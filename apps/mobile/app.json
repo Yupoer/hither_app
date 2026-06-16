@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "name": "Hither",
+    "slug": "hither",
+    "scheme": "hither",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "app.hither.mobile"
+    },
+    "android": {
+      "package": "app.hither.mobile"
+    }
+  }
+}
