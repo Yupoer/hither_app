@@ -1,0 +1,46 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Group management rules
+    match /groups/{groupId} {
+      // Allow read access to group basic info for authenticated users
+      allow read: if request.auth != null;
+      
+      // Allow group creation by authenticated users
+      allow create: if request.auth != null 
+        && request.auth.uid == resource.data.leaderId;
+      
+      // Only leaders can update group basic info
+      allow update: if request.auth != null 
+        && request.auth.uid == resource.data.leaderId;
+      
+      // Only leaders can delete groups (when leaving as last member)
+      allow delete: if request.auth != null 
+        && request.auth.uid == resource.data.leaderId;
+      
+      // Members subcollection rules
+      match /members/{userId} {
+        // Users can read all members in groups they belong to
+        allow read: if request.auth != null 
+          && (request.auth.uid == userId 
+              || exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid)));
+        
+        // Users can create their own member document when joining
+        allow create: if request.auth != null 
+          && request.auth.uid == userId
+          && request.auth.uid == resource.data.userId;
+        
+        // Users can update their own member document (location, status, etc.)
+        allow update: if request.auth != null 
+          && request.auth.uid == userId
+          && request.auth.uid == resource.data.userId;
+        
+        // Users can delete their own member document when leaving
+        // Leaders can delete any member document (for removing members)
+        allow delete: if request.auth != null 
+          && (request.auth.uid == userId
+              || request.auth.uid == get(/databases/$(database)/documents/groups/$(groupId)).data.leaderId);
+      }
+    }
+  }
+}

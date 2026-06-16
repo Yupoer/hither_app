@@ -1,0 +1,410 @@
+/* 
+  Localizable.strings
+  Hither - English
+*/
+
+// App Name
+"app_name" = "Hither";
+"app_subtitle" = "Stay Connected, Stay Safe";
+
+// Authentication
+"sign_in" = "Sign In";
+"sign_up" = "Sign Up";
+"email" = "Email";
+"password" = "Password";
+"display_name" = "Display Name";
+"create_account" = "Create Account";
+"sign_in_with_google" = "Sign in with Google";
+"sign_in_with_apple" = "Sign in with Apple";
+"language" = "Language";
+
+// Group Setup
+"create_or_join_group" = "Create or Join Group";
+"start_group_adventure" = "Start your group adventure";
+"create_new_group" = "Create New Group";
+"group_name_placeholder" = "Group Name (e.g., Hiking Adventure)";
+"create_group" = "Create Group";
+"join_existing_group" = "Join Existing Group";
+"invite_code" = "Invite Code";
+"join_group" = "Join Group";
+"group_setup" = "Group Setup";
+"help" = "Help";
+"sign_out" = "Sign Out";
+
+// Group/Settings Page
+"settings" = "Settings";
+"group" = "Group";
+"group_info" = "Group Info";
+"invite_members" = "Invite Members";
+"members_count" = "Members (%d)";
+"share" = "Share";
+"quick_actions" = "Quick Actions";
+"new_invite_code" = "New Invite Code";
+
+// Edit Nickname Sheet
+"enter_nickname_placeholder" = "Enter your nickname";
+"change_avatar" = "Change Avatar";
+"select_avatar" = "Select Avatar";
+"remove_avatar" = "Remove";
+"edit_nickname_title" = "Edit Nickname";
+"start_live_activity" = "Start Live Activity";
+"leave_group" = "Leave Group";
+
+// Badge System
+"badge_system" = "Badge System";
+"view_badges" = "View Badges";
+"badge_system_description" = "Earn badges based on your group activities and behaviors";
+"earned_badges" = "Earned Badges";
+"available_badges" = "Available Badges";
+"more_badges" = "More Badges";
+
+// Offline Mode
+"offline_mode" = "Offline Mode";
+"offline_mode_description" = "Disable all services for complete privacy";
+
+// Badge Descriptions
+"badge_punctual_sheep" = "Always arrive on time for group gatherings";
+"badge_pathfinder" = "Lead the group to new destinations";
+"badge_guardian" = "Help keep the group together";
+"badge_early_bird" = "First to join group activities";
+"badge_night_owl" = "Active during evening activities";
+"badge_social_butterfly" = "Connect with many group members";
+"badge_adventure_seeker" = "Participate in challenging activities";
+"badge_helping_hand" = "Always ready to help others";
+"no_group_found" = "No group found";
+"leave_group_confirmation" = "Are you sure you want to leave this group? This action cannot be undone.";
+"setting_up_group" = "Setting up your group...";
+"your_groups_count" = "Your Groups (%d)";
+"manage_all_groups" = "Manage All Groups";
+"leave" = "Leave";
+
+// Map
+"group_map" = "Group Map";
+"tracking" = "Tracking";
+"not_tracking" = "Not Tracking";
+"location" = "Location";
+"notifications" = "Notifications";
+"distance_to_leader" = "Distance to leader: %dm";
+"current_location" = "Current Location";
+"swipe_to_see_more" = "Swipe to see more";
+
+// Itinerary
+"itinerary" = "Itinerary";
+"manage_itinerary" = "Manage Itinerary";
+"add_waypoints_guide" = "Add waypoints and guide your group";
+"group_itinerary" = "Group Itinerary";
+"follow_planned_route" = "Follow the planned route";
+"upcoming" = "Upcoming";
+"completed" = "Completed";
+"no_waypoints_yet" = "No waypoints yet";
+"tap_plus_add_first" = "Tap + to add your first waypoint";
+"long_press_to_reorder" = "Long press to reorder";
+
+// Waypoints
+"select_location" = "Select Location";
+"search_for_place" = "Search for a place...";
+"clear" = "Clear";
+"current_location" = "Current Location";
+"selected_location" = "Selected Location";
+"use_this_location" = "Use This Location";
+"waypoint_details" = "Waypoint Details";
+"waypoint_type" = "Waypoint Type";
+"waypoint_name" = "Waypoint Name";
+"description_optional" = "Description (Optional)";
+"preview" = "Preview";
+"add" = "Add";
+"delete_waypoint" = "Delete Waypoint";
+"delete_confirmation" = "Are you sure you want to delete this waypoint? This action cannot be undone.";
+
+// Loading strings
+"loading" = "Loading...";
+
+// Command Types
+"command_gather" = "Gather";
+"command_depart" = "Depart";
+"command_rest" = "Rest";
+"command_be_careful" = "Be Careful";
+"command_go_left" = "Go Left";
+"command_go_right" = "Go Right";
+"command_stop" = "Stop";
+"command_hurry_up" = "Hurry Up";
+"command_custom" = "Custom";
+"command_need_restroom" = "Need Restroom";
+"command_need_break" = "Need Break";
+"command_need_help" = "Need Help";
+"command_found_something" = "Found Something";
+
+// Command Default Messages
+"message_gather" = "Everyone gather here";
+"message_depart" = "Let's move out";
+"message_rest" = "Take a 5-minute break";
+"message_be_careful" = "Be careful ahead";
+"message_go_left" = "Take the left path";
+"message_go_right" = "Take the right path";
+"message_stop" = "Stop where you are";
+"message_hurry_up" = "Please catch up";
+"message_need_restroom" = "I need to find a restroom";
+"message_need_break" = "I need a short break";
+"message_need_help" = "I need assistance";
+"message_found_something" = "I found something interesting";
+
+// Waypoint Types
+"waypoint_meeting_point" = "Meeting Point";
+"waypoint_rest_stop" = "Rest Stop";
+"waypoint_lunch" = "Lunch Spot";
+"waypoint_destination" = "Destination";
+"waypoint_checkpoint" = "Checkpoint";
+"waypoint_emergency" = "Emergency";
+"waypoint_custom" = "Custom";
+
+// Member Status Indicators
+"location_live" = "Location Live";
+"last_seen_minutes_ago" = "Last seen %dm ago";
+"location_stale" = "Location stale";
+"new_invite_code" = "New Invite Code";
+
+// Edit Nickname Sheet
+"enter_nickname_placeholder" = "Enter your nickname";
+"change_avatar" = "Change Avatar";
+"select_avatar" = "Select Avatar";
+"remove_avatar" = "Remove";
+"edit_nickname_title" = "Edit Nickname";
+"cancel" = "Cancel";
+"delete" = "Delete";
+
+// Commands
+"commands" = "Commands";
+"broadcast_commands" = "Broadcast Commands";
+"send_quick_commands" = "Send quick commands to your group";
+
+// Navigation
+"dashboard" = "Dashboard";
+"map" = "Map";
+"direction" = "Direction";
+"done" = "Done";
+"back" = "Back";
+
+// Direction View
+"join_group_to_see_directions" = "Join a group to see directions";
+"to_leader" = "to %@";
+"precision_finding" = "Precision Finding";
+"precision_finding_description" = "Get exact direction when within 50 meters";
+"precision_mode" = "Precision Mode";
+"team_overview" = "Team Overview";
+"leader_monitor_message" = "You are the leader - monitor your team below";
+"no_followers_yet" = "No followers yet";
+"share_invite_code_message" = "Share your invite code to add team members";
+"meters_away" = "%dm away";
+"location_unknown" = "Location unknown";
+
+// Map View
+"members_simple" = "Members: %d";
+"away" = "away";
+"no_location" = "no location";
+"in_progress" = "In Progress";
+
+// Additional UI Elements
+"join_group_to_view_itinerary" = "Join a group to view itinerary";
+"send_commands_to_group" = "Send Commands to Group";
+"send_requests_to_leader" = "Send Requests to Leader";
+"custom_request" = "Custom Request";
+"recent_commands" = "Recent Commands";
+"no_commands_yet" = "No commands yet";
+"you_indicator" = "(You)";
+"invite_to_group" = "Invite to %@";
+"share_code_message" = "Share this code with others to join your group";
+"not_in_any_groups" = "You are not in any groups";
+"leave_specific_group_confirmation" = "Are you sure you want to leave '%@'? This action cannot be undone.";
+"members_count_simple" = "%d members";
+"leader_prefix" = "Leader: %@";
+"created_date" = "Created: %@";
+"current_group_indicator" = "Current Group";
+"edit_nickname_title" = "Edit Nickname";
+"update_nickname_subtitle" = "Update your nickname for this group";
+"nickname_label" = "Nickname";
+"avatar_emoji_label" = "Avatar Emoji";
+"update_nickname_button" = "Update Nickname";
+"scan_qr_with_camera" = "Scan QR Code with Camera";
+"camera_instructions" = "Use your iPhone's built-in camera app to scan the QR code. When you scan it, you'll get a notification to open with Hither.";
+"instructions_header" = "Instructions:";
+"step_1" = "1.";
+"step_2" = "2.";
+"step_3" = "3.";
+"step_4" = "4.";
+"open_camera_app" = "Open the Camera app on your iPhone";
+"point_camera_at_qr" = "Point the camera at the QR code";
+"tap_notification" = "Tap the notification that appears";
+"select_open_in_hither" = "Select 'Open in Hither' to join the group";
+"join_group_question" = "Do you want to join this group?";
+
+// Dashboard View strings
+"join_group_to_see_dashboard" = "Join a group to see dashboard";
+"follower_dashboard_coming_soon" = "Follower dashboard coming soon";
+"members_online" = "%d/%d members online";
+"core_commands" = "Core Commands";
+"gather" = "Gather";
+"rest" = "Rest";
+"quick_actions" = "Quick Actions";
+"view_full_map" = "View Full Map";
+"invite_new_members" = "Invite New Members";
+"more_commands" = "More Commands";
+
+// Additional Direction View strings
+"start_precision_finding" = "Start Precision Finding";
+"stop_precision_finding" = "Stop Precision Finding";
+"location_active" = "Location Active";
+"location_inactive" = "Location Inactive";
+"no_data" = "No data";
+"live_status" = "Live";
+"minutes_ago" = "%dm ago";
+"stale_status" = "Stale";
+
+// Map View strings
+"group_map" = "Group Map";
+"location_permission" = "Location Permission";
+"settings" = "Settings";
+"cancel" = "Cancel";
+"tracking" = "Tracking";
+"not_tracking" = "Not Tracking";
+"location" = "Location";
+"notifications" = "Notifications";
+"members_simple" = "Members: %d";
+"distance_to_leader" = "Distance to leader: %dm";
+"away" = "away";
+"no_location" = "no location";
+"in_progress" = "In Progress";
+"swipe_to_see_more" = "Swipe to see more";
+"from_current_location" = "From Current Location";
+"from_waypoint" = "From %@";
+"current_destination" = "Current Destination";
+"upcoming_destination" = "Upcoming Destination";
+
+// Commands View strings
+"sending_command" = "Sending command...";
+"sending_request" = "Sending request...";
+"custom_command" = "Custom Command";
+"custom_request" = "Custom Request";
+"send_custom_command_subtitle" = "Send a custom command to all group members";
+"send_custom_request_subtitle" = "Send a custom request to the group leader";
+"enter_command_placeholder" = "Enter your command...";
+"enter_request_placeholder" = "Enter your request...";
+"send_command" = "Send Command";
+"send_request" = "Send Request";
+"now" = "Now";
+"minutes_ago_simple" = "%dm ago";
+
+// Itinerary View strings
+"manage_itinerary" = "Manage Itinerary";
+"add_waypoints_guide" = "Add waypoints and guide your group";
+"group_itinerary" = "Group Itinerary";
+"follow_planned_route" = "Follow the planned route";
+"completed" = "Completed";
+"loading_itinerary" = "Loading itinerary...";
+"imported_from_google_maps" = "Imported from Google Maps";
+
+// Waypoint Details strings
+"waypoint_details" = "Waypoint Details";
+"waypoint_type" = "Waypoint Type";
+"waypoint_name" = "Waypoint Name";
+"description_optional" = "Description (Optional)";
+"preview" = "Preview";
+"add" = "Add";
+"location" = "Location";
+"details" = "Details";
+"stop_going" = "Stop Going";
+"mark_as_completed" = "Mark as Completed";
+"going" = "Going";
+"delete_waypoint" = "Delete Waypoint";
+"delete_confirmation" = "Are you sure you want to delete this waypoint? This action cannot be undone.";
+
+// Loading strings
+"loading" = "Loading...";
+
+// Command Types
+"command_gather" = "Gather";
+"command_depart" = "Depart";
+"command_rest" = "Rest";
+"command_be_careful" = "Be Careful";
+"command_go_left" = "Go Left";
+"command_go_right" = "Go Right";
+"command_stop" = "Stop";
+"command_hurry_up" = "Hurry Up";
+"command_custom" = "Custom";
+"command_need_restroom" = "Need Restroom";
+"command_need_break" = "Need Break";
+"command_need_help" = "Need Help";
+"command_found_something" = "Found Something";
+
+// Command Default Messages
+"message_gather" = "Everyone gather here";
+"message_depart" = "Let's move out";
+"message_rest" = "Take a 5-minute break";
+"message_be_careful" = "Be careful ahead";
+"message_go_left" = "Take the left path";
+"message_go_right" = "Take the right path";
+"message_stop" = "Stop where you are";
+"message_hurry_up" = "Please catch up";
+"message_need_restroom" = "I need to find a restroom";
+"message_need_break" = "I need a short break";
+"message_need_help" = "I need assistance";
+"message_found_something" = "I found something interesting";
+
+// Waypoint Types
+"waypoint_meeting_point" = "Meeting Point";
+"waypoint_rest_stop" = "Rest Stop";
+"waypoint_lunch" = "Lunch Spot";
+"waypoint_destination" = "Destination";
+"waypoint_checkpoint" = "Checkpoint";
+"waypoint_emergency" = "Emergency";
+"waypoint_custom" = "Custom";
+
+// Member Status Indicators
+"location_live" = "Location Live";
+"last_seen_minutes_ago" = "Last seen %dm ago";
+"location_stale" = "Location stale";
+"new_invite_code" = "New Invite Code";
+
+// Edit Nickname Sheet
+"enter_nickname_placeholder" = "Enter your nickname";
+"change_avatar" = "Change Avatar";
+"select_avatar" = "Select Avatar";
+"remove_avatar" = "Remove";
+"edit_nickname_title" = "Edit Nickname";
+// All Groups Management
+"all_groups" = "All Groups";
+"switch_to" = "Switch To";
+"leave" = "Leave";
+"done" = "Done";
+"leave_group_alert" = "Leave Group";
+"cancel" = "Cancel";
+
+// Additional settings
+"app_settings" = "App Settings";
+"location_services" = "Location Services";
+"live_activity" = "Live Activity";
+"leader_settings" = "Leader Settings";
+"distance_alert_threshold" = "Distance Alert Threshold";
+"distance_alert_description" = "Get notified when followers are too far";
+"select_distance_threshold" = "Select the distance threshold for notifications";
+
+// Find Member View
+"exit_find_mode" = "Exit Find Mode";
+"exit_find_mode_message" = "Are you sure you want to stop finding this member?";
+"exit" = "Exit";
+"finding_member" = "Finding Member";
+"to_target_member" = "to target member";
+"precision_finding_member_description" = "Use UWB for precise guidance when close to the target member";
+"location_inactive" = "Location Inactive";
+
+// Free Roam Mode
+"free_roam_mode" = "Free Roam Mode";
+"free_roam_mode_description" = "Auto-approve all find requests in this group";
+"free_roam_mode_enabled" = "Free roam mode enabled";
+"free_roam_mode_disabled" = "Free roam mode disabled";
+"free_roam_active" = "Free Roam Active";
+
+// Network & Error Handling
+"network_error" = "Network Error";
+"network_error_message" = "Unable to connect to location services. You can continue offline but location updates may be limited.";
+"retry" = "Retry";
+"continue_offline" = "Continue Offline";
