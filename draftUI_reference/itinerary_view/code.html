@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8"/>
+<meta charset="utf-8"/>
+<link crossorigin="" href="https://fonts.gstatic.com/" rel="preconnect"/>
+<link as="style" href="https://fonts.googleapis.com/css2?display=swap&amp;family=Noto+Sans%3Awght%40400%3B500%3B700%3B900&amp;family=Plus+Jakarta+Sans%3Awght%40400%3B500%3B700%3B800" onload="this.rel='stylesheet'" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet"/>
+<title>Hither - Itinerary</title>
+<link href="data:image/x-icon;base64," rel="icon" type="image/x-icon"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<style type="text/tailwindcss">
+    :root {
+      --primary-color: #ea2a33;
+      --secondary-color: #fce8e9;
+      --text-primary: #1e1e1e;
+      --text-secondary: #757575;
+      --background-color: #ffffff;
+      --primary-soft: #f8d3d5;
+      --primary-soft-text: #5c1115;
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+    .swipe-container {
+        overflow: hidden;
+        position: relative;
+    }
+    .swipe-content {
+        transition: transform 0.3s ease-out;
+        will-change: transform;
+    }
+    .delete-action {
+        position: absolute;
+        top: 0;
+        right: 0;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        transform: translateX(100%);
+        transition: transform 0.3s ease-out;
+        will-change: transform;
+    }
+    .swiped .swipe-content {
+        transform: translateX(-80px);
+    }
+    .swiped .delete-action {
+        transform: translateX(0);
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-[var(--background-color)]">
+<div class="relative flex size-full min-h-screen flex-col justify-between group/design-root overflow-x-hidden" style='font-family: "Plus Jakarta Sans", "Noto Sans", sans-serif;'>
+<div class="flex-grow">
+<main class="p-4 pt-8 space-y-6">
+<button class="w-full text-left group p-4 rounded-2xl bg-[var(--primary-soft)] text-[var(--primary-soft-text)] shadow-[0_4px_10px_-5px_rgba(234,42,51,0.2)] hover:shadow-[0_8px_20px_-5px_rgba(234,42,51,0.3)] transition-all duration-300">
+<div class="flex items-center justify-between">
+<div>
+<p class="text-sm font-medium text-[var(--primary-soft-text)]/80">CURRENT DESTINATION</p>
+<h2 class="text-3xl font-bold mt-1">Ranger Station</h2>
+<p class="text-[var(--primary-soft-text)]/90 mt-1">8:00 AM - Meetup and briefing</p>
+</div>
+<span class="material-symbols-outlined text-4xl opacity-50 group-hover:opacity-100 transition-opacity">arrow_forward_ios</span>
+</div>
+</button>
+<div>
+<h3 class="text-lg font-semibold text-[var(--text-primary)] mb-2">Upcoming Destinations</h3>
+<div class="relative pl-8">
+<div class="absolute left-4 top-0 h-full w-0.5 bg-gray-200"></div>
+<div class="swipe-container rounded-lg my-2">
+<button class="group w-full text-left">
+<div class="absolute top-0 right-0 h-full w-20 bg-red-600 rounded-r-lg flex items-center justify-center text-white">
+<div class="flex flex-col items-center">
+<span class="material-symbols-outlined">delete</span>
+<span class="text-xs font-medium">Delete</span>
+</div>
+</div>
+<div class="relative z-10 flex items-start gap-4 bg-white p-3 rounded-lg border border-gray-200 shadow-sm hover:shadow-md hover:border-[var(--primary-color)] transition-all duration-200">
+<div class="relative z-10">
+<div class="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--secondary-color)] text-[var(--primary-color)]">
+<span class="material-symbols-outlined text-base">hiking</span>
+</div>
+</div>
+<div class="flex-grow">
+<h2 class="font-semibold text-[var(--text-primary)] group-hover:text-[var(--primary-color)] transition-colors">Eagle Peak Trailhead</h2>
+<p class="text-sm text-[var(--text-secondary)]">9:00 AM - Start of hike</p>
+</div>
+<div class="text-[var(--text-secondary)] cursor-grab">
+<span class="material-symbols-outlined"> drag_indicator </span>
+</div>
+</div>
+</button>
+</div>
+<div class="swipe-container swiped rounded-lg my-2">
+<button class="w-full text-left group">
+<div class="delete-action w-20 bg-red-600 rounded-r-lg">
+<div class="flex flex-col items-center justify-center h-full w-full">
+<span class="material-symbols-outlined">delete</span>
+<span class="text-xs font-medium">Delete</span>
+</div>
+</div>
+<div class="swipe-content bg-white w-full">
+<div class="relative z-10 flex items-start gap-4 bg-white p-3 rounded-lg border border-gray-200 shadow-sm hover:shadow-md hover:border-[var(--primary-color)] transition-all duration-200">
+<div class="relative z-10">
+<div class="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--secondary-color)] text-[var(--primary-color)]">
+<span class="material-symbols-outlined text-base">lunch_dining</span>
+</div>
+</div>
+<div class="flex-grow">
+<h2 class="font-semibold text-[var(--text-primary)] group-hover:text-[var(--primary-color)] transition-colors">Summit Lake</h2>
+<p class="text-sm text-[var(--text-secondary)]">12:30 PM - Lunch break</p>
+</div>
+<div class="text-[var(--text-secondary)] cursor-grab">
+<span class="material-symbols-outlined"> drag_indicator </span>
+</div>
+</div>
+</div>
+</button>
+</div>
+<div class="swipe-container rounded-lg my-2">
+<button class="group w-full text-left">
+<div class="absolute top-0 right-0 h-full w-20 bg-red-600 rounded-r-lg flex items-center justify-center text-white">
+<div class="flex flex-col items-center">
+<span class="material-symbols-outlined">delete</span>
+<span class="text-xs font-medium">Delete</span>
+</div>
+</div>
+<div class="relative z-10 flex items-start gap-4 bg-white p-3 rounded-lg border border-gray-200 shadow-sm hover:shadow-md hover:border-[var(--primary-color)] transition-all duration-200">
+<div class="relative z-10">
+<div class="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--secondary-color)] text-[var(--primary-color)]">
+<span class="material-symbols-outlined text-base">flag</span>
+</div>
+</div>
+<div class="flex-grow">
+<h2 class="font-semibold text-[var(--text-primary)] group-hover:text-[var(--primary-color)] transition-colors">Eagle Peak Summit</h2>
+<p class="text-sm text-[var(--text-secondary)]">2:30 PM - Destination</p>
+</div>
+<div class="text-[var(--text-secondary)] cursor-grab">
+<span class="material-symbols-outlined"> drag_indicator </span>
+</div>
+</div>
+</button>
+</div>
+</div>
+</div>
+<button class="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-gray-300 py-3 text-center text-gray-500 hover:bg-gray-50 hover:border-gray-400 transition-colors">
+<span class="material-symbols-outlined"> add_circle_outline </span>
+<span class="font-medium">Add Waypoint</span>
+</button>
+</main>
+</div>
+<footer class="sticky bottom-0 border-t border-gray-200 bg-[var(--background-color)]">
+<nav class="flex justify-around px-4 pt-2 pb-5">
+<a class="flex flex-col items-center gap-1 text-[var(--text-secondary)]" href="#">
+<span class="material-symbols-outlined"> dashboard </span>
+<span class="text-xs font-medium">Dashboard</span>
+</a>
+<a class="flex flex-col items-center gap-1 text-[var(--text-secondary)]" href="#">
+<span class="material-symbols-outlined"> map </span>
+<span class="text-xs font-medium">Map</span>
+</a>
+<a class="flex flex-col items-center gap-1 text-[var(--primary-color)]" href="#">
+<span class="material-symbols-outlined"> list_alt </span>
+<span class="text-xs font-medium">Itinerary</span>
+</a>
+<a class="flex flex-col items-center gap-1 text-[var(--text-secondary)]" href="#">
+<span class="material-symbols-outlined"> settings </span>
+<span class="text-xs font-medium">Settings</span>
+</a>
+</nav>
+</footer>
+<div class="fixed inset-0 z-20 flex items-end bg-black bg-opacity-50 hidden" id="popup-sheet">
+<div class="w-full bg-white rounded-t-2xl shadow-lg">
+<div class="p-4 border-b border-gray-200 text-center relative">
+<div class="mx-auto w-10 h-1.5 bg-gray-300 rounded-full"></div>
+<button class="absolute top-3 right-3 text-gray-500 hover:text-gray-800">
+<span class="material-symbols-outlined">close</span>
+</button>
+</div>
+<div class="p-6 space-y-4">
+<div class="flex items-center gap-4">
+<div class="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--secondary-color)] text-[var(--primary-color)] flex-shrink-0">
+<span class="material-symbols-outlined">location_on</span>
+</div>
+<div>
+<h2 class="text-2xl font-bold text-[var(--text-primary)]">Ranger Station</h2>
+<p class="text-md text-[var(--text-secondary)]">8:00 AM - Meetup and briefing</p>
+</div>
+</div>
+<div>
+<p class="text-sm text-[var(--text-primary)] leading-relaxed">
+              The Ranger Station is the primary meeting point for our group. It's located at the entrance of the national park and offers basic amenities. All team members are expected to gather here for a pre-hike briefing and gear check.
+            </p>
+</div>
+<div class="aspect-w-16 aspect-h-9 rounded-lg overflow-hidden">
+<img alt="Map view of Ranger Station" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAE5hrUfyD363equB4-jLkoOPFAvzMwVWgx91b_m3guGUp30RaTgEcAskzKQj26f9DJ5hnsfp6JvAditCvFLM6aOfFtSNgVIHnSZk-2AOuxandVSgaW6JYUIvd6uUqzvKi4tGyo-OETEHZ-jlHHNITnn86u1DYNRlTH-xsYoWDpsM1QVHGSh7ZZzL_4dMeRiyPI7ppF_gF-r9OqYWE1ay42icotAsCisWQ4-F4zsk5_2NV6zyyioUjOASRDDCICQzI4I9Vo6DHDrUO2"/>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+</body></html>
