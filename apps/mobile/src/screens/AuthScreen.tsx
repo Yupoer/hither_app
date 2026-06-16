@@ -1,24 +1,144 @@
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
+import { useSession } from '../state/SessionContext';
+import { colors, radius, spacing } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Auth'>;
 
 /**
- * Sign-in / sign-up entry point. Skeleton only — no auth logic yet.
+ * Entry point. The user types a nickname (the anonymous in-group identity from
+ * the design) — an optional email is accepted but not required for the MVP.
+ * "Sign in" creates a pseudo userId in the session and moves to the group
+ * screen. No real auth call yet.
  */
-export default function AuthScreen(_props: Props) {
+export default function AuthScreen({ navigation }: Props) {
+  const { signIn } = useSession();
+  const insets = useSafeAreaInsets();
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+
+  const canSubmit = name.trim().length >= 1;
+
+  function handleSignIn() {
+    if (!canSubmit) {
+      return;
+    }
+    signIn({ name, email });
+    navigation.replace('Group');
+  }
+
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Hither</Text>
-      <Text style={styles.subtitle}>登入 / 註冊（skeleton）</Text>
-    </View>
+    <KeyboardAvoidingView
+      style={styles.flex}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <View style={[styles.container, { paddingTop: insets.top + spacing.xl }]}>
+        <View style={styles.header}>
+          <Text style={styles.lantern}>🏮</Text>
+          <Text style={styles.title}>Hither</Text>
+          <Text style={styles.subtitle}>
+            一個暱稱，就能和大家一起出發{'\n'}A nickname is all you need.
+          </Text>
+        </View>
+
+        <View style={styles.form}>
+          <Text style={styles.label}>YOUR NAME · 暱稱</Text>
+          <TextInput
+            style={styles.input}
+            value={name}
+            onChangeText={setName}
+            placeholder="例如：迷路的貓"
+            placeholderTextColor={colors.textSecondary}
+            autoCapitalize="none"
+            returnKeyType="next"
+            accessibilityLabel="暱稱"
+          />
+
+          <Text style={styles.label}>EMAIL · 選填</Text>
+          <TextInput
+            style={styles.input}
+            value={email}
+            onChangeText={setEmail}
+            placeholder="you@example.com"
+            placeholderTextColor={colors.textSecondary}
+            autoCapitalize="none"
+            keyboardType="email-address"
+            returnKeyType="go"
+            onSubmitEditing={handleSignIn}
+            accessibilityLabel="Email（選填）"
+          />
+
+          <Pressable
+            style={({ pressed }) => [
+              styles.cta,
+              !canSubmit && styles.ctaDisabled,
+              pressed && canSubmit && styles.ctaPressed,
+            ]}
+            onPress={handleSignIn}
+            disabled={!canSubmit}
+            accessibilityRole="button"
+          >
+            <Text style={styles.ctaText}>登入 · Continue</Text>
+          </Pressable>
+        </View>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
-  title: { fontSize: 32, fontWeight: '700' },
-  subtitle: { fontSize: 16, color: '#666' },
+  flex: { flex: 1, backgroundColor: colors.background },
+  container: {
+    flex: 1,
+    paddingHorizontal: spacing.xl,
+    gap: spacing.xl,
+  },
+  header: { alignItems: 'center', gap: spacing.sm, marginTop: spacing.xl },
+  lantern: { fontSize: 56 },
+  title: { fontSize: 40, fontWeight: '800', color: colors.textPrimary },
+  subtitle: {
+    fontSize: 15,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  form: { gap: spacing.sm },
+  label: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 1,
+    color: colors.textSecondary,
+    marginTop: spacing.md,
+  },
+  input: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    fontSize: 17,
+    color: colors.textPrimary,
+  },
+  cta: {
+    backgroundColor: colors.accent,
+    borderRadius: radius.md,
+    paddingVertical: spacing.lg,
+    alignItems: 'center',
+    marginTop: spacing.xl,
+  },
+  ctaDisabled: { opacity: 0.4 },
+  ctaPressed: { opacity: 0.85 },
+  ctaText: { fontSize: 17, fontWeight: '700', color: colors.accentText },
 });
