@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -18,12 +18,15 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Auth'>;
 
 /**
  * Entry point. The user types a nickname (the anonymous in-group identity from
- * the design) — an optional email is accepted but not required for the MVP.
- * "Sign in" creates a pseudo userId in the session and moves to the group
- * screen. No real auth call yet.
+ * the design). "Continue" signs in anonymously via Supabase and records the
+ * nickname; an optional email is accepted but unused in the anonymous flow.
+ *
+ * If a persisted session is restored on launch (supabase-js + AsyncStorage),
+ * the user is already signed in — we skip straight to the Group screen rather
+ * than letting them sign in again (which would mint a fresh, orphaned anon user).
  */
 export default function AuthScreen({ navigation }: Props) {
-  const { signIn } = useSession();
+  const { signIn, user, initializing } = useSession();
   const insets = useSafeAreaInsets();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -31,6 +34,13 @@ export default function AuthScreen({ navigation }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const canSubmit = name.trim().length >= 1 && !submitting;
+
+  // Once a user exists (restored session or fresh sign-in), advance to Group.
+  useEffect(() => {
+    if (!initializing && user) {
+      navigation.replace('Group');
+    }
+  }, [initializing, user, navigation]);
 
   async function handleSignIn() {
     if (!canSubmit) {
@@ -40,7 +50,7 @@ export default function AuthScreen({ navigation }: Props) {
     setError(null);
     try {
       await signIn({ name, email });
-      navigation.replace('Group');
+      // Navigation handled by the effect above once `user` is set.
     } catch (e) {
       setError(e instanceof Error ? e.message : '登入失敗，請再試一次');
       setSubmitting(false);
