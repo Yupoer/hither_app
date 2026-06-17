@@ -1,0 +1,25 @@
+# Claude Code working directories (git worktrees, local agent state)
+.claude/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# Expo
+.expo/
+dist/
+web-build/
+
+# Native build output
+*.xcuserstate
+xcuserdata/
+DerivedData/
+build/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
