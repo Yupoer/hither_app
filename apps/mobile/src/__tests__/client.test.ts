@@ -5,6 +5,7 @@ jest.mock('../api/supabase', () => ({
 }));
 
 import {
+  addDestination,
   createGroup,
   joinGroup,
   generateInviteCode,
@@ -157,5 +158,114 @@ describe('joinGroup', () => {
     const group = await joinGroup('abc234');
     expect(group.inviteCode).toBe('ABC234');
     expect(mockedRpc).toHaveBeenCalledWith('join_group', { p_code: 'ABC234' });
+  });
+});
+
+describe('addDestination', () => {
+  // Build a flexible chainable mock for the `itinerary_items` table:
+  // - the min-position read ends in .maybeSingle()
+  // - .insert(...) resolves to `insertResult` and records its payload
+  // - the getGroupState re-read awaits the chain directly (.then)
+  function itineraryTable(minPosition: number | null, insertResult: unknown) {
+    const obj: Record<string, unknown> = {};
+    const self = () => obj;
+    Object.assign(obj, {
+      select: self,
+      eq: self,
+      order: self,
+      limit: self,
+      maybeSingle: () =>
+        Promise.resolve({
+          data: minPosition === null ? null : { position: minPosition },
+          error: null,
+        }),
+      insert: jest.fn(() => Promise.resolve(insertResult)),
+      // getGroupState's itinerary read awaits the builder -> empty list.
+      then: (onF: (v: unknown) => unknown, onR?: (e: unknown) => unknown) =>
+        Promise.resolve({ data: [], error: null }).then(onF, onR),
+    });
+    return obj as { insert: jest.Mock };
+  }
+
+  // Minimal stubs so the getGroupState() re-read after insert resolves.
+  function emptyGroupStateTables(itinerary: object) {
+    const listEq = () => Promise.resolve({ data: [], error: null });
+    return (table: string) => {
+      switch (table) {
+        case 'itinerary_items':
+          return itinerary;
+        case 'groups':
+          return {
+            select: () => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({
+                    data: {
+                      id: 'g1',
+                      name: '團',
+                      invite_code: 'ABC234',
+                      created_by: 'uid',
+                      created_at: 't0',
+                    },
+                    error: null,
+                  }),
+              }),
+            }),
+          };
+        case 'memberships':
+        case 'member_locations':
+          return { select: () => ({ eq: listEq }) };
+        default:
+          return { select: () => ({ eq: listEq }) };
+      }
+    };
+  }
+
+  it('inserts the new stop at the front (minPosition - 1) so it becomes next', async () => {
+    const itinerary = itineraryTable(2, { error: null });
+    mockedFrom.mockImplementation(emptyGroupStateTables(itinerary));
+
+    await addDestination('g1', {
+      title: '台北101',
+      address: '台北市信義區',
+      coordinates: { latitude: 25.034, longitude: 121.564 },
+    });
+
+    expect(itinerary.insert).toHaveBeenCalledWith({
+      group_id: 'g1',
+      title: '台北101',
+      address: '台北市信義區',
+      latitude: 25.034,
+      longitude: 121.564,
+      position: 1, // 2 - 1, ahead of the current first stop
+    });
+  });
+
+  it('uses position -1 when the itinerary is empty', async () => {
+    const itinerary = itineraryTable(null, { error: null });
+    mockedFrom.mockImplementation(emptyGroupStateTables(itinerary));
+
+    await addDestination('g1', {
+      title: '中正紀念堂',
+      coordinates: { latitude: 25.036, longitude: 121.518 },
+    });
+
+    expect(itinerary.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ position: -1, address: null }),
+    );
+  });
+
+  it('throws when the insert is rejected (e.g. a follower hitting RLS)', async () => {
+    const itinerary = itineraryTable(0, {
+      error: { code: '42501', message: 'new row violates row-level security' },
+    });
+    mockedFrom.mockImplementation(emptyGroupStateTables(itinerary));
+
+    await expect(
+      addDestination('g1', {
+        title: '某處',
+        coordinates: { latitude: 0, longitude: 0 },
+      }),
+    ).rejects.toThrow('row-level security');
   });
 });
