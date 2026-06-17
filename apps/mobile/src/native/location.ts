@@ -9,9 +9,24 @@
  *
  * Phase A: backed by `expo-location` (foreground positioning, works in
  * Expo Go). Background / high-accuracy positioning is the native module's job.
+ *
+ * Phase B seam: if the custom native module `HitherLocation`
+ * (`apps/mobile/modules/hither-location`) is present — i.e. on an EAS Dev
+ * Build — it backs these calls instead; in Expo Go it is absent and the
+ * Expo implementation below runs. The interface is identical either way.
  */
+import { requireOptionalNativeModule } from 'expo-modules-core';
 import * as Location from 'expo-location';
 import type { Coordinates } from '../types';
+
+/**
+ * Optional custom native module. `null` in Expo Go / when not built.
+ * Typed loosely on purpose — the contract is the exported functions below,
+ * not this proxy.
+ */
+const HitherLocation = requireOptionalNativeModule<{
+  getCurrentLocation(): Promise<LocationSample | null>;
+}>('HitherLocation');
 
 /** A single positioning sample. */
 export interface LocationSample {
@@ -62,6 +77,14 @@ export async function requestPermission(): Promise<boolean> {
  * without GPS by using a reference member).
  */
 export async function getCurrentLocation(): Promise<LocationSample | null> {
+  // Prefer the custom native module (precise/background-capable) when built.
+  if (HitherLocation) {
+    try {
+      return await HitherLocation.getCurrentLocation();
+    } catch {
+      // fall through to the Expo implementation
+    }
+  }
   const granted = await requestPermission();
   if (!granted) {
     return null;

@@ -2,13 +2,25 @@
  * Live Activity boundary (iOS ActivityKit / Dynamic Island).
  *
  * There is NO Expo-Go-compatible implementation: ActivityKit requires a
- * custom native module and a Dev Build. Phase A therefore ships safe no-ops
- * with {@link isSupported} returning false, so screens can call these freely
- * without crashing in Expo Go. The real implementation arrives with
- * `apps/mobile/modules/hither-live-activity` (Phase B, EAS Dev Build),
- * backing this same interface.
+ * custom native module and a Dev Build. In Expo Go these are safe no-ops
+ * with {@link isSupported} returning false, so screens can call them freely
+ * without crashing. On an EAS Dev Build the native module
+ * `HitherLiveActivity` (`apps/mobile/modules/hither-live-activity`) is
+ * present and backs every call through the same interface.
  */
+import { requireOptionalNativeModule } from 'expo-modules-core';
 import type { Coordinates } from '../types';
+
+/** Custom native module; `null` in Expo Go / when not built. */
+const HitherLiveActivity = requireOptionalNativeModule<{
+  isSupported(): boolean;
+  startGroupActivity(state: GroupActivityState): Promise<ActivityHandle | null>;
+  updateGroupActivity(
+    handle: ActivityHandle,
+    state: GroupActivityState,
+  ): Promise<void>;
+  endGroupActivity(handle: ActivityHandle): Promise<void>;
+}>('HitherLiveActivity');
 
 export interface GroupActivityState {
   groupName: string;
@@ -24,34 +36,33 @@ export interface GroupActivityState {
 export type ActivityHandle = string;
 
 /**
- * Whether Live Activities can actually run here. Always false in Expo Go /
- * on Android. Gate UI affordances on this.
+ * Whether Live Activities can actually run here. False in Expo Go / on
+ * Android; true only on an iOS Dev Build with the native module. Gate UI
+ * affordances on this.
  */
 export function isSupported(): boolean {
-  return false;
+  return HitherLiveActivity?.isSupported() ?? false;
 }
 
-/** Start a group Live Activity. No-op (returns null) until Phase B. */
+/** Start a group Live Activity. Returns null when unsupported (Expo Go). */
 export async function startGroupActivity(
-  _state: GroupActivityState,
+  state: GroupActivityState,
 ): Promise<ActivityHandle | null> {
-  if (!isSupported()) {
+  if (!HitherLiveActivity) {
     return null;
   }
-  return null;
+  return HitherLiveActivity.startGroupActivity(state);
 }
 
-/** Update a running Live Activity. No-op until Phase B. */
+/** Update a running Live Activity. No-op when unsupported. */
 export async function updateGroupActivity(
-  _handle: ActivityHandle,
-  _state: GroupActivityState,
+  handle: ActivityHandle,
+  state: GroupActivityState,
 ): Promise<void> {
-  // no-op
+  await HitherLiveActivity?.updateGroupActivity(handle, state);
 }
 
-/** End a running Live Activity. No-op until Phase B. */
-export async function endGroupActivity(
-  _handle: ActivityHandle,
-): Promise<void> {
-  // no-op
+/** End a running Live Activity. No-op when unsupported. */
+export async function endGroupActivity(handle: ActivityHandle): Promise<void> {
+  await HitherLiveActivity?.endGroupActivity(handle);
 }

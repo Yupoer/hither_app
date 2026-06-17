@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["HitherLiveActivityModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.hitherliveactivity.HitherLiveActivityModule"]
+  }
+}

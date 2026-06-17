@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["HitherMapsModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.hithermaps.HitherMapsModule"]
+  }
+}

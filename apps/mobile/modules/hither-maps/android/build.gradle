@@ -1,0 +1,15 @@
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+apply plugin: 'expo-module-gradle-plugin'
+
+group = 'expo.modules.hithermaps'
+version = '0.1.0'
+
+// SCAFFOLD (Phase B): Android no-op stub; the JS Nominatim fallback in
+// maps.ts already works cross-platform, so Android native is optional.
+android {
+  namespace 'expo.modules.hithermaps'
+  defaultConfig {
+    minSdkVersion 24
+  }
+}

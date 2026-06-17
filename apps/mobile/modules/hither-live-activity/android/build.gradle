@@ -1,0 +1,16 @@
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+apply plugin: 'expo-module-gradle-plugin'
+
+group = 'expo.modules.hitherliveactivity'
+version = '0.1.0'
+
+// SCAFFOLD (Phase B): Live Activities are iOS-only. The Android module is a
+// no-op stub purely so the JS module name resolves; there is no Android
+// equivalent planned.
+android {
+  namespace 'expo.modules.hitherliveactivity'
+  defaultConfig {
+    minSdkVersion 24
+  }
+}

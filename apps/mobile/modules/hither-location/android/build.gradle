@@ -1,0 +1,15 @@
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+apply plugin: 'expo-module-gradle-plugin'
+
+group = 'expo.modules.hitherlocation'
+version = '0.1.0'
+
+// SCAFFOLD (Phase B): standard Expo local-module Android config. Only built
+// under a Dev Build / prebuild, never in Expo Go.
+android {
+  namespace 'expo.modules.hitherlocation'
+  defaultConfig {
+    minSdkVersion 24
+  }
+}

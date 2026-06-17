@@ -9,8 +9,18 @@
  *
  * Deciding WHEN to push / WHO to push is server-side (Supabase Edge Function
  * + APNs), out of this client boundary's scope.
+ *
+ * Phase B seam: the custom native module `HitherNotifications`
+ * (`apps/mobile/modules/hither-notifications`) backs {@link getDevicePushToken}
+ * on a Dev Build; absent in Expo Go, where it returns null.
  */
+import { requireOptionalNativeModule } from 'expo-modules-core';
 import * as Notifications from 'expo-notifications';
+
+/** Custom native module; `null` in Expo Go / when not built. */
+const HitherNotifications = requireOptionalNativeModule<{
+  getDevicePushToken(): Promise<string | null>;
+}>('HitherNotifications');
 
 export interface LocalNotificationInput {
   title: string;
@@ -33,6 +43,13 @@ export async function requestPermission(): Promise<boolean> {
  * Dev Build with the native module ships.
  */
 export async function getDevicePushToken(): Promise<string | null> {
+  if (HitherNotifications) {
+    try {
+      return await HitherNotifications.getDevicePushToken();
+    } catch {
+      // fall through to the Expo implementation
+    }
+  }
   try {
     const granted = await requestPermission();
     if (!granted) {

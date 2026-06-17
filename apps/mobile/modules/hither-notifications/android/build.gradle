@@ -1,0 +1,15 @@
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+apply plugin: 'expo-module-gradle-plugin'
+
+group = 'expo.modules.hithernotifications'
+version = '0.1.0'
+
+// SCAFFOLD (Phase B): Android no-op stub; FCM token retrieval can be ported
+// here later if Android push is needed.
+android {
+  namespace 'expo.modules.hithernotifications'
+  defaultConfig {
+    minSdkVersion 24
+  }
+}

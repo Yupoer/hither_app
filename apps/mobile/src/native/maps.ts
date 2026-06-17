@@ -10,8 +10,19 @@
  *
  * Nominatim usage policy: low volume only, must send a descriptive
  * User-Agent / Referer. Do not hammer it; debounce callers.
+ *
+ * Phase B seam: the custom native module `HitherMaps`
+ * (`apps/mobile/modules/hither-maps`) can back these with Apple MapKit on a
+ * Dev Build; absent in Expo Go, where the Nominatim fallback runs.
  */
+import { requireOptionalNativeModule } from 'expo-modules-core';
 import type { Coordinates } from '../types';
+
+/** Custom native module; `null` in Expo Go / when not built. */
+const HitherMaps = requireOptionalNativeModule<{
+  searchPlaces(query: string, region?: MapRegion): Promise<PlaceResult[]>;
+  getDirections(from: Coordinates, to: Coordinates): Promise<DirectionsResult>;
+}>('HitherMaps');
 
 /** A search hit the "next gathering point" picker can drop on the map. */
 export interface PlaceResult {
@@ -73,6 +84,14 @@ export async function searchPlaces(
     return [];
   }
 
+  if (HitherMaps) {
+    try {
+      return await HitherMaps.searchPlaces(trimmed, region);
+    } catch {
+      // fall through to the Nominatim implementation
+    }
+  }
+
   const params = new URLSearchParams({
     q: trimmed,
     format: 'jsonv2',
@@ -118,6 +137,13 @@ export async function getDirections(
   from: Coordinates,
   to: Coordinates,
 ): Promise<DirectionsResult> {
+  if (HitherMaps) {
+    try {
+      return await HitherMaps.getDirections(from, to);
+    } catch {
+      // fall through to the straight-line estimate
+    }
+  }
   const dLat = ((to.latitude - from.latitude) * Math.PI) / 180;
   const dLon = ((to.longitude - from.longitude) * Math.PI) / 180;
   const lat1 = (from.latitude * Math.PI) / 180;
