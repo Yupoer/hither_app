@@ -1,17 +1,25 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
+import { supabase } from '../api/supabase';
 import type { Group, MemberRole, User } from '../types';
 
 /**
  * App-wide session state: who is signed in, and which group (and role)
  * they are currently in.
  *
- * This is the single source of truth for `userId`, the current `group`,
- * and the user's `role` (leader / follower). Screens read it via
- * `useSession()`; the live, frequently-changing member positions are NOT
- * kept here — those come from `useGroupState`, which polls the API.
+ * Auth is Supabase **anonymous sign-in** (`signInAnonymously()`), matching the
+ * MVP "anonymous nickname" model: there is no password/email step — the user
+ * just picks a nickname. `User.id` is the Supabase `auth.uid()`, which RLS uses
+ * to scope every row. The nickname is persisted to `public.profiles`.
  *
- * Persistence (AsyncStorage / SecureStore for the JWT) is intentionally
- * out of scope for this MVP slice: a fresh launch starts signed-out.
+ * The session itself is persisted by supabase-js via AsyncStorage, so a relaunch
+ * restores the signed-in anonymous user. `setMembership` tracks the current
+ * group/role; the live member positions live in `useGroupState`.
  */
 
 /** Where the user sits in the current group. `null` until they create/join one. */
@@ -23,9 +31,15 @@ export interface Membership {
 interface SessionContextValue {
   user: User | null;
   membership: Membership | null;
-  /** Create a pseudo session from a nickname/email. No server call (MVP). */
-  signIn: (input: { name: string; email?: string }) => User;
-  signOut: () => void;
+  /** True while restoring a persisted session on launch. */
+  initializing: boolean;
+  /**
+   * Anonymously sign in and record the chosen nickname. Resolves to the User
+   * (with `id === auth.uid()`). `email` is accepted for API compatibility but
+   * unused in the anonymous flow.
+   */
+  signIn: (input: { name: string; email?: string }) => Promise<User>;
+  signOut: () => Promise<void>;
   /** Record the group the user just created (as leader) or joined (as follower). */
   setMembership: (membership: Membership) => void;
   leaveGroup: () => void;
@@ -33,37 +47,81 @@ interface SessionContextValue {
 
 const SessionContext = createContext<SessionContextValue | undefined>(undefined);
 
-/** Generate a stable-ish pseudo user id for the session. */
-function makePseudoUserId(): string {
-  return `u_${Math.random().toString(36).slice(2, 10)}`;
-}
-
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [membership, setMembershipState] = useState<Membership | null>(null);
+  const [initializing, setInitializing] = useState(true);
+
+  // Restore any persisted anonymous session on launch and keep `user.id` in
+  // sync with auth state. The nickname is read back from `profiles` so a
+  // relaunch shows the same identity.
+  useEffect(() => {
+    let active = true;
+
+    async function hydrate(userId: string | undefined) {
+      if (!userId) {
+        if (active) setUser(null);
+        return;
+      }
+      const { data } = await supabase
+        .from('profiles')
+        .select('nickname')
+        .eq('id', userId)
+        .maybeSingle();
+      if (active) {
+        setUser({ id: userId, name: data?.nickname ?? '', email: '' });
+      }
+    }
+
+    supabase.auth.getSession().then(({ data }) => {
+      hydrate(data.session?.user.id).finally(() => {
+        if (active) setInitializing(false);
+      });
+    });
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session) {
+        if (active) setUser(null);
+      }
+    });
+
+    return () => {
+      active = false;
+      sub.subscription.unsubscribe();
+    };
+  }, []);
 
   const value = useMemo<SessionContextValue>(
     () => ({
       user,
       membership,
-      signIn: ({ name, email }) => {
-        const trimmed = name.trim();
-        const nextUser: User = {
-          id: makePseudoUserId(),
-          name: trimmed,
-          email: email?.trim() ?? '',
-        };
+      initializing,
+      signIn: async ({ name }) => {
+        const nickname = name.trim();
+        const { data, error } = await supabase.auth.signInAnonymously();
+        if (error || !data.user) {
+          throw new Error(error?.message ?? '匿名登入失敗');
+        }
+        const userId = data.user.id;
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .upsert({ id: userId, nickname }, { onConflict: 'id' });
+        if (profileError) {
+          throw new Error(profileError.message);
+        }
+        const nextUser: User = { id: userId, name: nickname, email: '' };
         setUser(nextUser);
         return nextUser;
       },
-      signOut: () => {
+      signOut: async () => {
+        await supabase.auth.signOut();
         setUser(null);
         setMembershipState(null);
       },
       setMembership: (next) => setMembershipState(next),
       leaveGroup: () => setMembershipState(null),
     }),
-    [user, membership],
+    [user, membership, initializing],
   );
 
   return (

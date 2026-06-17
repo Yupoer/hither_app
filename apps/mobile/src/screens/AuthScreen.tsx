@@ -27,15 +27,24 @@ export default function AuthScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const canSubmit = name.trim().length >= 1;
+  const canSubmit = name.trim().length >= 1 && !submitting;
 
-  function handleSignIn() {
+  async function handleSignIn() {
     if (!canSubmit) {
       return;
     }
-    signIn({ name, email });
-    navigation.replace('Group');
+    setSubmitting(true);
+    setError(null);
+    try {
+      await signIn({ name, email });
+      navigation.replace('Group');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '登入失敗，請再試一次');
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -89,8 +98,12 @@ export default function AuthScreen({ navigation }: Props) {
             disabled={!canSubmit}
             accessibilityRole="button"
           >
-            <Text style={styles.ctaText}>登入 · Continue</Text>
+            <Text style={styles.ctaText}>
+              {submitting ? '登入中…' : '登入 · Continue'}
+            </Text>
           </Pressable>
+
+          {error ? <Text style={styles.error}>{error}</Text> : null}
         </View>
       </View>
     </KeyboardAvoidingView>
@@ -141,4 +154,10 @@ const styles = StyleSheet.create({
   ctaDisabled: { opacity: 0.4 },
   ctaPressed: { opacity: 0.85 },
   ctaText: { fontSize: 17, fontWeight: '700', color: colors.accentText },
+  error: {
+    marginTop: spacing.md,
+    fontSize: 14,
+    color: '#d9534f',
+    textAlign: 'center',
+  },
 });
