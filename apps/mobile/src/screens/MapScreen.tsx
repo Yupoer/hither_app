@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -13,7 +13,9 @@ import GroupMap, { type GroupMapHandle } from '../components/GroupMap';
 import { useSession } from '../state/SessionContext';
 import { useGroupState } from '../state/useGroupState';
 import { distanceEtaLabel } from '../utils/geo';
-import type { MemberLocation } from '../types';
+import { location } from '../native';
+import { updateMyLocation } from '../api/client';
+import type { Coordinates, MemberLocation } from '../types';
 import { colors, radius, spacing } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Map'>;
@@ -35,11 +37,28 @@ export default function MapScreen({ route }: Props) {
 
   const mapRef = useRef<GroupMapHandle | null>(null);
 
+  // Real device GPS, via the native boundary (Expo Go: expo-location).
+  const [deviceCoords, setDeviceCoords] = useState<Coordinates | null>(null);
+
+  const refreshDeviceLocation = useCallback(async () => {
+    const fix = await location.getCurrentLocation();
+    if (fix) {
+      setDeviceCoords(fix.coordinates);
+      // Push our position so the rest of the group can see it. Mock no-op
+      // today; backed by Supabase `member_locations` once Phase S lands.
+      void updateMyLocation(fix.coordinates);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshDeviceLocation();
+  }, [refreshDeviceLocation]);
+
   const gathering = state?.nextDestination;
   const members = state?.members ?? [];
 
-  // Distance/ETA is measured from "you" to the gathering point. We don't have
-  // the device GPS in this MVP, so we use the matching member, else the leader.
+  // Measure distance/ETA from the real device position when we have it,
+  // else fall back to the matching member, then the leader.
   const reference = useMemo<MemberLocation | undefined>(() => {
     return (
       members.find((m) => m.userId === user?.id) ??
@@ -48,14 +67,17 @@ export default function MapScreen({ route }: Props) {
     );
   }, [members, user?.id]);
 
+  const fromCoords = deviceCoords ?? reference?.coordinates;
+
   const distanceLabel =
-    gathering && reference?.coordinates
-      ? distanceEtaLabel(reference.coordinates, gathering.coordinates)
+    gathering && fromCoords
+      ? distanceEtaLabel(fromCoords, gathering.coordinates)
       : null;
 
   function recenter() {
     mapRef.current?.recenter();
     refresh();
+    void refreshDeviceLocation();
   }
 
   if (loading && !state) {

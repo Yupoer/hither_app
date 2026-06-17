@@ -9,10 +9,26 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "app.hither.mobile"
+      "bundleIdentifier": "app.hither.mobile",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Hither 需要你的位置，才能在地圖上顯示你與下一個集合點的距離。"
+      }
     },
     "android": {
-      "package": "app.hither.mobile"
-    }
+      "package": "app.hither.mobile",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Hither 需要你的位置，才能在地圖上顯示你與下一個集合點的距離。"
+        }
+      ],
+      "expo-notifications"
+    ]
   }
 }
