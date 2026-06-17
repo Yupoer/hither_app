@@ -1,7 +1,7 @@
 // Mock the supabase singleton so importing the client does not pull in
 // react-native-url-polyfill / AsyncStorage (native-only) or require env vars.
 jest.mock('../api/supabase', () => ({
-  supabase: { from: jest.fn(), auth: { getUser: jest.fn() } },
+  supabase: { from: jest.fn(), rpc: jest.fn(), auth: { getUser: jest.fn() } },
 }));
 
 import {
@@ -16,6 +16,7 @@ import { supabase } from '../api/supabase';
 
 const mockedAuth = supabase.auth as unknown as { getUser: jest.Mock };
 const mockedFrom = supabase.from as unknown as jest.Mock;
+const mockedRpc = supabase.rpc as unknown as jest.Mock;
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -129,20 +130,20 @@ describe('joinGroup', () => {
       data: { user: { id: 'uid' } },
       error: null,
     });
-    const maybeSingle = jest.fn().mockResolvedValue({ data: null, error: null });
-    mockedFrom.mockReturnValue({
-      select: () => ({ eq: () => ({ maybeSingle }) }),
+    mockedRpc.mockResolvedValue({
+      data: null,
+      error: { code: 'P0002', message: 'group not found for code ZZZ999' },
     });
 
     await expect(joinGroup('zzz999')).rejects.toThrow('找不到這個群組');
   });
 
-  it('upper-cases the code and joins as follower', async () => {
+  it('upper-cases the code and joins via the join_group RPC', async () => {
     mockedAuth.getUser.mockResolvedValue({
       data: { user: { id: 'uid' } },
       error: null,
     });
-    const maybeSingle = jest.fn().mockResolvedValue({
+    mockedRpc.mockResolvedValue({
       data: {
         id: 'g1',
         name: '團',
@@ -152,18 +153,9 @@ describe('joinGroup', () => {
       },
       error: null,
     });
-    const membershipUpsert = jest.fn().mockResolvedValue({ error: null });
-    mockedFrom.mockImplementation((table: string) =>
-      table === 'groups'
-        ? { select: () => ({ eq: () => ({ maybeSingle }) }) }
-        : { upsert: membershipUpsert },
-    );
 
     const group = await joinGroup('abc234');
     expect(group.inviteCode).toBe('ABC234');
-    expect(membershipUpsert).toHaveBeenCalledWith(
-      expect.objectContaining({ role: 'follower', user_id: 'uid' }),
-      expect.objectContaining({ onConflict: 'group_id,user_id' }),
-    );
+    expect(mockedRpc).toHaveBeenCalledWith('join_group', { p_code: 'ABC234' });
   });
 });

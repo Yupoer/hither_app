@@ -177,35 +177,27 @@ export async function createGroup(name: string): Promise<Group> {
 /**
  * Join a group by its 6-char invite code, becoming a follower. Idempotent: a
  * repeat join for the same user is ignored.
+ *
+ * The target group is hidden from non-members by RLS, and broadening that
+ * SELECT would leak the whole group list, so the code lookup and the follower
+ * membership insert happen atomically in the `join_group` SECURITY DEFINER
+ * function (see the join_group_rpc migration). It raises SQLSTATE P0002 when the
+ * code matches nothing, which we surface as a clean "group not found".
  */
 export async function joinGroup(inviteCode: string): Promise<Group> {
-  const uid = await requireUserId();
-  const code = inviteCode.toUpperCase();
+  await requireUserId();
 
-  const { data, error } = await supabase
-    .from('groups')
-    .select('id, name, invite_code, created_by, created_at')
-    .eq('invite_code', code)
-    .maybeSingle();
+  const { data, error } = await supabase.rpc('join_group', {
+    p_code: inviteCode.toUpperCase(),
+  });
 
   if (error) {
+    if ((error as { code?: string }).code === 'P0002') {
+      throw new Error('找不到這個群組');
+    }
     throw new Error(error.message);
   }
-  if (!data) {
-    throw new Error('找不到這個群組');
-  }
-
-  const group = mapGroup(data as GroupRow);
-  const { error: memberError } = await supabase
-    .from('memberships')
-    .upsert(
-      { group_id: group.id, user_id: uid, role: 'follower', status: 'active' },
-      { onConflict: 'group_id,user_id', ignoreDuplicates: true },
-    );
-  if (memberError) {
-    throw new Error(memberError.message);
-  }
-  return group;
+  return mapGroup(data as GroupRow);
 }
 
 /**
