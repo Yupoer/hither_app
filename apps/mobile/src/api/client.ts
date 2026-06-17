@@ -297,6 +297,42 @@ export async function updateNextDestination(
 }
 
 /**
+ * Add a new itinerary stop and make it the group's next gathering point.
+ *
+ * The stop is inserted at the front of the itinerary (one below the current
+ * lowest `position`) so `getGroupState` surfaces it as `nextDestination`.
+ * Leader-only — `itinerary_items` INSERT is gated to leaders by RLS, so a
+ * follower's call rejects with a 42501 we surface to the caller. Returns the
+ * refreshed state.
+ */
+export async function addDestination(
+  groupId: string,
+  input: { title: string; address?: string; coordinates: Coordinates },
+): Promise<GroupState> {
+  const { data: minRow, error: minError } = await supabase
+    .from('itinerary_items')
+    .select('position')
+    .eq('group_id', groupId)
+    .order('position', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (minError) throw new Error(minError.message);
+
+  const minPosition = minRow?.position ?? 0;
+  const { error } = await supabase.from('itinerary_items').insert({
+    group_id: groupId,
+    title: input.title,
+    address: input.address ?? null,
+    latitude: input.coordinates.latitude,
+    longitude: input.coordinates.longitude,
+    position: minPosition - 1,
+  });
+  if (error) throw new Error(error.message);
+
+  return getGroupState(groupId);
+}
+
+/**
  * Push the current user's location for a group (upsert into member_locations).
  * `groupId` is required to scope the row; RLS restricts writes to the caller's
  * own user_id. Called by the location integration (Phase A) when GPS updates.

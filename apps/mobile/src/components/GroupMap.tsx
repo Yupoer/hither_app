@@ -9,9 +9,12 @@ import MapView, { Marker, type Region } from 'react-native-maps';
 import type { Coordinates, Destination, MemberLocation } from '../types';
 import { colors } from '../theme';
 
-/** Imperative handle so the screen can recenter the map. */
+/** Imperative handle so the screen can drive the map camera. */
 export interface GroupMapHandle {
+  /** Frame the next gathering point (used on first data load). */
   recenter: () => void;
+  /** Center the map on an arbitrary coordinate, e.g. the user's own position. */
+  centerOn: (coordinates: Coordinates) => void;
 }
 
 export interface GroupMapProps {
@@ -51,6 +54,9 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
         if (gathering && mapRef.current) {
           mapRef.current.animateToRegion(regionFor(gathering.coordinates), 400);
         }
+      },
+      centerOn: (coordinates) => {
+        mapRef.current?.animateToRegion(regionFor(coordinates), 400);
       },
     }),
     [gathering],

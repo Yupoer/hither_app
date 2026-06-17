@@ -15,7 +15,11 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
   { members, gathering, currentUserId },
   ref,
 ) {
-  useImperativeHandle(ref, () => ({ recenter: () => {} }), []);
+  useImperativeHandle(
+    ref,
+    () => ({ recenter: () => {}, centerOn: () => {} }),
+    [],
+  );
 
   return (
     <ScrollView

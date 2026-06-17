@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   StyleSheet,
   Text,
@@ -10,11 +11,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import GroupMap, { type GroupMapHandle } from '../components/GroupMap';
+import DestinationSearch from '../components/DestinationSearch';
 import { useSession } from '../state/SessionContext';
 import { useGroupState } from '../state/useGroupState';
 import { distanceEtaLabel } from '../utils/geo';
-import { location, liquidGlass } from '../native';
-import { updateMyLocation } from '../api/client';
+import { location, liquidGlass, type MapRegion, type PlaceResult } from '../native';
+import { addDestination, updateMyLocation } from '../api/client';
 import type { Coordinates, MemberLocation } from '../types';
 import { colors, radius, spacing } from '../theme';
 
@@ -37,10 +39,14 @@ export default function MapScreen({ route }: Props) {
 
   const mapRef = useRef<GroupMapHandle | null>(null);
 
+  // Only the leader can set the group's next gathering point.
+  const isLeader = membership?.role === 'leader';
+  const [searchVisible, setSearchVisible] = useState(false);
+
   // Real device GPS, via the native boundary (Expo Go: expo-location).
   const [deviceCoords, setDeviceCoords] = useState<Coordinates | null>(null);
 
-  const refreshDeviceLocation = useCallback(async () => {
+  const refreshDeviceLocation = useCallback(async (): Promise<Coordinates | null> => {
     const fix = await location.getCurrentLocation();
     if (fix) {
       setDeviceCoords(fix.coordinates);
@@ -49,7 +55,9 @@ export default function MapScreen({ route }: Props) {
       if (groupId) {
         void updateMyLocation(fix.coordinates, groupId);
       }
+      return fix.coordinates;
     }
+    return null;
   }, [groupId]);
 
   useEffect(() => {
@@ -76,10 +84,44 @@ export default function MapScreen({ route }: Props) {
       ? distanceEtaLabel(fromCoords, gathering.coordinates)
       : null;
 
-  function recenter() {
-    mapRef.current?.recenter();
+  // "Locate me": pull a fresh fix and center the map on the user's own
+  // position (falling back to the last known one if GPS is unavailable).
+  async function locateMe() {
     refresh();
-    void refreshDeviceLocation();
+    const coords = (await refreshDeviceLocation()) ?? deviceCoords;
+    if (coords) {
+      mapRef.current?.centerOn(coords);
+    }
+  }
+
+  // Bias place search toward what the user is looking at, when we know it.
+  const biasCenter = deviceCoords ?? gathering?.coordinates;
+  const biasRegion: MapRegion | undefined = biasCenter
+    ? {
+        latitude: biasCenter.latitude,
+        longitude: biasCenter.longitude,
+        latitudeDelta: 0.08,
+        longitudeDelta: 0.08,
+      }
+    : undefined;
+
+  async function handlePickDestination(place: PlaceResult) {
+    if (!groupId) {
+      return;
+    }
+    try {
+      await addDestination(groupId, {
+        title: place.name,
+        address: place.address,
+        coordinates: place.coordinates,
+      });
+      refresh();
+    } catch {
+      Alert.alert(
+        '設定失敗',
+        '無法設定集合點。請確認你是隊長，並再試一次。',
+      );
+    }
   }
 
   if (loading && !state) {
@@ -111,19 +153,34 @@ export default function MapScreen({ route }: Props) {
         <Text style={styles.pillCount}>{members.length} 人</Text>
       </liquidGlass.GlassView>
 
-      {/* Recenter button. */}
-      <liquidGlass.GlassView
-        style={[styles.recenter, { top: insets.top + spacing.sm }]}
-      >
-        <Pressable
-          style={styles.recenterPressable}
-          onPress={recenter}
-          accessibilityRole="button"
-          accessibilityLabel="重新置中並更新"
-        >
-          <Text style={styles.recenterIcon}>◎</Text>
-        </Pressable>
-      </liquidGlass.GlassView>
+      {/* Right-side action column. */}
+      <View style={[styles.fabColumn, { top: insets.top + spacing.sm }]}>
+        {/* Search a place to set the next gathering point (leader only). */}
+        {isLeader && (
+          <liquidGlass.GlassView style={styles.fab}>
+            <Pressable
+              style={styles.fabPressable}
+              onPress={() => setSearchVisible(true)}
+              accessibilityRole="button"
+              accessibilityLabel="搜尋下一集合點"
+            >
+              <Text style={styles.fabIcon}>🔍</Text>
+            </Pressable>
+          </liquidGlass.GlassView>
+        )}
+
+        {/* Center the map on my own location. */}
+        <liquidGlass.GlassView style={styles.fab}>
+          <Pressable
+            style={styles.fabPressable}
+            onPress={locateMe}
+            accessibilityRole="button"
+            accessibilityLabel="定位到我的位置"
+          >
+            <Text style={styles.fabIcon}>📍</Text>
+          </Pressable>
+        </liquidGlass.GlassView>
+      </View>
 
       {/* Bottom glass card: NEXT GATHERING POINT. */}
       <liquidGlass.GlassView
@@ -138,9 +195,18 @@ export default function MapScreen({ route }: Props) {
             </Text>
           </>
         ) : (
-          <Text style={styles.cardMeta}>尚未設定集合點</Text>
+          <Text style={styles.cardMeta}>
+            {isLeader ? '尚未設定集合點 · 點右上 🔍 搜尋' : '尚未設定集合點'}
+          </Text>
         )}
       </liquidGlass.GlassView>
+
+      <DestinationSearch
+        visible={searchVisible}
+        onClose={() => setSearchVisible(false)}
+        biasRegion={biasRegion}
+        onPick={handlePickDestination}
+      />
     </View>
   );
 }
@@ -181,9 +247,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.textSecondary,
   },
   pillCount: { color: colors.textSecondary, fontSize: 14 },
-  recenter: {
+  fabColumn: {
     position: 'absolute',
     right: spacing.lg,
+    gap: spacing.sm,
+  },
+  fab: {
     width: 44,
     height: 44,
     borderRadius: 22,
@@ -191,13 +260,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  recenterPressable: {
+  fabPressable: {
     width: '100%',
     height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  recenterIcon: { color: colors.accent, fontSize: 22 },
+  fabIcon: { fontSize: 20 },
   card: {
     position: 'absolute',
     left: spacing.lg,

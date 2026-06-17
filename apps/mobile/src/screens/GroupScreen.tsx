@@ -29,7 +29,7 @@ type Mode = 'choose' | 'create' | 'join';
  * "Enter group" to open the map.
  */
 export default function GroupScreen({ navigation }: Props) {
-  const { user, membership, setMembership } = useSession();
+  const { user, membership, setMembership, leaveGroup } = useSession();
   const insets = useSafeAreaInsets();
 
   const [mode, setMode] = useState<Mode>('choose');
@@ -75,6 +75,19 @@ export default function GroupScreen({ navigation }: Props) {
     }
   }
 
+  function confirmLeave() {
+    Alert.alert('離開群組', '確定要離開目前的群組嗎？', [
+      { text: '取消', style: 'cancel' },
+      {
+        text: '離開',
+        style: 'destructive',
+        // Clearing the membership drops us back to the role picker below
+        // (建立 / 加入) — i.e. the identity-choosing screen.
+        onPress: () => leaveGroup(),
+      },
+    ]);
+  }
+
   return (
     <KeyboardAvoidingView
       style={styles.flex}
@@ -111,6 +124,17 @@ export default function GroupScreen({ navigation }: Props) {
               accessibilityRole="button"
             >
               <Text style={styles.ctaText}>進入地圖 · Enter group</Text>
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.leaveBtn,
+                pressed && styles.ctaPressed,
+              ]}
+              onPress={confirmLeave}
+              accessibilityRole="button"
+            >
+              <Text style={styles.leaveText}>離開群組 · Leave group</Text>
             </Pressable>
           </View>
         ) : (
@@ -301,6 +325,14 @@ const styles = StyleSheet.create({
   ctaDisabled: { opacity: 0.5 },
   ctaPressed: { opacity: 0.85 },
   ctaText: { fontSize: 17, fontWeight: '700', color: colors.accentText },
+  leaveBtn: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.danger,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+  },
+  leaveText: { fontSize: 15, fontWeight: '700', color: colors.danger },
   lobby: { gap: spacing.md },
   codeHero: {
     backgroundColor: colors.surface,
