@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useMemo, useRef } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -7,32 +7,23 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import MapView, { Marker, type Region } from 'react-native-maps';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
+import GroupMap, { type GroupMapHandle } from '../components/GroupMap';
 import { useSession } from '../state/SessionContext';
 import { useGroupState } from '../state/useGroupState';
 import { distanceEtaLabel } from '../utils/geo';
-import type { Coordinates, MemberLocation } from '../types';
+import type { MemberLocation } from '../types';
 import { colors, radius, spacing } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Map'>;
-
-/** Region that comfortably frames a single gathering point. */
-function regionFor(center: Coordinates): Region {
-  return {
-    latitude: center.latitude,
-    longitude: center.longitude,
-    latitudeDelta: 0.01,
-    longitudeDelta: 0.01,
-  };
-}
 
 /**
  * Main screen. A live map of group members (pins) and the next gathering
  * point (lantern), with a frosted card at the bottom showing the gathering
  * point name, distance and ETA. Group state refreshes every 5 seconds via
- * `useGroupState`.
+ * `useGroupState`. The map itself lives in the platform-split `GroupMap`
+ * component (native MapView / web fallback).
  */
 export default function MapScreen({ route }: Props) {
   const insets = useSafeAreaInsets();
@@ -42,7 +33,7 @@ export default function MapScreen({ route }: Props) {
   const groupId = route.params?.groupId ?? membership?.group.id ?? null;
   const { state, loading, refresh } = useGroupState(groupId);
 
-  const mapRef = useRef<MapView | null>(null);
+  const mapRef = useRef<GroupMapHandle | null>(null);
 
   const gathering = state?.nextDestination;
   const members = state?.members ?? [];
@@ -62,19 +53,8 @@ export default function MapScreen({ route }: Props) {
       ? distanceEtaLabel(reference.coordinates, gathering.coordinates)
       : null;
 
-  // Center the map on the gathering point the first time we get data.
-  const centeredRef = useRef(false);
-  useEffect(() => {
-    if (!centeredRef.current && gathering && mapRef.current) {
-      mapRef.current.animateToRegion(regionFor(gathering.coordinates), 600);
-      centeredRef.current = true;
-    }
-  }, [gathering]);
-
   function recenter() {
-    if (gathering && mapRef.current) {
-      mapRef.current.animateToRegion(regionFor(gathering.coordinates), 400);
-    }
+    mapRef.current?.recenter();
     refresh();
   }
 
@@ -89,51 +69,12 @@ export default function MapScreen({ route }: Props) {
 
   return (
     <View style={styles.flex}>
-      <MapView
+      <GroupMap
         ref={mapRef}
-        style={StyleSheet.absoluteFill}
-        initialRegion={
-          gathering ? regionFor(gathering.coordinates) : undefined
-        }
-        showsUserLocation
-        showsCompass
-      >
-        {gathering && (
-          <Marker
-            coordinate={gathering.coordinates}
-            title={gathering.title}
-            description="下一個集合點 · gathering point"
-            pinColor={colors.accent}
-          >
-            <View style={styles.lanternMarker}>
-              <Text style={styles.lanternEmoji}>🏮</Text>
-            </View>
-          </Marker>
-        )}
-
-        {members.map((m) =>
-          m.coordinates ? (
-            <Marker
-              key={m.userId}
-              coordinate={m.coordinates}
-              title={`${m.name}${m.userId === user?.id ? ' · you' : ''}`}
-              description={m.role === 'leader' ? 'Leader' : 'Follower'}
-            >
-              <View
-                style={[
-                  styles.memberPin,
-                  {
-                    borderColor:
-                      m.role === 'leader' ? colors.leader : colors.follower,
-                  },
-                ]}
-              >
-                <Text style={styles.memberInitial}>{m.name.slice(0, 1)}</Text>
-              </View>
-            </Marker>
-          ) : null,
-        )}
-      </MapView>
+        members={members}
+        gathering={gathering}
+        currentUserId={user?.id}
+      />
 
       {/* Top pill: group code + member count. */}
       <View style={[styles.topPill, { top: insets.top + spacing.sm }]}>
@@ -184,18 +125,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   loadingText: { color: colors.textSecondary, fontSize: 15 },
-  lanternMarker: { alignItems: 'center', justifyContent: 'center' },
-  lanternEmoji: { fontSize: 34 },
-  memberPin: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.surface,
-    borderWidth: 3,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  memberInitial: { color: colors.textPrimary, fontWeight: '700', fontSize: 15 },
   topPill: {
     position: 'absolute',
     alignSelf: 'center',
