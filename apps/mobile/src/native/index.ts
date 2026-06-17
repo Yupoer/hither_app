@@ -10,14 +10,15 @@
  *
  * Phase A backs these with Expo modules (Expo Go compatible). Phase B adds
  * custom Swift/Kotlin modules behind the same interfaces (EAS Dev Build).
- * `liquidGlass` is added in Phase C.
  */
 export * as location from './location';
 export * as maps from './maps';
 export * as notifications from './notifications';
 export * as liveActivity from './liveActivity';
+export * as liquidGlass from './liquidGlass';
 
 export type { LocationSample, LocationSubscription } from './location';
 export type { PlaceResult, MapRegion, DirectionsResult } from './maps';
 export type { LocalNotificationInput } from './notifications';
 export type { GroupActivityState, ActivityHandle } from './liveActivity';
+export type { GlassViewProps } from './liquidGlass';

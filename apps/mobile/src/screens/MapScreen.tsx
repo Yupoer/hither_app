@@ -13,7 +13,7 @@ import GroupMap, { type GroupMapHandle } from '../components/GroupMap';
 import { useSession } from '../state/SessionContext';
 import { useGroupState } from '../state/useGroupState';
 import { distanceEtaLabel } from '../utils/geo';
-import { location } from '../native';
+import { location, liquidGlass } from '../native';
 import { updateMyLocation } from '../api/client';
 import type { Coordinates, MemberLocation } from '../types';
 import { colors, radius, spacing } from '../theme';
@@ -99,26 +99,32 @@ export default function MapScreen({ route }: Props) {
       />
 
       {/* Top pill: group code + member count. */}
-      <View style={[styles.topPill, { top: insets.top + spacing.sm }]}>
+      <liquidGlass.GlassView
+        style={[styles.topPill, { top: insets.top + spacing.sm }]}
+      >
         <Text style={styles.pillCode}>
           {state?.group.inviteCode ?? '------'}
         </Text>
         <View style={styles.pillDot} />
         <Text style={styles.pillCount}>{members.length} 人</Text>
-      </View>
+      </liquidGlass.GlassView>
 
       {/* Recenter button. */}
-      <Pressable
+      <liquidGlass.GlassView
         style={[styles.recenter, { top: insets.top + spacing.sm }]}
-        onPress={recenter}
-        accessibilityRole="button"
-        accessibilityLabel="重新置中並更新"
       >
-        <Text style={styles.recenterIcon}>◎</Text>
-      </Pressable>
+        <Pressable
+          style={styles.recenterPressable}
+          onPress={recenter}
+          accessibilityRole="button"
+          accessibilityLabel="重新置中並更新"
+        >
+          <Text style={styles.recenterIcon}>◎</Text>
+        </Pressable>
+      </liquidGlass.GlassView>
 
       {/* Bottom glass card: NEXT GATHERING POINT. */}
-      <View
+      <liquidGlass.GlassView
         style={[styles.card, { paddingBottom: insets.bottom + spacing.lg }]}
       >
         <Text style={styles.cardLabel}>NEXT GATHERING POINT · 下一集合點</Text>
@@ -132,7 +138,7 @@ export default function MapScreen({ route }: Props) {
         ) : (
           <Text style={styles.cardMeta}>尚未設定集合點</Text>
         )}
-      </View>
+      </liquidGlass.GlassView>
     </View>
   );
 }
@@ -153,7 +159,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    backgroundColor: colors.glass,
+    overflow: 'hidden',
     borderRadius: radius.pill,
     borderWidth: 1,
     borderColor: colors.border,
@@ -179,9 +185,13 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: colors.glass,
+    overflow: 'hidden',
     borderWidth: 1,
     borderColor: colors.border,
+  },
+  recenterPressable: {
+    width: '100%',
+    height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -192,7 +202,7 @@ const styles = StyleSheet.create({
     right: spacing.lg,
     bottom: 0,
     marginBottom: spacing.lg,
-    backgroundColor: colors.glass,
+    overflow: 'hidden',
     borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.border,
