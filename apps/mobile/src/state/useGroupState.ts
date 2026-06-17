@@ -12,6 +12,16 @@ export const GROUP_POLL_INTERVAL_MS = 15000;
 /** Coalesce bursts of realtime events into a single refetch. */
 const REALTIME_DEBOUNCE_MS = 300;
 
+/**
+ * Monotonic id so each hook instance gets its OWN realtime channel topic.
+ * supabase-js reuses a channel when two callers pass the same topic name, and a
+ * reused channel that is already `subscribe()`d rejects new `postgres_changes`
+ * bindings ("cannot add postgres_changes callbacks ... after subscribe()").
+ * That happens when two screens (e.g. Map + Settings) observe the same group at
+ * once, so we suffix the topic with a per-instance id to keep them distinct.
+ */
+let channelSeq = 0;
+
 interface UseGroupStateResult {
   state: GroupState | null;
   /** True only during the very first load (before any data arrives). */
@@ -40,6 +50,12 @@ export function useGroupState(groupId: string | null): UseGroupStateResult {
   // Guards against setState after unmount and out-of-order responses.
   const activeRef = useRef(true);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Stable per-instance suffix so two hooks on the same group don't collide on
+  // one shared (already-subscribed) realtime channel.
+  const instanceIdRef = useRef<number>(0);
+  if (instanceIdRef.current === 0) {
+    instanceIdRef.current = ++channelSeq;
+  }
 
   const load = useCallback(async () => {
     if (!groupId) {
@@ -84,7 +100,7 @@ export function useGroupState(groupId: string | null): UseGroupStateResult {
 
     const filter = `group_id=eq.${groupId}`;
     const channel = supabase
-      .channel(`group:${groupId}`)
+      .channel(`group:${groupId}:${instanceIdRef.current}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'member_locations', filter },
