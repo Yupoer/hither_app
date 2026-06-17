@@ -16,6 +16,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { createGroup, joinGroup } from '../api/client';
 import { useSession } from '../state/SessionContext';
+import { confirmAction } from '../utils/confirm';
 import type { Group } from '../types';
 import { colors, radius, spacing } from '../theme';
 
@@ -76,16 +77,17 @@ export default function GroupScreen({ navigation }: Props) {
   }
 
   function confirmLeave() {
-    Alert.alert('離開群組', '確定要離開目前的群組嗎？', [
-      { text: '取消', style: 'cancel' },
+    // Clearing the membership drops us back to the role picker below
+    // (建立 / 加入) — i.e. the identity-choosing screen.
+    confirmAction(
       {
-        text: '離開',
-        style: 'destructive',
-        // Clearing the membership drops us back to the role picker below
-        // (建立 / 加入) — i.e. the identity-choosing screen.
-        onPress: () => leaveGroup(),
+        title: '離開群組',
+        message: '確定要離開目前的群組嗎？',
+        confirmLabel: '離開',
+        destructive: true,
       },
-    ]);
+      () => leaveGroup(),
+    );
   }
 
   return (

@@ -1,9 +1,10 @@
 import React from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useSession } from '../state/SessionContext';
+import { confirmAction } from '../utils/confirm';
 import { colors, radius, spacing } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
@@ -17,31 +18,33 @@ export default function SettingsScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
 
   function confirmLeave() {
-    Alert.alert('離開群組', '確定要離開目前的群組嗎？', [
-      { text: '取消', style: 'cancel' },
+    confirmAction(
       {
-        text: '離開',
-        style: 'destructive',
-        onPress: () => {
-          leaveGroup();
-          navigation.navigate('Group');
-        },
+        title: '離開群組',
+        message: '確定要離開目前的群組嗎？',
+        confirmLabel: '離開',
+        destructive: true,
       },
-    ]);
+      () => {
+        leaveGroup();
+        navigation.navigate('Group');
+      },
+    );
   }
 
   function confirmSignOut() {
-    Alert.alert('登出', '登出後會回到登入畫面。', [
-      { text: '取消', style: 'cancel' },
+    confirmAction(
       {
-        text: '登出',
-        style: 'destructive',
-        onPress: () => {
-          signOut();
-          navigation.reset({ index: 0, routes: [{ name: 'Auth' }] });
-        },
+        title: '登出',
+        message: '登出後會回到登入畫面。',
+        confirmLabel: '登出',
+        destructive: true,
       },
-    ]);
+      () => {
+        signOut();
+        navigation.reset({ index: 0, routes: [{ name: 'Auth' }] });
+      },
+    );
   }
 
   return (
