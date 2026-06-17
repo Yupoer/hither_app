@@ -17,7 +17,7 @@ import {
   isLiquidGlassAvailable as expoIsLiquidGlassAvailable,
   type GlassStyle,
 } from 'expo-glass-effect';
-import { colors } from '../theme';
+import { useTheme } from '../state/PreferencesContext';
 
 /**
  * Whether the OS provides the Liquid Glass material (iOS 26+). Guarded so a
@@ -51,6 +51,7 @@ export function GlassView({
   children,
   ...rest
 }: GlassViewProps) {
+  const { colors } = useTheme();
   if (isLiquidGlassAvailable()) {
     return (
       <ExpoGlassView

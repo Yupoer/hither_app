@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -16,9 +16,11 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { createGroup, joinGroup } from '../api/client';
 import { useSession } from '../state/SessionContext';
+import { useTheme } from '../state/PreferencesContext';
+import { useTranslation } from '../i18n';
 import { confirmAction } from '../utils/confirm';
 import type { Group } from '../types';
-import { colors, radius, spacing } from '../theme';
+import { radius, spacing, type Palette } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Group'>;
 
@@ -32,6 +34,9 @@ type Mode = 'choose' | 'create' | 'join';
 export default function GroupScreen({ navigation }: Props) {
   const { user, membership, setMembership, leaveGroup } = useSession();
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
+  const { t } = useTranslation();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [mode, setMode] = useState<Mode>('choose');
   const [groupName, setGroupName] = useState('');
@@ -41,13 +46,14 @@ export default function GroupScreen({ navigation }: Props) {
   const group: Group | null = membership?.group ?? null;
 
   async function handleCreate() {
-    const name = groupName.trim() || `${user?.name ?? ''} 的團`;
+    const name =
+      groupName.trim() || t('group.defaultName', { name: user?.name ?? '' });
     setBusy(true);
     try {
       const created = await createGroup(name);
       setMembership({ group: created, role: 'leader' });
     } catch {
-      Alert.alert('建立失敗', '無法建立群組，請再試一次。');
+      Alert.alert(t('group.createFailedTitle'), t('group.createFailedMsg'));
     } finally {
       setBusy(false);
     }
@@ -56,7 +62,7 @@ export default function GroupScreen({ navigation }: Props) {
   async function handleJoin() {
     const code = joinCode.trim();
     if (code.length < 4) {
-      Alert.alert('代碼不正確', '請輸入群組代碼或 ID。');
+      Alert.alert(t('group.codeInvalidTitle'), t('group.codeInvalidMsg'));
       return;
     }
     setBusy(true);
@@ -64,7 +70,7 @@ export default function GroupScreen({ navigation }: Props) {
       const joined = await joinGroup(code);
       setMembership({ group: joined, role: 'follower' });
     } catch {
-      Alert.alert('加入失敗', '找不到這個群組，請確認代碼。');
+      Alert.alert(t('group.joinFailedTitle'), t('group.joinFailedMsg'));
     } finally {
       setBusy(false);
     }
@@ -81,9 +87,9 @@ export default function GroupScreen({ navigation }: Props) {
     // (建立 / 加入) — i.e. the identity-choosing screen.
     confirmAction(
       {
-        title: '離開群組',
-        message: '確定要離開目前的群組嗎？',
-        confirmLabel: '離開',
+        title: t('group.leaveTitle'),
+        message: t('group.leaveMsg'),
+        confirmLabel: t('group.leaveConfirm'),
         destructive: true,
       },
       () => leaveGroup(),
@@ -103,29 +109,29 @@ export default function GroupScreen({ navigation }: Props) {
         keyboardShouldPersistTaps="handled"
       >
         <Text style={styles.greeting}>
-          嗨，{user?.name ?? '旅人'} 👋
+          {t('group.greeting', { name: user?.name ?? t('group.travelerFallback') })}
         </Text>
 
         {/* Once in a group, show the code hero + Enter map (LOBBY screen). */}
         {group ? (
           <View style={styles.lobby}>
-            <Text style={styles.label}>GROUP CODE · 群組代碼</Text>
+            <Text style={styles.label}>{t('group.codeLabel')}</Text>
             <View style={styles.codeHero}>
               <Text style={styles.codeText}>{group.inviteCode}</Text>
             </View>
             <Text style={styles.roleLine}>
-              {membership?.role === 'leader' ? 'Leader · you 你是隊長' : 'Follower 你是成員'}
+              {membership?.role === 'leader'
+                ? t('group.roleLeaderYou')
+                : t('group.roleFollower')}
             </Text>
-            <Text style={styles.hint}>
-              把代碼分享給夥伴，他們用「加入群組」輸入即可。
-            </Text>
+            <Text style={styles.hint}>{t('group.shareHint')}</Text>
 
             <Pressable
               style={({ pressed }) => [styles.cta, pressed && styles.ctaPressed]}
               onPress={enterGroup}
               accessibilityRole="button"
             >
-              <Text style={styles.ctaText}>進入地圖 · Enter group</Text>
+              <Text style={styles.ctaText}>{t('group.enter')}</Text>
             </Pressable>
 
             <Pressable
@@ -136,7 +142,7 @@ export default function GroupScreen({ navigation }: Props) {
               onPress={confirmLeave}
               accessibilityRole="button"
             >
-              <Text style={styles.leaveText}>離開群組 · Leave group</Text>
+              <Text style={styles.leaveText}>{t('group.leave')}</Text>
             </Pressable>
           </View>
         ) : (
@@ -144,14 +150,14 @@ export default function GroupScreen({ navigation }: Props) {
             {/* Role / action picker. */}
             <View style={styles.segment}>
               <SegmentButton
-                label="建立群組"
-                sub="Leader"
+                label={t('group.create')}
+                sub={t('group.createSub')}
                 active={mode === 'create'}
                 onPress={() => setMode('create')}
               />
               <SegmentButton
-                label="加入群組"
-                sub="Follower"
+                label={t('group.join')}
+                sub={t('group.joinSub')}
                 active={mode === 'join'}
                 onPress={() => setMode('join')}
               />
@@ -159,17 +165,17 @@ export default function GroupScreen({ navigation }: Props) {
 
             {mode === 'create' && (
               <View style={styles.form}>
-                <Text style={styles.label}>GROUP NAME · 團名（選填）</Text>
+                <Text style={styles.label}>{t('group.nameLabel')}</Text>
                 <TextInput
                   style={styles.input}
                   value={groupName}
                   onChangeText={setGroupName}
-                  placeholder="例如：信義區週末小隊"
+                  placeholder={t('group.namePlaceholder')}
                   placeholderTextColor={colors.textSecondary}
-                  accessibilityLabel="團名"
+                  accessibilityLabel={t('group.nameLabel')}
                 />
                 <PrimaryButton
-                  label="建立並取得代碼 · Create group"
+                  label={t('group.createCta')}
                   busy={busy}
                   onPress={handleCreate}
                 />
@@ -178,19 +184,19 @@ export default function GroupScreen({ navigation }: Props) {
 
             {mode === 'join' && (
               <View style={styles.form}>
-                <Text style={styles.label}>GROUP CODE · 群組代碼或 ID</Text>
+                <Text style={styles.label}>{t('group.codeOrIdLabel')}</Text>
                 <TextInput
                   style={[styles.input, styles.codeInput]}
                   value={joinCode}
-                  onChangeText={(t) => setJoinCode(t.toUpperCase())}
+                  onChangeText={(t2) => setJoinCode(t2.toUpperCase())}
                   placeholder="WND482"
                   placeholderTextColor={colors.textSecondary}
                   autoCapitalize="characters"
                   autoCorrect={false}
-                  accessibilityLabel="群組代碼"
+                  accessibilityLabel={t('group.codeOrIdLabel')}
                 />
                 <PrimaryButton
-                  label="加入 · Join group"
+                  label={t('group.joinCta')}
                   busy={busy}
                   onPress={handleJoin}
                 />
@@ -198,9 +204,7 @@ export default function GroupScreen({ navigation }: Props) {
             )}
 
             {mode === 'choose' && (
-              <Text style={styles.hint}>
-                選擇「建立群組」當隊長，或用代碼「加入群組」當成員。
-              </Text>
+              <Text style={styles.hint}>{t('group.chooseHint')}</Text>
             )}
           </>
         )}
@@ -220,6 +224,8 @@ function SegmentButton({
   active: boolean;
   onPress: () => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <Pressable
       style={[styles.segmentBtn, active && styles.segmentBtnActive]}
@@ -245,6 +251,8 @@ function PrimaryButton({
   busy: boolean;
   onPress: () => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <Pressable
       style={({ pressed }) => [
@@ -265,7 +273,7 @@ function PrimaryButton({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.background },
   container: {
     padding: spacing.xl,
@@ -288,7 +296,7 @@ const styles = StyleSheet.create({
   },
   segmentBtnActive: {
     borderColor: colors.accent,
-    backgroundColor: '#231C0E',
+    backgroundColor: colors.glass,
   },
   segmentLabel: { fontSize: 16, fontWeight: '700', color: colors.textPrimary },
   segmentLabelActive: { color: colors.accent },

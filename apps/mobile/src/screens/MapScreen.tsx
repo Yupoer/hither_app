@@ -1,10 +1,20 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   Alert,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,31 +23,41 @@ import type { RootStackParamList } from '../navigation/RootNavigator';
 import GroupMap, { type GroupMapHandle } from '../components/GroupMap';
 import DestinationSearch from '../components/DestinationSearch';
 import { useSession } from '../state/SessionContext';
+import { useTheme } from '../state/PreferencesContext';
+import { useTranslation } from '../i18n';
 import { useGroupState } from '../state/useGroupState';
 import { distanceEtaLabel } from '../utils/geo';
 import { location, liquidGlass, type MapRegion, type PlaceResult } from '../native';
 import { addDestination, updateMyLocation } from '../api/client';
-import type { Coordinates, MemberLocation } from '../types';
-import { colors, radius, spacing } from '../theme';
+import type { Coordinates, Destination, MemberLocation } from '../types';
+import { radius, spacing, type Palette } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Map'>;
 
 /**
- * Main screen. A live map of group members (pins) and the next gathering
- * point (lantern), with a frosted card at the bottom showing the gathering
- * point name, distance and ETA. Group state refreshes every 5 seconds via
- * `useGroupState`. The map itself lives in the platform-split `GroupMap`
- * component (native MapView / web fallback).
+ * Main screen. A live map of group members (pins) and the gathering points
+ * (lantern). The bottom card is a horizontally swipeable carousel of every
+ * gathering point: swipe right for the next stop, left for the previous (and it
+ * stops at both ends). Swiping moves the lantern and recenters the map on the
+ * selected point. Group state refreshes via `useGroupState`; the map itself
+ * lives in the platform-split `GroupMap` component.
+ *
+ * Group code / member count moved into Settings (the gear in the header).
  */
 export default function MapScreen({ route }: Props) {
   const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
   const { membership, user } = useSession();
+  const { colors } = useTheme();
+  const { t } = useTranslation();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   // Prefer the route param; fall back to the session's current group.
   const groupId = route.params?.groupId ?? membership?.group.id ?? null;
   const { state, loading, refresh } = useGroupState(groupId);
 
   const mapRef = useRef<GroupMapHandle | null>(null);
+  const carouselRef = useRef<ScrollView | null>(null);
 
   // Only the leader can set the group's next gathering point.
   const isLeader = membership?.role === 'leader';
@@ -64,8 +84,34 @@ export default function MapScreen({ route }: Props) {
     void refreshDeviceLocation();
   }, [refreshDeviceLocation]);
 
-  const gathering = state?.nextDestination;
   const members = state?.members ?? [];
+  const destinations: Destination[] = state?.destinations ?? [];
+
+  // Which gathering point the carousel is showing (and where the lantern is).
+  const [selectedIndex, setSelectedIndex] = useState(0);
+
+  // Keep the selection valid as the itinerary changes (stops added/removed) and
+  // keep the carousel scrolled to the selected page.
+  useEffect(() => {
+    const clamped =
+      destinations.length === 0
+        ? 0
+        : Math.min(selectedIndex, destinations.length - 1);
+    if (clamped !== selectedIndex) {
+      setSelectedIndex(clamped);
+    }
+    carouselRef.current?.scrollTo({ x: clamped * windowWidth, animated: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [destinations.length, windowWidth]);
+
+  const selectedDestination: Destination | undefined = destinations[selectedIndex];
+
+  // Move the lantern / map camera onto the selected gathering point.
+  useEffect(() => {
+    if (selectedDestination) {
+      mapRef.current?.centerOn(selectedDestination.coordinates);
+    }
+  }, [selectedDestination?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Measure distance/ETA from the real device position when we have it,
   // else fall back to the matching member, then the leader.
@@ -79,10 +125,11 @@ export default function MapScreen({ route }: Props) {
 
   const fromCoords = deviceCoords ?? reference?.coordinates;
 
-  const distanceLabel =
-    gathering && fromCoords
-      ? distanceEtaLabel(fromCoords, gathering.coordinates)
-      : null;
+  const distanceFor = useCallback(
+    (dest: Destination): string | null =>
+      fromCoords ? distanceEtaLabel(fromCoords, dest.coordinates) : null,
+    [fromCoords],
+  );
 
   // "Locate me": pull a fresh fix and center the map on the user's own
   // position (falling back to the last known one if GPS is unavailable).
@@ -95,7 +142,7 @@ export default function MapScreen({ route }: Props) {
   }
 
   // Bias place search toward what the user is looking at, when we know it.
-  const biasCenter = deviceCoords ?? gathering?.coordinates;
+  const biasCenter = deviceCoords ?? selectedDestination?.coordinates;
   const biasRegion: MapRegion | undefined = biasCenter
     ? {
         latitude: biasCenter.latitude,
@@ -115,12 +162,23 @@ export default function MapScreen({ route }: Props) {
         address: place.address,
         coordinates: place.coordinates,
       });
+      // The new stop becomes the first gathering point — jump to it.
+      setSelectedIndex(0);
+      carouselRef.current?.scrollTo({ x: 0, animated: false });
       refresh();
     } catch {
-      Alert.alert(
-        '設定失敗',
-        '無法設定集合點。請確認你是隊長，並再試一次。',
-      );
+      Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
+    }
+  }
+
+  function handleMomentumEnd(e: NativeSyntheticEvent<NativeScrollEvent>) {
+    if (destinations.length === 0) {
+      return;
+    }
+    const index = Math.round(e.nativeEvent.contentOffset.x / windowWidth);
+    const clamped = Math.max(0, Math.min(index, destinations.length - 1));
+    if (clamped !== selectedIndex) {
+      setSelectedIndex(clamped);
     }
   }
 
@@ -128,7 +186,7 @@ export default function MapScreen({ route }: Props) {
     return (
       <View style={styles.loading}>
         <ActivityIndicator color={colors.accent} size="large" />
-        <Text style={styles.loadingText}>載入群組位置中…</Text>
+        <Text style={styles.loadingText}>{t('map.loading')}</Text>
       </View>
     );
   }
@@ -138,20 +196,9 @@ export default function MapScreen({ route }: Props) {
       <GroupMap
         ref={mapRef}
         members={members}
-        gathering={gathering}
+        gathering={selectedDestination}
         currentUserId={user?.id}
       />
-
-      {/* Top pill: group code + member count. */}
-      <liquidGlass.GlassView
-        style={[styles.topPill, { top: insets.top + spacing.sm }]}
-      >
-        <Text style={styles.pillCode}>
-          {state?.group.inviteCode ?? '------'}
-        </Text>
-        <View style={styles.pillDot} />
-        <Text style={styles.pillCount}>{members.length} 人</Text>
-      </liquidGlass.GlassView>
 
       {/* Right-side action column. */}
       <View style={[styles.fabColumn, { top: insets.top + spacing.sm }]}>
@@ -162,7 +209,7 @@ export default function MapScreen({ route }: Props) {
               style={styles.fabPressable}
               onPress={() => setSearchVisible(true)}
               accessibilityRole="button"
-              accessibilityLabel="搜尋下一集合點"
+              accessibilityLabel={t('map.searchA11y')}
             >
               <Text style={styles.fabIcon}>🔍</Text>
             </Pressable>
@@ -175,31 +222,71 @@ export default function MapScreen({ route }: Props) {
             style={styles.fabPressable}
             onPress={locateMe}
             accessibilityRole="button"
-            accessibilityLabel="定位到我的位置"
+            accessibilityLabel={t('map.locateA11y')}
           >
             <Text style={styles.fabIcon}>📍</Text>
           </Pressable>
         </liquidGlass.GlassView>
       </View>
 
-      {/* Bottom glass card: NEXT GATHERING POINT. */}
-      <liquidGlass.GlassView
-        style={[styles.card, { paddingBottom: insets.bottom + spacing.lg }]}
-      >
-        <Text style={styles.cardLabel}>NEXT GATHERING POINT · 下一集合點</Text>
-        {gathering ? (
-          <>
-            <Text style={styles.cardTitle}>{gathering.title}</Text>
+      {/* Bottom: swipeable carousel of gathering points (lantern follows). */}
+      <View style={[styles.carouselWrap, { bottom: insets.bottom + spacing.lg }]}>
+        {destinations.length === 0 ? (
+          <liquidGlass.GlassView style={[styles.card, { width: windowWidth - spacing.lg * 2 }]}>
+            <Text style={styles.cardLabel}>{t('map.nextLabel')}</Text>
             <Text style={styles.cardMeta}>
-              {distanceLabel ?? '計算距離中…'}
+              {isLeader ? t('map.noDestinationLeader') : t('map.noDestination')}
             </Text>
-          </>
+          </liquidGlass.GlassView>
         ) : (
-          <Text style={styles.cardMeta}>
-            {isLeader ? '尚未設定集合點 · 點右上 🔍 搜尋' : '尚未設定集合點'}
-          </Text>
+          <>
+            <ScrollView
+              ref={carouselRef}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              onMomentumScrollEnd={handleMomentumEnd}
+              scrollEventThrottle={16}
+            >
+              {destinations.map((dest, index) => (
+                <View
+                  key={dest.id}
+                  style={[styles.page, { width: windowWidth }]}
+                >
+                  <liquidGlass.GlassView style={styles.card}>
+                    <Text style={styles.cardLabel}>
+                      {t('map.nextLabel')} ·{' '}
+                      {t('map.destinationCounter', {
+                        index: index + 1,
+                        total: destinations.length,
+                      })}
+                    </Text>
+                    <Text style={styles.cardTitle}>{dest.title}</Text>
+                    <Text style={styles.cardMeta}>
+                      {distanceFor(dest) ?? t('map.calcDistance')}
+                    </Text>
+                  </liquidGlass.GlassView>
+                </View>
+              ))}
+            </ScrollView>
+
+            {/* Page dots. */}
+            {destinations.length > 1 && (
+              <View style={styles.dots}>
+                {destinations.map((dest, index) => (
+                  <View
+                    key={dest.id}
+                    style={[
+                      styles.dot,
+                      index === selectedIndex && styles.dotActive,
+                    ]}
+                  />
+                ))}
+              </View>
+            )}
+          </>
         )}
-      </liquidGlass.GlassView>
+      </View>
 
       <DestinationSearch
         visible={searchVisible}
@@ -211,7 +298,7 @@ export default function MapScreen({ route }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.background },
   loading: {
     flex: 1,
@@ -221,32 +308,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   loadingText: { color: colors.textSecondary, fontSize: 15 },
-  topPill: {
-    position: 'absolute',
-    alignSelf: 'center',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    overflow: 'hidden',
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-  },
-  pillCode: {
-    color: colors.textPrimary,
-    fontWeight: '700',
-    letterSpacing: 3,
-    fontSize: 15,
-  },
-  pillDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.textSecondary,
-  },
-  pillCount: { color: colors.textSecondary, fontSize: 14 },
   fabColumn: {
     position: 'absolute',
     right: spacing.lg,
@@ -267,18 +328,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   fabIcon: { fontSize: 20 },
-  card: {
+  carouselWrap: {
     position: 'absolute',
-    left: spacing.lg,
-    right: spacing.lg,
-    bottom: 0,
-    marginBottom: spacing.lg,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  page: {
+    paddingHorizontal: spacing.lg,
+  },
+  card: {
     overflow: 'hidden',
     borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.border,
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.lg,
+    paddingBottom: spacing.lg,
     gap: spacing.xs,
   },
   cardLabel: {
@@ -289,4 +356,19 @@ const styles = StyleSheet.create({
   },
   cardTitle: { fontSize: 20, fontWeight: '700', color: colors.textPrimary },
   cardMeta: { fontSize: 15, color: colors.textSecondary },
+  dots: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+    justifyContent: 'center',
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.border,
+  },
+  dotActive: {
+    backgroundColor: colors.accent,
+    width: 18,
+  },
 });

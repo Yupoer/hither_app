@@ -1,7 +1,9 @@
-import React, { forwardRef, useImperativeHandle } from 'react';
+import React, { forwardRef, useImperativeHandle, useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { GroupMapHandle, GroupMapProps } from './GroupMap';
-import { colors, radius, spacing } from '../theme';
+import { useTheme } from '../state/PreferencesContext';
+import { useTranslation } from '../i18n';
+import { radius, spacing, type Palette } from '../theme';
 
 /**
  * Web fallback for the native map. `react-native-maps` has no web support, so
@@ -15,6 +17,10 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
   { members, gathering, currentUserId },
   ref,
 ) {
+  const { colors } = useTheme();
+  const { t } = useTranslation();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+
   useImperativeHandle(
     ref,
     () => ({ recenter: () => {}, centerOn: () => {} }),
@@ -26,10 +32,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       style={styles.container}
       contentContainerStyle={styles.content}
     >
-      <Text style={styles.note}>
-        🗺️ 互動地圖只在原生 App 顯示（iPhone 上的 Expo Go）。{'\n'}
-        以下為 web 預覽用的即時資料。
-      </Text>
+      <Text style={styles.note}>{t('web.note')}</Text>
 
       {gathering && (
         <View style={[styles.row, styles.gathering]}>
@@ -44,7 +47,9 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
         </View>
       )}
 
-      <Text style={styles.section}>成員 · {members.length}</Text>
+      <Text style={styles.section}>
+        {t('web.membersSection', { count: members.length })}
+      </Text>
       {members.map((m) => (
         <View key={m.userId} style={styles.row}>
           <View
@@ -64,7 +69,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
               {m.role === 'leader' ? 'Leader' : 'Follower'} ·{' '}
               {m.coordinates
                 ? `${m.coordinates.latitude.toFixed(5)}, ${m.coordinates.longitude.toFixed(5)}`
-                : '位置未知'}
+                : t('web.unknownLocation')}
             </Text>
           </View>
         </View>
@@ -73,7 +78,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
   );
 });
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { padding: spacing.lg, gap: spacing.md, paddingBottom: 160 },
   note: {

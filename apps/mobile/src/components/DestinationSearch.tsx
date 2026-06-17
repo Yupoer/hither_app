@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -13,7 +13,9 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { maps, type PlaceResult, type MapRegion } from '../native';
-import { colors, radius, spacing } from '../theme';
+import { useTheme } from '../state/PreferencesContext';
+import { useTranslation } from '../i18n';
+import { radius, spacing, type Palette } from '../theme';
 
 const DEBOUNCE_MS = 450;
 
@@ -43,6 +45,9 @@ export default function DestinationSearch({
   onPick,
 }: DestinationSearchProps) {
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
+  const { t } = useTranslation();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<PlaceResult[]>([]);
   const [searching, setSearching] = useState(false);
@@ -107,35 +112,35 @@ export default function DestinationSearch({
         <Pressable style={styles.backdrop} onPress={onClose} />
         <View style={[styles.sheet, { paddingBottom: insets.bottom + spacing.lg }]}>
           <View style={styles.handle} />
-          <Text style={styles.label}>NEXT GATHERING POINT · 搜尋下一集合點</Text>
+          <Text style={styles.label}>{t('search.label')}</Text>
 
           <View style={styles.searchRow}>
             <TextInput
               style={styles.input}
               value={query}
               onChangeText={setQuery}
-              placeholder="輸入地址或地點名稱"
+              placeholder={t('search.placeholder')}
               placeholderTextColor={colors.textSecondary}
               autoFocus
               returnKeyType="search"
-              accessibilityLabel="搜尋地址"
+              accessibilityLabel={t('search.placeholder')}
             />
             <Pressable
               onPress={onClose}
               style={styles.cancel}
               accessibilityRole="button"
             >
-              <Text style={styles.cancelText}>取消</Text>
+              <Text style={styles.cancelText}>{t('common.cancel')}</Text>
             </Pressable>
           </View>
 
           {searching ? (
             <View style={styles.statusRow}>
               <ActivityIndicator color={colors.accent} />
-              <Text style={styles.statusText}>搜尋中…</Text>
+              <Text style={styles.statusText}>{t('search.searching')}</Text>
             </View>
           ) : query.trim() && results.length === 0 ? (
-            <Text style={styles.statusText}>找不到相符的地點</Text>
+            <Text style={styles.statusText}>{t('search.noResults')}</Text>
           ) : null}
 
           <FlatList
@@ -176,7 +181,7 @@ export default function DestinationSearch({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   flex: { flex: 1, justifyContent: 'flex-end' },
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
   sheet: {

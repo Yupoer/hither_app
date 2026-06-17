@@ -2,12 +2,14 @@ import React, {
   forwardRef,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
 } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import MapView, { Marker, type Region } from 'react-native-maps';
 import type { Coordinates, Destination, MemberLocation } from '../types';
-import { colors } from '../theme';
+import { useTheme } from '../state/PreferencesContext';
+import type { Palette } from '../theme';
 
 /** Imperative handle so the screen can drive the map camera. */
 export interface GroupMapHandle {
@@ -46,6 +48,8 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
 ) {
   const mapRef = useRef<MapView | null>(null);
   const centeredRef = useRef(false);
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   useImperativeHandle(
     ref,
@@ -116,7 +120,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
   );
 });
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   lanternMarker: { alignItems: 'center', justifyContent: 'center' },
   lanternEmoji: { fontSize: 34 },
   memberPin: {

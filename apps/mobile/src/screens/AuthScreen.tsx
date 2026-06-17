@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -12,7 +12,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useSession } from '../state/SessionContext';
-import { colors, radius, spacing } from '../theme';
+import { useTheme } from '../state/PreferencesContext';
+import { useTranslation } from '../i18n';
+import { radius, spacing, type Palette } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Auth'>;
 
@@ -28,6 +30,9 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Auth'>;
 export default function AuthScreen({ navigation }: Props) {
   const { signIn, user, initializing } = useSession();
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
+  const { t } = useTranslation();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -52,7 +57,7 @@ export default function AuthScreen({ navigation }: Props) {
       await signIn({ name, email });
       // Navigation handled by the effect above once `user` is set.
     } catch (e) {
-      setError(e instanceof Error ? e.message : '登入失敗，請再試一次');
+      setError(e instanceof Error ? e.message : t('auth.signInFailed'));
       setSubmitting(false);
     }
   }
@@ -66,25 +71,23 @@ export default function AuthScreen({ navigation }: Props) {
         <View style={styles.header}>
           <Text style={styles.lantern}>🏮</Text>
           <Text style={styles.title}>Hither</Text>
-          <Text style={styles.subtitle}>
-            一個暱稱，就能和大家一起出發{'\n'}A nickname is all you need.
-          </Text>
+          <Text style={styles.subtitle}>{t('auth.subtitle')}</Text>
         </View>
 
         <View style={styles.form}>
-          <Text style={styles.label}>YOUR NAME · 暱稱</Text>
+          <Text style={styles.label}>{t('auth.nameLabel')}</Text>
           <TextInput
             style={styles.input}
             value={name}
             onChangeText={setName}
-            placeholder="例如：迷路的貓"
+            placeholder={t('auth.namePlaceholder')}
             placeholderTextColor={colors.textSecondary}
             autoCapitalize="none"
             returnKeyType="next"
-            accessibilityLabel="暱稱"
+            accessibilityLabel={t('auth.nameLabel')}
           />
 
-          <Text style={styles.label}>EMAIL · 選填</Text>
+          <Text style={styles.label}>{t('auth.emailLabel')}</Text>
           <TextInput
             style={styles.input}
             value={email}
@@ -95,7 +98,7 @@ export default function AuthScreen({ navigation }: Props) {
             keyboardType="email-address"
             returnKeyType="go"
             onSubmitEditing={handleSignIn}
-            accessibilityLabel="Email（選填）"
+            accessibilityLabel={t('auth.emailLabel')}
           />
 
           <Pressable
@@ -109,7 +112,7 @@ export default function AuthScreen({ navigation }: Props) {
             accessibilityRole="button"
           >
             <Text style={styles.ctaText}>
-              {submitting ? '登入中…' : '登入 · Continue'}
+              {submitting ? t('auth.submitting') : t('auth.continue')}
             </Text>
           </Pressable>
 
@@ -120,7 +123,7 @@ export default function AuthScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.background },
   container: {
     flex: 1,
@@ -167,7 +170,7 @@ const styles = StyleSheet.create({
   error: {
     marginTop: spacing.md,
     fontSize: 14,
-    color: '#d9534f',
+    color: colors.danger,
     textAlign: 'center',
   },
 });

@@ -5,7 +5,8 @@ import AuthScreen from '../screens/AuthScreen';
 import GroupScreen from '../screens/GroupScreen';
 import MapScreen from '../screens/MapScreen';
 import SettingsScreen from '../screens/SettingsScreen';
-import { colors } from '../theme';
+import { useTheme } from '../state/PreferencesContext';
+import { useTranslation } from '../i18n';
 
 /**
  * Route names and params for the root stack. Keep this in sync with the
@@ -22,6 +23,9 @@ export type RootStackParamList = {
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function RootNavigator() {
+  const { colors } = useTheme();
+  const { t } = useTranslation();
+
   return (
     <Stack.Navigator
       initialRouteName="Auth"
@@ -40,17 +44,18 @@ export default function RootNavigator() {
       <Stack.Screen
         name="Group"
         component={GroupScreen}
-        options={{ title: '群組' }}
+        options={{ title: t('settings.groupSection') }}
       />
       <Stack.Screen
         name="Map"
         component={MapScreen}
         options={({ navigation }) => ({
-          title: '地圖',
+          title: 'Hither',
           headerRight: () => (
             <Pressable
               onPress={() => navigation.navigate('Settings')}
-              accessibilityLabel="設定"
+              accessibilityRole="button"
+              accessibilityLabel={t('settings.preferencesSection')}
             >
               <Text style={{ color: colors.accent, fontSize: 22 }}>⚙︎</Text>
             </Pressable>
@@ -60,7 +65,7 @@ export default function RootNavigator() {
       <Stack.Screen
         name="Settings"
         component={SettingsScreen}
-        options={{ title: '設定' }}
+        options={{ title: t('settings.preferencesSection') }}
       />
     </Stack.Navigator>
   );
