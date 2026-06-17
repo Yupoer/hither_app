@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getGroupState } from '../api/client';
+import { supabase } from '../api/supabase';
 import type { GroupState } from '../types';
 
-/** How often the Map screen refreshes group state, per the MVP requirement. */
-export const GROUP_POLL_INTERVAL_MS = 5000;
+/**
+ * Fallback polling interval. Realtime (below) is the primary update mechanism;
+ * this slow poll is a safety net for missed events / dropped websocket.
+ */
+export const GROUP_POLL_INTERVAL_MS = 15000;
+
+/** Coalesce bursts of realtime events into a single refetch. */
+const REALTIME_DEBOUNCE_MS = 300;
 
 interface UseGroupStateResult {
   state: GroupState | null;
@@ -15,13 +22,16 @@ interface UseGroupStateResult {
 }
 
 /**
- * Subscribe to a group's live state, polling `getGroupState` every
- * GROUP_POLL_INTERVAL_MS. Keeps the latest snapshot in local state.
+ * Subscribe to a group's live state.
  *
- * Why a hook + setInterval instead of React Query: the MVP only needs one
- * polled resource and no caching/invalidation across screens, so a focused
- * hook avoids an extra dependency. The fetch is isolated in api/client, so
- * moving to React Query (or websockets) later is a drop-in change.
+ * Primary path: a Supabase Realtime channel listening to postgres_changes on
+ * `member_locations`, `memberships`, and `itinerary_items` (scoped to this
+ * group). Any change triggers a debounced refetch of the aggregated state.
+ *
+ * Fallback path: a slow interval poll, in case a websocket event is missed.
+ *
+ * The fetch is isolated in api/client, so the snake_case→camelCase mapping and
+ * aggregation stay in one place.
  */
 export function useGroupState(groupId: string | null): UseGroupStateResult {
   const [state, setState] = useState<GroupState | null>(null);
@@ -29,6 +39,7 @@ export function useGroupState(groupId: string | null): UseGroupStateResult {
   const [error, setError] = useState<string | null>(null);
   // Guards against setState after unmount and out-of-order responses.
   const activeRef = useRef(true);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async () => {
     if (!groupId) {
@@ -62,11 +73,45 @@ export function useGroupState(groupId: string | null): UseGroupStateResult {
     }
 
     load();
+
+    // Debounced refetch shared by every realtime event for this group.
+    const scheduleReload = () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+      debounceRef.current = setTimeout(load, REALTIME_DEBOUNCE_MS);
+    };
+
+    const filter = `group_id=eq.${groupId}`;
+    const channel = supabase
+      .channel(`group:${groupId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'member_locations', filter },
+        scheduleReload,
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'memberships', filter },
+        scheduleReload,
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'itinerary_items', filter },
+        scheduleReload,
+      )
+      .subscribe();
+
+    // Fallback poll in case a realtime event is dropped.
     const timer = setInterval(load, GROUP_POLL_INTERVAL_MS);
 
     return () => {
       activeRef.current = false;
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
       clearInterval(timer);
+      supabase.removeChannel(channel);
     };
   }, [groupId, load]);
 

@@ -44,11 +44,13 @@ export default function MapScreen({ route }: Props) {
     const fix = await location.getCurrentLocation();
     if (fix) {
       setDeviceCoords(fix.coordinates);
-      // Push our position so the rest of the group can see it. Mock no-op
-      // today; backed by Supabase `member_locations` once Phase S lands.
-      void updateMyLocation(fix.coordinates);
+      // Push our position so the rest of the group can see it, backed by the
+      // Supabase `member_locations` table (Phase S). Needs an active group.
+      if (groupId) {
+        void updateMyLocation(fix.coordinates, groupId);
+      }
     }
-  }, []);
+  }, [groupId]);
 
   useEffect(() => {
     void refreshDeviceLocation();
