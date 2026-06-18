@@ -1,0 +1,38 @@
+- generic [ref=e54]:
+  - generic [ref=e55]:
+    - generic:
+      - generic:
+        - generic:
+          - link "群組, back" [ref=e57] [cursor=pointer]:
+            - /url: /Group
+          - heading "Hither" [level=1] [ref=e60]
+          - button "偏好設定" [ref=e61] [cursor=pointer]:
+            - generic [ref=e62]: ⚙
+  - generic [ref=e65]:
+    - generic [ref=e67]:
+      - generic [ref=e68]: 🗺️ 互動地圖只在原生 App 顯示（iPhone 上的 Expo Go）。 以下為 web 預覽用的即時資料。
+      - generic [ref=e240]:
+        - generic [ref=e241]: 🏮
+        - generic [ref=e242]:
+          - generic [ref=e243]: 中正紀念堂
+          - generic [ref=e244]: 25.03458, 121.52178
+      - generic [ref=e69]: 成員 · 1
+      - generic [ref=e70]:
+        - generic [ref=e72]: 新
+        - generic [ref=e73]:
+          - generic [ref=e74]: 新名字喵 · you
+          - generic [ref=e75]: Leader · 位置未知
+    - generic [ref=e76]:
+      - button "搜尋下一集合點" [ref=e78] [cursor=pointer]:
+        - generic [ref=e79]: 🔍
+      - button "定位到我的位置" [ref=e81] [cursor=pointer]:
+        - generic [ref=e82]: 📍
+    - generic [ref=e188]:
+      - generic [ref=e191]:
+        - generic [ref=e192]: 下一集合點 · 第 1 / 2 個集合點
+        - generic [ref=e193]: 台北101
+        - generic [ref=e194]: 計算距離中…
+      - generic [ref=e247]:
+        - generic [ref=e248]: 下一集合點 · 第 2 / 2 個集合點
+        - generic [ref=e249]: 中正紀念堂
+        - generic [ref=e250]: 計算距離中…

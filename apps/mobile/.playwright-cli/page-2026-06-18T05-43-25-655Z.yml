@@ -1,0 +1,65 @@
+- generic [ref=e254]:
+  - generic [ref=e255]:
+    - generic:
+      - generic:
+        - generic:
+          - link "Hither, back" [ref=e257] [cursor=pointer]:
+            - /url: /Map?groupId=0b3b915e-20c6-42ab-91cb-2ef555535728
+          - heading "偏好設定" [level=1] [ref=e260]
+  - generic [ref=e264]:
+    - generic [ref=e265]: 帳號
+    - generic [ref=e267]:
+      - generic [ref=e268]: 暱稱
+      - generic [ref=e269]:
+        - generic [ref=e270]: 新名字喵
+        - generic [ref=e272] [cursor=pointer]: 編輯
+    - generic [ref=e273]: 偏好設定
+    - generic [ref=e274]:
+      - generic [ref=e275]:
+        - generic [ref=e276]: 語言
+        - generic [ref=e277]:
+          - button "中文" [ref=e278] [cursor=pointer]:
+            - generic [ref=e279]: 中文
+          - button "English" [ref=e280] [cursor=pointer]:
+            - generic [ref=e281]: English
+      - generic [ref=e282]:
+        - generic [ref=e283]: 主題背景
+        - generic [ref=e284]:
+          - button "夜燈" [ref=e285] [cursor=pointer]:
+            - generic [ref=e287]: 夜燈
+          - button "晨光" [ref=e288] [cursor=pointer]:
+            - generic [ref=e290]: 晨光
+          - button "暮色" [ref=e291] [cursor=pointer]:
+            - generic [ref=e293]: 暮色
+    - generic [ref=e294]: 集合點
+    - generic [ref=e295]:
+      - generic [ref=e296]: 按住項目上下拖曳即可調整順序
+      - generic [ref=e297]:
+        - generic [ref=e298]:
+          - generic [ref=e299]: "1"
+          - generic [ref=e300]:
+            - generic [ref=e301]: 台北101
+            - generic [ref=e302]: 台北101, 7, 信義路五段, 西村里, 信義區, 信義商圈, 臺北市, 11049, 臺灣
+          - generic [ref=e303]: ≡
+        - generic [ref=e304]:
+          - generic [ref=e305]: "2"
+          - generic [ref=e306]:
+            - generic [ref=e307]: 中正紀念堂
+            - generic [ref=e308]: 中正紀念堂, 21, 中山南路, 東門里, 中正區, 龍匣口, 臺北市, 10048, 臺灣
+          - generic [ref=e309]: ≡
+    - generic [ref=e310]: 群組
+    - generic [ref=e311]:
+      - generic [ref=e312]:
+        - generic [ref=e313]: 群組
+        - generic [ref=e314]: 驗證小隊
+      - generic [ref=e315]:
+        - generic [ref=e316]: 代碼
+        - generic [ref=e317]: 6R43ST
+      - generic [ref=e318]:
+        - generic [ref=e319]: 人數
+        - generic [ref=e320]: 1 人
+      - generic [ref=e321]:
+        - generic [ref=e322]: 角色
+        - generic [ref=e323]: 隊長
+    - generic [ref=e325] [cursor=pointer]: 離開群組
+    - generic [ref=e327] [cursor=pointer]: 登出

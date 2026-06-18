@@ -1,0 +1,51 @@
+- generic [ref=e87]:
+  - generic [ref=e88]:
+    - generic:
+      - generic:
+        - generic:
+          - link "Hither, back" [ref=e90] [cursor=pointer]:
+            - /url: /Map?groupId=0b3b915e-20c6-42ab-91cb-2ef555535728
+          - heading "偏好設定" [level=1] [ref=e93]
+  - generic [ref=e97]:
+    - generic [ref=e98]: 帳號
+    - generic [ref=e100]:
+      - generic [ref=e101]: 暱稱
+      - generic [ref=e102]:
+        - generic [ref=e148]: 新名字喵
+        - generic [ref=e105] [cursor=pointer]: 編輯
+    - generic [ref=e106]: 偏好設定
+    - generic [ref=e107]:
+      - generic [ref=e108]:
+        - generic [ref=e109]: 語言
+        - generic [ref=e110]:
+          - button "中文" [ref=e111] [cursor=pointer]:
+            - generic [ref=e112]: 中文
+          - button "English" [ref=e113] [cursor=pointer]:
+            - generic [ref=e114]: English
+      - generic [ref=e115]:
+        - generic [ref=e116]: 主題背景
+        - generic [ref=e117]:
+          - button "夜燈" [ref=e118] [cursor=pointer]:
+            - generic [ref=e120]: 夜燈
+          - button "晨光" [ref=e121] [cursor=pointer]:
+            - generic [ref=e123]: 晨光
+          - button "暮色" [ref=e124] [cursor=pointer]:
+            - generic [ref=e126]: 暮色
+    - generic [ref=e127]: 集合點
+    - generic [ref=e128]: 尚未設定任何集合點。
+    - generic [ref=e129]: 群組
+    - generic [ref=e130]:
+      - generic [ref=e131]:
+        - generic [ref=e132]: 群組
+        - generic [ref=e133]: 驗證小隊
+      - generic [ref=e134]:
+        - generic [ref=e135]: 代碼
+        - generic [ref=e136]: 6R43ST
+      - generic [ref=e137]:
+        - generic [ref=e138]: 人數
+        - generic [ref=e139]: 1 人
+      - generic [ref=e140]:
+        - generic [ref=e141]: 角色
+        - generic [ref=e142]: 隊長
+    - generic [ref=e144] [cursor=pointer]: 離開群組
+    - generic [ref=e146] [cursor=pointer]: 登出

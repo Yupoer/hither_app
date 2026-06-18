@@ -1,0 +1,35 @@
+- generic [ref=e1]:
+  - generic [ref=e54]:
+    - generic [ref=e55]:
+      - generic:
+        - generic:
+          - generic:
+            - link "群組, back" [ref=e57] [cursor=pointer]:
+              - /url: /Group
+            - heading "Hither" [level=1] [ref=e60]
+            - button "偏好設定" [ref=e61] [cursor=pointer]:
+              - generic [ref=e62]: ⚙
+    - generic [ref=e65]:
+      - generic [ref=e67]:
+        - generic [ref=e68]: 🗺️ 互動地圖只在原生 App 顯示（iPhone 上的 Expo Go）。 以下為 web 預覽用的即時資料。
+        - generic [ref=e69]: 成員 · 1
+        - generic [ref=e70]:
+          - generic [ref=e72]: 新
+          - generic [ref=e73]:
+            - generic [ref=e74]: 新名字喵 · you
+            - generic [ref=e75]: Leader · 位置未知
+      - generic [ref=e76]:
+        - button "搜尋下一集合點" [ref=e78] [cursor=pointer]:
+          - generic [ref=e79]: 🔍
+        - button "定位到我的位置" [ref=e81] [cursor=pointer]:
+          - generic [ref=e82]: 📍
+      - generic [ref=e84]:
+        - generic [ref=e85]: 下一集合點
+        - generic [ref=e86]: 尚未設定集合點 · 點右上 🔍 搜尋
+  - dialog [ref=e150]:
+    - generic [ref=e154]:
+      - generic [ref=e156]: 搜尋下一集合點
+      - generic [ref=e157]:
+        - textbox "輸入地址或地點名稱" [active] [ref=e158]
+        - button "取消" [ref=e159] [cursor=pointer]:
+          - generic [ref=e160]: 取消

@@ -1,0 +1,13 @@
+- generic [ref=e21]:
+  - heading "群組" [level=1] [ref=e24]
+  - generic [ref=e29]:
+    - generic [ref=e30]: 嗨，測試貓 👋
+    - generic [ref=e44]:
+      - generic [ref=e45]: 群組代碼
+      - generic [ref=e47]: 6R43ST
+      - generic [ref=e48]: 你是隊長
+      - generic [ref=e49]: 把代碼分享給夥伴，他們用「加入群組」輸入即可。
+      - button "進入地圖" [ref=e50] [cursor=pointer]:
+        - generic [ref=e51]: 進入地圖
+      - button "離開群組" [ref=e52] [cursor=pointer]:
+        - generic [ref=e53]: 離開群組

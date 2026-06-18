@@ -1,0 +1,17 @@
+- generic [ref=e21]:
+  - heading "群組" [level=1] [ref=e24]
+  - generic [ref=e29]:
+    - generic [ref=e30]: 嗨，測試貓 👋
+    - generic [ref=e31]:
+      - button "建立群組 隊長" [active] [ref=e32] [cursor=pointer]:
+        - generic [ref=e33]: 建立群組
+        - generic [ref=e34]: 隊長
+      - button "加入群組 成員" [ref=e35] [cursor=pointer]:
+        - generic [ref=e36]: 加入群組
+        - generic [ref=e37]: 成員
+    - generic [ref=e39]:
+      - generic [ref=e40]: 團名（選填）
+      - textbox "團名（選填）" [ref=e41]:
+        - /placeholder: 例如：信義區週末小隊
+      - button "建立並取得代碼" [ref=e42] [cursor=pointer]:
+        - generic [ref=e43]: 建立並取得代碼

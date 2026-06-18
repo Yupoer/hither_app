@@ -1,0 +1,15 @@
+- generic [ref=e9]:
+  - generic [ref=e10]:
+    - generic [ref=e11]: 🏮
+    - generic [ref=e12]: Hither
+    - generic [ref=e13]: 一個暱稱，就能和大家一起出發
+  - generic [ref=e14]:
+    - generic [ref=e15]: 暱稱
+    - textbox "暱稱" [ref=e16]:
+      - /placeholder: 例如：迷路的貓
+      - text: 測試貓
+    - generic [ref=e17]: EMAIL · 選填
+    - textbox "EMAIL · 選填" [ref=e18]:
+      - /placeholder: you@example.com
+    - button "登入中…" [disabled]:
+      - generic [ref=e19]: 登入中…
