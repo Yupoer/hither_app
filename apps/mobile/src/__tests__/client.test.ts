@@ -12,6 +12,12 @@ import {
   mapGroup,
   mapDestination,
   mapMember,
+  mapNotificationPreferences,
+  sendCommand,
+  savePushToken,
+  getNotificationPreferences,
+  setNotificationPreferences,
+  setJourneyStatus,
 } from '../api/client';
 import { supabase } from '../api/supabase';
 
@@ -40,6 +46,7 @@ describe('pure mappers (snake_case row -> camelCase type)', () => {
         invite_code: 'ABC234',
         created_by: 'u1',
         created_at: '2026-01-01T00:00:00Z',
+        journey_status: 'going',
       }),
     ).toEqual({
       id: 'g1',
@@ -47,7 +54,21 @@ describe('pure mappers (snake_case row -> camelCase type)', () => {
       inviteCode: 'ABC234',
       createdBy: 'u1',
       createdAt: '2026-01-01T00:00:00Z',
+      journeyStatus: 'going',
     });
+  });
+
+  it('mapGroup defaults journeyStatus to paused when null', () => {
+    expect(
+      mapGroup({
+        id: 'g1',
+        name: '團',
+        invite_code: 'ABC234',
+        created_by: 'u1',
+        created_at: null,
+        journey_status: null,
+      }).journeyStatus,
+    ).toBe('paused');
   });
 
   it('mapDestination maps position->order and lat/lng->coordinates', () => {
@@ -267,5 +288,132 @@ describe('addDestination', () => {
         coordinates: { latitude: 0, longitude: 0 },
       }),
     ).rejects.toThrow('row-level security');
+  });
+});
+
+describe('notifications, commands & journey', () => {
+  beforeEach(() => {
+    mockedAuth.getUser.mockResolvedValue({
+      data: { user: { id: 'uid' } },
+      error: null,
+    });
+  });
+
+  it('mapNotificationPreferences maps snake_case flags to camelCase', () => {
+    expect(
+      mapNotificationPreferences({
+        add_gathering: true,
+        leader_commands: false,
+        follower_requests: true,
+        journey: false,
+      }),
+    ).toEqual({
+      addGathering: true,
+      leaderCommands: false,
+      followerRequests: true,
+      journey: false,
+    });
+  });
+
+  it('savePushToken upserts the token for the current user (no-op on null)', async () => {
+    const upsert = jest.fn().mockResolvedValue({ error: null });
+    mockedFrom.mockImplementation(() => ({ upsert }));
+
+    await savePushToken(null);
+    expect(upsert).not.toHaveBeenCalled();
+
+    await savePushToken('hextoken');
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ user_id: 'uid', token: 'hextoken', platform: 'ios' }),
+      { onConflict: 'user_id,token' },
+    );
+  });
+
+  it('sendCommand inserts a command with the sender id', async () => {
+    const insert = jest.fn().mockResolvedValue({ error: null });
+    mockedFrom.mockImplementation(() => ({ insert }));
+
+    await sendCommand('g1', 'need_restroom', '我要上廁所');
+    expect(insert).toHaveBeenCalledWith({
+      group_id: 'g1',
+      sender_id: 'uid',
+      type: 'need_restroom',
+      message: '我要上廁所',
+      latitude: null,
+      longitude: null,
+    });
+  });
+
+  it('getNotificationPreferences returns all-on defaults when no row exists', async () => {
+    const maybeSingle = jest.fn().mockResolvedValue({ data: null, error: null });
+    mockedFrom.mockImplementation(() => ({
+      select: () => ({ eq: () => ({ maybeSingle }) }),
+    }));
+
+    expect(await getNotificationPreferences()).toEqual({
+      addGathering: true,
+      leaderCommands: true,
+      followerRequests: true,
+      journey: true,
+    });
+  });
+
+  it('setNotificationPreferences upserts all four flags by user_id', async () => {
+    const upsert = jest.fn().mockResolvedValue({ error: null });
+    mockedFrom.mockImplementation(() => ({ upsert }));
+
+    await setNotificationPreferences({
+      addGathering: false,
+      leaderCommands: true,
+      followerRequests: false,
+      journey: true,
+    });
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: 'uid',
+        add_gathering: false,
+        leader_commands: true,
+        follower_requests: false,
+        journey: true,
+      }),
+      { onConflict: 'user_id' },
+    );
+  });
+
+  it('setJourneyStatus updates groups.journey_status then re-reads state', async () => {
+    const update = jest.fn(() => ({ eq: () => Promise.resolve({ error: null }) }));
+    const empty = () => Promise.resolve({ data: [], error: null });
+    mockedFrom.mockImplementation((table: string) => {
+      if (table === 'groups') {
+        return {
+          update,
+          select: () => ({
+            eq: () => ({
+              single: () =>
+                Promise.resolve({
+                  data: {
+                    id: 'g1',
+                    name: '團',
+                    invite_code: 'ABC234',
+                    created_by: 'uid',
+                    created_at: 't0',
+                    journey_status: 'going',
+                  },
+                  error: null,
+                }),
+            }),
+          }),
+        };
+      }
+      if (table === 'itinerary_items') {
+        return { select: () => ({ eq: () => ({ order: empty }) }) };
+      }
+      // memberships, member_locations: resolve at .eq()
+      return { select: () => ({ eq: empty }) };
+    });
+
+    const state = await setJourneyStatus('g1', 'going');
+    expect(update).toHaveBeenCalledWith({ journey_status: 'going' });
+    expect(state.group.journeyStatus).toBe('going');
   });
 });

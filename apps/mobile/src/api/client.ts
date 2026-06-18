@@ -1,13 +1,17 @@
 import { supabase } from './supabase';
 import type {
+  CommandType,
   Coordinates,
   Destination,
   Group,
   GroupState,
+  JourneyStatus,
   MemberLocation,
   MemberRole,
   MemberStatus,
+  NotificationPreferences,
 } from '../types';
+import { DEFAULT_NOTIFICATION_PREFERENCES } from '../types';
 
 /**
  * API client for the Hither backend.
@@ -33,6 +37,7 @@ interface GroupRow {
   invite_code: string;
   created_by: string | null;
   created_at: string | null;
+  journey_status: JourneyStatus | null;
 }
 
 interface MembershipRow {
@@ -81,6 +86,7 @@ export function mapGroup(row: GroupRow): Group {
     inviteCode: row.invite_code,
     createdBy: row.created_by ?? '',
     createdAt: row.created_at ?? new Date().toISOString(),
+    journeyStatus: row.journey_status ?? 'paused',
   };
 }
 
@@ -147,7 +153,7 @@ export async function createGroup(name: string): Promise<Group> {
     const { data, error } = await supabase
       .from('groups')
       .insert({ name, invite_code: inviteCode, created_by: uid })
-      .select('id, name, invite_code, created_by, created_at')
+      .select('id, name, invite_code, created_by, created_at, journey_status')
       .single();
 
     if (error) {
@@ -209,7 +215,7 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
   const [groupRes, membersRes, itineraryRes, locationsRes] = await Promise.all([
     supabase
       .from('groups')
-      .select('id, name, invite_code, created_by, created_at')
+      .select('id, name, invite_code, created_by, created_at, journey_status')
       .eq('id', groupId)
       .single(),
     supabase
@@ -399,4 +405,128 @@ export async function updateMyLocation(
   if (error) {
     throw new Error(error.message);
   }
+}
+
+// --- Notifications, commands & journey ------------------------------------
+
+/**
+ * Persist this device's APNs token (upsert into `push_tokens`). The token comes
+ * from the native boundary (`native/notifications.getDevicePushToken`) — this
+ * data-layer function only stores it, keeping client.ts free of native imports.
+ * No-op when `token` is falsy (e.g. Expo Go returns null). The APNs Edge
+ * Function later reads these rows (service role) to know where to push.
+ */
+export async function savePushToken(
+  token: string | null,
+  platform: 'ios' | 'android' = 'ios',
+): Promise<void> {
+  if (!token) return;
+  const uid = await requireUserId();
+  const { error } = await supabase.from('push_tokens').upsert(
+    { user_id: uid, token, platform, updated_at: new Date().toISOString() },
+    { onConflict: 'user_id,token' },
+  );
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Send a group command (leader directive or follower quick request) by
+ * inserting into `commands`. RLS restricts the insert to a member writing their
+ * own `sender_id`. An AFTER-INSERT trigger fans the push out to everyone else
+ * (minus the sender) via the Edge Function, so the caller only writes the row.
+ * `coords` optionally tags the command with the sender's position.
+ */
+export async function sendCommand(
+  groupId: string,
+  type: CommandType,
+  message?: string,
+  coords?: Coordinates,
+): Promise<void> {
+  const uid = await requireUserId();
+  const { error } = await supabase.from('commands').insert({
+    group_id: groupId,
+    sender_id: uid,
+    type,
+    message: message ?? null,
+    latitude: coords?.latitude ?? null,
+    longitude: coords?.longitude ?? null,
+  });
+  if (error) throw new Error(error.message);
+}
+
+interface NotificationPrefsRow {
+  add_gathering: boolean;
+  leader_commands: boolean;
+  follower_requests: boolean;
+  journey: boolean;
+}
+
+/** Map a DB notification_preferences row to the camelCase type. */
+export function mapNotificationPreferences(
+  row: NotificationPrefsRow,
+): NotificationPreferences {
+  return {
+    addGathering: row.add_gathering,
+    leaderCommands: row.leader_commands,
+    followerRequests: row.follower_requests,
+    journey: row.journey,
+  };
+}
+
+/**
+ * Read the current user's per-category notification preferences. Returns the
+ * all-on defaults when no row exists yet (a fresh user), matching the Edge
+ * Function's "missing row = everything enabled" rule.
+ */
+export async function getNotificationPreferences(): Promise<NotificationPreferences> {
+  const uid = await requireUserId();
+  const { data, error } = await supabase
+    .from('notification_preferences')
+    .select('add_gathering, leader_commands, follower_requests, journey')
+    .eq('user_id', uid)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return { ...DEFAULT_NOTIFICATION_PREFERENCES };
+  return mapNotificationPreferences(data as NotificationPrefsRow);
+}
+
+/**
+ * Upsert the current user's notification preferences (all four categories).
+ * RLS limits the write to the caller's own row. Returns the saved preferences.
+ */
+export async function setNotificationPreferences(
+  prefs: NotificationPreferences,
+): Promise<NotificationPreferences> {
+  const uid = await requireUserId();
+  const { error } = await supabase.from('notification_preferences').upsert(
+    {
+      user_id: uid,
+      add_gathering: prefs.addGathering,
+      leader_commands: prefs.leaderCommands,
+      follower_requests: prefs.followerRequests,
+      journey: prefs.journey,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'user_id' },
+  );
+  if (error) throw new Error(error.message);
+  return prefs;
+}
+
+/**
+ * Set the group's journey status (start = 'going', pause = 'paused').
+ * Leader-only — `groups` UPDATE is gated to leaders by RLS, so a follower's
+ * call rejects with a 42501. An AFTER-UPDATE trigger pushes the change to
+ * members (minus the leader). Returns the refreshed state.
+ */
+export async function setJourneyStatus(
+  groupId: string,
+  status: JourneyStatus,
+): Promise<GroupState> {
+  const { error } = await supabase
+    .from('groups')
+    .update({ journey_status: status })
+    .eq('id', groupId);
+  if (error) throw new Error(error.message);
+  return getGroupState(groupId);
 }
