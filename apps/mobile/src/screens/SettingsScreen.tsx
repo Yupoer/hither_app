@@ -19,6 +19,8 @@ import {
 } from '../state/PreferencesContext';
 import { getGroupState, reorderDestinations } from '../api/client';
 import DestinationReorderList from '../components/DestinationReorderList';
+import QuickCommandsCard from '../components/QuickCommandsCard';
+import NotificationPreferencesCard from '../components/NotificationPreferencesCard';
 import { useTranslation, type TranslationKey } from '../i18n';
 import { confirmAction } from '../utils/confirm';
 import type { GroupState } from '../types';
@@ -255,6 +257,22 @@ export default function SettingsScreen({ navigation }: Props) {
           />
         </>
       )}
+
+      {/* Quick notify (role-scoped command buttons) */}
+      {membership && groupId && (
+        <>
+          <Text style={styles.section}>{t('settings.quickSection')}</Text>
+          <QuickCommandsCard
+            groupId={groupId}
+            isLeader={!!isLeader}
+            colors={colors}
+          />
+        </>
+      )}
+
+      {/* Per-category notification toggles */}
+      <Text style={styles.section}>{t('settings.notifSection')}</Text>
+      <NotificationPreferencesCard colors={colors} />
 
       {/* Group */}
       <Text style={styles.section}>{t('settings.groupSection')}</Text>

@@ -26,9 +26,15 @@ import { useSession } from '../state/SessionContext';
 import { useTheme } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
 import { useGroupState } from '../state/useGroupState';
-import { distanceEtaLabel } from '../utils/geo';
+import { useLiveActivity } from '../state/useLiveActivity';
+import {
+  distanceEtaLabel,
+  distanceMeters,
+  walkingEtaSeconds,
+} from '../utils/geo';
 import { location, liquidGlass, type MapRegion, type PlaceResult } from '../native';
-import { addDestination, updateMyLocation } from '../api/client';
+import { addDestination, setJourneyStatus, updateMyLocation } from '../api/client';
+import JourneyBanner from '../components/JourneyBanner';
 import type { Coordinates, Destination, MemberLocation } from '../types';
 import { radius, spacing, type Palette } from '../theme';
 
@@ -131,6 +137,43 @@ export default function MapScreen({ route }: Props) {
     [fromCoords],
   );
 
+  // --- Journey (leader start/pause) + Live Activity ------------------------
+  const journeyStatus = state?.group.journeyStatus ?? 'paused';
+  const journeyGoing = journeyStatus === 'going';
+  // The journey is "live" (banner + Live Activity) only when started AND there
+  // is a gathering point to head toward.
+  const journeyActive = journeyGoing && !!selectedDestination;
+
+  // Numeric distance/ETA to the selected gathering point, for the Live Activity.
+  const numericDistance =
+    fromCoords && selectedDestination
+      ? distanceMeters(fromCoords, selectedDestination.coordinates)
+      : undefined;
+
+  useLiveActivity(journeyActive, {
+    groupName: membership?.group.name ?? '',
+    gatheringTitle: selectedDestination?.title,
+    distanceMeters: numericDistance,
+    etaSeconds:
+      numericDistance != null ? walkingEtaSeconds(numericDistance) : undefined,
+    gatheringCoordinates: selectedDestination?.coordinates,
+  });
+
+  const [journeyBusy, setJourneyBusy] = useState(false);
+  // Leader toggles start/pause; followers follow along via realtime.
+  async function toggleJourney() {
+    if (!groupId || journeyBusy) return;
+    setJourneyBusy(true);
+    try {
+      await setJourneyStatus(groupId, journeyGoing ? 'paused' : 'going');
+      refresh();
+    } catch {
+      Alert.alert(t('map.setFailedTitle'), t('map.journeyFailed'));
+    } finally {
+      setJourneyBusy(false);
+    }
+  }
+
   // "Locate me": pull a fresh fix and center the map on the user's own
   // position (falling back to the last known one if GPS is unavailable).
   async function locateMe() {
@@ -217,6 +260,25 @@ export default function MapScreen({ route }: Props) {
           </liquidGlass.GlassView>
         )}
 
+        {/* Start / pause heading to the gathering point (leader only). */}
+        {isLeader && (
+          <liquidGlass.GlassView
+            style={[styles.fab, journeyGoing && styles.fabActive]}
+          >
+            <Pressable
+              style={styles.fabPressable}
+              onPress={toggleJourney}
+              disabled={journeyBusy}
+              accessibilityRole="button"
+              accessibilityLabel={
+                journeyGoing ? t('map.pauseA11y') : t('map.startA11y')
+              }
+            >
+              <Text style={styles.fabIcon}>{journeyGoing ? '⏸️' : '▶️'}</Text>
+            </Pressable>
+          </liquidGlass.GlassView>
+        )}
+
         {/* Center the map on my own location. */}
         <liquidGlass.GlassView style={styles.fab}>
           <Pressable
@@ -232,6 +294,16 @@ export default function MapScreen({ route }: Props) {
 
       {/* Bottom: swipeable carousel of gathering points (lantern follows). */}
       <View style={[styles.carouselWrap, { bottom: insets.bottom + spacing.lg }]}>
+        {/* Journey banner mirrors the iOS Live Activity while going. */}
+        {journeyActive && selectedDestination && (
+          <View style={{ width: windowWidth - spacing.lg * 2 }}>
+            <JourneyBanner
+              gatheringTitle={selectedDestination.title}
+              distanceEta={distanceFor(selectedDestination)}
+              colors={colors}
+            />
+          </View>
+        )}
         {destinations.length === 0 ? (
           <liquidGlass.GlassView style={[styles.card, { width: windowWidth - spacing.lg * 2 }]}>
             <Text style={styles.cardLabel}>{t('map.nextLabel')}</Text>
@@ -321,6 +393,10 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: colors.border,
+  },
+  fabActive: {
+    borderColor: colors.accent,
+    borderWidth: 2,
   },
   fabPressable: {
     width: '100%',

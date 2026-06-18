@@ -8,6 +8,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import RootNavigator from './src/navigation/RootNavigator';
 import { SessionProvider } from './src/state/SessionContext';
+import { usePushRegistration } from './src/state/usePushRegistration';
 import {
   PreferencesProvider,
   useTheme,
@@ -19,6 +20,8 @@ import {
  */
 function ThemedNavigation() {
   const { colors, themeName } = useTheme();
+  // Register this device for APNs once signed in (no-op until a Dev Build).
+  usePushRegistration();
   const base = themeName === 'day' ? DefaultTheme : DarkTheme;
   const navTheme = {
     ...base,
