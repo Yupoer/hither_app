@@ -297,39 +297,83 @@ export async function updateNextDestination(
 }
 
 /**
- * Add a new itinerary stop and make it the group's next gathering point.
+ * Add a new itinerary stop, appended to the END of the itinerary.
  *
- * The stop is inserted at the front of the itinerary (one below the current
- * lowest `position`) so `getGroupState` surfaces it as `nextDestination`.
- * Leader-only — `itinerary_items` INSERT is gated to leaders by RLS, so a
- * follower's call rejects with a 42501 we surface to the caller. Returns the
- * refreshed state.
+ * The stop is inserted one above the current highest `position`, so it becomes
+ * the last gathering point in the trip rather than the next one — adding a stop
+ * extends the journey forward. Leader-only — `itinerary_items` INSERT is gated
+ * to leaders by RLS, so a follower's call rejects with a 42501 we surface to the
+ * caller. Returns the refreshed state.
  */
 export async function addDestination(
   groupId: string,
   input: { title: string; address?: string; coordinates: Coordinates },
 ): Promise<GroupState> {
-  const { data: minRow, error: minError } = await supabase
+  const { data: maxRow, error: maxError } = await supabase
     .from('itinerary_items')
     .select('position')
     .eq('group_id', groupId)
-    .order('position', { ascending: true })
+    .order('position', { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (minError) throw new Error(minError.message);
+  if (maxError) throw new Error(maxError.message);
 
-  const minPosition = minRow?.position ?? 0;
+  const maxPosition = maxRow?.position ?? -1;
   const { error } = await supabase.from('itinerary_items').insert({
     group_id: groupId,
     title: input.title,
     address: input.address ?? null,
     latitude: input.coordinates.latitude,
     longitude: input.coordinates.longitude,
-    position: minPosition - 1,
+    position: maxPosition + 1,
   });
   if (error) throw new Error(error.message);
 
   return getGroupState(groupId);
+}
+
+/**
+ * Persist a manual re-ordering of the itinerary. `orderedIds` is the list of
+ * stop ids in their new order; each is written `position = index` so the order
+ * is stable and gap-free. Leader-only (RLS gates `itinerary_items` UPDATE), so a
+ * follower's call rejects with a 42501. Returns the refreshed state.
+ */
+export async function reorderDestinations(
+  groupId: string,
+  orderedIds: string[],
+): Promise<GroupState> {
+  // Write all positions in parallel; each row is scoped to the group.
+  const results = await Promise.all(
+    orderedIds.map((id, index) =>
+      supabase
+        .from('itinerary_items')
+        .update({ position: index })
+        .eq('id', id)
+        .eq('group_id', groupId),
+    ),
+  );
+  const failed = results.find((r) => r.error);
+  if (failed?.error) throw new Error(failed.error.message);
+
+  return getGroupState(groupId);
+}
+
+/**
+ * Update the current user's anonymous nickname (in `public.profiles`). RLS lets
+ * a user write only their own profile row. Returns the trimmed nickname.
+ */
+export async function updateNickname(nickname: string): Promise<string> {
+  const uid = await requireUserId();
+  const trimmed = nickname.trim();
+  if (!trimmed) {
+    throw new Error('暱稱不能為空');
+  }
+  const { error } = await supabase
+    .from('profiles')
+    .update({ nickname: trimmed })
+    .eq('id', uid);
+  if (error) throw new Error(error.message);
+  return trimmed;
 }
 
 /**

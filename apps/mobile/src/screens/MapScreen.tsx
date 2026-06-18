@@ -162,9 +162,10 @@ export default function MapScreen({ route }: Props) {
         address: place.address,
         coordinates: place.coordinates,
       });
-      // The new stop becomes the first gathering point — jump to it.
-      setSelectedIndex(0);
-      carouselRef.current?.scrollTo({ x: 0, animated: false });
+      // The new stop is appended to the end of the trip — jump to it. Setting
+      // the index to the (pre-refresh) length targets the about-to-arrive last
+      // stop; the clamp effect snaps it to the real last index once data lands.
+      setSelectedIndex(destinations.length);
       refresh();
     } catch {
       Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));

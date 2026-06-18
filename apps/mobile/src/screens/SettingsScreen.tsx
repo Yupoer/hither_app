@@ -1,5 +1,13 @@
-import React, { useMemo } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
@@ -9,9 +17,11 @@ import {
   useTheme,
   type Language,
 } from '../state/PreferencesContext';
-import { useGroupState } from '../state/useGroupState';
+import { getGroupState, reorderDestinations } from '../api/client';
+import DestinationReorderList from '../components/DestinationReorderList';
 import { useTranslation, type TranslationKey } from '../i18n';
 import { confirmAction } from '../utils/confirm';
+import type { GroupState } from '../types';
 import {
   radius,
   spacing,
@@ -36,21 +46,87 @@ const THEME_LABEL_KEY: Record<ThemeName, TranslationKey> = {
 
 /**
  * Profile + group + preferences settings. Reached from the gear button in the
- * map header. Shows the anonymous nickname, lets the user change UI language and
- * colour theme (persisted device-side), surfaces the current group / role /
- * member count + code, and lets them leave the group or sign out.
+ * map header. Lets the user edit their anonymous nickname, change UI language and
+ * colour theme (persisted device-side), see and re-order the group's gathering
+ * points, see the group / role / member count + code, and leave or sign out.
+ *
+ * Group data is fetched once on entry (a lightweight one-shot, no realtime
+ * channel or poll) — Settings is a transient screen, so it avoids the extra
+ * websocket the live map already maintains. It refetches after a reorder.
  */
 export default function SettingsScreen({ navigation }: Props) {
-  const { user, membership, leaveGroup, signOut } = useSession();
+  const { user, membership, leaveGroup, signOut, updateNickname } = useSession();
   const { language, themeName, setLanguage, setThemeName } = usePreferences();
   const { colors } = useTheme();
   const { t } = useTranslation();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
 
-  // Live member count for the current group (same source the map uses).
-  const { state } = useGroupState(membership?.group.id ?? null);
-  const memberCount = state?.members.length ?? null;
+  const groupId = membership?.group.id ?? null;
+  const isLeader = membership?.role === 'leader';
+
+  // One-shot group state (members + itinerary). No realtime here on purpose.
+  const [groupState, setGroupState] = useState<GroupState | null>(null);
+  const loadGroupState = useCallback(async () => {
+    if (!groupId) {
+      setGroupState(null);
+      return;
+    }
+    try {
+      setGroupState(await getGroupState(groupId));
+    } catch {
+      // Leave whatever we had; the group section just shows dashes.
+    }
+  }, [groupId]);
+
+  useEffect(() => {
+    void loadGroupState();
+  }, [loadGroupState]);
+
+  const memberCount = groupState?.members.length ?? null;
+  const destinations = groupState?.destinations ?? [];
+
+  // --- Nickname editing -----------------------------------------------------
+  const [editingNickname, setEditingNickname] = useState(false);
+  const [nicknameDraft, setNicknameDraft] = useState('');
+  const [savingNickname, setSavingNickname] = useState(false);
+
+  function startEditNickname() {
+    setNicknameDraft(user?.name ?? '');
+    setEditingNickname(true);
+  }
+
+  async function saveNickname() {
+    const trimmed = nicknameDraft.trim();
+    if (!trimmed) {
+      Alert.alert(t('settings.nicknameEmpty'));
+      return;
+    }
+    setSavingNickname(true);
+    try {
+      await updateNickname(trimmed);
+      setEditingNickname(false);
+    } catch {
+      Alert.alert(t('settings.nicknameFailed'));
+    } finally {
+      setSavingNickname(false);
+    }
+  }
+
+  // --- Reorder gathering points --------------------------------------------
+  const handleReorder = useCallback(
+    async (orderedIds: string[]) => {
+      if (!groupId) return;
+      try {
+        const next = await reorderDestinations(groupId, orderedIds);
+        setGroupState(next);
+      } catch {
+        Alert.alert(t('settings.reorderFailed'));
+        void loadGroupState(); // restore the persisted order
+      }
+    },
+    [groupId, loadGroupState, t],
+  );
 
   function confirmLeave() {
     confirmAction(
@@ -95,7 +171,39 @@ export default function SettingsScreen({ navigation }: Props) {
       {/* Account */}
       <Text style={styles.section}>{t('settings.accountSection')}</Text>
       <View style={styles.card}>
-        <Row label={t('settings.nickname')} value={user?.name ?? dash} />
+        <View style={styles.row}>
+          <Text style={styles.rowLabel}>{t('settings.nickname')}</Text>
+          {editingNickname ? (
+            <View style={styles.editGroup}>
+              <TextInput
+                style={styles.input}
+                value={nicknameDraft}
+                onChangeText={setNicknameDraft}
+                autoFocus
+                maxLength={24}
+                placeholder={user?.name ?? ''}
+                placeholderTextColor={colors.textSecondary}
+                editable={!savingNickname}
+                onSubmitEditing={saveNickname}
+                returnKeyType="done"
+              />
+              <Pressable
+                style={styles.saveBtn}
+                onPress={saveNickname}
+                disabled={savingNickname}
+              >
+                <Text style={styles.saveText}>{t('settings.save')}</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View style={styles.editGroup}>
+              <Text style={styles.rowValue}>{user?.name ?? dash}</Text>
+              <Pressable style={styles.editBtn} onPress={startEditNickname}>
+                <Text style={styles.editText}>{t('settings.edit')}</Text>
+              </Pressable>
+            </View>
+          )}
+        </View>
         {user?.email ? <Row label={t('settings.email')} value={user.email} /> : null}
       </View>
 
@@ -112,7 +220,6 @@ export default function SettingsScreen({ navigation }: Props) {
                 active={language === opt.value}
                 onPress={() => setLanguage(opt.value)}
                 styles={styles}
-                colors={colors}
               />
             ))}
           </View>
@@ -128,12 +235,26 @@ export default function SettingsScreen({ navigation }: Props) {
                 onPress={() => setThemeName(name)}
                 swatch={themes[name].accent}
                 styles={styles}
-                colors={colors}
               />
             ))}
           </View>
         </View>
       </View>
+
+      {/* Gathering points (re-orderable) */}
+      {membership && (
+        <>
+          <Text style={styles.section}>{t('settings.destinationsSection')}</Text>
+          <DestinationReorderList
+            destinations={destinations}
+            canReorder={!!isLeader}
+            onReorder={handleReorder}
+            colors={colors}
+            emptyLabel={t('settings.noDestinations')}
+            dragHint={t('settings.dragHint')}
+          />
+        </>
+      )}
 
       {/* Group */}
       <Text style={styles.section}>{t('settings.groupSection')}</Text>
@@ -193,14 +314,12 @@ function Choice({
   onPress,
   swatch,
   styles,
-  colors,
 }: {
   label: string;
   active: boolean;
   onPress: () => void;
   swatch?: string;
   styles: ReturnType<typeof makeStyles>;
-  colors: Palette;
 }) {
   return (
     <Pressable
@@ -252,9 +371,40 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     color: colors.textPrimary,
     fontSize: 16,
     fontWeight: '600',
-    maxWidth: '60%',
     textAlign: 'right',
   },
+  editGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flexShrink: 1,
+    maxWidth: '70%',
+    justifyContent: 'flex-end',
+  },
+  input: {
+    flexShrink: 1,
+    minWidth: 120,
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'right',
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.accent,
+  },
+  editBtn: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  editText: { color: colors.accent, fontSize: 14, fontWeight: '600' },
+  saveBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accent,
+  },
+  saveText: { color: colors.background, fontSize: 14, fontWeight: '700' },
   prefRow: {
     paddingVertical: spacing.md,
     gap: spacing.sm,

@@ -6,6 +6,7 @@ import React, {
   useState,
 } from 'react';
 import { supabase } from '../api/supabase';
+import { updateNickname as updateNicknameApi } from '../api/client';
 import type { Group, MemberRole, User } from '../types';
 
 /**
@@ -40,6 +41,8 @@ interface SessionContextValue {
    */
   signIn: (input: { name: string; email?: string }) => Promise<User>;
   signOut: () => Promise<void>;
+  /** Change the signed-in user's nickname (persisted to `profiles`). */
+  updateNickname: (nickname: string) => Promise<void>;
   /** Record the group the user just created (as leader) or joined (as follower). */
   setMembership: (membership: Membership) => void;
   leaveGroup: () => void;
@@ -117,6 +120,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         await supabase.auth.signOut();
         setUser(null);
         setMembershipState(null);
+      },
+      updateNickname: async (nickname) => {
+        const next = await updateNicknameApi(nickname);
+        setUser((prev) => (prev ? { ...prev, name: next } : prev));
       },
       setMembership: (next) => setMembershipState(next),
       leaveGroup: () => setMembershipState(null),

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, Text } from 'react-native';
+import { Pressable, StyleSheet, Text } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import AuthScreen from '../screens/AuthScreen';
 import GroupScreen from '../screens/GroupScreen';
@@ -56,8 +56,10 @@ export default function RootNavigator() {
               onPress={() => navigation.navigate('Settings')}
               accessibilityRole="button"
               accessibilityLabel={t('settings.preferencesSection')}
+              hitSlop={12}
+              style={styles.gearButton}
             >
-              <Text style={{ color: colors.accent, fontSize: 22 }}>⚙︎</Text>
+              <Text style={[styles.gearIcon, { color: colors.accent }]}>⚙</Text>
             </Pressable>
           ),
         })}
@@ -70,3 +72,20 @@ export default function RootNavigator() {
     </Stack.Navigator>
   );
 }
+
+const styles = StyleSheet.create({
+  // Fixed-size, centred tap target so the gear sits in the middle and is easy
+  // to hit (the bare glyph alone has a tiny, off-centre touch area).
+  gearButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gearIcon: {
+    fontSize: 22,
+    lineHeight: 26,
+    textAlign: 'center',
+    textAlignVertical: 'center',
+  },
+});

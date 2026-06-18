@@ -163,10 +163,10 @@ describe('joinGroup', () => {
 
 describe('addDestination', () => {
   // Build a flexible chainable mock for the `itinerary_items` table:
-  // - the min-position read ends in .maybeSingle()
+  // - the edge-position read (max position) ends in .maybeSingle()
   // - .insert(...) resolves to `insertResult` and records its payload
   // - the getGroupState re-read awaits the chain directly (.then)
-  function itineraryTable(minPosition: number | null, insertResult: unknown) {
+  function itineraryTable(edgePosition: number | null, insertResult: unknown) {
     const obj: Record<string, unknown> = {};
     const self = () => obj;
     Object.assign(obj, {
@@ -176,7 +176,7 @@ describe('addDestination', () => {
       limit: self,
       maybeSingle: () =>
         Promise.resolve({
-          data: minPosition === null ? null : { position: minPosition },
+          data: edgePosition === null ? null : { position: edgePosition },
           error: null,
         }),
       insert: jest.fn(() => Promise.resolve(insertResult)),
@@ -221,7 +221,7 @@ describe('addDestination', () => {
     };
   }
 
-  it('inserts the new stop at the front (minPosition - 1) so it becomes next', async () => {
+  it('appends the new stop to the end (maxPosition + 1)', async () => {
     const itinerary = itineraryTable(2, { error: null });
     mockedFrom.mockImplementation(emptyGroupStateTables(itinerary));
 
@@ -237,11 +237,11 @@ describe('addDestination', () => {
       address: '台北市信義區',
       latitude: 25.034,
       longitude: 121.564,
-      position: 1, // 2 - 1, ahead of the current first stop
+      position: 3, // 2 + 1, after the current last stop
     });
   });
 
-  it('uses position -1 when the itinerary is empty', async () => {
+  it('uses position 0 when the itinerary is empty', async () => {
     const itinerary = itineraryTable(null, { error: null });
     mockedFrom.mockImplementation(emptyGroupStateTables(itinerary));
 
@@ -251,7 +251,7 @@ describe('addDestination', () => {
     });
 
     expect(itinerary.insert).toHaveBeenCalledWith(
-      expect.objectContaining({ position: -1, address: null }),
+      expect.objectContaining({ position: 0, address: null }),
     );
   });
 
