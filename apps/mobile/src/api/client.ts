@@ -339,6 +339,37 @@ export async function addDestination(
 }
 
 /**
+ * Delete a single itinerary stop, then re-pack the remaining stops so their
+ * `position` values stay gap-free (0,1,2…). Leader-only (RLS gates the DELETE),
+ * so a follower's call rejects with a 42501. Returns the refreshed state.
+ */
+export async function deleteDestination(
+  groupId: string,
+  destinationId: string,
+): Promise<GroupState> {
+  const { error } = await supabase
+    .from('itinerary_items')
+    .delete()
+    .eq('id', destinationId)
+    .eq('group_id', groupId);
+  if (error) throw new Error(error.message);
+
+  // Re-pack remaining positions so order stays gap-free.
+  const { data: rows, error: readError } = await supabase
+    .from('itinerary_items')
+    .select('id')
+    .eq('group_id', groupId)
+    .order('position', { ascending: true });
+  if (readError) throw new Error(readError.message);
+
+  const ids = (rows ?? []).map((r) => (r as { id: string }).id);
+  if (ids.length > 0) {
+    return reorderDestinations(groupId, ids);
+  }
+  return getGroupState(groupId);
+}
+
+/**
  * Persist a manual re-ordering of the itinerary. `orderedIds` is the list of
  * stop ids in their new order; each is written `position = index` so the order
  * is stable and gap-free. Leader-only (RLS gates `itinerary_items` UPDATE), so a

@@ -12,6 +12,8 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { createGroup, joinGroup } from '../api/client';
@@ -32,7 +34,7 @@ type Mode = 'choose' | 'create' | 'join';
  * "Enter group" to open the map.
  */
 export default function GroupScreen({ navigation }: Props) {
-  const { user, membership, setMembership, leaveGroup } = useSession();
+  const { user, membership, setMembership, leaveGroup, signOut } = useSession();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const { t } = useTranslation();
@@ -42,6 +44,29 @@ export default function GroupScreen({ navigation }: Props) {
   const [groupName, setGroupName] = useState('');
   const [joinCode, setJoinCode] = useState('');
   const [busy, setBusy] = useState(false);
+  const [codeCopied, setCodeCopied] = useState(false);
+
+  async function copyCode() {
+    if (!group) return;
+    await Clipboard.setStringAsync(group.inviteCode);
+    setCodeCopied(true);
+    setTimeout(() => setCodeCopied(false), 1500);
+  }
+
+  function confirmSignOut() {
+    confirmAction(
+      {
+        title: t('group.signOut'),
+        message: t('settings.signOutMsg'),
+        confirmLabel: t('group.signOut'),
+        destructive: true,
+      },
+      () => {
+        signOut();
+        navigation.reset({ index: 0, routes: [{ name: 'Auth' }] });
+      },
+    );
+  }
 
   const group: Group | null = membership?.group ?? null;
 
@@ -116,9 +141,24 @@ export default function GroupScreen({ navigation }: Props) {
         {group ? (
           <View style={styles.lobby}>
             <Text style={styles.label}>{t('group.codeLabel')}</Text>
-            <View style={styles.codeHero}>
+            <Pressable
+              style={styles.codeHero}
+              onPress={copyCode}
+              accessibilityRole="button"
+              accessibilityLabel={t('group.copyCode')}
+            >
               <Text style={styles.codeText}>{group.inviteCode}</Text>
-            </View>
+              <View style={styles.copyPill}>
+                <Ionicons
+                  name={codeCopied ? 'checkmark' : 'copy-outline'}
+                  size={16}
+                  color={colors.accent}
+                />
+                <Text style={styles.copyPillText}>
+                  {codeCopied ? t('group.copied') : t('group.copyCode')}
+                </Text>
+              </View>
+            </Pressable>
             <Text style={styles.roleLine}>
               {membership?.role === 'leader'
                 ? t('group.roleLeaderYou')
@@ -206,6 +246,17 @@ export default function GroupScreen({ navigation }: Props) {
             {mode === 'choose' && (
               <Text style={styles.hint}>{t('group.chooseHint')}</Text>
             )}
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.signOutBtn,
+                pressed && styles.ctaPressed,
+              ]}
+              onPress={confirmSignOut}
+              accessibilityRole="button"
+            >
+              <Text style={styles.signOutText}>{t('group.signOut')}</Text>
+            </Pressable>
           </>
         )}
       </ScrollView>
@@ -351,6 +402,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     borderColor: colors.accent,
     paddingVertical: spacing.xl,
     alignItems: 'center',
+    gap: spacing.md,
   },
   codeText: {
     fontSize: 40,
@@ -358,6 +410,26 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     letterSpacing: 10,
     color: colors.accent,
   },
+  copyPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.pill,
+    backgroundColor: colors.glass,
+  },
+  copyPillText: { fontSize: 13, fontWeight: '700', color: colors.accent },
+  signOutBtn: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    marginTop: spacing.sm,
+  },
+  signOutText: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
   roleLine: { fontSize: 15, fontWeight: '600', color: colors.textPrimary },
   hint: { fontSize: 14, color: colors.textSecondary, lineHeight: 20 },
 });

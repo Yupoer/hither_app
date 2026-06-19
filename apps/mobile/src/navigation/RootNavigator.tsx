@@ -1,5 +1,6 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { Pressable, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import AuthScreen from '../screens/AuthScreen';
 import GroupScreen from '../screens/GroupScreen';
@@ -23,8 +24,12 @@ export type RootStackParamList = {
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function RootNavigator() {
-  const { colors } = useTheme();
+  const { colors, themeName } = useTheme();
   const { t } = useTranslation();
+  // Frosted (UIBlurEffect) material behind the map header so it's translucent.
+  // UltraThin = the most see-through system material (map shows through clearly).
+  const headerBlur =
+    themeName === 'day' ? 'systemUltraThinMaterialLight' : 'systemUltraThinMaterialDark';
 
   return (
     <Stack.Navigator
@@ -50,7 +55,11 @@ export default function RootNavigator() {
         name="Map"
         component={MapScreen}
         options={({ navigation }) => ({
-          title: 'Hither',
+          title: '',
+          // Translucent frosted-glass header floating over the live map.
+          headerTransparent: true,
+          headerBlurEffect: headerBlur,
+          headerStyle: { backgroundColor: 'transparent' },
           headerRight: () => (
             <Pressable
               onPress={() => navigation.navigate('Settings')}
@@ -59,7 +68,7 @@ export default function RootNavigator() {
               hitSlop={12}
               style={styles.gearButton}
             >
-              <Text style={[styles.gearIcon, { color: colors.accent }]}>⚙</Text>
+              <Ionicons name="settings-sharp" size={22} color={colors.accent} />
             </Pressable>
           ),
         })}

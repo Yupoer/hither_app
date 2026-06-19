@@ -12,7 +12,13 @@
  */
 module.exports = (config) => ({
   type: 'widget',
-  name: 'HitherLiveActivity',
+  // NOTE: must NOT be 'HitherLiveActivity' — that name collides with the Expo
+  // module pod of the same name (modules/hither-live-activity), which made
+  // CocoaPods silently drop the module so `requireOptionalNativeModule(
+  // 'HitherLiveActivity')` returned null and no activity ever started. The
+  // widget renders any `Activity<HitherGroupAttributes>` regardless of its own
+  // target name, so a distinct name here is safe.
+  name: 'HitherActivityWidget',
   deploymentTarget: '16.2',
   // Live Activities require this Info.plist flag on the widget target.
   infoPlist: {

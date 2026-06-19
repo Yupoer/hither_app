@@ -18,6 +18,8 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useHeaderHeight } from '@react-navigation/elements';
+import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import GroupMap, { type GroupMapHandle } from '../components/GroupMap';
@@ -33,12 +35,23 @@ import {
   walkingEtaSeconds,
 } from '../utils/geo';
 import { location, liquidGlass, type MapRegion, type PlaceResult } from '../native';
-import { addDestination, setJourneyStatus, updateMyLocation } from '../api/client';
+import {
+  addDestination,
+  reorderDestinations,
+  setJourneyStatus,
+  updateMyLocation,
+} from '../api/client';
+import { confirmAction } from '../utils/confirm';
 import JourneyBanner from '../components/JourneyBanner';
 import type { Coordinates, Destination, MemberLocation } from '../types';
 import { radius, spacing, type Palette } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Map'>;
+
+// Dark, semi-transparent veil for the on-map glass banners so they stay
+// dark-toned and readable over a bright map (instead of washing out to white).
+// Still translucent → keeps the frosted-glass feel.
+const GLASS_DARK_VEIL = 'rgba(18, 22, 38, 0.55)';
 
 /**
  * Main screen. A live map of group members (pins) and the gathering points
@@ -52,6 +65,10 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Map'>;
  */
 export default function MapScreen({ route }: Props) {
   const insets = useSafeAreaInsets();
+  // The header is transparent (floats over the map), so its height is NOT
+  // subtracted from the content area — offset the FAB column past it manually,
+  // otherwise the search FAB sits under the header and taps hit the gear.
+  const headerHeight = useHeaderHeight();
   const { width: windowWidth } = useWindowDimensions();
   const { membership, user } = useSession();
   const { colors } = useTheme();
@@ -137,42 +154,122 @@ export default function MapScreen({ route }: Props) {
     [fromCoords],
   );
 
-  // --- Journey (leader start/pause) + Live Activity ------------------------
+  // --- Journey navigation (Google-Maps-style) + Live Activity --------------
+  // A journey targets ONE locked gathering point: starting navigation pins the
+  // current selection as `navTargetId`. Browsing the carousel afterwards only
+  // pans the map — it does NOT re-route the journey (that was the old jarring
+  // "instantly heading to stop 2" behaviour). Navigation ends explicitly
+  // (cancel) or automatically on arrival.
   const journeyStatus = state?.group.journeyStatus ?? 'paused';
   const journeyGoing = journeyStatus === 'going';
-  // The journey is "live" (banner + Live Activity) only when started AND there
-  // is a gathering point to head toward.
-  const journeyActive = journeyGoing && !!selectedDestination;
 
-  // Numeric distance/ETA to the selected gathering point, for the Live Activity.
+  const [navTargetId, setNavTargetId] = useState<string | null>(null);
+  const navTarget = useMemo<Destination | undefined>(
+    () => destinations.find((d) => d.id === navTargetId),
+    [destinations, navTargetId],
+  );
+
+  // Reconcile the local lock with the synced group status: if the journey is
+  // "going" but we have no locked target yet (e.g. after a relaunch), lock onto
+  // the current selection once. When the journey stops, drop the lock.
+  useEffect(() => {
+    if (journeyGoing && !navTargetId && selectedDestination) {
+      setNavTargetId(selectedDestination.id);
+    } else if (!journeyGoing && navTargetId) {
+      setNavTargetId(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [journeyGoing]);
+
+  // The journey is "live" (banner + Live Activity) only while going AND a
+  // locked gathering point exists.
+  const journeyActive = journeyGoing && !!navTarget;
+
+  // Numeric distance/ETA to the LOCKED target, for the Live Activity + arrival.
   const numericDistance =
-    fromCoords && selectedDestination
-      ? distanceMeters(fromCoords, selectedDestination.coordinates)
+    fromCoords && navTarget
+      ? distanceMeters(fromCoords, navTarget.coordinates)
       : undefined;
 
   useLiveActivity(journeyActive, {
     groupName: membership?.group.name ?? '',
-    gatheringTitle: selectedDestination?.title,
+    gatheringTitle: navTarget?.title,
     distanceMeters: numericDistance,
     etaSeconds:
       numericDistance != null ? walkingEtaSeconds(numericDistance) : undefined,
-    gatheringCoordinates: selectedDestination?.coordinates,
+    gatheringCoordinates: navTarget?.coordinates,
   });
 
   const [journeyBusy, setJourneyBusy] = useState(false);
-  // Leader toggles start/pause; followers follow along via realtime.
-  async function toggleJourney() {
-    if (!groupId || journeyBusy) return;
+
+  // Start navigating to the currently-selected gathering point (leader only).
+  async function startNavigation() {
+    if (!groupId || journeyBusy || !selectedDestination) return;
     setJourneyBusy(true);
+    setNavTargetId(selectedDestination.id);
     try {
-      await setJourneyStatus(groupId, journeyGoing ? 'paused' : 'going');
+      // Promote the chosen stop to the front of the itinerary: the stops that
+      // were ahead of it shift back by one to fill the gap (no order break).
+      // e.g. picking stop 2 makes it stop 1 and pushes the old stop 1 to 2.
+      if (selectedIndex > 0) {
+        const ids = destinations.map((d) => d.id);
+        const [moved] = ids.splice(selectedIndex, 1);
+        ids.unshift(moved);
+        await reorderDestinations(groupId, ids);
+        setSelectedIndex(0);
+      }
+      await setJourneyStatus(groupId, 'going');
       refresh();
     } catch {
+      setNavTargetId(null);
       Alert.alert(t('map.setFailedTitle'), t('map.journeyFailed'));
     } finally {
       setJourneyBusy(false);
     }
   }
+
+  // Stop the journey (manual cancel or automatic arrival).
+  const stopNavigation = useCallback(async () => {
+    if (!groupId) return;
+    setNavTargetId(null);
+    try {
+      await setJourneyStatus(groupId, 'paused');
+      refresh();
+    } catch {
+      Alert.alert(t('map.setFailedTitle'), t('map.journeyFailed'));
+    }
+  }, [groupId, refresh, t]);
+
+  // Auto-arrival: once the leader gets within ~30 m of the locked target, end
+  // the journey automatically and announce arrival.
+  const ARRIVAL_RADIUS_M = 30;
+  const arrivalFiredRef = useRef(false);
+  useEffect(() => {
+    if (!journeyActive) {
+      arrivalFiredRef.current = false;
+      return;
+    }
+    if (
+      isLeader &&
+      !arrivalFiredRef.current &&
+      numericDistance != null &&
+      numericDistance <= ARRIVAL_RADIUS_M
+    ) {
+      arrivalFiredRef.current = true;
+      const title = navTarget?.title ?? '';
+      // Near the target: ask whether to end this destination trip instead of
+      // silently auto-ending. "繼續前往" leaves the journey running.
+      confirmAction(
+        {
+          title: t('map.arriveTitle'),
+          message: t('map.arriveBody', { title }),
+          confirmLabel: t('map.arriveConfirm'),
+          cancelLabel: t('map.arriveDismiss'),
+        },
+        () => void stopNavigation(),
+      );
+    }
+  }, [journeyActive, isLeader, numericDistance, navTarget?.title, stopNavigation, t]);
 
   // "Locate me": pull a fresh fix and center the map on the user's own
   // position (falling back to the last known one if GPS is unavailable).
@@ -245,7 +342,7 @@ export default function MapScreen({ route }: Props) {
       />
 
       {/* Right-side action column. */}
-      <View style={[styles.fabColumn, { top: insets.top + spacing.sm }]}>
+      <View style={[styles.fabColumn, { top: headerHeight + spacing.sm }]}>
         {/* Search a place to set the next gathering point (leader only). */}
         {isLeader && (
           <liquidGlass.GlassView style={styles.fab}>
@@ -255,26 +352,7 @@ export default function MapScreen({ route }: Props) {
               accessibilityRole="button"
               accessibilityLabel={t('map.searchA11y')}
             >
-              <Text style={styles.fabIcon}>🔍</Text>
-            </Pressable>
-          </liquidGlass.GlassView>
-        )}
-
-        {/* Start / pause heading to the gathering point (leader only). */}
-        {isLeader && (
-          <liquidGlass.GlassView
-            style={[styles.fab, journeyGoing && styles.fabActive]}
-          >
-            <Pressable
-              style={styles.fabPressable}
-              onPress={toggleJourney}
-              disabled={journeyBusy}
-              accessibilityRole="button"
-              accessibilityLabel={
-                journeyGoing ? t('map.pauseA11y') : t('map.startA11y')
-              }
-            >
-              <Text style={styles.fabIcon}>{journeyGoing ? '⏸️' : '▶️'}</Text>
+              <Ionicons name="search" size={20} color={colors.textPrimary} />
             </Pressable>
           </liquidGlass.GlassView>
         )}
@@ -287,25 +365,32 @@ export default function MapScreen({ route }: Props) {
             accessibilityRole="button"
             accessibilityLabel={t('map.locateA11y')}
           >
-            <Text style={styles.fabIcon}>📍</Text>
+            <Ionicons name="locate" size={20} color={colors.textPrimary} />
           </Pressable>
         </liquidGlass.GlassView>
       </View>
 
       {/* Bottom: swipeable carousel of gathering points (lantern follows). */}
       <View style={[styles.carouselWrap, { bottom: insets.bottom + spacing.lg }]}>
-        {/* Journey banner mirrors the iOS Live Activity while going. */}
-        {journeyActive && selectedDestination && (
+        {/* Journey banner mirrors the iOS Live Activity while going. Shows the
+            LOCKED target (not the browsed carousel page) and a cancel button. */}
+        {journeyActive && navTarget && (
           <View style={{ width: windowWidth - spacing.lg * 2 }}>
             <JourneyBanner
-              gatheringTitle={selectedDestination.title}
-              distanceEta={distanceFor(selectedDestination)}
+              gatheringTitle={navTarget.title}
+              distanceEta={distanceFor(navTarget)}
               colors={colors}
+              tintColor={GLASS_DARK_VEIL}
+              onCancel={isLeader ? stopNavigation : undefined}
+              cancelLabel={t('map.navCancel')}
             />
           </View>
         )}
         {destinations.length === 0 ? (
-          <liquidGlass.GlassView style={[styles.card, { width: windowWidth - spacing.lg * 2 }]}>
+          <liquidGlass.GlassView
+            tintColor={GLASS_DARK_VEIL}
+            style={[styles.card, { width: windowWidth - spacing.lg * 2 }]}
+          >
             <Text style={styles.cardLabel}>{t('map.nextLabel')}</Text>
             <Text style={styles.cardMeta}>
               {isLeader ? t('map.noDestinationLeader') : t('map.noDestination')}
@@ -326,7 +411,7 @@ export default function MapScreen({ route }: Props) {
                   key={dest.id}
                   style={[styles.page, { width: windowWidth }]}
                 >
-                  <liquidGlass.GlassView style={styles.card}>
+                  <liquidGlass.GlassView tintColor={GLASS_DARK_VEIL} style={styles.card}>
                     <Text style={styles.cardLabel}>
                       {t('map.nextLabel')} ·{' '}
                       {t('map.destinationCounter', {
@@ -356,6 +441,24 @@ export default function MapScreen({ route }: Props) {
                   />
                 ))}
               </View>
+            )}
+
+            {/* Start navigating to the selected stop (leader only, when idle).
+                Moved here from the top-right FAB column. */}
+            {isLeader && !journeyActive && selectedDestination && (
+              <Pressable
+                style={[
+                  styles.startButton,
+                  { width: windowWidth - spacing.lg * 2 },
+                  journeyBusy && styles.startButtonBusy,
+                ]}
+                onPress={startNavigation}
+                disabled={journeyBusy}
+                accessibilityRole="button"
+                accessibilityLabel={t('map.navStartA11y')}
+              >
+                <Text style={styles.startButtonText}>{t('map.navStart')}</Text>
+              </Pressable>
             )}
           </>
         )}
@@ -391,8 +494,6 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     height: 44,
     borderRadius: 22,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: colors.border,
   },
   fabActive: {
     borderColor: colors.accent,
@@ -418,8 +519,6 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   card: {
     overflow: 'hidden',
     borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.lg,
     paddingBottom: spacing.lg,
@@ -431,8 +530,10 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     letterSpacing: 1,
     color: colors.accent,
   },
-  cardTitle: { fontSize: 20, fontWeight: '700', color: colors.textPrimary },
-  cardMeta: { fontSize: 15, color: colors.textSecondary },
+  // Light text: the card sits on the forced-dark glass veil (GLASS_DARK_VEIL)
+  // regardless of theme, so it must read against a dark surface.
+  cardTitle: { fontSize: 20, fontWeight: '700', color: '#F5F7FC' },
+  cardMeta: { fontSize: 15, color: 'rgba(255,255,255,0.72)' },
   dots: {
     flexDirection: 'row',
     gap: spacing.xs,
@@ -447,5 +548,18 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   dotActive: {
     backgroundColor: colors.accent,
     width: 18,
+  },
+  startButton: {
+    backgroundColor: colors.accent,
+    borderRadius: radius.pill,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  startButtonBusy: { opacity: 0.6 },
+  startButtonText: {
+    color: colors.accentText,
+    fontSize: 16,
+    fontWeight: '700',
   },
 });

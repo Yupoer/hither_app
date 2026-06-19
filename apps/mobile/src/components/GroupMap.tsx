@@ -6,6 +6,7 @@ import React, {
   useRef,
 } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, type Region } from 'react-native-maps';
 import type { Coordinates, Destination, MemberLocation } from '../types';
 import { useTheme } from '../state/PreferencesContext';
@@ -48,8 +49,12 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
 ) {
   const mapRef = useRef<MapView | null>(null);
   const centeredRef = useRef(false);
-  const { colors } = useTheme();
+  const { colors, themeName } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+
+  // Match the map chrome to the app theme: the light "day" palette gets the
+  // light Apple Maps style; the dark "night"/"dusk" palettes get the dark one.
+  const mapInterfaceStyle: 'light' | 'dark' = themeName === 'day' ? 'light' : 'dark';
 
   useImperativeHandle(
     ref,
@@ -76,9 +81,14 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
 
   return (
     <MapView
+      // Remount when the theme's light/dark changes so Apple Maps picks up the
+      // new `userInterfaceStyle` from a fresh mount (the prop alone is not
+      // re-applied to an already-rendered map under the new architecture).
+      key={mapInterfaceStyle}
       ref={mapRef}
       style={StyleSheet.absoluteFill}
       initialRegion={gathering ? regionFor(gathering.coordinates) : undefined}
+      userInterfaceStyle={mapInterfaceStyle}
       showsUserLocation
       showsCompass
     >
@@ -89,7 +99,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
           description="下一個集合點 · gathering point"
         >
           <View style={styles.lanternMarker}>
-            <Text style={styles.lanternEmoji}>🏮</Text>
+            <Ionicons name="location" size={40} color={colors.accent} />
           </View>
         </Marker>
       )}

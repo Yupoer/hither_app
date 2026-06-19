@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { liquidGlass } from '../native';
 import { useTranslation } from '../i18n';
 import { radius, spacing, type Palette } from '../theme';
@@ -15,16 +15,24 @@ export default function JourneyBanner({
   gatheringTitle,
   distanceEta,
   colors,
+  tintColor,
+  onCancel,
+  cancelLabel,
 }: {
   gatheringTitle: string;
   distanceEta: string | null;
   colors: Palette;
+  /** Optional dark glass veil so the banner reads dark-toned over the map. */
+  tintColor?: string;
+  /** When provided, renders a cancel/stop button (leader only). */
+  onCancel?: () => void;
+  cancelLabel?: string;
 }) {
   const { t } = useTranslation();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   return (
-    <liquidGlass.GlassView style={styles.banner}>
+    <liquidGlass.GlassView tintColor={tintColor} style={styles.banner}>
       <View style={styles.dot} />
       <View style={styles.texts}>
         <Text style={styles.status}>{t('map.bannerGoing')}</Text>
@@ -33,6 +41,17 @@ export default function JourneyBanner({
         </Text>
       </View>
       {distanceEta ? <Text style={styles.meta}>{distanceEta}</Text> : null}
+      {onCancel ? (
+        <Pressable
+          style={styles.cancel}
+          onPress={onCancel}
+          accessibilityRole="button"
+          accessibilityLabel={cancelLabel}
+          hitSlop={8}
+        >
+          <Text style={styles.cancelText}>{cancelLabel}</Text>
+        </Pressable>
+      ) : null}
     </liquidGlass.GlassView>
   );
 }
@@ -45,8 +64,6 @@ const makeStyles = (colors: Palette) =>
       gap: spacing.md,
       overflow: 'hidden',
       borderRadius: radius.lg,
-      borderWidth: 1,
-      borderColor: colors.accent,
       paddingHorizontal: spacing.lg,
       paddingVertical: spacing.md,
     },
@@ -63,6 +80,15 @@ const makeStyles = (colors: Palette) =>
       letterSpacing: 1,
       color: colors.accent,
     },
-    title: { fontSize: 16, fontWeight: '700', color: colors.textPrimary },
-    meta: { fontSize: 13, color: colors.textSecondary },
+    // Light text: banner sits on the forced-dark glass veil over the map.
+    title: { fontSize: 16, fontWeight: '700', color: '#F5F7FC' },
+    meta: { fontSize: 13, color: 'rgba(255,255,255,0.72)' },
+    cancel: {
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      borderColor: colors.danger,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.xs,
+    },
+    cancelText: { color: colors.danger, fontSize: 13, fontWeight: '700' },
   });

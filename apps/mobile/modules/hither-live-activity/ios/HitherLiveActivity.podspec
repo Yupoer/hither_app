@@ -5,7 +5,12 @@ Pod::Spec.new do |s|
   s.description    = 'Thin Expo module backing src/native/liveActivity.ts on iOS.'
   s.author         = ''
   s.homepage       = 'https://hither.app'
-  s.platforms      = { :ios => '16.1' }
+  # Must be <= the app's iOS deployment target (15.1) or expo-modules-autolinking
+  # treats the module as "not supporting iOS" and silently drops the pod — which
+  # made requireOptionalNativeModule('HitherLiveActivity') return null and no
+  # Live Activity ever started. All ActivityKit calls are guarded at runtime with
+  # `#available(iOS 16.2, *)`, so a lower deployment floor is safe here.
+  s.platforms      = { :ios => '15.1' }
   s.source         = { git: '' }
   s.static_framework = true
 

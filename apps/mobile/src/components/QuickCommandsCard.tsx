@@ -1,14 +1,35 @@
 import React, { useMemo, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { sendCommand } from '../api/client';
+import { notifications } from '../native';
 import { useTranslation } from '../i18n';
 import {
-  COMMAND_ICON,
   FOLLOWER_COMMANDS,
   LEADER_COMMANDS,
   type CommandType,
 } from '../types';
 import { radius, spacing, type Palette } from '../theme';
+
+/**
+ * Vector-icon per command (replaces the old emoji glyphs, which rendered as "?"
+ * tofu on some devices). Names are from Ionicons.
+ */
+const COMMAND_ICON: Record<CommandType, keyof typeof Ionicons.glyphMap> = {
+  gather: 'people',
+  find_gathering: 'location',
+  depart: 'walk',
+  rest: 'cafe',
+  be_careful: 'warning',
+  go_left: 'arrow-back',
+  go_right: 'arrow-forward',
+  stop: 'hand-left',
+  hurry_up: 'flash',
+  need_restroom: 'body',
+  need_break: 'pause',
+  need_help: 'help-buoy',
+  found_something: 'search',
+};
 
 /**
  * Quick-notify grid in Settings. Tapping a button inserts a `command` row,
@@ -40,8 +61,21 @@ export default function QuickCommandsCard({
   async function send(type: CommandType) {
     if (sending) return;
     setSending(type);
+    const label = t(`command.${type}` as const);
     try {
-      await sendCommand(groupId, type, t(`command.${type}` as const));
+      // Self-notify: fire a local notification on THIS device immediately, so a
+      // tap is visible right away ("notify myself" simulation) without waiting
+      // on the realtime → APNs round-trip (the sender is otherwise skipped).
+      await notifications.requestPermission();
+      await notifications.scheduleLocalNotification({
+        title: isLeader
+          ? t('notif.leaderTitle', { label })
+          : t('notif.memberTitle', { label }),
+        body: label,
+        data: { type, groupId, selfNotify: true },
+      });
+      // Still propagate to the rest of the group (best-effort).
+      await sendCommand(groupId, type, label);
       Alert.alert(t('command.sent'));
     } catch {
       Alert.alert(t('command.sendFailed'));
@@ -65,7 +99,11 @@ export default function QuickCommandsCard({
             accessibilityRole="button"
             accessibilityLabel={t(`command.${type}` as const)}
           >
-            <Text style={styles.icon}>{COMMAND_ICON[type]}</Text>
+            <Ionicons
+              name={COMMAND_ICON[type]}
+              size={22}
+              color={colors.textPrimary}
+            />
             <Text style={styles.label}>{t(`command.${type}` as const)}</Text>
           </Pressable>
         ))}

@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useSession } from '../state/SessionContext';
@@ -17,7 +18,8 @@ import {
   useTheme,
   type Language,
 } from '../state/PreferencesContext';
-import { getGroupState, reorderDestinations } from '../api/client';
+import { deleteDestination, getGroupState, reorderDestinations } from '../api/client';
+import * as Clipboard from 'expo-clipboard';
 import DestinationReorderList from '../components/DestinationReorderList';
 import QuickCommandsCard from '../components/QuickCommandsCard';
 import NotificationPreferencesCard from '../components/NotificationPreferencesCard';
@@ -88,6 +90,10 @@ export default function SettingsScreen({ navigation }: Props) {
   const memberCount = groupState?.members.length ?? null;
   const destinations = groupState?.destinations ?? [];
 
+  // Freeze page scroll while a gathering point is being dragged so the two
+  // gestures never fight (issue: page scrolled while dragging a row).
+  const [scrollEnabled, setScrollEnabled] = useState(true);
+
   // --- Nickname editing -----------------------------------------------------
   const [editingNickname, setEditingNickname] = useState(false);
   const [nicknameDraft, setNicknameDraft] = useState('');
@@ -130,6 +136,39 @@ export default function SettingsScreen({ navigation }: Props) {
     [groupId, loadGroupState, t],
   );
 
+  const handleDelete = useCallback(
+    (id: string) => {
+      if (!groupId) return;
+      const target = destinations.find((d) => d.id === id);
+      confirmAction(
+        {
+          title: t('settings.deleteTitle'),
+          message: t('settings.deleteMsg', { title: target?.title ?? '' }),
+          confirmLabel: t('settings.deleteConfirm'),
+          destructive: true,
+        },
+        async () => {
+          try {
+            setGroupState(await deleteDestination(groupId, id));
+          } catch {
+            Alert.alert(t('settings.deleteFailed'));
+            void loadGroupState();
+          }
+        },
+      );
+    },
+    [groupId, destinations, loadGroupState, t],
+  );
+
+  const [codeCopied, setCodeCopied] = useState(false);
+  async function copyCode() {
+    const code = membership?.group.inviteCode;
+    if (!code) return;
+    await Clipboard.setStringAsync(code);
+    setCodeCopied(true);
+    setTimeout(() => setCodeCopied(false), 1500);
+  }
+
   function confirmLeave() {
     confirmAction(
       {
@@ -140,7 +179,9 @@ export default function SettingsScreen({ navigation }: Props) {
       },
       () => {
         leaveGroup();
-        navigation.navigate('Group');
+        // Reset the stack so the left-side back button can't return to the map /
+        // settings of the group we just left (group content must be unreachable).
+        navigation.reset({ index: 0, routes: [{ name: 'Group' }] });
       },
     );
   }
@@ -165,6 +206,7 @@ export default function SettingsScreen({ navigation }: Props) {
   return (
     <ScrollView
       style={styles.flex}
+      scrollEnabled={scrollEnabled}
       contentContainerStyle={[
         styles.container,
         { paddingBottom: insets.bottom + spacing.xl },
@@ -251,9 +293,11 @@ export default function SettingsScreen({ navigation }: Props) {
             destinations={destinations}
             canReorder={!!isLeader}
             onReorder={handleReorder}
+            onDelete={isLeader ? handleDelete : undefined}
             colors={colors}
             emptyLabel={t('settings.noDestinations')}
             dragHint={t('settings.dragHint')}
+            onDragActiveChange={(active) => setScrollEnabled(!active)}
           />
         </>
       )}
@@ -281,7 +325,27 @@ export default function SettingsScreen({ navigation }: Props) {
           label={t('settings.group')}
           value={membership?.group.name ?? t('settings.notInGroup')}
         />
-        <Row label={t('settings.code')} value={membership?.group.inviteCode ?? dash} />
+        <View style={styles.row}>
+          <Text style={styles.rowLabel}>{t('settings.code')}</Text>
+          {membership?.group.inviteCode ? (
+            <Pressable
+              style={styles.copyGroup}
+              onPress={copyCode}
+              accessibilityRole="button"
+              accessibilityLabel={t('settings.copyCode')}
+              hitSlop={8}
+            >
+              <Text style={styles.rowValue}>{membership.group.inviteCode}</Text>
+              <Ionicons
+                name={codeCopied ? 'checkmark' : 'copy-outline'}
+                size={18}
+                color={colors.accent}
+              />
+            </Pressable>
+          ) : (
+            <Text style={styles.rowValue}>{dash}</Text>
+          )}
+        </View>
         <Row
           label={t('settings.members')}
           value={
@@ -303,12 +367,22 @@ export default function SettingsScreen({ navigation }: Props) {
       </View>
 
       {membership && (
-        <Pressable style={styles.dangerBtn} onPress={confirmLeave}>
+        <Pressable
+          style={styles.dangerBtn}
+          onPress={confirmLeave}
+          accessibilityRole="button"
+          accessibilityLabel={t('settings.leave')}
+        >
           <Text style={styles.dangerText}>{t('settings.leave')}</Text>
         </Pressable>
       )}
 
-      <Pressable style={styles.dangerBtn} onPress={confirmSignOut}>
+      <Pressable
+        style={styles.dangerBtn}
+        onPress={confirmSignOut}
+        accessibilityRole="button"
+        accessibilityLabel={t('settings.signOut')}
+      >
         <Text style={styles.dangerText}>{t('settings.signOut')}</Text>
       </Pressable>
     </ScrollView>
@@ -390,6 +464,11 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     textAlign: 'right',
+  },
+  copyGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   editGroup: {
     flexDirection: 'row',
