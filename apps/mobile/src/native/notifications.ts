@@ -31,6 +31,18 @@ export interface LocalNotificationInput {
 
 export type NotificationSubscription = { remove: () => void };
 
+// Foreground presentation: without a handler, iOS suppresses notifications
+// while the app is open. The interim local-notification flow (realtime event ->
+// local notification) needs them visible in-app too, so always show a banner.
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
 /** Request notification permission. Returns true if granted. */
 export async function requestPermission(): Promise<boolean> {
   const { status } = await Notifications.requestPermissionsAsync();

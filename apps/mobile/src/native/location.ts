@@ -80,7 +80,11 @@ export async function getCurrentLocation(): Promise<LocationSample | null> {
   // Prefer the custom native module (precise/background-capable) when built.
   if (HitherLocation) {
     try {
-      return await HitherLocation.getCurrentLocation();
+      const sample = await HitherLocation.getCurrentLocation();
+      if (sample) {
+        return sample;
+      }
+      // null => native module not wired yet; fall through to expo-location
     } catch {
       // fall through to the Expo implementation
     }

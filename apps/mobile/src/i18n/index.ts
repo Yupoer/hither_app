@@ -130,6 +130,16 @@ const zh = {
   'command.sent': '已通知大家',
   'command.sendFailed': '通知傳送失敗，請再試一次。',
 
+  // Local notification copy (received-side)
+  'notif.addGatheringTitle': '新的集合點',
+  'notif.addGatheringBody': '集合點：{title}',
+  'notif.leaderTitle': '隊長：{label}',
+  'notif.memberTitle': '成員：{label}',
+  'notif.journeyGoingTitle': '出發囉',
+  'notif.journeyGoingBody': '隊長已開始前往集合點',
+  'notif.journeyPausedTitle': '暫停',
+  'notif.journeyPausedBody': '隊長已暫停前往集合點',
+
   // Settings · quick notifications + per-category toggles
   'settings.quickSection': '快捷通知',
   'settings.quickHintLeader': '點一下即時通知所有成員。',
@@ -260,6 +270,15 @@ const en: Record<keyof typeof zh, string> = {
   'command.found_something': 'Found something',
   'command.sent': 'Everyone notified',
   'command.sendFailed': "Couldn't send the notification, please try again.",
+
+  'notif.addGatheringTitle': 'New gathering point',
+  'notif.addGatheringBody': 'Gathering point: {title}',
+  'notif.leaderTitle': 'Leader: {label}',
+  'notif.memberTitle': 'Member: {label}',
+  'notif.journeyGoingTitle': "Let's go",
+  'notif.journeyGoingBody': 'The leader has started heading to the gathering point',
+  'notif.journeyPausedTitle': 'Paused',
+  'notif.journeyPausedBody': 'The leader paused heading to the gathering point',
 
   'settings.quickSection': 'Quick notify',
   'settings.quickHintLeader': 'Tap to instantly notify all members.',

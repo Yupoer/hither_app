@@ -135,6 +135,12 @@ grant select, insert, update on public.notification_preferences to authenticated
 alter publication supabase_realtime add table public.commands;
 alter publication supabase_realtime add table public.groups;
 
+-- REPLICA IDENTITY FULL on groups so realtime UPDATE payloads carry the OLD row
+-- (not just the PK). The client local-notification listener compares
+-- old.journey_status vs new.journey_status to fire a notification only on an
+-- actual start/pause change.
+alter table public.groups replica identity full;
+
 -- ============================================================
 -- 推播觸發（pg_net -> Edge Function send-push）
 --

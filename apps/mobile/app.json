@@ -11,7 +11,14 @@
       "supportsTablet": true,
       "bundleIdentifier": "app.hither.mobile",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Hither 需要你的位置，才能在地圖上顯示你與下一個集合點的距離。"
+        "NSLocationWhenInUseUsageDescription": "Hither 需要你的位置，才能在地圖上顯示你與下一個集合點的距離。",
+        "NSSupportsLiveActivities": true,
+        "UIBackgroundModes": [
+          "remote-notification"
+        ]
+      },
+      "entitlements": {
+        "aps-environment": "development"
       }
     },
     "android": {
@@ -28,7 +35,8 @@
           "locationWhenInUsePermission": "Hither 需要你的位置，才能在地圖上顯示你與下一個集合點的距離。"
         }
       ],
-      "expo-notifications"
+      "expo-notifications",
+      "@bacons/apple-targets"
     ]
   }
 }
