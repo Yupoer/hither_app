@@ -7,6 +7,9 @@ import Foundation
 // so the two definitions MUST stay byte-for-byte equivalent in shape. If you
 // edit one, edit the other.
 
+// Keep in sync with the module copy: `@available(iOS 16.1, *)` gates the
+// ActivityKit-backed type so the module pod compiles to the app's 15.1 floor.
+@available(iOS 16.1, *)
 public struct HitherGroupAttributes: ActivityAttributes {
   public struct ContentState: Codable, Hashable {
     public var gatheringTitle: String?

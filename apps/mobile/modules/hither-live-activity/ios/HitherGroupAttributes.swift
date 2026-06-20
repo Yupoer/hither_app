@@ -10,6 +10,12 @@ import Foundation
 // (see apps/mobile/targets/live-activity); keep the shape in lockstep with the
 // JS `GroupActivityState` in src/native/liveActivity.ts.
 
+// `ActivityAttributes` ships in ActivityKit (iOS 16.1+). Marking the type
+// available keeps its 16.x API surface properly gated, so this module's pod
+// still compiles down to the app's iOS 15.1 deployment floor instead of
+// silently demanding 16.2 (which broke `import HitherLiveActivity` in the app
+// target and failed the whole build, so no Live Activity ever appeared).
+@available(iOS 16.1, *)
 public struct HitherGroupAttributes: ActivityAttributes {
   public struct ContentState: Codable, Hashable {
     public var gatheringTitle: String?
