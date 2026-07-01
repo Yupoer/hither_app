@@ -8,170 +8,159 @@ import React, {
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
+  TextInput,
   useWindowDimensions,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useHeaderHeight } from '@react-navigation/elements';
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import GroupMap, { type GroupMapHandle } from '../components/GroupMap';
 import DestinationSearch from '../components/DestinationSearch';
+import DestinationReorderList from '../components/DestinationReorderList';
+import NotificationPreferencesCard from '../components/NotificationPreferencesCard';
+import QuickCommandsCard from '../components/QuickCommandsCard';
+import BottomSheet from '../components/BottomSheet';
+import OverlaySheet from '../components/OverlaySheet';
+import DynamicIslandView from '../components/DynamicIslandView';
+import CrookIcon from '../components/CrookIcon';
 import { useSession } from '../state/SessionContext';
-import { useTheme } from '../state/PreferencesContext';
+import { usePreferences, useTheme, type Language } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
 import { useGroupState } from '../state/useGroupState';
 import { useLiveActivity } from '../state/useLiveActivity';
 import {
-  distanceEtaLabel,
   distanceMeters,
+  formatDistance,
   walkingEtaSeconds,
 } from '../utils/geo';
-import { location, liquidGlass, type MapRegion, type PlaceResult } from '../native';
+import { location, type MapRegion, type PlaceResult } from '../native';
 import {
   addDestination,
+  deleteDestination,
   reorderDestinations,
   setJourneyStatus,
   updateMyLocation,
 } from '../api/client';
 import { confirmAction } from '../utils/confirm';
-import JourneyBanner from '../components/JourneyBanner';
 import type { Coordinates, Destination, MemberLocation } from '../types';
-import { radius, spacing, type Palette } from '../theme';
+import { themes, THEME_ORDER, type ThemeName } from '../theme';
+import { glass, accentMix, memberColor, DETENTS } from '../glass';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Map'>;
 
-// Dark, semi-transparent veil for the on-map glass banners so they stay
-// dark-toned and readable over a bright map (instead of washing out to white).
-// Still translucent → keeps the frosted-glass feel.
-const GLASS_DARK_VEIL = 'rgba(18, 22, 38, 0.55)';
+const ARRIVAL_RADIUS_M = 30;
+/** Nominal walk that reads as ~"just started" for the progress bar. */
+const PROGRESS_REF_M = 1500;
+
+/** Short ETA like the design's "4 min" / "now" / "2 hr". */
+function shortEta(seconds: number): string {
+  const m = Math.round(seconds / 60);
+  if (m < 1) return 'now';
+  if (m < 60) return `${m} min`;
+  return `${Math.floor(m / 60)} hr`;
+}
 
 /**
- * Main screen. A live map of group members (pins) and the gathering points
- * (lantern). The bottom card is a horizontally swipeable carousel of every
- * gathering point: swipe right for the next stop, left for the previous (and it
- * stops at both ends). Swiping moves the lantern and recenters the map on the
- * selected point. Group state refreshes via `useGroupState`; the map itself
- * lives in the platform-split `GroupMap` component.
- *
- * Group code / member count moved into Settings (the gear in the header).
+ * The whole app: a live map with an Apple-Maps pull-up glass sheet. Peek shows a
+ * search bar + the floating gathering-point carousel; drag up for the group,
+ * flock, gathering points and quick commands. Search / route-reorder / settings
+ * open as stacked overlays. The in-app Dynamic Island mirrors the Live Activity.
  */
-export default function MapScreen({ route }: Props) {
+export default function MapScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
-  // The header is transparent (floats over the map), so its height is NOT
-  // subtracted from the content area — offset the FAB column past it manually,
-  // otherwise the search FAB sits under the header and taps hit the gear.
-  const headerHeight = useHeaderHeight();
-  const { width: windowWidth } = useWindowDimensions();
-  const { membership, user } = useSession();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const { membership, user, updateNickname, leaveGroup, signOut } = useSession();
+  const { language, themeName, setLanguage, setThemeName } = usePreferences();
   const { colors } = useTheme();
+  const accent = colors.accent;
   const { t } = useTranslation();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const styles = useMemo(() => makeStyles(accent), [accent]);
+  // Embedded themed components (reorder list, notifications, commands) always
+  // render on the dark glass overlay — force the night palette so they stay dark.
+  const dark = themes.night;
 
-  // Prefer the route param; fall back to the session's current group.
   const groupId = route.params?.groupId ?? membership?.group.id ?? null;
+  const group = membership?.group ?? null;
+  const isLeader = membership?.role === 'leader';
   const { state, loading, refresh } = useGroupState(groupId);
 
   const mapRef = useRef<GroupMapHandle | null>(null);
   const carouselRef = useRef<ScrollView | null>(null);
 
-  // Only the leader can set the group's next gathering point.
-  const isLeader = membership?.role === 'leader';
+  const members = state?.members ?? [];
+  const destinations: Destination[] = state?.destinations ?? [];
+
+  // --- Sheet / overlay / island UI state -----------------------------------
+  const detents = useMemo(() => {
+    const peek = 92 + insets.bottom;
+    const full = Math.min(DETENTS.full, windowHeight - insets.top - 8);
+    const mid = Math.round(full * 0.56);
+    return [peek, mid, full];
+  }, [insets.bottom, insets.top, windowHeight]);
+  const heightAnim = useRef(new Animated.Value(detents[0])).current;
+  const [detent, setDetent] = useState(0);
+  const [islandOpen, setIslandOpen] = useState(false);
+  const [overlay, setOverlay] = useState<null | 'route' | 'settings'>(null);
   const [searchVisible, setSearchVisible] = useState(false);
 
-  // Real device GPS, via the native boundary (Expo Go: expo-location).
+  // --- Device GPS ----------------------------------------------------------
   const [deviceCoords, setDeviceCoords] = useState<Coordinates | null>(null);
-
   const refreshDeviceLocation = useCallback(async (): Promise<Coordinates | null> => {
     const fix = await location.getCurrentLocation();
     if (fix) {
       setDeviceCoords(fix.coordinates);
-      // Push our position so the rest of the group can see it, backed by the
-      // Supabase `member_locations` table (Phase S). Needs an active group.
-      if (groupId) {
-        void updateMyLocation(fix.coordinates, groupId);
-      }
+      if (groupId) void updateMyLocation(fix.coordinates, groupId);
       return fix.coordinates;
     }
     return null;
   }, [groupId]);
-
   useEffect(() => {
     void refreshDeviceLocation();
   }, [refreshDeviceLocation]);
 
-  const members = state?.members ?? [];
-  const destinations: Destination[] = state?.destinations ?? [];
-
-  // Which gathering point the carousel is showing (and where the lantern is).
+  // --- Carousel selection ---------------------------------------------------
   const [selectedIndex, setSelectedIndex] = useState(0);
-
-  // Keep the selection valid as the itinerary changes (stops added/removed) and
-  // keep the carousel scrolled to the selected page.
   useEffect(() => {
     const clamped =
-      destinations.length === 0
-        ? 0
-        : Math.min(selectedIndex, destinations.length - 1);
-    if (clamped !== selectedIndex) {
-      setSelectedIndex(clamped);
-    }
+      destinations.length === 0 ? 0 : Math.min(selectedIndex, destinations.length - 1);
+    if (clamped !== selectedIndex) setSelectedIndex(clamped);
     carouselRef.current?.scrollTo({ x: clamped * windowWidth, animated: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [destinations.length, windowWidth]);
 
   const selectedDestination: Destination | undefined = destinations[selectedIndex];
-
-  // Move the lantern / map camera onto the selected gathering point.
   useEffect(() => {
-    if (selectedDestination) {
-      mapRef.current?.centerOn(selectedDestination.coordinates);
-    }
+    if (selectedDestination) mapRef.current?.centerOn(selectedDestination.coordinates);
   }, [selectedDestination?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Measure distance/ETA from the real device position when we have it,
-  // else fall back to the matching member, then the leader.
-  const reference = useMemo<MemberLocation | undefined>(() => {
-    return (
+  const reference = useMemo<MemberLocation | undefined>(
+    () =>
       members.find((m) => m.userId === user?.id) ??
       members.find((m) => m.role === 'leader') ??
-      members[0]
-    );
-  }, [members, user?.id]);
-
+      members[0],
+    [members, user?.id],
+  );
   const fromCoords = deviceCoords ?? reference?.coordinates;
 
-  const distanceFor = useCallback(
-    (dest: Destination): string | null =>
-      fromCoords ? distanceEtaLabel(fromCoords, dest.coordinates) : null,
-    [fromCoords],
-  );
-
-  // --- Journey navigation (Google-Maps-style) + Live Activity --------------
-  // A journey targets ONE locked gathering point: starting navigation pins the
-  // current selection as `navTargetId`. Browsing the carousel afterwards only
-  // pans the map — it does NOT re-route the journey (that was the old jarring
-  // "instantly heading to stop 2" behaviour). Navigation ends explicitly
-  // (cancel) or automatically on arrival.
+  // --- Journey navigation + Live Activity ----------------------------------
   const journeyStatus = state?.group.journeyStatus ?? 'paused';
   const journeyGoing = journeyStatus === 'going';
-
   const [navTargetId, setNavTargetId] = useState<string | null>(null);
   const navTarget = useMemo<Destination | undefined>(
     () => destinations.find((d) => d.id === navTargetId),
     [destinations, navTargetId],
   );
-
-  // Reconcile the local lock with the synced group status: if the journey is
-  // "going" but we have no locked target yet (e.g. after a relaunch), lock onto
-  // the current selection once. When the journey stops, drop the lock.
   useEffect(() => {
     if (journeyGoing && !navTargetId && selectedDestination) {
       setNavTargetId(selectedDestination.id);
@@ -180,55 +169,51 @@ export default function MapScreen({ route }: Props) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [journeyGoing]);
-
-  // The journey is "live" (banner + Live Activity) only while going AND a
-  // locked gathering point exists.
   const journeyActive = journeyGoing && !!navTarget;
 
-  // Numeric distance/ETA to the LOCKED target, for the Live Activity + arrival.
-  const numericDistance =
-    fromCoords && navTarget
-      ? distanceMeters(fromCoords, navTarget.coordinates)
-      : undefined;
+  // The point the whole UI (island, carousel highlight, flock ETAs) refers to.
+  const activePoint = navTarget ?? selectedDestination;
+  const pointDistance =
+    fromCoords && activePoint
+      ? distanceMeters(fromCoords, activePoint.coordinates)
+      : null;
 
+  const numericDistance =
+    fromCoords && navTarget ? distanceMeters(fromCoords, navTarget.coordinates) : undefined;
   useLiveActivity(journeyActive, {
     groupName: membership?.group.name ?? '',
     gatheringTitle: navTarget?.title,
     distanceMeters: numericDistance,
-    etaSeconds:
-      numericDistance != null ? walkingEtaSeconds(numericDistance) : undefined,
+    etaSeconds: numericDistance != null ? walkingEtaSeconds(numericDistance) : undefined,
     gatheringCoordinates: navTarget?.coordinates,
   });
 
   const [journeyBusy, setJourneyBusy] = useState(false);
-
-  // Start navigating to the currently-selected gathering point (leader only).
-  async function startNavigation() {
-    if (!groupId || journeyBusy || !selectedDestination) return;
-    setJourneyBusy(true);
-    setNavTargetId(selectedDestination.id);
-    try {
-      // Promote the chosen stop to the front of the itinerary: the stops that
-      // were ahead of it shift back by one to fill the gap (no order break).
-      // e.g. picking stop 2 makes it stop 1 and pushes the old stop 1 to 2.
-      if (selectedIndex > 0) {
-        const ids = destinations.map((d) => d.id);
-        const [moved] = ids.splice(selectedIndex, 1);
-        ids.unshift(moved);
-        await reorderDestinations(groupId, ids);
-        setSelectedIndex(0);
+  const startNavigation = useCallback(
+    async (dest: Destination, index: number) => {
+      if (!groupId || journeyBusy) return;
+      setJourneyBusy(true);
+      setNavTargetId(dest.id);
+      try {
+        if (index > 0) {
+          const ids = destinations.map((d) => d.id);
+          const [moved] = ids.splice(index, 1);
+          ids.unshift(moved);
+          await reorderDestinations(groupId, ids);
+          setSelectedIndex(0);
+        }
+        await setJourneyStatus(groupId, 'going');
+        refresh();
+      } catch {
+        setNavTargetId(null);
+        Alert.alert(t('map.setFailedTitle'), t('map.journeyFailed'));
+      } finally {
+        setJourneyBusy(false);
       }
-      await setJourneyStatus(groupId, 'going');
-      refresh();
-    } catch {
-      setNavTargetId(null);
-      Alert.alert(t('map.setFailedTitle'), t('map.journeyFailed'));
-    } finally {
-      setJourneyBusy(false);
-    }
-  }
+    },
+    [groupId, journeyBusy, destinations, refresh, t],
+  );
 
-  // Stop the journey (manual cancel or automatic arrival).
   const stopNavigation = useCallback(async () => {
     if (!groupId) return;
     setNavTargetId(null);
@@ -240,9 +225,6 @@ export default function MapScreen({ route }: Props) {
     }
   }, [groupId, refresh, t]);
 
-  // Auto-arrival: once the leader gets within ~30 m of the locked target, end
-  // the journey automatically and announce arrival.
-  const ARRIVAL_RADIUS_M = 30;
   const arrivalFiredRef = useRef(false);
   useEffect(() => {
     if (!journeyActive) {
@@ -256,13 +238,10 @@ export default function MapScreen({ route }: Props) {
       numericDistance <= ARRIVAL_RADIUS_M
     ) {
       arrivalFiredRef.current = true;
-      const title = navTarget?.title ?? '';
-      // Near the target: ask whether to end this destination trip instead of
-      // silently auto-ending. "繼續前往" leaves the journey running.
       confirmAction(
         {
           title: t('map.arriveTitle'),
-          message: t('map.arriveBody', { title }),
+          message: t('map.arriveBody', { title: navTarget?.title ?? '' }),
           confirmLabel: t('map.arriveConfirm'),
           cancelLabel: t('map.arriveDismiss'),
         },
@@ -271,17 +250,12 @@ export default function MapScreen({ route }: Props) {
     }
   }, [journeyActive, isLeader, numericDistance, navTarget?.title, stopNavigation, t]);
 
-  // "Locate me": pull a fresh fix and center the map on the user's own
-  // position (falling back to the last known one if GPS is unavailable).
   async function locateMe() {
     refresh();
     const coords = (await refreshDeviceLocation()) ?? deviceCoords;
-    if (coords) {
-      mapRef.current?.centerOn(coords);
-    }
+    if (coords) mapRef.current?.centerOn(coords);
   }
 
-  // Bias place search toward what the user is looking at, when we know it.
   const biasCenter = deviceCoords ?? selectedDestination?.coordinates;
   const biasRegion: MapRegion | undefined = biasCenter
     ? {
@@ -293,18 +267,13 @@ export default function MapScreen({ route }: Props) {
     : undefined;
 
   async function handlePickDestination(place: PlaceResult) {
-    if (!groupId) {
-      return;
-    }
+    if (!groupId) return;
     try {
       await addDestination(groupId, {
         title: place.name,
         address: place.address,
         coordinates: place.coordinates,
       });
-      // The new stop is appended to the end of the trip — jump to it. Setting
-      // the index to the (pre-refresh) length targets the about-to-arrive last
-      // stop; the clamp effect snaps it to the real last index once data lands.
       setSelectedIndex(destinations.length);
       refresh();
     } catch {
@@ -313,20 +282,161 @@ export default function MapScreen({ route }: Props) {
   }
 
   function handleMomentumEnd(e: NativeSyntheticEvent<NativeScrollEvent>) {
-    if (destinations.length === 0) {
-      return;
-    }
+    if (destinations.length === 0) return;
     const index = Math.round(e.nativeEvent.contentOffset.x / windowWidth);
     const clamped = Math.max(0, Math.min(index, destinations.length - 1));
-    if (clamped !== selectedIndex) {
-      setSelectedIndex(clamped);
+    if (clamped !== selectedIndex) setSelectedIndex(clamped);
+  }
+
+  // --- Group actions --------------------------------------------------------
+  const [codeCopied, setCodeCopied] = useState(false);
+  async function copyCode() {
+    if (!group) return;
+    await Clipboard.setStringAsync(group.inviteCode);
+    setCodeCopied(true);
+    setTimeout(() => setCodeCopied(false), 1500);
+  }
+  async function shareCode() {
+    if (!group) return;
+    await Share.share({ message: t('map.shareMsg', { code: group.inviteCode }) });
+  }
+
+  const [editingNickname, setEditingNickname] = useState(false);
+  const [nicknameDraft, setNicknameDraft] = useState('');
+  async function saveNickname() {
+    const trimmed = nicknameDraft.trim();
+    if (!trimmed) return;
+    try {
+      await updateNickname(trimmed);
+      setEditingNickname(false);
+    } catch {
+      Alert.alert(t('settings.nicknameFailed'));
     }
   }
+
+  const handleReorder = useCallback(
+    async (orderedIds: string[]) => {
+      if (!groupId) return;
+      try {
+        await reorderDestinations(groupId, orderedIds);
+        refresh();
+      } catch {
+        Alert.alert(t('settings.reorderFailed'));
+        refresh();
+      }
+    },
+    [groupId, refresh, t],
+  );
+  const handleDelete = useCallback(
+    (id: string) => {
+      if (!groupId) return;
+      const target = destinations.find((d) => d.id === id);
+      confirmAction(
+        {
+          title: t('settings.deleteTitle'),
+          message: t('settings.deleteMsg', { title: target?.title ?? '' }),
+          confirmLabel: t('settings.deleteConfirm'),
+          destructive: true,
+        },
+        async () => {
+          try {
+            await deleteDestination(groupId, id);
+            refresh();
+          } catch {
+            Alert.alert(t('settings.deleteFailed'));
+            refresh();
+          }
+        },
+      );
+    },
+    [groupId, destinations, refresh, t],
+  );
+
+  function confirmLeave() {
+    confirmAction(
+      {
+        title: t('group.leaveTitle'),
+        message: t('group.leaveMsg'),
+        confirmLabel: t('group.leaveConfirm'),
+        destructive: true,
+      },
+      () => {
+        leaveGroup();
+        navigation.reset({ index: 0, routes: [{ name: 'RoleSelect' }] });
+      },
+    );
+  }
+  function confirmSignOut() {
+    confirmAction(
+      {
+        title: t('settings.signOutTitle'),
+        message: t('settings.signOutMsg'),
+        confirmLabel: t('settings.signOut'),
+        destructive: true,
+      },
+      () => {
+        void signOut();
+        navigation.reset({ index: 0, routes: [{ name: 'RoleSelect' }] });
+      },
+    );
+  }
+
+  // --- Derived view models --------------------------------------------------
+  const flock = useMemo(
+    () =>
+      members.map((m) => {
+        const d =
+          m.coordinates && activePoint
+            ? distanceMeters(m.coordinates, activePoint.coordinates)
+            : null;
+        const arrived = d != null && d <= ARRIVAL_RADIUS_M;
+        const isMemberLeader = m.role === 'leader';
+        return {
+          userId: m.userId,
+          name: m.name || t('group.travelerFallback'),
+          color: memberColor(m.userId),
+          isLeader: isMemberLeader,
+          statusText: isMemberLeader
+            ? t('flock.leading')
+            : d == null
+              ? t('flock.unknown')
+              : arrived
+                ? t('flock.arrived')
+                : t('flock.enroute'),
+          statusColor: isMemberLeader
+            ? accent
+            : arrived
+              ? glass.ok
+              : glass.textSecondary,
+          eta: isMemberLeader ? '—' : d != null ? shortEta(walkingEtaSeconds(d)) : '',
+          dist: isMemberLeader ? t('flock.here') : d != null ? formatDistance(d) : '',
+          arrived,
+        };
+      }),
+    [members, activePoint, accent, t],
+  );
+
+  const gatheredCount = flock.filter((f) => f.arrived).length;
+  const enrouteCount = flock.filter((f) => !f.arrived && !f.isLeader).length;
+  const islandEta = pointDistance != null ? shortEta(walkingEtaSeconds(pointDistance)) : '—';
+  const islandDist = pointDistance != null ? formatDistance(pointDistance) : undefined;
+  const islandProgress =
+    pointDistance != null
+      ? Math.max(0.05, Math.min(0.95, 1 - Math.min(1, pointDistance / PROGRESS_REF_M)))
+      : 0.05;
+
+  // Floating chrome rides just above the sheet's live top edge.
+  const chromeBottom = Animated.add(heightAnim, 12);
+  const carouselOpacity = heightAnim.interpolate({
+    inputRange: [detents[0], detents[0] + 90],
+    outputRange: [1, 0],
+    extrapolate: 'clamp',
+  });
 
   if (loading && !state) {
     return (
       <View style={styles.loading}>
-        <ActivityIndicator color={colors.accent} size="large" />
+        <ActivityIndicator color={accent} size="large" />
         <Text style={styles.loadingText}>{t('map.loading')}</Text>
       </View>
     );
@@ -337,132 +447,370 @@ export default function MapScreen({ route }: Props) {
       <GroupMap
         ref={mapRef}
         members={members}
-        gathering={selectedDestination}
+        gathering={activePoint}
         currentUserId={user?.id}
       />
 
-      {/* Right-side action column. */}
-      <View style={[styles.fabColumn, { top: headerHeight + spacing.sm }]}>
-        {/* Search a place to set the next gathering point (leader only). */}
-        {isLeader && (
-          <liquidGlass.GlassView style={styles.fab}>
-            <Pressable
-              style={styles.fabPressable}
-              onPress={() => setSearchVisible(true)}
-              accessibilityRole="button"
-              accessibilityLabel={t('map.searchA11y')}
-            >
-              <Ionicons name="search" size={20} color={colors.textPrimary} />
-            </Pressable>
-          </liquidGlass.GlassView>
-        )}
-
-        {/* Center the map on my own location. */}
-        <liquidGlass.GlassView style={styles.fab}>
-          <Pressable
-            style={styles.fabPressable}
-            onPress={locateMe}
-            accessibilityRole="button"
-            accessibilityLabel={t('map.locateA11y')}
-          >
-            <Ionicons name="locate" size={20} color={colors.textPrimary} />
-          </Pressable>
-        </liquidGlass.GlassView>
+      {/* In-app Dynamic Island. */}
+      <View style={[styles.islandWrap, { top: insets.top }]} pointerEvents="box-none">
+        <DynamicIslandView
+          expanded={islandOpen}
+          onToggle={() => setIslandOpen((v) => !v)}
+          accent={accent}
+          gatheringName={activePoint?.title ?? t('map.noDestination')}
+          eta={islandEta}
+          dist={islandDist}
+          progress={islandProgress}
+          avatarColors={flock.map((f) => f.color)}
+          statusText={t('island.progress', { gathered: gatheredCount, enroute: enrouteCount })}
+        />
       </View>
 
-      {/* Bottom: swipeable carousel of gathering points (lantern follows). */}
-      <View style={[styles.carouselWrap, { bottom: insets.bottom + spacing.lg }]}>
-        {/* Journey banner mirrors the iOS Live Activity while going. Shows the
-            LOCKED target (not the browsed carousel page) and a cancel button. */}
-        {journeyActive && navTarget && (
-          <View style={{ width: windowWidth - spacing.lg * 2 }}>
-            <JourneyBanner
-              gatheringTitle={navTarget.title}
-              distanceEta={distanceFor(navTarget)}
-              colors={colors}
-              tintColor={GLASS_DARK_VEIL}
-              onCancel={isLeader ? stopNavigation : undefined}
-              cancelLabel={t('map.navCancel')}
-            />
+      {/* Group pill + role chip. */}
+      <View
+        style={[styles.topRow, { top: insets.top + 48 }]}
+        pointerEvents="box-none"
+      >
+        <View style={styles.groupPill}>
+          <View style={styles.pillAvatars}>
+            {flock.slice(0, 3).map((f, i) => (
+              <View
+                key={f.userId}
+                style={[styles.pillAvatar, { backgroundColor: f.color, marginLeft: i ? -10 : 0 }]}
+              />
+            ))}
           </View>
-        )}
-        {destinations.length === 0 ? (
-          <liquidGlass.GlassView
-            tintColor={GLASS_DARK_VEIL}
-            style={[styles.card, { width: windowWidth - spacing.lg * 2 }]}
+          <Text style={styles.pillName} numberOfLines={1}>
+            {group?.name ?? 'Hither'}
+          </Text>
+          <Text style={styles.pillCount}>· {members.length}</Text>
+        </View>
+        <View style={styles.roleChip}>
+          <View style={[styles.roleDot, { backgroundColor: accent }]} />
+          <Text style={styles.roleWord}>
+            {isLeader ? t('settings.roleLeader') : t('settings.roleFollower')}
+          </Text>
+        </View>
+      </View>
+
+      {/* Recenter — rides above the sheet. */}
+      <Animated.View style={[styles.recenter, { bottom: chromeBottom }]}>
+        <Pressable
+          style={styles.recenterHit}
+          onPress={locateMe}
+          accessibilityRole="button"
+          accessibilityLabel={t('map.locateA11y')}
+        >
+          <Ionicons name="navigate" size={20} color="#fff" />
+        </Pressable>
+      </Animated.View>
+
+      {/* Floating gathering-point carousel (peek only). */}
+      {destinations.length > 0 && (
+        <Animated.View
+          style={[styles.carouselWrap, { bottom: chromeBottom, opacity: carouselOpacity }]}
+          pointerEvents={detent === 0 ? 'auto' : 'none'}
+        >
+          <ScrollView
+            ref={carouselRef}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            onMomentumScrollEnd={handleMomentumEnd}
+            scrollEventThrottle={16}
           >
-            <Text style={styles.cardLabel}>{t('map.nextLabel')}</Text>
-            <Text style={styles.cardMeta}>
-              {isLeader ? t('map.noDestinationLeader') : t('map.noDestination')}
-            </Text>
-          </liquidGlass.GlassView>
-        ) : (
-          <>
-            <ScrollView
-              ref={carouselRef}
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              onMomentumScrollEnd={handleMomentumEnd}
-              scrollEventThrottle={16}
-            >
+            {destinations.map((dest, index) => {
+              const active = index === selectedIndex;
+              const d = fromCoords ? distanceMeters(fromCoords, dest.coordinates) : null;
+              return (
+                <View key={dest.id} style={{ width: windowWidth, paddingHorizontal: 14 }}>
+                  <View
+                    style={[
+                      styles.card,
+                      { backgroundColor: active ? glass.cardActive : glass.card },
+                      active && { borderColor: accentMix(accent, 50) },
+                    ]}
+                  >
+                    <View style={styles.cardHead}>
+                      <View style={[styles.cardIcon, { backgroundColor: accentMix(accent, 22), borderColor: accentMix(accent, 45) }]}>
+                        <CrookIcon size={26} color={accent} />
+                      </View>
+                      <View style={styles.grow}>
+                        <Text style={[styles.cardKicker, { color: accent }]}>
+                          {index === 0 ? t('map.nextTag') + ' · ' : ''}
+                          {t('map.destinationCounter', { index: index + 1, total: destinations.length })}
+                        </Text>
+                        <Text style={styles.cardTitle} numberOfLines={1}>
+                          {dest.title}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.cardActions}>
+                      <Pressable
+                        style={[styles.directions, { backgroundColor: accentMix(accent, 26), borderColor: accentMix(accent, 50) }]}
+                        onPress={() => (isLeader ? startNavigation(dest, index) : mapRef.current?.centerOn(dest.coordinates))}
+                        disabled={journeyBusy}
+                        accessibilityRole="button"
+                      >
+                        <CrookIcon size={16} color={accent} />
+                        <Text style={styles.directionsText}>
+                          {isLeader ? t('map.directions') : t('map.viewOnMap')}
+                        </Text>
+                      </Pressable>
+                      <View style={styles.etaPill}>
+                        <Text style={styles.etaPillEta}>
+                          {d != null ? shortEta(walkingEtaSeconds(d)) : '—'}
+                        </Text>
+                        <Text style={styles.etaPillDist}>
+                          {d != null ? formatDistance(d) : ''}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+              );
+            })}
+          </ScrollView>
+          {destinations.length > 1 && (
+            <View style={styles.dots}>
               {destinations.map((dest, index) => (
                 <View
                   key={dest.id}
-                  style={[styles.page, { width: windowWidth }]}
-                >
-                  <liquidGlass.GlassView tintColor={GLASS_DARK_VEIL} style={styles.card}>
-                    <Text style={styles.cardLabel}>
-                      {t('map.nextLabel')} ·{' '}
-                      {t('map.destinationCounter', {
-                        index: index + 1,
-                        total: destinations.length,
-                      })}
-                    </Text>
-                    <Text style={styles.cardTitle}>{dest.title}</Text>
-                    <Text style={styles.cardMeta}>
-                      {distanceFor(dest) ?? t('map.calcDistance')}
-                    </Text>
-                  </liquidGlass.GlassView>
-                </View>
+                  style={[styles.dot, index === selectedIndex && styles.dotActive]}
+                />
               ))}
-            </ScrollView>
+            </View>
+          )}
+        </Animated.View>
+      )}
 
-            {/* Page dots. */}
-            {destinations.length > 1 && (
-              <View style={styles.dots}>
-                {destinations.map((dest, index) => (
-                  <View
-                    key={dest.id}
-                    style={[
-                      styles.dot,
-                      index === selectedIndex && styles.dotActive,
-                    ]}
-                  />
-                ))}
-              </View>
-            )}
+      {/* The pull-up sheet. */}
+      <BottomSheet
+        heightAnim={heightAnim}
+        detents={detents}
+        index={detent}
+        onIndexChange={setDetent}
+        bottomInset={insets.bottom}
+      >
+        {/* Search row + account avatar. */}
+        <View style={styles.searchRow}>
+          <Pressable
+            style={styles.searchField}
+            onPress={() => (isLeader ? setSearchVisible(true) : undefined)}
+            accessibilityRole="button"
+            accessibilityLabel={t('map.searchA11y')}
+          >
+            <Ionicons name="search" size={17} color={glass.textSecondary} />
+            <Text style={styles.searchPlaceholder}>{t('map.searchPlaces')}</Text>
+          </Pressable>
+          <View style={[styles.avatar, { backgroundColor: accent }]}>
+            <Text style={styles.avatarText}>
+              {(user?.name ?? '?').slice(0, 1).toUpperCase()}
+            </Text>
+          </View>
+        </View>
 
-            {/* Start navigating to the selected stop (leader only, when idle).
-                Moved here from the top-right FAB column. */}
-            {isLeader && !journeyActive && selectedDestination && (
-              <Pressable
+        {/* Group code + share / copy. */}
+        <View style={styles.codeRow}>
+          <View style={styles.grow}>
+            <Text style={styles.sectionLabel}>{t('group.codeLabel')}</Text>
+            <Text style={styles.codeText}>{group?.inviteCode ?? '——'}</Text>
+          </View>
+          <Pressable
+            style={[styles.chip, { backgroundColor: accentMix(accent, 24), borderColor: accentMix(accent, 50) }]}
+            onPress={shareCode}
+            accessibilityRole="button"
+          >
+            <Ionicons name="share-outline" size={15} color="#fff" />
+            <Text style={styles.chipText}>{t('map.share')}</Text>
+          </Pressable>
+          <Pressable style={styles.chipGhost} onPress={copyCode} accessibilityRole="button">
+            <Text style={styles.chipText}>{codeCopied ? t('group.copied') : t('map.copy')}</Text>
+          </Pressable>
+        </View>
+
+        {/* Flock. */}
+        <Text style={styles.sectionLabel}>
+          {t('map.flockLabel')} · {members.length}
+        </Text>
+        <View style={styles.list}>
+          {flock.map((f, i) => (
+            <View
+              key={f.userId}
+              style={[styles.flockRow, i === flock.length - 1 && styles.flockRowLast]}
+            >
+              <View
                 style={[
-                  styles.startButton,
-                  { width: windowWidth - spacing.lg * 2 },
-                  journeyBusy && styles.startButtonBusy,
+                  styles.flockAvatar,
+                  { backgroundColor: f.color, borderColor: f.isLeader ? accent : 'transparent' },
                 ]}
-                onPress={startNavigation}
-                disabled={journeyBusy}
-                accessibilityRole="button"
-                accessibilityLabel={t('map.navStartA11y')}
               >
-                <Text style={styles.startButtonText}>{t('map.navStart')}</Text>
-              </Pressable>
-            )}
-          </>
-        )}
-      </View>
+                <Text style={styles.flockInitial}>{f.name.slice(0, 1).toUpperCase()}</Text>
+              </View>
+              <View style={styles.grow}>
+                <Text style={styles.flockName}>{f.name}</Text>
+                <Text style={[styles.flockStatus, { color: f.statusColor }]}>{f.statusText}</Text>
+              </View>
+              <View style={styles.flockMeta}>
+                <Text style={styles.flockEta}>{f.eta}</Text>
+                <Text style={styles.flockDist}>{f.dist}</Text>
+              </View>
+            </View>
+          ))}
+        </View>
+
+        {/* Gathering points → route overlay. */}
+        <Pressable style={styles.rowButton} onPress={() => setOverlay('route')} accessibilityRole="button">
+          <View style={[styles.rowIcon, { backgroundColor: accentMix(accent, 20) }]}>
+            <CrookIcon size={22} color={accent} />
+          </View>
+          <View style={styles.grow}>
+            <Text style={styles.rowTitle}>{t('map.gatheringPoints')}</Text>
+            <Text style={styles.rowSub}>
+              {t('map.stopsReorder', { count: destinations.length })}
+            </Text>
+          </View>
+          <Text style={[styles.rowAction, { color: accent }]}>{t('map.edit')}</Text>
+        </Pressable>
+
+        {/* Quick commands. */}
+        <Text style={styles.sectionLabel}>
+          {isLeader ? t('map.cmdLeaderTitle') : t('map.cmdFollowerTitle')}
+        </Text>
+        {groupId ? (
+          <QuickCommandsCard groupId={groupId} isLeader={!!isLeader} colors={dark} />
+        ) : null}
+
+        {/* Settings. */}
+        <Pressable style={styles.settingsButton} onPress={() => setOverlay('settings')} accessibilityRole="button">
+          <Ionicons name="settings-sharp" size={20} color="#fff" />
+          <Text style={styles.settingsText}>{t('map.settingsAll')}</Text>
+          <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
+        </Pressable>
+      </BottomSheet>
+
+      {/* Route overlay: reorder gathering points. */}
+      <OverlaySheet
+        visible={overlay === 'route'}
+        onClose={() => setOverlay(null)}
+        title={t('map.gatheringPoints')}
+        accent={accent}
+        doneLabel={t('map.done')}
+      >
+        <ScrollView contentContainerStyle={styles.overlayBody}>
+          <Text style={styles.overlayHint}>{t('map.routeHint')}</Text>
+          <DestinationReorderList
+            destinations={destinations}
+            canReorder={!!isLeader}
+            onReorder={handleReorder}
+            onDelete={isLeader ? handleDelete : undefined}
+            colors={dark}
+            emptyLabel={t('settings.noDestinations')}
+          />
+          {isLeader && (
+            <Pressable
+              style={styles.addStop}
+              onPress={() => {
+                setOverlay(null);
+                setSearchVisible(true);
+              }}
+              accessibilityRole="button"
+            >
+              <View style={[styles.addStopIcon, { backgroundColor: accentMix(accent, 26) }]}>
+                <Ionicons name="add" size={16} color={accent} />
+              </View>
+              <Text style={[styles.addStopText, { color: accent }]}>{t('map.addStop')}</Text>
+            </Pressable>
+          )}
+        </ScrollView>
+      </OverlaySheet>
+
+      {/* Settings overlay. */}
+      <OverlaySheet
+        visible={overlay === 'settings'}
+        onClose={() => setOverlay(null)}
+        title={t('map.overlaySettings')}
+        accent={accent}
+        doneLabel={t('map.done')}
+      >
+        <ScrollView contentContainerStyle={styles.overlayBody}>
+          <Text style={styles.sectionLabel}>{t('settings.accountSection')}</Text>
+          <View style={styles.settingsCard}>
+            <View style={styles.settingsRow}>
+              <Text style={styles.settingsRowLabel}>{t('settings.nickname')}</Text>
+              {editingNickname ? (
+                <View style={styles.editGroup}>
+                  <TextInput
+                    style={styles.nickInput}
+                    value={nicknameDraft}
+                    onChangeText={setNicknameDraft}
+                    autoFocus
+                    maxLength={24}
+                    onSubmitEditing={saveNickname}
+                    returnKeyType="done"
+                    placeholderTextColor={glass.textTertiary}
+                  />
+                  <Pressable onPress={saveNickname} style={[styles.saveBtn, { backgroundColor: accent }]}>
+                    <Text style={styles.saveText}>{t('settings.save')}</Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <View style={styles.editGroup}>
+                  <Text style={styles.settingsValue}>{user?.name ?? '—'}</Text>
+                  <Pressable
+                    onPress={() => {
+                      setNicknameDraft(user?.name ?? '');
+                      setEditingNickname(true);
+                    }}
+                  >
+                    <Text style={[styles.rowAction, { color: accent }]}>{t('settings.edit')}</Text>
+                  </Pressable>
+                </View>
+              )}
+            </View>
+          </View>
+
+          <Text style={styles.sectionLabel}>{t('settings.language')}</Text>
+          <Segmented
+            accent={accent}
+            options={[
+              { key: 'zh', label: '中文' },
+              { key: 'en', label: 'English' },
+            ]}
+            value={language}
+            onChange={(v) => setLanguage(v as Language)}
+          />
+
+          <Text style={styles.sectionLabel}>{t('settings.theme')}</Text>
+          <Segmented
+            accent={accent}
+            options={THEME_ORDER.map((n) => ({
+              key: n,
+              label: t(
+                n === 'night'
+                  ? 'settings.themeNight'
+                  : n === 'day'
+                    ? 'settings.themeDay'
+                    : 'settings.themeDusk',
+              ),
+            }))}
+            value={themeName}
+            onChange={(v) => setThemeName(v as ThemeName)}
+          />
+
+          <Text style={styles.sectionLabel}>{t('settings.notifSection')}</Text>
+          <NotificationPreferencesCard colors={dark} />
+
+          <Pressable style={styles.dangerBtn} onPress={confirmLeave} accessibilityRole="button">
+            <Text style={styles.dangerText}>
+              {isLeader ? t('map.endGroup') : t('group.leave')}
+            </Text>
+          </Pressable>
+          <Pressable style={styles.dangerBtn} onPress={confirmSignOut} accessibilityRole="button">
+            <Text style={styles.dangerText}>{t('settings.signOut')}</Text>
+          </Pressable>
+        </ScrollView>
+      </OverlaySheet>
 
       <DestinationSearch
         visible={searchVisible}
@@ -474,92 +822,354 @@ export default function MapScreen({ route }: Props) {
   );
 }
 
-const makeStyles = (colors: Palette) => StyleSheet.create({
-  flex: { flex: 1, backgroundColor: colors.background },
-  loading: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.md,
-    backgroundColor: colors.background,
-  },
-  loadingText: { color: colors.textSecondary, fontSize: 15 },
-  fabColumn: {
-    position: 'absolute',
-    right: spacing.lg,
-    gap: spacing.sm,
-  },
-  fab: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    overflow: 'hidden',
-  },
-  fabActive: {
-    borderColor: colors.accent,
-    borderWidth: 2,
-  },
-  fabPressable: {
-    width: '100%',
-    height: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  fabIcon: { fontSize: 20 },
-  carouselWrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  page: {
-    paddingHorizontal: spacing.lg,
-  },
-  card: {
-    overflow: 'hidden',
-    borderRadius: radius.lg,
-    paddingHorizontal: spacing.xl,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.lg,
-    gap: spacing.xs,
-  },
-  cardLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1,
-    color: colors.accent,
-  },
-  // Light text: the card sits on the forced-dark glass veil (GLASS_DARK_VEIL)
-  // regardless of theme, so it must read against a dark surface.
-  cardTitle: { fontSize: 20, fontWeight: '700', color: '#F5F7FC' },
-  cardMeta: { fontSize: 15, color: 'rgba(255,255,255,0.72)' },
-  dots: {
+function Segmented({
+  options,
+  value,
+  onChange,
+  accent,
+}: {
+  options: { key: string; label: string }[];
+  value: string;
+  onChange: (key: string) => void;
+  accent: string;
+}) {
+  return (
+    <View style={segStyles.track}>
+      {options.map((o) => {
+        const active = o.key === value;
+        return (
+          <Pressable
+            key={o.key}
+            style={[segStyles.seg, active && { backgroundColor: 'rgba(255,255,255,0.16)' }]}
+            onPress={() => onChange(o.key)}
+            accessibilityRole="button"
+            accessibilityState={{ selected: active }}
+          >
+            <Text style={[segStyles.segText, active && { color: '#fff' }]}>{o.label}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+const segStyles = StyleSheet.create({
+  track: {
     flexDirection: 'row',
-    gap: spacing.xs,
-    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: glass.fill,
+    borderRadius: 13,
+    padding: 4,
+    marginBottom: 4,
   },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.border,
-  },
-  dotActive: {
-    backgroundColor: colors.accent,
-    width: 18,
-  },
-  startButton: {
-    backgroundColor: colors.accent,
-    borderRadius: radius.pill,
-    paddingVertical: spacing.md,
+  seg: {
+    flex: 1,
+    height: 38,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  startButtonBusy: { opacity: 0.6 },
-  startButtonText: {
-    color: colors.accentText,
-    fontSize: 16,
-    fontWeight: '700',
-  },
+  segText: { fontSize: 15, fontWeight: '600', color: glass.textSecondary },
 });
+
+const makeStyles = (accent: string) =>
+  StyleSheet.create({
+    flex: { flex: 1, backgroundColor: '#0c1118' },
+    loading: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 12,
+      backgroundColor: '#0c1118',
+    },
+    loadingText: { color: glass.textSecondary, fontSize: 15 },
+
+    islandWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center', zIndex: 120 },
+
+    topRow: {
+      position: 'absolute',
+      left: 14,
+      right: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 10,
+      zIndex: 40,
+    },
+    groupPill: {
+      flexShrink: 1,
+      height: 44,
+      paddingLeft: 8,
+      paddingRight: 14,
+      borderRadius: 22,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 9,
+      backgroundColor: glass.pill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairlineStrong,
+    },
+    pillAvatars: { flexDirection: 'row' },
+    pillAvatar: {
+      width: 26,
+      height: 26,
+      borderRadius: 13,
+      borderWidth: 1.5,
+      borderColor: 'rgba(20,24,32,0.9)',
+    },
+    pillName: { fontSize: 15, fontWeight: '600', color: '#fff', flexShrink: 1 },
+    pillCount: { fontSize: 14, color: glass.textSecondary },
+    roleChip: {
+      height: 44,
+      paddingHorizontal: 16,
+      borderRadius: 22,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 7,
+      backgroundColor: glass.pill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairlineStrong,
+    },
+    roleDot: { width: 8, height: 8, borderRadius: 4 },
+    roleWord: { fontSize: 14, fontWeight: '600', color: '#fff' },
+
+    recenter: { position: 'absolute', right: 14, zIndex: 40 },
+    recenterHit: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: glass.pill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairlineStrong,
+    },
+
+    carouselWrap: { position: 'absolute', left: 0, right: 0, zIndex: 58 },
+    card: {
+      borderRadius: 22,
+      padding: 15,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
+    },
+    cardHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    cardIcon: {
+      width: 46,
+      height: 46,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: StyleSheet.hairlineWidth,
+    },
+    grow: { flex: 1, minWidth: 0 },
+    cardKicker: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8 },
+    cardTitle: { fontSize: 18, fontWeight: '600', color: '#fff' },
+    cardActions: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 13 },
+    directions: {
+      flex: 1,
+      height: 44,
+      borderRadius: 13,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      borderWidth: StyleSheet.hairlineWidth,
+    },
+    directionsText: { fontSize: 15, fontWeight: '600', color: '#fff' },
+    etaPill: {
+      height: 44,
+      paddingHorizontal: 16,
+      borderRadius: 13,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: glass.fillStrong,
+    },
+    etaPillEta: { fontSize: 15, fontWeight: '700', color: '#fff', fontVariant: ['tabular-nums'] },
+    etaPillDist: { fontSize: 11, color: glass.textSecondary },
+    dots: { flexDirection: 'row', gap: 6, justifyContent: 'center', marginTop: 10 },
+    dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.35)' },
+    dotActive: { width: 20, backgroundColor: accent },
+
+    // Sheet content
+    searchRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 20, marginTop: 4 },
+    searchField: {
+      flex: 1,
+      height: 46,
+      borderRadius: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 9,
+      paddingHorizontal: 14,
+      backgroundColor: 'rgba(118,118,128,0.26)',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'rgba(255,255,255,0.08)',
+    },
+    searchPlaceholder: { fontSize: 16, color: 'rgba(235,235,245,0.5)' },
+    avatar: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center' },
+    avatarText: { fontSize: 17, fontWeight: '700', color: '#fff' },
+
+    codeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
+    sectionLabel: {
+      fontSize: 12,
+      fontWeight: '700',
+      letterSpacing: 0.8,
+      color: glass.textTertiary,
+      marginBottom: 8,
+      marginLeft: 4,
+      marginTop: 4,
+    },
+    codeText: { fontSize: 24, fontWeight: '700', color: '#fff', letterSpacing: 2 },
+    chip: {
+      height: 38,
+      paddingHorizontal: 16,
+      borderRadius: 19,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 7,
+      borderWidth: StyleSheet.hairlineWidth,
+    },
+    chipGhost: {
+      height: 38,
+      paddingHorizontal: 14,
+      borderRadius: 19,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: glass.fill,
+    },
+    chipText: { fontSize: 14, fontWeight: '600', color: '#fff' },
+
+    list: {
+      borderRadius: 20,
+      overflow: 'hidden',
+      backgroundColor: glass.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
+      marginBottom: 20,
+    },
+    flockRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: 'rgba(255,255,255,0.08)',
+    },
+    flockRowLast: { borderBottomWidth: 0 },
+    flockAvatar: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 2,
+    },
+    flockInitial: { fontSize: 16, fontWeight: '600', color: '#fff' },
+    flockName: { fontSize: 16, color: '#fff' },
+    flockStatus: { fontSize: 13 },
+    flockMeta: { alignItems: 'flex-end' },
+    flockEta: { fontSize: 15, fontWeight: '600', color: '#fff', fontVariant: ['tabular-nums'] },
+    flockDist: { fontSize: 12, color: glass.textTertiary },
+
+    rowButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      height: 58,
+      borderRadius: 16,
+      paddingHorizontal: 14,
+      marginBottom: 20,
+      backgroundColor: glass.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
+    },
+    rowIcon: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    rowTitle: { fontSize: 16, fontWeight: '600', color: '#fff' },
+    rowSub: { fontSize: 13, color: glass.textSecondary },
+    rowAction: { fontSize: 14, fontWeight: '600' },
+
+    settingsButton: {
+      height: 54,
+      borderRadius: 16,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      paddingHorizontal: 16,
+      marginTop: 8,
+      backgroundColor: glass.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
+    },
+    settingsText: { flex: 1, fontSize: 16, fontWeight: '600', color: '#fff' },
+
+    // Overlays
+    overlayBody: { paddingHorizontal: 16, paddingBottom: 40 },
+    overlayHint: { fontSize: 12.5, color: glass.textSecondary, marginBottom: 12, marginHorizontal: 4 },
+    addStop: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      height: 56,
+      paddingHorizontal: 14,
+      marginTop: 14,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderStyle: 'dashed',
+      borderColor: 'rgba(255,255,255,0.22)',
+      backgroundColor: 'rgba(255,255,255,0.05)',
+    },
+    addStopIcon: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    addStopText: { fontSize: 16, fontWeight: '600' },
+
+    settingsCard: {
+      borderRadius: 18,
+      paddingHorizontal: 16,
+      marginBottom: 8,
+      backgroundColor: glass.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
+    },
+    settingsRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: 14,
+    },
+    settingsRowLabel: { fontSize: 16, color: '#fff' },
+    settingsValue: { fontSize: 16, color: glass.textSecondary },
+    editGroup: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    nickInput: {
+      minWidth: 120,
+      color: '#fff',
+      fontSize: 16,
+      textAlign: 'right',
+      borderBottomWidth: 1,
+      borderBottomColor: accent,
+      paddingVertical: 2,
+    },
+    saveBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999 },
+    saveText: { color: '#1A1206', fontSize: 14, fontWeight: '700' },
+    dangerBtn: {
+      height: 52,
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: 16,
+      backgroundColor: 'rgba(255,107,107,0.1)',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'rgba(255,107,107,0.3)',
+    },
+    dangerText: { fontSize: 16, fontWeight: '600', color: glass.danger },
+  });
