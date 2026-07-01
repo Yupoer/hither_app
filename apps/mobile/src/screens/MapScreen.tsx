@@ -113,6 +113,9 @@ export default function MapScreen({ route, navigation }: Props) {
   const [islandOpen, setIslandOpen] = useState(false);
   const [overlay, setOverlay] = useState<null | 'route' | 'settings'>(null);
   const [searchVisible, setSearchVisible] = useState(false);
+  // Freeze the route overlay's scroll while a stop is being drag-reordered so
+  // the two vertical gestures never fight.
+  const [routeScrollEnabled, setRouteScrollEnabled] = useState(true);
 
   // --- Device GPS ----------------------------------------------------------
   const [deviceCoords, setDeviceCoords] = useState<Coordinates | null>(null);
@@ -711,7 +714,10 @@ export default function MapScreen({ route, navigation }: Props) {
         accent={accent}
         doneLabel={t('map.done')}
       >
-        <ScrollView contentContainerStyle={styles.overlayBody}>
+        <ScrollView
+          contentContainerStyle={styles.overlayBody}
+          scrollEnabled={routeScrollEnabled}
+        >
           <Text style={styles.overlayHint}>{t('map.routeHint')}</Text>
           <DestinationReorderList
             destinations={destinations}
@@ -720,6 +726,7 @@ export default function MapScreen({ route, navigation }: Props) {
             onDelete={isLeader ? handleDelete : undefined}
             colors={dark}
             emptyLabel={t('settings.noDestinations')}
+            onDragActiveChange={(active) => setRouteScrollEnabled(!active)}
           />
           {isLeader && (
             <Pressable
