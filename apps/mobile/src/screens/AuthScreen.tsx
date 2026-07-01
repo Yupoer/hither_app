@@ -1,5 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -9,168 +11,244 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
+import { createGroup, joinGroup } from '../api/client';
 import { useSession } from '../state/SessionContext';
 import { useTheme } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
-import { radius, spacing, type Palette } from '../theme';
+import { accentMix } from '../glass';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Auth'>;
 
 /**
- * Entry point. The user types a nickname (the anonymous in-group identity from
- * the design). "Continue" signs in anonymously via Supabase and records the
- * nickname; an optional email is accepted but unused in the anonymous flow.
+ * Nickname (+ group code for followers) entry. From here the leader creates a
+ * group and the follower joins one by code, then both drop straight onto the
+ * map — the old separate "Group lobby" screen is gone (design: no lobby).
  *
- * If a persisted session is restored on launch (supabase-js + AsyncStorage),
- * the user is already signed in — we skip straight to the Group screen rather
- * than letting them sign in again (which would mint a fresh, orphaned anon user).
+ * Anonymous Supabase sign-in happens lazily on the first submit; a restored
+ * session skips it and just reuses / renames the existing anon user.
  */
-export default function AuthScreen({ navigation }: Props) {
-  const { signIn, user, initializing } = useSession();
+export default function AuthScreen({ navigation, route }: Props) {
+  const role = route.params?.role ?? 'leader';
+  const isLeader = role === 'leader';
+  const { signIn, user, updateNickname, setMembership } = useSession();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const { t } = useTranslation();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const accent = colors.accent;
+  const styles = useMemo(() => makeStyles(accent), [accent]);
 
-  const canSubmit = name.trim().length >= 1 && !submitting;
+  const [name, setName] = useState(user?.name ?? '');
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
 
-  // Once a user exists (restored session or fresh sign-in), advance to Group.
-  useEffect(() => {
-    if (!initializing && user) {
-      navigation.replace('Group');
-    }
-  }, [initializing, user, navigation]);
+  const canSubmit =
+    name.trim().length >= 1 && (isLeader || code.trim().length >= 4) && !busy;
 
-  async function handleSignIn() {
-    if (!canSubmit) {
-      return;
-    }
-    setSubmitting(true);
-    setError(null);
+  async function handleSubmit() {
+    if (!canSubmit) return;
+    setBusy(true);
+    const nickname = name.trim();
     try {
-      await signIn({ name, email });
-      // Navigation handled by the effect above once `user` is set.
+      // Ensure we have an anonymous user, then keep the nickname current.
+      if (!user) {
+        await signIn({ name: nickname });
+      } else if (nickname !== user.name) {
+        await updateNickname(nickname);
+      }
+
+      const group = isLeader
+        ? await createGroup(t('group.defaultName', { name: nickname }))
+        : await joinGroup(code.trim());
+      setMembership({ group, role });
+      navigation.replace('Map', { groupId: group.id });
     } catch (e) {
-      setError(e instanceof Error ? e.message : t('auth.signInFailed'));
-      setSubmitting(false);
+      const msg = e instanceof Error ? e.message : t('auth.signInFailed');
+      Alert.alert(
+        isLeader ? t('group.createFailedTitle') : t('group.joinFailedTitle'),
+        msg,
+      );
+      setBusy(false);
     }
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    <LinearGradient
+      colors={['#1f3050', '#0e1622', '#080b12']}
+      locations={[0, 0.52, 1]}
+      style={styles.fill}
     >
-      <View style={[styles.container, { paddingTop: insets.top + spacing.xl }]}>
-        <View style={styles.header}>
-          <Text style={styles.lantern}>🏮</Text>
-          <Text style={styles.title}>Hither</Text>
-          <Text style={styles.subtitle}>{t('auth.subtitle')}</Text>
-        </View>
+      <KeyboardAvoidingView
+        style={styles.fill}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View
+          style={[
+            styles.content,
+            { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 28 },
+          ]}
+        >
+          <Pressable
+            onPress={() => navigation.goBack()}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+            style={styles.back}
+          >
+            <Ionicons name="chevron-back" size={22} color="rgba(255,255,255,0.7)" />
+          </Pressable>
 
-        <View style={styles.form}>
+          <Text style={styles.kicker}>
+            {isLeader ? t('auth.leaderKicker') : t('auth.followerKicker')}
+          </Text>
+          <Text style={styles.title}>
+            {isLeader ? t('auth.leaderTitle') : t('auth.followerTitle')}
+          </Text>
+          <Text style={styles.sub}>
+            {isLeader ? t('auth.leaderSub') : t('auth.followerSub')}
+          </Text>
+
           <Text style={styles.label}>{t('auth.nameLabel')}</Text>
-          <TextInput
-            style={styles.input}
-            value={name}
-            onChangeText={setName}
-            placeholder={t('auth.namePlaceholder')}
-            placeholderTextColor={colors.textSecondary}
-            autoCapitalize="none"
-            returnKeyType="next"
-            accessibilityLabel={t('auth.nameLabel')}
-          />
+          <View style={styles.field}>
+            <TextInput
+              style={styles.input}
+              value={name}
+              onChangeText={setName}
+              placeholder={t('auth.namePlaceholder')}
+              placeholderTextColor="rgba(235,235,245,0.4)"
+              autoCapitalize="none"
+              autoFocus
+              returnKeyType={isLeader ? 'go' : 'next'}
+              onSubmitEditing={isLeader ? handleSubmit : undefined}
+              accessibilityLabel={t('auth.nameLabel')}
+            />
+          </View>
 
-          <Text style={styles.label}>{t('auth.emailLabel')}</Text>
-          <TextInput
-            style={styles.input}
-            value={email}
-            onChangeText={setEmail}
-            placeholder="you@example.com"
-            placeholderTextColor={colors.textSecondary}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            returnKeyType="go"
-            onSubmitEditing={handleSignIn}
-            accessibilityLabel={t('auth.emailLabel')}
-          />
+          {!isLeader && (
+            <>
+              <Text style={styles.label}>{t('group.codeLabel')}</Text>
+              <View style={styles.field}>
+                <TextInput
+                  style={[styles.input, styles.codeInput]}
+                  value={code}
+                  onChangeText={(v) => setCode(v.toUpperCase())}
+                  placeholder="WND482"
+                  placeholderTextColor="rgba(235,235,245,0.3)"
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  maxLength={8}
+                  returnKeyType="go"
+                  onSubmitEditing={handleSubmit}
+                  accessibilityLabel={t('group.codeLabel')}
+                />
+              </View>
+            </>
+          )}
+
+          <View style={styles.spacer} />
 
           <Pressable
+            onPress={handleSubmit}
+            disabled={!canSubmit}
+            accessibilityRole="button"
             style={({ pressed }) => [
               styles.cta,
               !canSubmit && styles.ctaDisabled,
-              pressed && canSubmit && styles.ctaPressed,
+              pressed && canSubmit && styles.pressed,
             ]}
-            onPress={handleSignIn}
-            disabled={!canSubmit}
-            accessibilityRole="button"
           >
-            <Text style={styles.ctaText}>
-              {submitting ? t('auth.submitting') : t('auth.continue')}
-            </Text>
+            {busy ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <Text style={styles.ctaText}>
+                  {isLeader ? t('auth.leaderCta') : t('auth.followerCta')}
+                </Text>
+                <Ionicons name="arrow-forward" size={18} color="#fff" />
+              </>
+            )}
           </Pressable>
 
-          {error ? <Text style={styles.error}>{error}</Text> : null}
+          <Text style={styles.footer}>
+            {isLeader ? t('auth.leaderFoot') : t('auth.followerFoot')}
+          </Text>
         </View>
-      </View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </LinearGradient>
   );
 }
 
-const makeStyles = (colors: Palette) => StyleSheet.create({
-  flex: { flex: 1, backgroundColor: colors.background },
-  container: {
-    flex: 1,
-    paddingHorizontal: spacing.xl,
-    gap: spacing.xl,
-  },
-  header: { alignItems: 'center', gap: spacing.sm, marginTop: spacing.xl },
-  lantern: { fontSize: 56 },
-  title: { fontSize: 40, fontWeight: '800', color: colors.textPrimary },
-  subtitle: {
-    fontSize: 15,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  form: { gap: spacing.sm },
-  label: {
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 1,
-    color: colors.textSecondary,
-    marginTop: spacing.md,
-  },
-  input: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    fontSize: 17,
-    color: colors.textPrimary,
-  },
-  cta: {
-    backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    paddingVertical: spacing.lg,
-    alignItems: 'center',
-    marginTop: spacing.xl,
-  },
-  ctaDisabled: { opacity: 0.4 },
-  ctaPressed: { opacity: 0.85 },
-  ctaText: { fontSize: 17, fontWeight: '700', color: colors.accentText },
-  error: {
-    marginTop: spacing.md,
-    fontSize: 14,
-    color: colors.danger,
-    textAlign: 'center',
-  },
-});
+const makeStyles = (accent: string) =>
+  StyleSheet.create({
+    fill: { flex: 1 },
+    content: { flex: 1, paddingHorizontal: 24 },
+    back: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(255,255,255,0.08)',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'rgba(255,255,255,0.18)',
+    },
+    kicker: {
+      fontSize: 12,
+      fontWeight: '700',
+      letterSpacing: 1.4,
+      textTransform: 'uppercase',
+      color: accent,
+      marginTop: 26,
+    },
+    title: { fontSize: 34, fontWeight: '700', color: '#fff', marginTop: 6 },
+    sub: {
+      fontSize: 15,
+      lineHeight: 21,
+      color: 'rgba(235,235,245,0.6)',
+      marginTop: 8,
+      maxWidth: 300,
+    },
+    label: {
+      fontSize: 12,
+      fontWeight: '600',
+      letterSpacing: 0.6,
+      color: 'rgba(235,235,245,0.45)',
+      marginTop: 26,
+      marginBottom: 8,
+      marginLeft: 4,
+    },
+    field: {
+      height: 58,
+      borderRadius: 16,
+      justifyContent: 'center',
+      paddingHorizontal: 18,
+      backgroundColor: 'rgba(255,255,255,0.08)',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'rgba(255,255,255,0.2)',
+    },
+    input: { fontSize: 19, color: '#fff' },
+    codeInput: { fontSize: 24, fontWeight: '600', letterSpacing: 6 },
+    spacer: { flex: 1, minHeight: 24 },
+    cta: {
+      height: 56,
+      borderRadius: 18,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      backgroundColor: accentMix(accent, 24),
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: accentMix(accent, 55),
+    },
+    ctaDisabled: { opacity: 0.4 },
+    pressed: { opacity: 0.85 },
+    ctaText: { fontSize: 17, fontWeight: '600', color: '#fff' },
+    footer: {
+      textAlign: 'center',
+      fontSize: 13,
+      color: 'rgba(235,235,245,0.4)',
+      marginTop: 14,
+    },
+  });

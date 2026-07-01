@@ -6,10 +6,11 @@ import React, {
   useRef,
 } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, type Region } from 'react-native-maps';
 import type { Coordinates, Destination, MemberLocation } from '../types';
 import { useTheme } from '../state/PreferencesContext';
+import { accentMix, memberColor } from '../glass';
+import CrookIcon from './CrookIcon';
 import type { Palette } from '../theme';
 
 /** Imperative handle so the screen can drive the map camera. */
@@ -97,52 +98,99 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
           coordinate={gathering.coordinates}
           title={gathering.title}
           description="下一個集合點 · gathering point"
+          anchor={{ x: 0.5, y: 0.9 }}
         >
-          <View style={styles.lanternMarker}>
-            <Ionicons name="location" size={40} color={colors.accent} />
+          <View style={styles.crookMarker}>
+            {/* Pulse ring + soft glow behind the active gathering crook. */}
+            <View style={[styles.crookRing, { borderColor: accentMix(colors.accent, 50) }]} />
+            <View style={[styles.crookGlow, { backgroundColor: accentMix(colors.accent, 30) }]} />
+            <CrookIcon size={40} color={colors.accent} glow />
           </View>
         </Marker>
       )}
 
-      {members.map((m) =>
-        m.coordinates ? (
+      {members.map((m) => {
+        if (!m.coordinates) return null;
+        const isSelf = m.userId === currentUserId;
+        const isLeader = m.role === 'leader';
+        const ringColor = isLeader ? colors.accent : '#FFFFFF';
+        return (
           <Marker
             key={m.userId}
             coordinate={m.coordinates}
-            title={`${m.name}${m.userId === currentUserId ? ' · you' : ''}`}
-            description={m.role === 'leader' ? 'Leader' : 'Follower'}
+            title={`${m.name}${isSelf ? ' · you' : ''}`}
+            description={isLeader ? 'Leader' : 'Follower'}
+            anchor={{ x: 0.5, y: 1 }}
           >
-            <View
-              style={[
-                styles.memberPin,
-                {
-                  borderColor:
-                    m.role === 'leader' ? colors.leader : colors.follower,
-                },
-              ]}
-            >
-              <Text style={styles.memberInitial}>{m.name.slice(0, 1)}</Text>
+            <View style={styles.pinWrap}>
+              <View style={styles.pinLabel}>
+                <Text style={styles.pinLabelText} numberOfLines={1}>
+                  {isSelf ? `${m.name} · you` : m.name}
+                </Text>
+              </View>
+              <View
+                style={[
+                  styles.memberPin,
+                  {
+                    backgroundColor: memberColor(m.userId),
+                    borderColor: ringColor,
+                    borderWidth: isLeader ? 3 : 2.5,
+                  },
+                  isLeader && styles.memberPinLeader,
+                ]}
+              >
+                <Text style={styles.memberInitial}>
+                  {m.name.slice(0, 1).toUpperCase()}
+                </Text>
+              </View>
             </View>
           </Marker>
-        ) : null,
-      )}
+        );
+      })}
     </MapView>
   );
 });
 
 const makeStyles = (colors: Palette) => StyleSheet.create({
-  lanternMarker: { alignItems: 'center', justifyContent: 'center' },
-  lanternEmoji: { fontSize: 34 },
+  crookMarker: { width: 138, height: 138, alignItems: 'center', justifyContent: 'center' },
+  crookRing: {
+    position: 'absolute',
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+  },
+  crookGlow: {
+    position: 'absolute',
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+  },
+  pinWrap: { alignItems: 'center', gap: 4 },
+  pinLabel: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    backgroundColor: 'rgba(16,20,28,0.6)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  pinLabelText: { fontSize: 11, fontWeight: '600', color: '#fff' },
   memberPin: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.surface,
-    borderWidth: 3,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  memberInitial: { color: colors.textPrimary, fontWeight: '700', fontSize: 15 },
+  memberPinLeader: {
+    shadowColor: colors.accent,
+    shadowOpacity: 0.7,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  memberInitial: { color: '#fff', fontWeight: '600', fontSize: 16 },
 });
 
 export default GroupMap;

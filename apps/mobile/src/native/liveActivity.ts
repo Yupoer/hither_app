@@ -30,6 +30,12 @@ export interface GroupActivityState {
   /** ETA in seconds. */
   etaSeconds?: number;
   gatheringCoordinates?: Coordinates;
+  /** Flock progress toward the point, 0..1 (drives the Live Activity bar). */
+  progress?: number;
+  /** How many members have reached the point. */
+  gatheredCount?: number;
+  /** Total members in the group (for the avatar stack). */
+  memberCount?: number;
 }
 
 /** Opaque id for an in-flight activity (native only). */

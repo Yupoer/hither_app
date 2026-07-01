@@ -16,6 +16,8 @@ import { maps, type PlaceResult, type MapRegion } from '../native';
 import { useTheme } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
 import { radius, spacing, type Palette } from '../theme';
+import { glass } from '../glass';
+import CrookIcon from './CrookIcon';
 
 const DEBOUNCE_MS = 450;
 
@@ -120,7 +122,7 @@ export default function DestinationSearch({
               value={query}
               onChangeText={setQuery}
               placeholder={t('search.placeholder')}
-              placeholderTextColor={colors.textSecondary}
+              placeholderTextColor={glass.textTertiary}
               autoFocus
               returnKeyType="search"
               accessibilityLabel={t('search.placeholder')}
@@ -158,7 +160,9 @@ export default function DestinationSearch({
                 disabled={submittingId !== null}
                 accessibilityRole="button"
               >
-                <Text style={styles.resultEmoji}>🏮</Text>
+                <View style={styles.resultIcon}>
+                  <CrookIcon size={22} color={colors.accent} />
+                </View>
                 <View style={styles.resultText}>
                   <Text style={styles.resultName} numberOfLines={1}>
                     {item.name}
@@ -181,13 +185,17 @@ export default function DestinationSearch({
   );
 }
 
+// Dark "Liquid Glass" surface to match the map's sheet/overlays (opened from
+// there), independent of the light/dark map theme. Accent still follows theme.
 const makeStyles = (colors: Palette) => StyleSheet.create({
   flex: { flex: 1, justifyContent: 'flex-end' },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: glass.scrim },
   sheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
+    backgroundColor: '#16202c',
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderColor: glass.hairlineStrong,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
     maxHeight: '80%',
@@ -196,9 +204,9 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   handle: {
     alignSelf: 'center',
     width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.border,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: glass.grabber,
   },
   label: {
     fontSize: 11,
@@ -209,19 +217,19 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   searchRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   input: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: 'rgba(255,255,255,0.12)',
     borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: glass.hairlineStrong,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     fontSize: 17,
-    color: colors.textPrimary,
+    color: '#fff',
   },
   cancel: { paddingHorizontal: spacing.sm, paddingVertical: spacing.sm },
-  cancelText: { color: colors.textSecondary, fontSize: 15, fontWeight: '600' },
+  cancelText: { color: colors.accent, fontSize: 15, fontWeight: '600' },
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  statusText: { color: colors.textSecondary, fontSize: 14 },
+  statusText: { color: glass.textSecondary, fontSize: 14 },
   list: { flexGrow: 0 },
   resultRow: {
     flexDirection: 'row',
@@ -229,11 +237,18 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     gap: spacing.md,
     paddingVertical: spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
   },
   resultPressed: { opacity: 0.6 },
-  resultEmoji: { fontSize: 24 },
+  resultIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
   resultText: { flex: 1, gap: 2 },
-  resultName: { color: colors.textPrimary, fontSize: 16, fontWeight: '600' },
-  resultAddress: { color: colors.textSecondary, fontSize: 13, lineHeight: 18 },
+  resultName: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  resultAddress: { color: glass.textSecondary, fontSize: 13, lineHeight: 18 },
 });

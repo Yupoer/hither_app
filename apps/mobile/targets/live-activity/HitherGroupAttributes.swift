@@ -15,21 +15,36 @@ public struct HitherGroupAttributes: ActivityAttributes {
     public var gatheringTitle: String?
     public var distanceMeters: Double?
     public var etaSeconds: Double?
+    /// Flock progress toward the point, 0...1 (drives the progress bar).
+    public var progress: Double?
+    /// How many members have reached the point.
+    public var gatheredCount: Int?
+    /// Total members in the group (for the avatar stack).
+    public var memberCount: Int?
 
     public init(
       gatheringTitle: String? = nil,
       distanceMeters: Double? = nil,
-      etaSeconds: Double? = nil
+      etaSeconds: Double? = nil,
+      progress: Double? = nil,
+      gatheredCount: Int? = nil,
+      memberCount: Int? = nil
     ) {
       self.gatheringTitle = gatheringTitle
       self.distanceMeters = distanceMeters
       self.etaSeconds = etaSeconds
+      self.progress = progress
+      self.gatheredCount = gatheredCount
+      self.memberCount = memberCount
     }
 
     public init(from state: [String: Any]) {
       self.gatheringTitle = state["gatheringTitle"] as? String
       self.distanceMeters = (state["distanceMeters"] as? NSNumber)?.doubleValue
       self.etaSeconds = (state["etaSeconds"] as? NSNumber)?.doubleValue
+      self.progress = (state["progress"] as? NSNumber)?.doubleValue
+      self.gatheredCount = (state["gatheredCount"] as? NSNumber)?.intValue
+      self.memberCount = (state["memberCount"] as? NSNumber)?.intValue
     }
 
     public var formattedDistance: String? {

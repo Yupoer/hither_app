@@ -6,9 +6,10 @@ import Foundation
 //   1) the HitherLiveActivity Expo module (this pod) — starts/updates/ends it
 //   2) the Widget Extension — renders it on the lock screen / Dynamic Island
 // so the system can match `Activity<HitherGroupAttributes>` across processes.
-// The Widget target references this file via the expo-apple-targets config
-// (see apps/mobile/targets/live-activity); keep the shape in lockstep with the
-// JS `GroupActivityState` in src/native/liveActivity.ts.
+// The Widget target references a byte-for-byte COPY of this file (see
+// apps/mobile/targets/live-activity/HitherGroupAttributes.swift); keep the two
+// in lockstep, and keep the shape aligned with the JS `GroupActivityState` in
+// src/native/liveActivity.ts.
 
 // `ActivityAttributes` ships in ActivityKit (iOS 16.1+). Marking the type
 // available keeps its 16.x API surface properly gated, so this module's pod
@@ -21,15 +22,27 @@ public struct HitherGroupAttributes: ActivityAttributes {
     public var gatheringTitle: String?
     public var distanceMeters: Double?
     public var etaSeconds: Double?
+    /// Flock progress toward the point, 0...1 (drives the progress bar).
+    public var progress: Double?
+    /// How many members have reached the point.
+    public var gatheredCount: Int?
+    /// Total members in the group (for the avatar stack).
+    public var memberCount: Int?
 
     public init(
       gatheringTitle: String? = nil,
       distanceMeters: Double? = nil,
-      etaSeconds: Double? = nil
+      etaSeconds: Double? = nil,
+      progress: Double? = nil,
+      gatheredCount: Int? = nil,
+      memberCount: Int? = nil
     ) {
       self.gatheringTitle = gatheringTitle
       self.distanceMeters = distanceMeters
       self.etaSeconds = etaSeconds
+      self.progress = progress
+      self.gatheredCount = gatheredCount
+      self.memberCount = memberCount
     }
 
     /// Build a ContentState from the loosely-typed dict the JS bridge sends.
@@ -37,9 +50,12 @@ public struct HitherGroupAttributes: ActivityAttributes {
       self.gatheringTitle = state["gatheringTitle"] as? String
       self.distanceMeters = (state["distanceMeters"] as? NSNumber)?.doubleValue
       self.etaSeconds = (state["etaSeconds"] as? NSNumber)?.doubleValue
+      self.progress = (state["progress"] as? NSNumber)?.doubleValue
+      self.gatheredCount = (state["gatheredCount"] as? NSNumber)?.intValue
+      self.memberCount = (state["memberCount"] as? NSNumber)?.intValue
     }
 
-    /// "320 m" / "1.2 km" — matches the in-app banner's formatting.
+    /// "320 m" / "1.2 km" — matches the in-app carousel's formatting.
     public var formattedDistance: String? {
       guard let d = distanceMeters else { return nil }
       if d < 1000 { return "\(Int(d.rounded())) m" }
