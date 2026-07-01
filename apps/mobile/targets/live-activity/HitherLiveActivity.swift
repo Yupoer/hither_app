@@ -3,20 +3,56 @@ import SwiftUI
 import WidgetKit
 
 // Live Activity UI: the lock-screen banner + Dynamic Island presentations for
-// the group "heading to gathering point" journey. Styled after Uber's trip
-// Live Activity — a clean dark card, a prominent ETA, and an origin→destination
-// route line — but in Hither's lantern-amber brand. Data comes from
+// the group "heading to gathering point" journey. Styled after the Hither iOS
+// Flow design — a dark glass card, the shepherd-crook brand mark, "GATHERING
+// AT" + ETA, a flock progress bar and member avatars. Data comes from
 // `HitherGroupAttributes` (started/updated by the app's HitherLiveActivity
 // module); this target only draws it.
 
 // MARK: - Brand
 
 private enum Brand {
-  // Lantern amber accent (matches src/theme.ts `accent`).
+  // Lantern-amber accent (matches src/theme.ts `accent` / the crook brand).
   static let accent = Color(red: 0xF5 / 255, green: 0xB1 / 255, blue: 0x42 / 255)
   static let card = Color(red: 0x0E / 255, green: 0x13 / 255, blue: 0x20 / 255)
   static let textPrimary = Color(red: 0xF5 / 255, green: 0xF7 / 255, blue: 0xFB / 255)
-  static let textSecondary = Color(red: 0x9A / 255, green: 0xA6 / 255, blue: 0xBF / 255)
+  static let textSecondary = Color(white: 1, opacity: 0.6)
+  static let track = Color(white: 1, opacity: 0.14)
+  // Deterministic member-avatar palette from the design.
+  static let avatarColors: [Color] = [
+    Color(red: 0x2a / 255, green: 0x34 / 255, blue: 0x50 / 255),
+    Color(red: 0x34 / 255, green: 0x50 / 255, blue: 0x7a / 255),
+    Color(red: 0x4a / 255, green: 0x3a / 255, blue: 0x6a / 255),
+  ]
+}
+
+// MARK: - Crook brand mark
+
+/// Shepherd's crook, the design's SVG path `M24 52 L24 20 C24 6 9 6 9 21`
+/// (viewBox 0 0 40 56), stroked with round caps.
+private struct CrookShape: Shape {
+  func path(in rect: CGRect) -> Path {
+    let sx = rect.width / 40
+    let sy = rect.height / 56
+    func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+      CGPoint(x: rect.minX + x * sx, y: rect.minY + y * sy)
+    }
+    var path = Path()
+    path.move(to: pt(24, 52))
+    path.addLine(to: pt(24, 20))
+    path.addCurve(to: pt(9, 21), control1: pt(24, 6), control2: pt(9, 6))
+    return path
+  }
+}
+
+private struct Crook: View {
+  var size: CGFloat
+  var color: Color = Brand.accent
+  var body: some View {
+    CrookShape()
+      .stroke(color, style: StrokeStyle(lineWidth: size * 5 / 56, lineCap: .round, lineJoin: .round))
+      .frame(width: size * 40 / 56, height: size)
+  }
 }
 
 @main
@@ -36,48 +72,58 @@ struct HitherLiveActivityWidget: Widget {
       DynamicIsland {
         DynamicIslandExpandedRegion(.leading) {
           ZStack {
-            Circle().fill(Brand.accent.opacity(0.18)).frame(width: 36, height: 36)
-            Image(systemName: "figure.walk")
-              .font(.system(size: 16, weight: .bold))
-              .foregroundStyle(Brand.accent)
+            RoundedRectangle(cornerRadius: 12)
+              .fill(Brand.accent.opacity(0.22))
+              .frame(width: 42, height: 42)
+            Crook(size: 25)
           }
         }
         DynamicIslandExpandedRegion(.trailing) {
-          EtaBadge(text: context.state.shortEta)
+          VStack(alignment: .trailing, spacing: 0) {
+            if let eta = context.state.etaText {
+              Text(eta.value)
+                .font(.system(size: 22, weight: .bold))
+                .foregroundStyle(Brand.textPrimary)
+              if let d = context.state.formattedDistance {
+                Text(d).font(.system(size: 12)).foregroundStyle(Brand.textSecondary)
+              }
+            }
+          }
         }
         DynamicIslandExpandedRegion(.center) {
           VStack(alignment: .leading, spacing: 2) {
-            Text("HEADING TO")
-              .font(.system(size: 10, weight: .bold))
-              .tracking(1.2)
+            Text("GATHERING AT")
+              .font(.system(size: 11, weight: .bold))
+              .tracking(0.8)
               .foregroundStyle(Brand.accent)
             Text(context.state.gatheringTitle ?? context.attributes.groupName)
-              .font(.system(size: 16, weight: .bold))
+              .font(.system(size: 16, weight: .semibold))
               .foregroundStyle(Brand.textPrimary)
               .lineLimit(1)
           }
           .frame(maxWidth: .infinity, alignment: .leading)
         }
         DynamicIslandExpandedRegion(.bottom) {
-          RouteLine(
-            origin: context.attributes.groupName,
-            destination: context.state.gatheringTitle ?? "Gathering point",
-            distance: context.state.formattedDistance
-          )
+          VStack(spacing: 10) {
+            ProgressBar(value: context.state.clampedProgress)
+            HStack {
+              AvatarStack(count: context.state.avatarCount)
+              Spacer()
+              if let s = context.state.flockStatus {
+                Text(s).font(.system(size: 12.5)).foregroundStyle(Brand.textSecondary)
+              }
+            }
+          }
           .padding(.top, 2)
         }
       } compactLeading: {
-        Image(systemName: "figure.walk")
-          .font(.system(size: 14, weight: .bold))
-          .foregroundStyle(Brand.accent)
+        Crook(size: 16)
       } compactTrailing: {
         Text(context.state.shortEta ?? context.state.formattedDistance ?? "")
           .font(.system(size: 13, weight: .semibold))
           .foregroundStyle(Brand.accent)
       } minimal: {
-        Image(systemName: "figure.walk")
-          .font(.system(size: 13, weight: .bold))
-          .foregroundStyle(Brand.accent)
+        Crook(size: 15)
       }
       .keylineTint(Brand.accent)
     }
@@ -90,125 +136,130 @@ private struct LockScreenView: View {
   let context: ActivityViewContext<HitherGroupAttributes>
 
   var body: some View {
-    HStack(alignment: .top, spacing: 14) {
-      VStack(alignment: .leading, spacing: 10) {
-        // Header: status label + destination title.
+    VStack(alignment: .leading, spacing: 14) {
+      // Header: crook + app name + freshness.
+      HStack(spacing: 10) {
+        ZStack {
+          RoundedRectangle(cornerRadius: 6)
+            .fill(Brand.accent.opacity(0.24))
+            .frame(width: 22, height: 22)
+          Crook(size: 13)
+        }
+        Text("Hither").font(.system(size: 13, weight: .semibold)).foregroundStyle(Brand.textSecondary)
+        Spacer()
+        Text("now").font(.system(size: 13)).foregroundStyle(Brand.textSecondary.opacity(0.75))
+      }
+
+      // Point + big ETA.
+      HStack(alignment: .bottom) {
         VStack(alignment: .leading, spacing: 3) {
-          Text("HEADING TO GATHERING POINT")
-            .font(.system(size: 11, weight: .bold))
-            .tracking(1.0)
-            .foregroundStyle(Brand.accent)
+          Text("Next gathering point")
+            .font(.system(size: 13))
+            .foregroundStyle(Brand.textSecondary)
           Text(context.state.gatheringTitle ?? context.attributes.groupName)
-            .font(.system(size: 20, weight: .bold))
+            .font(.system(size: 22, weight: .bold))
             .foregroundStyle(Brand.textPrimary)
             .lineLimit(1)
-        }
-        // Route line: group origin → destination, with distance.
-        RouteLine(
-          origin: context.attributes.groupName,
-          destination: context.state.gatheringTitle ?? "Gathering point",
-          distance: context.state.formattedDistance
-        )
-      }
-      Spacer(minLength: 8)
-      // Big ETA block on the right, Uber-style.
-      VStack(alignment: .trailing, spacing: 0) {
-        if let eta = context.state.etaText {
-          Text(eta.value)
-            .font(.system(size: 30, weight: .heavy))
-            .foregroundStyle(Brand.textPrimary)
-          Text(eta.unit)
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(Brand.textSecondary)
-        } else {
-          ZStack {
-            Circle().fill(Brand.accent.opacity(0.18)).frame(width: 48, height: 48)
-            Image(systemName: "location.fill")
-              .font(.system(size: 20, weight: .bold))
-              .foregroundStyle(Brand.accent)
+          if let line = distanceLine {
+            Text(line).font(.system(size: 14)).foregroundStyle(Brand.textSecondary)
           }
+        }
+        Spacer(minLength: 8)
+        if let eta = context.state.etaText {
+          VStack(spacing: 0) {
+            Text(eta.value)
+              .font(.system(size: 34, weight: .heavy))
+              .foregroundStyle(Brand.accent)
+            Text(eta.unit).font(.system(size: 12)).foregroundStyle(Brand.textSecondary)
+          }
+        }
+      }
+
+      ProgressBar(value: context.state.clampedProgress)
+
+      HStack(spacing: 8) {
+        AvatarStack(count: context.state.avatarCount)
+        if let s = context.state.flockStatus {
+          Text(s).font(.system(size: 12.5)).foregroundStyle(Brand.textSecondary)
         }
       }
     }
     .padding(16)
   }
+
+  private var distanceLine: String? {
+    switch (context.state.formattedDistance, context.state.formattedEta) {
+    case let (d?, e?): return "\(d) · \(e) walk"
+    case let (d?, nil): return d
+    case let (nil, e?): return e
+    default: return nil
+    }
+  }
 }
 
 // MARK: - Pieces
 
-private struct EtaBadge: View {
-  let text: String?
+private struct ProgressBar: View {
+  let value: Double
   var body: some View {
-    if let text {
-      Text(text)
-        .font(.system(size: 14, weight: .bold))
-        .foregroundStyle(Brand.card)
-        .lineLimit(1)
-        .fixedSize()
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(Capsule().fill(Brand.accent))
+    GeometryReader { geo in
+      ZStack(alignment: .leading) {
+        Capsule().fill(Brand.track)
+        Capsule().fill(Brand.accent).frame(width: max(6, geo.size.width * value))
+      }
+    }
+    .frame(height: 6)
+  }
+}
+
+private struct AvatarStack: View {
+  let count: Int
+  var body: some View {
+    HStack(spacing: -7) {
+      ForEach(Array(0..<max(0, count)), id: \.self) { i in
+        Circle()
+          .fill(Brand.avatarColors[i % Brand.avatarColors.count])
+          .frame(width: 22, height: 22)
+          .overlay(Circle().stroke(Brand.card, lineWidth: 1.5))
+      }
     }
   }
 }
 
-// Origin → destination route line, mimicking Uber's pickup/dropoff dots.
-private struct RouteLine: View {
-  let origin: String
-  let destination: String
-  let distance: String?
-
-  var body: some View {
-    HStack(spacing: 8) {
-      VStack(spacing: 0) {
-        Circle().stroke(Brand.accent, lineWidth: 2).frame(width: 9, height: 9)
-        Rectangle().fill(Brand.accent.opacity(0.45)).frame(width: 2, height: 12)
-        Circle().fill(Brand.accent).frame(width: 9, height: 9)
-      }
-      VStack(alignment: .leading, spacing: 6) {
-        Text(origin)
-          .font(.system(size: 12, weight: .medium))
-          .foregroundStyle(Brand.textSecondary)
-          .lineLimit(1)
-        HStack(spacing: 6) {
-          Text(destination)
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(Brand.textPrimary)
-            .lineLimit(1)
-          if let distance {
-            Text("· \(distance)")
-              .font(.system(size: 12, weight: .medium))
-              .foregroundStyle(Brand.accent)
-          }
-        }
-      }
-      Spacer(minLength: 0)
-    }
-  }
-}
-
-// MARK: - ETA split helper
+// MARK: - Presentation helpers
 
 private extension HitherGroupAttributes.ContentState {
-  /// Splits the formatted ETA into a big number + small unit for the lock-screen
-  /// hero block (e.g. "12" / "min").
-  var etaText: (value: String, unit: String)? {
-    guard let s = etaSeconds else { return nil }
-    let minutes = Int((s / 60).rounded())
-    if minutes < 1 { return (value: "<1", unit: "min") }
-    if minutes < 60 { return (value: "\(minutes)", unit: "min") }
-    let h = minutes / 60
-    let m = minutes % 60
-    return m == 0 ? (value: "\(h)", unit: "hr") : (value: "\(h):\(String(format: "%02d", m))", unit: "hr")
-  }
-
-  /// Compact ETA for the narrow Dynamic Island regions — no "about" prefix and
-  /// collapses to hours so the trailing badge never truncates (e.g. "12 hr").
+  /// Compact ETA for the narrow Dynamic Island regions ("4 min", "now", "2 hr").
   var shortEta: String? {
     guard let s = etaSeconds else { return nil }
-    let minutes = Int((s / 60).rounded())
-    if minutes < 1 { return "now" }
-    if minutes < 60 { return "\(minutes) min" }
-    return "\(minutes / 60) hr"
+    let m = Int((s / 60).rounded())
+    if m < 1 { return "now" }
+    if m < 60 { return "\(m) min" }
+    return "\(m / 60) hr"
   }
+
+  /// Big number + small unit for the hero ETA block ("12" / "min").
+  var etaText: (value: String, unit: String)? {
+    guard let s = etaSeconds else { return nil }
+    let m = Int((s / 60).rounded())
+    if m < 1 { return (value: "<1", unit: "min") }
+    if m < 60 { return (value: "\(m)", unit: "min") }
+    let h = m / 60
+    let mm = m % 60
+    return mm == 0 ? (value: "\(h)", unit: "hr") : (value: "\(h):\(String(format: "%02d", mm))", unit: "hr")
+  }
+
+  /// Progress clamped to 0...1, defaulting to 0 when unknown.
+  var clampedProgress: Double { min(1, max(0, progress ?? 0)) }
+
+  /// "2 gathered · 2 on the way" — nil when we have no member count.
+  var flockStatus: String? {
+    guard let total = memberCount, total > 0 else { return nil }
+    let gathered = gatheredCount ?? 0
+    let enroute = max(0, total - gathered)
+    return "\(gathered) gathered · \(enroute) on the way"
+  }
+
+  /// How many avatar bubbles to draw (design caps the stack at 3).
+  var avatarCount: Int { min(memberCount ?? 0, 3) }
 }

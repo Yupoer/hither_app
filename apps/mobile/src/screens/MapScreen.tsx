@@ -180,12 +180,26 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const numericDistance =
     fromCoords && navTarget ? distanceMeters(fromCoords, navTarget.coordinates) : undefined;
+  const liveProgress =
+    numericDistance != null
+      ? Math.max(0.05, Math.min(0.95, 1 - Math.min(1, numericDistance / PROGRESS_REF_M)))
+      : undefined;
+  const liveGathered = navTarget
+    ? members.filter(
+        (m) =>
+          m.coordinates &&
+          distanceMeters(m.coordinates, navTarget.coordinates) <= ARRIVAL_RADIUS_M,
+      ).length
+    : undefined;
   useLiveActivity(journeyActive, {
     groupName: membership?.group.name ?? '',
     gatheringTitle: navTarget?.title,
     distanceMeters: numericDistance,
     etaSeconds: numericDistance != null ? walkingEtaSeconds(numericDistance) : undefined,
     gatheringCoordinates: navTarget?.coordinates,
+    progress: liveProgress,
+    gatheredCount: liveGathered,
+    memberCount: members.length,
   });
 
   const [journeyBusy, setJourneyBusy] = useState(false);

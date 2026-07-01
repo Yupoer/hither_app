@@ -62,11 +62,23 @@ export function useLiveActivity(active: boolean, state: GroupActivityState): voi
     state.distanceMeters != null ? Math.round(state.distanceMeters / 10) * 10 : null;
   const roundedEta =
     state.etaSeconds != null ? Math.round(state.etaSeconds / 15) * 15 : null;
+  // Coarse progress bucket so the bar advances without spamming updates.
+  const progressBucket =
+    state.progress != null ? Math.round(state.progress * 20) : null;
 
   useEffect(() => {
     if (active && handleRef.current) {
       void liveActivity.updateGroupActivity(handleRef.current, stateRef.current);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, roundedDistance, roundedEta, state.gatheringTitle, state.groupName]);
+  }, [
+    active,
+    roundedDistance,
+    roundedEta,
+    progressBucket,
+    state.gatheredCount,
+    state.memberCount,
+    state.gatheringTitle,
+    state.groupName,
+  ]);
 }
