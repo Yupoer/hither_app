@@ -30,6 +30,24 @@ const zh = {
   'auth.submitting': '登入中…',
   'auth.signInFailed': '登入失敗，請再試一次',
 
+  // Role select
+  'role.tagline': '讓大家不走散，隨時知道下一個集合點。',
+  'role.lead': '帶領一個群組',
+  'role.join': '用代碼加入',
+  'role.footer': '免註冊 · 只要一個暱稱',
+
+  // Auth (role-scoped)
+  'auth.leaderKicker': '你是隊長',
+  'auth.leaderTitle': '建立群組',
+  'auth.leaderSub': '取一個名字，成員會在你的圖釘旁看到它。',
+  'auth.leaderCta': '建立並開啟地圖',
+  'auth.leaderFoot': '系統會產生一組 6 碼代碼供分享。',
+  'auth.followerKicker': '加入群組',
+  'auth.followerTitle': '輸入代碼',
+  'auth.followerSub': '輸入你的暱稱和隊長分享的代碼。',
+  'auth.followerCta': '加入並開啟地圖',
+  'auth.followerFoot': '向隊長索取 6 碼群組代碼。',
+
   // Group
   'group.greeting': '嗨，{name}',
   'group.travelerFallback': '旅人',
@@ -193,6 +211,22 @@ const en: Record<keyof typeof zh, string> = {
   'auth.continue': 'Continue',
   'auth.submitting': 'Signing in…',
   'auth.signInFailed': 'Sign-in failed, please try again',
+
+  'role.tagline': 'Keep your flock together. Always know the next gathering point.',
+  'role.lead': 'Lead a group',
+  'role.join': 'Join with a code',
+  'role.footer': 'No account needed · just a nickname',
+
+  'auth.leaderKicker': "You're the shepherd",
+  'auth.leaderTitle': 'Create group',
+  'auth.leaderSub': 'Pick a name your flock sees beside your pin.',
+  'auth.leaderCta': 'Create & open map',
+  'auth.leaderFoot': 'A 6-character code is generated to share.',
+  'auth.followerKicker': 'Join a flock',
+  'auth.followerTitle': 'Enter code',
+  'auth.followerSub': 'Type your name and the code your shepherd shared.',
+  'auth.followerCta': 'Join & open map',
+  'auth.followerFoot': 'Ask your shepherd for the 6-character code.',
 
   'group.greeting': 'Hi, {name}',
   'group.travelerFallback': 'traveler',

@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import RoleSelectScreen from '../screens/RoleSelectScreen';
 import AuthScreen from '../screens/AuthScreen';
 import GroupScreen from '../screens/GroupScreen';
 import MapScreen from '../screens/MapScreen';
@@ -15,7 +16,8 @@ import { useTranslation } from '../i18n';
  * `NativeStackScreenProps<RootStackParamList, 'X'>`.
  */
 export type RootStackParamList = {
-  Auth: undefined;
+  RoleSelect: undefined;
+  Auth: { role: 'leader' | 'follower' } | undefined;
   Group: undefined;
   Map: { groupId: string } | undefined;
   Settings: undefined;
@@ -33,7 +35,7 @@ export default function RootNavigator() {
 
   return (
     <Stack.Navigator
-      initialRouteName="Auth"
+      initialRouteName="RoleSelect"
       screenOptions={{
         headerStyle: { backgroundColor: colors.background },
         headerTintColor: colors.textPrimary,
@@ -41,6 +43,11 @@ export default function RootNavigator() {
         contentStyle: { backgroundColor: colors.background },
       }}
     >
+      <Stack.Screen
+        name="RoleSelect"
+        component={RoleSelectScreen}
+        options={{ headerShown: false }}
+      />
       <Stack.Screen
         name="Auth"
         component={AuthScreen}
