@@ -372,10 +372,14 @@ export default function MapScreen({ route, navigation }: Props) {
   // --- Solo mode -------------------------------------------------------------
   async function toggleSolo(next: boolean) {
     if (!groupId) return;
+    setSoloOverride(next);
     try {
       await setSolo(groupId, next);
-      refresh();
+      // memberships is realtime-subscribed (useGroupState); its debounced
+      // reload refreshes `members` and clears the override above once it
+      // matches — no need to force an extra fetch here.
     } catch (e) {
+      setSoloOverride(null);
       Alert.alert(t('solo.failed'), e instanceof Error ? e.message : undefined);
     }
   }
@@ -548,6 +552,12 @@ export default function MapScreen({ route, navigation }: Props) {
   }
 
   // --- Derived view models --------------------------------------------------
+  // Optimistic flip for the Solo switch — server round trip + realtime
+  // refetch otherwise take long enough to read as the switch not responding,
+  // especially when you're the only row in the flock. Cleared once `members`
+  // (server truth) confirms it, below.
+  const [soloOverride, setSoloOverride] = useState<boolean | null>(null);
+
   const flock = useMemo(
     () =>
       members.map((m) => {
@@ -557,15 +567,17 @@ export default function MapScreen({ route, navigation }: Props) {
             : null;
         const arrived = d != null && d <= ARRIVAL_RADIUS_M;
         const isMemberLeader = m.role === 'leader';
+        const solo =
+          m.userId === user?.id && soloOverride !== null ? soloOverride : !!m.solo;
         return {
           userId: m.userId,
           name: m.name || t('group.travelerFallback'),
           avatar: m.avatar,
-          solo: !!m.solo,
+          solo,
           subgroupId: m.subgroupId,
           color: memberColor(m.userId),
           isLeader: isMemberLeader,
-          statusText: m.solo
+          statusText: solo
             ? t('solo.badge')
             : isMemberLeader
               ? t('flock.leading')
@@ -574,7 +586,7 @@ export default function MapScreen({ route, navigation }: Props) {
                 : arrived
                   ? t('flock.arrived')
                   : t('flock.enroute'),
-          statusColor: m.solo
+          statusColor: solo
             ? glass.warn
             : isMemberLeader
               ? accent
@@ -586,8 +598,16 @@ export default function MapScreen({ route, navigation }: Props) {
           arrived,
         };
       }),
-    [members, activePoint, accent, t],
+    [members, activePoint, accent, t, user?.id, soloOverride],
   );
+
+  // Drop the override once the server value catches up, so a later toggle
+  // (from this device or another) isn't masked by a stale optimistic flip.
+  useEffect(() => {
+    if (soloOverride === null) return;
+    const mine = members.find((m) => m.userId === user?.id);
+    if (mine && !!mine.solo === soloOverride) setSoloOverride(null);
+  }, [members, soloOverride, user?.id]);
 
   const topFlock = flock.filter((f) => !f.subgroupId);
 
@@ -844,31 +864,41 @@ export default function MapScreen({ route, navigation }: Props) {
         onIndexChange={setDetent}
         bottomInset={insets.bottom}
       >
-        {/* Search row + account avatar. */}
-        <View style={styles.searchRow}>
-          <Pressable
-            style={styles.searchField}
-            onPress={() => (isLeader ? setSearchVisible(true) : undefined)}
-            accessibilityRole="button"
-            accessibilityLabel={t('map.searchA11y')}
-          >
-            <Ionicons name="search" size={17} color={glass.textSecondary} />
-            <Text style={styles.searchPlaceholder}>{t('map.searchPlaces')}</Text>
-          </Pressable>
-          <Pressable
-            style={[styles.avatar, { backgroundColor: accent }]}
-            onPress={openProfile}
-            accessibilityRole="button"
-            accessibilityLabel={t('profile.title')}
-          >
-            {user?.avatar ? (
-              <Text style={styles.avatarEmoji}>{user.avatar}</Text>
-            ) : (
-              <Text style={styles.avatarText}>
-                {(user?.name ?? '?').slice(0, 1).toUpperCase()}
-              </Text>
-            )}
-          </Pressable>
+        {/* Search row + account avatar. Wrapped in an outer View: RN's
+            stickyHeaderIndices clones this element and steals ITS OWN style
+            for the sticky wrapper, resetting the element itself to `flex: 1`
+            — which was collapsing searchRow's `flexDirection: 'row'` and
+            squeezing the avatar out from beside the search field. The row
+            layout now lives on the untouched inner View instead. The glass
+            fill here also gives the sticky header its own frosted backing so
+            scrolled content visibly blurs as it passes beneath. */}
+        <View style={styles.searchRowSticky}>
+          <liquidGlass.GlassView tintColor={glass.overlay} style={StyleSheet.absoluteFill} />
+          <View style={styles.searchRow}>
+            <Pressable
+              style={styles.searchField}
+              onPress={() => (isLeader ? setSearchVisible(true) : undefined)}
+              accessibilityRole="button"
+              accessibilityLabel={t('map.searchA11y')}
+            >
+              <Ionicons name="search" size={17} color={glass.textSecondary} />
+              <Text style={styles.searchPlaceholder}>{t('map.searchPlaces')}</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.avatar, { backgroundColor: accent }]}
+              onPress={openProfile}
+              accessibilityRole="button"
+              accessibilityLabel={t('profile.title')}
+            >
+              {user?.avatar ? (
+                <Text style={styles.avatarEmoji}>{user.avatar}</Text>
+              ) : (
+                <Text style={styles.avatarText}>
+                  {(user?.name ?? '?').slice(0, 1).toUpperCase()}
+                </Text>
+              )}
+            </Pressable>
+          </View>
         </View>
 
         {/* Flock — first section, Apple-Maps-style heading. Members with no
@@ -1315,8 +1345,16 @@ const makeStyles = (accent: string) =>
     dotActive: { width: 20, backgroundColor: accent },
 
     // Sheet content
-    // Slim Apple-Maps search capsule.
-    searchRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 20, marginTop: 2 },
+    // Slim Apple-Maps search capsule. The sticky wrapper spans full sheet
+    // width (cancels the ScrollView's horizontal padding) so its frosted
+    // glass reads as a continuous bar that scrolled content passes under.
+    searchRowSticky: {
+      marginHorizontal: -16,
+      paddingHorizontal: 16,
+      paddingTop: 8,
+      paddingBottom: 20,
+    },
+    searchRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
     searchField: {
       flex: 1,
       height: 40,
@@ -1519,7 +1557,7 @@ const makeStyles = (accent: string) =>
       alignItems: 'center',
       gap: 12,
       paddingHorizontal: 16,
-      marginTop: 8,
+      marginTop: 20,
       backgroundColor: glass.fill,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairline,

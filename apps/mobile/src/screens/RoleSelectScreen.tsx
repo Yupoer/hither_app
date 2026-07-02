@@ -31,9 +31,6 @@ export default function RoleSelectScreen({ navigation }: Props) {
       locations={[0, 0.52, 1]}
       style={styles.fill}
     >
-      {/* Soft accent glow behind the logo (approximates the design's radial). */}
-      <View style={[styles.glow, { backgroundColor: accentMix(accent, 28) }]} />
-
       <View
         style={[
           styles.content,
@@ -92,15 +89,6 @@ export default function RoleSelectScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
-  glow: {
-    position: 'absolute',
-    top: 60,
-    alignSelf: 'center',
-    width: 280,
-    height: 280,
-    borderRadius: 140,
-    opacity: 0.9,
-  },
   content: {
     flex: 1,
     alignItems: 'center',

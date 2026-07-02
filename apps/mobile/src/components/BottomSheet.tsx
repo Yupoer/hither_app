@@ -146,14 +146,17 @@ export default function BottomSheet({
     extrapolate: 'clamp',
   });
   const bottomOff = sheetBottomOffset(heightAnim, detents, bottomInset);
+  // Peek (Stage 1) reads rounder to match the fully-pill search capsule
+  // inside it; the old [26, 22, ...] dipped smaller at mid before growing
+  // again at full, which looked inconsistent as the sheet resized.
   const topRadius = heightAnim.interpolate({
     inputRange: detents,
-    outputRange: [26, 22, SCREEN_CORNER_RADIUS],
+    outputRange: [30, 34, SCREEN_CORNER_RADIUS],
     extrapolate: 'clamp',
   });
   const bottomRadius = heightAnim.interpolate({
     inputRange: detents,
-    outputRange: [26, 22, SCREEN_CORNER_RADIUS],
+    outputRange: [30, 34, SCREEN_CORNER_RADIUS],
     extrapolate: 'clamp',
   });
 
