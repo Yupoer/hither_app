@@ -56,6 +56,8 @@ interface MembershipRow {
 interface ProfileRow {
   id: string;
   nickname: string;
+  /** Optional — absent until the profiles_avatar migration is applied. */
+  avatar?: string | null;
 }
 
 interface ItineraryRow {
@@ -122,6 +124,7 @@ export function mapMember(
     userId: membership.user_id,
     name: profile?.nickname ?? '',
     role: membership.role,
+    avatar: profile?.avatar ?? undefined,
     coordinates,
     lastUpdated: location?.updated_at ?? undefined,
   };
@@ -217,7 +220,17 @@ export async function joinGroup(inviteCode: string): Promise<Group> {
 export async function getGroupState(groupId: string): Promise<GroupState> {
   if (isDemoGroup(groupId)) {
     const { data } = await supabase.auth.getUser();
-    return getDemoState(data.user?.id);
+    const uid = data.user?.id;
+    let profile: ProfileRow | null = null;
+    if (uid) {
+      const { data: p } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', uid)
+        .maybeSingle();
+      profile = (p as ProfileRow | null) ?? null;
+    }
+    return getDemoState(uid, profile?.nickname, profile?.avatar ?? undefined);
   }
   const [groupRes, membersRes, itineraryRes, locationsRes] = await Promise.all([
     supabase
@@ -255,9 +268,11 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
   const userIds = memberRows.map((m) => m.user_id);
   let profileRows: ProfileRow[] = [];
   if (userIds.length > 0) {
+    // select('*') so optional columns (avatar) come through when the migration
+    // is applied, and are simply absent — not an error — before it.
     const { data: profiles, error: profileError } = await supabase
       .from('profiles')
-      .select('id, nickname')
+      .select('*')
       .in('id', userIds);
     orThrow(profileError);
     profileRows = (profiles ?? []) as ProfileRow[];
@@ -395,6 +410,21 @@ export async function updateNickname(nickname: string): Promise<string> {
     .eq('id', uid);
   orThrow(error);
   return trimmed;
+}
+
+/**
+ * Update the current user's emoji avatar (in `public.profiles`). Same RLS as
+ * the nickname: only your own row. Errors clearly if the profiles_avatar
+ * migration has not been applied yet.
+ */
+export async function updateAvatar(avatar: string): Promise<string> {
+  const uid = await requireUserId();
+  const { error } = await supabase
+    .from('profiles')
+    .update({ avatar })
+    .eq('id', uid);
+  orThrow(error);
+  return avatar;
 }
 
 /**

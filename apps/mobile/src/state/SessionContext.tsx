@@ -6,7 +6,10 @@ import React, {
   useState,
 } from 'react';
 import { supabase } from '../api/supabase';
-import { updateNickname as updateNicknameApi } from '../api/client';
+import {
+  updateAvatar as updateAvatarApi,
+  updateNickname as updateNicknameApi,
+} from '../api/client';
 import type { Group, MemberRole, User } from '../types';
 
 /**
@@ -43,6 +46,8 @@ interface SessionContextValue {
   signOut: () => Promise<void>;
   /** Change the signed-in user's nickname (persisted to `profiles`). */
   updateNickname: (nickname: string) => Promise<void>;
+  /** Change the signed-in user's emoji avatar (persisted to `profiles`). */
+  updateAvatar: (avatar: string) => Promise<void>;
   /** Record the group the user just created (as leader) or joined (as follower). */
   setMembership: (membership: Membership) => void;
   leaveGroup: () => void;
@@ -66,13 +71,20 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         if (active) setUser(null);
         return;
       }
+      // select('*') so the optional avatar column is tolerated either way.
       const { data } = await supabase
         .from('profiles')
-        .select('nickname')
+        .select('*')
         .eq('id', userId)
         .maybeSingle();
+      const row = data as { nickname?: string; avatar?: string | null } | null;
       if (active) {
-        setUser({ id: userId, name: data?.nickname ?? '', email: '' });
+        setUser({
+          id: userId,
+          name: row?.nickname ?? '',
+          email: '',
+          avatar: row?.avatar ?? undefined,
+        });
       }
     }
 
@@ -124,6 +136,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       updateNickname: async (nickname) => {
         const next = await updateNicknameApi(nickname);
         setUser((prev) => (prev ? { ...prev, name: next } : prev));
+      },
+      updateAvatar: async (avatar) => {
+        const next = await updateAvatarApi(avatar);
+        setUser((prev) => (prev ? { ...prev, avatar: next } : prev));
       },
       setMembership: (next) => setMembershipState(next),
       leaveGroup: () => setMembershipState(null),

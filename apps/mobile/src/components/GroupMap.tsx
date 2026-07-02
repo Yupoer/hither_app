@@ -139,9 +139,13 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
                   isLeader && styles.memberPinLeader,
                 ]}
               >
-                <Text style={styles.memberInitial}>
-                  {m.name.slice(0, 1).toUpperCase()}
-                </Text>
+                {m.avatar ? (
+                  <Text style={styles.memberEmoji}>{m.avatar}</Text>
+                ) : (
+                  <Text style={styles.memberInitial}>
+                    {m.name.slice(0, 1).toUpperCase()}
+                  </Text>
+                )}
               </View>
             </View>
           </Marker>
@@ -191,6 +195,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     shadowOffset: { width: 0, height: 0 },
   },
   memberInitial: { color: '#fff', fontWeight: '600', fontSize: 16 },
+  memberEmoji: { fontSize: 20 },
 });
 
 export default GroupMap;

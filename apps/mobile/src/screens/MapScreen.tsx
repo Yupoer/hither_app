@@ -60,6 +60,13 @@ import { glass, accentMix, memberColor } from '../glass';
 type Props = NativeStackScreenProps<RootStackParamList, 'Map'>;
 
 const ARRIVAL_RADIUS_M = 30;
+
+/** Preset emoji avatars for the profile editor. */
+const AVATAR_EMOJI = [
+  '🐑', '🐺', '🦊', '🐰', '🐻', '🐼', '🐸', '🐥',
+  '🦁', '🐯', '🐨', '🐢', '🐙', '🦄', '🐳', '🦉',
+  '⭐', '🔥', '🌙', '🍀', '🍎', '⚽', '🎧', '🎈',
+] as const;
 /** Nominal walk that reads as ~"just started" for the progress bar. */
 const PROGRESS_REF_M = 1500;
 
@@ -80,7 +87,8 @@ function shortEta(seconds: number): string {
 export default function MapScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  const { membership, user, updateNickname, leaveGroup, signOut } = useSession();
+  const { membership, user, updateNickname, updateAvatar, leaveGroup, signOut } =
+    useSession();
   const { language, themeName, setLanguage, setThemeName } = usePreferences();
   const { colors } = useTheme();
   const accent = colors.accent;
@@ -113,7 +121,7 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [insets.top, windowHeight]);
   const heightAnim = useRef(new Animated.Value(detents[0])).current;
   const [detent, setDetent] = useState(0);
-  const [overlay, setOverlay] = useState<null | 'route' | 'settings'>(null);
+  const [overlay, setOverlay] = useState<null | 'route' | 'settings' | 'profile'>(null);
   const [searchVisible, setSearchVisible] = useState(false);
   // Freeze the route overlay's scroll while a stop is being drag-reordered so
   // the two vertical gestures never fight.
@@ -334,6 +342,34 @@ export default function MapScreen({ route, navigation }: Props) {
     }
   }
 
+  // --- Profile (nickname + emoji avatar) ------------------------------------
+  const [profileName, setProfileName] = useState('');
+  function openProfile() {
+    setProfileName(user?.name ?? '');
+    setOverlay('profile');
+  }
+  async function saveProfileName() {
+    const trimmed = profileName.trim();
+    if (!trimmed) return;
+    try {
+      await updateNickname(trimmed);
+      refresh();
+    } catch {
+      Alert.alert(t('settings.nicknameFailed'));
+    }
+  }
+  async function pickAvatar(emoji: string) {
+    try {
+      await updateAvatar(emoji);
+      refresh();
+    } catch (e) {
+      Alert.alert(
+        t('profile.avatarFailed'),
+        e instanceof Error ? e.message : undefined,
+      );
+    }
+  }
+
   const handleReorder = useCallback(
     async (orderedIds: string[]) => {
       if (!groupId) return;
@@ -414,6 +450,7 @@ export default function MapScreen({ route, navigation }: Props) {
         return {
           userId: m.userId,
           name: m.name || t('group.travelerFallback'),
+          avatar: m.avatar,
           color: memberColor(m.userId),
           isLeader: isMemberLeader,
           statusText: isMemberLeader
@@ -485,7 +522,9 @@ export default function MapScreen({ route, navigation }: Props) {
               <View
                 key={f.userId}
                 style={[styles.pillAvatar, { backgroundColor: f.color, marginLeft: i ? -10 : 0 }]}
-              />
+              >
+                {f.avatar ? <Text style={styles.pillEmoji}>{f.avatar}</Text> : null}
+              </View>
             ))}
           </View>
           <Text style={styles.pillName} numberOfLines={1}>
@@ -616,11 +655,20 @@ export default function MapScreen({ route, navigation }: Props) {
             <Ionicons name="search" size={17} color={glass.textSecondary} />
             <Text style={styles.searchPlaceholder}>{t('map.searchPlaces')}</Text>
           </Pressable>
-          <View style={[styles.avatar, { backgroundColor: accent }]}>
-            <Text style={styles.avatarText}>
-              {(user?.name ?? '?').slice(0, 1).toUpperCase()}
-            </Text>
-          </View>
+          <Pressable
+            style={[styles.avatar, { backgroundColor: accent }]}
+            onPress={openProfile}
+            accessibilityRole="button"
+            accessibilityLabel={t('profile.title')}
+          >
+            {user?.avatar ? (
+              <Text style={styles.avatarEmoji}>{user.avatar}</Text>
+            ) : (
+              <Text style={styles.avatarText}>
+                {(user?.name ?? '?').slice(0, 1).toUpperCase()}
+              </Text>
+            )}
+          </Pressable>
         </View>
 
         {/* Flock — first section, Apple-Maps-style heading. */}
@@ -639,7 +687,11 @@ export default function MapScreen({ route, navigation }: Props) {
                   { backgroundColor: f.color, borderColor: f.isLeader ? accent : 'transparent' },
                 ]}
               >
-                <Text style={styles.flockInitial}>{f.name.slice(0, 1).toUpperCase()}</Text>
+                {f.avatar ? (
+                  <Text style={styles.flockEmoji}>{f.avatar}</Text>
+                ) : (
+                  <Text style={styles.flockInitial}>{f.name.slice(0, 1).toUpperCase()}</Text>
+                )}
               </View>
               <View style={styles.grow}>
                 <Text style={styles.flockName}>{f.name}</Text>
@@ -829,6 +881,60 @@ export default function MapScreen({ route, navigation }: Props) {
         </ScrollView>
       </OverlaySheet>
 
+      {/* Profile overlay: nickname + emoji avatar, synced to the group. */}
+      <OverlaySheet
+        visible={overlay === 'profile'}
+        onClose={() => setOverlay(null)}
+        title={t('profile.title')}
+        accent={accent}
+        doneLabel={t('map.done')}
+      >
+        <ScrollView contentContainerStyle={styles.overlayBody}>
+          <Text style={styles.sectionLabel}>{t('settings.nickname')}</Text>
+          <View style={styles.profileRow}>
+            <TextInput
+              style={styles.profileInput}
+              value={profileName}
+              onChangeText={setProfileName}
+              maxLength={24}
+              placeholder={t('auth.namePlaceholder')}
+              placeholderTextColor={glass.textTertiary}
+              returnKeyType="done"
+              onSubmitEditing={saveProfileName}
+            />
+            <Pressable
+              onPress={saveProfileName}
+              style={[styles.saveBtn, { backgroundColor: accent }]}
+              accessibilityRole="button"
+            >
+              <Text style={styles.saveText}>{t('settings.save')}</Text>
+            </Pressable>
+          </View>
+
+          <Text style={styles.sectionLabel}>{t('profile.avatar')}</Text>
+          <View style={styles.emojiGrid}>
+            {AVATAR_EMOJI.map((e) => (
+              <Pressable
+                key={e}
+                onPress={() => pickAvatar(e)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: user?.avatar === e }}
+                style={[
+                  styles.emojiCell,
+                  user?.avatar === e && {
+                    borderColor: accent,
+                    backgroundColor: accentMix(accent, 18),
+                  },
+                ]}
+              >
+                <Text style={styles.emojiChar}>{e}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <Text style={styles.overlayHint}>{t('profile.syncHint')}</Text>
+        </ScrollView>
+      </OverlaySheet>
+
       <DestinationSearch
         visible={searchVisible}
         onClose={() => setSearchVisible(false)}
@@ -931,6 +1037,8 @@ const makeStyles = (accent: string) =>
       borderRadius: 13,
       borderWidth: 1.5,
       borderColor: 'rgba(20,24,32,0.9)',
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     // flexShrink + numberOfLines(1) so an overlong group name ellipsizes
     // instead of pushing the role chip off-screen.
@@ -1026,6 +1134,35 @@ const makeStyles = (accent: string) =>
     searchPlaceholder: { fontSize: 15, color: 'rgba(235,235,245,0.5)' },
     avatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
     avatarText: { fontSize: 16, fontWeight: '700', color: '#fff' },
+    avatarEmoji: { fontSize: 20 },
+    flockEmoji: { fontSize: 20 },
+    pillEmoji: { fontSize: 13 },
+
+    // Profile overlay
+    profileRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
+    profileInput: {
+      flex: 1,
+      height: 48,
+      borderRadius: 14,
+      paddingHorizontal: 14,
+      color: '#fff',
+      fontSize: 16,
+      backgroundColor: glass.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
+    },
+    emojiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+    emojiCell: {
+      width: 52,
+      height: 52,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: glass.fill,
+      borderWidth: 1,
+      borderColor: 'transparent',
+    },
+    emojiChar: { fontSize: 26 },
 
     codeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
     // Big bold white section headings on the main sheet (Apple Maps style).

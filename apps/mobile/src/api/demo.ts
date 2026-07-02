@@ -34,18 +34,21 @@ const state: GroupState = {
       userId: 'demo-user-2',
       name: '小羊',
       role: 'follower',
+      avatar: '🐑',
       coordinates: { latitude: BASE.latitude + 0.0021, longitude: BASE.longitude + 0.0014 },
     },
     {
       userId: 'demo-user-3',
       name: '阿福',
       role: 'follower',
+      avatar: '🦊',
       coordinates: { latitude: BASE.latitude - 0.0017, longitude: BASE.longitude + 0.0026 },
     },
     {
       userId: 'demo-user-4',
       name: '奇奇',
       role: 'follower',
+      avatar: '🐰',
       coordinates: { latitude: BASE.latitude + 0.0009, longitude: BASE.longitude - 0.0022 },
     },
   ],
@@ -57,11 +60,18 @@ let destSeq = 0;
 
 /**
  * Snapshot of the demo state. When the real session user is known, the "me"
- * member takes their id so own-pin styling and "· you" labels line up.
+ * member takes their id / nickname / avatar so own-pin styling, "· you"
+ * labels and the profile editor all line up.
  */
-export function getDemoState(uid?: string | null): GroupState {
+export function getDemoState(
+  uid?: string | null,
+  nickname?: string | null,
+  avatar?: string | null,
+): GroupState {
   const members = state.members.map((m, i) =>
-    i === 0 && uid ? { ...m, userId: uid } : m,
+    i === 0 && uid
+      ? { ...m, userId: uid, name: nickname || m.name, avatar: avatar ?? undefined }
+      : m,
   );
   const destinations = state.destinations.map((d) => ({ ...d }));
   return { group: { ...state.group }, members, destinations, nextDestination: destinations[0] };

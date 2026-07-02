@@ -21,6 +21,8 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  /** Emoji avatar shown to other members (persisted in `profiles.avatar`). */
+  avatar?: string;
 }
 
 /**
@@ -53,6 +55,8 @@ export interface MemberLocation {
   /** Anonymous nickname, per the MVP design. */
   name: string;
   role: MemberRole;
+  /** Emoji avatar; falls back to the name's initial when unset. */
+  avatar?: string;
   coordinates?: Coordinates;
   /** ISO-8601 timestamp of the last location update. */
   lastUpdated?: string;

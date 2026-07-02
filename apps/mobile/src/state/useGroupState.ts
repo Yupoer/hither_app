@@ -118,6 +118,20 @@ export function useGroupState(groupId: string | null): UseGroupStateResult {
       )
       .subscribe();
 
+    // Nickname / avatar edits live in `profiles` (no group_id column — RLS
+    // already scopes visibility to co-members). Kept on its OWN channel so a
+    // backend without the profiles_avatar migration (table not yet in the
+    // realtime publication) only degrades this binding, not the group channel
+    // above; the fallback poll still picks profile edits up.
+    const profilesChannel = supabase
+      .channel(`profiles:${groupId}:${instanceIdRef.current}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'profiles' },
+        scheduleReload,
+      )
+      .subscribe();
+
     // Fallback poll in case a realtime event is dropped.
     const timer = setInterval(load, GROUP_POLL_INTERVAL_MS);
 
@@ -128,6 +142,7 @@ export function useGroupState(groupId: string | null): UseGroupStateResult {
       }
       clearInterval(timer);
       supabase.removeChannel(channel);
+      supabase.removeChannel(profilesChannel);
     };
   }, [groupId, load]);
 

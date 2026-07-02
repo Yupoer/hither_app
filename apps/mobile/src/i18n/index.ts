@@ -81,6 +81,10 @@ const zh = {
 
   // Map
   'role.demo': '測試模式 · 虛擬團隊',
+  'profile.title': '個人資料',
+  'profile.avatar': '頭像',
+  'profile.avatarFailed': '頭像更新失敗',
+  'profile.syncHint': '名字與頭像會即時同步給群組成員。',
   'map.loading': '載入群組位置中…',
   'map.setFailedTitle': '設定失敗',
   'map.setFailedMsg': '無法設定集合點。請確認你是隊長，並再試一次。',
@@ -225,6 +229,10 @@ const en: Record<keyof typeof zh, string> = {
   'settings.signOutMsg': "You'll return to the sign-in screen.",
 
   'role.demo': 'Demo flock (testing)',
+  'profile.title': 'Profile',
+  'profile.avatar': 'Avatar',
+  'profile.avatarFailed': "Couldn't update the avatar",
+  'profile.syncHint': 'Your name and avatar sync to everyone in the group.',
   'map.loading': 'Loading group locations…',
   'map.setFailedTitle': 'Failed',
   'map.setFailedMsg': "Couldn't set the gathering point. Make sure you're the leader and try again.",
