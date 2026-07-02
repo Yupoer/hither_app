@@ -145,10 +145,10 @@ export default function MapScreen({ route, navigation }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [destinations.length, windowWidth]);
 
+  // The map only recenters on explicit user intent (swiping the carousel,
+  // picking a search result, starting navigation) — NOT whenever the selected
+  // id changes, or a background reorder/refetch would yank the map around.
   const selectedDestination: Destination | undefined = destinations[selectedIndex];
-  useEffect(() => {
-    if (selectedDestination) mapRef.current?.centerOn(selectedDestination.coordinates);
-  }, [selectedDestination?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const reference = useMemo<MemberLocation | undefined>(
     () =>
@@ -210,6 +210,7 @@ export default function MapScreen({ route, navigation }: Props) {
       if (!groupId || journeyBusy) return;
       setJourneyBusy(true);
       setNavTargetId(dest.id);
+      mapRef.current?.centerOn(dest.coordinates);
       try {
         if (index > 0) {
           const ids = destinations.map((d) => d.id);
@@ -291,6 +292,7 @@ export default function MapScreen({ route, navigation }: Props) {
         coordinates: place.coordinates,
       });
       setSelectedIndex(destinations.length);
+      mapRef.current?.centerOn(place.coordinates);
       refresh();
     } catch {
       Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
@@ -301,7 +303,10 @@ export default function MapScreen({ route, navigation }: Props) {
     if (destinations.length === 0) return;
     const index = Math.round(e.nativeEvent.contentOffset.x / windowWidth);
     const clamped = Math.max(0, Math.min(index, destinations.length - 1));
-    if (clamped !== selectedIndex) setSelectedIndex(clamped);
+    if (clamped !== selectedIndex) {
+      setSelectedIndex(clamped);
+      mapRef.current?.centerOn(destinations[clamped].coordinates);
+    }
   }
 
   // --- Group actions --------------------------------------------------------

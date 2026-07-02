@@ -334,7 +334,8 @@ const makeStyles = (colors: Palette) =>
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.surface,
-      overflow: 'visible',
+      // Clip swiped-open rows (and the red delete bar) to the rounded frame.
+      overflow: 'hidden',
     },
     row: {
       height: ROW_HEIGHT,
