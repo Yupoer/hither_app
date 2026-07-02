@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -19,9 +19,12 @@ import { createGroup, joinGroup } from '../api/client';
 import { useSession } from '../state/SessionContext';
 import { useTheme } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
-import { accentMix } from '../glass';
+import { accentMix, glass } from '../glass';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Auth'>;
+
+/** Group codes are 6 characters (design shows them as WND-482). */
+const CODE_LEN = 6;
 
 /**
  * Nickname (+ group code for followers) entry. From here the leader creates a
@@ -43,10 +46,12 @@ export default function AuthScreen({ navigation, route }: Props) {
 
   const [name, setName] = useState(user?.name ?? '');
   const [code, setCode] = useState('');
+  const [codeError, setCodeError] = useState(false);
   const [busy, setBusy] = useState(false);
+  const codeRef = useRef<TextInput>(null);
 
   const canSubmit =
-    name.trim().length >= 1 && (isLeader || code.trim().length >= 4) && !busy;
+    name.trim().length >= 1 && (isLeader || code.length === CODE_LEN) && !busy;
 
   async function handleSubmit() {
     if (!canSubmit) return;
@@ -66,6 +71,8 @@ export default function AuthScreen({ navigation, route }: Props) {
       setMembership({ group, role });
       navigation.replace('Map', { groupId: group.id });
     } catch (e) {
+      // Design: a rejected code highlights the code boxes.
+      if (!isLeader) setCodeError(true);
       const msg = e instanceof Error ? e.message : t('auth.signInFailed');
       Alert.alert(
         isLeader ? t('group.createFailedTitle') : t('group.joinFailedTitle'),
@@ -121,7 +128,7 @@ export default function AuthScreen({ navigation, route }: Props) {
               autoCapitalize="none"
               autoFocus
               returnKeyType={isLeader ? 'go' : 'next'}
-              onSubmitEditing={isLeader ? handleSubmit : undefined}
+              onSubmitEditing={isLeader ? handleSubmit : () => codeRef.current?.focus()}
               accessibilityLabel={t('auth.nameLabel')}
             />
           </View>
@@ -129,21 +136,43 @@ export default function AuthScreen({ navigation, route }: Props) {
           {!isLeader && (
             <>
               <Text style={styles.label}>{t('group.codeLabel')}</Text>
-              <View style={styles.field}>
+              {/* Design: six character boxes (WND-482) fed by one hidden
+                  input; a rejected code highlights the boxes. */}
+              <Pressable
+                style={styles.codeBoxes}
+                onPress={() => codeRef.current?.focus()}
+                accessibilityLabel={t('group.codeLabel')}
+              >
+                {Array.from({ length: CODE_LEN }, (_, i) => (
+                  <React.Fragment key={i}>
+                    {i === CODE_LEN / 2 && <Text style={styles.codeDash}>-</Text>}
+                    <View
+                      style={[
+                        styles.codeCell,
+                        i === code.length && styles.codeCellActive,
+                        codeError && styles.codeCellError,
+                      ]}
+                    >
+                      <Text style={styles.codeChar}>{code[i] ?? ''}</Text>
+                    </View>
+                  </React.Fragment>
+                ))}
                 <TextInput
-                  style={[styles.input, styles.codeInput]}
+                  ref={codeRef}
+                  style={styles.codeHidden}
                   value={code}
-                  onChangeText={(v) => setCode(v.toUpperCase())}
-                  placeholder="WND482"
-                  placeholderTextColor="rgba(235,235,245,0.3)"
+                  onChangeText={(v) => {
+                    setCodeError(false);
+                    setCode(
+                      v.replace(/[^0-9a-z]/gi, '').toUpperCase().slice(0, CODE_LEN),
+                    );
+                  }}
                   autoCapitalize="characters"
                   autoCorrect={false}
-                  maxLength={8}
                   returnKeyType="go"
                   onSubmitEditing={handleSubmit}
-                  accessibilityLabel={t('group.codeLabel')}
                 />
-              </View>
+              </Pressable>
             </>
           )}
 
@@ -229,7 +258,22 @@ const makeStyles = (accent: string) =>
       borderColor: 'rgba(255,255,255,0.2)',
     },
     input: { fontSize: 19, color: '#fff' },
-    codeInput: { fontSize: 24, fontWeight: '600', letterSpacing: 6 },
+    codeBoxes: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    codeCell: {
+      flex: 1,
+      height: 58,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(255,255,255,0.08)',
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.2)',
+    },
+    codeCellActive: { borderColor: accent },
+    codeCellError: { borderColor: glass.danger },
+    codeChar: { fontSize: 24, fontWeight: '700', color: '#fff' },
+    codeDash: { fontSize: 22, fontWeight: '600', color: 'rgba(235,235,245,0.4)' },
+    codeHidden: { position: 'absolute', width: 1, height: 1, opacity: 0 },
     spacer: { flex: 1, minHeight: 24 },
     cta: {
       height: 56,
