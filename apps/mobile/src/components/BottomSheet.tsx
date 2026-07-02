@@ -102,6 +102,10 @@ export default function BottomSheet({
         if (atFull) return g.dy > 0 && scrollY.current <= 0;
         return true;
       },
+      // Bubbled moves (no child claimed them — i.e. the grabber zone) always
+      // resize, so the grabber works even at full with the list scrolled.
+      onMoveShouldSetPanResponder: (_e, g) =>
+        Math.abs(g.dy) > 4 && Math.abs(g.dy) > Math.abs(g.dx),
       onPanResponderTerminationRequest: () => false,
       onPanResponderGrant: () => {
         heightAnim.stopAnimation((v) => {
