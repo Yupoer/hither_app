@@ -75,7 +75,6 @@ describe('pure mappers (snake_case row -> camelCase type)', () => {
     const d = mapDestination({
       id: 'd1',
       title: '集合點',
-      description: null,
       address: null,
       latitude: 25.04,
       longitude: 121.56,
@@ -89,7 +88,7 @@ describe('pure mappers (snake_case row -> camelCase type)', () => {
   it('mapMember combines membership + profile nickname + location', () => {
     expect(
       mapMember(
-        { user_id: 'u1', role: 'leader', status: 'active' },
+        { user_id: 'u1', role: 'leader' },
         { id: 'u1', nickname: '隊長小燈籠' },
         { user_id: 'u1', latitude: 25, longitude: 121, updated_at: 't0' },
       ),
@@ -97,7 +96,6 @@ describe('pure mappers (snake_case row -> camelCase type)', () => {
       userId: 'u1',
       name: '隊長小燈籠',
       role: 'leader',
-      status: 'active',
       coordinates: { latitude: 25, longitude: 121 },
       lastUpdated: 't0',
     });
@@ -105,7 +103,7 @@ describe('pure mappers (snake_case row -> camelCase type)', () => {
 
   it('mapMember without a location row yields no coordinates', () => {
     const m = mapMember(
-      { user_id: 'u2', role: 'follower', status: 'idle' },
+      { user_id: 'u2', role: 'follower' },
       undefined,
       undefined,
     );

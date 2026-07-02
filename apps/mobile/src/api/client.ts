@@ -8,7 +8,6 @@ import type {
   JourneyStatus,
   MemberLocation,
   MemberRole,
-  MemberStatus,
   NotificationPreferences,
 } from '../types';
 import { DEFAULT_NOTIFICATION_PREFERENCES } from '../types';
@@ -43,7 +42,6 @@ interface GroupRow {
 interface MembershipRow {
   user_id: string;
   role: MemberRole;
-  status: MemberStatus;
 }
 
 interface ProfileRow {
@@ -54,7 +52,6 @@ interface ProfileRow {
 interface ItineraryRow {
   id: string;
   title: string;
-  description: string | null;
   address: string | null;
   latitude: number | null;
   longitude: number | null;
@@ -91,20 +88,15 @@ export function mapGroup(row: GroupRow): Group {
 }
 
 export function mapDestination(row: ItineraryRow): Destination {
-  const coordinates: Coordinates = {
-    latitude: row.latitude ?? 0,
-    longitude: row.longitude ?? 0,
-  };
   return {
     id: row.id,
     title: row.title,
-    description: row.description ?? undefined,
     order: row.position,
     address: row.address ?? undefined,
-    coordinates,
-    // The MVP schema does not store routing info; default to 0 (meters/seconds).
-    travelDistance: 0,
-    travelTime: 0,
+    coordinates: {
+      latitude: row.latitude ?? 0,
+      longitude: row.longitude ?? 0,
+    },
   };
 }
 
@@ -121,7 +113,6 @@ export function mapMember(
     userId: membership.user_id,
     name: profile?.nickname ?? '',
     role: membership.role,
-    status: membership.status,
     coordinates,
     lastUpdated: location?.updated_at ?? undefined,
   };
@@ -220,11 +211,11 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
       .single(),
     supabase
       .from('memberships')
-      .select('user_id, role, status')
+      .select('user_id, role')
       .eq('group_id', groupId),
     supabase
       .from('itinerary_items')
-      .select('id, title, description, address, latitude, longitude, position')
+      .select('id, title, address, latitude, longitude, position')
       .eq('group_id', groupId)
       .order('position', { ascending: true }),
     supabase
