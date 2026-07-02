@@ -1,7 +1,9 @@
 import { supabase } from './supabase';
 import {
   demoAddDestination,
+  demoCreateSubgroup,
   demoDeleteDestination,
+  demoMergeSubgroup,
   demoReorderDestinations,
   demoSetJourneyStatus,
   demoSetSolo,
@@ -19,6 +21,8 @@ import type {
   MemberLocation,
   MemberRole,
   NotificationPreferences,
+  Subgroup,
+  SubgroupMode,
 } from '../types';
 import { DEFAULT_NOTIFICATION_PREFERENCES } from '../types';
 
@@ -54,6 +58,16 @@ interface MembershipRow {
   role: MemberRole;
   /** Optional — absent until the solo_mode migration is applied. */
   solo?: boolean | null;
+  /** Optional — absent until the subgroups migration is applied. */
+  subgroup_id?: string | null;
+}
+
+interface SubgroupRow {
+  id: string;
+  name: string;
+  mode: SubgroupMode;
+  leader_id: string | null;
+  parent_subgroup_id: string | null;
 }
 
 interface ProfileRow {
@@ -129,8 +143,19 @@ export function mapMember(
     role: membership.role,
     avatar: profile?.avatar ?? undefined,
     solo: membership.solo ?? false,
+    subgroupId: membership.subgroup_id ?? undefined,
     coordinates,
     lastUpdated: location?.updated_at ?? undefined,
+  };
+}
+
+export function mapSubgroup(row: SubgroupRow): Subgroup {
+  return {
+    id: row.id,
+    name: row.name,
+    mode: row.mode,
+    leaderId: row.leader_id ?? undefined,
+    parentId: row.parent_subgroup_id ?? undefined,
   };
 }
 
@@ -293,10 +318,22 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
 
   const destinations: Destination[] = itineraryRows.map(mapDestination);
 
+  // Subgroups — tolerant of the table not existing yet (pre-migration):
+  // an error just means "no subgroups".
+  let subgroups: Subgroup[] = [];
+  const sgRes = await supabase
+    .from('subgroups')
+    .select('*')
+    .eq('group_id', groupId);
+  if (!sgRes.error) {
+    subgroups = ((sgRes.data ?? []) as SubgroupRow[]).map(mapSubgroup);
+  }
+
   return {
     group: mapGroup(groupRes.data as GroupRow),
     members,
     destinations,
+    subgroups,
     nextDestination: destinations[0],
   };
 }
@@ -431,6 +468,77 @@ export async function updateAvatar(avatar: string): Promise<string> {
     .eq('id', uid);
   orThrow(error);
   return avatar;
+}
+
+/**
+ * Split members into a new subgroup ("小隊") — leader-only (RLS on both the
+ * subgroups insert and the memberships update). `parentId` nests the new
+ * subgroup under an existing one; members move onto the new leaf. Minimum 2
+ * members (one person = Solo mode).
+ */
+export async function createSubgroup(
+  groupId: string,
+  input: {
+    name: string;
+    mode: SubgroupMode;
+    leaderId?: string;
+    parentId?: string;
+    memberIds: string[];
+  },
+): Promise<void> {
+  if (input.memberIds.length < 2) {
+    throw new Error('小隊至少需要 2 人');
+  }
+  if (isDemoGroup(groupId)) {
+    demoCreateSubgroup(input);
+    return;
+  }
+  const { data, error } = await supabase
+    .from('subgroups')
+    .insert({
+      group_id: groupId,
+      parent_subgroup_id: input.parentId ?? null,
+      name: input.name,
+      mode: input.mode,
+      leader_id: input.mode === 'led' ? (input.leaderId ?? null) : null,
+    })
+    .select('id')
+    .single();
+  orThrow(error);
+
+  const { error: mErr } = await supabase
+    .from('memberships')
+    .update({ subgroup_id: (data as { id: string }).id })
+    .eq('group_id', groupId)
+    .in('user_id', input.memberIds);
+  orThrow(mErr);
+}
+
+/**
+ * Merge a subgroup back one level: its members return to the parent subgroup
+ * (or the main group) and the subgroup row is deleted. Leader-only. Callers
+ * must merge child subgroups first (the UI enforces leaf-only merges).
+ */
+export async function mergeSubgroup(
+  groupId: string,
+  subgroup: Subgroup,
+): Promise<void> {
+  if (isDemoGroup(groupId)) {
+    demoMergeSubgroup(subgroup.id);
+    return;
+  }
+  const { error: mErr } = await supabase
+    .from('memberships')
+    .update({ subgroup_id: subgroup.parentId ?? null })
+    .eq('group_id', groupId)
+    .eq('subgroup_id', subgroup.id);
+  orThrow(mErr);
+
+  const { error } = await supabase
+    .from('subgroups')
+    .delete()
+    .eq('id', subgroup.id);
+  orThrow(error);
 }
 
 /**

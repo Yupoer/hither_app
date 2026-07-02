@@ -96,6 +96,9 @@ describe('pure mappers (snake_case row -> camelCase type)', () => {
       userId: 'u1',
       name: '隊長小燈籠',
       role: 'leader',
+      avatar: undefined,
+      solo: false,
+      subgroupId: undefined,
       coordinates: { latitude: 25, longitude: 121 },
       lastUpdated: 't0',
     });

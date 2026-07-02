@@ -47,7 +47,9 @@ import {
 import { liquidGlass, location, type MapRegion, type PlaceResult } from '../native';
 import {
   addDestination,
+  createSubgroup,
   deleteDestination,
+  mergeSubgroup,
   reorderDestinations,
   setJourneyStatus,
   setSolo,
@@ -55,7 +57,13 @@ import {
 } from '../api/client';
 import { isDemoGroup } from '../api/demo';
 import { confirmAction } from '../utils/confirm';
-import type { Coordinates, Destination, MemberLocation } from '../types';
+import type {
+  Coordinates,
+  Destination,
+  MemberLocation,
+  Subgroup,
+  SubgroupMode,
+} from '../types';
 import { themes, THEME_ORDER, type ThemeName } from '../theme';
 import { glass, accentMix, memberColor } from '../glass';
 
@@ -384,6 +392,81 @@ export default function MapScreen({ route, navigation }: Props) {
     }
   }
 
+  // --- Subgroups (拆分 / 併回) ------------------------------------------------
+  const subgroups = state?.subgroups ?? [];
+  // When set, the flock list is in member-picking mode, scoped to one level of
+  // the tree (undefined parentId = the main group's own members).
+  const [splitParent, setSplitParent] = useState<null | { parentId?: string }>(null);
+  const [splitSelected, setSplitSelected] = useState<string[]>([]);
+
+  function startSplit(parentId?: string) {
+    setSplitParent({ parentId });
+    setSplitSelected([]);
+  }
+  function cancelSplit() {
+    setSplitParent(null);
+    setSplitSelected([]);
+  }
+  function toggleSplitSelect(userId: string) {
+    setSplitSelected((prev) =>
+      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId],
+    );
+  }
+  function confirmSplit() {
+    if (!splitParent) return;
+    const scope = flock.filter((f) => f.subgroupId === splitParent.parentId);
+    const remaining = scope.length - splitSelected.length;
+    if (splitSelected.length < 2) {
+      Alert.alert(t('subgroup.needTwo'));
+      return;
+    }
+    // Splitting inside a subgroup must leave it a valid subgroup (≥2) — or
+    // take everyone would just rename it, which is pointless.
+    if (splitParent.parentId && remaining === 1) {
+      Alert.alert(t('subgroup.remainOne'));
+      return;
+    }
+    if (splitParent.parentId && remaining === 0) {
+      Alert.alert(t('subgroup.selectFewer'));
+      return;
+    }
+    Alert.alert(t('subgroup.modeTitle'), t('subgroup.modeMsg'), [
+      { text: t('subgroup.modeLed'), onPress: () => void doSplit('led') },
+      { text: t('subgroup.modeCollab'), onPress: () => void doSplit('collab') },
+      { text: t('common.cancel'), style: 'cancel' },
+    ]);
+  }
+  async function doSplit(mode: SubgroupMode) {
+    if (!groupId || !splitParent) return;
+    try {
+      await createSubgroup(groupId, {
+        name: t('subgroup.defaultName', { index: subgroups.length + 1 }),
+        mode,
+        leaderId: mode === 'led' ? splitSelected[0] : undefined,
+        parentId: splitParent.parentId,
+        memberIds: splitSelected,
+      });
+      cancelSplit();
+      refresh();
+    } catch (e) {
+      Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
+    }
+  }
+  async function mergeSg(sg: Subgroup) {
+    if (!groupId) return;
+    // Leaf-only merges: fold the tree back one level at a time.
+    if (subgroups.some((s) => s.parentId === sg.id)) {
+      Alert.alert(t('subgroup.mergeChildrenFirst'));
+      return;
+    }
+    try {
+      await mergeSubgroup(groupId, sg);
+      refresh();
+    } catch (e) {
+      Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
+    }
+  }
+
   const handleReorder = useCallback(
     async (orderedIds: string[]) => {
       if (!groupId) return;
@@ -466,6 +549,7 @@ export default function MapScreen({ route, navigation }: Props) {
           name: m.name || t('group.travelerFallback'),
           avatar: m.avatar,
           solo: !!m.solo,
+          subgroupId: m.subgroupId,
           color: memberColor(m.userId),
           isLeader: isMemberLeader,
           statusText: m.solo
@@ -491,6 +575,56 @@ export default function MapScreen({ route, navigation }: Props) {
       }),
     [members, activePoint, accent, t],
   );
+
+  const topFlock = flock.filter((f) => !f.subgroupId);
+
+  // One flock row, shared by the main list and the subgroup cards. In split
+  // mode, rows in the scope being split become selectable.
+  const renderFlockRow = (f: (typeof flock)[number], last: boolean) => {
+    const selecting = !!splitParent && f.subgroupId === splitParent.parentId;
+    const isSelected = splitSelected.includes(f.userId);
+    return (
+      <Pressable
+        key={f.userId}
+        onPress={selecting ? () => toggleSplitSelect(f.userId) : undefined}
+        disabled={!selecting}
+        style={[styles.flockRow, last && styles.flockRowLast]}
+        accessibilityRole={selecting ? 'checkbox' : undefined}
+        accessibilityState={selecting ? { checked: isSelected } : undefined}
+      >
+        {selecting && (
+          <View
+            style={[
+              styles.selectDot,
+              isSelected && { backgroundColor: accent, borderColor: accent },
+            ]}
+          >
+            {isSelected ? <Ionicons name="checkmark" size={13} color="#1A1206" /> : null}
+          </View>
+        )}
+        <View
+          style={[
+            styles.flockAvatar,
+            { backgroundColor: f.color, borderColor: f.isLeader ? accent : 'transparent' },
+          ]}
+        >
+          {f.avatar ? (
+            <Text style={styles.flockEmoji}>{f.avatar}</Text>
+          ) : (
+            <Text style={styles.flockInitial}>{f.name.slice(0, 1).toUpperCase()}</Text>
+          )}
+        </View>
+        <View style={styles.grow}>
+          <Text style={styles.flockName}>{f.name}</Text>
+          <Text style={[styles.flockStatus, { color: f.statusColor }]}>{f.statusText}</Text>
+        </View>
+        <View style={styles.flockMeta}>
+          <Text style={styles.flockEta}>{f.eta}</Text>
+          <Text style={styles.flockDist}>{f.dist}</Text>
+        </View>
+      </Pressable>
+    );
+  };
 
   // Floating chrome rides just above the sheet's live top edge; its baseline
   // follows the sheet's animated gap to the screen bottom.
@@ -690,39 +824,73 @@ export default function MapScreen({ route, navigation }: Props) {
           </Pressable>
         </View>
 
-        {/* Flock — first section, Apple-Maps-style heading. */}
-        <Text style={styles.sheetHeading}>
-          {t('map.flockLabel')} · {members.length}
-        </Text>
-        <View style={styles.list}>
-          {flock.map((f, i) => (
-            <View
-              key={f.userId}
-              style={[styles.flockRow, i === flock.length - 1 && styles.flockRowLast]}
-            >
-              <View
-                style={[
-                  styles.flockAvatar,
-                  { backgroundColor: f.color, borderColor: f.isLeader ? accent : 'transparent' },
-                ]}
+        {/* Flock — first section, Apple-Maps-style heading. Members with no
+            subgroup list first; each subgroup renders as its own card. */}
+        <View style={styles.headingRow}>
+          <Text style={styles.sheetHeading}>
+            {t('map.flockLabel')} · {members.length}
+          </Text>
+          {isLeader && !splitParent && topFlock.length >= 2 && (
+            <Pressable onPress={() => startSplit(undefined)} hitSlop={8} accessibilityRole="button">
+              <Text style={[styles.rowAction, { color: accent }]}>{t('subgroup.split')}</Text>
+            </Pressable>
+          )}
+        </View>
+        {splitParent && (
+          <View style={styles.splitBar}>
+            <Text style={styles.splitHint}>{t('subgroup.selectHint')}</Text>
+            <View style={styles.splitActions}>
+              <Pressable
+                style={[styles.chip, { backgroundColor: accentMix(accent, 24), borderColor: accentMix(accent, 50) }]}
+                onPress={confirmSplit}
+                accessibilityRole="button"
               >
-                {f.avatar ? (
-                  <Text style={styles.flockEmoji}>{f.avatar}</Text>
-                ) : (
-                  <Text style={styles.flockInitial}>{f.name.slice(0, 1).toUpperCase()}</Text>
+                <Text style={styles.chipText}>
+                  {t('subgroup.create', { count: splitSelected.length })}
+                </Text>
+              </Pressable>
+              <Pressable style={styles.chipGhost} onPress={cancelSplit} accessibilityRole="button">
+                <Text style={styles.chipText}>{t('common.cancel')}</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+        <View style={styles.list}>
+          {topFlock.map((f, i) => renderFlockRow(f, i === topFlock.length - 1))}
+        </View>
+        {subgroups.map((sg) => {
+          const memberRows = flock.filter((f) => f.subgroupId === sg.id);
+          const leaderName = flock.find((f) => f.userId === sg.leaderId)?.name;
+          const parentName = subgroups.find((s) => s.id === sg.parentId)?.name;
+          return (
+            <View key={sg.id} style={styles.subgroupCard}>
+              <View style={styles.subgroupHead}>
+                <View style={styles.grow}>
+                  <Text style={styles.subgroupName}>
+                    {sg.name} · {memberRows.length}
+                  </Text>
+                  <Text style={styles.subgroupMeta}>
+                    {sg.mode === 'led'
+                      ? t('subgroup.led', { name: leaderName ?? '—' })
+                      : t('subgroup.collab')}
+                    {parentName ? ` · ${t('subgroup.childOf', { name: parentName })}` : ''}
+                  </Text>
+                </View>
+                {isLeader && !splitParent && memberRows.length >= 4 && (
+                  <Pressable onPress={() => startSplit(sg.id)} hitSlop={8} accessibilityRole="button">
+                    <Text style={[styles.rowAction, { color: accent }]}>{t('subgroup.split')}</Text>
+                  </Pressable>
+                )}
+                {isLeader && (
+                  <Pressable onPress={() => void mergeSg(sg)} hitSlop={8} accessibilityRole="button">
+                    <Text style={[styles.rowAction, { color: accent }]}>{t('subgroup.merge')}</Text>
+                  </Pressable>
                 )}
               </View>
-              <View style={styles.grow}>
-                <Text style={styles.flockName}>{f.name}</Text>
-                <Text style={[styles.flockStatus, { color: f.statusColor }]}>{f.statusText}</Text>
-              </View>
-              <View style={styles.flockMeta}>
-                <Text style={styles.flockEta}>{f.eta}</Text>
-                <Text style={styles.flockDist}>{f.dist}</Text>
-              </View>
+              {memberRows.map((f, i) => renderFlockRow(f, i === memberRows.length - 1))}
             </View>
-          ))}
-        </View>
+          );
+        })}
 
         {/* Group code + share / copy. */}
         <Text style={styles.sheetHeading}>{t('group.codeLabel')}</Text>
@@ -1210,6 +1378,52 @@ const makeStyles = (accent: string) =>
     },
     soloTitle: { fontSize: 16, fontWeight: '600', color: '#fff' },
     soloSub: { fontSize: 12.5, color: glass.textSecondary, marginTop: 2 },
+
+    // Subgroups
+    headingRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingRight: 4,
+    },
+    splitBar: {
+      borderRadius: 16,
+      padding: 12,
+      marginBottom: 12,
+      gap: 10,
+      backgroundColor: glass.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
+    },
+    splitHint: { fontSize: 13, color: glass.textSecondary },
+    splitActions: { flexDirection: 'row', gap: 8 },
+    selectDot: {
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      borderWidth: 1.5,
+      borderColor: 'rgba(255,255,255,0.4)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    subgroupCard: {
+      borderRadius: 20,
+      overflow: 'hidden',
+      marginBottom: 12,
+      backgroundColor: glass.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
+    },
+    subgroupHead: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 14,
+      paddingHorizontal: 14,
+      paddingTop: 12,
+      paddingBottom: 6,
+    },
+    subgroupName: { fontSize: 15, fontWeight: '700', color: '#fff' },
+    subgroupMeta: { fontSize: 12.5, color: glass.textSecondary, marginTop: 1 },
 
     codeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
     // Big bold white section headings on the main sheet (Apple Maps style).

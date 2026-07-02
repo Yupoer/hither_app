@@ -1,4 +1,11 @@
-import type { Coordinates, Destination, GroupState, JourneyStatus } from '../types';
+import type {
+  Coordinates,
+  Destination,
+  GroupState,
+  JourneyStatus,
+  Subgroup,
+  SubgroupMode,
+} from '../types';
 
 /**
  * Local demo flock for testing the leader flow without rounding up real
@@ -53,10 +60,12 @@ const state: GroupState = {
     },
   ],
   destinations: [],
+  subgroups: [],
   nextDestination: undefined,
 };
 
 let destSeq = 0;
+let subgroupSeq = 0;
 
 /**
  * Snapshot of the demo state. When the real session user is known, the "me"
@@ -74,7 +83,13 @@ export function getDemoState(
       : m,
   );
   const destinations = state.destinations.map((d) => ({ ...d }));
-  return { group: { ...state.group }, members, destinations, nextDestination: destinations[0] };
+  return {
+    group: { ...state.group },
+    members,
+    destinations,
+    subgroups: state.subgroups.map((s) => ({ ...s })),
+    nextDestination: destinations[0],
+  };
 }
 
 export function demoUpdateMyLocation(coordinates: Coordinates): void {
@@ -119,4 +134,33 @@ export function demoSetJourneyStatus(status: JourneyStatus): void {
 
 export function demoSetSolo(solo: boolean): void {
   state.members[0] = { ...state.members[0], solo };
+}
+
+export function demoCreateSubgroup(input: {
+  name: string;
+  mode: SubgroupMode;
+  leaderId?: string;
+  parentId?: string;
+  memberIds: string[];
+}): void {
+  const sg: Subgroup = {
+    id: `demo-sg-${++subgroupSeq}`,
+    name: input.name,
+    mode: input.mode,
+    leaderId: input.mode === 'led' ? input.leaderId : undefined,
+    parentId: input.parentId,
+  };
+  state.subgroups.push(sg);
+  state.members = state.members.map((m) =>
+    input.memberIds.includes(m.userId) ? { ...m, subgroupId: sg.id } : m,
+  );
+}
+
+export function demoMergeSubgroup(subgroupId: string): void {
+  const sg = state.subgroups.find((s) => s.id === subgroupId);
+  if (!sg) return;
+  state.members = state.members.map((m) =>
+    m.subgroupId === subgroupId ? { ...m, subgroupId: sg.parentId } : m,
+  );
+  state.subgroups = state.subgroups.filter((s) => s.id !== subgroupId);
 }

@@ -59,9 +59,29 @@ export interface MemberLocation {
   avatar?: string;
   /** Solo mode: temporarily detached from the flock (no group notifications). */
   solo?: boolean;
+  /** Leaf subgroup the member currently belongs to, if any. */
+  subgroupId?: string;
   coordinates?: Coordinates;
   /** ISO-8601 timestamp of the last location update. */
   lastUpdated?: string;
+}
+
+/** Subgroup mode: led by a sub-leader, or leaderless collaboration. */
+export type SubgroupMode = 'led' | 'collab';
+
+/**
+ * A subgroup ("小隊") split off the main group. Subgroups nest — `parentId`
+ * points at the enclosing subgroup (undefined = directly under the group) —
+ * and merge back one level at a time. Members sit on leaf subgroups via
+ * `MemberLocation.subgroupId`. Minimum 2 members (one person = Solo mode).
+ */
+export interface Subgroup {
+  id: string;
+  name: string;
+  mode: SubgroupMode;
+  /** Sub-leader (only for mode 'led'). */
+  leaderId?: string;
+  parentId?: string;
 }
 
 /** A gathering point / itinerary stop. */
@@ -79,6 +99,8 @@ export interface GroupState {
   group: Group;
   members: MemberLocation[];
   destinations: Destination[];
+  /** Subgroups split off the group (empty when the flock is whole). */
+  subgroups: Subgroup[];
   /** The destination the group is currently heading to, if any. */
   nextDestination?: Destination;
 }
