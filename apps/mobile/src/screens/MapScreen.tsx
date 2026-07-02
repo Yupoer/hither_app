@@ -30,7 +30,7 @@ import DestinationSearch from '../components/DestinationSearch';
 import DestinationReorderList from '../components/DestinationReorderList';
 import NotificationPreferencesCard from '../components/NotificationPreferencesCard';
 import QuickCommandsCard from '../components/QuickCommandsCard';
-import BottomSheet from '../components/BottomSheet';
+import BottomSheet, { sheetBottomOffset } from '../components/BottomSheet';
 import OverlaySheet from '../components/OverlaySheet';
 import CrookIcon from '../components/CrookIcon';
 import { useSession } from '../state/SessionContext';
@@ -54,7 +54,7 @@ import {
 import { confirmAction } from '../utils/confirm';
 import type { Coordinates, Destination, MemberLocation } from '../types';
 import { themes, THEME_ORDER, type ThemeName } from '../theme';
-import { glass, accentMix, memberColor, SHEET_FULL_HEIGHT } from '../glass';
+import { glass, accentMix, memberColor } from '../glass';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Map'>;
 
@@ -102,16 +102,13 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // --- Sheet / overlay / island UI state -----------------------------------
   const detents = useMemo(() => {
-    // Peek shows just the search bar + avatar row (the sheet floats
-    // insets.bottom + 10 above the screen edge, so no inset is added here).
-    const peek = 82;
-    const full = Math.min(
-      SHEET_FULL_HEIGHT,
-      windowHeight - insets.top - insets.bottom - 30,
-    );
-    const mid = Math.round(full * 0.56);
+    // Peek shows just the slim search bar + avatar row, floating high off the
+    // screen edges. Full fills the screen flush, leaving only the status bar.
+    const peek = 74;
+    const full = windowHeight - insets.top - 6;
+    const mid = Math.round(full * 0.55);
     return [peek, mid, full];
-  }, [insets.bottom, insets.top, windowHeight]);
+  }, [insets.top, windowHeight]);
   const heightAnim = useRef(new Animated.Value(detents[0])).current;
   const [detent, setDetent] = useState(0);
   const [overlay, setOverlay] = useState<null | 'route' | 'settings'>(null);
@@ -437,14 +434,25 @@ export default function MapScreen({ route, navigation }: Props) {
     [members, activePoint, accent, t],
   );
 
-  // Floating chrome rides just above the sheet's live top edge (the sheet
-  // itself floats insets.bottom + 10 off the screen bottom).
-  const chromeBottom = Animated.add(heightAnim, insets.bottom + 22);
+  // Floating chrome rides just above the sheet's live top edge; its baseline
+  // follows the sheet's animated gap to the screen bottom.
+  const chromeBottom = Animated.add(
+    heightAnim,
+    Animated.add(sheetBottomOffset(heightAnim, detents, insets.bottom), 12),
+  );
   const carouselOpacity = heightAnim.interpolate({
     inputRange: [detents[0], detents[0] + 90],
     outputRange: [1, 0],
     extrapolate: 'clamp',
   });
+  // At full the map chrome (group pill, role chip, recenter) fades away and
+  // stops catching touches; leaving full brings it back.
+  const chromeOpacity = heightAnim.interpolate({
+    inputRange: [detents[1], detents[2]],
+    outputRange: [1, 0],
+    extrapolate: 'clamp',
+  });
+  const atFull = detent === detents.length - 1;
 
   if (loading && !state) {
     return (
@@ -465,9 +473,9 @@ export default function MapScreen({ route, navigation }: Props) {
       />
 
       {/* Group pill + role chip. */}
-      <View
-        style={[styles.topRow, { top: insets.top + 8 }]}
-        pointerEvents="box-none"
+      <Animated.View
+        style={[styles.topRow, { top: insets.top + 8, opacity: chromeOpacity }]}
+        pointerEvents={atFull ? 'none' : 'box-none'}
       >
         <liquidGlass.GlassView tintColor={glass.pill} style={styles.groupPill}>
           <View style={styles.pillAvatars}>
@@ -489,10 +497,13 @@ export default function MapScreen({ route, navigation }: Props) {
             {isLeader ? t('settings.roleLeader') : t('settings.roleFollower')}
           </Text>
         </liquidGlass.GlassView>
-      </View>
+      </Animated.View>
 
       {/* Recenter — rides above the sheet. */}
-      <Animated.View style={[styles.recenter, { bottom: chromeBottom }]}>
+      <Animated.View
+        style={[styles.recenter, { bottom: chromeBottom, opacity: chromeOpacity }]}
+        pointerEvents={atFull ? 'none' : 'auto'}
+      >
         <Pressable
           style={styles.recenterHit}
           onPress={locateMe}
@@ -919,7 +930,9 @@ const makeStyles = (accent: string) =>
       borderWidth: 1.5,
       borderColor: 'rgba(20,24,32,0.9)',
     },
-    pillName: { fontSize: 15, fontWeight: '600', color: '#fff', flexShrink: 1 },
+    // flexShrink + numberOfLines(1) so an overlong group name ellipsizes
+    // instead of pushing the role chip off-screen.
+    pillName: { fontSize: 15, fontWeight: '600', color: '#fff', flexShrink: 1, minWidth: 0 },
     pillCount: { fontSize: 14, color: glass.textSecondary },
     roleChip: {
       height: 44,
@@ -994,22 +1007,23 @@ const makeStyles = (accent: string) =>
     dotActive: { width: 20, backgroundColor: accent },
 
     // Sheet content
-    searchRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 20, marginTop: 4 },
+    // Slim Apple-Maps search capsule.
+    searchRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 20, marginTop: 2 },
     searchField: {
       flex: 1,
-      height: 46,
-      borderRadius: 14,
+      height: 40,
+      borderRadius: 20,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 9,
-      paddingHorizontal: 14,
+      gap: 8,
+      paddingHorizontal: 13,
       backgroundColor: 'rgba(118,118,128,0.26)',
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: 'rgba(255,255,255,0.08)',
     },
-    searchPlaceholder: { fontSize: 16, color: 'rgba(235,235,245,0.5)' },
-    avatar: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center' },
-    avatarText: { fontSize: 17, fontWeight: '700', color: '#fff' },
+    searchPlaceholder: { fontSize: 15, color: 'rgba(235,235,245,0.5)' },
+    avatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+    avatarText: { fontSize: 16, fontWeight: '700', color: '#fff' },
 
     codeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
     sectionLabel: {

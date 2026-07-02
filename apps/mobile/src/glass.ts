@@ -68,9 +68,3 @@ export function accentMix(accent: string, pct: number): string {
   const b = parseInt(hex.slice(4, 6), 16);
   return `rgba(${r}, ${g}, ${b}, ${(pct / 100).toFixed(3)})`;
 }
-
-/**
- * Max pull-up sheet height (px), the design's FULL detent. Peek and mid are
- * derived from the window size at runtime (see MapScreen's `detents`).
- */
-export const SHEET_FULL_HEIGHT = 792;

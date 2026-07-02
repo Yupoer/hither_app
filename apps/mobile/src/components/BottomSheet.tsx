@@ -130,9 +130,41 @@ export default function BottomSheet({
     }),
   ).current;
 
+  // Apple-Maps stage morphing: peek floats far off every edge (small and
+  // dainty), mid hugs the edges at the search bar's gap, full fills the screen
+  // flush with square bottom corners, leaving only the status-bar sliver.
+  const sideInset = heightAnim.interpolate({
+    inputRange: detents,
+    outputRange: [20, 10, 0],
+    extrapolate: 'clamp',
+  });
+  const bottomOff = sheetBottomOffset(heightAnim, detents, bottomInset);
+  const topRadius = heightAnim.interpolate({
+    inputRange: detents,
+    outputRange: [26, 22, 12],
+    extrapolate: 'clamp',
+  });
+  const bottomRadius = heightAnim.interpolate({
+    inputRange: detents,
+    outputRange: [26, 22, 0],
+    extrapolate: 'clamp',
+  });
+
   return (
     <Animated.View
-      style={[styles.sheet, { height: heightAnim, bottom: bottomInset + 10 }]}
+      style={[
+        styles.sheet,
+        {
+          height: heightAnim,
+          bottom: bottomOff,
+          left: sideInset,
+          right: sideInset,
+          borderTopLeftRadius: topRadius,
+          borderTopRightRadius: topRadius,
+          borderBottomLeftRadius: bottomRadius,
+          borderBottomRightRadius: bottomRadius,
+        },
+      ]}
       {...pan.panHandlers}
     >
       <liquidGlass.GlassView tintColor={glass.sheet} style={StyleSheet.absoluteFill} />
@@ -154,15 +186,27 @@ export default function BottomSheet({
   );
 }
 
+/**
+ * The sheet's live gap to the screen bottom (peek floats high, full sits
+ * flush). Exported so MapScreen can stack the floating chrome (carousel,
+ * recenter) on the same baseline as the sheet's top edge.
+ */
+export function sheetBottomOffset(
+  heightAnim: Animated.Value,
+  detents: number[],
+  bottomInset: number,
+): Animated.AnimatedInterpolation<number> {
+  return heightAnim.interpolate({
+    inputRange: detents,
+    outputRange: [bottomInset + 16, 10, 0],
+    extrapolate: 'clamp',
+  });
+}
+
 const styles = StyleSheet.create({
-  // Floating inset panel, Apple-Maps style: padded off every screen edge and
-  // rounded on all corners, at every detent.
   sheet: {
     position: 'absolute',
-    left: 12,
-    right: 12,
     zIndex: 60,
-    borderRadius: 28,
     overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: glass.hairline,
