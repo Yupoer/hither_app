@@ -2,13 +2,12 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
-  KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -47,6 +46,7 @@ export default function DestinationSearch({
   onPick,
 }: DestinationSearchProps) {
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
   const { colors } = useTheme();
   const { t } = useTranslation();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -107,17 +107,21 @@ export default function DestinationSearch({
       transparent
       onRequestClose={onClose}
     >
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+      <View style={styles.flex}>
         <Pressable style={styles.backdrop} onPress={onClose} />
+        {/* Near-full-height panel (Apple Maps: tapping search sends the sheet
+            to the top) with the search field first, right under the grabber. */}
         <liquidGlass.GlassView
           tintColor={glass.overlay}
-          style={[styles.sheet, { paddingBottom: insets.bottom + spacing.lg }]}
+          style={[
+            styles.sheet,
+            {
+              height: windowHeight - insets.top - 6,
+              paddingBottom: insets.bottom + spacing.lg,
+            },
+          ]}
         >
           <View style={styles.handle} />
-          <Text style={styles.label}>{t('search.label')}</Text>
 
           <View style={styles.searchRow}>
             <TextInput
@@ -183,7 +187,7 @@ export default function DestinationSearch({
             )}
           />
         </liquidGlass.GlassView>
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }
@@ -201,7 +205,6 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     borderColor: glass.hairlineStrong,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
-    maxHeight: '80%',
     gap: spacing.md,
   },
   handle: {
@@ -210,12 +213,6 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     height: 5,
     borderRadius: 3,
     backgroundColor: glass.grabber,
-  },
-  label: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1,
-    color: colors.accent,
   },
   searchRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   input: {
@@ -233,7 +230,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   cancelText: { color: colors.accent, fontSize: 15, fontWeight: '600' },
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   statusText: { color: glass.textSecondary, fontSize: 14 },
-  list: { flexGrow: 0 },
+  list: { flex: 1 },
   resultRow: {
     flexDirection: 'row',
     alignItems: 'center',

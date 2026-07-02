@@ -87,7 +87,7 @@ export async function searchPlaces(
     q: trimmed,
     format: 'jsonv2',
     addressdetails: '0',
-    limit: '8',
+    limit: '10',
   });
   const viewbox = viewboxParam(region);
   if (viewbox) {
@@ -103,7 +103,7 @@ export async function searchPlaces(
       return [];
     }
     const hits = (await res.json()) as NominatimHit[];
-    return hits.map((h) => ({
+    const results = hits.map((h) => ({
       id: String(h.place_id),
       name: h.name || h.display_name.split(',')[0],
       address: h.display_name,
@@ -112,6 +112,16 @@ export async function searchPlaces(
         longitude: Number.parseFloat(h.lon),
       },
     }));
+    // Nominatim ranks by global "importance", so a famous far-away match beats
+    // the laundromat around the corner. Like Apple/Google Maps, re-rank by
+    // distance from the user's viewport when we know it.
+    if (region) {
+      const sq = (p: PlaceResult) =>
+        (p.coordinates.latitude - region.latitude) ** 2 +
+        (p.coordinates.longitude - region.longitude) ** 2;
+      results.sort((a, b) => sq(a) - sq(b));
+    }
+    return results;
   } catch {
     return [];
   }

@@ -156,7 +156,6 @@ const zh = {
   'settings.notifJourney': '行程開始 / 暫停',
 
   // Destination search
-  'search.label': '搜尋下一集合點',
   'search.placeholder': '輸入地址或地點名稱',
   'search.searching': '搜尋中…',
   'search.noResults': '找不到相符的地點',
@@ -294,7 +293,6 @@ const en: Record<keyof typeof zh, string> = {
   'settings.notifFollowerRequests': 'Member requests',
   'settings.notifJourney': 'Journey start / pause',
 
-  'search.label': 'SEARCH NEXT GATHERING POINT',
   'search.placeholder': 'Enter an address or place name',
   'search.searching': 'Searching…',
   'search.noResults': 'No matching places',
