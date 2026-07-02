@@ -14,12 +14,13 @@ import { glass } from '../glass';
  *
  * Controlled: the parent owns `heightAnim` (an Animated.Value) so it can also
  * position floating chrome — the gathering-point carousel and the recenter
- * button — just above the sheet's live top edge. Drag the grabber to resize;
- * on release it snaps to the nearest detent and reports it via `onIndexChange`.
+ * button — just above the sheet's live top edge. Drag anywhere on the sheet to
+ * resize; on release it snaps to the nearest detent (projecting the fling
+ * velocity, so a flick jumps a detent) and reports it via `onIndexChange`.
  *
  * No gesture/animation native deps — plain RN `Animated` + `PanResponder`
  * (JS-driven, since we animate `height`). Content scrolls only at the full
- * detent so a drag on the list at peek/mid resizes the sheet instead.
+ * detent; there, pulling down from the top of the list collapses the sheet.
  */
 export default function BottomSheet({
   heightAnim,
@@ -44,8 +45,18 @@ export default function BottomSheet({
     return () => heightAnim.removeListener(id);
   }, [heightAnim]);
 
-  const min = detents[0];
-  const max = detents[detents.length - 1];
+  // Live refs so the (once-created) responder always sees fresh values.
+  const indexRef = useRef(index);
+  indexRef.current = index;
+  const detentsRef = useRef(detents);
+  detentsRef.current = detents;
+  const onIndexChangeRef = useRef(onIndexChange);
+  onIndexChangeRef.current = onIndexChange;
+  // Height at the moment the finger went down — the anchor every move offsets
+  // from. (Offsetting from the LIVE height compounded the cumulative dy on
+  // every move event, so a tiny drag flew straight to full.)
+  const startH = useRef(detents[index]);
+  const scrollY = useRef(0);
 
   const springTo = (h: number) =>
     Animated.spring(heightAnim, {
@@ -62,9 +73,10 @@ export default function BottomSheet({
   }, [index, detents[0], detents[1], detents[2]]);
 
   const nearest = (h: number) => {
+    const ds = detentsRef.current;
     let best = 0;
     let bestD = Infinity;
-    detents.forEach((d, i) => {
+    ds.forEach((d, i) => {
       const dist = Math.abs(d - h);
       if (dist < bestD) {
         bestD = dist;
@@ -74,32 +86,60 @@ export default function BottomSheet({
     return best;
   };
 
+  const settle = (h: number) => {
+    const next = nearest(h);
+    springTo(detentsRef.current[next]);
+    onIndexChangeRef.current(next);
+  };
+
   const pan = useRef(
     PanResponder.create({
-      onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dy) > 4,
-      onPanResponderGrant: () => heightAnim.stopAnimation(),
+      // Capture vertical drags anywhere on the sheet. At the full detent the
+      // list owns scrolling, so only a pull-down from the very top collapses.
+      onMoveShouldSetPanResponderCapture: (_e, g) => {
+        if (Math.abs(g.dy) < 6 || Math.abs(g.dy) < Math.abs(g.dx)) return false;
+        const atFull = indexRef.current >= detentsRef.current.length - 1;
+        if (atFull) return g.dy > 0 && scrollY.current <= 0;
+        return true;
+      },
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: () => {
+        heightAnim.stopAnimation((v) => {
+          startH.current = v;
+          current.current = v;
+        });
+      },
       onPanResponderMove: (_e, g) => {
-        const h = Math.max(min - 40, Math.min(max + 60, current.current - g.dy));
+        const ds = detentsRef.current;
+        const h = Math.max(
+          ds[0] - 40,
+          Math.min(ds[ds.length - 1] + 60, startH.current - g.dy),
+        );
         heightAnim.setValue(h);
       },
       onPanResponderRelease: (_e, g) => {
-        const h = current.current - g.dy;
-        const next = nearest(h);
-        springTo(detents[next]);
-        onIndexChange(next);
+        // Project the fling (~200 ms of glide, vy is px/ms) so a flick moves a
+        // detent while a slow drag still snaps to whichever edge is nearest.
+        settle(startH.current - g.dy - g.vy * 200);
       },
+      onPanResponderTerminate: () => settle(current.current),
     }),
   ).current;
 
   return (
-    <Animated.View style={[styles.sheet, { height: heightAnim }]}>
+    <Animated.View
+      style={[styles.sheet, { height: heightAnim }]}
+      {...pan.panHandlers}
+    >
       <liquidGlass.GlassView tintColor={glass.sheet} style={StyleSheet.absoluteFill} />
-      {/* Grabber — the drag handle. */}
-      <View {...pan.panHandlers} style={styles.grabZone}>
+      {/* Grabber — visual affordance; the whole sheet drags. */}
+      <View style={styles.grabZone}>
         <View style={styles.grabber} />
       </View>
       <ScrollView
         scrollEnabled={index >= detents.length - 1}
+        onScroll={(e) => (scrollY.current = e.nativeEvent.contentOffset.y)}
+        scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: bottomInset + 24 }}
