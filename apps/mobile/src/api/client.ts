@@ -5,6 +5,8 @@ import {
   demoDeleteDestination,
   demoMergeSubgroup,
   demoReorderDestinations,
+  demoSelfMerge,
+  demoSelfSplit,
   demoSetJourneyStatus,
   demoSetSolo,
   demoUpdateMyLocation,
@@ -556,6 +558,38 @@ export async function setSolo(groupId: string, solo: boolean): Promise<void> {
     p_group: groupId,
     p_solo: solo,
   });
+  orThrow(error);
+}
+
+/**
+ * Split yourself off into a brand-new subgroup that you lead, nested under
+ * your current subgroup (or top-level if you're not in one). No leader
+ * permission needed — goes through the `self_split` SECURITY DEFINER RPC,
+ * which hard-scopes the write to the caller's own membership row.
+ */
+export async function selfSplit(groupId: string, name: string): Promise<Subgroup> {
+  if (isDemoGroup(groupId)) {
+    return demoSelfSplit(name);
+  }
+  const { data, error } = await supabase.rpc('self_split', {
+    p_group: groupId,
+    p_name: name,
+  });
+  orThrow(error);
+  return mapSubgroup(data as SubgroupRow);
+}
+
+/**
+ * Merge yourself back up one level (to your subgroup's parent, or the main
+ * group). No leader permission needed — goes through the `self_merge`
+ * SECURITY DEFINER RPC, which only ever moves the caller's own row.
+ */
+export async function selfMerge(groupId: string): Promise<void> {
+  if (isDemoGroup(groupId)) {
+    demoSelfMerge();
+    return;
+  }
+  const { error } = await supabase.rpc('self_merge', { p_group: groupId });
   orThrow(error);
 }
 

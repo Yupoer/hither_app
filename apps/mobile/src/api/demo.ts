@@ -164,3 +164,30 @@ export function demoMergeSubgroup(subgroupId: string): void {
   );
   state.subgroups = state.subgroups.filter((s) => s.id !== subgroupId);
 }
+
+/** Demo "me" always sits at state.members[0] — see getDemoState. */
+export function demoSelfSplit(name: string): Subgroup {
+  const me = state.members[0];
+  const sg: Subgroup = {
+    id: `demo-sg-${++subgroupSeq}`,
+    name,
+    mode: 'led',
+    leaderId: me.userId,
+    parentId: me.subgroupId,
+  };
+  state.subgroups.push(sg);
+  state.members[0] = { ...me, subgroupId: sg.id };
+  return sg;
+}
+
+export function demoSelfMerge(): void {
+  const me = state.members[0];
+  if (!me.subgroupId) return;
+  const sg = state.subgroups.find((s) => s.id === me.subgroupId);
+  state.members[0] = { ...me, subgroupId: sg?.parentId };
+  const stillOccupied = state.members.some((m) => m.subgroupId === me.subgroupId);
+  const hasChildren = state.subgroups.some((s) => s.parentId === me.subgroupId);
+  if (!stillOccupied && !hasChildren) {
+    state.subgroups = state.subgroups.filter((s) => s.id !== me.subgroupId);
+  }
+}

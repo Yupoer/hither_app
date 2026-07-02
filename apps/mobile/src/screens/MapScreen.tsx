@@ -51,6 +51,8 @@ import {
   deleteDestination,
   mergeSubgroup,
   reorderDestinations,
+  selfMerge,
+  selfSplit,
   setJourneyStatus,
   setSolo,
   updateMyLocation,
@@ -339,19 +341,6 @@ export default function MapScreen({ route, navigation }: Props) {
     await Share.share({ message: t('map.shareMsg', { code: group.inviteCode }) });
   }
 
-  const [editingNickname, setEditingNickname] = useState(false);
-  const [nicknameDraft, setNicknameDraft] = useState('');
-  async function saveNickname() {
-    const trimmed = nicknameDraft.trim();
-    if (!trimmed) return;
-    try {
-      await updateNickname(trimmed);
-      setEditingNickname(false);
-    } catch {
-      Alert.alert(t('settings.nicknameFailed'));
-    }
-  }
-
   // --- Profile (nickname + emoji avatar) ------------------------------------
   const [profileName, setProfileName] = useState('');
   function openProfile() {
@@ -381,7 +370,6 @@ export default function MapScreen({ route, navigation }: Props) {
   }
 
   // --- Solo mode -------------------------------------------------------------
-  const mySolo = members.find((m) => m.userId === user?.id)?.solo ?? false;
   async function toggleSolo(next: boolean) {
     if (!groupId) return;
     try {
@@ -461,6 +449,31 @@ export default function MapScreen({ route, navigation }: Props) {
     }
     try {
       await mergeSubgroup(groupId, sg);
+      refresh();
+    } catch (e) {
+      Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
+    }
+  }
+
+  // Self-service, independent of the leader-driven doSplit/mergeSg above:
+  // any member can split themselves into their own new subgroup, or merge
+  // themselves back up a level, without needing the leader's say-so.
+  async function doSelfSplit() {
+    if (!groupId) return;
+    try {
+      await selfSplit(
+        groupId,
+        t('subgroup.selfSplitName', { name: user?.name ?? t('group.travelerFallback') }),
+      );
+      refresh();
+    } catch (e) {
+      Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
+    }
+  }
+  async function doSelfMerge() {
+    if (!groupId) return;
+    try {
+      await selfMerge(groupId);
       refresh();
     } catch (e) {
       Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
@@ -583,6 +596,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const renderFlockRow = (f: (typeof flock)[number], last: boolean) => {
     const selecting = !!splitParent && f.subgroupId === splitParent.parentId;
     const isSelected = splitSelected.includes(f.userId);
+    const isMe = f.userId === user?.id;
     return (
       <Pressable
         key={f.userId}
@@ -592,36 +606,67 @@ export default function MapScreen({ route, navigation }: Props) {
         accessibilityRole={selecting ? 'checkbox' : undefined}
         accessibilityState={selecting ? { checked: isSelected } : undefined}
       >
-        {selecting && (
+        <View style={styles.flockRowMain}>
+          {selecting && (
+            <View
+              style={[
+                styles.selectDot,
+                isSelected && { backgroundColor: accent, borderColor: accent },
+              ]}
+            >
+              {isSelected ? <Ionicons name="checkmark" size={13} color="#1A1206" /> : null}
+            </View>
+          )}
           <View
             style={[
-              styles.selectDot,
-              isSelected && { backgroundColor: accent, borderColor: accent },
+              styles.flockAvatar,
+              { backgroundColor: f.color, borderColor: f.isLeader ? accent : 'transparent' },
             ]}
           >
-            {isSelected ? <Ionicons name="checkmark" size={13} color="#1A1206" /> : null}
+            {f.avatar ? (
+              <Text style={styles.flockEmoji}>{f.avatar}</Text>
+            ) : (
+              <Text style={styles.flockInitial}>{f.name.slice(0, 1).toUpperCase()}</Text>
+            )}
+          </View>
+          <View style={styles.grow}>
+            <Text style={styles.flockName}>{f.name}</Text>
+            <Text style={[styles.flockStatus, { color: f.statusColor }]}>{f.statusText}</Text>
+          </View>
+          <View style={styles.flockMeta}>
+            <Text style={styles.flockEta}>{f.eta}</Text>
+            <Text style={styles.flockDist}>{f.dist}</Text>
+          </View>
+        </View>
+        {/* Self-service: only on your own row, and not while picking members
+            for the leader's bulk split. Everyone gets to choose Solo mode or
+            split themselves off, independent of the leader. */}
+        {isMe && !selecting && (
+          <View style={styles.selfControls}>
+            <View style={styles.selfSoloRow}>
+              <Text style={styles.selfControlLabel}>{t('solo.switch')}</Text>
+              <Switch
+                value={f.solo}
+                onValueChange={toggleSolo}
+                trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
+                thumbColor="#fff"
+              />
+            </View>
+            {f.subgroupId ? (
+              <Pressable onPress={() => void doSelfMerge()} hitSlop={8} accessibilityRole="button">
+                <Text style={[styles.rowAction, { color: accent }]}>
+                  {t('subgroup.selfMergeAction')}
+                </Text>
+              </Pressable>
+            ) : (
+              <Pressable onPress={() => void doSelfSplit()} hitSlop={8} accessibilityRole="button">
+                <Text style={[styles.rowAction, { color: accent }]}>
+                  {t('subgroup.selfSplitAction')}
+                </Text>
+              </Pressable>
+            )}
           </View>
         )}
-        <View
-          style={[
-            styles.flockAvatar,
-            { backgroundColor: f.color, borderColor: f.isLeader ? accent : 'transparent' },
-          ]}
-        >
-          {f.avatar ? (
-            <Text style={styles.flockEmoji}>{f.avatar}</Text>
-          ) : (
-            <Text style={styles.flockInitial}>{f.name.slice(0, 1).toUpperCase()}</Text>
-          )}
-        </View>
-        <View style={styles.grow}>
-          <Text style={styles.flockName}>{f.name}</Text>
-          <Text style={[styles.flockStatus, { color: f.statusColor }]}>{f.statusText}</Text>
-        </View>
-        <View style={styles.flockMeta}>
-          <Text style={styles.flockEta}>{f.eta}</Text>
-          <Text style={styles.flockDist}>{f.dist}</Text>
-        </View>
       </Pressable>
     );
   };
@@ -632,11 +677,6 @@ export default function MapScreen({ route, navigation }: Props) {
     heightAnim,
     Animated.add(sheetBottomOffset(heightAnim, detents, insets.bottom), 12),
   );
-  const carouselOpacity = heightAnim.interpolate({
-    inputRange: [detents[0], detents[0] + 90],
-    outputRange: [1, 0],
-    extrapolate: 'clamp',
-  });
   // At full the map chrome (group pill, role chip, recenter) fades away and
   // stops catching touches; leaving full brings it back.
   const chromeOpacity = heightAnim.interpolate({
@@ -664,34 +704,36 @@ export default function MapScreen({ route, navigation }: Props) {
         currentUserId={user?.id}
       />
 
-      {/* Group pill + role chip. */}
-      <Animated.View
-        style={[styles.topRow, { top: insets.top + 8, opacity: chromeOpacity }]}
-        pointerEvents={atFull ? 'none' : 'box-none'}
-      >
-        <liquidGlass.GlassView tintColor={glass.pill} style={styles.groupPill}>
-          <View style={styles.pillAvatars}>
-            {flock.slice(0, 3).map((f, i) => (
-              <View
-                key={f.userId}
-                style={[styles.pillAvatar, { backgroundColor: f.color, marginLeft: i ? -10 : 0 }]}
-              >
-                {f.avatar ? <Text style={styles.pillEmoji}>{f.avatar}</Text> : null}
-              </View>
-            ))}
-          </View>
-          <Text style={styles.pillName} numberOfLines={1}>
-            {group?.name ?? 'Hither'}
-          </Text>
-          <Text style={styles.pillCount}>· {members.length}</Text>
-        </liquidGlass.GlassView>
-        <liquidGlass.GlassView tintColor={glass.pill} style={styles.roleChip}>
-          <View style={[styles.roleDot, { backgroundColor: accent }]} />
-          <Text style={styles.roleWord}>
-            {isLeader ? t('settings.roleLeader') : t('settings.roleFollower')}
-          </Text>
-        </liquidGlass.GlassView>
-      </Animated.View>
+      {/* Group pill + role chip — hidden once a gathering point takes the top slot. */}
+      {destinations.length === 0 && (
+        <Animated.View
+          style={[styles.topRow, { top: insets.top + 8, opacity: chromeOpacity }]}
+          pointerEvents={atFull ? 'none' : 'box-none'}
+        >
+          <liquidGlass.GlassView tintColor={glass.pill} style={styles.groupPill}>
+            <View style={styles.pillAvatars}>
+              {flock.slice(0, 3).map((f, i) => (
+                <View
+                  key={f.userId}
+                  style={[styles.pillAvatar, { backgroundColor: f.color, marginLeft: i ? -10 : 0 }]}
+                >
+                  {f.avatar ? <Text style={styles.pillEmoji}>{f.avatar}</Text> : null}
+                </View>
+              ))}
+            </View>
+            <Text style={styles.pillName} numberOfLines={1}>
+              {group?.name ?? 'Hither'}
+            </Text>
+            <Text style={styles.pillCount}>· {members.length}</Text>
+          </liquidGlass.GlassView>
+          <liquidGlass.GlassView tintColor={glass.pill} style={styles.roleChip}>
+            <View style={[styles.roleDot, { backgroundColor: accent }]} />
+            <Text style={styles.roleWord}>
+              {isLeader ? t('settings.roleLeader') : t('settings.roleFollower')}
+            </Text>
+          </liquidGlass.GlassView>
+        </Animated.View>
+      )}
 
       {/* Recenter — rides above the sheet. */}
       <Animated.View
@@ -713,11 +755,13 @@ export default function MapScreen({ route, navigation }: Props) {
         </Pressable>
       </Animated.View>
 
-      {/* Floating gathering-point carousel (peek only). */}
+      {/* Gathering-point carousel — takes over the top slot (where the group
+          pill was) instead of floating above the sheet, so it no longer
+          covers the recenter button. */}
       {destinations.length > 0 && (
         <Animated.View
-          style={[styles.carouselWrap, { bottom: chromeBottom, opacity: carouselOpacity }]}
-          pointerEvents={detent === 0 ? 'auto' : 'none'}
+          style={[styles.carouselWrap, { top: insets.top + 8, opacity: chromeOpacity }]}
+          pointerEvents={atFull ? 'none' : 'auto'}
         >
           <ScrollView
             ref={carouselRef}
@@ -749,6 +793,19 @@ export default function MapScreen({ route, navigation }: Props) {
                           {dest.title}
                         </Text>
                       </View>
+                      {/* Pagination — lives inside the card now that the
+                          carousel sits at the screen's top edge, where there's
+                          no room below it for a separate dots row. */}
+                      {destinations.length > 1 && (
+                        <View style={styles.dots}>
+                          {destinations.map((d2, i2) => (
+                            <View
+                              key={d2.id}
+                              style={[styles.dot, i2 === selectedIndex && styles.dotActive]}
+                            />
+                          ))}
+                        </View>
+                      )}
                     </View>
                     <View style={styles.cardActions}>
                       <Pressable
@@ -776,16 +833,6 @@ export default function MapScreen({ route, navigation }: Props) {
               );
             })}
           </ScrollView>
-          {destinations.length > 1 && (
-            <View style={styles.dots}>
-              {destinations.map((dest, index) => (
-                <View
-                  key={dest.id}
-                  style={[styles.dot, index === selectedIndex && styles.dotActive]}
-                />
-              ))}
-            </View>
-          )}
         </Animated.View>
       )}
 
@@ -990,42 +1037,6 @@ export default function MapScreen({ route, navigation }: Props) {
         doneLabel={t('map.done')}
       >
         <ScrollView contentContainerStyle={styles.overlayBody}>
-          <Text style={styles.sectionLabel}>{t('settings.accountSection')}</Text>
-          <View style={styles.settingsCard}>
-            <View style={styles.settingsRow}>
-              <Text style={styles.settingsRowLabel}>{t('settings.nickname')}</Text>
-              {editingNickname ? (
-                <View style={styles.editGroup}>
-                  <TextInput
-                    style={styles.nickInput}
-                    value={nicknameDraft}
-                    onChangeText={setNicknameDraft}
-                    autoFocus
-                    maxLength={24}
-                    onSubmitEditing={saveNickname}
-                    returnKeyType="done"
-                    placeholderTextColor={glass.textTertiary}
-                  />
-                  <Pressable onPress={saveNickname} style={[styles.saveBtn, { backgroundColor: accent }]}>
-                    <Text style={styles.saveText}>{t('settings.save')}</Text>
-                  </Pressable>
-                </View>
-              ) : (
-                <View style={styles.editGroup}>
-                  <Text style={styles.settingsValue}>{user?.name ?? '—'}</Text>
-                  <Pressable
-                    onPress={() => {
-                      setNicknameDraft(user?.name ?? '');
-                      setEditingNickname(true);
-                    }}
-                  >
-                    <Text style={[styles.rowAction, { color: accent }]}>{t('settings.edit')}</Text>
-                  </Pressable>
-                </View>
-              )}
-            </View>
-          </View>
-
           <Text style={styles.sectionLabel}>{t('settings.language')}</Text>
           <Segmented
             accent={accent}
@@ -1096,20 +1107,6 @@ export default function MapScreen({ route, navigation }: Props) {
             >
               <Text style={styles.saveText}>{t('settings.save')}</Text>
             </Pressable>
-          </View>
-
-          <Text style={styles.sectionLabel}>{t('solo.title')}</Text>
-          <View style={styles.soloRow}>
-            <View style={styles.grow}>
-              <Text style={styles.soloTitle}>{t('solo.switch')}</Text>
-              <Text style={styles.soloSub}>{t('solo.hint')}</Text>
-            </View>
-            <Switch
-              value={mySolo}
-              onValueChange={toggleSolo}
-              trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
-              thumbColor="#fff"
-            />
           </View>
 
           <Text style={styles.sectionLabel}>{t('profile.avatar')}</Text>
@@ -1313,7 +1310,7 @@ const makeStyles = (accent: string) =>
     },
     etaPillEta: { fontSize: 15, fontWeight: '700', color: '#fff', fontVariant: ['tabular-nums'] },
     etaPillDist: { fontSize: 11, color: glass.textSecondary },
-    dots: { flexDirection: 'row', gap: 6, justifyContent: 'center', marginTop: 10 },
+    dots: { flexDirection: 'row', gap: 6, alignItems: 'center' },
     dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.35)' },
     dotActive: { width: 20, backgroundColor: accent },
 
@@ -1364,20 +1361,6 @@ const makeStyles = (accent: string) =>
       borderColor: 'transparent',
     },
     emojiChar: { fontSize: 26 },
-    soloRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 12,
-      borderRadius: 16,
-      paddingHorizontal: 14,
-      paddingVertical: 12,
-      marginBottom: 16,
-      backgroundColor: glass.fill,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: glass.hairline,
-    },
-    soloTitle: { fontSize: 16, fontWeight: '600', color: '#fff' },
-    soloSub: { fontSize: 12.5, color: glass.textSecondary, marginTop: 2 },
 
     // Subgroups
     headingRow: {
@@ -1473,15 +1456,13 @@ const makeStyles = (accent: string) =>
       marginBottom: 20,
     },
     flockRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 12,
       paddingHorizontal: 14,
       paddingVertical: 12,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: 'rgba(255,255,255,0.08)',
     },
     flockRowLast: { borderBottomWidth: 0 },
+    flockRowMain: { flexDirection: 'row', alignItems: 'center', gap: 12 },
     flockAvatar: {
       width: 40,
       height: 40,
@@ -1496,6 +1477,17 @@ const makeStyles = (accent: string) =>
     flockMeta: { alignItems: 'flex-end' },
     flockEta: { fontSize: 15, fontWeight: '600', color: '#fff', fontVariant: ['tabular-nums'] },
     flockDist: { fontSize: 12, color: glass.textTertiary },
+    selfControls: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginTop: 10,
+      paddingTop: 10,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: 'rgba(255,255,255,0.08)',
+    },
+    selfSoloRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    selfControlLabel: { fontSize: 13, color: glass.textSecondary },
 
     rowButton: {
       flexDirection: 'row',
@@ -1559,32 +1551,6 @@ const makeStyles = (accent: string) =>
     },
     addStopText: { fontSize: 16, fontWeight: '600' },
 
-    settingsCard: {
-      borderRadius: 18,
-      paddingHorizontal: 16,
-      marginBottom: 8,
-      backgroundColor: glass.fill,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: glass.hairline,
-    },
-    settingsRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingVertical: 14,
-    },
-    settingsRowLabel: { fontSize: 16, color: '#fff' },
-    settingsValue: { fontSize: 16, color: glass.textSecondary },
-    editGroup: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-    nickInput: {
-      minWidth: 120,
-      color: '#fff',
-      fontSize: 16,
-      textAlign: 'right',
-      borderBottomWidth: 1,
-      borderBottomColor: accent,
-      paddingVertical: 2,
-    },
     saveBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999 },
     saveText: { color: '#1A1206', fontSize: 14, fontWeight: '700' },
     dangerBtn: {
