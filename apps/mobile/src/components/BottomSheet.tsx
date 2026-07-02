@@ -128,7 +128,7 @@ export default function BottomSheet({
 
   return (
     <Animated.View
-      style={[styles.sheet, { height: heightAnim }]}
+      style={[styles.sheet, { height: heightAnim, bottom: bottomInset + 10 }]}
       {...pan.panHandlers}
     >
       <liquidGlass.GlassView tintColor={glass.sheet} style={StyleSheet.absoluteFill} />
@@ -142,7 +142,7 @@ export default function BottomSheet({
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: bottomInset + 24 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
       >
         {children}
       </ScrollView>
@@ -151,16 +151,16 @@ export default function BottomSheet({
 }
 
 const styles = StyleSheet.create({
+  // Floating inset panel, Apple-Maps style: padded off every screen edge and
+  // rounded on all corners, at every detent.
   sheet: {
     position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
+    left: 12,
+    right: 12,
     zIndex: 60,
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
+    borderRadius: 28,
     overflow: 'hidden',
-    borderTopWidth: StyleSheet.hairlineWidth,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: glass.hairline,
   },
   grabZone: { paddingTop: 10, paddingBottom: 6, alignItems: 'center' },

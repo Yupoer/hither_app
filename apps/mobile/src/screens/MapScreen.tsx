@@ -102,8 +102,13 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // --- Sheet / overlay / island UI state -----------------------------------
   const detents = useMemo(() => {
-    const peek = 92 + insets.bottom;
-    const full = Math.min(SHEET_FULL_HEIGHT, windowHeight - insets.top - 8);
+    // Peek shows just the search bar + avatar row (the sheet floats
+    // insets.bottom + 10 above the screen edge, so no inset is added here).
+    const peek = 82;
+    const full = Math.min(
+      SHEET_FULL_HEIGHT,
+      windowHeight - insets.top - insets.bottom - 30,
+    );
     const mid = Math.round(full * 0.56);
     return [peek, mid, full];
   }, [insets.bottom, insets.top, windowHeight]);
@@ -427,8 +432,9 @@ export default function MapScreen({ route, navigation }: Props) {
     [members, activePoint, accent, t],
   );
 
-  // Floating chrome rides just above the sheet's live top edge.
-  const chromeBottom = Animated.add(heightAnim, 12);
+  // Floating chrome rides just above the sheet's live top edge (the sheet
+  // itself floats insets.bottom + 10 off the screen bottom).
+  const chromeBottom = Animated.add(heightAnim, insets.bottom + 22);
   const carouselOpacity = heightAnim.interpolate({
     inputRange: [detents[0], detents[0] + 90],
     outputRange: [1, 0],
