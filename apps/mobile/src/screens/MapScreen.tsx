@@ -32,7 +32,6 @@ import NotificationPreferencesCard from '../components/NotificationPreferencesCa
 import QuickCommandsCard from '../components/QuickCommandsCard';
 import BottomSheet from '../components/BottomSheet';
 import OverlaySheet from '../components/OverlaySheet';
-import DynamicIslandView from '../components/DynamicIslandView';
 import CrookIcon from '../components/CrookIcon';
 import { useSession } from '../state/SessionContext';
 import { usePreferences, useTheme, type Language } from '../state/PreferencesContext';
@@ -110,7 +109,6 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [insets.bottom, insets.top, windowHeight]);
   const heightAnim = useRef(new Animated.Value(detents[0])).current;
   const [detent, setDetent] = useState(0);
-  const [islandOpen, setIslandOpen] = useState(false);
   const [overlay, setOverlay] = useState<null | 'route' | 'settings'>(null);
   const [searchVisible, setSearchVisible] = useState(false);
   // Freeze the route overlay's scroll while a stop is being drag-reordered so
@@ -174,12 +172,8 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [journeyGoing]);
   const journeyActive = journeyGoing && !!navTarget;
 
-  // The point the whole UI (island, carousel highlight, flock ETAs) refers to.
+  // The point the whole UI (carousel highlight, flock ETAs) refers to.
   const activePoint = navTarget ?? selectedDestination;
-  const pointDistance =
-    fromCoords && activePoint
-      ? distanceMeters(fromCoords, activePoint.coordinates)
-      : null;
 
   const numericDistance =
     fromCoords && navTarget ? distanceMeters(fromCoords, navTarget.coordinates) : undefined;
@@ -433,15 +427,6 @@ export default function MapScreen({ route, navigation }: Props) {
     [members, activePoint, accent, t],
   );
 
-  const gatheredCount = flock.filter((f) => f.arrived).length;
-  const enrouteCount = flock.filter((f) => !f.arrived && !f.isLeader).length;
-  const islandEta = pointDistance != null ? shortEta(walkingEtaSeconds(pointDistance)) : '—';
-  const islandDist = pointDistance != null ? formatDistance(pointDistance) : undefined;
-  const islandProgress =
-    pointDistance != null
-      ? Math.max(0.05, Math.min(0.95, 1 - Math.min(1, pointDistance / PROGRESS_REF_M)))
-      : 0.05;
-
   // Floating chrome rides just above the sheet's live top edge.
   const chromeBottom = Animated.add(heightAnim, 12);
   const carouselOpacity = heightAnim.interpolate({
@@ -468,24 +453,9 @@ export default function MapScreen({ route, navigation }: Props) {
         currentUserId={user?.id}
       />
 
-      {/* In-app Dynamic Island. */}
-      <View style={[styles.islandWrap, { top: insets.top }]} pointerEvents="box-none">
-        <DynamicIslandView
-          expanded={islandOpen}
-          onToggle={() => setIslandOpen((v) => !v)}
-          accent={accent}
-          gatheringName={activePoint?.title ?? t('map.noDestination')}
-          eta={islandEta}
-          dist={islandDist}
-          progress={islandProgress}
-          avatarColors={flock.map((f) => f.color)}
-          statusText={t('island.progress', { gathered: gatheredCount, enroute: enrouteCount })}
-        />
-      </View>
-
       {/* Group pill + role chip. */}
       <View
-        style={[styles.topRow, { top: insets.top + 48 }]}
+        style={[styles.topRow, { top: insets.top + 8 }]}
         pointerEvents="box-none"
       >
         <View style={styles.groupPill}>
@@ -904,8 +874,6 @@ const makeStyles = (accent: string) =>
       backgroundColor: '#0c1118',
     },
     loadingText: { color: glass.textSecondary, fontSize: 15 },
-
-    islandWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center', zIndex: 120 },
 
     topRow: {
       position: 'absolute',

@@ -81,7 +81,6 @@ const zh = {
 
   // Map
   'map.loading': '載入群組位置中…',
-  'map.noDestination': '尚未設定集合點',
   'map.setFailedTitle': '設定失敗',
   'map.setFailedMsg': '無法設定集合點。請確認你是隊長，並再試一次。',
   'map.searchA11y': '搜尋下一集合點',
@@ -119,7 +118,6 @@ const zh = {
   'flock.enroute': '前往中',
   'flock.unknown': '位置未知',
   'flock.here': '就在這',
-  'island.progress': '{gathered} 已到 · {enroute} 前往中',
 
   // Commands (quick buttons) · labels
   'command.gather': '集合',
@@ -227,7 +225,6 @@ const en: Record<keyof typeof zh, string> = {
   'settings.signOutMsg': "You'll return to the sign-in screen.",
 
   'map.loading': 'Loading group locations…',
-  'map.noDestination': 'No gathering point yet',
   'map.setFailedTitle': 'Failed',
   'map.setFailedMsg': "Couldn't set the gathering point. Make sure you're the leader and try again.",
   'map.searchA11y': 'Search next gathering point',
@@ -263,7 +260,6 @@ const en: Record<keyof typeof zh, string> = {
   'flock.enroute': 'On the way',
   'flock.unknown': 'Location unknown',
   'flock.here': 'here',
-  'island.progress': '{gathered} gathered · {enroute} on the way',
 
   'command.gather': 'Gather',
   'command.find_gathering': 'Find point',
