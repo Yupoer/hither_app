@@ -621,27 +621,8 @@ export default function MapScreen({ route, navigation }: Props) {
           </View>
         </View>
 
-        {/* Group code + share / copy. */}
-        <View style={styles.codeRow}>
-          <View style={styles.grow}>
-            <Text style={styles.sectionLabel}>{t('group.codeLabel')}</Text>
-            <Text style={styles.codeText}>{group?.inviteCode ?? '——'}</Text>
-          </View>
-          <Pressable
-            style={[styles.chip, { backgroundColor: accentMix(accent, 24), borderColor: accentMix(accent, 50) }]}
-            onPress={shareCode}
-            accessibilityRole="button"
-          >
-            <Ionicons name="share-outline" size={15} color="#fff" />
-            <Text style={styles.chipText}>{t('map.share')}</Text>
-          </Pressable>
-          <Pressable style={styles.chipGhost} onPress={copyCode} accessibilityRole="button">
-            <Text style={styles.chipText}>{codeCopied ? t('group.copied') : t('map.copy')}</Text>
-          </Pressable>
-        </View>
-
-        {/* Flock. */}
-        <Text style={styles.sectionLabel}>
+        {/* Flock — first section, Apple-Maps-style heading. */}
+        <Text style={styles.sheetHeading}>
           {t('map.flockLabel')} · {members.length}
         </Text>
         <View style={styles.list}>
@@ -670,14 +651,33 @@ export default function MapScreen({ route, navigation }: Props) {
           ))}
         </View>
 
+        {/* Group code + share / copy. */}
+        <Text style={styles.sheetHeading}>{t('group.codeLabel')}</Text>
+        <View style={styles.codeRow}>
+          <View style={styles.grow}>
+            <Text style={styles.codeText}>{group?.inviteCode ?? '——'}</Text>
+          </View>
+          <Pressable
+            style={[styles.chip, { backgroundColor: accentMix(accent, 24), borderColor: accentMix(accent, 50) }]}
+            onPress={shareCode}
+            accessibilityRole="button"
+          >
+            <Ionicons name="share-outline" size={15} color="#fff" />
+            <Text style={styles.chipText}>{t('map.share')}</Text>
+          </Pressable>
+          <Pressable style={styles.chipGhost} onPress={copyCode} accessibilityRole="button">
+            <Text style={styles.chipText}>{codeCopied ? t('group.copied') : t('map.copy')}</Text>
+          </Pressable>
+        </View>
+
         {/* Gathering points → route overlay. */}
+        <Text style={styles.sheetHeading}>{t('map.gatheringPoints')}</Text>
         <Pressable style={styles.rowButton} onPress={() => setOverlay('route')} accessibilityRole="button">
           <View style={[styles.rowIcon, { backgroundColor: accentMix(accent, 20) }]}>
             <CrookIcon size={22} color={accent} />
           </View>
           <View style={styles.grow}>
-            <Text style={styles.rowTitle}>{t('map.gatheringPoints')}</Text>
-            <Text style={styles.rowSub}>
+            <Text style={styles.rowTitle}>
               {t('map.stopsReorder', { count: destinations.length })}
             </Text>
           </View>
@@ -685,7 +685,7 @@ export default function MapScreen({ route, navigation }: Props) {
         </Pressable>
 
         {/* Quick commands. */}
-        <Text style={styles.sectionLabel}>
+        <Text style={styles.sheetHeading}>
           {isLeader ? t('map.cmdLeaderTitle') : t('map.cmdFollowerTitle')}
         </Text>
         {groupId ? (
@@ -1026,6 +1026,15 @@ const makeStyles = (accent: string) =>
     avatarText: { fontSize: 16, fontWeight: '700', color: '#fff' },
 
     codeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
+    // Big bold white section headings on the main sheet (Apple Maps style).
+    sheetHeading: {
+      fontSize: 20,
+      fontWeight: '700',
+      color: '#fff',
+      marginTop: 4,
+      marginBottom: 10,
+      marginLeft: 4,
+    },
     sectionLabel: {
       fontSize: 12,
       fontWeight: '700',
