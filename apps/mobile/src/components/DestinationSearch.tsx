@@ -12,7 +12,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { maps, type PlaceResult, type MapRegion } from '../native';
+import { liquidGlass, maps, type PlaceResult, type MapRegion } from '../native';
 import { useTheme } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
 import { radius, spacing, type Palette } from '../theme';
@@ -112,7 +112,10 @@ export default function DestinationSearch({
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <Pressable style={styles.backdrop} onPress={onClose} />
-        <View style={[styles.sheet, { paddingBottom: insets.bottom + spacing.lg }]}>
+        <liquidGlass.GlassView
+          tintColor={glass.overlay}
+          style={[styles.sheet, { paddingBottom: insets.bottom + spacing.lg }]}
+        >
           <View style={styles.handle} />
           <Text style={styles.label}>{t('search.label')}</Text>
 
@@ -179,7 +182,7 @@ export default function DestinationSearch({
               </Pressable>
             )}
           />
-        </View>
+        </liquidGlass.GlassView>
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -191,7 +194,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   flex: { flex: 1, justifyContent: 'flex-end' },
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: glass.scrim },
   sheet: {
-    backgroundColor: '#16202c',
+    overflow: 'hidden',
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
     borderTopWidth: StyleSheet.hairlineWidth,

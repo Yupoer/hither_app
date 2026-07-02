@@ -43,7 +43,7 @@ import {
   formatDistance,
   walkingEtaSeconds,
 } from '../utils/geo';
-import { location, type MapRegion, type PlaceResult } from '../native';
+import { liquidGlass, location, type MapRegion, type PlaceResult } from '../native';
 import {
   addDestination,
   deleteDestination,
@@ -464,7 +464,7 @@ export default function MapScreen({ route, navigation }: Props) {
         style={[styles.topRow, { top: insets.top + 8 }]}
         pointerEvents="box-none"
       >
-        <View style={styles.groupPill}>
+        <liquidGlass.GlassView tintColor={glass.pill} style={styles.groupPill}>
           <View style={styles.pillAvatars}>
             {flock.slice(0, 3).map((f, i) => (
               <View
@@ -477,13 +477,13 @@ export default function MapScreen({ route, navigation }: Props) {
             {group?.name ?? 'Hither'}
           </Text>
           <Text style={styles.pillCount}>· {members.length}</Text>
-        </View>
-        <View style={styles.roleChip}>
+        </liquidGlass.GlassView>
+        <liquidGlass.GlassView tintColor={glass.pill} style={styles.roleChip}>
           <View style={[styles.roleDot, { backgroundColor: accent }]} />
           <Text style={styles.roleWord}>
             {isLeader ? t('settings.roleLeader') : t('settings.roleFollower')}
           </Text>
-        </View>
+        </liquidGlass.GlassView>
       </View>
 
       {/* Recenter — rides above the sheet. */}
@@ -494,6 +494,11 @@ export default function MapScreen({ route, navigation }: Props) {
           accessibilityRole="button"
           accessibilityLabel={t('map.locateA11y')}
         >
+          <liquidGlass.GlassView
+            tintColor={glass.pill}
+            style={StyleSheet.absoluteFill}
+            pointerEvents="none"
+          />
           <Ionicons name="navigate" size={20} color="#fff" />
         </Pressable>
       </Animated.View>
@@ -517,12 +522,9 @@ export default function MapScreen({ route, navigation }: Props) {
               const d = fromCoords ? distanceMeters(fromCoords, dest.coordinates) : null;
               return (
                 <View key={dest.id} style={{ width: windowWidth, paddingHorizontal: 14 }}>
-                  <View
-                    style={[
-                      styles.card,
-                      { backgroundColor: active ? glass.cardActive : glass.card },
-                      active && { borderColor: accentMix(accent, 50) },
-                    ]}
+                  <liquidGlass.GlassView
+                    tintColor={active ? glass.cardActive : glass.card}
+                    style={[styles.card, active && { borderColor: accentMix(accent, 50) }]}
                   >
                     <View style={styles.cardHead}>
                       <View style={[styles.cardIcon, { backgroundColor: accentMix(accent, 22), borderColor: accentMix(accent, 45) }]}>
@@ -559,7 +561,7 @@ export default function MapScreen({ route, navigation }: Props) {
                         </Text>
                       </View>
                     </View>
-                  </View>
+                  </liquidGlass.GlassView>
                 </View>
               );
             })}
@@ -897,10 +899,10 @@ const makeStyles = (accent: string) =>
       paddingLeft: 8,
       paddingRight: 14,
       borderRadius: 22,
+      overflow: 'hidden',
       flexDirection: 'row',
       alignItems: 'center',
       gap: 9,
-      backgroundColor: glass.pill,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairlineStrong,
     },
@@ -918,10 +920,10 @@ const makeStyles = (accent: string) =>
       height: 44,
       paddingHorizontal: 16,
       borderRadius: 22,
+      overflow: 'hidden',
       flexDirection: 'row',
       alignItems: 'center',
       gap: 7,
-      backgroundColor: glass.pill,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairlineStrong,
     },
@@ -933,9 +935,9 @@ const makeStyles = (accent: string) =>
       width: 48,
       height: 48,
       borderRadius: 24,
+      overflow: 'hidden',
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: glass.pill,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairlineStrong,
     },
@@ -943,6 +945,7 @@ const makeStyles = (accent: string) =>
     carouselWrap: { position: 'absolute', left: 0, right: 0, zIndex: 58 },
     card: {
       borderRadius: 22,
+      overflow: 'hidden',
       padding: 15,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairline,

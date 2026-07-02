@@ -19,10 +19,10 @@ export const glass = {
   overlay: 'rgba(22, 26, 34, 0.9)',
   /** Floating pills (group pill, role chip, recenter, FABs). */
   pill: 'rgba(40, 44, 52, 0.55)',
-  /** Carousel / island card, inactive. */
-  card: 'rgba(28, 32, 40, 0.72)',
+  /** Carousel card, inactive. Near-opaque so the card reads over any map. */
+  card: 'rgba(28, 32, 40, 0.9)',
   /** Carousel card, active (selected stop). */
-  cardActive: 'rgba(38, 44, 54, 0.82)',
+  cardActive: 'rgba(38, 44, 54, 0.94)',
   /** Inset list / button fill. */
   fill: 'rgba(255, 255, 255, 0.07)',
   /** Stronger inset fill (secondary buttons). */
