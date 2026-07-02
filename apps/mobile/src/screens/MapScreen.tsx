@@ -51,6 +51,7 @@ import {
   setJourneyStatus,
   updateMyLocation,
 } from '../api/client';
+import { isDemoGroup } from '../api/demo';
 import { confirmAction } from '../utils/confirm';
 import type { Coordinates, Destination, MemberLocation } from '../types';
 import { themes, THEME_ORDER, type ThemeName } from '../theme';
@@ -90,9 +91,10 @@ export default function MapScreen({ route, navigation }: Props) {
   const dark = themes.night;
 
   const groupId = route.params?.groupId ?? membership?.group.id ?? null;
-  const group = membership?.group ?? null;
-  const isLeader = membership?.role === 'leader';
+  // The demo flock has no membership row; the tester drives it as leader.
+  const isLeader = membership?.role === 'leader' || isDemoGroup(groupId);
   const { state, loading, refresh } = useGroupState(groupId);
+  const group = state?.group ?? membership?.group ?? null;
 
   const mapRef = useRef<GroupMapHandle | null>(null);
   const carouselRef = useRef<ScrollView | null>(null);

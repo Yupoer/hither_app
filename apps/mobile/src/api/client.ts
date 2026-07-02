@@ -1,4 +1,13 @@
 import { supabase } from './supabase';
+import {
+  demoAddDestination,
+  demoDeleteDestination,
+  demoReorderDestinations,
+  demoSetJourneyStatus,
+  demoUpdateMyLocation,
+  getDemoState,
+  isDemoGroup,
+} from './demo';
 import type {
   CommandType,
   Coordinates,
@@ -206,6 +215,10 @@ export async function joinGroup(inviteCode: string): Promise<Group> {
  * itinerary stop (lowest position) is surfaced as `nextDestination`.
  */
 export async function getGroupState(groupId: string): Promise<GroupState> {
+  if (isDemoGroup(groupId)) {
+    const { data } = await supabase.auth.getUser();
+    return getDemoState(data.user?.id);
+  }
   const [groupRes, membersRes, itineraryRes, locationsRes] = await Promise.all([
     supabase
       .from('groups')
@@ -280,6 +293,10 @@ export async function addDestination(
   groupId: string,
   input: { title: string; address?: string; coordinates: Coordinates },
 ): Promise<void> {
+  if (isDemoGroup(groupId)) {
+    demoAddDestination(input);
+    return;
+  }
   const { data: maxRow, error: maxError } = await supabase
     .from('itinerary_items')
     .select('position')
@@ -310,6 +327,10 @@ export async function deleteDestination(
   groupId: string,
   destinationId: string,
 ): Promise<void> {
+  if (isDemoGroup(groupId)) {
+    demoDeleteDestination(destinationId);
+    return;
+  }
   const { error } = await supabase
     .from('itinerary_items')
     .delete()
@@ -341,6 +362,10 @@ export async function reorderDestinations(
   groupId: string,
   orderedIds: string[],
 ): Promise<void> {
+  if (isDemoGroup(groupId)) {
+    demoReorderDestinations(orderedIds);
+    return;
+  }
   // Write all positions in parallel; each row is scoped to the group.
   const results = await Promise.all(
     orderedIds.map((id, index) =>
@@ -381,6 +406,10 @@ export async function updateMyLocation(
   coordinates: Coordinates,
   groupId: string,
 ): Promise<void> {
+  if (isDemoGroup(groupId)) {
+    demoUpdateMyLocation(coordinates);
+    return;
+  }
   const uid = await requireUserId();
   const { error } = await supabase.from('member_locations').upsert(
     {
@@ -430,6 +459,7 @@ export async function sendCommand(
   message?: string,
   coords?: Coordinates,
 ): Promise<void> {
+  if (isDemoGroup(groupId)) return; // demo flock: nobody to push to
   const uid = await requireUserId();
   const { error } = await supabase.from('commands').insert({
     group_id: groupId,
@@ -511,6 +541,10 @@ export async function setJourneyStatus(
   groupId: string,
   status: JourneyStatus,
 ): Promise<void> {
+  if (isDemoGroup(groupId)) {
+    demoSetJourneyStatus(status);
+    return;
+  }
   const { error } = await supabase
     .from('groups')
     .update({ journey_status: status })

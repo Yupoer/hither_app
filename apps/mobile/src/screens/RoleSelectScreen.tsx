@@ -8,6 +8,7 @@ import { useTheme } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
 import { glass, accentMix } from '../glass';
 import CrookIcon from '../components/CrookIcon';
+import { DEMO_GROUP_ID } from '../api/demo';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RoleSelect'>;
 
@@ -73,6 +74,16 @@ export default function RoleSelectScreen({ navigation }: Props) {
           <Text style={styles.ctaText}>{t('role.join')}</Text>
         </Pressable>
 
+        {__DEV__ && (
+          <Pressable
+            onPress={() => navigation.navigate('Map', { groupId: DEMO_GROUP_ID })}
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.demo, pressed && styles.pressed]}
+          >
+            <Text style={styles.demoText}>{t('role.demo')}</Text>
+          </Pressable>
+        )}
+
         <Text style={styles.footer}>{t('role.footer')}</Text>
       </View>
     </LinearGradient>
@@ -128,6 +139,8 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.18)',
   },
   ctaText: { fontSize: 17, fontWeight: '600', color: '#fff' },
+  demo: { paddingVertical: 10, paddingHorizontal: 16 },
+  demoText: { fontSize: 14, fontWeight: '600', color: 'rgba(235,235,245,0.55)' },
   pressed: { opacity: 0.85 },
   footer: {
     marginTop: 22,

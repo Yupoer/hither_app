@@ -80,6 +80,7 @@ const zh = {
   'settings.signOutMsg': '登出後會回到登入畫面。',
 
   // Map
+  'role.demo': '測試模式 · 虛擬團隊',
   'map.loading': '載入群組位置中…',
   'map.setFailedTitle': '設定失敗',
   'map.setFailedMsg': '無法設定集合點。請確認你是隊長，並再試一次。',
@@ -223,6 +224,7 @@ const en: Record<keyof typeof zh, string> = {
   'settings.signOutTitle': 'Sign out',
   'settings.signOutMsg': "You'll return to the sign-in screen.",
 
+  'role.demo': 'Demo flock (testing)',
   'map.loading': 'Loading group locations…',
   'map.setFailedTitle': 'Failed',
   'map.setFailedMsg': "Couldn't set the gathering point. Make sure you're the leader and try again.",
