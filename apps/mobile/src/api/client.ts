@@ -4,6 +4,7 @@ import {
   demoDeleteDestination,
   demoReorderDestinations,
   demoSetJourneyStatus,
+  demoSetSolo,
   demoUpdateMyLocation,
   getDemoState,
   isDemoGroup,
@@ -51,6 +52,8 @@ interface GroupRow {
 interface MembershipRow {
   user_id: string;
   role: MemberRole;
+  /** Optional — absent until the solo_mode migration is applied. */
+  solo?: boolean | null;
 }
 
 interface ProfileRow {
@@ -125,6 +128,7 @@ export function mapMember(
     name: profile?.nickname ?? '',
     role: membership.role,
     avatar: profile?.avatar ?? undefined,
+    solo: membership.solo ?? false,
     coordinates,
     lastUpdated: location?.updated_at ?? undefined,
   };
@@ -238,9 +242,11 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
       .select('id, name, invite_code, created_by, created_at, journey_status')
       .eq('id', groupId)
       .single(),
+    // select('*') so optional columns (solo, subgroup_id) come through when
+    // their migrations are applied, and are simply absent before.
     supabase
       .from('memberships')
-      .select('user_id, role')
+      .select('*')
       .eq('group_id', groupId),
     supabase
       .from('itinerary_items')
@@ -425,6 +431,24 @@ export async function updateAvatar(avatar: string): Promise<string> {
     .eq('id', uid);
   orThrow(error);
   return avatar;
+}
+
+/**
+ * Toggle the current user's Solo mode for a group. Solo members stay visible
+ * on the map but receive no group notifications until they rejoin. Goes
+ * through the `set_solo` SECURITY DEFINER RPC (memberships UPDATE is
+ * leader-only by RLS; the RPC limits the write to the caller's own solo flag).
+ */
+export async function setSolo(groupId: string, solo: boolean): Promise<void> {
+  if (isDemoGroup(groupId)) {
+    demoSetSolo(solo);
+    return;
+  }
+  const { error } = await supabase.rpc('set_solo', {
+    p_group: groupId,
+    p_solo: solo,
+  });
+  orThrow(error);
 }
 
 /**

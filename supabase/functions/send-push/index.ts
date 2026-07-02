@@ -34,15 +34,18 @@ Deno.serve(async (req) => {
     return json({ error: "missing category/group_id" }, 400);
   }
 
-  // 1) Recipients = group members minus the sender.
+  // 1) Recipients = group members minus the sender and minus anyone in Solo
+  //    mode (deploy after the solo_mode migration — the column must exist).
   const { data: members, error: mErr } = await supabase
     .from("memberships")
-    .select("user_id")
+    .select("user_id, solo")
     .eq("group_id", payload.group_id)
     .neq("user_id", payload.sender_id);
   if (mErr) return json({ error: mErr.message }, 500);
 
-  const recipientIds = (members ?? []).map((m) => m.user_id as string);
+  const recipientIds = (members ?? [])
+    .filter((m) => !(m as { solo?: boolean }).solo)
+    .map((m) => m.user_id as string);
   if (recipientIds.length === 0) return json({ sent: 0, reason: "no recipients" });
 
   // 2) Drop recipients who disabled this category. Missing row = all-on.

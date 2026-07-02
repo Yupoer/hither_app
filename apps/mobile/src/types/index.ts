@@ -57,6 +57,8 @@ export interface MemberLocation {
   role: MemberRole;
   /** Emoji avatar; falls back to the name's initial when unset. */
   avatar?: string;
+  /** Solo mode: temporarily detached from the flock (no group notifications). */
+  solo?: boolean;
   coordinates?: Coordinates;
   /** ISO-8601 timestamp of the last location update. */
   lastUpdated?: string;

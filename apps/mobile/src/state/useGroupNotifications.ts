@@ -58,6 +58,17 @@ export function useGroupNotifications(): void {
       body: string,
     ) => {
       try {
+        // Solo mode detaches this user from ALL group noise. Read fresh per
+        // event (like prefs below); a select error (solo_mode migration not
+        // applied yet) just means "not solo".
+        const { data: me, error: soloErr } = await supabase
+          .from('memberships')
+          .select('solo')
+          .eq('group_id', groupId)
+          .eq('user_id', myUserId)
+          .maybeSingle();
+        if (!soloErr && (me as { solo?: boolean } | null)?.solo) return;
+
         const prefs = await getNotificationPreferences();
         if (!prefs[category]) return;
         await notifications.scheduleLocalNotification({

@@ -15,6 +15,7 @@ import {
   ScrollView,
   Share,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   useWindowDimensions,
@@ -49,6 +50,7 @@ import {
   deleteDestination,
   reorderDestinations,
   setJourneyStatus,
+  setSolo,
   updateMyLocation,
 } from '../api/client';
 import { isDemoGroup } from '../api/demo';
@@ -370,6 +372,18 @@ export default function MapScreen({ route, navigation }: Props) {
     }
   }
 
+  // --- Solo mode -------------------------------------------------------------
+  const mySolo = members.find((m) => m.userId === user?.id)?.solo ?? false;
+  async function toggleSolo(next: boolean) {
+    if (!groupId) return;
+    try {
+      await setSolo(groupId, next);
+      refresh();
+    } catch (e) {
+      Alert.alert(t('solo.failed'), e instanceof Error ? e.message : undefined);
+    }
+  }
+
   const handleReorder = useCallback(
     async (orderedIds: string[]) => {
       if (!groupId) return;
@@ -451,20 +465,25 @@ export default function MapScreen({ route, navigation }: Props) {
           userId: m.userId,
           name: m.name || t('group.travelerFallback'),
           avatar: m.avatar,
+          solo: !!m.solo,
           color: memberColor(m.userId),
           isLeader: isMemberLeader,
-          statusText: isMemberLeader
-            ? t('flock.leading')
-            : d == null
-              ? t('flock.unknown')
+          statusText: m.solo
+            ? t('solo.badge')
+            : isMemberLeader
+              ? t('flock.leading')
+              : d == null
+                ? t('flock.unknown')
+                : arrived
+                  ? t('flock.arrived')
+                  : t('flock.enroute'),
+          statusColor: m.solo
+            ? glass.warn
+            : isMemberLeader
+              ? accent
               : arrived
-                ? t('flock.arrived')
-                : t('flock.enroute'),
-          statusColor: isMemberLeader
-            ? accent
-            : arrived
-              ? glass.ok
-              : glass.textSecondary,
+                ? glass.ok
+                : glass.textSecondary,
           eta: isMemberLeader ? '—' : d != null ? shortEta(walkingEtaSeconds(d)) : '',
           dist: isMemberLeader ? t('flock.here') : d != null ? formatDistance(d) : '',
           arrived,
@@ -911,6 +930,20 @@ export default function MapScreen({ route, navigation }: Props) {
             </Pressable>
           </View>
 
+          <Text style={styles.sectionLabel}>{t('solo.title')}</Text>
+          <View style={styles.soloRow}>
+            <View style={styles.grow}>
+              <Text style={styles.soloTitle}>{t('solo.switch')}</Text>
+              <Text style={styles.soloSub}>{t('solo.hint')}</Text>
+            </View>
+            <Switch
+              value={mySolo}
+              onValueChange={toggleSolo}
+              trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
+              thumbColor="#fff"
+            />
+          </View>
+
           <Text style={styles.sectionLabel}>{t('profile.avatar')}</Text>
           <View style={styles.emojiGrid}>
             {AVATAR_EMOJI.map((e) => (
@@ -1163,6 +1196,20 @@ const makeStyles = (accent: string) =>
       borderColor: 'transparent',
     },
     emojiChar: { fontSize: 26 },
+    soloRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      borderRadius: 16,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      marginBottom: 16,
+      backgroundColor: glass.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
+    },
+    soloTitle: { fontSize: 16, fontWeight: '600', color: '#fff' },
+    soloSub: { fontSize: 12.5, color: glass.textSecondary, marginTop: 2 },
 
     codeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
     // Big bold white section headings on the main sheet (Apple Maps style).

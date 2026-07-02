@@ -116,3 +116,7 @@ export function demoReorderDestinations(orderedIds: string[]): void {
 export function demoSetJourneyStatus(status: JourneyStatus): void {
   state.group = { ...state.group, journeyStatus: status };
 }
+
+export function demoSetSolo(solo: boolean): void {
+  state.members[0] = { ...state.members[0], solo };
+}
