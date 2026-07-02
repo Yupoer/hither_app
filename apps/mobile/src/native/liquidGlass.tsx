@@ -75,11 +75,20 @@ export function GlassView({
 }: GlassViewProps) {
   const { colors, themeName } = useTheme();
 
-  // iOS 26+: the system Liquid Glass material. No tint/overlay on top — the
-  // material already blurs + refracts the background; a thin tint only if asked.
+  // iOS 26+: the system Liquid Glass material. The native material treats
+  // `tintColor` as a thin hint, not a literal alpha-composited backdrop, so a
+  // near-opaque `glass.card`-style rgba read as fully transparent on-device.
+  // A real backgroundColor layer underneath restores the caller's intended
+  // opacity; the glass material still renders its blur/refraction on top.
   if (isLiquidGlassAvailable()) {
     return (
       <View style={style} {...rest}>
+        {tintColor && (
+          <View
+            style={[StyleSheet.absoluteFill, { backgroundColor: tintColor }]}
+            pointerEvents="none"
+          />
+        )}
         <ExpoGlassView
           glassEffectStyle={glassStyle}
           tintColor={tintColor}
