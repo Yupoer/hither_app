@@ -84,13 +84,6 @@ export const themes: Record<ThemeName, Palette> = {
 export const DEFAULT_THEME: ThemeName = 'night';
 export const THEME_ORDER: ThemeName[] = ['night', 'day', 'dusk'];
 
-/**
- * Back-compat static palette (the default theme). Modules that render outside a
- * React tree, or that have not been converted to `useTheme()`, can keep using
- * `colors.*`; converted screens read the live palette from the hook instead.
- */
-export const colors = themes[DEFAULT_THEME];
-
 export const spacing = {
   xs: 4,
   sm: 8,

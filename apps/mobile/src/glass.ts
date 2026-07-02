@@ -12,9 +12,6 @@
  * is the design's `#F5B142`). Call sites pass `accent` where the design uses it.
  */
 
-/** Blur radius for the frosted material behind glass surfaces. */
-export const GLASS_BLUR = 32;
-
 export const glass = {
   /** Bottom sheet body. */
   sheet: 'rgba(30, 32, 38, 0.66)',
@@ -72,6 +69,8 @@ export function accentMix(accent: string, pct: number): string {
   return `rgba(${r}, ${g}, ${b}, ${(pct / 100).toFixed(3)})`;
 }
 
-/** Bottom-sheet detents (px heights), matching the design's PEEK/MED/FULL. */
-export const DETENTS = { peek: 96, mid: 480, full: 792 } as const;
-export type DetentKey = keyof typeof DETENTS;
+/**
+ * Max pull-up sheet height (px), the design's FULL detent. Peek and mid are
+ * derived from the window size at runtime (see MapScreen's `detents`).
+ */
+export const SHEET_FULL_HEIGHT = 792;

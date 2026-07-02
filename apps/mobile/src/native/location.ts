@@ -37,20 +37,6 @@ export interface LocationSample {
   timestamp: number;
 }
 
-export type LocationCallback = (sample: LocationSample) => void;
-
-/** Opaque handle returned by {@link watchLocation}; pass to {@link stopLocationWatch}. */
-export interface LocationSubscription {
-  remove: () => void;
-}
-
-export interface WatchOptions {
-  /** Minimum metres moved before a new sample is delivered. Default 10. */
-  distanceIntervalMeters?: number;
-  /** Minimum milliseconds between samples. Default 4000. */
-  timeIntervalMs?: number;
-}
-
 function toSample(p: Location.LocationObject): LocationSample {
   return {
     coordinates: {
@@ -101,34 +87,4 @@ export async function getCurrentLocation(): Promise<LocationSample | null> {
   } catch {
     return null;
   }
-}
-
-/**
- * Stream position updates until {@link stopLocationWatch} is called.
- * Returns null if permission is denied.
- */
-export async function watchLocation(
-  callback: LocationCallback,
-  options: WatchOptions = {},
-): Promise<LocationSubscription | null> {
-  const granted = await requestPermission();
-  if (!granted) {
-    return null;
-  }
-  const sub = await Location.watchPositionAsync(
-    {
-      accuracy: Location.Accuracy.Balanced,
-      distanceInterval: options.distanceIntervalMeters ?? 10,
-      timeInterval: options.timeIntervalMs ?? 4000,
-    },
-    (position) => callback(toSample(position)),
-  );
-  return sub;
-}
-
-/** Stop a {@link watchLocation} stream. No-op for a null handle. */
-export function stopLocationWatch(
-  subscription: LocationSubscription | null,
-): void {
-  subscription?.remove();
 }

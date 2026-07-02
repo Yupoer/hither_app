@@ -2,8 +2,8 @@
  * Live Activity boundary (iOS ActivityKit / Dynamic Island).
  *
  * There is NO Expo-Go-compatible implementation: ActivityKit requires a
- * custom native module and a Dev Build. In Expo Go these are safe no-ops
- * with {@link isSupported} returning false, so screens can call them freely
+ * custom native module and a Dev Build. In Expo Go these are safe no-ops,
+ * so screens can call them freely
  * without crashing. On an EAS Dev Build the native module
  * `HitherLiveActivity` (`apps/mobile/modules/hither-live-activity`) is
  * present and backs every call through the same interface.
@@ -13,7 +13,6 @@ import type { Coordinates } from '../types';
 
 /** Custom native module; `null` in Expo Go / when not built. */
 const HitherLiveActivity = requireOptionalNativeModule<{
-  isSupported(): boolean;
   startGroupActivity(state: GroupActivityState): Promise<ActivityHandle | null>;
   updateGroupActivity(
     handle: ActivityHandle,
@@ -40,15 +39,6 @@ export interface GroupActivityState {
 
 /** Opaque id for an in-flight activity (native only). */
 export type ActivityHandle = string;
-
-/**
- * Whether Live Activities can actually run here. False in Expo Go / on
- * Android; true only on an iOS Dev Build with the native module. Gate UI
- * affordances on this.
- */
-export function isSupported(): boolean {
-  return HitherLiveActivity?.isSupported() ?? false;
-}
 
 /** Start a group Live Activity. Returns null when unsupported (Expo Go). */
 export async function startGroupActivity(

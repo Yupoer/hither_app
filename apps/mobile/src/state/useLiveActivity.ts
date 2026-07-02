@@ -11,7 +11,7 @@ import { liveActivity, type GroupActivityState } from '../native';
  * returns null/does nothing when the native module is absent (see
  * `native/liveActivity.ts`), so callers don't need to gate on platform.
  *
- * The native Live Activity is the system banner; the in-app `JourneyBanner`
+ * The native Live Activity is the system banner; the in-app Dynamic Island
  * mirrors the same data inside the map. Both read from the same source.
  */
 export function useLiveActivity(active: boolean, state: GroupActivityState): void {

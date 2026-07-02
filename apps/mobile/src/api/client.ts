@@ -274,35 +274,6 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
 }
 
 /**
- * Set the group's next destination by moving the chosen stop to the front of
- * the itinerary (lowest position). Leader-only (enforced by RLS). Returns the
- * refreshed state.
- */
-export async function updateNextDestination(
-  groupId: string,
-  destinationId: string,
-): Promise<GroupState> {
-  const { data: minRow, error: minError } = await supabase
-    .from('itinerary_items')
-    .select('position')
-    .eq('group_id', groupId)
-    .order('position', { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  if (minError) throw new Error(minError.message);
-
-  const minPosition = minRow?.position ?? 0;
-  const { error } = await supabase
-    .from('itinerary_items')
-    .update({ position: minPosition - 1 })
-    .eq('id', destinationId)
-    .eq('group_id', groupId);
-  if (error) throw new Error(error.message);
-
-  return getGroupState(groupId);
-}
-
-/**
  * Add a new itinerary stop, appended to the END of the itinerary.
  *
  * The stop is inserted one above the current highest `position`, so it becomes

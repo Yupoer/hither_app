@@ -25,11 +25,9 @@ const HitherNotifications = requireOptionalNativeModule<{
 export interface LocalNotificationInput {
   title: string;
   body?: string;
-  /** Arbitrary payload delivered back to {@link onNotificationReceived}. */
+  /** Arbitrary payload delivered with the notification. */
   data?: Record<string, unknown>;
 }
-
-export type NotificationSubscription = { remove: () => void };
 
 // Foreground presentation: without a handler, iOS suppresses notifications
 // while the app is open. The interim local-notification flow (realtime event ->
@@ -75,16 +73,6 @@ export async function getDevicePushToken(): Promise<string | null> {
     );
     return null;
   }
-}
-
-/**
- * Subscribe to notifications received while the app is foregrounded.
- * Returns a handle whose `.remove()` ends the subscription.
- */
-export function onNotificationReceived(
-  callback: (notification: Notifications.Notification) => void,
-): NotificationSubscription {
-  return Notifications.addNotificationReceivedListener(callback);
 }
 
 /**

@@ -17,8 +17,8 @@ export * as notifications from './notifications';
 export * as liveActivity from './liveActivity';
 export * as liquidGlass from './liquidGlass';
 
-export type { LocationSample, LocationSubscription } from './location';
-export type { PlaceResult, MapRegion, DirectionsResult } from './maps';
+export type { LocationSample } from './location';
+export type { PlaceResult, MapRegion } from './maps';
 export type { LocalNotificationInput } from './notifications';
 export type { GroupActivityState, ActivityHandle } from './liveActivity';
 export type { GlassViewProps } from './liquidGlass';

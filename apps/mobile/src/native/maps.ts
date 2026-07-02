@@ -21,7 +21,6 @@ import type { Coordinates } from '../types';
 /** Custom native module; `null` in Expo Go / when not built. */
 const HitherMaps = requireOptionalNativeModule<{
   searchPlaces(query: string, region?: MapRegion): Promise<PlaceResult[]>;
-  getDirections(from: Coordinates, to: Coordinates): Promise<DirectionsResult>;
 }>('HitherMaps');
 
 /** A search hit the "next gathering point" picker can drop on the map. */
@@ -38,14 +37,6 @@ export interface MapRegion {
   longitude: number;
   latitudeDelta: number;
   longitudeDelta: number;
-}
-
-/** A coarse directions result. Phase A returns a straight-line estimate. */
-export interface DirectionsResult {
-  /** Straight-line (or routed, on native) distance in metres. */
-  distanceMeters: number;
-  /** Ordered polyline points. Phase A: just [from, to]. */
-  points: Coordinates[];
 }
 
 const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
@@ -124,33 +115,4 @@ export async function searchPlaces(
   } catch {
     return [];
   }
-}
-
-const EARTH_RADIUS_M = 6_371_000;
-
-/**
- * Directions between two points. Phase A returns a straight-line estimate
- * (haversine + a 2-point polyline); a native module can replace this with a
- * real routed path without changing callers.
- */
-export async function getDirections(
-  from: Coordinates,
-  to: Coordinates,
-): Promise<DirectionsResult> {
-  if (HitherMaps) {
-    try {
-      return await HitherMaps.getDirections(from, to);
-    } catch {
-      // fall through to the straight-line estimate
-    }
-  }
-  const dLat = ((to.latitude - from.latitude) * Math.PI) / 180;
-  const dLon = ((to.longitude - from.longitude) * Math.PI) / 180;
-  const lat1 = (from.latitude * Math.PI) / 180;
-  const lat2 = (to.latitude * Math.PI) / 180;
-  const h =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
-  const distanceMeters = 2 * EARTH_RADIUS_M * Math.asin(Math.sqrt(h));
-  return { distanceMeters, points: [from, to] };
 }

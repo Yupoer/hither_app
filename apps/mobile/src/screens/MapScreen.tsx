@@ -55,7 +55,7 @@ import {
 import { confirmAction } from '../utils/confirm';
 import type { Coordinates, Destination, MemberLocation } from '../types';
 import { themes, THEME_ORDER, type ThemeName } from '../theme';
-import { glass, accentMix, memberColor, DETENTS } from '../glass';
+import { glass, accentMix, memberColor, SHEET_FULL_HEIGHT } from '../glass';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Map'>;
 
@@ -104,7 +104,7 @@ export default function MapScreen({ route, navigation }: Props) {
   // --- Sheet / overlay / island UI state -----------------------------------
   const detents = useMemo(() => {
     const peek = 92 + insets.bottom;
-    const full = Math.min(DETENTS.full, windowHeight - insets.top - 8);
+    const full = Math.min(SHEET_FULL_HEIGHT, windowHeight - insets.top - 8);
     const mid = Math.round(full * 0.56);
     return [peek, mid, full];
   }, [insets.bottom, insets.top, windowHeight]);

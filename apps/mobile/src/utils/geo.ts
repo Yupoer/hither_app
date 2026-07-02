@@ -37,21 +37,3 @@ export function formatDistance(distanceM: number): string {
   }
   return `${(distanceM / 1000).toFixed(1)} km`;
 }
-
-/** Format an ETA for display, e.g. "about 4 min" or "< 1 min". */
-export function formatEta(seconds: number): string {
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 1) {
-    return '< 1 min';
-  }
-  return `about ${minutes} min`;
-}
-
-/**
- * Build the "320 m · about 4 min walk" string the design's gathering-point
- * card shows, from a member position to the gathering point.
- */
-export function distanceEtaLabel(from: Coordinates, to: Coordinates): string {
-  const d = distanceMeters(from, to);
-  return `${formatDistance(d)} · ${formatEta(walkingEtaSeconds(d))} walk`;
-}

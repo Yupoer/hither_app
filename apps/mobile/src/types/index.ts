@@ -14,7 +14,6 @@ export type {
 export {
   LEADER_COMMANDS,
   FOLLOWER_COMMANDS,
-  COMMAND_ICON,
   isLeaderCommand,
 } from './command';
 export type {

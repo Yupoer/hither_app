@@ -36,23 +36,6 @@ export type LeaderCommandType = (typeof LEADER_COMMANDS)[number];
 export type FollowerCommandType = (typeof FOLLOWER_COMMANDS)[number];
 export type CommandType = LeaderCommandType | FollowerCommandType;
 
-/** A short emoji glyph per command, for the Settings quick-button grid. */
-export const COMMAND_ICON: Record<CommandType, string> = {
-  gather: '🧲',
-  find_gathering: '📍',
-  depart: '🚶',
-  rest: '☕️',
-  be_careful: '⚠️',
-  go_left: '⬅️',
-  go_right: '➡️',
-  stop: '✋',
-  hurry_up: '⏩',
-  need_restroom: '🚻',
-  need_break: '😮‍💨',
-  need_help: '🆘',
-  found_something: '🔎',
-};
-
 /** True if the command is a leader directive (vs a follower request). */
 export function isLeaderCommand(type: CommandType): boolean {
   return (LEADER_COMMANDS as readonly string[]).includes(type);
