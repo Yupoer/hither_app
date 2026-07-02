@@ -1,5 +1,7 @@
 # Hither App — MVP 規格文件
 
+> ⚠️ **本文件為 2026-06-16 初版 PRD，多處已被實作取代，現況以 `docs/dev-status.md` 為準。** 已知過期條目：單一集合點 → 已改為多集合點可重排行程；單一 group → 已有 subgroups 巢狀分隊；6 畫面 flow → 實作為 4 畫面（Auth/Group/Map/Settings）；「裝置本地 token」→ Supabase 匿名登入；「後端 Node.js 待定」→ 已定案 Supabase；「Expo Go 全驗收」→ Live Activity 等原生功能需 Dev Build。
+
 | 欄位 | 內容 |
 |------|------|
 | 版本 | 0.1.0 |

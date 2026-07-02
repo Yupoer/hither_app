@@ -1,5 +1,7 @@
 # Hither App — 開發現況報告（給 Claude Design 對齊用）
 
+> ⚠️ **本報告僅涵蓋至 master @ `0953288`；此後 master 又新增 23+ commits（subgroups 分隊、solo mode、emoji avatar/profile、Apple-Maps 式搜尋 sheet 等）不在本報告內。**引用前先 `git log --oneline 0953288..master` 確認差距。
+
 | 欄位 | 內容 |
 |------|------|
 | 報告日期 | 2026-07-01 |
