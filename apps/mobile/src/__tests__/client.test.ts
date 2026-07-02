@@ -181,10 +181,9 @@ describe('joinGroup', () => {
 });
 
 describe('addDestination', () => {
-  // Build a flexible chainable mock for the `itinerary_items` table:
-  // - the edge-position read (max position) ends in .maybeSingle()
-  // - .insert(...) resolves to `insertResult` and records its payload
-  // - the getGroupState re-read awaits the chain directly (.then)
+  // Chainable mock for the `itinerary_items` table: the edge-position read
+  // (max position) ends in .maybeSingle(); .insert(...) resolves to
+  // `insertResult` and records its payload.
   function itineraryTable(edgePosition: number | null, insertResult: unknown) {
     const obj: Record<string, unknown> = {};
     const self = () => obj;
@@ -199,50 +198,13 @@ describe('addDestination', () => {
           error: null,
         }),
       insert: jest.fn(() => Promise.resolve(insertResult)),
-      // getGroupState's itinerary read awaits the builder -> empty list.
-      then: (onF: (v: unknown) => unknown, onR?: (e: unknown) => unknown) =>
-        Promise.resolve({ data: [], error: null }).then(onF, onR),
     });
     return obj as { insert: jest.Mock };
   }
 
-  // Minimal stubs so the getGroupState() re-read after insert resolves.
-  function emptyGroupStateTables(itinerary: object) {
-    const listEq = () => Promise.resolve({ data: [], error: null });
-    return (table: string) => {
-      switch (table) {
-        case 'itinerary_items':
-          return itinerary;
-        case 'groups':
-          return {
-            select: () => ({
-              eq: () => ({
-                single: () =>
-                  Promise.resolve({
-                    data: {
-                      id: 'g1',
-                      name: '團',
-                      invite_code: 'ABC234',
-                      created_by: 'uid',
-                      created_at: 't0',
-                    },
-                    error: null,
-                  }),
-              }),
-            }),
-          };
-        case 'memberships':
-        case 'member_locations':
-          return { select: () => ({ eq: listEq }) };
-        default:
-          return { select: () => ({ eq: listEq }) };
-      }
-    };
-  }
-
   it('appends the new stop to the end (maxPosition + 1)', async () => {
     const itinerary = itineraryTable(2, { error: null });
-    mockedFrom.mockImplementation(emptyGroupStateTables(itinerary));
+    mockedFrom.mockImplementation(() => itinerary);
 
     await addDestination('g1', {
       title: '台北101',
@@ -262,7 +224,7 @@ describe('addDestination', () => {
 
   it('uses position 0 when the itinerary is empty', async () => {
     const itinerary = itineraryTable(null, { error: null });
-    mockedFrom.mockImplementation(emptyGroupStateTables(itinerary));
+    mockedFrom.mockImplementation(() => itinerary);
 
     await addDestination('g1', {
       title: '中正紀念堂',
@@ -278,7 +240,7 @@ describe('addDestination', () => {
     const itinerary = itineraryTable(0, {
       error: { code: '42501', message: 'new row violates row-level security' },
     });
-    mockedFrom.mockImplementation(emptyGroupStateTables(itinerary));
+    mockedFrom.mockImplementation(() => itinerary);
 
     await expect(
       addDestination('g1', {
@@ -378,40 +340,11 @@ describe('notifications, commands & journey', () => {
     );
   });
 
-  it('setJourneyStatus updates groups.journey_status then re-reads state', async () => {
+  it('setJourneyStatus updates groups.journey_status', async () => {
     const update = jest.fn(() => ({ eq: () => Promise.resolve({ error: null }) }));
-    const empty = () => Promise.resolve({ data: [], error: null });
-    mockedFrom.mockImplementation((table: string) => {
-      if (table === 'groups') {
-        return {
-          update,
-          select: () => ({
-            eq: () => ({
-              single: () =>
-                Promise.resolve({
-                  data: {
-                    id: 'g1',
-                    name: '團',
-                    invite_code: 'ABC234',
-                    created_by: 'uid',
-                    created_at: 't0',
-                    journey_status: 'going',
-                  },
-                  error: null,
-                }),
-            }),
-          }),
-        };
-      }
-      if (table === 'itinerary_items') {
-        return { select: () => ({ eq: () => ({ order: empty }) }) };
-      }
-      // memberships, member_locations: resolve at .eq()
-      return { select: () => ({ eq: empty }) };
-    });
+    mockedFrom.mockImplementation(() => ({ update }));
 
-    const state = await setJourneyStatus('g1', 'going');
+    await setJourneyStatus('g1', 'going');
     expect(update).toHaveBeenCalledWith({ journey_status: 'going' });
-    expect(state.group.journeyStatus).toBe('going');
   });
 });

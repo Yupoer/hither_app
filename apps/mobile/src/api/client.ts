@@ -129,6 +129,11 @@ async function requireUserId(): Promise<string> {
   return data.user.id;
 }
 
+/** Throw a clean Error when a Supabase response reports one. */
+function orThrow(error: { message: string } | null): void {
+  if (error) throw new Error(error.message);
+}
+
 // --- API functions --------------------------------------------------------
 
 /**
@@ -160,9 +165,7 @@ export async function createGroup(name: string): Promise<Group> {
     const { error: memberError } = await supabase
       .from('memberships')
       .insert({ group_id: group.id, user_id: uid, role: 'leader', status: 'active' });
-    if (memberError) {
-      throw new Error(memberError.message);
-    }
+    orThrow(memberError);
     return group;
   }
 
@@ -224,10 +227,10 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
       .eq('group_id', groupId),
   ]);
 
-  if (groupRes.error) throw new Error(groupRes.error.message);
-  if (membersRes.error) throw new Error(membersRes.error.message);
-  if (itineraryRes.error) throw new Error(itineraryRes.error.message);
-  if (locationsRes.error) throw new Error(locationsRes.error.message);
+  orThrow(groupRes.error);
+  orThrow(membersRes.error);
+  orThrow(itineraryRes.error);
+  orThrow(locationsRes.error);
 
   const memberRows = (membersRes.data ?? []) as MembershipRow[];
   const locationRows = (locationsRes.data ?? []) as LocationRow[];
@@ -243,7 +246,7 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
       .from('profiles')
       .select('id, nickname')
       .in('id', userIds);
-    if (profileError) throw new Error(profileError.message);
+    orThrow(profileError);
     profileRows = (profiles ?? []) as ProfileRow[];
   }
 
@@ -271,12 +274,12 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
  * the last gathering point in the trip rather than the next one — adding a stop
  * extends the journey forward. Leader-only — `itinerary_items` INSERT is gated
  * to leaders by RLS, so a follower's call rejects with a 42501 we surface to the
- * caller. Returns the refreshed state.
+ * caller. Callers refresh via useGroupState (realtime + refresh()).
  */
 export async function addDestination(
   groupId: string,
   input: { title: string; address?: string; coordinates: Coordinates },
-): Promise<GroupState> {
+): Promise<void> {
   const { data: maxRow, error: maxError } = await supabase
     .from('itinerary_items')
     .select('position')
@@ -284,7 +287,7 @@ export async function addDestination(
     .order('position', { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (maxError) throw new Error(maxError.message);
+  orThrow(maxError);
 
   const maxPosition = maxRow?.position ?? -1;
   const { error } = await supabase.from('itinerary_items').insert({
@@ -295,26 +298,24 @@ export async function addDestination(
     longitude: input.coordinates.longitude,
     position: maxPosition + 1,
   });
-  if (error) throw new Error(error.message);
-
-  return getGroupState(groupId);
+  orThrow(error);
 }
 
 /**
  * Delete a single itinerary stop, then re-pack the remaining stops so their
  * `position` values stay gap-free (0,1,2…). Leader-only (RLS gates the DELETE),
- * so a follower's call rejects with a 42501. Returns the refreshed state.
+ * so a follower's call rejects with a 42501.
  */
 export async function deleteDestination(
   groupId: string,
   destinationId: string,
-): Promise<GroupState> {
+): Promise<void> {
   const { error } = await supabase
     .from('itinerary_items')
     .delete()
     .eq('id', destinationId)
     .eq('group_id', groupId);
-  if (error) throw new Error(error.message);
+  orThrow(error);
 
   // Re-pack remaining positions so order stays gap-free.
   const { data: rows, error: readError } = await supabase
@@ -322,25 +323,24 @@ export async function deleteDestination(
     .select('id')
     .eq('group_id', groupId)
     .order('position', { ascending: true });
-  if (readError) throw new Error(readError.message);
+  orThrow(readError);
 
   const ids = (rows ?? []).map((r) => (r as { id: string }).id);
   if (ids.length > 0) {
-    return reorderDestinations(groupId, ids);
+    await reorderDestinations(groupId, ids);
   }
-  return getGroupState(groupId);
 }
 
 /**
  * Persist a manual re-ordering of the itinerary. `orderedIds` is the list of
  * stop ids in their new order; each is written `position = index` so the order
  * is stable and gap-free. Leader-only (RLS gates `itinerary_items` UPDATE), so a
- * follower's call rejects with a 42501. Returns the refreshed state.
+ * follower's call rejects with a 42501.
  */
 export async function reorderDestinations(
   groupId: string,
   orderedIds: string[],
-): Promise<GroupState> {
+): Promise<void> {
   // Write all positions in parallel; each row is scoped to the group.
   const results = await Promise.all(
     orderedIds.map((id, index) =>
@@ -351,10 +351,7 @@ export async function reorderDestinations(
         .eq('group_id', groupId),
     ),
   );
-  const failed = results.find((r) => r.error);
-  if (failed?.error) throw new Error(failed.error.message);
-
-  return getGroupState(groupId);
+  orThrow(results.find((r) => r.error)?.error ?? null);
 }
 
 /**
@@ -371,7 +368,7 @@ export async function updateNickname(nickname: string): Promise<string> {
     .from('profiles')
     .update({ nickname: trimmed })
     .eq('id', uid);
-  if (error) throw new Error(error.message);
+  orThrow(error);
   return trimmed;
 }
 
@@ -395,9 +392,7 @@ export async function updateMyLocation(
     },
     { onConflict: 'group_id,user_id' },
   );
-  if (error) {
-    throw new Error(error.message);
-  }
+  orThrow(error);
 }
 
 // --- Notifications, commands & journey ------------------------------------
@@ -419,7 +414,7 @@ export async function savePushToken(
     { user_id: uid, token, platform, updated_at: new Date().toISOString() },
     { onConflict: 'user_id,token' },
   );
-  if (error) throw new Error(error.message);
+  orThrow(error);
 }
 
 /**
@@ -444,7 +439,7 @@ export async function sendCommand(
     latitude: coords?.latitude ?? null,
     longitude: coords?.longitude ?? null,
   });
-  if (error) throw new Error(error.message);
+  orThrow(error);
 }
 
 interface NotificationPrefsRow {
@@ -478,7 +473,7 @@ export async function getNotificationPreferences(): Promise<NotificationPreferen
     .select('add_gathering, leader_commands, follower_requests, journey')
     .eq('user_id', uid)
     .maybeSingle();
-  if (error) throw new Error(error.message);
+  orThrow(error);
   if (!data) return { ...DEFAULT_NOTIFICATION_PREFERENCES };
   return mapNotificationPreferences(data as NotificationPrefsRow);
 }
@@ -502,7 +497,7 @@ export async function setNotificationPreferences(
     },
     { onConflict: 'user_id' },
   );
-  if (error) throw new Error(error.message);
+  orThrow(error);
   return prefs;
 }
 
@@ -510,16 +505,15 @@ export async function setNotificationPreferences(
  * Set the group's journey status (start = 'going', pause = 'paused').
  * Leader-only — `groups` UPDATE is gated to leaders by RLS, so a follower's
  * call rejects with a 42501. An AFTER-UPDATE trigger pushes the change to
- * members (minus the leader). Returns the refreshed state.
+ * members (minus the leader).
  */
 export async function setJourneyStatus(
   groupId: string,
   status: JourneyStatus,
-): Promise<GroupState> {
+): Promise<void> {
   const { error } = await supabase
     .from('groups')
     .update({ journey_status: status })
     .eq('id', groupId);
-  if (error) throw new Error(error.message);
-  return getGroupState(groupId);
+  orThrow(error);
 }
