@@ -9,6 +9,12 @@ import {
 import { liquidGlass } from '../native';
 import { glass } from '../glass';
 
+// ponytail: no RN/Expo API exposes the device's actual screen corner radius;
+// this approximates modern iPhones' bezel curve so the full-detent sheet
+// (flush with all 4 screen edges) reads as continuous with the physical
+// screen corners instead of squaring them off.
+const SCREEN_CORNER_RADIUS = 44;
+
 /**
  * Apple-Maps-style pull-up glass sheet with three detents (peek / mid / full).
  *
@@ -132,7 +138,8 @@ export default function BottomSheet({
 
   // Apple-Maps stage morphing: peek floats far off every edge (small and
   // dainty), mid hugs the edges at the search bar's gap, full fills the screen
-  // flush with square bottom corners, leaving only the status-bar sliver.
+  // flush — all 4 corners then coincide with the physical screen corners, so
+  // they curve to match the device bezel instead of squaring off.
   const sideInset = heightAnim.interpolate({
     inputRange: detents,
     outputRange: [20, 10, 0],
@@ -141,12 +148,12 @@ export default function BottomSheet({
   const bottomOff = sheetBottomOffset(heightAnim, detents, bottomInset);
   const topRadius = heightAnim.interpolate({
     inputRange: detents,
-    outputRange: [26, 22, 12],
+    outputRange: [26, 22, SCREEN_CORNER_RADIUS],
     extrapolate: 'clamp',
   });
   const bottomRadius = heightAnim.interpolate({
     inputRange: detents,
-    outputRange: [26, 22, 0],
+    outputRange: [26, 22, SCREEN_CORNER_RADIUS],
     extrapolate: 'clamp',
   });
 
@@ -179,6 +186,10 @@ export default function BottomSheet({
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
+        // The search row + avatar (children[0]) stay pinned at the sheet's
+        // top edge; everything else slides underneath instead of scrolling
+        // the header itself out past the sheet's rounded top corners.
+        stickyHeaderIndices={[0]}
       >
         {children}
       </ScrollView>
