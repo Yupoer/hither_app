@@ -99,8 +99,7 @@ function shortEta(seconds: number): string {
 export default function MapScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  const { membership, user, updateNickname, updateAvatar, leaveGroup, signOut } =
-    useSession();
+  const { membership, user, updateProfile, leaveGroup, signOut } = useSession();
   const { language, themeName, setLanguage, setThemeName } = usePreferences();
   const { colors } = useTheme();
   const accent = colors.accent;
@@ -343,30 +342,29 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // --- Profile (nickname + emoji avatar) ------------------------------------
   const [profileName, setProfileName] = useState('');
+  const [profileAvatar, setProfileAvatar] = useState<string | undefined>(undefined);
   function openProfile() {
     setProfileName(user?.name ?? '');
+    setProfileAvatar(user?.avatar);
     setOverlay('profile');
   }
-  async function saveProfileName() {
-    const trimmed = profileName.trim();
-    if (!trimmed) return;
-    try {
-      await updateNickname(trimmed);
-      refresh();
-    } catch {
-      Alert.alert(t('settings.nicknameFailed'));
-    }
-  }
-  async function pickAvatar(emoji: string) {
-    try {
-      await updateAvatar(emoji);
-      refresh();
-    } catch (e) {
-      Alert.alert(
-        t('profile.avatarFailed'),
-        e instanceof Error ? e.message : undefined,
+  // "Done" (and the scrim tap) closes instantly, then persists whatever changed
+  // in one write — picking an avatar is a pure local highlight until then.
+  function closeProfile() {
+    setOverlay(null);
+    const nickname = profileName.trim();
+    const fields: { nickname?: string; avatar?: string } = {};
+    if (nickname && nickname !== user?.name) fields.nickname = nickname;
+    if (profileAvatar && profileAvatar !== user?.avatar) fields.avatar = profileAvatar;
+    if (!fields.nickname && !fields.avatar) return;
+    updateProfile(fields)
+      .then(() => refresh())
+      .catch((e) =>
+        Alert.alert(
+          t('profile.saveFailed'),
+          e instanceof Error ? e.message : undefined,
+        ),
       );
-    }
   }
 
   // --- Solo mode -------------------------------------------------------------
@@ -1112,7 +1110,7 @@ export default function MapScreen({ route, navigation }: Props) {
       {/* Profile overlay: nickname + emoji avatar, synced to the group. */}
       <OverlaySheet
         visible={overlay === 'profile'}
-        onClose={() => setOverlay(null)}
+        onClose={closeProfile}
         title={t('profile.title')}
         accent={accent}
         doneLabel={t('map.done')}
@@ -1128,15 +1126,8 @@ export default function MapScreen({ route, navigation }: Props) {
               placeholder={t('auth.namePlaceholder')}
               placeholderTextColor={glass.textTertiary}
               returnKeyType="done"
-              onSubmitEditing={saveProfileName}
+              onSubmitEditing={closeProfile}
             />
-            <Pressable
-              onPress={saveProfileName}
-              style={[styles.saveBtn, { backgroundColor: accent }]}
-              accessibilityRole="button"
-            >
-              <Text style={styles.saveText}>{t('settings.save')}</Text>
-            </Pressable>
           </View>
 
           <Text style={styles.sectionLabel}>{t('profile.avatar')}</Text>
@@ -1144,12 +1135,12 @@ export default function MapScreen({ route, navigation }: Props) {
             {AVATAR_EMOJI.map((e) => (
               <Pressable
                 key={e}
-                onPress={() => pickAvatar(e)}
+                onPress={() => setProfileAvatar(e)}
                 accessibilityRole="button"
-                accessibilityState={{ selected: user?.avatar === e }}
+                accessibilityState={{ selected: profileAvatar === e }}
                 style={[
                   styles.emojiCell,
-                  user?.avatar === e && {
+                  profileAvatar === e && {
                     borderColor: accent,
                     backgroundColor: accentMix(accent, 18),
                   },
@@ -1589,8 +1580,6 @@ const makeStyles = (accent: string) =>
     },
     addStopText: { fontSize: 16, fontWeight: '600' },
 
-    saveBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999 },
-    saveText: { color: '#1A1206', fontSize: 14, fontWeight: '700' },
     dangerBtn: {
       height: 52,
       borderRadius: 16,

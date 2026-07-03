@@ -163,13 +163,18 @@ export function mapSubgroup(row: SubgroupRow): Subgroup {
 
 // --- Helpers --------------------------------------------------------------
 
-/** Current authenticated user id (auth.uid()). Throws if signed out. */
+/**
+ * Current authenticated user id (auth.uid()). Throws if signed out. Reads the
+ * locally cached session — no network round-trip per API call; RLS re-validates
+ * the JWT server-side on every query, so nothing trusts this id blindly.
+ */
 async function requireUserId(): Promise<string> {
-  const { data, error } = await supabase.auth.getUser();
-  if (error || !data.user) {
+  const { data, error } = await supabase.auth.getSession();
+  const uid = data.session?.user.id;
+  if (error || !uid) {
     throw new Error('尚未登入');
   }
-  return data.user.id;
+  return uid;
 }
 
 /** Throw a clean Error when a Supabase response reports one. */
@@ -458,18 +463,25 @@ export async function updateNickname(nickname: string): Promise<string> {
 }
 
 /**
- * Update the current user's emoji avatar (in `public.profiles`). Same RLS as
- * the nickname: only your own row. Errors clearly if the profiles_avatar
- * migration has not been applied yet.
+ * Update the current user's profile (nickname and/or emoji avatar) in a single
+ * `profiles` round-trip. Same RLS as above: only your own row. Blank/omitted
+ * fields are left untouched; a call with nothing to change is a no-op.
  */
-export async function updateAvatar(avatar: string): Promise<string> {
+export async function updateProfile(fields: {
+  nickname?: string;
+  avatar?: string;
+}): Promise<void> {
+  const patch: { nickname?: string; avatar?: string } = {};
+  const nickname = fields.nickname?.trim();
+  if (nickname) patch.nickname = nickname;
+  if (fields.avatar) patch.avatar = fields.avatar;
+  if (!patch.nickname && !patch.avatar) return;
   const uid = await requireUserId();
   const { error } = await supabase
     .from('profiles')
-    .update({ avatar })
+    .update(patch)
     .eq('id', uid);
   orThrow(error);
-  return avatar;
 }
 
 /**

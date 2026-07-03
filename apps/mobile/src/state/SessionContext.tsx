@@ -7,8 +7,8 @@ import React, {
 } from 'react';
 import { supabase } from '../api/supabase';
 import {
-  updateAvatar as updateAvatarApi,
   updateNickname as updateNicknameApi,
+  updateProfile as updateProfileApi,
 } from '../api/client';
 import type { Group, MemberRole, User } from '../types';
 
@@ -46,8 +46,11 @@ interface SessionContextValue {
   signOut: () => Promise<void>;
   /** Change the signed-in user's nickname (persisted to `profiles`). */
   updateNickname: (nickname: string) => Promise<void>;
-  /** Change the signed-in user's emoji avatar (persisted to `profiles`). */
-  updateAvatar: (avatar: string) => Promise<void>;
+  /**
+   * Save nickname/avatar changes in one call (persisted to `profiles`).
+   * Optimistic: `user` updates immediately and reverts if the write fails.
+   */
+  updateProfile: (fields: { nickname?: string; avatar?: string }) => Promise<void>;
   /** Record the group the user just created (as leader) or joined (as follower). */
   setMembership: (membership: Membership) => void;
   leaveGroup: () => void;
@@ -137,9 +140,24 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         const next = await updateNicknameApi(nickname);
         setUser((prev) => (prev ? { ...prev, name: next } : prev));
       },
-      updateAvatar: async (avatar) => {
-        const next = await updateAvatarApi(avatar);
-        setUser((prev) => (prev ? { ...prev, avatar: next } : prev));
+      updateProfile: async (fields) => {
+        const prev = user;
+        const nickname = fields.nickname?.trim();
+        setUser((u) =>
+          u
+            ? {
+                ...u,
+                name: nickname || u.name,
+                avatar: fields.avatar ?? u.avatar,
+              }
+            : u,
+        );
+        try {
+          await updateProfileApi(fields);
+        } catch (e) {
+          setUser(prev);
+          throw e;
+        }
       },
       setMembership: (next) => setMembershipState(next),
       leaveGroup: () => setMembershipState(null),

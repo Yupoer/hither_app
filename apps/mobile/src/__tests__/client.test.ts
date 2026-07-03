@@ -1,7 +1,7 @@
 // Mock the supabase singleton so importing the client does not pull in
 // react-native-url-polyfill / AsyncStorage (native-only) or require env vars.
 jest.mock('../api/supabase', () => ({
-  supabase: { from: jest.fn(), rpc: jest.fn(), auth: { getUser: jest.fn() } },
+  supabase: { from: jest.fn(), rpc: jest.fn(), auth: { getSession: jest.fn() } },
 }));
 
 import {
@@ -21,7 +21,7 @@ import {
 } from '../api/client';
 import { supabase } from '../api/supabase';
 
-const mockedAuth = supabase.auth as unknown as { getUser: jest.Mock };
+const mockedAuth = supabase.auth as unknown as { getSession: jest.Mock };
 const mockedFrom = supabase.from as unknown as jest.Mock;
 const mockedRpc = supabase.rpc as unknown as jest.Mock;
 
@@ -117,8 +117,8 @@ describe('pure mappers (snake_case row -> camelCase type)', () => {
 
 describe('createGroup', () => {
   it('inserts a group as leader and returns the mapped group', async () => {
-    mockedAuth.getUser.mockResolvedValue({
-      data: { user: { id: 'uid' } },
+    mockedAuth.getSession.mockResolvedValue({
+      data: { session: { user: { id: 'uid' } } },
       error: null,
     });
     const single = jest.fn().mockResolvedValue({
@@ -149,8 +149,8 @@ describe('createGroup', () => {
 
 describe('joinGroup', () => {
   it('throws when the invite code matches no group', async () => {
-    mockedAuth.getUser.mockResolvedValue({
-      data: { user: { id: 'uid' } },
+    mockedAuth.getSession.mockResolvedValue({
+      data: { session: { user: { id: 'uid' } } },
       error: null,
     });
     mockedRpc.mockResolvedValue({
@@ -162,8 +162,8 @@ describe('joinGroup', () => {
   });
 
   it('upper-cases the code and joins via the join_group RPC', async () => {
-    mockedAuth.getUser.mockResolvedValue({
-      data: { user: { id: 'uid' } },
+    mockedAuth.getSession.mockResolvedValue({
+      data: { session: { user: { id: 'uid' } } },
       error: null,
     });
     mockedRpc.mockResolvedValue({
@@ -256,8 +256,8 @@ describe('addDestination', () => {
 
 describe('notifications, commands & journey', () => {
   beforeEach(() => {
-    mockedAuth.getUser.mockResolvedValue({
-      data: { user: { id: 'uid' } },
+    mockedAuth.getSession.mockResolvedValue({
+      data: { session: { user: { id: 'uid' } } },
       error: null,
     });
   });
