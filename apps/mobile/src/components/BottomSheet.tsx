@@ -72,6 +72,7 @@ export default function BottomSheet({
   // sheet was still expanding.
   const [atFull, setAtFull] = useState(index >= detents.length - 1);
   const atFullRef = useRef(atFull);
+  const scrollRef = useRef<ScrollView | null>(null);
   useEffect(() => {
     const id = heightAnim.addListener(({ value }) => {
       current.current = value;
@@ -80,6 +81,9 @@ export default function BottomSheet({
       if (nf !== atFullRef.current) {
         atFullRef.current = nf;
         setAtFull(nf);
+        // Leaving full: park the list back at its top so mid/peek always
+        // present the content from the very start, never mid-scroll.
+        if (!nf) scrollRef.current?.scrollTo({ y: 0, animated: false });
       }
     });
     return () => heightAnim.removeListener(id);
@@ -97,7 +101,6 @@ export default function BottomSheet({
   // Detent the drag started from — the live drag is clamped to its neighbours.
   const startIdx = useRef(index);
 
-  const scrollRef = useRef<ScrollView | null>(null);
   // True while a finger is actually on the list — a momentum bounce off the
   // top can overshoot past COLLAPSE_PULL too, and must not collapse the sheet.
   const scrollDragging = useRef(false);
