@@ -10,25 +10,25 @@ describe('nearestDetent', () => {
   });
 });
 
-describe('settleTarget (directional detent snap)', () => {
+describe('settleTarget (stepwise detent snap)', () => {
   it('stays put on a sub-threshold wobble', () => {
     expect(settleTarget({ dy: -8, vy: -0.1 }, 460, DETENTS)).toBe(1);
   });
 
-  it('an intentional slow up-swipe still advances one detent', () => {
+  it('an intentional slow up-swipe advances one detent', () => {
     expect(settleTarget({ dy: -60, vy: -0.1 }, 460, DETENTS)).toBe(2);
   });
 
-  it('a strong upward fling from peek jumps two detents', () => {
-    expect(settleTarget({ dy: -40, vy: -1.2 }, 78, DETENTS)).toBe(2);
+  it('a strong upward fling from peek still only reaches mid — never skips a stage', () => {
+    expect(settleTarget({ dy: -40, vy: -1.2 }, 78, DETENTS)).toBe(1);
   });
 
   it('a pull-down at full collapses one detent', () => {
     expect(settleTarget({ dy: 90, vy: 0.3 }, 840, DETENTS)).toBe(1);
   });
 
-  it('a long slow drag can cross more than one detent via projection', () => {
-    expect(settleTarget({ dy: 700, vy: 0 }, 840, DETENTS)).toBe(0);
+  it('a long hard drag down from full still stops at mid', () => {
+    expect(settleTarget({ dy: 700, vy: 3 }, 840, DETENTS)).toBe(1);
   });
 
   it('never over-runs the detent range', () => {

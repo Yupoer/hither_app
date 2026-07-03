@@ -18,8 +18,8 @@ const SCREEN_CORNER_RADIUS = 44;
 
 // Height tolerance for "the spring actually reached the full detent".
 const EPS = 1;
-// Content offset at/under which the list counts as scrolled back to the top.
-const TOP_EPS = 1;
+// Top-overscroll depth (px, finger down) that steps full back down to mid.
+const COLLAPSE_PULL = 48;
 
 /**
  * Apple-Maps-style pull-up glass sheet with three detents (peek / mid / full).
@@ -27,15 +27,20 @@ const TOP_EPS = 1;
  * Controlled: the parent owns `heightAnim` (an Animated.Value) so it can also
  * position floating chrome — the gathering-point carousel and the recenter
  * button — just above the sheet's live top edge. Drag anywhere on the sheet to
- * resize; a release settles directionally (see `settleTarget`): an intentional
- * swipe always advances at least one detent the way it moved, a strong fling
- * two, reported via `onIndexChange`.
+ * resize; movement is STEPWISE: both the live drag (clamped to the
+ * neighbouring detents) and the release settle move at most one detent per
+ * gesture, so peek always passes mid before full and full always passes mid
+ * before peek, reported via `onIndexChange`.
  *
  * No gesture/animation native deps — plain RN `Animated` + `PanResponder`
- * (JS-driven, since we animate `height`). The list scrolls only once the sheet
- * has ACTUALLY reached full (live height, not the eager index — an expanding
- * sheet never scrolls mid-spring); there, pulling down with the content back
- * at the top collapses it, and the grabber/header always resize.
+ * (JS-driven, since we animate `height`). Below full every vertical drag
+ * resizes the sheet. Once the sheet has ACTUALLY reached full (live height,
+ * not the eager index — an expanding sheet never scrolls mid-spring) the list
+ * owns every gesture, both directions; collapsing back to mid is driven by
+ * the list's own native top-overscroll (finger down, pulled past
+ * COLLAPSE_PULL), never by stealing the pan — the old JS-mirrored scroll
+ * offset went stale under load and ate scrolls. The grabber/header always
+ * resize: the escape hatch, same as Apple Maps.
  */
 export default function BottomSheet({
   heightAnim,
@@ -89,7 +94,16 @@ export default function BottomSheet({
   // from. (Offsetting from the LIVE height compounded the cumulative dy on
   // every move event, so a tiny drag flew straight to full.)
   const startH = useRef(detents[index]);
-  const scrollY = useRef(0);
+  // Detent the drag started from — the live drag is clamped to its neighbours.
+  const startIdx = useRef(index);
+
+  const scrollRef = useRef<ScrollView | null>(null);
+  // True while a finger is actually on the list — a momentum bounce off the
+  // top can overshoot past COLLAPSE_PULL too, and must not collapse the sheet.
+  const scrollDragging = useRef(false);
+  // One collapse per touch — the overscroll region keeps streaming events
+  // while the sheet springs down.
+  const collapsed = useRef(false);
 
   // Height of the pinned header block; the scroll content starts below it.
   const [headerH, setHeaderH] = useState(0);
@@ -118,18 +132,15 @@ export default function BottomSheet({
 
   const pan = useRef(
     PanResponder.create({
-      // Capture vertical drags anywhere on the sheet. Below full (LIVE
-      // height — mid-spring counts as "not full yet") every vertical drag
-      // keeps resizing, so the sheet extends all the way before the list may
-      // scroll. At full the list owns the gesture until its content is back
-      // at the top; only then does a pull-down collapse the sheet.
+      // Capture vertical drags anywhere on the sheet while below full (LIVE
+      // height — mid-spring counts as "not full yet"), so the sheet resizes.
+      // At full the list owns every gesture — scrolling both ways — and the
+      // collapse is triggered by the list's top-overscroll (see onScroll),
+      // so there is nothing to capture here.
       onMoveShouldSetPanResponderCapture: (_e, g) => {
         if (Math.abs(g.dy) < 6 || Math.abs(g.dy) < Math.abs(g.dx)) return false;
         const ds = detentsRef.current;
-        if (current.current >= ds[ds.length - 1] - EPS) {
-          return g.dy > 0 && scrollY.current <= TOP_EPS;
-        }
-        return true;
+        return current.current < ds[ds.length - 1] - EPS;
       },
       // Bubbled moves (no child claimed them — the grabber zone and the
       // pinned header) always resize, so both work even at full with the
@@ -141,18 +152,23 @@ export default function BottomSheet({
         // Anchor synchronously — stopAnimation's callback lands a frame
         // later, too late for the first move of a spring-interrupting grab.
         startH.current = current.current;
+        startIdx.current = nearestDetent(current.current, detentsRef.current);
         heightAnim.stopAnimation((v) => {
           startH.current = v;
           current.current = v;
+          startIdx.current = nearestDetent(v, detentsRef.current);
         });
       },
       onPanResponderMove: (_e, g) => {
         const ds = detentsRef.current;
-        const h = Math.max(
-          ds[0] - 40,
-          Math.min(ds[ds.length - 1] + 60, startH.current - g.dy),
-        );
-        heightAnim.setValue(h);
+        const last = ds.length - 1;
+        const si = startIdx.current;
+        // One stage per gesture: the drag itself stops at the neighbouring
+        // detents (rubber-band only past the outer ends), so a single swipe
+        // can never carry peek straight to full.
+        const lo = si === 0 ? ds[0] - 40 : ds[si - 1];
+        const hi = si === last ? ds[last] + 60 : ds[si + 1];
+        heightAnim.setValue(Math.max(lo, Math.min(hi, startH.current - g.dy)));
       },
       onPanResponderRelease: (_e, g) =>
         settleAt(settleTarget(g, startH.current, detentsRef.current)),
@@ -204,15 +220,32 @@ export default function BottomSheet({
     >
       <liquidGlass.GlassView tintColor={glass.sheet} style={StyleSheet.absoluteFill} />
       <ScrollView
+        ref={scrollRef}
         scrollEnabled={atFull}
-        // ponytail: the JS-mirrored offset can go stale if a finger lands
-        // mid-fling (dropped onScroll frames under load); the end-of-drag /
-        // end-of-momentum writes make it authoritative at every gesture
-        // boundary. Bridging the native scroll offset would be the full fix.
-        onScroll={(e) => (scrollY.current = e.nativeEvent.contentOffset.y)}
-        onScrollEndDrag={(e) => (scrollY.current = e.nativeEvent.contentOffset.y)}
-        onMomentumScrollEnd={(e) => (scrollY.current = e.nativeEvent.contentOffset.y)}
-        bounces={false}
+        // Top-overscroll collapse: with the content back at the top, keep
+        // pulling down (finger on) past COLLAPSE_PULL and the sheet steps
+        // back to mid. Native contentOffset drives it, so nothing goes stale.
+        // ponytail: iOS-only mechanism — Android clamps overscroll at 0;
+        // re-add a pan-capture path there if Android ever ships.
+        bounces
+        alwaysBounceVertical
+        onScrollBeginDrag={() => {
+          scrollDragging.current = true;
+          collapsed.current = false;
+        }}
+        onScrollEndDrag={() => (scrollDragging.current = false)}
+        onScroll={(e) => {
+          if (
+            atFullRef.current &&
+            scrollDragging.current &&
+            !collapsed.current &&
+            e.nativeEvent.contentOffset.y < -COLLAPSE_PULL
+          ) {
+            collapsed.current = true;
+            scrollRef.current?.scrollTo({ y: 0, animated: false });
+            settleAt(detentsRef.current.length - 2);
+          }
+        }}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
