@@ -114,12 +114,16 @@ export default function BottomSheet({
   const onHeaderHeightRef = useRef(onHeaderHeight);
   onHeaderHeightRef.current = onHeaderHeight;
 
-  const springTo = (h: number) =>
+  // SwiftUI .spring(response: 0.35, dampingFraction: 0.8) translated:
+  // stiffness = (2π/0.35)² ≈ 322, damping = 2·0.8·√stiffness ≈ 29.
+  const springTo = (h: number, velocity = 0) =>
     Animated.spring(heightAnim, {
       toValue: h,
       useNativeDriver: false,
-      bounciness: 2,
-      speed: 14,
+      stiffness: 320,
+      damping: 29,
+      mass: 1,
+      velocity,
     }).start();
 
   // Snap to the detent when the parent changes `index` (tap / programmatic).
@@ -128,8 +132,8 @@ export default function BottomSheet({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index, detents[0], detents[1], detents[2]]);
 
-  const settleAt = (next: number) => {
-    springTo(detentsRef.current[next]);
+  const settleAt = (next: number, velocity = 0) => {
+    springTo(detentsRef.current[next], velocity);
     onIndexChangeRef.current(next);
   };
 
@@ -173,8 +177,14 @@ export default function BottomSheet({
         const hi = si === last ? ds[last] + 60 : ds[si + 1];
         heightAnim.setValue(Math.max(lo, Math.min(hi, startH.current - g.dy)));
       },
+      // Feed the release velocity into the settle spring (px/ms → px/s;
+      // height grows as the finger moves up) so the sheet carries the
+      // gesture's momentum instead of restarting from rest.
       onPanResponderRelease: (_e, g) =>
-        settleAt(settleTarget(g, startH.current, detentsRef.current)),
+        settleAt(
+          settleTarget(g, current.current, startIdx.current, detentsRef.current),
+          -g.vy * 1000,
+        ),
       onPanResponderTerminate: () =>
         settleAt(nearestDetent(current.current, detentsRef.current)),
     }),

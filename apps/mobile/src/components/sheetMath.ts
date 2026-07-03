@@ -3,10 +3,9 @@
  * test (src/__tests__/sheetMath.test.ts) without mocking react-native.
  */
 
-// A release past either threshold counts as an intentional step; anything
-// smaller is a wobble that snaps back. `vy` is px/ms.
-const MOVE_MIN = 14;
-const VEL_MIN = 0.2;
+// A release flicking faster than this (px/ms) steps one detent in the flick's
+// direction no matter how far the drag travelled; below it, position decides.
+const VEL_FLICK = 0.35;
 
 /** Index of the detent closest to height `h`. */
 export function nearestDetent(h: number, detents: number[]): number {
@@ -23,19 +22,29 @@ export function nearestDetent(h: number, detents: number[]): number {
 }
 
 /**
- * Detent a released drag settles on. Stepwise: an intentional gesture moves
- * EXACTLY one detent in its direction — no fling ever skips a stage (peek
- * must pass mid before full, and back down the same way) — while a
- * sub-threshold wobble stays put.
+ * Detent a released drag settles on — Apple Maps rules, velocity first:
+ *
+ * - A flick (|vy| > VEL_FLICK) steps EXACTLY one detent in the flick's
+ *   direction, even against the drag's net displacement — flicking back
+ *   toward where you started returns you there.
+ * - Otherwise the sheet settles on the detent nearest its released height:
+ *   past the midpoint carries forward, short of it snaps back. Never stuck
+ *   in between.
+ *
+ * Stepwise is preserved structurally: the live drag is clamped to the start
+ * detent's neighbours, so the nearest detent is at most one step away and a
+ * fling can never skip a stage.
  */
 export function settleTarget(
-  g: { dy: number; vy: number },
-  startH: number,
+  g: { vy: number },
+  endH: number,
+  startIdx: number,
   detents: number[],
 ): number {
   const last = detents.length - 1;
-  const startIdx = nearestDetent(startH, detents);
-  if (Math.abs(g.dy) <= MOVE_MIN && Math.abs(g.vy) <= VEL_MIN) return startIdx;
-  const dir = g.dy < 0 || (g.dy === 0 && g.vy < 0) ? 1 : -1; // up = taller
-  return Math.max(0, Math.min(last, startIdx + dir));
+  if (Math.abs(g.vy) > VEL_FLICK) {
+    const dir = g.vy < 0 ? 1 : -1; // finger up (vy < 0) = taller
+    return Math.max(0, Math.min(last, startIdx + dir));
+  }
+  return nearestDetent(endH, detents);
 }
