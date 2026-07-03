@@ -1,0 +1,47 @@
+name: Claude Fix
+
+# Auto-fix loop: when an issue gets the `claude-fix` label (the CI workflow adds it on a
+# red master build; you can also add it by hand to any issue), Claude reads the issue,
+# investigates the repo, and opens a PR with the fix. Review the PR before merging —
+# it is never auto-merged.
+#
+# REQUIRED SECRET: ANTHROPIC_API_KEY  (Settings > Secrets and variables > Actions).
+# Each run is a billed API call. Remove the `ci.yml` `claude-fix` label if you want the
+# CI issues to stay manual-trigger only.
+
+on:
+  issues:
+    types: [opened, labeled]
+
+jobs:
+  claude:
+    # Fires whether the label is applied at creation (CI path) or added later (manual path).
+    if: contains(github.event.issue.labels.*.name, 'claude-fix')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@v1
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        with:
+          prompt: |
+            You are fixing GitHub issue #${{ github.event.issue.number }} in this repo.
+
+            Title: ${{ github.event.issue.title }}
+
+            The app lives in `apps/mobile` (React Native + Expo SDK 54, Supabase backend).
+            Read `CLAUDE.md` first and follow its rules. The CI gates you must keep green:
+              cd apps/mobile && npm ci && npm test && npm run typecheck && npx expo install --check
+            Expo Go compatibility is the #1 recurring failure class — native access must stay
+            behind `src/native/` with a JS fallback; do not branch on Platform.OS in UI.
+
+            Find the root cause, make the smallest correct fix, run the gates locally, then
+            open a PR against master. Do not merge it.
+          claude_args: "--allowedTools Bash,Edit,Read,Write,Glob,Grep"
