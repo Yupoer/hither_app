@@ -92,7 +92,28 @@ export function getDemoState(
   };
 }
 
+let rehomed = false;
+
 export function demoUpdateMyLocation(coordinates: Coordinates): void {
+  // The flock is authored around 台北車站; on the first real GPS fix, shift
+  // everyone by the same delta so the demo mates are visible wherever the
+  // tester actually is.
+  if (!rehomed) {
+    rehomed = true;
+    const dLat = coordinates.latitude - BASE.latitude;
+    const dLng = coordinates.longitude - BASE.longitude;
+    state.members = state.members.map((m, i) =>
+      i === 0 || !m.coordinates
+        ? m
+        : {
+            ...m,
+            coordinates: {
+              latitude: m.coordinates.latitude + dLat,
+              longitude: m.coordinates.longitude + dLng,
+            },
+          },
+    );
+  }
   state.members[0] = {
     ...state.members[0],
     coordinates,

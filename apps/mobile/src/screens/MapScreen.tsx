@@ -58,6 +58,7 @@ import {
   updateMyLocation,
 } from '../api/client';
 import { isDemoGroup } from '../api/demo';
+import { isVirtualMember } from '../api/virtualMates';
 import { confirmAction } from '../utils/confirm';
 import type {
   Coordinates,
@@ -614,7 +615,12 @@ export default function MapScreen({ route, navigation }: Props) {
   // One flock row, shared by the main list and the subgroup cards. In split
   // mode, rows in the scope being split become selectable.
   const renderFlockRow = (f: (typeof flock)[number], last: boolean) => {
-    const selecting = !!splitParent && f.subgroupId === splitParent.parentId;
+    // Virtual dev teammates are display-only — never selectable for a split,
+    // so their fake ids can't reach the subgroup RPCs.
+    const selecting =
+      !!splitParent &&
+      f.subgroupId === splitParent.parentId &&
+      !isVirtualMember(f.userId);
     const isSelected = splitSelected.includes(f.userId);
     const isMe = f.userId === user?.id;
     return (
