@@ -238,8 +238,10 @@ export default function MapScreen({ route, navigation }: Props) {
           const [moved] = ids.splice(index, 1);
           ids.unshift(moved);
           await reorderDestinations(groupId, ids);
-          setSelectedIndex(0);
         }
+        // The navigated stop is now first — snap the carousel card with it.
+        setSelectedIndex(0);
+        carouselRef.current?.scrollTo({ x: 0, animated: true });
         await setJourneyStatus(groupId, 'going');
         refresh();
       } catch {
@@ -800,6 +802,10 @@ export default function MapScreen({ route, navigation }: Props) {
             {destinations.map((dest, index) => {
               const active = index === selectedIndex;
               const d = fromCoords ? distanceMeters(fromCoords, dest.coordinates) : null;
+              // This card is the stop we're actively navigating to — its
+              // button flips to "end navigation" (leader only; followers
+              // can't change journey status).
+              const navigatingThis = isLeader && journeyActive && navTarget?.id === dest.id;
               return (
                 <View key={dest.id} style={{ width: windowWidth, paddingHorizontal: 14 }}>
                   <liquidGlass.GlassView
@@ -836,13 +842,23 @@ export default function MapScreen({ route, navigation }: Props) {
                     <View style={styles.cardActions}>
                       <Pressable
                         style={[styles.directions, { backgroundColor: accentMix(accent, 26), borderColor: accentMix(accent, 50) }]}
-                        onPress={() => (isLeader ? startNavigation(dest, index) : mapRef.current?.centerOn(dest.coordinates))}
+                        onPress={() =>
+                          navigatingThis
+                            ? void stopNavigation()
+                            : isLeader
+                              ? startNavigation(dest, index)
+                              : mapRef.current?.centerOn(dest.coordinates)
+                        }
                         disabled={journeyBusy}
                         accessibilityRole="button"
                       >
                         <CrookIcon size={16} color={accent} />
                         <Text style={styles.directionsText}>
-                          {isLeader ? t('map.directions') : t('map.viewOnMap')}
+                          {navigatingThis
+                            ? t('map.stopNav')
+                            : isLeader
+                              ? t('map.directions')
+                              : t('map.viewOnMap')}
                         </Text>
                       </Pressable>
                       <View style={styles.etaPill}>
@@ -1439,12 +1455,13 @@ const makeStyles = (accent: string) =>
 
     codeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
     // Big bold white section headings on the main sheet (Apple Maps style).
+    // Generous top margin so each section visibly separates from the last.
     sheetHeading: {
       fontSize: 20,
       fontWeight: '700',
       color: '#fff',
-      marginTop: 4,
-      marginBottom: 10,
+      marginTop: 24,
+      marginBottom: 12,
       marginLeft: 4,
     },
     sectionLabel: {
