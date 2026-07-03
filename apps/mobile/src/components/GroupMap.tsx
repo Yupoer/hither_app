@@ -25,6 +25,9 @@ export interface GroupMapProps {
   members: MemberLocation[];
   gathering?: Destination;
   currentUserId?: string;
+  /** Sheet height overlapping the map — shifts the camera center up so
+   *  markers stay inside the exposed strip, like Apple Maps. */
+  bottomOverlap?: number;
 }
 
 /** Region that comfortably frames a single gathering point. */
@@ -45,7 +48,7 @@ function regionFor(center: Coordinates): Region {
  * never tries to bundle the native component for web.
  */
 const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
-  { members, gathering, currentUserId },
+  { members, gathering, currentUserId, bottomOverlap },
   ref,
 ) {
   const mapRef = useRef<MapView | null>(null);
@@ -90,6 +93,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       style={StyleSheet.absoluteFill}
       initialRegion={gathering ? regionFor(gathering.coordinates) : undefined}
       userInterfaceStyle={mapInterfaceStyle}
+      mapPadding={{ top: 0, left: 0, right: 0, bottom: bottomOverlap ?? 0 }}
       showsUserLocation
       showsCompass
     >

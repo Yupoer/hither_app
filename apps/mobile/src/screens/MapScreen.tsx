@@ -730,6 +730,11 @@ export default function MapScreen({ route, navigation }: Props) {
         members={members}
         gathering={activePoint}
         currentUserId={user?.id}
+        // Capped at mid: at full the sheet covers the map anyway.
+        // ponytail: updates once per detent settle (3 discrete values), not
+        // per frame — per-frame MapView prop updates re-render the native map
+        // 60×/s; switch to a heightAnim listener if the step reads harsh.
+        bottomOverlap={Math.min(detents[detent], detents[1])}
       />
 
       {/* Group pill + role chip — hidden once a gathering point takes the top slot. */}
