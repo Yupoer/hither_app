@@ -17,6 +17,8 @@ export const glass = {
   sheet: 'rgba(30, 32, 38, 0.66)',
   /** Stacked overlay sheet (search / route / settings) — more opaque. */
   overlay: 'rgba(22, 26, 34, 0.9)',
+  /** Sheet header veil — thin, so content visibly blurs through beneath it. */
+  headerVeil: 'rgba(22, 26, 34, 0.35)',
   /** Floating pills (group pill, role chip, recenter, FABs). */
   pill: 'rgba(40, 44, 52, 0.55)',
   /** Carousel card, inactive. Near-opaque so the card reads over any map. */

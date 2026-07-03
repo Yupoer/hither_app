@@ -122,14 +122,16 @@ export default function MapScreen({ route, navigation }: Props) {
   const destinations: Destination[] = state?.destinations ?? [];
 
   // --- Sheet / overlay / island UI state -----------------------------------
+  // Measured height of the sheet's pinned header (grabber + search row) —
+  // peek shows exactly that block, floating high off the screen edges.
+  const [sheetHeaderH, setSheetHeaderH] = useState(78);
   const detents = useMemo(() => {
-    // Peek shows just the slim search bar + avatar row, floating high off the
-    // screen edges. Full fills the screen flush, leaving only the status bar.
-    const peek = 74;
+    // Full fills the screen flush, leaving only the status bar.
+    const peek = sheetHeaderH;
     const full = windowHeight - insets.top - 6;
     const mid = Math.round(full * 0.55);
     return [peek, mid, full];
-  }, [insets.top, windowHeight]);
+  }, [insets.top, windowHeight, sheetHeaderH]);
   const heightAnim = useRef(new Animated.Value(detents[0])).current;
   const [detent, setDetent] = useState(0);
   const [overlay, setOverlay] = useState<null | 'route' | 'settings' | 'profile'>(null);
@@ -861,17 +863,10 @@ export default function MapScreen({ route, navigation }: Props) {
         index={detent}
         onIndexChange={setDetent}
         bottomInset={insets.bottom}
-      >
-        {/* Search row + account avatar. Wrapped in an outer View: RN's
-            stickyHeaderIndices clones this element and steals ITS OWN style
-            for the sticky wrapper, resetting the element itself to `flex: 1`
-            — which was collapsing searchRow's `flexDirection: 'row'` and
-            squeezing the avatar out from beside the search field. The row
-            layout now lives on the untouched inner View instead. The glass
-            fill here also gives the sticky header its own frosted backing so
-            scrolled content visibly blurs as it passes beneath. */}
-        <View style={styles.searchRowSticky}>
-          <liquidGlass.GlassView tintColor={glass.overlay} style={StyleSheet.absoluteFill} />
+        onHeaderHeight={setSheetHeaderH}
+        header={
+          /* Search row + account avatar — pinned over the scroll content on
+             BottomSheet's frosted header veil (Apple-Maps look). */
           <View style={styles.searchRow}>
             <Pressable
               style={styles.searchField}
@@ -897,8 +892,8 @@ export default function MapScreen({ route, navigation }: Props) {
               )}
             </Pressable>
           </View>
-        </View>
-
+        }
+      >
         {/* Flock — first section, Apple-Maps-style heading. Members with no
             subgroup list first; each subgroup renders as its own card. */}
         <View style={styles.headingRow}>
@@ -1336,30 +1331,29 @@ const makeStyles = (accent: string) =>
     dotActive: { width: 20, backgroundColor: accent },
 
     // Sheet content
-    // Slim Apple-Maps search capsule. The sticky wrapper spans full sheet
-    // width (cancels the ScrollView's horizontal padding) so its frosted
-    // glass reads as a continuous bar that scrolled content passes under.
-    searchRowSticky: {
-      marginHorizontal: -16,
+    // Slim Apple-Maps search capsule, pinned inside the sheet's frosted
+    // header block (BottomSheet's `header` prop supplies the veil).
+    searchRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
       paddingHorizontal: 16,
-      paddingTop: 8,
-      paddingBottom: 20,
+      paddingBottom: 12,
     },
-    searchRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
     searchField: {
       flex: 1,
-      height: 40,
-      borderRadius: 20,
+      height: 44,
+      borderRadius: 22,
       flexDirection: 'row',
       alignItems: 'center',
       gap: 8,
-      paddingHorizontal: 13,
+      paddingHorizontal: 14,
       backgroundColor: 'rgba(118,118,128,0.26)',
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: 'rgba(255,255,255,0.08)',
+      borderColor: 'rgba(255,255,255,0.15)',
     },
     searchPlaceholder: { fontSize: 15, color: 'rgba(235,235,245,0.5)' },
-    avatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+    avatar: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
     avatarText: { fontSize: 16, fontWeight: '700', color: '#fff' },
     avatarEmoji: { fontSize: 20 },
     flockEmoji: { fontSize: 20 },

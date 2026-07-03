@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   PanResponder,
@@ -34,6 +34,8 @@ export default function BottomSheet({
   index,
   onIndexChange,
   bottomInset,
+  header,
+  onHeaderHeight,
   children,
 }: {
   heightAnim: Animated.Value;
@@ -42,6 +44,10 @@ export default function BottomSheet({
   index: number;
   onIndexChange: (index: number) => void;
   bottomInset: number;
+  /** Chrome pinned over the scroll content on a thin frosted veil (search row). */
+  header?: React.ReactNode;
+  /** Measured height of the pinned block (grabber + header) — size peek with it. */
+  onHeaderHeight?: (h: number) => void;
   children: React.ReactNode;
 }) {
   // Track the live height so a drag can start from wherever the spring left it.
@@ -63,6 +69,12 @@ export default function BottomSheet({
   // every move event, so a tiny drag flew straight to full.)
   const startH = useRef(detents[index]);
   const scrollY = useRef(0);
+
+  // Height of the pinned header block; the scroll content starts below it.
+  const [headerH, setHeaderH] = useState(0);
+  const headerHRef = useRef(0);
+  const onHeaderHeightRef = useRef(onHeaderHeight);
+  onHeaderHeightRef.current = onHeaderHeight;
 
   const springTo = (h: number) =>
     Animated.spring(heightAnim, {
@@ -178,24 +190,39 @@ export default function BottomSheet({
       {...pan.panHandlers}
     >
       <liquidGlass.GlassView tintColor={glass.sheet} style={StyleSheet.absoluteFill} />
-      {/* Grabber — visual affordance; the whole sheet drags. */}
-      <View style={styles.grabZone}>
-        <View style={styles.grabber} />
-      </View>
       <ScrollView
         scrollEnabled={index >= detents.length - 1}
         onScroll={(e) => (scrollY.current = e.nativeEvent.contentOffset.y)}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
-        // The search row + avatar (children[0]) stay pinned at the sheet's
-        // top edge; everything else slides underneath instead of scrolling
-        // the header itself out past the sheet's rounded top corners.
-        stickyHeaderIndices={[0]}
+        contentContainerStyle={{
+          paddingHorizontal: 16,
+          paddingBottom: 24,
+          paddingTop: headerH,
+        }}
       >
         {children}
       </ScrollView>
+      {/* Grabber + header float over the content on their own thin frosted
+          veil, so scrolled content visibly blurs as it slides beneath them
+          (and never pokes out above — the veil covers the grab zone too). */}
+      <View
+        style={styles.headerBlock}
+        onLayout={(e) => {
+          const h = Math.round(e.nativeEvent.layout.height);
+          if (h === headerHRef.current) return;
+          headerHRef.current = h;
+          setHeaderH(h);
+          onHeaderHeightRef.current?.(h);
+        }}
+      >
+        <liquidGlass.GlassView tintColor={glass.headerVeil} style={StyleSheet.absoluteFill} />
+        <View style={styles.grabZone}>
+          <View style={styles.grabber} />
+        </View>
+        {header}
+      </View>
     </Animated.View>
   );
 }
@@ -225,6 +252,7 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: glass.hairline,
   },
+  headerBlock: { position: 'absolute', top: 0, left: 0, right: 0 },
   grabZone: { paddingTop: 10, paddingBottom: 6, alignItems: 'center' },
   grabber: {
     width: 40,
