@@ -8,7 +8,6 @@ import React, {
 import {
   ActivityIndicator,
   Alert,
-  Animated,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Pressable,
@@ -21,6 +20,12 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  interpolate,
+  Extrapolation,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
@@ -133,7 +138,7 @@ export default function MapScreen({ route, navigation }: Props) {
     const mid = Math.round(full * 0.55);
     return [peek, mid, full];
   }, [insets.top, windowHeight, sheetHeaderH]);
-  const heightAnim = useRef(new Animated.Value(detents[0])).current;
+  const heightSV = useSharedValue(detents[0]);
   const [detent, setDetent] = useState(0);
   const [overlay, setOverlay] = useState<null | 'route' | 'settings' | 'profile'>(null);
   const [searchVisible, setSearchVisible] = useState(false);
@@ -700,18 +705,16 @@ export default function MapScreen({ route, navigation }: Props) {
   };
 
   // Floating chrome rides just above the sheet's live top edge; its baseline
-  // follows the sheet's animated gap to the screen bottom.
-  const chromeBottom = Animated.add(
-    heightAnim,
-    Animated.add(sheetBottomOffset(heightAnim, detents, insets.bottom), 12),
-  );
-  // At full the map chrome (group pill, role chip, recenter) fades away and
-  // stops catching touches; leaving full brings it back.
-  const chromeOpacity = heightAnim.interpolate({
-    inputRange: [detents[1], detents[2]],
-    outputRange: [1, 0],
-    extrapolate: 'clamp',
-  });
+  // follows the sheet's animated gap to the screen bottom. At full the map
+  // chrome (group pill, role chip, recenter) fades away and stops catching
+  // touches; leaving full brings it back.
+  const chromeOpacityStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(heightSV.value, [detents[1], detents[2]], [1, 0], Extrapolation.CLAMP),
+  }));
+  const recenterStyle = useAnimatedStyle(() => ({
+    bottom: heightSV.value + sheetBottomOffset(heightSV.value, detents, insets.bottom) + 12,
+    opacity: interpolate(heightSV.value, [detents[1], detents[2]], [1, 0], Extrapolation.CLAMP),
+  }));
   const atFull = detent === detents.length - 1;
 
   if (loading && !state) {
@@ -740,7 +743,7 @@ export default function MapScreen({ route, navigation }: Props) {
       {/* Group pill + role chip — hidden once a gathering point takes the top slot. */}
       {destinations.length === 0 && (
         <Animated.View
-          style={[styles.topRow, { top: insets.top + 8, opacity: chromeOpacity }]}
+          style={[styles.topRow, { top: insets.top + 8 }, chromeOpacityStyle]}
           pointerEvents={atFull ? 'none' : 'box-none'}
         >
           <liquidGlass.GlassView tintColor={glass.pill} style={styles.groupPill}>
@@ -770,7 +773,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
       {/* Recenter — rides above the sheet. */}
       <Animated.View
-        style={[styles.recenter, { bottom: chromeBottom, opacity: chromeOpacity }]}
+        style={[styles.recenter, recenterStyle]}
         pointerEvents={atFull ? 'none' : 'auto'}
       >
         <Pressable
@@ -793,7 +796,7 @@ export default function MapScreen({ route, navigation }: Props) {
           covers the recenter button. */}
       {destinations.length > 0 && (
         <Animated.View
-          style={[styles.carouselWrap, { top: insets.top + 8, opacity: chromeOpacity }]}
+          style={[styles.carouselWrap, { top: insets.top + 8 }, chromeOpacityStyle]}
           pointerEvents={atFull ? 'none' : 'auto'}
         >
           <ScrollView
@@ -885,7 +888,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
       {/* The pull-up sheet. */}
       <BottomSheet
-        heightAnim={heightAnim}
+        height={heightSV}
         detents={detents}
         index={detent}
         onIndexChange={setDetent}
