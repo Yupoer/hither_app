@@ -208,16 +208,23 @@ export default function BottomSheet({
         <liquidGlass.GlassView tintColor={glass.sheet} style={StyleSheet.absoluteFill} />
         <AnimatedScrollView
           ref={scrollRef}
-          // Enabled at mid + full (peek has no room to scroll). Scroll position
-          // is never auto-reset — handoff is arbitrated live in the Pan worklet.
-          scrollEnabled={index >= 1}
+          // Only enabled once truly resting at the last detent. The Pan
+          // worklet already refuses to enter MODE_SCROLL below full (see the
+          // decision table above), so this was previously dead protection —
+          // except gesture-handler's native scroll recognizer still competes
+          // for the touch whenever `scrollEnabled` is true, letting a hair of
+          // real scroll leak through while a mid→full expand drag is being
+          // pinned every frame. Gating on the *committed* index (not `>= 1`)
+          // keeps the recognizer fully off until a brand-new gesture starts
+          // at full, so content genuinely can't move mid-transition.
+          scrollEnabled={index === detents.length - 1}
           onScroll={scrollHandler}
           scrollEventThrottle={16}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{
             paddingHorizontal: 16,
-            paddingBottom: 24,
+            paddingBottom: 40,
             paddingTop: headerH,
           }}
         >
