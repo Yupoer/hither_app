@@ -19,6 +19,8 @@ export interface GroupMapHandle {
   recenter: () => void;
   /** Center the map on an arbitrary coordinate, e.g. the user's own position. */
   centerOn: (coordinates: Coordinates) => void;
+  /** Zoom/pan so every member with a known location is visible at once. */
+  fitToMembers: () => void;
 }
 
 export interface GroupMapProps {
@@ -71,8 +73,19 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       centerOn: (coordinates) => {
         mapRef.current?.animateToRegion(regionFor(coordinates), 400);
       },
+      fitToMembers: () => {
+        const coords = members.filter((m) => m.coordinates).map((m) => m.coordinates!);
+        if (mapRef.current && coords.length > 0) {
+          // ponytail: fixed edge padding tuned for the peek/mid sheet height;
+          // revisit if a taller sheet ever covers markers this should frame.
+          mapRef.current.fitToCoordinates(coords, {
+            edgePadding: { top: 80, right: 60, bottom: 220, left: 60 },
+            animated: true,
+          });
+        }
+      },
     }),
-    [gathering],
+    [gathering, members],
   );
 
   // Center on the gathering point the first time data arrives.

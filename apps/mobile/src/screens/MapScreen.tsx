@@ -295,6 +295,10 @@ export default function MapScreen({ route, navigation }: Props) {
     if (coords) mapRef.current?.centerOn(coords);
   }
 
+  function fitAllMembers() {
+    mapRef.current?.fitToMembers();
+  }
+
   const biasCenter = deviceCoords ?? selectedDestination?.coordinates;
   const biasRegion: MapRegion | undefined = biasCenter
     ? {
@@ -712,24 +716,36 @@ export default function MapScreen({ route, navigation }: Props) {
         </Animated.View>
       )}
 
-      {/* Recenter — rides above the sheet. */}
+      {/* Recenter capsule — rides above the sheet. Fit-all on top, locate-me
+          below, sharing one pill-shaped glass surface. */}
       <Animated.View
         style={[styles.recenter, recenterStyle]}
         pointerEvents={atFull ? 'none' : 'auto'}
       >
-        <Pressable
-          style={styles.recenterHit}
-          onPress={locateMe}
-          accessibilityRole="button"
-          accessibilityLabel={t('map.locateA11y')}
-        >
+        <View style={styles.recenterCapsule}>
           <liquidGlass.GlassView
             tintColor={glass.pill}
             style={StyleSheet.absoluteFill}
             pointerEvents="none"
           />
-          <Ionicons name="navigate" size={20} color="#fff" />
-        </Pressable>
+          <Pressable
+            style={styles.recenterHit}
+            onPress={fitAllMembers}
+            accessibilityRole="button"
+            accessibilityLabel={t('map.fitAllA11y')}
+          >
+            <Ionicons name="expand-outline" size={19} color="#fff" />
+          </Pressable>
+          <View style={styles.recenterDivider} />
+          <Pressable
+            style={styles.recenterHit}
+            onPress={locateMe}
+            accessibilityRole="button"
+            accessibilityLabel={t('map.locateA11y')}
+          >
+            <Ionicons name="navigate" size={19} color="#fff" />
+          </Pressable>
+        </View>
       </Animated.View>
 
       {/* Gathering-point carousel — takes over the top slot (where the group
@@ -1237,16 +1253,15 @@ const makeStyles = (accent: string) =>
     roleWord: { fontSize: 14, fontWeight: '600', color: '#fff' },
 
     recenter: { position: 'absolute', right: 14, zIndex: 40 },
-    recenterHit: {
+    recenterCapsule: {
       width: 48,
-      height: 48,
       borderRadius: 24,
       overflow: 'hidden',
-      alignItems: 'center',
-      justifyContent: 'center',
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairlineStrong,
     },
+    recenterHit: { height: 48, alignItems: 'center', justifyContent: 'center' },
+    recenterDivider: { height: StyleSheet.hairlineWidth, backgroundColor: glass.hairlineStrong },
 
     carouselWrap: { position: 'absolute', left: 0, right: 0, zIndex: 58 },
     card: {
