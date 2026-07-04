@@ -36,7 +36,8 @@
         }
       ],
       "expo-notifications",
-      "@bacons/apple-targets"
+      "@bacons/apple-targets",
+      "expo-web-browser"
     ]
   }
 }

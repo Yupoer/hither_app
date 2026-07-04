@@ -37,7 +37,8 @@ const CODE_LEN = 6;
 export default function AuthScreen({ navigation, route }: Props) {
   const role = route.params?.role ?? 'leader';
   const isLeader = role === 'leader';
-  const { signIn, user, updateNickname, setMembership } = useSession();
+  const { signIn, signInWithGoogle, user, updateNickname, setMembership } =
+    useSession();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const { t } = useTranslation();
@@ -50,8 +51,30 @@ export default function AuthScreen({ navigation, route }: Props) {
   const [busy, setBusy] = useState(false);
   const codeRef = useRef<TextInput>(null);
 
-  const canSubmit =
-    name.trim().length >= 1 && (isLeader || code.length === CODE_LEN) && !busy;
+  const codeReady = isLeader || code.length === CODE_LEN;
+  const canSubmit = name.trim().length >= 1 && codeReady && !busy;
+  // Google supplies the nickname, so a name isn't required — only the code.
+  const canGoogle = codeReady && !busy;
+
+  /** Create (leader) / join (follower) the group, then drop onto the map. */
+  async function enterGroup(nickname: string) {
+    const group = isLeader
+      ? await createGroup(t('group.defaultName', { name: nickname }))
+      : await joinGroup(code.trim());
+    setMembership({ group, role });
+    navigation.replace('Map', { groupId: group.id });
+  }
+
+  function handleAuthError(e: unknown) {
+    // Design: a rejected code highlights the code boxes.
+    if (!isLeader) setCodeError(true);
+    const msg = e instanceof Error ? e.message : t('auth.signInFailed');
+    Alert.alert(
+      isLeader ? t('group.createFailedTitle') : t('group.joinFailedTitle'),
+      msg,
+    );
+    setBusy(false);
+  }
 
   async function handleSubmit() {
     if (!canSubmit) return;
@@ -64,21 +87,24 @@ export default function AuthScreen({ navigation, route }: Props) {
       } else if (nickname !== user.name) {
         await updateNickname(nickname);
       }
-
-      const group = isLeader
-        ? await createGroup(t('group.defaultName', { name: nickname }))
-        : await joinGroup(code.trim());
-      setMembership({ group, role });
-      navigation.replace('Map', { groupId: group.id });
+      await enterGroup(nickname);
     } catch (e) {
-      // Design: a rejected code highlights the code boxes.
-      if (!isLeader) setCodeError(true);
-      const msg = e instanceof Error ? e.message : t('auth.signInFailed');
-      Alert.alert(
-        isLeader ? t('group.createFailedTitle') : t('group.joinFailedTitle'),
-        msg,
-      );
-      setBusy(false);
+      handleAuthError(e);
+    }
+  }
+
+  async function handleGoogle() {
+    if (!canGoogle) return;
+    setBusy(true);
+    try {
+      const googleUser = await signInWithGoogle(name.trim() || undefined);
+      if (!googleUser) {
+        setBusy(false); // user dismissed the Google browser
+        return;
+      }
+      await enterGroup(googleUser.name);
+    } catch (e) {
+      handleAuthError(e);
     }
   }
 
@@ -200,6 +226,30 @@ export default function AuthScreen({ navigation, route }: Props) {
             )}
           </Pressable>
 
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>{t('common.or')}</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          {/* Google logo "ball": sign up / in with a Google account. */}
+          <View style={styles.googleRow}>
+            <Pressable
+              onPress={handleGoogle}
+              disabled={!canGoogle}
+              accessibilityRole="button"
+              accessibilityLabel={t('auth.googleCta')}
+              style={({ pressed }) => [
+                styles.googleBall,
+                !canGoogle && styles.ctaDisabled,
+                pressed && canGoogle && styles.pressed,
+              ]}
+            >
+              <Ionicons name="logo-google" size={26} color="#fff" />
+            </Pressable>
+          </View>
+          <Text style={styles.googleCaption}>{t('auth.googleCta')}</Text>
+
           <Text style={styles.footer}>
             {isLeader ? t('auth.leaderFoot') : t('auth.followerFoot')}
           </Text>
@@ -288,6 +338,39 @@ const makeStyles = (accent: string) =>
     },
     ctaDisabled: { opacity: 0.4 },
     pressed: { opacity: 0.85 },
+    divider: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      marginTop: 18,
+    },
+    dividerLine: {
+      flex: 1,
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: 'rgba(255,255,255,0.18)',
+    },
+    dividerText: {
+      fontSize: 12,
+      letterSpacing: 1,
+      color: 'rgba(235,235,245,0.4)',
+    },
+    googleRow: { alignItems: 'center', marginTop: 16 },
+    googleBall: {
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(255,255,255,0.08)',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'rgba(255,255,255,0.22)',
+    },
+    googleCaption: {
+      textAlign: 'center',
+      fontSize: 12,
+      color: 'rgba(235,235,245,0.45)',
+      marginTop: 8,
+    },
     ctaText: { fontSize: 17, fontWeight: '600', color: '#fff' },
     footer: {
       textAlign: 'center',

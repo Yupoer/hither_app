@@ -20,11 +20,13 @@ type Dict = Record<string, string>;
 const zh = {
   // Common
   'common.cancel': '取消',
+  'common.or': '或',
 
   // Auth
   'auth.nameLabel': '暱稱',
   'auth.namePlaceholder': '例如：迷路的貓',
   'auth.signInFailed': '登入失敗，請再試一次',
+  'auth.googleCta': '使用 Google 帳號註冊',
 
   // Role select
   'role.tagline': '讓大家不走散，隨時知道下一個集合點。',
@@ -197,10 +199,12 @@ const zh = {
 
 const en: Record<keyof typeof zh, string> = {
   'common.cancel': 'Cancel',
+  'common.or': 'or',
 
   'auth.nameLabel': 'YOUR NAME',
   'auth.namePlaceholder': 'e.g. Lost Cat',
   'auth.signInFailed': 'Sign-in failed, please try again',
+  'auth.googleCta': 'Sign up with Google',
 
   'role.tagline': 'Keep your flock together. Always know the next gathering point.',
   'role.lead': 'Lead a group',
