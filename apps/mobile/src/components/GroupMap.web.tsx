@@ -23,7 +23,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
 
   useImperativeHandle(
     ref,
-    () => ({ recenter: () => {}, centerOn: () => {} }),
+    () => ({ recenter: () => {}, centerOn: () => {}, fitToMembers: () => {} }),
     [],
   );
 
