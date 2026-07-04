@@ -43,6 +43,7 @@ import { useSession } from '../state/SessionContext';
 import { usePreferences, useTheme, type Language } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
 import { useGroupState } from '../state/useGroupState';
+import { useSubgroupInvites } from '../state/useSubgroupInvites';
 import { useLiveActivity } from '../state/useLiveActivity';
 import {
   distanceMeters,
@@ -52,9 +53,8 @@ import {
 import { liquidGlass, location, type MapRegion, type PlaceResult } from '../native';
 import {
   addDestination,
-  createSubgroup,
   deleteDestination,
-  mergeSubgroup,
+  inviteToSubgroup,
   reorderDestinations,
   selfMerge,
   selfSplit,
@@ -65,13 +65,7 @@ import {
 import { isDemoGroup } from '../api/demo';
 import { isVirtualMember } from '../api/virtualMates';
 import { confirmAction } from '../utils/confirm';
-import type {
-  Coordinates,
-  Destination,
-  MemberLocation,
-  Subgroup,
-  SubgroupMode,
-} from '../types';
+import type { Coordinates, Destination, MemberLocation } from '../types';
 import { themes, THEME_ORDER, type ThemeName } from '../theme';
 import { glass, accentMix, memberColor } from '../glass';
 
@@ -392,84 +386,38 @@ export default function MapScreen({ route, navigation }: Props) {
     }
   }
 
-  // --- Subgroups (拆分 / 併回) ------------------------------------------------
+  // --- Subgroups (小隊：邀請制、無隊長) ---------------------------------------
   const subgroups = state?.subgroups ?? [];
-  // When set, the flock list is in member-picking mode, scoped to one level of
-  // the tree (undefined parentId = the main group's own members).
-  const [splitParent, setSplitParent] = useState<null | { parentId?: string }>(null);
-  const [splitSelected, setSplitSelected] = useState<string[]>([]);
+  const { invites: pendingInvites, accept: acceptInvite, decline: declineInvite } =
+    useSubgroupInvites();
 
-  function startSplit(parentId?: string) {
-    setSplitParent({ parentId });
-    setSplitSelected([]);
-  }
-  function cancelSplit() {
-    setSplitParent(null);
-    setSplitSelected([]);
-  }
-  function toggleSplitSelect(userId: string) {
-    setSplitSelected((prev) =>
-      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId],
-    );
-  }
-  function confirmSplit() {
-    if (!splitParent) return;
-    const scope = flock.filter((f) => f.subgroupId === splitParent.parentId);
-    const remaining = scope.length - splitSelected.length;
-    if (splitSelected.length < 2) {
-      Alert.alert(t('subgroup.needTwo'));
-      return;
-    }
-    // Splitting inside a subgroup must leave it a valid subgroup (≥2) — or
-    // take everyone would just rename it, which is pointless.
-    if (splitParent.parentId && remaining === 1) {
-      Alert.alert(t('subgroup.remainOne'));
-      return;
-    }
-    if (splitParent.parentId && remaining === 0) {
-      Alert.alert(t('subgroup.selectFewer'));
-      return;
-    }
-    Alert.alert(t('subgroup.modeTitle'), t('subgroup.modeMsg'), [
-      { text: t('subgroup.modeLed'), onPress: () => void doSplit('led') },
-      { text: t('subgroup.modeCollab'), onPress: () => void doSplit('collab') },
-      { text: t('common.cancel'), style: 'cancel' },
-    ]);
-  }
-  async function doSplit(mode: SubgroupMode) {
-    if (!groupId || !splitParent) return;
+  async function handleAcceptInvite(inviteId: string) {
     try {
-      await createSubgroup(groupId, {
-        name: t('subgroup.defaultName', { index: subgroups.length + 1 }),
-        mode,
-        leaderId: mode === 'led' ? splitSelected[0] : undefined,
-        parentId: splitParent.parentId,
-        memberIds: splitSelected,
-      });
-      cancelSplit();
+      await acceptInvite(inviteId);
       refresh();
     } catch (e) {
       Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
     }
   }
-  async function mergeSg(sg: Subgroup) {
-    if (!groupId) return;
-    // Leaf-only merges: fold the tree back one level at a time.
-    if (subgroups.some((s) => s.parentId === sg.id)) {
-      Alert.alert(t('subgroup.mergeChildrenFirst'));
-      return;
-    }
+  async function handleDeclineInvite(inviteId: string) {
     try {
-      await mergeSubgroup(groupId, sg);
-      refresh();
+      await declineInvite(inviteId);
     } catch (e) {
       Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
     }
   }
 
-  // Self-service, independent of the leader-driven doSplit/mergeSg above:
-  // any member can split themselves into their own new subgroup, or merge
-  // themselves back up a level, without needing the leader's say-so.
+  async function handleInvite(subgroupId: string, inviteeId: string) {
+    try {
+      await inviteToSubgroup(subgroupId, inviteeId);
+      Alert.alert(t('subgroup.inviteSent'));
+    } catch (e) {
+      Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
+    }
+  }
+
+  // Any member can split themselves into their own new (collab, no-leader)
+  // subgroup, or merge themselves back up a level — no leader say-so needed.
   async function doSelfSplit() {
     if (!groupId) return;
     try {
@@ -618,38 +566,22 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [members, soloOverride, user?.id]);
 
   const topFlock = flock.filter((f) => !f.subgroupId);
+  // My own subgroup, if any — drives which other rows get an "Invite" button.
+  const mySubgroupId = flock.find((f) => f.userId === user?.id)?.subgroupId;
 
-  // One flock row, shared by the main list and the subgroup cards. In split
-  // mode, rows in the scope being split become selectable.
+  // One flock row, shared by the main list and the subgroup cards.
   const renderFlockRow = (f: (typeof flock)[number], last: boolean) => {
-    // Virtual dev teammates are display-only — never selectable for a split,
-    // so their fake ids can't reach the subgroup RPCs.
-    const selecting =
-      !!splitParent &&
-      f.subgroupId === splitParent.parentId &&
-      !isVirtualMember(f.userId);
-    const isSelected = splitSelected.includes(f.userId);
     const isMe = f.userId === user?.id;
+    // Show "invite" on a real (non-virtual), non-me row that isn't already in
+    // my team — only meaningful once I'm in a team myself.
+    const canInvite =
+      !isMe &&
+      !!mySubgroupId &&
+      f.subgroupId !== mySubgroupId &&
+      !isVirtualMember(f.userId);
     return (
-      <Pressable
-        key={f.userId}
-        onPress={selecting ? () => toggleSplitSelect(f.userId) : undefined}
-        disabled={!selecting}
-        style={[styles.flockRow, last && styles.flockRowLast]}
-        accessibilityRole={selecting ? 'checkbox' : undefined}
-        accessibilityState={selecting ? { checked: isSelected } : undefined}
-      >
+      <View key={f.userId} style={[styles.flockRow, last && styles.flockRowLast]}>
         <View style={styles.flockRowMain}>
-          {selecting && (
-            <View
-              style={[
-                styles.selectDot,
-                isSelected && { backgroundColor: accent, borderColor: accent },
-              ]}
-            >
-              {isSelected ? <Ionicons name="checkmark" size={13} color="#1A1206" /> : null}
-            </View>
-          )}
           <View
             style={[
               styles.flockAvatar,
@@ -671,10 +603,9 @@ export default function MapScreen({ route, navigation }: Props) {
             <Text style={styles.flockDist}>{f.dist}</Text>
           </View>
         </View>
-        {/* Self-service: only on your own row, and not while picking members
-            for the leader's bulk split. Everyone gets to choose Solo mode or
-            split themselves off, independent of the leader. */}
-        {isMe && !selecting && (
+        {/* Self-service: only on your own row. Everyone gets to choose Solo
+            mode or create/leave a team, independent of any leader. */}
+        {isMe && (
           <View style={styles.selfControls}>
             <View style={styles.selfSoloRow}>
               <Text style={styles.selfControlLabel}>{t('solo.switch')}</Text>
@@ -688,19 +619,29 @@ export default function MapScreen({ route, navigation }: Props) {
             {f.subgroupId ? (
               <Pressable onPress={() => void doSelfMerge()} hitSlop={8} accessibilityRole="button">
                 <Text style={[styles.rowAction, { color: accent }]}>
-                  {t('subgroup.selfMergeAction')}
+                  {t('subgroup.leaveTeam')}
                 </Text>
               </Pressable>
             ) : (
               <Pressable onPress={() => void doSelfSplit()} hitSlop={8} accessibilityRole="button">
                 <Text style={[styles.rowAction, { color: accent }]}>
-                  {t('subgroup.selfSplitAction')}
+                  {t('subgroup.createTeam')}
                 </Text>
               </Pressable>
             )}
           </View>
         )}
-      </Pressable>
+        {canInvite && mySubgroupId && (
+          <Pressable
+            onPress={() => void handleInvite(mySubgroupId, f.userId)}
+            hitSlop={8}
+            accessibilityRole="button"
+            style={styles.inviteRow}
+          >
+            <Text style={[styles.rowAction, { color: accent }]}>{t('subgroup.inviteAction')}</Text>
+          </Pressable>
+        )}
+      </View>
     );
   };
 
@@ -930,29 +871,35 @@ export default function MapScreen({ route, navigation }: Props) {
           <Text style={styles.sheetHeading}>
             {t('map.flockLabel')} · {members.length}
           </Text>
-          {isLeader && !splitParent && topFlock.length >= 2 && (
-            <Pressable onPress={() => startSplit(undefined)} hitSlop={8} accessibilityRole="button">
-              <Text style={[styles.rowAction, { color: accent }]}>{t('subgroup.split')}</Text>
-            </Pressable>
-          )}
         </View>
-        {splitParent && (
-          <View style={styles.splitBar}>
-            <Text style={styles.splitHint}>{t('subgroup.selectHint')}</Text>
-            <View style={styles.splitActions}>
-              <Pressable
-                style={[styles.chip, { backgroundColor: accentMix(accent, 24), borderColor: accentMix(accent, 50) }]}
-                onPress={confirmSplit}
-                accessibilityRole="button"
+        {pendingInvites.length > 0 && (
+          <View style={styles.list}>
+            {pendingInvites.map((inv, i) => (
+              <View
+                key={inv.id}
+                style={[styles.flockRow, i === pendingInvites.length - 1 && styles.flockRowLast]}
               >
-                <Text style={styles.chipText}>
-                  {t('subgroup.create', { count: splitSelected.length })}
+                <Text style={styles.flockName}>
+                  {t('subgroup.invitePrompt', { name: inv.inviterName, team: inv.subgroupName })}
                 </Text>
-              </Pressable>
-              <Pressable style={styles.chipGhost} onPress={cancelSplit} accessibilityRole="button">
-                <Text style={styles.chipText}>{t('common.cancel')}</Text>
-              </Pressable>
-            </View>
+                <View style={styles.splitActions}>
+                  <Pressable
+                    style={[styles.chip, { backgroundColor: accentMix(accent, 24), borderColor: accentMix(accent, 50) }]}
+                    onPress={() => void handleAcceptInvite(inv.id)}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.chipText}>{t('subgroup.accept')}</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.chipGhost}
+                    onPress={() => void handleDeclineInvite(inv.id)}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.chipText}>{t('subgroup.decline')}</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ))}
           </View>
         )}
         <View style={styles.list}>
@@ -960,7 +907,6 @@ export default function MapScreen({ route, navigation }: Props) {
         </View>
         {subgroups.map((sg) => {
           const memberRows = flock.filter((f) => f.subgroupId === sg.id);
-          const leaderName = flock.find((f) => f.userId === sg.leaderId)?.name;
           const parentName = subgroups.find((s) => s.id === sg.parentId)?.name;
           return (
             <View key={sg.id} style={styles.subgroupCard}>
@@ -970,22 +916,10 @@ export default function MapScreen({ route, navigation }: Props) {
                     {sg.name} · {memberRows.length}
                   </Text>
                   <Text style={styles.subgroupMeta}>
-                    {sg.mode === 'led'
-                      ? t('subgroup.led', { name: leaderName ?? '—' })
-                      : t('subgroup.collab')}
+                    {t('subgroup.collab')}
                     {parentName ? ` · ${t('subgroup.childOf', { name: parentName })}` : ''}
                   </Text>
                 </View>
-                {isLeader && !splitParent && memberRows.length >= 4 && (
-                  <Pressable onPress={() => startSplit(sg.id)} hitSlop={8} accessibilityRole="button">
-                    <Text style={[styles.rowAction, { color: accent }]}>{t('subgroup.split')}</Text>
-                  </Pressable>
-                )}
-                {isLeader && (
-                  <Pressable onPress={() => void mergeSg(sg)} hitSlop={8} accessibilityRole="button">
-                    <Text style={[styles.rowAction, { color: accent }]}>{t('subgroup.merge')}</Text>
-                  </Pressable>
-                )}
               </View>
               {memberRows.map((f, i) => renderFlockRow(f, i === memberRows.length - 1))}
             </View>
@@ -1541,6 +1475,12 @@ const makeStyles = (accent: string) =>
       borderTopColor: 'rgba(255,255,255,0.08)',
     },
     selfSoloRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    inviteRow: {
+      marginTop: 10,
+      paddingTop: 10,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: 'rgba(255,255,255,0.08)',
+    },
     selfControlLabel: { fontSize: 13, color: glass.textSecondary },
 
     rowButton: {

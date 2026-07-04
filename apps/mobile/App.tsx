@@ -12,6 +12,7 @@ import RootNavigator from './src/navigation/RootNavigator';
 import { SessionProvider, useSession } from './src/state/SessionContext';
 import { usePushRegistration } from './src/state/usePushRegistration';
 import { useGroupNotifications } from './src/state/useGroupNotifications';
+import { useSubgroupInvites } from './src/state/useSubgroupInvites';
 import {
   PreferencesProvider,
   useTheme,
@@ -29,6 +30,11 @@ function ThemedNavigation() {
   usePushRegistration();
   // Interim: turn group realtime events into local notifications (no APNs yet).
   useGroupNotifications();
+  // Same realtime -> local-notification treatment for subgroup invites,
+  // wherever in the app the user happens to be. MapScreen mounts its own
+  // instance too (for the accept/decline UI) — see useSubgroupInvites for
+  // how duplicate notifications across the two instances are avoided.
+  useSubgroupInvites();
 
   // Hold the navigator until the persisted session is resolved, so
   // RootNavigator's initialRouteName sees the correct logged-in/out state

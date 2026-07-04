@@ -3,8 +3,8 @@ import type {
   Destination,
   GroupState,
   JourneyStatus,
+  PendingInvite,
   Subgroup,
-  SubgroupMode,
 } from '../types';
 
 /**
@@ -157,48 +157,44 @@ export function demoSetSolo(solo: boolean): void {
   state.members[0] = { ...state.members[0], solo };
 }
 
-export function demoCreateSubgroup(input: {
-  name: string;
-  mode: SubgroupMode;
-  leaderId?: string;
-  parentId?: string;
-  memberIds: string[];
-}): void {
-  const sg: Subgroup = {
-    id: `demo-sg-${++subgroupSeq}`,
-    name: input.name,
-    mode: input.mode,
-    leaderId: input.mode === 'led' ? input.leaderId : undefined,
-    parentId: input.parentId,
-  };
-  state.subgroups.push(sg);
-  state.members = state.members.map((m) =>
-    input.memberIds.includes(m.userId) ? { ...m, subgroupId: sg.id } : m,
-  );
-}
-
-export function demoMergeSubgroup(subgroupId: string): void {
-  const sg = state.subgroups.find((s) => s.id === subgroupId);
-  if (!sg) return;
-  state.members = state.members.map((m) =>
-    m.subgroupId === subgroupId ? { ...m, subgroupId: sg.parentId } : m,
-  );
-  state.subgroups = state.subgroups.filter((s) => s.id !== subgroupId);
-}
-
 /** Demo "me" always sits at state.members[0] — see getDemoState. */
 export function demoSelfSplit(name: string): Subgroup {
   const me = state.members[0];
   const sg: Subgroup = {
     id: `demo-sg-${++subgroupSeq}`,
     name,
-    mode: 'led',
-    leaderId: me.userId,
+    mode: 'collab',
+    leaderId: undefined,
     parentId: me.subgroupId,
   };
   state.subgroups.push(sg);
   state.members[0] = { ...me, subgroupId: sg.id };
   return sg;
+}
+
+/**
+ * Invite a demo mate into a demo subgroup. There's no second device to accept
+ * in the demo flock, so — matching client.ts's comment on the real
+ * `inviteToSubgroup` — this auto-joins the invitee immediately instead of
+ * creating a pending invite.
+ * ponytail: no pending-invite bookkeeping for demo; add if a demo scenario
+ * ever needs to show the accept/decline card.
+ */
+export function demoInviteToSubgroup(subgroupId: string, inviteeId: string): void {
+  state.members = state.members.map((m) =>
+    m.userId === inviteeId ? { ...m, subgroupId } : m,
+  );
+}
+
+/** Demo invites auto-join (see demoInviteToSubgroup) — never pending, so no-op. */
+export function demoAcceptSubgroupInvite(_inviteId: string): void {}
+
+/** Demo invites auto-join (see demoInviteToSubgroup) — never pending, so no-op. */
+export function demoDeclineSubgroupInvite(_inviteId: string): void {}
+
+/** Demo invites auto-join — there is never a pending one to show. */
+export function demoFetchMyInvites(_userId: string): PendingInvite[] {
+  return [];
 }
 
 export function demoSelfMerge(): void {

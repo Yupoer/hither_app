@@ -22,29 +22,28 @@ export function nearestDetent(h: number, detents: number[]): number {
 }
 
 /**
- * Detent a released drag settles on — Apple Maps rules, velocity first:
+ * Detent a released drag settles on — position-based, velocity as a nudge:
  *
- * - A flick (|vy| > VEL_FLICK) steps EXACTLY one detent in the flick's
- *   direction, even against the drag's net displacement — flicking back
- *   toward where you started returns you there.
- * - Otherwise the sheet settles on the detent nearest its released height:
- *   past the midpoint carries forward, short of it snaps back. Never stuck
- *   in between.
- *
- * Stepwise is preserved structurally: the live drag is clamped to the start
- * detent's neighbours, so the nearest detent is at most one step away and a
- * fling can never skip a stage.
+ * - Otherwise (no flick) the sheet settles on the detent nearest its
+ *   released height, whatever that is — a long drag can cross multiple
+ *   stages in one gesture (peek straight to full).
+ * - A flick (|vy| > VEL_FLICK) steps one detent past the nearest detent, in
+ *   the flick's direction — a quick shove carries one stage further than a
+ *   slow release would have landed.
  */
 export function settleTarget(
   g: { vy: number },
   endH: number,
-  startIdx: number,
   detents: number[],
 ): number {
   const last = detents.length - 1;
+  const nearest = nearestDetent(endH, detents);
+  // A flick nudges one detent past where the finger released, in the flick's
+  // direction; a slow release settles on whichever detent it's nearest — so a
+  // long drag can cross multiple stages at once (peek straight to full).
   if (Math.abs(g.vy) > VEL_FLICK) {
-    const dir = g.vy < 0 ? 1 : -1; // finger up (vy < 0) = taller
-    return Math.max(0, Math.min(last, startIdx + dir));
+    const dir = g.vy < 0 ? 1 : -1;
+    return Math.max(0, Math.min(last, nearest + dir));
   }
-  return nearestDetent(endH, detents);
+  return nearest;
 }
