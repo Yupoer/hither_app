@@ -57,6 +57,18 @@ interface SessionContextValue {
    * `null` if the user cancels the browser.
    */
   signInWithGoogle: (nickname?: string) => Promise<User | null>;
+  /** Sign in with an existing email + password account. */
+  signInWithEmail: (input: { email: string; password: string }) => Promise<User>;
+  /**
+   * Register a new email + password account and record the nickname.
+   * Assumes Supabase "Confirm email" is OFF so `signUp` returns a session
+   * immediately; throws a clear error if no session comes back.
+   */
+  signUpWithEmail: (input: {
+    email: string;
+    password: string;
+    nickname: string;
+  }) => Promise<User>;
   signOut: () => Promise<void>;
   /** Change the signed-in user's nickname (persisted to `profiles`). */
   updateNickname: (nickname: string) => Promise<void>;
@@ -200,6 +212,58 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           name,
           email: authUser.email ?? '',
           avatar: meta.avatar_url ?? undefined,
+        };
+        setUser(nextUser);
+        return nextUser;
+      },
+      signInWithEmail: async ({ email, password }) => {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
+        if (error || !data.user) {
+          throw new Error(error?.message ?? 'Email 登入失敗');
+        }
+        const userId = data.user.id;
+        // Read back the nickname/avatar this account already has.
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('nickname, avatar')
+          .eq('id', userId)
+          .maybeSingle();
+        const row = profile as { nickname?: string; avatar?: string | null } | null;
+        const nextUser: User = {
+          id: userId,
+          name: row?.nickname ?? '',
+          email: data.user.email ?? '',
+          avatar: row?.avatar ?? undefined,
+        };
+        setUser(nextUser);
+        return nextUser;
+      },
+      signUpWithEmail: async ({ email, password, nickname }) => {
+        const trimmed = nickname.trim();
+        const { data, error } = await supabase.auth.signUp({
+          email: email.trim(),
+          password,
+        });
+        if (error) throw new Error(error.message);
+        // With "Confirm email" ON, signUp returns no session — surface that
+        // instead of silently failing the profile upsert (RLS needs the uid).
+        if (!data.session || !data.user) {
+          throw new Error(
+            '註冊需要 Email 驗證。請在 Supabase 關閉 Confirm email，或改用驗證信流程。',
+          );
+        }
+        const userId = data.user.id;
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .upsert({ id: userId, nickname: trimmed }, { onConflict: 'id' });
+        if (profileError) throw new Error(profileError.message);
+        const nextUser: User = {
+          id: userId,
+          name: trimmed,
+          email: data.user.email ?? '',
         };
         setUser(nextUser);
         return nextUser;

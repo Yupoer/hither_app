@@ -554,7 +554,7 @@ export default function MapScreen({ route, navigation }: Props) {
       },
       () => {
         void signOut();
-        navigation.reset({ index: 0, routes: [{ name: 'RoleSelect' }] });
+        navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
       },
     );
   }

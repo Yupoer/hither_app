@@ -1,4 +1,5 @@
 import React from 'react';
+import { ActivityIndicator, View } from 'react-native';
 import {
   DarkTheme,
   DefaultTheme,
@@ -8,7 +9,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import RootNavigator from './src/navigation/RootNavigator';
-import { SessionProvider } from './src/state/SessionContext';
+import { SessionProvider, useSession } from './src/state/SessionContext';
 import { usePushRegistration } from './src/state/usePushRegistration';
 import { useGroupNotifications } from './src/state/useGroupNotifications';
 import {
@@ -22,11 +23,31 @@ import {
  */
 function ThemedNavigation() {
   const { colors, themeName } = useTheme();
+  const { initializing } = useSession();
   // Register this device for APNs once signed in (no-op until a Dev Build);
   // also asks notification permission, which the local-notification flow needs.
   usePushRegistration();
   // Interim: turn group realtime events into local notifications (no APNs yet).
   useGroupNotifications();
+
+  // Hold the navigator until the persisted session is resolved, so
+  // RootNavigator's initialRouteName sees the correct logged-in/out state
+  // (a restored user skips Login) instead of flashing the wrong first screen.
+  if (initializing) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: colors.background,
+        }}
+      >
+        <ActivityIndicator color={colors.accent} />
+      </View>
+    );
+  }
+
   const base = themeName === 'day' ? DefaultTheme : DarkTheme;
   const navTheme = {
     ...base,
