@@ -1,9 +1,8 @@
 import { supabase } from './supabase';
 import {
   demoAddDestination,
-  demoCreateSubgroup,
   demoDeleteDestination,
-  demoMergeSubgroup,
+  demoInviteToSubgroup,
   demoReorderDestinations,
   demoSelfMerge,
   demoSelfSplit,
@@ -23,7 +22,9 @@ import type {
   MemberLocation,
   MemberRole,
   NotificationPreferences,
+  PendingInvite,
   Subgroup,
+  SubgroupInvite,
   SubgroupMode,
 } from '../types';
 import { DEFAULT_NOTIFICATION_PREFERENCES } from '../types';
@@ -70,6 +71,16 @@ interface SubgroupRow {
   mode: SubgroupMode;
   leader_id: string | null;
   parent_subgroup_id: string | null;
+}
+
+interface SubgroupInviteRow {
+  id: string;
+  group_id: string;
+  subgroup_id: string;
+  inviter_id: string;
+  invitee_id: string;
+  status: SubgroupInvite['status'];
+  created_at: string | null;
 }
 
 interface ProfileRow {
@@ -158,6 +169,18 @@ export function mapSubgroup(row: SubgroupRow): Subgroup {
     mode: row.mode,
     leaderId: row.leader_id ?? undefined,
     parentId: row.parent_subgroup_id ?? undefined,
+  };
+}
+
+export function mapSubgroupInvite(row: SubgroupInviteRow): SubgroupInvite {
+  return {
+    id: row.id,
+    groupId: row.group_id,
+    subgroupId: row.subgroup_id,
+    inviterId: row.inviter_id,
+    inviteeId: row.invitee_id,
+    status: row.status,
+    createdAt: row.created_at ?? undefined,
   };
 }
 
@@ -485,74 +508,88 @@ export async function updateProfile(fields: {
 }
 
 /**
- * Split members into a new subgroup ("小隊") — leader-only (RLS on both the
- * subgroups insert and the memberships update). `parentId` nests the new
- * subgroup under an existing one; members move onto the new leaf. Minimum 2
- * members (one person = Solo mode).
+ * Invite someone into a subgroup ("小隊"). Forming a ≥2-person team is
+ * invite-driven now: any team member invites a co-member, who accepts to move
+ * in. Goes through the `invite_to_subgroup` SECURITY DEFINER RPC (direct
+ * subgroup_invites writes are closed), which verifies the caller is a member of
+ * the subgroup and the invitee is an eligible co-member. Demo teams have no
+ * second device to accept, so the demo path auto-joins instead.
  */
-export async function createSubgroup(
-  groupId: string,
-  input: {
-    name: string;
-    mode: SubgroupMode;
-    leaderId?: string;
-    parentId?: string;
-    memberIds: string[];
-  },
+export async function inviteToSubgroup(
+  subgroupId: string,
+  inviteeId: string,
 ): Promise<void> {
-  if (input.memberIds.length < 2) {
-    throw new Error('小隊至少需要 2 人');
-  }
-  if (isDemoGroup(groupId)) {
-    demoCreateSubgroup(input);
+  // Demo subgroups carry `demo-sg-` ids and never reach Supabase.
+  if (subgroupId.startsWith('demo-sg-')) {
+    demoInviteToSubgroup(subgroupId, inviteeId);
     return;
   }
-  const { data, error } = await supabase
-    .from('subgroups')
-    .insert({
-      group_id: groupId,
-      parent_subgroup_id: input.parentId ?? null,
-      name: input.name,
-      mode: input.mode,
-      leader_id: input.mode === 'led' ? (input.leaderId ?? null) : null,
-    })
-    .select('id')
-    .single();
+  const { error } = await supabase.rpc('invite_to_subgroup', {
+    p_subgroup: subgroupId,
+    p_invitee: inviteeId,
+  });
   orThrow(error);
-
-  const { error: mErr } = await supabase
-    .from('memberships')
-    .update({ subgroup_id: (data as { id: string }).id })
-    .eq('group_id', groupId)
-    .in('user_id', input.memberIds);
-  orThrow(mErr);
 }
 
 /**
- * Merge a subgroup back one level: its members return to the parent subgroup
- * (or the main group) and the subgroup row is deleted. Leader-only. Callers
- * must merge child subgroups first (the UI enforces leaf-only merges).
+ * Accept a subgroup invite: mark it accepted and move yourself into the
+ * subgroup. Goes through the `accept_subgroup_invite` RPC, which hard-scopes
+ * the write to the invitee (auth.uid()) and their own membership row.
  */
-export async function mergeSubgroup(
-  groupId: string,
-  subgroup: Subgroup,
-): Promise<void> {
-  if (isDemoGroup(groupId)) {
-    demoMergeSubgroup(subgroup.id);
-    return;
-  }
-  const { error: mErr } = await supabase
-    .from('memberships')
-    .update({ subgroup_id: subgroup.parentId ?? null })
-    .eq('group_id', groupId)
-    .eq('subgroup_id', subgroup.id);
-  orThrow(mErr);
-
-  const { error } = await supabase
-    .from('subgroups')
-    .delete()
-    .eq('id', subgroup.id);
+export async function acceptSubgroupInvite(inviteId: string): Promise<void> {
+  const { error } = await supabase.rpc('accept_subgroup_invite', {
+    p_invite: inviteId,
+  });
   orThrow(error);
+}
+
+/** Decline a subgroup invite (marks it declined; membership untouched). */
+export async function declineSubgroupInvite(inviteId: string): Promise<void> {
+  const { error } = await supabase.rpc('decline_subgroup_invite', {
+    p_invite: inviteId,
+  });
+  orThrow(error);
+}
+
+/**
+ * Fetch the current user's pending subgroup invites, enriched with the team
+ * name and inviter nickname for the accept/decline card. There is no direct FK
+ * from subgroup_invites to profiles, so names are joined client-side (same
+ * pattern as getGroupState).
+ */
+export async function fetchMyInvites(userId: string): Promise<PendingInvite[]> {
+  const { data, error } = await supabase
+    .from('subgroup_invites')
+    .select('id, group_id, subgroup_id, inviter_id, invitee_id, status, created_at')
+    .eq('invitee_id', userId)
+    .eq('status', 'pending');
+  orThrow(error);
+
+  const invites = ((data ?? []) as SubgroupInviteRow[]).map(mapSubgroupInvite);
+  if (invites.length === 0) return [];
+
+  const subgroupIds = [...new Set(invites.map((i) => i.subgroupId))];
+  const inviterIds = [...new Set(invites.map((i) => i.inviterId))];
+
+  const [sgRes, profRes] = await Promise.all([
+    supabase.from('subgroups').select('id, name').in('id', subgroupIds),
+    supabase.from('profiles').select('id, nickname').in('id', inviterIds),
+  ]);
+  orThrow(sgRes.error);
+  orThrow(profRes.error);
+
+  const nameBySubgroup = new Map(
+    ((sgRes.data ?? []) as { id: string; name: string }[]).map((s) => [s.id, s.name]),
+  );
+  const nameByInviter = new Map(
+    ((profRes.data ?? []) as { id: string; nickname: string }[]).map((p) => [p.id, p.nickname]),
+  );
+
+  return invites.map((i) => ({
+    ...i,
+    subgroupName: nameBySubgroup.get(i.subgroupId) ?? '',
+    inviterName: nameByInviter.get(i.inviterId) ?? '',
+  }));
 }
 
 /**

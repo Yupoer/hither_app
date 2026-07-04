@@ -84,6 +84,31 @@ export interface Subgroup {
   parentId?: string;
 }
 
+/** Lifecycle of a subgroup invite. */
+export type SubgroupInviteStatus = 'pending' | 'accepted' | 'declined';
+
+/**
+ * An invite to join a subgroup ("小隊"). Forming a ≥2-person team is
+ * invite-driven: a team member invites someone, who accepts to move in.
+ * Backed by `public.subgroup_invites`; writes go through SECURITY DEFINER
+ * RPCs (invite/accept/decline), never a direct table write.
+ */
+export interface SubgroupInvite {
+  id: string;
+  groupId: string;
+  subgroupId: string;
+  inviterId: string;
+  inviteeId: string;
+  status: SubgroupInviteStatus;
+  createdAt?: string;
+}
+
+/** A pending invite enriched with display names for the accept/decline card. */
+export interface PendingInvite extends SubgroupInvite {
+  subgroupName: string;
+  inviterName: string;
+}
+
 /** A gathering point / itinerary stop. */
 export interface Destination {
   id: string;
