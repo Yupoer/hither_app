@@ -101,7 +101,6 @@ export default function BottomSheet({
   // Per-gesture state (worklet-owned; reset each onBegin, read through onEnd).
   const gStartH = useSharedValue(detents[index]);
   const gStartScroll = useSharedValue(0);
-  const gStartIdx = useSharedValue(index);
   const gMode = useSharedValue<number>(MODE_NONE);
 
   // Height of the pinned header block; the scroll content starts below it.
@@ -114,8 +113,8 @@ export default function BottomSheet({
   // helpers, then springs the shared height (carrying the fling velocity) and
   // reports the eager index. gh velocityY is px/s, down-positive; sheetMath
   // wants px/ms with the same sign, and the height grows as the finger rises.
-  const settle = (endH: number, startIdx: number, velocityY: number) => {
-    const target = settleTarget({ vy: velocityY / 1000 }, endH, startIdx, detents);
+  const settle = (endH: number, velocityY: number) => {
+    const target = settleTarget({ vy: velocityY / 1000 }, endH, detents);
     height.value = withSpring(detents[target], { ...SPRING, velocity: -velocityY });
     onIndexChange(target);
   };
@@ -137,19 +136,6 @@ export default function BottomSheet({
       cancelAnimation(height);
       gStartH.value = height.value;
       gMode.value = MODE_NONE;
-      // Nearest detent to the start height — the live drag is clamped to its
-      // neighbours so one swipe never skips a stage. (Inlined: nearestDetent is
-      // JS-only; this 3-element scan is its worklet-safe twin.)
-      let si = 0;
-      let bd = Infinity;
-      for (let i = 0; i < detents.length; i++) {
-        const dist = Math.abs(detents[i] - gStartH.value);
-        if (dist < bd) {
-          bd = dist;
-          si = i;
-        }
-      }
-      gStartIdx.value = si;
     })
     .onUpdate((e) => {
       'worklet';
@@ -170,11 +156,11 @@ export default function BottomSheet({
         gStartScroll.value = scrollOffset.value;
       }
       if (gMode.value === MODE_SHEET) {
-        const si = gStartIdx.value;
-        // One stage per gesture: clamp to the neighbouring detents, rubber-band
-        // only past the outer ends.
-        const lo = si === 0 ? detents[0] - 40 : detents[si - 1];
-        const hi = si === last ? detents[last] + 60 : detents[si + 1];
+        // Position-based: the sheet tracks the finger across the whole detent
+        // range (rubber-banding only past the outer ends), so a long drag can
+        // jump straight from peek to full instead of stopping one stage on.
+        const lo = detents[0] - 40;
+        const hi = detents[last] + 60;
         height.value = Math.max(lo, Math.min(hi, gStartH.value - e.translationY));
         // Hold the list still while the finger resizes the sheet, so a
         // simultaneous native scroll can't leak through. Not a reset-to-top:
@@ -186,7 +172,7 @@ export default function BottomSheet({
     .onEnd((e) => {
       'worklet';
       if (gMode.value === MODE_SHEET) {
-        runOnJS(settle)(height.value, gStartIdx.value, e.velocityY);
+        runOnJS(settle)(height.value, e.velocityY);
       }
       gMode.value = MODE_NONE;
     });
