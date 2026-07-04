@@ -197,6 +197,11 @@ const zh = {
   'settings.notifFollowerRequests': '成員快捷請求',
   'settings.notifJourney': '行程開始 / 暫停',
 
+  // Settings · location tracking
+  'settings.locationSection': '定位追蹤',
+  'settings.powerSaver': '省電模式',
+  'settings.powerSaverHint': '降低定位精度與更新頻率以省電；隊友的位置會更新較慢。',
+
   // Destination search
   'search.placeholder': '輸入地址或地點名稱',
   'search.searching': '搜尋中…',
@@ -375,6 +380,11 @@ const en: Record<keyof typeof zh, string> = {
   'settings.notifLeaderCommands': 'Leader commands',
   'settings.notifFollowerRequests': 'Member requests',
   'settings.notifJourney': 'Journey start / pause',
+
+  'settings.locationSection': 'Location tracking',
+  'settings.powerSaver': 'Battery saver',
+  'settings.powerSaverHint':
+    'Lower accuracy and update rate to save power; teammates’ dots update more slowly.',
 
   'search.placeholder': 'Enter an address or place name',
   'search.searching': 'Searching…',
