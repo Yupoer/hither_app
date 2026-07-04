@@ -50,8 +50,28 @@ export default function AuthScreen({ navigation, route }: Props) {
   const [busy, setBusy] = useState(false);
   const codeRef = useRef<TextInput>(null);
 
-  const canSubmit =
-    name.trim().length >= 1 && (isLeader || code.length === CODE_LEN) && !busy;
+  const codeReady = isLeader || code.length === CODE_LEN;
+  const canSubmit = name.trim().length >= 1 && codeReady && !busy;
+
+  /** Create (leader) / join (follower) the group, then drop onto the map. */
+  async function enterGroup(nickname: string) {
+    const group = isLeader
+      ? await createGroup(t('group.defaultName', { name: nickname }))
+      : await joinGroup(code.trim());
+    setMembership({ group, role });
+    navigation.replace('Map', { groupId: group.id });
+  }
+
+  function handleAuthError(e: unknown) {
+    // Design: a rejected code highlights the code boxes.
+    if (!isLeader) setCodeError(true);
+    const msg = e instanceof Error ? e.message : t('auth.signInFailed');
+    Alert.alert(
+      isLeader ? t('group.createFailedTitle') : t('group.joinFailedTitle'),
+      msg,
+    );
+    setBusy(false);
+  }
 
   async function handleSubmit() {
     if (!canSubmit) return;
@@ -64,23 +84,12 @@ export default function AuthScreen({ navigation, route }: Props) {
       } else if (nickname !== user.name) {
         await updateNickname(nickname);
       }
-
-      const group = isLeader
-        ? await createGroup(t('group.defaultName', { name: nickname }))
-        : await joinGroup(code.trim());
-      setMembership({ group, role });
-      navigation.replace('Map', { groupId: group.id });
+      await enterGroup(nickname);
     } catch (e) {
-      // Design: a rejected code highlights the code boxes.
-      if (!isLeader) setCodeError(true);
-      const msg = e instanceof Error ? e.message : t('auth.signInFailed');
-      Alert.alert(
-        isLeader ? t('group.createFailedTitle') : t('group.joinFailedTitle'),
-        msg,
-      );
-      setBusy(false);
+      handleAuthError(e);
     }
   }
+
 
   return (
     <LinearGradient
