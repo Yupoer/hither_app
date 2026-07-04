@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useTheme } from '../state/PreferencesContext';
@@ -31,6 +32,20 @@ export default function RoleSelectScreen({ navigation }: Props) {
       locations={[0, 0.52, 1]}
       style={styles.fill}
     >
+      {/* Only a guest (who reached here via navigate, not replace) can go
+          back — to Login, to register instead. Authed users have no Login
+          below them, so this stays hidden. */}
+      {navigation.canGoBack() && (
+        <Pressable
+          onPress={() => navigation.goBack()}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+          style={[styles.back, { top: insets.top + 12 }]}
+        >
+          <Ionicons name="chevron-back" size={22} color="rgba(255,255,255,0.7)" />
+        </Pressable>
+      )}
+
       <View
         style={[
           styles.content,
@@ -89,6 +104,19 @@ export default function RoleSelectScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
+  back: {
+    position: 'absolute',
+    left: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.18)',
+    zIndex: 10,
+  },
   content: {
     flex: 1,
     alignItems: 'center',

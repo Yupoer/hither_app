@@ -57,6 +57,12 @@ export default function LoginScreen({ navigation }: Props) {
     navigation.replace('RoleSelect');
   }
 
+  // Guest keeps Login on the stack (navigate, not replace) so RoleSelect's
+  // back button can return here to register — a guest isn't signed in yet.
+  function continueAsGuest() {
+    navigation.navigate('RoleSelect');
+  }
+
   async function handleSubmit() {
     if (!canSubmit) return;
     setBusy(true);
@@ -225,7 +231,7 @@ export default function LoginScreen({ navigation }: Props) {
           <Text style={styles.googleCaption}>{t('login.google')}</Text>
 
           <Pressable
-            onPress={goToApp}
+            onPress={continueAsGuest}
             disabled={busy}
             accessibilityRole="button"
             style={styles.guest}
