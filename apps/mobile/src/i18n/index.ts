@@ -20,11 +20,31 @@ type Dict = Record<string, string>;
 const zh = {
   // Common
   'common.cancel': '取消',
+  'common.or': '或',
 
   // Auth
   'auth.nameLabel': '暱稱',
   'auth.namePlaceholder': '例如：迷路的貓',
   'auth.signInFailed': '登入失敗，請再試一次',
+  'auth.googleCta': '使用 Google 帳號註冊',
+
+  // Login gate
+  'login.welcomeTitle': '歡迎使用 Hither',
+  'login.welcomeSub': '登入以同步你的群組，或以訪客身分快速開始。',
+  'login.tabSignIn': '登入',
+  'login.tabSignUp': '註冊',
+  'login.email': 'Email',
+  'login.emailPlaceholder': 'you@example.com',
+  'login.password': '密碼',
+  'login.passwordPlaceholder': '至少 6 個字元',
+  'login.nickname': '暱稱',
+  'login.nicknamePlaceholder': '例如：迷路的貓',
+  'login.ctaSignIn': '登入',
+  'login.ctaSignUp': '註冊並開始',
+  'login.google': '使用 Google 帳號',
+  'login.guest': '以訪客身分繼續',
+  'login.signInFailed': '登入失敗，請確認 Email 與密碼',
+  'login.signUpFailed': '註冊失敗，請再試一次',
 
   // Role select
   'role.tagline': '讓大家不走散，隨時知道下一個集合點。',
@@ -191,10 +211,29 @@ const zh = {
 
 const en: Record<keyof typeof zh, string> = {
   'common.cancel': 'Cancel',
+  'common.or': 'or',
 
   'auth.nameLabel': 'YOUR NAME',
   'auth.namePlaceholder': 'e.g. Lost Cat',
   'auth.signInFailed': 'Sign-in failed, please try again',
+  'auth.googleCta': 'Sign up with Google',
+
+  'login.welcomeTitle': 'Welcome to Hither',
+  'login.welcomeSub': 'Sign in to sync your groups, or jump in as a guest.',
+  'login.tabSignIn': 'Sign in',
+  'login.tabSignUp': 'Sign up',
+  'login.email': 'Email',
+  'login.emailPlaceholder': 'you@example.com',
+  'login.password': 'Password',
+  'login.passwordPlaceholder': 'At least 6 characters',
+  'login.nickname': 'Nickname',
+  'login.nicknamePlaceholder': 'e.g. Lost Cat',
+  'login.ctaSignIn': 'Sign in',
+  'login.ctaSignUp': 'Sign up & start',
+  'login.google': 'Continue with Google',
+  'login.guest': 'Continue as guest',
+  'login.signInFailed': 'Sign-in failed. Check your email and password.',
+  'login.signUpFailed': 'Sign-up failed, please try again',
 
   'role.tagline': 'Keep your flock together. Always know the next gathering point.',
   'role.lead': 'Lead a group',

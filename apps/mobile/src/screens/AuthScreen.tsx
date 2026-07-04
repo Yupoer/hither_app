@@ -52,10 +52,31 @@ export default function AuthScreen({ navigation, route }: Props) {
   const codeRef = useRef<TextInput>(null);
   const groupNameRef = useRef<TextInput>(null);
 
-  const canSubmit =
-    name.trim().length >= 1 &&
-    (isLeader ? groupName.trim().length >= 1 : code.length === CODE_LEN) &&
-    !busy;
+  const codeReady = isLeader ? groupName.trim().length >= 1 : code.length === CODE_LEN;
+  const canSubmit = name.trim().length >= 1 && codeReady && !busy;
+
+  // The group's name is asked separately from the nickname: unlike a
+  // nickname (editable later), the group name is set once at creation, so
+  // defaulting it to the nickname would permanently weld the two.
+  /** Create (leader) / join (follower) the group, then drop onto the map. */
+  async function enterGroup() {
+    const group = isLeader
+      ? await createGroup(groupName.trim())
+      : await joinGroup(code.trim());
+    setMembership({ group, role });
+    navigation.replace('Map', { groupId: group.id });
+  }
+
+  function handleAuthError(e: unknown) {
+    // Design: a rejected code highlights the code boxes.
+    if (!isLeader) setCodeError(true);
+    const msg = e instanceof Error ? e.message : t('auth.signInFailed');
+    Alert.alert(
+      isLeader ? t('group.createFailedTitle') : t('group.joinFailedTitle'),
+      msg,
+    );
+    setBusy(false);
+  }
 
   async function handleSubmit() {
     if (!canSubmit) return;
@@ -68,24 +89,9 @@ export default function AuthScreen({ navigation, route }: Props) {
       } else if (nickname !== user.name) {
         await updateNickname(nickname);
       }
-
-      // The group's name is asked separately from the nickname: unlike a
-      // nickname (editable later), the group name is set once at creation,
-      // so defaulting it to the nickname would permanently weld the two.
-      const group = isLeader
-        ? await createGroup(groupName.trim())
-        : await joinGroup(code.trim());
-      setMembership({ group, role });
-      navigation.replace('Map', { groupId: group.id });
+      await enterGroup();
     } catch (e) {
-      // Design: a rejected code highlights the code boxes.
-      if (!isLeader) setCodeError(true);
-      const msg = e instanceof Error ? e.message : t('auth.signInFailed');
-      Alert.alert(
-        isLeader ? t('group.createFailedTitle') : t('group.joinFailedTitle'),
-        msg,
-      );
-      setBusy(false);
+      handleAuthError(e);
     }
   }
 
