@@ -45,13 +45,17 @@ export default function AuthScreen({ navigation, route }: Props) {
   const styles = useMemo(() => makeStyles(accent), [accent]);
 
   const [name, setName] = useState(user?.name ?? '');
+  const [groupName, setGroupName] = useState('');
   const [code, setCode] = useState('');
   const [codeError, setCodeError] = useState(false);
   const [busy, setBusy] = useState(false);
   const codeRef = useRef<TextInput>(null);
+  const groupNameRef = useRef<TextInput>(null);
 
   const canSubmit =
-    name.trim().length >= 1 && (isLeader || code.length === CODE_LEN) && !busy;
+    name.trim().length >= 1 &&
+    (isLeader ? groupName.trim().length >= 1 : code.length === CODE_LEN) &&
+    !busy;
 
   async function handleSubmit() {
     if (!canSubmit) return;
@@ -65,8 +69,11 @@ export default function AuthScreen({ navigation, route }: Props) {
         await updateNickname(nickname);
       }
 
+      // The group's name is asked separately from the nickname: unlike a
+      // nickname (editable later), the group name is set once at creation,
+      // so defaulting it to the nickname would permanently weld the two.
       const group = isLeader
-        ? await createGroup(t('group.defaultName', { name: nickname }))
+        ? await createGroup(groupName.trim())
         : await joinGroup(code.trim());
       setMembership({ group, role });
       navigation.replace('Map', { groupId: group.id });
@@ -127,11 +134,33 @@ export default function AuthScreen({ navigation, route }: Props) {
               placeholderTextColor="rgba(235,235,245,0.4)"
               autoCapitalize="none"
               autoFocus
-              returnKeyType={isLeader ? 'go' : 'next'}
-              onSubmitEditing={isLeader ? handleSubmit : () => codeRef.current?.focus()}
+              returnKeyType="next"
+              onSubmitEditing={() =>
+                isLeader ? groupNameRef.current?.focus() : codeRef.current?.focus()
+              }
               accessibilityLabel={t('auth.nameLabel')}
             />
           </View>
+
+          {isLeader && (
+            <>
+              <Text style={styles.label}>{t('group.nameLabel')}</Text>
+              <View style={styles.field}>
+                <TextInput
+                  ref={groupNameRef}
+                  style={styles.input}
+                  value={groupName}
+                  onChangeText={setGroupName}
+                  placeholder={t('group.namePlaceholder')}
+                  placeholderTextColor="rgba(235,235,245,0.4)"
+                  autoCapitalize="none"
+                  returnKeyType="go"
+                  onSubmitEditing={handleSubmit}
+                  accessibilityLabel={t('group.nameLabel')}
+                />
+              </View>
+            </>
+          )}
 
           {!isLeader && (
             <>
