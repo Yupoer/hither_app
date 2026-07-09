@@ -17,6 +17,15 @@ export const AVATAR_EMOJI = [
 ] as const;
 
 /**
+ * Selectable avatar background colours (persisted in `profiles.avatar_color`).
+ * When unset, the app falls back to the derived `memberColor` / theme accent.
+ */
+export const AVATAR_COLORS = [
+  '#E8543F', '#F0883E', '#F4C13E', '#5FB56A', '#3FB4A6',
+  '#4A90D9', '#6A5ACD', '#B565C4', '#E06B9A', '#8A8F99',
+] as const;
+
+/**
  * Pick a default avatar for a user, deterministically from their id — the same
  * user always gets the same emoji, so we can default one at login without
  * persisting it or re-rolling on every sign-in.

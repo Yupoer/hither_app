@@ -96,7 +96,11 @@ interface SessionContextValue {
    * Save nickname/avatar changes in one call (persisted to `profiles`).
    * Optimistic: `user` updates immediately and reverts if the write fails.
    */
-  updateProfile: (fields: { nickname?: string; avatar?: string }) => Promise<void>;
+  updateProfile: (fields: {
+    nickname?: string;
+    avatar?: string;
+    avatarColor?: string;
+  }) => Promise<void>;
   /** Record the group the user just created (as leader) or joined (as follower). */
   setMembership: (membership: Membership) => void;
   leaveGroup: () => void;
@@ -133,7 +137,12 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         .eq('id', authUser.id)
         .maybeSingle();
       const row = data as
-        | { nickname?: string; avatar?: string | null; pro?: boolean | null }
+        | {
+            nickname?: string;
+            avatar?: string | null;
+            avatar_color?: string | null;
+            pro?: boolean | null;
+          }
         | null;
       if (active) {
         setUser({
@@ -141,6 +150,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           name: row?.nickname ?? '',
           email: authUser.email ?? '',
           avatar: row?.avatar ?? undefined,
+          avatarColor: row?.avatar_color ?? undefined,
         });
         setIsAnonymous(!!authUser.is_anonymous);
         setIsPro(!!row?.pro);
@@ -353,6 +363,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
                 ...u,
                 name: nickname || u.name,
                 avatar: fields.avatar ?? u.avatar,
+                avatarColor: fields.avatarColor ?? u.avatarColor,
               }
             : u,
         );

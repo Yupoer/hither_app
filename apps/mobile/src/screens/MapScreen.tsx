@@ -83,7 +83,7 @@ import { isVirtualMember } from '../api/virtualMates';
 import { confirmAction } from '../utils/confirm';
 import { logEvent, logError } from '../utils/activityLog';
 import { lightTap, mediumTap, selectionTick, alertBuzz } from '../utils/haptics';
-import { AVATAR_EMOJI } from '../constants/avatars';
+import { AVATAR_EMOJI, AVATAR_COLORS } from '../constants/avatars';
 import type { Coordinates, Destination, MemberLocation } from '../types';
 import type { KmlPlacemark } from '../utils/kml';
 import { FREE_LIMITS } from '../entitlements';
@@ -561,10 +561,12 @@ export default function MapScreen({ route, navigation }: Props) {
   // --- Profile (nickname + emoji avatar) ------------------------------------
   const [profileName, setProfileName] = useState('');
   const [profileAvatar, setProfileAvatar] = useState<string | undefined>(undefined);
+  const [profileColor, setProfileColor] = useState<string | undefined>(undefined);
   function openProfile() {
     lightTap();
     setProfileName(user?.name ?? '');
     setProfileAvatar(user?.avatar);
+    setProfileColor(user?.avatarColor);
     setOverlay('profile');
   }
   // "Done" (and the scrim tap) closes instantly, then persists whatever changed
@@ -572,10 +574,11 @@ export default function MapScreen({ route, navigation }: Props) {
   function closeProfile() {
     setOverlay(null);
     const nickname = profileName.trim();
-    const fields: { nickname?: string; avatar?: string } = {};
+    const fields: { nickname?: string; avatar?: string; avatarColor?: string } = {};
     if (nickname && nickname !== user?.name) fields.nickname = nickname;
     if (profileAvatar && profileAvatar !== user?.avatar) fields.avatar = profileAvatar;
-    if (!fields.nickname && !fields.avatar) return;
+    if (profileColor && profileColor !== user?.avatarColor) fields.avatarColor = profileColor;
+    if (!fields.nickname && !fields.avatar && !fields.avatarColor) return;
     logEvent('profile_save', { changed: Object.keys(fields) });
     updateProfile(fields)
       .then(() => refresh())
@@ -879,7 +882,9 @@ export default function MapScreen({ route, navigation }: Props) {
           avatar: m.avatar,
           solo,
           subgroupId: m.subgroupId,
-          color: memberColor(m.userId),
+          // Prefer the member's chosen avatar background colour; fall back to the
+          // deterministic per-user colour when they haven't picked one.
+          color: m.avatarColor ?? memberColor(m.userId),
           isLeader: isMemberLeader,
           memberStatusKey,
           statusText: solo
@@ -1291,7 +1296,7 @@ export default function MapScreen({ route, navigation }: Props) {
               <Text style={styles.searchPlaceholder}>{t('map.searchPlaces')}</Text>
             </Pressable>
             <Pressable
-              style={[styles.avatar, { backgroundColor: accent }]}
+              style={[styles.avatar, { backgroundColor: user?.avatarColor ?? accent }]}
               onPress={openProfile}
               accessibilityRole="button"
               accessibilityLabel={t('profile.title')}
@@ -1750,6 +1755,27 @@ export default function MapScreen({ route, navigation }: Props) {
               </Pressable>
             ))}
           </View>
+
+          <Text style={styles.sectionLabel}>{t('profile.avatarColor')}</Text>
+          <View style={styles.colorRow}>
+            {AVATAR_COLORS.map((c) => (
+              <Pressable
+                key={c}
+                onPress={() => { selectionTick(); setProfileColor(c); }}
+                accessibilityRole="button"
+                accessibilityState={{ selected: profileColor === c }}
+                style={[
+                  styles.colorSwatch,
+                  { backgroundColor: c },
+                  profileColor === c && { borderColor: '#fff' },
+                ]}
+              >
+                {profileColor === c && (
+                  <Ionicons name="checkmark" size={18} color="#fff" />
+                )}
+              </Pressable>
+            ))}
+          </View>
           <Text style={styles.overlayHint}>{t('profile.syncHint')}</Text>
         </ScrollView>
       </OverlaySheet>
@@ -2192,6 +2218,16 @@ const makeStyles = (accent: string) =>
       borderColor: 'transparent',
     },
     emojiChar: { fontSize: 26 },
+    colorRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 12 },
+    colorSwatch: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 2,
+      borderColor: 'transparent',
+    },
 
     // Subgroups
     headingRow: {

@@ -23,6 +23,8 @@ export interface User {
   email: string;
   /** Emoji avatar shown to other members (persisted in `profiles.avatar`). */
   avatar?: string;
+  /** Avatar background colour hex (persisted in `profiles.avatar_color`). */
+  avatarColor?: string;
 }
 
 /**
@@ -61,6 +63,8 @@ export interface MemberLocation {
   role: MemberRole;
   /** Emoji avatar; falls back to the name's initial when unset. */
   avatar?: string;
+  /** Avatar background colour hex (persisted in `profiles.avatar_color`). */
+  avatarColor?: string;
   /** Solo mode: temporarily detached from the flock (no group notifications). */
   solo?: boolean;
   /** Leaf subgroup the member currently belongs to, if any. */

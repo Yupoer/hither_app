@@ -92,6 +92,8 @@ interface ProfileRow {
   nickname: string;
   /** Optional — absent until the profiles_avatar migration is applied. */
   avatar?: string | null;
+  /** Optional — absent until the profiles_avatar_color migration is applied. */
+  avatar_color?: string | null;
 }
 
 interface ItineraryRow {
@@ -167,6 +169,7 @@ export function mapMember(
     name: profile?.nickname ?? '',
     role: membership.role,
     avatar: profile?.avatar ?? undefined,
+    avatarColor: profile?.avatar_color ?? undefined,
     solo: membership.solo ?? false,
     subgroupId: membership.subgroup_id ?? undefined,
     coordinates,
@@ -534,12 +537,14 @@ export async function updateNickname(nickname: string): Promise<string> {
 export async function updateProfile(fields: {
   nickname?: string;
   avatar?: string;
+  avatarColor?: string;
 }): Promise<void> {
-  const patch: { nickname?: string; avatar?: string } = {};
+  const patch: { nickname?: string; avatar?: string; avatar_color?: string } = {};
   const nickname = fields.nickname?.trim();
   if (nickname) patch.nickname = nickname;
   if (fields.avatar) patch.avatar = fields.avatar;
-  if (!patch.nickname && !patch.avatar) return;
+  if (fields.avatarColor) patch.avatar_color = fields.avatarColor;
+  if (!patch.nickname && !patch.avatar && !patch.avatar_color) return;
   const uid = await requireUserId();
   const { error } = await supabase
     .from('profiles')
