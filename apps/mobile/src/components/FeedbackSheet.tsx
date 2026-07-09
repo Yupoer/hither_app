@@ -31,9 +31,9 @@ const CATEGORIES: { key: Category; label: TranslationKey }[] = [
 ];
 
 /**
- * Report-a-problem form, opened by `FeedbackButton`. The screenshot (if any)
- * is captured by the button BEFORE this sheet opens (so it shows the actual
- * screen, not the feedback form) and handed in as `screenshotUri`.
+ * Report-a-problem form, opened from the Settings overlay. The screenshot (if
+ * any) is captured BEFORE this sheet opens (so it shows the actual screen, not
+ * the feedback form) and handed in as `screenshotUri`.
  *
  * Upload/insert failures degrade gracefully: a failed screenshot upload just
  * sends the report without one, never blocking the report itself.

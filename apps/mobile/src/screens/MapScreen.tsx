@@ -44,7 +44,7 @@ import BottomSheet, { sheetBottomOffset } from '../components/BottomSheet';
 import OverlaySheet from '../components/OverlaySheet';
 import PaywallSheet from '../components/PaywallSheet';
 import KmlImportSheet from '../components/KmlImportSheet';
-import FeedbackButton from '../components/FeedbackButton';
+import FeedbackSheet from '../components/FeedbackSheet';
 import CrookIcon from '../components/CrookIcon';
 import { useSession } from '../state/SessionContext';
 import { usePreferences, useTheme, type Language } from '../state/PreferencesContext';
@@ -74,13 +74,14 @@ import {
   setStragglerConfig,
   updateMyLocation,
 } from '../api/client';
+import { captureScreen } from 'react-native-view-shot';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ONBOARDING_STORAGE_KEY } from '../onboarding/sync';
 import { isDemoGroup } from '../api/demo';
 import { isVirtualMember } from '../api/virtualMates';
 import { confirmAction } from '../utils/confirm';
 import { logEvent, logError } from '../utils/activityLog';
-import { lightTap, mediumTap, selectionTick, heavyTap } from '../utils/haptics';
+import { lightTap, mediumTap, selectionTick } from '../utils/haptics';
 import { AVATAR_EMOJI } from '../constants/avatars';
 import type { Coordinates, Destination, MemberLocation } from '../types';
 import type { KmlPlacemark } from '../utils/kml';
@@ -172,7 +173,14 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [insets.top, windowHeight, sheetHeaderH]);
   const heightSV = useSharedValue(detents[0]);
   const [detent, setDetent] = useState(0);
-  const [overlay, setOverlay] = useState<null | 'route' | 'settings' | 'profile'>(null);
+  const [overlay, setOverlay] = useState<null | 'route' | 'settings' | 'profile' | 'feedback'>(
+    null,
+  );
+  // Screenshot captured the instant the feedback entry is tapped (before the
+  // form opens over the screen), handed to the sheet as evidence.
+  const [feedbackShot, setFeedbackShot] = useState<string | null>(null);
+  // "Invite a teammate" picker, opened from my own subgroup card.
+  const [inviteSheetOpen, setInviteSheetOpen] = useState(false);
   const [searchVisible, setSearchVisible] = useState(false);
   const [kmlVisible, setKmlVisible] = useState(false);
   const [paywallTrigger, setPaywallTrigger] = useState<TranslationKey | undefined>(undefined);
@@ -621,6 +629,22 @@ export default function MapScreen({ route, navigation }: Props) {
     }
   }
 
+  // Report-a-problem: grab the current screen, then swap the settings overlay
+  // for the feedback form. Uses the SAME `overlay` state so the two are
+  // mutually exclusive — opening feedback closes settings, so the translucent
+  // panels can never stack and interleave their text.
+  async function openFeedback() {
+    lightTap();
+    let uri: string | null = null;
+    try {
+      uri = await captureScreen({ format: 'jpg', quality: 0.6, result: 'tmpfile' });
+    } catch {
+      uri = null;
+    }
+    setFeedbackShot(uri);
+    setOverlay('feedback');
+  }
+
   const handleReorder = useCallback(
     async (orderedIds: string[]) => {
       if (!groupId) return;
@@ -825,19 +849,20 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [members, soloOverride, user?.id]);
 
   const topFlock = flock.filter((f) => !f.subgroupId);
-  // My own subgroup, if any — drives which other rows get an "Invite" button.
+  // My own subgroup, if any — gates the "invite a teammate" entry on my card.
   const mySubgroupId = flock.find((f) => f.userId === user?.id)?.subgroupId;
+  // Real co-members I could still pull into my team (virtual solo-test mates
+  // are excluded — there's no one on the other end to accept).
+  const invitable = flock.filter(
+    (f) =>
+      f.userId !== user?.id &&
+      f.subgroupId !== mySubgroupId &&
+      !isVirtualMember(f.userId),
+  );
 
   // One flock row, shared by the main list and the subgroup cards.
   const renderFlockRow = (f: (typeof flock)[number], last: boolean) => {
     const isMe = f.userId === user?.id;
-    // Show "invite" on a real (non-virtual), non-me row that isn't already in
-    // my team — only meaningful once I'm in a team myself.
-    const canInvite =
-      !isMe &&
-      !!mySubgroupId &&
-      f.subgroupId !== mySubgroupId &&
-      !isVirtualMember(f.userId);
     return (
       <View key={f.userId} style={[styles.flockRow, last && styles.flockRowLast]}>
         <View style={styles.flockRowMain}>
@@ -890,16 +915,6 @@ export default function MapScreen({ route, navigation }: Props) {
               </Pressable>
             )}
           </View>
-        )}
-        {canInvite && mySubgroupId && (
-          <Pressable
-            onPress={() => void handleInvite(mySubgroupId, f.userId)}
-            hitSlop={8}
-            accessibilityRole="button"
-            style={styles.inviteRow}
-          >
-            <Text style={[styles.rowAction, { color: accent }]}>{t('subgroup.inviteAction')}</Text>
-          </Pressable>
         )}
       </View>
     );
@@ -1108,14 +1123,31 @@ export default function MapScreen({ route, navigation }: Props) {
                     </View>
                     {(meetLabel || canEditItinerary) && (
                       <Pressable
-                        style={styles.meetTimeRow}
+                        style={[
+                          styles.meetTimeBtn,
+                          meetLabel && {
+                            backgroundColor: accentMix(accent, 20),
+                            borderColor: accentMix(accent, 45),
+                          },
+                        ]}
                         onPress={() => openMeetTimePicker(dest)}
                         disabled={!canEditItinerary}
                         accessibilityRole="button"
                         accessibilityLabel={t('meetTime.set')}
                       >
-                        <Ionicons name="time-outline" size={13} color={glass.textSecondary} />
-                        <Text style={styles.meetTimeText}>{meetLabel ?? t('meetTime.set')}</Text>
+                        <Ionicons
+                          name="time-outline"
+                          size={15}
+                          color={meetLabel ? accent : glass.textSecondary}
+                        />
+                        <Text
+                          style={[
+                            styles.meetTimeText,
+                            meetLabel ? { color: accent, fontWeight: '700' } : null,
+                          ]}
+                        >
+                          {meetLabel ?? t('meetTime.set')}
+                        </Text>
                       </Pressable>
                     )}
                   </liquidGlass.GlassView>
@@ -1132,7 +1164,7 @@ export default function MapScreen({ route, navigation }: Props) {
         <Animated.View
           style={[
             styles.stragglerBanner,
-            { top: insets.top + 8 + (destinations.length > 0 ? 190 : 96) },
+            { top: insets.top + 8 + (destinations.length > 0 ? 200 : 96) },
             chromeOpacityStyle,
           ]}
           pointerEvents={atFull ? 'none' : 'box-none'}
@@ -1267,6 +1299,23 @@ export default function MapScreen({ route, navigation }: Props) {
                 </View>
               </View>
               {memberRows.map((f, i) => renderFlockRow(f, i === memberRows.length - 1))}
+              {/* Invite entry lives ON my own team card — where you look to grow
+                  the team — instead of buried on every other member's row. */}
+              {sg.id === mySubgroupId && (
+                <Pressable
+                  style={[styles.inviteMemberBtn, { borderColor: accentMix(accent, 45) }]}
+                  onPress={() => {
+                    lightTap();
+                    setInviteSheetOpen(true);
+                  }}
+                  accessibilityRole="button"
+                >
+                  <Ionicons name="person-add-outline" size={16} color={accent} />
+                  <Text style={[styles.rowAction, { color: accent }]}>
+                    {t('subgroup.inviteAction')}
+                  </Text>
+                </Pressable>
+              )}
             </View>
           );
         })}
@@ -1429,26 +1478,21 @@ export default function MapScreen({ route, navigation }: Props) {
           </View>
 
           <Text style={styles.sectionLabel}>{t('settings.notifSection')}</Text>
-          <NotificationPreferencesCard colors={dark} />
-
-          <Pressable
-            style={styles.settingSwitchRow}
-            onPress={() => {
-              heavyTap();
-              logEvent('haptic_test');
-            }}
-            accessibilityRole="button"
-          >
-            <View style={styles.settingSwitchText}>
-              <Text style={styles.settingSwitchLabel}>{t('settings.hapticTest')}</Text>
-              <Text style={styles.settingSwitchHint}>{t('settings.hapticTestHint')}</Text>
-            </View>
-            <Ionicons name="phone-portrait-outline" size={20} color={accent} />
-          </Pressable>
+          {/* Force the LIVE theme accent onto the otherwise-frozen night
+              palette so the toggles recolour when the theme changes. */}
+          <NotificationPreferencesCard colors={{ ...dark, accent }} />
 
           <View style={styles.settingsSectionHeaderRow}>
             <Text style={styles.sectionLabel}>{t('account.section')}</Text>
-            <FeedbackButton />
+            <Pressable
+              style={styles.feedbackEntry}
+              onPress={openFeedback}
+              accessibilityRole="button"
+              accessibilityLabel={t('feedback.title')}
+              hitSlop={8}
+            >
+              <Ionicons name="warning-outline" size={17} color={glass.textSecondary} />
+            </Pressable>
           </View>
           {isAnonymous ? (
             <>
@@ -1632,6 +1676,58 @@ export default function MapScreen({ route, navigation }: Props) {
         </ScrollView>
       </OverlaySheet>
 
+      {/* Report-a-problem — a top-level overlay sharing the `overlay` state, so
+          it fully replaces (never stacks over) the settings sheet. */}
+      <FeedbackSheet
+        visible={overlay === 'feedback'}
+        onClose={() => setOverlay(null)}
+        screenshotUri={feedbackShot}
+      />
+
+      {/* Invite-a-teammate picker, opened from my own subgroup card. */}
+      <OverlaySheet
+        visible={inviteSheetOpen}
+        onClose={() => setInviteSheetOpen(false)}
+        title={t('subgroup.inviteTitle')}
+        accent={accent}
+        doneLabel={t('map.done')}
+      >
+        <ScrollView contentContainerStyle={styles.overlayBody}>
+          {invitable.length === 0 ? (
+            <Text style={styles.overlayHint}>{t('subgroup.inviteEmpty')}</Text>
+          ) : (
+            <View style={styles.list}>
+              {invitable.map((f, i) => (
+                <View
+                  key={f.userId}
+                  style={[styles.flockRow, i === invitable.length - 1 && styles.flockRowLast]}
+                >
+                  <View style={styles.flockRowMain}>
+                    <View style={[styles.flockAvatar, { backgroundColor: f.color, borderColor: 'transparent' }]}>
+                      {f.avatar ? (
+                        <Text style={styles.flockEmoji}>{f.avatar}</Text>
+                      ) : (
+                        <Text style={styles.flockInitial}>{f.name.slice(0, 1).toUpperCase()}</Text>
+                      )}
+                    </View>
+                    <View style={styles.grow}>
+                      <Text style={styles.flockName}>{f.name}</Text>
+                    </View>
+                    <Pressable
+                      style={[styles.chip, { backgroundColor: accentMix(accent, 24), borderColor: accentMix(accent, 50) }]}
+                      onPress={() => mySubgroupId && void handleInvite(mySubgroupId, f.userId)}
+                      accessibilityRole="button"
+                    >
+                      <Text style={styles.chipText}>{t('subgroup.inviteAction')}</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+        </ScrollView>
+      </OverlaySheet>
+
       <DestinationSearch
         visible={searchVisible}
         onClose={() => setSearchVisible(false)}
@@ -1668,34 +1764,39 @@ export default function MapScreen({ route, navigation }: Props) {
           doneLabel={t('common.cancel')}
         >
           {meetTimeEditor && (
-            <View style={styles.overlayBody}>
-              <DateTimePicker
-                value={meetTimeEditor.value}
-                mode="time"
-                display="spinner"
-                onChange={(_event, selected) =>
-                  selected && setMeetTimeEditor((s) => (s ? { ...s, value: selected } : s))
-                }
-              />
+            <View style={styles.meetEditorBody}>
+              <View style={styles.meetPickerWrap}>
+                <DateTimePicker
+                  value={meetTimeEditor.value}
+                  mode="time"
+                  display="spinner"
+                  onChange={(_event, selected) =>
+                    selected && setMeetTimeEditor((s) => (s ? { ...s, value: selected } : s))
+                  }
+                />
+              </View>
               <Pressable
-                style={[styles.chip, { backgroundColor: accentMix(accent, 24), borderColor: accentMix(accent, 50) }]}
+                style={[
+                  styles.meetSetBtn,
+                  { backgroundColor: accentMix(accent, 90), borderColor: accentMix(accent, 50) },
+                ]}
                 onPress={() => {
                   persistMeetTime(meetTimeEditor.id, meetTimeEditor.value);
                   setMeetTimeEditor(null);
                 }}
                 accessibilityRole="button"
               >
-                <Text style={styles.chipText}>{t('meetTime.set')}</Text>
+                <Text style={styles.meetSetText}>{t('meetTime.set')}</Text>
               </Pressable>
               <Pressable
-                style={styles.chipGhost}
+                style={styles.meetClearBtn}
                 onPress={() => {
                   persistMeetTime(meetTimeEditor.id, null);
                   setMeetTimeEditor(null);
                 }}
                 accessibilityRole="button"
               >
-                <Text style={styles.chipText}>{t('meetTime.clear')}</Text>
+                <Text style={styles.meetClearText}>{t('meetTime.clear')}</Text>
               </Pressable>
             </View>
           )}
@@ -1835,6 +1936,16 @@ const makeStyles = (accent: string) =>
       alignItems: 'center',
       justifyContent: 'space-between',
     },
+    feedbackEntry: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: glass.pill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
+    },
     recenterCapsule: {
       width: 48,
       borderRadius: 24,
@@ -1899,13 +2010,43 @@ const makeStyles = (accent: string) =>
     },
     etaPillEta: { fontSize: 15, fontWeight: '700', color: '#fff', fontVariant: ['tabular-nums'] },
     etaPillDist: { fontSize: 11, color: glass.textSecondary },
-    meetTimeRow: {
+    // Prominent capsule pinned at the card's foot (kept compact so the card
+    // height barely moves — see the straggler banner's fixed top offset).
+    meetTimeBtn: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 6,
-      marginTop: 10,
+      justifyContent: 'center',
+      gap: 7,
+      height: 32,
+      borderRadius: 11,
+      marginTop: 12,
+      backgroundColor: glass.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
     },
-    meetTimeText: { fontSize: 12, color: glass.textSecondary },
+    meetTimeText: { fontSize: 13, fontWeight: '600', color: glass.textSecondary },
+    // Meet-time editor sheet: roomy, full-width controls (not the old cramped
+    // left-aligned chips).
+    meetEditorBody: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 40, gap: 14 },
+    meetPickerWrap: { alignItems: 'center', marginBottom: 4 },
+    meetSetBtn: {
+      height: 52,
+      borderRadius: 15,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: StyleSheet.hairlineWidth,
+    },
+    meetSetText: { fontSize: 17, fontWeight: '700', color: '#fff' },
+    meetClearBtn: {
+      height: 50,
+      borderRadius: 15,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: glass.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
+    },
+    meetClearText: { fontSize: 15, fontWeight: '600', color: glass.textSecondary },
     dots: { flexDirection: 'row', gap: 6, alignItems: 'center' },
     dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.35)' },
     dotActive: { width: 20, backgroundColor: accent },
@@ -2110,11 +2251,15 @@ const makeStyles = (accent: string) =>
       borderTopColor: 'rgba(255,255,255,0.08)',
     },
     selfSoloRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-    inviteRow: {
-      marginTop: 10,
-      paddingTop: 10,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: 'rgba(255,255,255,0.08)',
+    inviteMemberBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 7,
+      marginTop: 12,
+      paddingVertical: 11,
+      borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth,
     },
     selfControlLabel: { fontSize: 13, color: glass.textSecondary },
 
