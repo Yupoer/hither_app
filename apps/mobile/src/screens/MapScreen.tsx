@@ -79,7 +79,7 @@ import { ONBOARDING_STORAGE_KEY } from '../onboarding/sync';
 import { isDemoGroup } from '../api/demo';
 import { isVirtualMember } from '../api/virtualMates';
 import { confirmAction } from '../utils/confirm';
-import { logEvent } from '../utils/activityLog';
+import { logEvent, logError } from '../utils/activityLog';
 import { lightTap, mediumTap, selectionTick, heavyTap } from '../utils/haptics';
 import { AVATAR_EMOJI } from '../constants/avatars';
 import type { Coordinates, Destination, MemberLocation } from '../types';
@@ -443,7 +443,8 @@ export default function MapScreen({ route, navigation }: Props) {
       setSelectedIndex(destinations.length);
       mapRef.current?.centerOn(place.coordinates);
       refresh();
-    } catch {
+    } catch (e) {
+      logError('destination_add_failed', e, { source: 'search' });
       Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
     }
   }
@@ -479,6 +480,7 @@ export default function MapScreen({ route, navigation }: Props) {
   async function copyCode() {
     if (!group) return;
     lightTap();
+    logEvent('code_copy');
     await Clipboard.setStringAsync(group.inviteCode);
     setCodeCopied(true);
     setTimeout(() => setCodeCopied(false), 1500);
@@ -486,6 +488,7 @@ export default function MapScreen({ route, navigation }: Props) {
   async function shareCode() {
     if (!group) return;
     lightTap();
+    logEvent('code_share');
     await Share.share({ message: t('map.shareMsg', { code: group.inviteCode }) });
   }
 
@@ -507,20 +510,23 @@ export default function MapScreen({ route, navigation }: Props) {
     if (nickname && nickname !== user?.name) fields.nickname = nickname;
     if (profileAvatar && profileAvatar !== user?.avatar) fields.avatar = profileAvatar;
     if (!fields.nickname && !fields.avatar) return;
+    logEvent('profile_save', { changed: Object.keys(fields) });
     updateProfile(fields)
       .then(() => refresh())
-      .catch((e) =>
+      .catch((e) => {
+        logError('profile_save_failed', e);
         Alert.alert(
           t('profile.saveFailed'),
           e instanceof Error ? e.message : undefined,
-        ),
-      );
+        );
+      });
   }
 
   // --- Solo mode -------------------------------------------------------------
   async function toggleSolo(next: boolean) {
     if (!groupId) return;
     selectionTick();
+    logEvent('solo_toggle', { groupId, next });
     setSoloOverride(next);
     try {
       await setSolo(groupId, next);
@@ -528,6 +534,7 @@ export default function MapScreen({ route, navigation }: Props) {
       // reload refreshes `members` and clears the override above once it
       // matches — no need to force an extra fetch here.
     } catch (e) {
+      logError('solo_toggle_failed', e, { groupId, next });
       setSoloOverride(null);
       Alert.alert(t('solo.failed'), e instanceof Error ? e.message : undefined);
     }
@@ -540,28 +547,36 @@ export default function MapScreen({ route, navigation }: Props) {
 
   async function handleAcceptInvite(inviteId: string) {
     mediumTap();
+    logEvent('invite_accept', { inviteId });
     try {
       await acceptInvite(inviteId);
+      logEvent('invite_accept_ok', { inviteId });
       refresh();
     } catch (e) {
+      logError('invite_accept_failed', e, { inviteId });
       Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
     }
   }
   async function handleDeclineInvite(inviteId: string) {
     selectionTick();
+    logEvent('invite_decline', { inviteId });
     try {
       await declineInvite(inviteId);
     } catch (e) {
+      logError('invite_decline_failed', e, { inviteId });
       Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
     }
   }
 
   async function handleInvite(subgroupId: string, inviteeId: string) {
     mediumTap();
+    logEvent('invite_send', { subgroupId, inviteeId });
     try {
       await inviteToSubgroup(subgroupId, inviteeId);
+      logEvent('invite_send_ok', { subgroupId, inviteeId });
       Alert.alert(t('subgroup.inviteSent'));
     } catch (e) {
+      logError('invite_send_failed', e, { subgroupId, inviteeId });
       Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
     }
   }
@@ -571,23 +586,29 @@ export default function MapScreen({ route, navigation }: Props) {
   async function doSelfSplit() {
     if (!groupId) return;
     mediumTap();
+    logEvent('team_create', { groupId });
     try {
       await selfSplit(
         groupId,
         t('subgroup.selfSplitName', { name: user?.name ?? t('group.travelerFallback') }),
       );
+      logEvent('team_create_ok', { groupId });
       refresh();
     } catch (e) {
+      logError('team_create_failed', e, { groupId });
       Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
     }
   }
   async function doSelfMerge() {
     if (!groupId) return;
     selectionTick();
+    logEvent('team_leave', { groupId });
     try {
       await selfMerge(groupId);
+      logEvent('team_leave_ok', { groupId });
       refresh();
     } catch (e) {
+      logError('team_leave_failed', e, { groupId });
       Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
     }
   }
@@ -595,10 +616,12 @@ export default function MapScreen({ route, navigation }: Props) {
   const handleReorder = useCallback(
     async (orderedIds: string[]) => {
       if (!groupId) return;
+      logEvent('destination_reorder', { count: orderedIds.length });
       try {
         await reorderDestinations(groupId, orderedIds);
         refresh();
-      } catch {
+      } catch (e) {
+        logError('destination_reorder_failed', e);
         Alert.alert(t('settings.reorderFailed'));
         refresh();
       }
@@ -617,10 +640,12 @@ export default function MapScreen({ route, navigation }: Props) {
           destructive: true,
         },
         async () => {
+          logEvent('destination_delete', { id });
           try {
             await deleteDestination(groupId, id);
             refresh();
-          } catch {
+          } catch (e) {
+            logError('destination_delete_failed', e, { id });
             Alert.alert(t('settings.deleteFailed'));
             refresh();
           }
@@ -639,6 +664,7 @@ export default function MapScreen({ route, navigation }: Props) {
         destructive: true,
       },
       () => {
+        logEvent('group_leave', { groupId, isLeader });
         leaveGroup();
         navigation.reset({ index: 0, routes: [{ name: 'RoleSelect' }] });
       },
@@ -653,6 +679,7 @@ export default function MapScreen({ route, navigation }: Props) {
         destructive: true,
       },
       () => {
+        logEvent('sign_out');
         void signOut();
         navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
       },
@@ -703,9 +730,11 @@ export default function MapScreen({ route, navigation }: Props) {
   }
 
   async function resetPrefs() {
+    logEvent('reset_prefs');
     try {
       await saveOnboardingProfile({});
     } catch (e) {
+      logError('reset_prefs_failed', e);
       console.warn('[settings] resetPrefs saveOnboardingProfile failed', e);
     }
     await AsyncStorage.removeItem(ONBOARDING_STORAGE_KEY);
@@ -1388,7 +1417,10 @@ export default function MapScreen({ route, navigation }: Props) {
 
           <Pressable
             style={styles.settingSwitchRow}
-            onPress={heavyTap}
+            onPress={() => {
+              heavyTap();
+              logEvent('haptic_test');
+            }}
             accessibilityRole="button"
           >
             <View style={styles.settingSwitchText}>

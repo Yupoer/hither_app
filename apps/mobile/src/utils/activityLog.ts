@@ -45,6 +45,15 @@ export function logEvent(event: string, payload?: Record<string, unknown>): void
   void logEventAsync(event, payload);
 }
 
+/**
+ * Log the failure of an operation. Shorthand for the `catch` blocks that pair
+ * with an action log — captures the error message so a reported bug can be
+ * traced from the cloud `activity_logs` without any UI surface.
+ */
+export function logError(event: string, e: unknown, extra?: Record<string, unknown>): void {
+  logEvent(event, { ...extra, ok: false, error: e instanceof Error ? e.message : String(e) });
+}
+
 async function logEventAsync(event: string, payload?: Record<string, unknown>): Promise<void> {
   try {
     const { data } = await supabase.auth.getSession();

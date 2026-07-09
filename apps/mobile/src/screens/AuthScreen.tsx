@@ -20,7 +20,7 @@ import { useSession } from '../state/SessionContext';
 import { useTheme } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
 import { accentMix, glass } from '../glass';
-import { logEvent } from '../utils/activityLog';
+import { logEvent, logError } from '../utils/activityLog';
 import { mediumTap } from '../utils/haptics';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Auth'>;
@@ -72,6 +72,7 @@ export default function AuthScreen({ navigation, route }: Props) {
   }
 
   function handleAuthError(e: unknown) {
+    logError(isLeader ? 'group_create_failed' : 'group_join_failed', e);
     // Design: a rejected code highlights the code boxes.
     if (!isLeader) setCodeError(true);
     const msg = e instanceof Error ? e.message : t('auth.signInFailed');

@@ -15,6 +15,7 @@ import { useTranslation, type TranslationKey } from '../i18n';
 import { useTheme } from '../state/PreferencesContext';
 import { glass, accentMix } from '../glass';
 import { supabase } from '../api/supabase';
+import { logEvent, logError } from '../utils/activityLog';
 
 type Status = 'form' | 'sending' | 'sent' | 'error';
 
@@ -82,6 +83,7 @@ export default function FeedbackSheet({
   async function submit() {
     if (!description.trim()) return;
     setStatus('sending');
+    logEvent('feedback_submit', { category });
     try {
       const { data } = await supabase.auth.getSession();
       const userId = data.session?.user?.id;
@@ -99,9 +101,11 @@ export default function FeedbackSheet({
         },
       });
       if (error) throw error;
+      logEvent('feedback_submit_ok', { category });
       setStatus('sent');
       setTimeout(handleClose, 1000);
-    } catch {
+    } catch (e) {
+      logError('feedback_submit_failed', e, { category });
       setStatus('error');
     }
   }
