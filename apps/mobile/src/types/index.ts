@@ -123,6 +123,8 @@ export interface Destination {
   coordinates: Coordinates;
   /** ISO-8601 target time to gather, set by the leader. Optional. */
   meetAt?: string;
+  /** Owning subgroup's list; undefined = the main group's itinerary. */
+  subgroupId?: string;
 }
 
 /** Aggregated live view of a group, consumed by the Map screen. */

@@ -130,7 +130,19 @@ export default function MapScreen({ route, navigation }: Props) {
   const carouselRef = useRef<ScrollView | null>(null);
 
   const members = state?.members ?? [];
-  const destinations: Destination[] = state?.destinations ?? [];
+  // My current scope: undefined = main group's itinerary, a subgroup id =
+  // that subgroup's own itinerary. Everything itinerary-related below reads
+  // only from this scope's list (carousel, reorder, nav target, meet-time,
+  // straggler nav target) — filtering once here means nothing downstream
+  // needs its own leader/subgroup branching to stay scoped correctly.
+  const me = members.find((m) => m.userId === user?.id);
+  const myScopeId = me?.subgroupId;
+  const destinations: Destination[] = (state?.destinations ?? []).filter(
+    (d) => (d.subgroupId ?? undefined) === (myScopeId ?? undefined),
+  );
+  // Main-group scope: leader-only (unchanged). Subgroup scope: everyone in
+  // the subgroup may add/reorder/delete its stops — no sub-leader.
+  const canEditItinerary = isLeader || myScopeId != null;
 
   // --- Sheet / overlay / island UI state -----------------------------------
   // Measured height of the sheet's pinned header (grabber + search row) —
@@ -168,7 +180,7 @@ export default function MapScreen({ route, navigation }: Props) {
   }
 
   function openMeetTimePicker(dest: Destination) {
-    if (!isLeader) return;
+    if (!canEditItinerary) return;
     const initial = dest.meetAt ? new Date(dest.meetAt) : new Date();
     if (Platform.OS === 'android') {
       DateTimePickerAndroid.open({
@@ -392,11 +404,15 @@ export default function MapScreen({ route, navigation }: Props) {
   async function handlePickDestination(place: PlaceResult) {
     if (!groupId) return;
     try {
-      await addDestination(groupId, {
-        title: place.name,
-        address: place.address,
-        coordinates: place.coordinates,
-      });
+      await addDestination(
+        groupId,
+        {
+          title: place.name,
+          address: place.address,
+          coordinates: place.coordinates,
+        },
+        myScopeId,
+      );
       setSelectedIndex(destinations.length);
       mapRef.current?.centerOn(place.coordinates);
       refresh();
@@ -950,6 +966,11 @@ export default function MapScreen({ route, navigation }: Props) {
                         <Text style={styles.cardTitle} numberOfLines={1}>
                           {dest.title}
                         </Text>
+                        {myScopeId != null && (
+                          <Text style={{ color: glass.textSecondary, fontSize: 11 }}>
+                            {t('subgroup.itineraryBadge')}
+                          </Text>
+                        )}
                       </View>
                       {/* Pagination — lives inside the card now that the
                           carousel sits at the screen's top edge, where there's
@@ -996,11 +1017,11 @@ export default function MapScreen({ route, navigation }: Props) {
                         </Text>
                       </View>
                     </View>
-                    {(meetLabel || isLeader) && (
+                    {(meetLabel || canEditItinerary) && (
                       <Pressable
                         style={styles.meetTimeRow}
                         onPress={() => openMeetTimePicker(dest)}
-                        disabled={!isLeader}
+                        disabled={!canEditItinerary}
                         accessibilityRole="button"
                         accessibilityLabel={t('meetTime.set')}
                       >
@@ -1063,7 +1084,7 @@ export default function MapScreen({ route, navigation }: Props) {
           <View style={styles.searchRow}>
             <Pressable
               style={styles.searchField}
-              onPress={() => (isLeader ? setSearchVisible(true) : undefined)}
+              onPress={() => (canEditItinerary ? setSearchVisible(true) : undefined)}
               accessibilityRole="button"
               accessibilityLabel={t('map.searchA11y')}
             >
@@ -1212,14 +1233,14 @@ export default function MapScreen({ route, navigation }: Props) {
           <Text style={styles.overlayHint}>{t('map.routeHint')}</Text>
           <DestinationReorderList
             destinations={destinations}
-            canReorder={!!isLeader}
+            canReorder={canEditItinerary}
             onReorder={handleReorder}
-            onDelete={isLeader ? handleDelete : undefined}
+            onDelete={canEditItinerary ? handleDelete : undefined}
             colors={dark}
             emptyLabel={t('settings.noDestinations')}
             onDragActiveChange={(active) => setRouteScrollEnabled(!active)}
           />
-          {isLeader && (
+          {canEditItinerary && (
             <Pressable
               style={styles.addStop}
               onPress={() => {

@@ -197,6 +197,7 @@ describe('addDestination', () => {
     Object.assign(obj, {
       select: self,
       eq: self,
+      is: self,
       order: self,
       limit: self,
       maybeSingle: () =>
@@ -221,12 +222,28 @@ describe('addDestination', () => {
 
     expect(itinerary.insert).toHaveBeenCalledWith({
       group_id: 'g1',
+      subgroup_id: null,
       title: '台北101',
       address: '台北市信義區',
       latitude: 25.034,
       longitude: 121.564,
       position: 3, // 2 + 1, after the current last stop
     });
+  });
+
+  it('with a subgroupId: inserts subgroup_id and scopes max-position to that subgroup', async () => {
+    const itinerary = itineraryTable(1, { error: null });
+    mockedFrom.mockImplementation(() => itinerary);
+
+    await addDestination(
+      'g1',
+      { title: '小隊集合點', coordinates: { latitude: 1, longitude: 2 } },
+      'sg1',
+    );
+
+    expect(itinerary.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ subgroup_id: 'sg1', position: 2 }),
+    );
   });
 
   it('uses position 0 when the itinerary is empty', async () => {
