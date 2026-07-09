@@ -87,3 +87,57 @@ export async function scheduleLocalNotification(
     trigger: null,
   });
 }
+
+/**
+ * Schedule a local notification to fire AT a future date (OS-scheduled, so it
+ * fires even if the app is backgrounded or closed — the OS also vibrates per
+ * the user's notification settings). Returns the id, or null if the date is
+ * already past / permission was denied. Used for gathering-point meet times.
+ */
+export async function scheduleLocalNotificationAt(
+  input: LocalNotificationInput,
+  date: Date,
+): Promise<string | null> {
+  if (date.getTime() <= Date.now()) {
+    return null;
+  }
+  try {
+    if (!(await requestPermission())) {
+      return null;
+    }
+    return await Notifications.scheduleNotificationAsync({
+      content: {
+        title: input.title,
+        body: input.body,
+        data: input.data ?? {},
+        sound: true,
+      },
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date },
+    });
+  } catch {
+    console.warn('[native/notifications] scheduleLocalNotificationAt failed');
+    return null;
+  }
+}
+
+/** Cancel a previously-scheduled local notification. Safe to call with a stale id. */
+export async function cancelScheduledNotification(id: string): Promise<void> {
+  try {
+    await Notifications.cancelScheduledNotificationAsync(id);
+  } catch {
+    // already fired / unknown id — nothing to do
+  }
+}
+
+/**
+ * Subscribe to notifications arriving while the app is foregrounded. Returns an
+ * unsubscribe function. Lets the UI add an in-app buzz on top of the OS banner.
+ */
+export function addForegroundListener(
+  handler: (data: Record<string, unknown>) => void,
+): () => void {
+  const sub = Notifications.addNotificationReceivedListener((n) => {
+    handler((n.request.content.data ?? {}) as Record<string, unknown>);
+  });
+  return () => sub.remove();
+}

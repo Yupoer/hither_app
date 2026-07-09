@@ -60,7 +60,7 @@ import {
   walkingEtaSeconds,
 } from '../utils/geo';
 import { minutesUntil } from '../utils/meetTime';
-import { liquidGlass, location, type MapRegion, type PlaceResult } from '../native';
+import { liquidGlass, location, notifications, type MapRegion, type PlaceResult } from '../native';
 import {
   addDestination,
   deleteDestination,
@@ -82,7 +82,7 @@ import { isDemoGroup } from '../api/demo';
 import { isVirtualMember } from '../api/virtualMates';
 import { confirmAction } from '../utils/confirm';
 import { logEvent, logError } from '../utils/activityLog';
-import { lightTap, mediumTap, selectionTick } from '../utils/haptics';
+import { lightTap, mediumTap, selectionTick, alertBuzz } from '../utils/haptics';
 import { AVATAR_EMOJI } from '../constants/avatars';
 import type { Coordinates, Destination, MemberLocation } from '../types';
 import type { KmlPlacemark } from '../utils/kml';
@@ -203,6 +203,51 @@ export default function MapScreen({ route, navigation }: Props) {
     const id = setInterval(() => setNowTick(new Date()), 30_000);
     return () => clearInterval(id);
   }, [hasMeetTimes]);
+
+  // The soonest gathering point whose meet time is still ahead — the one worth
+  // scheduling an "it's time" alert for.
+  const nextMeet = useMemo(() => {
+    const now = Date.now();
+    return (
+      destinations
+        .filter((d) => d.meetAt && new Date(d.meetAt as string).getTime() > now)
+        .sort(
+          (a, b) =>
+            new Date(a.meetAt as string).getTime() -
+            new Date(b.meetAt as string).getTime(),
+        )[0] ?? null
+    );
+  }, [destinations]);
+
+  // Fire a local notification + buzz when that meet time arrives. OS-scheduled,
+  // so it shows (and vibrates, per the user's notification settings) even from
+  // the lock screen; the foreground listener adds an in-app buzz on top.
+  useEffect(() => {
+    if (!nextMeet?.meetAt) return;
+    let id: string | null = null;
+    let cancelled = false;
+    void notifications
+      .scheduleLocalNotificationAt(
+        {
+          title: t('meetTime.notifyTitle'),
+          body: t('meetTime.notifyBody', { title: nextMeet.title }),
+          data: { kind: 'meetTime', destinationId: nextMeet.id },
+        },
+        new Date(nextMeet.meetAt as string),
+      )
+      .then((nid) => {
+        if (cancelled && nid) void notifications.cancelScheduledNotification(nid);
+        else id = nid;
+      });
+    const off = notifications.addForegroundListener((data) => {
+      if (data.kind === 'meetTime') alertBuzz();
+    });
+    return () => {
+      cancelled = true;
+      if (id) void notifications.cancelScheduledNotification(id);
+      off();
+    };
+  }, [nextMeet?.id, nextMeet?.meetAt, t]);
 
   function persistMeetTime(destinationId: string, value: Date | null) {
     setDestinationMeetTime(destinationId, value ? value.toISOString() : null)

@@ -1,6 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 import {
   Animated,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   PanResponder,
   Pressable,
   StyleSheet,
@@ -44,9 +46,20 @@ export default function OverlaySheet({
   // Live finger offset while drag-dismissing; added on top of the show/hide
   // translate. Reset to 0 every time the sheet re-opens (see effect below).
   const dragY = useRef(new Animated.Value(0)).current;
+  // Whether the inner ScrollView is scrolled to its top — gates the
+  // content-area pull-to-dismiss so it only fires when there's nothing above.
+  const atTop = useRef(true);
+  // Latest height/onClose for the (once-created) pan responders to read.
+  const heightRef = useRef(height);
+  heightRef.current = height;
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
-    if (visible) dragY.setValue(0);
+    if (visible) {
+      dragY.setValue(0);
+      atTop.current = true;
+    }
     Animated.timing(t, {
       toValue: visible ? 1 : 0,
       duration: 320,
@@ -54,24 +67,25 @@ export default function OverlaySheet({
     }).start();
   }, [visible, t, dragY]);
 
-  // Drag-to-dismiss on the grabber/header region. Only claims clearly-downward
-  // drags, so horizontal taps and the header's "Done" button still work.
-  const pan = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_evt, g) =>
-        g.dy > 4 && Math.abs(g.dy) > Math.abs(g.dx),
-      onPanResponderMove: (_evt, g) => {
+  // Two drag-to-dismiss responders sharing one release rule: one on the
+  // grabber/header (drags anywhere on it), one on the body that only claims a
+  // downward drag when the content is already at the top — matching the search
+  // sheet, so "finger not on the grabber" still dismisses once you can't scroll
+  // up any further.
+  const { grabberPan, bodyPan } = useRef(
+    (() => {
+      const onMove = (_evt: unknown, g: { dy: number }) => {
         if (g.dy > 0) dragY.setValue(g.dy);
-      },
-      onPanResponderRelease: (_evt, g) => {
+      };
+      const onRelease = (_evt: unknown, g: { dy: number; vy: number }) => {
         if (g.dy > DISMISS_TRAVEL || g.vy > DISMISS_VELOCITY) {
           // Slide the panel the rest of the way out, THEN unmount-close, so
           // there's no flash back to the top edge before it disappears.
           Animated.timing(dragY, {
-            toValue: height,
+            toValue: heightRef.current,
             duration: 160,
             useNativeDriver: true,
-          }).start(() => onClose());
+          }).start(() => onCloseRef.current());
         } else {
           Animated.spring(dragY, {
             toValue: 0,
@@ -79,9 +93,39 @@ export default function OverlaySheet({
             bounciness: 0,
           }).start();
         }
-      },
-    }),
+      };
+      return {
+        grabberPan: PanResponder.create({
+          onMoveShouldSetPanResponder: (_evt, g) =>
+            g.dy > 4 && Math.abs(g.dy) > Math.abs(g.dx),
+          onPanResponderMove: onMove,
+          onPanResponderRelease: onRelease,
+        }),
+        bodyPan: PanResponder.create({
+          onMoveShouldSetPanResponder: (_evt, g) =>
+            atTop.current && g.dy > 8 && g.dy > Math.abs(g.dx),
+          onPanResponderMove: onMove,
+          onPanResponderRelease: onRelease,
+        }),
+      };
+    })(),
   ).current;
+
+  // Clone the child (each caller passes a ScrollView) to track whether it's at
+  // the top, without every caller having to wire this up.
+  const trackedChild = React.isValidElement(children)
+    ? React.cloneElement(children as React.ReactElement<Record<string, unknown>>, {
+        scrollEventThrottle: 16,
+        onScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+          atTop.current = e.nativeEvent.contentOffset.y <= 0;
+          (
+            children as React.ReactElement<{
+              onScroll?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
+            }>
+          ).props.onScroll?.(e);
+        },
+      })
+    : children;
 
   const translateY = Animated.add(
     t.interpolate({ inputRange: [0, 1], outputRange: [height, 0] }),
@@ -110,7 +154,7 @@ export default function OverlaySheet({
         ]}
       >
         <liquidGlass.GlassView tintColor={glass.overlay} style={StyleSheet.absoluteFill} />
-        <View {...pan.panHandlers}>
+        <View {...grabberPan.panHandlers}>
           <View style={styles.grabZone}>
             <View style={styles.grabber} />
           </View>
@@ -127,7 +171,9 @@ export default function OverlaySheet({
             </Pressable>
           </View>
         </View>
-        <View style={styles.body}>{children}</View>
+        <View style={styles.body} {...bodyPan.panHandlers}>
+          {trackedChild}
+        </View>
       </Animated.View>
     </View>
   );

@@ -31,3 +31,13 @@ export function selectionTick(): void {
     // no-op: unsupported platform (e.g. web)
   }
 }
+
+/** Stronger notification-style buzz — for an alert the user should feel (e.g. a
+ *  gathering-point meet time arriving), not a routine tap. */
+export function alertBuzz(): void {
+  try {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  } catch {
+    // no-op: unsupported platform (e.g. web)
+  }
+}
