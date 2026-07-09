@@ -11,6 +11,7 @@ import { StatusBar } from 'expo-status-bar';
 import RootNavigator from './src/navigation/RootNavigator';
 import OnboardingScreen from './src/onboarding/OnboardingScreen';
 import { readOnboardingState } from './src/onboarding/sync';
+import { installGlobalErrorLogger } from './src/utils/activityLog';
 import { SessionProvider, useSession } from './src/state/SessionContext';
 import { usePushRegistration } from './src/state/usePushRegistration';
 import { useGroupNotifications } from './src/state/useGroupNotifications';
@@ -101,6 +102,8 @@ function ThemedNavigation() {
     </NavigationContainer>
   );
 }
+
+installGlobalErrorLogger();
 
 export default function App() {
   return (

@@ -4,6 +4,7 @@ import { nextStep, prevStep } from './flow';
 import { writeOnboardingCompleted } from './sync';
 import type { OnboardingAnswers, StepId, StepProps } from './types';
 import { selectionTick } from '../utils/haptics';
+import { logEvent } from '../utils/activityLog';
 
 import IntroStep from './steps/IntroStep';
 import ThemeStep from './steps/ThemeStep';
@@ -46,6 +47,7 @@ export default function OnboardingScreen({ onDone }: { onDone: () => void }) {
 
   const finish = useCallback((finalAnswers: OnboardingAnswers) => {
     void writeOnboardingCompleted(finalAnswers);
+    logEvent('onboarding_complete', { role: finalAnswers.role, mascot: finalAnswers.mascot });
     onDone();
   }, [onDone]);
 
@@ -58,6 +60,7 @@ export default function OnboardingScreen({ onDone }: { onDone: () => void }) {
         finish(merged);
         return;
       }
+      logEvent('onboarding_step', { from: step, to: next });
       selectionTick();
       setStep(next);
     },
@@ -69,8 +72,10 @@ export default function OnboardingScreen({ onDone }: { onDone: () => void }) {
   }, [answers]);
 
   const handleSkip = useCallback(() => {
-    finish(answers);
-  }, [answers, finish]);
+    logEvent('onboarding_skip', { atStep: step });
+    void writeOnboardingCompleted(answers);
+    onDone();
+  }, [answers, step, onDone]);
 
   const Step = STEP_RENDERERS[step];
   return (

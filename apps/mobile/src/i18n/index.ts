@@ -377,6 +377,16 @@ const zh = {
   'kml.importing': '匯入中 {done}/{total}',
   'kml.done': '匯入完成',
   'kml.retry': '重試',
+  'feedback.title': '回報問題',
+  'feedback.context_map': '定位與地圖',
+  'feedback.context_itinerary': '行程編輯與排序',
+  'feedback.context_kml': 'KML 匯入',
+  'feedback.context_settings': '系統與帳號',
+  'feedback.placeholder': '描述你遇到的問題…',
+  'feedback.send': '送出回報',
+  'feedback.sent': '已送出，謝謝回報',
+  'feedback.failed': '送出失敗，請稍後再試',
+  'feedback.screenshotNote': '送出時會附上目前畫面截圖與裝置資訊',
 } as const;
 
 const en: Record<keyof typeof zh, string> = {
@@ -723,6 +733,16 @@ const en: Record<keyof typeof zh, string> = {
   'kml.importing': 'Importing {done}/{total}',
   'kml.done': 'Import complete',
   'kml.retry': 'Retry',
+  'feedback.title': 'Report a problem',
+  'feedback.context_map': 'Location & map',
+  'feedback.context_itinerary': 'Itinerary editing & ordering',
+  'feedback.context_kml': 'KML import',
+  'feedback.context_settings': 'System & account',
+  'feedback.placeholder': 'Describe what went wrong…',
+  'feedback.send': 'Send report',
+  'feedback.sent': "Sent — thanks for the report",
+  'feedback.failed': "Couldn't send — try again later",
+  'feedback.screenshotNote': 'A screenshot of the current screen and device info are attached',
 };
 
 export const translations: Record<Language, Dict> = { zh, en };

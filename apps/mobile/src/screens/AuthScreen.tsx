@@ -20,6 +20,7 @@ import { useSession } from '../state/SessionContext';
 import { useTheme } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
 import { accentMix, glass } from '../glass';
+import { logEvent } from '../utils/activityLog';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Auth'>;
 
@@ -63,6 +64,7 @@ export default function AuthScreen({ navigation, route }: Props) {
     const group = isLeader
       ? await createGroup(groupName.trim())
       : await joinGroup(code.trim());
+    logEvent(isLeader ? 'group_create' : 'group_join');
     setMembership({ group, role });
     navigation.replace('Map', { groupId: group.id });
   }
