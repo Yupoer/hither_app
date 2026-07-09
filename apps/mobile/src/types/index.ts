@@ -44,6 +44,10 @@ export interface Group {
   createdAt?: string;
   /** Leader-controlled journey state; defaults to 'paused'. */
   journeyStatus: JourneyStatus;
+  /** Straggler alerts on/off (leader-controlled). */
+  stragglerAlerts: boolean;
+  /** Distance in metres beyond which a member counts as a straggler. */
+  stragglerThresholdM: number;
 }
 
 /** Role within a group. */

@@ -19,6 +19,7 @@ import {
   setNotificationPreferences,
   setJourneyStatus,
   setDestinationMeetTime,
+  setStragglerConfig,
 } from '../api/client';
 import { supabase } from '../api/supabase';
 
@@ -56,6 +57,8 @@ describe('pure mappers (snake_case row -> camelCase type)', () => {
       createdBy: 'u1',
       createdAt: '2026-01-01T00:00:00Z',
       journeyStatus: 'going',
+      stragglerAlerts: true,
+      stragglerThresholdM: 500,
     });
   });
 
@@ -350,6 +353,17 @@ describe('notifications, commands & journey', () => {
 
     await setJourneyStatus('g1', 'going');
     expect(update).toHaveBeenCalledWith({ journey_status: 'going' });
+  });
+
+  it('setStragglerConfig updates groups.straggler_alerts and threshold', async () => {
+    const update = jest.fn(() => ({ eq: () => Promise.resolve({ error: null }) }));
+    mockedFrom.mockImplementation(() => ({ update }));
+
+    await setStragglerConfig('g1', false, 1000);
+    expect(update).toHaveBeenCalledWith({
+      straggler_alerts: false,
+      straggler_threshold_m: 1000,
+    });
   });
 
   it('setDestinationMeetTime updates itinerary_items.meet_at', async () => {

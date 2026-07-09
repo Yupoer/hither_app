@@ -328,6 +328,14 @@ const zh = {
   'onboarding.c3.meetReminders': '集合提醒',
   'onboarding.c3.sharedItinerary': '行程共編',
   'onboarding.c3.tripRecap': '旅程回顧',
+
+  // Straggler alerts
+  'straggler.section': '脫隊示警',
+  'straggler.banner': '{name} 已脫隊 {distance}',
+  'straggler.bannerMore': '等 {n} 人',
+  'straggler.selfWarning': '你已離隊伍 {distance}，注意跟上',
+  'straggler.freeNote': '免費版預設 500 公尺',
+  'straggler.threshold': '警示距離',
 } as const;
 
 const en: Record<keyof typeof zh, string> = {
@@ -625,6 +633,14 @@ const en: Record<keyof typeof zh, string> = {
   'onboarding.c3.meetReminders': 'Meet-up reminders',
   'onboarding.c3.sharedItinerary': 'Shared itinerary',
   'onboarding.c3.tripRecap': 'Trip recap',
+
+  // Straggler alerts
+  'straggler.section': 'Straggler alerts',
+  'straggler.banner': '{name} fell behind ({distance})',
+  'straggler.bannerMore': 'and {n} more',
+  'straggler.selfWarning': "You're {distance} from the flock — catch up!",
+  'straggler.freeNote': 'Free plan defaults to 500 m',
+  'straggler.threshold': 'Alert distance',
 };
 
 export const translations: Record<Language, Dict> = { zh, en };

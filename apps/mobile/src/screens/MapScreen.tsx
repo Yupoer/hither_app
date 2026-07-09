@@ -47,6 +47,7 @@ import { useSession } from '../state/SessionContext';
 import { usePreferences, useTheme, type Language } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
 import { useGroupState } from '../state/useGroupState';
+import { useStragglerAlerts } from '../state/useStragglerAlerts';
 import { useSubgroupInvites } from '../state/useSubgroupInvites';
 import { useLiveActivity } from '../state/useLiveActivity';
 import {
@@ -67,6 +68,7 @@ import {
   setDestinationMeetTime,
   setJourneyStatus,
   setSolo,
+  setStragglerConfig,
   updateMyLocation,
 } from '../api/client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -82,6 +84,9 @@ import { glass, accentMix, memberColor } from '../glass';
 type Props = NativeStackScreenProps<RootStackParamList, 'Map'>;
 
 const ARRIVAL_RADIUS_M = 30;
+
+/** Preset straggler-alert distance chips shown in settings. */
+const STRAGGLER_THRESHOLD_OPTIONS = [300, 500, 1000, 2000];
 
 /** Nominal walk that reads as ~"just started" for the progress bar. */
 const PROGRESS_REF_M = 1500;
@@ -263,6 +268,17 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // The point the whole UI (carousel highlight, flock ETAs) refers to.
   const activePoint = navTarget ?? selectedDestination;
+
+  // --- Straggler alerts ------------------------------------------------------
+  const { stragglers } = useStragglerAlerts(state, navTarget?.coordinates);
+  const [stragglerBannerCollapsed, setStragglerBannerCollapsed] = useState(false);
+  const lastStragglerIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const ids = new Set(stragglers.map((s) => s.userId));
+    const grew = [...ids].some((id) => !lastStragglerIdsRef.current.has(id));
+    if (grew) setStragglerBannerCollapsed(false);
+    lastStragglerIdsRef.current = ids;
+  }, [stragglers]);
 
   const numericDistance =
     fromCoords && navTarget ? distanceMeters(fromCoords, navTarget.coordinates) : undefined;
@@ -626,6 +642,13 @@ export default function MapScreen({ route, navigation }: Props) {
     }
     await AsyncStorage.removeItem(ONBOARDING_STORAGE_KEY);
     Alert.alert(t('settings.resetPrefs'), t('settings.resetPrefsDone'));
+  }
+
+  function persistStragglerConfig(enabled: boolean, thresholdM: number) {
+    if (!groupId) return;
+    setStragglerConfig(groupId, enabled, thresholdM)
+      .then(() => refresh())
+      .catch(() => Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg')));
   }
 
   // --- Derived view models --------------------------------------------------
@@ -993,6 +1016,39 @@ export default function MapScreen({ route, navigation }: Props) {
         </Animated.View>
       )}
 
+      {/* Straggler alert banner — sits below the carousel/top pill, below its
+          zIndex so it never fights the carousel's own touches. */}
+      {group?.stragglerAlerts && stragglers.length > 0 && !stragglerBannerCollapsed && (
+        <Animated.View
+          style={[
+            styles.stragglerBanner,
+            { top: insets.top + 8 + (destinations.length > 0 ? 190 : 96) },
+            chromeOpacityStyle,
+          ]}
+          pointerEvents={atFull ? 'none' : 'box-none'}
+        >
+          <Pressable
+            style={styles.stragglerCard}
+            onPress={() => setStragglerBannerCollapsed(true)}
+            accessibilityRole="button"
+          >
+            {stragglers.slice(0, 2).map((s) => (
+              <Text key={s.userId} style={styles.stragglerText} numberOfLines={1}>
+                {t(
+                  s.userId === user?.id ? 'straggler.selfWarning' : 'straggler.banner',
+                  { name: s.name, distance: formatDistance(s.distanceM) },
+                )}
+              </Text>
+            ))}
+            {stragglers.length > 2 && (
+              <Text style={styles.stragglerMore}>
+                {t('straggler.bannerMore', { n: stragglers.length - 2 })}
+              </Text>
+            )}
+          </Pressable>
+        </Animated.View>
+      )}
+
       {/* The pull-up sheet. */}
       <BottomSheet
         height={heightSV}
@@ -1255,6 +1311,33 @@ export default function MapScreen({ route, navigation }: Props) {
             <Text style={styles.overlayHint}>
               {t('account.signedInAs', { email: user?.email ?? '' })}
             </Text>
+          )}
+
+          {isLeader && group && (
+            <>
+              <Text style={styles.sectionLabel}>{t('straggler.section')}</Text>
+              <View style={styles.settingSwitchRow}>
+                <View style={styles.settingSwitchText}>
+                  <Text style={styles.settingSwitchLabel}>{t('straggler.section')}</Text>
+                </View>
+                <Switch
+                  value={group.stragglerAlerts}
+                  onValueChange={(v) => persistStragglerConfig(v, group.stragglerThresholdM)}
+                  trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
+                  thumbColor="#fff"
+                />
+              </View>
+              <Segmented
+                accent={accent}
+                options={STRAGGLER_THRESHOLD_OPTIONS.map((m) => ({
+                  key: String(m),
+                  label: formatDistance(m),
+                }))}
+                value={String(group.stragglerThresholdM)}
+                onChange={(v) => persistStragglerConfig(group.stragglerAlerts, Number(v))}
+              />
+              <Text style={styles.overlayHint}>{t('straggler.freeNote')}</Text>
+            </>
           )}
 
           <Pressable style={styles.dangerBtn} onPress={confirmResetPrefs} accessibilityRole="button">
@@ -1550,6 +1633,18 @@ const makeStyles = (accent: string) =>
     recenterDivider: { height: StyleSheet.hairlineWidth, backgroundColor: glass.hairlineStrong },
 
     carouselWrap: { position: 'absolute', left: 0, right: 0, zIndex: 58 },
+    stragglerBanner: { position: 'absolute', left: 14, right: 14, zIndex: 50 },
+    stragglerCard: {
+      backgroundColor: 'rgba(197,58,68,0.28)',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.danger,
+      borderRadius: 16,
+      paddingVertical: 10,
+      paddingHorizontal: 14,
+      gap: 2,
+    },
+    stragglerText: { fontSize: 13.5, fontWeight: '600', color: '#fff' },
+    stragglerMore: { fontSize: 12, color: glass.textSecondary, marginTop: 2 },
     card: {
       borderRadius: 22,
       overflow: 'hidden',

@@ -54,6 +54,10 @@ interface GroupRow {
   created_by: string | null;
   created_at: string | null;
   journey_status: JourneyStatus | null;
+  /** Optional — absent until the straggler_alerts migration is applied. */
+  straggler_alerts?: boolean | null;
+  /** Optional — absent until the straggler_alerts migration is applied. */
+  straggler_threshold_m?: number | null;
 }
 
 interface MembershipRow {
@@ -127,6 +131,8 @@ export function mapGroup(row: GroupRow): Group {
     createdBy: row.created_by ?? '',
     createdAt: row.created_at ?? new Date().toISOString(),
     journeyStatus: row.journey_status ?? 'paused',
+    stragglerAlerts: row.straggler_alerts ?? true,
+    stragglerThresholdM: row.straggler_threshold_m ?? 500,
   };
 }
 
@@ -829,6 +835,23 @@ export async function setJourneyStatus(
   const { error } = await supabase
     .from('groups')
     .update({ journey_status: status })
+    .eq('id', groupId);
+  orThrow(error);
+}
+
+/**
+ * Set the group's straggler-alert config (on/off + distance threshold in
+ * metres). Leader-only — `groups` UPDATE is gated to leaders by RLS, so a
+ * follower's call rejects with a 42501.
+ */
+export async function setStragglerConfig(
+  groupId: string,
+  enabled: boolean,
+  thresholdM: number,
+): Promise<void> {
+  const { error } = await supabase
+    .from('groups')
+    .update({ straggler_alerts: enabled, straggler_threshold_m: thresholdM })
     .eq('id', groupId);
   orThrow(error);
 }

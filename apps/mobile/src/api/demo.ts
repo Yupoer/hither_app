@@ -34,6 +34,8 @@ const state: GroupState = {
     createdBy: 'demo-me',
     createdAt: new Date().toISOString(),
     journeyStatus: 'paused',
+    stragglerAlerts: true,
+    stragglerThresholdM: 500,
   },
   members: [
     { userId: 'demo-me', name: '我', role: 'leader', coordinates: BASE },
