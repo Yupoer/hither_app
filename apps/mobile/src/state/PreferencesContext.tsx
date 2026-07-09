@@ -30,14 +30,18 @@ export const DEFAULT_LANGUAGE: Language = 'zh';
 
 const LANGUAGE_KEY = 'pref.language';
 const THEME_KEY = 'pref.theme';
+const POWER_SAVER_KEY = 'pref.powerSaver';
 
 interface PreferencesValue {
   language: Language;
   themeName: ThemeName;
+  /** Battery-saver location tracking: coarser fixes, slower cadence. */
+  powerSaver: boolean;
   /** True once the persisted preferences have been loaded from storage. */
   ready: boolean;
   setLanguage: (language: Language) => void;
   setThemeName: (theme: ThemeName) => void;
+  setPowerSaver: (on: boolean) => void;
 }
 
 const PreferencesContext = createContext<PreferencesValue | undefined>(undefined);
@@ -53,6 +57,7 @@ function isThemeName(value: string | null): value is ThemeName {
 export function PreferencesProvider({ children }: { children: React.ReactNode }) {
   const [language, setLanguageState] = useState<Language>(DEFAULT_LANGUAGE);
   const [themeName, setThemeNameState] = useState<ThemeName>(DEFAULT_THEME);
+  const [powerSaver, setPowerSaverState] = useState(false);
   const [ready, setReady] = useState(false);
 
   // Restore persisted preferences on launch.
@@ -60,13 +65,15 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     let active = true;
     (async () => {
       try {
-        const [storedLang, storedTheme] = await AsyncStorage.multiGet([
+        const [storedLang, storedTheme, storedSaver] = await AsyncStorage.multiGet([
           LANGUAGE_KEY,
           THEME_KEY,
+          POWER_SAVER_KEY,
         ]);
         if (!active) return;
         if (isLanguage(storedLang[1])) setLanguageState(storedLang[1]);
         if (isThemeName(storedTheme[1])) setThemeNameState(storedTheme[1]);
+        if (storedSaver[1] === 'true') setPowerSaverState(true);
       } finally {
         if (active) setReady(true);
       }
@@ -86,9 +93,22 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     void AsyncStorage.setItem(THEME_KEY, next);
   }, []);
 
+  const setPowerSaver = useCallback((on: boolean) => {
+    setPowerSaverState(on);
+    void AsyncStorage.setItem(POWER_SAVER_KEY, on ? 'true' : 'false');
+  }, []);
+
   const value = useMemo<PreferencesValue>(
-    () => ({ language, themeName, ready, setLanguage, setThemeName }),
-    [language, themeName, ready, setLanguage, setThemeName],
+    () => ({
+      language,
+      themeName,
+      powerSaver,
+      ready,
+      setLanguage,
+      setThemeName,
+      setPowerSaver,
+    }),
+    [language, themeName, powerSaver, ready, setLanguage, setThemeName, setPowerSaver],
   );
 
   return (

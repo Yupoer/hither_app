@@ -88,3 +88,46 @@ export async function getCurrentLocation(): Promise<LocationSample | null> {
     return null;
   }
 }
+
+/**
+ * Continuous tracking presets. `normal` keeps teammates' dots moving in near
+ * real time; `saver` trades freshness/precision for battery — coarser fixes,
+ * bigger move threshold, slower cadence.
+ */
+const WATCH_PROFILES = {
+  normal: {
+    accuracy: Location.Accuracy.High,
+    distanceInterval: 10,
+    timeInterval: 5000,
+  },
+  saver: {
+    accuracy: Location.Accuracy.Balanced,
+    distanceInterval: 50,
+    timeInterval: 30000,
+  },
+} as const;
+
+/**
+ * Stream foreground position updates until the returned unsubscribe is called.
+ * Returns a no-op unsubscribe if permission is denied, so callers can start it
+ * unconditionally. Foreground only — background tracking is the native
+ * module's job (Phase B). `powerSaver` picks the saver profile above.
+ */
+export async function watchLocation(
+  onSample: (sample: LocationSample) => void,
+  powerSaver: boolean,
+): Promise<() => void> {
+  const granted = await requestPermission();
+  if (!granted) {
+    return () => {};
+  }
+  try {
+    const sub = await Location.watchPositionAsync(
+      powerSaver ? WATCH_PROFILES.saver : WATCH_PROFILES.normal,
+      (position) => onSample(toSample(position)),
+    );
+    return () => sub.remove();
+  } catch {
+    return () => {};
+  }
+}

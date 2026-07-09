@@ -14,6 +14,7 @@ import {
   updateProfile as updateProfileApi,
 } from '../api/client';
 import type { Group, MemberRole, User } from '../types';
+import { avatarForUser } from '../constants/avatars';
 
 // Dismisses a leftover auth browser tab if one is still open on launch.
 WebBrowser.maybeCompleteAuthSession();
@@ -191,12 +192,15 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         // the Google display name (or email prefix) for a first sign-in.
         const { data: existing } = await supabase
           .from('profiles')
-          .select('nickname')
+          .select('nickname, avatar')
           .eq('id', authUser.id)
           .maybeSingle();
+        const existingRow = existing as
+          | { nickname?: string; avatar?: string | null }
+          | null;
         const name =
           nickname?.trim() ||
-          (existing as { nickname?: string } | null)?.nickname ||
+          existingRow?.nickname ||
           meta.full_name ||
           meta.name ||
           authUser.email?.split('@')[0] ||
@@ -211,7 +215,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           id: authUser.id,
           name,
           email: authUser.email ?? '',
-          avatar: meta.avatar_url ?? undefined,
+          // Google's avatar_url is an HTTP URL, not an emoji — never use it here.
+          // Keep a previously chosen emoji, else default one deterministically.
+          avatar: existingRow?.avatar ?? avatarForUser(authUser.id),
         };
         setUser(nextUser);
         return nextUser;
