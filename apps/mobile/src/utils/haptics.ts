@@ -16,9 +16,30 @@ export function lightTap(): void {
   }
 }
 
+export function mediumTap(): void {
+  try {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  } catch {
+    // no-op: unsupported platform (e.g. web)
+  }
+}
+
 export function selectionTick(): void {
   try {
     void Haptics.selectionAsync();
+  } catch {
+    // no-op: unsupported platform (e.g. web)
+  }
+}
+
+/**
+ * Loud, unmistakable buzz used only by the Settings "test vibration" button —
+ * a one-tap way for the user to tell a device/simulator with no haptics from a
+ * wiring bug. Not for normal interactions (they should stay light/medium).
+ */
+export function heavyTap(): void {
+  try {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
   } catch {
     // no-op: unsupported platform (e.g. web)
   }

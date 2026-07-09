@@ -80,6 +80,7 @@ import { isDemoGroup } from '../api/demo';
 import { isVirtualMember } from '../api/virtualMates';
 import { confirmAction } from '../utils/confirm';
 import { logEvent } from '../utils/activityLog';
+import { lightTap, mediumTap, selectionTick, heavyTap } from '../utils/haptics';
 import { AVATAR_EMOJI } from '../constants/avatars';
 import type { Coordinates, Destination, MemberLocation } from '../types';
 import type { KmlPlacemark } from '../utils/kml';
@@ -477,12 +478,14 @@ export default function MapScreen({ route, navigation }: Props) {
   const [codeCopied, setCodeCopied] = useState(false);
   async function copyCode() {
     if (!group) return;
+    lightTap();
     await Clipboard.setStringAsync(group.inviteCode);
     setCodeCopied(true);
     setTimeout(() => setCodeCopied(false), 1500);
   }
   async function shareCode() {
     if (!group) return;
+    lightTap();
     await Share.share({ message: t('map.shareMsg', { code: group.inviteCode }) });
   }
 
@@ -490,6 +493,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const [profileName, setProfileName] = useState('');
   const [profileAvatar, setProfileAvatar] = useState<string | undefined>(undefined);
   function openProfile() {
+    lightTap();
     setProfileName(user?.name ?? '');
     setProfileAvatar(user?.avatar);
     setOverlay('profile');
@@ -516,6 +520,7 @@ export default function MapScreen({ route, navigation }: Props) {
   // --- Solo mode -------------------------------------------------------------
   async function toggleSolo(next: boolean) {
     if (!groupId) return;
+    selectionTick();
     setSoloOverride(next);
     try {
       await setSolo(groupId, next);
@@ -534,6 +539,7 @@ export default function MapScreen({ route, navigation }: Props) {
     useSubgroupInvites();
 
   async function handleAcceptInvite(inviteId: string) {
+    mediumTap();
     try {
       await acceptInvite(inviteId);
       refresh();
@@ -542,6 +548,7 @@ export default function MapScreen({ route, navigation }: Props) {
     }
   }
   async function handleDeclineInvite(inviteId: string) {
+    selectionTick();
     try {
       await declineInvite(inviteId);
     } catch (e) {
@@ -550,6 +557,7 @@ export default function MapScreen({ route, navigation }: Props) {
   }
 
   async function handleInvite(subgroupId: string, inviteeId: string) {
+    mediumTap();
     try {
       await inviteToSubgroup(subgroupId, inviteeId);
       Alert.alert(t('subgroup.inviteSent'));
@@ -562,6 +570,7 @@ export default function MapScreen({ route, navigation }: Props) {
   // subgroup, or merge themselves back up a level — no leader say-so needed.
   async function doSelfSplit() {
     if (!groupId) return;
+    mediumTap();
     try {
       await selfSplit(
         groupId,
@@ -574,6 +583,7 @@ export default function MapScreen({ route, navigation }: Props) {
   }
   async function doSelfMerge() {
     if (!groupId) return;
+    selectionTick();
     try {
       await selfMerge(groupId);
       refresh();
@@ -1237,7 +1247,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
         {/* Gathering points → route overlay. */}
         <Text style={styles.sheetHeading}>{t('map.gatheringPoints')}</Text>
-        <Pressable style={styles.rowButton} onPress={() => setOverlay('route')} accessibilityRole="button">
+        <Pressable style={styles.rowButton} onPress={() => { lightTap(); setOverlay('route'); }} accessibilityRole="button">
           <View style={[styles.rowIcon, { backgroundColor: accentMix(accent, 20) }]}>
             <CrookIcon size={22} color={accent} />
           </View>
@@ -1258,7 +1268,7 @@ export default function MapScreen({ route, navigation }: Props) {
         ) : null}
 
         {/* Settings. */}
-        <Pressable style={styles.settingsButton} onPress={() => setOverlay('settings')} accessibilityRole="button">
+        <Pressable style={styles.settingsButton} onPress={() => { lightTap(); setOverlay('settings'); }} accessibilityRole="button">
           <Ionicons name="settings-sharp" size={20} color="#fff" />
           <Text style={styles.settingsText}>{t('map.settingsAll')}</Text>
           <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
@@ -1375,6 +1385,18 @@ export default function MapScreen({ route, navigation }: Props) {
 
           <Text style={styles.sectionLabel}>{t('settings.notifSection')}</Text>
           <NotificationPreferencesCard colors={dark} />
+
+          <Pressable
+            style={styles.settingSwitchRow}
+            onPress={heavyTap}
+            accessibilityRole="button"
+          >
+            <View style={styles.settingSwitchText}>
+              <Text style={styles.settingSwitchLabel}>{t('settings.hapticTest')}</Text>
+              <Text style={styles.settingSwitchHint}>{t('settings.hapticTestHint')}</Text>
+            </View>
+            <Ionicons name="phone-portrait-outline" size={20} color={accent} />
+          </Pressable>
 
           <View style={styles.settingsSectionHeaderRow}>
             <Text style={styles.sectionLabel}>{t('account.section')}</Text>

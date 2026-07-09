@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text } from 'react-native';
 import { useTheme } from '../../state/PreferencesContext';
-import { lightTap } from '../../utils/haptics';
+import { mediumTap } from '../../utils/haptics';
 
 export default function PrimaryButton({
   label,
@@ -18,7 +18,7 @@ export default function PrimaryButton({
       accessibilityRole="button"
       disabled={disabled}
       onPress={() => {
-        lightTap();
+        mediumTap();
         onPress();
       }}
       style={({ pressed }) => [

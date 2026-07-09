@@ -21,6 +21,7 @@ import { useTheme } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
 import { accentMix, glass } from '../glass';
 import { logEvent } from '../utils/activityLog';
+import { mediumTap } from '../utils/haptics';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Auth'>;
 
@@ -61,6 +62,7 @@ export default function AuthScreen({ navigation, route }: Props) {
   // defaulting it to the nickname would permanently weld the two.
   /** Create (leader) / join (follower) the group, then drop onto the map. */
   async function enterGroup() {
+    mediumTap();
     const group = isLeader
       ? await createGroup(groupName.trim())
       : await joinGroup(code.trim());
