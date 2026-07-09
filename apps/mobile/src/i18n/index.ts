@@ -106,7 +106,7 @@ const zh = {
   'settings.resetPrefs': '重設旅行偏好',
   'settings.resetPrefsConfirm':
     '將清除性格測驗與旅行偏好資料，並重新進行偏好問卷。確定要重設？',
-  'settings.resetPrefsDone': '已重設，重新開啟 App 後會重新進行問卷。',
+  'settings.resetPrefsDone': '已重設。登出或結束群組後，會重新進行旅行偏好問卷。',
   'settings.hapticTest': '測試震動',
   'settings.hapticTestHint': '點一下應該會有明顯震動。沒感覺代表裝置關閉了觸感或在模擬器上。',
   'account.section': '帳號',
@@ -475,7 +475,7 @@ const en: Record<keyof typeof zh, string> = {
   'settings.resetPrefsConfirm':
     'This clears your quiz results and travel preferences, and re-runs the preference survey. Reset?',
   'settings.resetPrefsDone':
-    'Preferences reset — the survey will run again next time you open the app.',
+    'Preferences reset — the survey runs again once you sign out or end the group.',
   'settings.hapticTest': 'Test vibration',
   'settings.hapticTestHint': 'Tapping should buzz clearly. No buzz means haptics are off on your device or you are on a simulator.',
   'account.section': 'Account',

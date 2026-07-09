@@ -27,7 +27,7 @@ import {
  */
 function ThemedNavigation() {
   const { colors, themeName } = useTheme();
-  const { initializing } = useSession();
+  const { initializing, user, membership } = useSession();
   // Register this device for APNs once signed in (no-op until a Dev Build);
   // also asks notification permission, which the local-notification flow needs.
   usePushRegistration();
@@ -53,6 +53,21 @@ function ThemedNavigation() {
       active = false;
     };
   }, []);
+
+  // Re-surface Onboarding when the user signs out or ends a group AND the
+  // onboarding flag has been cleared (via "reset travel preferences"). This
+  // only ever PROMOTES to onboarding — it never hides it — so signing in or
+  // joining a group can't race a not-yet-flushed completion write.
+  useEffect(() => {
+    if (user && membership) return; // fully in-app, nothing to re-check
+    let active = true;
+    readOnboardingState().then((state) => {
+      if (active && !state?.completed) setNeedsOnboarding(true);
+    });
+    return () => {
+      active = false;
+    };
+  }, [user, membership]);
 
   // Hold the navigator until the persisted session AND the onboarding flag
   // are resolved, so RootNavigator's initialRouteName sees the correct

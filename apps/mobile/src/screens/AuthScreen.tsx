@@ -115,14 +115,19 @@ export default function AuthScreen({ navigation, route }: Props) {
             { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 28 },
           ]}
         >
-          <Pressable
-            onPress={() => navigation.goBack()}
-            accessibilityRole="button"
-            accessibilityLabel="Back"
-            style={styles.back}
-          >
-            <Ionicons name="chevron-back" size={22} color="rgba(255,255,255,0.7)" />
-          </Pressable>
+          {/* Only render Back when there is somewhere to go — after an
+              end-group/sign-out reset this screen can be the stack root, and an
+              unconditional goBack() throws "GO_BACK was not handled". */}
+          {navigation.canGoBack() && (
+            <Pressable
+              onPress={() => navigation.goBack()}
+              accessibilityRole="button"
+              accessibilityLabel="Back"
+              style={styles.back}
+            >
+              <Ionicons name="chevron-back" size={22} color="rgba(255,255,255,0.7)" />
+            </Pressable>
+          )}
 
           <Text style={styles.kicker}>
             {isLeader ? t('auth.leaderKicker') : t('auth.followerKicker')}
