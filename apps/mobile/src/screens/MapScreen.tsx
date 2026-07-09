@@ -8,6 +8,7 @@ import React, {
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Platform,
@@ -345,6 +346,18 @@ export default function MapScreen({ route, navigation }: Props) {
     gatheredCount: liveGathered,
     memberCount: members.length,
   });
+
+  // ponytail: temporary hand-off to Apple Maps until native routing (MKDirections,
+  // Dev Build) exists. Coords in daddr guarantee the exact pin; label names it;
+  // dirflg=w matches Hither's walking-ETA model. Universal-link fallback if the
+  // maps:// scheme is unavailable. Works in Expo Go (pure Linking, no native mod).
+  const openInAppleMaps = useCallback((dest: Destination) => {
+    const { latitude, longitude } = dest.coordinates;
+    const label = encodeURIComponent(dest.title);
+    const scheme = `maps://?daddr=${label}@${latitude},${longitude}&dirflg=w`;
+    const universal = `https://maps.apple.com/?daddr=${latitude},${longitude}&dirflg=w`;
+    Linking.openURL(scheme).catch(() => void Linking.openURL(universal));
+  }, []);
 
   const [journeyBusy, setJourneyBusy] = useState(false);
   const startNavigation = useCallback(
@@ -790,9 +803,17 @@ export default function MapScreen({ route, navigation }: Props) {
   const flock = useMemo(
     () =>
       members.map((m) => {
+        const isSelf = m.userId === user?.id;
+        // Gathering-point distance still drives the arrived/en-route STATUS.
         const d =
           m.coordinates && activePoint
             ? distanceMeters(m.coordinates, activePoint.coordinates)
+            : null;
+        // Displayed distance/ETA is "how far this member is from ME" — more
+        // useful for keeping the flock together than distance-to-destination.
+        const dToMe =
+          !isSelf && m.coordinates && fromCoords
+            ? distanceMeters(m.coordinates, fromCoords)
             : null;
         const arrived = d != null && d <= ARRIVAL_RADIUS_M;
         const isMemberLeader = m.role === 'leader';
@@ -832,12 +853,14 @@ export default function MapScreen({ route, navigation }: Props) {
               : arrived
                 ? glass.ok
                 : glass.textSecondary,
-          eta: isMemberLeader ? '—' : d != null ? shortEta(walkingEtaSeconds(d)) : '',
-          dist: isMemberLeader ? t('flock.here') : d != null ? formatDistance(d) : '',
+          // "—" for my own row (distance to myself is meaningless); everyone
+          // else shows how far they are from me.
+          eta: isSelf ? '' : dToMe != null ? shortEta(walkingEtaSeconds(dToMe)) : '',
+          dist: isSelf ? t('flock.you') : dToMe != null ? formatDistance(dToMe) : '',
           arrived,
         };
       }),
-    [members, activePoint, accent, t, user?.id, soloOverride],
+    [members, activePoint, accent, t, user?.id, soloOverride, fromCoords],
   );
 
   // Drop the override once the server value catches up, so a later toggle
@@ -851,13 +874,15 @@ export default function MapScreen({ route, navigation }: Props) {
   const topFlock = flock.filter((f) => !f.subgroupId);
   // My own subgroup, if any — gates the "invite a teammate" entry on my card.
   const mySubgroupId = flock.find((f) => f.userId === user?.id)?.subgroupId;
-  // Real co-members I could still pull into my team (virtual solo-test mates
-  // are excluded — there's no one on the other end to accept).
+  // Co-members I could still pull into my team. Virtual solo-test mates are
+  // excluded in a real group (no one on the other end to accept) — BUT in the
+  // demo group they ARE invitable, because handleInvite simulates them
+  // accepting; otherwise a solo tester's invite picker is always empty.
   const invitable = flock.filter(
     (f) =>
       f.userId !== user?.id &&
       f.subgroupId !== mySubgroupId &&
-      !isVirtualMember(f.userId),
+      (isDemoGroup(groupId) || !isVirtualMember(f.userId)),
   );
 
   // One flock row, shared by the main list and the subgroup cards.
@@ -1067,9 +1092,14 @@ export default function MapScreen({ route, navigation }: Props) {
                           {index === 0 ? t('map.nextTag') + ' · ' : ''}
                           {t('map.destinationCounter', { index: index + 1, total: destinations.length })}
                         </Text>
-                        <Text style={styles.cardTitle} numberOfLines={1}>
-                          {dest.title}
-                        </Text>
+                        <View style={styles.titleRow}>
+                          <Text style={styles.cardTitle} numberOfLines={1}>
+                            {dest.title}
+                          </Text>
+                          {d != null && (
+                            <Text style={styles.titleDist}>{formatDistance(d)}</Text>
+                          )}
+                        </View>
                         {myScopeId != null && (
                           <Text style={{ color: glass.textSecondary, fontSize: 11 }}>
                             {t('subgroup.itineraryBadge')}
@@ -1093,13 +1123,19 @@ export default function MapScreen({ route, navigation }: Props) {
                     <View style={styles.cardActions}>
                       <Pressable
                         style={[styles.directions, { backgroundColor: accentMix(accent, 26), borderColor: accentMix(accent, 50) }]}
-                        onPress={() =>
-                          navigatingThis
-                            ? void stopNavigation()
-                            : isLeader
-                              ? startNavigation(dest, index)
-                              : mapRef.current?.centerOn(dest.coordinates)
-                        }
+                        onPress={() => {
+                          if (navigatingThis) {
+                            void stopNavigation();
+                          } else if (isLeader) {
+                            // Keep the in-app journey state (flock "going" /
+                            // arrival / live activity) AND hand off turn-by-turn
+                            // to Apple Maps with the address pre-filled.
+                            startNavigation(dest, index);
+                            openInAppleMaps(dest);
+                          } else {
+                            mapRef.current?.centerOn(dest.coordinates);
+                          }
+                        }}
                         disabled={journeyBusy}
                         accessibilityRole="button"
                       >
@@ -1115,9 +1151,6 @@ export default function MapScreen({ route, navigation }: Props) {
                       <View style={styles.etaPill}>
                         <Text style={styles.etaPillEta}>
                           {d != null ? shortEta(walkingEtaSeconds(d)) : '—'}
-                        </Text>
-                        <Text style={styles.etaPillDist}>
-                          {d != null ? formatDistance(d) : ''}
                         </Text>
                       </View>
                     </View>
@@ -1353,6 +1386,56 @@ export default function MapScreen({ route, navigation }: Props) {
           <Text style={[styles.rowAction, { color: accent }]}>{t('map.edit')}</Text>
         </Pressable>
 
+        {/* KML import — a sub-item of gathering points (moved out of the reorder
+            overlay so it's reachable without opening "調整順序"). */}
+        {canEditItinerary && (
+          <Pressable style={styles.rowButton} onPress={() => { lightTap(); setKmlVisible(true); }} accessibilityRole="button">
+            <View style={[styles.rowIcon, { backgroundColor: accentMix(accent, 20) }]}>
+              <Ionicons name="document-attach-outline" size={20} color={accent} />
+            </View>
+            <View style={styles.grow}>
+              <Text style={styles.rowTitle}>{t('kml.entry')}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
+          </Pressable>
+        )}
+
+        {/* Straggler alerts — also a gathering-point sub-item (moved out of the
+            Settings overlay). Leader-only; threshold is paywall-gated. */}
+        {isLeader && group && (
+          <>
+            <View style={styles.settingSwitchRow}>
+              <View style={styles.settingSwitchText}>
+                <Text style={styles.settingSwitchLabel}>{t('straggler.section')}</Text>
+              </View>
+              <Switch
+                value={group.stragglerAlerts}
+                onValueChange={(v) => persistStragglerConfig(v, group.stragglerThresholdM)}
+                trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
+                thumbColor="#fff"
+              />
+            </View>
+            <Segmented
+              accent={accent}
+              options={STRAGGLER_THRESHOLD_OPTIONS.map((m) => ({
+                key: String(m),
+                label: formatDistance(m),
+              }))}
+              value={String(group.stragglerThresholdM)}
+              onChange={(v) => persistStragglerConfig(group.stragglerAlerts, Number(v))}
+              disabledKeys={
+                isPro
+                  ? []
+                  : STRAGGLER_THRESHOLD_OPTIONS.filter(
+                      (m) => m !== FREE_LIMITS.stragglerThresholdM,
+                    ).map(String)
+              }
+              onDisabledPress={() => openPaywall('paywall.triggerStraggler')}
+            />
+            <Text style={styles.overlayHint}>{t('straggler.freeNote')}</Text>
+          </>
+        )}
+
         {/* Quick commands. */}
         <Text style={styles.sheetHeading}>
           {isLeader ? t('map.cmdLeaderTitle') : t('map.cmdFollowerTitle')}
@@ -1404,21 +1487,6 @@ export default function MapScreen({ route, navigation }: Props) {
                 <Ionicons name="add" size={16} color={accent} />
               </View>
               <Text style={[styles.addStopText, { color: accent }]}>{t('map.addStop')}</Text>
-            </Pressable>
-          )}
-          {canEditItinerary && (
-            <Pressable
-              style={styles.addStop}
-              onPress={() => {
-                setOverlay(null);
-                setKmlVisible(true);
-              }}
-              accessibilityRole="button"
-            >
-              <View style={[styles.addStopIcon, { backgroundColor: accentMix(accent, 26) }]}>
-                <Ionicons name="document-attach-outline" size={16} color={accent} />
-              </View>
-              <Text style={[styles.addStopText, { color: accent }]}>{t('kml.entry')}</Text>
             </Pressable>
           )}
         </ScrollView>
@@ -1526,41 +1594,6 @@ export default function MapScreen({ route, navigation }: Props) {
                 {t('paywall.upgrade')}
               </Text>
             </Pressable>
-          )}
-
-          {isLeader && group && (
-            <>
-              <Text style={styles.sectionLabel}>{t('straggler.section')}</Text>
-              <View style={styles.settingSwitchRow}>
-                <View style={styles.settingSwitchText}>
-                  <Text style={styles.settingSwitchLabel}>{t('straggler.section')}</Text>
-                </View>
-                <Switch
-                  value={group.stragglerAlerts}
-                  onValueChange={(v) => persistStragglerConfig(v, group.stragglerThresholdM)}
-                  trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
-                  thumbColor="#fff"
-                />
-              </View>
-              <Segmented
-                accent={accent}
-                options={STRAGGLER_THRESHOLD_OPTIONS.map((m) => ({
-                  key: String(m),
-                  label: formatDistance(m),
-                }))}
-                value={String(group.stragglerThresholdM)}
-                onChange={(v) => persistStragglerConfig(group.stragglerAlerts, Number(v))}
-                disabledKeys={
-                  isPro
-                    ? []
-                    : STRAGGLER_THRESHOLD_OPTIONS.filter(
-                        (m) => m !== FREE_LIMITS.stragglerThresholdM,
-                      ).map(String)
-                }
-                onDisabledPress={() => openPaywall('paywall.triggerStraggler')}
-              />
-              <Text style={styles.overlayHint}>{t('straggler.freeNote')}</Text>
-            </>
           )}
 
           <Pressable style={styles.dangerBtn} onPress={confirmResetPrefs} accessibilityRole="button">
@@ -1987,7 +2020,14 @@ const makeStyles = (accent: string) =>
     },
     grow: { flex: 1, minWidth: 0 },
     cardKicker: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8 },
-    cardTitle: { fontSize: 18, fontWeight: '600', color: '#fff' },
+    titleRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
+    cardTitle: { flexShrink: 1, fontSize: 18, fontWeight: '600', color: '#fff' },
+    titleDist: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: glass.textSecondary,
+      fontVariant: ['tabular-nums'],
+    },
     cardActions: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 13 },
     directions: {
       flex: 1,
@@ -2009,7 +2049,6 @@ const makeStyles = (accent: string) =>
       backgroundColor: glass.fillStrong,
     },
     etaPillEta: { fontSize: 15, fontWeight: '700', color: '#fff', fontVariant: ['tabular-nums'] },
-    etaPillDist: { fontSize: 11, color: glass.textSecondary },
     // Prominent capsule pinned at the card's foot (kept compact so the card
     // height barely moves — see the straggler banner's fixed top offset).
     meetTimeBtn: {
@@ -2046,7 +2085,7 @@ const makeStyles = (accent: string) =>
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairline,
     },
-    meetClearText: { fontSize: 15, fontWeight: '600', color: glass.textSecondary },
+    meetClearText: { fontSize: 17, fontWeight: '600', color: glass.textSecondary },
     dots: { flexDirection: 'row', gap: 6, alignItems: 'center' },
     dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.35)' },
     dotActive: { width: 20, backgroundColor: accent },

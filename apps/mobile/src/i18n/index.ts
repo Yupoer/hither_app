@@ -184,6 +184,7 @@ const zh = {
   'flock.enroute': '前往中',
   'flock.unknown': '位置未知',
   'flock.here': '就在這',
+  'flock.you': '你',
 
   // Map · meet time (countdown / set / clear) + member status
   'meetTime.countdown': '還剩 {minutes} 分鐘集合',
@@ -556,6 +557,7 @@ const en: Record<keyof typeof zh, string> = {
   'flock.enroute': 'On the way',
   'flock.unknown': 'Location unknown',
   'flock.here': 'here',
+  'flock.you': 'You',
 
   'meetTime.countdown': '{minutes} min to gather',
   'meetTime.overdue': '{minutes} min past meet time',
