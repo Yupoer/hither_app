@@ -65,6 +65,7 @@ import {
 import { isDemoGroup } from '../api/demo';
 import { isVirtualMember } from '../api/virtualMates';
 import { confirmAction } from '../utils/confirm';
+import { AVATAR_EMOJI } from '../constants/avatars';
 import type { Coordinates, Destination, MemberLocation } from '../types';
 import { themes, THEME_ORDER, type ThemeName } from '../theme';
 import { glass, accentMix, memberColor } from '../glass';
@@ -73,12 +74,6 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Map'>;
 
 const ARRIVAL_RADIUS_M = 30;
 
-/** Preset emoji avatars for the profile editor. */
-const AVATAR_EMOJI = [
-  '🐑', '🐺', '🦊', '🐰', '🐻', '🐼', '🐸', '🐥',
-  '🦁', '🐯', '🐨', '🐢', '🐙', '🦄', '🐳', '🦉',
-  '⭐', '🔥', '🌙', '🍀', '🍎', '⚽', '🎧', '🎈',
-] as const;
 /** Nominal walk that reads as ~"just started" for the progress bar. */
 const PROGRESS_REF_M = 1500;
 
@@ -100,7 +95,8 @@ export default function MapScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const { membership, user, updateProfile, leaveGroup, signOut } = useSession();
-  const { language, themeName, setLanguage, setThemeName } = usePreferences();
+  const { language, themeName, powerSaver, setLanguage, setThemeName, setPowerSaver } =
+    usePreferences();
   const { colors } = useTheme();
   const accent = colors.accent;
   const { t } = useTranslation();
@@ -154,6 +150,29 @@ export default function MapScreen({ route, navigation }: Props) {
   useEffect(() => {
     void refreshDeviceLocation();
   }, [refreshDeviceLocation]);
+
+  // Continuous foreground tracking: teammates' dots move in near real time.
+  // The watch's distanceInterval/timeInterval already bound how often this
+  // fires (power-saver widens both), so each sample writes straight through —
+  // no extra throttle needed. Restarts when the group or the saver flag change.
+  useEffect(() => {
+    if (!groupId) return;
+    let cancelled = false;
+    let stop = () => {};
+    void location
+      .watchLocation((sample) => {
+        setDeviceCoords(sample.coordinates);
+        void updateMyLocation(sample.coordinates, groupId);
+      }, powerSaver)
+      .then((unsub) => {
+        if (cancelled) unsub();
+        else stop = unsub;
+      });
+    return () => {
+      cancelled = true;
+      stop();
+    };
+  }, [groupId, powerSaver]);
 
   // --- Carousel selection ---------------------------------------------------
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -1068,6 +1087,20 @@ export default function MapScreen({ route, navigation }: Props) {
             onChange={(v) => setThemeName(v as ThemeName)}
           />
 
+          <Text style={styles.sectionLabel}>{t('settings.locationSection')}</Text>
+          <View style={styles.settingSwitchRow}>
+            <View style={styles.settingSwitchText}>
+              <Text style={styles.settingSwitchLabel}>{t('settings.powerSaver')}</Text>
+              <Text style={styles.settingSwitchHint}>{t('settings.powerSaverHint')}</Text>
+            </View>
+            <Switch
+              value={powerSaver}
+              onValueChange={setPowerSaver}
+              trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
+              thumbColor="#fff"
+            />
+          </View>
+
           <Text style={styles.sectionLabel}>{t('settings.notifSection')}</Text>
           <NotificationPreferencesCard colors={dark} />
 
@@ -1351,10 +1384,13 @@ const makeStyles = (accent: string) =>
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairline,
     },
-    emojiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+    // 5 columns × 6 rows filling edge-to-edge: 5 × (18% + 1% + 1%) = 100%.
+    emojiGrid: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 12 },
     emojiCell: {
-      width: 52,
-      height: 52,
+      width: '18%',
+      aspectRatio: 1,
+      marginHorizontal: '1%',
+      marginVertical: 4,
       borderRadius: 14,
       alignItems: 'center',
       justifyContent: 'center',
@@ -1430,6 +1466,16 @@ const makeStyles = (accent: string) =>
       marginLeft: 4,
       marginTop: 4,
     },
+    settingSwitchRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      paddingHorizontal: 4,
+      marginBottom: 12,
+    },
+    settingSwitchText: { flex: 1 },
+    settingSwitchLabel: { fontSize: 15, fontWeight: '600', color: '#fff' },
+    settingSwitchHint: { fontSize: 12, color: glass.textTertiary, marginTop: 2 },
     codeText: { fontSize: 24, fontWeight: '700', color: '#fff', letterSpacing: 2 },
     chip: {
       height: 38,
