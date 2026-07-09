@@ -47,6 +47,8 @@ interface SessionContextValue {
   initializing: boolean;
   /** True when the signed-in user is a Supabase anonymous (guest) account. */
   isAnonymous: boolean;
+  /** Hither Pro entitlement (`profiles.pro`). Client-trusted for now. */
+  isPro: boolean;
   /**
    * Anonymously sign in and record the chosen nickname. Resolves to the User
    * (with `id === auth.uid()`). `email` is accepted for API compatibility but
@@ -106,6 +108,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [membership, setMembershipState] = useState<Membership | null>(null);
   const [initializing, setInitializing] = useState(true);
   const [isAnonymous, setIsAnonymous] = useState(false);
+  const [isPro, setIsPro] = useState(false);
 
   // Restore any persisted anonymous session on launch and keep `user.id` in
   // sync with auth state. The nickname is read back from `profiles` so a
@@ -118,16 +121,19 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         if (active) {
           setUser(null);
           setIsAnonymous(false);
+          setIsPro(false);
         }
         return;
       }
-      // select('*') so the optional avatar column is tolerated either way.
+      // select('*') so the optional avatar/pro columns are tolerated either way.
       const { data } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', authUser.id)
         .maybeSingle();
-      const row = data as { nickname?: string; avatar?: string | null } | null;
+      const row = data as
+        | { nickname?: string; avatar?: string | null; pro?: boolean | null }
+        | null;
       if (active) {
         setUser({
           id: authUser.id,
@@ -136,6 +142,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           avatar: row?.avatar ?? undefined,
         });
         setIsAnonymous(!!authUser.is_anonymous);
+        setIsPro(!!row?.pro);
       }
     }
 
@@ -174,6 +181,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       membership,
       initializing,
       isAnonymous,
+      isPro,
       signIn: async ({ name }) => {
         const nickname = name.trim();
         const { data, error } = await supabase.auth.signInAnonymously();
@@ -315,6 +323,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         await supabase.auth.signOut();
         setUser(null);
         setIsAnonymous(false);
+        setIsPro(false);
         setMembershipState(null);
       },
       upgradeToEmailAccount: async (email, password) => {
@@ -353,7 +362,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       setMembership: (next) => setMembershipState(next),
       leaveGroup: () => setMembershipState(null),
     }),
-    [user, membership, initializing, isAnonymous],
+    [user, membership, initializing, isAnonymous, isPro],
   );
 
   return (

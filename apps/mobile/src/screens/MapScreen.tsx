@@ -42,10 +42,11 @@ import NotificationPreferencesCard from '../components/NotificationPreferencesCa
 import QuickCommandsCard from '../components/QuickCommandsCard';
 import BottomSheet, { sheetBottomOffset } from '../components/BottomSheet';
 import OverlaySheet from '../components/OverlaySheet';
+import PaywallSheet from '../components/PaywallSheet';
 import CrookIcon from '../components/CrookIcon';
 import { useSession } from '../state/SessionContext';
 import { usePreferences, useTheme, type Language } from '../state/PreferencesContext';
-import { useTranslation } from '../i18n';
+import { useTranslation, type TranslationKey } from '../i18n';
 import { useGroupState } from '../state/useGroupState';
 import { useStragglerAlerts } from '../state/useStragglerAlerts';
 import { useSubgroupInvites } from '../state/useSubgroupInvites';
@@ -78,6 +79,7 @@ import { isVirtualMember } from '../api/virtualMates';
 import { confirmAction } from '../utils/confirm';
 import { AVATAR_EMOJI } from '../constants/avatars';
 import type { Coordinates, Destination, MemberLocation } from '../types';
+import { FREE_LIMITS } from '../entitlements';
 import { themes, THEME_ORDER, type ThemeName } from '../theme';
 import { glass, accentMix, memberColor } from '../glass';
 
@@ -108,8 +110,16 @@ function shortEta(seconds: number): string {
 export default function MapScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  const { membership, user, updateProfile, leaveGroup, signOut, isAnonymous, upgradeToEmailAccount } =
-    useSession();
+  const {
+    membership,
+    user,
+    updateProfile,
+    leaveGroup,
+    signOut,
+    isAnonymous,
+    isPro,
+    upgradeToEmailAccount,
+  } = useSession();
   const { language, themeName, powerSaver, setLanguage, setThemeName, setPowerSaver } =
     usePreferences();
   const { colors } = useTheme();
@@ -159,6 +169,12 @@ export default function MapScreen({ route, navigation }: Props) {
   const [detent, setDetent] = useState(0);
   const [overlay, setOverlay] = useState<null | 'route' | 'settings' | 'profile'>(null);
   const [searchVisible, setSearchVisible] = useState(false);
+  const [paywallTrigger, setPaywallTrigger] = useState<TranslationKey | undefined>(undefined);
+  const [paywallVisible, setPaywallVisible] = useState(false);
+  function openPaywall(trigger?: TranslationKey) {
+    setPaywallTrigger(trigger);
+    setPaywallVisible(true);
+  }
 
   // --- Meet-time countdown + editor (iOS embeds a spinner overlay; Android
   // opens the native dialog imperatively) -------------------------------------
@@ -403,6 +419,10 @@ export default function MapScreen({ route, navigation }: Props) {
 
   async function handlePickDestination(place: PlaceResult) {
     if (!groupId) return;
+    if (!isPro && destinations.length >= FREE_LIMITS.destinationsPerItinerary) {
+      openPaywall('paywall.triggerDestinations');
+      return;
+    }
     try {
       await addDestination(
         groupId,
@@ -1114,6 +1134,11 @@ export default function MapScreen({ route, navigation }: Props) {
           <Text style={styles.sheetHeading}>
             {t('map.flockLabel')} · {members.length}
           </Text>
+          {!isPro && (
+            <Text style={styles.memberCapHint}>
+              {t('paywall.memberCap', { n: FREE_LIMITS.groupMembers })}
+            </Text>
+          )}
         </View>
         {pendingInvites.length > 0 && (
           <View style={styles.list}>
@@ -1334,6 +1359,21 @@ export default function MapScreen({ route, navigation }: Props) {
             </Text>
           )}
 
+          <Text style={styles.sectionLabel}>{t('paywall.title')}</Text>
+          {isPro ? (
+            <Text style={styles.overlayHint}>{t('paywall.active')}</Text>
+          ) : (
+            <Pressable
+              style={styles.accountBtn}
+              onPress={() => openPaywall()}
+              accessibilityRole="button"
+            >
+              <Text style={[styles.accountBtnText, { color: accent }]}>
+                {t('paywall.upgrade')}
+              </Text>
+            </Pressable>
+          )}
+
           {isLeader && group && (
             <>
               <Text style={styles.sectionLabel}>{t('straggler.section')}</Text>
@@ -1356,6 +1396,14 @@ export default function MapScreen({ route, navigation }: Props) {
                 }))}
                 value={String(group.stragglerThresholdM)}
                 onChange={(v) => persistStragglerConfig(group.stragglerAlerts, Number(v))}
+                disabledKeys={
+                  isPro
+                    ? []
+                    : STRAGGLER_THRESHOLD_OPTIONS.filter(
+                        (m) => m !== FREE_LIMITS.stragglerThresholdM,
+                      ).map(String)
+                }
+                onDisabledPress={() => openPaywall('paywall.triggerStraggler')}
               />
               <Text style={styles.overlayHint}>{t('straggler.freeNote')}</Text>
             </>
@@ -1481,6 +1529,12 @@ export default function MapScreen({ route, navigation }: Props) {
         onPick={handlePickDestination}
       />
 
+      <PaywallSheet
+        visible={paywallVisible}
+        onClose={() => setPaywallVisible(false)}
+        trigger={paywallTrigger}
+      />
+
       {/* iOS meet-time editor: embedded spinner + Set/Clear (Android uses the
           native dialog directly, see openMeetTimePicker). */}
       {Platform.OS !== 'android' && (
@@ -1534,23 +1588,33 @@ function Segmented({
   value,
   onChange,
   accent,
+  disabledKeys,
+  onDisabledPress,
 }: {
   options: { key: string; label: string }[];
   value: string;
   onChange: (key: string) => void;
   accent: string;
+  /** Options shown greyed-out/locked; tapping them calls `onDisabledPress` instead of `onChange`. */
+  disabledKeys?: string[];
+  onDisabledPress?: (key: string) => void;
 }) {
   return (
     <View style={segStyles.track}>
       {options.map((o) => {
         const active = o.key === value;
+        const locked = !!disabledKeys?.includes(o.key);
         return (
           <Pressable
             key={o.key}
-            style={[segStyles.seg, active && { backgroundColor: 'rgba(255,255,255,0.16)' }]}
-            onPress={() => onChange(o.key)}
+            style={[
+              segStyles.seg,
+              active && { backgroundColor: 'rgba(255,255,255,0.16)' },
+              locked && segStyles.segLocked,
+            ]}
+            onPress={() => (locked ? onDisabledPress?.(o.key) : onChange(o.key))}
             accessibilityRole="button"
-            accessibilityState={{ selected: active }}
+            accessibilityState={{ selected: active, disabled: locked }}
           >
             <Text style={[segStyles.segText, active && { color: '#fff' }]}>{o.label}</Text>
           </Pressable>
@@ -1576,6 +1640,7 @@ const segStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  segLocked: { opacity: 0.4 },
   segText: { fontSize: 15, fontWeight: '600', color: glass.textSecondary },
 });
 
@@ -1832,6 +1897,11 @@ const makeStyles = (accent: string) =>
       marginTop: 24,
       marginBottom: 12,
       marginLeft: 4,
+    },
+    memberCapHint: {
+      fontSize: 12,
+      color: glass.textTertiary,
+      marginTop: 24,
     },
     sectionLabel: {
       fontSize: 12,
