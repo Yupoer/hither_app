@@ -256,6 +256,9 @@ const zh = {
   'onboarding.intro.title': '牽起隊伍，不再走散',
   'onboarding.intro.body': '像牧羊人一樣，把散開的隊員輕鬆聚回同一個集合點。',
   'onboarding.intro.start': '開始',
+  'onboarding.celebration.title': '一切就緒！',
+  'onboarding.celebration.subtitle': '你已完成所有步驟，準備好開始這趟旅程了。',
+  'onboarding.celebration.cta': '出發',
 
   'onboarding.theme.title': '選一個喜歡的主題',
   'onboarding.theme.night': '夜燈',
@@ -615,6 +618,9 @@ const en: Record<keyof typeof zh, string> = {
   'onboarding.intro.title': 'Keep your flock together',
   'onboarding.intro.body': 'Like a shepherd, gently guide everyone back to the same gathering point.',
   'onboarding.intro.start': 'Get started',
+  'onboarding.celebration.title': "You're all set!",
+  'onboarding.celebration.subtitle': "Every step is done — you're ready to start the journey.",
+  'onboarding.celebration.cta': "Let's go",
 
   'onboarding.theme.title': 'Pick a theme you like',
   'onboarding.theme.night': 'Night',

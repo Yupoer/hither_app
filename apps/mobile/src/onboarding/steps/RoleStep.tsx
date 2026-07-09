@@ -20,12 +20,14 @@ export default function RoleStep({ answers, onAnswer, onSkip, onBack }: StepProp
       onSkip={onSkip}
     >
       <OptionCard
+        emoji="🧑‍🌾"
         title={t('onboarding.role.leaderTitle')}
         subtitle={t('onboarding.role.leaderBody')}
         selected={answers.role === 'leader'}
         onPress={() => onAnswer({ role: 'leader' })}
       />
       <OptionCard
+        emoji="🐑"
         title={t('onboarding.role.followerTitle')}
         subtitle={t('onboarding.role.followerBody')}
         selected={answers.role === 'follower'}

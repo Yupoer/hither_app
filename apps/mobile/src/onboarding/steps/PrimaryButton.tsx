@@ -37,6 +37,12 @@ export default function PrimaryButton({
 }
 
 const styles = StyleSheet.create({
-  btn: { height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  label: { fontSize: 16, fontWeight: '700' },
+  btn: {
+    alignSelf: 'stretch',
+    height: 60,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  label: { fontSize: 18, fontWeight: '700' },
 });

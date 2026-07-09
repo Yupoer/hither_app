@@ -45,11 +45,7 @@ export default function MascotStep({ answers, onAnswer, onSkip, onBack }: StepPr
       }
     >
       <Animated.View style={[styles.card, style]}>
-        <View style={[styles.badge, { backgroundColor: colors.accent }]}>
-          <Text style={[styles.badgeText, { color: colors.accentText }]}>
-            {t(mascot.nameKey as never).slice(0, 1)}
-          </Text>
-        </View>
+        <Text style={styles.emoji}>{mascot.emoji}</Text>
         <Text style={[styles.description, { color: colors.textPrimary }]}>
           {t(mascot.descriptionKey as never)}
         </Text>
@@ -63,15 +59,7 @@ export default function MascotStep({ answers, onAnswer, onSkip, onBack }: StepPr
 
 const styles = StyleSheet.create({
   card: { alignItems: 'center', marginTop: 24 },
-  badge: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-  },
-  badgeText: { fontSize: 36, fontWeight: '700' },
+  emoji: { fontSize: 108, textAlign: 'center', marginBottom: 20 },
   description: { fontSize: 16, fontWeight: '600', marginBottom: 8, textAlign: 'center' },
   bestLeader: { fontSize: 14, textAlign: 'center' },
 });

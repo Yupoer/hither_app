@@ -20,7 +20,8 @@ export type StepId =
   | 'F4_prefs' // follower
   | 'C1_why'
   | 'C2_companions'
-  | 'C3_wanted'; // browser
+  | 'C3_wanted' // browser
+  | 'celebration'; // shared finish/congrats screen (all branches end here)
 
 /** A/B answer to one of the F1-F3 personality quiz questions. */
 export type QuizAnswer = 'A' | 'B';

@@ -8,11 +8,14 @@ import { selectionTick } from '../../utils/haptics';
 export default function OptionCard({
   title,
   subtitle,
+  emoji,
   selected,
   onPress,
 }: {
   title: string;
   subtitle?: string;
+  /** Optional leading emoji (temporary stand-in for step artwork). */
+  emoji?: string;
   selected?: boolean;
   onPress: () => void;
 }) {
@@ -33,21 +36,30 @@ export default function OptionCard({
         pressed && { opacity: 0.85 },
       ]}
     >
-      <Text style={[styles.title, { color: colors.textPrimary }]}>{title}</Text>
-      {subtitle ? (
-        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{subtitle}</Text>
-      ) : null}
+      {emoji ? <Text style={styles.emoji}>{emoji}</Text> : null}
+      <View style={styles.textCol}>
+        <Text style={[styles.title, { color: colors.textPrimary }]}>{title}</Text>
+        {subtitle ? (
+          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{subtitle}</Text>
+        ) : null}
+      </View>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 68,
     borderWidth: StyleSheet.hairlineWidth * 2,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
+    borderRadius: 18,
+    paddingVertical: 18,
+    paddingHorizontal: 18,
+    marginBottom: 14,
   },
-  title: { fontSize: 16, fontWeight: '600' },
-  subtitle: { fontSize: 13, marginTop: 4 },
+  emoji: { fontSize: 32, marginRight: 14 },
+  textCol: { flex: 1 },
+  title: { fontSize: 17, fontWeight: '600' },
+  subtitle: { fontSize: 14, marginTop: 4 },
 });

@@ -18,6 +18,7 @@ import F4PrefsStep from './steps/F4PrefsStep';
 import C1WhyStep from './steps/C1WhyStep';
 import C2CompanionsStep from './steps/C2CompanionsStep';
 import C3WantedStep from './steps/C3WantedStep';
+import CelebrationStep from './steps/CelebrationStep';
 
 /**
  * step id -> component. This is the whole UI surface: to reskin Onboarding,
@@ -39,6 +40,7 @@ const STEP_RENDERERS: Record<StepId, ComponentType<StepProps>> = {
   C1_why: C1WhyStep,
   C2_companions: C2CompanionsStep,
   C3_wanted: C3WantedStep,
+  celebration: CelebrationStep,
 };
 
 export default function OnboardingScreen({ onDone }: { onDone: () => void }) {

@@ -6,9 +6,9 @@ import type { OnboardingAnswers, StepId } from './types';
  *
  * Branches:
  *   intro -> theme -> role
- *   role=leader   -> L1_purpose -> L2_days -> L3_departure -> done
- *   role=follower -> F1 -> F2 -> F3 -> mascot -> F4_prefs -> done
- *   role=browser  -> C1_why -> C2_companions -> C3_wanted -> done
+ *   role=leader   -> L1_purpose -> L2_days -> L3_departure -> celebration -> done
+ *   role=follower -> F1 -> F2 -> F3 -> mascot -> F4_prefs -> celebration -> done
+ *   role=browser  -> C1_why -> C2_companions -> C3_wanted -> celebration -> done
  */
 
 export function nextStep(current: StepId, answers: OnboardingAnswers): StepId | 'done' {
@@ -34,7 +34,7 @@ export function nextStep(current: StepId, answers: OnboardingAnswers): StepId | 
     case 'L2_days':
       return 'L3_departure';
     case 'L3_departure':
-      return 'done';
+      return 'celebration';
     // Follower branch
     case 'F1':
       return 'F2';
@@ -45,13 +45,16 @@ export function nextStep(current: StepId, answers: OnboardingAnswers): StepId | 
     case 'mascot':
       return 'F4_prefs';
     case 'F4_prefs':
-      return 'done';
+      return 'celebration';
     // Browser branch
     case 'C1_why':
       return 'C2_companions';
     case 'C2_companions':
       return 'C3_wanted';
     case 'C3_wanted':
+      return 'celebration';
+    // Shared finish
+    case 'celebration':
       return 'done';
     default:
       return 'done';
