@@ -363,6 +363,20 @@ const zh = {
   'paywall.rowHistoryPro': '無上限',
   'paywall.rowThemesFree': '主題：4 種',
   'paywall.rowThemesPro': '更多主題',
+
+  // KML import
+  'kml.entry': '匯入 KML',
+  'kml.step1': '在 Google 我的地圖規劃景點',
+  'kml.step2': '匯出 KML 檔案',
+  'kml.step3': '在此上傳，一鍵導入行程',
+  'kml.pick': '選擇 KML 檔案',
+  'kml.parseError': '無法解析這個檔案，請確認是 Google 我的地圖匯出的 KML',
+  'kml.lockedNote': '免費版一次最多匯入 {n} 個景點，升級解鎖全部',
+  'kml.noRoom': '行程已達免費版集合點上限',
+  'kml.importN': '匯入 {n} 個景點',
+  'kml.importing': '匯入中 {done}/{total}',
+  'kml.done': '匯入完成',
+  'kml.retry': '重試',
 } as const;
 
 const en: Record<keyof typeof zh, string> = {
@@ -695,6 +709,20 @@ const en: Record<keyof typeof zh, string> = {
   'paywall.rowHistoryPro': 'Unlimited',
   'paywall.rowThemesFree': 'Themes: 4',
   'paywall.rowThemesPro': 'More themes',
+
+  // KML import
+  'kml.entry': 'Import KML',
+  'kml.step1': 'Plan your spots in Google My Maps',
+  'kml.step2': 'Export as a KML file',
+  'kml.step3': 'Upload it here to import your itinerary',
+  'kml.pick': 'Choose KML file',
+  'kml.parseError': "Couldn't parse this file — make sure it's a KML exported from Google My Maps",
+  'kml.lockedNote': 'Free plan imports up to {n} spots at once — upgrade to unlock all',
+  'kml.noRoom': "Your itinerary is at the free plan's limit",
+  'kml.importN': 'Import {n} spots',
+  'kml.importing': 'Importing {done}/{total}',
+  'kml.done': 'Import complete',
+  'kml.retry': 'Retry',
 };
 
 export const translations: Record<Language, Dict> = { zh, en };

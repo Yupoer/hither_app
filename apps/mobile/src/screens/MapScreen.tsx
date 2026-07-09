@@ -43,6 +43,7 @@ import QuickCommandsCard from '../components/QuickCommandsCard';
 import BottomSheet, { sheetBottomOffset } from '../components/BottomSheet';
 import OverlaySheet from '../components/OverlaySheet';
 import PaywallSheet from '../components/PaywallSheet';
+import KmlImportSheet from '../components/KmlImportSheet';
 import CrookIcon from '../components/CrookIcon';
 import { useSession } from '../state/SessionContext';
 import { usePreferences, useTheme, type Language } from '../state/PreferencesContext';
@@ -79,6 +80,7 @@ import { isVirtualMember } from '../api/virtualMates';
 import { confirmAction } from '../utils/confirm';
 import { AVATAR_EMOJI } from '../constants/avatars';
 import type { Coordinates, Destination, MemberLocation } from '../types';
+import type { KmlPlacemark } from '../utils/kml';
 import { FREE_LIMITS } from '../entitlements';
 import { themes, THEME_ORDER, type ThemeName } from '../theme';
 import { glass, accentMix, memberColor } from '../glass';
@@ -169,6 +171,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const [detent, setDetent] = useState(0);
   const [overlay, setOverlay] = useState<null | 'route' | 'settings' | 'profile'>(null);
   const [searchVisible, setSearchVisible] = useState(false);
+  const [kmlVisible, setKmlVisible] = useState(false);
   const [paywallTrigger, setPaywallTrigger] = useState<TranslationKey | undefined>(undefined);
   const [paywallVisible, setPaywallVisible] = useState(false);
   function openPaywall(trigger?: TranslationKey) {
@@ -439,6 +442,20 @@ export default function MapScreen({ route, navigation }: Props) {
     } catch {
       Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
     }
+  }
+
+  async function handleKmlImport(items: KmlPlacemark[], onProgress: (done: number) => void) {
+    if (!groupId) return;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      await addDestination(
+        groupId,
+        { title: item.name, coordinates: { latitude: item.latitude, longitude: item.longitude } },
+        myScopeId,
+      );
+      onProgress(i + 1);
+    }
+    refresh();
   }
 
   function handleMomentumEnd(e: NativeSyntheticEvent<NativeScrollEvent>) {
@@ -1280,6 +1297,21 @@ export default function MapScreen({ route, navigation }: Props) {
               <Text style={[styles.addStopText, { color: accent }]}>{t('map.addStop')}</Text>
             </Pressable>
           )}
+          {canEditItinerary && (
+            <Pressable
+              style={styles.addStop}
+              onPress={() => {
+                setOverlay(null);
+                setKmlVisible(true);
+              }}
+              accessibilityRole="button"
+            >
+              <View style={[styles.addStopIcon, { backgroundColor: accentMix(accent, 26) }]}>
+                <Ionicons name="document-attach-outline" size={16} color={accent} />
+              </View>
+              <Text style={[styles.addStopText, { color: accent }]}>{t('kml.entry')}</Text>
+            </Pressable>
+          )}
         </ScrollView>
       </OverlaySheet>
 
@@ -1533,6 +1565,18 @@ export default function MapScreen({ route, navigation }: Props) {
         visible={paywallVisible}
         onClose={() => setPaywallVisible(false)}
         trigger={paywallTrigger}
+      />
+
+      <KmlImportSheet
+        visible={kmlVisible}
+        onClose={() => setKmlVisible(false)}
+        currentCount={destinations.length}
+        isPro={isPro}
+        onImport={handleKmlImport}
+        onUpgrade={() => {
+          setKmlVisible(false);
+          openPaywall('paywall.triggerDestinations');
+        }}
       />
 
       {/* iOS meet-time editor: embedded spinner + Set/Clear (Android uses the
