@@ -542,8 +542,12 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // --- Subgroups (小隊：邀請制、無隊長) ---------------------------------------
   const subgroups = state?.subgroups ?? [];
-  const { invites: pendingInvites, accept: acceptInvite, decline: declineInvite } =
-    useSubgroupInvites();
+  const {
+    invites: pendingInvites,
+    accept: acceptInvite,
+    decline: declineInvite,
+    refresh: refreshInvites,
+  } = useSubgroupInvites();
 
   async function handleAcceptInvite(inviteId: string) {
     mediumTap();
@@ -574,6 +578,10 @@ export default function MapScreen({ route, navigation }: Props) {
     try {
       await inviteToSubgroup(subgroupId, inviteeId);
       logEvent('invite_send_ok', { subgroupId, inviteeId });
+      // Demo has no realtime channel to nudge the invite list, and simulates
+      // the invitee replying with a join-request — pull it in so the pending
+      // approve/decline card shows immediately.
+      if (isDemoGroup(groupId)) refreshInvites();
       Alert.alert(t('subgroup.inviteSent'));
     } catch (e) {
       logError('invite_send_failed', e, { subgroupId, inviteeId });
@@ -1203,32 +1211,40 @@ export default function MapScreen({ route, navigation }: Props) {
         </View>
         {pendingInvites.length > 0 && (
           <View style={styles.list}>
-            {pendingInvites.map((inv, i) => (
-              <View
-                key={inv.id}
-                style={[styles.flockRow, i === pendingInvites.length - 1 && styles.flockRowLast]}
-              >
-                <Text style={styles.flockName}>
-                  {t('subgroup.invitePrompt', { name: inv.inviterName, team: inv.subgroupName })}
-                </Text>
-                <View style={styles.splitActions}>
-                  <Pressable
-                    style={[styles.chip, { backgroundColor: accentMix(accent, 24), borderColor: accentMix(accent, 50) }]}
-                    onPress={() => void handleAcceptInvite(inv.id)}
-                    accessibilityRole="button"
-                  >
-                    <Text style={styles.chipText}>{t('subgroup.accept')}</Text>
-                  </Pressable>
-                  <Pressable
-                    style={styles.chipGhost}
-                    onPress={() => void handleDeclineInvite(inv.id)}
-                    accessibilityRole="button"
-                  >
-                    <Text style={styles.chipText}>{t('subgroup.decline')}</Text>
-                  </Pressable>
+            {pendingInvites.map((inv, i) => {
+              const isRequest = inv.kind === 'request';
+              return (
+                <View
+                  key={inv.id}
+                  style={[styles.flockRow, i === pendingInvites.length - 1 && styles.flockRowLast]}
+                >
+                  <Text style={styles.flockName}>
+                    {t(isRequest ? 'subgroup.requestPrompt' : 'subgroup.invitePrompt', {
+                      name: inv.inviterName,
+                      team: inv.subgroupName,
+                    })}
+                  </Text>
+                  <View style={styles.splitActions}>
+                    <Pressable
+                      style={[styles.chip, { backgroundColor: accentMix(accent, 24), borderColor: accentMix(accent, 50) }]}
+                      onPress={() => void handleAcceptInvite(inv.id)}
+                      accessibilityRole="button"
+                    >
+                      <Text style={styles.chipText}>
+                        {t(isRequest ? 'subgroup.approve' : 'subgroup.accept')}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.chipGhost}
+                      onPress={() => void handleDeclineInvite(inv.id)}
+                      accessibilityRole="button"
+                    >
+                      <Text style={styles.chipText}>{t('subgroup.decline')}</Text>
+                    </Pressable>
+                  </View>
                 </View>
-              </View>
-            ))}
+              );
+            })}
           </View>
         )}
         <View style={styles.list}>

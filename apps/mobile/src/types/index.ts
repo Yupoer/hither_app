@@ -111,6 +111,13 @@ export interface SubgroupInvite {
 export interface PendingInvite extends SubgroupInvite {
   subgroupName: string;
   inviterName: string;
+  /**
+   * Direction of the pending row from the viewer's side:
+   * - 'invite'  — someone invited ME to their team; I accept to join (default).
+   * - 'request' — someone wants to join MY team; I approve to let them in.
+   * Used to pick the prompt/button wording. Demo simulates 'request'.
+   */
+  kind?: 'invite' | 'request';
 }
 
 /** A gathering point / itinerary stop. */
