@@ -527,6 +527,23 @@ export async function updateProfile(fields: {
 }
 
 /**
+ * Persist the Onboarding answers onto the signed-in user's profile row (the
+ * `onboarding` jsonb column — see the profiles_onboarding migration). The
+ * flow runs before sign-in, so this is called once after a session exists
+ * (see onboarding/sync.ts). Throws on failure (e.g. the `onboarding` column
+ * not deployed yet) — the caller decides whether to swallow; sync.ts does,
+ * and only marks the answers synced on success so they retry next launch.
+ */
+export async function saveOnboardingProfile(answers: object): Promise<void> {
+  const uid = await requireUserId();
+  const { error } = await supabase
+    .from('profiles')
+    .update({ onboarding: answers })
+    .eq('id', uid);
+  if (error) throw new Error(error.message);
+}
+
+/**
  * Invite someone into a subgroup ("小隊"). Forming a ≥2-person team is
  * invite-driven now: any team member invites a co-member, who accepts to move
  * in. Goes through the `invite_to_subgroup` SECURITY DEFINER RPC (direct

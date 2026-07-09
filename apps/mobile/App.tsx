@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import {
   DarkTheme,
@@ -9,6 +9,8 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import RootNavigator from './src/navigation/RootNavigator';
+import OnboardingScreen from './src/onboarding/OnboardingScreen';
+import { readOnboardingState } from './src/onboarding/sync';
 import { SessionProvider, useSession } from './src/state/SessionContext';
 import { usePushRegistration } from './src/state/usePushRegistration';
 import { useGroupNotifications } from './src/state/useGroupNotifications';
@@ -36,10 +38,26 @@ function ThemedNavigation() {
   // how duplicate notifications across the two instances are avoided.
   useSubgroupInvites();
 
-  // Hold the navigator until the persisted session is resolved, so
-  // RootNavigator's initialRouteName sees the correct logged-in/out state
-  // (a restored user skips Login) instead of flashing the wrong first screen.
-  if (initializing) {
+  // First-launch Onboarding gate: a local AsyncStorage flag
+  // (hither.onboarding.v1), independent of session/auth. `null` means
+  // "still checking" — held alongside the session splash below so neither
+  // flashes the wrong first screen.
+  const [needsOnboarding, setNeedsOnboarding] = useState<boolean | null>(null);
+  useEffect(() => {
+    let active = true;
+    readOnboardingState().then((state) => {
+      if (active) setNeedsOnboarding(!state?.completed);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Hold the navigator until the persisted session AND the onboarding flag
+  // are resolved, so RootNavigator's initialRouteName sees the correct
+  // logged-in/out state (a restored user skips Login) instead of flashing
+  // the wrong first screen.
+  if (initializing || needsOnboarding === null) {
     return (
       <View
         style={{
@@ -51,6 +69,15 @@ function ThemedNavigation() {
       >
         <ActivityIndicator color={colors.accent} />
       </View>
+    );
+  }
+
+  if (needsOnboarding) {
+    return (
+      <>
+        <OnboardingScreen onDone={() => setNeedsOnboarding(false)} />
+        <StatusBar style={themeName === 'day' ? 'dark' : 'light'} />
+      </>
     );
   }
 

@@ -33,6 +33,8 @@ Hither 的品牌核心隱喻是**牧羊人的拐杖 (Shepherd's Crook)**：
 
 為了大副降低用戶心智負擔，同時收集關鍵的旅行背景偏好，Onboarding 流程採用**低文字密度、動畫優先、分支互動式**的設計。
 
+> ✅ **已實作（2026-07-09，UX 邏輯層 + 佔位 UI）**：`src/onboarding/` 模組——純資料流程狀態機（`flow.ts`）、題目與吉祥物 8 組合對照表（`content.ts`，題目為暫編版）、step registry（換 UI 只換 registry 內的 component）、共享 3 頁 + Leader/Member/Browser 三條分支、theme 頁即時切換含新增 forest 主題、expo-haptics 正向互動回饋、AsyncStorage 完成旗標（絕不二次顯示）、登入後答案一次性同步至 `profiles.onboarding`（失敗自動下次啟動重試）。jest+tsc 全綠。**未實機驗證**；migration `20260709010000_profiles_onboarding.sql` 待套用；正式 UI 依 §2 規範之後整包抽換。
+
 Onboarding 設計的完整 UI 佈局、手勢、動態與震動回饋規範詳見 [onboarding_design_specs.md](file:///C:/Users/alexs/Desktop/BZ/hither/hither_app/docs/../brain/6fd5d31c-11d3-43e7-9e28-54f672ae2d7f/onboarding_design_specs.md)。
 
 ### 2.1 共享流程頁面

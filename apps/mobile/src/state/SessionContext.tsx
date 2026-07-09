@@ -15,6 +15,7 @@ import {
 } from '../api/client';
 import type { Group, MemberRole, User } from '../types';
 import { avatarForUser } from '../constants/avatars';
+import { syncOnboardingIfNeeded } from '../onboarding/sync';
 
 // Dismisses a leftover auth browser tab if one is still open on launch.
 WebBrowser.maybeCompleteAuthSession();
@@ -135,6 +136,14 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       sub.subscription.unsubscribe();
     };
   }, []);
+
+  // Once a session exists (any sign-in path — anonymous, email, Google, or a
+  // restored launch), push any locally-completed Onboarding answers to the
+  // profile exactly once. No-op if onboarding wasn't completed or was
+  // already synced; never throws (see onboarding/sync.ts).
+  useEffect(() => {
+    if (user) void syncOnboardingIfNeeded();
+  }, [user]);
 
   const value = useMemo<SessionContextValue>(
     () => ({

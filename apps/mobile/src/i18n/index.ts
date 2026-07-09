@@ -221,6 +221,94 @@ const zh = {
     '🗺️ 互動地圖只在原生 App 顯示（iPhone 上的 Expo Go）。\n以下為 web 預覽用的即時資料。',
   'web.membersSection': '成員 · {count}',
   'web.unknownLocation': '位置未知',
+
+  // Settings · theme (forest, added by Onboarding)
+  'settings.themeForest': '森林',
+
+  // Onboarding
+  'onboarding.skip': '跳過',
+  'onboarding.next': '下一步',
+  'onboarding.back': '返回',
+  'onboarding.continue': '繼續',
+
+  'onboarding.intro.title': '牽起隊伍，不再走散',
+  'onboarding.intro.body': '像牧羊人一樣，把散開的隊員輕鬆聚回同一個集合點。',
+  'onboarding.intro.start': '開始',
+
+  'onboarding.theme.title': '選一個喜歡的主題',
+  'onboarding.theme.night': '夜燈',
+  'onboarding.theme.day': '晨光',
+  'onboarding.theme.dusk': '暮色',
+  'onboarding.theme.forest': '森林',
+
+  'onboarding.role.title': '你是哪一種旅人？',
+  'onboarding.role.leaderTitle': '牧羊人',
+  'onboarding.role.leaderBody': '規劃行程，帶領大家前進',
+  'onboarding.role.followerTitle': '羊群',
+  'onboarding.role.followerBody': '輕鬆跟隨，不必操心',
+  'onboarding.role.browser': '我只是先下載看看',
+
+  'onboarding.l1.title': '這趟旅行的目的是？',
+  'onboarding.l1.abroad': '出國旅行',
+  'onboarding.l1.city': '城市探索',
+  'onboarding.l1.family': '家庭出遊',
+  'onboarding.l1.friends': '朋友聚會',
+
+  'onboarding.l2.title': '這趟旅行大概幾天？',
+  'onboarding.l2.days': '{count} 天',
+
+  'onboarding.l3.title': '什麼時候出發？',
+  'onboarding.l3.now': '我現在就要用',
+  'onboarding.l3.countdown': '距出發還有 {days} 天',
+
+  'onboarding.f1.title': '自由活動時，你通常會…',
+  'onboarding.f1.a': '衝去排隊必吃美食',
+  'onboarding.f1.b': '漫無目的隨意散步',
+  'onboarding.f2.title': '到陌生城市，你通常會…',
+  'onboarding.f2.a': '先開地圖排好路線',
+  'onboarding.f2.b': '隨遇而安走到哪算哪',
+  'onboarding.f3.title': '集合時間快到，你通常會…',
+  'onboarding.f3.a': '提早十分鐘到集合點',
+  'onboarding.f3.b': '掐點出現或遲到隨緣',
+
+  'onboarding.mascot.collie.name': '邊境牧羊犬',
+  'onboarding.mascot.collie.description': '守時又重規劃',
+  'onboarding.mascot.collie.bestLeader': '最搭「行程排滿型隊長」',
+  'onboarding.mascot.retriever.name': '黃金獵犬',
+  'onboarding.mascot.retriever.description': '高行動力、探索導向',
+  'onboarding.mascot.retriever.bestLeader': '最搭「彈性隨行型隊長」',
+  'onboarding.mascot.koala.name': '無尾熊',
+  'onboarding.mascot.koala.description': '慢步調、享受型',
+  'onboarding.mascot.koala.bestLeader': '最搭「節奏放鬆型隊長」',
+  'onboarding.mascot.cat.name': '貓',
+  'onboarding.mascot.cat.description': '特立獨行、獨立探索',
+  'onboarding.mascot.cat.bestLeader': '最搭「放養信任型隊長」',
+
+  'onboarding.f4.title': '你喜歡什麼樣的景點？（可複選）',
+  'onboarding.f4.food': '美食',
+  'onboarding.f4.sights': '景點',
+  'onboarding.f4.shopping': '購物',
+  'onboarding.f4.nature': '自然',
+  'onboarding.f4.culture': '文化',
+  'onboarding.f4.nightlife': '夜生活',
+
+  'onboarding.c1.title': '你為什麼想用 Hither？',
+  'onboarding.c1.findPeople': '找人',
+  'onboarding.c1.fearLost': '怕走丟',
+  'onboarding.c1.planTrip': '規劃行程',
+  'onboarding.c1.curious': '好奇',
+
+  'onboarding.c2.title': '通常和誰一起旅行？',
+  'onboarding.c2.family': '家人',
+  'onboarding.c2.friends': '朋友',
+  'onboarding.c2.partner': '伴侶',
+  'onboarding.c2.colleagues': '同事',
+
+  'onboarding.c3.title': '你最想要哪個功能？',
+  'onboarding.c3.liveLocation': '即時定位',
+  'onboarding.c3.meetReminders': '集合提醒',
+  'onboarding.c3.sharedItinerary': '行程共編',
+  'onboarding.c3.tripRecap': '旅程回顧',
 } as const;
 
 const en: Record<keyof typeof zh, string> = {
@@ -411,6 +499,92 @@ const en: Record<keyof typeof zh, string> = {
     '🗺️ The interactive map only shows in the native app (Expo Go on iPhone).\nLive data below is for the web preview.',
   'web.membersSection': 'Members · {count}',
   'web.unknownLocation': 'Location unknown',
+
+  'settings.themeForest': 'Forest',
+
+  'onboarding.skip': 'Skip',
+  'onboarding.next': 'Next',
+  'onboarding.back': 'Back',
+  'onboarding.continue': 'Continue',
+
+  'onboarding.intro.title': 'Keep your flock together',
+  'onboarding.intro.body': 'Like a shepherd, gently guide everyone back to the same gathering point.',
+  'onboarding.intro.start': 'Get started',
+
+  'onboarding.theme.title': 'Pick a theme you like',
+  'onboarding.theme.night': 'Night',
+  'onboarding.theme.day': 'Day',
+  'onboarding.theme.dusk': 'Dusk',
+  'onboarding.theme.forest': 'Forest',
+
+  'onboarding.role.title': 'What kind of traveler are you?',
+  'onboarding.role.leaderTitle': 'Shepherd',
+  'onboarding.role.leaderBody': 'Plan the trip and lead the way',
+  'onboarding.role.followerTitle': 'Flock',
+  'onboarding.role.followerBody': 'Follow along, worry-free',
+  'onboarding.role.browser': "I'm just browsing for now",
+
+  'onboarding.l1.title': "What's the purpose of this trip?",
+  'onboarding.l1.abroad': 'Abroad trip',
+  'onboarding.l1.city': 'City exploring',
+  'onboarding.l1.family': 'Family outing',
+  'onboarding.l1.friends': 'Friends gathering',
+
+  'onboarding.l2.title': 'About how many days?',
+  'onboarding.l2.days': '{count} days',
+
+  'onboarding.l3.title': 'When are you leaving?',
+  'onboarding.l3.now': "I need this right now",
+  'onboarding.l3.countdown': '{days} days to go',
+
+  'onboarding.f1.title': 'On free time, you usually…',
+  'onboarding.f1.a': 'Rush to queue for must-try food',
+  'onboarding.f1.b': 'Wander around aimlessly',
+  'onboarding.f2.title': 'In an unfamiliar city, you usually…',
+  'onboarding.f2.a': 'Map out the route first',
+  'onboarding.f2.b': 'Go with the flow',
+  'onboarding.f3.title': 'When it\'s almost time to meet up, you usually…',
+  'onboarding.f3.a': 'Arrive ten minutes early',
+  'onboarding.f3.b': 'Cut it close or run late',
+
+  'onboarding.mascot.collie.name': 'Border Collie',
+  'onboarding.mascot.collie.description': 'Punctual and plan-driven',
+  'onboarding.mascot.collie.bestLeader': 'Best paired with a "packed-itinerary" leader',
+  'onboarding.mascot.retriever.name': 'Golden Retriever',
+  'onboarding.mascot.retriever.description': 'High energy, exploration-driven',
+  'onboarding.mascot.retriever.bestLeader': 'Best paired with a "go-with-the-flow" leader',
+  'onboarding.mascot.koala.name': 'Koala',
+  'onboarding.mascot.koala.description': 'Slow-paced and easygoing',
+  'onboarding.mascot.koala.bestLeader': 'Best paired with a "relaxed-pace" leader',
+  'onboarding.mascot.cat.name': 'Cat',
+  'onboarding.mascot.cat.description': 'Independent, self-guided explorer',
+  'onboarding.mascot.cat.bestLeader': 'Best paired with a "hands-off, trusting" leader',
+
+  'onboarding.f4.title': 'What do you enjoy? (pick any)',
+  'onboarding.f4.food': 'Food',
+  'onboarding.f4.sights': 'Sights',
+  'onboarding.f4.shopping': 'Shopping',
+  'onboarding.f4.nature': 'Nature',
+  'onboarding.f4.culture': 'Culture',
+  'onboarding.f4.nightlife': 'Nightlife',
+
+  'onboarding.c1.title': 'Why do you want to use Hither?',
+  'onboarding.c1.findPeople': 'Find people',
+  'onboarding.c1.fearLost': 'Afraid of getting lost',
+  'onboarding.c1.planTrip': 'Plan a trip',
+  'onboarding.c1.curious': 'Just curious',
+
+  'onboarding.c2.title': 'Who do you usually travel with?',
+  'onboarding.c2.family': 'Family',
+  'onboarding.c2.friends': 'Friends',
+  'onboarding.c2.partner': 'Partner',
+  'onboarding.c2.colleagues': 'Colleagues',
+
+  'onboarding.c3.title': "What's the one feature you'd want most?",
+  'onboarding.c3.liveLocation': 'Live location',
+  'onboarding.c3.meetReminders': 'Meet-up reminders',
+  'onboarding.c3.sharedItinerary': 'Shared itinerary',
+  'onboarding.c3.tripRecap': 'Trip recap',
 };
 
 export const translations: Record<Language, Dict> = { zh, en };

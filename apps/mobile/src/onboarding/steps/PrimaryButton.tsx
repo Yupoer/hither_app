@@ -1,0 +1,42 @@
+import React from 'react';
+import { Pressable, StyleSheet, Text } from 'react-native';
+import { useTheme } from '../../state/PreferencesContext';
+import { lightTap } from '../../utils/haptics';
+
+export default function PrimaryButton({
+  label,
+  onPress,
+  disabled,
+}: {
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
+  const { colors } = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={() => {
+        lightTap();
+        onPress();
+      }}
+      style={({ pressed }) => [
+        styles.btn,
+        {
+          backgroundColor: disabled ? colors.border : colors.accent,
+          opacity: pressed ? 0.85 : 1,
+        },
+      ]}
+    >
+      <Text style={[styles.label, { color: disabled ? colors.textSecondary : colors.accentText }]}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+const styles = StyleSheet.create({
+  btn: { height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  label: { fontSize: 16, fontWeight: '700' },
+});

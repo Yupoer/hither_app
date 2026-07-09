@@ -1154,7 +1154,9 @@ export default function MapScreen({ route, navigation }: Props) {
                   ? 'settings.themeNight'
                   : n === 'day'
                     ? 'settings.themeDay'
-                    : 'settings.themeDusk',
+                    : n === 'dusk'
+                      ? 'settings.themeDusk'
+                      : 'settings.themeForest',
               ),
             }))}
             value={themeName}
