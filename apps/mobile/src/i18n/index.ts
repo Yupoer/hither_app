@@ -45,6 +45,14 @@ const zh = {
   'login.guest': '以訪客身分繼續',
   'login.signInFailed': '登入失敗，請確認 Email 與密碼',
   'login.signUpFailed': '註冊失敗，請再試一次',
+  'anon.confirmTitle': '以匿名身份繼續？',
+  'anon.limit1': '無法保留歷史紀錄',
+  'anon.limit2': '無法跨裝置同步',
+  'anon.limit3': '無法被他人加入常用同伴',
+  'anon.expiryWarning':
+    '匿名帳號與其資料自加入群組起最多保留 3 天。若出遊行程超過 3 天，建議註冊帳號，以免中途遺失群組與定位資料。',
+  'anon.continue': '繼續匿名',
+  'anon.goRegister': '返回註冊',
 
   // Role select
   'role.tagline': '讓大家不走散，隨時知道下一個集合點。',
@@ -95,6 +103,17 @@ const zh = {
   'settings.signOut': '登出',
   'settings.signOutTitle': '登出',
   'settings.signOutMsg': '登出後會回到登入畫面。',
+  'settings.resetPrefs': '重設旅行偏好',
+  'settings.resetPrefsConfirm':
+    '將清除性格測驗與旅行偏好資料，並重新進行偏好問卷。確定要重設？',
+  'settings.resetPrefsDone': '已重設，重新開啟 App 後會重新進行問卷。',
+  'account.section': '帳號',
+  'account.upgradeButton': '建立帳號（保留現有資料）',
+  'account.email': 'Email',
+  'account.password': '密碼（至少 6 字元）',
+  'account.submit': '送出',
+  'account.upgradeSent': '確認信已寄出，點擊信中連結完成註冊。',
+  'account.signedInAs': '目前帳號：{email}',
 
   // Map
   'role.demo': '測試模式 · 虛擬團隊',
@@ -336,6 +355,14 @@ const en: Record<keyof typeof zh, string> = {
   'login.guest': 'Continue as guest',
   'login.signInFailed': 'Sign-in failed. Check your email and password.',
   'login.signUpFailed': 'Sign-up failed, please try again',
+  'anon.confirmTitle': 'Continue anonymously?',
+  'anon.limit1': 'No history is kept',
+  'anon.limit2': 'No sync across devices',
+  'anon.limit3': "Others can't add you as a frequent companion",
+  'anon.expiryWarning':
+    "An anonymous account and its data are kept for at most 3 days after you join a group. If your trip is longer, create an account so you don't lose your group and location data mid-trip.",
+  'anon.continue': 'Continue anonymously',
+  'anon.goRegister': 'Back to sign up',
 
   'role.tagline': 'Keep your flock together. Always know the next gathering point.',
   'role.lead': 'Lead a group',
@@ -382,6 +409,19 @@ const en: Record<keyof typeof zh, string> = {
   'settings.signOut': 'Sign out',
   'settings.signOutTitle': 'Sign out',
   'settings.signOutMsg': "You'll return to the sign-in screen.",
+  'settings.resetPrefs': 'Reset travel preferences',
+  'settings.resetPrefsConfirm':
+    'This clears your quiz results and travel preferences, and re-runs the preference survey. Reset?',
+  'settings.resetPrefsDone':
+    'Preferences reset — the survey will run again next time you open the app.',
+  'account.section': 'Account',
+  'account.upgradeButton': 'Create account (keeps your data)',
+  'account.email': 'Email',
+  'account.password': 'Password (min 6 characters)',
+  'account.submit': 'Submit',
+  'account.upgradeSent':
+    'Confirmation email sent — click the link inside to finish signing up.',
+  'account.signedInAs': 'Signed in as {email}',
 
   'role.demo': 'Demo flock (testing)',
   'profile.title': 'Profile',

@@ -61,6 +61,7 @@ import {
   deleteDestination,
   inviteToSubgroup,
   reorderDestinations,
+  saveOnboardingProfile,
   selfMerge,
   selfSplit,
   setDestinationMeetTime,
@@ -68,6 +69,8 @@ import {
   setSolo,
   updateMyLocation,
 } from '../api/client';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { ONBOARDING_STORAGE_KEY } from '../onboarding/sync';
 import { isDemoGroup } from '../api/demo';
 import { isVirtualMember } from '../api/virtualMates';
 import { confirmAction } from '../utils/confirm';
@@ -100,7 +103,8 @@ function shortEta(seconds: number): string {
 export default function MapScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  const { membership, user, updateProfile, leaveGroup, signOut } = useSession();
+  const { membership, user, updateProfile, leaveGroup, signOut, isAnonymous, upgradeToEmailAccount } =
+    useSession();
   const { language, themeName, powerSaver, setLanguage, setThemeName, setPowerSaver } =
     usePreferences();
   const { colors } = useTheme();
@@ -569,6 +573,59 @@ export default function MapScreen({ route, navigation }: Props) {
         navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
       },
     );
+  }
+
+  // --- Account upgrade (anonymous -> email) ---------------------------------
+  const [upgradeVisible, setUpgradeVisible] = useState(false);
+  const [upgradeEmail, setUpgradeEmail] = useState('');
+  const [upgradePassword, setUpgradePassword] = useState('');
+  const [upgradeError, setUpgradeError] = useState<string | null>(null);
+  const [upgradeBusy, setUpgradeBusy] = useState(false);
+  const upgradeCanSubmit =
+    /\S+@\S+\.\S+/.test(upgradeEmail.trim()) && upgradePassword.length >= 6 && !upgradeBusy;
+
+  function closeUpgrade() {
+    setUpgradeVisible(false);
+    setUpgradeEmail('');
+    setUpgradePassword('');
+    setUpgradeError(null);
+  }
+
+  async function submitUpgrade() {
+    if (!upgradeCanSubmit) return;
+    setUpgradeBusy(true);
+    setUpgradeError(null);
+    try {
+      await upgradeToEmailAccount(upgradeEmail.trim(), upgradePassword);
+      Alert.alert(t('account.section'), t('account.upgradeSent'));
+      closeUpgrade();
+    } catch (e) {
+      setUpgradeError(e instanceof Error ? e.message : t('account.upgradeSent'));
+    } finally {
+      setUpgradeBusy(false);
+    }
+  }
+
+  function confirmResetPrefs() {
+    confirmAction(
+      {
+        title: t('settings.resetPrefs'),
+        message: t('settings.resetPrefsConfirm'),
+        confirmLabel: t('settings.resetPrefs'),
+        destructive: true,
+      },
+      () => void resetPrefs(),
+    );
+  }
+
+  async function resetPrefs() {
+    try {
+      await saveOnboardingProfile({});
+    } catch (e) {
+      console.warn('[settings] resetPrefs saveOnboardingProfile failed', e);
+    }
+    await AsyncStorage.removeItem(ONBOARDING_STORAGE_KEY);
+    Alert.alert(t('settings.resetPrefs'), t('settings.resetPrefsDone'));
   }
 
   // --- Derived view models --------------------------------------------------
@@ -1180,6 +1237,29 @@ export default function MapScreen({ route, navigation }: Props) {
           <Text style={styles.sectionLabel}>{t('settings.notifSection')}</Text>
           <NotificationPreferencesCard colors={dark} />
 
+          <Text style={styles.sectionLabel}>{t('account.section')}</Text>
+          {isAnonymous ? (
+            <>
+              <Text style={styles.overlayHint}>{t('anon.expiryWarning')}</Text>
+              <Pressable
+                style={styles.accountBtn}
+                onPress={() => setUpgradeVisible(true)}
+                accessibilityRole="button"
+              >
+                <Text style={[styles.accountBtnText, { color: accent }]}>
+                  {t('account.upgradeButton')}
+                </Text>
+              </Pressable>
+            </>
+          ) : (
+            <Text style={styles.overlayHint}>
+              {t('account.signedInAs', { email: user?.email ?? '' })}
+            </Text>
+          )}
+
+          <Pressable style={styles.dangerBtn} onPress={confirmResetPrefs} accessibilityRole="button">
+            <Text style={styles.dangerText}>{t('settings.resetPrefs')}</Text>
+          </Pressable>
           <Pressable style={styles.dangerBtn} onPress={confirmLeave} accessibilityRole="button">
             <Text style={styles.dangerText}>
               {isLeader ? t('map.endGroup') : t('group.leave')}
@@ -1187,6 +1267,58 @@ export default function MapScreen({ route, navigation }: Props) {
           </Pressable>
           <Pressable style={styles.dangerBtn} onPress={confirmSignOut} accessibilityRole="button">
             <Text style={styles.dangerText}>{t('settings.signOut')}</Text>
+          </Pressable>
+        </ScrollView>
+      </OverlaySheet>
+
+      {/* Anonymous -> email upgrade: same uid, keeps profiles/memberships. */}
+      <OverlaySheet
+        visible={upgradeVisible}
+        onClose={closeUpgrade}
+        title={t('account.upgradeButton')}
+        accent={accent}
+        doneLabel={t('map.done')}
+      >
+        <ScrollView contentContainerStyle={styles.overlayBody}>
+          <Text style={styles.sectionLabel}>{t('account.email')}</Text>
+          <View style={styles.profileRow}>
+            <TextInput
+              style={styles.profileInput}
+              value={upgradeEmail}
+              onChangeText={setUpgradeEmail}
+              placeholder="you@example.com"
+              placeholderTextColor={glass.textTertiary}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="email-address"
+            />
+          </View>
+          <Text style={styles.sectionLabel}>{t('account.password')}</Text>
+          <View style={styles.profileRow}>
+            <TextInput
+              style={styles.profileInput}
+              value={upgradePassword}
+              onChangeText={setUpgradePassword}
+              placeholder={t('account.password')}
+              placeholderTextColor={glass.textTertiary}
+              autoCapitalize="none"
+              secureTextEntry
+            />
+          </View>
+          {upgradeError && <Text style={styles.upgradeError}>{upgradeError}</Text>}
+          <Pressable
+            style={[styles.accountBtn, !upgradeCanSubmit && { opacity: 0.4 }]}
+            onPress={submitUpgrade}
+            disabled={!upgradeCanSubmit}
+            accessibilityRole="button"
+          >
+            {upgradeBusy ? (
+              <ActivityIndicator color={accent} />
+            ) : (
+              <Text style={[styles.accountBtnText, { color: accent }]}>
+                {t('account.submit')}
+              </Text>
+            )}
           </Pressable>
         </ScrollView>
       </OverlaySheet>
@@ -1746,4 +1878,21 @@ const makeStyles = (accent: string) =>
       borderColor: 'rgba(255,107,107,0.3)',
     },
     dangerText: { fontSize: 16, fontWeight: '600', color: glass.danger },
+    accountBtn: {
+      height: 48,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: 10,
+      backgroundColor: accentMix(accent, 14),
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: accentMix(accent, 40),
+    },
+    accountBtnText: { fontSize: 15, fontWeight: '600' },
+    upgradeError: {
+      fontSize: 13,
+      color: glass.danger,
+      marginTop: 8,
+      marginHorizontal: 4,
+    },
   });
