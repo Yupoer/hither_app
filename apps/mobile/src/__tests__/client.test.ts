@@ -18,6 +18,7 @@ import {
   getNotificationPreferences,
   setNotificationPreferences,
   setJourneyStatus,
+  setDestinationMeetTime,
 } from '../api/client';
 import { supabase } from '../api/supabase';
 
@@ -349,5 +350,33 @@ describe('notifications, commands & journey', () => {
 
     await setJourneyStatus('g1', 'going');
     expect(update).toHaveBeenCalledWith({ journey_status: 'going' });
+  });
+
+  it('setDestinationMeetTime updates itinerary_items.meet_at', async () => {
+    const update = jest.fn(() => ({ eq: () => Promise.resolve({ error: null }) }));
+    mockedFrom.mockImplementation(() => ({ update }));
+
+    await setDestinationMeetTime('d1', '2026-07-09T10:00:00.000Z');
+    expect(update).toHaveBeenCalledWith({ meet_at: '2026-07-09T10:00:00.000Z' });
+  });
+
+  it('setDestinationMeetTime(null) clears the meet time', async () => {
+    const update = jest.fn(() => ({ eq: () => Promise.resolve({ error: null }) }));
+    mockedFrom.mockImplementation(() => ({ update }));
+
+    await setDestinationMeetTime('d1', null);
+    expect(update).toHaveBeenCalledWith({ meet_at: null });
+  });
+
+  it('setDestinationMeetTime throws when RLS rejects (follower, not leader)', async () => {
+    const update = jest.fn(() => ({
+      eq: () =>
+        Promise.resolve({
+          error: { code: '42501', message: 'new row violates row-level security' },
+        }),
+    }));
+    mockedFrom.mockImplementation(() => ({ update }));
+
+    await expect(setDestinationMeetTime('d1', null)).rejects.toThrow('row-level security');
   });
 });

@@ -117,6 +117,8 @@ export interface Destination {
   order: number;
   address?: string;
   coordinates: Coordinates;
+  /** ISO-8601 target time to gather, set by the leader. Optional. */
+  meetAt?: string;
 }
 
 /** Aggregated live view of a group, consumed by the Map screen. */

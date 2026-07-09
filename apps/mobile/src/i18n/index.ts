@@ -161,6 +161,15 @@ const zh = {
   'flock.unknown': '位置未知',
   'flock.here': '就在這',
 
+  // Map · meet time (countdown / set / clear) + member status
+  'meetTime.countdown': '還剩 {minutes} 分鐘集合',
+  'meetTime.overdue': '已超過集合時間 {minutes} 分鐘',
+  'meetTime.set': '設定集合時間',
+  'meetTime.clear': '清除集合時間',
+  'memberStatus.arrived': '已抵達',
+  'memberStatus.moving': '移動中',
+  'memberStatus.notStarted': '未出發',
+
   // Commands (quick buttons) · labels
   'command.gather': '集合',
   'command.find_gathering': '找集合點',
@@ -347,6 +356,14 @@ const en: Record<keyof typeof zh, string> = {
   'flock.enroute': 'On the way',
   'flock.unknown': 'Location unknown',
   'flock.here': 'here',
+
+  'meetTime.countdown': '{minutes} min to gather',
+  'meetTime.overdue': '{minutes} min past meet time',
+  'meetTime.set': 'Set meet time',
+  'meetTime.clear': 'Clear meet time',
+  'memberStatus.arrived': 'Arrived',
+  'memberStatus.moving': 'On the way',
+  'memberStatus.notStarted': 'Not started',
 
   'command.gather': 'Gather',
   'command.find_gathering': 'Find point',

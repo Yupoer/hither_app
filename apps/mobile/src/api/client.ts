@@ -97,6 +97,8 @@ interface ItineraryRow {
   latitude: number | null;
   longitude: number | null;
   position: number;
+  /** Optional — absent until the meet_time migration is applied. */
+  meet_at?: string | null;
 }
 
 interface LocationRow {
@@ -138,6 +140,7 @@ export function mapDestination(row: ItineraryRow): Destination {
       latitude: row.latitude ?? 0,
       longitude: row.longitude ?? 0,
     },
+    meetAt: row.meet_at ?? undefined,
   };
 }
 
@@ -305,7 +308,7 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
       .eq('group_id', groupId),
     supabase
       .from('itinerary_items')
-      .select('id, title, address, latitude, longitude, position')
+      .select('id, title, address, latitude, longitude, position, meet_at')
       .eq('group_id', groupId)
       .order('position', { ascending: true }),
     supabase
@@ -465,6 +468,22 @@ export async function reorderDestinations(
     ),
   );
   orThrow(results.find((r) => r.error)?.error ?? null);
+}
+
+/**
+ * Set (or clear, with `null`) a gathering point's target meet time. Leader-only
+ * — `itinerary_items` UPDATE is gated to leaders by RLS, so a follower's call
+ * rejects with a 42501.
+ */
+export async function setDestinationMeetTime(
+  destinationId: string,
+  meetAt: string | null,
+): Promise<void> {
+  const { error } = await supabase
+    .from('itinerary_items')
+    .update({ meet_at: meetAt })
+    .eq('id', destinationId);
+  orThrow(error);
 }
 
 /**

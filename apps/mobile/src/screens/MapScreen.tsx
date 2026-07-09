@@ -10,6 +10,7 @@ import {
   Alert,
   NativeScrollEvent,
   NativeSyntheticEvent,
+  Platform,
   Pressable,
   ScrollView,
   Share,
@@ -20,6 +21,9 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import DateTimePicker, {
+  DateTimePickerAndroid,
+} from '@react-native-community/datetimepicker';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -50,6 +54,7 @@ import {
   formatDistance,
   walkingEtaSeconds,
 } from '../utils/geo';
+import { minutesUntil } from '../utils/meetTime';
 import { liquidGlass, location, type MapRegion, type PlaceResult } from '../native';
 import {
   addDestination,
@@ -58,6 +63,7 @@ import {
   reorderDestinations,
   selfMerge,
   selfSplit,
+  setDestinationMeetTime,
   setJourneyStatus,
   setSolo,
   updateMyLocation,
@@ -132,6 +138,41 @@ export default function MapScreen({ route, navigation }: Props) {
   const [detent, setDetent] = useState(0);
   const [overlay, setOverlay] = useState<null | 'route' | 'settings' | 'profile'>(null);
   const [searchVisible, setSearchVisible] = useState(false);
+
+  // --- Meet-time countdown + editor (iOS embeds a spinner overlay; Android
+  // opens the native dialog imperatively) -------------------------------------
+  const [meetTimeEditor, setMeetTimeEditor] = useState<{ id: string; value: Date } | null>(
+    null,
+  );
+  const [nowTick, setNowTick] = useState(() => new Date());
+  const hasMeetTimes = destinations.some((d) => d.meetAt);
+  useEffect(() => {
+    if (!hasMeetTimes) return;
+    const id = setInterval(() => setNowTick(new Date()), 30_000);
+    return () => clearInterval(id);
+  }, [hasMeetTimes]);
+
+  function persistMeetTime(destinationId: string, value: Date | null) {
+    setDestinationMeetTime(destinationId, value ? value.toISOString() : null)
+      .then(() => refresh())
+      .catch(() => Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg')));
+  }
+
+  function openMeetTimePicker(dest: Destination) {
+    if (!isLeader) return;
+    const initial = dest.meetAt ? new Date(dest.meetAt) : new Date();
+    if (Platform.OS === 'android') {
+      DateTimePickerAndroid.open({
+        value: initial,
+        mode: 'time',
+        onChange: (event, selected) => {
+          if (event.type === 'set' && selected) persistMeetTime(dest.id, selected);
+        },
+      });
+    } else {
+      setMeetTimeEditor({ id: dest.id, value: initial });
+    }
+  }
   // Freeze the route overlay's scroll while a stop is being drag-reordered so
   // the two vertical gestures never fight.
   const [routeScrollEnabled, setRouteScrollEnabled] = useState(true);
@@ -546,6 +587,15 @@ export default function MapScreen({ route, navigation }: Props) {
             : null;
         const arrived = d != null && d <= ARRIVAL_RADIUS_M;
         const isMemberLeader = m.role === 'leader';
+        // Member status chip: arrived (within the radius) > moving (a fresh
+        // location ping in the last 2 minutes) > not started (no recent ping).
+        const movingRecently =
+          !!m.lastUpdated && Date.now() - new Date(m.lastUpdated).getTime() < 2 * 60_000;
+        const memberStatusKey = arrived
+          ? 'memberStatus.arrived'
+          : movingRecently
+            ? 'memberStatus.moving'
+            : 'memberStatus.notStarted';
         const solo =
           m.userId === user?.id && soloOverride !== null ? soloOverride : !!m.solo;
         return {
@@ -556,6 +606,7 @@ export default function MapScreen({ route, navigation }: Props) {
           subgroupId: m.subgroupId,
           color: memberColor(m.userId),
           isLeader: isMemberLeader,
+          memberStatusKey,
           statusText: solo
             ? t('solo.badge')
             : isMemberLeader
@@ -620,6 +671,7 @@ export default function MapScreen({ route, navigation }: Props) {
           <View style={styles.grow}>
             <Text style={styles.flockName}>{f.name}</Text>
             <Text style={[styles.flockStatus, { color: f.statusColor }]}>{f.statusText}</Text>
+            <Text style={styles.flockMemberStatus}>{t(f.memberStatusKey)}</Text>
           </View>
           <View style={styles.flockMeta}>
             <Text style={styles.flockEta}>{f.eta}</Text>
@@ -790,6 +842,16 @@ export default function MapScreen({ route, navigation }: Props) {
               // button flips to "end navigation" (leader only; followers
               // can't change journey status).
               const navigatingThis = isLeader && journeyActive && navTarget?.id === dest.id;
+              // Leader-set target meet time, formatted as a live countdown /
+              // overdue label. Recomputed every 30s by the nowTick interval.
+              const meetLabel = dest.meetAt
+                ? (() => {
+                    const mins = minutesUntil(dest.meetAt as string, nowTick);
+                    return mins >= 0
+                      ? t('meetTime.countdown', { minutes: mins })
+                      : t('meetTime.overdue', { minutes: Math.abs(mins) });
+                  })()
+                : null;
               return (
                 <View key={dest.id} style={{ width: windowWidth, paddingHorizontal: 14 }}>
                   <liquidGlass.GlassView
@@ -854,6 +916,18 @@ export default function MapScreen({ route, navigation }: Props) {
                         </Text>
                       </View>
                     </View>
+                    {(meetLabel || isLeader) && (
+                      <Pressable
+                        style={styles.meetTimeRow}
+                        onPress={() => openMeetTimePicker(dest)}
+                        disabled={!isLeader}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('meetTime.set')}
+                      >
+                        <Ionicons name="time-outline" size={13} color={glass.textSecondary} />
+                        <Text style={styles.meetTimeText}>{meetLabel ?? t('meetTime.set')}</Text>
+                      </Pressable>
+                    )}
                   </liquidGlass.GlassView>
                 </View>
               );
@@ -1168,6 +1242,51 @@ export default function MapScreen({ route, navigation }: Props) {
         biasRegion={biasRegion}
         onPick={handlePickDestination}
       />
+
+      {/* iOS meet-time editor: embedded spinner + Set/Clear (Android uses the
+          native dialog directly, see openMeetTimePicker). */}
+      {Platform.OS !== 'android' && (
+        <OverlaySheet
+          visible={!!meetTimeEditor}
+          onClose={() => setMeetTimeEditor(null)}
+          title={t('meetTime.set')}
+          accent={accent}
+          doneLabel={t('common.cancel')}
+        >
+          {meetTimeEditor && (
+            <View style={styles.overlayBody}>
+              <DateTimePicker
+                value={meetTimeEditor.value}
+                mode="time"
+                display="spinner"
+                onChange={(_event, selected) =>
+                  selected && setMeetTimeEditor((s) => (s ? { ...s, value: selected } : s))
+                }
+              />
+              <Pressable
+                style={[styles.chip, { backgroundColor: accentMix(accent, 24), borderColor: accentMix(accent, 50) }]}
+                onPress={() => {
+                  persistMeetTime(meetTimeEditor.id, meetTimeEditor.value);
+                  setMeetTimeEditor(null);
+                }}
+                accessibilityRole="button"
+              >
+                <Text style={styles.chipText}>{t('meetTime.set')}</Text>
+              </Pressable>
+              <Pressable
+                style={styles.chipGhost}
+                onPress={() => {
+                  persistMeetTime(meetTimeEditor.id, null);
+                  setMeetTimeEditor(null);
+                }}
+                accessibilityRole="button"
+              >
+                <Text style={styles.chipText}>{t('meetTime.clear')}</Text>
+              </Pressable>
+            </View>
+          )}
+        </OverlaySheet>
+      )}
     </View>
   );
 }
@@ -1338,6 +1457,13 @@ const makeStyles = (accent: string) =>
     },
     etaPillEta: { fontSize: 15, fontWeight: '700', color: '#fff', fontVariant: ['tabular-nums'] },
     etaPillDist: { fontSize: 11, color: glass.textSecondary },
+    meetTimeRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      marginTop: 10,
+    },
+    meetTimeText: { fontSize: 12, color: glass.textSecondary },
     dots: { flexDirection: 'row', gap: 6, alignItems: 'center' },
     dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.35)' },
     dotActive: { width: 20, backgroundColor: accent },
@@ -1523,6 +1649,7 @@ const makeStyles = (accent: string) =>
     flockInitial: { fontSize: 16, fontWeight: '600', color: '#fff' },
     flockName: { fontSize: 16, color: '#fff' },
     flockStatus: { fontSize: 13 },
+    flockMemberStatus: { fontSize: 11, color: glass.textTertiary, marginTop: 1 },
     flockMeta: { alignItems: 'flex-end' },
     flockEta: { fontSize: 15, fontWeight: '600', color: '#fff', fontVariant: ['tabular-nums'] },
     flockDist: { fontSize: 12, color: glass.textTertiary },
