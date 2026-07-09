@@ -8,6 +8,7 @@ import React, {
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Pressable,
@@ -271,6 +272,18 @@ export default function MapScreen({ route, navigation }: Props) {
     },
     [groupId, journeyBusy, destinations, refresh, t],
   );
+
+  // ponytail: temporary hand-off to Apple Maps until native routing (Plan A)
+  // exists. Coords in daddr guarantee the exact pin; label names it; dirflg=w
+  // matches Hither's walking-ETA model. Universal-link fallback if maps:// is
+  // unavailable. Upgrade path: swap for in-app MapKit directions.
+  const openInAppleMaps = useCallback((dest: Destination) => {
+    const { latitude, longitude } = dest.coordinates;
+    const label = encodeURIComponent(dest.title);
+    const scheme = `maps://?daddr=${label}@${latitude},${longitude}&dirflg=w`;
+    const universal = `https://maps.apple.com/?daddr=${latitude},${longitude}&dirflg=w`;
+    Linking.openURL(scheme).catch(() => void Linking.openURL(universal));
+  }, []);
 
   const stopNavigation = useCallback(async () => {
     if (!groupId) return;
@@ -805,9 +818,14 @@ export default function MapScreen({ route, navigation }: Props) {
                           {index === 0 ? t('map.nextTag') + ' · ' : ''}
                           {t('map.destinationCounter', { index: index + 1, total: destinations.length })}
                         </Text>
-                        <Text style={styles.cardTitle} numberOfLines={1}>
-                          {dest.title}
-                        </Text>
+                        <View style={styles.titleRow}>
+                          <Text style={styles.cardTitle} numberOfLines={1}>
+                            {dest.title}
+                          </Text>
+                          {d != null && (
+                            <Text style={styles.titleDist}>{formatDistance(d)}</Text>
+                          )}
+                        </View>
                       </View>
                       {/* Pagination — lives inside the card now that the
                           carousel sits at the screen's top edge, where there's
@@ -826,13 +844,19 @@ export default function MapScreen({ route, navigation }: Props) {
                     <View style={styles.cardActions}>
                       <Pressable
                         style={[styles.directions, { backgroundColor: accentMix(accent, 26), borderColor: accentMix(accent, 50) }]}
-                        onPress={() =>
-                          navigatingThis
-                            ? void stopNavigation()
-                            : isLeader
-                              ? startNavigation(dest, index)
-                              : mapRef.current?.centerOn(dest.coordinates)
-                        }
+                        onPress={() => {
+                          if (navigatingThis) {
+                            void stopNavigation();
+                          } else if (isLeader) {
+                            // Keep the in-app journey state (flock "going" /
+                            // arrival / live activity) AND hand off turn-by-turn
+                            // to Apple Maps with the address pre-filled.
+                            startNavigation(dest, index);
+                            openInAppleMaps(dest);
+                          } else {
+                            mapRef.current?.centerOn(dest.coordinates);
+                          }
+                        }}
                         disabled={journeyBusy}
                         accessibilityRole="button"
                       >
@@ -848,9 +872,6 @@ export default function MapScreen({ route, navigation }: Props) {
                       <View style={styles.etaPill}>
                         <Text style={styles.etaPillEta}>
                           {d != null ? shortEta(walkingEtaSeconds(d)) : '—'}
-                        </Text>
-                        <Text style={styles.etaPillDist}>
-                          {d != null ? formatDistance(d) : ''}
                         </Text>
                       </View>
                     </View>
@@ -1315,7 +1336,14 @@ const makeStyles = (accent: string) =>
     },
     grow: { flex: 1, minWidth: 0 },
     cardKicker: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8 },
-    cardTitle: { fontSize: 18, fontWeight: '600', color: '#fff' },
+    titleRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
+    cardTitle: { flexShrink: 1, fontSize: 18, fontWeight: '600', color: '#fff' },
+    titleDist: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: glass.textSecondary,
+      fontVariant: ['tabular-nums'],
+    },
     cardActions: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 13 },
     directions: {
       flex: 1,
@@ -1337,7 +1365,6 @@ const makeStyles = (accent: string) =>
       backgroundColor: glass.fillStrong,
     },
     etaPillEta: { fontSize: 15, fontWeight: '700', color: '#fff', fontVariant: ['tabular-nums'] },
-    etaPillDist: { fontSize: 11, color: glass.textSecondary },
     dots: { flexDirection: 'row', gap: 6, alignItems: 'center' },
     dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.35)' },
     dotActive: { width: 20, backgroundColor: accent },
