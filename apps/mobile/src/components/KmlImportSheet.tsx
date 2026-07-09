@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import OverlaySheet from './OverlaySheet';
-import FeedbackButton from './FeedbackButton';
 import { useTranslation } from '../i18n';
 import { useTheme } from '../state/PreferencesContext';
 import { glass, accentMix } from '../glass';
@@ -98,9 +97,6 @@ export default function KmlImportSheet({
       accent={accent}
       doneLabel={t('common.cancel')}
     >
-      <View style={styles.feedbackCorner}>
-        <FeedbackButton contextTag="kml" />
-      </View>
       <ScrollView contentContainerStyle={styles.body}>
         {step.kind === 'intro' && (
           <>
@@ -193,7 +189,6 @@ export default function KmlImportSheet({
 }
 
 const styles = StyleSheet.create({
-  feedbackCorner: { position: 'absolute', top: 6, right: 12, zIndex: 10 },
   body: { paddingHorizontal: 18, paddingBottom: 24, gap: 14 },
   stepText: { fontSize: 15, color: '#fff', lineHeight: 22 },
   errorText: { fontSize: 14, color: glass.textSecondary, lineHeight: 20 },

@@ -869,12 +869,6 @@ export default function MapScreen({ route, navigation }: Props) {
     bottom: heightSV.value + sheetBottomOffset(heightSV.value, detents, insets.bottom) + 12,
     opacity: interpolate(heightSV.value, [detents[1], detents[2]], [1, 0], Extrapolation.CLAMP),
   }));
-  // Mirrors recenterStyle on the opposite (left) edge, out of the way of the
-  // recenter/fit-all buttons and the straggler banner above it.
-  const feedbackStyle = useAnimatedStyle(() => ({
-    bottom: heightSV.value + sheetBottomOffset(heightSV.value, detents, insets.bottom) + 12,
-    opacity: interpolate(heightSV.value, [detents[1], detents[2]], [1, 0], Extrapolation.CLAMP),
-  }));
   const atFull = detent === detents.length - 1;
 
   if (loading && !state) {
@@ -961,14 +955,6 @@ export default function MapScreen({ route, navigation }: Props) {
             <Ionicons name="navigate" size={19} color="#fff" />
           </Pressable>
         </View>
-      </Animated.View>
-
-      {/* Report-a-problem — mirrors the recenter capsule on the left edge. */}
-      <Animated.View
-        style={[styles.feedbackButton, feedbackStyle]}
-        pointerEvents={atFull ? 'none' : 'auto'}
-      >
-        <FeedbackButton contextTag="map" />
       </Animated.View>
 
       {/* Gathering-point carousel — takes over the top slot (where the group
@@ -1331,9 +1317,6 @@ export default function MapScreen({ route, navigation }: Props) {
               <Text style={[styles.addStopText, { color: accent }]}>{t('kml.entry')}</Text>
             </Pressable>
           )}
-          <View style={styles.itineraryFeedbackRow}>
-            <FeedbackButton contextTag="itinerary" />
-          </View>
         </ScrollView>
       </OverlaySheet>
 
@@ -1395,7 +1378,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
           <View style={styles.settingsSectionHeaderRow}>
             <Text style={styles.sectionLabel}>{t('account.section')}</Text>
-            <FeedbackButton contextTag="settings" />
+            <FeedbackButton />
           </View>
           {isAnonymous ? (
             <>
@@ -1777,8 +1760,6 @@ const makeStyles = (accent: string) =>
     roleWord: { fontSize: 14, fontWeight: '600', color: '#fff' },
 
     recenter: { position: 'absolute', right: 14, zIndex: 40 },
-    feedbackButton: { position: 'absolute', left: 14, zIndex: 40 },
-    itineraryFeedbackRow: { alignItems: 'flex-end', paddingTop: 8 },
     settingsSectionHeaderRow: {
       flexDirection: 'row',
       alignItems: 'center',

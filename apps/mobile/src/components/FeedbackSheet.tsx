@@ -18,12 +18,16 @@ import { supabase } from '../api/supabase';
 
 type Status = 'form' | 'sending' | 'sent' | 'error';
 
-const CONTEXT_LABELS: Record<string, TranslationKey> = {
-  map: 'feedback.context_map',
-  itinerary: 'feedback.context_itinerary',
-  kml: 'feedback.context_kml',
-  settings: 'feedback.context_settings',
-};
+type Category = 'bug' | 'suggestion' | 'ui' | 'other';
+
+// Category doubles as the stored `context_tag` (settings is now the only entry
+// point, so the column carries the user-picked category instead of a screen).
+const CATEGORIES: { key: Category; label: TranslationKey }[] = [
+  { key: 'bug', label: 'feedback.cat_bug' },
+  { key: 'suggestion', label: 'feedback.cat_suggestion' },
+  { key: 'ui', label: 'feedback.cat_ui' },
+  { key: 'other', label: 'feedback.cat_other' },
+];
 
 /**
  * Report-a-problem form, opened by `FeedbackButton`. The screenshot (if any)
@@ -36,22 +40,22 @@ const CONTEXT_LABELS: Record<string, TranslationKey> = {
 export default function FeedbackSheet({
   visible,
   onClose,
-  contextTag,
   screenshotUri,
 }: {
   visible: boolean;
   onClose: () => void;
-  contextTag: 'map' | 'itinerary' | 'kml' | 'settings';
   screenshotUri: string | null;
 }) {
   const { t } = useTranslation();
   const { colors } = useTheme();
   const accent = colors.accent;
   const [description, setDescription] = useState('');
+  const [category, setCategory] = useState<Category>('bug');
   const [status, setStatus] = useState<Status>('form');
 
   function reset() {
     setDescription('');
+    setCategory('bug');
     setStatus('form');
   }
 
@@ -85,7 +89,7 @@ export default function FeedbackSheet({
       const screenshotPath = await uploadScreenshot(userId);
       const { error } = await supabase.from('feedback_reports').insert({
         user_id: userId,
-        context_tag: contextTag,
+        context_tag: category,
         description: description.trim(),
         screenshot_path: screenshotPath,
         device: {
@@ -102,8 +106,6 @@ export default function FeedbackSheet({
     }
   }
 
-  const contextKey = CONTEXT_LABELS[contextTag];
-
   return (
     <OverlaySheet
       visible={visible}
@@ -113,7 +115,28 @@ export default function FeedbackSheet({
       doneLabel={t('common.cancel')}
     >
       <ScrollView contentContainerStyle={styles.body}>
-        <Text style={[styles.contextTag, { color: accent }]}>{t(contextKey)}</Text>
+        <Text style={styles.categoryLabel}>{t('feedback.categoryLabel')}</Text>
+        <View style={styles.categoryRow}>
+          {CATEGORIES.map((c) => {
+            const selected = c.key === category;
+            return (
+              <Pressable
+                key={c.key}
+                onPress={() => setCategory(c.key)}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                style={[
+                  styles.categoryChip,
+                  selected && { backgroundColor: accentMix(accent, 26), borderColor: accent },
+                ]}
+              >
+                <Text style={[styles.categoryChipText, selected && { color: accent }]}>
+                  {t(c.label)}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
         <TextInput
           style={styles.input}
           value={description}
@@ -152,7 +175,17 @@ export default function FeedbackSheet({
 
 const styles = StyleSheet.create({
   body: { paddingHorizontal: 18, paddingBottom: 24, gap: 14 },
-  contextTag: { fontSize: 13, fontWeight: '700' },
+  categoryLabel: { fontSize: 13, fontWeight: '700', color: glass.textSecondary },
+  categoryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  categoryChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 12,
+    backgroundColor: glass.fill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: glass.hairline,
+  },
+  categoryChipText: { fontSize: 14, fontWeight: '600', color: glass.textSecondary },
   input: {
     minHeight: 110,
     borderRadius: 14,

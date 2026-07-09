@@ -11,13 +11,7 @@ import { glass } from '../glass';
  * instant it's pressed (before the feedback sheet opens over it), so the
  * screenshot shows what the user actually saw, not the feedback form.
  */
-export default function FeedbackButton({
-  contextTag,
-  style,
-}: {
-  contextTag: 'map' | 'itinerary' | 'kml' | 'settings';
-  style?: ViewStyle;
-}) {
+export default function FeedbackButton({ style }: { style?: ViewStyle }) {
   const { t } = useTranslation();
   const [visible, setVisible] = useState(false);
   const [screenshotUri, setScreenshotUri] = useState<string | null>(null);
@@ -46,7 +40,6 @@ export default function FeedbackButton({
       <FeedbackSheet
         visible={visible}
         onClose={() => setVisible(false)}
-        contextTag={contextTag}
         screenshotUri={screenshotUri}
       />
     </>
