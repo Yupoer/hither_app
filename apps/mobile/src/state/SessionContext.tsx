@@ -15,6 +15,8 @@ import {
 } from '../api/client';
 import type { Group, MemberRole, User } from '../types';
 import { avatarForUser } from '../constants/avatars';
+import { syncOnboardingIfNeeded } from '../onboarding/sync';
+import { flushQueuedEvents } from '../utils/activityLog';
 
 // Dismisses a leftover auth browser tab if one is still open on launch.
 WebBrowser.maybeCompleteAuthSession();
@@ -44,10 +46,18 @@ interface SessionContextValue {
   membership: Membership | null;
   /** True while restoring a persisted session on launch. */
   initializing: boolean;
+  /** True when the signed-in user is a Supabase anonymous (guest) account. */
+  isAnonymous: boolean;
+  /** Hither Pro entitlement (`profiles.pro`). Client-trusted for now. */
+  isPro: boolean;
   /**
    * Anonymously sign in and record the chosen nickname. Resolves to the User
    * (with `id === auth.uid()`). `email` is accepted for API compatibility but
    * unused in the anonymous flow.
+   *
+   * Anonymous accounts and their data are subject to cleanup 3 days after the
+   * user joins a group (server-side cleanup job not yet implemented; the join
+   * timestamp lives in `memberships.created_at`).
    */
   signIn: (input: { name: string; email?: string }) => Promise<User>;
   /**
@@ -71,13 +81,26 @@ interface SessionContextValue {
     nickname: string;
   }) => Promise<User>;
   signOut: () => Promise<void>;
+  /**
+   * Upgrade the signed-in anonymous account to an email + password account.
+   * Uses `auth.updateUser`, which attaches email/password to the *same*
+   * `auth.uid()` — profiles/memberships and every other row keyed by uid are
+   * kept (per PRODUCT.md: "匿名轉註冊不得丟棄資料"). Supabase sends a
+   * confirmation email; the new email only takes effect once the user clicks
+   * the link inside it.
+   */
+  upgradeToEmailAccount: (email: string, password: string) => Promise<void>;
   /** Change the signed-in user's nickname (persisted to `profiles`). */
   updateNickname: (nickname: string) => Promise<void>;
   /**
    * Save nickname/avatar changes in one call (persisted to `profiles`).
    * Optimistic: `user` updates immediately and reverts if the write fails.
    */
-  updateProfile: (fields: { nickname?: string; avatar?: string }) => Promise<void>;
+  updateProfile: (fields: {
+    nickname?: string;
+    avatar?: string;
+    avatarColor?: string;
+  }) => Promise<void>;
   /** Record the group the user just created (as leader) or joined (as follower). */
   setMembership: (membership: Membership) => void;
   leaveGroup: () => void;
@@ -89,6 +112,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [membership, setMembershipState] = useState<Membership | null>(null);
   const [initializing, setInitializing] = useState(true);
+  const [isAnonymous, setIsAnonymous] = useState(false);
+  const [isPro, setIsPro] = useState(false);
 
   // Restore any persisted anonymous session on launch and keep `user.id` in
   // sync with auth state. The nickname is read back from `profiles` so a
@@ -96,37 +121,54 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let active = true;
 
-    async function hydrate(userId: string | undefined) {
-      if (!userId) {
-        if (active) setUser(null);
+    async function hydrate(authUser: { id: string; is_anonymous?: boolean; email?: string } | undefined) {
+      if (!authUser) {
+        if (active) {
+          setUser(null);
+          setIsAnonymous(false);
+          setIsPro(false);
+        }
         return;
       }
-      // select('*') so the optional avatar column is tolerated either way.
+      // select('*') so the optional avatar/pro columns are tolerated either way.
       const { data } = await supabase
         .from('profiles')
         .select('*')
-        .eq('id', userId)
+        .eq('id', authUser.id)
         .maybeSingle();
-      const row = data as { nickname?: string; avatar?: string | null } | null;
+      const row = data as
+        | {
+            nickname?: string;
+            avatar?: string | null;
+            avatar_color?: string | null;
+            pro?: boolean | null;
+          }
+        | null;
       if (active) {
         setUser({
-          id: userId,
+          id: authUser.id,
           name: row?.nickname ?? '',
-          email: '',
+          email: authUser.email ?? '',
           avatar: row?.avatar ?? undefined,
+          avatarColor: row?.avatar_color ?? undefined,
         });
+        setIsAnonymous(!!authUser.is_anonymous);
+        setIsPro(!!row?.pro);
       }
     }
 
     supabase.auth.getSession().then(({ data }) => {
-      hydrate(data.session?.user.id).finally(() => {
+      hydrate(data.session?.user).finally(() => {
         if (active) setInitializing(false);
       });
     });
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session) {
-        if (active) setUser(null);
+        if (active) {
+          setUser(null);
+          setIsAnonymous(false);
+        }
       }
     });
 
@@ -136,11 +178,24 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // Once a session exists (any sign-in path — anonymous, email, Google, or a
+  // restored launch), push any locally-completed Onboarding answers to the
+  // profile exactly once. No-op if onboarding wasn't completed or was
+  // already synced; never throws (see onboarding/sync.ts).
+  useEffect(() => {
+    if (user) {
+      void syncOnboardingIfNeeded();
+      flushQueuedEvents().catch(() => {});
+    }
+  }, [user]);
+
   const value = useMemo<SessionContextValue>(
     () => ({
       user,
       membership,
       initializing,
+      isAnonymous,
+      isPro,
       signIn: async ({ name }) => {
         const nickname = name.trim();
         const { data, error } = await supabase.auth.signInAnonymously();
@@ -156,6 +211,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         }
         const nextUser: User = { id: userId, name: nickname, email: '' };
         setUser(nextUser);
+        setIsAnonymous(true);
         return nextUser;
       },
       signInWithGoogle: async (nickname) => {
@@ -220,6 +276,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           avatar: existingRow?.avatar ?? avatarForUser(authUser.id),
         };
         setUser(nextUser);
+        setIsAnonymous(false);
         return nextUser;
       },
       signInWithEmail: async ({ email, password }) => {
@@ -245,6 +302,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           avatar: row?.avatar ?? undefined,
         };
         setUser(nextUser);
+        setIsAnonymous(false);
         return nextUser;
       },
       signUpWithEmail: async ({ email, password, nickname }) => {
@@ -272,12 +330,25 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           email: data.user.email ?? '',
         };
         setUser(nextUser);
+        setIsAnonymous(false);
         return nextUser;
       },
       signOut: async () => {
         await supabase.auth.signOut();
         setUser(null);
+        setIsAnonymous(false);
+        setIsPro(false);
         setMembershipState(null);
+      },
+      upgradeToEmailAccount: async (email, password) => {
+        const { error } = await supabase.auth.updateUser({
+          email: email.trim(),
+          password,
+        });
+        if (error) throw new Error(error.message);
+        // Email only takes effect once the confirmation link is clicked, so
+        // don't flip isAnonymous yet — auth state (and hydrate) will reflect
+        // it on the next session refresh/relaunch.
       },
       updateNickname: async (nickname) => {
         const next = await updateNicknameApi(nickname);
@@ -292,6 +363,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
                 ...u,
                 name: nickname || u.name,
                 avatar: fields.avatar ?? u.avatar,
+                avatarColor: fields.avatarColor ?? u.avatarColor,
               }
             : u,
         );
@@ -305,7 +377,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       setMembership: (next) => setMembershipState(next),
       leaveGroup: () => setMembershipState(null),
     }),
-    [user, membership, initializing],
+    [user, membership, initializing, isAnonymous, isPro],
   );
 
   return (

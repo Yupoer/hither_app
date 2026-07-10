@@ -8,6 +8,8 @@ import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useTheme } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
 import { glass, accentMix } from '../glass';
+import { lightTap } from '../utils/haptics';
+import { logEvent } from '../utils/activityLog';
 import CrookIcon from '../components/CrookIcon';
 import { DEMO_GROUP_ID } from '../api/demo';
 
@@ -59,7 +61,7 @@ export default function RoleSelectScreen({ navigation }: Props) {
         <View style={styles.spacer} />
 
         <Pressable
-          onPress={() => navigation.navigate('Auth', { role: 'leader' })}
+          onPress={() => { lightTap(); logEvent('role_select', { role: 'leader' }); navigation.navigate('Auth', { role: 'leader' }); }}
           accessibilityRole="button"
           style={({ pressed }) => [
             styles.cta,
@@ -75,7 +77,7 @@ export default function RoleSelectScreen({ navigation }: Props) {
         </Pressable>
 
         <Pressable
-          onPress={() => navigation.navigate('Auth', { role: 'follower' })}
+          onPress={() => { lightTap(); logEvent('role_select', { role: 'follower' }); navigation.navigate('Auth', { role: 'follower' }); }}
           accessibilityRole="button"
           style={({ pressed }) => [
             styles.cta,

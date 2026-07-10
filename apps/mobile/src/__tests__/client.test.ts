@@ -18,6 +18,8 @@ import {
   getNotificationPreferences,
   setNotificationPreferences,
   setJourneyStatus,
+  setDestinationMeetTime,
+  setStragglerConfig,
 } from '../api/client';
 import { supabase } from '../api/supabase';
 
@@ -55,6 +57,8 @@ describe('pure mappers (snake_case row -> camelCase type)', () => {
       createdBy: 'u1',
       createdAt: '2026-01-01T00:00:00Z',
       journeyStatus: 'going',
+      stragglerAlerts: true,
+      stragglerThresholdM: 500,
     });
   });
 
@@ -193,6 +197,7 @@ describe('addDestination', () => {
     Object.assign(obj, {
       select: self,
       eq: self,
+      is: self,
       order: self,
       limit: self,
       maybeSingle: () =>
@@ -217,12 +222,28 @@ describe('addDestination', () => {
 
     expect(itinerary.insert).toHaveBeenCalledWith({
       group_id: 'g1',
+      subgroup_id: null,
       title: '台北101',
       address: '台北市信義區',
       latitude: 25.034,
       longitude: 121.564,
       position: 3, // 2 + 1, after the current last stop
     });
+  });
+
+  it('with a subgroupId: inserts subgroup_id and scopes max-position to that subgroup', async () => {
+    const itinerary = itineraryTable(1, { error: null });
+    mockedFrom.mockImplementation(() => itinerary);
+
+    await addDestination(
+      'g1',
+      { title: '小隊集合點', coordinates: { latitude: 1, longitude: 2 } },
+      'sg1',
+    );
+
+    expect(itinerary.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ subgroup_id: 'sg1', position: 2 }),
+    );
   });
 
   it('uses position 0 when the itinerary is empty', async () => {
@@ -349,5 +370,44 @@ describe('notifications, commands & journey', () => {
 
     await setJourneyStatus('g1', 'going');
     expect(update).toHaveBeenCalledWith({ journey_status: 'going' });
+  });
+
+  it('setStragglerConfig updates groups.straggler_alerts and threshold', async () => {
+    const update = jest.fn(() => ({ eq: () => Promise.resolve({ error: null }) }));
+    mockedFrom.mockImplementation(() => ({ update }));
+
+    await setStragglerConfig('g1', false, 1000);
+    expect(update).toHaveBeenCalledWith({
+      straggler_alerts: false,
+      straggler_threshold_m: 1000,
+    });
+  });
+
+  it('setDestinationMeetTime updates itinerary_items.meet_at', async () => {
+    const update = jest.fn(() => ({ eq: () => Promise.resolve({ error: null }) }));
+    mockedFrom.mockImplementation(() => ({ update }));
+
+    await setDestinationMeetTime('d1', '2026-07-09T10:00:00.000Z');
+    expect(update).toHaveBeenCalledWith({ meet_at: '2026-07-09T10:00:00.000Z' });
+  });
+
+  it('setDestinationMeetTime(null) clears the meet time', async () => {
+    const update = jest.fn(() => ({ eq: () => Promise.resolve({ error: null }) }));
+    mockedFrom.mockImplementation(() => ({ update }));
+
+    await setDestinationMeetTime('d1', null);
+    expect(update).toHaveBeenCalledWith({ meet_at: null });
+  });
+
+  it('setDestinationMeetTime throws when RLS rejects (follower, not leader)', async () => {
+    const update = jest.fn(() => ({
+      eq: () =>
+        Promise.resolve({
+          error: { code: '42501', message: 'new row violates row-level security' },
+        }),
+    }));
+    mockedFrom.mockImplementation(() => ({ update }));
+
+    await expect(setDestinationMeetTime('d1', null)).rejects.toThrow('row-level security');
   });
 });

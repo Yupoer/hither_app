@@ -3,6 +3,7 @@ import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { sendCommand } from '../api/client';
 import { notifications } from '../native';
+import { mediumTap } from '../utils/haptics';
 import { useTranslation } from '../i18n';
 import {
   FOLLOWER_COMMANDS,
@@ -60,6 +61,7 @@ export default function QuickCommandsCard({
 
   async function send(type: CommandType) {
     if (sending) return;
+    mediumTap(); // confirm the tap landed before the network round-trip
     setSending(type);
     const label = t(`command.${type}` as const);
     try {

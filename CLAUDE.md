@@ -20,6 +20,12 @@
 7. **UI baseline**：以「Hither MVP v1 design」為準，未經使用者同意不可大改畫面結構。
 8. 架構決策已定（RN 核心、Supabase 後端、匿名登入、Firebase 切斷），**不要重問**。
 
+## Debug 與求解策略
+
+1. **先查 log 再猜**：app 每個操作＋結果都寫進自架的 activity log（Supabase 表，見 `21e64ab feat: self-hosted activity logs`）。debug 時直接去資料庫查 log，比重跑複現快。
+2. **回溯 commit 是合法捷徑**：要達到某個目的時，`git log`／`git diff`／checkout 舊版本對照或直接還原，往往比從頭重推更快，別只想著往前改。
+3. **與其修正不如打掉重作——但要先算帳**：某段程式碼愈修愈亂時，重寫是選項；但動手前必須衡量重寫是否**真的**更省 token、更省時、更穩定，確認划算才做，不要為重寫而重寫。
+
 ## 程式碼探索：何時用 codebase-memory MCP
 
 滿足**任一**條件才優先用 cbm（`search_graph` / `trace_path` / `get_code_snippet`）：

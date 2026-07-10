@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -46,6 +47,7 @@ export default function LoginScreen({ navigation }: Props) {
   const [password, setPassword] = useState('');
   const [nickname, setNickname] = useState('');
   const [busy, setBusy] = useState(false);
+  const [guestConfirmVisible, setGuestConfirmVisible] = useState(false);
 
   const isSignUp = mode === 'signup';
   const emailOk = /\S+@\S+\.\S+/.test(email.trim());
@@ -59,7 +61,10 @@ export default function LoginScreen({ navigation }: Props) {
 
   // Guest keeps Login on the stack (navigate, not replace) so RoleSelect's
   // back button can return here to register — a guest isn't signed in yet.
+  // Gated behind a confirm modal (anon.*) that discloses the 3-day data
+  // retention limit before committing to the anonymous flow.
   function continueAsGuest() {
+    setGuestConfirmVisible(false);
     navigation.navigate('RoleSelect');
   }
 
@@ -231,7 +236,7 @@ export default function LoginScreen({ navigation }: Props) {
           <Text style={styles.googleCaption}>{t('login.google')}</Text>
 
           <Pressable
-            onPress={continueAsGuest}
+            onPress={() => setGuestConfirmVisible(true)}
             disabled={busy}
             accessibilityRole="button"
             style={styles.guest}
@@ -240,6 +245,41 @@ export default function LoginScreen({ navigation }: Props) {
           </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <Modal
+        visible={guestConfirmVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setGuestConfirmVisible(false)}
+      >
+        <View style={styles.modalScrim}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>{t('anon.confirmTitle')}</Text>
+            <View style={styles.modalList}>
+              <Text style={styles.modalListItem}>{'• ' + t('anon.limit1')}</Text>
+              <Text style={styles.modalListItem}>{'• ' + t('anon.limit2')}</Text>
+              <Text style={styles.modalListItem}>{'• ' + t('anon.limit3')}</Text>
+            </View>
+            <View style={styles.modalWarning}>
+              <Text style={styles.modalWarningText}>{t('anon.expiryWarning')}</Text>
+            </View>
+            <Pressable
+              onPress={continueAsGuest}
+              accessibilityRole="button"
+              style={[styles.cta, styles.modalCta]}
+            >
+              <Text style={styles.ctaText}>{t('anon.continue')}</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setGuestConfirmVisible(false)}
+              accessibilityRole="button"
+              style={styles.modalSecondary}
+            >
+              <Text style={styles.modalSecondaryText}>{t('anon.goRegister')}</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </LinearGradient>
   );
 }
@@ -358,6 +398,54 @@ const makeStyles = (accent: string) =>
     },
     guest: { alignSelf: 'center', marginTop: 28, padding: 8 },
     guestText: {
+      fontSize: 14,
+      color: 'rgba(235,235,245,0.55)',
+      textDecorationLine: 'underline',
+    },
+    modalScrim: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.55)',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 24,
+    },
+    modalCard: {
+      width: '100%',
+      maxWidth: 380,
+      borderRadius: 22,
+      padding: 22,
+      backgroundColor: '#182131',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'rgba(255,255,255,0.14)',
+    },
+    modalTitle: {
+      fontSize: 19,
+      fontWeight: '700',
+      color: '#fff',
+      marginBottom: 14,
+    },
+    modalList: { marginBottom: 14, gap: 6 },
+    modalListItem: {
+      fontSize: 14,
+      lineHeight: 20,
+      color: 'rgba(235,235,245,0.75)',
+    },
+    modalWarning: {
+      borderRadius: 14,
+      padding: 14,
+      marginBottom: 18,
+      backgroundColor: 'rgba(255,107,107,0.1)',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'rgba(255,107,107,0.4)',
+    },
+    modalWarningText: {
+      fontSize: 13,
+      lineHeight: 19,
+      color: '#ffb3b3',
+    },
+    modalCta: { marginTop: 0 },
+    modalSecondary: { alignSelf: 'center', marginTop: 14, padding: 6 },
+    modalSecondaryText: {
       fontSize: 14,
       color: 'rgba(235,235,245,0.55)',
       textDecorationLine: 'underline',

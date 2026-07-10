@@ -23,6 +23,8 @@ export interface User {
   email: string;
   /** Emoji avatar shown to other members (persisted in `profiles.avatar`). */
   avatar?: string;
+  /** Avatar background colour hex (persisted in `profiles.avatar_color`). */
+  avatarColor?: string;
 }
 
 /**
@@ -44,6 +46,10 @@ export interface Group {
   createdAt?: string;
   /** Leader-controlled journey state; defaults to 'paused'. */
   journeyStatus: JourneyStatus;
+  /** Straggler alerts on/off (leader-controlled). */
+  stragglerAlerts: boolean;
+  /** Distance in metres beyond which a member counts as a straggler. */
+  stragglerThresholdM: number;
 }
 
 /** Role within a group. */
@@ -57,6 +63,8 @@ export interface MemberLocation {
   role: MemberRole;
   /** Emoji avatar; falls back to the name's initial when unset. */
   avatar?: string;
+  /** Avatar background colour hex (persisted in `profiles.avatar_color`). */
+  avatarColor?: string;
   /** Solo mode: temporarily detached from the flock (no group notifications). */
   solo?: boolean;
   /** Leaf subgroup the member currently belongs to, if any. */
@@ -107,6 +115,13 @@ export interface SubgroupInvite {
 export interface PendingInvite extends SubgroupInvite {
   subgroupName: string;
   inviterName: string;
+  /**
+   * Direction of the pending row from the viewer's side:
+   * - 'invite'  — someone invited ME to their team; I accept to join (default).
+   * - 'request' — someone wants to join MY team; I approve to let them in.
+   * Used to pick the prompt/button wording. Demo simulates 'request'.
+   */
+  kind?: 'invite' | 'request';
 }
 
 /** A gathering point / itinerary stop. */
@@ -117,6 +132,10 @@ export interface Destination {
   order: number;
   address?: string;
   coordinates: Coordinates;
+  /** ISO-8601 target time to gather, set by the leader. Optional. */
+  meetAt?: string;
+  /** Owning subgroup's list; undefined = the main group's itinerary. */
+  subgroupId?: string;
 }
 
 /** Aggregated live view of a group, consumed by the Map screen. */
