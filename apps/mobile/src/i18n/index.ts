@@ -137,6 +137,7 @@ const zh = {
   'subgroup.inviteTitle': '邀請成員',
   'subgroup.inviteEmpty': '目前沒有可邀請的成員。',
   'subgroup.inviteSent': '邀請已送出',
+  'subgroup.pendingInvites': '邀請中，等待接受：{names}',
   'subgroup.invitePrompt': '{name} 邀請你加入 {team}',
   'subgroup.requestPrompt': '{name} 想加入你的小隊 {team}',
   'subgroup.accept': '加入',
@@ -154,10 +155,9 @@ const zh = {
   'map.destinationCounter': '第 {index} / {total} 個集合點',
   // Map · journey (start/pause) + arrival
   'map.journeyFailed': '無法更新行程狀態，請確認你是隊長並再試一次。',
-  'map.arriveTitle': '接近目的地',
-  'map.arriveBody': '你已接近「{title}」，要結束此目的地行程嗎？',
-  'map.arriveConfirm': '結束行程',
-  'map.arriveDismiss': '繼續前往',
+  'map.arriveTitle': '已抵達',
+  'map.autoAdvanceBody': '已抵達「{title}」，自動前往下一站「{next}」',
+  'map.journeyCompleteBody': '已抵達「{title}」，行程結束',
 
   // Map · new design (Hither iOS Flow)
   'map.searchPlaces': '搜尋地點',
@@ -177,13 +177,14 @@ const zh = {
   'map.directions': '導航',
   'map.stopNav': '結束導航',
   'map.viewOnMap': '在地圖上查看',
+  'map.openInAppleMaps': '在 Apple 地圖開啟',
+  'map.travelMode.walk': '步行',
+  'map.travelMode.drive': '開車',
+  'map.travelMode.transit': '大眾運輸',
   'map.nextTag': '下一站',
   'map.overlaySettings': '設定',
   'map.endGroup': '結束群組',
   'flock.leading': '領隊中',
-  'flock.arrived': '已抵達',
-  'flock.enroute': '前往中',
-  'flock.unknown': '位置未知',
   'flock.here': '就在這',
   'flock.you': '你',
 
@@ -341,10 +342,15 @@ const zh = {
   'onboarding.c3.sharedItinerary': '行程共編',
   'onboarding.c3.tripRecap': '旅程回顧',
 
+  // History (visited waypoints)
+  'history.title': '歷史行程',
+  'history.open': '查看歷史行程',
+  'history.empty': '還沒有抵達紀錄。',
+
   // Straggler alerts
   'straggler.section': '脫隊示警',
+  'straggler.notifyTitle': '脫隊提醒',
   'straggler.banner': '{name} 已脫隊 {distance}',
-  'straggler.bannerMore': '等 {n} 人',
   'straggler.selfWarning': '你已離隊伍 {distance}，注意跟上',
   'straggler.freeNote': '免費版預設 500 公尺',
   'straggler.threshold': '警示距離',
@@ -515,6 +521,7 @@ const en: Record<keyof typeof zh, string> = {
   'subgroup.inviteTitle': 'Invite members',
   'subgroup.inviteEmpty': 'No one to invite right now.',
   'subgroup.inviteSent': 'Invite sent',
+  'subgroup.pendingInvites': 'Invited, awaiting: {names}',
   'subgroup.invitePrompt': '{name} invited you to {team}',
   'subgroup.requestPrompt': '{name} wants to join {team}',
   'subgroup.accept': 'Join',
@@ -531,10 +538,9 @@ const en: Record<keyof typeof zh, string> = {
   'map.fitAllA11y': 'Zoom to fit all members',
   'map.destinationCounter': 'Stop {index} of {total}',
   'map.journeyFailed': "Couldn't update journey status. Make sure you're the leader and try again.",
-  'map.arriveTitle': 'Approaching destination',
-  'map.arriveBody': "You're near “{title}”. End this destination trip?",
-  'map.arriveConfirm': 'End trip',
-  'map.arriveDismiss': 'Keep going',
+  'map.arriveTitle': 'Arrived',
+  'map.autoAdvanceBody': 'Arrived at "{title}" — heading to "{next}" next',
+  'map.journeyCompleteBody': 'Arrived at "{title}" — journey complete',
 
   'map.searchPlaces': 'Search places',
   'map.share': 'Share',
@@ -553,13 +559,14 @@ const en: Record<keyof typeof zh, string> = {
   'map.directions': 'Directions',
   'map.stopNav': 'End navigation',
   'map.viewOnMap': 'View on map',
+  'map.openInAppleMaps': 'Open in Apple Maps',
+  'map.travelMode.walk': 'Walk',
+  'map.travelMode.drive': 'Drive',
+  'map.travelMode.transit': 'Transit',
   'map.nextTag': 'NEXT',
   'map.overlaySettings': 'Settings',
   'map.endGroup': 'End group',
   'flock.leading': 'Leading',
-  'flock.arrived': 'Arrived',
-  'flock.enroute': 'On the way',
-  'flock.unknown': 'Location unknown',
   'flock.here': 'here',
   'flock.you': 'You',
 
@@ -709,10 +716,15 @@ const en: Record<keyof typeof zh, string> = {
   'onboarding.c3.sharedItinerary': 'Shared itinerary',
   'onboarding.c3.tripRecap': 'Trip recap',
 
+  // History (visited waypoints)
+  'history.title': 'Trip history',
+  'history.open': 'View trip history',
+  'history.empty': 'No arrivals recorded yet.',
+
   // Straggler alerts
   'straggler.section': 'Straggler alerts',
+  'straggler.notifyTitle': 'Straggler alert',
   'straggler.banner': '{name} fell behind ({distance})',
-  'straggler.bannerMore': 'and {n} more',
   'straggler.selfWarning': "You're {distance} from the flock — catch up!",
   'straggler.freeNote': 'Free plan defaults to 500 m',
   'straggler.threshold': 'Alert distance',

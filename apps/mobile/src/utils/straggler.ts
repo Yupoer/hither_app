@@ -3,7 +3,7 @@ import { distanceMeters } from './geo';
 
 export interface StragglerInput {
   members: MemberLocation[];
-  /** Current navigation target; falls back to the flock centroid when absent. */
+  /** The viewer's own coordinates; falls back to the flock centroid when absent. */
   target?: Coordinates;
   thresholdM: number;
 }
@@ -16,9 +16,10 @@ export interface Straggler {
 
 /**
  * Members who have fallen more than `thresholdM` behind the reference point
- * (the nav target, or the flock's centroid when there is none). Solo members,
- * subgroup members, and members without a location fix don't count — and a
- * lone remaining member has nobody to straggle behind.
+ * (the viewer's own position, or the flock's centroid when unknown) — i.e.
+ * behind ME, not behind the gathering point. Solo members, subgroup members,
+ * and members without a location fix don't count — and a lone remaining
+ * member has nobody to straggle behind.
  */
 export function findStragglers(input: StragglerInput): Straggler[] {
   const { members, target, thresholdM } = input;

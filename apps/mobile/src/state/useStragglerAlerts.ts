@@ -15,7 +15,7 @@ interface UseStragglerAlertsResult {
  */
 export function useStragglerAlerts(
   groupState: GroupState | null,
-  navTarget?: Coordinates,
+  myCoordinates?: Coordinates,
 ): UseStragglerAlertsResult {
   // userIds currently considered "alerting" (hysteresis state).
   const alertingRef = useRef<Set<string>>(new Set());
@@ -31,12 +31,12 @@ export function useStragglerAlerts(
     // list is always a superset of the threshold list.
     const overThreshold = findStragglers({
       members: groupState.members,
-      target: navTarget,
+      target: myCoordinates,
       thresholdM,
     });
     const overRelease = findStragglers({
       members: groupState.members,
-      target: navTarget,
+      target: myCoordinates,
       thresholdM: thresholdM * 0.8,
     });
     const overThresholdIds = new Set(overThreshold.map((s) => s.userId));
@@ -52,7 +52,7 @@ export function useStragglerAlerts(
     alertingRef.current = stillAlerting;
 
     return overRelease.filter((s) => stillAlerting.has(s.userId));
-  }, [groupState, navTarget]);
+  }, [groupState, myCoordinates]);
 
   return { stragglers };
 }

@@ -124,6 +124,18 @@ export interface PendingInvite extends SubgroupInvite {
   kind?: 'invite' | 'request';
 }
 
+/**
+ * A gathering point the user has actually reached, kept for the "歷史行程"
+ * list (grouped by day, sorted by time). Personal — not scoped to a group.
+ */
+export interface VisitedWaypoint {
+  id: string;
+  name: string;
+  coordinates: Coordinates;
+  /** ISO-8601 timestamp of arrival. */
+  arrivedAt: string;
+}
+
 /** A gathering point / itinerary stop. */
 export interface Destination {
   id: string;

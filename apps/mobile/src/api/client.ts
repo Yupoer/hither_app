@@ -26,6 +26,7 @@ import type {
   Subgroup,
   SubgroupInvite,
   SubgroupMode,
+  VisitedWaypoint,
 } from '../types';
 import { DEFAULT_NOTIFICATION_PREFERENCES } from '../types';
 
@@ -469,6 +470,54 @@ export async function deleteDestination(
 }
 
 /**
+ * Record a gathering point the user just reached, for the personal "歷史行程"
+ * list. Best-effort and personal (not group-scoped) — skipped for demo groups,
+ * which have no backing table row to attach to.
+ */
+export async function recordVisitedWaypoint(
+  groupId: string,
+  name: string,
+  coordinates: Coordinates,
+): Promise<void> {
+  if (isDemoGroup(groupId)) return;
+  const { data } = await supabase.auth.getUser();
+  const userId = data.user?.id;
+  if (!userId) return;
+  const { error } = await supabase.from('visited_waypoints').insert({
+    user_id: userId,
+    name,
+    latitude: coordinates.latitude,
+    longitude: coordinates.longitude,
+  });
+  orThrow(error);
+}
+
+/** The signed-in user's visited-waypoint history, most recent first. */
+export async function fetchVisitedWaypoints(): Promise<VisitedWaypoint[]> {
+  const { data: userData } = await supabase.auth.getUser();
+  const userId = userData.user?.id;
+  if (!userId) return [];
+  const { data, error } = await supabase
+    .from('visited_waypoints')
+    .select('id, name, latitude, longitude, arrived_at')
+    .eq('user_id', userId)
+    .order('arrived_at', { ascending: false });
+  orThrow(error);
+  return ((data ?? []) as {
+    id: string;
+    name: string;
+    latitude: number;
+    longitude: number;
+    arrived_at: string;
+  }[]).map((row) => ({
+    id: row.id,
+    name: row.name,
+    coordinates: { latitude: row.latitude, longitude: row.longitude },
+    arrivedAt: row.arrived_at,
+  }));
+}
+
+/**
  * Persist a manual re-ordering of the itinerary. `orderedIds` is the list of
  * stop ids in their new order; each is written `position = index` so the order
  * is stable and gap-free. Leader-only (RLS gates `itinerary_items` UPDATE), so a
@@ -653,6 +702,38 @@ export async function fetchMyInvites(userId: string): Promise<PendingInvite[]> {
     subgroupName: nameBySubgroup.get(i.subgroupId) ?? '',
     inviterName: nameByInviter.get(i.inviterId) ?? '',
   }));
+}
+
+/**
+ * Pending invites THIS user has sent for a subgroup, enriched with the
+ * invitee's nickname — surfaced on the subgroup card so "I invited someone
+ * and then saw nothing" reads as "invite sent, awaiting X" instead of silence.
+ */
+export async function fetchSentInvites(
+  subgroupId: string,
+): Promise<{ id: string; inviteeName: string }[]> {
+  const { data, error } = await supabase
+    .from('subgroup_invites')
+    .select('id, invitee_id')
+    .eq('subgroup_id', subgroupId)
+    .eq('status', 'pending');
+  orThrow(error);
+
+  const rows = (data ?? []) as { id: string; invitee_id: string }[];
+  if (rows.length === 0) return [];
+
+  const { data: profiles, error: profError } = await supabase
+    .from('profiles')
+    .select('id, nickname')
+    .in(
+      'id',
+      rows.map((r) => r.invitee_id),
+    );
+  orThrow(profError);
+  const nameById = new Map(
+    ((profiles ?? []) as { id: string; nickname: string }[]).map((p) => [p.id, p.nickname]),
+  );
+  return rows.map((r) => ({ id: r.id, inviteeName: nameById.get(r.invitee_id) ?? '' }));
 }
 
 /**

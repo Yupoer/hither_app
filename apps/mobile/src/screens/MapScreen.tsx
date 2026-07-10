@@ -56,15 +56,22 @@ import { useSubgroupInvites } from '../state/useSubgroupInvites';
 import { useLiveActivity } from '../state/useLiveActivity';
 import {
   distanceMeters,
+  etaSecondsFor,
   formatDistance,
   walkingEtaSeconds,
+  type TravelMode,
 } from '../utils/geo';
+import { dotWindow } from '../utils/pagination';
 import { minutesUntil } from '../utils/meetTime';
+import { groupHistoryByDay, type HistoryDayGroup } from '../utils/history';
 import { liquidGlass, location, notifications, type MapRegion, type PlaceResult } from '../native';
 import {
   addDestination,
   deleteDestination,
+  fetchSentInvites,
+  fetchVisitedWaypoints,
   inviteToSubgroup,
+  recordVisitedWaypoint,
   reorderDestinations,
   saveOnboardingProfile,
   selfMerge,
@@ -93,6 +100,11 @@ import { glass, accentMix, memberColor } from '../glass';
 type Props = NativeStackScreenProps<RootStackParamList, 'Map'>;
 
 const ARRIVAL_RADIUS_M = 30;
+// Auto-advance to the next gathering point once the leader is this close —
+// separate from ARRIVAL_RADIUS_M, which drives the flock's "arrived" status.
+const AUTO_ADVANCE_RADIUS_M = 50;
+// Cap on gathering-point pagination dots shown at once (see utils/pagination.ts).
+const DOTS_MAX_VISIBLE = 5;
 
 /** Preset straggler-alert distance chips shown in settings. */
 const STRAGGLER_THRESHOLD_OPTIONS = [300, 500, 1000, 2000];
@@ -174,14 +186,41 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [insets.top, windowHeight, sheetHeaderH]);
   const heightSV = useSharedValue(detents[0]);
   const [detent, setDetent] = useState(0);
-  const [overlay, setOverlay] = useState<null | 'route' | 'settings' | 'profile' | 'feedback'>(
-    null,
-  );
+  const [overlay, setOverlay] = useState<
+    null | 'route' | 'settings' | 'profile' | 'feedback' | 'history'
+  >(null);
   // Screenshot captured the instant the feedback entry is tapped (before the
   // form opens over the screen), handed to the sheet as evidence.
   const [feedbackShot, setFeedbackShot] = useState<string | null>(null);
+  // Visited-waypoint history — fetched fresh each time the overlay opens.
+  const [historyGroups, setHistoryGroups] = useState<HistoryDayGroup[]>([]);
+  useEffect(() => {
+    if (overlay !== 'history') return;
+    let cancelled = false;
+    void fetchVisitedWaypoints().then((items) => {
+      if (!cancelled) setHistoryGroups(groupHistoryByDay(items));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [overlay]);
   // "Invite a teammate" picker, opened from my own subgroup card.
   const [inviteSheetOpen, setInviteSheetOpen] = useState(false);
+  // Invites I've sent for my subgroup that are still pending — shown on the
+  // card so "I invited someone" doesn't just look like nothing happened while
+  // they haven't accepted yet.
+  const [sentInvites, setSentInvites] = useState<{ id: string; inviteeName: string }[]>([]);
+  const refreshSentInvites = useCallback(async (subgroupId: string | undefined) => {
+    if (!subgroupId) {
+      setSentInvites([]);
+      return;
+    }
+    try {
+      setSentInvites(await fetchSentInvites(subgroupId));
+    } catch {
+      // best-effort
+    }
+  }, []);
   const [searchVisible, setSearchVisible] = useState(false);
   const [kmlVisible, setKmlVisible] = useState(false);
   const [paywallTrigger, setPaywallTrigger] = useState<TranslationKey | undefined>(undefined);
@@ -314,6 +353,9 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // --- Carousel selection ---------------------------------------------------
   const [selectedIndex, setSelectedIndex] = useState(0);
+  // Travel mode for the ETA estimate shown per card — no live routing API,
+  // just a rough speed-based estimate (see utils/geo.ts).
+  const [travelMode, setTravelMode] = useState<TravelMode>('walk');
   useEffect(() => {
     const clamped =
       destinations.length === 0 ? 0 : Math.min(selectedIndex, destinations.length - 1);
@@ -358,15 +400,28 @@ export default function MapScreen({ route, navigation }: Props) {
   const activePoint = navTarget ?? selectedDestination;
 
   // --- Straggler alerts ------------------------------------------------------
-  const { stragglers } = useStragglerAlerts(state, navTarget?.coordinates);
-  const [stragglerBannerCollapsed, setStragglerBannerCollapsed] = useState(false);
+  // Reference is ME, not the gathering point — "fell behind" means fell
+  // behind the flock (specifically me), not "hasn't reached the destination".
+  const { stragglers } = useStragglerAlerts(state, fromCoords ?? undefined);
+  // Fire a native OS notification per NEWLY-flagged straggler (hysteresis in
+  // the hook already prevents re-firing while still over the release band) —
+  // no in-app banner; the system notification is the only surface for this.
   const lastStragglerIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     const ids = new Set(stragglers.map((s) => s.userId));
-    const grew = [...ids].some((id) => !lastStragglerIdsRef.current.has(id));
-    if (grew) setStragglerBannerCollapsed(false);
+    const newOnes = stragglers.filter((s) => !lastStragglerIdsRef.current.has(s.userId));
     lastStragglerIdsRef.current = ids;
-  }, [stragglers]);
+    for (const s of newOnes) {
+      void notifications.scheduleLocalNotification({
+        title: t('straggler.notifyTitle'),
+        body: t(s.userId === user?.id ? 'straggler.selfWarning' : 'straggler.banner', {
+          name: s.name,
+          distance: formatDistance(s.distanceM),
+        }),
+        data: { kind: 'straggler', userId: s.userId },
+      });
+    }
+  }, [stragglers, t, user?.id]);
 
   const numericDistance =
     fromCoords && navTarget ? distanceMeters(fromCoords, navTarget.coordinates) : undefined;
@@ -444,6 +499,9 @@ export default function MapScreen({ route, navigation }: Props) {
     }
   }, [groupId, refresh, t]);
 
+  // Within AUTO_ADVANCE_RADIUS_M of the current stop: notify, drop it from
+  // the itinerary (it's done), and auto-advance to whatever's now first —
+  // or end the journey when that was the last stop.
   const arrivalFiredRef = useRef(false);
   useEffect(() => {
     if (!journeyActive) {
@@ -454,20 +512,37 @@ export default function MapScreen({ route, navigation }: Props) {
       isLeader &&
       !arrivalFiredRef.current &&
       numericDistance != null &&
-      numericDistance <= ARRIVAL_RADIUS_M
+      numericDistance <= AUTO_ADVANCE_RADIUS_M &&
+      navTarget &&
+      groupId
     ) {
       arrivalFiredRef.current = true;
-      confirmAction(
-        {
-          title: t('map.arriveTitle'),
-          message: t('map.arriveBody', { title: navTarget?.title ?? '' }),
-          confirmLabel: t('map.arriveConfirm'),
-          cancelLabel: t('map.arriveDismiss'),
-        },
-        () => void stopNavigation(),
-      );
+      const arrivedId = navTarget.id;
+      const arrivedTitle = navTarget.title;
+      const nextDest = destinations.find((d) => d.id !== arrivedId);
+      void recordVisitedWaypoint(groupId, arrivedTitle, navTarget.coordinates);
+      void notifications.scheduleLocalNotification({
+        title: t('map.arriveTitle'),
+        body: nextDest
+          ? t('map.autoAdvanceBody', { title: arrivedTitle, next: nextDest.title })
+          : t('map.journeyCompleteBody', { title: arrivedTitle }),
+        data: { kind: 'arrival', destinationId: arrivedId },
+      });
+      void deleteDestination(groupId, arrivedId)
+        .then(() => (nextDest ? startNavigation(nextDest, 0) : stopNavigation()))
+        .catch(() => Alert.alert(t('map.setFailedTitle'), t('map.journeyFailed')));
     }
-  }, [journeyActive, isLeader, numericDistance, navTarget?.title, stopNavigation, t]);
+  }, [
+    journeyActive,
+    isLeader,
+    numericDistance,
+    navTarget,
+    destinations,
+    groupId,
+    startNavigation,
+    stopNavigation,
+    t,
+  ]);
 
   async function locateMe() {
     refresh();
@@ -651,6 +726,7 @@ export default function MapScreen({ route, navigation }: Props) {
       // the invitee replying with a join-request — pull it in so the pending
       // approve/decline card shows immediately.
       if (isDemoGroup(groupId)) refreshInvites();
+      void refreshSentInvites(subgroupId);
       Alert.alert(t('subgroup.inviteSent'));
     } catch (e) {
       logError('invite_send_failed', e, { subgroupId, inviteeId });
@@ -865,15 +941,11 @@ export default function MapScreen({ route, navigation }: Props) {
             : null;
         const arrived = d != null && d <= ARRIVAL_RADIUS_M;
         const isMemberLeader = m.role === 'leader';
-        // Member status chip: arrived (within the radius) > moving (a fresh
-        // location ping in the last 2 minutes) > not started (no recent ping).
+        // Member status: arrived (within the radius) > moving (a fresh
+        // location ping in the last 2 minutes) > not started (no recent ping —
+        // the app hasn't sent a location update, e.g. before they've left).
         const movingRecently =
           !!m.lastUpdated && Date.now() - new Date(m.lastUpdated).getTime() < 2 * 60_000;
-        const memberStatusKey = arrived
-          ? 'memberStatus.arrived'
-          : movingRecently
-            ? 'memberStatus.moving'
-            : 'memberStatus.notStarted';
         const solo =
           m.userId === user?.id && soloOverride !== null ? soloOverride : !!m.solo;
         return {
@@ -886,16 +958,15 @@ export default function MapScreen({ route, navigation }: Props) {
           // deterministic per-user colour when they haven't picked one.
           color: m.avatarColor ?? memberColor(m.userId),
           isLeader: isMemberLeader,
-          memberStatusKey,
           statusText: solo
             ? t('solo.badge')
             : isMemberLeader
               ? t('flock.leading')
-              : d == null
-                ? t('flock.unknown')
-                : arrived
-                  ? t('flock.arrived')
-                  : t('flock.enroute'),
+              : arrived
+                ? t('memberStatus.arrived')
+                : movingRecently
+                  ? t('memberStatus.moving')
+                  : t('memberStatus.notStarted'),
           statusColor: solo
             ? glass.warn
             : isMemberLeader
@@ -924,6 +995,9 @@ export default function MapScreen({ route, navigation }: Props) {
   const topFlock = flock.filter((f) => !f.subgroupId);
   // My own subgroup, if any — gates the "invite a teammate" entry on my card.
   const mySubgroupId = flock.find((f) => f.userId === user?.id)?.subgroupId;
+  useEffect(() => {
+    void refreshSentInvites(mySubgroupId);
+  }, [mySubgroupId, refreshSentInvites]);
   // Co-members I could still pull into my team. Virtual solo-test mates are
   // excluded in a real group (no one on the other end to accept) — BUT in the
   // demo group they ARE invitable, because handleInvite simulates them
@@ -956,7 +1030,6 @@ export default function MapScreen({ route, navigation }: Props) {
           <View style={styles.grow}>
             <Text style={styles.flockName}>{f.name}</Text>
             <Text style={[styles.flockStatus, { color: f.statusColor }]}>{f.statusText}</Text>
-            <Text style={styles.flockMemberStatus}>{t(f.memberStatusKey)}</Text>
           </View>
           <View style={styles.flockMeta}>
             <Text style={styles.flockEta}>{f.eta}</Text>
@@ -1142,14 +1215,9 @@ export default function MapScreen({ route, navigation }: Props) {
                           {index === 0 ? t('map.nextTag') + ' · ' : ''}
                           {t('map.destinationCounter', { index: index + 1, total: destinations.length })}
                         </Text>
-                        <View style={styles.titleRow}>
-                          <Text style={styles.cardTitle} numberOfLines={1}>
-                            {dest.title}
-                          </Text>
-                          {d != null && (
-                            <Text style={styles.titleDist}>{formatDistance(d)}</Text>
-                          )}
-                        </View>
+                        <Text style={styles.cardTitle} numberOfLines={1}>
+                          {dest.title}
+                        </Text>
                         {myScopeId != null && (
                           <Text style={{ color: glass.textSecondary, fontSize: 11 }}>
                             {t('subgroup.itineraryBadge')}
@@ -1158,15 +1226,19 @@ export default function MapScreen({ route, navigation }: Props) {
                       </View>
                       {/* Pagination — lives inside the card now that the
                           carousel sits at the screen's top edge, where there's
-                          no room below it for a separate dots row. */}
+                          no room below it for a separate dots row. Capped at
+                          DOTS_MAX_VISIBLE; the window slides to keep the
+                          active dot centered until it nears either end. */}
                       {destinations.length > 1 && (
                         <View style={styles.dots}>
-                          {destinations.map((d2, i2) => (
-                            <View
-                              key={d2.id}
-                              style={[styles.dot, i2 === selectedIndex && styles.dotActive]}
-                            />
-                          ))}
+                          {dotWindow(destinations.length, selectedIndex, DOTS_MAX_VISIBLE).map(
+                            (i2) => (
+                              <View
+                                key={destinations[i2].id}
+                                style={[styles.dot, i2 === selectedIndex && styles.dotActive]}
+                              />
+                            ),
+                          )}
                         </View>
                       )}
                     </View>
@@ -1177,11 +1249,10 @@ export default function MapScreen({ route, navigation }: Props) {
                           if (navigatingThis) {
                             void stopNavigation();
                           } else if (isLeader) {
-                            // Keep the in-app journey state (flock "going" /
-                            // arrival / live activity) AND hand off turn-by-turn
-                            // to Apple Maps with the address pre-filled.
+                            // In-app journey: flock "going" state, arrival
+                            // detection, and the Live Activity all drive off
+                            // this — Apple Maps is a separate opt-in button.
                             startNavigation(dest, index);
-                            openInAppleMaps(dest);
                           } else {
                             mapRef.current?.centerOn(dest.coordinates);
                           }
@@ -1198,11 +1269,52 @@ export default function MapScreen({ route, navigation }: Props) {
                               : t('map.viewOnMap')}
                         </Text>
                       </Pressable>
+                      <Pressable
+                        style={styles.appleMapsBtn}
+                        onPress={() => openInAppleMaps(dest)}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('map.openInAppleMaps')}
+                      >
+                        <Ionicons name="open-outline" size={18} color={glass.textSecondary} />
+                      </Pressable>
                       <View style={styles.etaPill}>
                         <Text style={styles.etaPillEta}>
-                          {d != null ? shortEta(walkingEtaSeconds(d)) : '—'}
+                          {d != null ? shortEta(etaSecondsFor(d, travelMode)) : '—'}
                         </Text>
+                        {d != null && (
+                          <Text style={styles.etaPillDist}>{formatDistance(d)}</Text>
+                        )}
                       </View>
+                    </View>
+                    <View style={styles.travelModeRow}>
+                      {(['walk', 'drive', 'transit'] as const).map((mode) => (
+                        <Pressable
+                          key={mode}
+                          onPress={() => setTravelMode(mode)}
+                          style={[
+                            styles.travelModeBtn,
+                            travelMode === mode && {
+                              backgroundColor: accentMix(accent, 26),
+                              borderColor: accentMix(accent, 50),
+                            },
+                          ]}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: travelMode === mode }}
+                          accessibilityLabel={t(`map.travelMode.${mode}`)}
+                        >
+                          <Ionicons
+                            name={
+                              mode === 'walk'
+                                ? 'walk-outline'
+                                : mode === 'drive'
+                                  ? 'car-outline'
+                                  : 'bus-outline'
+                            }
+                            size={16}
+                            color={travelMode === mode ? accent : glass.textSecondary}
+                          />
+                        </Pressable>
+                      ))}
                     </View>
                     {(meetLabel || canEditItinerary) && (
                       <Pressable
@@ -1241,38 +1353,8 @@ export default function MapScreen({ route, navigation }: Props) {
         </Animated.View>
       )}
 
-      {/* Straggler alert banner — sits below the carousel/top pill, below its
-          zIndex so it never fights the carousel's own touches. */}
-      {group?.stragglerAlerts && stragglers.length > 0 && !stragglerBannerCollapsed && (
-        <Animated.View
-          style={[
-            styles.stragglerBanner,
-            { top: insets.top + 8 + (destinations.length > 0 ? 200 : 96) },
-            chromeOpacityStyle,
-          ]}
-          pointerEvents={atFull ? 'none' : 'box-none'}
-        >
-          <Pressable
-            style={styles.stragglerCard}
-            onPress={() => setStragglerBannerCollapsed(true)}
-            accessibilityRole="button"
-          >
-            {stragglers.slice(0, 2).map((s) => (
-              <Text key={s.userId} style={styles.stragglerText} numberOfLines={1}>
-                {t(
-                  s.userId === user?.id ? 'straggler.selfWarning' : 'straggler.banner',
-                  { name: s.name, distance: formatDistance(s.distanceM) },
-                )}
-              </Text>
-            ))}
-            {stragglers.length > 2 && (
-              <Text style={styles.stragglerMore}>
-                {t('straggler.bannerMore', { n: stragglers.length - 2 })}
-              </Text>
-            )}
-          </Pressable>
-        </Animated.View>
-      )}
+      {/* Straggler alerts fire as a native OS notification (see the effect
+          above) — no in-app banner, so they don't cover the map. */}
 
       {/* The pull-up sheet. */}
       <BottomSheet
@@ -1398,6 +1480,15 @@ export default function MapScreen({ route, navigation }: Props) {
                     {t('subgroup.inviteAction')}
                   </Text>
                 </Pressable>
+              )}
+              {/* So sending an invite doesn't look like it did nothing while
+                  the other person hasn't accepted yet. */}
+              {sg.id === mySubgroupId && sentInvites.length > 0 && (
+                <Text style={styles.subgroupPendingHint}>
+                  {t('subgroup.pendingInvites', {
+                    names: sentInvites.map((i) => i.inviteeName).join('、'),
+                  })}
+                </Text>
               )}
             </View>
           );
@@ -1600,6 +1691,15 @@ export default function MapScreen({ route, navigation }: Props) {
               palette so the toggles recolour when the theme changes. */}
           <NotificationPreferencesCard colors={{ ...dark, accent }} />
 
+          <Text style={styles.sectionLabel}>{t('history.title')}</Text>
+          <Pressable
+            style={styles.accountBtn}
+            onPress={() => setOverlay('history')}
+            accessibilityRole="button"
+          >
+            <Text style={[styles.accountBtnText, { color: accent }]}>{t('history.open')}</Text>
+          </Pressable>
+
           <View style={styles.settingsSectionHeaderRow}>
             <Text style={styles.sectionLabel}>{t('account.section')}</Text>
             <Pressable
@@ -1721,6 +1821,23 @@ export default function MapScreen({ route, navigation }: Props) {
         doneLabel={t('map.done')}
       >
         <ScrollView contentContainerStyle={styles.overlayBody}>
+          <View style={styles.profilePreviewRow}>
+            <View
+              style={[
+                styles.profilePreviewAvatar,
+                { backgroundColor: profileColor ?? memberColor(user?.id ?? '') },
+              ]}
+            >
+              {profileAvatar ? (
+                <Text style={styles.profilePreviewEmoji}>{profileAvatar}</Text>
+              ) : (
+                <Text style={styles.profilePreviewInitial}>
+                  {(profileName || user?.name || '?').slice(0, 1).toUpperCase()}
+                </Text>
+              )}
+            </View>
+          </View>
+
           <Text style={styles.sectionLabel}>{t('settings.nickname')}</Text>
           <View style={styles.profileRow}>
             <TextInput
@@ -1777,6 +1894,54 @@ export default function MapScreen({ route, navigation }: Props) {
             ))}
           </View>
           <Text style={styles.overlayHint}>{t('profile.syncHint')}</Text>
+        </ScrollView>
+      </OverlaySheet>
+
+      {/* History overlay: gathering points actually reached, grouped by day. */}
+      <OverlaySheet
+        visible={overlay === 'history'}
+        onClose={() => setOverlay(null)}
+        title={t('history.title')}
+        accent={accent}
+        doneLabel={t('map.done')}
+      >
+        <ScrollView contentContainerStyle={styles.overlayBody}>
+          {historyGroups.length === 0 ? (
+            <Text style={styles.overlayHint}>{t('history.empty')}</Text>
+          ) : (
+            historyGroups.map((group) => {
+              const [y, m, dNum] = group.day.split('-').map(Number);
+              const dayLabel = new Date(y, m - 1, dNum).toLocaleDateString();
+              return (
+                <View key={group.day} style={styles.historyDayBlock}>
+                  <Text style={styles.sectionLabel}>{dayLabel}</Text>
+                  <View style={styles.list}>
+                    {group.items.map((item, i) => (
+                      <View
+                        key={item.id}
+                        style={[
+                          styles.flockRow,
+                          i === group.items.length - 1 && styles.flockRowLast,
+                        ]}
+                      >
+                        <View style={styles.flockRowMain}>
+                          <View style={styles.grow}>
+                            <Text style={styles.flockName}>{item.name}</Text>
+                          </View>
+                          <Text style={styles.historyTime}>
+                            {new Date(item.arrivedAt).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              );
+            })
+          )}
         </ScrollView>
       </OverlaySheet>
 
@@ -2061,18 +2226,6 @@ const makeStyles = (accent: string) =>
     recenterDivider: { height: StyleSheet.hairlineWidth, backgroundColor: glass.hairlineStrong },
 
     carouselWrap: { position: 'absolute', left: 0, right: 0, zIndex: 58 },
-    stragglerBanner: { position: 'absolute', left: 14, right: 14, zIndex: 50 },
-    stragglerCard: {
-      backgroundColor: 'rgba(197,58,68,0.28)',
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: glass.danger,
-      borderRadius: 16,
-      paddingVertical: 10,
-      paddingHorizontal: 14,
-      gap: 2,
-    },
-    stragglerText: { fontSize: 13.5, fontWeight: '600', color: '#fff' },
-    stragglerMore: { fontSize: 12, color: glass.textSecondary, marginTop: 2 },
     card: {
       borderRadius: 22,
       overflow: 'hidden',
@@ -2091,14 +2244,7 @@ const makeStyles = (accent: string) =>
     },
     grow: { flex: 1, minWidth: 0 },
     cardKicker: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8 },
-    titleRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
-    cardTitle: { flexShrink: 1, fontSize: 18, fontWeight: '600', color: '#fff' },
-    titleDist: {
-      fontSize: 13,
-      fontWeight: '600',
-      color: glass.textSecondary,
-      fontVariant: ['tabular-nums'],
-    },
+    cardTitle: { fontSize: 18, fontWeight: '600', color: '#fff' },
     cardActions: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 13 },
     directions: {
       flex: 1,
@@ -2111,15 +2257,46 @@ const makeStyles = (accent: string) =>
       borderWidth: StyleSheet.hairlineWidth,
     },
     directionsText: { fontSize: 15, fontWeight: '600', color: '#fff' },
-    etaPill: {
+    // Secondary action: hand off to the real Apple Maps app for turn-by-turn —
+    // the main "directions" button stays in-app (journey state + Live Activity).
+    appleMapsBtn: {
+      width: 44,
       height: 44,
+      borderRadius: 13,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: glass.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
+    },
+    etaPill: {
       paddingHorizontal: 16,
+      paddingVertical: 6,
       borderRadius: 13,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: glass.fillStrong,
     },
     etaPillEta: { fontSize: 15, fontWeight: '700', color: '#fff', fontVariant: ['tabular-nums'] },
+    etaPillDist: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: glass.textSecondary,
+      fontVariant: ['tabular-nums'],
+      marginTop: 1,
+    },
+    // Compact walk/drive/transit switcher below the nav row.
+    travelModeRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
+    travelModeBtn: {
+      width: 40,
+      height: 32,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: glass.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'transparent',
+    },
     // Prominent capsule pinned at the card's foot (kept compact so the card
     // height barely moves — see the straggler banner's fixed top offset).
     meetTimeBtn: {
@@ -2203,6 +2380,16 @@ const makeStyles = (accent: string) =>
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairline,
     },
+    profilePreviewRow: { alignItems: 'center', marginBottom: 16 },
+    profilePreviewAvatar: {
+      width: 76,
+      height: 76,
+      borderRadius: 38,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    profilePreviewEmoji: { fontSize: 40 },
+    profilePreviewInitial: { fontSize: 32, fontWeight: '700', color: '#fff' },
     // 5 columns × 6 rows filling edge-to-edge: 5 × (18% + 1% + 1%) = 100%.
     emojiGrid: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 12 },
     emojiCell: {
@@ -2274,6 +2461,12 @@ const makeStyles = (accent: string) =>
     },
     subgroupName: { fontSize: 15, fontWeight: '700', color: '#fff' },
     subgroupMeta: { fontSize: 12.5, color: glass.textSecondary, marginTop: 1 },
+    subgroupPendingHint: {
+      fontSize: 12.5,
+      color: glass.textSecondary,
+      paddingHorizontal: 14,
+      paddingBottom: 10,
+    },
 
     codeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
     // Big bold white section headings on the main sheet (Apple Maps style).
@@ -2299,6 +2492,13 @@ const makeStyles = (accent: string) =>
       marginBottom: 8,
       marginLeft: 4,
       marginTop: 4,
+    },
+    historyDayBlock: { marginBottom: 16 },
+    historyTime: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: glass.textSecondary,
+      fontVariant: ['tabular-nums'],
     },
     settingSwitchRow: {
       flexDirection: 'row',
@@ -2357,7 +2557,6 @@ const makeStyles = (accent: string) =>
     flockInitial: { fontSize: 16, fontWeight: '600', color: '#fff' },
     flockName: { fontSize: 16, color: '#fff' },
     flockStatus: { fontSize: 13 },
-    flockMemberStatus: { fontSize: 11, color: glass.textTertiary, marginTop: 1 },
     flockMeta: { alignItems: 'flex-end' },
     flockEta: { fontSize: 15, fontWeight: '600', color: '#fff', fontVariant: ['tabular-nums'] },
     flockDist: { fontSize: 12, color: glass.textTertiary },
