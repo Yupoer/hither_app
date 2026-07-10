@@ -165,6 +165,8 @@ const zh = {
 
   // Map · new design (Hither iOS Flow)
   'map.searchPlaces': '搜尋地點',
+  'confirmGather.kicker': '加入這個集合點？',
+  'confirmGather.add': '加入',
   'map.share': '分享',
   'map.copy': '複製',
   'map.shareMsg': '用代碼 {code} 加入我的 Hither 群組',
@@ -194,6 +196,8 @@ const zh = {
   'flock.you': '你',
 
   // Map · meet time (countdown / set / clear) + member status
+  'meetTime.redSection': '集合倒數變紅門檻',
+  'meetTime.redOption': '剩 {minutes} 分',
   'meetTime.countdown': '還剩 {minutes} 分鐘集合',
   'meetTime.overdue': '已超過集合時間 {minutes} 分鐘',
   'meetTime.set': '設定集合時間',
@@ -406,7 +410,7 @@ const zh = {
   'paywall.rowThemesPro': '更多主題',
 
   // KML import
-  'kml.entry': '匯入 KML',
+  'kml.entry': '從 Google Map 地圖匯入',
   'kml.step1': '在 Google 我的地圖規劃景點',
   'kml.step2': '匯出 KML 檔案',
   'kml.step3': '在此上傳，一鍵導入行程',
@@ -571,6 +575,8 @@ const en: Record<keyof typeof zh, string> = {
   'map.journeyCompleteBody': 'Arrived at "{title}" — journey complete',
 
   'map.searchPlaces': 'Search places',
+  'confirmGather.kicker': 'Add this gather point?',
+  'confirmGather.add': 'Add',
   'map.share': 'Share',
   'map.copy': 'Copy',
   'map.shareMsg': 'Join my Hither group with code {code}',
@@ -599,6 +605,8 @@ const en: Record<keyof typeof zh, string> = {
   'flock.here': 'here',
   'flock.you': 'You',
 
+  'meetTime.redSection': 'Countdown turns red at',
+  'meetTime.redOption': '{minutes} min left',
   'meetTime.countdown': '{minutes} min to gather',
   'meetTime.overdue': '{minutes} min past meet time',
   'meetTime.set': 'Set meet time',
@@ -804,7 +812,7 @@ const en: Record<keyof typeof zh, string> = {
   'paywall.rowThemesPro': 'More themes',
 
   // KML import
-  'kml.entry': 'Import KML',
+  'kml.entry': 'Import from Google Maps',
   'kml.step1': 'Plan your spots in Google My Maps',
   'kml.step2': 'Export as a KML file',
   'kml.step3': 'Upload it here to import your itinerary',

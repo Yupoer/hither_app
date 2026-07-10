@@ -6,6 +6,7 @@ import React, {
   useRef,
 } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, type Region } from 'react-native-maps';
 import type { Coordinates, Destination, MemberLocation } from '../types';
 import { useTheme } from '../state/PreferencesContext';
@@ -114,17 +115,22 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
           coordinate={gathering.coordinates}
           title={gathering.title}
           description="下一個集合點 · gathering point"
-          // Flag pole sits at the emoji's lower-left, so anchor there to pin
-          // the flag base on the exact coordinate (Apple-Maps-style small icon).
-          anchor={{ x: 0.28, y: 0.95 }}
+          anchor={{ x: 0.5, y: 0.5 }}
         >
-          <Text style={styles.flagMarker}>🚩</Text>
+          {/* Apple-Maps-style place marker: a small accent disc with a white
+              ring holding a flag glyph — pops on the basemap, no huge halo. */}
+          <View style={[styles.gatherMarker, { backgroundColor: colors.accent }]}>
+            <Ionicons name="flag" size={17} color="#fff" />
+          </View>
         </Marker>
       )}
 
       {members.map((m) => {
         if (!m.coordinates) return null;
-        const isSelf = m.userId === currentUserId;
+        // Own avatar is shown by the OS blue dot (showsUserLocation) — don't
+        // double it up with a member pin. Only teammates get a pin.
+        if (m.userId === currentUserId) return null;
+        const isSelf = false;
         const isLeader = m.role === 'leader';
         const ringColor = isLeader ? colors.accent : '#FFFFFF';
         return (
@@ -169,8 +175,21 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
 });
 
 const makeStyles = (colors: Palette) => StyleSheet.create({
-  // Small Apple-Maps-style flag pin — no oversized pulse ring/glow.
-  flagMarker: { fontSize: 30 },
+  // Small Apple-Maps-style place disc — accent circle, white ring, flag glyph.
+  gatherMarker: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2.5,
+    borderColor: '#fff',
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 4,
+  },
   pinWrap: { alignItems: 'center', gap: 4 },
   pinLabel: {
     paddingHorizontal: 8,

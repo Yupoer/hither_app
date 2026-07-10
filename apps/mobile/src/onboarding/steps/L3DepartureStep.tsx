@@ -1,53 +1,29 @@
 import React, { useState } from 'react';
-import { Platform, StyleSheet, Text } from 'react-native';
+import { Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import DateTimePicker, {
   DateTimePickerAndroid,
 } from '@react-native-community/datetimepicker';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../state/PreferencesContext';
-import { useTranslation, type TranslationKey } from '../../i18n';
+import { useTranslation } from '../../i18n';
 import type { StepProps } from '../types';
 import StepShell from './StepShell';
-import OptionCard from './OptionCard';
 import PrimaryButton from './PrimaryButton';
 import { selectionTick } from '../../utils/haptics';
 
-type DepartKey = 'now' | 'in3' | 'week' | 'custom';
-
 const DAY_MS = 24 * 60 * 60 * 1000;
-const OPTION_ORDER: DepartKey[] = ['now', 'in3', 'week', 'custom'];
-
-const LABEL_KEY: Record<DepartKey, TranslationKey> = {
-  now: 'onboarding.l3.optNow',
-  in3: 'onboarding.l3.opt3days',
-  week: 'onboarding.l3.optWeek',
-  custom: 'onboarding.l3.optCustom',
-};
-
-const EMOJI: Record<DepartKey, string> = {
-  now: '⚡',
-  in3: '📅',
-  week: '🗓️',
-  custom: '✏️',
-};
+// The 自訂 (custom) tile gets its own distinct hue so the two options read as
+// clearly different choices (Design System "Electric Sky" secondary).
+const CUSTOM_COLOR = '#37B6FF';
 
 function daysUntil(date: Date): number {
   return Math.max(0, Math.ceil((date.getTime() - Date.now()) / DAY_MS));
 }
 
-/** The actual departure Date a preset key resolves to. */
-function presetDate(key: Exclude<DepartKey, 'custom'>): Date {
-  const base = Date.now();
-  if (key === 'in3') return new Date(base + 3 * DAY_MS);
-  if (key === 'week') return new Date(base + 7 * DAY_MS);
-  return new Date(base); // 'now'
-}
-
 export default function L3DepartureStep({ answers, onAnswer, onSkip, onBack }: StepProps) {
   const { colors } = useTheme();
   const { t } = useTranslation();
-  // Restore a previously-saved custom date as the custom selection; presets
-  // aren't round-tripped (the user just re-taps one).
-  const [key, setKey] = useState<DepartKey | null>(
+  const [key, setKey] = useState<'now' | 'custom' | null>(
     answers.departureDate ? 'custom' : null,
   );
   const [customDate, setCustomDate] = useState<Date | null>(
@@ -55,42 +31,33 @@ export default function L3DepartureStep({ answers, onAnswer, onSkip, onBack }: S
   );
   const [showIosPicker, setShowIosPicker] = useState(false);
 
-  const openAndroidPicker = () => {
-    DateTimePickerAndroid.open({
-      value: customDate ?? new Date(),
-      mode: 'date',
-      minimumDate: new Date(),
-      onChange: (event, selected) => {
-        if (event.type === 'set' && selected) {
-          selectionTick();
-          setCustomDate(selected);
-          setKey('custom');
-        }
-      },
-    });
-  };
-
-  const select = (k: DepartKey) => {
+  const openCustom = () => {
     selectionTick();
-    if (k === 'custom') {
-      // Pop the calendar; on iOS it renders inline below the options.
-      if (Platform.OS === 'android') openAndroidPicker();
-      else setShowIosPicker(true);
-      return;
+    if (Platform.OS === 'android') {
+      DateTimePickerAndroid.open({
+        value: customDate ?? new Date(),
+        mode: 'date',
+        minimumDate: new Date(),
+        onChange: (event, selected) => {
+          if (event.type === 'set' && selected) {
+            selectionTick();
+            setCustomDate(selected);
+            setKey('custom');
+          }
+        },
+      });
+    } else {
+      setShowIosPicker(true);
     }
-    setShowIosPicker(false);
-    setKey(k);
   };
 
-  // Effective date for the countdown + submit ('now' departs immediately).
-  const effectiveDate =
-    key === 'custom' ? customDate : key ? presetDate(key) : null;
-  const canContinue = key !== null && (key !== 'custom' || customDate !== null);
+  const effectiveDate = key === 'custom' ? customDate : key === 'now' ? new Date() : null;
+  const canContinue = key === 'now' || (key === 'custom' && customDate !== null);
 
   const submit = () => {
     onAnswer({
       departureDate:
-        key === 'now' ? null : effectiveDate ? effectiveDate.toISOString() : null,
+        key === 'custom' && customDate ? customDate.toISOString() : null,
     });
   };
 
@@ -110,47 +77,122 @@ export default function L3DepartureStep({ answers, onAnswer, onSkip, onBack }: S
         />
       }
     >
-      {OPTION_ORDER.map((k) => (
-        <OptionCard
-          key={k}
-          emoji={EMOJI[k]}
-          title={
-            k === 'custom' && customDate
-              ? customDate.toLocaleDateString()
-              : t(LABEL_KEY[k])
-          }
-          selected={key === k}
-          onPress={() => select(k)}
-        />
-      ))}
-
-      {showIosPicker && Platform.OS === 'ios' ? (
-        <DateTimePicker
-          value={customDate ?? new Date()}
-          mode="date"
-          display="inline"
-          minimumDate={new Date()}
-          onChange={(_event, selected) => {
-            if (selected) {
-              selectionTick();
-              setCustomDate(selected);
-              setKey('custom');
-              // Return to the options list with 自訂時間 now ticked.
-              setShowIosPicker(false);
-            }
+      {/* Two side-by-side, colour-differentiated choices — never stacked. */}
+      <View style={styles.row}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ selected: key === 'now' }}
+          onPress={() => {
+            selectionTick();
+            setKey('now');
           }}
-        />
-      ) : null}
+          style={[
+            styles.tile,
+            { borderColor: colors.accent },
+            key === 'now' && { backgroundColor: colors.accent },
+          ]}
+        >
+          <Ionicons
+            name="flash"
+            size={22}
+            color={key === 'now' ? colors.accentText : colors.accent}
+          />
+          <Text
+            style={[
+              styles.tileLabel,
+              { color: key === 'now' ? colors.accentText : colors.textPrimary },
+            ]}
+          >
+            {t('onboarding.l3.optNow')}
+          </Text>
+        </Pressable>
+
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ selected: key === 'custom' }}
+          onPress={openCustom}
+          style={[
+            styles.tile,
+            { borderColor: CUSTOM_COLOR },
+            key === 'custom' && { backgroundColor: CUSTOM_COLOR },
+          ]}
+        >
+          <Ionicons
+            name="calendar"
+            size={22}
+            color={key === 'custom' ? '#fff' : CUSTOM_COLOR}
+          />
+          <Text
+            style={[
+              styles.tileLabel,
+              { color: key === 'custom' ? '#fff' : colors.textPrimary },
+            ]}
+            numberOfLines={1}
+          >
+            {key === 'custom' && customDate
+              ? customDate.toLocaleDateString()
+              : t('onboarding.l3.optCustom')}
+          </Text>
+        </Pressable>
+      </View>
 
       {effectiveDate ? (
         <Text style={[styles.countdown, { color: colors.textSecondary }]}>
           {t('onboarding.l3.countdown', { days: daysUntil(effectiveDate) })}
         </Text>
       ) : null}
+
+      {/* Calendar in a centered popup so it's never clipped off-screen or
+          hidden behind the footer button. */}
+      <Modal
+        visible={showIosPicker}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowIosPicker(false)}
+      >
+        <Pressable style={styles.backdrop} onPress={() => setShowIosPicker(false)} />
+        <View style={styles.modalWrap} pointerEvents="box-none">
+          <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
+            <DateTimePicker
+              value={customDate ?? new Date()}
+              mode="date"
+              display="inline"
+              minimumDate={new Date()}
+              onChange={(_event, selected) => {
+                if (selected) {
+                  setCustomDate(selected);
+                  setKey('custom');
+                }
+              }}
+            />
+            <PrimaryButton
+              label={t('onboarding.continue')}
+              onPress={() => {
+                selectionTick();
+                setShowIosPicker(false);
+              }}
+            />
+          </View>
+        </View>
+      </Modal>
     </StepShell>
   );
 }
 
 const styles = StyleSheet.create({
-  countdown: { fontSize: 15, marginTop: 16, textAlign: 'center' },
+  row: { flexDirection: 'row', gap: 14, marginTop: 8 },
+  tile: {
+    flex: 1,
+    aspectRatio: 1.25,
+    borderRadius: 24,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  tileLabel: { fontSize: 16, fontWeight: '700' },
+  countdown: { fontSize: 15, marginTop: 20, textAlign: 'center' },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
+  modalWrap: { flex: 1, justifyContent: 'center', paddingHorizontal: 24 },
+  modalCard: { borderRadius: 24, padding: 16, gap: 12 },
 });

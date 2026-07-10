@@ -31,17 +31,25 @@ export const DEFAULT_LANGUAGE: Language = 'zh';
 const LANGUAGE_KEY = 'pref.language';
 const THEME_KEY = 'pref.theme';
 const POWER_SAVER_KEY = 'pref.powerSaver';
+const MEET_RED_KEY = 'pref.meetRedMin';
+
+/** Minutes-remaining at which the meet-time countdown turns red. */
+export const MEET_RED_OPTIONS = [3, 5, 10] as const;
+export const DEFAULT_MEET_RED_MIN = 5;
 
 interface PreferencesValue {
   language: Language;
   themeName: ThemeName;
   /** Battery-saver location tracking: coarser fixes, slower cadence. */
   powerSaver: boolean;
+  /** Countdown turns red when this many minutes (or fewer) remain. */
+  meetRedMin: number;
   /** True once the persisted preferences have been loaded from storage. */
   ready: boolean;
   setLanguage: (language: Language) => void;
   setThemeName: (theme: ThemeName) => void;
   setPowerSaver: (on: boolean) => void;
+  setMeetRedMin: (min: number) => void;
 }
 
 const PreferencesContext = createContext<PreferencesValue | undefined>(undefined);
@@ -58,6 +66,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [language, setLanguageState] = useState<Language>(DEFAULT_LANGUAGE);
   const [themeName, setThemeNameState] = useState<ThemeName>(DEFAULT_THEME);
   const [powerSaver, setPowerSaverState] = useState(false);
+  const [meetRedMin, setMeetRedMinState] = useState<number>(DEFAULT_MEET_RED_MIN);
   const [ready, setReady] = useState(false);
 
   // Restore persisted preferences on launch.
@@ -65,15 +74,19 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     let active = true;
     (async () => {
       try {
-        const [storedLang, storedTheme, storedSaver] = await AsyncStorage.multiGet([
-          LANGUAGE_KEY,
-          THEME_KEY,
-          POWER_SAVER_KEY,
-        ]);
+        const [storedLang, storedTheme, storedSaver, storedMeetRed] =
+          await AsyncStorage.multiGet([
+            LANGUAGE_KEY,
+            THEME_KEY,
+            POWER_SAVER_KEY,
+            MEET_RED_KEY,
+          ]);
         if (!active) return;
         if (isLanguage(storedLang[1])) setLanguageState(storedLang[1]);
         if (isThemeName(storedTheme[1])) setThemeNameState(storedTheme[1]);
         if (storedSaver[1] === 'true') setPowerSaverState(true);
+        const red = Number(storedMeetRed[1]);
+        if ((MEET_RED_OPTIONS as readonly number[]).includes(red)) setMeetRedMinState(red);
       } finally {
         if (active) setReady(true);
       }
@@ -98,17 +111,34 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     void AsyncStorage.setItem(POWER_SAVER_KEY, on ? 'true' : 'false');
   }, []);
 
+  const setMeetRedMin = useCallback((min: number) => {
+    setMeetRedMinState(min);
+    void AsyncStorage.setItem(MEET_RED_KEY, String(min));
+  }, []);
+
   const value = useMemo<PreferencesValue>(
     () => ({
       language,
       themeName,
       powerSaver,
+      meetRedMin,
       ready,
       setLanguage,
       setThemeName,
       setPowerSaver,
+      setMeetRedMin,
     }),
-    [language, themeName, powerSaver, ready, setLanguage, setThemeName, setPowerSaver],
+    [
+      language,
+      themeName,
+      powerSaver,
+      meetRedMin,
+      ready,
+      setLanguage,
+      setThemeName,
+      setPowerSaver,
+      setMeetRedMin,
+    ],
   );
 
   return (

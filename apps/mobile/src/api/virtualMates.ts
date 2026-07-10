@@ -26,6 +26,15 @@ const MATES = [
 // app session, so the fake flock appears around wherever the tester is.
 const anchors = new Map<string, Coordinates>();
 
+// Which subgroup each virtual mate has been "invited" into (mock invite flow —
+// virtual mates always accept). userId → subgroupId. Session-lived.
+const virtualSubgroups = new Map<string, string>();
+
+/** Mock-accept an invite: pull a virtual mate into the given subgroup. */
+export function assignVirtualToSubgroup(userId: string, subgroupId: string): void {
+  virtualSubgroups.set(userId, subgroupId);
+}
+
 /** Virtual members around `anchor`; [] until a first real coordinate exists. */
 export function virtualMates(
   groupId: string,
@@ -42,6 +51,7 @@ export function virtualMates(
     name: m.name,
     role: 'follower' as const,
     avatar: m.avatar,
+    subgroupId: virtualSubgroups.get(m.userId),
     coordinates: {
       latitude: base.latitude + m.dLat,
       longitude: base.longitude + m.dLng,

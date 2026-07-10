@@ -38,6 +38,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import GroupMap, { type GroupMapHandle } from '../components/GroupMap';
 import DestinationSearch from '../components/DestinationSearch';
+import MeetCountdown from '../components/MeetCountdown';
 import DestinationReorderList from '../components/DestinationReorderList';
 import NotificationPreferencesCard from '../components/NotificationPreferencesCard';
 import QuickCommandsCard from '../components/QuickCommandsCard';
@@ -48,7 +49,12 @@ import KmlImportSheet from '../components/KmlImportSheet';
 import FeedbackSheet from '../components/FeedbackSheet';
 import CrookIcon from '../components/CrookIcon';
 import { useSession } from '../state/SessionContext';
-import { usePreferences, useTheme, type Language } from '../state/PreferencesContext';
+import {
+  usePreferences,
+  useTheme,
+  MEET_RED_OPTIONS,
+  type Language,
+} from '../state/PreferencesContext';
 import { useTranslation, type TranslationKey } from '../i18n';
 import { useGroupState } from '../state/useGroupState';
 import { useStragglerAlerts } from '../state/useStragglerAlerts';
@@ -62,7 +68,7 @@ import {
   type TravelMode,
 } from '../utils/geo';
 import { dotWindow } from '../utils/pagination';
-import { minutesUntil, meetCountdownShort } from '../utils/meetTime';
+import { minutesUntil } from '../utils/meetTime';
 import { groupHistoryByDay, type HistoryDayGroup } from '../utils/history';
 import { liquidGlass, location, notifications, type MapRegion, type PlaceResult } from '../native';
 import {
@@ -86,7 +92,7 @@ import { captureScreen } from 'react-native-view-shot';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ONBOARDING_STORAGE_KEY } from '../onboarding/sync';
 import { isDemoGroup } from '../api/demo';
-import { isVirtualMember } from '../api/virtualMates';
+import { isVirtualMember, assignVirtualToSubgroup } from '../api/virtualMates';
 import { confirmAction } from '../utils/confirm';
 import { logEvent, logError } from '../utils/activityLog';
 import { lightTap, mediumTap, selectionTick, alertBuzz } from '../utils/haptics';
@@ -146,8 +152,16 @@ export default function MapScreen({ route, navigation }: Props) {
     isPro,
     upgradeToEmailAccount,
   } = useSession();
-  const { language, themeName, powerSaver, setLanguage, setThemeName, setPowerSaver } =
-    usePreferences();
+  const {
+    language,
+    themeName,
+    powerSaver,
+    meetRedMin,
+    setLanguage,
+    setThemeName,
+    setPowerSaver,
+    setMeetRedMin,
+  } = usePreferences();
   const { colors } = useTheme();
   const accent = colors.accent;
   const { t } = useTranslation();
@@ -229,6 +243,9 @@ export default function MapScreen({ route, navigation }: Props) {
     }
   }, []);
   const [searchVisible, setSearchVisible] = useState(false);
+  // A place picked in search, awaiting the bottom "add / cancel" confirm card.
+  // While set, the search field + locate capsule hide behind the card.
+  const [pendingPlace, setPendingPlace] = useState<PlaceResult | null>(null);
   const [kmlVisible, setKmlVisible] = useState(false);
   const [paywallTrigger, setPaywallTrigger] = useState<TranslationKey | undefined>(undefined);
   const [paywallVisible, setPaywallVisible] = useState(false);
@@ -757,6 +774,15 @@ export default function MapScreen({ route, navigation }: Props) {
   async function handleInvite(subgroupId: string, inviteeId: string) {
     mediumTap();
     logEvent('invite_send', { subgroupId, inviteeId });
+    // Virtual mates aren't real Supabase users — mock the invite: they always
+    // accept, so drop them straight into my subgroup (client-side) and refresh.
+    if (isVirtualMember(inviteeId)) {
+      assignVirtualToSubgroup(inviteeId, subgroupId);
+      setInviteSheetOpen(false);
+      refresh();
+      Alert.alert(t('subgroup.inviteSent'));
+      return;
+    }
     try {
       await inviteToSubgroup(subgroupId, inviteeId);
       logEvent('invite_send_ok', { subgroupId, inviteeId });
@@ -814,7 +840,14 @@ export default function MapScreen({ route, navigation }: Props) {
     mediumTap();
     try {
       for (const dest of destinations) {
-        await recordVisitedWaypoint(groupId, dest.title, dest.coordinates);
+        // Best-effort archive (mirrors the real arrival flow) — if the
+        // visited_waypoints table isn't migrated yet, still drop the stop so
+        // the itinerary clears; history just won't populate until it exists.
+        try {
+          await recordVisitedWaypoint(groupId, dest.title, dest.coordinates);
+        } catch (recordErr) {
+          logError('history_record_failed', recordErr, { groupId, dest: dest.id });
+        }
         await deleteDestination(groupId, dest.id);
       }
       await stopNavigation();
@@ -968,11 +1001,24 @@ export default function MapScreen({ route, navigation }: Props) {
     Alert.alert(t('settings.resetPrefs'), t('settings.resetPrefsDone'));
   }
 
+  // Optimistic flip for the straggler-alert switch — the server round trip +
+  // realtime refetch otherwise reads as a 1-2s lag. Cleared once server truth
+  // (group.stragglerAlerts) matches, in the effect below.
+  const [stragglerOverride, setStragglerOverride] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (stragglerOverride === null) return;
+    if (group && group.stragglerAlerts === stragglerOverride) setStragglerOverride(null);
+  }, [group?.stragglerAlerts, stragglerOverride]);
+
   function persistStragglerConfig(enabled: boolean, thresholdM: number) {
     if (!groupId) return;
+    setStragglerOverride(enabled);
     setStragglerConfig(groupId, enabled, thresholdM)
       .then(() => refresh())
-      .catch(() => Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg')));
+      .catch(() => {
+        setStragglerOverride(null);
+        Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
+      });
   }
 
   // --- Derived view models --------------------------------------------------
@@ -1056,15 +1102,11 @@ export default function MapScreen({ route, navigation }: Props) {
   useEffect(() => {
     void refreshSentInvites(mySubgroupId);
   }, [mySubgroupId, refreshSentInvites]);
-  // Co-members I could still pull into my team. Virtual solo-test mates are
-  // excluded in a real group (no one on the other end to accept) — BUT in the
-  // demo group they ARE invitable, because handleInvite simulates them
-  // accepting; otherwise a solo tester's invite picker is always empty.
+  // Co-members I could still pull into my team — anyone not me and not already
+  // in my subgroup. Virtual solo-test mates ARE invitable now: handleInvite
+  // mock-accepts them so a solo tester can exercise the whole team flow.
   const invitable = flock.filter(
-    (f) =>
-      f.userId !== user?.id &&
-      f.subgroupId !== mySubgroupId &&
-      (isDemoGroup(groupId) || !isVirtualMember(f.userId)),
+    (f) => f.userId !== user?.id && f.subgroupId !== mySubgroupId,
   );
 
   // One flock row, shared by the main list and the subgroup cards.
@@ -1204,7 +1246,9 @@ export default function MapScreen({ route, navigation }: Props) {
       )}
 
       {/* Recenter capsule — rides above the sheet. Fit-all on top, locate-me
-          below, sharing one pill-shaped glass surface. */}
+          below, sharing one pill-shaped glass surface. Hidden while the
+          add-gather-point confirm card owns the bottom of the screen. */}
+      {!pendingPlace && (
       <Animated.View
         style={[styles.recenter, recenterStyle]}
         pointerEvents={atFull ? 'none' : 'auto'}
@@ -1234,6 +1278,52 @@ export default function MapScreen({ route, navigation }: Props) {
           </Pressable>
         </View>
       </Animated.View>
+      )}
+
+      {/* Add-gather-point confirm card — a bottom sheet-style card shown after
+          picking a search result. Add (accent) / Cancel (red) side by side. */}
+      {pendingPlace && (
+        <View style={[styles.confirmCard, { bottom: insets.bottom + 16 }]} pointerEvents="box-none">
+          <liquidGlass.GlassView tintColor={glass.card} style={styles.confirmCardInner}>
+            <Text style={styles.confirmKicker}>{t('confirmGather.kicker')}</Text>
+            <Text style={styles.confirmTitle} numberOfLines={1}>
+              {pendingPlace.name}
+            </Text>
+            {pendingPlace.address ? (
+              <Text style={styles.confirmAddress} numberOfLines={1}>
+                {pendingPlace.address}
+              </Text>
+            ) : null}
+            <View style={styles.confirmBtnRow}>
+              <Pressable
+                style={({ pressed }) => [styles.confirmCancel, pressed && { opacity: 0.85 }]}
+                onPress={() => {
+                  selectionTick();
+                  setPendingPlace(null);
+                }}
+                accessibilityRole="button"
+              >
+                <Text style={styles.confirmCancelText}>{t('common.cancel')}</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.confirmAdd,
+                  { backgroundColor: accent },
+                  pressed && { opacity: 0.9 },
+                ]}
+                onPress={() => {
+                  const place = pendingPlace;
+                  setPendingPlace(null);
+                  void handlePickDestination(place);
+                }}
+                accessibilityRole="button"
+              >
+                <Text style={styles.confirmAddText}>{t('confirmGather.add')}</Text>
+              </Pressable>
+            </View>
+          </liquidGlass.GlassView>
+        </View>
+      )}
 
       {/* Gathering-point carousel — takes over the top slot (where the group
           pill was) instead of floating above the sheet, so it no longer
@@ -1280,11 +1370,6 @@ export default function MapScreen({ route, navigation }: Props) {
               const arrivalPct = totalMembers
                 ? Math.round((arrivedHere / totalMembers) * 100)
                 : 0;
-              // Compact live countdown in the set-gather-time square: time
-              // REMAINING to the meet time (local-clock based), or "——" unset.
-              const meetShort = dest.meetAt
-                ? meetCountdownShort(dest.meetAt as string, nowTick)
-                : '——';
               const modeIconName =
                 travelMode === 'walk'
                   ? 'walk-outline'
@@ -1434,12 +1519,18 @@ export default function MapScreen({ route, navigation }: Props) {
                           size={16}
                           color={meetLabel ? accent : glass.textSecondary}
                         />
-                        <Text
-                          style={[styles.cmdSquareLabel, meetLabel ? { color: accent } : null]}
-                          numberOfLines={1}
-                        >
-                          {meetShort}
-                        </Text>
+                        {dest.meetAt ? (
+                          <MeetCountdown
+                            meetAtIso={dest.meetAt as string}
+                            redWithinMin={meetRedMin}
+                            redColor={glass.danger}
+                            baseStyle={[styles.cmdSquareLabel, { color: accent }]}
+                          />
+                        ) : (
+                          <Text style={styles.cmdSquareLabel} numberOfLines={1}>
+                            ——
+                          </Text>
+                        )}
                       </Pressable>
                     </View>
                   </liquidGlass.GlassView>
@@ -1465,15 +1556,20 @@ export default function MapScreen({ route, navigation }: Props) {
           /* Search row + account avatar — pinned over the scroll content on
              BottomSheet's frosted header veil (Apple-Maps look). */
           <View style={styles.searchRow}>
-            <Pressable
-              style={styles.searchField}
-              onPress={() => (canEditItinerary ? setSearchVisible(true) : undefined)}
-              accessibilityRole="button"
-              accessibilityLabel={t('map.searchA11y')}
-            >
-              <Ionicons name="search" size={17} color={glass.textSecondary} />
-              <Text style={styles.searchPlaceholder}>{t('map.searchPlaces')}</Text>
-            </Pressable>
+            {pendingPlace ? (
+              // Search field hides while the add-gather-point confirm card is up.
+              <View style={styles.searchField} />
+            ) : (
+              <Pressable
+                style={styles.searchField}
+                onPress={() => (canEditItinerary ? setSearchVisible(true) : undefined)}
+                accessibilityRole="button"
+                accessibilityLabel={t('map.searchA11y')}
+              >
+                <Ionicons name="search" size={17} color={glass.textSecondary} />
+                <Text style={styles.searchPlaceholder}>{t('map.searchPlaces')}</Text>
+              </Pressable>
+            )}
             <Pressable
               style={[styles.avatar, { backgroundColor: user?.avatarColor ?? accent }]}
               onPress={openProfile}
@@ -1647,7 +1743,7 @@ export default function MapScreen({ route, navigation }: Props) {
                 <Text style={styles.settingSwitchLabel}>{t('straggler.section')}</Text>
               </View>
               <Switch
-                value={group.stragglerAlerts}
+                value={stragglerOverride ?? group.stragglerAlerts}
                 onValueChange={(v) => persistStragglerConfig(v, group.stragglerThresholdM)}
                 trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
                 thumbColor="#fff"
@@ -1787,6 +1883,17 @@ export default function MapScreen({ route, navigation }: Props) {
           {/* Force the LIVE theme accent onto the otherwise-frozen night
               palette so the toggles recolour when the theme changes. */}
           <NotificationPreferencesCard colors={{ ...dark, accent }} />
+
+          <Text style={styles.sectionLabel}>{t('meetTime.redSection')}</Text>
+          <Segmented
+            accent={accent}
+            options={MEET_RED_OPTIONS.map((m) => ({
+              key: String(m),
+              label: t('meetTime.redOption', { minutes: m }),
+            }))}
+            value={String(meetRedMin)}
+            onChange={(v) => setMeetRedMin(Number(v))}
+          />
 
           <Text style={styles.sectionLabel}>{t('history.title')}</Text>
           <Pressable
@@ -2108,7 +2215,12 @@ export default function MapScreen({ route, navigation }: Props) {
         visible={searchVisible}
         onClose={() => setSearchVisible(false)}
         biasRegion={biasRegion}
-        onPick={handlePickDestination}
+        // Don't persist on pick — stage the place for the bottom confirm card
+        // (Add / Cancel). Resolves immediately so the search sheet closes.
+        onPick={(place) => {
+          setPendingPlace(place);
+          return Promise.resolve();
+        }}
       />
 
       <PaywallSheet
@@ -2415,6 +2527,42 @@ const makeStyles = (accent: string) =>
       borderColor: glass.hairline,
     },
     cmdSquareLabel: { fontSize: 10, fontWeight: '700', color: glass.textSecondary, fontVariant: ['tabular-nums'] },
+
+    // Add-gather-point confirm card (floats over the sheet bottom).
+    confirmCard: { position: 'absolute', left: 14, right: 14, zIndex: 60 },
+    confirmCardInner: {
+      overflow: 'hidden',
+      borderRadius: 24,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairlineStrong,
+      paddingHorizontal: 18,
+      paddingTop: 16,
+      paddingBottom: 16,
+      gap: 4,
+    },
+    confirmKicker: { fontSize: 12.5, color: glass.textSecondary },
+    confirmTitle: { fontFamily: DISPLAY_FONT, fontSize: 20, color: '#fff', marginTop: 2 },
+    confirmAddress: { fontSize: 13, color: glass.textSecondary },
+    confirmBtnRow: { flexDirection: 'row', gap: 12, marginTop: 14 },
+    confirmCancel: {
+      flex: 1,
+      height: 50,
+      borderRadius: 15,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(255,69,58,0.16)',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'rgba(255,69,58,0.5)',
+    },
+    confirmCancelText: { fontSize: 16, fontWeight: '700', color: '#FF453A' },
+    confirmAdd: {
+      flex: 1,
+      height: 50,
+      borderRadius: 15,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    confirmAddText: { fontSize: 16, fontWeight: '700', color: '#0c1a12' },
     // Meet-time editor sheet: roomy, full-width controls (not the old cramped
     // left-aligned chips).
     meetEditorBody: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 40, gap: 14 },
