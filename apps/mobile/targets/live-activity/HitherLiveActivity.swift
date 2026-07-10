@@ -3,16 +3,19 @@ import SwiftUI
 import WidgetKit
 
 // Live Activity UI: the lock-screen banner + Dynamic Island presentations for
-// the group "heading to gathering point" journey. Styled after the Hither iOS
-// Flow design — a dark glass card, the shepherd-crook brand mark, "GATHERING
-// AT" + ETA, a flock progress bar and member avatars. Data comes from
-// `HitherGroupAttributes` (started/updated by the app's HitherLiveActivity
-// module); this target only draws it.
+// the group "heading to gathering point" journey. Styled after the Hither
+// "Gather Card" redesign — a dark glass surface, the shepherd-crook brand mark,
+// the transit glyph, "前往集合點 · GATHERING AT" + ETA, a flock progress bar and
+// member-emoji avatars. The accent follows the app's active theme (passed as
+// `accentHex` in the state); everything else reads from the same live stop as
+// the in-app gather card. Data comes from `HitherGroupAttributes` (started /
+// updated by the app's HitherLiveActivity module); this target only draws it.
 
 // MARK: - Brand
 
 private enum Brand {
-  // Lantern-amber accent (matches src/theme.ts `accent` / the crook brand).
+  // Fallback accent (lantern amber) — used only when the app doesn't pass a
+  // theme accent. The live value comes from `ContentState.accentColor`.
   static let accent = Color(red: 0xF5 / 255, green: 0xB1 / 255, blue: 0x42 / 255)
   static let card = Color(red: 0x0E / 255, green: 0x13 / 255, blue: 0x20 / 255)
   static let textPrimary = Color(red: 0xF5 / 255, green: 0xF7 / 255, blue: 0xFB / 255)
@@ -23,7 +26,22 @@ private enum Brand {
     Color(red: 0x2a / 255, green: 0x34 / 255, blue: 0x50 / 255),
     Color(red: 0x34 / 255, green: 0x50 / 255, blue: 0x7a / 255),
     Color(red: 0x4a / 255, green: 0x3a / 255, blue: 0x6a / 255),
+    Color(red: 0x6a / 255, green: 0x4a / 255, blue: 0x3a / 255),
   ]
+}
+
+private extension Color {
+  /// Parse a "#RRGGBB" hex string (the app's theme accent). Nil on bad input.
+  init?(hexString: String?) {
+    guard var s = hexString else { return nil }
+    if s.hasPrefix("#") { s.removeFirst() }
+    guard s.count == 6, let v = UInt64(s, radix: 16) else { return nil }
+    self.init(
+      red: Double((v >> 16) & 0xFF) / 255,
+      green: Double((v >> 8) & 0xFF) / 255,
+      blue: Double(v & 0xFF) / 255
+    )
+  }
 }
 
 // MARK: - Crook brand mark
@@ -47,7 +65,7 @@ private struct CrookShape: Shape {
 
 private struct Crook: View {
   var size: CGFloat
-  var color: Color = Brand.accent
+  var color: Color
   var body: some View {
     CrookShape()
       .stroke(color, style: StrokeStyle(lineWidth: size * 5 / 56, lineCap: .round, lineJoin: .round))
@@ -67,15 +85,16 @@ struct HitherLiveActivityWidget: Widget {
     ActivityConfiguration(for: HitherGroupAttributes.self) { context in
       LockScreenView(context: context)
         .activityBackgroundTint(Brand.card)
-        .activitySystemActionForegroundColor(Brand.accent)
+        .activitySystemActionForegroundColor(context.state.accentColor)
     } dynamicIsland: { context in
-      DynamicIsland {
+      let accent = context.state.accentColor
+      return DynamicIsland {
         DynamicIslandExpandedRegion(.leading) {
           ZStack {
             RoundedRectangle(cornerRadius: 12)
-              .fill(Brand.accent.opacity(0.22))
+              .fill(accent.opacity(0.22))
               .frame(width: 42, height: 42)
-            Crook(size: 25)
+            Crook(size: 25, color: accent)
           }
         }
         DynamicIslandExpandedRegion(.trailing) {
@@ -92,10 +111,10 @@ struct HitherLiveActivityWidget: Widget {
         }
         DynamicIslandExpandedRegion(.center) {
           VStack(alignment: .leading, spacing: 2) {
-            Text("GATHERING AT")
+            Text("前往集合點 · GATHERING AT")
               .font(.system(size: 11, weight: .bold))
-              .tracking(0.8)
-              .foregroundStyle(Brand.accent)
+              .tracking(0.6)
+              .foregroundStyle(accent)
             Text(context.state.gatheringTitle ?? context.attributes.groupName)
               .font(.system(size: 16, weight: .semibold))
               .foregroundStyle(Brand.textPrimary)
@@ -105,11 +124,14 @@ struct HitherLiveActivityWidget: Widget {
         }
         DynamicIslandExpandedRegion(.bottom) {
           VStack(spacing: 10) {
-            ProgressBar(value: context.state.clampedProgress)
+            ProgressBar(value: context.state.clampedProgress, accent: accent)
             HStack {
-              AvatarStack(count: context.state.avatarCount)
+              AvatarStack(
+                emojis: context.state.avatarEmojis,
+                gathered: context.state.gatheredCount ?? 0
+              )
               Spacer()
-              if let s = context.state.flockStatus {
+              if let s = context.state.arrivalStatus {
                 Text(s).font(.system(size: 12.5)).foregroundStyle(Brand.textSecondary)
               }
             }
@@ -117,15 +139,20 @@ struct HitherLiveActivityWidget: Widget {
           .padding(.top, 2)
         }
       } compactLeading: {
-        Crook(size: 16)
+        HStack(spacing: 6) {
+          Crook(size: 16, color: accent)
+          Image(systemName: context.state.modeSymbol)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(accent)
+        }
       } compactTrailing: {
         Text(context.state.shortEta ?? context.state.formattedDistance ?? "")
           .font(.system(size: 13, weight: .semibold))
-          .foregroundStyle(Brand.accent)
+          .foregroundStyle(accent)
       } minimal: {
-        Crook(size: 15)
+        Crook(size: 15, color: accent)
       }
-      .keylineTint(Brand.accent)
+      .keylineTint(accent)
     }
   }
 }
@@ -136,24 +163,28 @@ private struct LockScreenView: View {
   let context: ActivityViewContext<HitherGroupAttributes>
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 14) {
-      // Header: crook + app name + freshness.
+    let accent = context.state.accentColor
+    return VStack(alignment: .leading, spacing: 14) {
+      // Header: crook + app name + transit glyph + freshness.
       HStack(spacing: 10) {
         ZStack {
           RoundedRectangle(cornerRadius: 6)
-            .fill(Brand.accent.opacity(0.24))
+            .fill(accent.opacity(0.24))
             .frame(width: 22, height: 22)
-          Crook(size: 13)
+          Crook(size: 13, color: accent)
         }
         Text("Hither").font(.system(size: 13, weight: .semibold)).foregroundStyle(Brand.textSecondary)
         Spacer()
+        Image(systemName: context.state.modeSymbol)
+          .font(.system(size: 12))
+          .foregroundStyle(Brand.textSecondary)
         Text("now").font(.system(size: 13)).foregroundStyle(Brand.textSecondary.opacity(0.75))
       }
 
       // Point + big ETA.
       HStack(alignment: .bottom) {
         VStack(alignment: .leading, spacing: 3) {
-          Text("Next gathering point")
+          Text("下一個集合點 · Next gather")
             .font(.system(size: 13))
             .foregroundStyle(Brand.textSecondary)
           Text(context.state.gatheringTitle ?? context.attributes.groupName)
@@ -169,16 +200,19 @@ private struct LockScreenView: View {
           VStack(spacing: 0) {
             Text(eta.value)
               .font(.system(size: 34, weight: .heavy))
-              .foregroundStyle(Brand.accent)
+              .foregroundStyle(accent)
             Text(eta.unit).font(.system(size: 12)).foregroundStyle(Brand.textSecondary)
           }
         }
       }
 
-      ProgressBar(value: context.state.clampedProgress)
+      ProgressBar(value: context.state.clampedProgress, accent: accent)
 
       HStack(spacing: 8) {
-        AvatarStack(count: context.state.avatarCount)
+        AvatarStack(
+          emojis: context.state.avatarEmojis,
+          gathered: context.state.gatheredCount ?? 0
+        )
         if let s = context.state.flockStatus {
           Text(s).font(.system(size: 12.5)).foregroundStyle(Brand.textSecondary)
         }
@@ -187,11 +221,12 @@ private struct LockScreenView: View {
     .padding(16)
   }
 
+  // "320 m · 約 4 min" — matches the gather card's distance/ETA read-out.
   private var distanceLine: String? {
-    switch (context.state.formattedDistance, context.state.formattedEta) {
-    case let (d?, e?): return "\(d) · \(e) walk"
+    switch (context.state.formattedDistance, context.state.shortEta) {
+    case let (d?, e?): return "\(d) · 約 \(e)"
     case let (d?, nil): return d
-    case let (nil, e?): return e
+    case let (nil, e?): return "約 \(e)"
     default: return nil
     }
   }
@@ -201,11 +236,12 @@ private struct LockScreenView: View {
 
 private struct ProgressBar: View {
   let value: Double
+  let accent: Color
   var body: some View {
     GeometryReader { geo in
       ZStack(alignment: .leading) {
         Capsule().fill(Brand.track)
-        Capsule().fill(Brand.accent).frame(width: max(6, geo.size.width * value))
+        Capsule().fill(accent).frame(width: max(6, geo.size.width * value))
       }
     }
     .frame(height: 6)
@@ -213,14 +249,20 @@ private struct ProgressBar: View {
 }
 
 private struct AvatarStack: View {
-  let count: Int
+  let emojis: [String]
+  let gathered: Int
   var body: some View {
     HStack(spacing: -7) {
-      ForEach(Array(0..<max(0, count)), id: \.self) { i in
-        Circle()
-          .fill(Brand.avatarColors[i % Brand.avatarColors.count])
-          .frame(width: 22, height: 22)
-          .overlay(Circle().stroke(Brand.card, lineWidth: 1.5))
+      ForEach(Array(emojis.prefix(4).enumerated()), id: \.offset) { i, emoji in
+        ZStack {
+          Circle().fill(Brand.avatarColors[i % Brand.avatarColors.count])
+          if !emoji.isEmpty {
+            Text(emoji).font(.system(size: 12))
+          }
+        }
+        .frame(width: 24, height: 24)
+        .overlay(Circle().stroke(Brand.card, lineWidth: 1.5))
+        .opacity(i < gathered ? 1 : 0.4)
       }
     }
   }
@@ -229,6 +271,26 @@ private struct AvatarStack: View {
 // MARK: - Presentation helpers
 
 private extension HitherGroupAttributes.ContentState {
+  /// The app's theme accent (from `accentHex`), or the brand fallback.
+  var accentColor: Color { Color(hexString: accentHex) ?? Brand.accent }
+
+  /// SF Symbol for the active travel mode (transit glyph).
+  var modeSymbol: String {
+    switch travelMode {
+    case "drive": return "car.fill"
+    case "transit": return "bus.fill"
+    default: return "figure.walk"
+    }
+  }
+
+  /// Emojis to draw in the flock stack — the passed avatars, or blank circles
+  /// sized to the member count when no emojis are available.
+  var avatarEmojis: [String] {
+    if let e = memberEmojis, !e.isEmpty { return Array(e.prefix(4)) }
+    let n = min(memberCount ?? 0, 4)
+    return Array(repeating: "", count: n)
+  }
+
   /// Compact ETA for the narrow Dynamic Island regions ("4 min", "now", "2 hr").
   var shortEta: String? {
     guard let s = etaSeconds else { return nil }
@@ -252,14 +314,17 @@ private extension HitherGroupAttributes.ContentState {
   /// Progress clamped to 0...1, defaulting to 0 when unknown.
   var clampedProgress: Double { min(1, max(0, progress ?? 0)) }
 
-  /// "2 gathered · 2 on the way" — nil when we have no member count.
+  /// "2 / 4 已抵達" — the expanded island's arrival caption (nil without a count).
+  var arrivalStatus: String? {
+    guard let total = memberCount, total > 0 else { return nil }
+    return "\(gatheredCount ?? 0) / \(total) 已抵達"
+  }
+
+  /// "2 位已抵達 · 1 人在路上" — the lock screen's flock line.
   var flockStatus: String? {
     guard let total = memberCount, total > 0 else { return nil }
     let gathered = gatheredCount ?? 0
     let enroute = max(0, total - gathered)
-    return "\(gathered) gathered · \(enroute) on the way"
+    return "\(gathered) 位已抵達 · \(enroute) 人在路上"
   }
-
-  /// How many avatar bubbles to draw (design caps the stack at 3).
-  var avatarCount: Int { min(memberCount ?? 0, 3) }
 }

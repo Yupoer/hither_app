@@ -35,6 +35,14 @@ export interface GroupActivityState {
   gatheredCount?: number;
   /** Total members in the group (for the avatar stack). */
   memberCount?: number;
+  /** Active theme accent (hex, e.g. "#F5B142") so the Live Activity tints with
+   * the app's theme instead of a baked-in colour. */
+  accentHex?: string;
+  /** Current travel mode ('walk' | 'transit' | 'drive') — drives the transit
+   * glyph in the compact island + lock-screen header. */
+  travelMode?: string;
+  /** Member avatar emojis for the flock stack (empty string = no emoji set). */
+  memberEmojis?: string[];
 }
 
 /** Opaque id for an in-flight activity (native only). */
