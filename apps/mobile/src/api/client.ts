@@ -26,6 +26,7 @@ import type {
   Subgroup,
   SubgroupInvite,
   SubgroupMode,
+  VisitedWaypoint,
 } from '../types';
 import { DEFAULT_NOTIFICATION_PREFERENCES } from '../types';
 
@@ -54,6 +55,10 @@ interface GroupRow {
   created_by: string | null;
   created_at: string | null;
   journey_status: JourneyStatus | null;
+  /** Optional — absent until the straggler_alerts migration is applied. */
+  straggler_alerts?: boolean | null;
+  /** Optional — absent until the straggler_alerts migration is applied. */
+  straggler_threshold_m?: number | null;
 }
 
 interface MembershipRow {
@@ -88,6 +93,8 @@ interface ProfileRow {
   nickname: string;
   /** Optional — absent until the profiles_avatar migration is applied. */
   avatar?: string | null;
+  /** Optional — absent until the profiles_avatar_color migration is applied. */
+  avatar_color?: string | null;
 }
 
 interface ItineraryRow {
@@ -97,6 +104,10 @@ interface ItineraryRow {
   latitude: number | null;
   longitude: number | null;
   position: number;
+  /** Optional — absent until the meet_time migration is applied. */
+  meet_at?: string | null;
+  /** Optional — absent until the subgroup_itineraries migration is applied. */
+  subgroup_id?: string | null;
 }
 
 interface LocationRow {
@@ -125,6 +136,8 @@ export function mapGroup(row: GroupRow): Group {
     createdBy: row.created_by ?? '',
     createdAt: row.created_at ?? new Date().toISOString(),
     journeyStatus: row.journey_status ?? 'paused',
+    stragglerAlerts: row.straggler_alerts ?? true,
+    stragglerThresholdM: row.straggler_threshold_m ?? 500,
   };
 }
 
@@ -138,6 +151,8 @@ export function mapDestination(row: ItineraryRow): Destination {
       latitude: row.latitude ?? 0,
       longitude: row.longitude ?? 0,
     },
+    meetAt: row.meet_at ?? undefined,
+    subgroupId: row.subgroup_id ?? undefined,
   };
 }
 
@@ -155,6 +170,7 @@ export function mapMember(
     name: profile?.nickname ?? '',
     role: membership.role,
     avatar: profile?.avatar ?? undefined,
+    avatarColor: profile?.avatar_color ?? undefined,
     solo: membership.solo ?? false,
     subgroupId: membership.subgroup_id ?? undefined,
     coordinates,
@@ -220,7 +236,9 @@ export async function createGroup(name: string): Promise<Group> {
     const { data, error } = await supabase
       .from('groups')
       .insert({ name, invite_code: inviteCode, created_by: uid })
-      .select('id, name, invite_code, created_by, created_at, journey_status')
+      .select(
+        'id, name, invite_code, created_by, created_at, journey_status, straggler_alerts, straggler_threshold_m',
+      )
       .single();
 
     if (error) {
@@ -294,7 +312,9 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
   const [groupRes, membersRes, itineraryRes, locationsRes] = await Promise.all([
     supabase
       .from('groups')
-      .select('id, name, invite_code, created_by, created_at, journey_status')
+      .select(
+        'id, name, invite_code, created_by, created_at, journey_status, straggler_alerts, straggler_threshold_m',
+      )
       .eq('id', groupId)
       .single(),
     // select('*') so optional columns (solo, subgroup_id) come through when
@@ -305,7 +325,7 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
       .eq('group_id', groupId),
     supabase
       .from('itinerary_items')
-      .select('id, title, address, latitude, longitude, position')
+      .select('id, title, address, latitude, longitude, position, meet_at, subgroup_id')
       .eq('group_id', groupId)
       .order('position', { ascending: true }),
     supabase
@@ -380,15 +400,23 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
 export async function addDestination(
   groupId: string,
   input: { title: string; address?: string; coordinates: Coordinates },
+  subgroupId?: string,
 ): Promise<void> {
   if (isDemoGroup(groupId)) {
     demoAddDestination(input);
     return;
   }
-  const { data: maxRow, error: maxError } = await supabase
+  // "Append to the end" is scoped per list: the main group's itinerary and
+  // each subgroup's itinerary are independent, so max-position is computed
+  // within the same scope the new stop is being inserted into.
+  let scopedQuery = supabase
     .from('itinerary_items')
     .select('position')
-    .eq('group_id', groupId)
+    .eq('group_id', groupId);
+  scopedQuery = subgroupId
+    ? scopedQuery.eq('subgroup_id', subgroupId)
+    : scopedQuery.is('subgroup_id', null);
+  const { data: maxRow, error: maxError } = await scopedQuery
     .order('position', { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -397,6 +425,7 @@ export async function addDestination(
   const maxPosition = maxRow?.position ?? -1;
   const { error } = await supabase.from('itinerary_items').insert({
     group_id: groupId,
+    subgroup_id: subgroupId ?? null,
     title: input.title,
     address: input.address ?? null,
     latitude: input.coordinates.latitude,
@@ -441,6 +470,54 @@ export async function deleteDestination(
 }
 
 /**
+ * Record a gathering point the user just reached, for the personal "歷史行程"
+ * list. Best-effort and personal (not group-scoped) — skipped for demo groups,
+ * which have no backing table row to attach to.
+ */
+export async function recordVisitedWaypoint(
+  groupId: string,
+  name: string,
+  coordinates: Coordinates,
+): Promise<void> {
+  if (isDemoGroup(groupId)) return;
+  const { data } = await supabase.auth.getUser();
+  const userId = data.user?.id;
+  if (!userId) return;
+  const { error } = await supabase.from('visited_waypoints').insert({
+    user_id: userId,
+    name,
+    latitude: coordinates.latitude,
+    longitude: coordinates.longitude,
+  });
+  orThrow(error);
+}
+
+/** The signed-in user's visited-waypoint history, most recent first. */
+export async function fetchVisitedWaypoints(): Promise<VisitedWaypoint[]> {
+  const { data: userData } = await supabase.auth.getUser();
+  const userId = userData.user?.id;
+  if (!userId) return [];
+  const { data, error } = await supabase
+    .from('visited_waypoints')
+    .select('id, name, latitude, longitude, arrived_at')
+    .eq('user_id', userId)
+    .order('arrived_at', { ascending: false });
+  orThrow(error);
+  return ((data ?? []) as {
+    id: string;
+    name: string;
+    latitude: number;
+    longitude: number;
+    arrived_at: string;
+  }[]).map((row) => ({
+    id: row.id,
+    name: row.name,
+    coordinates: { latitude: row.latitude, longitude: row.longitude },
+    arrivedAt: row.arrived_at,
+  }));
+}
+
+/**
  * Persist a manual re-ordering of the itinerary. `orderedIds` is the list of
  * stop ids in their new order; each is written `position = index` so the order
  * is stable and gap-free. Leader-only (RLS gates `itinerary_items` UPDATE), so a
@@ -465,6 +542,22 @@ export async function reorderDestinations(
     ),
   );
   orThrow(results.find((r) => r.error)?.error ?? null);
+}
+
+/**
+ * Set (or clear, with `null`) a gathering point's target meet time. Leader-only
+ * — `itinerary_items` UPDATE is gated to leaders by RLS, so a follower's call
+ * rejects with a 42501.
+ */
+export async function setDestinationMeetTime(
+  destinationId: string,
+  meetAt: string | null,
+): Promise<void> {
+  const { error } = await supabase
+    .from('itinerary_items')
+    .update({ meet_at: meetAt })
+    .eq('id', destinationId);
+  orThrow(error);
 }
 
 /**
@@ -493,18 +586,37 @@ export async function updateNickname(nickname: string): Promise<string> {
 export async function updateProfile(fields: {
   nickname?: string;
   avatar?: string;
+  avatarColor?: string;
 }): Promise<void> {
-  const patch: { nickname?: string; avatar?: string } = {};
+  const patch: { nickname?: string; avatar?: string; avatar_color?: string } = {};
   const nickname = fields.nickname?.trim();
   if (nickname) patch.nickname = nickname;
   if (fields.avatar) patch.avatar = fields.avatar;
-  if (!patch.nickname && !patch.avatar) return;
+  if (fields.avatarColor) patch.avatar_color = fields.avatarColor;
+  if (!patch.nickname && !patch.avatar && !patch.avatar_color) return;
   const uid = await requireUserId();
   const { error } = await supabase
     .from('profiles')
     .update(patch)
     .eq('id', uid);
   orThrow(error);
+}
+
+/**
+ * Persist the Onboarding answers onto the signed-in user's profile row (the
+ * `onboarding` jsonb column — see the profiles_onboarding migration). The
+ * flow runs before sign-in, so this is called once after a session exists
+ * (see onboarding/sync.ts). Throws on failure (e.g. the `onboarding` column
+ * not deployed yet) — the caller decides whether to swallow; sync.ts does,
+ * and only marks the answers synced on success so they retry next launch.
+ */
+export async function saveOnboardingProfile(answers: object): Promise<void> {
+  const uid = await requireUserId();
+  const { error } = await supabase
+    .from('profiles')
+    .update({ onboarding: answers })
+    .eq('id', uid);
+  if (error) throw new Error(error.message);
 }
 
 /**
@@ -590,6 +702,38 @@ export async function fetchMyInvites(userId: string): Promise<PendingInvite[]> {
     subgroupName: nameBySubgroup.get(i.subgroupId) ?? '',
     inviterName: nameByInviter.get(i.inviterId) ?? '',
   }));
+}
+
+/**
+ * Pending invites THIS user has sent for a subgroup, enriched with the
+ * invitee's nickname — surfaced on the subgroup card so "I invited someone
+ * and then saw nothing" reads as "invite sent, awaiting X" instead of silence.
+ */
+export async function fetchSentInvites(
+  subgroupId: string,
+): Promise<{ id: string; inviteeName: string }[]> {
+  const { data, error } = await supabase
+    .from('subgroup_invites')
+    .select('id, invitee_id')
+    .eq('subgroup_id', subgroupId)
+    .eq('status', 'pending');
+  orThrow(error);
+
+  const rows = (data ?? []) as { id: string; invitee_id: string }[];
+  if (rows.length === 0) return [];
+
+  const { data: profiles, error: profError } = await supabase
+    .from('profiles')
+    .select('id, nickname')
+    .in(
+      'id',
+      rows.map((r) => r.invitee_id),
+    );
+  orThrow(profError);
+  const nameById = new Map(
+    ((profiles ?? []) as { id: string; nickname: string }[]).map((p) => [p.id, p.nickname]),
+  );
+  return rows.map((r) => ({ id: r.id, inviteeName: nameById.get(r.invitee_id) ?? '' }));
 }
 
 /**
@@ -793,6 +937,23 @@ export async function setJourneyStatus(
   const { error } = await supabase
     .from('groups')
     .update({ journey_status: status })
+    .eq('id', groupId);
+  orThrow(error);
+}
+
+/**
+ * Set the group's straggler-alert config (on/off + distance threshold in
+ * metres). Leader-only — `groups` UPDATE is gated to leaders by RLS, so a
+ * follower's call rejects with a 42501.
+ */
+export async function setStragglerConfig(
+  groupId: string,
+  enabled: boolean,
+  thresholdM: number,
+): Promise<void> {
+  const { error } = await supabase
+    .from('groups')
+    .update({ straggler_alerts: enabled, straggler_threshold_m: thresholdM })
     .eq('id', groupId);
   orThrow(error);
 }

@@ -3,6 +3,17 @@ import type { Coordinates } from '../types';
 /** Mean walking speed in metres per second (~5 km/h), per the design's "walk" ETA. */
 const WALKING_SPEED_MPS = 1.4;
 
+export type TravelMode = 'walk' | 'drive' | 'transit';
+
+// Rough average speeds (m/s) for the nav-mode switcher's ETA estimate — no
+// live routing API yet, so these are ballpark urban averages (drive accounts
+// for lights/traffic, transit for stops/waiting), not turn-by-turn ETAs.
+const TRAVEL_SPEED_MPS: Record<TravelMode, number> = {
+  walk: WALKING_SPEED_MPS,
+  drive: 10,
+  transit: 6.5,
+};
+
 const EARTH_RADIUS_M = 6_371_000;
 
 function toRad(deg: number): number {
@@ -28,6 +39,11 @@ export function distanceMeters(a: Coordinates, b: Coordinates): number {
 /** Estimated walking time in seconds for a given distance in metres. */
 export function walkingEtaSeconds(distanceM: number): number {
   return distanceM / WALKING_SPEED_MPS;
+}
+
+/** Estimated travel time in seconds for a given distance and travel mode. */
+export function etaSecondsFor(distanceM: number, mode: TravelMode): number {
+  return distanceM / TRAVEL_SPEED_MPS[mode];
 }
 
 /** Format a distance for display, e.g. "320 m" or "1.2 km". */

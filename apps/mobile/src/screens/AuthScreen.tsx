@@ -20,6 +20,8 @@ import { useSession } from '../state/SessionContext';
 import { useTheme } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
 import { accentMix, glass } from '../glass';
+import { logEvent, logError } from '../utils/activityLog';
+import { mediumTap } from '../utils/haptics';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Auth'>;
 
@@ -60,14 +62,17 @@ export default function AuthScreen({ navigation, route }: Props) {
   // defaulting it to the nickname would permanently weld the two.
   /** Create (leader) / join (follower) the group, then drop onto the map. */
   async function enterGroup() {
+    mediumTap();
     const group = isLeader
       ? await createGroup(groupName.trim())
       : await joinGroup(code.trim());
+    logEvent(isLeader ? 'group_create' : 'group_join');
     setMembership({ group, role });
     navigation.replace('Map', { groupId: group.id });
   }
 
   function handleAuthError(e: unknown) {
+    logError(isLeader ? 'group_create_failed' : 'group_join_failed', e);
     // Design: a rejected code highlights the code boxes.
     if (!isLeader) setCodeError(true);
     const msg = e instanceof Error ? e.message : t('auth.signInFailed');
@@ -111,14 +116,19 @@ export default function AuthScreen({ navigation, route }: Props) {
             { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 28 },
           ]}
         >
-          <Pressable
-            onPress={() => navigation.goBack()}
-            accessibilityRole="button"
-            accessibilityLabel="Back"
-            style={styles.back}
-          >
-            <Ionicons name="chevron-back" size={22} color="rgba(255,255,255,0.7)" />
-          </Pressable>
+          {/* Only render Back when there is somewhere to go — after an
+              end-group/sign-out reset this screen can be the stack root, and an
+              unconditional goBack() throws "GO_BACK was not handled". */}
+          {navigation.canGoBack() && (
+            <Pressable
+              onPress={() => navigation.goBack()}
+              accessibilityRole="button"
+              accessibilityLabel="Back"
+              style={styles.back}
+            >
+              <Ionicons name="chevron-back" size={22} color="rgba(255,255,255,0.7)" />
+            </Pressable>
+          )}
 
           <Text style={styles.kicker}>
             {isLeader ? t('auth.leaderKicker') : t('auth.followerKicker')}

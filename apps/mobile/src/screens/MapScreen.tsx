@@ -8,8 +8,10 @@ import React, {
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   NativeScrollEvent,
   NativeSyntheticEvent,
+  Platform,
   Pressable,
   ScrollView,
   Share,
@@ -20,6 +22,9 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import DateTimePicker, {
+  DateTimePickerAndroid,
+} from '@react-native-community/datetimepicker';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -38,41 +43,71 @@ import NotificationPreferencesCard from '../components/NotificationPreferencesCa
 import QuickCommandsCard from '../components/QuickCommandsCard';
 import BottomSheet, { sheetBottomOffset } from '../components/BottomSheet';
 import OverlaySheet from '../components/OverlaySheet';
+import PaywallSheet from '../components/PaywallSheet';
+import KmlImportSheet from '../components/KmlImportSheet';
+import FeedbackSheet from '../components/FeedbackSheet';
 import CrookIcon from '../components/CrookIcon';
 import { useSession } from '../state/SessionContext';
 import { usePreferences, useTheme, type Language } from '../state/PreferencesContext';
-import { useTranslation } from '../i18n';
+import { useTranslation, type TranslationKey } from '../i18n';
 import { useGroupState } from '../state/useGroupState';
+import { useStragglerAlerts } from '../state/useStragglerAlerts';
 import { useSubgroupInvites } from '../state/useSubgroupInvites';
 import { useLiveActivity } from '../state/useLiveActivity';
 import {
   distanceMeters,
+  etaSecondsFor,
   formatDistance,
   walkingEtaSeconds,
+  type TravelMode,
 } from '../utils/geo';
-import { liquidGlass, location, type MapRegion, type PlaceResult } from '../native';
+import { dotWindow } from '../utils/pagination';
+import { minutesUntil } from '../utils/meetTime';
+import { groupHistoryByDay, type HistoryDayGroup } from '../utils/history';
+import { liquidGlass, location, notifications, type MapRegion, type PlaceResult } from '../native';
 import {
   addDestination,
   deleteDestination,
+  fetchSentInvites,
+  fetchVisitedWaypoints,
   inviteToSubgroup,
+  recordVisitedWaypoint,
   reorderDestinations,
+  saveOnboardingProfile,
   selfMerge,
   selfSplit,
+  setDestinationMeetTime,
   setJourneyStatus,
   setSolo,
+  setStragglerConfig,
   updateMyLocation,
 } from '../api/client';
+import { captureScreen } from 'react-native-view-shot';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { ONBOARDING_STORAGE_KEY } from '../onboarding/sync';
 import { isDemoGroup } from '../api/demo';
 import { isVirtualMember } from '../api/virtualMates';
 import { confirmAction } from '../utils/confirm';
-import { AVATAR_EMOJI } from '../constants/avatars';
+import { logEvent, logError } from '../utils/activityLog';
+import { lightTap, mediumTap, selectionTick, alertBuzz } from '../utils/haptics';
+import { AVATAR_EMOJI, AVATAR_COLORS } from '../constants/avatars';
 import type { Coordinates, Destination, MemberLocation } from '../types';
+import type { KmlPlacemark } from '../utils/kml';
+import { FREE_LIMITS } from '../entitlements';
 import { themes, THEME_ORDER, type ThemeName } from '../theme';
 import { glass, accentMix, memberColor } from '../glass';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Map'>;
 
 const ARRIVAL_RADIUS_M = 30;
+// Auto-advance to the next gathering point once the leader is this close —
+// separate from ARRIVAL_RADIUS_M, which drives the flock's "arrived" status.
+const AUTO_ADVANCE_RADIUS_M = 50;
+// Cap on gathering-point pagination dots shown at once (see utils/pagination.ts).
+const DOTS_MAX_VISIBLE = 5;
+
+/** Preset straggler-alert distance chips shown in settings. */
+const STRAGGLER_THRESHOLD_OPTIONS = [300, 500, 1000, 2000];
 
 /** Nominal walk that reads as ~"just started" for the progress bar. */
 const PROGRESS_REF_M = 1500;
@@ -94,7 +129,16 @@ function shortEta(seconds: number): string {
 export default function MapScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  const { membership, user, updateProfile, leaveGroup, signOut } = useSession();
+  const {
+    membership,
+    user,
+    updateProfile,
+    leaveGroup,
+    signOut,
+    isAnonymous,
+    isPro,
+    upgradeToEmailAccount,
+  } = useSession();
   const { language, themeName, powerSaver, setLanguage, setThemeName, setPowerSaver } =
     usePreferences();
   const { colors } = useTheme();
@@ -115,7 +159,19 @@ export default function MapScreen({ route, navigation }: Props) {
   const carouselRef = useRef<ScrollView | null>(null);
 
   const members = state?.members ?? [];
-  const destinations: Destination[] = state?.destinations ?? [];
+  // My current scope: undefined = main group's itinerary, a subgroup id =
+  // that subgroup's own itinerary. Everything itinerary-related below reads
+  // only from this scope's list (carousel, reorder, nav target, meet-time,
+  // straggler nav target) — filtering once here means nothing downstream
+  // needs its own leader/subgroup branching to stay scoped correctly.
+  const me = members.find((m) => m.userId === user?.id);
+  const myScopeId = me?.subgroupId;
+  const destinations: Destination[] = (state?.destinations ?? []).filter(
+    (d) => (d.subgroupId ?? undefined) === (myScopeId ?? undefined),
+  );
+  // Main-group scope: leader-only (unchanged). Subgroup scope: everyone in
+  // the subgroup may add/reorder/delete its stops — no sub-leader.
+  const canEditItinerary = isLeader || myScopeId != null;
 
   // --- Sheet / overlay / island UI state -----------------------------------
   // Measured height of the sheet's pinned header (grabber + search row) —
@@ -130,8 +186,129 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [insets.top, windowHeight, sheetHeaderH]);
   const heightSV = useSharedValue(detents[0]);
   const [detent, setDetent] = useState(0);
-  const [overlay, setOverlay] = useState<null | 'route' | 'settings' | 'profile'>(null);
+  const [overlay, setOverlay] = useState<
+    null | 'route' | 'settings' | 'profile' | 'feedback' | 'history'
+  >(null);
+  // Screenshot captured the instant the feedback entry is tapped (before the
+  // form opens over the screen), handed to the sheet as evidence.
+  const [feedbackShot, setFeedbackShot] = useState<string | null>(null);
+  // Visited-waypoint history — fetched fresh each time the overlay opens.
+  const [historyGroups, setHistoryGroups] = useState<HistoryDayGroup[]>([]);
+  useEffect(() => {
+    if (overlay !== 'history') return;
+    let cancelled = false;
+    void fetchVisitedWaypoints().then((items) => {
+      if (!cancelled) setHistoryGroups(groupHistoryByDay(items));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [overlay]);
+  // "Invite a teammate" picker, opened from my own subgroup card.
+  const [inviteSheetOpen, setInviteSheetOpen] = useState(false);
+  // Invites I've sent for my subgroup that are still pending — shown on the
+  // card so "I invited someone" doesn't just look like nothing happened while
+  // they haven't accepted yet.
+  const [sentInvites, setSentInvites] = useState<{ id: string; inviteeName: string }[]>([]);
+  const refreshSentInvites = useCallback(async (subgroupId: string | undefined) => {
+    if (!subgroupId) {
+      setSentInvites([]);
+      return;
+    }
+    try {
+      setSentInvites(await fetchSentInvites(subgroupId));
+    } catch {
+      // best-effort
+    }
+  }, []);
   const [searchVisible, setSearchVisible] = useState(false);
+  const [kmlVisible, setKmlVisible] = useState(false);
+  const [paywallTrigger, setPaywallTrigger] = useState<TranslationKey | undefined>(undefined);
+  const [paywallVisible, setPaywallVisible] = useState(false);
+  function openPaywall(trigger?: TranslationKey) {
+    setPaywallTrigger(trigger);
+    setPaywallVisible(true);
+  }
+
+  // --- Meet-time countdown + editor (iOS embeds a spinner overlay; Android
+  // opens the native dialog imperatively) -------------------------------------
+  const [meetTimeEditor, setMeetTimeEditor] = useState<{ id: string; value: Date } | null>(
+    null,
+  );
+  const [nowTick, setNowTick] = useState(() => new Date());
+  const hasMeetTimes = destinations.some((d) => d.meetAt);
+  useEffect(() => {
+    if (!hasMeetTimes) return;
+    const id = setInterval(() => setNowTick(new Date()), 30_000);
+    return () => clearInterval(id);
+  }, [hasMeetTimes]);
+
+  // The soonest gathering point whose meet time is still ahead — the one worth
+  // scheduling an "it's time" alert for.
+  const nextMeet = useMemo(() => {
+    const now = Date.now();
+    return (
+      destinations
+        .filter((d) => d.meetAt && new Date(d.meetAt as string).getTime() > now)
+        .sort(
+          (a, b) =>
+            new Date(a.meetAt as string).getTime() -
+            new Date(b.meetAt as string).getTime(),
+        )[0] ?? null
+    );
+  }, [destinations]);
+
+  // Fire a local notification + buzz when that meet time arrives. OS-scheduled,
+  // so it shows (and vibrates, per the user's notification settings) even from
+  // the lock screen; the foreground listener adds an in-app buzz on top.
+  useEffect(() => {
+    if (!nextMeet?.meetAt) return;
+    let id: string | null = null;
+    let cancelled = false;
+    void notifications
+      .scheduleLocalNotificationAt(
+        {
+          title: t('meetTime.notifyTitle'),
+          body: t('meetTime.notifyBody', { title: nextMeet.title }),
+          data: { kind: 'meetTime', destinationId: nextMeet.id },
+        },
+        new Date(nextMeet.meetAt as string),
+      )
+      .then((nid) => {
+        if (cancelled && nid) void notifications.cancelScheduledNotification(nid);
+        else id = nid;
+      });
+    const off = notifications.addForegroundListener((data) => {
+      if (data.kind === 'meetTime') alertBuzz();
+    });
+    return () => {
+      cancelled = true;
+      if (id) void notifications.cancelScheduledNotification(id);
+      off();
+    };
+  }, [nextMeet?.id, nextMeet?.meetAt, t]);
+
+  function persistMeetTime(destinationId: string, value: Date | null) {
+    setDestinationMeetTime(destinationId, value ? value.toISOString() : null)
+      .then(() => refresh())
+      .catch(() => Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg')));
+  }
+
+  function openMeetTimePicker(dest: Destination) {
+    if (!canEditItinerary) return;
+    const initial = dest.meetAt ? new Date(dest.meetAt) : new Date();
+    if (Platform.OS === 'android') {
+      DateTimePickerAndroid.open({
+        value: initial,
+        mode: 'time',
+        onChange: (event, selected) => {
+          if (event.type === 'set' && selected) persistMeetTime(dest.id, selected);
+        },
+      });
+    } else {
+      setMeetTimeEditor({ id: dest.id, value: initial });
+    }
+  }
   // Freeze the route overlay's scroll while a stop is being drag-reordered so
   // the two vertical gestures never fight.
   const [routeScrollEnabled, setRouteScrollEnabled] = useState(true);
@@ -176,6 +353,9 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // --- Carousel selection ---------------------------------------------------
   const [selectedIndex, setSelectedIndex] = useState(0);
+  // Travel mode for the ETA estimate shown per card — no live routing API,
+  // just a rough speed-based estimate (see utils/geo.ts).
+  const [travelMode, setTravelMode] = useState<TravelMode>('walk');
   useEffect(() => {
     const clamped =
       destinations.length === 0 ? 0 : Math.min(selectedIndex, destinations.length - 1);
@@ -219,6 +399,30 @@ export default function MapScreen({ route, navigation }: Props) {
   // The point the whole UI (carousel highlight, flock ETAs) refers to.
   const activePoint = navTarget ?? selectedDestination;
 
+  // --- Straggler alerts ------------------------------------------------------
+  // Reference is ME, not the gathering point — "fell behind" means fell
+  // behind the flock (specifically me), not "hasn't reached the destination".
+  const { stragglers } = useStragglerAlerts(state, fromCoords ?? undefined);
+  // Fire a native OS notification per NEWLY-flagged straggler (hysteresis in
+  // the hook already prevents re-firing while still over the release band) —
+  // no in-app banner; the system notification is the only surface for this.
+  const lastStragglerIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const ids = new Set(stragglers.map((s) => s.userId));
+    const newOnes = stragglers.filter((s) => !lastStragglerIdsRef.current.has(s.userId));
+    lastStragglerIdsRef.current = ids;
+    for (const s of newOnes) {
+      void notifications.scheduleLocalNotification({
+        title: t('straggler.notifyTitle'),
+        body: t(s.userId === user?.id ? 'straggler.selfWarning' : 'straggler.banner', {
+          name: s.name,
+          distance: formatDistance(s.distanceM),
+        }),
+        data: { kind: 'straggler', userId: s.userId },
+      });
+    }
+  }, [stragglers, t, user?.id]);
+
   const numericDistance =
     fromCoords && navTarget ? distanceMeters(fromCoords, navTarget.coordinates) : undefined;
   const liveProgress =
@@ -242,6 +446,18 @@ export default function MapScreen({ route, navigation }: Props) {
     gatheredCount: liveGathered,
     memberCount: members.length,
   });
+
+  // ponytail: temporary hand-off to Apple Maps until native routing (MKDirections,
+  // Dev Build) exists. Coords in daddr guarantee the exact pin; label names it;
+  // dirflg=w matches Hither's walking-ETA model. Universal-link fallback if the
+  // maps:// scheme is unavailable. Works in Expo Go (pure Linking, no native mod).
+  const openInAppleMaps = useCallback((dest: Destination) => {
+    const { latitude, longitude } = dest.coordinates;
+    const label = encodeURIComponent(dest.title);
+    const scheme = `maps://?daddr=${label}@${latitude},${longitude}&dirflg=w`;
+    const universal = `https://maps.apple.com/?daddr=${latitude},${longitude}&dirflg=w`;
+    Linking.openURL(scheme).catch(() => void Linking.openURL(universal));
+  }, []);
 
   const [journeyBusy, setJourneyBusy] = useState(false);
   const startNavigation = useCallback(
@@ -283,6 +499,9 @@ export default function MapScreen({ route, navigation }: Props) {
     }
   }, [groupId, refresh, t]);
 
+  // Within AUTO_ADVANCE_RADIUS_M of the current stop: notify, drop it from
+  // the itinerary (it's done), and auto-advance to whatever's now first —
+  // or end the journey when that was the last stop.
   const arrivalFiredRef = useRef(false);
   useEffect(() => {
     if (!journeyActive) {
@@ -293,20 +512,37 @@ export default function MapScreen({ route, navigation }: Props) {
       isLeader &&
       !arrivalFiredRef.current &&
       numericDistance != null &&
-      numericDistance <= ARRIVAL_RADIUS_M
+      numericDistance <= AUTO_ADVANCE_RADIUS_M &&
+      navTarget &&
+      groupId
     ) {
       arrivalFiredRef.current = true;
-      confirmAction(
-        {
-          title: t('map.arriveTitle'),
-          message: t('map.arriveBody', { title: navTarget?.title ?? '' }),
-          confirmLabel: t('map.arriveConfirm'),
-          cancelLabel: t('map.arriveDismiss'),
-        },
-        () => void stopNavigation(),
-      );
+      const arrivedId = navTarget.id;
+      const arrivedTitle = navTarget.title;
+      const nextDest = destinations.find((d) => d.id !== arrivedId);
+      void recordVisitedWaypoint(groupId, arrivedTitle, navTarget.coordinates);
+      void notifications.scheduleLocalNotification({
+        title: t('map.arriveTitle'),
+        body: nextDest
+          ? t('map.autoAdvanceBody', { title: arrivedTitle, next: nextDest.title })
+          : t('map.journeyCompleteBody', { title: arrivedTitle }),
+        data: { kind: 'arrival', destinationId: arrivedId },
+      });
+      void deleteDestination(groupId, arrivedId)
+        .then(() => (nextDest ? startNavigation(nextDest, 0) : stopNavigation()))
+        .catch(() => Alert.alert(t('map.setFailedTitle'), t('map.journeyFailed')));
     }
-  }, [journeyActive, isLeader, numericDistance, navTarget?.title, stopNavigation, t]);
+  }, [
+    journeyActive,
+    isLeader,
+    numericDistance,
+    navTarget,
+    destinations,
+    groupId,
+    startNavigation,
+    stopNavigation,
+    t,
+  ]);
 
   async function locateMe() {
     refresh();
@@ -330,18 +566,43 @@ export default function MapScreen({ route, navigation }: Props) {
 
   async function handlePickDestination(place: PlaceResult) {
     if (!groupId) return;
+    if (!isPro && destinations.length >= FREE_LIMITS.destinationsPerItinerary) {
+      openPaywall('paywall.triggerDestinations');
+      return;
+    }
     try {
-      await addDestination(groupId, {
-        title: place.name,
-        address: place.address,
-        coordinates: place.coordinates,
-      });
+      await addDestination(
+        groupId,
+        {
+          title: place.name,
+          address: place.address,
+          coordinates: place.coordinates,
+        },
+        myScopeId,
+      );
+      logEvent('destination_add', { source: 'search' });
       setSelectedIndex(destinations.length);
       mapRef.current?.centerOn(place.coordinates);
       refresh();
-    } catch {
+    } catch (e) {
+      logError('destination_add_failed', e, { source: 'search' });
       Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
     }
+  }
+
+  async function handleKmlImport(items: KmlPlacemark[], onProgress: (done: number) => void) {
+    if (!groupId) return;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      await addDestination(
+        groupId,
+        { title: item.name, coordinates: { latitude: item.latitude, longitude: item.longitude } },
+        myScopeId,
+      );
+      onProgress(i + 1);
+    }
+    logEvent('kml_import', { count: items.length });
+    refresh();
   }
 
   function handleMomentumEnd(e: NativeSyntheticEvent<NativeScrollEvent>) {
@@ -350,6 +611,7 @@ export default function MapScreen({ route, navigation }: Props) {
     const clamped = Math.max(0, Math.min(index, destinations.length - 1));
     if (clamped !== selectedIndex) {
       setSelectedIndex(clamped);
+      logEvent('carousel_swipe', { index: clamped });
       mapRef.current?.centerOn(destinations[clamped].coordinates);
     }
   }
@@ -358,21 +620,28 @@ export default function MapScreen({ route, navigation }: Props) {
   const [codeCopied, setCodeCopied] = useState(false);
   async function copyCode() {
     if (!group) return;
+    lightTap();
+    logEvent('code_copy');
     await Clipboard.setStringAsync(group.inviteCode);
     setCodeCopied(true);
     setTimeout(() => setCodeCopied(false), 1500);
   }
   async function shareCode() {
     if (!group) return;
+    lightTap();
+    logEvent('code_share');
     await Share.share({ message: t('map.shareMsg', { code: group.inviteCode }) });
   }
 
   // --- Profile (nickname + emoji avatar) ------------------------------------
   const [profileName, setProfileName] = useState('');
   const [profileAvatar, setProfileAvatar] = useState<string | undefined>(undefined);
+  const [profileColor, setProfileColor] = useState<string | undefined>(undefined);
   function openProfile() {
+    lightTap();
     setProfileName(user?.name ?? '');
     setProfileAvatar(user?.avatar);
+    setProfileColor(user?.avatarColor);
     setOverlay('profile');
   }
   // "Done" (and the scrim tap) closes instantly, then persists whatever changed
@@ -380,23 +649,28 @@ export default function MapScreen({ route, navigation }: Props) {
   function closeProfile() {
     setOverlay(null);
     const nickname = profileName.trim();
-    const fields: { nickname?: string; avatar?: string } = {};
+    const fields: { nickname?: string; avatar?: string; avatarColor?: string } = {};
     if (nickname && nickname !== user?.name) fields.nickname = nickname;
     if (profileAvatar && profileAvatar !== user?.avatar) fields.avatar = profileAvatar;
-    if (!fields.nickname && !fields.avatar) return;
+    if (profileColor && profileColor !== user?.avatarColor) fields.avatarColor = profileColor;
+    if (!fields.nickname && !fields.avatar && !fields.avatarColor) return;
+    logEvent('profile_save', { changed: Object.keys(fields) });
     updateProfile(fields)
       .then(() => refresh())
-      .catch((e) =>
+      .catch((e) => {
+        logError('profile_save_failed', e);
         Alert.alert(
           t('profile.saveFailed'),
           e instanceof Error ? e.message : undefined,
-        ),
-      );
+        );
+      });
   }
 
   // --- Solo mode -------------------------------------------------------------
   async function toggleSolo(next: boolean) {
     if (!groupId) return;
+    selectionTick();
+    logEvent('solo_toggle', { groupId, next });
     setSoloOverride(next);
     try {
       await setSolo(groupId, next);
@@ -404,6 +678,7 @@ export default function MapScreen({ route, navigation }: Props) {
       // reload refreshes `members` and clears the override above once it
       // matches — no need to force an extra fetch here.
     } catch (e) {
+      logError('solo_toggle_failed', e, { groupId, next });
       setSoloOverride(null);
       Alert.alert(t('solo.failed'), e instanceof Error ? e.message : undefined);
     }
@@ -411,30 +686,50 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // --- Subgroups (小隊：邀請制、無隊長) ---------------------------------------
   const subgroups = state?.subgroups ?? [];
-  const { invites: pendingInvites, accept: acceptInvite, decline: declineInvite } =
-    useSubgroupInvites();
+  const {
+    invites: pendingInvites,
+    accept: acceptInvite,
+    decline: declineInvite,
+    refresh: refreshInvites,
+  } = useSubgroupInvites();
 
   async function handleAcceptInvite(inviteId: string) {
+    mediumTap();
+    logEvent('invite_accept', { inviteId });
     try {
       await acceptInvite(inviteId);
+      logEvent('invite_accept_ok', { inviteId });
       refresh();
     } catch (e) {
+      logError('invite_accept_failed', e, { inviteId });
       Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
     }
   }
   async function handleDeclineInvite(inviteId: string) {
+    selectionTick();
+    logEvent('invite_decline', { inviteId });
     try {
       await declineInvite(inviteId);
     } catch (e) {
+      logError('invite_decline_failed', e, { inviteId });
       Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
     }
   }
 
   async function handleInvite(subgroupId: string, inviteeId: string) {
+    mediumTap();
+    logEvent('invite_send', { subgroupId, inviteeId });
     try {
       await inviteToSubgroup(subgroupId, inviteeId);
+      logEvent('invite_send_ok', { subgroupId, inviteeId });
+      // Demo has no realtime channel to nudge the invite list, and simulates
+      // the invitee replying with a join-request — pull it in so the pending
+      // approve/decline card shows immediately.
+      if (isDemoGroup(groupId)) refreshInvites();
+      void refreshSentInvites(subgroupId);
       Alert.alert(t('subgroup.inviteSent'));
     } catch (e) {
+      logError('invite_send_failed', e, { subgroupId, inviteeId });
       Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
     }
   }
@@ -443,33 +738,59 @@ export default function MapScreen({ route, navigation }: Props) {
   // subgroup, or merge themselves back up a level — no leader say-so needed.
   async function doSelfSplit() {
     if (!groupId) return;
+    mediumTap();
+    logEvent('team_create', { groupId });
     try {
       await selfSplit(
         groupId,
         t('subgroup.selfSplitName', { name: user?.name ?? t('group.travelerFallback') }),
       );
+      logEvent('team_create_ok', { groupId });
       refresh();
     } catch (e) {
+      logError('team_create_failed', e, { groupId });
       Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
     }
   }
   async function doSelfMerge() {
     if (!groupId) return;
+    selectionTick();
+    logEvent('team_leave', { groupId });
     try {
       await selfMerge(groupId);
+      logEvent('team_leave_ok', { groupId });
       refresh();
     } catch (e) {
+      logError('team_leave_failed', e, { groupId });
       Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
     }
+  }
+
+  // Report-a-problem: grab the current screen, then swap the settings overlay
+  // for the feedback form. Uses the SAME `overlay` state so the two are
+  // mutually exclusive — opening feedback closes settings, so the translucent
+  // panels can never stack and interleave their text.
+  async function openFeedback() {
+    lightTap();
+    let uri: string | null = null;
+    try {
+      uri = await captureScreen({ format: 'jpg', quality: 0.6, result: 'tmpfile' });
+    } catch {
+      uri = null;
+    }
+    setFeedbackShot(uri);
+    setOverlay('feedback');
   }
 
   const handleReorder = useCallback(
     async (orderedIds: string[]) => {
       if (!groupId) return;
+      logEvent('destination_reorder', { count: orderedIds.length });
       try {
         await reorderDestinations(groupId, orderedIds);
         refresh();
-      } catch {
+      } catch (e) {
+        logError('destination_reorder_failed', e);
         Alert.alert(t('settings.reorderFailed'));
         refresh();
       }
@@ -488,10 +809,12 @@ export default function MapScreen({ route, navigation }: Props) {
           destructive: true,
         },
         async () => {
+          logEvent('destination_delete', { id });
           try {
             await deleteDestination(groupId, id);
             refresh();
-          } catch {
+          } catch (e) {
+            logError('destination_delete_failed', e, { id });
             Alert.alert(t('settings.deleteFailed'));
             refresh();
           }
@@ -510,6 +833,7 @@ export default function MapScreen({ route, navigation }: Props) {
         destructive: true,
       },
       () => {
+        logEvent('group_leave', { groupId, isLeader });
         leaveGroup();
         navigation.reset({ index: 0, routes: [{ name: 'RoleSelect' }] });
       },
@@ -524,10 +848,73 @@ export default function MapScreen({ route, navigation }: Props) {
         destructive: true,
       },
       () => {
+        logEvent('sign_out');
         void signOut();
         navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
       },
     );
+  }
+
+  // --- Account upgrade (anonymous -> email) ---------------------------------
+  const [upgradeVisible, setUpgradeVisible] = useState(false);
+  const [upgradeEmail, setUpgradeEmail] = useState('');
+  const [upgradePassword, setUpgradePassword] = useState('');
+  const [upgradeError, setUpgradeError] = useState<string | null>(null);
+  const [upgradeBusy, setUpgradeBusy] = useState(false);
+  const upgradeCanSubmit =
+    /\S+@\S+\.\S+/.test(upgradeEmail.trim()) && upgradePassword.length >= 6 && !upgradeBusy;
+
+  function closeUpgrade() {
+    setUpgradeVisible(false);
+    setUpgradeEmail('');
+    setUpgradePassword('');
+    setUpgradeError(null);
+  }
+
+  async function submitUpgrade() {
+    if (!upgradeCanSubmit) return;
+    setUpgradeBusy(true);
+    setUpgradeError(null);
+    try {
+      await upgradeToEmailAccount(upgradeEmail.trim(), upgradePassword);
+      Alert.alert(t('account.section'), t('account.upgradeSent'));
+      closeUpgrade();
+    } catch (e) {
+      setUpgradeError(e instanceof Error ? e.message : t('account.upgradeSent'));
+    } finally {
+      setUpgradeBusy(false);
+    }
+  }
+
+  function confirmResetPrefs() {
+    confirmAction(
+      {
+        title: t('settings.resetPrefs'),
+        message: t('settings.resetPrefsConfirm'),
+        confirmLabel: t('settings.resetPrefs'),
+        destructive: true,
+      },
+      () => void resetPrefs(),
+    );
+  }
+
+  async function resetPrefs() {
+    logEvent('reset_prefs');
+    try {
+      await saveOnboardingProfile({});
+    } catch (e) {
+      logError('reset_prefs_failed', e);
+      console.warn('[settings] resetPrefs saveOnboardingProfile failed', e);
+    }
+    await AsyncStorage.removeItem(ONBOARDING_STORAGE_KEY);
+    Alert.alert(t('settings.resetPrefs'), t('settings.resetPrefsDone'));
+  }
+
+  function persistStragglerConfig(enabled: boolean, thresholdM: number) {
+    if (!groupId) return;
+    setStragglerConfig(groupId, enabled, thresholdM)
+      .then(() => refresh())
+      .catch(() => Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg')));
   }
 
   // --- Derived view models --------------------------------------------------
@@ -540,12 +927,25 @@ export default function MapScreen({ route, navigation }: Props) {
   const flock = useMemo(
     () =>
       members.map((m) => {
+        const isSelf = m.userId === user?.id;
+        // Gathering-point distance still drives the arrived/en-route STATUS.
         const d =
           m.coordinates && activePoint
             ? distanceMeters(m.coordinates, activePoint.coordinates)
             : null;
+        // Displayed distance/ETA is "how far this member is from ME" — more
+        // useful for keeping the flock together than distance-to-destination.
+        const dToMe =
+          !isSelf && m.coordinates && fromCoords
+            ? distanceMeters(m.coordinates, fromCoords)
+            : null;
         const arrived = d != null && d <= ARRIVAL_RADIUS_M;
         const isMemberLeader = m.role === 'leader';
+        // Member status: arrived (within the radius) > moving (a fresh
+        // location ping in the last 2 minutes) > not started (no recent ping —
+        // the app hasn't sent a location update, e.g. before they've left).
+        const movingRecently =
+          !!m.lastUpdated && Date.now() - new Date(m.lastUpdated).getTime() < 2 * 60_000;
         const solo =
           m.userId === user?.id && soloOverride !== null ? soloOverride : !!m.solo;
         return {
@@ -554,17 +954,19 @@ export default function MapScreen({ route, navigation }: Props) {
           avatar: m.avatar,
           solo,
           subgroupId: m.subgroupId,
-          color: memberColor(m.userId),
+          // Prefer the member's chosen avatar background colour; fall back to the
+          // deterministic per-user colour when they haven't picked one.
+          color: m.avatarColor ?? memberColor(m.userId),
           isLeader: isMemberLeader,
           statusText: solo
             ? t('solo.badge')
             : isMemberLeader
               ? t('flock.leading')
-              : d == null
-                ? t('flock.unknown')
-                : arrived
-                  ? t('flock.arrived')
-                  : t('flock.enroute'),
+              : arrived
+                ? t('memberStatus.arrived')
+                : movingRecently
+                  ? t('memberStatus.moving')
+                  : t('memberStatus.notStarted'),
           statusColor: solo
             ? glass.warn
             : isMemberLeader
@@ -572,12 +974,14 @@ export default function MapScreen({ route, navigation }: Props) {
               : arrived
                 ? glass.ok
                 : glass.textSecondary,
-          eta: isMemberLeader ? '—' : d != null ? shortEta(walkingEtaSeconds(d)) : '',
-          dist: isMemberLeader ? t('flock.here') : d != null ? formatDistance(d) : '',
+          // "—" for my own row (distance to myself is meaningless); everyone
+          // else shows how far they are from me.
+          eta: isSelf ? '' : dToMe != null ? shortEta(walkingEtaSeconds(dToMe)) : '',
+          dist: isSelf ? t('flock.you') : dToMe != null ? formatDistance(dToMe) : '',
           arrived,
         };
       }),
-    [members, activePoint, accent, t, user?.id, soloOverride],
+    [members, activePoint, accent, t, user?.id, soloOverride, fromCoords],
   );
 
   // Drop the override once the server value catches up, so a later toggle
@@ -589,19 +993,25 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [members, soloOverride, user?.id]);
 
   const topFlock = flock.filter((f) => !f.subgroupId);
-  // My own subgroup, if any — drives which other rows get an "Invite" button.
+  // My own subgroup, if any — gates the "invite a teammate" entry on my card.
   const mySubgroupId = flock.find((f) => f.userId === user?.id)?.subgroupId;
+  useEffect(() => {
+    void refreshSentInvites(mySubgroupId);
+  }, [mySubgroupId, refreshSentInvites]);
+  // Co-members I could still pull into my team. Virtual solo-test mates are
+  // excluded in a real group (no one on the other end to accept) — BUT in the
+  // demo group they ARE invitable, because handleInvite simulates them
+  // accepting; otherwise a solo tester's invite picker is always empty.
+  const invitable = flock.filter(
+    (f) =>
+      f.userId !== user?.id &&
+      f.subgroupId !== mySubgroupId &&
+      (isDemoGroup(groupId) || !isVirtualMember(f.userId)),
+  );
 
   // One flock row, shared by the main list and the subgroup cards.
   const renderFlockRow = (f: (typeof flock)[number], last: boolean) => {
     const isMe = f.userId === user?.id;
-    // Show "invite" on a real (non-virtual), non-me row that isn't already in
-    // my team — only meaningful once I'm in a team myself.
-    const canInvite =
-      !isMe &&
-      !!mySubgroupId &&
-      f.subgroupId !== mySubgroupId &&
-      !isVirtualMember(f.userId);
     return (
       <View key={f.userId} style={[styles.flockRow, last && styles.flockRowLast]}>
         <View style={styles.flockRowMain}>
@@ -653,16 +1063,6 @@ export default function MapScreen({ route, navigation }: Props) {
               </Pressable>
             )}
           </View>
-        )}
-        {canInvite && mySubgroupId && (
-          <Pressable
-            onPress={() => void handleInvite(mySubgroupId, f.userId)}
-            hitSlop={8}
-            accessibilityRole="button"
-            style={styles.inviteRow}
-          >
-            <Text style={[styles.rowAction, { color: accent }]}>{t('subgroup.inviteAction')}</Text>
-          </Pressable>
         )}
       </View>
     );
@@ -790,6 +1190,16 @@ export default function MapScreen({ route, navigation }: Props) {
               // button flips to "end navigation" (leader only; followers
               // can't change journey status).
               const navigatingThis = isLeader && journeyActive && navTarget?.id === dest.id;
+              // Leader-set target meet time, formatted as a live countdown /
+              // overdue label. Recomputed every 30s by the nowTick interval.
+              const meetLabel = dest.meetAt
+                ? (() => {
+                    const mins = minutesUntil(dest.meetAt as string, nowTick);
+                    return mins >= 0
+                      ? t('meetTime.countdown', { minutes: mins })
+                      : t('meetTime.overdue', { minutes: Math.abs(mins) });
+                  })()
+                : null;
               return (
                 <View key={dest.id} style={{ width: windowWidth, paddingHorizontal: 14 }}>
                   <liquidGlass.GlassView
@@ -808,31 +1218,45 @@ export default function MapScreen({ route, navigation }: Props) {
                         <Text style={styles.cardTitle} numberOfLines={1}>
                           {dest.title}
                         </Text>
+                        {myScopeId != null && (
+                          <Text style={{ color: glass.textSecondary, fontSize: 11 }}>
+                            {t('subgroup.itineraryBadge')}
+                          </Text>
+                        )}
                       </View>
                       {/* Pagination — lives inside the card now that the
                           carousel sits at the screen's top edge, where there's
-                          no room below it for a separate dots row. */}
+                          no room below it for a separate dots row. Capped at
+                          DOTS_MAX_VISIBLE; the window slides to keep the
+                          active dot centered until it nears either end. */}
                       {destinations.length > 1 && (
                         <View style={styles.dots}>
-                          {destinations.map((d2, i2) => (
-                            <View
-                              key={d2.id}
-                              style={[styles.dot, i2 === selectedIndex && styles.dotActive]}
-                            />
-                          ))}
+                          {dotWindow(destinations.length, selectedIndex, DOTS_MAX_VISIBLE).map(
+                            (i2) => (
+                              <View
+                                key={destinations[i2].id}
+                                style={[styles.dot, i2 === selectedIndex && styles.dotActive]}
+                              />
+                            ),
+                          )}
                         </View>
                       )}
                     </View>
                     <View style={styles.cardActions}>
                       <Pressable
                         style={[styles.directions, { backgroundColor: accentMix(accent, 26), borderColor: accentMix(accent, 50) }]}
-                        onPress={() =>
-                          navigatingThis
-                            ? void stopNavigation()
-                            : isLeader
-                              ? startNavigation(dest, index)
-                              : mapRef.current?.centerOn(dest.coordinates)
-                        }
+                        onPress={() => {
+                          if (navigatingThis) {
+                            void stopNavigation();
+                          } else if (isLeader) {
+                            // In-app journey: flock "going" state, arrival
+                            // detection, and the Live Activity all drive off
+                            // this — Apple Maps is a separate opt-in button.
+                            startNavigation(dest, index);
+                          } else {
+                            mapRef.current?.centerOn(dest.coordinates);
+                          }
+                        }}
                         disabled={journeyBusy}
                         accessibilityRole="button"
                       >
@@ -845,15 +1269,82 @@ export default function MapScreen({ route, navigation }: Props) {
                               : t('map.viewOnMap')}
                         </Text>
                       </Pressable>
+                      <Pressable
+                        style={styles.appleMapsBtn}
+                        onPress={() => openInAppleMaps(dest)}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('map.openInAppleMaps')}
+                      >
+                        <Ionicons name="open-outline" size={18} color={glass.textSecondary} />
+                      </Pressable>
                       <View style={styles.etaPill}>
                         <Text style={styles.etaPillEta}>
-                          {d != null ? shortEta(walkingEtaSeconds(d)) : '—'}
+                          {d != null ? shortEta(etaSecondsFor(d, travelMode)) : '—'}
                         </Text>
-                        <Text style={styles.etaPillDist}>
-                          {d != null ? formatDistance(d) : ''}
-                        </Text>
+                        {d != null && (
+                          <Text style={styles.etaPillDist}>{formatDistance(d)}</Text>
+                        )}
                       </View>
                     </View>
+                    <View style={styles.travelModeRow}>
+                      {(['walk', 'drive', 'transit'] as const).map((mode) => (
+                        <Pressable
+                          key={mode}
+                          onPress={() => setTravelMode(mode)}
+                          style={[
+                            styles.travelModeBtn,
+                            travelMode === mode && {
+                              backgroundColor: accentMix(accent, 26),
+                              borderColor: accentMix(accent, 50),
+                            },
+                          ]}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: travelMode === mode }}
+                          accessibilityLabel={t(`map.travelMode.${mode}`)}
+                        >
+                          <Ionicons
+                            name={
+                              mode === 'walk'
+                                ? 'walk-outline'
+                                : mode === 'drive'
+                                  ? 'car-outline'
+                                  : 'bus-outline'
+                            }
+                            size={16}
+                            color={travelMode === mode ? accent : glass.textSecondary}
+                          />
+                        </Pressable>
+                      ))}
+                    </View>
+                    {(meetLabel || canEditItinerary) && (
+                      <Pressable
+                        style={[
+                          styles.meetTimeBtn,
+                          meetLabel && {
+                            backgroundColor: accentMix(accent, 20),
+                            borderColor: accentMix(accent, 45),
+                          },
+                        ]}
+                        onPress={() => openMeetTimePicker(dest)}
+                        disabled={!canEditItinerary}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('meetTime.set')}
+                      >
+                        <Ionicons
+                          name="time-outline"
+                          size={15}
+                          color={meetLabel ? accent : glass.textSecondary}
+                        />
+                        <Text
+                          style={[
+                            styles.meetTimeText,
+                            meetLabel ? { color: accent, fontWeight: '700' } : null,
+                          ]}
+                        >
+                          {meetLabel ?? t('meetTime.set')}
+                        </Text>
+                      </Pressable>
+                    )}
                   </liquidGlass.GlassView>
                 </View>
               );
@@ -861,6 +1352,9 @@ export default function MapScreen({ route, navigation }: Props) {
           </ScrollView>
         </Animated.View>
       )}
+
+      {/* Straggler alerts fire as a native OS notification (see the effect
+          above) — no in-app banner, so they don't cover the map. */}
 
       {/* The pull-up sheet. */}
       <BottomSheet
@@ -876,7 +1370,7 @@ export default function MapScreen({ route, navigation }: Props) {
           <View style={styles.searchRow}>
             <Pressable
               style={styles.searchField}
-              onPress={() => (isLeader ? setSearchVisible(true) : undefined)}
+              onPress={() => (canEditItinerary ? setSearchVisible(true) : undefined)}
               accessibilityRole="button"
               accessibilityLabel={t('map.searchA11y')}
             >
@@ -884,7 +1378,7 @@ export default function MapScreen({ route, navigation }: Props) {
               <Text style={styles.searchPlaceholder}>{t('map.searchPlaces')}</Text>
             </Pressable>
             <Pressable
-              style={[styles.avatar, { backgroundColor: accent }]}
+              style={[styles.avatar, { backgroundColor: user?.avatarColor ?? accent }]}
               onPress={openProfile}
               accessibilityRole="button"
               accessibilityLabel={t('profile.title')}
@@ -906,35 +1400,48 @@ export default function MapScreen({ route, navigation }: Props) {
           <Text style={styles.sheetHeading}>
             {t('map.flockLabel')} · {members.length}
           </Text>
+          {!isPro && (
+            <Text style={styles.memberCapHint}>
+              {t('paywall.memberCap', { n: FREE_LIMITS.groupMembers })}
+            </Text>
+          )}
         </View>
         {pendingInvites.length > 0 && (
           <View style={styles.list}>
-            {pendingInvites.map((inv, i) => (
-              <View
-                key={inv.id}
-                style={[styles.flockRow, i === pendingInvites.length - 1 && styles.flockRowLast]}
-              >
-                <Text style={styles.flockName}>
-                  {t('subgroup.invitePrompt', { name: inv.inviterName, team: inv.subgroupName })}
-                </Text>
-                <View style={styles.splitActions}>
-                  <Pressable
-                    style={[styles.chip, { backgroundColor: accentMix(accent, 24), borderColor: accentMix(accent, 50) }]}
-                    onPress={() => void handleAcceptInvite(inv.id)}
-                    accessibilityRole="button"
-                  >
-                    <Text style={styles.chipText}>{t('subgroup.accept')}</Text>
-                  </Pressable>
-                  <Pressable
-                    style={styles.chipGhost}
-                    onPress={() => void handleDeclineInvite(inv.id)}
-                    accessibilityRole="button"
-                  >
-                    <Text style={styles.chipText}>{t('subgroup.decline')}</Text>
-                  </Pressable>
+            {pendingInvites.map((inv, i) => {
+              const isRequest = inv.kind === 'request';
+              return (
+                <View
+                  key={inv.id}
+                  style={[styles.flockRow, i === pendingInvites.length - 1 && styles.flockRowLast]}
+                >
+                  <Text style={styles.flockName}>
+                    {t(isRequest ? 'subgroup.requestPrompt' : 'subgroup.invitePrompt', {
+                      name: inv.inviterName,
+                      team: inv.subgroupName,
+                    })}
+                  </Text>
+                  <View style={styles.splitActions}>
+                    <Pressable
+                      style={[styles.chip, { backgroundColor: accentMix(accent, 24), borderColor: accentMix(accent, 50) }]}
+                      onPress={() => void handleAcceptInvite(inv.id)}
+                      accessibilityRole="button"
+                    >
+                      <Text style={styles.chipText}>
+                        {t(isRequest ? 'subgroup.approve' : 'subgroup.accept')}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.chipGhost}
+                      onPress={() => void handleDeclineInvite(inv.id)}
+                      accessibilityRole="button"
+                    >
+                      <Text style={styles.chipText}>{t('subgroup.decline')}</Text>
+                    </Pressable>
+                  </View>
                 </View>
-              </View>
-            ))}
+              );
+            })}
           </View>
         )}
         <View style={styles.list}>
@@ -957,6 +1464,32 @@ export default function MapScreen({ route, navigation }: Props) {
                 </View>
               </View>
               {memberRows.map((f, i) => renderFlockRow(f, i === memberRows.length - 1))}
+              {/* Invite entry lives ON my own team card — where you look to grow
+                  the team — instead of buried on every other member's row. */}
+              {sg.id === mySubgroupId && (
+                <Pressable
+                  style={[styles.inviteMemberBtn, { borderColor: accentMix(accent, 45) }]}
+                  onPress={() => {
+                    lightTap();
+                    setInviteSheetOpen(true);
+                  }}
+                  accessibilityRole="button"
+                >
+                  <Ionicons name="person-add-outline" size={16} color={accent} />
+                  <Text style={[styles.rowAction, { color: accent }]}>
+                    {t('subgroup.inviteAction')}
+                  </Text>
+                </Pressable>
+              )}
+              {/* So sending an invite doesn't look like it did nothing while
+                  the other person hasn't accepted yet. */}
+              {sg.id === mySubgroupId && sentInvites.length > 0 && (
+                <Text style={styles.subgroupPendingHint}>
+                  {t('subgroup.pendingInvites', {
+                    names: sentInvites.map((i) => i.inviteeName).join('、'),
+                  })}
+                </Text>
+              )}
             </View>
           );
         })}
@@ -982,7 +1515,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
         {/* Gathering points → route overlay. */}
         <Text style={styles.sheetHeading}>{t('map.gatheringPoints')}</Text>
-        <Pressable style={styles.rowButton} onPress={() => setOverlay('route')} accessibilityRole="button">
+        <Pressable style={styles.rowButton} onPress={() => { lightTap(); setOverlay('route'); }} accessibilityRole="button">
           <View style={[styles.rowIcon, { backgroundColor: accentMix(accent, 20) }]}>
             <CrookIcon size={22} color={accent} />
           </View>
@@ -994,6 +1527,56 @@ export default function MapScreen({ route, navigation }: Props) {
           <Text style={[styles.rowAction, { color: accent }]}>{t('map.edit')}</Text>
         </Pressable>
 
+        {/* KML import — a sub-item of gathering points (moved out of the reorder
+            overlay so it's reachable without opening "調整順序"). */}
+        {canEditItinerary && (
+          <Pressable style={styles.rowButton} onPress={() => { lightTap(); setKmlVisible(true); }} accessibilityRole="button">
+            <View style={[styles.rowIcon, { backgroundColor: accentMix(accent, 20) }]}>
+              <Ionicons name="document-attach-outline" size={20} color={accent} />
+            </View>
+            <View style={styles.grow}>
+              <Text style={styles.rowTitle}>{t('kml.entry')}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
+          </Pressable>
+        )}
+
+        {/* Straggler alerts — also a gathering-point sub-item (moved out of the
+            Settings overlay). Leader-only; threshold is paywall-gated. */}
+        {isLeader && group && (
+          <>
+            <View style={styles.settingSwitchRow}>
+              <View style={styles.settingSwitchText}>
+                <Text style={styles.settingSwitchLabel}>{t('straggler.section')}</Text>
+              </View>
+              <Switch
+                value={group.stragglerAlerts}
+                onValueChange={(v) => persistStragglerConfig(v, group.stragglerThresholdM)}
+                trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
+                thumbColor="#fff"
+              />
+            </View>
+            <Segmented
+              accent={accent}
+              options={STRAGGLER_THRESHOLD_OPTIONS.map((m) => ({
+                key: String(m),
+                label: formatDistance(m),
+              }))}
+              value={String(group.stragglerThresholdM)}
+              onChange={(v) => persistStragglerConfig(group.stragglerAlerts, Number(v))}
+              disabledKeys={
+                isPro
+                  ? []
+                  : STRAGGLER_THRESHOLD_OPTIONS.filter(
+                      (m) => m !== FREE_LIMITS.stragglerThresholdM,
+                    ).map(String)
+              }
+              onDisabledPress={() => openPaywall('paywall.triggerStraggler')}
+            />
+            <Text style={styles.overlayHint}>{t('straggler.freeNote')}</Text>
+          </>
+        )}
+
         {/* Quick commands. */}
         <Text style={styles.sheetHeading}>
           {isLeader ? t('map.cmdLeaderTitle') : t('map.cmdFollowerTitle')}
@@ -1003,7 +1586,7 @@ export default function MapScreen({ route, navigation }: Props) {
         ) : null}
 
         {/* Settings. */}
-        <Pressable style={styles.settingsButton} onPress={() => setOverlay('settings')} accessibilityRole="button">
+        <Pressable style={styles.settingsButton} onPress={() => { lightTap(); setOverlay('settings'); }} accessibilityRole="button">
           <Ionicons name="settings-sharp" size={20} color="#fff" />
           <Text style={styles.settingsText}>{t('map.settingsAll')}</Text>
           <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
@@ -1025,14 +1608,14 @@ export default function MapScreen({ route, navigation }: Props) {
           <Text style={styles.overlayHint}>{t('map.routeHint')}</Text>
           <DestinationReorderList
             destinations={destinations}
-            canReorder={!!isLeader}
+            canReorder={canEditItinerary}
             onReorder={handleReorder}
-            onDelete={isLeader ? handleDelete : undefined}
+            onDelete={canEditItinerary ? handleDelete : undefined}
             colors={dark}
             emptyLabel={t('settings.noDestinations')}
             onDragActiveChange={(active) => setRouteScrollEnabled(!active)}
           />
-          {isLeader && (
+          {canEditItinerary && (
             <Pressable
               style={styles.addStop}
               onPress={() => {
@@ -1080,7 +1663,9 @@ export default function MapScreen({ route, navigation }: Props) {
                   ? 'settings.themeNight'
                   : n === 'day'
                     ? 'settings.themeDay'
-                    : 'settings.themeDusk',
+                    : n === 'dusk'
+                      ? 'settings.themeDusk'
+                      : 'settings.themeForest',
               ),
             }))}
             value={themeName}
@@ -1102,8 +1687,68 @@ export default function MapScreen({ route, navigation }: Props) {
           </View>
 
           <Text style={styles.sectionLabel}>{t('settings.notifSection')}</Text>
-          <NotificationPreferencesCard colors={dark} />
+          {/* Force the LIVE theme accent onto the otherwise-frozen night
+              palette so the toggles recolour when the theme changes. */}
+          <NotificationPreferencesCard colors={{ ...dark, accent }} />
 
+          <Text style={styles.sectionLabel}>{t('history.title')}</Text>
+          <Pressable
+            style={styles.accountBtn}
+            onPress={() => setOverlay('history')}
+            accessibilityRole="button"
+          >
+            <Text style={[styles.accountBtnText, { color: accent }]}>{t('history.open')}</Text>
+          </Pressable>
+
+          <View style={styles.settingsSectionHeaderRow}>
+            <Text style={styles.sectionLabel}>{t('account.section')}</Text>
+            <Pressable
+              style={styles.feedbackEntry}
+              onPress={openFeedback}
+              accessibilityRole="button"
+              accessibilityLabel={t('feedback.title')}
+              hitSlop={8}
+            >
+              <Ionicons name="warning-outline" size={17} color={glass.textSecondary} />
+            </Pressable>
+          </View>
+          {isAnonymous ? (
+            <>
+              <Text style={styles.overlayHint}>{t('anon.expiryWarning')}</Text>
+              <Pressable
+                style={styles.accountBtn}
+                onPress={() => setUpgradeVisible(true)}
+                accessibilityRole="button"
+              >
+                <Text style={[styles.accountBtnText, { color: accent }]}>
+                  {t('account.upgradeButton')}
+                </Text>
+              </Pressable>
+            </>
+          ) : (
+            <Text style={styles.overlayHint}>
+              {t('account.signedInAs', { email: user?.email ?? '' })}
+            </Text>
+          )}
+
+          <Text style={styles.sectionLabel}>{t('paywall.title')}</Text>
+          {isPro ? (
+            <Text style={styles.overlayHint}>{t('paywall.active')}</Text>
+          ) : (
+            <Pressable
+              style={styles.accountBtn}
+              onPress={() => openPaywall()}
+              accessibilityRole="button"
+            >
+              <Text style={[styles.accountBtnText, { color: accent }]}>
+                {t('paywall.upgrade')}
+              </Text>
+            </Pressable>
+          )}
+
+          <Pressable style={styles.dangerBtn} onPress={confirmResetPrefs} accessibilityRole="button">
+            <Text style={styles.dangerText}>{t('settings.resetPrefs')}</Text>
+          </Pressable>
           <Pressable style={styles.dangerBtn} onPress={confirmLeave} accessibilityRole="button">
             <Text style={styles.dangerText}>
               {isLeader ? t('map.endGroup') : t('group.leave')}
@@ -1111,6 +1756,58 @@ export default function MapScreen({ route, navigation }: Props) {
           </Pressable>
           <Pressable style={styles.dangerBtn} onPress={confirmSignOut} accessibilityRole="button">
             <Text style={styles.dangerText}>{t('settings.signOut')}</Text>
+          </Pressable>
+        </ScrollView>
+      </OverlaySheet>
+
+      {/* Anonymous -> email upgrade: same uid, keeps profiles/memberships. */}
+      <OverlaySheet
+        visible={upgradeVisible}
+        onClose={closeUpgrade}
+        title={t('account.upgradeButton')}
+        accent={accent}
+        doneLabel={t('map.done')}
+      >
+        <ScrollView contentContainerStyle={styles.overlayBody}>
+          <Text style={styles.sectionLabel}>{t('account.email')}</Text>
+          <View style={styles.profileRow}>
+            <TextInput
+              style={styles.profileInput}
+              value={upgradeEmail}
+              onChangeText={setUpgradeEmail}
+              placeholder="you@example.com"
+              placeholderTextColor={glass.textTertiary}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="email-address"
+            />
+          </View>
+          <Text style={styles.sectionLabel}>{t('account.password')}</Text>
+          <View style={styles.profileRow}>
+            <TextInput
+              style={styles.profileInput}
+              value={upgradePassword}
+              onChangeText={setUpgradePassword}
+              placeholder={t('account.password')}
+              placeholderTextColor={glass.textTertiary}
+              autoCapitalize="none"
+              secureTextEntry
+            />
+          </View>
+          {upgradeError && <Text style={styles.upgradeError}>{upgradeError}</Text>}
+          <Pressable
+            style={[styles.accountBtn, !upgradeCanSubmit && { opacity: 0.4 }]}
+            onPress={submitUpgrade}
+            disabled={!upgradeCanSubmit}
+            accessibilityRole="button"
+          >
+            {upgradeBusy ? (
+              <ActivityIndicator color={accent} />
+            ) : (
+              <Text style={[styles.accountBtnText, { color: accent }]}>
+                {t('account.submit')}
+              </Text>
+            )}
           </Pressable>
         </ScrollView>
       </OverlaySheet>
@@ -1124,6 +1821,23 @@ export default function MapScreen({ route, navigation }: Props) {
         doneLabel={t('map.done')}
       >
         <ScrollView contentContainerStyle={styles.overlayBody}>
+          <View style={styles.profilePreviewRow}>
+            <View
+              style={[
+                styles.profilePreviewAvatar,
+                { backgroundColor: profileColor ?? memberColor(user?.id ?? '') },
+              ]}
+            >
+              {profileAvatar ? (
+                <Text style={styles.profilePreviewEmoji}>{profileAvatar}</Text>
+              ) : (
+                <Text style={styles.profilePreviewInitial}>
+                  {(profileName || user?.name || '?').slice(0, 1).toUpperCase()}
+                </Text>
+              )}
+            </View>
+          </View>
+
           <Text style={styles.sectionLabel}>{t('settings.nickname')}</Text>
           <View style={styles.profileRow}>
             <TextInput
@@ -1158,7 +1872,128 @@ export default function MapScreen({ route, navigation }: Props) {
               </Pressable>
             ))}
           </View>
+
+          <Text style={styles.sectionLabel}>{t('profile.avatarColor')}</Text>
+          <View style={styles.colorRow}>
+            {AVATAR_COLORS.map((c) => (
+              <Pressable
+                key={c}
+                onPress={() => { selectionTick(); setProfileColor(c); }}
+                accessibilityRole="button"
+                accessibilityState={{ selected: profileColor === c }}
+                style={[
+                  styles.colorSwatch,
+                  { backgroundColor: c },
+                  profileColor === c && { borderColor: '#fff' },
+                ]}
+              >
+                {profileColor === c && (
+                  <Ionicons name="checkmark" size={18} color="#fff" />
+                )}
+              </Pressable>
+            ))}
+          </View>
           <Text style={styles.overlayHint}>{t('profile.syncHint')}</Text>
+        </ScrollView>
+      </OverlaySheet>
+
+      {/* History overlay: gathering points actually reached, grouped by day. */}
+      <OverlaySheet
+        visible={overlay === 'history'}
+        onClose={() => setOverlay(null)}
+        title={t('history.title')}
+        accent={accent}
+        doneLabel={t('map.done')}
+      >
+        <ScrollView contentContainerStyle={styles.overlayBody}>
+          {historyGroups.length === 0 ? (
+            <Text style={styles.overlayHint}>{t('history.empty')}</Text>
+          ) : (
+            historyGroups.map((group) => {
+              const [y, m, dNum] = group.day.split('-').map(Number);
+              const dayLabel = new Date(y, m - 1, dNum).toLocaleDateString();
+              return (
+                <View key={group.day} style={styles.historyDayBlock}>
+                  <Text style={styles.sectionLabel}>{dayLabel}</Text>
+                  <View style={styles.list}>
+                    {group.items.map((item, i) => (
+                      <View
+                        key={item.id}
+                        style={[
+                          styles.flockRow,
+                          i === group.items.length - 1 && styles.flockRowLast,
+                        ]}
+                      >
+                        <View style={styles.flockRowMain}>
+                          <View style={styles.grow}>
+                            <Text style={styles.flockName}>{item.name}</Text>
+                          </View>
+                          <Text style={styles.historyTime}>
+                            {new Date(item.arrivedAt).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              );
+            })
+          )}
+        </ScrollView>
+      </OverlaySheet>
+
+      {/* Report-a-problem — a top-level overlay sharing the `overlay` state, so
+          it fully replaces (never stacks over) the settings sheet. */}
+      <FeedbackSheet
+        visible={overlay === 'feedback'}
+        onClose={() => setOverlay(null)}
+        screenshotUri={feedbackShot}
+      />
+
+      {/* Invite-a-teammate picker, opened from my own subgroup card. */}
+      <OverlaySheet
+        visible={inviteSheetOpen}
+        onClose={() => setInviteSheetOpen(false)}
+        title={t('subgroup.inviteTitle')}
+        accent={accent}
+        doneLabel={t('map.done')}
+      >
+        <ScrollView contentContainerStyle={styles.overlayBody}>
+          {invitable.length === 0 ? (
+            <Text style={styles.overlayHint}>{t('subgroup.inviteEmpty')}</Text>
+          ) : (
+            <View style={styles.list}>
+              {invitable.map((f, i) => (
+                <View
+                  key={f.userId}
+                  style={[styles.flockRow, i === invitable.length - 1 && styles.flockRowLast]}
+                >
+                  <View style={styles.flockRowMain}>
+                    <View style={[styles.flockAvatar, { backgroundColor: f.color, borderColor: 'transparent' }]}>
+                      {f.avatar ? (
+                        <Text style={styles.flockEmoji}>{f.avatar}</Text>
+                      ) : (
+                        <Text style={styles.flockInitial}>{f.name.slice(0, 1).toUpperCase()}</Text>
+                      )}
+                    </View>
+                    <View style={styles.grow}>
+                      <Text style={styles.flockName}>{f.name}</Text>
+                    </View>
+                    <Pressable
+                      style={[styles.chip, { backgroundColor: accentMix(accent, 24), borderColor: accentMix(accent, 50) }]}
+                      onPress={() => mySubgroupId && void handleInvite(mySubgroupId, f.userId)}
+                      accessibilityRole="button"
+                    >
+                      <Text style={styles.chipText}>{t('subgroup.inviteAction')}</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
         </ScrollView>
       </OverlaySheet>
 
@@ -1168,6 +2003,74 @@ export default function MapScreen({ route, navigation }: Props) {
         biasRegion={biasRegion}
         onPick={handlePickDestination}
       />
+
+      <PaywallSheet
+        visible={paywallVisible}
+        onClose={() => setPaywallVisible(false)}
+        trigger={paywallTrigger}
+      />
+
+      <KmlImportSheet
+        visible={kmlVisible}
+        onClose={() => setKmlVisible(false)}
+        currentCount={destinations.length}
+        isPro={isPro}
+        onImport={handleKmlImport}
+        onUpgrade={() => {
+          setKmlVisible(false);
+          openPaywall('paywall.triggerDestinations');
+        }}
+      />
+
+      {/* iOS meet-time editor: embedded spinner + Set/Clear (Android uses the
+          native dialog directly, see openMeetTimePicker). */}
+      {Platform.OS !== 'android' && (
+        <OverlaySheet
+          visible={!!meetTimeEditor}
+          onClose={() => setMeetTimeEditor(null)}
+          title={t('meetTime.set')}
+          accent={accent}
+          doneLabel={t('common.cancel')}
+        >
+          {meetTimeEditor && (
+            <View style={styles.meetEditorBody}>
+              <View style={styles.meetPickerWrap}>
+                <DateTimePicker
+                  value={meetTimeEditor.value}
+                  mode="time"
+                  display="spinner"
+                  onChange={(_event, selected) =>
+                    selected && setMeetTimeEditor((s) => (s ? { ...s, value: selected } : s))
+                  }
+                />
+              </View>
+              <Pressable
+                style={[
+                  styles.meetSetBtn,
+                  { backgroundColor: accentMix(accent, 90), borderColor: accentMix(accent, 50) },
+                ]}
+                onPress={() => {
+                  persistMeetTime(meetTimeEditor.id, meetTimeEditor.value);
+                  setMeetTimeEditor(null);
+                }}
+                accessibilityRole="button"
+              >
+                <Text style={styles.meetSetText}>{t('meetTime.set')}</Text>
+              </Pressable>
+              <Pressable
+                style={styles.meetClearBtn}
+                onPress={() => {
+                  persistMeetTime(meetTimeEditor.id, null);
+                  setMeetTimeEditor(null);
+                }}
+                accessibilityRole="button"
+              >
+                <Text style={styles.meetClearText}>{t('meetTime.clear')}</Text>
+              </Pressable>
+            </View>
+          )}
+        </OverlaySheet>
+      )}
     </View>
   );
 }
@@ -1177,23 +2080,33 @@ function Segmented({
   value,
   onChange,
   accent,
+  disabledKeys,
+  onDisabledPress,
 }: {
   options: { key: string; label: string }[];
   value: string;
   onChange: (key: string) => void;
   accent: string;
+  /** Options shown greyed-out/locked; tapping them calls `onDisabledPress` instead of `onChange`. */
+  disabledKeys?: string[];
+  onDisabledPress?: (key: string) => void;
 }) {
   return (
     <View style={segStyles.track}>
       {options.map((o) => {
         const active = o.key === value;
+        const locked = !!disabledKeys?.includes(o.key);
         return (
           <Pressable
             key={o.key}
-            style={[segStyles.seg, active && { backgroundColor: 'rgba(255,255,255,0.16)' }]}
-            onPress={() => onChange(o.key)}
+            style={[
+              segStyles.seg,
+              active && { backgroundColor: 'rgba(255,255,255,0.16)' },
+              locked && segStyles.segLocked,
+            ]}
+            onPress={() => (locked ? onDisabledPress?.(o.key) : onChange(o.key))}
             accessibilityRole="button"
-            accessibilityState={{ selected: active }}
+            accessibilityState={{ selected: active, disabled: locked }}
           >
             <Text style={[segStyles.segText, active && { color: '#fff' }]}>{o.label}</Text>
           </Pressable>
@@ -1219,6 +2132,7 @@ const segStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  segLocked: { opacity: 0.4 },
   segText: { fontSize: 15, fontWeight: '600', color: glass.textSecondary },
 });
 
@@ -1286,6 +2200,21 @@ const makeStyles = (accent: string) =>
     roleWord: { fontSize: 14, fontWeight: '600', color: '#fff' },
 
     recenter: { position: 'absolute', right: 14, zIndex: 40 },
+    settingsSectionHeaderRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    feedbackEntry: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: glass.pill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
+    },
     recenterCapsule: {
       width: 48,
       borderRadius: 24,
@@ -1328,16 +2257,83 @@ const makeStyles = (accent: string) =>
       borderWidth: StyleSheet.hairlineWidth,
     },
     directionsText: { fontSize: 15, fontWeight: '600', color: '#fff' },
-    etaPill: {
+    // Secondary action: hand off to the real Apple Maps app for turn-by-turn —
+    // the main "directions" button stays in-app (journey state + Live Activity).
+    appleMapsBtn: {
+      width: 44,
       height: 44,
+      borderRadius: 13,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: glass.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
+    },
+    etaPill: {
       paddingHorizontal: 16,
+      paddingVertical: 6,
       borderRadius: 13,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: glass.fillStrong,
     },
     etaPillEta: { fontSize: 15, fontWeight: '700', color: '#fff', fontVariant: ['tabular-nums'] },
-    etaPillDist: { fontSize: 11, color: glass.textSecondary },
+    etaPillDist: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: glass.textSecondary,
+      fontVariant: ['tabular-nums'],
+      marginTop: 1,
+    },
+    // Compact walk/drive/transit switcher below the nav row.
+    travelModeRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
+    travelModeBtn: {
+      width: 40,
+      height: 32,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: glass.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'transparent',
+    },
+    // Prominent capsule pinned at the card's foot (kept compact so the card
+    // height barely moves — see the straggler banner's fixed top offset).
+    meetTimeBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 7,
+      height: 32,
+      borderRadius: 11,
+      marginTop: 12,
+      backgroundColor: glass.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
+    },
+    meetTimeText: { fontSize: 13, fontWeight: '600', color: glass.textSecondary },
+    // Meet-time editor sheet: roomy, full-width controls (not the old cramped
+    // left-aligned chips).
+    meetEditorBody: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 40, gap: 14 },
+    meetPickerWrap: { alignItems: 'center', marginBottom: 4 },
+    meetSetBtn: {
+      height: 52,
+      borderRadius: 15,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: StyleSheet.hairlineWidth,
+    },
+    meetSetText: { fontSize: 17, fontWeight: '700', color: '#fff' },
+    meetClearBtn: {
+      height: 50,
+      borderRadius: 15,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: glass.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
+    },
+    meetClearText: { fontSize: 17, fontWeight: '600', color: glass.textSecondary },
     dots: { flexDirection: 'row', gap: 6, alignItems: 'center' },
     dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.35)' },
     dotActive: { width: 20, backgroundColor: accent },
@@ -1384,6 +2380,16 @@ const makeStyles = (accent: string) =>
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairline,
     },
+    profilePreviewRow: { alignItems: 'center', marginBottom: 16 },
+    profilePreviewAvatar: {
+      width: 76,
+      height: 76,
+      borderRadius: 38,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    profilePreviewEmoji: { fontSize: 40 },
+    profilePreviewInitial: { fontSize: 32, fontWeight: '700', color: '#fff' },
     // 5 columns × 6 rows filling edge-to-edge: 5 × (18% + 1% + 1%) = 100%.
     emojiGrid: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 12 },
     emojiCell: {
@@ -1399,6 +2405,16 @@ const makeStyles = (accent: string) =>
       borderColor: 'transparent',
     },
     emojiChar: { fontSize: 26 },
+    colorRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 12 },
+    colorSwatch: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 2,
+      borderColor: 'transparent',
+    },
 
     // Subgroups
     headingRow: {
@@ -1445,6 +2461,12 @@ const makeStyles = (accent: string) =>
     },
     subgroupName: { fontSize: 15, fontWeight: '700', color: '#fff' },
     subgroupMeta: { fontSize: 12.5, color: glass.textSecondary, marginTop: 1 },
+    subgroupPendingHint: {
+      fontSize: 12.5,
+      color: glass.textSecondary,
+      paddingHorizontal: 14,
+      paddingBottom: 10,
+    },
 
     codeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
     // Big bold white section headings on the main sheet (Apple Maps style).
@@ -1457,6 +2479,11 @@ const makeStyles = (accent: string) =>
       marginBottom: 12,
       marginLeft: 4,
     },
+    memberCapHint: {
+      fontSize: 12,
+      color: glass.textTertiary,
+      marginTop: 24,
+    },
     sectionLabel: {
       fontSize: 12,
       fontWeight: '700',
@@ -1465,6 +2492,13 @@ const makeStyles = (accent: string) =>
       marginBottom: 8,
       marginLeft: 4,
       marginTop: 4,
+    },
+    historyDayBlock: { marginBottom: 16 },
+    historyTime: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: glass.textSecondary,
+      fontVariant: ['tabular-nums'],
     },
     settingSwitchRow: {
       flexDirection: 'row',
@@ -1536,11 +2570,15 @@ const makeStyles = (accent: string) =>
       borderTopColor: 'rgba(255,255,255,0.08)',
     },
     selfSoloRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-    inviteRow: {
-      marginTop: 10,
-      paddingTop: 10,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: 'rgba(255,255,255,0.08)',
+    inviteMemberBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 7,
+      marginTop: 12,
+      paddingVertical: 11,
+      borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth,
     },
     selfControlLabel: { fontSize: 13, color: glass.textSecondary },
 
@@ -1617,4 +2655,21 @@ const makeStyles = (accent: string) =>
       borderColor: 'rgba(255,107,107,0.3)',
     },
     dangerText: { fontSize: 16, fontWeight: '600', color: glass.danger },
+    accountBtn: {
+      height: 48,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: 10,
+      backgroundColor: accentMix(accent, 14),
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: accentMix(accent, 40),
+    },
+    accountBtnText: { fontSize: 15, fontWeight: '600' },
+    upgradeError: {
+      fontSize: 13,
+      color: glass.danger,
+      marginTop: 8,
+      marginHorizontal: 4,
+    },
   });

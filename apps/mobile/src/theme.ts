@@ -32,11 +32,12 @@ export interface Palette {
 }
 
 /** Identifiers for the selectable themes. */
-export type ThemeName = 'night' | 'day' | 'dusk';
+export type ThemeName = 'night' | 'day' | 'dusk' | 'forest';
 
 /**
  * The selectable palettes. `night` is the original design baseline and the
- * default; `day` is a light variant; `dusk` is a warmer purple night.
+ * default; `day` is a light variant; `dusk` is a warmer purple night; `forest`
+ * is a deep green woodland variant (used by Onboarding's theme step).
  */
 export const themes: Record<ThemeName, Palette> = {
   night: {
@@ -78,11 +79,24 @@ export const themes: Record<ThemeName, Palette> = {
     leader: '#F08FB0',
     follower: '#8FB8FF',
   },
+  forest: {
+    background: '#0D1A14',
+    surface: '#16261D',
+    glass: 'rgba(22, 38, 29, 0.92)',
+    border: '#27402F',
+    accent: '#7BC47F',
+    accentText: '#0A1A0E',
+    textPrimary: '#EFF7F0',
+    textSecondary: '#9BB8A4',
+    danger: '#E5575C',
+    leader: '#7BC47F',
+    follower: '#6FA8FF',
+  },
 };
 
 /** Default palette / order shown in the theme picker. */
 export const DEFAULT_THEME: ThemeName = 'night';
-export const THEME_ORDER: ThemeName[] = ['night', 'day', 'dusk'];
+export const THEME_ORDER: ThemeName[] = ['night', 'day', 'dusk', 'forest'];
 
 export const spacing = {
   xs: 4,

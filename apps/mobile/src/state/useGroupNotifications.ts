@@ -61,13 +61,17 @@ export function useGroupNotifications(): void {
         // Solo mode detaches this user from ALL group noise. Read fresh per
         // event (like prefs below); a select error (solo_mode migration not
         // applied yet) just means "not solo".
+        // Subgroup members are muted from main-group events by design (a
+        // subgroup is Solo-for-two-or-more semantically) — server-side push
+        // fanout doesn't apply the same filter yet, that's a known follow-up.
         const { data: me, error: soloErr } = await supabase
           .from('memberships')
-          .select('solo')
+          .select('solo, subgroup_id')
           .eq('group_id', groupId)
           .eq('user_id', myUserId)
           .maybeSingle();
-        if (!soloErr && (me as { solo?: boolean } | null)?.solo) return;
+        const meRow = me as { solo?: boolean; subgroup_id?: string | null } | null;
+        if (!soloErr && (meRow?.solo || meRow?.subgroup_id != null)) return;
 
         const prefs = await getNotificationPreferences();
         if (!prefs[category]) return;

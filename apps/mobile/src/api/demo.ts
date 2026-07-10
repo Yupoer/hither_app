@@ -34,6 +34,8 @@ const state: GroupState = {
     createdBy: 'demo-me',
     createdAt: new Date().toISOString(),
     journeyStatus: 'paused',
+    stragglerAlerts: true,
+    stragglerThresholdM: 500,
   },
   members: [
     { userId: 'demo-me', name: '我', role: 'leader', coordinates: BASE },
@@ -172,29 +174,53 @@ export function demoSelfSplit(name: string): Subgroup {
   return sg;
 }
 
+// Pending join-requests awaiting MY approval. There's no second device in the
+// demo flock, so inviting a mate simulates them "requesting to join" — a
+// pending card the tester approves/declines, exercising the real approve flow.
+let invSeq = 0;
+let demoPending: PendingInvite[] = [];
+
 /**
- * Invite a demo mate into a demo subgroup. There's no second device to accept
- * in the demo flock, so — matching client.ts's comment on the real
- * `inviteToSubgroup` — this auto-joins the invitee immediately instead of
- * creating a pending invite.
- * ponytail: no pending-invite bookkeeping for demo; add if a demo scenario
- * ever needs to show the accept/decline card.
+ * Invite a demo mate into a demo subgroup. Instead of a silent auto-join, this
+ * simulates the invitee responding: it raises a pending "wants to join your
+ * team" request (kind: 'request') that the tester approves in the flock list.
  */
 export function demoInviteToSubgroup(subgroupId: string, inviteeId: string): void {
-  state.members = state.members.map((m) =>
-    m.userId === inviteeId ? { ...m, subgroupId } : m,
-  );
+  const member = state.members.find((m) => m.userId === inviteeId);
+  const sg = state.subgroups.find((s) => s.id === subgroupId);
+  if (!member || !sg) return;
+  if (demoPending.some((p) => p.subgroupId === subgroupId && p.inviterId === inviteeId)) return;
+  demoPending.push({
+    id: `demo-inv-${++invSeq}`,
+    groupId: DEMO_GROUP_ID,
+    subgroupId,
+    inviterId: inviteeId, // the mate requesting to join
+    inviteeId: state.members[0].userId, // me, the approver
+    status: 'pending',
+    subgroupName: sg.name,
+    inviterName: member.name,
+    kind: 'request',
+  });
 }
 
-/** Demo invites auto-join (see demoInviteToSubgroup) — never pending, so no-op. */
-export function demoAcceptSubgroupInvite(_inviteId: string): void {}
+/** Approve a pending demo join-request: move the requester into the team. */
+export function demoAcceptSubgroupInvite(inviteId: string): void {
+  const p = demoPending.find((x) => x.id === inviteId);
+  if (!p) return;
+  state.members = state.members.map((m) =>
+    m.userId === p.inviterId ? { ...m, subgroupId: p.subgroupId } : m,
+  );
+  demoPending = demoPending.filter((x) => x.id !== inviteId);
+}
 
-/** Demo invites auto-join (see demoInviteToSubgroup) — never pending, so no-op. */
-export function demoDeclineSubgroupInvite(_inviteId: string): void {}
+/** Decline a pending demo join-request (drop it; membership untouched). */
+export function demoDeclineSubgroupInvite(inviteId: string): void {
+  demoPending = demoPending.filter((x) => x.id !== inviteId);
+}
 
-/** Demo invites auto-join — there is never a pending one to show. */
+/** The demo join-requests awaiting my approval. */
 export function demoFetchMyInvites(_userId: string): PendingInvite[] {
-  return [];
+  return demoPending.map((p) => ({ ...p }));
 }
 
 export function demoSelfMerge(): void {
