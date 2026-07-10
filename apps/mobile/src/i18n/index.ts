@@ -181,9 +181,6 @@ const zh = {
   'map.overlaySettings': '設定',
   'map.endGroup': '結束群組',
   'flock.leading': '領隊中',
-  'flock.arrived': '已抵達',
-  'flock.enroute': '前往中',
-  'flock.unknown': '位置未知',
   'flock.here': '就在這',
   'flock.you': '你',
 
@@ -343,8 +340,8 @@ const zh = {
 
   // Straggler alerts
   'straggler.section': '脫隊示警',
+  'straggler.notifyTitle': '脫隊提醒',
   'straggler.banner': '{name} 已脫隊 {distance}',
-  'straggler.bannerMore': '等 {n} 人',
   'straggler.selfWarning': '你已離隊伍 {distance}，注意跟上',
   'straggler.freeNote': '免費版預設 500 公尺',
   'straggler.threshold': '警示距離',
@@ -557,9 +554,6 @@ const en: Record<keyof typeof zh, string> = {
   'map.overlaySettings': 'Settings',
   'map.endGroup': 'End group',
   'flock.leading': 'Leading',
-  'flock.arrived': 'Arrived',
-  'flock.enroute': 'On the way',
-  'flock.unknown': 'Location unknown',
   'flock.here': 'here',
   'flock.you': 'You',
 
@@ -711,8 +705,8 @@ const en: Record<keyof typeof zh, string> = {
 
   // Straggler alerts
   'straggler.section': 'Straggler alerts',
+  'straggler.notifyTitle': 'Straggler alert',
   'straggler.banner': '{name} fell behind ({distance})',
-  'straggler.bannerMore': 'and {n} more',
   'straggler.selfWarning': "You're {distance} from the flock — catch up!",
   'straggler.freeNote': 'Free plan defaults to 500 m',
   'straggler.threshold': 'Alert distance',

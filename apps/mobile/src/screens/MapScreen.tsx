@@ -358,15 +358,28 @@ export default function MapScreen({ route, navigation }: Props) {
   const activePoint = navTarget ?? selectedDestination;
 
   // --- Straggler alerts ------------------------------------------------------
-  const { stragglers } = useStragglerAlerts(state, navTarget?.coordinates);
-  const [stragglerBannerCollapsed, setStragglerBannerCollapsed] = useState(false);
+  // Reference is ME, not the gathering point — "fell behind" means fell
+  // behind the flock (specifically me), not "hasn't reached the destination".
+  const { stragglers } = useStragglerAlerts(state, fromCoords ?? undefined);
+  // Fire a native OS notification per NEWLY-flagged straggler (hysteresis in
+  // the hook already prevents re-firing while still over the release band) —
+  // no in-app banner; the system notification is the only surface for this.
   const lastStragglerIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     const ids = new Set(stragglers.map((s) => s.userId));
-    const grew = [...ids].some((id) => !lastStragglerIdsRef.current.has(id));
-    if (grew) setStragglerBannerCollapsed(false);
+    const newOnes = stragglers.filter((s) => !lastStragglerIdsRef.current.has(s.userId));
     lastStragglerIdsRef.current = ids;
-  }, [stragglers]);
+    for (const s of newOnes) {
+      void notifications.scheduleLocalNotification({
+        title: t('straggler.notifyTitle'),
+        body: t(s.userId === user?.id ? 'straggler.selfWarning' : 'straggler.banner', {
+          name: s.name,
+          distance: formatDistance(s.distanceM),
+        }),
+        data: { kind: 'straggler', userId: s.userId },
+      });
+    }
+  }, [stragglers, t, user?.id]);
 
   const numericDistance =
     fromCoords && navTarget ? distanceMeters(fromCoords, navTarget.coordinates) : undefined;
@@ -865,15 +878,11 @@ export default function MapScreen({ route, navigation }: Props) {
             : null;
         const arrived = d != null && d <= ARRIVAL_RADIUS_M;
         const isMemberLeader = m.role === 'leader';
-        // Member status chip: arrived (within the radius) > moving (a fresh
-        // location ping in the last 2 minutes) > not started (no recent ping).
+        // Member status: arrived (within the radius) > moving (a fresh
+        // location ping in the last 2 minutes) > not started (no recent ping —
+        // the app hasn't sent a location update, e.g. before they've left).
         const movingRecently =
           !!m.lastUpdated && Date.now() - new Date(m.lastUpdated).getTime() < 2 * 60_000;
-        const memberStatusKey = arrived
-          ? 'memberStatus.arrived'
-          : movingRecently
-            ? 'memberStatus.moving'
-            : 'memberStatus.notStarted';
         const solo =
           m.userId === user?.id && soloOverride !== null ? soloOverride : !!m.solo;
         return {
@@ -886,16 +895,15 @@ export default function MapScreen({ route, navigation }: Props) {
           // deterministic per-user colour when they haven't picked one.
           color: m.avatarColor ?? memberColor(m.userId),
           isLeader: isMemberLeader,
-          memberStatusKey,
           statusText: solo
             ? t('solo.badge')
             : isMemberLeader
               ? t('flock.leading')
-              : d == null
-                ? t('flock.unknown')
-                : arrived
-                  ? t('flock.arrived')
-                  : t('flock.enroute'),
+              : arrived
+                ? t('memberStatus.arrived')
+                : movingRecently
+                  ? t('memberStatus.moving')
+                  : t('memberStatus.notStarted'),
           statusColor: solo
             ? glass.warn
             : isMemberLeader
@@ -956,7 +964,6 @@ export default function MapScreen({ route, navigation }: Props) {
           <View style={styles.grow}>
             <Text style={styles.flockName}>{f.name}</Text>
             <Text style={[styles.flockStatus, { color: f.statusColor }]}>{f.statusText}</Text>
-            <Text style={styles.flockMemberStatus}>{t(f.memberStatusKey)}</Text>
           </View>
           <View style={styles.flockMeta}>
             <Text style={styles.flockEta}>{f.eta}</Text>
@@ -1241,38 +1248,8 @@ export default function MapScreen({ route, navigation }: Props) {
         </Animated.View>
       )}
 
-      {/* Straggler alert banner — sits below the carousel/top pill, below its
-          zIndex so it never fights the carousel's own touches. */}
-      {group?.stragglerAlerts && stragglers.length > 0 && !stragglerBannerCollapsed && (
-        <Animated.View
-          style={[
-            styles.stragglerBanner,
-            { top: insets.top + 8 + (destinations.length > 0 ? 200 : 96) },
-            chromeOpacityStyle,
-          ]}
-          pointerEvents={atFull ? 'none' : 'box-none'}
-        >
-          <Pressable
-            style={styles.stragglerCard}
-            onPress={() => setStragglerBannerCollapsed(true)}
-            accessibilityRole="button"
-          >
-            {stragglers.slice(0, 2).map((s) => (
-              <Text key={s.userId} style={styles.stragglerText} numberOfLines={1}>
-                {t(
-                  s.userId === user?.id ? 'straggler.selfWarning' : 'straggler.banner',
-                  { name: s.name, distance: formatDistance(s.distanceM) },
-                )}
-              </Text>
-            ))}
-            {stragglers.length > 2 && (
-              <Text style={styles.stragglerMore}>
-                {t('straggler.bannerMore', { n: stragglers.length - 2 })}
-              </Text>
-            )}
-          </Pressable>
-        </Animated.View>
-      )}
+      {/* Straggler alerts fire as a native OS notification (see the effect
+          above) — no in-app banner, so they don't cover the map. */}
 
       {/* The pull-up sheet. */}
       <BottomSheet
@@ -2061,18 +2038,6 @@ const makeStyles = (accent: string) =>
     recenterDivider: { height: StyleSheet.hairlineWidth, backgroundColor: glass.hairlineStrong },
 
     carouselWrap: { position: 'absolute', left: 0, right: 0, zIndex: 58 },
-    stragglerBanner: { position: 'absolute', left: 14, right: 14, zIndex: 50 },
-    stragglerCard: {
-      backgroundColor: 'rgba(197,58,68,0.28)',
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: glass.danger,
-      borderRadius: 16,
-      paddingVertical: 10,
-      paddingHorizontal: 14,
-      gap: 2,
-    },
-    stragglerText: { fontSize: 13.5, fontWeight: '600', color: '#fff' },
-    stragglerMore: { fontSize: 12, color: glass.textSecondary, marginTop: 2 },
     card: {
       borderRadius: 22,
       overflow: 'hidden',
@@ -2357,7 +2322,6 @@ const makeStyles = (accent: string) =>
     flockInitial: { fontSize: 16, fontWeight: '600', color: '#fff' },
     flockName: { fontSize: 16, color: '#fff' },
     flockStatus: { fontSize: 13 },
-    flockMemberStatus: { fontSize: 11, color: glass.textTertiary, marginTop: 1 },
     flockMeta: { alignItems: 'flex-end' },
     flockEta: { fontSize: 15, fontWeight: '600', color: '#fff', fontVariant: ['tabular-nums'] },
     flockDist: { fontSize: 12, color: glass.textTertiary },
