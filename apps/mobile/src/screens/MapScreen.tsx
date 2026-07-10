@@ -62,7 +62,7 @@ import {
   type TravelMode,
 } from '../utils/geo';
 import { dotWindow } from '../utils/pagination';
-import { minutesUntil } from '../utils/meetTime';
+import { minutesUntil, meetCountdownShort } from '../utils/meetTime';
 import { groupHistoryByDay, type HistoryDayGroup } from '../utils/history';
 import { liquidGlass, location, notifications, type MapRegion, type PlaceResult } from '../native';
 import {
@@ -109,6 +109,9 @@ const DOTS_MAX_VISIBLE = 5;
 /** The design's display face — Fredoka (loaded in App.tsx). Used for
  * gathering-point titles, ETA numerals and the set-gather-time. */
 const DISPLAY_FONT = 'Fredoka_600SemiBold';
+
+/** Persisted "don't warn me again" flag for the leave-the-main-group notice. */
+const LEAVE_GROUP_WARN_KEY = 'hither.subgroupLeaveWarnDismissed';
 
 /** Preset straggler-alert distance chips shown in settings. */
 const STRAGGLER_THRESHOLD_OPTIONS = [300, 500, 1000, 2000];
@@ -700,7 +703,35 @@ export default function MapScreen({ route, navigation }: Props) {
     refresh: refreshInvites,
   } = useSubgroupInvites();
 
+  // Leaving the main "組隊伍" (by creating or joining a subteam) hides the
+  // shared gathering-point cards. Warn once per action unless the user has
+  // ticked "don't show again". Resolves true = proceed (both buttons proceed;
+  // only the dismiss button silences future warnings). Never blocks if already
+  // dismissed.
+  async function confirmLeaveMainGroup(): Promise<boolean> {
+    const dismissed = await AsyncStorage.getItem(LEAVE_GROUP_WARN_KEY);
+    if (dismissed === '1') return true;
+    return new Promise((resolve) => {
+      Alert.alert(
+        t('subgroup.leaveWarnTitle'),
+        t('subgroup.leaveWarnBody'),
+        [
+          {
+            text: t('subgroup.leaveWarnDontShow'),
+            onPress: () => {
+              void AsyncStorage.setItem(LEAVE_GROUP_WARN_KEY, '1');
+              resolve(true);
+            },
+          },
+          { text: t('subgroup.leaveWarnConfirm'), onPress: () => resolve(true) },
+        ],
+        { cancelable: false },
+      );
+    });
+  }
+
   async function handleAcceptInvite(inviteId: string) {
+    if (!(await confirmLeaveMainGroup())) return;
     mediumTap();
     logEvent('invite_accept', { inviteId });
     try {
@@ -745,6 +776,7 @@ export default function MapScreen({ route, navigation }: Props) {
   // subgroup, or merge themselves back up a level — no leader say-so needed.
   async function doSelfSplit() {
     if (!groupId) return;
+    if (!(await confirmLeaveMainGroup())) return;
     mediumTap();
     logEvent('team_create', { groupId });
     try {
@@ -769,6 +801,25 @@ export default function MapScreen({ route, navigation }: Props) {
       refresh();
     } catch (e) {
       logError('team_leave_failed', e, { groupId });
+      Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
+    }
+  }
+
+  // ponytail: TEMPORARY test helper — archives every current gathering point to
+  // 歷史行程 (record + delete, like a real arrival) and ends navigation, so the
+  // history screen can be exercised without physically walking to each stop.
+  // Remove once history testing is done.
+  async function archiveAllForTest() {
+    if (!groupId) return;
+    mediumTap();
+    try {
+      for (const dest of destinations) {
+        await recordVisitedWaypoint(groupId, dest.title, dest.coordinates);
+        await deleteDestination(groupId, dest.id);
+      }
+      await stopNavigation();
+      refresh();
+    } catch (e) {
       Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
     }
   }
@@ -1057,13 +1108,23 @@ export default function MapScreen({ route, navigation }: Props) {
               />
             </View>
             {f.subgroupId ? (
-              <Pressable onPress={() => void doSelfMerge()} hitSlop={8} accessibilityRole="button">
+              <Pressable
+                onPress={() => void doSelfMerge()}
+                hitSlop={8}
+                accessibilityRole="button"
+                style={({ pressed }) => pressed && styles.rowActionPressed}
+              >
                 <Text style={[styles.rowAction, { color: accent }]}>
                   {t('subgroup.leaveTeam')}
                 </Text>
               </Pressable>
             ) : (
-              <Pressable onPress={() => void doSelfSplit()} hitSlop={8} accessibilityRole="button">
+              <Pressable
+                onPress={() => void doSelfSplit()}
+                hitSlop={8}
+                accessibilityRole="button"
+                style={({ pressed }) => pressed && styles.rowActionPressed}
+              >
                 <Text style={[styles.rowAction, { color: accent }]}>
                   {t('subgroup.createTeam')}
                 </Text>
@@ -1219,13 +1280,10 @@ export default function MapScreen({ route, navigation }: Props) {
               const arrivalPct = totalMembers
                 ? Math.round((arrivedHere / totalMembers) * 100)
                 : 0;
-              // Clock face in the compact set-gather-time square: the set time
-              // (HH:MM) or "——" when unset.
+              // Compact live countdown in the set-gather-time square: time
+              // REMAINING to the meet time (local-clock based), or "——" unset.
               const meetShort = dest.meetAt
-                ? new Date(dest.meetAt as string).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })
+                ? meetCountdownShort(dest.meetAt as string, nowTick)
                 : '——';
               const modeIconName =
                 travelMode === 'walk'
@@ -1737,6 +1795,16 @@ export default function MapScreen({ route, navigation }: Props) {
             accessibilityRole="button"
           >
             <Text style={[styles.accountBtnText, { color: accent }]}>{t('history.open')}</Text>
+          </Pressable>
+          {/* ponytail: TEMPORARY test button — archive all stops as done. Remove later. */}
+          <Pressable
+            style={styles.accountBtn}
+            onPress={() => void archiveAllForTest()}
+            accessibilityRole="button"
+          >
+            <Text style={[styles.accountBtnText, { color: glass.warn }]}>
+              🧪 全部集合點標記為已完成（測試）
+            </Text>
           </Pressable>
 
           <View style={styles.settingsSectionHeaderRow}>
@@ -2294,7 +2362,9 @@ const makeStyles = (accent: string) =>
     },
     grow: { flex: 1, minWidth: 0 },
     cardKicker: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8 },
-    cardTitle: { fontFamily: DISPLAY_FONT, fontSize: 20, color: '#fff', lineHeight: 23 },
+    // marginTop nudges the (system-font) CJK title clear of the kicker line —
+    // Fredoka only covers Latin, so CJK sits higher and would otherwise crowd it.
+    cardTitle: { fontFamily: DISPLAY_FONT, fontSize: 20, color: '#fff', lineHeight: 23, marginTop: 4 },
     cardBadge: { color: glass.textSecondary, fontSize: 11, marginTop: 1 },
 
     // Arrival caption row (design 1b) — "隊伍抵達進度 · X / Y".
@@ -2637,6 +2707,7 @@ const makeStyles = (accent: string) =>
     rowTitle: { fontSize: 16, fontWeight: '600', color: '#fff' },
     rowSub: { fontSize: 13, color: glass.textSecondary },
     rowAction: { fontSize: 14, fontWeight: '600' },
+    rowActionPressed: { opacity: 0.5 },
 
     settingsButton: {
       height: 54,

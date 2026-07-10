@@ -33,10 +33,7 @@ export default function L2DaysStep({ answers, onAnswer, onSkip, onBack }: StepPr
       footer={<PrimaryButton label={t('onboarding.continue')} onPress={() => onAnswer({ days })} />}
     >
       <View style={styles.center}>
-        <Text style={[styles.count, { color: colors.accent }]}>
-          {t('onboarding.l2.days', { count: days })}
-        </Text>
-        <View style={styles.stepper}>
+        <View style={styles.stepperRow}>
           <Pressable
             accessibilityRole="button"
             disabled={days <= MIN_DAYS}
@@ -45,6 +42,9 @@ export default function L2DaysStep({ answers, onAnswer, onSkip, onBack }: StepPr
           >
             <Text style={[styles.stepBtnText, { color: colors.textPrimary }]}>−</Text>
           </Pressable>
+          <Text style={[styles.count, { color: colors.accent }]}>
+            {t('onboarding.l2.days', { count: days })}
+          </Text>
           <Pressable
             accessibilityRole="button"
             disabled={days >= MAX_DAYS}
@@ -60,9 +60,10 @@ export default function L2DaysStep({ answers, onAnswer, onSkip, onBack }: StepPr
 }
 
 const styles = StyleSheet.create({
-  center: { alignItems: 'center', justifyContent: 'center', marginTop: 24, gap: 28 },
-  count: { fontSize: 60, fontWeight: '800', textAlign: 'center' },
-  stepper: { flexDirection: 'row', alignItems: 'center', gap: 28 },
+  center: { alignItems: 'center', justifyContent: 'center', marginTop: 48 },
+  // − [ days ] + on one line: number centered, steppers pinned to the sides.
+  stepperRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 20 },
+  count: { minWidth: 140, fontSize: 56, fontWeight: '800', textAlign: 'center' },
   stepBtn: {
     width: 56,
     height: 56,

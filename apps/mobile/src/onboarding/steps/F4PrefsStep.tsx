@@ -37,16 +37,6 @@ const TILE_COLOR: Record<PrefOption, string> = {
   nightlife: '#5C4CC4',
 };
 
-// Secondary label under the title — purely a visual hierarchy cue.
-const SUBLABEL: Record<PrefOption, string> = {
-  food: 'Food',
-  sights: 'Sights',
-  shopping: 'Shopping',
-  nature: 'Nature',
-  culture: 'Culture',
-  nightlife: 'Nightlife',
-};
-
 export default function F4PrefsStep({ answers, onAnswer, onSkip, onBack }: StepProps) {
   const { t } = useTranslation();
   const [selected, setSelected] = useState<string[]>(answers.prefs ?? []);
@@ -81,7 +71,6 @@ export default function F4PrefsStep({ answers, onAnswer, onSkip, onBack }: StepP
               emoji={EMOJI[opt]}
               tileColor={TILE_COLOR[opt]}
               title={t(LABEL_KEY[opt])}
-              subtitle={SUBLABEL[opt]}
               selected={selected.includes(opt)}
               onPress={() => toggle(opt)}
             />

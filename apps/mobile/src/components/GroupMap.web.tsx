@@ -36,7 +36,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
 
       {gathering && (
         <View style={[styles.row, styles.gathering]}>
-          <Text style={styles.emoji}>🏮</Text>
+          <Text style={styles.emoji}>🚩</Text>
           <View style={styles.rowText}>
             <Text style={styles.title}>{gathering.title}</Text>
             <Text style={styles.sub}>

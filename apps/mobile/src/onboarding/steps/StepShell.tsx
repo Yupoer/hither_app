@@ -33,6 +33,7 @@ export default function StepShell({
   onSkip,
   footer,
   children,
+  background,
 }: {
   step: StepId;
   role: OnboardingRole | undefined;
@@ -44,6 +45,8 @@ export default function StepShell({
   onSkip: () => void;
   footer?: React.ReactNode;
   children: React.ReactNode;
+  /** Override the screen background (defaults to the active theme's). */
+  background?: string;
 }) {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
@@ -62,7 +65,7 @@ export default function StepShell({
     <View
       style={[
         styles.fill,
-        { backgroundColor: colors.background, paddingTop: insets.top + 12 },
+        { backgroundColor: background ?? colors.background, paddingTop: insets.top + 12 },
       ]}
     >
       <View style={styles.header}>

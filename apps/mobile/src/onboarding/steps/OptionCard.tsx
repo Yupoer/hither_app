@@ -62,9 +62,16 @@ export default function OptionCard({
         </View>
       ) : null}
       <View style={styles.textCol}>
-        <Text style={[styles.title, { color: colors.textPrimary }]}>{title}</Text>
+        <Text style={[styles.title, { color: colors.textPrimary }]} numberOfLines={1}>
+          {title}
+        </Text>
         {subtitle ? (
-          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{subtitle}</Text>
+          <Text
+            style={[styles.subtitle, { color: colors.textSecondary }]}
+            numberOfLines={1}
+          >
+            {subtitle}
+          </Text>
         ) : null}
       </View>
       <View

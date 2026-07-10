@@ -133,6 +133,10 @@ const zh = {
   'subgroup.selfSplitName': '{name} 的小隊',
   'subgroup.createTeam': '建立小隊',
   'subgroup.leaveTeam': '離開小隊',
+  'subgroup.leaveWarnTitle': '提醒',
+  'subgroup.leaveWarnBody': '當脫離組隊伍時，不會顯示集合點卡片',
+  'subgroup.leaveWarnDontShow': '下次不要再顯示',
+  'subgroup.leaveWarnConfirm': '確認',
   'subgroup.inviteAction': '邀請加入',
   'subgroup.inviteTitle': '邀請成員',
   'subgroup.inviteEmpty': '目前沒有可邀請的成員。',
@@ -307,6 +311,10 @@ const zh = {
 
   'onboarding.l3.title': '什麼時候出發？',
   'onboarding.l3.now': '我現在就要用',
+  'onboarding.l3.optNow': '現在就要',
+  'onboarding.l3.opt3days': '三天後出發',
+  'onboarding.l3.optWeek': '一週後出發',
+  'onboarding.l3.optCustom': '自訂時間',
   'onboarding.l3.countdown': '距出發還有 {days} 天',
 
   'onboarding.f1.title': '自由活動時，你通常會…',
@@ -533,6 +541,10 @@ const en: Record<keyof typeof zh, string> = {
   'subgroup.selfSplitName': "{name}'s team",
   'subgroup.createTeam': 'Create team',
   'subgroup.leaveTeam': 'Leave team',
+  'subgroup.leaveWarnTitle': 'Heads up',
+  'subgroup.leaveWarnBody': "Leaving the main group hides the gathering-point cards.",
+  'subgroup.leaveWarnDontShow': "Don't show again",
+  'subgroup.leaveWarnConfirm': 'Got it',
   'subgroup.inviteAction': 'Invite',
   'subgroup.inviteTitle': 'Invite members',
   'subgroup.inviteEmpty': 'No one to invite right now.',
@@ -697,6 +709,10 @@ const en: Record<keyof typeof zh, string> = {
 
   'onboarding.l3.title': 'When are you leaving?',
   'onboarding.l3.now': "I need this right now",
+  'onboarding.l3.optNow': 'Right now',
+  'onboarding.l3.opt3days': 'In 3 days',
+  'onboarding.l3.optWeek': 'In a week',
+  'onboarding.l3.optCustom': 'Custom date',
   'onboarding.l3.countdown': '{days} days to go',
 
   'onboarding.f1.title': 'On free time, you usually…',

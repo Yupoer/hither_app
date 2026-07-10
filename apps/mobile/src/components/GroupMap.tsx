@@ -9,8 +9,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import MapView, { Marker, type Region } from 'react-native-maps';
 import type { Coordinates, Destination, MemberLocation } from '../types';
 import { useTheme } from '../state/PreferencesContext';
-import { accentMix, memberColor } from '../glass';
-import CrookIcon from './CrookIcon';
+import { memberColor } from '../glass';
 import type { Palette } from '../theme';
 
 /** Imperative handle so the screen can drive the map camera. */
@@ -115,14 +114,11 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
           coordinate={gathering.coordinates}
           title={gathering.title}
           description="下一個集合點 · gathering point"
-          anchor={{ x: 0.5, y: 0.9 }}
+          // Flag pole sits at the emoji's lower-left, so anchor there to pin
+          // the flag base on the exact coordinate (Apple-Maps-style small icon).
+          anchor={{ x: 0.28, y: 0.95 }}
         >
-          <View style={styles.crookMarker}>
-            {/* Pulse ring + soft glow behind the active gathering crook. */}
-            <View style={[styles.crookRing, { borderColor: accentMix(colors.accent, 50) }]} />
-            <View style={[styles.crookGlow, { backgroundColor: accentMix(colors.accent, 30) }]} />
-            <CrookIcon size={40} color={colors.accent} glow />
-          </View>
+          <Text style={styles.flagMarker}>🚩</Text>
         </Marker>
       )}
 
@@ -173,21 +169,8 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
 });
 
 const makeStyles = (colors: Palette) => StyleSheet.create({
-  crookMarker: { width: 138, height: 138, alignItems: 'center', justifyContent: 'center' },
-  crookRing: {
-    position: 'absolute',
-    width: 130,
-    height: 130,
-    borderRadius: 65,
-    borderWidth: 1.5,
-    borderStyle: 'dashed',
-  },
-  crookGlow: {
-    position: 'absolute',
-    width: 62,
-    height: 62,
-    borderRadius: 31,
-  },
+  // Small Apple-Maps-style flag pin — no oversized pulse ring/glow.
+  flagMarker: { fontSize: 30 },
   pinWrap: { alignItems: 'center', gap: 4 },
   pinLabel: {
     paddingHorizontal: 8,
