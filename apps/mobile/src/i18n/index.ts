@@ -341,6 +341,11 @@ const zh = {
   'onboarding.c3.sharedItinerary': '行程共編',
   'onboarding.c3.tripRecap': '旅程回顧',
 
+  // History (visited waypoints)
+  'history.title': '歷史行程',
+  'history.open': '查看歷史行程',
+  'history.empty': '還沒有抵達紀錄。',
+
   // Straggler alerts
   'straggler.section': '脫隊示警',
   'straggler.notifyTitle': '脫隊提醒',
@@ -708,6 +713,11 @@ const en: Record<keyof typeof zh, string> = {
   'onboarding.c3.meetReminders': 'Meet-up reminders',
   'onboarding.c3.sharedItinerary': 'Shared itinerary',
   'onboarding.c3.tripRecap': 'Trip recap',
+
+  // History (visited waypoints)
+  'history.title': 'Trip history',
+  'history.open': 'View trip history',
+  'history.empty': 'No arrivals recorded yet.',
 
   // Straggler alerts
   'straggler.section': 'Straggler alerts',

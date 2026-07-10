@@ -63,11 +63,14 @@ import {
 } from '../utils/geo';
 import { dotWindow } from '../utils/pagination';
 import { minutesUntil } from '../utils/meetTime';
+import { groupHistoryByDay, type HistoryDayGroup } from '../utils/history';
 import { liquidGlass, location, notifications, type MapRegion, type PlaceResult } from '../native';
 import {
   addDestination,
   deleteDestination,
+  fetchVisitedWaypoints,
   inviteToSubgroup,
+  recordVisitedWaypoint,
   reorderDestinations,
   saveOnboardingProfile,
   selfMerge,
@@ -182,12 +185,24 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [insets.top, windowHeight, sheetHeaderH]);
   const heightSV = useSharedValue(detents[0]);
   const [detent, setDetent] = useState(0);
-  const [overlay, setOverlay] = useState<null | 'route' | 'settings' | 'profile' | 'feedback'>(
-    null,
-  );
+  const [overlay, setOverlay] = useState<
+    null | 'route' | 'settings' | 'profile' | 'feedback' | 'history'
+  >(null);
   // Screenshot captured the instant the feedback entry is tapped (before the
   // form opens over the screen), handed to the sheet as evidence.
   const [feedbackShot, setFeedbackShot] = useState<string | null>(null);
+  // Visited-waypoint history — fetched fresh each time the overlay opens.
+  const [historyGroups, setHistoryGroups] = useState<HistoryDayGroup[]>([]);
+  useEffect(() => {
+    if (overlay !== 'history') return;
+    let cancelled = false;
+    void fetchVisitedWaypoints().then((items) => {
+      if (!cancelled) setHistoryGroups(groupHistoryByDay(items));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [overlay]);
   // "Invite a teammate" picker, opened from my own subgroup card.
   const [inviteSheetOpen, setInviteSheetOpen] = useState(false);
   const [searchVisible, setSearchVisible] = useState(false);
@@ -489,6 +504,7 @@ export default function MapScreen({ route, navigation }: Props) {
       const arrivedId = navTarget.id;
       const arrivedTitle = navTarget.title;
       const nextDest = destinations.find((d) => d.id !== arrivedId);
+      void recordVisitedWaypoint(groupId, arrivedTitle, navTarget.coordinates);
       void notifications.scheduleLocalNotification({
         title: t('map.arriveTitle'),
         body: nextDest
@@ -1646,6 +1662,15 @@ export default function MapScreen({ route, navigation }: Props) {
               palette so the toggles recolour when the theme changes. */}
           <NotificationPreferencesCard colors={{ ...dark, accent }} />
 
+          <Text style={styles.sectionLabel}>{t('history.title')}</Text>
+          <Pressable
+            style={styles.accountBtn}
+            onPress={() => setOverlay('history')}
+            accessibilityRole="button"
+          >
+            <Text style={[styles.accountBtnText, { color: accent }]}>{t('history.open')}</Text>
+          </Pressable>
+
           <View style={styles.settingsSectionHeaderRow}>
             <Text style={styles.sectionLabel}>{t('account.section')}</Text>
             <Pressable
@@ -1840,6 +1865,54 @@ export default function MapScreen({ route, navigation }: Props) {
             ))}
           </View>
           <Text style={styles.overlayHint}>{t('profile.syncHint')}</Text>
+        </ScrollView>
+      </OverlaySheet>
+
+      {/* History overlay: gathering points actually reached, grouped by day. */}
+      <OverlaySheet
+        visible={overlay === 'history'}
+        onClose={() => setOverlay(null)}
+        title={t('history.title')}
+        accent={accent}
+        doneLabel={t('map.done')}
+      >
+        <ScrollView contentContainerStyle={styles.overlayBody}>
+          {historyGroups.length === 0 ? (
+            <Text style={styles.overlayHint}>{t('history.empty')}</Text>
+          ) : (
+            historyGroups.map((group) => {
+              const [y, m, dNum] = group.day.split('-').map(Number);
+              const dayLabel = new Date(y, m - 1, dNum).toLocaleDateString();
+              return (
+                <View key={group.day} style={styles.historyDayBlock}>
+                  <Text style={styles.sectionLabel}>{dayLabel}</Text>
+                  <View style={styles.list}>
+                    {group.items.map((item, i) => (
+                      <View
+                        key={item.id}
+                        style={[
+                          styles.flockRow,
+                          i === group.items.length - 1 && styles.flockRowLast,
+                        ]}
+                      >
+                        <View style={styles.flockRowMain}>
+                          <View style={styles.grow}>
+                            <Text style={styles.flockName}>{item.name}</Text>
+                          </View>
+                          <Text style={styles.historyTime}>
+                            {new Date(item.arrivedAt).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              );
+            })
+          )}
         </ScrollView>
       </OverlaySheet>
 
@@ -2384,6 +2457,13 @@ const makeStyles = (accent: string) =>
       marginBottom: 8,
       marginLeft: 4,
       marginTop: 4,
+    },
+    historyDayBlock: { marginBottom: 16 },
+    historyTime: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: glass.textSecondary,
+      fontVariant: ['tabular-nums'],
     },
     settingSwitchRow: {
       flexDirection: 'row',

@@ -26,6 +26,7 @@ import type {
   Subgroup,
   SubgroupInvite,
   SubgroupMode,
+  VisitedWaypoint,
 } from '../types';
 import { DEFAULT_NOTIFICATION_PREFERENCES } from '../types';
 
@@ -466,6 +467,54 @@ export async function deleteDestination(
   if (ids.length > 0) {
     await reorderDestinations(groupId, ids);
   }
+}
+
+/**
+ * Record a gathering point the user just reached, for the personal "歷史行程"
+ * list. Best-effort and personal (not group-scoped) — skipped for demo groups,
+ * which have no backing table row to attach to.
+ */
+export async function recordVisitedWaypoint(
+  groupId: string,
+  name: string,
+  coordinates: Coordinates,
+): Promise<void> {
+  if (isDemoGroup(groupId)) return;
+  const { data } = await supabase.auth.getUser();
+  const userId = data.user?.id;
+  if (!userId) return;
+  const { error } = await supabase.from('visited_waypoints').insert({
+    user_id: userId,
+    name,
+    latitude: coordinates.latitude,
+    longitude: coordinates.longitude,
+  });
+  orThrow(error);
+}
+
+/** The signed-in user's visited-waypoint history, most recent first. */
+export async function fetchVisitedWaypoints(): Promise<VisitedWaypoint[]> {
+  const { data: userData } = await supabase.auth.getUser();
+  const userId = userData.user?.id;
+  if (!userId) return [];
+  const { data, error } = await supabase
+    .from('visited_waypoints')
+    .select('id, name, latitude, longitude, arrived_at')
+    .eq('user_id', userId)
+    .order('arrived_at', { ascending: false });
+  orThrow(error);
+  return ((data ?? []) as {
+    id: string;
+    name: string;
+    latitude: number;
+    longitude: number;
+    arrived_at: string;
+  }[]).map((row) => ({
+    id: row.id,
+    name: row.name,
+    coordinates: { latitude: row.latitude, longitude: row.longitude },
+    arrivedAt: row.arrived_at,
+  }));
 }
 
 /**
