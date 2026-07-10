@@ -80,5 +80,7 @@ export function useLiveActivity(active: boolean, state: GroupActivityState): voi
     state.memberCount,
     state.gatheringTitle,
     state.groupName,
+    state.accentHex,
+    state.travelMode,
   ]);
 }

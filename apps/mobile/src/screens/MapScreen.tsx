@@ -106,6 +106,10 @@ const AUTO_ADVANCE_RADIUS_M = 50;
 // Cap on gathering-point pagination dots shown at once (see utils/pagination.ts).
 const DOTS_MAX_VISIBLE = 5;
 
+/** The design's display face — Fredoka (loaded in App.tsx). Used for
+ * gathering-point titles, ETA numerals and the set-gather-time. */
+const DISPLAY_FONT = 'Fredoka_600SemiBold';
+
 /** Preset straggler-alert distance chips shown in settings. */
 const STRAGGLER_THRESHOLD_OPTIONS = [300, 500, 1000, 2000];
 
@@ -445,6 +449,9 @@ export default function MapScreen({ route, navigation }: Props) {
     progress: liveProgress,
     gatheredCount: liveGathered,
     memberCount: members.length,
+    accentHex: accent,
+    travelMode,
+    memberEmojis: members.map((m) => m.avatar ?? ''),
   });
 
   // ponytail: temporary hand-off to Apple Maps until native routing (MKDirections,
@@ -1200,12 +1207,47 @@ export default function MapScreen({ route, navigation }: Props) {
                       : t('meetTime.overdue', { minutes: Math.abs(mins) });
                   })()
                 : null;
+              // Team arrival toward THIS stop — how many of the flock are
+              // already within the arrival radius. Drives the top hairline and
+              // the "隊伍抵達進度" caption (design 1b).
+              const arrivedHere = members.filter(
+                (m) =>
+                  m.coordinates &&
+                  distanceMeters(m.coordinates, dest.coordinates) <= ARRIVAL_RADIUS_M,
+              ).length;
+              const totalMembers = members.length;
+              const arrivalPct = totalMembers
+                ? Math.round((arrivedHere / totalMembers) * 100)
+                : 0;
+              // Clock face in the compact set-gather-time square: the set time
+              // (HH:MM) or "——" when unset.
+              const meetShort = dest.meetAt
+                ? new Date(dest.meetAt as string).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })
+                : '——';
+              const modeIconName =
+                travelMode === 'walk'
+                  ? 'walk-outline'
+                  : travelMode === 'drive'
+                    ? 'car-outline'
+                    : 'bus-outline';
               return (
                 <View key={dest.id} style={{ width: windowWidth, paddingHorizontal: 14 }}>
                   <liquidGlass.GlassView
                     tintColor={active ? glass.cardActive : glass.card}
                     style={[styles.card, active && { borderColor: accentMix(accent, 50) }]}
                   >
+                    {/* Top arrival hairline — team progress toward this stop. */}
+                    <View style={styles.arrivalHairline}>
+                      <View
+                        style={[
+                          styles.arrivalHairlineFill,
+                          { width: `${arrivalPct}%`, backgroundColor: accent },
+                        ]}
+                      />
+                    </View>
                     <View style={styles.cardHead}>
                       <View style={[styles.cardIcon, { backgroundColor: accentMix(accent, 22), borderColor: accentMix(accent, 45) }]}>
                         <CrookIcon size={26} color={accent} />
@@ -1219,9 +1261,7 @@ export default function MapScreen({ route, navigation }: Props) {
                           {dest.title}
                         </Text>
                         {myScopeId != null && (
-                          <Text style={{ color: glass.textSecondary, fontSize: 11 }}>
-                            {t('subgroup.itineraryBadge')}
-                          </Text>
+                          <Text style={styles.cardBadge}>{t('subgroup.itineraryBadge')}</Text>
                         )}
                       </View>
                       {/* Pagination — lives inside the card now that the
@@ -1242,9 +1282,22 @@ export default function MapScreen({ route, navigation }: Props) {
                         </View>
                       )}
                     </View>
-                    <View style={styles.cardActions}>
+                    {/* Arrival caption — mirrors the top hairline in words. */}
+                    <View style={styles.arrivalCaption}>
+                      <Text style={styles.arrivalCaptionLabel}>{t('map.arrivalProgress')}</Text>
+                      <Text style={[styles.arrivalCaptionValue, { color: accent }]}>
+                        {arrivedHere} / {totalMembers}
+                      </Text>
+                    </View>
+
+                    {/* One command row: nav toggle · transit (cycles mode, shows
+                        live time·distance) · Apple Maps hand-off · gather-time. */}
+                    <View style={styles.commandRow}>
                       <Pressable
-                        style={[styles.directions, { backgroundColor: accentMix(accent, 26), borderColor: accentMix(accent, 50) }]}
+                        style={[
+                          styles.navBtn,
+                          navigatingThis ? styles.navBtnEnd : { backgroundColor: accent },
+                        ]}
                         onPress={() => {
                           if (navigatingThis) {
                             void stopNavigation();
@@ -1260,8 +1313,17 @@ export default function MapScreen({ route, navigation }: Props) {
                         disabled={journeyBusy}
                         accessibilityRole="button"
                       >
-                        <CrookIcon size={16} color={accent} />
-                        <Text style={styles.directionsText}>
+                        <Ionicons
+                          name={navigatingThis ? 'stop' : isLeader ? 'play' : 'navigate'}
+                          size={15}
+                          color={navigatingThis ? glass.danger : '#0c1a12'}
+                        />
+                        <Text
+                          style={[
+                            styles.navBtnText,
+                            { color: navigatingThis ? glass.danger : '#0c1a12' },
+                          ]}
+                        >
                           {navigatingThis
                             ? t('map.stopNav')
                             : isLeader
@@ -1269,62 +1331,41 @@ export default function MapScreen({ route, navigation }: Props) {
                               : t('map.viewOnMap')}
                         </Text>
                       </Pressable>
+
                       <Pressable
-                        style={styles.appleMapsBtn}
+                        style={[
+                          styles.transitPill,
+                          { backgroundColor: accentMix(accent, 16), borderColor: accentMix(accent, 38) },
+                        ]}
+                        onPress={() => {
+                          const order = ['walk', 'transit', 'drive'] as const;
+                          setTravelMode(order[(order.indexOf(travelMode) + 1) % order.length]);
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel={t(`map.travelMode.${travelMode}`)}
+                      >
+                        <View style={styles.transitPillTop}>
+                          <Ionicons name={modeIconName} size={16} color={accent} />
+                          <Text style={styles.transitPillTime}>
+                            {d != null ? shortEta(etaSecondsFor(d, travelMode)) : '—'}
+                          </Text>
+                        </View>
+                        <Text style={styles.transitPillDist}>
+                          {d != null ? formatDistance(d) : ''}
+                        </Text>
+                      </Pressable>
+
+                      <Pressable
+                        style={styles.cmdSquare}
                         onPress={() => openInAppleMaps(dest)}
                         accessibilityRole="button"
                         accessibilityLabel={t('map.openInAppleMaps')}
                       >
                         <Ionicons name="open-outline" size={18} color={glass.textSecondary} />
                       </Pressable>
-                      <View style={styles.etaPill}>
-                        <Text style={styles.etaPillEta}>
-                          {d != null ? shortEta(etaSecondsFor(d, travelMode)) : '—'}
-                        </Text>
-                        {d != null && (
-                          <Text style={styles.etaPillDist}>{formatDistance(d)}</Text>
-                        )}
-                      </View>
-                    </View>
-                    <View style={styles.travelModeRow}>
-                      {(['walk', 'drive', 'transit'] as const).map((mode) => (
-                        <Pressable
-                          key={mode}
-                          onPress={() => setTravelMode(mode)}
-                          style={[
-                            styles.travelModeBtn,
-                            travelMode === mode && {
-                              backgroundColor: accentMix(accent, 26),
-                              borderColor: accentMix(accent, 50),
-                            },
-                          ]}
-                          accessibilityRole="button"
-                          accessibilityState={{ selected: travelMode === mode }}
-                          accessibilityLabel={t(`map.travelMode.${mode}`)}
-                        >
-                          <Ionicons
-                            name={
-                              mode === 'walk'
-                                ? 'walk-outline'
-                                : mode === 'drive'
-                                  ? 'car-outline'
-                                  : 'bus-outline'
-                            }
-                            size={16}
-                            color={travelMode === mode ? accent : glass.textSecondary}
-                          />
-                        </Pressable>
-                      ))}
-                    </View>
-                    {(meetLabel || canEditItinerary) && (
+
                       <Pressable
-                        style={[
-                          styles.meetTimeBtn,
-                          meetLabel && {
-                            backgroundColor: accentMix(accent, 20),
-                            borderColor: accentMix(accent, 45),
-                          },
-                        ]}
+                        style={styles.cmdSquare}
                         onPress={() => openMeetTimePicker(dest)}
                         disabled={!canEditItinerary}
                         accessibilityRole="button"
@@ -1332,19 +1373,17 @@ export default function MapScreen({ route, navigation }: Props) {
                       >
                         <Ionicons
                           name="time-outline"
-                          size={15}
+                          size={16}
                           color={meetLabel ? accent : glass.textSecondary}
                         />
                         <Text
-                          style={[
-                            styles.meetTimeText,
-                            meetLabel ? { color: accent, fontWeight: '700' } : null,
-                          ]}
+                          style={[styles.cmdSquareLabel, meetLabel ? { color: accent } : null]}
+                          numberOfLines={1}
                         >
-                          {meetLabel ?? t('meetTime.set')}
+                          {meetShort}
                         </Text>
                       </Pressable>
-                    )}
+                    </View>
                   </liquidGlass.GlassView>
                 </View>
               );
@@ -2227,12 +2266,23 @@ const makeStyles = (accent: string) =>
 
     carouselWrap: { position: 'absolute', left: 0, right: 0, zIndex: 58 },
     card: {
-      borderRadius: 22,
+      borderRadius: 24,
       overflow: 'hidden',
-      padding: 15,
+      padding: 14,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairline,
     },
+    // Top arrival hairline (design 1b) — full-bleed above the padded content.
+    arrivalHairline: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      height: 3,
+      backgroundColor: 'rgba(255,255,255,0.08)',
+      zIndex: 2,
+    },
+    arrivalHairlineFill: { height: '100%' },
     cardHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
     cardIcon: {
       width: 46,
@@ -2244,74 +2294,57 @@ const makeStyles = (accent: string) =>
     },
     grow: { flex: 1, minWidth: 0 },
     cardKicker: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8 },
-    cardTitle: { fontSize: 18, fontWeight: '600', color: '#fff' },
-    cardActions: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 13 },
-    directions: {
+    cardTitle: { fontFamily: DISPLAY_FONT, fontSize: 20, color: '#fff', lineHeight: 23 },
+    cardBadge: { color: glass.textSecondary, fontSize: 11, marginTop: 1 },
+
+    // Arrival caption row (design 1b) — "隊伍抵達進度 · X / Y".
+    arrivalCaption: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 11, paddingLeft: 2 },
+    arrivalCaptionLabel: { fontSize: 12.5, color: glass.textSecondary },
+    arrivalCaptionValue: { fontFamily: DISPLAY_FONT, fontSize: 13, fontVariant: ['tabular-nums'] },
+
+    // The single command row and its four controls.
+    commandRow: { flexDirection: 'row', alignItems: 'stretch', gap: 8, marginTop: 10 },
+    navBtn: {
       flex: 1,
-      height: 44,
-      borderRadius: 13,
+      minWidth: 0,
+      height: 54,
+      borderRadius: 15,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
       gap: 8,
       borderWidth: StyleSheet.hairlineWidth,
-    },
-    directionsText: { fontSize: 15, fontWeight: '600', color: '#fff' },
-    // Secondary action: hand off to the real Apple Maps app for turn-by-turn —
-    // the main "directions" button stays in-app (journey state + Live Activity).
-    appleMapsBtn: {
-      width: 44,
-      height: 44,
-      borderRadius: 13,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: glass.fill,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: glass.hairline,
-    },
-    etaPill: {
-      paddingHorizontal: 16,
-      paddingVertical: 6,
-      borderRadius: 13,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: glass.fillStrong,
-    },
-    etaPillEta: { fontSize: 15, fontWeight: '700', color: '#fff', fontVariant: ['tabular-nums'] },
-    etaPillDist: {
-      fontSize: 12,
-      fontWeight: '600',
-      color: glass.textSecondary,
-      fontVariant: ['tabular-nums'],
-      marginTop: 1,
-    },
-    // Compact walk/drive/transit switcher below the nav row.
-    travelModeRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
-    travelModeBtn: {
-      width: 40,
-      height: 32,
-      borderRadius: 10,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: glass.fill,
-      borderWidth: StyleSheet.hairlineWidth,
       borderColor: 'transparent',
     },
-    // Prominent capsule pinned at the card's foot (kept compact so the card
-    // height barely moves — see the straggler banner's fixed top offset).
-    meetTimeBtn: {
-      flexDirection: 'row',
+    // "End navigation" state — a soft danger tint over the accent-solid "go".
+    navBtnEnd: { backgroundColor: 'rgba(255,107,107,0.14)', borderColor: 'rgba(255,107,107,0.4)' },
+    navBtnText: { fontSize: 15, fontWeight: '700' },
+    // Transit pill: tap to cycle mode; shows the live time · distance for it.
+    transitPill: {
+      width: 92,
+      height: 54,
+      borderRadius: 15,
       alignItems: 'center',
       justifyContent: 'center',
-      gap: 7,
-      height: 32,
-      borderRadius: 11,
-      marginTop: 12,
-      backgroundColor: glass.fill,
+      gap: 1,
+      borderWidth: StyleSheet.hairlineWidth,
+    },
+    transitPillTop: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+    transitPillTime: { fontFamily: DISPLAY_FONT, fontSize: 15, color: '#fff', fontVariant: ['tabular-nums'] },
+    transitPillDist: { fontSize: 10.5, color: glass.textSecondary, fontVariant: ['tabular-nums'] },
+    // Square secondary controls (Apple-Maps hand-off, gather-time clock).
+    cmdSquare: {
+      width: 54,
+      height: 54,
+      borderRadius: 15,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 2,
+      backgroundColor: 'rgba(255,255,255,0.09)',
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairline,
     },
-    meetTimeText: { fontSize: 13, fontWeight: '600', color: glass.textSecondary },
+    cmdSquareLabel: { fontSize: 10, fontWeight: '700', color: glass.textSecondary, fontVariant: ['tabular-nums'] },
     // Meet-time editor sheet: roomy, full-width controls (not the old cramped
     // left-aligned chips).
     meetEditorBody: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 40, gap: 14 },
@@ -2336,7 +2369,7 @@ const makeStyles = (accent: string) =>
     meetClearText: { fontSize: 17, fontWeight: '600', color: glass.textSecondary },
     dots: { flexDirection: 'row', gap: 6, alignItems: 'center' },
     dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.35)' },
-    dotActive: { width: 20, backgroundColor: accent },
+    dotActive: { width: 18, backgroundColor: accent },
 
     // Sheet content
     // Slim Apple-Maps search capsule, pinned inside the sheet's frosted

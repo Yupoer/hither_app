@@ -8,6 +8,7 @@ import {
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { useFonts, Fredoka_500Medium, Fredoka_600SemiBold } from '@expo-google-fonts/fredoka';
 import RootNavigator from './src/navigation/RootNavigator';
 import OnboardingScreen from './src/onboarding/OnboardingScreen';
 import { readOnboardingState } from './src/onboarding/sync';
@@ -28,6 +29,10 @@ import {
 function ThemedNavigation() {
   const { colors, themeName } = useTheme();
   const { initializing, user, membership } = useSession();
+  // Fredoka is the design's display face (gathering-point titles, ETA numerals,
+  // Live Activity numbers). Held alongside the session/onboarding splash so the
+  // first screen never flashes system font before Fredoka swaps in.
+  const [fontsLoaded] = useFonts({ Fredoka_500Medium, Fredoka_600SemiBold });
   // Register this device for APNs once signed in (no-op until a Dev Build);
   // also asks notification permission, which the local-notification flow needs.
   usePushRegistration();
@@ -73,7 +78,7 @@ function ThemedNavigation() {
   // are resolved, so RootNavigator's initialRouteName sees the correct
   // logged-in/out state (a restored user skips Login) instead of flashing
   // the wrong first screen.
-  if (initializing || needsOnboarding === null) {
+  if (initializing || needsOnboarding === null || !fontsLoaded) {
     return (
       <View
         style={{

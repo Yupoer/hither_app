@@ -28,6 +28,13 @@ public struct HitherGroupAttributes: ActivityAttributes {
     public var gatheredCount: Int?
     /// Total members in the group (for the avatar stack).
     public var memberCount: Int?
+    /// Active theme accent as a hex string ("#F5B142") — the widget tints with
+    /// this so the Live Activity follows the app's theme colour.
+    public var accentHex: String?
+    /// Travel mode ("walk" | "transit" | "drive") for the transit glyph.
+    public var travelMode: String?
+    /// Member avatar emojis for the flock stack ("" = no emoji).
+    public var memberEmojis: [String]?
 
     public init(
       gatheringTitle: String? = nil,
@@ -35,7 +42,10 @@ public struct HitherGroupAttributes: ActivityAttributes {
       etaSeconds: Double? = nil,
       progress: Double? = nil,
       gatheredCount: Int? = nil,
-      memberCount: Int? = nil
+      memberCount: Int? = nil,
+      accentHex: String? = nil,
+      travelMode: String? = nil,
+      memberEmojis: [String]? = nil
     ) {
       self.gatheringTitle = gatheringTitle
       self.distanceMeters = distanceMeters
@@ -43,6 +53,9 @@ public struct HitherGroupAttributes: ActivityAttributes {
       self.progress = progress
       self.gatheredCount = gatheredCount
       self.memberCount = memberCount
+      self.accentHex = accentHex
+      self.travelMode = travelMode
+      self.memberEmojis = memberEmojis
     }
 
     /// Build a ContentState from the loosely-typed dict the JS bridge sends.
@@ -53,6 +66,9 @@ public struct HitherGroupAttributes: ActivityAttributes {
       self.progress = (state["progress"] as? NSNumber)?.doubleValue
       self.gatheredCount = (state["gatheredCount"] as? NSNumber)?.intValue
       self.memberCount = (state["memberCount"] as? NSNumber)?.intValue
+      self.accentHex = state["accentHex"] as? String
+      self.travelMode = state["travelMode"] as? String
+      self.memberEmojis = state["memberEmojis"] as? [String]
     }
 
     /// "320 m" / "1.2 km" — matches the in-app carousel's formatting.
