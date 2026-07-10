@@ -25,46 +25,51 @@ export default function L2DaysStep({ answers, onAnswer, onSkip, onBack }: StepPr
     <StepShell
       step="L2_days"
       role={answers.role}
+      kicker={t('onboarding.l2.kicker')}
       title={t('onboarding.l2.title')}
+      subtitle={t('onboarding.l2.subtitle')}
       onBack={onBack}
       onSkip={onSkip}
-      footer={<PrimaryButton label={t('onboarding.next')} onPress={() => onAnswer({ days })} />}
+      footer={<PrimaryButton label={t('onboarding.continue')} onPress={() => onAnswer({ days })} />}
     >
-      <View style={styles.stepper}>
-        <Pressable
-          accessibilityRole="button"
-          disabled={days <= MIN_DAYS}
-          onPress={() => change(-1)}
-          style={[styles.stepBtn, { borderColor: colors.border }]}
-        >
-          <Text style={[styles.stepBtnText, { color: colors.textPrimary }]}>−</Text>
-        </Pressable>
+      <View style={styles.center}>
         <Text style={[styles.count, { color: colors.accent }]}>
           {t('onboarding.l2.days', { count: days })}
         </Text>
-        <Pressable
-          accessibilityRole="button"
-          disabled={days >= MAX_DAYS}
-          onPress={() => change(1)}
-          style={[styles.stepBtn, { borderColor: colors.border }]}
-        >
-          <Text style={[styles.stepBtnText, { color: colors.textPrimary }]}>+</Text>
-        </Pressable>
+        <View style={styles.stepper}>
+          <Pressable
+            accessibilityRole="button"
+            disabled={days <= MIN_DAYS}
+            onPress={() => change(-1)}
+            style={[styles.stepBtn, { borderColor: colors.border, opacity: days <= MIN_DAYS ? 0.4 : 1 }]}
+          >
+            <Text style={[styles.stepBtnText, { color: colors.textPrimary }]}>−</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            disabled={days >= MAX_DAYS}
+            onPress={() => change(1)}
+            style={[styles.stepBtn, { borderColor: colors.border, opacity: days >= MAX_DAYS ? 0.4 : 1 }]}
+          >
+            <Text style={[styles.stepBtnText, { color: colors.textPrimary }]}>+</Text>
+          </Pressable>
+        </View>
       </View>
     </StepShell>
   );
 }
 
 const styles = StyleSheet.create({
-  stepper: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 24, marginTop: 40 },
+  center: { alignItems: 'center', justifyContent: 'center', marginTop: 24, gap: 28 },
+  count: { fontSize: 60, fontWeight: '800', textAlign: 'center' },
+  stepper: { flexDirection: 'row', alignItems: 'center', gap: 28 },
   stepBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     borderWidth: StyleSheet.hairlineWidth * 2,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  stepBtnText: { fontSize: 24, fontWeight: '600' },
-  count: { fontSize: 32, fontWeight: '700', minWidth: 110, textAlign: 'center' },
+  stepBtnText: { fontSize: 28, fontWeight: '600' },
 });

@@ -9,10 +9,19 @@ const LABEL_KEY: Record<CompanionOption, TranslationKey> = {
   colleagues: 'onboarding.c2.colleagues',
 };
 
+const EMOJI: Record<CompanionOption, string> = {
+  family: '👨‍👩‍👧',
+  friends: '🧑‍🤝‍🧑',
+  partner: '💑',
+  colleagues: '💼',
+};
+
 export default makeBrowserStep(
   'C2_companions',
   'companions',
+  'onboarding.c2.kicker',
   'onboarding.c2.title',
   COMPANION_OPTIONS,
   LABEL_KEY,
+  EMOJI,
 );

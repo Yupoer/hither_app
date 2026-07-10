@@ -18,6 +18,15 @@ const LABEL_KEY: Record<PrefOption, TranslationKey> = {
   nightlife: 'onboarding.f4.nightlife',
 };
 
+const EMOJI: Record<PrefOption, string> = {
+  food: '🍜',
+  sights: '📸',
+  shopping: '🛍️',
+  nature: '🌿',
+  culture: '🏛️',
+  nightlife: '🌃',
+};
+
 export default function F4PrefsStep({ answers, onAnswer, onSkip, onBack }: StepProps) {
   const { colors } = useTheme();
   const { t } = useTranslation();
@@ -34,6 +43,7 @@ export default function F4PrefsStep({ answers, onAnswer, onSkip, onBack }: StepP
     <StepShell
       step="F4_prefs"
       role={answers.role}
+      kicker={t('onboarding.f4.kicker')}
       title={t('onboarding.f4.title')}
       onBack={onBack}
       onSkip={onSkip}
@@ -62,7 +72,7 @@ export default function F4PrefsStep({ answers, onAnswer, onSkip, onBack }: StepP
               ]}
             >
               <Text style={[styles.chipText, { color: colors.textPrimary }]}>
-                {t(LABEL_KEY[opt])}
+                {EMOJI[opt]}  {t(LABEL_KEY[opt])}
               </Text>
             </Pressable>
           );
