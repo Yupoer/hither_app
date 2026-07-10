@@ -9,4 +9,19 @@ const LABEL_KEY: Record<WhyOption, TranslationKey> = {
   curious: 'onboarding.c1.curious',
 };
 
-export default makeBrowserStep('C1_why', 'why', 'onboarding.c1.title', WHY_OPTIONS, LABEL_KEY);
+const EMOJI: Record<WhyOption, string> = {
+  findPeople: '🔍',
+  fearLost: '😰',
+  planTrip: '🗺️',
+  curious: '✨',
+};
+
+export default makeBrowserStep(
+  'C1_why',
+  'why',
+  'onboarding.c1.kicker',
+  'onboarding.c1.title',
+  WHY_OPTIONS,
+  LABEL_KEY,
+  EMOJI,
+);

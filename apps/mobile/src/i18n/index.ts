@@ -260,6 +260,21 @@ const zh = {
   'onboarding.back': '返回',
   'onboarding.continue': '繼續',
 
+  // Step kickers (small uppercase accent label above each title)
+  'onboarding.theme.kicker': '選一個主題',
+  'onboarding.theme.subtitle': '之後隨時能改。',
+  'onboarding.role.kicker': '選擇身分',
+  'onboarding.l1.kicker': '旅行目的',
+  'onboarding.l2.kicker': '旅行天數',
+  'onboarding.l2.subtitle': '用 −／＋ 調整，之後也能改。',
+  'onboarding.l3.kicker': '出發時間',
+  'onboarding.quiz.kicker': '關於你 · 第 {n} / 3 題',
+  'onboarding.f4.kicker': '你的興趣',
+  'onboarding.c1.kicker': '為何用 Hither',
+  'onboarding.c2.kicker': '旅伴',
+  'onboarding.c3.kicker': '最想要的功能',
+  'onboarding.mascot.kicker': '你的旅伴',
+
   'onboarding.intro.title': '牽起隊伍，不再走散',
   'onboarding.intro.body': '像牧羊人一樣，把散開的隊員輕鬆聚回同一個集合點。',
   'onboarding.intro.start': '開始',
@@ -633,6 +648,21 @@ const en: Record<keyof typeof zh, string> = {
   'onboarding.next': 'Next',
   'onboarding.back': 'Back',
   'onboarding.continue': 'Continue',
+
+  // Step kickers (small uppercase accent label above each title)
+  'onboarding.theme.kicker': 'Choose a theme',
+  'onboarding.theme.subtitle': 'Change it anytime.',
+  'onboarding.role.kicker': 'Pick your role',
+  'onboarding.l1.kicker': 'Trip purpose',
+  'onboarding.l2.kicker': 'Trip length',
+  'onboarding.l2.subtitle': 'Adjust with −/+, change it anytime.',
+  'onboarding.l3.kicker': 'Departure',
+  'onboarding.quiz.kicker': 'About you · {n} of 3',
+  'onboarding.f4.kicker': 'Your interests',
+  'onboarding.c1.kicker': 'Why Hither',
+  'onboarding.c2.kicker': 'Travel buddies',
+  'onboarding.c3.kicker': 'Most wanted',
+  'onboarding.mascot.kicker': 'Your mascot',
 
   'onboarding.intro.title': 'Keep your flock together',
   'onboarding.intro.body': 'Like a shepherd, gently guide everyone back to the same gathering point.',

@@ -6,6 +6,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useTheme } from '../../state/PreferencesContext';
+import { accentMix } from '../../glass';
 import { useTranslation } from '../../i18n';
 import { MASCOTS, resolveMascot } from '../content';
 import type { StepProps } from '../types';
@@ -34,6 +35,7 @@ export default function MascotStep({ answers, onAnswer, onSkip, onBack }: StepPr
     <StepShell
       step="mascot"
       role={answers.role}
+      kicker={t('onboarding.mascot.kicker')}
       title={t(mascot.nameKey as never)}
       onBack={onBack}
       onSkip={onSkip}
@@ -45,11 +47,24 @@ export default function MascotStep({ answers, onAnswer, onSkip, onBack }: StepPr
       }
     >
       <Animated.View style={[styles.card, style]}>
-        <Text style={styles.emoji}>{mascot.emoji}</Text>
+        <View
+          style={[
+            styles.slot,
+            {
+              backgroundColor: accentMix(colors.accent, 12),
+              borderColor: accentMix(colors.accent, 45),
+            },
+          ]}
+        >
+          <Text style={styles.emoji}>{mascot.emoji}</Text>
+          <View style={[styles.slotHint, { backgroundColor: accentMix(colors.accent, 18) }]}>
+            <Text style={[styles.slotHintText, { color: colors.accent }]}>插畫待補 · art slot</Text>
+          </View>
+        </View>
         <Text style={[styles.description, { color: colors.textPrimary }]}>
           {t(mascot.descriptionKey as never)}
         </Text>
-        <Text style={[styles.bestLeader, { color: colors.textSecondary }]}>
+        <Text style={[styles.bestLeader, { color: colors.accent }]}>
           {t(mascot.bestLeaderKey as never)}
         </Text>
       </Animated.View>
@@ -58,8 +73,26 @@ export default function MascotStep({ answers, onAnswer, onSkip, onBack }: StepPr
 }
 
 const styles = StyleSheet.create({
-  card: { alignItems: 'center', marginTop: 24 },
-  emoji: { fontSize: 108, textAlign: 'center', marginBottom: 20 },
-  description: { fontSize: 16, fontWeight: '600', marginBottom: 8, textAlign: 'center' },
-  bestLeader: { fontSize: 14, textAlign: 'center' },
+  card: { alignItems: 'center', marginTop: 8 },
+  slot: {
+    width: 180,
+    height: 180,
+    borderRadius: 30,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  emoji: { fontSize: 92, textAlign: 'center' },
+  slotHint: {
+    position: 'absolute',
+    bottom: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  slotHintText: { fontSize: 10.5, fontWeight: '700', letterSpacing: 0.4 },
+  description: { fontSize: 15, fontWeight: '600', marginBottom: 6, textAlign: 'center' },
+  bestLeader: { fontSize: 14, fontWeight: '700', textAlign: 'center' },
 });

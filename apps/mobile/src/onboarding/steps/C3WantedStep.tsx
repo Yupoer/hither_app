@@ -9,10 +9,19 @@ const LABEL_KEY: Record<WantedOption, TranslationKey> = {
   tripRecap: 'onboarding.c3.tripRecap',
 };
 
+const EMOJI: Record<WantedOption, string> = {
+  liveLocation: '📍',
+  meetReminders: '🔔',
+  sharedItinerary: '📝',
+  tripRecap: '📖',
+};
+
 export default makeBrowserStep(
   'C3_wanted',
   'wanted',
+  'onboarding.c3.kicker',
   'onboarding.c3.title',
   WANTED_OPTIONS,
   LABEL_KEY,
+  EMOJI,
 );

@@ -19,6 +19,13 @@ const THEME_LABEL_KEY: Record<ThemeName, TranslationKey> = {
   forest: 'onboarding.theme.forest',
 };
 
+const THEME_EMOJI: Record<ThemeName, string> = {
+  night: '🌙',
+  day: '🌅',
+  dusk: '🌇',
+  forest: '🌲',
+};
+
 export default function ThemeStep({ answers, onAnswer, onSkip, onBack }: StepProps) {
   const { colors } = useTheme();
   const { themeName, setThemeName } = usePreferences();
@@ -33,12 +40,14 @@ export default function ThemeStep({ answers, onAnswer, onSkip, onBack }: StepPro
       <StepShell
         step="theme"
         role={answers.role}
+        kicker={t('onboarding.theme.kicker')}
         title={t('onboarding.theme.title')}
+        subtitle={t('onboarding.theme.subtitle')}
         onBack={onBack}
         onSkip={onSkip}
         footer={
           <PrimaryButton
-            label={t('onboarding.next')}
+            label={t('onboarding.continue')}
             onPress={() => onAnswer({ theme: themeName })}
           />
         }
@@ -65,6 +74,7 @@ export default function ThemeStep({ answers, onAnswer, onSkip, onBack }: StepPro
                   },
                 ]}
               >
+                <Text style={styles.cardEmoji}>{THEME_EMOJI[name]}</Text>
                 <View style={[styles.swatch, { backgroundColor: palette.accent }]} />
                 <Text style={[styles.cardLabel, { color: palette.textPrimary }]}>
                   {t(THEME_LABEL_KEY[name])}
@@ -89,6 +99,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 10,
   },
-  swatch: { width: 32, height: 32, borderRadius: 16 },
+  cardEmoji: { fontSize: 30 },
+  swatch: { width: 28, height: 28, borderRadius: 14 },
   cardLabel: { fontSize: 14, fontWeight: '600' },
 });

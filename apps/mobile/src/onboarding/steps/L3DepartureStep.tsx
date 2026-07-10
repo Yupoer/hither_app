@@ -40,13 +40,14 @@ export default function L3DepartureStep({ answers, onAnswer, onSkip, onBack }: S
     <StepShell
       step="L3_departure"
       role={answers.role}
+      kicker={t('onboarding.l3.kicker')}
       title={t('onboarding.l3.title')}
       onBack={onBack}
       onSkip={onSkip}
       footer={
         <View style={styles.footerStack}>
           <PrimaryButton
-            label={t('onboarding.next')}
+            label={t('onboarding.continue')}
             disabled={!date}
             onPress={() => onAnswer({ departureDate: date ? date.toISOString() : null })}
           />

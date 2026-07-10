@@ -1,55 +1,50 @@
-import React from 'react';
-import { Pressable, StyleSheet, Text } from 'react-native';
-import { useTheme } from '../../state/PreferencesContext';
+import React, { useState } from 'react';
 import { useTranslation } from '../../i18n';
-import type { StepProps } from '../types';
+import type { OnboardingRole, StepProps } from '../types';
 import StepShell from './StepShell';
 import OptionCard from './OptionCard';
-import { selectionTick } from '../../utils/haptics';
+import PrimaryButton from './PrimaryButton';
 
 export default function RoleStep({ answers, onAnswer, onSkip, onBack }: StepProps) {
-  const { colors } = useTheme();
   const { t } = useTranslation();
+  const [role, setRole] = useState<OnboardingRole | undefined>(answers.role);
 
   return (
     <StepShell
       step="role"
       role={answers.role}
+      kicker={t('onboarding.role.kicker')}
       title={t('onboarding.role.title')}
       onBack={onBack}
       onSkip={onSkip}
+      footer={
+        <PrimaryButton
+          label={t('onboarding.continue')}
+          disabled={!role}
+          onPress={() => role && onAnswer({ role })}
+        />
+      }
     >
       <OptionCard
-        emoji="🧑‍🌾"
+        emoji="🪝"
         title={t('onboarding.role.leaderTitle')}
         subtitle={t('onboarding.role.leaderBody')}
-        selected={answers.role === 'leader'}
-        onPress={() => onAnswer({ role: 'leader' })}
+        selected={role === 'leader'}
+        onPress={() => setRole('leader')}
       />
       <OptionCard
         emoji="🐑"
         title={t('onboarding.role.followerTitle')}
         subtitle={t('onboarding.role.followerBody')}
-        selected={answers.role === 'follower'}
-        onPress={() => onAnswer({ role: 'follower' })}
+        selected={role === 'follower'}
+        onPress={() => setRole('follower')}
       />
-      <Pressable
-        accessibilityRole="button"
-        onPress={() => {
-          selectionTick();
-          onAnswer({ role: 'browser' });
-        }}
-        style={styles.link}
-      >
-        <Text style={[styles.linkText, { color: colors.textSecondary }]}>
-          {t('onboarding.role.browser')}
-        </Text>
-      </Pressable>
+      <OptionCard
+        emoji="👀"
+        title={t('onboarding.role.browser')}
+        selected={role === 'browser'}
+        onPress={() => setRole('browser')}
+      />
     </StepShell>
   );
 }
-
-const styles = StyleSheet.create({
-  link: { alignItems: 'center', paddingVertical: 16 },
-  linkText: { fontSize: 14, textDecorationLine: 'underline' },
-});
