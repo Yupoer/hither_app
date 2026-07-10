@@ -154,10 +154,9 @@ const zh = {
   'map.destinationCounter': '第 {index} / {total} 個集合點',
   // Map · journey (start/pause) + arrival
   'map.journeyFailed': '無法更新行程狀態，請確認你是隊長並再試一次。',
-  'map.arriveTitle': '接近目的地',
-  'map.arriveBody': '你已接近「{title}」，要結束此目的地行程嗎？',
-  'map.arriveConfirm': '結束行程',
-  'map.arriveDismiss': '繼續前往',
+  'map.arriveTitle': '已抵達',
+  'map.autoAdvanceBody': '已抵達「{title}」，自動前往下一站「{next}」',
+  'map.journeyCompleteBody': '已抵達「{title}」，行程結束',
 
   // Map · new design (Hither iOS Flow)
   'map.searchPlaces': '搜尋地點',
@@ -532,10 +531,9 @@ const en: Record<keyof typeof zh, string> = {
   'map.fitAllA11y': 'Zoom to fit all members',
   'map.destinationCounter': 'Stop {index} of {total}',
   'map.journeyFailed': "Couldn't update journey status. Make sure you're the leader and try again.",
-  'map.arriveTitle': 'Approaching destination',
-  'map.arriveBody': "You're near “{title}”. End this destination trip?",
-  'map.arriveConfirm': 'End trip',
-  'map.arriveDismiss': 'Keep going',
+  'map.arriveTitle': 'Arrived',
+  'map.autoAdvanceBody': 'Arrived at "{title}" — heading to "{next}" next',
+  'map.journeyCompleteBody': 'Arrived at "{title}" — journey complete',
 
   'map.searchPlaces': 'Search places',
   'map.share': 'Share',

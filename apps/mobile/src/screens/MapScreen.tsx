@@ -61,6 +61,7 @@ import {
   walkingEtaSeconds,
   type TravelMode,
 } from '../utils/geo';
+import { dotWindow } from '../utils/pagination';
 import { minutesUntil } from '../utils/meetTime';
 import { liquidGlass, location, notifications, type MapRegion, type PlaceResult } from '../native';
 import {
@@ -95,6 +96,11 @@ import { glass, accentMix, memberColor } from '../glass';
 type Props = NativeStackScreenProps<RootStackParamList, 'Map'>;
 
 const ARRIVAL_RADIUS_M = 30;
+// Auto-advance to the next gathering point once the leader is this close —
+// separate from ARRIVAL_RADIUS_M, which drives the flock's "arrived" status.
+const AUTO_ADVANCE_RADIUS_M = 50;
+// Cap on gathering-point pagination dots shown at once (see utils/pagination.ts).
+const DOTS_MAX_VISIBLE = 5;
 
 /** Preset straggler-alert distance chips shown in settings. */
 const STRAGGLER_THRESHOLD_OPTIONS = [300, 500, 1000, 2000];
@@ -462,6 +468,9 @@ export default function MapScreen({ route, navigation }: Props) {
     }
   }, [groupId, refresh, t]);
 
+  // Within AUTO_ADVANCE_RADIUS_M of the current stop: notify, drop it from
+  // the itinerary (it's done), and auto-advance to whatever's now first —
+  // or end the journey when that was the last stop.
   const arrivalFiredRef = useRef(false);
   useEffect(() => {
     if (!journeyActive) {
@@ -472,20 +481,36 @@ export default function MapScreen({ route, navigation }: Props) {
       isLeader &&
       !arrivalFiredRef.current &&
       numericDistance != null &&
-      numericDistance <= ARRIVAL_RADIUS_M
+      numericDistance <= AUTO_ADVANCE_RADIUS_M &&
+      navTarget &&
+      groupId
     ) {
       arrivalFiredRef.current = true;
-      confirmAction(
-        {
-          title: t('map.arriveTitle'),
-          message: t('map.arriveBody', { title: navTarget?.title ?? '' }),
-          confirmLabel: t('map.arriveConfirm'),
-          cancelLabel: t('map.arriveDismiss'),
-        },
-        () => void stopNavigation(),
-      );
+      const arrivedId = navTarget.id;
+      const arrivedTitle = navTarget.title;
+      const nextDest = destinations.find((d) => d.id !== arrivedId);
+      void notifications.scheduleLocalNotification({
+        title: t('map.arriveTitle'),
+        body: nextDest
+          ? t('map.autoAdvanceBody', { title: arrivedTitle, next: nextDest.title })
+          : t('map.journeyCompleteBody', { title: arrivedTitle }),
+        data: { kind: 'arrival', destinationId: arrivedId },
+      });
+      void deleteDestination(groupId, arrivedId)
+        .then(() => (nextDest ? startNavigation(nextDest, 0) : stopNavigation()))
+        .catch(() => Alert.alert(t('map.setFailedTitle'), t('map.journeyFailed')));
     }
-  }, [journeyActive, isLeader, numericDistance, navTarget?.title, stopNavigation, t]);
+  }, [
+    journeyActive,
+    isLeader,
+    numericDistance,
+    navTarget,
+    destinations,
+    groupId,
+    startNavigation,
+    stopNavigation,
+    t,
+  ]);
 
   async function locateMe() {
     refresh();
@@ -1165,15 +1190,19 @@ export default function MapScreen({ route, navigation }: Props) {
                       </View>
                       {/* Pagination — lives inside the card now that the
                           carousel sits at the screen's top edge, where there's
-                          no room below it for a separate dots row. */}
+                          no room below it for a separate dots row. Capped at
+                          DOTS_MAX_VISIBLE; the window slides to keep the
+                          active dot centered until it nears either end. */}
                       {destinations.length > 1 && (
                         <View style={styles.dots}>
-                          {destinations.map((d2, i2) => (
-                            <View
-                              key={d2.id}
-                              style={[styles.dot, i2 === selectedIndex && styles.dotActive]}
-                            />
-                          ))}
+                          {dotWindow(destinations.length, selectedIndex, DOTS_MAX_VISIBLE).map(
+                            (i2) => (
+                              <View
+                                key={destinations[i2].id}
+                                style={[styles.dot, i2 === selectedIndex && styles.dotActive]}
+                              />
+                            ),
+                          )}
                         </View>
                       )}
                     </View>
