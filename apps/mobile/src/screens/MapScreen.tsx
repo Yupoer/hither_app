@@ -56,8 +56,10 @@ import { useSubgroupInvites } from '../state/useSubgroupInvites';
 import { useLiveActivity } from '../state/useLiveActivity';
 import {
   distanceMeters,
+  etaSecondsFor,
   formatDistance,
   walkingEtaSeconds,
+  type TravelMode,
 } from '../utils/geo';
 import { minutesUntil } from '../utils/meetTime';
 import { liquidGlass, location, notifications, type MapRegion, type PlaceResult } from '../native';
@@ -314,6 +316,9 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // --- Carousel selection ---------------------------------------------------
   const [selectedIndex, setSelectedIndex] = useState(0);
+  // Travel mode for the ETA estimate shown per card — no live routing API,
+  // just a rough speed-based estimate (see utils/geo.ts).
+  const [travelMode, setTravelMode] = useState<TravelMode>('walk');
   useEffect(() => {
     const clamped =
       destinations.length === 0 ? 0 : Math.min(selectedIndex, destinations.length - 1);
@@ -1149,14 +1154,9 @@ export default function MapScreen({ route, navigation }: Props) {
                           {index === 0 ? t('map.nextTag') + ' · ' : ''}
                           {t('map.destinationCounter', { index: index + 1, total: destinations.length })}
                         </Text>
-                        <View style={styles.titleRow}>
-                          <Text style={styles.cardTitle} numberOfLines={1}>
-                            {dest.title}
-                          </Text>
-                          {d != null && (
-                            <Text style={styles.titleDist}>{formatDistance(d)}</Text>
-                          )}
-                        </View>
+                        <Text style={styles.cardTitle} numberOfLines={1}>
+                          {dest.title}
+                        </Text>
                         {myScopeId != null && (
                           <Text style={{ color: glass.textSecondary, fontSize: 11 }}>
                             {t('subgroup.itineraryBadge')}
@@ -1184,11 +1184,10 @@ export default function MapScreen({ route, navigation }: Props) {
                           if (navigatingThis) {
                             void stopNavigation();
                           } else if (isLeader) {
-                            // Keep the in-app journey state (flock "going" /
-                            // arrival / live activity) AND hand off turn-by-turn
-                            // to Apple Maps with the address pre-filled.
+                            // In-app journey: flock "going" state, arrival
+                            // detection, and the Live Activity all drive off
+                            // this — Apple Maps is a separate opt-in button.
                             startNavigation(dest, index);
-                            openInAppleMaps(dest);
                           } else {
                             mapRef.current?.centerOn(dest.coordinates);
                           }
@@ -1205,11 +1204,52 @@ export default function MapScreen({ route, navigation }: Props) {
                               : t('map.viewOnMap')}
                         </Text>
                       </Pressable>
+                      <Pressable
+                        style={styles.appleMapsBtn}
+                        onPress={() => openInAppleMaps(dest)}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('map.openInAppleMaps')}
+                      >
+                        <Ionicons name="open-outline" size={18} color={glass.textSecondary} />
+                      </Pressable>
                       <View style={styles.etaPill}>
                         <Text style={styles.etaPillEta}>
-                          {d != null ? shortEta(walkingEtaSeconds(d)) : '—'}
+                          {d != null ? shortEta(etaSecondsFor(d, travelMode)) : '—'}
                         </Text>
+                        {d != null && (
+                          <Text style={styles.etaPillDist}>{formatDistance(d)}</Text>
+                        )}
                       </View>
+                    </View>
+                    <View style={styles.travelModeRow}>
+                      {(['walk', 'drive', 'transit'] as const).map((mode) => (
+                        <Pressable
+                          key={mode}
+                          onPress={() => setTravelMode(mode)}
+                          style={[
+                            styles.travelModeBtn,
+                            travelMode === mode && {
+                              backgroundColor: accentMix(accent, 26),
+                              borderColor: accentMix(accent, 50),
+                            },
+                          ]}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: travelMode === mode }}
+                          accessibilityLabel={t(`map.travelMode.${mode}`)}
+                        >
+                          <Ionicons
+                            name={
+                              mode === 'walk'
+                                ? 'walk-outline'
+                                : mode === 'drive'
+                                  ? 'car-outline'
+                                  : 'bus-outline'
+                            }
+                            size={16}
+                            color={travelMode === mode ? accent : glass.textSecondary}
+                          />
+                        </Pressable>
+                      ))}
                     </View>
                     {(meetLabel || canEditItinerary) && (
                       <Pressable
@@ -1698,6 +1738,23 @@ export default function MapScreen({ route, navigation }: Props) {
         doneLabel={t('map.done')}
       >
         <ScrollView contentContainerStyle={styles.overlayBody}>
+          <View style={styles.profilePreviewRow}>
+            <View
+              style={[
+                styles.profilePreviewAvatar,
+                { backgroundColor: profileColor ?? memberColor(user?.id ?? '') },
+              ]}
+            >
+              {profileAvatar ? (
+                <Text style={styles.profilePreviewEmoji}>{profileAvatar}</Text>
+              ) : (
+                <Text style={styles.profilePreviewInitial}>
+                  {(profileName || user?.name || '?').slice(0, 1).toUpperCase()}
+                </Text>
+              )}
+            </View>
+          </View>
+
           <Text style={styles.sectionLabel}>{t('settings.nickname')}</Text>
           <View style={styles.profileRow}>
             <TextInput
@@ -2056,14 +2113,7 @@ const makeStyles = (accent: string) =>
     },
     grow: { flex: 1, minWidth: 0 },
     cardKicker: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8 },
-    titleRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
-    cardTitle: { flexShrink: 1, fontSize: 18, fontWeight: '600', color: '#fff' },
-    titleDist: {
-      fontSize: 13,
-      fontWeight: '600',
-      color: glass.textSecondary,
-      fontVariant: ['tabular-nums'],
-    },
+    cardTitle: { fontSize: 18, fontWeight: '600', color: '#fff' },
     cardActions: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 13 },
     directions: {
       flex: 1,
@@ -2076,15 +2126,46 @@ const makeStyles = (accent: string) =>
       borderWidth: StyleSheet.hairlineWidth,
     },
     directionsText: { fontSize: 15, fontWeight: '600', color: '#fff' },
-    etaPill: {
+    // Secondary action: hand off to the real Apple Maps app for turn-by-turn —
+    // the main "directions" button stays in-app (journey state + Live Activity).
+    appleMapsBtn: {
+      width: 44,
       height: 44,
+      borderRadius: 13,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: glass.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
+    },
+    etaPill: {
       paddingHorizontal: 16,
+      paddingVertical: 6,
       borderRadius: 13,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: glass.fillStrong,
     },
     etaPillEta: { fontSize: 15, fontWeight: '700', color: '#fff', fontVariant: ['tabular-nums'] },
+    etaPillDist: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: glass.textSecondary,
+      fontVariant: ['tabular-nums'],
+      marginTop: 1,
+    },
+    // Compact walk/drive/transit switcher below the nav row.
+    travelModeRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
+    travelModeBtn: {
+      width: 40,
+      height: 32,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: glass.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'transparent',
+    },
     // Prominent capsule pinned at the card's foot (kept compact so the card
     // height barely moves — see the straggler banner's fixed top offset).
     meetTimeBtn: {
@@ -2168,6 +2249,16 @@ const makeStyles = (accent: string) =>
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairline,
     },
+    profilePreviewRow: { alignItems: 'center', marginBottom: 16 },
+    profilePreviewAvatar: {
+      width: 76,
+      height: 76,
+      borderRadius: 38,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    profilePreviewEmoji: { fontSize: 40 },
+    profilePreviewInitial: { fontSize: 32, fontWeight: '700', color: '#fff' },
     // 5 columns × 6 rows filling edge-to-edge: 5 × (18% + 1% + 1%) = 100%.
     emojiGrid: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 12 },
     emojiCell: {
