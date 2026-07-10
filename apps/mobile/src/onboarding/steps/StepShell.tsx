@@ -8,7 +8,9 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../../state/PreferencesContext';
+import { shade } from '../../glass';
 import { useTranslation } from '../../i18n';
 import { stepProgress } from '../progress';
 import type { OnboardingRole, StepId } from '../types';
@@ -80,7 +82,14 @@ export default function StepShell({
           <View style={styles.headerSpacer} />
         ) : (
           <View style={[styles.track, { backgroundColor: colors.border }]}>
-            <Animated.View style={[styles.fillBar, { backgroundColor: colors.accent }, fillStyle]} />
+            <Animated.View style={[styles.fillBar, fillStyle]}>
+              <LinearGradient
+                colors={[shade(colors.accent, -0.15), shade(colors.accent, 0.25)]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.fillGrad}
+              />
+            </Animated.View>
           </View>
         )}
         <Pressable onPress={onSkip} accessibilityRole="button" hitSlop={8}>
@@ -120,17 +129,18 @@ const styles = StyleSheet.create({
   },
   headerSpacer: { flex: 1 },
   track: { flex: 1, height: 10, borderRadius: 5, overflow: 'hidden' },
-  fillBar: { height: '100%', borderRadius: 5 },
+  fillBar: { height: '100%', borderRadius: 5, overflow: 'hidden' },
+  fillGrad: { flex: 1, borderRadius: 5 },
   skip: { fontSize: 14, fontWeight: '600' },
   heading: { marginTop: 18, marginBottom: 18 },
   kicker: {
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 1,
+    fontSize: 12.5,
+    fontWeight: '800',
+    letterSpacing: 1.4,
     textTransform: 'uppercase',
-    marginBottom: 5,
+    marginBottom: 6,
   },
-  title: { fontSize: 24, fontWeight: '700', lineHeight: 30 },
+  title: { fontSize: 27, fontWeight: '800', lineHeight: 33 },
   subtitle: { fontSize: 14, lineHeight: 20, marginTop: 6 },
   body: { flex: 1 },
   footer: { paddingTop: 12 },

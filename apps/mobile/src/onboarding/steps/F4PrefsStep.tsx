@@ -1,11 +1,10 @@
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { useTheme } from '../../state/PreferencesContext';
+import { StyleSheet, View } from 'react-native';
 import { useTranslation, type TranslationKey } from '../../i18n';
-import { accentMix } from '../../glass';
 import { PREF_OPTIONS, type PrefOption } from '../content';
 import type { StepProps } from '../types';
 import StepShell from './StepShell';
+import OptionCard from './OptionCard';
 import PrimaryButton from './PrimaryButton';
 import { selectionTick } from '../../utils/haptics';
 
@@ -27,8 +26,28 @@ const EMOJI: Record<PrefOption, string> = {
   nightlife: '🌃',
 };
 
+// Fixed colour block behind each emoji so the tiles read as categories rather
+// than bare stickers on the card. Theme-independent (decorative, not accent).
+const TILE_COLOR: Record<PrefOption, string> = {
+  food: '#E8663C',
+  sights: '#3E86E0',
+  shopping: '#4C6FE5',
+  nature: '#3FA96B',
+  culture: '#9B6BE0',
+  nightlife: '#5C4CC4',
+};
+
+// Secondary label under the title — purely a visual hierarchy cue.
+const SUBLABEL: Record<PrefOption, string> = {
+  food: 'Food',
+  sights: 'Sights',
+  shopping: 'Shopping',
+  nature: 'Nature',
+  culture: 'Culture',
+  nightlife: 'Nightlife',
+};
+
 export default function F4PrefsStep({ answers, onAnswer, onSkip, onBack }: StepProps) {
-  const { colors } = useTheme();
   const { t } = useTranslation();
   const [selected, setSelected] = useState<string[]>(answers.prefs ?? []);
 
@@ -56,39 +75,24 @@ export default function F4PrefsStep({ answers, onAnswer, onSkip, onBack }: StepP
       }
     >
       <View style={styles.grid}>
-        {PREF_OPTIONS.map((opt) => {
-          const active = selected.includes(opt);
-          return (
-            <Pressable
-              key={opt}
-              accessibilityRole="button"
+        {PREF_OPTIONS.map((opt) => (
+          <View key={opt} style={styles.cell}>
+            <OptionCard
+              emoji={EMOJI[opt]}
+              tileColor={TILE_COLOR[opt]}
+              title={t(LABEL_KEY[opt])}
+              subtitle={SUBLABEL[opt]}
+              selected={selected.includes(opt)}
               onPress={() => toggle(opt)}
-              style={[
-                styles.chip,
-                {
-                  backgroundColor: active ? accentMix(colors.accent, 20) : colors.surface,
-                  borderColor: active ? colors.accent : colors.border,
-                },
-              ]}
-            >
-              <Text style={[styles.chipText, { color: colors.textPrimary }]}>
-                {EMOJI[opt]}  {t(LABEL_KEY[opt])}
-              </Text>
-            </Pressable>
-          );
-        })}
+            />
+          </View>
+        ))}
       </View>
     </StepShell>
   );
 }
 
 const styles = StyleSheet.create({
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  chip: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    borderWidth: StyleSheet.hairlineWidth * 2,
-  },
-  chipText: { fontSize: 14, fontWeight: '600' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  cell: { width: '48%' },
 });

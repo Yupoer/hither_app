@@ -15,6 +15,7 @@ export default function OptionCard({
   title,
   subtitle,
   emoji,
+  tileColor,
   selected,
   onPress,
 }: {
@@ -22,6 +23,8 @@ export default function OptionCard({
   subtitle?: string;
   /** Optional leading emoji (temporary stand-in for step artwork). */
   emoji?: string;
+  /** Fixed colour block behind the emoji (e.g. per-category interest colours). */
+  tileColor?: string;
   selected?: boolean;
   onPress: () => void;
 }) {
@@ -40,6 +43,7 @@ export default function OptionCard({
           backgroundColor: selected ? accentMix(colors.accent, 16) : colors.surface,
           borderColor: selected ? colors.accent : colors.border,
         },
+        selected && { ...styles.glow, shadowColor: colors.accent },
         pressed && { opacity: 0.85 },
       ]}
     >
@@ -47,7 +51,11 @@ export default function OptionCard({
         <View
           style={[
             styles.tile,
-            { backgroundColor: selected ? accentMix(colors.accent, 24) : accentMix(colors.textSecondary, 10) },
+            {
+              backgroundColor:
+                tileColor ??
+                (selected ? accentMix(colors.accent, 24) : accentMix(colors.textSecondary, 10)),
+            },
           ]}
         >
           <Text style={styles.emoji}>{emoji}</Text>
@@ -84,6 +92,13 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
     paddingHorizontal: 14,
     marginBottom: 12,
+  },
+  // Soft accent glow around the selected card (iOS shadow + Android elevation).
+  glow: {
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 6,
   },
   tile: {
     width: 46,

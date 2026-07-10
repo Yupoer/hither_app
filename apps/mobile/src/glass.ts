@@ -70,3 +70,19 @@ export function accentMix(accent: string, pct: number): string {
   const b = parseInt(hex.slice(4, 6), 16);
   return `rgba(${r}, ${g}, ${b}, ${(pct / 100).toFixed(3)})`;
 }
+
+/**
+ * Shift a hex colour toward white (amt > 0) or black (amt < 0), amt in -1..1.
+ * Used to derive a deep→light gradient from a single accent token so the
+ * onboarding progress bar stays theme-driven instead of hard-coding green.
+ */
+export function shade(hex: string, amt: number): string {
+  const h = hex.replace('#', '');
+  const to = amt < 0 ? 0 : 255;
+  const p = Math.min(1, Math.abs(amt));
+  const mix = (c: number) => Math.round(c + (to - c) * p);
+  const r = mix(parseInt(h.slice(0, 2), 16));
+  const g = mix(parseInt(h.slice(2, 4), 16));
+  const b = mix(parseInt(h.slice(4, 6), 16));
+  return `rgb(${r}, ${g}, ${b})`;
+}
