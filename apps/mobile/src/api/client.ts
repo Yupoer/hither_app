@@ -705,6 +705,38 @@ export async function fetchMyInvites(userId: string): Promise<PendingInvite[]> {
 }
 
 /**
+ * Pending invites THIS user has sent for a subgroup, enriched with the
+ * invitee's nickname — surfaced on the subgroup card so "I invited someone
+ * and then saw nothing" reads as "invite sent, awaiting X" instead of silence.
+ */
+export async function fetchSentInvites(
+  subgroupId: string,
+): Promise<{ id: string; inviteeName: string }[]> {
+  const { data, error } = await supabase
+    .from('subgroup_invites')
+    .select('id, invitee_id')
+    .eq('subgroup_id', subgroupId)
+    .eq('status', 'pending');
+  orThrow(error);
+
+  const rows = (data ?? []) as { id: string; invitee_id: string }[];
+  if (rows.length === 0) return [];
+
+  const { data: profiles, error: profError } = await supabase
+    .from('profiles')
+    .select('id, nickname')
+    .in(
+      'id',
+      rows.map((r) => r.invitee_id),
+    );
+  orThrow(profError);
+  const nameById = new Map(
+    ((profiles ?? []) as { id: string; nickname: string }[]).map((p) => [p.id, p.nickname]),
+  );
+  return rows.map((r) => ({ id: r.id, inviteeName: nameById.get(r.invitee_id) ?? '' }));
+}
+
+/**
  * Toggle the current user's Solo mode for a group. Solo members stay visible
  * on the map but receive no group notifications until they rejoin. Goes
  * through the `set_solo` SECURITY DEFINER RPC (memberships UPDATE is

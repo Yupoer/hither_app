@@ -68,6 +68,7 @@ import { liquidGlass, location, notifications, type MapRegion, type PlaceResult 
 import {
   addDestination,
   deleteDestination,
+  fetchSentInvites,
   fetchVisitedWaypoints,
   inviteToSubgroup,
   recordVisitedWaypoint,
@@ -205,6 +206,21 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [overlay]);
   // "Invite a teammate" picker, opened from my own subgroup card.
   const [inviteSheetOpen, setInviteSheetOpen] = useState(false);
+  // Invites I've sent for my subgroup that are still pending — shown on the
+  // card so "I invited someone" doesn't just look like nothing happened while
+  // they haven't accepted yet.
+  const [sentInvites, setSentInvites] = useState<{ id: string; inviteeName: string }[]>([]);
+  const refreshSentInvites = useCallback(async (subgroupId: string | undefined) => {
+    if (!subgroupId) {
+      setSentInvites([]);
+      return;
+    }
+    try {
+      setSentInvites(await fetchSentInvites(subgroupId));
+    } catch {
+      // best-effort
+    }
+  }, []);
   const [searchVisible, setSearchVisible] = useState(false);
   const [kmlVisible, setKmlVisible] = useState(false);
   const [paywallTrigger, setPaywallTrigger] = useState<TranslationKey | undefined>(undefined);
@@ -710,6 +726,7 @@ export default function MapScreen({ route, navigation }: Props) {
       // the invitee replying with a join-request — pull it in so the pending
       // approve/decline card shows immediately.
       if (isDemoGroup(groupId)) refreshInvites();
+      void refreshSentInvites(subgroupId);
       Alert.alert(t('subgroup.inviteSent'));
     } catch (e) {
       logError('invite_send_failed', e, { subgroupId, inviteeId });
@@ -978,6 +995,9 @@ export default function MapScreen({ route, navigation }: Props) {
   const topFlock = flock.filter((f) => !f.subgroupId);
   // My own subgroup, if any — gates the "invite a teammate" entry on my card.
   const mySubgroupId = flock.find((f) => f.userId === user?.id)?.subgroupId;
+  useEffect(() => {
+    void refreshSentInvites(mySubgroupId);
+  }, [mySubgroupId, refreshSentInvites]);
   // Co-members I could still pull into my team. Virtual solo-test mates are
   // excluded in a real group (no one on the other end to accept) — BUT in the
   // demo group they ARE invitable, because handleInvite simulates them
@@ -1460,6 +1480,15 @@ export default function MapScreen({ route, navigation }: Props) {
                     {t('subgroup.inviteAction')}
                   </Text>
                 </Pressable>
+              )}
+              {/* So sending an invite doesn't look like it did nothing while
+                  the other person hasn't accepted yet. */}
+              {sg.id === mySubgroupId && sentInvites.length > 0 && (
+                <Text style={styles.subgroupPendingHint}>
+                  {t('subgroup.pendingInvites', {
+                    names: sentInvites.map((i) => i.inviteeName).join('、'),
+                  })}
+                </Text>
               )}
             </View>
           );
@@ -2432,6 +2461,12 @@ const makeStyles = (accent: string) =>
     },
     subgroupName: { fontSize: 15, fontWeight: '700', color: '#fff' },
     subgroupMeta: { fontSize: 12.5, color: glass.textSecondary, marginTop: 1 },
+    subgroupPendingHint: {
+      fontSize: 12.5,
+      color: glass.textSecondary,
+      paddingHorizontal: 14,
+      paddingBottom: 10,
+    },
 
     codeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
     // Big bold white section headings on the main sheet (Apple Maps style).
