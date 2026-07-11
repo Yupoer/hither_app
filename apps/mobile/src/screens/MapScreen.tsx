@@ -61,6 +61,10 @@ import { useTranslation, type TranslationKey } from '../i18n';
 import { useDeviceLocation } from './MapScreen/hooks/useDeviceLocation';
 import { useCarouselSelection } from './MapScreen/hooks/useCarouselSelection';
 import { useJourneyNavigation } from './MapScreen/hooks/useJourneyNavigation';
+import { SettingsOverlay } from './MapScreen/components/SettingsOverlay';
+import { ProfileOverlay } from './MapScreen/components/ProfileOverlay';
+import { SubgroupSection } from './MapScreen/components/SubgroupSection';
+import { Segmented } from './MapScreen/components/Segmented';
 import { useGroupState } from '../state/useGroupState';
 import { useStragglerAlerts } from '../state/useStragglerAlerts';
 import { useSubgroupInvites } from '../state/useSubgroupInvites';
@@ -533,37 +537,10 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [group, t]);
 
   // --- Profile (nickname + emoji avatar) ------------------------------------
-  const [profileName, setProfileName] = useState('');
-  const [profileAvatar, setProfileAvatar] = useState<string | undefined>(undefined);
-  const [profileColor, setProfileColor] = useState<string | undefined>(undefined);
   const openProfile = useCallback(() => {
     lightTap();
-    setProfileName(user?.name ?? '');
-    setProfileAvatar(user?.avatar);
-    setProfileColor(user?.avatarColor);
     setOverlay('profile');
-  }, [user]);
-  // "Done" (and the scrim tap) closes instantly, then persists whatever changed
-  // in one write — picking an avatar is a pure local highlight until then.
-  const closeProfile = useCallback(() => {
-    setOverlay(null);
-    const nickname = profileName.trim();
-    const fields: { nickname?: string; avatar?: string; avatarColor?: string } = {};
-    if (nickname && nickname !== user?.name) fields.nickname = nickname;
-    if (profileAvatar && profileAvatar !== user?.avatar) fields.avatar = profileAvatar;
-    if (profileColor && profileColor !== user?.avatarColor) fields.avatarColor = profileColor;
-    if (!fields.nickname && !fields.avatar && !fields.avatarColor) return;
-    logEvent('profile_save', { changed: Object.keys(fields) });
-    updateProfile(fields)
-      .then(() => refresh())
-      .catch((e) => {
-        logError('profile_save_failed', e);
-        Alert.alert(
-          t('profile.saveFailed'),
-          e instanceof Error ? e.message : undefined,
-        );
-      });
-  }, [profileName, profileAvatar, profileColor, user, updateProfile, refresh, t]);
+  }, []);
 
   // --- Solo mode -------------------------------------------------------------
   const toggleSolo = useCallback(async (next: boolean) => {
@@ -815,36 +792,7 @@ export default function MapScreen({ route, navigation }: Props) {
     );
   }, [t, signOut, navigation]);
 
-  // --- Account upgrade (anonymous -> email) ---------------------------------
-  const [upgradeVisible, setUpgradeVisible] = useState(false);
-  const [upgradeEmail, setUpgradeEmail] = useState('');
-  const [upgradePassword, setUpgradePassword] = useState('');
-  const [upgradeError, setUpgradeError] = useState<string | null>(null);
-  const [upgradeBusy, setUpgradeBusy] = useState(false);
-  const upgradeCanSubmit =
-    /\S+@\S+\.\S+/.test(upgradeEmail.trim()) && upgradePassword.length >= 6 && !upgradeBusy;
 
-  const closeUpgrade = useCallback(() => {
-    setUpgradeVisible(false);
-    setUpgradeEmail('');
-    setUpgradePassword('');
-    setUpgradeError(null);
-  }, []);
-
-  const submitUpgrade = useCallback(async () => {
-    if (!upgradeCanSubmit) return;
-    setUpgradeBusy(true);
-    setUpgradeError(null);
-    try {
-      await upgradeToEmailAccount(upgradeEmail.trim(), upgradePassword);
-      Alert.alert(t('account.section'), t('account.upgradeSent'));
-      closeUpgrade();
-    } catch (e) {
-      setUpgradeError(e instanceof Error ? e.message : t('account.upgradeSent'));
-    } finally {
-      setUpgradeBusy(false);
-    }
-  }, [upgradeCanSubmit, upgradeEmail, upgradePassword, upgradeToEmailAccount, t, closeUpgrade]);
 
   const resetPrefs = useCallback(async () => {
     logEvent('reset_prefs');
@@ -1152,56 +1100,16 @@ export default function MapScreen({ route, navigation }: Props) {
         <View style={styles.list}>
           {topFlock.map((f, i) => renderFlockRow(f, i === topFlock.length - 1))}
         </View>
-        {subgroups.map((sg) => {
-          const memberRows = flock.filter((f) => f.subgroupId === sg.id);
-          const parentName = subgroups.find((s) => s.id === sg.parentId)?.name;
-          return (
-            <View key={sg.id} style={styles.subgroupCard}>
-              <View style={styles.subgroupHead}>
-                <View style={styles.grow}>
-                  <Text style={styles.subgroupName}>
-                    {sg.name} · {memberRows.length}
-                  </Text>
-                  <Text style={styles.subgroupMeta}>
-                    {t('subgroup.collab')}
-                    {parentName ? ` · ${t('subgroup.childOf', { name: parentName })}` : ''}
-                  </Text>
-                </View>
-              </View>
-              {memberRows.map((f, i) => renderFlockRow(f, i === memberRows.length - 1))}
-              {/* Invite entry lives ON my own team card — where you look to grow
-                  the team — instead of buried on every other member's row. */}
-              {sg.id === mySubgroupId && (
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.inviteMemberBtn,
-                    { backgroundColor: accent },
-                    pressed && { opacity: 0.85 },
-                  ]}
-                  onPress={() => {
-                    lightTap();
-                    setInviteSheetOpen(true);
-                  }}
-                  accessibilityRole="button"
-                >
-                  <Ionicons name="person-add" size={16} color="#0c1a12" />
-                  <Text style={[styles.rowAction, { color: '#0c1a12' }]}>
-                    {t('subgroup.inviteAction')}
-                  </Text>
-                </Pressable>
-              )}
-              {/* So sending an invite doesn't look like it did nothing while
-                  the other person hasn't accepted yet. */}
-              {sg.id === mySubgroupId && sentInvites.length > 0 && (
-                <Text style={styles.subgroupPendingHint}>
-                  {t('subgroup.pendingInvites', {
-                    names: sentInvites.map((i) => i.inviteeName).join('、'),
-                  })}
-                </Text>
-              )}
-            </View>
-          );
-        })}
+        <SubgroupSection
+          subgroups={subgroups}
+          flock={flock}
+          mySubgroupId={mySubgroupId}
+          sentInvites={sentInvites}
+          accent={accent}
+          setInviteSheetOpen={setInviteSheetOpen}
+          renderFlockRow={renderFlockRow}
+          styles={styles}
+        />
 
         {/* Group code + share / copy. */}
         <Text style={styles.sheetHeading}>{t('group.codeLabel')}</Text>
@@ -1736,290 +1644,26 @@ export default function MapScreen({ route, navigation }: Props) {
         </ScrollView>
       </OverlaySheet>
 
-      {/* Settings overlay. */}
-      <OverlaySheet
+      <SettingsOverlay
         visible={overlay === 'settings'}
         onClose={() => setOverlay(null)}
-        title={t('map.overlaySettings')}
-        accent={accent}
-        doneLabel={t('map.done')}
-      >
-        <ScrollView contentContainerStyle={styles.overlayBody}>
-          <Text style={styles.sectionLabel}>{t('settings.language')}</Text>
-          <Segmented
-            accent={accent}
-            options={[
-              { key: 'zh', label: '中文' },
-              { key: 'en', label: 'English' },
-            ]}
-            value={language}
-            onChange={(v) => setLanguage(v as Language)}
-          />
+        isLeader={isLeader}
+        onOpenHistory={() => setOverlay('history')}
+        onArchiveAllForTest={() => void archiveAllForTest()}
+        onOpenFeedback={openFeedback}
+        onConfirmResetPrefs={confirmResetPrefs}
+        onConfirmLeave={confirmLeave}
+        onConfirmSignOut={confirmSignOut}
+        onOpenPaywall={() => openPaywall()}
+        styles={styles}
+      />
 
-          <Text style={styles.sectionLabel}>{t('settings.theme')}</Text>
-          <Segmented
-            accent={accent}
-            options={THEME_ORDER.map((n) => ({
-              key: n,
-              label: t(
-                n === 'night'
-                  ? 'settings.themeNight'
-                  : n === 'day'
-                    ? 'settings.themeDay'
-                    : n === 'dusk'
-                      ? 'settings.themeDusk'
-                      : 'settings.themeForest',
-              ),
-            }))}
-            value={themeName}
-            onChange={(v) => setThemeName(v as ThemeName)}
-          />
-
-          <Text style={styles.sectionLabel}>{t('settings.locationSection')}</Text>
-          <View style={styles.settingSwitchRow}>
-            <View style={styles.settingSwitchText}>
-              <Text style={styles.settingSwitchLabel}>{t('settings.powerSaver')}</Text>
-              <Text style={styles.settingSwitchHint}>{t('settings.powerSaverHint')}</Text>
-            </View>
-            <Switch
-              value={powerSaver}
-              onValueChange={setPowerSaver}
-              trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
-              thumbColor="#fff"
-            />
-          </View>
-
-          <Text style={styles.sectionLabel}>{t('settings.notifSection')}</Text>
-          {/* Force the LIVE theme accent onto the otherwise-frozen night
-              palette so the toggles recolour when the theme changes. */}
-          <NotificationPreferencesCard colors={{ ...dark, accent }} />
-
-          <Text style={styles.sectionLabel}>{t('meetTime.redSection')}</Text>
-          <Segmented
-            accent={accent}
-            options={MEET_RED_OPTIONS.map((m) => ({
-              key: String(m),
-              label: t('meetTime.redOption', { minutes: m }),
-            }))}
-            value={String(meetRedMin)}
-            onChange={(v) => setMeetRedMin(Number(v))}
-          />
-
-          <Text style={styles.sectionLabel}>{t('history.title')}</Text>
-          <Pressable
-            style={styles.accountBtn}
-            onPress={() => setOverlay('history')}
-            accessibilityRole="button"
-          >
-            <Text style={[styles.accountBtnText, { color: accent }]}>{t('history.open')}</Text>
-          </Pressable>
-          {/* ponytail: TEMPORARY test button — archive all stops as done. Remove later. */}
-          <Pressable
-            style={styles.accountBtn}
-            onPress={() => void archiveAllForTest()}
-            accessibilityRole="button"
-          >
-            <Text style={[styles.accountBtnText, { color: glass.warn }]}>
-              🧪 全部集合點標記為已完成（測試）
-            </Text>
-          </Pressable>
-
-          <View style={styles.settingsSectionHeaderRow}>
-            <Text style={styles.sectionLabel}>{t('account.section')}</Text>
-            <Pressable
-              style={styles.feedbackEntry}
-              onPress={openFeedback}
-              accessibilityRole="button"
-              accessibilityLabel={t('feedback.title')}
-              hitSlop={8}
-            >
-              <Ionicons name="warning-outline" size={17} color={glass.textSecondary} />
-            </Pressable>
-          </View>
-          {isAnonymous ? (
-            <>
-              <Text style={styles.overlayHint}>{t('anon.expiryWarning')}</Text>
-              <Pressable
-                style={styles.accountBtn}
-                onPress={() => setUpgradeVisible(true)}
-                accessibilityRole="button"
-              >
-                <Text style={[styles.accountBtnText, { color: accent }]}>
-                  {t('account.upgradeButton')}
-                </Text>
-              </Pressable>
-            </>
-          ) : (
-            <Text style={styles.overlayHint}>
-              {t('account.signedInAs', { email: user?.email ?? '' })}
-            </Text>
-          )}
-
-          <Text style={styles.sectionLabel}>{t('paywall.title')}</Text>
-          {isPro ? (
-            <Text style={styles.overlayHint}>{t('paywall.active')}</Text>
-          ) : (
-            <Pressable
-              style={styles.accountBtn}
-              onPress={() => openPaywall()}
-              accessibilityRole="button"
-            >
-              <Text style={[styles.accountBtnText, { color: accent }]}>
-                {t('paywall.upgrade')}
-              </Text>
-            </Pressable>
-          )}
-
-          <Pressable style={styles.dangerBtn} onPress={confirmResetPrefs} accessibilityRole="button">
-            <Text style={styles.dangerText}>{t('settings.resetPrefs')}</Text>
-          </Pressable>
-          <Pressable style={styles.dangerBtn} onPress={confirmLeave} accessibilityRole="button">
-            <Text style={styles.dangerText}>
-              {isLeader ? t('map.endGroup') : t('group.leave')}
-            </Text>
-          </Pressable>
-          <Pressable style={styles.dangerBtn} onPress={confirmSignOut} accessibilityRole="button">
-            <Text style={styles.dangerText}>{t('settings.signOut')}</Text>
-          </Pressable>
-        </ScrollView>
-      </OverlaySheet>
-
-      {/* Anonymous -> email upgrade: same uid, keeps profiles/memberships. */}
-      <OverlaySheet
-        visible={upgradeVisible}
-        onClose={closeUpgrade}
-        title={t('account.upgradeButton')}
-        accent={accent}
-        doneLabel={t('map.done')}
-      >
-        <ScrollView contentContainerStyle={styles.overlayBody}>
-          <Text style={styles.sectionLabel}>{t('account.email')}</Text>
-          <View style={styles.profileRow}>
-            <TextInput
-              style={styles.profileInput}
-              value={upgradeEmail}
-              onChangeText={setUpgradeEmail}
-              placeholder="you@example.com"
-              placeholderTextColor={glass.textTertiary}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="email-address"
-            />
-          </View>
-          <Text style={styles.sectionLabel}>{t('account.password')}</Text>
-          <View style={styles.profileRow}>
-            <TextInput
-              style={styles.profileInput}
-              value={upgradePassword}
-              onChangeText={setUpgradePassword}
-              placeholder={t('account.password')}
-              placeholderTextColor={glass.textTertiary}
-              autoCapitalize="none"
-              secureTextEntry
-            />
-          </View>
-          {upgradeError && <Text style={styles.upgradeError}>{upgradeError}</Text>}
-          <Pressable
-            style={[styles.accountBtn, !upgradeCanSubmit && { opacity: 0.4 }]}
-            onPress={submitUpgrade}
-            disabled={!upgradeCanSubmit}
-            accessibilityRole="button"
-          >
-            {upgradeBusy ? (
-              <ActivityIndicator color={accent} />
-            ) : (
-              <Text style={[styles.accountBtnText, { color: accent }]}>
-                {t('account.submit')}
-              </Text>
-            )}
-          </Pressable>
-        </ScrollView>
-      </OverlaySheet>
-
-      {/* Profile overlay: nickname + emoji avatar, synced to the group. */}
-      <OverlaySheet
+      <ProfileOverlay
         visible={overlay === 'profile'}
-        onClose={closeProfile}
-        title={t('profile.title')}
-        accent={accent}
-        doneLabel={t('map.done')}
-      >
-        <ScrollView contentContainerStyle={styles.overlayBody}>
-          <View style={styles.profilePreviewRow}>
-            <View
-              style={[
-                styles.profilePreviewAvatar,
-                { backgroundColor: profileColor ?? memberColor(user?.id ?? '') },
-              ]}
-            >
-              {profileAvatar ? (
-                <Text style={styles.profilePreviewEmoji}>{profileAvatar}</Text>
-              ) : (
-                <Text style={styles.profilePreviewInitial}>
-                  {(profileName || user?.name || '?').slice(0, 1).toUpperCase()}
-                </Text>
-              )}
-            </View>
-          </View>
-
-          <Text style={styles.sectionLabel}>{t('settings.nickname')}</Text>
-          <View style={styles.profileRow}>
-            <TextInput
-              style={styles.profileInput}
-              value={profileName}
-              onChangeText={setProfileName}
-              maxLength={24}
-              placeholder={t('auth.namePlaceholder')}
-              placeholderTextColor={glass.textTertiary}
-              returnKeyType="done"
-              onSubmitEditing={closeProfile}
-            />
-          </View>
-
-          <Text style={styles.sectionLabel}>{t('profile.avatar')}</Text>
-          <View style={styles.emojiGrid}>
-            {AVATAR_EMOJI.map((e) => (
-              <Pressable
-                key={e}
-                onPress={() => setProfileAvatar(e)}
-                accessibilityRole="button"
-                accessibilityState={{ selected: profileAvatar === e }}
-                style={[
-                  styles.emojiCell,
-                  profileAvatar === e && {
-                    borderColor: accent,
-                    backgroundColor: accentMix(accent, 18),
-                  },
-                ]}
-              >
-                <Text style={styles.emojiChar}>{e}</Text>
-              </Pressable>
-            ))}
-          </View>
-
-          <Text style={styles.sectionLabel}>{t('profile.avatarColor')}</Text>
-          <View style={styles.colorRow}>
-            {AVATAR_COLORS.map((c) => (
-              <Pressable
-                key={c}
-                onPress={() => { selectionTick(); setProfileColor(c); }}
-                accessibilityRole="button"
-                accessibilityState={{ selected: profileColor === c }}
-                style={[
-                  styles.colorSwatch,
-                  { backgroundColor: c },
-                  profileColor === c && { borderColor: '#fff' },
-                ]}
-              >
-                {profileColor === c && (
-                  <Ionicons name="checkmark" size={18} color="#fff" />
-                )}
-              </Pressable>
-            ))}
-          </View>
-          <Text style={styles.overlayHint}>{t('profile.syncHint')}</Text>
-        </ScrollView>
-      </OverlaySheet>
+        onClose={() => setOverlay(null)}
+        refresh={refresh}
+        styles={styles}
+      />
 
       {/* History overlay: gathering points actually reached, grouped by day. */}
       <OverlaySheet
@@ -2204,68 +1848,7 @@ export default function MapScreen({ route, navigation }: Props) {
   );
 }
 
-function Segmented({
-  options,
-  value,
-  onChange,
-  accent,
-  disabledKeys,
-  onDisabledPress,
-}: {
-  options: { key: string; label: string }[];
-  value: string;
-  onChange: (key: string) => void;
-  accent: string;
-  /** Options shown greyed-out/locked; tapping them calls `onDisabledPress` instead of `onChange`. */
-  disabledKeys?: string[];
-  onDisabledPress?: (key: string) => void;
-}) {
-  const SEG_PAD = 4;
-  const SEG_GAP = 6;
-  const [trackW, setTrackW] = useState(0);
-  const n = options.length;
-  const activeIdx = Math.max(0, options.findIndex((o) => o.key === value));
-  const segW = trackW > 0 ? (trackW - SEG_PAD * 2 - SEG_GAP * (n - 1)) / n : 0;
-  const tx = useSharedValue(0);
-  useEffect(() => {
-    // Slide the highlight to the active segment — smooth easing beats a hard cut.
-    tx.value = withTiming(activeIdx * (segW + SEG_GAP), {
-      duration: 220,
-      easing: Easing.out(Easing.cubic),
-    });
-  }, [activeIdx, segW, tx]);
-  const highlightStyle = useAnimatedStyle(() => ({ transform: [{ translateX: tx.value }] }));
 
-  return (
-    <View style={segStyles.track} onLayout={(e) => setTrackW(e.nativeEvent.layout.width)}>
-      {segW > 0 ? (
-        <Animated.View
-          pointerEvents="none"
-          style={[segStyles.highlight, { width: segW }, highlightStyle]}
-        />
-      ) : null}
-      {options.map((o) => {
-        const active = o.key === value;
-        const locked = !!disabledKeys?.includes(o.key);
-        return (
-          <Pressable
-            key={o.key}
-            style={({ pressed }) => [
-              segStyles.seg,
-              locked && segStyles.segLocked,
-              pressed && { opacity: 0.6 },
-            ]}
-            onPress={() => (locked ? onDisabledPress?.(o.key) : onChange(o.key))}
-            accessibilityRole="button"
-            accessibilityState={{ selected: active, disabled: locked }}
-          >
-            <Text style={[segStyles.segText, active && { color: '#fff' }]}>{o.label}</Text>
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
 
 const segStyles = StyleSheet.create({
   track: {
