@@ -1033,10 +1033,10 @@ export default function MapScreen({ route, navigation }: Props) {
   );
 
   // One flock row, shared by the main list and the subgroup cards.
-  const renderFlockRow = useCallback((f: (typeof flock)[number], last: boolean) => {
+  const renderFlockRow = useCallback((f: (typeof flock)[number], last: boolean, index?: number) => {
     const isMe = f.userId === user?.id;
     return (
-      <View key={f.userId} style={[styles.flockRow, last && styles.flockRowLast]}>
+      <View key={`flock-${f.userId}-${index ?? 0}`} style={[styles.flockRow, last && styles.flockRowLast]}>
         <View style={styles.flockRowMain}>
           <View
             style={[
@@ -1171,7 +1171,7 @@ export default function MapScreen({ route, navigation }: Props) {
               const isRequest = inv.kind === 'request';
               return (
                 <View
-                  key={inv.id}
+                  key={`inv-${inv.id}-${i}`}
                   style={[styles.flockRow, i === pendingInvites.length - 1 && styles.flockRowLast]}
                 >
                   <Text style={styles.flockName}>
@@ -1204,7 +1204,7 @@ export default function MapScreen({ route, navigation }: Props) {
           </View>
         )}
         <View style={styles.list}>
-          {topFlock.map((f, i) => renderFlockRow(f, i === topFlock.length - 1))}
+          {topFlock.map((f, i) => renderFlockRow(f, i === topFlock.length - 1, i))}
         </View>
         <SubgroupSection
           subgroups={subgroups}
@@ -1557,7 +1557,7 @@ export default function MapScreen({ route, navigation }: Props) {
                     ? 'car-outline'
                     : 'bus-outline';
               return (
-                <View key={dest.id} style={{ width: windowWidth, paddingHorizontal: 14 }}>
+                <View key={`carousel-dest-${dest.id}-${index}`} style={{ width: windowWidth, paddingHorizontal: 14 }}>
                   <Pressable
                     delayLongPress={300}
                     onPressIn={() => {
@@ -1644,7 +1644,7 @@ export default function MapScreen({ route, navigation }: Props) {
                           {dotWindow(destinations.length, selectedIndex, DOTS_MAX_VISIBLE).map(
                             (i2) => (
                               <Animated.View
-                                key={`dot-${destinations[i2].id}`}
+                                key={`dot-${destinations[i2]?.id || i2}-${i2}`}
                                 entering={FadeIn.duration(100)}
                                 exiting={FadeOut.duration(100)}
                                 layout={LinearTransition.springify().damping(14).stiffness(300)}

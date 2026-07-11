@@ -11,7 +11,7 @@ interface SubgroupSectionProps {
   sentInvites: any[];
   accent: string;
   setInviteSheetOpen: (open: boolean) => void;
-  renderFlockRow: (f: any, last: boolean) => React.ReactNode;
+  renderFlockRow: (f: any, last: boolean, index?: number) => React.ReactNode;
   styles: any;
 }
 
@@ -45,7 +45,7 @@ export function SubgroupSection({
                 </Text>
               </View>
             </View>
-            {memberRows.map((f, i) => renderFlockRow(f, i === memberRows.length - 1))}
+            {memberRows.map((f, i) => renderFlockRow(f, i === memberRows.length - 1, i))}
             {/* Invite entry lives ON my own team card — where you look to grow
                 the team — instead of buried on every other member's row. */}
             {sg.id === mySubgroupId && (
