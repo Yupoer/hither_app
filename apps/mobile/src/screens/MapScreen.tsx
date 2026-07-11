@@ -107,6 +107,7 @@ import {
   setSolo,
   setStragglerConfig,
   updateMyLocation,
+  updateGroupTripDetails,
 } from '../api/client';
 import { captureScreen } from 'react-native-view-shot';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -853,6 +854,31 @@ export default function MapScreen({ route, navigation }: Props) {
   // Optimistic flip for the straggler-alert switch — the server round trip +
   // realtime refetch otherwise reads as a 1-2s lag. Cleared once server truth
   // (group.stragglerAlerts) matches, in the effect below.
+  const [optimisticTripDays, setOptimisticTripDays] = useState<number | null>(null);
+  const [optimisticDepartureDate, setOptimisticDepartureDate] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (group && group.tripDays === optimisticTripDays && group.departureDate === optimisticDepartureDate) {
+      setOptimisticTripDays(null);
+      setOptimisticDepartureDate(null);
+    }
+  }, [group?.tripDays, group?.departureDate, optimisticTripDays, optimisticDepartureDate]);
+
+  const handleUpdateTripDetails = useCallback(async (days: number, date: string) => {
+    if (groupId) {
+       setOptimisticTripDays(days);
+       setOptimisticDepartureDate(date);
+       try {
+         await updateGroupTripDetails(groupId, days, date);
+         refresh();
+       } catch(e) {
+         setOptimisticTripDays(null);
+         setOptimisticDepartureDate(null);
+         Alert.alert('更新失敗', e instanceof Error ? e.message : String(e));
+       }
+    }
+  }, [groupId, refresh]);
+
   const [stragglerOverride, setStragglerOverride] = useState<boolean | null>(null);
   useEffect(() => {
     if (stragglerOverride === null) return;
@@ -1708,9 +1734,12 @@ export default function MapScreen({ route, navigation }: Props) {
         >
           <Text style={styles.overlayHint}>{t('map.routeHint')}</Text>
           <DestinationReorderList
+            groupId={groupId ?? undefined}
             destinations={destinations}
             canReorder={canEditItinerary}
-            onUpdateTripDetails={() => {}}
+            tripDays={optimisticTripDays ?? group?.tripDays}
+            departureDate={optimisticDepartureDate ?? group?.departureDate}
+            onUpdateTripDetails={handleUpdateTripDetails}
             onReorder={handleReorder}
             onDelete={canEditItinerary ? handleDelete : undefined}
             colors={dark}
