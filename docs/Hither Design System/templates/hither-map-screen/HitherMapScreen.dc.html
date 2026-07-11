@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<!-- @template name="Hither Map Screen" description="Leader's map home — Liquid Glass chrome (GroupChip, RolePill, MapControl, markers) over a dark navy basemap" -->
+<helmet>
+  <script src="./ds-base.js"></script>
+</helmet>
+<div style="width: 390px; height: 844px; border-radius: 44px; overflow: hidden; position: relative; background: radial-gradient(130% 100% at 25% 8%, #1e386b 0%, #16264a 42%, #101b36 100%); font-family: var(--font-ui); box-shadow: 0 40px 90px rgba(0,0,0,0.5);">
+
+  <!-- faint landmass + POI, decorative basemap stand-in -->
+  <div style="position: absolute; left: 8%; top: 62%; width: 46%; height: 18%; background: rgba(34,197,94,0.22); border-radius: 50% 40% 60% 30%; filter: blur(2px);"></div>
+  <span style="position: absolute; left: 46%; top: 68%; color: #8fb98f; font-size: 12px; font-weight: 600;">🌲 國立公園</span>
+
+  <!-- status bar -->
+  <div style="display: flex; align-items: center; justify-content: space-between; padding: 14px 26px 0; color: #fff; font-weight: 700; font-size: 15px;">
+    <span>14:40</span>
+    <span>▂▄▆ 􀙇 99</span>
+  </div>
+
+  <!-- top floating chrome -->
+  <div style="display: flex; justify-content: space-between; align-items: flex-start; padding: 14px 16px 0; position: relative; z-index: 2;">
+    <x-import component-from-global-scope="HitherDesignSystem_fea0fc.GroupChip" name="松山戶" count="4" hint-size="150px,46px"></x-import>
+    <x-import component-from-global-scope="HitherDesignSystem_fea0fc.RolePill" label="隊長" hint-size="100px,46px"></x-import>
+  </div>
+
+  <!-- map markers -->
+  <div style="position: absolute; left: 30%; top: 40%;">
+    <x-import component-from-global-scope="HitherDesignSystem_fea0fc.MemberMarker" emoji="🐑" color="signal" hint-size="44px,44px"></x-import>
+  </div>
+  <div style="position: absolute; left: 58%; top: 52%;">
+    <x-import component-from-global-scope="HitherDesignSystem_fea0fc.MemberMarker" emoji="🦊" color="sky" pulse="true" hint-size="44px,44px"></x-import>
+  </div>
+  <div style="position: absolute; left: 48%; top: 28%;">
+    <x-import component-from-global-scope="HitherDesignSystem_fea0fc.MemberMarker" gather="true" color="signal" size="50" pulse="true" hint-size="50px,50px"></x-import>
+  </div>
+
+  <!-- right map controls -->
+  <div style="position: absolute; right: 16px; bottom: 200px; z-index: 2;">
+    <x-import component-from-global-scope="HitherDesignSystem_fea0fc.MapControl" hint-size="52px,110px"></x-import>
+  </div>
+
+  <!-- Apple Maps tag -->
+  <div style="position: absolute; left: 20px; bottom: 148px; color: rgba(255,255,255,0.8); font-weight: 700; font-size: 14px;">Maps</div>
+
+  <!-- bottom search sheet peek -->
+  <div style="position: absolute; left: 12px; right: 12px; bottom: 22px; z-index: 2;">
+    <x-import component-from-global-scope="HitherDesignSystem_fea0fc.GlassSurface" variant="pane" weight="heavy" hint-size="100%,86px">
+      <div style="width: 40px; height: 5px; border-radius: 3px; background: rgba(255,255,255,0.35); margin: 2px auto 14px;"></div>
+      <div style="display: flex; align-items: center; gap: 12px; padding: 0 14px 14px;">
+        <div style="flex: 1; display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 16px; background: rgba(255,255,255,0.10); border-radius: 999px;">
+          <span style="color: var(--text-muted);">🔍</span>
+          <span style="color: var(--text-muted); font-weight: 500;">搜尋地點</span>
+        </div>
+        <x-import component-from-global-scope="HitherDesignSystem_fea0fc.Avatar" emoji="⚽️" color="neutral" size="46" ring="false" hint-size="46px,46px"></x-import>
+      </div>
+    </x-import>
+  </div>
+</div>
+
+</x-dc>
+</body>
+</html>

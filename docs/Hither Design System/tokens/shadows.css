@@ -1,0 +1,21 @@
+/* Hither — Shadow & glow tokens.
+ * On dark surfaces, elevation reads via soft ambient shadow + colored glow,
+ * not white borders. Accent elements emit a subtle glow (the "beacon" feel). */
+
+:root {
+  /* Neutral elevation */
+  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.35);
+  --shadow-raised: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-sheet: 0 -12px 40px rgba(0, 0, 0, 0.55);
+  --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.5);
+
+  /* Colored glows (beacon / focus) */
+  --glow-signal: 0 6px 24px rgba(255, 107, 53, 0.42);
+  --glow-accent: 0 6px 24px rgba(255, 107, 53, 0.42);
+  --glow-sky: 0 6px 24px rgba(55, 182, 255, 0.40);
+  --glow-pink: 0 6px 24px rgba(255, 68, 196, 0.38);
+  --glow-success: 0 6px 22px rgba(74, 222, 128, 0.40);
+
+  /* Ring for focus states */
+  --ring-focus: 0 0 0 3px rgba(55, 182, 255, 0.55);
+}

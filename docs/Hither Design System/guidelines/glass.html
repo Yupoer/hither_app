@@ -1,0 +1,18 @@
+<!-- @dsCard group="Brand" viewport="700x240" name="Liquid Glass material" subtitle="Blur + translucent fill + specular edge over the navy basemap" -->
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../styles.css">
+<style>body{margin:0;font-family:var(--font-ui);padding:0;overflow:hidden}
+.map{background:
+  radial-gradient(120% 90% at 30% 10%, #1d3566 0%, var(--map-navy) 45%, var(--map-navy-deep) 100%);
+  min-height:240px;padding:26px;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.glass{background:var(--glass-fill);backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur);
+  border:1px solid var(--glass-edge);box-shadow:var(--glass-shadow),var(--glass-inner-hi),var(--glass-inner-lo);
+  color:var(--text-primary);position:relative;overflow:hidden}
+.pill{border-radius:var(--radius-pill);padding:12px 22px;font-family:var(--font-display);font-weight:600;font-size:17px}
+.pane{border-radius:var(--radius-lg);padding:18px 22px;font-weight:600;max-width:230px}
+.sheen{position:absolute;inset:0;background:var(--glass-sheen);pointer-events:none}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--grass-500);box-shadow:0 0 8px var(--grass-500);margin-right:8px}</style></head>
+<body><div class="map">
+<div class="glass pill"><span class="dot"></span>隊長<div class="sheen"></div></div>
+<div class="glass pane">Liquid&nbsp;Glass<div style="font-size:12px;color:var(--text-secondary);font-weight:500;margin-top:4px">blur · saturate · specular edge</div><div class="sheen"></div></div>
+<div class="glass pill" style="background:var(--glass-fill-accent);border-color:rgba(255,140,90,.4)">🚩 集合點<div class="sheen"></div></div>
+</div></body></html>

@@ -36,9 +36,16 @@
 
 反之（單檔 UI 調整、樣式、文案、設定值、找某段文字）直接 Grep/Glob/Read，比較省 token。
 
+**Token 效率判準**：真正的變數不是改動大小，而是「查詢型態」與「grep→Read 迭代輪數」。grep 爆 token 的點不是 grep 本身，是它逼出的多輪 Read（grep 定義→Read body→再 grep callee→再 Read，每輪拉進大段無關檔案）。
+
+- **文字/定位型**（找字串、設定值、單一定義、單檔改）→ grep 省，1-2 次就完。
+- **關係型**（誰呼叫、呼叫鏈、依賴、改簽名影響面）→ cbm 省，一次 `trace_path` 取代多輪迭代。改動再小，只要要「全部 caller」就屬此類。
+- **常見函式名高命中需逐檔消歧** → cbm 省，圖用 node type/qualified name 消歧。
+- **經驗法則**：預期 grep→Read→再 grep **≥2~3 輪**，或高命中需逐檔 Read 消歧 → 用 cbm；否則 grep。
+
 ## 多模型調度（主控 Fable 5 + 子 agent）
 
-主模型固定為 Fable 5（推理 xhigh），扮演 tech lead：自己只做決策、拆解任務、驗收結果，不做機械執行。派工給下列子 agent（定義在 `.claude/agents/`，該目錄未進版控，每台機器需各自建立）：
+主模型固定為 Fable 5（推理 medium）(或是子模型不得高於主模型等級)，扮演 tech lead：自己只做決策、拆解任務、驗收結果，不做機械執行。派工給下列子 agent（定義在 `.claude/agents/`，該目錄未進版控，每台機器需各自建立）：
 
 - **deep-reasoner（Opus）**：架構決策、疑難 bug 根因分析、tradeoff 判斷、非平凡邏輯的 code review。
 - **fast-worker（Sonnet）**：規格已定案的機械執行——依指示改多檔案、跑指令、格式化、單純套用既有 pattern。

@@ -1,0 +1,1084 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hither Design System</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  /* ===== Page Shell ===== */
+  *,*::before,*::after{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;
+    background:var(--bg-app);
+    color:var(--text-primary);
+    font-family:var(--font-ui);
+    -webkit-font-smoothing:antialiased;
+    -moz-osx-font-smoothing:grayscale;
+  }
+
+  /* Hero */
+  .ds-hero{
+    position:relative;
+    overflow:hidden;
+    padding:80px var(--gutter-screen) 60px;
+    background:radial-gradient(120% 90% at 30% 10%, #1d3566 0%, var(--map-navy) 45%, var(--map-navy-deep) 100%);
+    border-bottom:1px solid var(--glass-edge);
+  }
+  .ds-hero::before{
+    content:'';position:absolute;inset:0;
+    background:var(--glass-sheen);
+    pointer-events:none;
+  }
+  .ds-hero h1{
+    font-family:var(--font-display);
+    font-size:var(--text-display-xl);
+    font-weight:var(--fw-bold);
+    letter-spacing:var(--tracking-tight);
+    line-height:var(--lh-tight);
+    margin:0 0 12px;
+    color:var(--text-primary);
+  }
+  .ds-hero h1 span{color:var(--accent)}
+  .ds-hero p{
+    font-size:var(--text-body);
+    color:var(--text-secondary);
+    line-height:var(--lh-relaxed);
+    max-width:620px;
+    margin:0;
+  }
+
+  /* Navigation */
+  .ds-nav{
+    position:sticky;top:0;z-index:100;
+    background:var(--glass-fill-heavy);
+    backdrop-filter:var(--glass-blur);
+    -webkit-backdrop-filter:var(--glass-blur);
+    border-bottom:1px solid var(--glass-edge);
+    padding:0 var(--gutter-screen);
+    overflow-x:auto;
+    -webkit-overflow-scrolling:touch;
+  }
+  .ds-nav::-webkit-scrollbar{display:none}
+  .ds-nav-inner{
+    display:flex;
+    gap:4px;
+    min-width:max-content;
+    padding:8px 0;
+  }
+  .ds-nav a{
+    display:inline-flex;
+    align-items:center;
+    padding:8px 16px;
+    border-radius:var(--radius-pill);
+    font-family:var(--font-display);
+    font-weight:var(--fw-semibold);
+    font-size:var(--text-footnote);
+    letter-spacing:var(--tracking-wide);
+    text-transform:uppercase;
+    color:var(--text-secondary);
+    text-decoration:none;
+    white-space:nowrap;
+    transition:all var(--dur-base) var(--ease-out);
+  }
+  .ds-nav a:hover{
+    background:var(--surface-hover);
+    color:var(--text-primary);
+  }
+  .ds-nav a.active{
+    background:var(--accent);
+    color:var(--on-accent);
+    box-shadow:var(--glow-accent);
+  }
+
+  /* Sections */
+  .ds-section{
+    padding:48px var(--gutter-screen) 32px;
+    max-width:1200px;
+    margin:0 auto;
+  }
+  .ds-section-title{
+    font-family:var(--font-display);
+    font-size:var(--text-display-md);
+    font-weight:var(--fw-bold);
+    letter-spacing:var(--tracking-tight);
+    margin:0 0 8px;
+  }
+  .ds-section-subtitle{
+    font-size:var(--text-callout);
+    color:var(--text-muted);
+    font-weight:var(--fw-medium);
+    margin:0 0 32px;
+  }
+
+  /* Card wrapper — each specimen/demo lives inside a card */
+  .ds-card{
+    background:var(--surface-card);
+    border-radius:var(--radius-xl);
+    overflow:hidden;
+    margin-bottom:28px;
+    box-shadow:var(--shadow-card);
+  }
+  .ds-card-header{
+    padding:18px 22px 14px;
+    border-bottom:1px solid var(--border-subtle);
+  }
+  .ds-card-header h3{
+    font-family:var(--font-display);
+    font-size:var(--text-display-sm);
+    font-weight:var(--fw-semibold);
+    margin:0 0 4px;
+  }
+  .ds-card-header p{
+    font-size:var(--text-footnote);
+    color:var(--text-muted);
+    margin:0;
+  }
+  .ds-card-body{padding:22px}
+
+  /* ===== Guideline: Colors ===== */
+  .swatch-row{display:flex;gap:14px;flex-wrap:wrap}
+  .swatch{
+    flex:1;min-width:120px;height:96px;border-radius:var(--radius-lg);
+    display:flex;flex-direction:column;justify-content:flex-end;padding:12px;
+    box-shadow:var(--shadow-card);
+  }
+  .swatch .sn{font-family:var(--font-display);font-weight:700;font-size:15px;color:#000}
+  .swatch .sh{font-size:12px;color:rgba(0,0,0,.55);font-weight:600}
+
+  .member-row{display:flex;gap:12px;flex-wrap:wrap}
+  .member-sw{
+    flex:1;min-width:80px;height:88px;border-radius:var(--radius-md);
+    display:flex;align-items:flex-end;padding:10px;box-shadow:var(--shadow-card);
+  }
+  .member-sw .mn{font-size:11px;color:rgba(0,0,0,.65);font-weight:700}
+
+  .neutral-row{display:flex;gap:6px;flex-wrap:wrap}
+  .neutral-sw{
+    flex:1;min-width:50px;height:88px;border-radius:10px;
+    display:flex;align-items:flex-end;justify-content:center;padding-bottom:8px;
+    border:1px solid var(--border-subtle);
+  }
+  .neutral-sw .nn{font-size:10px;font-weight:700}
+
+  /* ===== Guideline: Type ===== */
+  .type-row{display:flex;align-items:baseline;gap:14px;padding:5px 0}
+  .type-lab{
+    font-family:var(--font-ui);font-size:11px;color:var(--text-muted);
+    width:130px;font-weight:600;flex-shrink:0;
+  }
+  .type-d{font-family:var(--font-display);font-weight:600}
+  .type-u{font-family:var(--font-ui);font-weight:600}
+
+  /* ===== Guideline: Spacing ===== */
+  .spacing-row{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap}
+  .spacing-col{display:flex;flex-direction:column;align-items:center;gap:8px}
+  .spacing-bar{background:var(--accent);border-radius:4px;width:24px}
+  .spacing-n{font-size:11px;color:var(--text-muted);font-weight:700}
+
+  /* ===== Guideline: Radius ===== */
+  .radius-row{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+  .radius-box{
+    width:96px;height:96px;
+    background:var(--surface-card-elevated);
+    border:1.5px solid var(--border-subtle);
+    display:flex;align-items:flex-end;justify-content:center;
+    padding-bottom:8px;
+  }
+  .radius-n{font-size:11px;color:var(--text-muted);font-weight:700}
+
+  /* ===== Guideline: Glass ===== */
+  .glass-map{
+    background:radial-gradient(120% 90% at 30% 10%, #1d3566 0%, var(--map-navy) 45%, var(--map-navy-deep) 100%);
+    padding:26px;display:flex;gap:16px;align-items:center;flex-wrap:wrap;
+    border-radius:var(--radius-lg);min-height:200px;
+  }
+  .glass-el{
+    background:var(--glass-fill);
+    backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur);
+    border:1px solid var(--glass-edge);
+    box-shadow:var(--glass-shadow),var(--glass-inner-hi),var(--glass-inner-lo);
+    color:var(--text-primary);position:relative;overflow:hidden;
+  }
+  .glass-pill{border-radius:var(--radius-pill);padding:12px 22px;font-family:var(--font-display);font-weight:600;font-size:17px}
+  .glass-pane{border-radius:var(--radius-lg);padding:18px 22px;font-weight:600;max-width:230px}
+  .glass-sheen{position:absolute;inset:0;background:var(--glass-sheen);pointer-events:none}
+  .glass-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--grass-500);box-shadow:0 0 8px var(--grass-500);margin-right:8px}
+
+  /* ===== Component Demo ===== */
+  .comp-grp{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:18px}
+  .comp-lab{
+    font-size:11px;color:var(--text-muted);font-weight:700;
+    letter-spacing:.06em;text-transform:uppercase;
+    width:100%;margin-bottom:2px;
+  }
+  .forms-blk{margin-bottom:18px;max-width:420px}
+  .forms-row{display:flex;align-items:center;gap:16px}
+
+  /* Hither component map */
+  .hither-map{
+    background:radial-gradient(120% 90% at 30% 10%, #1d3566 0%, var(--map-navy) 45%, var(--map-navy-deep) 100%);
+    padding:22px;border-radius:var(--radius-lg);
+  }
+  .hither-lab{
+    font-size:11px;color:var(--text-secondary);font-weight:700;
+    letter-spacing:.06em;text-transform:uppercase;margin:16px 0 10px;
+  }
+  .hither-lab:first-child{margin-top:0}
+  .hither-row{display:flex;gap:16px;flex-wrap:wrap;align-items:center}
+  .hither-sheet{
+    background:var(--glass-fill-heavy);
+    backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur);
+    border:1px solid var(--glass-edge);border-radius:var(--radius-lg);
+    padding:6px 16px;max-width:420px;margin-top:6px;
+  }
+
+  /* Glass components on map */
+  .glass-comp-map{
+    background:radial-gradient(120% 90% at 30% 10%, #1d3566 0%, var(--map-navy) 45%, var(--map-navy-deep) 100%);
+    padding:26px;border-radius:var(--radius-lg);
+  }
+  .glass-comp-lab{
+    font-size:11px;color:var(--text-secondary);font-weight:700;
+    letter-spacing:.06em;text-transform:uppercase;margin:0 0 10px;
+  }
+  .glass-comp-row{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+
+  /* UI Kit wrapper */
+  .ds-kit-stage{
+    display:flex;flex-direction:column;align-items:center;
+    gap:22px;padding:0;
+  }
+  .ds-kit-picker{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+  .ds-kit-tab{
+    padding:9px 16px;border-radius:var(--radius-pill);
+    border:1px solid var(--border-subtle);
+    background:var(--surface-card);color:var(--text-secondary);
+    font-family:var(--font-display);font-weight:600;font-size:14px;
+    cursor:pointer;transition:all .18s;
+  }
+  .ds-kit-tab[data-on="1"]{
+    background:var(--accent);color:var(--on-accent);
+    border-color:transparent;box-shadow:var(--glow-accent);
+  }
+
+  /* Tokens grid */
+  .token-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(200px,1fr));
+    gap:12px;
+  }
+  .token-item{
+    padding:14px;
+    background:var(--surface-card-elevated);
+    border-radius:var(--radius-md);
+    border:1px solid var(--border-subtle);
+  }
+  .token-name{
+    font-family:'SF Mono','Fira Code',monospace;
+    font-size:12px;color:var(--accent);font-weight:600;
+    margin-bottom:6px;word-break:break-all;
+  }
+  .token-value{
+    font-size:13px;color:var(--text-secondary);font-weight:500;
+    word-break:break-all;
+  }
+  .token-swatch{
+    width:100%;height:36px;border-radius:var(--radius-xs);
+    margin-bottom:8px;border:1px solid var(--border-subtle);
+  }
+
+  /* Motion tokens */
+  .motion-demo{
+    display:flex;gap:20px;flex-wrap:wrap;align-items:center;
+  }
+  .motion-box{
+    width:80px;height:80px;
+    background:var(--accent);
+    border-radius:var(--radius-lg);
+    display:flex;align-items:center;justify-content:center;
+    font-family:var(--font-display);font-weight:700;font-size:13px;
+    color:var(--on-accent);cursor:pointer;
+    transition:transform var(--dur-base) var(--ease-spring);
+  }
+  .motion-box:hover{transform:scale(1.08)}
+  .motion-box:active{transform:scale(var(--press-scale))}
+
+  /* Footer */
+  .ds-footer{
+    text-align:center;padding:40px var(--gutter-screen);
+    color:var(--text-muted);font-size:var(--text-footnote);
+    border-top:1px solid var(--border-subtle);
+  }
+
+  /* Responsive */
+  @media(max-width:640px){
+    .ds-hero{padding:50px var(--gutter-screen) 40px}
+    .ds-hero h1{font-size:var(--text-display-lg)}
+    .ds-section{padding:32px var(--gutter-screen) 20px}
+    .swatch{min-width:100px;height:80px}
+    .radius-box{width:70px;height:70px}
+  }
+</style>
+</head>
+<body>
+
+<!-- ===== HERO ===== -->
+<header class="ds-hero">
+  <h1><span>Hither</span> Design System</h1>
+  <p>iOS app 設計系統 — 一位領隊引導多名隊員穿越實體空間。品牌隱喻：牧羊人的杖，把走散的夥伴聚在一起。Duolingo-fun 與 Apple-Maps-clean 的平衡，Liquid Glass 材質浮在深色地圖上。</p>
+</header>
+
+<!-- ===== NAVIGATION ===== -->
+<nav class="ds-nav">
+  <div class="ds-nav-inner">
+    <a href="#colors" class="active">Colors</a>
+    <a href="#type">Type</a>
+    <a href="#spacing">Spacing</a>
+    <a href="#glass-material">Glass</a>
+    <a href="#motion">Motion</a>
+    <a href="#shadows">Shadows</a>
+    <a href="#brand-assets">Assets &amp; Icons</a>
+    <a href="#comp-core">Core</a>
+    <a href="#comp-forms">Forms</a>
+    <a href="#comp-glass">Glass 元件</a>
+    <a href="#comp-hither">Hither</a>
+    <a href="#uikit">UI Kit</a>
+  </div>
+</nav>
+
+
+<!-- ============================================================ -->
+<!-- COLORS                                                       -->
+<!-- ============================================================ -->
+<section class="ds-section" id="colors">
+  <h2 class="ds-section-title">Colors</h2>
+  <p class="ds-section-subtitle">Theme accents · member palette · neutrals — dark-first, built to sit over a navy Apple-Maps basemap under glass</p>
+
+  <!-- Theme accents -->
+  <div class="ds-card">
+    <div class="ds-card-header">
+      <h3>Theme accents</h3>
+      <p>Signal Orange (default) · Electric Sky · Grass — the swappable theme trio</p>
+    </div>
+    <div class="ds-card-body">
+      <div class="swatch-row">
+        <div class="swatch" style="background:var(--signal-500)"><div class="sn">Signal Orange</div><div class="sh">#FF6B35 · --accent</div></div>
+        <div class="swatch" style="background:var(--sky-500)"><div class="sn">Electric Sky</div><div class="sh">#37B6FF · --nav</div></div>
+        <div class="swatch" style="background:var(--grass-500)"><div class="sn">Grass</div><div class="sh">#4ADE80 · --success</div></div>
+      </div>
+      <!-- Accent variants -->
+      <div style="margin-top:18px">
+        <div style="font-size:11px;color:var(--text-muted);font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px">Accent Variants</div>
+        <div class="swatch-row">
+          <div class="swatch" style="background:var(--signal-400);height:64px"><div class="sn" style="font-size:12px">Signal 400</div><div class="sh">#FF8757</div></div>
+          <div class="swatch" style="background:var(--signal-500);height:64px"><div class="sn" style="font-size:12px">Signal 500</div><div class="sh">#FF6B35</div></div>
+          <div class="swatch" style="background:var(--signal-600);height:64px"><div class="sn" style="font-size:12px">Signal 600</div><div class="sh">#F0521A</div></div>
+          <div class="swatch" style="background:var(--sky-400);height:64px"><div class="sn" style="font-size:12px">Sky 400</div><div class="sh">#5FC6FF</div></div>
+          <div class="swatch" style="background:var(--sky-500);height:64px"><div class="sn" style="font-size:12px">Sky 500</div><div class="sh">#37B6FF</div></div>
+          <div class="swatch" style="background:var(--sky-600);height:64px"><div class="sn" style="font-size:12px">Sky 600</div><div class="sh">#1C9BEC</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Member palette -->
+  <div class="ds-card">
+    <div class="ds-card-header">
+      <h3>Member palette</h3>
+      <p>Playful hues for member rings, markers &amp; onboarding delight</p>
+    </div>
+    <div class="ds-card-body">
+      <div class="member-row">
+        <div class="member-sw" style="background:var(--pink-500)"><div class="mn">Pink</div></div>
+        <div class="member-sw" style="background:var(--cyan-500)"><div class="mn">Cyan</div></div>
+        <div class="member-sw" style="background:var(--sun-500)"><div class="mn">Sun</div></div>
+        <div class="member-sw" style="background:var(--plum-500)"><div class="mn">Plum</div></div>
+        <div class="member-sw" style="background:var(--sky-500)"><div class="mn">Sky</div></div>
+        <div class="member-sw" style="background:var(--grass-500)"><div class="mn">Grass</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Neutrals -->
+  <div class="ds-card">
+    <div class="ds-card-header">
+      <h3>Neutrals (ink scale)</h3>
+      <p>Cool-tinted dark surfaces &amp; text, ink-900 → ink-100</p>
+    </div>
+    <div class="ds-card-body">
+      <div class="neutral-row">
+        <div class="neutral-sw" style="background:var(--ink-900)"><span class="nn" style="color:#888">900</span></div>
+        <div class="neutral-sw" style="background:var(--ink-800)"><span class="nn" style="color:#888">800</span></div>
+        <div class="neutral-sw" style="background:var(--ink-700)"><span class="nn" style="color:#999">700</span></div>
+        <div class="neutral-sw" style="background:var(--ink-600)"><span class="nn" style="color:#aaa">600</span></div>
+        <div class="neutral-sw" style="background:var(--ink-500)"><span class="nn" style="color:#ccc">500</span></div>
+        <div class="neutral-sw" style="background:var(--ink-400)"><span class="nn" style="color:#111">400</span></div>
+        <div class="neutral-sw" style="background:var(--ink-300)"><span class="nn" style="color:#111">300</span></div>
+        <div class="neutral-sw" style="background:var(--ink-100)"><span class="nn" style="color:#111">100</span></div>
+      </div>
+      <!-- Semantic aliases -->
+      <div style="margin-top:22px">
+        <div style="font-size:11px;color:var(--text-muted);font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px">Semantic Aliases</div>
+        <div class="token-grid">
+          <div class="token-item">
+            <div class="token-swatch" style="background:var(--bg-app)"></div>
+            <div class="token-name">--bg-app</div><div class="token-value">ink-900</div>
+          </div>
+          <div class="token-item">
+            <div class="token-swatch" style="background:var(--bg-raised)"></div>
+            <div class="token-name">--bg-raised</div><div class="token-value">ink-850</div>
+          </div>
+          <div class="token-item">
+            <div class="token-swatch" style="background:var(--surface-card)"></div>
+            <div class="token-name">--surface-card</div><div class="token-value">ink-800</div>
+          </div>
+          <div class="token-item">
+            <div class="token-swatch" style="background:var(--surface-card-elevated)"></div>
+            <div class="token-name">--surface-card-elevated</div><div class="token-value">ink-750</div>
+          </div>
+          <div class="token-item">
+            <div class="token-swatch" style="background:var(--surface-input)"></div>
+            <div class="token-name">--surface-input</div><div class="token-value">ink-700</div>
+          </div>
+          <div class="token-item">
+            <div class="token-swatch" style="background:var(--map-navy)"></div>
+            <div class="token-name">--map-navy</div><div class="token-value">#16264A</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ============================================================ -->
+<!-- TYPOGRAPHY                                                    -->
+<!-- ============================================================ -->
+<section class="ds-section" id="type">
+  <h2 class="ds-section-title">Typography</h2>
+  <p class="ds-section-subtitle">Fredoka display · Plus Jakarta Sans UI · type scale</p>
+
+  <!-- Display — Fredoka -->
+  <div class="ds-card">
+    <div class="ds-card-header">
+      <h3>Display — Fredoka</h3>
+      <p>Chunky rounded display face for headings, brand &amp; big numbers</p>
+    </div>
+    <div class="ds-card-body">
+      <div style="font-family:var(--font-display)">
+        <div style="font-size:var(--text-display-lg);font-weight:700;letter-spacing:-.02em;line-height:1">往哪走、還差多遠</div>
+        <div style="font-size:var(--text-display-sm);font-weight:600;color:var(--text-secondary);margin-top:10px">Fredoka · Semibold 600</div>
+        <div style="font-size:var(--text-metric-lg);font-weight:700;color:var(--accent);margin-top:10px">3 min <span style="font-size:16px;color:var(--text-muted);font-weight:600">· 273 m</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- UI / Body — Plus Jakarta Sans -->
+  <div class="ds-card">
+    <div class="ds-card-header">
+      <h3>UI / Body — Plus Jakarta Sans</h3>
+      <p>Clean humanist sans for body, labels &amp; meta (Apple-Maps-clean)</p>
+    </div>
+    <div class="ds-card-body">
+      <div style="font-family:var(--font-ui)">
+        <div style="font-size:var(--text-title);font-weight:700">領隊設定下一個集合點</div>
+        <div style="font-size:var(--text-body);font-weight:500;color:var(--text-secondary);margin-top:8px;max-width:560px;line-height:1.5">成員立即收到通知，並在地圖上看到方向與距離。走散的羊群，被重新聚集。</div>
+        <div style="font-size:var(--text-footnote);font-weight:600;color:var(--text-muted);letter-spacing:.02em;margin-top:8px">FOOTNOTE · 免費版上限 4 人</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Type scale -->
+  <div class="ds-card">
+    <div class="ds-card-header">
+      <h3>Type scale</h3>
+      <p>Display, title, body, footnote, caption steps</p>
+    </div>
+    <div class="ds-card-body">
+      <div class="type-row"><span class="type-lab">display-lg · 34</span><span class="type-d" style="font-size:34px">集合點</span></div>
+      <div class="type-row"><span class="type-lab">display-sm · 21</span><span class="type-d" style="font-size:21px">下一站在哪</span></div>
+      <div class="type-row"><span class="type-lab">title · 19</span><span class="type-u" style="font-size:19px">小羊 · 未出發</span></div>
+      <div class="type-row"><span class="type-lab">body · 16</span><span class="type-u" style="font-size:16px;font-weight:500">往這個方向走</span></div>
+      <div class="type-row"><span class="type-lab">footnote · 13</span><span class="type-u" style="font-size:13px;color:var(--text-muted)">273 m</span></div>
+    </div>
+  </div>
+
+  <!-- Token reference -->
+  <div class="ds-card">
+    <div class="ds-card-header">
+      <h3>Typography tokens</h3>
+      <p>Font families, weights, sizes, line heights, tracking</p>
+    </div>
+    <div class="ds-card-body">
+      <div class="token-grid">
+        <div class="token-item"><div class="token-name">--font-display</div><div class="token-value">'Fredoka', 'Trebuchet MS', system-ui, sans-serif</div></div>
+        <div class="token-item"><div class="token-name">--font-ui</div><div class="token-value">'Plus Jakarta Sans', -apple-system, 'Segoe UI', system-ui, sans-serif</div></div>
+        <div class="token-item"><div class="token-name">--fw-regular</div><div class="token-value">400</div></div>
+        <div class="token-item"><div class="token-name">--fw-medium</div><div class="token-value">500</div></div>
+        <div class="token-item"><div class="token-name">--fw-semibold</div><div class="token-value">600</div></div>
+        <div class="token-item"><div class="token-name">--fw-bold</div><div class="token-value">700</div></div>
+        <div class="token-item"><div class="token-name">--fw-extrabold</div><div class="token-value">800</div></div>
+        <div class="token-item"><div class="token-name">--text-display-xl</div><div class="token-value">44px</div></div>
+        <div class="token-item"><div class="token-name">--text-display-lg</div><div class="token-value">34px</div></div>
+        <div class="token-item"><div class="token-name">--text-display-md</div><div class="token-value">26px</div></div>
+        <div class="token-item"><div class="token-name">--text-display-sm</div><div class="token-value">21px</div></div>
+        <div class="token-item"><div class="token-name">--text-title</div><div class="token-value">19px</div></div>
+        <div class="token-item"><div class="token-name">--text-body</div><div class="token-value">16px</div></div>
+        <div class="token-item"><div class="token-name">--text-callout</div><div class="token-value">15px</div></div>
+        <div class="token-item"><div class="token-name">--text-footnote</div><div class="token-value">13px</div></div>
+        <div class="token-item"><div class="token-name">--text-caption</div><div class="token-value">11px</div></div>
+        <div class="token-item"><div class="token-name">--text-metric-xl</div><div class="token-value">52px</div></div>
+        <div class="token-item"><div class="token-name">--text-metric-lg</div><div class="token-value">34px</div></div>
+        <div class="token-item"><div class="token-name">--lh-tight</div><div class="token-value">1.05</div></div>
+        <div class="token-item"><div class="token-name">--lh-snug</div><div class="token-value">1.2</div></div>
+        <div class="token-item"><div class="token-name">--lh-normal</div><div class="token-value">1.4</div></div>
+        <div class="token-item"><div class="token-name">--lh-relaxed</div><div class="token-value">1.55</div></div>
+        <div class="token-item"><div class="token-name">--tracking-tight</div><div class="token-value">-0.02em</div></div>
+        <div class="token-item"><div class="token-name">--tracking-normal</div><div class="token-value">0</div></div>
+        <div class="token-item"><div class="token-name">--tracking-wide</div><div class="token-value">0.04em</div></div>
+        <div class="token-item"><div class="token-name">--tracking-caps</div><div class="token-value">0.08em</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ============================================================ -->
+<!-- SPACING                                                      -->
+<!-- ============================================================ -->
+<section class="ds-section" id="spacing">
+  <h2 class="ds-section-title">Spacing &amp; Radius</h2>
+  <p class="ds-section-subtitle">4px base grid · spacing scale · corner radii · tap targets</p>
+
+  <!-- Spacing scale -->
+  <div class="ds-card">
+    <div class="ds-card-header">
+      <h3>Spacing scale</h3>
+      <p>4px base grid · space-1 → space-9</p>
+    </div>
+    <div class="ds-card-body">
+      <div class="spacing-row">
+        <div class="spacing-col"><div class="spacing-bar" style="height:4px"></div><div class="spacing-n">1·4</div></div>
+        <div class="spacing-col"><div class="spacing-bar" style="height:8px"></div><div class="spacing-n">2·8</div></div>
+        <div class="spacing-col"><div class="spacing-bar" style="height:12px"></div><div class="spacing-n">3·12</div></div>
+        <div class="spacing-col"><div class="spacing-bar" style="height:16px"></div><div class="spacing-n">4·16</div></div>
+        <div class="spacing-col"><div class="spacing-bar" style="height:24px"></div><div class="spacing-n">6·24</div></div>
+        <div class="spacing-col"><div class="spacing-bar" style="height:32px"></div><div class="spacing-n">7·32</div></div>
+        <div class="spacing-col"><div class="spacing-bar" style="height:48px"></div><div class="spacing-n">9·48</div></div>
+      </div>
+      <!-- Spacing tokens grid -->
+      <div style="margin-top:22px">
+        <div class="token-grid">
+          <div class="token-item"><div class="token-name">--gutter-screen</div><div class="token-value">20px · 預設側邊內距</div></div>
+          <div class="token-item"><div class="token-name">--gap-card</div><div class="token-value">12px · 卡片間距</div></div>
+          <div class="token-item"><div class="token-name">--tap-min</div><div class="token-value">44px · iOS HIG 最小觸控</div></div>
+          <div class="token-item"><div class="token-name">--tap-comfortable</div><div class="token-value">52px</div></div>
+          <div class="token-item"><div class="token-name">--h-button</div><div class="token-value">54px</div></div>
+          <div class="token-item"><div class="token-name">--h-button-sm</div><div class="token-value">40px</div></div>
+          <div class="token-item"><div class="token-name">--h-input</div><div class="token-value">52px</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Corner radii -->
+  <div class="ds-card">
+    <div class="ds-card-header">
+      <h3>Corner radii</h3>
+      <p>Generous friendly rounding · sm → 2xl → pill</p>
+    </div>
+    <div class="ds-card-body">
+      <div class="radius-row">
+        <div class="radius-box" style="border-radius:var(--radius-sm)"><span class="radius-n">sm 12</span></div>
+        <div class="radius-box" style="border-radius:var(--radius-md)"><span class="radius-n">md 18</span></div>
+        <div class="radius-box" style="border-radius:var(--radius-lg)"><span class="radius-n">lg 24</span></div>
+        <div class="radius-box" style="border-radius:var(--radius-xl)"><span class="radius-n">xl 30</span></div>
+        <div class="radius-box" style="border-radius:var(--radius-pill)"><span class="radius-n">pill</span></div>
+      </div>
+      <div style="margin-top:18px" class="token-grid">
+        <div class="token-item"><div class="token-name">--radius-xs</div><div class="token-value">8px</div></div>
+        <div class="token-item"><div class="token-name">--radius-sm</div><div class="token-value">12px</div></div>
+        <div class="token-item"><div class="token-name">--radius-md</div><div class="token-value">18px</div></div>
+        <div class="token-item"><div class="token-name">--radius-lg</div><div class="token-value">24px · 預設卡片</div></div>
+        <div class="token-item"><div class="token-name">--radius-xl</div><div class="token-value">30px · 大型卡片/sheet</div></div>
+        <div class="token-item"><div class="token-name">--radius-2xl</div><div class="token-value">38px · bottom sheet</div></div>
+        <div class="token-item"><div class="token-name">--radius-pill</div><div class="token-value">999px · 按鈕/chips/頭像</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ============================================================ -->
+<!-- GLASS MATERIAL                                               -->
+<!-- ============================================================ -->
+<section class="ds-section" id="glass-material">
+  <h2 class="ds-section-title">Liquid Glass Material</h2>
+  <p class="ds-section-subtitle">iOS 26 風格 — blur + translucent fill + specular edge over the navy basemap</p>
+
+  <div class="ds-card">
+    <div class="ds-card-header">
+      <h3>Liquid Glass material</h3>
+      <p>Blur + translucent fill + specular edge over the navy basemap</p>
+    </div>
+    <div class="ds-card-body" style="padding:0">
+      <div class="glass-map">
+        <div class="glass-el glass-pill"><span class="glass-dot"></span>隊長<div class="glass-sheen"></div></div>
+        <div class="glass-el glass-pane">Liquid&nbsp;Glass<div style="font-size:12px;color:var(--text-secondary);font-weight:500;margin-top:4px">blur · saturate · specular edge</div><div class="glass-sheen"></div></div>
+        <div class="glass-el glass-pill" style="background:var(--glass-fill-accent);border-color:rgba(255,140,90,.4)">🚩 集合點<div class="glass-sheen"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Glass tokens -->
+  <div class="ds-card">
+    <div class="ds-card-header">
+      <h3>Glass tokens</h3>
+      <p>Blur stacks, fills, edges, shadows, and sheen</p>
+    </div>
+    <div class="ds-card-body">
+      <div class="token-grid">
+        <div class="token-item"><div class="token-name">--glass-blur</div><div class="token-value">blur(24px) saturate(180%)</div></div>
+        <div class="token-item"><div class="token-name">--glass-blur-strong</div><div class="token-value">blur(40px) saturate(200%)</div></div>
+        <div class="token-item"><div class="token-name">--glass-blur-thin</div><div class="token-value">blur(14px) saturate(160%)</div></div>
+        <div class="token-item">
+          <div class="token-swatch" style="background:var(--glass-fill)"></div>
+          <div class="token-name">--glass-fill</div><div class="token-value">rgba(28,32,40,0.55)</div>
+        </div>
+        <div class="token-item">
+          <div class="token-swatch" style="background:var(--glass-fill-light)"></div>
+          <div class="token-name">--glass-fill-light</div><div class="token-value">rgba(48,54,66,0.48)</div>
+        </div>
+        <div class="token-item">
+          <div class="token-swatch" style="background:var(--glass-fill-heavy)"></div>
+          <div class="token-name">--glass-fill-heavy</div><div class="token-value">rgba(18,21,27,0.72)</div>
+        </div>
+        <div class="token-item">
+          <div class="token-swatch" style="background:var(--glass-fill-accent)"></div>
+          <div class="token-name">--glass-fill-accent</div><div class="token-value">rgba(255,107,53,0.22)</div>
+        </div>
+        <div class="token-item"><div class="token-name">--glass-edge</div><div class="token-value">rgba(255,255,255,0.16)</div></div>
+        <div class="token-item"><div class="token-name">--glass-edge-bright</div><div class="token-value">rgba(255,255,255,0.28)</div></div>
+        <div class="token-item"><div class="token-name">--glass-shadow</div><div class="token-value">0 8px 32px rgba(0,0,0,0.45)</div></div>
+        <div class="token-item"><div class="token-name">--glass-inner-hi</div><div class="token-value">inset 0 1px 0 rgba(255,255,255,0.22)</div></div>
+        <div class="token-item"><div class="token-name">--glass-inner-lo</div><div class="token-value">inset 0 -1px 0 rgba(0,0,0,0.25)</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ============================================================ -->
+<!-- MOTION                                                       -->
+<!-- ============================================================ -->
+<section class="ds-section" id="motion">
+  <h2 class="ds-section-title">Motion</h2>
+  <p class="ds-section-subtitle">Playful but not silly — quick springy taps, gentle eases for surfaces</p>
+
+  <div class="ds-card">
+    <div class="ds-card-header">
+      <h3>Motion tokens</h3>
+      <p>Durations, easing curves, press feedback</p>
+    </div>
+    <div class="ds-card-body">
+      <div class="token-grid" style="margin-bottom:24px">
+        <div class="token-item"><div class="token-name">--dur-fast</div><div class="token-value">120ms</div></div>
+        <div class="token-item"><div class="token-name">--dur-base</div><div class="token-value">200ms</div></div>
+        <div class="token-item"><div class="token-name">--dur-slow</div><div class="token-value">320ms</div></div>
+        <div class="token-item"><div class="token-name">--dur-sheet</div><div class="token-value">380ms</div></div>
+        <div class="token-item"><div class="token-name">--ease-out</div><div class="token-value">cubic-bezier(0.22, 1, 0.36, 1)</div></div>
+        <div class="token-item"><div class="token-name">--ease-in-out</div><div class="token-value">cubic-bezier(0.65, 0, 0.35, 1)</div></div>
+        <div class="token-item"><div class="token-name">--ease-spring</div><div class="token-value">cubic-bezier(0.34, 1.56, 0.64, 1)</div></div>
+        <div class="token-item"><div class="token-name">--press-scale</div><div class="token-value">0.96</div></div>
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:12px">Interactive Demo — hover / click</div>
+      <div class="motion-demo">
+        <div class="motion-box" style="transition-duration:var(--dur-fast)">Fast</div>
+        <div class="motion-box" style="transition-duration:var(--dur-base)">Base</div>
+        <div class="motion-box" style="transition-duration:var(--dur-slow);background:var(--sky-500);color:#04263B">Slow</div>
+        <div class="motion-box" style="transition-timing-function:var(--ease-spring);background:var(--grass-500);color:#043318">Spring</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ============================================================ -->
+<!-- SHADOWS                                                      -->
+<!-- ============================================================ -->
+<section class="ds-section" id="shadows">
+  <h2 class="ds-section-title">Shadows &amp; Glows</h2>
+  <p class="ds-section-subtitle">Neutral elevation + colored glows (the beacon feel)</p>
+
+  <div class="ds-card">
+    <div class="ds-card-header">
+      <h3>Shadow &amp; glow tokens</h3>
+      <p>On dark surfaces, elevation reads via soft ambient shadow + colored glow</p>
+    </div>
+    <div class="ds-card-body">
+      <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:24px">
+        <div style="width:120px;height:90px;background:var(--surface-card-elevated);border-radius:var(--radius-lg);box-shadow:var(--shadow-card);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text-muted);font-weight:700">card</div>
+        <div style="width:120px;height:90px;background:var(--surface-card-elevated);border-radius:var(--radius-lg);box-shadow:var(--shadow-raised);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text-muted);font-weight:700">raised</div>
+        <div style="width:120px;height:90px;background:var(--surface-card-elevated);border-radius:var(--radius-lg);box-shadow:var(--shadow-pop);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text-muted);font-weight:700">pop</div>
+        <div style="width:120px;height:90px;background:var(--signal-500);border-radius:var(--radius-lg);box-shadow:var(--glow-signal);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--on-accent);font-weight:700">glow-signal</div>
+        <div style="width:120px;height:90px;background:var(--sky-500);border-radius:var(--radius-lg);box-shadow:var(--glow-sky);display:flex;align-items:center;justify-content:center;font-size:11px;color:#04263B;font-weight:700">glow-sky</div>
+        <div style="width:120px;height:90px;background:var(--grass-500);border-radius:var(--radius-lg);box-shadow:var(--glow-success);display:flex;align-items:center;justify-content:center;font-size:11px;color:#043318;font-weight:700">glow-success</div>
+        <div style="width:120px;height:90px;background:var(--pink-500);border-radius:var(--radius-lg);box-shadow:var(--glow-pink);display:flex;align-items:center;justify-content:center;font-size:11px;color:#000;font-weight:700">glow-pink</div>
+      </div>
+      <div class="token-grid">
+        <div class="token-item"><div class="token-name">--shadow-card</div><div class="token-value">0 2px 8px rgba(0,0,0,0.35)</div></div>
+        <div class="token-item"><div class="token-name">--shadow-raised</div><div class="token-value">0 8px 24px rgba(0,0,0,0.45)</div></div>
+        <div class="token-item"><div class="token-name">--shadow-sheet</div><div class="token-value">0 -12px 40px rgba(0,0,0,0.55)</div></div>
+        <div class="token-item"><div class="token-name">--shadow-pop</div><div class="token-value">0 12px 32px rgba(0,0,0,0.5)</div></div>
+        <div class="token-item"><div class="token-name">--glow-signal</div><div class="token-value">0 6px 24px rgba(255,107,53,0.42)</div></div>
+        <div class="token-item"><div class="token-name">--glow-sky</div><div class="token-value">0 6px 24px rgba(55,182,255,0.40)</div></div>
+        <div class="token-item"><div class="token-name">--glow-success</div><div class="token-value">0 6px 22px rgba(74,222,128,0.40)</div></div>
+        <div class="token-item"><div class="token-name">--glow-pink</div><div class="token-value">0 6px 24px rgba(255,68,196,0.38)</div></div>
+        <div class="token-item"><div class="token-name">--ring-focus</div><div class="token-value">0 0 0 3px rgba(55,182,255,0.55)</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ============================================================ -->
+<!-- BRAND ASSETS & ICONS                                         -->
+<!-- ============================================================ -->
+<section class="ds-section" id="brand-assets">
+  <h2 class="ds-section-title">Brand Assets &amp; Option Icons</h2>
+  <p class="ds-section-subtitle">牧羊人拐杖 LOGO (扁平化設計) 與選項按鈕 2.5D 立體去背圖示 (夜燈、晨光、暮色、森林)</p>
+
+  <div class="ds-card">
+    <div class="ds-card-header">
+      <h3>Brand Logo</h3>
+      <p>Shepherd's crook logo designed in Signal Orange (#FF6B35)</p>
+    </div>
+    <div class="ds-card-body" style="background:var(--map-navy); text-align:center; padding:32px;">
+      <img src="assets/logo.png" alt="Hither Logo" style="height:120px; object-fit:contain;" />
+      <p style="margin-top:12px; font-size:12px; color:var(--text-secondary);">扁平化、簡單的牧羊人拐杖標誌</p>
+    </div>
+  </div>
+
+  <div class="ds-card">
+    <div class="ds-card-header">
+      <h3>Option Buttons Icons (2.5D Style)</h3>
+      <p>3D claymorphic emoji icons with transparent background for setting selection buttons</p>
+    </div>
+    <div class="ds-card-body" style="background:radial-gradient(120% 90% at 30% 10%, #1d3566 0%, var(--map-navy) 45%, var(--map-navy-deep) 100%);">
+      <div style="display:flex; justify-content:space-around; gap:16px; flex-wrap:wrap; padding:20px 0;">
+        <div style="text-align:center; flex:1; min-width:100px;">
+          <div style="background:var(--glass-fill); backdrop-filter:var(--glass-blur); border:1px solid var(--glass-edge); border-radius:var(--radius-lg); padding:16px; box-shadow:var(--glass-shadow); transition:transform var(--dur-base) var(--ease-spring); cursor:pointer;" onmouseover="this.style.transform='scale(1.08)'" onmouseout="this.style.transform='scale(1)'">
+            <img src="assets/night_light.png" alt="夜燈" style="width:80px; height:80px; object-fit:contain;" />
+          </div>
+          <p style="margin-top:8px; font-weight:600;">夜燈 (Night Light)</p>
+        </div>
+        <div style="text-align:center; flex:1; min-width:100px;">
+          <div style="background:var(--glass-fill); backdrop-filter:var(--glass-blur); border:1px solid var(--glass-edge); border-radius:var(--radius-lg); padding:16px; box-shadow:var(--glass-shadow); transition:transform var(--dur-base) var(--ease-spring); cursor:pointer;" onmouseover="this.style.transform='scale(1.08)'" onmouseout="this.style.transform='scale(1)'">
+            <img src="assets/morning_light.png" alt="晨光" style="width:80px; height:80px; object-fit:contain;" />
+          </div>
+          <p style="margin-top:8px; font-weight:600;">晨光 (Morning Light)</p>
+        </div>
+        <div style="text-align:center; flex:1; min-width:100px;">
+          <div style="background:var(--glass-fill); backdrop-filter:var(--glass-blur); border:1px solid var(--glass-edge); border-radius:var(--radius-lg); padding:16px; box-shadow:var(--glass-shadow); transition:transform var(--dur-base) var(--ease-spring); cursor:pointer;" onmouseover="this.style.transform='scale(1.08)'" onmouseout="this.style.transform='scale(1)'">
+            <img src="assets/dusk.png" alt="暮色" style="width:80px; height:80px; object-fit:contain;" />
+          </div>
+          <p style="margin-top:8px; font-weight:600;">暮色 (Dusk)</p>
+        </div>
+        <div style="text-align:center; flex:1; min-width:100px;">
+          <div style="background:var(--glass-fill); backdrop-filter:var(--glass-blur); border:1px solid var(--glass-edge); border-radius:var(--radius-lg); padding:16px; box-shadow:var(--glass-shadow); transition:transform var(--dur-base) var(--ease-spring); cursor:pointer;" onmouseover="this.style.transform='scale(1.08)'" onmouseout="this.style.transform='scale(1)'">
+            <img src="assets/forest.png" alt="森林" style="width:80px; height:80px; object-fit:contain;" />
+          </div>
+          <p style="margin-top:8px; font-weight:600;">森林 (Forest)</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ============================================================ -->
+<!-- COMPONENTS — Core                                            -->
+<!-- ============================================================ -->
+<section class="ds-section" id="comp-core">
+  <h2 class="ds-section-title">Core Components</h2>
+  <p class="ds-section-subtitle">Button variants, IconButton, Avatar rings, Pills, Banner</p>
+
+  <div class="ds-card">
+    <div class="ds-card-header">
+      <h3>Core — Buttons, Avatars, Pills</h3>
+      <p>Button variants, IconButton, Avatar rings, Pills, Banner</p>
+    </div>
+    <div class="ds-card-body" id="comp-core-root"></div>
+  </div>
+</section>
+
+
+<!-- ============================================================ -->
+<!-- COMPONENTS — Forms                                           -->
+<!-- ============================================================ -->
+<section class="ds-section" id="comp-forms">
+  <h2 class="ds-section-title">Form Components</h2>
+  <p class="ds-section-subtitle">Search input, toggle, and the Leader / Follower segmented control</p>
+
+  <div class="ds-card">
+    <div class="ds-card-header">
+      <h3>Forms — Input, Switch, Segmented</h3>
+      <p>Search input, toggle, and the Leader / Follower segmented control</p>
+    </div>
+    <div class="ds-card-body" id="comp-forms-root"></div>
+  </div>
+</section>
+
+
+<!-- ============================================================ -->
+<!-- COMPONENTS — Glass                                           -->
+<!-- ============================================================ -->
+<section class="ds-section" id="comp-glass">
+  <h2 class="ds-section-title">Glass Components</h2>
+  <p class="ds-section-subtitle">GlassSurface variants over the navy basemap</p>
+
+  <div class="ds-card">
+    <div class="ds-card-header">
+      <h3>Glass — surfaces &amp; materials</h3>
+      <p>GlassSurface variants over the navy basemap</p>
+    </div>
+    <div class="ds-card-body" style="padding:0">
+      <div class="glass-comp-map">
+        <div class="glass-comp-lab">GlassSurface — pill · pane · capsule · tinted</div>
+        <div class="glass-comp-row" id="comp-glass-root"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ============================================================ -->
+<!-- COMPONENTS — Hither                                          -->
+<!-- ============================================================ -->
+<section class="ds-section" id="comp-hither">
+  <h2 class="ds-section-title">Hither Components</h2>
+  <p class="ds-section-subtitle">GroupChip, RolePill, MapControl, MemberRow, DistanceChip, MemberMarker, GatherPointRow, ProgressDots</p>
+
+  <div class="ds-card">
+    <div class="ds-card-header">
+      <h3>Hither — group, roles, members, markers</h3>
+      <p>GroupChip, RolePill, MapControl, MemberRow, DistanceChip, MemberMarker, GatherPointRow, ProgressDots</p>
+    </div>
+    <div class="ds-card-body" style="padding:0">
+      <div class="hither-map">
+        <div class="hither-lab" style="margin-top:0">Floating glass — GroupChip · RolePill · MapControl</div>
+        <div class="hither-row" id="hither-r1"></div>
+        <div class="hither-lab">Members list — MemberRow · DistanceChip</div>
+        <div class="hither-sheet" id="hither-r2"></div>
+        <div class="hither-lab">Markers — MemberMarker · gather beacon</div>
+        <div class="hither-row" id="hither-r3"></div>
+        <div class="hither-lab">GatherPointRow · ProgressDots</div>
+        <div id="hither-r4" style="max-width:420px"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ============================================================ -->
+<!-- UI KIT                                                       -->
+<!-- ============================================================ -->
+<section class="ds-section" id="uikit">
+  <h2 class="ds-section-title">Hither iOS — Interactive Kit</h2>
+  <p class="ds-section-subtitle">Onboarding → 地圖 → 成員 sheet → 設定集合點 → 隊員導航</p>
+
+  <div class="ds-card">
+    <div class="ds-card-header">
+      <h3>Hither iOS — interactive kit</h3>
+      <p>Onboarding → map → members sheet → set gather point → follower nav</p>
+    </div>
+    <div class="ds-card-body" style="background:#050608;padding:40px 20px">
+      <div class="ds-kit-stage">
+        <div id="kit-phone"></div>
+        <div class="ds-kit-picker" id="kit-picker"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ===== FOOTER ===== -->
+<footer class="ds-footer">
+  <p>Hither Design System · Dark-first · Liquid Glass · Fredoka + Plus Jakarta Sans</p>
+  <p style="margin-top:6px">Fonts: Google Fonts CDN substitutions · Icons: Unicode/Emoji (Phosphor recommended for web)</p>
+</footer>
+
+
+<!-- ===== SCRIPTS ===== -->
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="_ds_bundle.js"></script>
+
+<!-- UI Kit JSX (loaded from ui_kits) -->
+<script type="text/babel" src="ui_kits/hither_ios/frame.jsx"></script>
+<script type="text/babel" src="ui_kits/hither_ios/Onboarding.jsx"></script>
+<script type="text/babel" src="ui_kits/hither_ios/MapHome.jsx"></script>
+<script type="text/babel" src="ui_kits/hither_ios/MembersSheet.jsx"></script>
+<script type="text/babel" src="ui_kits/hither_ios/SetGatherPoint.jsx"></script>
+<script type="text/babel" src="ui_kits/hither_ios/FollowerNav.jsx"></script>
+
+<script type="text/babel">
+// ===== Nav active state =====
+(function(){
+  const links = document.querySelectorAll('.ds-nav a');
+  const sections = [...links].map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
+  function update(){
+    const scrollY = window.scrollY + 80;
+    let current = '';
+    sections.forEach(s => { if(s.offsetTop <= scrollY) current = '#' + s.id; });
+    links.forEach(a => a.classList.toggle('active', a.getAttribute('href') === current));
+  }
+  window.addEventListener('scroll', update, {passive:true});
+  update();
+})();
+
+// ===== Core Components Demo =====
+(function(){
+  const { Button, IconButton, Avatar, Pill, Banner } = window.HitherDesignSystem_fea0fc;
+  function CoreDemo(){return (<>
+    <div className="comp-lab">Buttons</div>
+    <div className="comp-grp">
+      <Button variant="primary">設定集合點</Button>
+      <Button variant="secondary">導航</Button>
+      <Button variant="success">已抵達</Button>
+      <Button variant="glass">稍後</Button>
+      <Button variant="ghost" size="sm">取消</Button>
+      <Button variant="primary" disabled>停用</Button>
+    </div>
+    <div className="comp-lab">Icon buttons</div>
+    <div className="comp-grp">
+      <IconButton tone="neutral">＋</IconButton>
+      <IconButton tone="glass">🔔</IconButton>
+      <IconButton tone="signal">➤</IconButton>
+      <IconButton tone="sky">⤢</IconButton>
+    </div>
+    <div className="comp-lab">Avatars</div>
+    <div className="comp-grp">
+      <Avatar emoji="⚽️" color="success" leader />
+      <Avatar emoji="🐑" color="signal" />
+      <Avatar emoji="🦊" color="sky" />
+      <Avatar emoji="🐰" color="plum" />
+      <Avatar label="AB" color="pink" />
+      <Avatar emoji="🐑" color="neutral" dimmed />
+    </div>
+    <div className="comp-lab">Pills & banner</div>
+    <div className="comp-grp">
+      <Pill color="success">已抵達</Pill>
+      <Pill color="signal" soft>領隊中</Pill>
+      <Pill color="sky" soft>隊員</Pill>
+      <Pill color="neutral">4 人</Pill>
+    </div>
+    <div className="comp-grp"><Banner tone="signal" icon="🚩">領隊已設定新的集合點</Banner></div>
+  </>);}
+  ReactDOM.createRoot(document.getElementById('comp-core-root')).render(<CoreDemo/>);
+})();
+
+// ===== Forms Components Demo =====
+(function(){
+  const { Input, Switch, Segmented } = window.HitherDesignSystem_fea0fc;
+  function FormsDemo(){
+    const [q,setQ]=React.useState('');
+    const [solo,setSolo]=React.useState(false);
+    const [role,setRole]=React.useState('leader');
+    return (<>
+      <div className="forms-blk"><div className="comp-lab">Input</div>
+        <Input iconLeft="🔍" placeholder="搜尋地點" value={q} onChange={e=>setQ(e.target.value)} /></div>
+      <div className="forms-blk"><div className="comp-lab">Switch — 獨自行動</div>
+        <div className="forms-row"><Switch checked={solo} onChange={setSolo}/><span style={{color:'var(--text-secondary)',fontWeight:600}}>{solo?'開':'關'}</span></div></div>
+      <div className="forms-blk"><div className="comp-lab">Segmented — 角色</div>
+        <Segmented options={[{label:'隊長',value:'leader'},{label:'隊員',value:'follower'}]} value={role} onChange={setRole}/></div>
+    </>);
+  }
+  ReactDOM.createRoot(document.getElementById('comp-forms-root')).render(<FormsDemo/>);
+})();
+
+// ===== Glass Components Demo =====
+(function(){
+  const { GlassSurface } = window.HitherDesignSystem_fea0fc;
+  const S={fontFamily:'var(--font-display)',fontWeight:600};
+  function GlassDemo(){return (<>
+    <GlassSurface variant="pill" style={{padding:'12px 22px',...S}}>隊長</GlassSurface>
+    <GlassSurface variant="pane" style={{padding:'18px 22px',maxWidth:220}}>
+      <div style={S}>成員 · 4</div>
+      <div style={{fontSize:13,color:'var(--text-secondary)',fontWeight:500,marginTop:4}}>免費版上限 4 人</div>
+    </GlassSurface>
+    <GlassSurface variant="capsule" style={{padding:'14px',...S,textAlign:'center'}}>⤢<div style={{height:12}}/>➤</GlassSurface>
+    <GlassSurface variant="pill" tint="accent" style={{padding:'12px 22px',...S}}>🚩 集合點</GlassSurface>
+  </>);}
+  ReactDOM.createRoot(document.getElementById('comp-glass-root')).render(<GlassDemo/>);
+})();
+
+// ===== Hither Components Demo =====
+(function(){
+  const NS = window.HitherDesignSystem_fea0fc;
+  const { GroupChip, RolePill, MapControl, MemberRow, DistanceChip, MemberMarker, GatherPointRow, ProgressDots } = NS;
+  const members=[{emoji:'⚽️',color:'success'},{emoji:'🐑',color:'signal'},{emoji:'🦊',color:'sky'}];
+
+  ReactDOM.createRoot(document.getElementById('hither-r1')).render(<>
+    <GroupChip name="松山戶" count={4} members={members}/>
+    <RolePill label="隊長"/>
+    <MapControl items={[{icon:'⤢'},{icon:'➤',active:true}]}/>
+  </>);
+
+  ReactDOM.createRoot(document.getElementById('hither-r2')).render(<>
+    <MemberRow emoji="⚽️" name="sudjnd" leader status="領隊中" statusTone="success" you/>
+    <MemberRow emoji="🐑" name="小羊" color="signal" status="未出發" time="3 min" distance="273 m" divider/>
+    <MemberRow emoji="🦊" name="阿福" color="sky" status="未出發" time="4 min" distance="323 m" divider/>
+  </>);
+
+  ReactDOM.createRoot(document.getElementById('hither-r3')).render(<div style={{display:'flex',gap:20,alignItems:'center'}}>
+    <MemberMarker emoji="🐑" color="signal"/>
+    <MemberMarker emoji="🦊" color="sky" pulse/>
+    <MemberMarker emoji="🐰" color="plum"/>
+    <MemberMarker gather color="signal"/>
+  </div>);
+
+  ReactDOM.createRoot(document.getElementById('hither-r4')).render(<div style={{maxWidth:420}}>
+    <GatherPointRow icon="🚩" title="0 個集合點 · 調整順序" trailing={<span style={{color:'var(--accent)',fontWeight:700}}>編輯</span>}/>
+    <div style={{height:16}}/>
+    <ProgressDots total={4} active={1}/>
+  </div>);
+})();
+
+// ===== UI Kit =====
+(function(){
+  const SCREENS = [
+    ['onboarding','導覽'], ['map','地圖'], ['members','成員'],
+    ['gather','設定集合點'], ['follower','隊員導航'],
+  ];
+  function KitApp(){
+    const [screen,setScreen]=React.useState('onboarding');
+    const { PhoneFrame } = window;
+    let view=null;
+    if(screen==='onboarding') view=<window.Onboarding onDone={()=>setScreen('map')} />;
+    else if(screen==='map') view=<window.MapHome onOpenSheet={()=>setScreen('members')} onSetGather={()=>setScreen('gather')} />;
+    else if(screen==='members') view=<window.MembersSheet onClose={()=>setScreen('map')} onSetGather={()=>setScreen('gather')} />;
+    else if(screen==='gather') view=<window.SetGatherPoint onCancel={()=>setScreen('members')} onConfirm={()=>setScreen('follower')} />;
+    else if(screen==='follower') view=<window.FollowerNav onOpenSheet={()=>setScreen('members')} />;
+
+    React.useEffect(()=>{
+      const p=document.getElementById('kit-picker');
+      p.innerHTML='';
+      SCREENS.forEach(([id,label])=>{
+        const b=document.createElement('button');
+        b.className='ds-kit-tab'; b.textContent=label; b.dataset.on=screen===id?'1':'0';
+        b.onclick=()=>setScreen(id); p.appendChild(b);
+      });
+    },[screen]);
+
+    return <PhoneFrame>{view}</PhoneFrame>;
+  }
+  ReactDOM.createRoot(document.getElementById('kit-phone')).render(<KitApp/>);
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,50 @@
+<!-- @dsCard group="Components" viewport="700x460" name="Hither — group, roles, members, markers" subtitle="GroupChip, RolePill, MapControl, MemberRow, DistanceChip, MemberMarker, GatherPointRow, ProgressDots" -->
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<style>html,body{margin:0}
+.map{background:radial-gradient(120% 90% at 30% 10%, #1d3566 0%, var(--map-navy) 45%, var(--map-navy-deep) 100%);
+  min-height:460px;padding:22px;font-family:var(--font-ui);color:var(--text-primary)}
+.lab{font-size:11px;color:var(--text-secondary);font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin:16px 0 10px}
+.lab:first-child{margin-top:0}
+.row{display:flex;gap:16px;flex-wrap:wrap;align-items:center}
+.sheet{background:var(--glass-fill-heavy);backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur);border:1px solid var(--glass-edge);border-radius:var(--radius-lg);padding:6px 16px;max-width:420px;margin-top:6px}</style></head>
+<body><div class="map">
+<div class="lab">Floating glass — GroupChip · RolePill · MapControl</div>
+<div class="row" id="r1"></div>
+<div class="lab">Members list — MemberRow · DistanceChip</div>
+<div class="sheet" id="r2"></div>
+<div class="lab">Markers — MemberMarker · gather beacon</div>
+<div class="row" id="r3"></div>
+<div class="lab">GatherPointRow · ProgressDots</div>
+<div id="r4" style="max-width:420px"></div>
+</div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<script type="text/babel">
+const NS = window.HitherDesignSystem_fea0fc;
+const { GroupChip, RolePill, MapControl, MemberRow, DistanceChip, MemberMarker, GatherPointRow, ProgressDots } = NS;
+const members=[{emoji:'⚽️',color:'success'},{emoji:'🐑',color:'signal'},{emoji:'🦊',color:'sky'}];
+ReactDOM.createRoot(document.getElementById('r1')).render(<>
+  <GroupChip name="松山戶" count={4} members={members}/>
+  <RolePill label="隊長"/>
+  <MapControl items={[{icon:'⤢'},{icon:'➤',active:true}]}/>
+</>);
+ReactDOM.createRoot(document.getElementById('r2')).render(<>
+  <MemberRow emoji="⚽️" name="sudjnd" leader status="領隊中" statusTone="success" you/>
+  <MemberRow emoji="🐑" name="小羊" color="signal" status="未出發" time="3 min" distance="273 m" divider/>
+  <MemberRow emoji="🦊" name="阿福" color="sky" status="未出發" time="4 min" distance="323 m" divider/>
+</>);
+ReactDOM.createRoot(document.getElementById('r3')).render(<div style={{display:'flex',gap:20,alignItems:'center'}}>
+  <MemberMarker emoji="🐑" color="signal"/>
+  <MemberMarker emoji="🦊" color="sky" pulse/>
+  <MemberMarker emoji="🐰" color="plum"/>
+  <MemberMarker gather color="signal"/>
+</div>);
+ReactDOM.createRoot(document.getElementById('r4')).render(<div style={{maxWidth:420}}>
+  <GatherPointRow icon="🚩" title="0 個集合點 · 調整順序" trailing={<span style={{color:'var(--accent)',fontWeight:700}}>編輯</span>}/>
+  <div style={{height:16}}/>
+  <ProgressDots total={4} active={1}/>
+</div>);
+</script>
+</body></html>

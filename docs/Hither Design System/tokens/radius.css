@@ -1,0 +1,11 @@
+/* Hither — Radius tokens. Generous, friendly rounding throughout. */
+
+:root {
+  --radius-xs: 8px;
+  --radius-sm: 12px;
+  --radius-md: 18px;
+  --radius-lg: 24px;    /* default card */
+  --radius-xl: 30px;    /* large card / sheet */
+  --radius-2xl: 38px;   /* bottom sheet top */
+  --radius-pill: 999px; /* buttons, chips, avatars */
+}

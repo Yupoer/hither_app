@@ -1,0 +1,82 @@
+/* Hither — Color tokens
+ * Dark-first, built to sit over a dark Apple-Maps navy basemap under glass.
+ * The theme accent is a SINGLE swappable token (--accent + friends). Default is
+ * Signal Orange (the "gather beacon"); retheme by repointing the aliases below.
+ * Base values first, semantic aliases second. */
+
+:root {
+  /* ---- Accent families (any can become the theme via the aliases) ---- */
+  --signal-500: #FF6B35;   /* Signal Orange — beacon / gather (DEFAULT THEME) */
+  --signal-400: #FF8757;
+  --signal-600: #F0521A;
+  --signal-glow: rgba(255, 107, 53, 0.42);
+
+  --sky-500: #37B6FF;      /* Electric Sky — navigation / leader path */
+  --sky-400: #5FC6FF;
+  --sky-600: #1C9BEC;
+  --sky-glow: rgba(55, 182, 255, 0.40);
+
+  --grass-500: #4ADE80;    /* Grass — arrived / success / go */
+  --grass-400: #6EE79B;
+  --grass-600: #2FC468;
+  --grass-glow: rgba(74, 222, 128, 0.40);
+
+  /* ---- Playful member / delight palette (from the SETLOG art direction) ---- */
+  --pink-500: #FF44C4;
+  --pink-400: #FF66D2;
+  --cyan-500: #33E0D6;
+  --cyan-400: #5CEBE2;
+  --sun-500: #FFD84D;
+  --sun-400: #FFE477;
+  --plum-500: #A97BFF;
+  --plum-400: #BE9BFF;
+
+  /* ---- Neutrals (dark, faintly cool to match the navy basemap) ---- */
+  --black: #060709;
+  --ink-900: #0C0E12;      /* app background */
+  --ink-850: #12151A;      /* raised background */
+  --ink-800: #191C22;      /* card / sheet surface */
+  --ink-750: #1F232A;      /* elevated surface */
+  --ink-700: #282C34;      /* input / hover surface */
+  --ink-600: #363B44;      /* borders, dividers */
+  --ink-500: #4B515B;      /* disabled / muted UI */
+  --ink-400: #6C737F;      /* muted icon */
+  --ink-300: #969CA7;      /* secondary text */
+  --ink-200: #C4C9D1;      /* tertiary-strong text */
+  --ink-100: #ECEEF2;      /* primary text on dark */
+  --white: #FFFFFF;
+
+  /* Apple-Maps-style basemap navy (kit backdrops behind glass) */
+  --map-navy: #16264A;
+  --map-navy-deep: #101B36;
+
+  /* ---- Semantic aliases ---- (retheme by changing these) */
+  --bg-app: var(--ink-900);
+  --bg-raised: var(--ink-850);
+  --surface-card: var(--ink-800);
+  --surface-card-elevated: var(--ink-750);
+  --surface-input: var(--ink-700);
+  --surface-hover: var(--ink-700);
+
+  --border-subtle: var(--ink-600);
+  --border-strong: var(--ink-500);
+
+  --text-primary: var(--ink-100);
+  --text-secondary: var(--ink-300);
+  --text-muted: var(--ink-400);
+  --text-inverse: var(--ink-900);
+
+  --accent: var(--signal-500);
+  --accent-hover: var(--signal-400);
+  --accent-press: var(--signal-600);
+  --accent-glow: var(--signal-glow);
+  --on-accent: #2A0E00;    /* dark text on the bright accent */
+
+  --nav: var(--sky-500);
+  --success: var(--grass-500);
+  --highlight: var(--sun-500);
+
+  /* Role colors */
+  --role-leader: var(--signal-500);
+  --role-follower: var(--sky-500);
+}

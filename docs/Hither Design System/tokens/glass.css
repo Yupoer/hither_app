@@ -1,0 +1,42 @@
+/* Hither — Liquid Glass material tokens (iOS 26 style).
+ * Approximates Apple's Liquid Glass on the web: heavy backdrop blur + saturation,
+ * a translucent fill, a bright top edge highlight (specular), and a soft ambient
+ * shadow so the pane reads as a floating slab of glass over the map.
+ *
+ * LIMITATION: real Liquid Glass refracts the content behind it in real time;
+ * backdrop-filter cannot refract, so we simulate depth with blur + edge sheen.
+ *
+ * Usage recipe for any glass surface:
+ *   background: var(--glass-fill);
+ *   backdrop-filter: var(--glass-blur);  -webkit-backdrop-filter: var(--glass-blur);
+ *   border: 1px solid var(--glass-edge);
+ *   box-shadow: var(--glass-shadow), var(--glass-inner-hi);
+ */
+
+:root {
+  /* Blur + saturation stacks */
+  --glass-blur: blur(24px) saturate(180%); /* @kind other */
+  --glass-blur-strong: blur(40px) saturate(200%); /* @kind other */
+  --glass-blur-thin: blur(14px) saturate(160%); /* @kind other */
+
+  /* Translucent fills (over dark map). Lighter = more "frosted". */
+  --glass-fill: rgba(28, 32, 40, 0.55);
+  --glass-fill-light: rgba(48, 54, 66, 0.48);
+  --glass-fill-heavy: rgba(18, 21, 27, 0.72);   /* sheets — more opaque for legibility */
+
+  /* Accent-tinted glass (a themed pane, e.g. active gather-point control) */
+  --glass-fill-accent: rgba(255, 107, 53, 0.22);
+
+  /* Edges: a light top highlight + darker base = the specular rim of glass */
+  --glass-edge: rgba(255, 255, 255, 0.16);
+  --glass-edge-bright: rgba(255, 255, 255, 0.28);
+
+  /* Shadows: ambient drop + an inset top highlight line (the sheen) */
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  --glass-shadow-sheet: 0 -10px 44px rgba(0, 0, 0, 0.5);
+  --glass-inner-hi: inset 0 1px 0 rgba(255, 255, 255, 0.22); /* @kind shadow */
+  --glass-inner-lo: inset 0 -1px 0 rgba(0, 0, 0, 0.25); /* @kind shadow */
+
+  /* A diagonal specular sheen you can layer as a ::before gradient */
+  --glass-sheen: linear-gradient(135deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.04) 28%, rgba(255,255,255,0) 55%); /* @kind other */
+}

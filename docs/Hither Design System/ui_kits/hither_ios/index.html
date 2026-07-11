@@ -1,0 +1,65 @@
+<!-- @dsCard group="Hither iOS" viewport="900x900" name="Hither iOS — interactive kit" subtitle="Onboarding → map → members sheet → set gather point → follower nav" -->
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hither iOS — UI Kit</title>
+<link rel="stylesheet" href="../../styles.css">
+<style>
+  html,body{margin:0;height:100%;background:#050608;font-family:var(--font-ui)}
+  .stage{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:40px 20px}
+  .picker{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+  .tab{padding:9px 16px;border-radius:var(--radius-pill);border:1px solid var(--border-subtle);
+    background:var(--surface-card);color:var(--text-secondary);font-family:var(--font-display);
+    font-weight:600;font-size:14px;cursor:pointer;transition:all .18s}
+  .tab[data-on="1"]{background:var(--accent);color:var(--on-accent);border-color:transparent;box-shadow:var(--glow-accent)}
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div id="phone"></div>
+    <div class="picker" id="picker"></div>
+  </div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+  <script src="../../_ds_bundle.js"></script>
+  <script type="text/babel" src="frame.jsx"></script>
+  <script type="text/babel" src="Onboarding.jsx"></script>
+  <script type="text/babel" src="MapHome.jsx"></script>
+  <script type="text/babel" src="MembersSheet.jsx"></script>
+  <script type="text/babel" src="SetGatherPoint.jsx"></script>
+  <script type="text/babel" src="FollowerNav.jsx"></script>
+  <script type="text/babel">
+    const SCREENS = [
+      ['onboarding','導覽'], ['map','地圖'], ['members','成員'],
+      ['gather','設定集合點'], ['follower','隊員導航'],
+    ];
+    function App(){
+      const [screen,setScreen]=React.useState('onboarding');
+      const { PhoneFrame } = window;
+      let view=null;
+      if(screen==='onboarding') view=<window.Onboarding onDone={()=>setScreen('map')} />;
+      else if(screen==='map') view=<window.MapHome onOpenSheet={()=>setScreen('members')} onSetGather={()=>setScreen('gather')} />;
+      else if(screen==='members') view=<window.MembersSheet onClose={()=>setScreen('map')} onSetGather={()=>setScreen('gather')} />;
+      else if(screen==='gather') view=<window.SetGatherPoint onCancel={()=>setScreen('members')} onConfirm={()=>setScreen('follower')} />;
+      else if(screen==='follower') view=<window.FollowerNav onOpenSheet={()=>setScreen('members')} />;
+
+      React.useEffect(()=>{
+        const p=document.getElementById('picker');
+        p.innerHTML='';
+        SCREENS.forEach(([id,label])=>{
+          const b=document.createElement('button');
+          b.className='tab'; b.textContent=label; b.dataset.on=screen===id?'1':'0';
+          b.onclick=()=>setScreen(id); p.appendChild(b);
+        });
+      },[screen]);
+
+      return <PhoneFrame>{view}</PhoneFrame>;
+    }
+    ReactDOM.createRoot(document.getElementById('phone')).render(<App/>);
+  </script>
+</body>
+</html>

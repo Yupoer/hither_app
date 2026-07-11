@@ -1,0 +1,353 @@
+/**
+ * GroupService — group lifecycle (create, join, fetch state, config).
+ *
+ * Extracted from the monolithic client.ts for maintainability. Every export is
+ * re-exported from `../client.ts` so existing imports stay unchanged.
+ */
+import { supabase } from '../supabase';
+import {
+  demoSetJourneyStatus,
+  demoSetSolo,
+  demoSelfSplit,
+  demoSelfMerge,
+  getDemoState,
+  isDemoGroup,
+} from '../demo';
+import type {
+  Coordinates,
+  Destination,
+  Group,
+  GroupState,
+  JourneyStatus,
+  MemberLocation,
+  MemberRole,
+  Subgroup,
+  SubgroupInvite,
+  SubgroupMode,
+} from '../../types';
+import { generateInviteCode, requireUserId, orThrow } from './_helpers';
+import { mapDestination } from './DestinationService';
+
+// ── Row shapes (DB snake_case) ─────────────────────────────────────────────
+
+export interface GroupRow {
+  id: string;
+  name: string;
+  invite_code: string;
+  created_by: string | null;
+  created_at: string | null;
+  journey_status: JourneyStatus | null;
+  straggler_alerts?: boolean | null;
+  straggler_threshold_m?: number | null;
+  trip_days?: number | null;
+  departure_date?: string | null;
+}
+
+export interface MembershipRow {
+  user_id: string;
+  role: MemberRole;
+  solo?: boolean | null;
+  subgroup_id?: string | null;
+}
+
+export interface SubgroupRow {
+  id: string;
+  name: string;
+  mode: SubgroupMode;
+  leader_id: string | null;
+  parent_subgroup_id: string | null;
+}
+
+export interface SubgroupInviteRow {
+  id: string;
+  group_id: string;
+  subgroup_id: string;
+  inviter_id: string;
+  invitee_id: string;
+  status: SubgroupInvite['status'];
+  created_at: string | null;
+}
+
+export interface ProfileRow {
+  id: string;
+  nickname: string;
+  avatar?: string | null;
+  avatar_color?: string | null;
+}
+
+export interface LocationRow {
+  user_id: string;
+  latitude: number | null;
+  longitude: number | null;
+  updated_at: string | null;
+}
+
+// ── Pure mappers ───────────────────────────────────────────────────────────
+
+export function mapGroup(row: GroupRow): Group {
+  return {
+    id: row.id,
+    name: row.name,
+    inviteCode: row.invite_code,
+    createdBy: row.created_by ?? '',
+    createdAt: row.created_at ?? new Date().toISOString(),
+    journeyStatus: row.journey_status ?? 'paused',
+    stragglerAlerts: row.straggler_alerts ?? true,
+    stragglerThresholdM: row.straggler_threshold_m ?? 500,
+    tripDays: row.trip_days ?? undefined,
+    departureDate: row.departure_date ?? undefined,
+  };
+}
+
+export function mapMember(
+  membership: MembershipRow,
+  profile: ProfileRow | undefined,
+  location: LocationRow | undefined,
+): MemberLocation {
+  const coordinates: Coordinates | undefined =
+    location && location.latitude != null && location.longitude != null
+      ? { latitude: location.latitude, longitude: location.longitude }
+      : undefined;
+  return {
+    userId: membership.user_id,
+    name: profile?.nickname ?? '',
+    role: membership.role,
+    avatar: profile?.avatar ?? undefined,
+    avatarColor: profile?.avatar_color ?? undefined,
+    solo: membership.solo ?? false,
+    subgroupId: membership.subgroup_id ?? undefined,
+    coordinates,
+    lastUpdated: location?.updated_at ?? undefined,
+  };
+}
+
+export function mapSubgroup(row: SubgroupRow): Subgroup {
+  return {
+    id: row.id,
+    name: row.name,
+    mode: row.mode,
+    leaderId: row.leader_id ?? undefined,
+    parentId: row.parent_subgroup_id ?? undefined,
+  };
+}
+
+export function mapSubgroupInvite(row: SubgroupInviteRow): SubgroupInvite {
+  return {
+    id: row.id,
+    groupId: row.group_id,
+    subgroupId: row.subgroup_id,
+    inviterId: row.inviter_id,
+    inviteeId: row.invitee_id,
+    status: row.status,
+    createdAt: row.created_at ?? undefined,
+  };
+}
+
+// ── API functions ──────────────────────────────────────────────────────────
+
+export async function createGroup(name: string): Promise<Group> {
+  const uid = await requireUserId();
+
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const inviteCode = generateInviteCode();
+    const { data, error } = await supabase
+      .from('groups')
+      .insert({ name, invite_code: inviteCode, created_by: uid })
+      .select(
+        'id, name, invite_code, created_by, created_at, journey_status, straggler_alerts, straggler_threshold_m',
+      )
+      .single();
+
+    if (error) {
+      if ((error as { code?: string }).code === '23505') {
+        lastError = error;
+        continue;
+      }
+      throw new Error(error.message);
+    }
+
+    const group = mapGroup(data as GroupRow);
+    const { error: memberError } = await supabase
+      .from('memberships')
+      .insert({ group_id: group.id, user_id: uid, role: 'leader', status: 'active' });
+    orThrow(memberError);
+    return group;
+  }
+
+  throw new Error(
+    lastError instanceof Error ? lastError.message : '建立群組失敗，請再試一次',
+  );
+}
+
+export async function joinGroup(inviteCode: string): Promise<Group> {
+  await requireUserId();
+  const { data, error } = await supabase.rpc('join_group', {
+    p_code: inviteCode.toUpperCase(),
+  });
+  if (error) {
+    if ((error as { code?: string }).code === 'P0002') {
+      throw new Error('找不到這個群組');
+    }
+    throw new Error(error.message);
+  }
+  return mapGroup(data as GroupRow);
+}
+
+export async function getGroupState(groupId: string): Promise<GroupState> {
+  if (isDemoGroup(groupId)) {
+    const { data } = await supabase.auth.getUser();
+    const uid = data.user?.id;
+    let profile: ProfileRow | null = null;
+    if (uid) {
+      const { data: p } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', uid)
+        .maybeSingle();
+      profile = (p as ProfileRow | null) ?? null;
+    }
+    return getDemoState(uid, profile?.nickname, profile?.avatar ?? undefined);
+  }
+  const [groupRes, membersRes, itineraryRes, locationsRes] = await Promise.all([
+    supabase
+      .from('groups')
+      .select(
+        'id, name, invite_code, created_by, created_at, journey_status, straggler_alerts, straggler_threshold_m',
+      )
+      .eq('id', groupId)
+      .single(),
+    supabase
+      .from('memberships')
+      .select('*')
+      .eq('group_id', groupId),
+    supabase
+      .from('itinerary_items')
+      .select('id, title, address, latitude, longitude, position, day, meet_at, subgroup_id')
+      .eq('group_id', groupId)
+      .order('position', { ascending: true }),
+    supabase
+      .from('member_locations')
+      .select('user_id, latitude, longitude, updated_at')
+      .eq('group_id', groupId),
+  ]);
+
+  orThrow(groupRes.error);
+  orThrow(membersRes.error);
+  orThrow(itineraryRes.error);
+  orThrow(locationsRes.error);
+
+  const memberRows = (membersRes.data ?? []) as MembershipRow[];
+  const locationRows = (locationsRes.data ?? []) as LocationRow[];
+  const itineraryRows = (itineraryRes.data ?? []) as unknown[];
+
+  const userIds = memberRows.map((m) => m.user_id);
+  let profileRows: ProfileRow[] = [];
+  if (userIds.length > 0) {
+    const { data: profiles, error: profileError } = await supabase
+      .from('profiles')
+      .select('*')
+      .in('id', userIds);
+    orThrow(profileError);
+    profileRows = (profiles ?? []) as ProfileRow[];
+  }
+
+  const profileById = new Map(profileRows.map((p) => [p.id, p]));
+  const locationByUser = new Map(locationRows.map((l) => [l.user_id, l]));
+
+  const members: MemberLocation[] = memberRows.map((m) =>
+    mapMember(m, profileById.get(m.user_id), locationByUser.get(m.user_id)),
+  );
+
+  const destinations: Destination[] = (itineraryRows as any[]).map(mapDestination);
+
+  let subgroups: Subgroup[] = [];
+  const sgRes = await supabase
+    .from('subgroups')
+    .select('*')
+    .eq('group_id', groupId);
+  if (!sgRes.error) {
+    subgroups = ((sgRes.data ?? []) as SubgroupRow[]).map(mapSubgroup);
+  }
+
+  return {
+    group: mapGroup(groupRes.data as GroupRow),
+    members,
+    destinations,
+    subgroups,
+    nextDestination: destinations[0],
+  };
+}
+
+export async function setJourneyStatus(
+  groupId: string,
+  status: JourneyStatus,
+): Promise<void> {
+  if (isDemoGroup(groupId)) {
+    demoSetJourneyStatus(status);
+    return;
+  }
+  const { error } = await supabase
+    .from('groups')
+    .update({ journey_status: status })
+    .eq('id', groupId);
+  orThrow(error);
+}
+
+export async function setStragglerConfig(
+  groupId: string,
+  enabled: boolean,
+  thresholdM: number,
+): Promise<void> {
+  const { error } = await supabase
+    .from('groups')
+    .update({ straggler_alerts: enabled, straggler_threshold_m: thresholdM })
+    .eq('id', groupId);
+  orThrow(error);
+}
+
+export async function updateGroupTripDetails(
+  groupId: string,
+  tripDays: number,
+  departureDate: string,
+): Promise<void> {
+  if (isDemoGroup(groupId)) return;
+  const { error } = await supabase
+    .from('groups')
+    .update({ trip_days: tripDays, departure_date: departureDate })
+    .eq('id', groupId);
+  orThrow(error);
+}
+
+export async function setSolo(groupId: string, solo: boolean): Promise<void> {
+  if (isDemoGroup(groupId)) {
+    demoSetSolo(solo);
+    return;
+  }
+  const { error } = await supabase.rpc('set_solo', {
+    p_group: groupId,
+    p_solo: solo,
+  });
+  orThrow(error);
+}
+
+export async function selfSplit(groupId: string, name: string): Promise<Subgroup> {
+  if (isDemoGroup(groupId)) {
+    return demoSelfSplit(name);
+  }
+  const { data, error } = await supabase.rpc('self_split', {
+    p_group: groupId,
+    p_name: name,
+  });
+  orThrow(error);
+  return mapSubgroup(data as SubgroupRow);
+}
+
+export async function selfMerge(groupId: string): Promise<void> {
+  if (isDemoGroup(groupId)) {
+    demoSelfMerge();
+    return;
+  }
+  const { error } = await supabase.rpc('self_merge', { p_group: groupId });
+  orThrow(error);
+}

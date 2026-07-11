@@ -80,10 +80,11 @@ describe('pure mappers (snake_case row -> camelCase type)', () => {
       id: 'd1',
       title: '集合點',
       address: null,
-      latitude: 25.04,
-      longitude: 121.56,
-      position: 0,
-    });
+      latitude: 25.033,
+      longitude: 121.565,
+      position: 1,
+      day: 1,
+    } as any);
     expect(d.order).toBe(0);
     expect(d.title).toBe('集合點');
     expect(d.coordinates).toEqual({ latitude: 25.04, longitude: 121.56 });
