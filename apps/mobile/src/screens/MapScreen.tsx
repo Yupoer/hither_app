@@ -1350,6 +1350,7 @@ export default function MapScreen({ route, navigation }: Props) {
       />
 
       {/* Group pill — moved to bottom left, tracking sheet like recenter capsule. */}
+      {!confirmCardReady && (
       <Animated.View
         style={[styles.teamCapsuleWrap, recenterStyle]}
         pointerEvents={atFull ? 'none' : 'box-none'}
@@ -1391,6 +1392,7 @@ export default function MapScreen({ route, navigation }: Props) {
           </Pressable>
         </View>
       </Animated.View>
+      )}
 
 
       {/* Recenter capsule — rides above the sheet. Fit-all on top, locate-me

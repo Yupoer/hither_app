@@ -234,7 +234,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       style={StyleSheet.absoluteFill}
       initialRegion={gathering ? regionFor(gathering.coordinates, latOffset) : undefined}
       userInterfaceStyle={mapInterfaceStyle}
-      mapPadding={{ top: 0, left: 32, right: 0, bottom: 42 }}
+      mapPadding={{ top: 120, left: 32, right: 32, bottom: bottomOverlap ?? 42 }}
       showsUserLocation
       showsCompass
     >
