@@ -25,7 +25,7 @@ interface SettingsOverlayProps {
   styles: any;
 }
 
-export function SettingsOverlay({
+export const SettingsOverlay = React.memo(function SettingsOverlay({
   visible,
   onClose,
   isLeader,
@@ -292,4 +292,4 @@ export function SettingsOverlay({
       </OverlaySheet>
     </>
   );
-}
+});

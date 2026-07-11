@@ -277,9 +277,37 @@ export default function MapScreen({ route, navigation }: Props) {
   }, []);
   const [searchVisible, setSearchVisible] = useState(false);
   // A place picked in search, awaiting the bottom "add / cancel" confirm card.
-  // While set, the search field + locate capsule hide behind the card.
   const [pendingPlace, setPendingPlace] = useState<PlaceResult | null>(null);
+  // Two-phase flow: pendingPlace is set immediately when a place is picked
+  // (so the search sheet can close and the bottom sheet collapses to peek).
+  // confirmCardReady flips true instantly — then the bounce-up
+  // card appears and the search bar / recenter capsule hide.
+  const [confirmCardReady, setConfirmCardReady] = useState(false);
   const [kmlVisible, setKmlVisible] = useState(false);
+  // Bounce-up entrance animation for the add-gather-point confirm card.
+  const confirmCardAnim = useSharedValue(0);
+  useEffect(() => {
+    if (pendingPlace) {
+      const id = setTimeout(() => {
+        setConfirmCardReady(true);
+        confirmCardAnim.value = 0;
+        confirmCardAnim.value = withSpring(1, { damping: 16, stiffness: 100, mass: 1 });
+      }, 0);
+      return () => clearTimeout(id);
+    } else {
+      setConfirmCardReady(false);
+      confirmCardAnim.value = 0;
+    }
+  }, [pendingPlace, confirmCardAnim]);
+  const confirmCardStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(confirmCardAnim.value, [0, 0.4], [0, 1], Extrapolation.CLAMP),
+    transform: [{ translateY: interpolate(confirmCardAnim.value, [0, 1], [120, 0], Extrapolation.CLAMP) }],
+  }));
+  /** Dismiss the confirm card (used by both Cancel and Add buttons). */
+  function dismissConfirmCard() {
+    setConfirmCardReady(false);
+    setPendingPlace(null);
+  }
   const [paywallTrigger, setPaywallTrigger] = useState<TranslationKey | undefined>(undefined);
   const [paywallVisible, setPaywallVisible] = useState(false);
   const openPaywall = useCallback((trigger?: TranslationKey) => {
@@ -892,18 +920,26 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [groupId, refresh]);
 
   const [stragglerOverride, setStragglerOverride] = useState<boolean | null>(null);
+  const [stragglerThresholdOverride, setStragglerThresholdOverride] = useState<number | null>(null);
   useEffect(() => {
     if (stragglerOverride === null) return;
     if (group && group.stragglerAlerts === stragglerOverride) setStragglerOverride(null);
   }, [group?.stragglerAlerts, stragglerOverride]);
 
+  useEffect(() => {
+    if (stragglerThresholdOverride === null) return;
+    if (group && group.stragglerThresholdM === stragglerThresholdOverride) setStragglerThresholdOverride(null);
+  }, [group?.stragglerThresholdM, stragglerThresholdOverride]);
+
   const persistStragglerConfig = useCallback((enabled: boolean, thresholdM: number) => {
     if (!groupId) return;
     setStragglerOverride(enabled);
+    setStragglerThresholdOverride(thresholdM);
     setStragglerConfig(groupId, enabled, thresholdM)
       .then(() => refresh())
       .catch(() => {
         setStragglerOverride(null);
+        setStragglerThresholdOverride(null);
         Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
       });
   }, [groupId, refresh, t]);
@@ -1238,7 +1274,7 @@ export default function MapScreen({ route, navigation }: Props) {
               </View>
               <Switch
                 value={stragglerOverride ?? group.stragglerAlerts}
-                onValueChange={(v) => persistStragglerConfig(v, group.stragglerThresholdM)}
+                onValueChange={(v) => persistStragglerConfig(v, stragglerThresholdOverride ?? group.stragglerThresholdM)}
                 trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
                 thumbColor="#fff"
               />
@@ -1249,8 +1285,8 @@ export default function MapScreen({ route, navigation }: Props) {
                 key: String(m),
                 label: formatDistance(m),
               }))}
-              value={String(group.stragglerThresholdM)}
-              onChange={(v) => persistStragglerConfig(group.stragglerAlerts, Number(v))}
+              value={String(stragglerThresholdOverride ?? group.stragglerThresholdM)}
+              onChange={(v) => persistStragglerConfig(stragglerOverride ?? group.stragglerAlerts, Number(v))}
               disabledKeys={
                 isPro
                   ? []
@@ -1280,8 +1316,13 @@ export default function MapScreen({ route, navigation }: Props) {
         </Pressable>
     </>
   ), [
-    t, members.length, isPro, pendingInvites, accent, handleAcceptInvite, handleDeclineInvite, topFlock, renderFlockRow, subgroups, flock, mySubgroupId, sentInvites, group, shareCode, codeCopied, copyCode, destinations.length, canEditItinerary, isLeader, stragglerOverride, persistStragglerConfig, openPaywall, groupId, dark, styles
+    t, members.length, isPro, pendingInvites, accent, handleAcceptInvite, handleDeclineInvite, topFlock, renderFlockRow, subgroups, flock, mySubgroupId, sentInvites, group, shareCode, codeCopied, copyCode, destinations.length, canEditItinerary, isLeader, stragglerOverride, stragglerThresholdOverride, persistStragglerConfig, openPaywall, groupId, dark, styles
   ]);
+
+  const closeOverlay = useCallback(() => setOverlay(null), []);
+  const openHistoryOverlay = useCallback(() => setOverlay('history'), []);
+  const openAccountOverlay = useCallback(() => setOverlay('account'), []);
+  const openPaywallCb = useCallback(() => openPaywall(), [openPaywall]);
 
   if (loading && !state) {
     return (
@@ -1308,59 +1349,54 @@ export default function MapScreen({ route, navigation }: Props) {
         bottomOverlap={detents[1]}
       />
 
-      {/* Group pill + role chip — hidden once a gathering point takes the top slot. */}
-      {destinations.length === 0 && (
-        <Animated.View
-          style={[styles.topRow, { top: insets.top + 8 }, chromeOpacityStyle]}
-          pointerEvents={atFull ? 'none' : 'box-none'}
-        >
-          <liquidGlass.GlassView tintColor={glass.pill} style={styles.groupPill}>
-            <View style={styles.pillAvatars}>
-              {flock.slice(0, 3).map((f, i) => (
-                <View
-                  key={f.userId}
-                  style={[styles.pillAvatar, { backgroundColor: f.color, marginLeft: i ? -10 : 0 }]}
-                >
-                  {f.avatar ? <Text style={styles.pillEmoji}>{f.avatar}</Text> : null}
-                </View>
-              ))}
-            </View>
-            <Text style={styles.pillName} numberOfLines={1}>
-              {group?.name ?? 'Hither'}
-            </Text>
-            <Text style={styles.pillCount}>· {members.length}</Text>
-          </liquidGlass.GlassView>
-          <liquidGlass.GlassView tintColor={glass.pill} style={styles.roleChip}>
-            <View style={[styles.roleDot, { backgroundColor: accent }]} />
-            <Text style={styles.roleWord}>
-              {isLeader ? t('settings.roleLeader') : t('settings.roleFollower')}
-            </Text>
-          </liquidGlass.GlassView>
-        </Animated.View>
-      )}
+      {/* Group pill — moved to bottom left, tracking sheet like recenter capsule. */}
+      <Animated.View
+        style={[styles.teamCapsuleWrap, recenterStyle]}
+        pointerEvents={atFull ? 'none' : 'box-none'}
+      >
+        <View style={{ alignItems: 'flex-start' }}>
+          <Pressable 
+            style={{ zIndex: 2 }}
+            onPress={() => {
+              if (myScopeId) {
+                LayoutAnimation.configureNext(LayoutAnimation.Presets.spring);
+                setViewingScope(prev => prev === 'sub' ? 'main' : 'sub');
+              }
+            }}
+          >
+            <liquidGlass.GlassView 
+              tintColor={glass.pill} 
+              style={styles.groupPill}
+            >
+              <View style={styles.pillAvatars}>
+                {(() => {
+                  const visibleMembers = viewingScope === 'main' || !myScopeId ? flock : flock.filter(f => f.subgroupId === myScopeId);
+                  return visibleMembers.slice(0, 3).map((f, i) => (
+                    <View
+                      key={f.userId}
+                      style={[styles.pillAvatar, { backgroundColor: f.color, marginLeft: i ? -10 : 0 }]}
+                    >
+                      {f.avatar ? <Text style={styles.pillEmoji}>{f.avatar}</Text> : null}
+                    </View>
+                  ));
+                })()}
+              </View>
+              <Text style={styles.pillName} numberOfLines={1}>
+                {myScopeId 
+                  ? (viewingScope === 'main' ? (group?.name ?? 'Hither') : '小隊')
+                  : (group?.name ?? 'Hither')}
+              </Text>
+              <Text style={styles.pillCount}>· {viewingScope === 'main' || !myScopeId ? members.length : flock.filter(f => f.subgroupId === myScopeId).length}</Text>
+            </liquidGlass.GlassView>
+          </Pressable>
+        </View>
+      </Animated.View>
 
-      {/* Squad Split Toggles */}
-      {subgroups && subgroups.length > 0 && me?.subgroupId && (
-        <Animated.View
-          style={[styles.subgroupToggleWrapper, { top: insets.top + 80 }, chromeOpacityStyle]}
-          pointerEvents={atFull ? 'none' : 'auto'}
-        >
-          <Segmented
-            options={[
-              { key: 'main', label: '主隊伍' },
-              { key: 'sub', label: '目前小隊' },
-            ]}
-            value={viewingScope}
-            onChange={(val) => setViewingScope(val as 'main' | 'sub')}
-            accent={accent}
-          />
-        </Animated.View>
-      )}
 
       {/* Recenter capsule — rides above the sheet. Fit-all on top, locate-me
           below, sharing one pill-shaped glass surface. Hidden while the
           add-gather-point confirm card owns the bottom of the screen. */}
-      {!pendingPlace && (
+      {!confirmCardReady && (
       <Animated.View
         style={[styles.recenter, recenterStyle]}
         pointerEvents={atFull ? 'none' : 'auto'}
@@ -1394,7 +1430,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
       {/* Add-gather-point confirm card — a bottom sheet-style card shown after
           picking a search result. Add (accent) / Cancel (red) side by side. */}
-      {pendingPlace && (() => {
+      {confirmCardReady && pendingPlace && (() => {
         // Walking time + distance from me to the picked place — the follower-nav
         // card layout (arrow · N min · distance) applied to the add-confirm step.
         const pDist = fromCoords
@@ -1402,17 +1438,30 @@ export default function MapScreen({ route, navigation }: Props) {
           : null;
         const pMin = pDist != null ? shortEta(walkingEtaSeconds(pDist)) : null;
         return (
-          // Sits ABOVE the sheet peek so its buttons are never covered by the
-          // (now hidden) search bar.
-          <View
-            style={[styles.confirmCard, { bottom: detents[0] + insets.bottom + 12 }]}
+          // Sits above the hidden sheet; centred vertically near the bottom.
+          <Animated.View
+            style={[styles.confirmCard, { bottom: insets.bottom + 24 }, confirmCardStyle]}
             pointerEvents="box-none"
           >
             <liquidGlass.GlassView tintColor={glass.cardActive} style={styles.confirmCardInner}>
-              <Text style={styles.confirmKicker} numberOfLines={1}>
-                {t('confirmGather.going', { name: pendingPlace.name })}
-              </Text>
-              <View style={styles.confirmMainRow}>
+              <View style={styles.confirmTopRow}>
+                <View style={styles.confirmTextCol}>
+                  <Text style={styles.confirmKicker} numberOfLines={1}>
+                    {t('confirmGather.going', { name: pendingPlace.name })}
+                  </Text>
+                  <View style={styles.confirmEtaRow}>
+                    {pMin ? (
+                      <Text style={[styles.confirmMin, { color: accent }]} numberOfLines={1}>
+                        {pMin}
+                      </Text>
+                    ) : null}
+                    {pDist != null ? (
+                      <Text style={styles.confirmDist} numberOfLines={1}>
+                        · {formatDistance(pDist)}
+                      </Text>
+                    ) : null}
+                  </View>
+                </View>
                 <Pressable
                   style={({ pressed }) => [
                     styles.confirmArrow,
@@ -1421,25 +1470,15 @@ export default function MapScreen({ route, navigation }: Props) {
                   ]}
                   onPress={() => mapRef.current?.centerOn(pendingPlace.coordinates)}
                 >
-                  <Ionicons name="navigate" size={22} color={accent} />
+                  <Ionicons name="navigate" size={28} color={accent} />
                 </Pressable>
-                {pMin ? (
-                  <Text style={[styles.confirmMin, { color: accent }]} numberOfLines={1}>
-                    {pMin}
-                  </Text>
-                ) : null}
-                {pDist != null ? (
-                  <Text style={styles.confirmDist} numberOfLines={1}>
-                    · {formatDistance(pDist)}
-                  </Text>
-                ) : null}
               </View>
               <View style={styles.confirmBtnRow}>
                 <Pressable
                   style={({ pressed }) => [styles.confirmCancel, pressed && { opacity: 0.85 }]}
                   onPress={() => {
                     selectionTick();
-                    setPendingPlace(null);
+                    dismissConfirmCard();
                   }}
                   accessibilityRole="button"
                 >
@@ -1453,7 +1492,7 @@ export default function MapScreen({ route, navigation }: Props) {
                   ]}
                   onPress={() => {
                     const place = pendingPlace;
-                    setPendingPlace(null);
+                    dismissConfirmCard();
                     void handlePickDestination(place);
                   }}
                   accessibilityRole="button"
@@ -1462,7 +1501,7 @@ export default function MapScreen({ route, navigation }: Props) {
                 </Pressable>
               </View>
             </liquidGlass.GlassView>
-          </View>
+          </Animated.View>
         );
       })()}
 
@@ -1736,13 +1775,9 @@ export default function MapScreen({ route, navigation }: Props) {
 
       {/* Straggler alerts fire as a native OS notification (see the effect
           above) — no in-app banner, so they don't cover the map. */}
-
-  const closeOverlay = useCallback(() => setOverlay(null), []);
-  const openHistoryOverlay = useCallback(() => setOverlay('history'), []);
-  const openAccountOverlay = useCallback(() => setOverlay('account'), []);
-  const openPaywallCb = useCallback(() => openPaywall(), [openPaywall]);
-
-      {/* The pull-up sheet. */}
+      {/* The pull-up sheet — hidden while the add-gather-point confirm card
+          owns the screen (search bar + recenter capsule disappear). */}
+      <Animated.View style={[StyleSheet.absoluteFill, confirmCardReady && styles.sheetHidden]} pointerEvents={confirmCardReady ? 'none' : 'auto'}>
       <BottomSheet
         height={heightSV}
         detents={detents}
@@ -1754,6 +1789,7 @@ export default function MapScreen({ route, navigation }: Props) {
       >
         {sheetChildren}
       </BottomSheet>
+      </Animated.View>
 
       {/* Route overlay: reorder gathering points. */}
       <OverlaySheet
@@ -2149,6 +2185,12 @@ const makeStyles = (accent: string) =>
     recenterHit: { height: 48, alignItems: 'center', justifyContent: 'center' },
     recenterDivider: { height: StyleSheet.hairlineWidth, backgroundColor: glass.hairlineStrong },
 
+    teamCapsuleWrap: {
+      position: 'absolute',
+      left: 14,
+      zIndex: 50,
+    },
+
     carouselWrap: { position: 'absolute', left: 0, right: 0, zIndex: 58 },
     card: {
       borderRadius: 30,
@@ -2245,17 +2287,21 @@ const makeStyles = (accent: string) =>
       paddingBottom: 16,
       gap: 6,
     },
-    confirmKicker: { fontSize: 13, color: glass.textSecondary, marginLeft: 2 },
-    confirmMainRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    // Hide the bottom sheet while the confirm card is up.
+    sheetHidden: { opacity: 0 },
+    confirmTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
+    confirmTextCol: { flex: 1, gap: 2 },
+    confirmKicker: { fontSize: 16, fontWeight: '600', color: '#fff', marginLeft: 2 },
+    confirmEtaRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
     confirmArrow: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
+      width: 52,
+      height: 52,
+      borderRadius: 26,
       alignItems: 'center',
       justifyContent: 'center',
     },
-    confirmMin: { fontFamily: DISPLAY_FONT, fontSize: 30, includeFontPadding: false },
-    confirmDist: { fontSize: 15, color: glass.textSecondary },
+    confirmMin: { fontFamily: DISPLAY_FONT, fontSize: 36, includeFontPadding: false },
+    confirmDist: { fontSize: 16, color: glass.textSecondary },
     confirmBtnRow: { flexDirection: 'row', gap: 12, marginTop: 12 },
     confirmCancel: {
       flex: 1,

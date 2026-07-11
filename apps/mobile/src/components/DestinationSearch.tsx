@@ -39,7 +39,7 @@ export interface DestinationSearchProps {
  * the Nominatim fallback in Expo Go). Picking a result calls `onPick`, which
  * persists it as the next destination.
  */
-export default function DestinationSearch({
+export default React.memo(function DestinationSearch({
   visible,
   onClose,
   biasRegion,
@@ -190,7 +190,7 @@ export default function DestinationSearch({
       </View>
     </Modal>
   );
-}
+});
 
 // Dark "Liquid Glass" surface to match the map's sheet/overlays (opened from
 // there), independent of the light/dark map theme. Accent still follows theme.

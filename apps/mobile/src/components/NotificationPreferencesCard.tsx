@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, Switch, Text, View } from 'react-native';
+import { Alert, StyleSheet, Switch, Text, View } from 'react-native';
 import {
   getNotificationPreferences,
   setNotificationPreferences,
@@ -64,6 +64,10 @@ export default function NotificationPreferencesCard({
       await setNotificationPreferences(next);
     } catch {
       setPrefs(previous); // roll back on failure
+      Alert.alert(
+        t('subgroup.failed') || '設定失敗',
+        t('map.setFailedMsg') || '無法更新設定，請檢查網路連線後再試。'
+      );
     }
   }
 

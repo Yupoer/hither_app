@@ -4,6 +4,7 @@ import React, {
   useImperativeHandle,
   useMemo,
   useRef,
+  useState,
 } from 'react';
 import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -56,15 +57,31 @@ function getColorForDay(day: number | undefined, dayColors: Record<number, strin
   return dayColors[day] || DAY_COLORS[(day - 1) % DAY_COLORS.length];
 }
 
-/** 
- * A completely static marker for destinations.
- * Since we removed the dynamic `isGathering` active state resizing, this marker's
- * layout bounds and styles never change after mount. Thus, we can safely let
- * react-native-maps use its default tracksViewChanges=true behavior. It will continually
- * snapshot, which avoids the dreaded "off-screen culling" bug where markers locked
- * to tracksViewChanges=false stay permanently invisible if they were off-screen when the timer fired.
+/**
+ * Hook to manage `tracksViewChanges` for custom map markers.
+ * react-native-maps has a massive performance penalty if tracksViewChanges
+ * is left as true (the default) for custom views, dropping fps drastically.
+ * We set it to true briefly when dependencies change (so it captures the view),
+ * then switch to false so it doesn't continuously re-render bitmaps.
  */
+function useTracksViewChanges(deps: any[]) {
+  const [tracksViewChanges, setTracksViewChanges] = useState(true);
+
+  useEffect(() => {
+    setTracksViewChanges(true);
+    const timer = setTimeout(() => {
+      setTracksViewChanges(false);
+    }, 500);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+
+  return tracksViewChanges;
+}
+
 const DestinationMarker = React.memo(({ dest, bgColor, styles }: any) => {
+  const tracksViewChanges = useTracksViewChanges([bgColor, dest.title]);
+
   return (
     <Marker
       coordinate={dest.coordinates}
@@ -72,6 +89,7 @@ const DestinationMarker = React.memo(({ dest, bgColor, styles }: any) => {
       description={`Day ${dest.day || 1}`}
       anchor={{ x: 0.5, y: 0.5 }}
       style={{ zIndex: 1 }}
+      tracksViewChanges={tracksViewChanges}
     >
       <View
         style={[
@@ -80,6 +98,74 @@ const DestinationMarker = React.memo(({ dest, bgColor, styles }: any) => {
         ]}
       >
         <Ionicons name="flag" size={14} color="#fff" />
+      </View>
+    </Marker>
+  );
+});
+
+const PendingPlaceMarker = React.memo(({ pendingPlace, accent, styles }: any) => {
+  const tracksViewChanges = useTracksViewChanges([pendingPlace.name, accent]);
+
+  return (
+    <Marker
+      coordinate={pendingPlace.coordinates}
+      title={pendingPlace.name}
+      anchor={{ x: 0.5, y: 0.5 }}
+      tracksViewChanges={tracksViewChanges}
+    >
+      <View style={[styles.gatherMarker, { backgroundColor: accent }]}>
+        <Ionicons name="flag" size={17} color="#fff" />
+      </View>
+    </Marker>
+  );
+});
+
+const MemberMarker = React.memo(({ member, accent, styles }: any) => {
+  const isLeader = member.role === 'leader';
+  const ringColor = isLeader ? accent : '#FFFFFF';
+  const bgColor = memberColor(member.userId);
+  
+  const tracksViewChanges = useTracksViewChanges([
+    member.name,
+    member.avatar,
+    isLeader,
+    ringColor,
+    bgColor
+  ]);
+
+  return (
+    <Marker
+      coordinate={member.coordinates}
+      title={member.name}
+      description={isLeader ? 'Leader' : 'Follower'}
+      anchor={{ x: 0.5, y: 1 }}
+      tracksViewChanges={tracksViewChanges}
+    >
+      <View style={styles.pinWrap}>
+        <View style={styles.pinLabel}>
+          <Text style={styles.pinLabelText} numberOfLines={1}>
+            {member.name}
+          </Text>
+        </View>
+        <View
+          style={[
+            styles.memberPin,
+            {
+              backgroundColor: bgColor,
+              borderColor: ringColor,
+              borderWidth: isLeader ? 3 : 2.5,
+            },
+            isLeader && styles.memberPinLeader,
+          ]}
+        >
+          {member.avatar ? (
+            <Text style={styles.memberEmoji}>{member.avatar}</Text>
+          ) : (
+            <Text style={styles.memberInitial}>
+              {member.name.slice(0, 1).toUpperCase()}
+            </Text>
+          )}
+        </View>
       </View>
     </Marker>
   );
@@ -165,60 +251,23 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       })}
 
       {pendingPlace && (
-        <Marker
-          coordinate={pendingPlace.coordinates}
-          title={pendingPlace.name}
-          anchor={{ x: 0.5, y: 0.5 }}
-        >
-          <View style={[styles.gatherMarker, { backgroundColor: colors.accent }]}>
-            <Ionicons name="flag" size={17} color="#fff" />
-          </View>
-        </Marker>
+        <PendingPlaceMarker
+          pendingPlace={pendingPlace}
+          accent={colors.accent}
+          styles={styles}
+        />
       )}
 
       {members.map((m) => {
         if (!m.coordinates) return null;
-        // Own avatar is shown by the OS blue dot (showsUserLocation) — don't
-        // double it up with a member pin. Only teammates get a pin.
         if (m.userId === currentUserId) return null;
-        const isSelf = false;
-        const isLeader = m.role === 'leader';
-        const ringColor = isLeader ? colors.accent : '#FFFFFF';
         return (
-          <Marker
+          <MemberMarker
             key={m.userId}
-            coordinate={m.coordinates}
-            title={`${m.name}${isSelf ? ' · you' : ''}`}
-            description={isLeader ? 'Leader' : 'Follower'}
-            anchor={{ x: 0.5, y: 1 }}
-          >
-            <View style={styles.pinWrap}>
-              <View style={styles.pinLabel}>
-                <Text style={styles.pinLabelText} numberOfLines={1}>
-                  {isSelf ? `${m.name} · you` : m.name}
-                </Text>
-              </View>
-              <View
-                style={[
-                  styles.memberPin,
-                  {
-                    backgroundColor: memberColor(m.userId),
-                    borderColor: ringColor,
-                    borderWidth: isLeader ? 3 : 2.5,
-                  },
-                  isLeader && styles.memberPinLeader,
-                ]}
-              >
-                {m.avatar ? (
-                  <Text style={styles.memberEmoji}>{m.avatar}</Text>
-                ) : (
-                  <Text style={styles.memberInitial}>
-                    {m.name.slice(0, 1).toUpperCase()}
-                  </Text>
-                )}
-              </View>
-            </View>
-          </Marker>
+            member={m}
+            accent={colors.accent}
+            styles={styles}
+          />
         );
       })}
     </MapView>
