@@ -481,14 +481,21 @@ export default function MapScreen({ route, navigation }: Props) {
   }, []);
 
   const biasCenter = deviceCoords ?? selectedDestination?.coordinates;
-  const biasRegion: MapRegion | undefined = biasCenter
-    ? {
+  const biasRegion = useMemo<MapRegion | undefined>(() => {
+    return biasCenter ? {
         latitude: biasCenter.latitude,
         longitude: biasCenter.longitude,
         latitudeDelta: 0.08,
         longitudeDelta: 0.08,
-      }
-    : undefined;
+      } : undefined;
+  }, [biasCenter?.latitude, biasCenter?.longitude]);
+
+  const closeSearch = useCallback(() => setSearchVisible(false), []);
+  const handleSearchPick = useCallback((place: PlaceResult) => {
+    setPendingPlace(place);
+    mapRef.current?.centerOn(place.coordinates);
+    return Promise.resolve();
+  }, []);
 
   const handlePickDestination = useCallback(async (place: PlaceResult) => {
     if (!groupId) return;
@@ -698,7 +705,7 @@ export default function MapScreen({ route, navigation }: Props) {
   // 歷史行程 (record + delete, like a real arrival) and ends navigation, so the
   // history screen can be exercised without physically walking to each stop.
   // Remove once history testing is done.
-  async function archiveAllForTest() {
+  const archiveAllForTest = useCallback(async () => {
     if (!groupId) return;
     mediumTap();
     try {
@@ -718,13 +725,13 @@ export default function MapScreen({ route, navigation }: Props) {
     } catch (e) {
       Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
     }
-  }
+  }, [groupId, destinations, stopNavigation, refresh, t]);
 
   // Report-a-problem: grab the current screen, then swap the settings overlay
   // for the feedback form. Uses the SAME `overlay` state so the two are
   // mutually exclusive — opening feedback closes settings, so the translucent
   // panels can never stack and interleave their text.
-  async function openFeedback() {
+  const openFeedback = useCallback(async () => {
     lightTap();
     let uri: string | null = null;
     try {
@@ -734,7 +741,7 @@ export default function MapScreen({ route, navigation }: Props) {
     }
     setFeedbackShot(uri);
     setOverlay('feedback');
-  }
+  }, []);
 
   const handleReorder = useCallback(
     async (updates: { id: string; position: number; day: number }[]) => {
@@ -1524,7 +1531,7 @@ export default function MapScreen({ route, navigation }: Props) {
                     }}
                     onPressOut={() => {
                       LayoutAnimation.configureNext({
-                        duration: 1000,
+                        duration: 300,
                         create: { type: 'linear', property: 'opacity' },
                         update: { type: 'linear' },
                         delete: { type: 'linear', property: 'opacity' },
@@ -1540,7 +1547,7 @@ export default function MapScreen({ route, navigation }: Props) {
                       pendingExpandId.current = dest.id;
                     }}
                   >
-                    <Animated.View layout={LinearTransition.duration(1000)}>
+                    <Animated.View layout={LinearTransition.duration(300)}>
                       <liquidGlass.GlassView
                         tintColor={active ? glass.cardActive : glass.card}
                         style={[
@@ -1730,6 +1737,11 @@ export default function MapScreen({ route, navigation }: Props) {
       {/* Straggler alerts fire as a native OS notification (see the effect
           above) — no in-app banner, so they don't cover the map. */}
 
+  const closeOverlay = useCallback(() => setOverlay(null), []);
+  const openHistoryOverlay = useCallback(() => setOverlay('history'), []);
+  const openAccountOverlay = useCallback(() => setOverlay('account'), []);
+  const openPaywallCb = useCallback(() => openPaywall(), [openPaywall]);
+
       {/* The pull-up sheet. */}
       <BottomSheet
         height={heightSV}
@@ -1741,7 +1753,7 @@ export default function MapScreen({ route, navigation }: Props) {
         header={sheetHeader}
       >
         {sheetChildren}
-</BottomSheet>
+      </BottomSheet>
 
       {/* Route overlay: reorder gathering points. */}
       <OverlaySheet
@@ -1789,16 +1801,16 @@ export default function MapScreen({ route, navigation }: Props) {
 
       <SettingsOverlay
         visible={overlay === 'settings'}
-        onClose={() => setOverlay(null)}
+        onClose={closeOverlay}
         isLeader={isLeader}
-        onOpenHistory={() => setOverlay('history')}
-        onArchiveAllForTest={() => void archiveAllForTest()}
+        onOpenHistory={openHistoryOverlay}
+        onArchiveAllForTest={archiveAllForTest}
         onOpenFeedback={openFeedback}
         onConfirmResetPrefs={confirmResetPrefs}
         onConfirmLeave={confirmLeave}
         onConfirmSignOut={confirmSignOut}
-        onOpenPaywall={() => openPaywall()}
-        onOpenAccount={() => setOverlay('account')}
+        onOpenPaywall={openPaywallCb}
+        onOpenAccount={openAccountOverlay}
         styles={styles}
       />
 
@@ -1917,15 +1929,11 @@ export default function MapScreen({ route, navigation }: Props) {
 
       <DestinationSearch
         visible={searchVisible}
-        onClose={() => setSearchVisible(false)}
+        onClose={closeSearch}
         biasRegion={biasRegion}
         // Don't persist on pick — stage the place for the bottom confirm card
         // (Add / Cancel). Resolves immediately so the search sheet closes.
-        onPick={(place) => {
-          setPendingPlace(place);
-          mapRef.current?.centerOn(place.coordinates);
-          return Promise.resolve();
-        }}
+        onPick={handleSearchPick}
       />
 
       <PaywallSheet
