@@ -1513,17 +1513,42 @@ export default function MapScreen({ route, navigation }: Props) {
               return (
                 <View key={dest.id} style={{ width: windowWidth, paddingHorizontal: 14 }}>
                   <Pressable
-                    onLongPress={() => setOverlay('route')}
                     delayLongPress={300}
-                    style={({ pressed }) => [pressed && { transform: [{ scale: 0.98 }] }]}
+                    onPressIn={() => {
+                      LayoutAnimation.configureNext({
+                        duration: 150,
+                        update: { type: 'easeInEaseOut' },
+                      });
+                      setPressedCardId(dest.id);
+                      pendingExpandId.current = null;
+                    }}
+                    onPressOut={() => {
+                      LayoutAnimation.configureNext({
+                        duration: 1000,
+                        create: { type: 'linear', property: 'opacity' },
+                        update: { type: 'linear' },
+                        delete: { type: 'linear', property: 'opacity' },
+                      });
+                      setPressedCardId(null);
+                      if (pendingExpandId.current === dest.id) {
+                        setExpandedCardId((prev) => (prev === dest.id ? null : dest.id));
+                        pendingExpandId.current = null;
+                      }
+                    }}
+                    onLongPress={() => {
+                      rigidTap();
+                      pendingExpandId.current = dest.id;
+                    }}
                   >
-                    <liquidGlass.GlassView
-                      tintColor={active ? glass.cardActive : glass.card}
-                      style={[
-                        styles.card,
-                        active && { borderColor: accentMix(accent, 50) },
-                      ]}
-                    >
+                    <Animated.View layout={LinearTransition.duration(1000)}>
+                      <liquidGlass.GlassView
+                        tintColor={active ? glass.cardActive : glass.card}
+                        style={[
+                          styles.card,
+                          active && { borderColor: accentMix(accent, 50) },
+                          pressedCardId === dest.id && { transform: [{ scale: 0.96 }] }
+                        ]}
+                      >
                     {/* Top arrival hairline — team progress toward this stop. */}
                     <View style={styles.arrivalHairline}>
                       <View
@@ -1692,7 +1717,8 @@ export default function MapScreen({ route, navigation }: Props) {
                         )}
                       </Pressable>
                     </View>
-                    </liquidGlass.GlassView>
+                      </liquidGlass.GlassView>
+                    </Animated.View>
                   </Pressable>
                 </View>
               );
