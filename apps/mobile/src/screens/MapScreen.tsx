@@ -1226,7 +1226,7 @@ export default function MapScreen({ route, navigation }: Props) {
         // ponytail: updates once per detent settle (3 discrete values), not
         // per frame — per-frame MapView prop updates re-render the native map
         // 60×/s; switch to a heightAnim listener if the step reads harsh.
-        bottomOverlap={Math.min(detents[detent], detents[1])}
+        bottomOverlap={detents[1]}
       />
 
       {/* Group pill + role chip — hidden once a gathering point takes the top slot. */}
@@ -1316,9 +1316,16 @@ export default function MapScreen({ route, navigation }: Props) {
                 {t('confirmGather.going', { name: pendingPlace.name })}
               </Text>
               <View style={styles.confirmMainRow}>
-                <View style={[styles.confirmArrow, { backgroundColor: accentMix(accent, 18) }]}>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.confirmArrow,
+                    { backgroundColor: accentMix(accent, 18) },
+                    pressed && { opacity: 0.8 }
+                  ]}
+                  onPress={() => mapRef.current?.centerOn(pendingPlace.coordinates)}
+                >
                   <Ionicons name="navigate" size={22} color={accent} />
-                </View>
+                </Pressable>
                 {pMin ? (
                   <Text style={[styles.confirmMin, { color: accent }]} numberOfLines={1}>
                     {pMin}
@@ -1771,6 +1778,7 @@ export default function MapScreen({ route, navigation }: Props) {
         // (Add / Cancel). Resolves immediately so the search sheet closes.
         onPick={(place) => {
           setPendingPlace(place);
+          mapRef.current?.centerOn(place.coordinates);
           return Promise.resolve();
         }}
       />
