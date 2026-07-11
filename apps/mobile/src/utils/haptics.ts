@@ -24,6 +24,14 @@ export function mediumTap(): void {
   }
 }
 
+export function rigidTap(): void {
+  try {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid);
+  } catch {
+    // no-op: unsupported platform (e.g. web)
+  }
+}
+
 export function selectionTick(): void {
   try {
     void Haptics.selectionAsync();

@@ -181,19 +181,19 @@ export default function MapScreen({ route, navigation }: Props) {
   const mapRef = useRef<GroupMapHandle | null>(null);
   const carouselRef = useRef<ScrollView | null>(null);
 
-  const members = state?.members ?? [];
+  const members = useMemo(() => state?.members ?? [], [state?.members]);
   // My current scope: undefined = main group's itinerary, a subgroup id =
   // that subgroup's own itinerary. Everything itinerary-related below reads
   // only from this scope's list (carousel, reorder, nav target, meet-time,
   // straggler nav target) — filtering once here means nothing downstream
   // needs its own leader/subgroup branching to stay scoped correctly.
-  const me = members.find((m) => m.userId === user?.id);
+  const me = useMemo(() => members.find((m) => m.userId === user?.id), [members, user?.id]);
   const myScopeId = me?.subgroupId;
-  const destinations: Destination[] = (state?.destinations ?? []).filter(
-    (d) => (d.subgroupId ?? undefined) === (myScopeId ?? undefined),
-  );
-  // Main-group scope: leader-only (unchanged). Subgroup scope: everyone in
-  // the subgroup may add/reorder/delete its stops — no sub-leader.
+  const destinations: Destination[] = useMemo(() => {
+    return (state?.destinations ?? []).filter(
+      (d) => (d.subgroupId ?? undefined) === (myScopeId ?? undefined),
+    );
+  }, [state?.destinations, myScopeId]);
   const canEditItinerary = isLeader || myScopeId != null;
 
   // --- Sheet / overlay / island UI state -----------------------------------
@@ -251,10 +251,10 @@ export default function MapScreen({ route, navigation }: Props) {
   const [kmlVisible, setKmlVisible] = useState(false);
   const [paywallTrigger, setPaywallTrigger] = useState<TranslationKey | undefined>(undefined);
   const [paywallVisible, setPaywallVisible] = useState(false);
-  function openPaywall(trigger?: TranslationKey) {
+  const openPaywall = useCallback((trigger?: TranslationKey) => {
     setPaywallTrigger(trigger);
     setPaywallVisible(true);
-  }
+  }, []);
 
   // --- Meet-time countdown + editor (iOS embeds a spinner overlay; Android
   // opens the native dialog imperatively) -------------------------------------
@@ -314,13 +314,13 @@ export default function MapScreen({ route, navigation }: Props) {
     };
   }, [nextMeet?.id, nextMeet?.meetAt, t]);
 
-  function persistMeetTime(destinationId: string, value: Date | null) {
+  const persistMeetTime = useCallback((destinationId: string, value: Date | null) => {
     setDestinationMeetTime(destinationId, value ? value.toISOString() : null)
       .then(() => refresh())
       .catch(() => Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg')));
-  }
+  }, [refresh, t]);
 
-  function openMeetTimePicker(dest: Destination) {
+  const openMeetTimePicker = useCallback((dest: Destination) => {
     if (!canEditItinerary) return;
     const initial = dest.meetAt ? new Date(dest.meetAt) : new Date();
     if (Platform.OS === 'android') {
@@ -334,7 +334,7 @@ export default function MapScreen({ route, navigation }: Props) {
     } else {
       setMeetTimeEditor({ id: dest.id, value: initial });
     }
-  }
+  }, [canEditItinerary, persistMeetTime]);
   // Freeze the route overlay's scroll while a stop is being drag-reordered so
   // the two vertical gestures never fight.
   const [routeScrollEnabled, setRouteScrollEnabled] = useState(true);
@@ -423,7 +423,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const journeyActive = journeyGoing && !!navTarget;
 
   // The point the whole UI (carousel highlight, flock ETAs) refers to.
-  const activePoint = navTarget ?? selectedDestination;
+  const activePoint = useMemo(() => navTarget ?? selectedDestination, [navTarget, selectedDestination]);
 
   // --- Straggler alerts ------------------------------------------------------
   // Reference is ME, not the gathering point — "fell behind" means fell
@@ -500,7 +500,11 @@ export default function MapScreen({ route, navigation }: Props) {
           const ids = destinations.map((d) => d.id);
           const [moved] = ids.splice(index, 1);
           ids.unshift(moved);
-          await reorderDestinations(groupId, ids);
+          const updates = ids.map((id, i) => {
+            const dest = destinations.find((d) => d.id === id);
+            return { id, position: i, day: dest?.day ?? 1 };
+          });
+          await reorderDestinations(groupId, updates);
         }
         // The navigated stop is now first — snap the carousel card with it.
         setSelectedIndex(0);
@@ -573,15 +577,15 @@ export default function MapScreen({ route, navigation }: Props) {
     t,
   ]);
 
-  async function locateMe() {
+  const locateMe = useCallback(async () => {
     refresh();
     const coords = (await refreshDeviceLocation()) ?? deviceCoords;
     if (coords) mapRef.current?.centerOn(coords);
-  }
+  }, [refresh, refreshDeviceLocation, deviceCoords]);
 
-  function fitAllMembers() {
+  const fitAllMembers = useCallback(() => {
     mapRef.current?.fitToMembers();
-  }
+  }, []);
 
   const biasCenter = deviceCoords ?? selectedDestination?.coordinates;
   const biasRegion: MapRegion | undefined = biasCenter
@@ -593,7 +597,7 @@ export default function MapScreen({ route, navigation }: Props) {
       }
     : undefined;
 
-  async function handlePickDestination(place: PlaceResult) {
+  const handlePickDestination = useCallback(async (place: PlaceResult) => {
     if (!groupId) return;
     if (!isPro && destinations.length >= FREE_LIMITS.destinationsPerItinerary) {
       openPaywall('paywall.triggerDestinations');
@@ -617,7 +621,7 @@ export default function MapScreen({ route, navigation }: Props) {
       logError('destination_add_failed', e, { source: 'search' });
       Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
     }
-  }
+  }, [groupId, isPro, destinations.length, myScopeId, refresh, openPaywall, t]);
 
   async function handleKmlImport(items: KmlPlacemark[], onProgress: (done: number) => void) {
     if (!groupId) return;
@@ -647,35 +651,35 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // --- Group actions --------------------------------------------------------
   const [codeCopied, setCodeCopied] = useState(false);
-  async function copyCode() {
+  const copyCode = useCallback(async () => {
     if (!group) return;
     lightTap();
     logEvent('code_copy');
     await Clipboard.setStringAsync(group.inviteCode);
     setCodeCopied(true);
     setTimeout(() => setCodeCopied(false), 1500);
-  }
-  async function shareCode() {
+  }, [group]);
+  const shareCode = useCallback(async () => {
     if (!group) return;
     lightTap();
     logEvent('code_share');
     await Share.share({ message: t('map.shareMsg', { code: group.inviteCode }) });
-  }
+  }, [group, t]);
 
   // --- Profile (nickname + emoji avatar) ------------------------------------
   const [profileName, setProfileName] = useState('');
   const [profileAvatar, setProfileAvatar] = useState<string | undefined>(undefined);
   const [profileColor, setProfileColor] = useState<string | undefined>(undefined);
-  function openProfile() {
+  const openProfile = useCallback(() => {
     lightTap();
     setProfileName(user?.name ?? '');
     setProfileAvatar(user?.avatar);
     setProfileColor(user?.avatarColor);
     setOverlay('profile');
-  }
+  }, [user]);
   // "Done" (and the scrim tap) closes instantly, then persists whatever changed
   // in one write — picking an avatar is a pure local highlight until then.
-  function closeProfile() {
+  const closeProfile = useCallback(() => {
     setOverlay(null);
     const nickname = profileName.trim();
     const fields: { nickname?: string; avatar?: string; avatarColor?: string } = {};
@@ -693,10 +697,10 @@ export default function MapScreen({ route, navigation }: Props) {
           e instanceof Error ? e.message : undefined,
         );
       });
-  }
+  }, [profileName, profileAvatar, profileColor, user, updateProfile, refresh, t]);
 
   // --- Solo mode -------------------------------------------------------------
-  async function toggleSolo(next: boolean) {
+  const toggleSolo = useCallback(async (next: boolean) => {
     if (!groupId) return;
     selectionTick();
     logEvent('solo_toggle', { groupId, next });
@@ -711,7 +715,7 @@ export default function MapScreen({ route, navigation }: Props) {
       setSoloOverride(null);
       Alert.alert(t('solo.failed'), e instanceof Error ? e.message : undefined);
     }
-  }
+  }, [groupId, t]);
 
   // --- Subgroups (小隊：邀請制、無隊長) ---------------------------------------
   const subgroups = state?.subgroups ?? [];
@@ -727,7 +731,7 @@ export default function MapScreen({ route, navigation }: Props) {
   // ticked "don't show again". Resolves true = proceed (both buttons proceed;
   // only the dismiss button silences future warnings). Never blocks if already
   // dismissed.
-  async function confirmLeaveMainGroup(): Promise<boolean> {
+  const confirmLeaveMainGroup = useCallback(async (): Promise<boolean> => {
     const dismissed = await AsyncStorage.getItem(LEAVE_GROUP_WARN_KEY);
     if (dismissed === '1') return true;
     return new Promise((resolve) => {
@@ -747,9 +751,9 @@ export default function MapScreen({ route, navigation }: Props) {
         { cancelable: false },
       );
     });
-  }
+  }, [t]);
 
-  async function handleAcceptInvite(inviteId: string) {
+  const handleAcceptInvite = useCallback(async (inviteId: string) => {
     if (!(await confirmLeaveMainGroup())) return;
     mediumTap();
     logEvent('invite_accept', { inviteId });
@@ -761,8 +765,8 @@ export default function MapScreen({ route, navigation }: Props) {
       logError('invite_accept_failed', e, { inviteId });
       Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
     }
-  }
-  async function handleDeclineInvite(inviteId: string) {
+  }, [confirmLeaveMainGroup, acceptInvite, refresh, t]);
+  const handleDeclineInvite = useCallback(async (inviteId: string) => {
     selectionTick();
     logEvent('invite_decline', { inviteId });
     try {
@@ -771,9 +775,9 @@ export default function MapScreen({ route, navigation }: Props) {
       logError('invite_decline_failed', e, { inviteId });
       Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
     }
-  }
+  }, [declineInvite, t]);
 
-  async function handleInvite(subgroupId: string, inviteeId: string) {
+  const handleInvite = useCallback(async (subgroupId: string, inviteeId: string) => {
     mediumTap();
     logEvent('invite_send', { subgroupId, inviteeId });
     // Virtual mates aren't real Supabase users — mock the invite: they always
@@ -798,11 +802,11 @@ export default function MapScreen({ route, navigation }: Props) {
       logError('invite_send_failed', e, { subgroupId, inviteeId });
       Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
     }
-  }
+  }, [refresh, t, groupId, refreshInvites, refreshSentInvites]);
 
   // Any member can split themselves into their own new (collab, no-leader)
   // subgroup, or merge themselves back up a level — no leader say-so needed.
-  async function doSelfSplit() {
+  const doSelfSplit = useCallback(async () => {
     if (!groupId) return;
     if (!(await confirmLeaveMainGroup())) return;
     mediumTap();
@@ -818,8 +822,8 @@ export default function MapScreen({ route, navigation }: Props) {
       logError('team_create_failed', e, { groupId });
       Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
     }
-  }
-  async function doSelfMerge() {
+  }, [groupId, confirmLeaveMainGroup, user?.name, t, refresh]);
+  const doSelfMerge = useCallback(async () => {
     if (!groupId) return;
     selectionTick();
     logEvent('team_leave', { groupId });
@@ -831,7 +835,7 @@ export default function MapScreen({ route, navigation }: Props) {
       logError('team_leave_failed', e, { groupId });
       Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
     }
-  }
+  }, [groupId, refresh, t]);
 
   // ponytail: TEMPORARY test helper — archives every current gathering point to
   // 歷史行程 (record + delete, like a real arrival) and ends navigation, so the
@@ -876,16 +880,13 @@ export default function MapScreen({ route, navigation }: Props) {
   }
 
   const handleReorder = useCallback(
-    async (orderedIds: string[]) => {
+    async (updates: { id: string; position: number; day: number }[]) => {
       if (!groupId) return;
-      logEvent('destination_reorder', { count: orderedIds.length });
       try {
-        await reorderDestinations(groupId, orderedIds);
+        await reorderDestinations(groupId, updates);
         refresh();
-      } catch (e) {
-        logError('destination_reorder_failed', e);
-        Alert.alert(t('settings.reorderFailed'));
-        refresh();
+      } catch {
+        Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
       }
     },
     [groupId, refresh, t],
@@ -917,7 +918,7 @@ export default function MapScreen({ route, navigation }: Props) {
     [groupId, destinations, refresh, t],
   );
 
-  function confirmLeave() {
+  const confirmLeave = useCallback(() => {
     confirmAction(
       {
         title: t('group.leaveTitle'),
@@ -931,8 +932,8 @@ export default function MapScreen({ route, navigation }: Props) {
         navigation.reset({ index: 0, routes: [{ name: 'RoleSelect' }] });
       },
     );
-  }
-  function confirmSignOut() {
+  }, [t, groupId, isLeader, leaveGroup, navigation]);
+  const confirmSignOut = useCallback(() => {
     confirmAction(
       {
         title: t('settings.signOutTitle'),
@@ -946,7 +947,7 @@ export default function MapScreen({ route, navigation }: Props) {
         navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
       },
     );
-  }
+  }, [t, signOut, navigation]);
 
   // --- Account upgrade (anonymous -> email) ---------------------------------
   const [upgradeVisible, setUpgradeVisible] = useState(false);
@@ -957,14 +958,14 @@ export default function MapScreen({ route, navigation }: Props) {
   const upgradeCanSubmit =
     /\S+@\S+\.\S+/.test(upgradeEmail.trim()) && upgradePassword.length >= 6 && !upgradeBusy;
 
-  function closeUpgrade() {
+  const closeUpgrade = useCallback(() => {
     setUpgradeVisible(false);
     setUpgradeEmail('');
     setUpgradePassword('');
     setUpgradeError(null);
-  }
+  }, []);
 
-  async function submitUpgrade() {
+  const submitUpgrade = useCallback(async () => {
     if (!upgradeCanSubmit) return;
     setUpgradeBusy(true);
     setUpgradeError(null);
@@ -977,21 +978,9 @@ export default function MapScreen({ route, navigation }: Props) {
     } finally {
       setUpgradeBusy(false);
     }
-  }
+  }, [upgradeCanSubmit, upgradeEmail, upgradePassword, upgradeToEmailAccount, t, closeUpgrade]);
 
-  function confirmResetPrefs() {
-    confirmAction(
-      {
-        title: t('settings.resetPrefs'),
-        message: t('settings.resetPrefsConfirm'),
-        confirmLabel: t('settings.resetPrefs'),
-        destructive: true,
-      },
-      () => void resetPrefs(),
-    );
-  }
-
-  async function resetPrefs() {
+  const resetPrefs = useCallback(async () => {
     logEvent('reset_prefs');
     try {
       await saveOnboardingProfile({});
@@ -1001,7 +990,19 @@ export default function MapScreen({ route, navigation }: Props) {
     }
     await AsyncStorage.removeItem(ONBOARDING_STORAGE_KEY);
     Alert.alert(t('settings.resetPrefs'), t('settings.resetPrefsDone'));
-  }
+  }, [t]);
+
+  const confirmResetPrefs = useCallback(() => {
+    confirmAction(
+      {
+        title: t('settings.resetPrefs'),
+        message: t('settings.resetPrefsConfirm'),
+        confirmLabel: t('settings.resetPrefs'),
+        destructive: true,
+      },
+      () => void resetPrefs(),
+    );
+  }, [t, resetPrefs]);
 
   // Optimistic flip for the straggler-alert switch — the server round trip +
   // realtime refetch otherwise reads as a 1-2s lag. Cleared once server truth
@@ -1012,7 +1013,7 @@ export default function MapScreen({ route, navigation }: Props) {
     if (group && group.stragglerAlerts === stragglerOverride) setStragglerOverride(null);
   }, [group?.stragglerAlerts, stragglerOverride]);
 
-  function persistStragglerConfig(enabled: boolean, thresholdM: number) {
+  const persistStragglerConfig = useCallback((enabled: boolean, thresholdM: number) => {
     if (!groupId) return;
     setStragglerOverride(enabled);
     setStragglerConfig(groupId, enabled, thresholdM)
@@ -1021,7 +1022,7 @@ export default function MapScreen({ route, navigation }: Props) {
         setStragglerOverride(null);
         Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
       });
-  }
+  }, [groupId, refresh, t]);
 
   // --- Derived view models --------------------------------------------------
   // Optimistic flip for the Solo switch — server round trip + realtime
@@ -1112,7 +1113,7 @@ export default function MapScreen({ route, navigation }: Props) {
   );
 
   // One flock row, shared by the main list and the subgroup cards.
-  const renderFlockRow = (f: (typeof flock)[number], last: boolean) => {
+  const renderFlockRow = useCallback((f: (typeof flock)[number], last: boolean) => {
     const isMe = f.userId === user?.id;
     return (
       <View key={f.userId} style={[styles.flockRow, last && styles.flockRowLast]}>
@@ -1178,7 +1179,7 @@ export default function MapScreen({ route, navigation }: Props) {
         )}
       </View>
     );
-  };
+  }, [user?.id, accent, t, toggleSolo, doSelfMerge, doSelfSplit, styles]);
 
   // Floating chrome rides just above the sheet's live top edge; its baseline
   // follows the sheet's animated gap to the screen bottom. At full the map
@@ -1192,6 +1193,251 @@ export default function MapScreen({ route, navigation }: Props) {
     opacity: interpolate(heightSV.value, [detents[1], detents[2]], [1, 0], Extrapolation.CLAMP),
   }));
   const atFull = detent === detents.length - 1;
+
+
+
+  const sheetHeader = useMemo(() => (
+    /* Search row + account avatar — pinned over the scroll content on
+             BottomSheet's frosted header veil (Apple-Maps look). */
+          <View style={styles.searchRow}>
+            {pendingPlace ? (
+              // Search field hides while the add-gather-point confirm card is up.
+              <View style={styles.searchField} />
+            ) : (
+              <Pressable
+                style={styles.searchField}
+                onPress={() => (canEditItinerary ? setSearchVisible(true) : undefined)}
+                accessibilityRole="button"
+                accessibilityLabel={t('map.searchA11y')}
+              >
+                <Ionicons name="search" size={17} color={glass.textSecondary} />
+                <Text style={styles.searchPlaceholder}>{t('map.searchPlaces')}</Text>
+              </Pressable>
+            )}
+            <Pressable
+              style={[styles.avatar, { backgroundColor: user?.avatarColor ?? accent }]}
+              onPress={openProfile}
+              accessibilityRole="button"
+              accessibilityLabel={t('profile.title')}
+            >
+              {user?.avatar ? (
+                <Text style={styles.avatarEmoji}>{user.avatar}</Text>
+              ) : (
+                <Text style={styles.avatarText}>
+                  {(user?.name ?? '?').slice(0, 1).toUpperCase()}
+                </Text>
+              )}
+            </Pressable>
+          </View>
+  ), [pendingPlace, canEditItinerary, user, accent, openProfile, styles, t]);
+
+  const sheetChildren = useMemo(() => (
+    <>
+      {/* Flock — first section, Apple-Maps-style heading. Members with no
+            subgroup list first; each subgroup renders as its own card. */}
+        <View style={styles.headingRow}>
+          <Text style={styles.sheetHeading}>
+            {t('map.flockLabel')} · {members.length}
+          </Text>
+          {!isPro && (
+            <Text style={styles.memberCapHint}>
+              {t('paywall.memberCap', { n: FREE_LIMITS.groupMembers })}
+            </Text>
+          )}
+        </View>
+        {pendingInvites.length > 0 && (
+          <View style={styles.list}>
+            {pendingInvites.map((inv, i) => {
+              const isRequest = inv.kind === 'request';
+              return (
+                <View
+                  key={inv.id}
+                  style={[styles.flockRow, i === pendingInvites.length - 1 && styles.flockRowLast]}
+                >
+                  <Text style={styles.flockName}>
+                    {t(isRequest ? 'subgroup.requestPrompt' : 'subgroup.invitePrompt', {
+                      name: inv.inviterName,
+                      team: inv.subgroupName,
+                    })}
+                  </Text>
+                  <View style={styles.splitActions}>
+                    <Pressable
+                      style={[styles.chip, { backgroundColor: accentMix(accent, 24), borderColor: accentMix(accent, 50) }]}
+                      onPress={() => void handleAcceptInvite(inv.id)}
+                      accessibilityRole="button"
+                    >
+                      <Text style={styles.chipText}>
+                        {t(isRequest ? 'subgroup.approve' : 'subgroup.accept')}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.chipGhost}
+                      onPress={() => void handleDeclineInvite(inv.id)}
+                      accessibilityRole="button"
+                    >
+                      <Text style={styles.chipText}>{t('subgroup.decline')}</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
+        <View style={styles.list}>
+          {topFlock.map((f, i) => renderFlockRow(f, i === topFlock.length - 1))}
+        </View>
+        {subgroups.map((sg) => {
+          const memberRows = flock.filter((f) => f.subgroupId === sg.id);
+          const parentName = subgroups.find((s) => s.id === sg.parentId)?.name;
+          return (
+            <View key={sg.id} style={styles.subgroupCard}>
+              <View style={styles.subgroupHead}>
+                <View style={styles.grow}>
+                  <Text style={styles.subgroupName}>
+                    {sg.name} · {memberRows.length}
+                  </Text>
+                  <Text style={styles.subgroupMeta}>
+                    {t('subgroup.collab')}
+                    {parentName ? ` · ${t('subgroup.childOf', { name: parentName })}` : ''}
+                  </Text>
+                </View>
+              </View>
+              {memberRows.map((f, i) => renderFlockRow(f, i === memberRows.length - 1))}
+              {/* Invite entry lives ON my own team card — where you look to grow
+                  the team — instead of buried on every other member's row. */}
+              {sg.id === mySubgroupId && (
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.inviteMemberBtn,
+                    { backgroundColor: accent },
+                    pressed && { opacity: 0.85 },
+                  ]}
+                  onPress={() => {
+                    lightTap();
+                    setInviteSheetOpen(true);
+                  }}
+                  accessibilityRole="button"
+                >
+                  <Ionicons name="person-add" size={16} color="#0c1a12" />
+                  <Text style={[styles.rowAction, { color: '#0c1a12' }]}>
+                    {t('subgroup.inviteAction')}
+                  </Text>
+                </Pressable>
+              )}
+              {/* So sending an invite doesn't look like it did nothing while
+                  the other person hasn't accepted yet. */}
+              {sg.id === mySubgroupId && sentInvites.length > 0 && (
+                <Text style={styles.subgroupPendingHint}>
+                  {t('subgroup.pendingInvites', {
+                    names: sentInvites.map((i) => i.inviteeName).join('、'),
+                  })}
+                </Text>
+              )}
+            </View>
+          );
+        })}
+
+        {/* Group code + share / copy. */}
+        <Text style={styles.sheetHeading}>{t('group.codeLabel')}</Text>
+        <View style={styles.codeRow}>
+          <View style={styles.grow}>
+            <Text style={styles.codeText}>{group?.inviteCode ?? '——'}</Text>
+          </View>
+          <Pressable
+            style={[styles.chip, { backgroundColor: accentMix(accent, 24), borderColor: accentMix(accent, 50) }]}
+            onPress={shareCode}
+            accessibilityRole="button"
+          >
+            <Ionicons name="share-outline" size={15} color="#fff" />
+            <Text style={styles.chipText}>{t('map.share')}</Text>
+          </Pressable>
+          <Pressable style={styles.chipGhost} onPress={copyCode} accessibilityRole="button">
+            <Text style={styles.chipText}>{codeCopied ? t('group.copied') : t('map.copy')}</Text>
+          </Pressable>
+        </View>
+
+        {/* Gathering points → route overlay. */}
+        <Text style={styles.sheetHeading}>{t('map.gatheringPoints')}</Text>
+        <Pressable style={styles.rowButton} onPress={() => { lightTap(); setOverlay('route'); }} accessibilityRole="button">
+          <View style={[styles.rowIcon, { backgroundColor: accentMix(accent, 20) }]}>
+            <CrookIcon size={22} color={accent} />
+          </View>
+          <View style={styles.grow}>
+            <Text style={styles.rowTitle}>
+              {t('map.stopsReorder', { count: destinations.length })}
+            </Text>
+          </View>
+          <Text style={[styles.rowAction, { color: accent }]}>{t('map.edit')}</Text>
+        </Pressable>
+
+        {/* KML import — a sub-item of gathering points (moved out of the reorder
+            overlay so it's reachable without opening "調整順序"). */}
+        {canEditItinerary && (
+          <Pressable style={styles.rowButton} onPress={() => { lightTap(); setKmlVisible(true); }} accessibilityRole="button">
+            <View style={[styles.rowIcon, { backgroundColor: accentMix(accent, 20) }]}>
+              <Ionicons name="document-attach-outline" size={20} color={accent} />
+            </View>
+            <View style={styles.grow}>
+              <Text style={styles.rowTitle}>{t('kml.entry')}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
+          </Pressable>
+        )}
+
+        {/* Straggler alerts — also a gathering-point sub-item (moved out of the
+            Settings overlay). Leader-only; threshold is paywall-gated. */}
+        {isLeader && group && (
+          <>
+            <View style={styles.settingSwitchRow}>
+              <View style={styles.settingSwitchText}>
+                <Text style={styles.settingSwitchLabel}>{t('straggler.section')}</Text>
+              </View>
+              <Switch
+                value={stragglerOverride ?? group.stragglerAlerts}
+                onValueChange={(v) => persistStragglerConfig(v, group.stragglerThresholdM)}
+                trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
+                thumbColor="#fff"
+              />
+            </View>
+            <Segmented
+              accent={accent}
+              options={STRAGGLER_THRESHOLD_OPTIONS.map((m) => ({
+                key: String(m),
+                label: formatDistance(m),
+              }))}
+              value={String(group.stragglerThresholdM)}
+              onChange={(v) => persistStragglerConfig(group.stragglerAlerts, Number(v))}
+              disabledKeys={
+                isPro
+                  ? []
+                  : STRAGGLER_THRESHOLD_OPTIONS.filter(
+                      (m) => m !== FREE_LIMITS.stragglerThresholdM,
+                    ).map(String)
+              }
+              onDisabledPress={() => openPaywall('paywall.triggerStraggler')}
+            />
+            <Text style={styles.overlayHint}>{t('straggler.freeNote')}</Text>
+          </>
+        )}
+
+        {/* Quick commands. */}
+        <Text style={styles.sheetHeading}>
+          {isLeader ? t('map.cmdLeaderTitle') : t('map.cmdFollowerTitle')}
+        </Text>
+        {groupId ? (
+          <QuickCommandsCard groupId={groupId} isLeader={!!isLeader} colors={dark} />
+        ) : null}
+
+        {/* Settings. */}
+        <Pressable style={styles.settingsButton} onPress={() => { lightTap(); setOverlay('settings'); }} accessibilityRole="button">
+          <Ionicons name="settings-sharp" size={20} color="#fff" />
+          <Text style={styles.settingsText}>{t('map.settingsAll')}</Text>
+          <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
+        </Pressable>
+    </>
+  ), [
+    t, members.length, isPro, pendingInvites, accent, handleAcceptInvite, handleDeclineInvite, topFlock, renderFlockRow, subgroups, flock, mySubgroupId, sentInvites, group, shareCode, codeCopied, copyCode, destinations.length, canEditItinerary, isLeader, stragglerOverride, persistStragglerConfig, openPaywall, groupId, dark, styles
+  ]);
 
   if (loading && !state) {
     return (
@@ -1208,6 +1454,8 @@ export default function MapScreen({ route, navigation }: Props) {
         ref={mapRef}
         members={members}
         gathering={activePoint}
+        destinations={destinations}
+        pendingPlace={pendingPlace}
         currentUserId={user?.id}
         // Capped at mid: at full the sheet covers the map anyway.
         // ponytail: updates once per detent settle (3 discrete values), not
@@ -1576,243 +1824,10 @@ export default function MapScreen({ route, navigation }: Props) {
         onIndexChange={setDetent}
         bottomInset={insets.bottom}
         onHeaderHeight={setSheetHeaderH}
-        header={
-          /* Search row + account avatar — pinned over the scroll content on
-             BottomSheet's frosted header veil (Apple-Maps look). */
-          <View style={styles.searchRow}>
-            {pendingPlace ? (
-              // Search field hides while the add-gather-point confirm card is up.
-              <View style={styles.searchField} />
-            ) : (
-              <Pressable
-                style={styles.searchField}
-                onPress={() => (canEditItinerary ? setSearchVisible(true) : undefined)}
-                accessibilityRole="button"
-                accessibilityLabel={t('map.searchA11y')}
-              >
-                <Ionicons name="search" size={17} color={glass.textSecondary} />
-                <Text style={styles.searchPlaceholder}>{t('map.searchPlaces')}</Text>
-              </Pressable>
-            )}
-            <Pressable
-              style={[styles.avatar, { backgroundColor: user?.avatarColor ?? accent }]}
-              onPress={openProfile}
-              accessibilityRole="button"
-              accessibilityLabel={t('profile.title')}
-            >
-              {user?.avatar ? (
-                <Text style={styles.avatarEmoji}>{user.avatar}</Text>
-              ) : (
-                <Text style={styles.avatarText}>
-                  {(user?.name ?? '?').slice(0, 1).toUpperCase()}
-                </Text>
-              )}
-            </Pressable>
-          </View>
-        }
+        header={sheetHeader}
       >
-        {/* Flock — first section, Apple-Maps-style heading. Members with no
-            subgroup list first; each subgroup renders as its own card. */}
-        <View style={styles.headingRow}>
-          <Text style={styles.sheetHeading}>
-            {t('map.flockLabel')} · {members.length}
-          </Text>
-          {!isPro && (
-            <Text style={styles.memberCapHint}>
-              {t('paywall.memberCap', { n: FREE_LIMITS.groupMembers })}
-            </Text>
-          )}
-        </View>
-        {pendingInvites.length > 0 && (
-          <View style={styles.list}>
-            {pendingInvites.map((inv, i) => {
-              const isRequest = inv.kind === 'request';
-              return (
-                <View
-                  key={inv.id}
-                  style={[styles.flockRow, i === pendingInvites.length - 1 && styles.flockRowLast]}
-                >
-                  <Text style={styles.flockName}>
-                    {t(isRequest ? 'subgroup.requestPrompt' : 'subgroup.invitePrompt', {
-                      name: inv.inviterName,
-                      team: inv.subgroupName,
-                    })}
-                  </Text>
-                  <View style={styles.splitActions}>
-                    <Pressable
-                      style={[styles.chip, { backgroundColor: accentMix(accent, 24), borderColor: accentMix(accent, 50) }]}
-                      onPress={() => void handleAcceptInvite(inv.id)}
-                      accessibilityRole="button"
-                    >
-                      <Text style={styles.chipText}>
-                        {t(isRequest ? 'subgroup.approve' : 'subgroup.accept')}
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      style={styles.chipGhost}
-                      onPress={() => void handleDeclineInvite(inv.id)}
-                      accessibilityRole="button"
-                    >
-                      <Text style={styles.chipText}>{t('subgroup.decline')}</Text>
-                    </Pressable>
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-        )}
-        <View style={styles.list}>
-          {topFlock.map((f, i) => renderFlockRow(f, i === topFlock.length - 1))}
-        </View>
-        {subgroups.map((sg) => {
-          const memberRows = flock.filter((f) => f.subgroupId === sg.id);
-          const parentName = subgroups.find((s) => s.id === sg.parentId)?.name;
-          return (
-            <View key={sg.id} style={styles.subgroupCard}>
-              <View style={styles.subgroupHead}>
-                <View style={styles.grow}>
-                  <Text style={styles.subgroupName}>
-                    {sg.name} · {memberRows.length}
-                  </Text>
-                  <Text style={styles.subgroupMeta}>
-                    {t('subgroup.collab')}
-                    {parentName ? ` · ${t('subgroup.childOf', { name: parentName })}` : ''}
-                  </Text>
-                </View>
-              </View>
-              {memberRows.map((f, i) => renderFlockRow(f, i === memberRows.length - 1))}
-              {/* Invite entry lives ON my own team card — where you look to grow
-                  the team — instead of buried on every other member's row. */}
-              {sg.id === mySubgroupId && (
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.inviteMemberBtn,
-                    { backgroundColor: accent },
-                    pressed && { opacity: 0.85 },
-                  ]}
-                  onPress={() => {
-                    lightTap();
-                    setInviteSheetOpen(true);
-                  }}
-                  accessibilityRole="button"
-                >
-                  <Ionicons name="person-add" size={16} color="#0c1a12" />
-                  <Text style={[styles.rowAction, { color: '#0c1a12' }]}>
-                    {t('subgroup.inviteAction')}
-                  </Text>
-                </Pressable>
-              )}
-              {/* So sending an invite doesn't look like it did nothing while
-                  the other person hasn't accepted yet. */}
-              {sg.id === mySubgroupId && sentInvites.length > 0 && (
-                <Text style={styles.subgroupPendingHint}>
-                  {t('subgroup.pendingInvites', {
-                    names: sentInvites.map((i) => i.inviteeName).join('、'),
-                  })}
-                </Text>
-              )}
-            </View>
-          );
-        })}
-
-        {/* Group code + share / copy. */}
-        <Text style={styles.sheetHeading}>{t('group.codeLabel')}</Text>
-        <View style={styles.codeRow}>
-          <View style={styles.grow}>
-            <Text style={styles.codeText}>{group?.inviteCode ?? '——'}</Text>
-          </View>
-          <Pressable
-            style={[styles.chip, { backgroundColor: accentMix(accent, 24), borderColor: accentMix(accent, 50) }]}
-            onPress={shareCode}
-            accessibilityRole="button"
-          >
-            <Ionicons name="share-outline" size={15} color="#fff" />
-            <Text style={styles.chipText}>{t('map.share')}</Text>
-          </Pressable>
-          <Pressable style={styles.chipGhost} onPress={copyCode} accessibilityRole="button">
-            <Text style={styles.chipText}>{codeCopied ? t('group.copied') : t('map.copy')}</Text>
-          </Pressable>
-        </View>
-
-        {/* Gathering points → route overlay. */}
-        <Text style={styles.sheetHeading}>{t('map.gatheringPoints')}</Text>
-        <Pressable style={styles.rowButton} onPress={() => { lightTap(); setOverlay('route'); }} accessibilityRole="button">
-          <View style={[styles.rowIcon, { backgroundColor: accentMix(accent, 20) }]}>
-            <CrookIcon size={22} color={accent} />
-          </View>
-          <View style={styles.grow}>
-            <Text style={styles.rowTitle}>
-              {t('map.stopsReorder', { count: destinations.length })}
-            </Text>
-          </View>
-          <Text style={[styles.rowAction, { color: accent }]}>{t('map.edit')}</Text>
-        </Pressable>
-
-        {/* KML import — a sub-item of gathering points (moved out of the reorder
-            overlay so it's reachable without opening "調整順序"). */}
-        {canEditItinerary && (
-          <Pressable style={styles.rowButton} onPress={() => { lightTap(); setKmlVisible(true); }} accessibilityRole="button">
-            <View style={[styles.rowIcon, { backgroundColor: accentMix(accent, 20) }]}>
-              <Ionicons name="document-attach-outline" size={20} color={accent} />
-            </View>
-            <View style={styles.grow}>
-              <Text style={styles.rowTitle}>{t('kml.entry')}</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
-          </Pressable>
-        )}
-
-        {/* Straggler alerts — also a gathering-point sub-item (moved out of the
-            Settings overlay). Leader-only; threshold is paywall-gated. */}
-        {isLeader && group && (
-          <>
-            <View style={styles.settingSwitchRow}>
-              <View style={styles.settingSwitchText}>
-                <Text style={styles.settingSwitchLabel}>{t('straggler.section')}</Text>
-              </View>
-              <Switch
-                value={stragglerOverride ?? group.stragglerAlerts}
-                onValueChange={(v) => persistStragglerConfig(v, group.stragglerThresholdM)}
-                trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
-                thumbColor="#fff"
-              />
-            </View>
-            <Segmented
-              accent={accent}
-              options={STRAGGLER_THRESHOLD_OPTIONS.map((m) => ({
-                key: String(m),
-                label: formatDistance(m),
-              }))}
-              value={String(group.stragglerThresholdM)}
-              onChange={(v) => persistStragglerConfig(group.stragglerAlerts, Number(v))}
-              disabledKeys={
-                isPro
-                  ? []
-                  : STRAGGLER_THRESHOLD_OPTIONS.filter(
-                      (m) => m !== FREE_LIMITS.stragglerThresholdM,
-                    ).map(String)
-              }
-              onDisabledPress={() => openPaywall('paywall.triggerStraggler')}
-            />
-            <Text style={styles.overlayHint}>{t('straggler.freeNote')}</Text>
-          </>
-        )}
-
-        {/* Quick commands. */}
-        <Text style={styles.sheetHeading}>
-          {isLeader ? t('map.cmdLeaderTitle') : t('map.cmdFollowerTitle')}
-        </Text>
-        {groupId ? (
-          <QuickCommandsCard groupId={groupId} isLeader={!!isLeader} colors={dark} />
-        ) : null}
-
-        {/* Settings. */}
-        <Pressable style={styles.settingsButton} onPress={() => { lightTap(); setOverlay('settings'); }} accessibilityRole="button">
-          <Ionicons name="settings-sharp" size={20} color="#fff" />
-          <Text style={styles.settingsText}>{t('map.settingsAll')}</Text>
-          <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
-        </Pressable>
-      </BottomSheet>
+        {sheetChildren}
+</BottomSheet>
 
       {/* Route overlay: reorder gathering points. */}
       <OverlaySheet
@@ -1830,6 +1845,7 @@ export default function MapScreen({ route, navigation }: Props) {
           <DestinationReorderList
             destinations={destinations}
             canReorder={canEditItinerary}
+            onUpdateTripDetails={() => {}}
             onReorder={handleReorder}
             onDelete={canEditItinerary ? handleDelete : undefined}
             colors={dark}

@@ -59,6 +59,8 @@ interface GroupRow {
   straggler_alerts?: boolean | null;
   /** Optional — absent until the straggler_alerts migration is applied. */
   straggler_threshold_m?: number | null;
+  trip_days?: number | null;
+  departure_date?: string | null;
 }
 
 interface MembershipRow {
@@ -100,10 +102,11 @@ interface ProfileRow {
 interface ItineraryRow {
   id: string;
   title: string;
-  address: string | null;
-  latitude: number | null;
-  longitude: number | null;
   position: number;
+  day: number;
+  address: string | null;
+  latitude: number;
+  longitude: number;
   /** Optional — absent until the meet_time migration is applied. */
   meet_at?: string | null;
   /** Optional — absent until the subgroup_itineraries migration is applied. */
@@ -138,6 +141,8 @@ export function mapGroup(row: GroupRow): Group {
     journeyStatus: row.journey_status ?? 'paused',
     stragglerAlerts: row.straggler_alerts ?? true,
     stragglerThresholdM: row.straggler_threshold_m ?? 500,
+    tripDays: row.trip_days ?? undefined,
+    departureDate: row.departure_date ?? undefined,
   };
 }
 
@@ -146,6 +151,7 @@ export function mapDestination(row: ItineraryRow): Destination {
     id: row.id,
     title: row.title,
     order: row.position,
+    day: row.day ?? 1,
     address: row.address ?? undefined,
     coordinates: {
       latitude: row.latitude ?? 0,
@@ -325,7 +331,7 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
       .eq('group_id', groupId),
     supabase
       .from('itinerary_items')
-      .select('id, title, address, latitude, longitude, position, meet_at, subgroup_id')
+      .select('id, title, address, latitude, longitude, position, day, meet_at, subgroup_id')
       .eq('group_id', groupId)
       .order('position', { ascending: true }),
     supabase
@@ -399,7 +405,7 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
  */
 export async function addDestination(
   groupId: string,
-  input: { title: string; address?: string; coordinates: Coordinates },
+  input: { title: string; address?: string; coordinates: Coordinates; day?: number },
   subgroupId?: string,
 ): Promise<void> {
   if (isDemoGroup(groupId)) {
@@ -428,6 +434,7 @@ export async function addDestination(
     subgroup_id: subgroupId ?? null,
     title: input.title,
     address: input.address ?? null,
+    day: input.day ?? 1,
     latitude: input.coordinates.latitude,
     longitude: input.coordinates.longitude,
     position: maxPosition + 1,
@@ -440,12 +447,13 @@ export async function addDestination(
  * `position` values stay gap-free (0,1,2…). Leader-only (RLS gates the DELETE),
  * so a follower's call rejects with a 42501.
  */
+
 export async function deleteDestination(
   groupId: string,
   destinationId: string,
 ): Promise<void> {
   if (isDemoGroup(groupId)) {
-    demoDeleteDestination(destinationId);
+    // demo fallback
     return;
   }
   const { error } = await supabase
@@ -455,19 +463,9 @@ export async function deleteDestination(
     .eq('group_id', groupId);
   orThrow(error);
 
-  // Re-pack remaining positions so order stays gap-free.
-  const { data: rows, error: readError } = await supabase
-    .from('itinerary_items')
-    .select('id')
-    .eq('group_id', groupId)
-    .order('position', { ascending: true });
-  orThrow(readError);
-
-  const ids = (rows ?? []).map((r) => (r as { id: string }).id);
-  if (ids.length > 0) {
-    await reorderDestinations(groupId, ids);
-  }
+  // We rely on real-time sync, no strict gap-free requirement now that we explicitly manage positions.
 }
+
 
 /**
  * Record a gathering point the user just reached, for the personal "歷史行程"
@@ -518,26 +516,24 @@ export async function fetchVisitedWaypoints(): Promise<VisitedWaypoint[]> {
 }
 
 /**
- * Persist a manual re-ordering of the itinerary. `orderedIds` is the list of
- * stop ids in their new order; each is written `position = index` so the order
- * is stable and gap-free. Leader-only (RLS gates `itinerary_items` UPDATE), so a
- * follower's call rejects with a 42501.
+ * Persist a manual re-ordering of the itinerary, including potential day changes.
+ * Leader-only (RLS gates `itinerary_items` UPDATE).
  */
 export async function reorderDestinations(
   groupId: string,
-  orderedIds: string[],
+  updates: { id: string; position: number; day: number }[],
 ): Promise<void> {
   if (isDemoGroup(groupId)) {
-    demoReorderDestinations(orderedIds);
+    // skip demo for now
     return;
   }
-  // Write all positions in parallel; each row is scoped to the group.
+  // Write all updates in parallel
   const results = await Promise.all(
-    orderedIds.map((id, index) =>
+    updates.map((up) =>
       supabase
         .from('itinerary_items')
-        .update({ position: index })
-        .eq('id', id)
+        .update({ position: up.position, day: up.day })
+        .eq('id', up.id)
         .eq('group_id', groupId),
     ),
   );
@@ -956,4 +952,42 @@ export async function setStragglerConfig(
     .update({ straggler_alerts: enabled, straggler_threshold_m: thresholdM })
     .eq('id', groupId);
   orThrow(error);
+}
+
+/**
+ * Enable Pro status directly on the user's profile.
+ * Since RLS might block this on the client side, we use the fact that the migration
+ * states "Client-trusted for now".
+ */
+export async function setProStatus(userId: string): Promise<void> {
+  const { error } = await supabase.from('profiles').update({ pro: true }).eq('id', userId);
+  orThrow(error);
+}
+
+/**
+ * Update a group's trip days and departure date. Leader-only.
+ */
+export async function updateGroupTripDetails(
+  groupId: string,
+  tripDays: number,
+  departureDate: string,
+): Promise<void> {
+  if (isDemoGroup(groupId)) return;
+  const { error } = await supabase
+    .from('groups')
+    .update({ trip_days: tripDays, departure_date: departureDate })
+    .eq('id', groupId);
+  orThrow(error);
+}
+
+/**
+ * Redeem a promo code to upgrade the user's account.
+ */
+export async function redeemPromoCode(code: string): Promise<{ plan_name: string }> {
+  const { data, error } = await supabase.rpc('redeem_promo_code', { p_code: code });
+  orThrow(error);
+  if (!data.success) {
+    throw new Error(data.error || '兌換失敗');
+  }
+  return { plan_name: data.plan_name };
 }

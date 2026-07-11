@@ -51,21 +51,38 @@ export default function KmlImportSheet({
 
   async function pickFile() {
     const result = await DocumentPicker.getDocumentAsync({
-      type: ['application/vnd.google-earth.kml+xml', '*/*'],
+      type: ['application/vnd.google-earth.kml+xml', 'application/vnd.google-earth.kmz', '*/*'],
       copyToCacheDirectory: true,
     });
     if (result.canceled) return;
-    const uri = result.assets?.[0]?.uri;
+    const asset = result.assets?.[0];
+    const uri = asset?.uri;
     if (!uri) return;
     try {
-      const xml = await fetch(uri).then((r) => r.text());
+      const isKmz = uri.toLowerCase().endsWith('.kmz') || asset?.name.toLowerCase().endsWith('.kmz') || asset?.mimeType === 'application/vnd.google-earth.kmz';
+      let xml = '';
+
+      if (isKmz) {
+        const JSZip = (await import('jszip')).default;
+        const arrayBuffer = await fetch(uri).then((r) => r.arrayBuffer());
+        const zip = await JSZip.loadAsync(arrayBuffer);
+        const kmlFile = Object.values(zip.files).find((f) => f.name.toLowerCase().endsWith('.kml') && !f.dir);
+        if (!kmlFile) {
+          throw new Error('No KML file found in KMZ');
+        }
+        xml = await kmlFile.async('string');
+      } else {
+        xml = await fetch(uri).then((r) => r.text());
+      }
+
       const items = parseKml(xml);
       if (items.length === 0) {
         setStep({ kind: 'error' });
         return;
       }
       setStep({ kind: 'preview', items });
-    } catch {
+    } catch (err) {
+      console.error('KML/KMZ parse error:', err);
       setStep({ kind: 'error' });
     }
   }

@@ -112,3 +112,13 @@ export const radius = {
   lg: 20,
   pill: 999,
 } as const;
+
+export const DAY_COLORS = [
+  '#E5575C', // Day 1: Red
+  '#6FA8FF', // Day 2: Blue
+  '#F5B142', // Day 3: Orange
+  '#7BC47F', // Day 4: Green
+  '#F08FB0', // Day 5: Pink
+  '#9B5DE5', // Day 6: Purple
+  '#00BBF9', // Day 7: Cyan
+];

@@ -21,12 +21,14 @@ import {
   PreferencesProvider,
   useTheme,
 } from './src/state/PreferencesContext';
+import { useJSFPSLogger } from './src/utils/profiling';
 
 /**
  * Navigation theme + status bar follow the active palette, so the header and
  * screen backgrounds restyle when the user switches theme in Settings.
  */
 function ThemedNavigation() {
+  useJSFPSLogger();
   const { colors, themeName } = useTheme();
   const { initializing, user, membership } = useSession();
   // Fredoka is the design's display face (gathering-point titles, ETA numerals,

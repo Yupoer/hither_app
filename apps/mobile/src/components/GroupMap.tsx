@@ -26,6 +26,8 @@ export interface GroupMapHandle {
 export interface GroupMapProps {
   members: MemberLocation[];
   gathering?: Destination;
+  destinations?: Destination[];
+  pendingPlace?: { coordinates: Coordinates; name: string } | null;
   currentUserId?: string;
   /** Sheet height overlapping the map — shifts the camera center up so
    *  markers stay inside the exposed strip, like Apple Maps. */
@@ -217,4 +219,4 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   memberEmoji: { fontSize: 20 },
 });
 
-export default GroupMap;
+export default React.memo(GroupMap);

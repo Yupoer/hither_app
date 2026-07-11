@@ -104,6 +104,10 @@ interface SessionContextValue {
   /** Record the group the user just created (as leader) or joined (as follower). */
   setMembership: (membership: Membership) => void;
   leaveGroup: () => void;
+  /** Immediately update the local Pro status after a successful upgrade. */
+  setProStatusLocal: (pro: boolean) => void;
+  /** Refresh the user profile from the database (e.g. after a promo code). */
+  refreshProfile: () => Promise<void>;
 }
 
 const SessionContext = createContext<SessionContextValue | undefined>(undefined);
@@ -121,7 +125,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let active = true;
 
-    async function hydrate(authUser: { id: string; is_anonymous?: boolean; email?: string } | undefined) {
+    async function hydrate(authUser: { id: string; is_anonymous?: boolean; email?: string; app_metadata?: { provider?: string } } | undefined) {
       if (!authUser) {
         if (active) {
           setUser(null);
@@ -142,6 +146,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
             avatar?: string | null;
             avatar_color?: string | null;
             pro?: boolean | null;
+            created_at?: string;
+            pro_plan?: string | null;
+            pro_purchased_at?: string | null;
+            pro_expires_at?: string | null;
           }
         | null;
       if (active) {
@@ -151,6 +159,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           email: authUser.email ?? '',
           avatar: row?.avatar ?? undefined,
           avatarColor: row?.avatar_color ?? undefined,
+          createdAt: row?.created_at,
+          provider: authUser.app_metadata?.provider ?? (authUser.is_anonymous ? 'anonymous' : 'email'),
+          proPlan: row?.pro_plan ?? undefined,
+          proPurchasedAt: row?.pro_purchased_at ?? undefined,
+          proExpiresAt: row?.pro_expires_at ?? undefined,
         });
         setIsAnonymous(!!authUser.is_anonymous);
         setIsPro(!!row?.pro);
@@ -376,6 +389,34 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       },
       setMembership: (next) => setMembershipState(next),
       leaveGroup: () => setMembershipState(null),
+      setProStatusLocal: (pro) => setIsPro(pro),
+      refreshProfile: async () => {
+        const { data } = await supabase.auth.getSession();
+        if (data.session?.user) {
+          const authUser = data.session.user;
+          const { data: profileData } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', authUser.id)
+            .maybeSingle();
+          const row = profileData as any;
+          setUser((prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              name: row?.nickname ?? prev.name,
+              avatar: row?.avatar ?? prev.avatar,
+              avatarColor: row?.avatar_color ?? prev.avatarColor,
+              createdAt: row?.created_at ?? prev.createdAt,
+              provider: authUser.app_metadata?.provider ?? prev.provider,
+              proPlan: row?.pro_plan ?? prev.proPlan,
+              proPurchasedAt: row?.pro_purchased_at ?? prev.proPurchasedAt,
+              proExpiresAt: row?.pro_expires_at ?? prev.proExpiresAt,
+            };
+          });
+          setIsPro(!!row?.pro);
+        }
+      },
     }),
     [user, membership, initializing, isAnonymous, isPro],
   );

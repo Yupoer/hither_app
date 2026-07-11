@@ -67,7 +67,7 @@ const MODE_SCROLL = 2; // finger scrolls the content (sheet frozen)
  * offset) and held, so the sheet never jitters between resizing and scrolling.
  * Release settles via the pure sheetMath helpers, carrying the fling velocity.
  */
-export default function BottomSheet({
+export default React.memo(function BottomSheet({
   height,
   detents,
   index,
@@ -252,7 +252,7 @@ export default function BottomSheet({
       </Animated.View>
     </GestureDetector>
   );
-}
+});
 
 /**
  * The sheet's live gap to the screen bottom (peek floats high, full sits

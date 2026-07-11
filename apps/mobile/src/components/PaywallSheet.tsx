@@ -3,14 +3,14 @@ import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View
 import OverlaySheet from './OverlaySheet';
 import { useTranslation, type TranslationKey } from '../i18n';
 import { useTheme } from '../state/PreferencesContext';
-import { purchases } from '../native';
+import { useSession } from '../state/SessionContext';
+import { setProStatus } from '../api/client';
 import { glass, accentMix } from '../glass';
 
 /** Free vs Pro comparison rows, paired free/pro i18n keys per feature. */
 const COMPARE_ROWS: { free: TranslationKey; pro: TranslationKey }[] = [
   { free: 'paywall.rowMembersFree', pro: 'paywall.rowMembersPro' },
   { free: 'paywall.rowAnonFree', pro: 'paywall.rowAnonPro' },
-  { free: 'paywall.rowDestinationsFree', pro: 'paywall.rowDestinationsPro' },
   { free: 'paywall.rowKmlFree', pro: 'paywall.rowKmlPro' },
   { free: 'paywall.rowStragglerFree', pro: 'paywall.rowStragglerPro' },
   { free: 'paywall.rowHistoryFree', pro: 'paywall.rowHistoryPro' },
@@ -38,16 +38,20 @@ export default function PaywallSheet({
 }) {
   const { t } = useTranslation();
   const { colors } = useTheme();
+  const { user, setProStatusLocal } = useSession();
   const accent = colors.accent;
   const [busy, setBusy] = useState<'purchase' | 'restore' | null>(null);
 
   async function handlePurchase() {
+    if (!user) return;
     setBusy('purchase');
     try {
-      const result = await purchases.purchasePro();
-      if (result === 'unavailable') {
-        Alert.alert(t('paywall.unavailable'));
-      }
+      await setProStatus(user.id);
+      setProStatusLocal(true);
+      Alert.alert('已升級', 'Hither Pro 方案已啟用！');
+      onClose();
+    } catch (e) {
+      Alert.alert('升級失敗', e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(null);
     }
@@ -56,14 +60,17 @@ export default function PaywallSheet({
   async function handleRestore() {
     setBusy('restore');
     try {
-      const result = await purchases.restorePurchases();
-      if (result === 'unavailable') {
-        Alert.alert(t('paywall.unavailable'));
+      if (user) {
+         await setProStatus(user.id);
+         setProStatusLocal(true);
+         Alert.alert('已恢復', 'Hither Pro 方案已啟用！');
+         onClose();
       }
     } finally {
       setBusy(null);
     }
   }
+
 
   return (
     <OverlaySheet

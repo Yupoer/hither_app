@@ -24,10 +24,10 @@ export default function MeetCountdown({
     return () => clearInterval(id);
   }, []);
 
-  const totalSec = Math.round((new Date(meetAtIso).getTime() - now) / 1000);
+  const totalSec = Math.max(0, Math.round((new Date(meetAtIso).getTime() - now) / 1000));
   const red = totalSec <= redWithinMin * 60;
-  const sign = totalSec < 0 ? '-' : '';
-  const abs = Math.abs(totalSec);
+  const sign = '';
+  const abs = totalSec;
   const label =
     abs >= 3600
       ? `${sign}${Math.floor(abs / 60)}分`

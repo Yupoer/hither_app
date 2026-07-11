@@ -25,6 +25,16 @@ export interface User {
   avatar?: string;
   /** Avatar background colour hex (persisted in `profiles.avatar_color`). */
   avatarColor?: string;
+  /** Account creation timestamp (from auth.users / profiles) */
+  createdAt?: string;
+  /** The authentication provider used (e.g. 'google', 'email', 'anonymous') */
+  provider?: string;
+  /** Name of the current pro plan, if applicable */
+  proPlan?: string;
+  /** Timestamp when pro was purchased/upgraded */
+  proPurchasedAt?: string;
+  /** Timestamp when pro expires, if applicable */
+  proExpiresAt?: string;
 }
 
 /**
@@ -50,6 +60,10 @@ export interface Group {
   stragglerAlerts: boolean;
   /** Distance in metres beyond which a member counts as a straggler. */
   stragglerThresholdM: number;
+  /** Number of days for the trip (used for grouping destinations). */
+  tripDays?: number;
+  /** Start date of the trip (ISO-8601). */
+  departureDate?: string;
 }
 
 /** Role within a group. */
@@ -142,6 +156,8 @@ export interface Destination {
   title: string;
   /** Position within the group's ordered itinerary (0-based). */
   order: number;
+  /** Which day of the trip this destination belongs to (1-based). */
+  day: number;
   address?: string;
   coordinates: Coordinates;
   /** ISO-8601 target time to gather, set by the leader. Optional. */

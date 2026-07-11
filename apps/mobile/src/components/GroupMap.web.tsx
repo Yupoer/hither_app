@@ -1,9 +1,9 @@
 import React, { forwardRef, useImperativeHandle, useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { GroupMapHandle, GroupMapProps } from './GroupMap';
-import { useTheme } from '../state/PreferencesContext';
+import { usePreferences, useTheme } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
-import { radius, spacing, type Palette } from '../theme';
+import { radius, spacing, DAY_COLORS, type Palette } from '../theme';
 
 /**
  * Web fallback for the native map. `react-native-maps` has no web support, so
@@ -13,11 +13,17 @@ import { radius, spacing, type Palette } from '../theme';
  *
  * The real, interactive map only runs on iOS / Android (Expo Go on a device).
  */
+function getColorForDay(day: number | undefined, dayColors: Record<number, string>) {
+  if (!day) return dayColors[1] || DAY_COLORS[0];
+  return dayColors[day] || DAY_COLORS[(day - 1) % DAY_COLORS.length];
+}
+
 const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
-  { members, gathering, currentUserId },
+  { members, gathering, destinations, currentUserId },
   ref,
 ) {
   const { colors } = useTheme();
+  const { dayColors } = usePreferences();
   const { t } = useTranslation();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
@@ -34,18 +40,22 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     >
       <Text style={styles.note}>{t('web.note')}</Text>
 
-      {gathering && (
-        <View style={[styles.row, styles.gathering]}>
-          <Text style={styles.emoji}>🚩</Text>
-          <View style={styles.rowText}>
-            <Text style={styles.title}>{gathering.title}</Text>
-            <Text style={styles.sub}>
-              {gathering.coordinates.latitude.toFixed(5)},{' '}
-              {gathering.coordinates.longitude.toFixed(5)}
-            </Text>
+      {destinations?.map((dest) => {
+        const isGathering = dest.id === gathering?.id;
+        const bgColor = getColorForDay(dest.day, dayColors);
+        
+        return (
+          <View key={dest.id} style={[styles.row, isGathering && styles.gathering, { borderLeftColor: bgColor, borderLeftWidth: 4 }]}>
+            <Text style={styles.emoji}>🚩</Text>
+            <View style={styles.rowText}>
+              <Text style={styles.title}>{dest.title}</Text>
+              <Text style={styles.sub}>
+                Day {dest.day || 1} · {dest.coordinates.latitude.toFixed(5)}, {dest.coordinates.longitude.toFixed(5)}
+              </Text>
+            </View>
           </View>
-        </View>
-      )}
+        );
+      })}
 
       <Text style={styles.section}>
         {t('web.membersSection', { count: members.length })}

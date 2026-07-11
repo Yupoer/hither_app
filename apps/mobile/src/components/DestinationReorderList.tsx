@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
 import {
   Animated,
   PanResponder,
@@ -6,51 +6,47 @@ import {
   StyleSheet,
   Text,
   View,
+  Modal,
+  TextInput,
+  Alert,
+  Dimensions
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import type { Destination } from '../types';
-import { radius, spacing, type Palette } from '../theme';
-
-/**
- * A re-orderable list of the group's gathering points.
- *
- * Drag-to-reorder is implemented with React Native's built-in `PanResponder`
- * (no native gesture library) so it works in Expo Go. Rows live in normal column
- * flow; while a row is dragged it floats under the finger (an `Animated`
- * translateY), and crossing a row boundary splices the live order so the other
- * rows shift into place. On release the new id order is handed back to the parent
- * to persist.
- *
- * Reordering is leader-only (`canReorder`); followers see the same list, ordered,
- * but without drag handles.
- */
+import { radius, spacing, DAY_COLORS, type Palette } from '../theme';
+import { readOnboardingState } from '../onboarding/sync';
+import { usePreferences } from '../state/PreferencesContext';
 
 const ROW_HEIGHT = 56;
-// How far left the row slides to reveal the trash button. The row CANNOT be
-// dragged past this (no fling-off-screen); deletion happens by tapping the
-// revealed trash, not by the swipe distance.
 const REVEAL_WIDTH = 76;
 
 interface Props {
+  groupId?: string;
   destinations: Destination[];
   canReorder: boolean;
-  onReorder: (orderedIds: string[]) => void;
-  /** Swipe-left to delete a stop (leader-only). Omit to disable. */
+  tripDays?: number;
+  departureDate?: string;
+  onUpdateTripDetails: (days: number, date: string) => void;
+  onReorder: (updates: { id: string; position: number; day: number }[]) => void;
   onDelete?: (id: string) => void;
   colors: Palette;
   emptyLabel: string;
   dragHint?: string;
-  /**
-   * Fires true when a drag starts and false when it ends, so an enclosing
-   * ScrollView can freeze its own vertical scroll while a row is under the
-   * finger (the two gestures must never run at once).
-   */
   onDragActiveChange?: (active: boolean) => void;
 }
 
+type ListItem =
+  | { type: 'header'; day: number; id: string; title: string; dateStr: string }
+  | { type: 'dest'; item: Destination; id: string };
+
 export default function DestinationReorderList({
+  groupId,
   destinations,
   canReorder,
+  tripDays,
+  departureDate,
+  onUpdateTripDetails,
   onReorder,
   onDelete,
   colors,
@@ -59,30 +55,94 @@ export default function DestinationReorderList({
   onDragActiveChange,
 }: Props) {
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const { dayColors, setDayColor } = usePreferences();
 
-  const [order, setOrder] = useState<Destination[]>(destinations);
+  const [order, setOrder] = useState<ListItem[]>([]);
   const orderRef = useRef(order);
   orderRef.current = order;
 
   const draggingRef = useRef(false);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [colorPickerDay, setColorPickerDay] = useState<number | null>(null);
   const startIndexRef = useRef(0);
   const pan = useRef(new Animated.Value(0)).current;
 
-  // Resync from props, but never while a drag is in flight (a background
-  // realtime refetch must not clobber the order under the finger).
+  const [showSettings, setShowSettings] = useState(false);
+  const [editDays, setEditDays] = useState(tripDays ?? 1);
+  const [editDate, setEditDate] = useState(departureDate ? new Date(departureDate) : new Date());
+
+  // Wait for onboarding
+  useEffect(() => {
+    if (canReorder && !tripDays) {
+      readOnboardingState().then((state) => {
+        if (state?.completed && state.answers.days) {
+           const dDays = state.answers.days;
+           const dDate = state.answers.departureDate ?? new Date().toISOString();
+           onUpdateTripDetails(dDays, dDate);
+           setEditDays(dDays);
+           setEditDate(new Date(dDate));
+        }
+      }).catch(() => {});
+    }
+  }, [tripDays, canReorder, onUpdateTripDetails]);
+
   useEffect(() => {
     if (!draggingRef.current) {
-      setOrder(destinations);
+      const nextOrder: ListItem[] = [];
+      const days = Math.max(1, tripDays || 1);
+      
+      const sortedDests = [...destinations].sort((a, b) => a.order - b.order);
+      
+      for (let d = 1; d <= days; d++) {
+        let dateStr = '';
+        if (departureDate) {
+           const dateObj = new Date(departureDate);
+           dateObj.setDate(dateObj.getDate() + (d - 1));
+           dateStr = `${dateObj.getMonth() + 1}月${dateObj.getDate()}號`;
+        }
+        nextOrder.push({ type: 'header', day: d, id: `header-${d}`, title: `第 ${d} 天`, dateStr });
+        const dayDests = sortedDests.filter(dest => (dest.day || 1) === d);
+        for (const dest of dayDests) {
+          nextOrder.push({ type: 'dest', item: dest, id: dest.id });
+        }
+      }
+      const dangling = sortedDests.filter(dest => (dest.day || 1) > days);
+      for (const dest of dangling) {
+          nextOrder.push({ type: 'dest', item: dest, id: dest.id });
+      }
+
+      setOrder(nextOrder);
     }
-  }, [destinations]);
+  }, [destinations, tripDays, departureDate]);
+
+  const dragBoundsRef = useRef<{ min: number; max: number } | null>(null);
 
   const handleGrant = useCallback(
     (id: string) => {
       draggingRef.current = true;
       onDragActiveChange?.(true);
       setActiveId(id);
-      startIndexRef.current = orderRef.current.findIndex((d) => d.id === id);
+      const startIdx = orderRef.current.findIndex((d) => d.id === id);
+      startIndexRef.current = startIdx;
+
+      if (startIdx !== -1 && orderRef.current[startIdx].type === 'header') {
+         let min = 0;
+         let max = orderRef.current.length - 1;
+         for (let i = startIdx - 1; i >= 0; i--) {
+            if (orderRef.current[i].type === 'header') {
+               min = i + 1; break;
+            }
+         }
+         for (let i = startIdx + 1; i < orderRef.current.length; i++) {
+            if (orderRef.current[i].type === 'header') {
+               max = i - 1; break;
+            }
+         }
+         dragBoundsRef.current = { min, max };
+      } else {
+         dragBoundsRef.current = null;
+      }
+
       pan.setValue(0);
     },
     [pan, onDragActiveChange],
@@ -94,17 +154,20 @@ export default function DestinationReorderList({
       const currentIndex = orderRef.current.findIndex((d) => d.id === id);
       const len = orderRef.current.length;
       let target = Math.round(startIndex + dy / ROW_HEIGHT);
-      target = Math.max(0, Math.min(target, len - 1));
+      if (dragBoundsRef.current) {
+         target = Math.max(dragBoundsRef.current.min, Math.min(target, dragBoundsRef.current.max));
+      } else {
+         target = Math.max(0, Math.min(target, len - 1));
+      }
 
       if (target !== currentIndex && currentIndex !== -1) {
         const next = orderRef.current.slice();
         const [moved] = next.splice(currentIndex, 1);
         next.splice(target, 0, moved);
         orderRef.current = next;
-        setOrder(next);
+        setOrder(next); // This triggers a re-render. With memo, it's fast.
       }
 
-      // Keep the floating row glued to the finger relative to its new slot.
       const idxNow = orderRef.current.findIndex((d) => d.id === id);
       pan.setValue(dy + (startIndex - idxNow) * ROW_HEIGHT);
     },
@@ -115,20 +178,36 @@ export default function DestinationReorderList({
     if (!draggingRef.current) return;
     draggingRef.current = false;
     onDragActiveChange?.(false);
-    const ids = orderRef.current.map((d) => d.id);
+    
     setActiveId(null);
     pan.setValue(0);
 
-    // Only persist if the order actually changed.
-    const before = destinations.map((d) => d.id).join(',');
-    if (ids.join(',') !== before) {
-      onReorder(ids);
+    const updates: { id: string; position: number; day: number }[] = [];
+    let currentDay = 1;
+    let position = 0;
+    for (const item of orderRef.current) {
+      if (item.type === 'header') {
+        currentDay = item.day;
+      } else {
+        updates.push({ id: item.id, position, day: currentDay });
+        position++;
+      }
+    }
+
+    let changed = false;
+    for (const u of updates) {
+       const orig = destinations.find(d => d.id === u.id);
+       if (!orig || orig.order !== u.position || (orig.day || 1) !== u.day) {
+           changed = true;
+           break;
+       }
+    }
+    
+    if (changed) {
+      onReorder(updates);
     }
   }, [pan, onReorder, destinations, onDragActiveChange]);
 
-  // Each Row builds its PanResponder once (closing over first-render callbacks),
-  // but handleRelease changes with `destinations`/`onReorder`. Dispatch through a
-  // ref so the responder always calls the latest handlers, never a stale one.
   const handlersRef = useRef({ handleGrant, handleMove, handleRelease });
   handlersRef.current = { handleGrant, handleMove, handleRelease };
   const onGrant = useCallback((id: string) => handlersRef.current.handleGrant(id), []);
@@ -138,39 +217,208 @@ export default function DestinationReorderList({
   );
   const onRelease = useCallback(() => handlersRef.current.handleRelease(), []);
 
-  if (order.length === 0) {
-    return <Text style={styles.empty}>{emptyLabel}</Text>;
-  }
-
   return (
     <View>
-      {canReorder && dragHint ? (
-        <Text style={styles.hint}>{dragHint}</Text>
-      ) : null}
-      <View style={styles.list}>
-        {order.map((item, index) => (
-          <Row
-            key={item.id}
-            item={item}
-            index={index}
-            active={activeId === item.id}
-            canReorder={canReorder}
-            pan={pan}
-            styles={styles}
-            onGrant={onGrant}
-            onMove={onMove}
-            onRelease={onRelease}
-            onDelete={onDelete}
-          />
-        ))}
-      </View>
+      {canReorder && (
+         <View style={styles.topActions}>
+           <Pressable style={styles.setDaysBtn} onPress={() => {
+               setEditDays(tripDays ?? 1);
+               setEditDate(departureDate ? new Date(departureDate) : new Date());
+               setShowSettings(true);
+           }}>
+              <Ionicons name="calendar-outline" size={16} color={colors.accent} style={{ marginRight: 6 }} />
+              <Text style={styles.setDaysText}>設定天數與日期</Text>
+           </Pressable>
+         </View>
+      )}
+
+      {order.length === 0 ? (
+         <Text style={styles.empty}>{emptyLabel}</Text>
+      ) : (
+        <View style={styles.list}>
+          {order.map((item, index) => {
+            if (item.type === 'header') {
+               const bgColor = dayColors[item.day] || DAY_COLORS[(item.day - 1) % DAY_COLORS.length];
+               return (
+                 <HeaderRow
+                   key={item.id}
+                   item={item}
+                   active={activeId === item.id}
+                   canReorder={canReorder}
+                   pan={pan}
+                   styles={styles}
+                   bgColor={bgColor}
+                   onColorPress={() => setColorPickerDay(item.day)}
+                   onGrant={onGrant}
+                   onMove={onMove}
+                   onRelease={onRelease}
+                 />
+               );
+            }
+            return (
+              <Row
+                key={item.id}
+                item={item.item}
+                active={activeId === item.id}
+                canReorder={canReorder}
+                pan={pan}
+                styles={styles}
+                onGrant={onGrant}
+                onMove={onMove}
+                onRelease={onRelease}
+                onDelete={onDelete}
+              />
+            );
+          })}
+        </View>
+      )}
+
+      <Modal visible={showSettings} transparent animationType="fade">
+         <View style={styles.modalOverlay}>
+            <View style={styles.modalCard}>
+               <Text style={styles.modalTitle}>設定行程天數</Text>
+               <View style={styles.modalRow}>
+                  <Text style={styles.modalLabel}>出發日期</Text>
+                  <DateTimePicker
+                     value={editDate}
+                     mode="date"
+                     display="default"
+                     onChange={(e, date) => {
+                         if (date) setEditDate(date);
+                     }}
+                  />
+               </View>
+               <View style={styles.modalRow}>
+                  <Text style={styles.modalLabel}>行程總天數</Text>
+                  <View style={styles.daysControls}>
+                     <Pressable onPress={() => setEditDays(Math.max(1, editDays - 1))} style={styles.daysBtn}>
+                        <Text style={styles.daysBtnText}>-</Text>
+                     </Pressable>
+                     <Text style={styles.daysValue}>{editDays}</Text>
+                     <Pressable onPress={() => setEditDays(editDays + 1)} style={styles.daysBtn}>
+                        <Text style={styles.daysBtnText}>+</Text>
+                     </Pressable>
+                  </View>
+               </View>
+               <View style={styles.modalActions}>
+                  <Pressable onPress={() => setShowSettings(false)} style={styles.modalActionBtn}>
+                     <Text style={styles.modalActionText}>取消</Text>
+                  </Pressable>
+                  <Pressable onPress={() => {
+                      setShowSettings(false);
+                      onUpdateTripDetails(editDays, editDate.toISOString());
+                  }} style={[styles.modalActionBtn, { backgroundColor: colors.accent }]}>
+                     <Text style={[styles.modalActionText, { color: '#fff' }]}>儲存</Text>
+                  </Pressable>
+               </View>
+            </View>
+         </View>
+      </Modal>
+
+      <Modal visible={colorPickerDay !== null} transparent animationType="fade">
+         <Pressable style={styles.modalOverlay} onPress={() => setColorPickerDay(null)}>
+            <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
+               <Text style={styles.modalTitle}>選擇第 {colorPickerDay} 天的旗幟顏色</Text>
+               <View style={styles.colorPickerContainer}>
+                  {DAY_COLORS.map(c => (
+                     <Pressable 
+                        key={c} 
+                        onPress={() => { setDayColor(colorPickerDay!, c); setColorPickerDay(null); }} 
+                        style={[styles.colorPickerDot, { backgroundColor: c }]} 
+                     />
+                  ))}
+               </View>
+            </Pressable>
+         </Pressable>
+      </Modal>
     </View>
   );
 }
 
-function Row({
+const HeaderRow = memo(function HeaderRow({
   item,
-  index,
+  active,
+  canReorder,
+  pan,
+  styles,
+  bgColor,
+  onColorPress,
+  onGrant,
+  onMove,
+  onRelease,
+}: {
+  item: any;
+  active: boolean;
+  canReorder: boolean;
+  pan: Animated.Value;
+  styles: any;
+  bgColor: string;
+  onColorPress: () => void;
+  onGrant: (id: string) => void;
+  onMove: (id: string, dy: number) => void;
+  onRelease: () => void;
+}) {
+  const axisRef = useRef<null | 'v'>(null);
+  const reorderable = canReorder && item.day > 1;
+  const responder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: (evt) => {
+        if (!reorderable) return false;
+        const screenWidth = Dimensions.get('window').width;
+        if (evt.nativeEvent.pageX > screenWidth - 60) return true;
+        return false;
+      },
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: (evt) => {
+        const screenWidth = Dimensions.get('window').width;
+        if (reorderable && evt.nativeEvent.pageX > screenWidth - 60) {
+           axisRef.current = 'v';
+           onGrant(item.id);
+        }
+      },
+      onPanResponderMove: (_evt, g) => {
+        if (axisRef.current === 'v') {
+          onMove(item.id, g.dy);
+        }
+      },
+      onPanResponderRelease: () => {
+        if (axisRef.current === 'v') onRelease();
+        axisRef.current = null;
+      },
+      onPanResponderTerminate: () => {
+        if (axisRef.current === 'v') onRelease();
+        axisRef.current = null;
+      },
+    })
+  ).current;
+
+  return (
+    <View style={active && { zIndex: 10, elevation: 6 }}>
+      <Animated.View
+        style={[
+          styles.headerRow,
+          active && styles.rowActive,
+          {
+            transform: [{ translateY: active ? pan : 0 }],
+          },
+        ]}
+        {...(reorderable ? responder.panHandlers : {})}
+      >
+        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 16 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Pressable onPress={onColorPress} style={[styles.colorDot, { backgroundColor: bgColor }]} />
+            <Text style={styles.headerTitle}>{item.title}</Text>
+          </View>
+          <Text style={styles.headerDate}>{item.dateStr}</Text>
+        </View>
+        {reorderable ? <Text style={styles.handle}>≡</Text> : null}
+      </Animated.View>
+    </View>
+  );
+});
+
+const Row = memo(function Row({
+  item,
   active,
   canReorder,
   pan,
@@ -181,7 +429,6 @@ function Row({
   onDelete,
 }: {
   item: Destination;
-  index: number;
   active: boolean;
   canReorder: boolean;
   pan: Animated.Value;
@@ -191,12 +438,8 @@ function Row({
   onRelease: () => void;
   onDelete?: (id: string) => void;
 }) {
-  // Horizontal offset for the swipe-to-reveal. Non-native driver so it can share
-  // a transform array with the vertical reorder `pan` (also non-native).
   const translateX = useRef(new Animated.Value(0)).current;
-  // Which axis the in-flight gesture locked onto: 'v' = reorder, 'h' = swipe.
   const axisRef = useRef<null | 'h' | 'v'>(null);
-  // Whether the trash is currently revealed (row held open at -REVEAL_WIDTH).
   const openRef = useRef(false);
   const canSwipe = !!onDelete;
 
@@ -212,27 +455,30 @@ function Row({
     [translateX],
   );
 
-  // Stable per-row responder: created once, closes over the stable callbacks
-  // and the row's id (rows are keyed by id, so this survives reordering).
   const responder = useRef(
     PanResponder.create({
+      onStartShouldSetPanResponder: (evt) => {
+        if (!canReorder) return false;
+        const screenWidth = Dimensions.get('window').width;
+        if (evt.nativeEvent.pageX > screenWidth - 60) return true;
+        return false;
+      },
       onMoveShouldSetPanResponder: (_evt, g) =>
-        (canReorder || canSwipe) &&
-        (Math.abs(g.dy) > 6 || Math.abs(g.dx) > 6),
-      // Once we own the drag, don't let the enclosing ScrollView reclaim it.
+        canSwipe && Math.abs(g.dx) > 6 && Math.abs(g.dx) > Math.abs(g.dy),
       onPanResponderTerminationRequest: () => false,
-      onPanResponderGrant: () => {
+      onPanResponderGrant: (evt) => {
         axisRef.current = null;
+        const screenWidth = Dimensions.get('window').width;
+        if (canReorder && evt.nativeEvent.pageX > screenWidth - 60) {
+           axisRef.current = 'v';
+           onGrant(item.id);
+        }
       },
       onPanResponderMove: (_evt, g) => {
-        // Lock the axis on the first meaningful movement.
-        if (axisRef.current === null && (Math.abs(g.dx) > 6 || Math.abs(g.dy) > 6)) {
-          const horizontal = Math.abs(g.dx) > Math.abs(g.dy);
-          axisRef.current = horizontal && canSwipe ? 'h' : canReorder ? 'v' : 'h';
-          if (axisRef.current === 'v') onGrant(item.id);
+        if (axisRef.current === null && canSwipe && Math.abs(g.dx) > 6) {
+          axisRef.current = 'h';
         }
         if (axisRef.current === 'h' && canSwipe) {
-          // Clamp strictly to [-REVEAL_WIDTH, 0]: reveal the trash, never fling.
           const base = openRef.current ? -REVEAL_WIDTH : 0;
           const next = Math.max(-REVEAL_WIDTH, Math.min(0, base + g.dx));
           translateX.setValue(next);
@@ -242,7 +488,6 @@ function Row({
       },
       onPanResponderRelease: (_evt, g) => {
         if (axisRef.current === 'h' && canSwipe) {
-          // Snap open if dragged past the half-way reveal, else snap closed.
           const base = openRef.current ? -REVEAL_WIDTH : 0;
           const next = base + g.dx;
           snap(next < -REVEAL_WIDTH / 2);
@@ -261,10 +506,6 @@ function Row({
 
   return (
     <View style={active && { zIndex: 10, elevation: 6 }}>
-      {/* Red delete affordance behind the row; the trash is a real tap target,
-          exposed once the row is swiped open. Tapping it closes the row first
-          (so a cancelled confirm never leaves a stranded red bar) then fires
-          the delete confirm. */}
       {canSwipe ? (
         <View style={styles.deleteBg}>
           <Animated.View
@@ -300,7 +541,7 @@ function Row({
         ]}
         {...(canReorder || canSwipe ? responder.panHandlers : {})}
       >
-        <Text style={styles.rowIndex}>{index + 1}</Text>
+        <Ionicons name="location-outline" size={20} color={styles.handle.color} style={{ marginRight: 8 }} />
         <View style={styles.rowBody}>
           <Text style={styles.rowTitle} numberOfLines={1}>
             {item.title}
@@ -315,10 +556,15 @@ function Row({
       </Animated.View>
     </View>
   );
-}
+});
 
 const makeStyles = (colors: Palette) =>
   StyleSheet.create({
+    topActions: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      marginBottom: spacing.sm,
+    },
     hint: {
       color: colors.textSecondary,
       fontSize: 12,
@@ -334,14 +580,31 @@ const makeStyles = (colors: Palette) =>
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.surface,
-      // Clip swiped-open rows (and the red delete bar) to the rounded frame.
       overflow: 'hidden',
+    },
+    headerRow: {
+      height: ROW_HEIGHT,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing.lg,
+      backgroundColor: colors.glass,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+    },
+    headerTitle: {
+      color: colors.textPrimary,
+      fontSize: 15,
+      fontWeight: '700',
+    },
+    headerDate: {
+      color: colors.textSecondary,
+      fontSize: 14,
     },
     row: {
       height: ROW_HEIGHT,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: spacing.md,
       paddingHorizontal: spacing.lg,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: colors.border,
@@ -378,4 +641,106 @@ const makeStyles = (colors: Palette) =>
       alignItems: 'center',
       justifyContent: 'center',
     },
+    setDaysBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      backgroundColor: colors.glass,
+      borderRadius: 16,
+    },
+    setDaysText: {
+      color: colors.accent,
+      fontWeight: '600',
+      fontSize: 13,
+    },
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    modalCard: {
+      backgroundColor: colors.surface,
+      borderRadius: radius.lg,
+      padding: spacing.xl,
+      width: '80%',
+    },
+    modalTitle: {
+      fontSize: 18,
+      fontWeight: 'bold',
+      color: colors.textPrimary,
+      marginBottom: spacing.lg,
+    },
+    modalRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: spacing.lg,
+    },
+    modalLabel: {
+      fontSize: 16,
+      color: colors.textPrimary,
+    },
+    daysControls: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.glass,
+      borderRadius: radius.md,
+      overflow: 'hidden',
+    },
+    daysBtn: {
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      backgroundColor: colors.border,
+    },
+    daysBtnText: {
+      fontSize: 18,
+      fontWeight: 'bold',
+      color: colors.textPrimary,
+    },
+    daysValue: {
+      fontSize: 16,
+      fontWeight: 'bold',
+      color: colors.textPrimary,
+      paddingHorizontal: 16,
+    },
+    modalActions: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      marginTop: spacing.md,
+    },
+    modalActionBtn: {
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.sm,
+      borderRadius: radius.md,
+      marginLeft: spacing.sm,
+    },
+    modalActionText: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: colors.textSecondary,
+    },
+    colorDot: {
+      width: 16,
+      height: 16,
+      borderRadius: 8,
+      marginRight: 8,
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.2)',
+    },
+    colorPickerContainer: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 16,
+      justifyContent: 'center',
+      marginBottom: spacing.md,
+    },
+    colorPickerDot: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      borderWidth: 2,
+      borderColor: 'rgba(255,255,255,0.2)',
+    }
   });

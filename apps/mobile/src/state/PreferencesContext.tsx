@@ -32,6 +32,7 @@ const LANGUAGE_KEY = 'pref.language';
 const THEME_KEY = 'pref.theme';
 const POWER_SAVER_KEY = 'pref.powerSaver';
 const MEET_RED_KEY = 'pref.meetRedMin';
+const DAY_COLORS_KEY = 'pref.dayColors';
 
 /** Minutes-remaining at which the meet-time countdown turns red. */
 export const MEET_RED_OPTIONS = [3, 5, 10] as const;
@@ -44,12 +45,15 @@ interface PreferencesValue {
   powerSaver: boolean;
   /** Countdown turns red when this many minutes (or fewer) remain. */
   meetRedMin: number;
+  /** Custom colors for each day */
+  dayColors: Record<number, string>;
   /** True once the persisted preferences have been loaded from storage. */
   ready: boolean;
   setLanguage: (language: Language) => void;
   setThemeName: (theme: ThemeName) => void;
   setPowerSaver: (on: boolean) => void;
   setMeetRedMin: (min: number) => void;
+  setDayColor: (day: number, color: string) => void;
 }
 
 const PreferencesContext = createContext<PreferencesValue | undefined>(undefined);
@@ -67,6 +71,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [themeName, setThemeNameState] = useState<ThemeName>(DEFAULT_THEME);
   const [powerSaver, setPowerSaverState] = useState(false);
   const [meetRedMin, setMeetRedMinState] = useState<number>(DEFAULT_MEET_RED_MIN);
+  const [dayColors, setDayColorsState] = useState<Record<number, string>>({});
   const [ready, setReady] = useState(false);
 
   // Restore persisted preferences on launch.
@@ -74,12 +79,13 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     let active = true;
     (async () => {
       try {
-        const [storedLang, storedTheme, storedSaver, storedMeetRed] =
+        const [storedLang, storedTheme, storedSaver, storedMeetRed, storedDayColors] =
           await AsyncStorage.multiGet([
             LANGUAGE_KEY,
             THEME_KEY,
             POWER_SAVER_KEY,
             MEET_RED_KEY,
+            DAY_COLORS_KEY,
           ]);
         if (!active) return;
         if (isLanguage(storedLang[1])) setLanguageState(storedLang[1]);
@@ -87,6 +93,11 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         if (storedSaver[1] === 'true') setPowerSaverState(true);
         const red = Number(storedMeetRed[1]);
         if ((MEET_RED_OPTIONS as readonly number[]).includes(red)) setMeetRedMinState(red);
+        if (storedDayColors[1]) {
+          try {
+            setDayColorsState(JSON.parse(storedDayColors[1]));
+          } catch {}
+        }
       } finally {
         if (active) setReady(true);
       }
@@ -116,28 +127,40 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     void AsyncStorage.setItem(MEET_RED_KEY, String(min));
   }, []);
 
+  const setDayColor = useCallback((day: number, color: string) => {
+    setDayColorsState((prev) => {
+      const next = { ...prev, [day]: color };
+      void AsyncStorage.setItem(DAY_COLORS_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
   const value = useMemo<PreferencesValue>(
     () => ({
       language,
       themeName,
       powerSaver,
       meetRedMin,
+      dayColors,
       ready,
       setLanguage,
       setThemeName,
       setPowerSaver,
       setMeetRedMin,
+      setDayColor,
     }),
     [
       language,
       themeName,
       powerSaver,
       meetRedMin,
+      dayColors,
       ready,
       setLanguage,
       setThemeName,
       setPowerSaver,
       setMeetRedMin,
+      setDayColor,
     ],
   );
 
