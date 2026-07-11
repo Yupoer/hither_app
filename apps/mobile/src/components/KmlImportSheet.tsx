@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import OverlaySheet from './OverlaySheet';
@@ -20,7 +20,7 @@ type Step =
  * past the free-plan cap) → progress → done. Mirrors PaywallSheet/OverlaySheet
  * conventions used elsewhere on the map screen.
  */
-export default function KmlImportSheet({
+export default React.memo(function KmlImportSheet({
   visible,
   onClose,
   currentCount,
@@ -40,16 +40,16 @@ export default function KmlImportSheet({
   const accent = colors.accent;
   const [step, setStep] = useState<Step>({ kind: 'intro' });
 
-  function reset() {
+  const reset = useCallback(() => {
     setStep({ kind: 'intro' });
-  }
+  }, []);
 
-  function handleClose() {
+  const handleClose = useCallback(() => {
     reset();
     onClose();
-  }
+  }, [reset, onClose]);
 
-  async function pickFile() {
+  const pickFile = useCallback(async () => {
     const result = await DocumentPicker.getDocumentAsync({
       type: ['application/vnd.google-earth.kml+xml', 'application/vnd.google-earth.kmz', '*/*'],
       copyToCacheDirectory: true,
@@ -85,9 +85,9 @@ export default function KmlImportSheet({
       console.error('KML/KMZ parse error:', err);
       setStep({ kind: 'error' });
     }
-  }
+  }, []);
 
-  async function runImport(items: KmlPlacemark[]) {
+  const runImport = useCallback(async (items: KmlPlacemark[]) => {
     setStep({ kind: 'importing', done: 0, total: items.length });
     try {
       await onImport(items, (done) => setStep({ kind: 'importing', done, total: items.length }));
@@ -96,7 +96,7 @@ export default function KmlImportSheet({
     } catch {
       setStep({ kind: 'error' });
     }
-  }
+  }, [onImport, handleClose]);
 
   const allowedFor = (items: KmlPlacemark[]) =>
     isPro
@@ -203,7 +203,7 @@ export default function KmlImportSheet({
       </ScrollView>
     </OverlaySheet>
   );
-}
+});
 
 const styles = StyleSheet.create({
   body: { paddingHorizontal: 18, paddingBottom: 24, gap: 14 },

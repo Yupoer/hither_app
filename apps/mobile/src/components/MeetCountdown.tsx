@@ -7,7 +7,7 @@ import { Text, type StyleProp, type TextStyle } from 'react-native';
  * `M:SS`; further out just `N分` (seconds are noise at that range). Turns
  * `redColor` once `redWithinMin` minutes (or fewer) remain. Overdue → leading `-`.
  */
-export default function MeetCountdown({
+export default React.memo(function MeetCountdown({
   meetAtIso,
   redWithinMin,
   baseStyle,
@@ -38,4 +38,4 @@ export default function MeetCountdown({
       {label}
     </Text>
   );
-}
+});

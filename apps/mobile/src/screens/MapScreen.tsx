@@ -623,7 +623,7 @@ export default function MapScreen({ route, navigation }: Props) {
     }
   }, [groupId, isPro, destinations.length, myScopeId, refresh, openPaywall, t]);
 
-  async function handleKmlImport(items: KmlPlacemark[], onProgress: (done: number) => void) {
+  const handleKmlImport = useCallback(async (items: KmlPlacemark[], onProgress: (done: number) => void) => {
     if (!groupId) return;
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
@@ -636,9 +636,9 @@ export default function MapScreen({ route, navigation }: Props) {
     }
     logEvent('kml_import', { count: items.length });
     refresh();
-  }
+  }, [groupId, myScopeId, refresh]);
 
-  function handleMomentumEnd(e: NativeSyntheticEvent<NativeScrollEvent>) {
+  const handleMomentumEnd = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
     if (destinations.length === 0) return;
     const index = Math.round(e.nativeEvent.contentOffset.x / windowWidth);
     const clamped = Math.max(0, Math.min(index, destinations.length - 1));
@@ -647,7 +647,7 @@ export default function MapScreen({ route, navigation }: Props) {
       logEvent('carousel_swipe', { index: clamped });
       mapRef.current?.centerOn(destinations[clamped].coordinates);
     }
-  }
+  }, [destinations, windowWidth, selectedIndex]);
 
   // --- Group actions --------------------------------------------------------
   const [codeCopied, setCodeCopied] = useState(false);

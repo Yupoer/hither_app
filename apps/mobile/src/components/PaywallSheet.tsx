@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import OverlaySheet from './OverlaySheet';
 import { useTranslation, type TranslationKey } from '../i18n';
@@ -27,7 +27,7 @@ const COMPARE_ROWS: { free: TranslationKey; pro: TranslationKey }[] = [
  * is wired in a dev build — both actions currently resolve 'unavailable' and
  * this sheet just explains that.
  */
-export default function PaywallSheet({
+export default React.memo(function PaywallSheet({
   visible,
   onClose,
   trigger,
@@ -42,7 +42,7 @@ export default function PaywallSheet({
   const accent = colors.accent;
   const [busy, setBusy] = useState<'purchase' | 'restore' | null>(null);
 
-  async function handlePurchase() {
+  const handlePurchase = useCallback(async () => {
     if (!user) return;
     setBusy('purchase');
     try {
@@ -55,9 +55,9 @@ export default function PaywallSheet({
     } finally {
       setBusy(null);
     }
-  }
+  }, [user, setProStatusLocal, onClose]);
 
-  async function handleRestore() {
+  const handleRestore = useCallback(async () => {
     setBusy('restore');
     try {
       if (user) {
@@ -69,7 +69,7 @@ export default function PaywallSheet({
     } finally {
       setBusy(null);
     }
-  }
+  }, [user, setProStatusLocal, onClose]);
 
 
   return (
@@ -117,7 +117,7 @@ export default function PaywallSheet({
       </ScrollView>
     </OverlaySheet>
   );
-}
+});
 
 const styles = StyleSheet.create({
   body: { paddingHorizontal: 18, paddingBottom: 24, gap: 14 },
