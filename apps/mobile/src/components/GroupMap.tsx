@@ -5,13 +5,13 @@ import React, {
   useMemo,
   useRef,
 } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, type Region } from 'react-native-maps';
 import type { Coordinates, Destination, MemberLocation } from '../types';
-import { useTheme } from '../state/PreferencesContext';
+import { usePreferences, useTheme } from '../state/PreferencesContext';
 import { memberColor } from '../glass';
-import type { Palette } from '../theme';
+import { DAY_COLORS, type Palette } from '../theme';
 
 /** Imperative handle so the screen can drive the map camera. */
 export interface GroupMapHandle {
@@ -35,9 +35,9 @@ export interface GroupMapProps {
 }
 
 /** Region that comfortably frames a single gathering point. */
-function regionFor(center: Coordinates): Region {
+function regionFor(center: Coordinates, latOffset: number = 0): Region {
   return {
-    latitude: center.latitude,
+    latitude: center.latitude - latOffset,
     longitude: center.longitude,
     latitudeDelta: 0.01,
     longitudeDelta: 0.01,
@@ -51,14 +51,54 @@ function regionFor(center: Coordinates): Region {
  * native-only. The `.web.tsx` sibling provides a web-safe fallback so Metro
  * never tries to bundle the native component for web.
  */
+function getColorForDay(day: number | undefined, dayColors: Record<number, string>) {
+  if (!day) return dayColors[1] || DAY_COLORS[0];
+  return dayColors[day] || DAY_COLORS[(day - 1) % DAY_COLORS.length];
+}
+
+/** 
+ * A completely static marker for destinations.
+ * Since we removed the dynamic `isGathering` active state resizing, this marker's
+ * layout bounds and styles never change after mount. Thus, we can safely let
+ * react-native-maps use its default tracksViewChanges=true behavior. It will continually
+ * snapshot, which avoids the dreaded "off-screen culling" bug where markers locked
+ * to tracksViewChanges=false stay permanently invisible if they were off-screen when the timer fired.
+ */
+const DestinationMarker = React.memo(({ dest, bgColor, styles }: any) => {
+  return (
+    <Marker
+      coordinate={dest.coordinates}
+      title={dest.title}
+      description={`Day ${dest.day || 1}`}
+      anchor={{ x: 0.5, y: 0.5 }}
+      style={{ zIndex: 1 }}
+    >
+      <View
+        style={[
+          styles.gatherMarker,
+          { backgroundColor: bgColor },
+        ]}
+      >
+        <Ionicons name="flag" size={14} color="#fff" />
+      </View>
+    </Marker>
+  );
+});
+
 const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
-  { members, gathering, currentUserId, bottomOverlap },
+  { members, gathering, destinations, pendingPlace, currentUserId, bottomOverlap },
   ref,
 ) {
   const mapRef = useRef<MapView | null>(null);
   const centeredRef = useRef(false);
   const { colors, themeName } = useTheme();
+  const { dayColors } = usePreferences();
+  const { height } = useWindowDimensions();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+
+  // Shift the camera center up by moving the target coordinate down (subtracting from latitude).
+  // 0.01 is the latitudeDelta. We shift by half the overlap ratio so the point centers in the visible area.
+  const latOffset = 0.01 * ((bottomOverlap ?? 0) / 2) / height;
 
   // Match the map chrome to the app theme: the light "day" palette gets the
   // light Apple Maps style; the dark "night"/"dusk" palettes get the dark one.
@@ -69,11 +109,11 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     () => ({
       recenter: () => {
         if (gathering && mapRef.current) {
-          mapRef.current.animateToRegion(regionFor(gathering.coordinates), 400);
+          mapRef.current.animateToRegion(regionFor(gathering.coordinates, latOffset), 400);
         }
       },
       centerOn: (coordinates) => {
-        mapRef.current?.animateToRegion(regionFor(coordinates), 400);
+        mapRef.current?.animateToRegion(regionFor(coordinates, latOffset), 400);
       },
       fitToMembers: () => {
         const coords = members.filter((m) => m.coordinates).map((m) => m.coordinates!);
@@ -87,16 +127,16 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
         }
       },
     }),
-    [gathering, members],
+    [gathering, members, latOffset],
   );
 
   // Center on the gathering point the first time data arrives.
   useEffect(() => {
     if (!centeredRef.current && gathering && mapRef.current) {
-      mapRef.current.animateToRegion(regionFor(gathering.coordinates), 600);
+      mapRef.current.animateToRegion(regionFor(gathering.coordinates, latOffset), 600);
       centeredRef.current = true;
     }
-  }, [gathering]);
+  }, [gathering, latOffset]);
 
   return (
     <MapView
@@ -106,21 +146,30 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       key={mapInterfaceStyle}
       ref={mapRef}
       style={StyleSheet.absoluteFill}
-      initialRegion={gathering ? regionFor(gathering.coordinates) : undefined}
+      initialRegion={gathering ? regionFor(gathering.coordinates, latOffset) : undefined}
       userInterfaceStyle={mapInterfaceStyle}
-      mapPadding={{ top: 0, left: 0, right: 0, bottom: bottomOverlap ?? 0 }}
+      mapPadding={{ top: 0, left: 32, right: 0, bottom: 42 }}
       showsUserLocation
       showsCompass
     >
-      {gathering && (
+      {destinations?.map((dest) => {
+        const bgColor = getColorForDay(dest.day, dayColors);
+        return (
+          <DestinationMarker 
+            key={dest.id}
+            dest={dest}
+            bgColor={bgColor}
+            styles={styles}
+          />
+        );
+      })}
+
+      {pendingPlace && (
         <Marker
-          coordinate={gathering.coordinates}
-          title={gathering.title}
-          description="下一個集合點 · gathering point"
+          coordinate={pendingPlace.coordinates}
+          title={pendingPlace.name}
           anchor={{ x: 0.5, y: 0.5 }}
         >
-          {/* Apple-Maps-style place marker: a small accent disc with a white
-              ring holding a flag glyph — pops on the basemap, no huge halo. */}
           <View style={[styles.gatherMarker, { backgroundColor: colors.accent }]}>
             <Ionicons name="flag" size={17} color="#fff" />
           </View>
@@ -179,9 +228,9 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
 const makeStyles = (colors: Palette) => StyleSheet.create({
   // Small Apple-Maps-style place disc — accent circle, white ring, flag glyph.
   gatherMarker: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2.5,
