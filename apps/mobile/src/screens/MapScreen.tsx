@@ -65,6 +65,7 @@ import { SettingsOverlay } from './MapScreen/components/SettingsOverlay';
 import { ProfileOverlay } from './MapScreen/components/ProfileOverlay';
 import { SubgroupSection } from './MapScreen/components/SubgroupSection';
 import { Segmented } from './MapScreen/components/Segmented';
+import AccountSheet from '../components/AccountSheet';
 import { useGroupState } from '../state/useGroupState';
 import { useStragglerAlerts } from '../state/useStragglerAlerts';
 import { useSubgroupInvites } from '../state/useSubgroupInvites';
@@ -217,7 +218,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const heightSV = useSharedValue(detents[0]);
   const [detent, setDetent] = useState(0);
   const [overlay, setOverlay] = useState<
-    null | 'route' | 'settings' | 'profile' | 'feedback' | 'history'
+    null | 'route' | 'settings' | 'profile' | 'feedback' | 'history' | 'account'
   >(null);
   // Screenshot captured the instant the feedback entry is tapped (before the
   // form opens over the screen), handed to the sheet as evidence.
@@ -330,18 +331,8 @@ export default function MapScreen({ route, navigation }: Props) {
   const openMeetTimePicker = useCallback((dest: Destination) => {
     if (!canEditItinerary) return;
     const initial = dest.meetAt ? new Date(dest.meetAt) : new Date();
-    if (Platform.OS === 'android') {
-      DateTimePickerAndroid.open({
-        value: initial,
-        mode: 'time',
-        onChange: (event, selected) => {
-          if (event.type === 'set' && selected) persistMeetTime(dest.id, selected);
-        },
-      });
-    } else {
-      setMeetTimeEditor({ id: dest.id, value: initial });
-    }
-  }, [canEditItinerary, persistMeetTime]);
+    setMeetTimeEditor({ id: dest.id, value: initial });
+  }, [canEditItinerary]);
   // Freeze the route overlay's scroll while a stop is being drag-reordered so
   // the two vertical gestures never fight.
   const [routeScrollEnabled, setRouteScrollEnabled] = useState(true);
@@ -1655,7 +1646,14 @@ export default function MapScreen({ route, navigation }: Props) {
         onConfirmLeave={confirmLeave}
         onConfirmSignOut={confirmSignOut}
         onOpenPaywall={() => openPaywall()}
+        onOpenAccount={() => setOverlay('account')}
         styles={styles}
+      />
+
+      <AccountSheet
+        visible={overlay === 'account'}
+        onClose={() => setOverlay(null)}
+        accent={accent}
       />
 
       <ProfileOverlay
@@ -1795,20 +1793,37 @@ export default function MapScreen({ route, navigation }: Props) {
         }}
       />
 
-      {/* iOS meet-time editor: embedded spinner + Set/Clear (Android uses the
-          native dialog directly, see openMeetTimePicker). */}
-      {Platform.OS !== 'android' && (
-        <OverlaySheet
-          visible={!!meetTimeEditor}
-          onClose={() => setMeetTimeEditor(null)}
-          title={t('meetTime.set')}
-          accent={accent}
-          doneLabel={t('common.cancel')}
-        >
-          {meetTimeEditor && (
-            <View style={styles.meetEditorBody}>
-              <View style={styles.meetPickerWrap}>
-                <DateTimePicker
+      {/* Meet-time editor: embedded spinner + Set/Clear + Quick Shortcuts */}
+      <OverlaySheet
+        visible={!!meetTimeEditor}
+        onClose={() => setMeetTimeEditor(null)}
+        title={t('meetTime.set')}
+        accent={accent}
+        doneLabel={t('common.cancel')}
+      >
+        {meetTimeEditor && (
+          <View style={styles.meetEditorBody}>
+            <View style={styles.meetQuickRow}>
+              {[10, 30, 60].map((m) => (
+                <Pressable
+                  key={m}
+                  style={styles.meetQuickBtn}
+                  onPress={() => {
+                    lightTap();
+                    const d = new Date();
+                    d.setMinutes(d.getMinutes() + m);
+                    setMeetTimeEditor((s) => (s ? { ...s, value: d } : s));
+                  }}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.meetQuickBtnText}>
+                    +{m < 60 ? `${m}分` : `${m / 60}小時`}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <View style={styles.meetPickerWrap}>
+              <DateTimePicker
                   value={meetTimeEditor.value}
                   mode="time"
                   display="spinner"
@@ -1842,8 +1857,7 @@ export default function MapScreen({ route, navigation }: Props) {
               </Pressable>
             </View>
           )}
-        </OverlaySheet>
-      )}
+      </OverlaySheet>
     </View>
   );
 }
@@ -2097,6 +2111,16 @@ const makeStyles = (accent: string) =>
     // Meet-time editor sheet: roomy, full-width controls (not the old cramped
     // left-aligned chips).
     meetEditorBody: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 40, gap: 14 },
+    meetQuickRow: { flexDirection: 'row', gap: 10, justifyContent: 'center', marginBottom: -4 },
+    meetQuickBtn: {
+      paddingVertical: 8,
+      paddingHorizontal: 16,
+      borderRadius: 20,
+      backgroundColor: glass.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
+    },
+    meetQuickBtnText: { color: glass.textSecondary, fontSize: 14, fontWeight: '600' },
     meetPickerWrap: { alignItems: 'center', marginBottom: 4 },
     meetSetBtn: {
       height: 52,

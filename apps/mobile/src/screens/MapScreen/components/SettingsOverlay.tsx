@@ -21,6 +21,7 @@ interface SettingsOverlayProps {
   onConfirmLeave: () => void;
   onConfirmSignOut: () => void;
   onOpenPaywall: () => void;
+  onOpenAccount: () => void;
   styles: any;
 }
 
@@ -35,6 +36,7 @@ export function SettingsOverlay({
   onConfirmLeave,
   onConfirmSignOut,
   onOpenPaywall,
+  onOpenAccount,
   styles,
 }: SettingsOverlayProps) {
   const { t } = useTranslation();
@@ -93,6 +95,14 @@ export function SettingsOverlay({
         doneLabel={t('map.done')}
       >
         <ScrollView contentContainerStyle={styles.overlayBody}>
+          <Pressable
+            style={[styles.accountBtn, { marginBottom: 24 }]}
+            onPress={onOpenAccount}
+            accessibilityRole="button"
+          >
+            <Text style={[styles.accountBtnText, { color: accent }]}>{t('settings.account') || '帳號設定'}</Text>
+          </Pressable>
+
           <Text style={styles.sectionLabel}>{t('settings.language')}</Text>
           <Segmented
             accent={accent}
