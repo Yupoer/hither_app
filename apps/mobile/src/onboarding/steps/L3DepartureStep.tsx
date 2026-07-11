@@ -5,6 +5,7 @@ import DateTimePicker, {
 } from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../state/PreferencesContext';
+import { accentMix } from '../../glass';
 import { useTranslation } from '../../i18n';
 import type { StepProps } from '../types';
 import StepShell from './StepShell';
@@ -137,9 +138,14 @@ export default function L3DepartureStep({ answers, onAnswer, onSkip, onBack }: S
       </View>
 
       {effectiveDate ? (
-        <Text style={[styles.countdown, { color: colors.textSecondary }]}>
-          {t('onboarding.l3.countdown', { days: daysUntil(effectiveDate) })}
-        </Text>
+        <View style={styles.countdownWrap}>
+          <View style={[styles.countdownPill, { backgroundColor: accentMix(colors.accent, 16), borderColor: accentMix(colors.accent, 40) }]}>
+            <Ionicons name="hourglass-outline" size={20} color={colors.accent} />
+            <Text style={[styles.countdownText, { color: colors.accent }]}>
+              {t('onboarding.l3.countdown', { days: daysUntil(effectiveDate) })}
+            </Text>
+          </View>
+        </View>
       ) : null}
 
       {/* Calendar in a centered popup so it's never clipped off-screen or
@@ -158,6 +164,7 @@ export default function L3DepartureStep({ answers, onAnswer, onSkip, onBack }: S
               mode="date"
               display="inline"
               minimumDate={new Date()}
+              style={styles.picker}
               onChange={(_event, selected) => {
                 if (selected) {
                   setCustomDate(selected);
@@ -191,8 +198,29 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   tileLabel: { fontSize: 16, fontWeight: '700' },
-  countdown: { fontSize: 15, marginTop: 20, textAlign: 'center' },
+  // Enlarged, badge-style "days to go" so it reads as the confirmation moment.
+  countdownWrap: { alignItems: 'center', marginTop: 28 },
+  countdownPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 24,
+    borderWidth: 1.5,
+  },
+  countdownText: { fontSize: 20, fontWeight: '800' },
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
-  modalWrap: { flex: 1, justifyContent: 'center', paddingHorizontal: 24 },
-  modalCard: { borderRadius: 24, padding: 16, gap: 12 },
+  // Minimal side padding + centered card so the inline calendar is never
+  // clipped on the right.
+  modalWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 10 },
+  modalCard: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: 24,
+    paddingHorizontal: 8,
+    paddingVertical: 14,
+    gap: 12,
+  },
+  picker: { alignSelf: 'center', width: '100%' },
 });

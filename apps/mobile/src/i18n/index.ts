@@ -166,6 +166,7 @@ const zh = {
   // Map · new design (Hither iOS Flow)
   'map.searchPlaces': '搜尋地點',
   'confirmGather.kicker': '加入這個集合點？',
+  'confirmGather.going': '前往 {name}',
   'confirmGather.add': '加入',
   'map.share': '分享',
   'map.copy': '複製',
@@ -576,6 +577,7 @@ const en: Record<keyof typeof zh, string> = {
 
   'map.searchPlaces': 'Search places',
   'confirmGather.kicker': 'Add this gather point?',
+  'confirmGather.going': 'To {name}',
   'confirmGather.add': 'Add',
   'map.share': 'Share',
   'map.copy': 'Copy',

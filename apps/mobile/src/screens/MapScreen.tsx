@@ -30,6 +30,8 @@ import Animated, {
   useAnimatedStyle,
   interpolate,
   Extrapolation,
+  withTiming,
+  Easing,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -1282,48 +1284,70 @@ export default function MapScreen({ route, navigation }: Props) {
 
       {/* Add-gather-point confirm card — a bottom sheet-style card shown after
           picking a search result. Add (accent) / Cancel (red) side by side. */}
-      {pendingPlace && (
-        <View style={[styles.confirmCard, { bottom: insets.bottom + 16 }]} pointerEvents="box-none">
-          <liquidGlass.GlassView tintColor={glass.card} style={styles.confirmCardInner}>
-            <Text style={styles.confirmKicker}>{t('confirmGather.kicker')}</Text>
-            <Text style={styles.confirmTitle} numberOfLines={1}>
-              {pendingPlace.name}
-            </Text>
-            {pendingPlace.address ? (
-              <Text style={styles.confirmAddress} numberOfLines={1}>
-                {pendingPlace.address}
+      {pendingPlace && (() => {
+        // Walking time + distance from me to the picked place — the follower-nav
+        // card layout (arrow · N min · distance) applied to the add-confirm step.
+        const pDist = fromCoords
+          ? distanceMeters(fromCoords, pendingPlace.coordinates)
+          : null;
+        const pMin = pDist != null ? shortEta(walkingEtaSeconds(pDist)) : null;
+        return (
+          // Sits ABOVE the sheet peek so its buttons are never covered by the
+          // (now hidden) search bar.
+          <View
+            style={[styles.confirmCard, { bottom: detents[0] + insets.bottom + 12 }]}
+            pointerEvents="box-none"
+          >
+            <liquidGlass.GlassView tintColor={glass.cardActive} style={styles.confirmCardInner}>
+              <Text style={styles.confirmKicker} numberOfLines={1}>
+                {t('confirmGather.going', { name: pendingPlace.name })}
               </Text>
-            ) : null}
-            <View style={styles.confirmBtnRow}>
-              <Pressable
-                style={({ pressed }) => [styles.confirmCancel, pressed && { opacity: 0.85 }]}
-                onPress={() => {
-                  selectionTick();
-                  setPendingPlace(null);
-                }}
-                accessibilityRole="button"
-              >
-                <Text style={styles.confirmCancelText}>{t('common.cancel')}</Text>
-              </Pressable>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.confirmAdd,
-                  { backgroundColor: accent },
-                  pressed && { opacity: 0.9 },
-                ]}
-                onPress={() => {
-                  const place = pendingPlace;
-                  setPendingPlace(null);
-                  void handlePickDestination(place);
-                }}
-                accessibilityRole="button"
-              >
-                <Text style={styles.confirmAddText}>{t('confirmGather.add')}</Text>
-              </Pressable>
-            </View>
-          </liquidGlass.GlassView>
-        </View>
-      )}
+              <View style={styles.confirmMainRow}>
+                <View style={[styles.confirmArrow, { backgroundColor: accentMix(accent, 18) }]}>
+                  <Ionicons name="navigate" size={22} color={accent} />
+                </View>
+                {pMin ? (
+                  <Text style={[styles.confirmMin, { color: accent }]} numberOfLines={1}>
+                    {pMin}
+                  </Text>
+                ) : null}
+                {pDist != null ? (
+                  <Text style={styles.confirmDist} numberOfLines={1}>
+                    · {formatDistance(pDist)}
+                  </Text>
+                ) : null}
+              </View>
+              <View style={styles.confirmBtnRow}>
+                <Pressable
+                  style={({ pressed }) => [styles.confirmCancel, pressed && { opacity: 0.85 }]}
+                  onPress={() => {
+                    selectionTick();
+                    setPendingPlace(null);
+                  }}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.confirmCancelText}>{t('common.cancel')}</Text>
+                </Pressable>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.confirmAdd,
+                    { backgroundColor: accent },
+                    pressed && { opacity: 0.9 },
+                  ]}
+                  onPress={() => {
+                    const place = pendingPlace;
+                    setPendingPlace(null);
+                    void handlePickDestination(place);
+                  }}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.confirmAddText}>{t('confirmGather.add')}</Text>
+                </Pressable>
+              </View>
+            </liquidGlass.GlassView>
+          </View>
+        );
+      })()}
 
       {/* Gathering-point carousel — takes over the top slot (where the group
           pill was) instead of floating above the sheet, so it no longer
@@ -1661,15 +1685,19 @@ export default function MapScreen({ route, navigation }: Props) {
                   the team — instead of buried on every other member's row. */}
               {sg.id === mySubgroupId && (
                 <Pressable
-                  style={[styles.inviteMemberBtn, { borderColor: accentMix(accent, 45) }]}
+                  style={({ pressed }) => [
+                    styles.inviteMemberBtn,
+                    { backgroundColor: accent },
+                    pressed && { opacity: 0.85 },
+                  ]}
                   onPress={() => {
                     lightTap();
                     setInviteSheetOpen(true);
                   }}
                   accessibilityRole="button"
                 >
-                  <Ionicons name="person-add-outline" size={16} color={accent} />
-                  <Text style={[styles.rowAction, { color: accent }]}>
+                  <Ionicons name="person-add" size={16} color="#0c1a12" />
+                  <Text style={[styles.rowAction, { color: '#0c1a12' }]}>
                     {t('subgroup.inviteAction')}
                   </Text>
                 </Pressable>
@@ -2310,18 +2338,40 @@ function Segmented({
   disabledKeys?: string[];
   onDisabledPress?: (key: string) => void;
 }) {
+  const SEG_PAD = 4;
+  const SEG_GAP = 6;
+  const [trackW, setTrackW] = useState(0);
+  const n = options.length;
+  const activeIdx = Math.max(0, options.findIndex((o) => o.key === value));
+  const segW = trackW > 0 ? (trackW - SEG_PAD * 2 - SEG_GAP * (n - 1)) / n : 0;
+  const tx = useSharedValue(0);
+  useEffect(() => {
+    // Slide the highlight to the active segment — smooth easing beats a hard cut.
+    tx.value = withTiming(activeIdx * (segW + SEG_GAP), {
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [activeIdx, segW, tx]);
+  const highlightStyle = useAnimatedStyle(() => ({ transform: [{ translateX: tx.value }] }));
+
   return (
-    <View style={segStyles.track}>
+    <View style={segStyles.track} onLayout={(e) => setTrackW(e.nativeEvent.layout.width)}>
+      {segW > 0 ? (
+        <Animated.View
+          pointerEvents="none"
+          style={[segStyles.highlight, { width: segW }, highlightStyle]}
+        />
+      ) : null}
       {options.map((o) => {
         const active = o.key === value;
         const locked = !!disabledKeys?.includes(o.key);
         return (
           <Pressable
             key={o.key}
-            style={[
+            style={({ pressed }) => [
               segStyles.seg,
-              active && { backgroundColor: 'rgba(255,255,255,0.16)' },
               locked && segStyles.segLocked,
+              pressed && { opacity: 0.6 },
             ]}
             onPress={() => (locked ? onDisabledPress?.(o.key) : onChange(o.key))}
             accessibilityRole="button"
@@ -2350,6 +2400,14 @@ const segStyles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  highlight: {
+    position: 'absolute',
+    left: 4,
+    top: 4,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.16)',
   },
   segLocked: { opacity: 0.4 },
   segText: { fontSize: 15, fontWeight: '600', color: glass.textSecondary },
@@ -2446,7 +2504,7 @@ const makeStyles = (accent: string) =>
 
     carouselWrap: { position: 'absolute', left: 0, right: 0, zIndex: 58 },
     card: {
-      borderRadius: 24,
+      borderRadius: 30,
       overflow: 'hidden',
       padding: 14,
       borderWidth: StyleSheet.hairlineWidth,
@@ -2528,26 +2586,34 @@ const makeStyles = (accent: string) =>
     },
     cmdSquareLabel: { fontSize: 10, fontWeight: '700', color: glass.textSecondary, fontVariant: ['tabular-nums'] },
 
-    // Add-gather-point confirm card (floats over the sheet bottom).
+    // Add-gather-point confirm card — follower-nav layout, extra-round corners.
     confirmCard: { position: 'absolute', left: 14, right: 14, zIndex: 60 },
     confirmCardInner: {
       overflow: 'hidden',
-      borderRadius: 24,
+      borderRadius: 34,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairlineStrong,
-      paddingHorizontal: 18,
+      paddingHorizontal: 20,
       paddingTop: 16,
       paddingBottom: 16,
-      gap: 4,
+      gap: 6,
     },
-    confirmKicker: { fontSize: 12.5, color: glass.textSecondary },
-    confirmTitle: { fontFamily: DISPLAY_FONT, fontSize: 20, color: '#fff', marginTop: 2 },
-    confirmAddress: { fontSize: 13, color: glass.textSecondary },
-    confirmBtnRow: { flexDirection: 'row', gap: 12, marginTop: 14 },
+    confirmKicker: { fontSize: 13, color: glass.textSecondary, marginLeft: 2 },
+    confirmMainRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    confirmArrow: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    confirmMin: { fontFamily: DISPLAY_FONT, fontSize: 30, includeFontPadding: false },
+    confirmDist: { fontSize: 15, color: glass.textSecondary },
+    confirmBtnRow: { flexDirection: 'row', gap: 12, marginTop: 12 },
     confirmCancel: {
       flex: 1,
-      height: 50,
-      borderRadius: 15,
+      height: 52,
+      borderRadius: 26,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: 'rgba(255,69,58,0.16)',
@@ -2557,8 +2623,8 @@ const makeStyles = (accent: string) =>
     confirmCancelText: { fontSize: 16, fontWeight: '700', color: '#FF453A' },
     confirmAdd: {
       flex: 1,
-      height: 50,
-      borderRadius: 15,
+      height: 52,
+      borderRadius: 26,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -2736,13 +2802,13 @@ const makeStyles = (accent: string) =>
       marginTop: 24,
     },
     sectionLabel: {
-      fontSize: 12,
-      fontWeight: '700',
-      letterSpacing: 0.8,
-      color: glass.textTertiary,
-      marginBottom: 8,
+      fontSize: 15,
+      fontWeight: '800',
+      letterSpacing: 0.4,
+      color: glass.textSecondary,
+      marginBottom: 12,
       marginLeft: 4,
-      marginTop: 4,
+      marginTop: 26,
     },
     historyDayBlock: { marginBottom: 16 },
     historyTime: {
@@ -2756,7 +2822,7 @@ const makeStyles = (accent: string) =>
       alignItems: 'center',
       gap: 12,
       paddingHorizontal: 4,
-      marginBottom: 12,
+      marginBottom: 18,
     },
     settingSwitchText: { flex: 1 },
     settingSwitchLabel: { fontSize: 15, fontWeight: '600', color: '#fff' },
@@ -2826,10 +2892,11 @@ const makeStyles = (accent: string) =>
       alignItems: 'center',
       justifyContent: 'center',
       gap: 7,
-      marginTop: 12,
-      paddingVertical: 11,
-      borderRadius: 12,
-      borderWidth: StyleSheet.hairlineWidth,
+      marginTop: 14,
+      marginHorizontal: 8,
+      marginBottom: 4,
+      paddingVertical: 13,
+      borderRadius: 16,
     },
     selfControlLabel: { fontSize: 13, color: glass.textSecondary },
 

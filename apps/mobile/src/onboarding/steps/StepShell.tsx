@@ -114,7 +114,9 @@ export default function StepShell({
 
       <View style={styles.body}>{children}</View>
       {footer ? (
-        <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>{footer}</View>
+        // Lifted a whole button-height off the bottom edge so the CTA doesn't
+        // hug the home indicator across every onboarding step.
+        <View style={[styles.footer, { paddingBottom: insets.bottom + 72 }]}>{footer}</View>
       ) : null}
     </View>
   );

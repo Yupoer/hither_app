@@ -60,7 +60,8 @@ export default function L2DaysStep({ answers, onAnswer, onSkip, onBack }: StepPr
 }
 
 const styles = StyleSheet.create({
-  center: { alignItems: 'center', justifyContent: 'center', marginTop: 48 },
+  // Fill the step body so the number + steppers sit dead-center on screen.
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   // − [ days ] + on one line: number centered, steppers pinned to the sides.
   stepperRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 20 },
   count: { minWidth: 140, fontSize: 56, fontWeight: '800', textAlign: 'center' },
