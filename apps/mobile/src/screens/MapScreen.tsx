@@ -8,6 +8,7 @@ import React, {
 import {
   ActivityIndicator,
   Alert,
+  LayoutAnimation,
   Linking,
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -19,9 +20,14 @@ import {
   Switch,
   Text,
   TextInput,
+  UIManager,
   useWindowDimensions,
   View,
 } from 'react-native';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 import DateTimePicker, {
   DateTimePickerAndroid,
 } from '@react-native-community/datetimepicker';
@@ -31,7 +37,11 @@ import Animated, {
   interpolate,
   Extrapolation,
   withTiming,
+  withSpring,
   Easing,
+  FadeIn,
+  FadeOut,
+  LinearTransition,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -105,7 +115,7 @@ import { isDemoGroup } from '../api/demo';
 import { isVirtualMember, assignVirtualToSubgroup } from '../api/virtualMates';
 import { confirmAction } from '../utils/confirm';
 import { logEvent, logError } from '../utils/activityLog';
-import { lightTap, mediumTap, selectionTick, alertBuzz } from '../utils/haptics';
+import { lightTap, mediumTap, rigidTap, selectionTick, alertBuzz } from '../utils/haptics';
 import { AVATAR_EMOJI, AVATAR_COLORS } from '../constants/avatars';
 import type { Coordinates, Destination, MemberLocation } from '../types';
 import type { KmlPlacemark } from '../utils/kml';
@@ -197,11 +207,15 @@ export default function MapScreen({ route, navigation }: Props) {
   // needs its own leader/subgroup branching to stay scoped correctly.
   const me = useMemo(() => members.find((m) => m.userId === user?.id), [members, user?.id]);
   const myScopeId = me?.subgroupId;
-  const destinations: Destination[] = useMemo(() => {
+  const rawDestinations: Destination[] = useMemo(() => {
     return (state?.destinations ?? []).filter(
       (d) => (d.subgroupId ?? undefined) === (myScopeId ?? undefined),
     );
   }, [state?.destinations, myScopeId]);
+  
+  const [optimisticDestinations, setOptimisticDestinations] = useState<Destination[] | null>(null);
+  const destinations = optimisticDestinations ?? rawDestinations;
+  const optimisticTimeoutRef = useRef<NodeJS.Timeout>();
   const canEditItinerary = isLeader || myScopeId != null;
 
   // --- Sheet / overlay / island UI state -----------------------------------
@@ -217,6 +231,9 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [insets.top, windowHeight, sheetHeaderH]);
   const heightSV = useSharedValue(detents[0]);
   const [detent, setDetent] = useState(0);
+  const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
+  const [pressedCardId, setPressedCardId] = useState<string | null>(null);
+  const pendingExpandId = useRef<string | null>(null);
   const [overlay, setOverlay] = useState<
     null | 'route' | 'settings' | 'profile' | 'feedback' | 'history' | 'account'
   >(null);
@@ -716,14 +733,38 @@ export default function MapScreen({ route, navigation }: Props) {
   const handleReorder = useCallback(
     async (updates: { id: string; position: number; day: number }[]) => {
       if (!groupId) return;
+      logEvent('destination_reorder', { count: updates.length });
+      
+      const newDests = rawDestinations.map(d => ({ ...d }));
+      updates.forEach(u => {
+         const dest = newDests.find(d => d.id === u.id);
+         if (dest) {
+            dest.order = u.position;
+            dest.day = u.day;
+         }
+      });
+      newDests.sort((a, b) => {
+         if ((a.day || 1) !== (b.day || 1)) return (a.day || 1) - (b.day || 1);
+         return a.order - b.order;
+      });
+      setOptimisticDestinations(newDests);
+      
+      if (optimisticTimeoutRef.current) clearTimeout(optimisticTimeoutRef.current);
+      optimisticTimeoutRef.current = setTimeout(() => {
+        setOptimisticDestinations(null);
+      }, 3000);
+
       try {
         await reorderDestinations(groupId, updates);
         refresh();
-      } catch {
+      } catch (e) {
+        logError('destination_reorder_failed', e);
         Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
+        setOptimisticDestinations(null);
+        refresh();
       }
     },
-    [groupId, refresh, t],
+    [groupId, t, refresh, rawDestinations],
   );
   const handleDelete = useCallback(
     (id: string) => {
@@ -1422,10 +1463,43 @@ export default function MapScreen({ route, navigation }: Props) {
                     : 'bus-outline';
               return (
                 <View key={dest.id} style={{ width: windowWidth, paddingHorizontal: 14 }}>
-                  <liquidGlass.GlassView
-                    tintColor={active ? glass.cardActive : glass.card}
-                    style={[styles.card, active && { borderColor: accentMix(accent, 50) }]}
+                  <Pressable
+                    delayLongPress={300}
+                    onPressIn={() => {
+                      LayoutAnimation.configureNext({
+                        duration: 150,
+                        update: { type: 'easeInEaseOut' },
+                      });
+                      setPressedCardId(dest.id);
+                      pendingExpandId.current = null;
+                    }}
+                    onPressOut={() => {
+                      LayoutAnimation.configureNext({
+                        duration: 1000,
+                        create: { type: 'linear', property: 'opacity' },
+                        update: { type: 'linear' },
+                        delete: { type: 'linear', property: 'opacity' },
+                      });
+                      setPressedCardId(null);
+                      if (pendingExpandId.current === dest.id) {
+                        setExpandedCardId((prev) => (prev === dest.id ? null : dest.id));
+                        pendingExpandId.current = null;
+                      }
+                    }}
+                    onLongPress={() => {
+                      rigidTap();
+                      pendingExpandId.current = dest.id;
+                    }}
                   >
+                    <Animated.View layout={LinearTransition.duration(1000)}>
+                      <liquidGlass.GlassView
+                        tintColor={active ? glass.cardActive : glass.card}
+                        style={[
+                          styles.card,
+                          active && { borderColor: accentMix(accent, 50) },
+                          pressedCardId === dest.id && { transform: [{ scale: 0.96 }] }
+                        ]}
+                      >
                     {/* Top arrival hairline — team progress toward this stop. */}
                     <View style={styles.arrivalHairline}>
                       <View
@@ -1444,9 +1518,23 @@ export default function MapScreen({ route, navigation }: Props) {
                           {index === 0 ? t('map.nextTag') + ' · ' : ''}
                           {t('map.destinationCounter', { index: index + 1, total: destinations.length })}
                         </Text>
-                        <Text style={styles.cardTitle} numberOfLines={1}>
+                        <Text style={styles.cardTitle} numberOfLines={expandedCardId === dest.id ? undefined : 1}>
                           {dest.title}
                         </Text>
+                        {expandedCardId === dest.id && (
+                          <Animated.Text entering={FadeIn.duration(200)} style={{ color: glass.textSecondary, fontSize: 13, marginTop: 4 }}>
+                            {(() => {
+                              const dayNum = dest.day || 1;
+                              let dateStr = '';
+                              if (group?.departureDate) {
+                                const d = new Date(group.departureDate);
+                                d.setDate(d.getDate() + (dayNum - 1));
+                                dateStr = `${d.getMonth() + 1}月${d.getDate()}號`;
+                              }
+                              return `第${dayNum}天${dateStr ? ` · ${dateStr}` : ''}`;
+                            })()}
+                          </Animated.Text>
+                        )}
                         {myScopeId != null && (
                           <Text style={styles.cardBadge}>{t('subgroup.itineraryBadge')}</Text>
                         )}
@@ -1457,16 +1545,19 @@ export default function MapScreen({ route, navigation }: Props) {
                           DOTS_MAX_VISIBLE; the window slides to keep the
                           active dot centered until it nears either end. */}
                       {destinations.length > 1 && (
-                        <View style={styles.dots}>
+                        <Animated.View style={styles.dots} layout={LinearTransition.duration(100)}>
                           {dotWindow(destinations.length, selectedIndex, DOTS_MAX_VISIBLE).map(
                             (i2) => (
-                              <View
-                                key={destinations[i2].id}
+                              <Animated.View
+                                key={`dot-${destinations[i2].id}`}
+                                entering={FadeIn.duration(100)}
+                                exiting={FadeOut.duration(100)}
+                                layout={LinearTransition.springify().damping(14).stiffness(300)}
                                 style={[styles.dot, i2 === selectedIndex && styles.dotActive]}
                               />
                             ),
                           )}
-                        </View>
+                        </Animated.View>
                       )}
                     </View>
                     {/* Arrival caption — mirrors the top hairline in words. */}
@@ -1578,6 +1669,8 @@ export default function MapScreen({ route, navigation }: Props) {
                       </Pressable>
                     </View>
                   </liquidGlass.GlassView>
+                    </Animated.View>
+                  </Pressable>
                 </View>
               );
             })}
