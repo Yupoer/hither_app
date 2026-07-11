@@ -58,6 +58,9 @@ import {
   type Language,
 } from '../state/PreferencesContext';
 import { useTranslation, type TranslationKey } from '../i18n';
+import { useDeviceLocation } from './MapScreen/hooks/useDeviceLocation';
+import { useCarouselSelection } from './MapScreen/hooks/useCarouselSelection';
+import { useJourneyNavigation } from './MapScreen/hooks/useJourneyNavigation';
 import { useGroupState } from '../state/useGroupState';
 import { useStragglerAlerts } from '../state/useStragglerAlerts';
 import { useSubgroupInvites } from '../state/useSubgroupInvites';
@@ -340,60 +343,25 @@ export default function MapScreen({ route, navigation }: Props) {
   const [routeScrollEnabled, setRouteScrollEnabled] = useState(true);
 
   // --- Device GPS ----------------------------------------------------------
-  const [deviceCoords, setDeviceCoords] = useState<Coordinates | null>(null);
-  const refreshDeviceLocation = useCallback(async (): Promise<Coordinates | null> => {
-    const fix = await location.getCurrentLocation();
-    if (fix) {
-      setDeviceCoords(fix.coordinates);
-      if (groupId) void updateMyLocation(fix.coordinates, groupId);
-      return fix.coordinates;
-    }
-    return null;
-  }, [groupId]);
-  useEffect(() => {
-    void refreshDeviceLocation();
-  }, [refreshDeviceLocation]);
-
-  // Continuous foreground tracking: teammates' dots move in near real time.
-  // The watch's distanceInterval/timeInterval already bound how often this
-  // fires (power-saver widens both), so each sample writes straight through —
-  // no extra throttle needed. Restarts when the group or the saver flag change.
-  useEffect(() => {
-    if (!groupId) return;
-    let cancelled = false;
-    let stop = () => {};
-    void location
-      .watchLocation((sample) => {
-        setDeviceCoords(sample.coordinates);
-        void updateMyLocation(sample.coordinates, groupId);
-      }, powerSaver)
-      .then((unsub) => {
-        if (cancelled) unsub();
-        else stop = unsub;
-      });
-    return () => {
-      cancelled = true;
-      stop();
-    };
-  }, [groupId, powerSaver]);
+  const { deviceCoords, refreshDeviceLocation } = useDeviceLocation({
+    groupId,
+    powerSaver,
+  });
 
   // --- Carousel selection ---------------------------------------------------
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  // Travel mode for the ETA estimate shown per card — no live routing API,
-  // just a rough speed-based estimate (see utils/geo.ts).
-  const [travelMode, setTravelMode] = useState<TravelMode>('walk');
-  useEffect(() => {
-    const clamped =
-      destinations.length === 0 ? 0 : Math.min(selectedIndex, destinations.length - 1);
-    if (clamped !== selectedIndex) setSelectedIndex(clamped);
-    carouselRef.current?.scrollTo({ x: clamped * windowWidth, animated: false });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [destinations.length, windowWidth]);
-
-  // The map only recenters on explicit user intent (swiping the carousel,
-  // picking a search result, starting navigation) — NOT whenever the selected
-  // id changes, or a background reorder/refetch would yank the map around.
-  const selectedDestination: Destination | undefined = destinations[selectedIndex];
+  const {
+    selectedIndex,
+    setSelectedIndex,
+    travelMode,
+    setTravelMode,
+    selectedDestination,
+    handleMomentumEnd,
+  } = useCarouselSelection({
+    destinations,
+    windowWidth,
+    carouselRef,
+    mapRef,
+  });
 
   const reference = useMemo<MemberLocation | undefined>(
     () =>
@@ -405,25 +373,32 @@ export default function MapScreen({ route, navigation }: Props) {
   const fromCoords = deviceCoords ?? reference?.coordinates;
 
   // --- Journey navigation + Live Activity ----------------------------------
-  const journeyStatus = state?.group.journeyStatus ?? 'paused';
-  const journeyGoing = journeyStatus === 'going';
-  const [navTargetId, setNavTargetId] = useState<string | null>(null);
-  const navTarget = useMemo<Destination | undefined>(
-    () => destinations.find((d) => d.id === navTargetId),
-    [destinations, navTargetId],
-  );
-  useEffect(() => {
-    if (journeyGoing && !navTargetId && selectedDestination) {
-      setNavTargetId(selectedDestination.id);
-    } else if (!journeyGoing && navTargetId) {
-      setNavTargetId(null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [journeyGoing]);
-  const journeyActive = journeyGoing && !!navTarget;
-
-  // The point the whole UI (carousel highlight, flock ETAs) refers to.
-  const activePoint = useMemo(() => navTarget ?? selectedDestination, [navTarget, selectedDestination]);
+  const {
+    journeyStatus,
+    journeyGoing,
+    journeyActive,
+    navTarget,
+    navTargetId,
+    setNavTargetId,
+    activePoint,
+    numericDistance,
+    journeyBusy,
+    openInAppleMaps,
+    startNavigation,
+    stopNavigation,
+  } = useJourneyNavigation({
+    state,
+    groupId,
+    isLeader,
+    destinations,
+    selectedDestination,
+    fromCoords,
+    refresh,
+    t,
+    mapRef,
+    carouselRef,
+    setSelectedIndex,
+  });
 
   // --- Straggler alerts ------------------------------------------------------
   // Reference is ME, not the gathering point — "fell behind" means fell
@@ -449,8 +424,7 @@ export default function MapScreen({ route, navigation }: Props) {
     }
   }, [stragglers, t, user?.id]);
 
-  const numericDistance =
-    fromCoords && navTarget ? distanceMeters(fromCoords, navTarget.coordinates) : undefined;
+
   const liveProgress =
     numericDistance != null
       ? Math.max(0.05, Math.min(0.95, 1 - Math.min(1, numericDistance / PROGRESS_REF_M)))
@@ -476,106 +450,7 @@ export default function MapScreen({ route, navigation }: Props) {
     memberEmojis: members.map((m) => m.avatar ?? ''),
   });
 
-  // ponytail: temporary hand-off to Apple Maps until native routing (MKDirections,
-  // Dev Build) exists. Coords in daddr guarantee the exact pin; label names it;
-  // dirflg=w matches Hither's walking-ETA model. Universal-link fallback if the
-  // maps:// scheme is unavailable. Works in Expo Go (pure Linking, no native mod).
-  const openInAppleMaps = useCallback((dest: Destination) => {
-    const { latitude, longitude } = dest.coordinates;
-    const label = encodeURIComponent(dest.title);
-    const scheme = `maps://?daddr=${label}@${latitude},${longitude}&dirflg=w`;
-    const universal = `https://maps.apple.com/?daddr=${latitude},${longitude}&dirflg=w`;
-    Linking.openURL(scheme).catch(() => void Linking.openURL(universal));
-  }, []);
 
-  const [journeyBusy, setJourneyBusy] = useState(false);
-  const startNavigation = useCallback(
-    async (dest: Destination, index: number) => {
-      if (!groupId || journeyBusy) return;
-      setJourneyBusy(true);
-      setNavTargetId(dest.id);
-      mapRef.current?.centerOn(dest.coordinates);
-      try {
-        if (index > 0) {
-          const ids = destinations.map((d) => d.id);
-          const [moved] = ids.splice(index, 1);
-          ids.unshift(moved);
-          const updates = ids.map((id, i) => {
-            const dest = destinations.find((d) => d.id === id);
-            return { id, position: i, day: dest?.day ?? 1 };
-          });
-          await reorderDestinations(groupId, updates);
-        }
-        // The navigated stop is now first — snap the carousel card with it.
-        setSelectedIndex(0);
-        carouselRef.current?.scrollTo({ x: 0, animated: true });
-        await setJourneyStatus(groupId, 'going');
-        refresh();
-      } catch {
-        setNavTargetId(null);
-        Alert.alert(t('map.setFailedTitle'), t('map.journeyFailed'));
-      } finally {
-        setJourneyBusy(false);
-      }
-    },
-    [groupId, journeyBusy, destinations, refresh, t],
-  );
-
-  const stopNavigation = useCallback(async () => {
-    if (!groupId) return;
-    setNavTargetId(null);
-    try {
-      await setJourneyStatus(groupId, 'paused');
-      refresh();
-    } catch {
-      Alert.alert(t('map.setFailedTitle'), t('map.journeyFailed'));
-    }
-  }, [groupId, refresh, t]);
-
-  // Within AUTO_ADVANCE_RADIUS_M of the current stop: notify, drop it from
-  // the itinerary (it's done), and auto-advance to whatever's now first —
-  // or end the journey when that was the last stop.
-  const arrivalFiredRef = useRef(false);
-  useEffect(() => {
-    if (!journeyActive) {
-      arrivalFiredRef.current = false;
-      return;
-    }
-    if (
-      isLeader &&
-      !arrivalFiredRef.current &&
-      numericDistance != null &&
-      numericDistance <= AUTO_ADVANCE_RADIUS_M &&
-      navTarget &&
-      groupId
-    ) {
-      arrivalFiredRef.current = true;
-      const arrivedId = navTarget.id;
-      const arrivedTitle = navTarget.title;
-      const nextDest = destinations.find((d) => d.id !== arrivedId);
-      void recordVisitedWaypoint(groupId, arrivedTitle, navTarget.coordinates);
-      void notifications.scheduleLocalNotification({
-        title: t('map.arriveTitle'),
-        body: nextDest
-          ? t('map.autoAdvanceBody', { title: arrivedTitle, next: nextDest.title })
-          : t('map.journeyCompleteBody', { title: arrivedTitle }),
-        data: { kind: 'arrival', destinationId: arrivedId },
-      });
-      void deleteDestination(groupId, arrivedId)
-        .then(() => (nextDest ? startNavigation(nextDest, 0) : stopNavigation()))
-        .catch(() => Alert.alert(t('map.setFailedTitle'), t('map.journeyFailed')));
-    }
-  }, [
-    journeyActive,
-    isLeader,
-    numericDistance,
-    navTarget,
-    destinations,
-    groupId,
-    startNavigation,
-    stopNavigation,
-    t,
-  ]);
 
   const locateMe = useCallback(async () => {
     refresh();
@@ -638,16 +513,7 @@ export default function MapScreen({ route, navigation }: Props) {
     refresh();
   }, [groupId, myScopeId, refresh]);
 
-  const handleMomentumEnd = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    if (destinations.length === 0) return;
-    const index = Math.round(e.nativeEvent.contentOffset.x / windowWidth);
-    const clamped = Math.max(0, Math.min(index, destinations.length - 1));
-    if (clamped !== selectedIndex) {
-      setSelectedIndex(clamped);
-      logEvent('carousel_swipe', { index: clamped });
-      mapRef.current?.centerOn(destinations[clamped].coordinates);
-    }
-  }, [destinations, windowWidth, selectedIndex]);
+
 
   // --- Group actions --------------------------------------------------------
   const [codeCopied, setCodeCopied] = useState(false);
