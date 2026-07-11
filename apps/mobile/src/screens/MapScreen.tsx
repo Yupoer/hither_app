@@ -206,17 +206,22 @@ export default function MapScreen({ route, navigation }: Props) {
   // only from this scope's list (carousel, reorder, nav target, meet-time,
   // straggler nav target) — filtering once here means nothing downstream
   // needs its own leader/subgroup branching to stay scoped correctly.
+
   const me = useMemo(() => members.find((m) => m.userId === user?.id), [members, user?.id]);
   const myScopeId = me?.subgroupId;
+  
+  const [viewingScope, setViewingScope] = useState<'main' | 'sub'>('main');
+  const activeScopeId = viewingScope === 'sub' ? myScopeId : undefined;
+
   const rawDestinations: Destination[] = useMemo(() => {
     return (state?.destinations ?? []).filter(
-      (d) => (d.subgroupId ?? undefined) === (myScopeId ?? undefined),
+      (d) => (d.subgroupId ?? undefined) === (activeScopeId ?? undefined),
     );
-  }, [state?.destinations, myScopeId]);
+  }, [state?.destinations, activeScopeId]);
   
   const [optimisticDestinations, setOptimisticDestinations] = useState<Destination[] | null>(null);
   const destinations = optimisticDestinations ?? rawDestinations;
-  const optimisticTimeoutRef = useRef<NodeJS.Timeout>();
+  const optimisticTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const canEditItinerary = isLeader || myScopeId != null;
 
   // --- Sheet / overlay / island UI state -----------------------------------
@@ -1327,6 +1332,24 @@ export default function MapScreen({ route, navigation }: Props) {
         </Animated.View>
       )}
 
+      {/* Squad Split Toggles */}
+      {subgroups && subgroups.length > 0 && me?.subgroupId && (
+        <Animated.View
+          style={[styles.subgroupToggleWrapper, { top: insets.top + 80 }, chromeOpacityStyle]}
+          pointerEvents={atFull ? 'none' : 'auto'}
+        >
+          <Segmented
+            options={[
+              { key: 'main', label: '主隊伍' },
+              { key: 'sub', label: '目前小隊' },
+            ]}
+            value={viewingScope}
+            onChange={(val) => setViewingScope(val as 'main' | 'sub')}
+            accent={accent}
+          />
+        </Animated.View>
+      )}
+
       {/* Recenter capsule — rides above the sheet. Fit-all on top, locate-me
           below, sharing one pill-shaped glass surface. Hidden while the
           add-gather-point confirm card owns the bottom of the screen. */}
@@ -1490,42 +1513,17 @@ export default function MapScreen({ route, navigation }: Props) {
               return (
                 <View key={dest.id} style={{ width: windowWidth, paddingHorizontal: 14 }}>
                   <Pressable
+                    onLongPress={() => setOverlay('route')}
                     delayLongPress={300}
-                    onPressIn={() => {
-                      LayoutAnimation.configureNext({
-                        duration: 150,
-                        update: { type: 'easeInEaseOut' },
-                      });
-                      setPressedCardId(dest.id);
-                      pendingExpandId.current = null;
-                    }}
-                    onPressOut={() => {
-                      LayoutAnimation.configureNext({
-                        duration: 1000,
-                        create: { type: 'linear', property: 'opacity' },
-                        update: { type: 'linear' },
-                        delete: { type: 'linear', property: 'opacity' },
-                      });
-                      setPressedCardId(null);
-                      if (pendingExpandId.current === dest.id) {
-                        setExpandedCardId((prev) => (prev === dest.id ? null : dest.id));
-                        pendingExpandId.current = null;
-                      }
-                    }}
-                    onLongPress={() => {
-                      rigidTap();
-                      pendingExpandId.current = dest.id;
-                    }}
+                    style={({ pressed }) => [pressed && { transform: [{ scale: 0.98 }] }]}
                   >
-                    <Animated.View layout={LinearTransition.duration(1000)}>
-                      <liquidGlass.GlassView
-                        tintColor={active ? glass.cardActive : glass.card}
-                        style={[
-                          styles.card,
-                          active && { borderColor: accentMix(accent, 50) },
-                          pressedCardId === dest.id && { transform: [{ scale: 0.96 }] }
-                        ]}
-                      >
+                    <liquidGlass.GlassView
+                      tintColor={active ? glass.cardActive : glass.card}
+                      style={[
+                        styles.card,
+                        active && { borderColor: accentMix(accent, 50) },
+                      ]}
+                    >
                     {/* Top arrival hairline — team progress toward this stop. */}
                     <View style={styles.arrivalHairline}>
                       <View
@@ -1694,8 +1692,7 @@ export default function MapScreen({ route, navigation }: Props) {
                         )}
                       </Pressable>
                     </View>
-                  </liquidGlass.GlassView>
-                    </Animated.View>
+                    </liquidGlass.GlassView>
                   </Pressable>
                 </View>
               );
@@ -2043,6 +2040,13 @@ const makeStyles = (accent: string) =>
       justifyContent: 'space-between',
       gap: 10,
       zIndex: 40,
+    },
+    subgroupToggleWrapper: {
+      position: 'absolute',
+      width: '100%',
+      paddingHorizontal: 16,
+      alignItems: 'center',
+      zIndex: 20,
     },
     groupPill: {
       flexShrink: 1,
