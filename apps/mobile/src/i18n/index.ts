@@ -197,7 +197,7 @@ const zh = {
   'flock.you': '你',
 
   // Map · meet time (countdown / set / clear) + member status
-  'meetTime.redSection': '集合倒數變紅門檻',
+  'meetTime.redSection': '時間變紅警示時機',
   'meetTime.redOption': '剩 {minutes} 分',
   'meetTime.countdown': '還剩 {minutes} 分鐘集合',
   'meetTime.overdue': '已超過集合時間 {minutes} 分鐘',

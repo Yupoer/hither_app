@@ -184,7 +184,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
 
   // Shift the camera center up by moving the target coordinate down (subtracting from latitude).
   // 0.01 is the latitudeDelta. We shift by half the overlap ratio so the point centers in the visible area.
-  const latOffset = 0.01 * ((bottomOverlap ?? 0) / 2) / height;
+  const latOffset = 0; // Removed offset to keep targets perfectly centered at 1/2 height.
 
   // Match the map chrome to the app theme: the light "day" palette gets the
   // light Apple Maps style; the dark "night"/"dusk" palettes get the dark one.
@@ -234,7 +234,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       style={StyleSheet.absoluteFill}
       initialRegion={gathering ? regionFor(gathering.coordinates, latOffset) : undefined}
       userInterfaceStyle={mapInterfaceStyle}
-      mapPadding={{ top: 120, left: 32, right: 32, bottom: bottomOverlap ?? 42 }}
+      mapPadding={{ top: 42, left: 32, right: 32, bottom: 42 }}
       showsUserLocation
       showsCompass
     >

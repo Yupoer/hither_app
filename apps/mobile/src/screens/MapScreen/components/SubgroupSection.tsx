@@ -1,8 +1,10 @@
 import React from 'react';
-import { View, Text, Pressable } from 'react-native';
+import { View, Text, Pressable, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from '../../../i18n';
 import { lightTap } from '../../../utils/haptics';
+
+const DISPLAY_FONT = Platform.OS === 'ios' ? 'SF Pro Rounded' : 'sans-serif-medium';
 
 interface SubgroupSectionProps {
   subgroups: any[];
@@ -37,7 +39,7 @@ export function SubgroupSection({
             <View style={styles.subgroupHead}>
               <View style={styles.grow}>
                 <Text style={styles.subgroupName}>
-                  {sg.name} · {memberRows.length}
+                  {sg.name} · <Text style={{ fontFamily: DISPLAY_FONT }}>{memberRows.length}</Text>
                 </Text>
                 <Text style={styles.subgroupMeta}>
                   {t('subgroup.collab')}

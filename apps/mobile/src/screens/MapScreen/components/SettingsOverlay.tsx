@@ -5,7 +5,7 @@ import OverlaySheet from '../../../components/OverlaySheet';
 import { Segmented } from './Segmented';
 import NotificationPreferencesCard from '../../../components/NotificationPreferencesCard';
 import { useSession } from '../../../state/SessionContext';
-import { usePreferences, useTheme, MEET_RED_OPTIONS, type Language } from '../../../state/PreferencesContext';
+import { usePreferences, useTheme, type Language } from '../../../state/PreferencesContext';
 import { useTranslation } from '../../../i18n';
 import { THEME_ORDER, type ThemeName, themes } from '../../../theme';
 import { glass, accentMix } from '../../../glass';
@@ -45,11 +45,9 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
     language,
     themeName,
     powerSaver,
-    meetRedMin,
     setLanguage,
     setThemeName,
     setPowerSaver,
-    setMeetRedMin,
   } = usePreferences();
   const { colors } = useTheme();
   const accent = colors.accent;
@@ -150,16 +148,6 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
           <Text style={styles.sectionLabel}>{t('settings.notifSection')}</Text>
           <NotificationPreferencesCard colors={{ ...themes.night, accent }} />
 
-          <Text style={styles.sectionLabel}>{t('meetTime.redSection')}</Text>
-          <Segmented
-            accent={accent}
-            options={MEET_RED_OPTIONS.map((m) => ({
-              key: String(m),
-              label: t('meetTime.redOption', { minutes: m }),
-            }))}
-            value={String(meetRedMin)}
-            onChange={(v) => setMeetRedMin(Number(v))}
-          />
 
           <Text style={styles.sectionLabel}>{t('history.title')}</Text>
           <Pressable

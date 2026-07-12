@@ -918,30 +918,15 @@ export default function MapScreen({ route, navigation }: Props) {
        }
     }
   }, [groupId, refresh]);
-
-  const [stragglerOverride, setStragglerOverride] = useState<boolean | null>(null);
-  const [stragglerThresholdOverride, setStragglerThresholdOverride] = useState<number | null>(null);
-  useEffect(() => {
-    if (stragglerOverride === null) return;
-    if (group && group.stragglerAlerts === stragglerOverride) setStragglerOverride(null);
-  }, [group?.stragglerAlerts, stragglerOverride]);
-
-  useEffect(() => {
-    if (stragglerThresholdOverride === null) return;
-    if (group && group.stragglerThresholdM === stragglerThresholdOverride) setStragglerThresholdOverride(null);
-  }, [group?.stragglerThresholdM, stragglerThresholdOverride]);
-
-  const persistStragglerConfig = useCallback((enabled: boolean, thresholdM: number) => {
+  const persistStragglerConfig = useCallback(async (enabled: boolean, thresholdM: number) => {
     if (!groupId) return;
-    setStragglerOverride(enabled);
-    setStragglerThresholdOverride(thresholdM);
-    setStragglerConfig(groupId, enabled, thresholdM)
-      .then(() => refresh())
-      .catch(() => {
-        setStragglerOverride(null);
-        setStragglerThresholdOverride(null);
-        Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
-      });
+    try {
+      await setStragglerConfig(groupId, enabled, thresholdM);
+      refresh();
+    } catch (e) {
+      Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
+      throw e;
+    }
   }, [groupId, refresh, t]);
 
   // --- Derived view models --------------------------------------------------
@@ -1157,7 +1142,7 @@ export default function MapScreen({ route, navigation }: Props) {
             subgroup list first; each subgroup renders as its own card. */}
         <View style={styles.headingRow}>
           <Text style={styles.sheetHeading}>
-            {t('map.flockLabel')} · {members.length}
+            {t('map.flockLabel')} · <Text style={{ fontFamily: DISPLAY_FONT }}>{members.length}</Text>
           </Text>
           {!isPro && (
             <Text style={styles.memberCapHint}>
@@ -1266,38 +1251,18 @@ export default function MapScreen({ route, navigation }: Props) {
 
         {/* Straggler alerts — also a gathering-point sub-item (moved out of the
             Settings overlay). Leader-only; threshold is paywall-gated. */}
-        {isLeader && group && (
-          <>
-            <View style={styles.settingSwitchRow}>
-              <View style={styles.settingSwitchText}>
-                <Text style={styles.settingSwitchLabel}>{t('straggler.section')}</Text>
-              </View>
-              <Switch
-                value={stragglerOverride ?? group.stragglerAlerts}
-                onValueChange={(v) => persistStragglerConfig(v, stragglerThresholdOverride ?? group.stragglerThresholdM)}
-                trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
-                thumbColor="#fff"
-              />
-            </View>
-            <Segmented
-              accent={accent}
-              options={STRAGGLER_THRESHOLD_OPTIONS.map((m) => ({
-                key: String(m),
-                label: formatDistance(m),
-              }))}
-              value={String(stragglerThresholdOverride ?? group.stragglerThresholdM)}
-              onChange={(v) => persistStragglerConfig(stragglerOverride ?? group.stragglerAlerts, Number(v))}
-              disabledKeys={
-                isPro
-                  ? []
-                  : STRAGGLER_THRESHOLD_OPTIONS.filter(
-                      (m) => m !== FREE_LIMITS.stragglerThresholdM,
-                    ).map(String)
-              }
-              onDisabledPress={() => openPaywall('paywall.triggerStraggler')}
-            />
-            <Text style={styles.overlayHint}>{t('straggler.freeNote')}</Text>
-          </>
+        {isLeader && group && groupId && (
+          <StragglerConfigSection
+            groupId={groupId}
+            groupAlerts={group.stragglerAlerts}
+            groupThreshold={group.stragglerThresholdM}
+            accent={accent}
+            isPro={isPro}
+            openPaywall={openPaywall}
+            onPersist={persistStragglerConfig}
+            styles={styles}
+            t={t}
+          />
         )}
 
         {/* Quick commands. */}
@@ -1316,7 +1281,7 @@ export default function MapScreen({ route, navigation }: Props) {
         </Pressable>
     </>
   ), [
-    t, members.length, isPro, pendingInvites, accent, handleAcceptInvite, handleDeclineInvite, topFlock, renderFlockRow, subgroups, flock, mySubgroupId, sentInvites, group, shareCode, codeCopied, copyCode, destinations.length, canEditItinerary, isLeader, stragglerOverride, stragglerThresholdOverride, persistStragglerConfig, openPaywall, groupId, dark, styles
+    t, members.length, isPro, pendingInvites, accent, handleAcceptInvite, handleDeclineInvite, topFlock, renderFlockRow, subgroups, flock, mySubgroupId, sentInvites, group, shareCode, codeCopied, copyCode, destinations.length, canEditItinerary, isLeader, persistStragglerConfig, openPaywall, groupId, dark, styles
   ]);
 
   const closeOverlay = useCallback(() => setOverlay(null), []);
@@ -2016,7 +1981,7 @@ export default function MapScreen({ route, navigation }: Props) {
                   accessibilityRole="button"
                 >
                   <Text style={styles.meetQuickBtnText}>
-                    +{m < 60 ? `${m}分` : `${m / 60}小時`}
+                    {m < 60 ? `${m}分鐘` : `${m / 60}小時`}後
                   </Text>
                 </Pressable>
               ))}
@@ -2029,6 +1994,20 @@ export default function MapScreen({ route, navigation }: Props) {
                   onChange={(_event, selected) =>
                     selected && setMeetTimeEditor((s) => (s ? { ...s, value: selected } : s))
                   }
+                />
+              </View>
+              <View style={{ marginTop: 10, marginBottom: 6 }}>
+                <Text style={[styles.sectionLabel, { marginTop: 0, marginBottom: 8 }]}>
+                  {t('meetTime.redSection')}
+                </Text>
+                <Segmented
+                  accent={accent}
+                  options={MEET_RED_OPTIONS.map((m) => ({
+                    key: String(m),
+                    label: t('meetTime.redOption', { minutes: m }),
+                  }))}
+                  value={String(meetRedMin)}
+                  onChange={(v) => setMeetRedMin(Number(v))}
                 />
               </View>
               <Pressable
@@ -2060,6 +2039,90 @@ export default function MapScreen({ route, navigation }: Props) {
     </View>
   );
 }
+
+interface StragglerConfigSectionProps {
+  groupId: string;
+  groupAlerts: boolean;
+  groupThreshold: number;
+  accent: string;
+  isPro: boolean;
+  openPaywall: (trigger?: TranslationKey) => void;
+  onPersist: (enabled: boolean, thresholdM: number) => Promise<void>;
+  styles: any;
+  t: any;
+}
+
+const StragglerConfigSection = React.memo(function StragglerConfigSection({
+  groupId,
+  groupAlerts,
+  groupThreshold,
+  accent,
+  isPro,
+  openPaywall,
+  onPersist,
+  styles,
+  t,
+}: StragglerConfigSectionProps) {
+  const [localAlerts, setLocalAlerts] = useState(groupAlerts);
+  const [localThreshold, setLocalThreshold] = useState(groupThreshold);
+
+  useEffect(() => {
+    setLocalAlerts(groupAlerts);
+  }, [groupAlerts]);
+
+  useEffect(() => {
+    setLocalThreshold(groupThreshold);
+  }, [groupThreshold]);
+
+  const handleToggle = useCallback((v: boolean) => {
+    setLocalAlerts(v);
+    onPersist(v, localThreshold).catch(() => {
+      setLocalAlerts(groupAlerts);
+    });
+  }, [localThreshold, onPersist, groupAlerts]);
+
+  const handleThresholdChange = useCallback((v: string) => {
+    const nextVal = Number(v);
+    setLocalThreshold(nextVal);
+    onPersist(localAlerts, nextVal).catch(() => {
+      setLocalThreshold(groupThreshold);
+    });
+  }, [localAlerts, onPersist, groupThreshold]);
+
+  return (
+    <>
+      <View style={styles.settingSwitchRow}>
+        <View style={styles.settingSwitchText}>
+          <Text style={styles.settingSwitchLabel}>{t('straggler.section')}</Text>
+        </View>
+        <Switch
+          value={localAlerts}
+          onValueChange={handleToggle}
+          trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
+          thumbColor="#fff"
+        />
+      </View>
+      <Segmented
+        accent={accent}
+        options={STRAGGLER_THRESHOLD_OPTIONS.map((m) => ({
+          key: String(m),
+          label: formatDistance(m),
+        }))}
+        value={String(localThreshold)}
+        onChange={handleThresholdChange}
+        disabledKeys={
+          isPro
+            ? []
+            : STRAGGLER_THRESHOLD_OPTIONS.filter(
+                (m) => m !== FREE_LIMITS.stragglerThresholdM,
+              ).map(String)
+        }
+        onDisabledPress={() => openPaywall('paywall.triggerStraggler')}
+      />
+      <Text style={styles.overlayHint}>{t('straggler.freeNote')}</Text>
+    </>
+  );
+});
 
 
 
@@ -2146,7 +2209,7 @@ const makeStyles = (accent: string) =>
     // flexShrink + numberOfLines(1) so an overlong group name ellipsizes
     // instead of pushing the role chip off-screen.
     pillName: { fontSize: 15, fontWeight: '600', color: '#fff', flexShrink: 1, minWidth: 0 },
-    pillCount: { fontSize: 14, color: glass.textSecondary },
+    pillCount: { fontFamily: DISPLAY_FONT, fontSize: 14, color: glass.textSecondary, fontVariant: ['tabular-nums'] },
     roleChip: {
       height: 44,
       paddingHorizontal: 16,
@@ -2532,7 +2595,7 @@ const makeStyles = (accent: string) =>
     settingSwitchText: { flex: 1 },
     settingSwitchLabel: { fontSize: 15, fontWeight: '600', color: '#fff' },
     settingSwitchHint: { fontSize: 12, color: glass.textTertiary, marginTop: 2 },
-    codeText: { fontSize: 24, fontWeight: '700', color: '#fff', letterSpacing: 2 },
+    codeText: { fontFamily: DISPLAY_FONT, fontSize: 24, fontWeight: '700', color: '#fff', letterSpacing: 2 },
     chip: {
       height: 38,
       paddingHorizontal: 16,
@@ -2580,7 +2643,7 @@ const makeStyles = (accent: string) =>
     flockName: { fontSize: 16, color: '#fff' },
     flockStatus: { fontSize: 13 },
     flockMeta: { alignItems: 'flex-end' },
-    flockEta: { fontSize: 15, fontWeight: '600', color: '#fff', fontVariant: ['tabular-nums'] },
+    flockEta: { fontFamily: DISPLAY_FONT, fontSize: 15, fontWeight: '600', color: '#fff', fontVariant: ['tabular-nums'] },
     flockDist: { fontSize: 12, color: glass.textTertiary },
     selfControls: {
       flexDirection: 'row',

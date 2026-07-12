@@ -55,11 +55,17 @@ export function Segmented({
   disabledKeys,
   onDisabledPress,
 }: SegmentedProps) {
+  const [localValue, setLocalValue] = useState(value);
+
+  useEffect(() => {
+    setLocalValue(value);
+  }, [value]);
+
   const SEG_PAD = 4;
   const SEG_GAP = 6;
   const [trackW, setTrackW] = useState(0);
   const n = options.length;
-  const activeIdx = Math.max(0, options.findIndex((o) => o.key === value));
+  const activeIdx = Math.max(0, options.findIndex((o) => o.key === localValue));
   const segW = trackW > 0 ? (trackW - SEG_PAD * 2 - SEG_GAP * (n - 1)) / n : 0;
   const tx = useSharedValue(0);
 
@@ -82,7 +88,7 @@ export function Segmented({
         />
       ) : null}
       {options.map((o) => {
-        const active = o.key === value;
+        const active = o.key === localValue;
         const locked = !!disabledKeys?.includes(o.key);
         return (
           <Pressable
@@ -92,7 +98,14 @@ export function Segmented({
               locked && segStyles.segLocked,
               pressed && { opacity: 0.6 },
             ]}
-            onPress={() => (locked ? onDisabledPress?.(o.key) : onChange(o.key))}
+            onPress={() => {
+              if (locked) {
+                onDisabledPress?.(o.key);
+              } else {
+                setLocalValue(o.key);
+                onChange(o.key);
+              }
+            }}
             accessibilityRole="button"
             accessibilityState={{ selected: active, disabled: locked }}
           >

@@ -25,8 +25,8 @@ import { mediumTap } from '../utils/haptics';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Auth'>;
 
-/** Group codes are 6 characters (design shows them as WND-482). */
 const CODE_LEN = 6;
+const DISPLAY_FONT = Platform.OS === 'ios' ? 'SF Pro Rounded' : 'sans-serif-medium';
 
 /**
  * Nickname (+ group code for followers) entry. From here the leader creates a
@@ -316,7 +316,7 @@ const makeStyles = (accent: string) =>
     },
     codeCellActive: { borderColor: accent },
     codeCellError: { borderColor: glass.danger },
-    codeChar: { fontSize: 24, fontWeight: '700', color: '#fff' },
+    codeChar: { fontFamily: DISPLAY_FONT, fontSize: 24, fontWeight: '700', color: '#fff' },
     codeDash: { fontSize: 22, fontWeight: '600', color: 'rgba(235,235,245,0.4)' },
     codeHidden: { position: 'absolute', width: 1, height: 1, opacity: 0 },
     spacer: { flex: 1, minHeight: 24 },

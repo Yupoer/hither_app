@@ -41,10 +41,7 @@ export function useGroupNotifications(): void {
   const isLeaderRef = useRef(membership?.role === 'leader');
   isLeaderRef.current = membership?.role === 'leader';
 
-  const instanceIdRef = useRef(0);
-  if (instanceIdRef.current === 0) {
-    instanceIdRef.current = ++channelSeq;
-  }
+
 
   useEffect(() => {
     if (!groupId || !myUserId) return;
@@ -88,8 +85,9 @@ export function useGroupNotifications(): void {
     const groupFilter = `group_id=eq.${groupId}`;
     const idFilter = `id=eq.${groupId}`;
 
+    const subId = ++channelSeq;
     const channel = supabase
-      .channel(`notif:${groupId}:${instanceIdRef.current}`)
+      .channel(`notif:${groupId}:${subId}`)
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'commands', filter: groupFilter },

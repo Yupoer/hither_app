@@ -54,10 +54,7 @@ export function useGroupState(groupId: string | null): UseGroupStateResult {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Stable per-instance suffix so two hooks on the same group don't collide on
   // one shared (already-subscribed) realtime channel.
-  const instanceIdRef = useRef<number>(0);
-  if (instanceIdRef.current === 0) {
-    instanceIdRef.current = ++channelSeq;
-  }
+
 
   const load = useCallback(async () => {
     if (!groupId) {
@@ -87,6 +84,9 @@ export function useGroupState(groupId: string | null): UseGroupStateResult {
     }
   }, [groupId]);
 
+  const loadRef = useRef(load);
+  loadRef.current = load;
+
   useEffect(() => {
     activeRef.current = true;
     setLoading(true);
@@ -97,19 +97,22 @@ export function useGroupState(groupId: string | null): UseGroupStateResult {
       return;
     }
 
-    load();
+    loadRef.current();
 
     // Debounced refetch shared by every realtime event for this group.
     const scheduleReload = () => {
       if (debounceRef.current) {
         clearTimeout(debounceRef.current);
       }
-      debounceRef.current = setTimeout(load, REALTIME_DEBOUNCE_MS);
+      debounceRef.current = setTimeout(() => {
+        loadRef.current();
+      }, REALTIME_DEBOUNCE_MS);
     };
 
     const filter = `group_id=eq.${groupId}`;
+    const subId = ++channelSeq;
     const channel = supabase
-      .channel(`group:${groupId}:${instanceIdRef.current}`)
+      .channel(`group:${groupId}:${subId}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'member_locations', filter },
@@ -133,7 +136,7 @@ export function useGroupState(groupId: string | null): UseGroupStateResult {
     // realtime publication) only degrades this binding, not the group channel
     // above; the fallback poll still picks profile edits up.
     const profilesChannel = supabase
-      .channel(`profiles:${groupId}:${instanceIdRef.current}`)
+      .channel(`profiles:${groupId}:${subId}`)
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'profiles' },
@@ -142,7 +145,7 @@ export function useGroupState(groupId: string | null): UseGroupStateResult {
       .subscribe();
 
     // Fallback poll in case a realtime event is dropped.
-    const timer = setInterval(load, GROUP_POLL_INTERVAL_MS);
+    const timer = setInterval(() => loadRef.current(), GROUP_POLL_INTERVAL_MS);
 
     return () => {
       activeRef.current = false;
@@ -153,7 +156,7 @@ export function useGroupState(groupId: string | null): UseGroupStateResult {
       supabase.removeChannel(channel);
       supabase.removeChannel(profilesChannel);
     };
-  }, [groupId, load]);
+  }, [groupId]);
 
   return { state, loading, error, refresh: load };
 }

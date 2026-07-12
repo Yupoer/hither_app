@@ -58,10 +58,6 @@ export function useSubgroupInvites(): UseSubgroupInvitesResult {
   const tRef = useRef(t);
   tRef.current = t;
 
-  const instanceIdRef = useRef(0);
-  if (instanceIdRef.current === 0) {
-    instanceIdRef.current = ++channelSeq;
-  }
 
   const load = useCallback(async () => {
     if (!myUserId) return;
@@ -97,19 +93,25 @@ export function useSubgroupInvites(): UseSubgroupInvitesResult {
     }
   }, [groupId, myUserId]);
 
+  const loadRef = useRef(load);
+  loadRef.current = load;
+
   useEffect(() => {
     if (!myUserId) return;
     initializedRef.current = false;
     seenIdsRef.current = new Set();
-    load();
+    loadRef.current();
 
     const scheduleReload = () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = setTimeout(load, REALTIME_DEBOUNCE_MS);
+      debounceRef.current = setTimeout(() => {
+        loadRef.current();
+      }, REALTIME_DEBOUNCE_MS);
     };
 
+    const subId = ++channelSeq;
     const channel = supabase
-      .channel(`subgroup-invites:${myUserId}:${instanceIdRef.current}`)
+      .channel(`subgroup-invites:${myUserId}:${subId}`)
       .on(
         'postgres_changes',
         {
@@ -126,7 +128,7 @@ export function useSubgroupInvites(): UseSubgroupInvitesResult {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       supabase.removeChannel(channel);
     };
-  }, [myUserId, load]);
+  }, [myUserId]);
 
   const accept = useCallback(
     async (inviteId: string) => {
