@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { ScrollView, Text, View, Switch, Pressable, ActivityIndicator, TextInput, Alert } from 'react-native';
+import { ScrollView, Text, View, Switch, Pressable, ActivityIndicator, TextInput, Alert, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import OverlaySheet from '../../../components/OverlaySheet';
 import { Segmented } from './Segmented';
@@ -93,13 +93,14 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
         doneLabel={t('map.done')}
       >
         <ScrollView contentContainerStyle={styles.overlayBody}>
-          <Pressable
+          <TouchableOpacity
             style={[styles.accountBtn, { marginBottom: 24 }]}
             onPress={onOpenAccount}
             accessibilityRole="button"
+            activeOpacity={0.7}
           >
             <Text style={[styles.accountBtnText, { color: accent }]}>{t('settings.account') || '帳號設定'}</Text>
-          </Pressable>
+          </TouchableOpacity>
 
           <Text style={styles.sectionLabel}>{t('settings.language')}</Text>
           <Segmented
@@ -150,48 +151,52 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
 
 
           <Text style={styles.sectionLabel}>{t('history.title')}</Text>
-          <Pressable
+          <TouchableOpacity
             style={styles.accountBtn}
             onPress={onOpenHistory}
             accessibilityRole="button"
+            activeOpacity={0.7}
           >
             <Text style={[styles.accountBtnText, { color: accent }]}>{t('history.open')}</Text>
-          </Pressable>
+          </TouchableOpacity>
 
-          <Pressable
+          <TouchableOpacity
             style={styles.accountBtn}
             onPress={onArchiveAllForTest}
             accessibilityRole="button"
+            activeOpacity={0.7}
           >
             <Text style={[styles.accountBtnText, { color: glass.warn }]}>
               🧪 全部集合點標記為已完成（測試）
             </Text>
-          </Pressable>
+          </TouchableOpacity>
 
           <View style={styles.settingsSectionHeaderRow}>
             <Text style={styles.sectionLabel}>{t('account.section')}</Text>
-            <Pressable
+            <TouchableOpacity
               style={styles.feedbackEntry}
               onPress={onOpenFeedback}
               accessibilityRole="button"
               accessibilityLabel={t('feedback.title')}
               hitSlop={8}
+              activeOpacity={0.7}
             >
               <Ionicons name="warning-outline" size={17} color={glass.textSecondary} />
-            </Pressable>
+            </TouchableOpacity>
           </View>
           {isAnonymous ? (
             <>
               <Text style={styles.overlayHint}>{t('anon.expiryWarning')}</Text>
-              <Pressable
+              <TouchableOpacity
                 style={styles.accountBtn}
                 onPress={() => setUpgradeVisible(true)}
                 accessibilityRole="button"
+                activeOpacity={0.7}
               >
                 <Text style={[styles.accountBtnText, { color: accent }]}>
                   {t('account.upgradeButton')}
                 </Text>
-              </Pressable>
+              </TouchableOpacity>
             </>
           ) : (
             <Text style={styles.overlayHint}>
@@ -203,28 +208,29 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
           {isPro ? (
             <Text style={styles.overlayHint}>{t('paywall.active')}</Text>
           ) : (
-            <Pressable
+            <TouchableOpacity
               style={styles.accountBtn}
               onPress={onOpenPaywall}
               accessibilityRole="button"
+              activeOpacity={0.7}
             >
               <Text style={[styles.accountBtnText, { color: accent }]}>
                 {t('paywall.upgrade')}
               </Text>
-            </Pressable>
+            </TouchableOpacity>
           )}
 
-          <Pressable style={styles.dangerBtn} onPress={onConfirmResetPrefs} accessibilityRole="button">
+          <TouchableOpacity style={styles.dangerBtn} onPress={onConfirmResetPrefs} accessibilityRole="button" activeOpacity={0.7}>
             <Text style={styles.dangerText}>{t('settings.resetPrefs')}</Text>
-          </Pressable>
-          <Pressable style={styles.dangerBtn} onPress={onConfirmLeave} accessibilityRole="button">
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.dangerBtn} onPress={onConfirmLeave} accessibilityRole="button" activeOpacity={0.7}>
             <Text style={styles.dangerText}>
               {isLeader ? t('map.endGroup') : t('group.leave')}
             </Text>
-          </Pressable>
-          <Pressable style={styles.dangerBtn} onPress={onConfirmSignOut} accessibilityRole="button">
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.dangerBtn} onPress={onConfirmSignOut} accessibilityRole="button" activeOpacity={0.7}>
             <Text style={styles.dangerText}>{t('settings.signOut')}</Text>
-          </Pressable>
+          </TouchableOpacity>
         </ScrollView>
       </OverlaySheet>
 
@@ -262,11 +268,12 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             />
           </View>
           {upgradeError && <Text style={styles.upgradeError}>{upgradeError}</Text>}
-          <Pressable
+          <TouchableOpacity
             style={[styles.accountBtn, !upgradeCanSubmit && { opacity: 0.4 }]}
             onPress={submitUpgrade}
             disabled={!upgradeCanSubmit}
             accessibilityRole="button"
+            activeOpacity={0.7}
           >
             {upgradeBusy ? (
               <ActivityIndicator color={accent} />
@@ -275,7 +282,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
                 {t('account.submit')}
               </Text>
             )}
-          </Pressable>
+          </TouchableOpacity>
         </ScrollView>
       </OverlaySheet>
     </>

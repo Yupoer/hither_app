@@ -1744,7 +1744,7 @@ export default function MapScreen({ route, navigation }: Props) {
           above) — no in-app banner, so they don't cover the map. */}
       {/* The pull-up sheet — hidden while the add-gather-point confirm card
           owns the screen (search bar + recenter capsule disappear). */}
-      <Animated.View style={[StyleSheet.absoluteFill, confirmCardReady && styles.sheetHidden]} pointerEvents={confirmCardReady ? 'none' : 'auto'}>
+      <Animated.View style={[StyleSheet.absoluteFill, confirmCardReady && styles.sheetHidden]} pointerEvents={confirmCardReady ? 'none' : 'box-none'}>
       <BottomSheet
         height={heightSV}
         detents={detents}
