@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View, ScrollView, Alert } from 'react-native';
+import { Pressable, StyleSheet, Text, View, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -14,18 +14,25 @@ import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanim
 
 type Props = NativeStackScreenProps<RootStackParamList, 'MyTeams'>;
 
-export default function MyTeamsScreen({ navigation }: Props) {
+export default function MyTeamsScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const accent = colors.accent;
   const { user, setMembership } = useSession();
 
-  const [joinedGroups, setJoinedGroups] = useState<JoinedGroupInfo[]>([]);
+  const [joinedGroups, setJoinedGroups] = useState<JoinedGroupInfo[]>(route.params?.initialGroups || []);
   const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(!route.params?.initialGroups?.length);
 
   useEffect(() => {
     if (user) {
-      getMyJoinedGroups().then(setJoinedGroups).catch((e) => console.log('Failed to fetch joined groups', e));
+      getMyJoinedGroups().then(data => {
+        setJoinedGroups(data);
+        setIsLoading(false);
+      }).catch((e) => {
+        console.log('Failed to fetch joined groups', e);
+        setIsLoading(false);
+      });
     }
   }, [user]);
 
@@ -90,6 +97,11 @@ export default function MyTeamsScreen({ navigation }: Props) {
       </View>
 
       <ScrollView contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 40 }]}>
+        {isLoading && joinedGroups.length === 0 ? (
+          <View style={{ paddingTop: 60, alignItems: 'center' }}>
+            <ActivityIndicator size="large" color={accent} />
+          </View>
+        ) : null}
         {joinedGroups.map((info) => {
           const totalMembers = Math.max(0, info.memberCount);
           const displayAvatars = [];
@@ -119,9 +131,12 @@ export default function MyTeamsScreen({ navigation }: Props) {
                   lightTap();
                   setExpandedGroupId(isExpanded ? null : info.group.id);
                 }}
-                style={({ pressed }) => [styles.teamCard, pressed && !isExpanded && styles.pressed]}
+                style={({ pressed }) => [
+                  styles.teamCard,
+                  { backgroundColor: 'rgba(255,255,255,0.1)' },
+                  pressed && !isExpanded && styles.pressed
+                ]}
               >
-                <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(255,255,255,0.1)' }]} pointerEvents="none" />
                 
                 <View style={styles.teamCardHeader}>
                   <View style={styles.teamCardLeft}>

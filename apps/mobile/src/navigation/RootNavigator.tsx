@@ -7,6 +7,7 @@ import MapScreen from '../screens/MapScreen';
 import MyTeamsScreen from '../screens/MyTeamsScreen';
 import { useTheme } from '../state/PreferencesContext';
 import { useSession } from '../state/SessionContext';
+import { JoinedGroupInfo } from '../api/client';
 
 /**
  * Route names and params for the root stack. A logged-out launch starts on
@@ -20,7 +21,7 @@ export type RootStackParamList = {
   RoleSelect: undefined;
   Auth: { role: 'leader' | 'follower' } | undefined;
   Map: { groupId: string } | undefined;
-  MyTeams: undefined;
+  MyTeams: { initialGroups?: JoinedGroupInfo[] } | undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();

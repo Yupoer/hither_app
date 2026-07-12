@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View, ScrollView, Modal, Alert, Dimensions } from 'react-native';
+import { Pressable, StyleSheet, Text, View, ScrollView, Modal, Alert, Dimensions, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -62,8 +62,8 @@ export default function RoleSelectScreen({ navigation }: Props) {
 
         <View style={{ height: 56 }} />
 
-        <Animated.View entering={SlideInDown.duration(600).springify().delay(200)} style={styles.actionArea}>
-          <View style={styles.actionRow}>
+        <View style={styles.actionArea}>
+          <Animated.View entering={SlideInDown.duration(600).springify().delay(200)} style={styles.actionRow}>
             <Pressable
               onPress={() => { lightTap(); logEvent('role_select', { role: 'leader' }); navigation.navigate('Auth', { role: 'leader' }); }}
               style={({ pressed }) => [
@@ -87,26 +87,28 @@ export default function RoleSelectScreen({ navigation }: Props) {
               <Ionicons name="keypad" size={32} color="#fff" />
               <Text style={styles.actionTileText}>{t('role.join')}</Text>
             </Pressable>
-          </View>
+          </Animated.View>
 
           {joinedGroups.length > 0 && (
-            <Animated.View entering={FadeIn.delay(500)} style={{ marginTop: 32, zIndex: 10 }}>
-              <Pressable
-                onPress={() => { lightTap(); navigation.navigate('MyTeams'); }}
-                style={({ pressed }) => [
+            <Animated.View entering={FadeIn.duration(400)}>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => { lightTap(); navigation.navigate('MyTeams', { initialGroups: joinedGroups }); }}
+                style={[
                   styles.ctaMyTeams,
-                  pressed && styles.pressed,
+                  { backgroundColor: 'rgba(255,255,255,0.12)', marginTop: 32 }
                 ]}
               >
-                <View pointerEvents="none" style={[styles.ctaGlassBg, { backgroundColor: 'rgba(255,255,255,0.12)' }]} />
                 <Ionicons name="people-outline" size={20} color={accent} />
                 <Text style={styles.ctaMyTeamsText}>查看我的隊伍 ({joinedGroups.length})</Text>
-              </Pressable>
+              </TouchableOpacity>
             </Animated.View>
           )}
 
-          <Text style={[styles.footer, { marginTop: 16 }]}>{t('role.footer')}</Text>
-        </Animated.View>
+          <Animated.View entering={FadeIn.duration(600).delay(300)}>
+            <Text style={[styles.footer, { marginTop: 16 }]}>{t('role.footer')}</Text>
+          </Animated.View>
+        </View>
       </View>
     </LinearGradient>
   );
