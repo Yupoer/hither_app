@@ -9,6 +9,8 @@ import {
   Text,
   TextInput,
   View,
+  Keyboard,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -26,7 +28,7 @@ import { mediumTap } from '../utils/haptics';
 type Props = NativeStackScreenProps<RootStackParamList, 'Auth'>;
 
 const CODE_LEN = 6;
-const DISPLAY_FONT = Platform.OS === 'ios' ? 'SF Pro Rounded' : 'sans-serif-medium';
+const DISPLAY_FONT = 'Fredoka_600SemiBold';
 
 /**
  * Nickname (+ group code for followers) entry. From here the leader creates a
@@ -101,14 +103,11 @@ export default function AuthScreen({ navigation, route }: Props) {
   }
 
   return (
-    <LinearGradient
-      colors={['#1f3050', '#0e1622', '#080b12']}
-      locations={[0, 0.52, 1]}
-      style={styles.fill}
-    >
-      <KeyboardAvoidingView
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <LinearGradient
+        colors={['#1f3050', '#0e1622', '#080b12']}
+        locations={[0, 0.52, 1]}
         style={styles.fill}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <View
           style={[
@@ -116,141 +115,141 @@ export default function AuthScreen({ navigation, route }: Props) {
             { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 28 },
           ]}
         >
-          {/* Only render Back when there is somewhere to go — after an
-              end-group/sign-out reset this screen can be the stack root, and an
-              unconditional goBack() throws "GO_BACK was not handled". */}
-          {navigation.canGoBack() && (
-            <Pressable
-              onPress={() => navigation.goBack()}
-              accessibilityRole="button"
-              accessibilityLabel="Back"
-              style={styles.back}
-            >
-              <Ionicons name="chevron-back" size={22} color="rgba(255,255,255,0.7)" />
-            </Pressable>
-          )}
-
-          <Text style={styles.kicker}>
-            {isLeader ? t('auth.leaderKicker') : t('auth.followerKicker')}
-          </Text>
-          <Text style={styles.title}>
-            {isLeader ? t('auth.leaderTitle') : t('auth.followerTitle')}
-          </Text>
-          <Text style={styles.sub}>
-            {isLeader ? t('auth.leaderSub') : t('auth.followerSub')}
-          </Text>
-
-          <Text style={styles.label}>{t('auth.nameLabel')}</Text>
-          <View style={styles.field}>
-            <TextInput
-              style={styles.input}
-              value={name}
-              onChangeText={setName}
-              placeholder={t('auth.namePlaceholder')}
-              placeholderTextColor="rgba(235,235,245,0.4)"
-              autoCapitalize="none"
-              autoFocus
-              returnKeyType="next"
-              onSubmitEditing={() =>
-                isLeader ? groupNameRef.current?.focus() : codeRef.current?.focus()
-              }
-              accessibilityLabel={t('auth.nameLabel')}
-            />
-          </View>
-
-          {isLeader && (
-            <>
-              <Text style={styles.label}>{t('group.nameLabel')}</Text>
-              <View style={styles.field}>
-                <TextInput
-                  ref={groupNameRef}
-                  style={styles.input}
-                  value={groupName}
-                  onChangeText={setGroupName}
-                  placeholder={t('group.namePlaceholder')}
-                  placeholderTextColor="rgba(235,235,245,0.4)"
-                  autoCapitalize="none"
-                  returnKeyType="go"
-                  onSubmitEditing={handleSubmit}
-                  accessibilityLabel={t('group.nameLabel')}
-                />
-              </View>
-            </>
-          )}
-
-          {!isLeader && (
-            <>
-              <Text style={styles.label}>{t('group.codeLabel')}</Text>
-              {/* Design: six character boxes (WND-482) fed by one hidden
-                  input; a rejected code highlights the boxes. */}
+            {/* Only render Back when there is somewhere to go — after an
+                end-group/sign-out reset this screen can be the stack root, and an
+                unconditional goBack() throws "GO_BACK was not handled". */}
+            {navigation.canGoBack() && (
               <Pressable
-                style={styles.codeBoxes}
-                onPress={() => codeRef.current?.focus()}
-                accessibilityLabel={t('group.codeLabel')}
+                onPress={() => navigation.goBack()}
+                accessibilityRole="button"
+                accessibilityLabel="Back"
+                style={styles.back}
               >
-                {Array.from({ length: CODE_LEN }, (_, i) => (
-                  <React.Fragment key={i}>
-                    {i === CODE_LEN / 2 && <Text style={styles.codeDash}>-</Text>}
-                    <View
-                      style={[
-                        styles.codeCell,
-                        i === code.length && styles.codeCellActive,
-                        codeError && styles.codeCellError,
-                      ]}
-                    >
-                      <Text style={styles.codeChar}>{code[i] ?? ''}</Text>
-                    </View>
-                  </React.Fragment>
-                ))}
-                <TextInput
-                  ref={codeRef}
-                  style={styles.codeHidden}
-                  value={code}
-                  onChangeText={(v) => {
-                    setCodeError(false);
-                    setCode(
-                      v.replace(/[^0-9a-z]/gi, '').toUpperCase().slice(0, CODE_LEN),
-                    );
-                  }}
-                  autoCapitalize="characters"
-                  autoCorrect={false}
-                  returnKeyType="go"
-                  onSubmitEditing={handleSubmit}
-                />
+                <Ionicons name="chevron-back" size={22} color="rgba(255,255,255,0.7)" />
               </Pressable>
-            </>
-          )}
+            )}
 
-          <View style={styles.spacer} />
+            <Text style={styles.kicker}>
+              {isLeader ? t('auth.leaderKicker') : t('auth.followerKicker')}
+            </Text>
+            <Text style={styles.title}>
+              {isLeader ? t('auth.leaderTitle') : t('auth.followerTitle')}
+            </Text>
+            <Text style={styles.sub}>
+              {isLeader ? t('auth.leaderSub') : t('auth.followerSub')}
+            </Text>
 
-          <Pressable
-            onPress={handleSubmit}
-            disabled={!canSubmit}
-            accessibilityRole="button"
-            style={({ pressed }) => [
-              styles.cta,
-              !canSubmit && styles.ctaDisabled,
-              pressed && canSubmit && styles.pressed,
-            ]}
-          >
-            {busy ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
+            <Text style={styles.label}>{t('auth.nameLabel')}</Text>
+            <View style={styles.field}>
+              <TextInput
+                style={styles.input}
+                value={name}
+                onChangeText={setName}
+                placeholder={t('auth.namePlaceholder')}
+                placeholderTextColor="rgba(235,235,245,0.4)"
+                autoCapitalize="none"
+                autoFocus
+                returnKeyType="next"
+                onSubmitEditing={() =>
+                  isLeader ? groupNameRef.current?.focus() : codeRef.current?.focus()
+                }
+                accessibilityLabel={t('auth.nameLabel')}
+              />
+            </View>
+
+            {isLeader && (
               <>
-                <Text style={styles.ctaText}>
-                  {isLeader ? t('auth.leaderCta') : t('auth.followerCta')}
-                </Text>
-                <Ionicons name="arrow-forward" size={18} color="#fff" />
+                <Text style={styles.label}>{t('group.nameLabel')}</Text>
+                <View style={styles.field}>
+                  <TextInput
+                    ref={groupNameRef}
+                    style={styles.input}
+                    value={groupName}
+                    onChangeText={setGroupName}
+                    placeholder={t('group.namePlaceholder')}
+                    placeholderTextColor="rgba(235,235,245,0.4)"
+                    autoCapitalize="none"
+                    returnKeyType="go"
+                    onSubmitEditing={handleSubmit}
+                    accessibilityLabel={t('group.nameLabel')}
+                  />
+                </View>
               </>
             )}
-          </Pressable>
 
-          <Text style={styles.footer}>
-            {isLeader ? t('auth.leaderFoot') : t('auth.followerFoot')}
-          </Text>
-        </View>
-      </KeyboardAvoidingView>
-    </LinearGradient>
+            {!isLeader && (
+              <>
+                <Text style={styles.label}>{t('group.codeLabel')}</Text>
+                {/* Design: six character boxes (WND-482) fed by one hidden
+                    input; a rejected code highlights the boxes. */}
+                <Pressable
+                  style={styles.codeBoxes}
+                  onPress={() => codeRef.current?.focus()}
+                  accessibilityLabel={t('group.codeLabel')}
+                >
+                  {Array.from({ length: CODE_LEN }, (_, i) => (
+                    <React.Fragment key={i}>
+                      {i === CODE_LEN / 2 && <Text style={styles.codeDash}>-</Text>}
+                      <View
+                        style={[
+                          styles.codeCell,
+                          i === code.length && styles.codeCellActive,
+                          codeError && styles.codeCellError,
+                        ]}
+                      >
+                        <Text style={styles.codeChar}>{code[i] ?? ''}</Text>
+                      </View>
+                    </React.Fragment>
+                  ))}
+                  <TextInput
+                    ref={codeRef}
+                    style={styles.codeHidden}
+                    value={code}
+                    onChangeText={(v) => {
+                      setCodeError(false);
+                      setCode(
+                        v.replace(/[^0-9a-z]/gi, '').toUpperCase().slice(0, CODE_LEN),
+                      );
+                    }}
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                    returnKeyType="go"
+                    onSubmitEditing={handleSubmit}
+                  />
+                </Pressable>
+              </>
+            )}
+
+            <View style={styles.spacer} />
+
+            <Pressable
+              onPress={handleSubmit}
+              disabled={!canSubmit}
+              accessibilityRole="button"
+              style={({ pressed }) => [
+                styles.cta,
+                !canSubmit && styles.ctaDisabled,
+                pressed && canSubmit && styles.pressed,
+              ]}
+            >
+              {busy ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Text style={styles.ctaText}>
+                    {isLeader ? t('auth.leaderCta') : t('auth.followerCta')}
+                  </Text>
+                  <Ionicons name="arrow-forward" size={18} color="#fff" />
+                </>
+              )}
+            </Pressable>
+
+            <Text style={styles.footer}>
+              {isLeader ? t('auth.leaderFoot') : t('auth.followerFoot')}
+            </Text>
+          </View>
+      </LinearGradient>
+    </TouchableWithoutFeedback>
   );
 }
 
@@ -327,9 +326,7 @@ const makeStyles = (accent: string) =>
       alignItems: 'center',
       justifyContent: 'center',
       gap: 8,
-      backgroundColor: accentMix(accent, 24),
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: accentMix(accent, 55),
+      backgroundColor: accent,
     },
     ctaDisabled: { opacity: 0.4 },
     pressed: { opacity: 0.85 },

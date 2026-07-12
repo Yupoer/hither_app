@@ -4,6 +4,7 @@ import LoginScreen from '../screens/LoginScreen';
 import RoleSelectScreen from '../screens/RoleSelectScreen';
 import AuthScreen from '../screens/AuthScreen';
 import MapScreen from '../screens/MapScreen';
+import MyTeamsScreen from '../screens/MyTeamsScreen';
 import { useTheme } from '../state/PreferencesContext';
 import { useSession } from '../state/SessionContext';
 
@@ -19,6 +20,7 @@ export type RootStackParamList = {
   RoleSelect: undefined;
   Auth: { role: 'leader' | 'follower' } | undefined;
   Map: { groupId: string } | undefined;
+  MyTeams: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -42,6 +44,7 @@ export default function RootNavigator() {
       <Stack.Screen name="RoleSelect" component={RoleSelectScreen} />
       <Stack.Screen name="Auth" component={AuthScreen} />
       <Stack.Screen name="Map" component={MapScreen} />
+      <Stack.Screen name="MyTeams" component={MyTeamsScreen} />
     </Stack.Navigator>
   );
 }

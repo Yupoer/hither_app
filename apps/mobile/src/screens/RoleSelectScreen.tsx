@@ -1,5 +1,5 @@
-import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Pressable, StyleSheet, Text, View, ScrollView, Modal, Alert, Dimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,25 +7,30 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useTheme } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
-import { glass, accentMix } from '../glass';
-import { lightTap } from '../utils/haptics';
+import { accentMix } from '../glass';
+import { lightTap, alertBuzz } from '../utils/haptics';
 import { logEvent } from '../utils/activityLog';
 import CrookIcon from '../components/CrookIcon';
+import { useSession } from '../state/SessionContext';
+import { getMyJoinedGroups, JoinedGroupInfo } from '../api/client';
+import Animated, { FadeIn, FadeOut, SlideInDown, ZoomIn, LinearTransition } from 'react-native-reanimated';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RoleSelect'>;
 
-/**
- * First screen (design: "Role select"). Pick a role and drop straight into the
- * flow — no lobby. "Lead a group" → create a group as shepherd; "Join with a
- * code" → enter a code as flock. Both land on the Auth screen for a nickname.
- *
- * Always dark (the design's radial night sky) regardless of the map theme.
- */
 export default function RoleSelectScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const { t } = useTranslation();
   const accent = colors.accent;
+  const { user } = useSession();
+
+  const [joinedGroups, setJoinedGroups] = useState<JoinedGroupInfo[]>([]);
+
+  useEffect(() => {
+    if (user) {
+      getMyJoinedGroups().then(setJoinedGroups).catch((e) => console.log('Failed to fetch joined groups', e));
+    }
+  }, [user]);
 
   return (
     <LinearGradient
@@ -33,14 +38,10 @@ export default function RoleSelectScreen({ navigation }: Props) {
       locations={[0, 0.52, 1]}
       style={styles.fill}
     >
-      {/* Only a guest (who reached here via navigate, not replace) can go
-          back — to Login, to register instead. Authed users have no Login
-          below them, so this stays hidden. */}
       {navigation.canGoBack() && (
         <Pressable
           onPress={() => navigation.goBack()}
           accessibilityRole="button"
-          accessibilityLabel="Back"
           style={[styles.back, { top: insets.top + 12 }]}
         >
           <Ionicons name="chevron-back" size={22} color="rgba(255,255,255,0.7)" />
@@ -50,44 +51,62 @@ export default function RoleSelectScreen({ navigation }: Props) {
       <View
         style={[
           styles.content,
-          { paddingTop: insets.top + 96, paddingBottom: insets.bottom + 32 },
+          { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 32 },
         ]}
       >
-        <CrookIcon size={86} color={accent} glow style={styles.logo} />
-        <Text style={styles.title}>Hither</Text>
-        <Text style={styles.tagline}>{t('role.tagline')}</Text>
+        <Animated.View entering={ZoomIn.duration(800).springify()} style={styles.headerArea}>
+          <CrookIcon size={96} color={accent} glow style={styles.logo} />
+          <Text style={styles.title}>Hither</Text>
+          <Text style={styles.tagline}>{t('role.tagline')}</Text>
+        </Animated.View>
 
-        <View style={styles.spacer} />
+        <View style={{ height: 56 }} />
 
-        <Pressable
-          onPress={() => { lightTap(); logEvent('role_select', { role: 'leader' }); navigation.navigate('Auth', { role: 'leader' }); }}
-          accessibilityRole="button"
-          style={({ pressed }) => [
-            styles.cta,
-            {
-              backgroundColor: accentMix(accent, 24),
-              borderColor: accentMix(accent, 55),
-            },
-            pressed && styles.pressed,
-          ]}
-        >
-          <CrookIcon size={22} color={accent} />
-          <Text style={styles.ctaText}>{t('role.lead')}</Text>
-        </Pressable>
+        <Animated.View entering={SlideInDown.duration(600).springify().delay(200)} style={styles.actionArea}>
+          <View style={styles.actionRow}>
+            <Pressable
+              onPress={() => { lightTap(); logEvent('role_select', { role: 'leader' }); navigation.navigate('Auth', { role: 'leader' }); }}
+              style={({ pressed }) => [
+                styles.actionTile,
+                { backgroundColor: accent, borderColor: accent },
+                pressed && styles.pressed,
+              ]}
+            >
+              <CrookIcon size={32} color="#fff" />
+              <Text style={styles.actionTileText}>{t('role.lead')}</Text>
+            </Pressable>
 
-        <Pressable
-          onPress={() => { lightTap(); logEvent('role_select', { role: 'follower' }); navigation.navigate('Auth', { role: 'follower' }); }}
-          accessibilityRole="button"
-          style={({ pressed }) => [
-            styles.cta,
-            styles.ctaGhost,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Text style={styles.ctaText}>{t('role.join')}</Text>
-        </Pressable>
+            <Pressable
+              onPress={() => { lightTap(); logEvent('role_select', { role: 'follower' }); navigation.navigate('Auth', { role: 'follower' }); }}
+              style={({ pressed }) => [
+                styles.actionTile,
+                { backgroundColor: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.2)' },
+                pressed && styles.pressed,
+              ]}
+            >
+              <Ionicons name="keypad" size={32} color="#fff" />
+              <Text style={styles.actionTileText}>{t('role.join')}</Text>
+            </Pressable>
+          </View>
 
-        <Text style={styles.footer}>{t('role.footer')}</Text>
+          {joinedGroups.length > 0 && (
+            <Animated.View entering={FadeIn.delay(500)} style={{ marginTop: 32, zIndex: 10 }}>
+              <Pressable
+                onPress={() => { lightTap(); navigation.navigate('MyTeams'); }}
+                style={({ pressed }) => [
+                  styles.ctaMyTeams,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <View pointerEvents="none" style={[styles.ctaGlassBg, { backgroundColor: 'rgba(255,255,255,0.12)' }]} />
+                <Ionicons name="people-outline" size={20} color={accent} />
+                <Text style={styles.ctaMyTeamsText}>查看我的隊伍 ({joinedGroups.length})</Text>
+              </Pressable>
+            </Animated.View>
+          )}
+
+          <Text style={[styles.footer, { marginTop: 16 }]}>{t('role.footer')}</Text>
+        </Animated.View>
       </View>
     </LinearGradient>
   );
@@ -111,45 +130,75 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     alignItems: 'center',
-    paddingHorizontal: 30,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
   },
-  logo: { marginBottom: 4 },
+  headerArea: {
+    alignItems: 'center',
+    marginTop: 0,
+  },
+  logo: { marginBottom: 12 },
   title: {
-    fontSize: 42,
-    fontWeight: '700',
+    fontSize: 48,
+    fontWeight: '800',
     letterSpacing: 0.5,
     color: '#fff',
-    marginTop: 22,
+    marginTop: 16,
   },
   tagline: {
-    fontSize: 16,
-    lineHeight: 22,
+    fontSize: 17,
+    lineHeight: 24,
     textAlign: 'center',
-    color: 'rgba(235,235,245,0.62)',
-    marginTop: 10,
-    maxWidth: 240,
+    color: 'rgba(235,235,245,0.6)',
+    marginTop: 12,
+    maxWidth: 260,
   },
   spacer: { flex: 1 },
-  cta: {
+  actionArea: {
     width: '100%',
-    height: 56,
-    borderRadius: 18,
+    alignItems: 'center',
+  },
+  actionRow: {
     flexDirection: 'row',
+    width: '100%',
+    gap: 14,
+    marginBottom: 16,
+  },
+  actionTile: {
+    flex: 1,
+    aspectRatio: 1.2,
+    borderRadius: 24,
+    borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
-    marginBottom: 12,
+    gap: 12,
+  },
+  actionTileText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  ctaMyTeams: {
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.15)',
+    marginBottom: 16,
   },
-  ctaGhost: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderColor: 'rgba(255,255,255,0.18)',
+  ctaGlassBg: {
+    ...StyleSheet.absoluteFillObject,
   },
-  ctaText: { fontSize: 17, fontWeight: '600', color: '#fff' },
-  pressed: { opacity: 0.85 },
+  ctaMyTeamsText: { fontSize: 15, fontWeight: '600', color: '#fff' },
   footer: {
-    marginTop: 22,
     fontSize: 13,
     color: 'rgba(235,235,245,0.4)',
   },
+  pressed: { opacity: 0.8 },
+  
+
 });

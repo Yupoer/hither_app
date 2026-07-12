@@ -5,6 +5,8 @@
  * re-exported from `../client.ts` so existing imports stay unchanged.
  */
 import { supabase } from '../supabase';
+import { avatarForUser } from '../../constants/avatars';
+import { memberColor } from '../../glass';
 import {
   demoSetJourneyStatus,
   demoSetSolo,
@@ -277,6 +279,87 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
     subgroups,
     nextDestination: destinations[0],
   };
+}
+
+export interface JoinedGroupInfo {
+  group: Group;
+  memberCount: number;
+  role: MemberRole;
+  memberProfiles: { avatar?: string; avatarColor?: string }[];
+}
+
+export async function getMyJoinedGroups(): Promise<JoinedGroupInfo[]> {
+  const { data: userAuth } = await supabase.auth.getUser();
+  const uid = userAuth?.user?.id;
+  if (!uid) return [];
+
+  const { data: myMemberships } = await supabase
+    .from('memberships')
+    .select('group_id, role')
+    .eq('user_id', uid);
+
+  if (!myMemberships || myMemberships.length === 0) return [];
+
+  const groupIds = myMemberships.map((m) => m.group_id);
+  const roleByGroup = new Map(myMemberships.map((m) => [m.group_id, m.role]));
+
+  const { data: groups } = await supabase
+    .from('groups')
+    .select('id, name, invite_code, created_by, created_at, journey_status, straggler_alerts, straggler_threshold_m, trip_days, departure_date')
+    .in('id', groupIds);
+
+  if (!groups || groups.length === 0) return [];
+
+  const { data: members } = await supabase
+    .from('memberships')
+    .select('group_id, user_id')
+    .in('group_id', groupIds);
+
+  const userIdsToFetch = Array.from(new Set(members?.map((m) => m.user_id) ?? []));
+
+  let profiles: { id: string; avatar?: string | null; avatar_color?: string | null }[] = [];
+  if (userIdsToFetch.length > 0) {
+    const { data: profileRows } = await supabase
+      .from('profiles')
+      .select('id, avatar, avatar_color')
+      .in('id', userIdsToFetch);
+    profiles = profileRows ?? [];
+  }
+  const profileById = new Map(profiles.map((p) => [p.id, p]));
+
+  const membersByGroup = new Map<string, { avatar?: string; avatarColor?: string }[]>();
+  for (const m of (members ?? [])) {
+    if (!membersByGroup.has(m.group_id)) membersByGroup.set(m.group_id, []);
+    
+    const p = profileById.get(m.user_id);
+    membersByGroup.get(m.group_id)!.push({
+      avatar: p?.avatar || avatarForUser(m.user_id),
+      avatarColor: p?.avatar_color || memberColor(m.user_id),
+    });
+  }
+
+  const memberCounts = new Map<string, number>();
+  for (const m of (members ?? [])) {
+    memberCounts.set(m.group_id, (memberCounts.get(m.group_id) ?? 0) + 1);
+  }
+
+  return groups.map((g) => ({
+    group: mapGroup(g as GroupRow),
+    memberCount: memberCounts.get(g.id) ?? 1,
+    role: roleByGroup.get(g.id) as MemberRole ?? 'follower',
+    memberProfiles: membersByGroup.get(g.id) ?? [],
+  }));
+}
+
+export async function leaveGroups(groupIds: string[]): Promise<void> {
+  if (!groupIds || groupIds.length === 0) return;
+  const uid = await requireUserId();
+  const { error } = await supabase
+    .from('memberships')
+    .delete()
+    .eq('user_id', uid)
+    .in('group_id', groupIds);
+  orThrow(error);
 }
 
 export async function setJourneyStatus(

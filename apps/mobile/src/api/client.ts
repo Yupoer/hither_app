@@ -29,9 +29,12 @@ export {
   setSolo,
   selfSplit,
   selfMerge,
+  getMyJoinedGroups,
+  leaveGroups,
 } from './services/GroupService';
 
 export type {
+  JoinedGroupInfo,
   GroupRow,
   MembershipRow,
   SubgroupRow,
