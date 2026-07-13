@@ -8,7 +8,7 @@ import React, {
 } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import MapView, { Marker, type Region } from 'react-native-maps';
+import MapView, { Marker, Polyline, type Region } from 'react-native-maps';
 import type { Coordinates, Destination, MemberLocation } from '../types';
 import { usePreferences, useTheme } from '../state/PreferencesContext';
 import { memberColor } from '../glass';
@@ -22,6 +22,8 @@ export interface GroupMapHandle {
   centerOn: (coordinates: Coordinates) => void;
   /** Zoom/pan so every member with a known location is visible at once. */
   fitToMembers: () => void;
+  focusOblique: (coordinates: Coordinates) => void;
+  fitRoute: (coordinates: Coordinates[]) => void;
 }
 
 export interface GroupMapProps {
@@ -30,6 +32,8 @@ export interface GroupMapProps {
   destinations?: Destination[];
   pendingPlace?: { coordinates: Coordinates; name: string } | null;
   currentUserId?: string;
+  routePoints?: Coordinates[];
+  routeColor?: string;
   /** Sheet height overlapping the map — shifts the camera center up so
    *  markers stay inside the exposed strip, like Apple Maps. */
   bottomOverlap?: number;
@@ -172,7 +176,7 @@ const MemberMarker = React.memo(({ member, accent, styles }: any) => {
 });
 
 const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
-  { members, gathering, destinations, pendingPlace, bottomOverlap },
+  { members, gathering, destinations, pendingPlace, routePoints, routeColor },
   ref,
 ) {
   const mapRef = useRef<MapView | null>(null);
@@ -199,6 +203,20 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       },
       centerOn: (coordinates) => {
         mapRef.current?.animateToRegion(regionFor(coordinates, latOffset), 400);
+      },
+      focusOblique: (coordinates) => {
+        mapRef.current?.animateCamera(
+          { center: coordinates, pitch: 45, heading: 0, altitude: 1200 },
+          { duration: 500 },
+        );
+      },
+      fitRoute: (coordinates) => {
+        if (coordinates.length > 1) {
+          mapRef.current?.fitToCoordinates(coordinates, {
+            edgePadding: { top: 120, right: 60, bottom: 240, left: 60 },
+            animated: true,
+          });
+        }
       },
       fitToMembers: () => {
         const coords = members.filter((m) => m.coordinates).map((m) => m.coordinates!);
@@ -236,6 +254,16 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       mapPadding={{ top: 42, left: 32, right: 32, bottom: 42 }}
       showsCompass
     >
+      {routePoints && routePoints.length > 1 ? (
+        <Polyline
+          coordinates={routePoints}
+          strokeColor={routeColor ?? colors.accent}
+          strokeWidth={5}
+          lineCap="round"
+          lineJoin="round"
+        />
+      ) : null}
+
       {destinations?.map((dest) => {
         const bgColor = getColorForDay(dest.day, dayColors);
         return (
