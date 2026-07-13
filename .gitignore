@@ -1,5 +1,6 @@
 # Claude Code working directories (git worktrees, local agent state)
 .claude/
+.worktrees/
 
 # Node
 node_modules/
