@@ -41,7 +41,7 @@ public class HitherMapsModule: Module {
       }
     }
 
-    AsyncFunction("getDirections") { (from: [String: Any], to: [String: Any], promise: Promise) in
+    AsyncFunction("getDirections") { (from: [String: Any], to: [String: Any], travelMode: String, promise: Promise) in
       guard let fromCoord = Self.coordinate(from: from), let toCoord = Self.coordinate(from: to) else {
         promise.reject("ERR_MAPS_DIRECTIONS", "Invalid coordinates")
         return
@@ -49,7 +49,11 @@ public class HitherMapsModule: Module {
       let request = MKDirections.Request()
       request.source = MKMapItem(placemark: MKPlacemark(coordinate: fromCoord))
       request.destination = MKMapItem(placemark: MKPlacemark(coordinate: toCoord))
-      request.transportType = .walking
+      switch travelMode {
+      case "drive": request.transportType = .automobile
+      case "transit": request.transportType = .transit
+      default: request.transportType = .walking
+      }
       MKDirections(request: request).calculate { response, error in
         if let error = error {
           promise.reject("ERR_MAPS_DIRECTIONS", error.localizedDescription)
@@ -63,7 +67,11 @@ public class HitherMapsModule: Module {
         var coords = [CLLocationCoordinate2D](repeating: kCLLocationCoordinate2DInvalid, count: count)
         route.polyline.getCoordinates(&coords, range: NSRange(location: 0, length: count))
         let points = coords.map { ["latitude": $0.latitude, "longitude": $0.longitude] }
-        promise.resolve(["distanceMeters": route.distance, "points": points])
+        promise.resolve([
+          "distanceMeters": route.distance,
+          "expectedTravelTimeSeconds": route.expectedTravelTime,
+          "points": points,
+        ])
       }
     }
   }
