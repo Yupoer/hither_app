@@ -6,6 +6,7 @@ function member(overrides: Partial<MemberLocation>): MemberLocation {
     userId: 'u',
     name: 'name',
     role: 'follower',
+    status: 'active',
     coordinates: { latitude: 25.0478, longitude: 121.517 },
     ...overrides,
   };

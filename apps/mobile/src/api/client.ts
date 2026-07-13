@@ -24,6 +24,7 @@ export {
   joinGroup,
   getGroupState,
   setJourneyStatus,
+  setJourneyTarget,
   setStragglerConfig,
   updateGroupTripDetails,
   setSolo,
@@ -83,3 +84,9 @@ export {
 } from './services/NotificationService';
 
 export { updateMyLocation } from './services/LocationService';
+
+export {
+  upsertLiveActivitySession,
+  deleteLiveActivitySession,
+} from './services/LiveActivityService';
+export type { LiveActivitySessionInput } from './services/LiveActivityService';

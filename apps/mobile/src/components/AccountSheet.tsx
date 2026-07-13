@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -12,6 +12,8 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import OverlaySheet from './OverlaySheet';
 import { useSession } from '../state/SessionContext';
 import { redeemPromoCode } from '../api/client';
@@ -28,7 +30,15 @@ export default function AccountSheet({
   accent: string;
 }) {
   const insets = useSafeAreaInsets();
-  const { user, isPro, isAnonymous, refreshProfile, upgradeToEmailAccount } = useSession();
+  const {
+    user,
+    isPro,
+    isAnonymous,
+    refreshProfile,
+    upgradeToEmailAccount,
+    linkWithGoogle,
+    linkWithApple,
+  } = useSession();
   const { t } = useTranslation();
   
   const [promoCode, setPromoCode] = useState('');
@@ -36,6 +46,11 @@ export default function AccountSheet({
   const [upgradeEmail, setUpgradeEmail] = useState('');
   const [upgradePassword, setUpgradePassword] = useState('');
   const [upgradeBusy, setUpgradeBusy] = useState(false);
+  const [appleAvailable, setAppleAvailable] = useState(false);
+
+  useEffect(() => {
+    void AppleAuthentication.isAvailableAsync().then(setAppleAvailable);
+  }, []);
 
   // Compute registered days
   const registeredDays = user?.createdAt
@@ -45,6 +60,8 @@ export default function AccountSheet({
   let providerText = 'Email 註冊';
   if (user?.provider === 'google') providerText = 'Google 註冊';
   if (user?.provider === 'anonymous') providerText = '匿名帳號';
+
+  if (user?.provider === 'apple') providerText = 'Apple';
 
   async function handleRedeem() {
     const code = promoCode.trim();
@@ -72,6 +89,24 @@ export default function AccountSheet({
       setUpgradePassword('');
     } catch (e) {
       Alert.alert(t('account.section'), e instanceof Error ? e.message : t('account.upgradeSent'));
+    } finally {
+      setUpgradeBusy(false);
+    }
+  }
+
+  async function handleLink(provider: 'google' | 'apple') {
+    if (upgradeBusy) return;
+    setUpgradeBusy(true);
+    try {
+      const linked = provider === 'google' ? await linkWithGoogle() : await linkWithApple();
+      if (linked) {
+        Alert.alert(t('account.section'), provider === 'google' ? t('login.google') : t('login.apple'));
+      }
+    } catch (e) {
+      Alert.alert(
+        provider === 'google' ? t('login.google') : t('login.apple'),
+        e instanceof Error ? e.message : t('login.signInFailed'),
+      );
     } finally {
       setUpgradeBusy(false);
     }
@@ -120,6 +155,30 @@ export default function AccountSheet({
               <Text style={styles.sectionLabel}>{t('account.upgradeButton')}</Text>
               <View style={styles.card}>
                 <Text style={styles.promoHint}>{t('anon.expiryWarning')}</Text>
+                <View style={styles.socialRow}>
+                  <Pressable
+                    style={({ pressed }) => [styles.socialButton, pressed && styles.pressed, upgradeBusy && styles.disabledButton]}
+                    onPress={() => void handleLink('google')}
+                    disabled={upgradeBusy}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('login.google')}
+                  >
+                    <Ionicons name="logo-google" size={20} color="#fff" />
+                    <Text style={styles.socialText}>{t('login.google')}</Text>
+                  </Pressable>
+                  {appleAvailable ? (
+                    <Pressable
+                      style={({ pressed }) => [styles.socialButton, pressed && styles.pressed, upgradeBusy && styles.disabledButton]}
+                      onPress={() => void handleLink('apple')}
+                      disabled={upgradeBusy}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('login.apple')}
+                    >
+                      <Ionicons name="logo-apple" size={20} color="#fff" />
+                      <Text style={styles.socialText}>{t('login.apple')}</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
                 <TextInput
                   style={styles.accountInput}
                   value={upgradeEmail}
@@ -310,6 +369,28 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   disabledButton: { opacity: 0.4 },
+  pressed: { opacity: 0.8 },
+  socialRow: {
+    gap: 10,
+    marginBottom: 14,
+  },
+  socialButton: {
+    minHeight: 44,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: glass.fill,
+    borderWidth: 1,
+    borderColor: glass.hairlineStrong,
+  },
+  socialText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   redeemButton: {
     marginLeft: 12,
     height: 44,

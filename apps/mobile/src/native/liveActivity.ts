@@ -8,18 +8,37 @@
  * `HitherLiveActivity` (`apps/mobile/modules/hither-live-activity`) is
  * present and backs every call through the same interface.
  */
-import { requireOptionalNativeModule } from 'expo-modules-core';
+import {
+  requireOptionalNativeModule,
+  type EventSubscription,
+} from 'expo-modules-core';
 import type { Coordinates } from '../types';
 
 /** Custom native module; `null` in Expo Go / when not built. */
-const HitherLiveActivity = requireOptionalNativeModule<{
-  startGroupActivity(state: GroupActivityState): Promise<ActivityHandle | null>;
+interface PushTokenEvent {
+  activityId: string;
+  pushToken: string;
+}
+
+type HitherLiveActivityEvents = {
+  onPushToken: (event: PushTokenEvent) => void;
+};
+
+type HitherLiveActivityModule = {
+  addListener<EventName extends keyof HitherLiveActivityEvents>(
+    eventName: EventName,
+    listener: HitherLiveActivityEvents[EventName],
+  ): EventSubscription;
+  startGroupActivity(state: GroupActivityState): Promise<ActivityStartResult | null>;
   updateGroupActivity(
     handle: ActivityHandle,
     state: GroupActivityState,
   ): Promise<void>;
   endGroupActivity(handle: ActivityHandle): Promise<void>;
-}>('HitherLiveActivity');
+};
+
+const HitherLiveActivity =
+  requireOptionalNativeModule<HitherLiveActivityModule>('HitherLiveActivity');
 
 export interface GroupActivityState {
   groupName: string;
@@ -43,19 +62,34 @@ export interface GroupActivityState {
   travelMode?: string;
   /** Member avatar emojis for the flock stack (empty string = no emoji set). */
   memberEmojis?: string[];
+  /** Per-member arrival flags aligned with `memberEmojis`. */
+  memberArrived?: boolean[];
 }
 
 /** Opaque id for an in-flight activity (native only). */
 export type ActivityHandle = string;
 
+export interface ActivityStartResult {
+  activityId: string;
+  pushToken?: string;
+}
+
 /** Start a group Live Activity. Returns null when unsupported (Expo Go). */
 export async function startGroupActivity(
   state: GroupActivityState,
-): Promise<ActivityHandle | null> {
+): Promise<ActivityStartResult | null> {
   if (!HitherLiveActivity) {
     return null;
   }
   return HitherLiveActivity.startGroupActivity(state);
+}
+
+export function addPushTokenListener(
+  listener: (event: PushTokenEvent) => void,
+): EventSubscription {
+  return HitherLiveActivity?.addListener('onPushToken', listener) ?? {
+    remove() {},
+  };
 }
 
 /** Update a running Live Activity. No-op when unsupported. */

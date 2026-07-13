@@ -2,6 +2,10 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const quickCommandsCard = readFileSync(
+  join(__dirname, '../components/QuickCommandsCard.tsx'),
+  'utf8',
+);
 const settingsOverlay = readFileSync(
   join(__dirname, '../screens/MapScreen/components/SettingsOverlay.tsx'),
   'utf8',
@@ -62,5 +66,38 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain("setKmlVisible(true)");
     expect(settingsOverlay).not.toContain("t('account.section')");
     expect(settingsOverlay).toContain('styles.reportButton');
+  });
+
+  it('updates the gathering-point navigation state before the network request finishes', () => {
+    expect(mapScreen).toContain(
+      'isLeader && (journeyActive || journeyBusy) && navTarget?.id === dest.id',
+    );
+  });
+
+  it('does not animate the whole card when a child navigation button is pressed', () => {
+    const pressIn = mapScreen.indexOf('onPressIn={() => {');
+    const pressOut = mapScreen.indexOf('onPressOut={() => {', pressIn);
+    expect(mapScreen.slice(pressIn, pressOut)).not.toContain('LayoutAnimation.configureNext');
+  });
+
+  it('opens the custom quick command editor as a sheet', () => {
+    const quickCommands = readFileSync(
+      join(__dirname, '../components/CustomQuickCommandSheet.tsx'),
+      'utf8',
+    );
+
+    expect(quickCommands).toContain('<OverlaySheet');
+    expect(quickCommands).toContain('visible={visible}');
+    expect(mapScreen).toContain('onConfigureCustom={openCustomQuickCommand}');
+  });
+
+  it('returns the report sheet to settings after cancel or submit', () => {
+    expect(mapScreen).toMatch(
+      /<FeedbackSheet[\s\S]*?onClose=\{\(\) => setOverlay\('settings'\)\}/,
+    );
+  });
+
+  it('sends the custom command message to the group', () => {
+    expect(quickCommandsCard).toContain('sendCommand(groupId, type, message)');
   });
 });

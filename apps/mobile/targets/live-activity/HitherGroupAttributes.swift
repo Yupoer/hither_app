@@ -28,6 +28,8 @@ public struct HitherGroupAttributes: ActivityAttributes {
     public var travelMode: String?
     /// Member avatar emojis for the flock stack ("" = no emoji).
     public var memberEmojis: [String]?
+    /// Arrival state aligned by index with `memberEmojis`.
+    public var memberArrived: [Bool]?
 
     public init(
       gatheringTitle: String? = nil,
@@ -38,7 +40,8 @@ public struct HitherGroupAttributes: ActivityAttributes {
       memberCount: Int? = nil,
       accentHex: String? = nil,
       travelMode: String? = nil,
-      memberEmojis: [String]? = nil
+      memberEmojis: [String]? = nil,
+      memberArrived: [Bool]? = nil
     ) {
       self.gatheringTitle = gatheringTitle
       self.distanceMeters = distanceMeters
@@ -49,6 +52,7 @@ public struct HitherGroupAttributes: ActivityAttributes {
       self.accentHex = accentHex
       self.travelMode = travelMode
       self.memberEmojis = memberEmojis
+      self.memberArrived = memberArrived
     }
 
     public init(from state: [String: Any]) {
@@ -61,6 +65,7 @@ public struct HitherGroupAttributes: ActivityAttributes {
       self.accentHex = state["accentHex"] as? String
       self.travelMode = state["travelMode"] as? String
       self.memberEmojis = state["memberEmojis"] as? [String]
+      self.memberArrived = state["memberArrived"] as? [Bool]
     }
 
     public var formattedDistance: String? {

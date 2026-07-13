@@ -21,6 +21,10 @@ export * as purchases from './purchases';
 export type { LocationSample } from './location';
 export type { PlaceResult, MapRegion } from './maps';
 export type { LocalNotificationInput } from './notifications';
-export type { GroupActivityState, ActivityHandle } from './liveActivity';
+export type {
+  GroupActivityState,
+  ActivityHandle,
+  ActivityStartResult,
+} from './liveActivity';
 export type { GlassViewProps } from './liquidGlass';
 export type { PurchaseResult } from './purchases';

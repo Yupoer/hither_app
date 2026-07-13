@@ -50,6 +50,7 @@ export function virtualMates(
     userId: m.userId,
     name: m.name,
     role: 'follower' as const,
+    status: 'active' as const,
     avatar: m.avatar,
     subgroupId: virtualSubgroups.get(m.userId),
     coordinates: {

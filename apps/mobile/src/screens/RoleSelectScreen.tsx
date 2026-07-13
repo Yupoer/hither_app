@@ -22,7 +22,7 @@ export default function RoleSelectScreen({ navigation }: Props) {
   const { colors } = useTheme();
   const { t } = useTranslation();
   const accent = colors.accent;
-  const { user } = useSession();
+  const { user, signOut } = useSession();
 
   const [joinedGroups, setJoinedGroups] = useState<JoinedGroupInfo[]>([]);
 
@@ -47,6 +47,29 @@ export default function RoleSelectScreen({ navigation }: Props) {
           <Ionicons name="chevron-back" size={22} color="rgba(255,255,255,0.7)" />
         </Pressable>
       )}
+      <Pressable
+        onPress={() => Alert.alert(
+          t('settings.signOutTitle'),
+          t('settings.signOutMsg'),
+          [
+            { text: t('common.cancel'), style: 'cancel' },
+            {
+              text: t('settings.signOut'),
+              style: 'destructive',
+              onPress: () => {
+                logEvent('sign_out');
+                void signOut().then(() => navigation.reset({ index: 0, routes: [{ name: 'Login' }] }));
+              },
+            },
+          ],
+        )}
+        accessibilityRole="button"
+        accessibilityLabel={t('settings.signOut')}
+        style={[styles.logout, { top: insets.top + 12 }]}
+      >
+        <Ionicons name="log-out-outline" size={20} color="rgba(255,255,255,0.8)" />
+        <Text style={styles.logoutText}>{t('settings.signOut')}</Text>
+      </Pressable>
 
       <View
         style={[
@@ -128,6 +151,25 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255,255,255,0.18)',
     zIndex: 10,
+  },
+  logout: {
+    position: 'absolute',
+    right: 20,
+    minHeight: 44,
+    paddingHorizontal: 12,
+    borderRadius: 22,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.18)',
+    zIndex: 10,
+  },
+  logoutText: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 14,
+    fontWeight: '600',
   },
   content: {
     flex: 1,

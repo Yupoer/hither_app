@@ -75,6 +75,10 @@ export interface Group {
   createdAt?: string;
   /** Leader-controlled journey state; defaults to 'paused'. */
   journeyStatus: JourneyStatus;
+  /** Persisted gathering point used by every member while the journey is active. */
+  activeDestinationId?: string;
+  /** ISO timestamp for the current journey target, used to reset personal progress. */
+  journeyStartedAt?: string;
   /** Straggler alerts on/off (leader-controlled). */
   stragglerAlerts: boolean;
   /** Distance in metres beyond which a member counts as a straggler. */
@@ -87,6 +91,7 @@ export interface Group {
 
 /** Role within a group. */
 export type MemberRole = 'leader' | 'follower';
+export type MembershipStatus = 'active' | 'idle' | 'arrived' | 'offline';
 
 /** A group member together with their latest location. */
 export interface MemberLocation {
@@ -94,6 +99,8 @@ export interface MemberLocation {
   /** Anonymous nickname, per the MVP design. */
   name: string;
   role: MemberRole;
+  /** Server-authoritative presence for the active gathering point. */
+  status: MembershipStatus;
   /** Emoji avatar; falls back to the name's initial when unset. */
   avatar?: string;
   /** Avatar background colour hex (persisted in `profiles.avatar_color`). */

@@ -38,11 +38,12 @@ const state: GroupState = {
     stragglerThresholdM: 500,
   },
   members: [
-    { userId: 'demo-me', name: '我', role: 'leader', coordinates: BASE },
+    { userId: 'demo-me', name: '我', role: 'leader', status: 'active', coordinates: BASE },
     {
       userId: 'demo-user-2',
       name: '小羊',
       role: 'follower',
+      status: 'active',
       avatar: '🐑',
       coordinates: { latitude: BASE.latitude + 0.0021, longitude: BASE.longitude + 0.0014 },
     },
@@ -50,6 +51,7 @@ const state: GroupState = {
       userId: 'demo-user-3',
       name: '阿福',
       role: 'follower',
+      status: 'active',
       avatar: '🦊',
       coordinates: { latitude: BASE.latitude - 0.0017, longitude: BASE.longitude + 0.0026 },
     },
@@ -57,6 +59,7 @@ const state: GroupState = {
       userId: 'demo-user-4',
       name: '奇奇',
       role: 'follower',
+      status: 'active',
       avatar: '🐰',
       coordinates: { latitude: BASE.latitude + 0.0009, longitude: BASE.longitude - 0.0022 },
     },
@@ -153,6 +156,22 @@ export function demoReorderDestinations(orderedIds: string[]): void {
 
 export function demoSetJourneyStatus(status: JourneyStatus): void {
   state.group = { ...state.group, journeyStatus: status };
+}
+
+export function demoSetJourneyTarget(destinationId: string | null): void {
+  const nextTargetId = destinationId ?? undefined;
+  const targetChanged = state.group.activeDestinationId !== nextTargetId;
+  state.group = {
+    ...state.group,
+    journeyStatus: destinationId ? 'going' : 'paused',
+    activeDestinationId: nextTargetId,
+    journeyStartedAt: destinationId ? new Date().toISOString() : undefined,
+  };
+  if (targetChanged) {
+    state.members = state.members.map((member) =>
+      member.status === 'arrived' ? { ...member, status: 'active' } : member,
+    );
+  }
 }
 
 export function demoSetSolo(solo: boolean): void {

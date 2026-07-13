@@ -9,6 +9,7 @@ import { avatarForUser } from '../../constants/avatars';
 import { memberColor } from '../../glass';
 import {
   demoSetJourneyStatus,
+  demoSetJourneyTarget,
   demoSetSolo,
   demoSelfSplit,
   demoSelfMerge,
@@ -23,6 +24,7 @@ import type {
   JourneyStatus,
   MemberLocation,
   MemberRole,
+  MembershipStatus,
   Subgroup,
   SubgroupInvite,
   SubgroupMode,
@@ -39,6 +41,8 @@ export interface GroupRow {
   created_by: string | null;
   created_at: string | null;
   journey_status: JourneyStatus | null;
+  active_destination_id?: string | null;
+  journey_started_at?: string | null;
   straggler_alerts?: boolean | null;
   straggler_threshold_m?: number | null;
   trip_days?: number | null;
@@ -48,6 +52,7 @@ export interface GroupRow {
 export interface MembershipRow {
   user_id: string;
   role: MemberRole;
+  status?: MembershipStatus | null;
   solo?: boolean | null;
   subgroup_id?: string | null;
 }
@@ -94,6 +99,8 @@ export function mapGroup(row: GroupRow): Group {
     createdBy: row.created_by ?? '',
     createdAt: row.created_at ?? new Date().toISOString(),
     journeyStatus: row.journey_status ?? 'paused',
+    activeDestinationId: row.active_destination_id ?? undefined,
+    journeyStartedAt: row.journey_started_at ?? undefined,
     stragglerAlerts: row.straggler_alerts ?? true,
     stragglerThresholdM: row.straggler_threshold_m ?? 500,
     tripDays: row.trip_days ?? undefined,
@@ -114,6 +121,7 @@ export function mapMember(
     userId: membership.user_id,
     name: profile?.nickname ?? '',
     role: membership.role,
+    status: membership.status ?? 'active',
     avatar: profile?.avatar ?? undefined,
     avatarColor: profile?.avatar_color ?? undefined,
     solo: membership.solo ?? false,
@@ -157,7 +165,7 @@ export async function createGroup(name: string): Promise<Group> {
       .from('groups')
       .insert({ name, invite_code: inviteCode, created_by: uid })
       .select(
-        'id, name, invite_code, created_by, created_at, journey_status, straggler_alerts, straggler_threshold_m',
+        'id, name, invite_code, created_by, created_at, journey_status, active_destination_id, journey_started_at, straggler_alerts, straggler_threshold_m',
       )
       .single();
 
@@ -215,7 +223,7 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
     supabase
       .from('groups')
       .select(
-        'id, name, invite_code, created_by, created_at, journey_status, straggler_alerts, straggler_threshold_m',
+        'id, name, invite_code, created_by, created_at, journey_status, active_destination_id, journey_started_at, straggler_alerts, straggler_threshold_m',
       )
       .eq('id', groupId)
       .single(),
@@ -305,7 +313,7 @@ export async function getMyJoinedGroups(): Promise<JoinedGroupInfo[]> {
 
   const { data: groups } = await supabase
     .from('groups')
-    .select('id, name, invite_code, created_by, created_at, journey_status, straggler_alerts, straggler_threshold_m, trip_days, departure_date')
+    .select('id, name, invite_code, created_by, created_at, journey_status, active_destination_id, journey_started_at, straggler_alerts, straggler_threshold_m, trip_days, departure_date')
     .in('id', groupIds);
 
   if (!groups || groups.length === 0) return [];
@@ -374,6 +382,21 @@ export async function setJourneyStatus(
     .from('groups')
     .update({ journey_status: status })
     .eq('id', groupId);
+  orThrow(error);
+}
+
+export async function setJourneyTarget(
+  groupId: string,
+  destinationId: string | null,
+): Promise<void> {
+  if (isDemoGroup(groupId)) {
+    demoSetJourneyTarget(destinationId);
+    return;
+  }
+  const { error } = await supabase.rpc('set_journey_target', {
+    p_group_id: groupId,
+    p_destination_id: destinationId,
+  });
   orThrow(error);
 }
 

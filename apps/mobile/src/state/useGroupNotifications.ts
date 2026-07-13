@@ -44,7 +44,7 @@ export function useGroupNotifications(): void {
 
 
   useEffect(() => {
-    if (!groupId || !myUserId) return;
+    if (!__DEV__ || !groupId || !myUserId) return;
 
     // Fire a local notification iff this user's category pref is on. Prefs are
     // read fresh per event (events are low-frequency) so a toggle in Settings

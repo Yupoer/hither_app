@@ -54,6 +54,7 @@ import MeetCountdown from '../components/MeetCountdown';
 import DestinationReorderList from '../components/DestinationReorderList';
 import NotificationPreferencesCard from '../components/NotificationPreferencesCard';
 import QuickCommandsCard from '../components/QuickCommandsCard';
+import CustomQuickCommandSheet from '../components/CustomQuickCommandSheet';
 import BottomSheet, { sheetBottomOffset } from '../components/BottomSheet';
 import OverlaySheet from '../components/OverlaySheet';
 import PaywallSheet from '../components/PaywallSheet';
@@ -81,6 +82,15 @@ import { useGroupState } from '../state/useGroupState';
 import { useStragglerAlerts } from '../state/useStragglerAlerts';
 import { useSubgroupInvites } from '../state/useSubgroupInvites';
 import { useLiveActivity } from '../state/useLiveActivity';
+import {
+  startBackgroundJourney,
+  stopBackgroundJourney,
+} from '../state/backgroundJourney';
+import {
+  ARRIVAL_RADIUS_M,
+  initialJourneyDistance,
+  journeyProgress,
+} from '../utils/journeyProgress';
 import {
   distanceMeters,
   etaSecondsFor,
@@ -129,7 +139,6 @@ import { glass, accentMix, memberColor } from '../glass';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Map'>;
 
-const ARRIVAL_RADIUS_M = 30;
 // Auto-advance to the next gathering point once the leader is this close —
 // separate from ARRIVAL_RADIUS_M, which drives the flock's "arrived" status.
 const AUTO_ADVANCE_RADIUS_M = 50;
@@ -145,9 +154,6 @@ const LEAVE_GROUP_WARN_KEY = 'hither.subgroupLeaveWarnDismissed';
 
 /** Preset straggler-alert distance chips shown in settings. */
 const STRAGGLER_THRESHOLD_OPTIONS = [300, 500, 1000, 2000];
-
-/** Nominal walk that reads as ~"just started" for the progress bar. */
-const PROGRESS_REF_M = 1500;
 
 /** Short ETA like the design's "4 min" / "now" / "2 hr". */
 function shortEta(seconds: number): string {
@@ -240,7 +246,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const [pressedCardId, setPressedCardId] = useState<string | null>(null);
   const pendingExpandId = useRef<string | null>(null);
   const [overlay, setOverlay] = useState<
-    null | 'route' | 'settings' | 'profile' | 'feedback' | 'history' | 'account'
+    null | 'route' | 'settings' | 'profile' | 'feedback' | 'history' | 'account' | 'custom'
   >(null);
   // Screenshot captured the instant the feedback entry is tapped (before the
   // form opens over the screen), handed to the sheet as evidence.
@@ -428,7 +434,6 @@ export default function MapScreen({ route, navigation }: Props) {
     journeyActive,
     navTarget,
     navTargetId,
-    setNavTargetId,
     activePoint,
     numericDistance,
     journeyBusy,
@@ -455,6 +460,64 @@ export default function MapScreen({ route, navigation }: Props) {
     gathering: activePoint,
     travelMode,
   });
+  const initialJourneyRef = useRef<{
+    key: string;
+    distanceM: number;
+    source: 'route' | 'fallback';
+  } | null>(null);
+  const [initialDistanceM, setInitialDistanceM] = useState<number | undefined>();
+  const backgroundPermissionDeniedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!journeyActive || !groupId || !navTarget) {
+      initialJourneyRef.current = null;
+      setInitialDistanceM(undefined);
+      backgroundPermissionDeniedRef.current = null;
+      void stopBackgroundJourney();
+      return;
+    }
+
+    const key = `${groupId}:${navTarget.id}:${state?.group.journeyStartedAt ?? ''}`;
+    if (backgroundPermissionDeniedRef.current === key) return;
+
+    const routeDistanceM = selfRoute?.distanceMeters;
+    const distanceM = initialJourneyDistance(routeDistanceM, numericDistance);
+    if (distanceM == null) return;
+
+    const source = routeDistanceM != null ? 'route' : 'fallback';
+    const current = initialJourneyRef.current;
+    if (!current || current.key !== key || (current.source === 'fallback' && source === 'route')) {
+      initialJourneyRef.current = { key, distanceM, source };
+      setInitialDistanceM(distanceM);
+    }
+    const initialJourney = initialJourneyRef.current;
+    if (!initialJourney) return;
+
+    void startBackgroundJourney({
+      groupId,
+      destinationId: navTarget.id,
+      destination: navTarget.coordinates,
+      initialDistanceM: initialJourney.distanceM,
+      travelMode,
+    }).then((result) => {
+      if (result === 'permission_denied') {
+        backgroundPermissionDeniedRef.current = key;
+        Alert.alert(
+          '需要背景定位',
+          '請在「設定」允許永遠取用位置；否則鎖定螢幕後將無法持續更新距離與抵達狀態。',
+        );
+      }
+    });
+  }, [
+    groupId,
+    journeyActive,
+    navTarget,
+    numericDistance,
+    selfRoute?.distanceMeters,
+    state?.group.journeyStartedAt,
+    travelMode,
+  ]);
+
+  useEffect(() => () => void stopBackgroundJourney(), []);
   const lastFittedRouteRef = useRef<string | null>(null);
   useEffect(() => {
     const key = activePoint ? `${activePoint.id}:${travelMode}` : null;
@@ -492,15 +555,11 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const liveDistance = selfRoute?.distanceMeters ?? numericDistance;
   const liveProgress =
-    liveDistance != null
-      ? Math.max(0.05, Math.min(0.95, 1 - Math.min(1, liveDistance / PROGRESS_REF_M)))
+    liveDistance != null && initialDistanceM != null
+      ? journeyProgress(initialDistanceM, liveDistance)
       : undefined;
   const liveGathered = navTarget
-    ? members.filter(
-        (m) =>
-          m.coordinates &&
-          distanceMeters(m.coordinates, navTarget.coordinates) <= ARRIVAL_RADIUS_M,
-      ).length
+    ? members.filter((m) => m.status === 'arrived').length
     : undefined;
   useLiveActivity(journeyActive, {
     groupName: membership?.group.name ?? '',
@@ -516,7 +575,13 @@ export default function MapScreen({ route, navigation }: Props) {
     accentHex: accent,
     travelMode,
     memberEmojis: members.map((m) => m.avatar ?? ''),
-  });
+    memberArrived: members.map((m) => m.status === 'arrived'),
+  }, groupId && navTarget && initialDistanceM != null ? {
+    groupId,
+    destinationId: navTarget.id,
+    initialDistanceM,
+    travelMode,
+  } : undefined);
 
 
 
@@ -990,7 +1055,7 @@ export default function MapScreen({ route, navigation }: Props) {
         const displayedDistance = memberRoute?.distanceMeters ?? d;
         const displayedEta = memberRoute?.expectedTravelTimeSeconds
           ?? (d != null ? etaSecondsFor(d, travelMode) : null);
-        const arrived = d != null && d <= ARRIVAL_RADIUS_M;
+        const arrived = m.status === 'arrived';
         const isMemberLeader = m.role === 'leader';
         // Member status: arrived (within the radius) > moving (a fresh
         // location ping in the last 2 minutes) > not started (no recent ping —
@@ -1187,6 +1252,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const closeOverlay = useCallback(() => setOverlay(null), []);
   const openHistoryOverlay = useCallback(() => setOverlay('history'), []);
   const openAccountOverlay = useCallback(() => setOverlay('account'), []);
+  const openCustomQuickCommand = useCallback(() => setOverlay('custom'), []);
   const openPaywallCb = useCallback(() => openPaywall(), [openPaywall]);
 
   const sheetChildren = useMemo(() => (
@@ -1232,6 +1298,7 @@ export default function MapScreen({ route, navigation }: Props) {
             <Text style={styles.accuracyBattery}>{t('settings.preciseLocationHint')}</Text>
           </View>
           <Switch
+            style={styles.accuracySwitch}
             value={highAccuracy}
             onValueChange={setHighAccuracy}
             trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
@@ -1370,7 +1437,12 @@ export default function MapScreen({ route, navigation }: Props) {
           {isLeader ? t('map.cmdLeaderTitle') : t('map.cmdFollowerTitle')}
         </Text>
         {groupId ? (
-          <QuickCommandsCard groupId={groupId} isLeader={!!isLeader} colors={dark} />
+          <QuickCommandsCard
+            groupId={groupId}
+            isLeader={!!isLeader}
+            colors={dark}
+            onConfigureCustom={openCustomQuickCommand}
+          />
         ) : null}
 
         {/* Settings. */}
@@ -1381,7 +1453,7 @@ export default function MapScreen({ route, navigation }: Props) {
         </Pressable>
     </>
   ), [
-    t, members.length, isPro, pendingInvites, accent, handleAcceptInvite, handleDeclineInvite, topFlock, renderFlockRow, subgroups, flock, mySubgroupId, sentInvites, group, shareCode, codeCopied, copyCode, destinations.length, canEditItinerary, isLeader, persistStragglerConfig, openPaywall, groupId, dark, styles, refreshAllLocations, refreshingLocations, highAccuracy, setHighAccuracy, openHistoryOverlay
+    t, members.length, isPro, pendingInvites, accent, handleAcceptInvite, handleDeclineInvite, topFlock, renderFlockRow, subgroups, flock, mySubgroupId, sentInvites, group, shareCode, codeCopied, copyCode, destinations.length, canEditItinerary, isLeader, persistStragglerConfig, openPaywall, groupId, dark, styles, refreshAllLocations, refreshingLocations, highAccuracy, setHighAccuracy, openHistoryOverlay, openCustomQuickCommand
   ]);
 
   if (loading && !state) {
@@ -1593,7 +1665,8 @@ export default function MapScreen({ route, navigation }: Props) {
               // This card is the stop we're actively navigating to — its
               // button flips to "end navigation" (leader only; followers
               // can't change journey status).
-              const navigatingThis = isLeader && journeyActive && navTarget?.id === dest.id;
+              const navigatingThis =
+                isLeader && (journeyActive || journeyBusy) && navTarget?.id === dest.id;
               // Leader-set target meet time, formatted as a live countdown /
               // overdue label. Recomputed every 30s by the nowTick interval.
               const meetLabel = dest.meetAt
@@ -1627,22 +1700,18 @@ export default function MapScreen({ route, navigation }: Props) {
                   <Pressable
                     delayLongPress={300}
                     onPressIn={() => {
-                      LayoutAnimation.configureNext({
-                        duration: 150,
-                        update: { type: 'easeInEaseOut' },
-                      });
                       setPressedCardId(dest.id);
                       pendingExpandId.current = null;
                     }}
                     onPressOut={() => {
-                      LayoutAnimation.configureNext({
-                        duration: 300,
-                        create: { type: 'linear', property: 'opacity' },
-                        update: { type: 'linear' },
-                        delete: { type: 'linear', property: 'opacity' },
-                      });
                       setPressedCardId(null);
                       if (pendingExpandId.current === dest.id) {
+                        LayoutAnimation.configureNext({
+                          duration: 300,
+                          create: { type: 'linear', property: 'opacity' },
+                          update: { type: 'linear' },
+                          delete: { type: 'linear', property: 'opacity' },
+                        });
                         setExpandedCardId((prev) => (prev === dest.id ? null : dest.id));
                         pendingExpandId.current = null;
                       }
@@ -1998,8 +2067,13 @@ export default function MapScreen({ route, navigation }: Props) {
           it fully replaces (never stacks over) the settings sheet. */}
       <FeedbackSheet
         visible={overlay === 'feedback'}
-        onClose={() => setOverlay(null)}
+        onClose={() => setOverlay('settings')}
         screenshotUri={feedbackShot}
+      />
+
+      <CustomQuickCommandSheet
+        visible={overlay === 'custom'}
+        onClose={() => setOverlay(null)}
       />
 
       {/* Invite-a-teammate picker, opened from my own subgroup card. */}
@@ -2616,14 +2690,15 @@ const makeStyles = (accent: string) =>
       flexDirection: 'row',
       alignItems: 'center',
       gap: 12,
-      paddingHorizontal: 4,
+      padding: 12,
       marginBottom: 8,
       borderRadius: 16,
       backgroundColor: glass.fill,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairline,
     },
-    accuracyCopy: { flex: 1, minWidth: 0, paddingVertical: 9 },
+    accuracyCopy: { flex: 1, minWidth: 0 },
+    accuracySwitch: { transform: [{ translateY: 4 }] },
     accuracyTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
     accuracyLabel: { color: '#fff', fontSize: 15, fontWeight: '700', lineHeight: 20 },
     accuracyBattery: { marginLeft: 25, marginTop: 2, color: glass.warn, fontSize: 11, fontWeight: '600', lineHeight: 15 },

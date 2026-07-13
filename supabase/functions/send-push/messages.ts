@@ -3,9 +3,19 @@
 // localizing per-user would require persisting language to the profile (future).
 
 export interface PushPayload {
-  category: "add_gathering" | "leader_commands" | "follower_requests" | "journey";
+  category:
+    | "add_gathering"
+    | "leader_commands"
+    | "follower_requests"
+    | "journey"
+    | "arrival"
+    | "straggler"
+    | "live_activity";
   group_id: string;
   sender_id: string;
+  target_user_id?: string | null;
+  destination_id?: string | null;
+  member_id?: string | null;
   type?: string;
   message?: string | null;
   title?: string | null;
@@ -41,6 +51,12 @@ export function buildMessage(p: PushPayload): { title: string; body: string } {
       return p.status === "going"
         ? { title: "出發囉", body: "隊長已開始前往集合點" }
         : { title: "暫停", body: "隊長已暫停前往集合點" };
+    case "arrival":
+      return { title: "隊友已抵達", body: "一位隊友已抵達集合點" };
+    case "straggler":
+      return { title: "隊友已脫隊", body: "一位隊友已離開主隊伍" };
+    case "live_activity":
+      return { title: "Hither", body: "集合進度已更新" };
     case "leader_commands": {
       const label = (p.type && COMMAND_LABEL[p.type]) || "指令";
       return { title: `隊長：${label}`, body: p.message ?? label };
@@ -64,6 +80,9 @@ export function prefColumn(category: PushPayload["category"]): string {
     case "follower_requests":
       return "follower_requests";
     case "journey":
+    case "arrival":
+    case "straggler":
+    case "live_activity":
       return "journey";
   }
 }

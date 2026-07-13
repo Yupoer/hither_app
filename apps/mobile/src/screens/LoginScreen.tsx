@@ -242,33 +242,38 @@ export default function LoginScreen({ navigation }: Props) {
           </View>
 
           <View style={styles.socialRow}>
-            <View style={styles.googleColumn}>
+            <View style={styles.socialColumn}>
               <Pressable
                 onPress={handleGoogle}
                 disabled={busy}
                 accessibilityRole="button"
                 accessibilityLabel={t('login.google')}
                 style={({ pressed }) => [
-                  styles.googleBall,
+                  styles.socialIcon,
                   busy && styles.ctaDisabled,
                   pressed && !busy && styles.pressed,
                 ]}
               >
                 <Ionicons name="logo-google" size={26} color="#fff" />
               </Pressable>
-              <Text style={styles.googleCaption}>{t('login.google')}</Text>
+              <Text style={styles.socialCaption}>{t('login.google')}</Text>
             </View>
             {appleAvailable ? (
-              <View pointerEvents={busy ? 'none' : 'auto'} style={busy && styles.ctaDisabled}>
-                <AppleAuthentication.AppleAuthenticationButton
-                  buttonType={isSignUp
-                    ? AppleAuthentication.AppleAuthenticationButtonType.SIGN_UP
-                    : AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
-                  buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
-                  cornerRadius={18}
-                  style={styles.appleButton}
+              <View style={styles.socialColumn}>
+                <Pressable
                   onPress={handleApple}
-                />
+                  disabled={busy}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('login.apple')}
+                  style={({ pressed }) => [
+                    styles.socialIcon,
+                    busy && styles.ctaDisabled,
+                    pressed && !busy && styles.pressed,
+                  ]}
+                >
+                  <Ionicons name="logo-apple" size={26} color="#fff" />
+                </Pressable>
+                <Text style={styles.socialCaption}>{t('login.apple')}</Text>
               </View>
             ) : null}
           </View>
@@ -416,7 +421,7 @@ const makeStyles = (accent: string) =>
       letterSpacing: 1,
       color: 'rgba(235,235,245,0.4)',
     },
-    googleBall: {
+    socialIcon: {
       width: 56,
       height: 56,
       borderRadius: 28,
@@ -426,7 +431,7 @@ const makeStyles = (accent: string) =>
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: 'rgba(255,255,255,0.22)',
     },
-    googleCaption: {
+    socialCaption: {
       textAlign: 'center',
       fontSize: 12,
       color: 'rgba(235,235,245,0.45)',
@@ -440,8 +445,7 @@ const makeStyles = (accent: string) =>
       justifyContent: 'center',
       gap: 16,
     },
-    googleColumn: { alignItems: 'center' },
-    appleButton: { width: 176, height: 56 },
+    socialColumn: { alignItems: 'center' },
     guest: { alignSelf: 'center', marginTop: 28, padding: 8 },
     guestText: {
       fontSize: 14,

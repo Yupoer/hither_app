@@ -1,5 +1,6 @@
 import ActivityKit
 import ExpoModulesCore
+import Foundation
 
 // ActivityKit Live Activity module (iOS 16.2+). Backs the JS boundary
 // `apps/mobile/src/native/liveActivity.ts`. The app target drives the activity
@@ -19,8 +20,21 @@ public class HitherLiveActivityModule: Module {
   // "stale" UI without leaving zombies (the end call removes them).
   private static let staleInterval: TimeInterval = 2 * 60 * 60
 
+  @available(iOS 16.2, *)
+  private func observePushToken(for activity: Activity<HitherGroupAttributes>) {
+    Task { [weak self] in
+      for await token in activity.pushTokenUpdates {
+        self?.sendEvent("onPushToken", [
+          "activityId": activity.id,
+          "pushToken": token.hexString,
+        ])
+      }
+    }
+  }
+
   public func definition() -> ModuleDefinition {
     Name("HitherLiveActivity")
+    Events("onPushToken")
 
     Function("isSupported") { () -> Bool in
       if #available(iOS 16.2, *) {
@@ -29,7 +43,7 @@ public class HitherLiveActivityModule: Module {
       return false
     }
 
-    AsyncFunction("startGroupActivity") { (state: [String: Any]) -> String? in
+    AsyncFunction("startGroupActivity") { (state: [String: Any]) -> [String: String]? in
       guard #available(iOS 16.2, *),
             ActivityAuthorizationInfo().areActivitiesEnabled else {
         return nil
@@ -45,9 +59,14 @@ public class HitherLiveActivityModule: Module {
         let activity = try Activity.request(
           attributes: attributes,
           content: content,
-          pushType: nil
+          pushType: .token
         )
-        return activity.id
+        self.observePushToken(for: activity)
+        var result = ["activityId": activity.id]
+        if let pushToken = activity.pushToken {
+          result["pushToken"] = pushToken.hexString
+        }
+        return result
       } catch {
         return nil
       }
@@ -72,5 +91,11 @@ public class HitherLiveActivityModule: Module {
         await activity.end(nil, dismissalPolicy: .immediate)
       }
     }
+  }
+}
+
+private extension Data {
+  var hexString: String {
+    map { String(format: "%02x", $0) }.joined()
   }
 }

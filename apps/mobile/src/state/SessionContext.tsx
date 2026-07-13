@@ -26,6 +26,7 @@ import { avatarForUser } from '../constants/avatars';
 import { syncOnboardingIfNeeded } from '../onboarding/sync';
 import { flushQueuedEvents } from '../utils/activityLog';
 import { useAuthFlow } from './useAuthFlow';
+import { stopBackgroundJourney } from './backgroundJourney';
 
 // Dismisses a leftover auth browser tab if one is still open on launch.
 WebBrowser.maybeCompleteAuthSession();
@@ -78,6 +79,9 @@ interface SessionContextValue {
    */
   signInWithGoogle: (nickname?: string) => Promise<User | null>;
   signInWithApple: () => Promise<User | null>;
+  /** Link Google/Apple to the current anonymous account without changing its UID. */
+  linkWithGoogle: () => Promise<User | null>;
+  linkWithApple: () => Promise<User | null>;
   /** Sign in with an existing email + password account. */
   signInWithEmail: (input: { email: string; password: string }) => Promise<User>;
   /**
@@ -222,6 +226,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     signIn,
     signInWithGoogle,
     signInWithApple,
+    linkWithGoogle,
+    linkWithApple,
     signInWithEmail,
     signUpWithEmail,
     signOut,
@@ -230,11 +236,22 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     updateProfile,
   } = useAuthFlow({
     user,
+    isAnonymous,
     setUser,
     setIsAnonymous,
     setIsPro,
     setMembershipState,
   });
+
+  const signOutWithJourneyCleanup = useCallback(async () => {
+    await stopBackgroundJourney().catch(() => undefined);
+    await signOut();
+  }, [signOut]);
+
+  const leaveGroupWithJourneyCleanup = useCallback(() => {
+    void stopBackgroundJourney();
+    setMembershipState(null);
+  }, []);
 
   const customQuickCommand = user?.preferences?.quickCommand ?? null;
   const setCustomQuickCommand = useCallback(
@@ -261,16 +278,18 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       signIn,
       signInWithGoogle,
       signInWithApple,
+      linkWithGoogle,
+      linkWithApple,
       signInWithEmail,
       signUpWithEmail,
-      signOut,
+      signOut: signOutWithJourneyCleanup,
       upgradeToEmailAccount,
       updateNickname,
       updateProfile,
       customQuickCommand,
       setCustomQuickCommand,
       setMembership: (next) => setMembershipState(next),
-      leaveGroup: () => setMembershipState(null),
+      leaveGroup: leaveGroupWithJourneyCleanup,
       setProStatusLocal: (pro) => setIsPro(pro),
       refreshProfile: async () => {
         const { data } = await supabase.auth.getSession();
@@ -313,14 +332,17 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       signIn,
       signInWithGoogle,
       signInWithApple,
+      linkWithGoogle,
+      linkWithApple,
       signInWithEmail,
       signUpWithEmail,
-      signOut,
+      signOutWithJourneyCleanup,
       upgradeToEmailAccount,
       updateNickname,
       updateProfile,
       customQuickCommand,
       setCustomQuickCommand,
+      leaveGroupWithJourneyCleanup,
     ],
   );
 

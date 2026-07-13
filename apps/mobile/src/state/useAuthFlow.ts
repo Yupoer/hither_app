@@ -15,6 +15,7 @@ import { avatarForUser } from '../constants/avatars';
 
 export interface UseAuthFlowParams {
   user: User | null;
+  isAnonymous?: boolean;
   setUser: React.Dispatch<React.SetStateAction<User | null>>;
   setIsAnonymous: React.Dispatch<React.SetStateAction<boolean>>;
   setIsPro: React.Dispatch<React.SetStateAction<boolean>>;
@@ -23,6 +24,7 @@ export interface UseAuthFlowParams {
 
 export function useAuthFlow({
   user,
+  isAnonymous = false,
   setUser,
   setIsAnonymous,
   setIsPro,
@@ -52,7 +54,10 @@ export function useAuthFlow({
 
   const signInWithGoogle = useCallback(
     async (nickname?: string): Promise<User | null> => {
-      const redirectTo = makeRedirectUri();
+      const redirectTo = makeRedirectUri({
+        scheme: 'hither',
+        path: 'auth/callback',
+      });
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: { redirectTo, skipBrowserRedirect: true },
@@ -200,6 +205,100 @@ export function useAuthFlow({
     }
   }, [setIsAnonymous, setUser]);
 
+  const linkWithGoogle = useCallback(async (): Promise<User | null> => {
+    if (!user) throw new Error('No active account to link');
+
+    const redirectTo = makeRedirectUri({
+      scheme: 'hither',
+      path: 'auth/callback',
+    });
+    const { data, error } = await supabase.auth.linkIdentity({
+      provider: 'google',
+      options: { redirectTo, skipBrowserRedirect: true },
+    });
+    if (error || !data?.url) {
+      throw new Error(error?.message ?? 'Google linking failed');
+    }
+
+    const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+    if (result.type !== 'success') return null;
+
+    const { params, errorCode } = QueryParams.getQueryParams(result.url);
+    if (errorCode) throw new Error(errorCode);
+    let authUser;
+    if (params.code) {
+      const exchanged = await supabase.auth.exchangeCodeForSession(params.code);
+      if (exchanged.error || !exchanged.data.user) {
+        throw new Error(exchanged.error?.message ?? 'Google linking failed');
+      }
+      authUser = exchanged.data.user;
+    } else if (params.access_token) {
+      const session = await supabase.auth.setSession({
+        access_token: params.access_token,
+        refresh_token: params.refresh_token,
+      });
+      if (session.error || !session.data.user) {
+        throw new Error(session.error?.message ?? 'Google linking failed');
+      }
+      authUser = session.data.user;
+    } else {
+      const current = await supabase.auth.getUser();
+      if (current.error || !current.data.user) {
+        throw new Error(current.error?.message ?? 'Google linking failed');
+      }
+      authUser = current.data.user;
+    }
+
+    const nextUser = {
+      ...user,
+      email: authUser.email ?? user.email,
+      provider: 'google',
+    };
+    setUser(nextUser);
+    setIsAnonymous(false);
+    return nextUser;
+  }, [setIsAnonymous, setUser, user]);
+
+  const linkWithApple = useCallback(async (): Promise<User | null> => {
+    if (!user) throw new Error('No active account to link');
+    try {
+      const rawNonce = Crypto.randomUUID();
+      const hashedNonce = await Crypto.digestStringAsync(
+        Crypto.CryptoDigestAlgorithm.SHA256,
+        rawNonce,
+      );
+      const credential = await AppleAuthentication.signInAsync({
+        nonce: hashedNonce,
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+      if (!credential.identityToken) throw new Error('Apple linking failed');
+
+      const { data, error } = await supabase.auth.linkIdentity({
+        provider: 'apple',
+        token: credential.identityToken,
+        nonce: rawNonce,
+      });
+      if (error || !data.user) {
+        throw new Error(error?.message ?? 'Apple linking failed');
+      }
+
+      const nextUser = {
+        ...user,
+        email: data.user.email ?? credential.email ?? user.email,
+        provider: 'apple',
+      };
+      setUser(nextUser);
+      setIsAnonymous(false);
+      return nextUser;
+    } catch (error) {
+      if ((error as { code?: string }).code === 'ERR_REQUEST_CANCELED') return null;
+      throw error;
+    }
+  }, [setIsAnonymous, setUser, user]);
+
   const signInWithEmail = useCallback(
     async ({ email, password }: any): Promise<User> => {
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -268,12 +367,18 @@ export function useAuthFlow({
   );
 
   const signOut = useCallback(async () => {
-    await supabase.auth.signOut();
+    if (isAnonymous) {
+      const { error } = await supabase.rpc('delete_anonymous_account');
+      if (error) throw new Error(error.message);
+      await supabase.auth.signOut({ scope: 'local' });
+    } else {
+      await supabase.auth.signOut();
+    }
     setUser(null);
     setIsAnonymous(false);
     setIsPro(false);
     setMembershipState(null);
-  }, [setUser, setIsAnonymous, setIsPro, setMembershipState]);
+  }, [isAnonymous, setUser, setIsAnonymous, setIsPro, setMembershipState]);
 
   const upgradeToEmailAccount = useCallback(
     async (email: string, password: string) => {
@@ -328,6 +433,8 @@ export function useAuthFlow({
     signIn,
     signInWithGoogle,
     signInWithApple,
+    linkWithGoogle,
+    linkWithApple,
     signInWithEmail,
     signUpWithEmail,
     signOut,

@@ -16,8 +16,8 @@ import WidgetKit
 private enum Brand {
   // Fallback accent (lantern amber) — used only when the app doesn't pass a
   // theme accent. The live value comes from `ContentState.accentColor`.
-  static let accent = Color(red: 0xF5 / 255, green: 0xB1 / 255, blue: 0x42 / 255)
-  static let card = Color(red: 0x0E / 255, green: 0x13 / 255, blue: 0x20 / 255)
+  static let accent = Color(red: 0x58 / 255, green: 0xD6 / 255, blue: 0x8D / 255)
+  static let card = Color.black
   static let textPrimary = Color(red: 0xF5 / 255, green: 0xF7 / 255, blue: 0xFB / 255)
   static let textSecondary = Color(white: 1, opacity: 0.6)
   static let track = Color(white: 1, opacity: 0.14)
@@ -100,7 +100,7 @@ struct HitherLiveActivityWidget: Widget {
         DynamicIslandExpandedRegion(.trailing) {
           VStack(alignment: .trailing, spacing: 0) {
             if let eta = context.state.etaText {
-              Text(eta.value)
+              Text("\(eta.value) \(eta.unit)")
                 .font(.system(size: 22, weight: .bold))
                 .foregroundStyle(Brand.textPrimary)
               if let d = context.state.formattedDistance {
@@ -128,7 +128,7 @@ struct HitherLiveActivityWidget: Widget {
             HStack {
               AvatarStack(
                 emojis: context.state.avatarEmojis,
-                gathered: context.state.gatheredCount ?? 0
+                arrived: context.state.avatarArrived
               )
               Spacer()
               if let s = context.state.arrivalStatus {
@@ -164,72 +164,61 @@ private struct LockScreenView: View {
 
   var body: some View {
     let accent = context.state.accentColor
-    return VStack(alignment: .leading, spacing: 14) {
-      // Header: crook + app name + transit glyph + freshness.
-      HStack(spacing: 10) {
+    return VStack(alignment: .leading, spacing: 12) {
+      HStack(alignment: .top, spacing: 12) {
         ZStack {
-          RoundedRectangle(cornerRadius: 6)
-            .fill(accent.opacity(0.24))
-            .frame(width: 22, height: 22)
-          Crook(size: 13, color: accent)
+          RoundedRectangle(cornerRadius: 12)
+            .fill(accent.opacity(0.22))
+            .frame(width: 44, height: 44)
+          Crook(size: 25, color: accent)
         }
-        Text("Hither").font(.system(size: 13, weight: .semibold)).foregroundStyle(Brand.textSecondary)
-        Spacer()
-        Image(systemName: context.state.modeSymbol)
-          .font(.system(size: 12))
-          .foregroundStyle(Brand.textSecondary)
-        Text("now").font(.system(size: 13)).foregroundStyle(Brand.textSecondary.opacity(0.75))
-      }
-
-      // Point + big ETA.
-      HStack(alignment: .bottom) {
         VStack(alignment: .leading, spacing: 3) {
-          Text("下一個集合點 · Next gather")
-            .font(.system(size: 13))
-            .foregroundStyle(Brand.textSecondary)
+          HStack(spacing: 5) {
+            Image(systemName: context.state.modeSymbol)
+              .font(.system(size: 10, weight: .bold))
+            Text("前往集合點 · GATHERING AT")
+          }
+          .font(.system(size: 10.5, weight: .bold))
+          .tracking(0.45)
+          .foregroundStyle(accent)
           Text(context.state.gatheringTitle ?? context.attributes.groupName)
-            .font(.system(size: 22, weight: .bold))
+            .font(.system(size: 17, weight: .semibold))
             .foregroundStyle(Brand.textPrimary)
             .lineLimit(1)
-          if let line = distanceLine {
-            Text(line).font(.system(size: 14)).foregroundStyle(Brand.textSecondary)
-          }
         }
-        Spacer(minLength: 8)
+        Spacer(minLength: 6)
         if let eta = context.state.etaText {
-          VStack(spacing: 0) {
-            Text(eta.value)
-              .font(.system(size: 34, weight: .heavy))
-              .foregroundStyle(accent)
-            Text(eta.unit).font(.system(size: 12)).foregroundStyle(Brand.textSecondary)
+          VStack(alignment: .trailing, spacing: 1) {
+            Text("\(eta.value) \(eta.unit)")
+              .font(.system(size: 22, weight: .bold))
+              .foregroundStyle(Brand.textPrimary)
+            if let distance = context.state.formattedDistance {
+              Text(distance)
+                .font(.system(size: 12))
+                .foregroundStyle(Brand.textSecondary)
+            }
           }
         }
       }
 
       ProgressBar(value: context.state.clampedProgress, accent: accent)
 
-      HStack(spacing: 8) {
+      HStack {
         AvatarStack(
           emojis: context.state.avatarEmojis,
-          gathered: context.state.gatheredCount ?? 0
+          arrived: context.state.avatarArrived
         )
-        if let s = context.state.flockStatus {
-          Text(s).font(.system(size: 12.5)).foregroundStyle(Brand.textSecondary)
+        Spacer()
+        if let status = context.state.arrivalStatus {
+          Text(status)
+            .font(.system(size: 12.5, weight: .medium))
+            .foregroundStyle(Brand.textSecondary)
         }
       }
     }
     .padding(16)
   }
 
-  // "320 m · 約 4 min" — matches the gather card's distance/ETA read-out.
-  private var distanceLine: String? {
-    switch (context.state.formattedDistance, context.state.shortEta) {
-    case let (d?, e?): return "\(d) · 約 \(e)"
-    case let (d?, nil): return d
-    case let (nil, e?): return "約 \(e)"
-    default: return nil
-    }
-  }
 }
 
 // MARK: - Pieces
@@ -250,10 +239,11 @@ private struct ProgressBar: View {
 
 private struct AvatarStack: View {
   let emojis: [String]
-  let gathered: Int
+  let arrived: [Bool]
   var body: some View {
     HStack(spacing: -7) {
       ForEach(Array(emojis.prefix(4).enumerated()), id: \.offset) { i, emoji in
+        let isArrived = arrived.indices.contains(i) && arrived[i]
         ZStack {
           Circle().fill(Brand.avatarColors[i % Brand.avatarColors.count])
           if !emoji.isEmpty {
@@ -262,7 +252,8 @@ private struct AvatarStack: View {
         }
         .frame(width: 24, height: 24)
         .overlay(Circle().stroke(Brand.card, lineWidth: 1.5))
-        .opacity(i < gathered ? 1 : 0.4)
+        .opacity(isArrived ? 1 : 0.35)
+        .saturation(isArrived ? 1 : 0.25)
       }
     }
   }
@@ -289,6 +280,14 @@ private extension HitherGroupAttributes.ContentState {
     if let e = memberEmojis, !e.isEmpty { return Array(e.prefix(4)) }
     let n = min(memberCount ?? 0, 4)
     return Array(repeating: "", count: n)
+  }
+
+  var avatarArrived: [Bool] {
+    let count = avatarEmojis.count
+    guard let arrived = memberArrived else {
+      return Array(repeating: false, count: count)
+    }
+    return (0..<count).map { arrived.indices.contains($0) && arrived[$0] }
   }
 
   /// Compact ETA for the narrow Dynamic Island regions ("4 min", "now", "2 hr").

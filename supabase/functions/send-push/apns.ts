@@ -4,7 +4,7 @@
 // The provider token is a short-lived ES256 JWT signed with the .p8 key; Apple
 // allows reusing it for up to ~1h, so we cache it per cold start.
 
-interface ApnsConfig {
+export interface ApnsConfig {
   /** Full PEM contents of the AuthKey_XXX.p8 (PKCS#8). */
   key: string;
   keyId: string;
@@ -72,40 +72,128 @@ export interface ApnsResult {
   dead: boolean;
 }
 
-/** Send one alert notification to a single device token. */
-export async function sendApns(
+export interface AlertPayload {
+  title: string;
+  body: string;
+  data?: Record<string, unknown>;
+}
+
+export interface LiveActivityContentState {
+  gatheringTitle: string;
+  distanceMeters: number;
+  etaSeconds: number;
+  progress: number;
+  gatheredCount: number;
+  memberCount: number;
+  accentHex: string;
+  travelMode: string;
+  memberEmojis: string[];
+  memberArrived: boolean[];
+}
+
+export interface LiveActivityPayload {
+  event: "update" | "end";
+  timestamp: number;
+  contentState: LiveActivityContentState;
+}
+
+function apnsHost(cfg: ApnsConfig): string {
+  return cfg.env === "production"
+    ? "api.push.apple.com"
+    : "api.sandbox.push.apple.com";
+}
+
+export function buildAlertRequest(
   cfg: ApnsConfig,
   jwt: string,
   deviceToken: string,
-  payload: { title: string; body: string; data?: Record<string, unknown> },
-): Promise<ApnsResult> {
-  const host = cfg.env === "production"
-    ? "api.push.apple.com"
-    : "api.sandbox.push.apple.com";
-  const res = await fetch(`https://${host}/3/device/${deviceToken}`, {
-    method: "POST",
-    headers: {
-      authorization: `bearer ${jwt}`,
-      "apns-topic": cfg.bundleId,
-      "apns-push-type": "alert",
-      "apns-priority": "10",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      aps: {
-        alert: { title: payload.title, body: payload.body },
-        sound: "default",
+  payload: AlertPayload,
+): { url: string; init: RequestInit } {
+  return {
+    url: `https://${apnsHost(cfg)}/3/device/${deviceToken}`,
+    init: {
+      method: "POST",
+      headers: {
+        authorization: `bearer ${jwt}`,
+        "apns-topic": cfg.bundleId,
+        "apns-push-type": "alert",
+        "apns-priority": "10",
+        "content-type": "application/json",
       },
-      ...(payload.data ?? {}),
-    }),
-  });
+      body: JSON.stringify({
+        aps: {
+          alert: { title: payload.title, body: payload.body },
+          sound: "default",
+        },
+        ...(payload.data ?? {}),
+      }),
+    },
+  };
+}
+
+export function buildLiveActivityRequest(
+  cfg: ApnsConfig,
+  jwt: string,
+  activityToken: string,
+  payload: LiveActivityPayload,
+): { url: string; init: RequestInit } {
+  return {
+    url: `https://${apnsHost(cfg)}/3/device/${activityToken}`,
+    init: {
+      method: "POST",
+      headers: {
+        authorization: `bearer ${jwt}`,
+        "apns-topic": `${cfg.bundleId}.push-type.liveactivity`,
+        "apns-push-type": "liveactivity",
+        "apns-priority": "5",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        aps: {
+          timestamp: payload.timestamp,
+          event: payload.event,
+          "content-state": payload.contentState,
+        },
+      }),
+    },
+  };
+}
+
+async function resultFromResponse(
+  token: string,
+  res: Response,
+): Promise<ApnsResult> {
   let reason = "";
   if (res.status !== 200) {
     reason = (await res.text().catch(() => "")) || "";
   }
   const dead = res.status === 410 || reason.includes("BadDeviceToken") ||
     reason.includes("Unregistered");
-  return { token: deviceToken, status: res.status, dead };
+  return { token, status: res.status, dead };
+}
+
+/** Send one alert notification to a single device token. */
+export async function sendApns(
+  cfg: ApnsConfig,
+  jwt: string,
+  deviceToken: string,
+  payload: AlertPayload,
+): Promise<ApnsResult> {
+  const request = buildAlertRequest(cfg, jwt, deviceToken, payload);
+  return resultFromResponse(deviceToken, await fetch(request.url, request.init));
+}
+
+export async function sendLiveActivityApns(
+  cfg: ApnsConfig,
+  jwt: string,
+  activityToken: string,
+  payload: LiveActivityPayload,
+): Promise<ApnsResult> {
+  const request = buildLiveActivityRequest(cfg, jwt, activityToken, payload);
+  return resultFromResponse(
+    activityToken,
+    await fetch(request.url, request.init),
+  );
 }
 
 export function readApnsConfig(): ApnsConfig {

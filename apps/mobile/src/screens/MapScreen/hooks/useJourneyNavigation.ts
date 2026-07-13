@@ -1,18 +1,13 @@
-import { useState, useMemo, useEffect, useRef, useCallback, RefObject } from 'react';
+import { useState, useMemo, useEffect, useCallback, RefObject } from 'react';
 import { Alert, Linking } from 'react-native';
-import { notifications } from '../../../native';
 import {
-  setJourneyStatus,
+  setJourneyTarget,
   reorderDestinations,
-  recordVisitedWaypoint,
-  deleteDestination,
 } from '../../../api/client';
 import { distanceMeters } from '../../../utils/geo';
-import type { Coordinates, Destination, GroupState } from '../../../types';
+import type { Coordinates, Destination, GroupState, JourneyStatus } from '../../../types';
 import type { ScrollView } from 'react-native';
 import type { GroupMapHandle } from '../../../components/GroupMap';
-
-const AUTO_ADVANCE_RADIUS_M = 30;
 
 interface UseJourneyNavigationParams {
   state: GroupState | null;
@@ -41,9 +36,15 @@ export function useJourneyNavigation({
   carouselRef,
   setSelectedIndex,
 }: UseJourneyNavigationParams) {
-  const journeyStatus = state?.group.journeyStatus ?? 'paused';
+  const serverJourneyStatus = state?.group.journeyStatus;
+  const [pendingJourneyStatus, setPendingJourneyStatus] = useState<JourneyStatus | null>(null);
+  const journeyStatus = pendingJourneyStatus ?? serverJourneyStatus ?? 'paused';
   const journeyGoing = journeyStatus === 'going';
-  const [navTargetId, setNavTargetId] = useState<string | null>(null);
+  const serverTargetId = state?.group.activeDestinationId ?? null;
+  const [pendingTargetId, setPendingTargetId] = useState<string | null | undefined>(
+    undefined,
+  );
+  const navTargetId = pendingTargetId !== undefined ? pendingTargetId : serverTargetId;
   
   const navTarget = useMemo<Destination | undefined>(
     () => destinations.find((d) => d.id === navTargetId),
@@ -51,12 +52,15 @@ export function useJourneyNavigation({
   );
 
   useEffect(() => {
-    if (journeyGoing && !navTargetId && selectedDestination) {
-      setNavTargetId(selectedDestination.id);
-    } else if (!journeyGoing && navTargetId) {
-      setNavTargetId(null);
+    if (
+      pendingJourneyStatus &&
+      serverJourneyStatus === pendingJourneyStatus &&
+      serverTargetId === pendingTargetId
+    ) {
+      setPendingJourneyStatus(null);
+      setPendingTargetId(undefined);
     }
-  }, [journeyGoing, navTargetId, selectedDestination]);
+  }, [pendingJourneyStatus, pendingTargetId, serverJourneyStatus, serverTargetId]);
 
   const journeyActive = journeyGoing && !!navTarget;
   const activePoint = useMemo(() => navTarget ?? selectedDestination, [navTarget, selectedDestination]);
@@ -77,7 +81,8 @@ export function useJourneyNavigation({
     async (dest: Destination, index: number) => {
       if (!groupId || journeyBusy) return;
       setJourneyBusy(true);
-      setNavTargetId(dest.id);
+      setPendingJourneyStatus('going');
+      setPendingTargetId(dest.id);
       mapRef.current?.centerOn(dest.coordinates);
       try {
         if (index > 0) {
@@ -92,10 +97,11 @@ export function useJourneyNavigation({
         }
         setSelectedIndex(0);
         carouselRef.current?.scrollTo({ x: 0, animated: true });
-        await setJourneyStatus(groupId, 'going');
-        refresh();
+        await setJourneyTarget(groupId, dest.id);
+        await refresh();
       } catch {
-        setNavTargetId(null);
+        setPendingJourneyStatus(null);
+        setPendingTargetId(undefined);
         Alert.alert(t('map.setFailedTitle'), t('map.journeyFailed'));
       } finally {
         setJourneyBusy(false);
@@ -105,57 +111,21 @@ export function useJourneyNavigation({
   );
 
   const stopNavigation = useCallback(async () => {
-    if (!groupId) return;
-    setNavTargetId(null);
+    if (!groupId || journeyBusy) return;
+    setJourneyBusy(true);
+    setPendingJourneyStatus('paused');
+    setPendingTargetId(null);
     try {
-      await setJourneyStatus(groupId, 'paused');
-      refresh();
+      await setJourneyTarget(groupId, null);
+      await refresh();
     } catch {
+      setPendingJourneyStatus(null);
+      setPendingTargetId(undefined);
       Alert.alert(t('map.setFailedTitle'), t('map.journeyFailed'));
+    } finally {
+      setJourneyBusy(false);
     }
-  }, [groupId, refresh, t]);
-
-  const arrivalFiredRef = useRef(false);
-  useEffect(() => {
-    if (!journeyActive) {
-      arrivalFiredRef.current = false;
-      return;
-    }
-    if (
-      isLeader &&
-      !arrivalFiredRef.current &&
-      numericDistance != null &&
-      numericDistance <= AUTO_ADVANCE_RADIUS_M &&
-      navTarget &&
-      groupId
-    ) {
-      arrivalFiredRef.current = true;
-      const arrivedId = navTarget.id;
-      const arrivedTitle = navTarget.title;
-      const nextDest = destinations.find((d) => d.id !== arrivedId);
-      void recordVisitedWaypoint(groupId, arrivedTitle, navTarget.coordinates);
-      void notifications.scheduleLocalNotification({
-        title: t('map.arriveTitle'),
-        body: nextDest
-          ? t('map.autoAdvanceBody', { title: arrivedTitle, next: nextDest.title })
-          : t('map.journeyCompleteBody', { title: arrivedTitle }),
-        data: { kind: 'arrival', destinationId: arrivedId },
-      });
-      void deleteDestination(groupId, arrivedId)
-        .then(() => (nextDest ? startNavigation(nextDest, 0) : stopNavigation()))
-        .catch(() => Alert.alert(t('map.setFailedTitle'), t('map.journeyFailed')));
-    }
-  }, [
-    journeyActive,
-    isLeader,
-    numericDistance,
-    navTarget,
-    destinations,
-    groupId,
-    startNavigation,
-    stopNavigation,
-    t,
-  ]);
+  }, [groupId, journeyBusy, refresh, t]);
 
   return {
     journeyStatus,
@@ -163,7 +133,6 @@ export function useJourneyNavigation({
     journeyActive,
     navTarget,
     navTargetId,
-    setNavTargetId,
     activePoint,
     numericDistance,
     journeyBusy,

@@ -18,8 +18,11 @@ import {
   getNotificationPreferences,
   setNotificationPreferences,
   setJourneyStatus,
+  setJourneyTarget,
   setDestinationMeetTime,
   setStragglerConfig,
+  upsertLiveActivitySession,
+  deleteLiveActivitySession,
 } from '../api/client';
 import { supabase } from '../api/supabase';
 
@@ -40,7 +43,7 @@ describe('pure mappers (snake_case row -> camelCase type)', () => {
     }
   });
 
-  it('mapGroup converts invite_code/created_by/created_at', () => {
+  it('mapGroup converts persisted journey target fields', () => {
     expect(
       mapGroup({
         id: 'g1',
@@ -49,6 +52,8 @@ describe('pure mappers (snake_case row -> camelCase type)', () => {
         created_by: 'u1',
         created_at: '2026-01-01T00:00:00Z',
         journey_status: 'going',
+        active_destination_id: 'destination-1',
+        journey_started_at: '2026-07-13T10:00:00Z',
       }),
     ).toEqual({
       id: 'g1',
@@ -57,8 +62,12 @@ describe('pure mappers (snake_case row -> camelCase type)', () => {
       createdBy: 'u1',
       createdAt: '2026-01-01T00:00:00Z',
       journeyStatus: 'going',
+      activeDestinationId: 'destination-1',
+      journeyStartedAt: '2026-07-13T10:00:00Z',
       stragglerAlerts: true,
       stragglerThresholdM: 500,
+      tripDays: undefined,
+      departureDate: undefined,
     });
   });
 
@@ -94,7 +103,7 @@ describe('pure mappers (snake_case row -> camelCase type)', () => {
   it('mapMember combines membership + profile nickname + location', () => {
     expect(
       mapMember(
-        { user_id: 'u1', role: 'leader' },
+        { user_id: 'u1', role: 'leader', status: 'arrived' },
         { id: 'u1', nickname: '隊長小燈籠' },
         { user_id: 'u1', latitude: 25, longitude: 121, updated_at: 't0' },
       ),
@@ -102,7 +111,9 @@ describe('pure mappers (snake_case row -> camelCase type)', () => {
       userId: 'u1',
       name: '隊長小燈籠',
       role: 'leader',
+      status: 'arrived',
       avatar: undefined,
+      avatarColor: undefined,
       solo: false,
       subgroupId: undefined,
       coordinates: { latitude: 25, longitude: 121 },
@@ -375,6 +386,28 @@ describe('notifications, commands & journey', () => {
     expect(update).toHaveBeenCalledWith({ journey_status: 'going' });
   });
 
+  it('setJourneyTarget atomically starts the persisted destination through RPC', async () => {
+    mockedRpc.mockResolvedValue({ data: null, error: null });
+
+    await setJourneyTarget('g1', 'destination-1');
+
+    expect(mockedRpc).toHaveBeenCalledWith('set_journey_target', {
+      p_group_id: 'g1',
+      p_destination_id: 'destination-1',
+    });
+  });
+
+  it('setJourneyTarget clears the persisted destination when paused', async () => {
+    mockedRpc.mockResolvedValue({ data: null, error: null });
+
+    await setJourneyTarget('g1', null);
+
+    expect(mockedRpc).toHaveBeenCalledWith('set_journey_target', {
+      p_group_id: 'g1',
+      p_destination_id: null,
+    });
+  });
+
   it('setStragglerConfig updates groups.straggler_alerts and threshold', async () => {
     const update = jest.fn(() => ({ eq: () => Promise.resolve({ error: null }) }));
     mockedFrom.mockImplementation(() => ({ update }));
@@ -412,5 +445,53 @@ describe('notifications, commands & journey', () => {
     mockedFrom.mockImplementation(() => ({ update }));
 
     await expect(setDestinationMeetTime('d1', null)).rejects.toThrow('row-level security');
+  });
+});
+
+describe('live activity sessions', () => {
+  beforeEach(() => {
+    mockedAuth.getSession.mockResolvedValue({
+      data: { session: { user: { id: 'uid' } } },
+      error: null,
+    });
+  });
+
+  it('upserts the current user session by user and group', async () => {
+    const upsert = jest.fn().mockResolvedValue({ error: null });
+    mockedFrom.mockImplementation(() => ({ upsert }));
+
+    await upsertLiveActivitySession({
+      groupId: 'g1',
+      destinationId: 'd1',
+      activityId: 'activity-1',
+      pushToken: 'token-1',
+      initialDistanceM: 1000,
+      currentDistanceM: 800,
+      etaSeconds: 600,
+      travelMode: 'walk',
+    });
+
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: 'uid',
+        group_id: 'g1',
+        destination_id: 'd1',
+        activity_id: 'activity-1',
+        push_token: 'token-1',
+      }),
+      { onConflict: 'user_id,group_id' },
+    );
+  });
+
+  it('deletes only the current activity session', async () => {
+    const eqActivity = jest.fn().mockResolvedValue({ error: null });
+    const eqUser = jest.fn(() => ({ eq: eqActivity }));
+    const remove = jest.fn(() => ({ eq: eqUser }));
+    mockedFrom.mockImplementation(() => ({ delete: remove }));
+
+    await deleteLiveActivitySession('activity-1');
+
+    expect(eqUser).toHaveBeenCalledWith('user_id', 'uid');
+    expect(eqActivity).toHaveBeenCalledWith('activity_id', 'activity-1');
   });
 });
