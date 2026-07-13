@@ -101,7 +101,7 @@ export function ProfileOverlay({
           />
         </View>
 
-        <Text style={styles.sectionLabel}>{t('profile.avatar')}</Text>
+        <Text style={styles.profileSectionLabel}>{t('profile.avatar')}</Text>
         <View style={styles.emojiGrid}>
           {AVATAR_EMOJI.map((e) => (
             <Pressable
@@ -122,7 +122,7 @@ export function ProfileOverlay({
           ))}
         </View>
 
-        <Text style={styles.sectionLabel}>{t('profile.avatarColor')}</Text>
+        <Text style={styles.profileColorLabel}>{t('profile.avatarColor')}</Text>
         <View style={styles.colorRow}>
           {AVATAR_COLORS.map((c) => (
             <Pressable
