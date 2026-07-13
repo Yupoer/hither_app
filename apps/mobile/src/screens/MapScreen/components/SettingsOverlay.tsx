@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { ScrollView, Text, View, Switch, Pressable, ActivityIndicator, TextInput, Alert, TouchableOpacity } from 'react-native';
+import { ScrollView, Text, View, Switch, ActivityIndicator, TextInput, Alert, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import OverlaySheet from '../../../components/OverlaySheet';
 import { Segmented } from './Segmented';
@@ -8,7 +8,7 @@ import { useSession } from '../../../state/SessionContext';
 import { usePreferences, useTheme, type Language } from '../../../state/PreferencesContext';
 import { useTranslation } from '../../../i18n';
 import { THEME_ORDER, type ThemeName, themes } from '../../../theme';
-import { glass, accentMix } from '../../../glass';
+import { glass } from '../../../glass';
 
 interface SettingsOverlayProps {
   visible: boolean;
@@ -44,10 +44,10 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
   const {
     language,
     themeName,
-    powerSaver,
+    highAccuracy,
     setLanguage,
     setThemeName,
-    setPowerSaver,
+    setHighAccuracy,
   } = usePreferences();
   const { colors } = useTheme();
   const accent = colors.accent;
@@ -135,12 +135,12 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
           <Text style={styles.sectionLabel}>{t('settings.locationSection')}</Text>
           <View style={styles.settingSwitchRow}>
             <View style={styles.settingSwitchText}>
-              <Text style={styles.settingSwitchLabel}>{t('settings.powerSaver')}</Text>
-              <Text style={styles.settingSwitchHint}>{t('settings.powerSaverHint')}</Text>
+              <Text style={styles.settingSwitchLabel}>{t('settings.highAccuracy')}</Text>
+              <Text style={styles.settingSwitchHint}>{t('settings.highAccuracyHint')}</Text>
             </View>
             <Switch
-              value={powerSaver}
-              onValueChange={setPowerSaver}
+              value={highAccuracy}
+              onValueChange={setHighAccuracy}
               trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
               thumbColor="#fff"
             />

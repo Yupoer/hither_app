@@ -6,7 +6,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, type Region } from 'react-native-maps';
 import type { Coordinates, Destination, MemberLocation } from '../types';
@@ -172,14 +172,13 @@ const MemberMarker = React.memo(({ member, accent, styles }: any) => {
 });
 
 const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
-  { members, gathering, destinations, pendingPlace, currentUserId, bottomOverlap },
+  { members, gathering, destinations, pendingPlace, bottomOverlap },
   ref,
 ) {
   const mapRef = useRef<MapView | null>(null);
   const centeredRef = useRef(false);
   const { colors, themeName } = useTheme();
   const { dayColors } = usePreferences();
-  const { height } = useWindowDimensions();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   // Shift the camera center up by moving the target coordinate down (subtracting from latitude).
@@ -235,7 +234,6 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       initialRegion={gathering ? regionFor(gathering.coordinates, latOffset) : undefined}
       userInterfaceStyle={mapInterfaceStyle}
       mapPadding={{ top: 42, left: 32, right: 32, bottom: 42 }}
-      showsUserLocation
       showsCompass
     >
       {destinations?.map((dest) => {
@@ -260,7 +258,6 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
 
       {members.map((m) => {
         if (!m.coordinates) return null;
-        if (m.userId === currentUserId) return null;
         return (
           <MemberMarker
             key={m.userId}

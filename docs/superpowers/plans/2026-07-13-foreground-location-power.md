@@ -14,6 +14,7 @@
 - Default profile is Balanced / 50 m / 30 s; high accuracy is High / 10 m / 5 s.
 - Location watching runs only while AppState is active.
 - Manual refresh uploads this device, then reloads cached group locations; it does not wake peer devices.
+- Realtime remains primary; fallback group polling runs every 5 minutes instead of every 15 seconds.
 - Freshness becomes a fixed stale warning at 24 hours.
 
 ---

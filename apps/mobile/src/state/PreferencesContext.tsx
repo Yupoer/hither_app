@@ -30,7 +30,7 @@ export const DEFAULT_LANGUAGE: Language = 'zh';
 
 const LANGUAGE_KEY = 'pref.language';
 const THEME_KEY = 'pref.theme';
-const POWER_SAVER_KEY = 'pref.powerSaver';
+const HIGH_ACCURACY_KEY = 'pref.highAccuracy';
 const MEET_RED_KEY = 'pref.meetRedMin';
 const DAY_COLORS_KEY = 'pref.dayColors';
 
@@ -41,8 +41,8 @@ export const DEFAULT_MEET_RED_MIN = 5;
 interface PreferencesValue {
   language: Language;
   themeName: ThemeName;
-  /** Battery-saver location tracking: coarser fixes, slower cadence. */
-  powerSaver: boolean;
+  /** Opt-in location tracking with finer fixes and a faster cadence. */
+  highAccuracy: boolean;
   /** Countdown turns red when this many minutes (or fewer) remain. */
   meetRedMin: number;
   /** Custom colors for each day */
@@ -51,7 +51,7 @@ interface PreferencesValue {
   ready: boolean;
   setLanguage: (language: Language) => void;
   setThemeName: (theme: ThemeName) => void;
-  setPowerSaver: (on: boolean) => void;
+  setHighAccuracy: (on: boolean) => void;
   setMeetRedMin: (min: number) => void;
   setDayColor: (day: number, color: string) => void;
 }
@@ -69,7 +69,7 @@ function isThemeName(value: string | null): value is ThemeName {
 export function PreferencesProvider({ children }: { children: React.ReactNode }) {
   const [language, setLanguageState] = useState<Language>(DEFAULT_LANGUAGE);
   const [themeName, setThemeNameState] = useState<ThemeName>(DEFAULT_THEME);
-  const [powerSaver, setPowerSaverState] = useState(false);
+  const [highAccuracy, setHighAccuracyState] = useState(false);
   const [meetRedMin, setMeetRedMinState] = useState<number>(DEFAULT_MEET_RED_MIN);
   const [dayColors, setDayColorsState] = useState<Record<number, string>>({});
   const [ready, setReady] = useState(false);
@@ -79,18 +79,18 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     let active = true;
     (async () => {
       try {
-        const [storedLang, storedTheme, storedSaver, storedMeetRed, storedDayColors] =
+        const [storedLang, storedTheme, storedHighAccuracy, storedMeetRed, storedDayColors] =
           await AsyncStorage.multiGet([
             LANGUAGE_KEY,
             THEME_KEY,
-            POWER_SAVER_KEY,
+            HIGH_ACCURACY_KEY,
             MEET_RED_KEY,
             DAY_COLORS_KEY,
           ]);
         if (!active) return;
         if (isLanguage(storedLang[1])) setLanguageState(storedLang[1]);
         if (isThemeName(storedTheme[1])) setThemeNameState(storedTheme[1]);
-        if (storedSaver[1] === 'true') setPowerSaverState(true);
+        if (storedHighAccuracy[1] === 'true') setHighAccuracyState(true);
         const red = Number(storedMeetRed[1]);
         if ((MEET_RED_OPTIONS as readonly number[]).includes(red)) setMeetRedMinState(red);
         if (storedDayColors[1]) {
@@ -117,9 +117,9 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     void AsyncStorage.setItem(THEME_KEY, next);
   }, []);
 
-  const setPowerSaver = useCallback((on: boolean) => {
-    setPowerSaverState(on);
-    void AsyncStorage.setItem(POWER_SAVER_KEY, on ? 'true' : 'false');
+  const setHighAccuracy = useCallback((on: boolean) => {
+    setHighAccuracyState(on);
+    void AsyncStorage.setItem(HIGH_ACCURACY_KEY, on ? 'true' : 'false');
   }, []);
 
   const setMeetRedMin = useCallback((min: number) => {
@@ -139,26 +139,26 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     () => ({
       language,
       themeName,
-      powerSaver,
+      highAccuracy,
       meetRedMin,
       dayColors,
       ready,
       setLanguage,
       setThemeName,
-      setPowerSaver,
+      setHighAccuracy,
       setMeetRedMin,
       setDayColor,
     }),
     [
       language,
       themeName,
-      powerSaver,
+      highAccuracy,
       meetRedMin,
       dayColors,
       ready,
       setLanguage,
       setThemeName,
-      setPowerSaver,
+      setHighAccuracy,
       setMeetRedMin,
       setDayColor,
     ],

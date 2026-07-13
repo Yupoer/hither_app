@@ -156,6 +156,7 @@ const zh = {
   'map.searchA11y': '搜尋下一集合點',
   'map.locateA11y': '定位到我的位置',
   'map.fitAllA11y': '縮放至可看見所有隊員',
+  'map.refreshLocationsA11y': '立即更新成員位置',
   'map.destinationCounter': '第 {index} / {total} 個集合點',
   // Map · journey (start/pause) + arrival
   'map.journeyFailed': '無法更新行程狀態，請確認你是隊長並再試一次。',
@@ -208,6 +209,11 @@ const zh = {
   'memberStatus.arrived': '已抵達',
   'memberStatus.moving': '移動中',
   'memberStatus.notStarted': '未出發',
+  'locationUpdate.missing': '尚無位置更新',
+  'locationUpdate.justNow': '剛剛更新',
+  'locationUpdate.minutes': '{minutes} 分鐘前更新',
+  'locationUpdate.hours': '{hours} 小時前更新',
+  'locationUpdate.stale': '過久未更新',
 
   // Commands (quick buttons) · labels
   'command.gather': '集合',
@@ -247,8 +253,8 @@ const zh = {
 
   // Settings · location tracking
   'settings.locationSection': '定位追蹤',
-  'settings.powerSaver': '省電模式',
-  'settings.powerSaverHint': '降低定位精度與更新頻率以省電；隊友的位置會更新較慢。',
+  'settings.highAccuracy': '高精準模式',
+  'settings.highAccuracyHint': '提高定位精度與更新頻率；預設關閉以降低耗電。',
 
   // Destination search
   'search.placeholder': '輸入地址或地點名稱',
@@ -569,6 +575,7 @@ const en: Record<keyof typeof zh, string> = {
   'map.searchA11y': 'Search next gathering point',
   'map.locateA11y': 'Center on my location',
   'map.fitAllA11y': 'Zoom to fit all members',
+  'map.refreshLocationsA11y': 'Refresh member locations now',
   'map.destinationCounter': 'Stop {index} of {total}',
   'map.journeyFailed': "Couldn't update journey status. Make sure you're the leader and try again.",
   'map.arriveTitle': 'Arrived',
@@ -618,6 +625,11 @@ const en: Record<keyof typeof zh, string> = {
   'memberStatus.arrived': 'Arrived',
   'memberStatus.moving': 'On the way',
   'memberStatus.notStarted': 'Not started',
+  'locationUpdate.missing': 'No location update yet',
+  'locationUpdate.justNow': 'Updated just now',
+  'locationUpdate.minutes': 'Updated {minutes} min ago',
+  'locationUpdate.hours': 'Updated {hours} hr ago',
+  'locationUpdate.stale': 'Not updated for a long time',
 
   'command.gather': 'Gather',
   'command.find_gathering': 'Find point',
@@ -653,9 +665,9 @@ const en: Record<keyof typeof zh, string> = {
   'settings.notifJourney': 'Journey start / pause',
 
   'settings.locationSection': 'Location tracking',
-  'settings.powerSaver': 'Battery saver',
-  'settings.powerSaverHint':
-    'Lower accuracy and update rate to save power; teammates’ dots update more slowly.',
+  'settings.highAccuracy': 'High accuracy',
+  'settings.highAccuracyHint':
+    'Increase location accuracy and update rate; off by default to reduce battery use.',
 
   'search.placeholder': 'Enter an address or place name',
   'search.searching': 'Searching…',

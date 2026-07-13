@@ -89,6 +89,7 @@ import {
 } from '../utils/geo';
 import { dotWindow } from '../utils/pagination';
 import { minutesUntil } from '../utils/meetTime';
+import { locationFreshness } from '../utils/locationFreshness';
 import { groupHistoryByDay, type HistoryDayGroup } from '../utils/history';
 import { liquidGlass, location, notifications, type MapRegion, type PlaceResult } from '../native';
 import {
@@ -174,13 +175,8 @@ export default function MapScreen({ route, navigation }: Props) {
     upgradeToEmailAccount,
   } = useSession();
   const {
-    language,
-    themeName,
-    powerSaver,
+    highAccuracy,
     meetRedMin,
-    setLanguage,
-    setThemeName,
-    setPowerSaver,
     setMeetRedMin,
   } = usePreferences();
   const { colors } = useTheme();
@@ -322,11 +318,15 @@ export default function MapScreen({ route, navigation }: Props) {
   );
   const [nowTick, setNowTick] = useState(() => new Date());
   const hasMeetTimes = destinations.some((d) => d.meetAt);
+  const hasChangingLocationAges = members.some((m) => {
+    const unit = locationFreshness(m.lastUpdated, nowTick.getTime()).unit;
+    return unit !== 'missing' && unit !== 'stale';
+  });
   useEffect(() => {
-    if (!hasMeetTimes) return;
+    if (!hasMeetTimes && !hasChangingLocationAges) return;
     const id = setInterval(() => setNowTick(new Date()), 30_000);
     return () => clearInterval(id);
-  }, [hasMeetTimes]);
+  }, [hasMeetTimes, hasChangingLocationAges]);
 
   // The soonest gathering point whose meet time is still ahead — the one worth
   // scheduling an "it's time" alert for.
@@ -391,7 +391,7 @@ export default function MapScreen({ route, navigation }: Props) {
   // --- Device GPS ----------------------------------------------------------
   const { deviceCoords, refreshDeviceLocation } = useDeviceLocation({
     groupId,
-    powerSaver,
+    highAccuracy,
   });
 
   // --- Carousel selection ---------------------------------------------------
@@ -499,10 +499,25 @@ export default function MapScreen({ route, navigation }: Props) {
 
 
   const locateMe = useCallback(async () => {
-    refresh();
-    const coords = (await refreshDeviceLocation()) ?? deviceCoords;
+    const coords = (await refreshDeviceLocation().catch(() => null)) ?? deviceCoords;
+    await refresh();
     if (coords) mapRef.current?.centerOn(coords);
   }, [refresh, refreshDeviceLocation, deviceCoords]);
+
+  const [refreshingLocations, setRefreshingLocations] = useState(false);
+  const refreshAllLocations = useCallback(async () => {
+    if (refreshingLocations) return;
+    setRefreshingLocations(true);
+    try {
+      const ownLocation = await refreshDeviceLocation().catch(() => null);
+      await refresh();
+      if (!ownLocation) {
+        Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
+      }
+    } finally {
+      setRefreshingLocations(false);
+    }
+  }, [refresh, refreshDeviceLocation, refreshingLocations, t]);
 
   const fitAllMembers = useCallback(() => {
     mapRef.current?.fitToMembers();
@@ -957,9 +972,16 @@ export default function MapScreen({ route, navigation }: Props) {
         // location ping in the last 2 minutes) > not started (no recent ping —
         // the app hasn't sent a location update, e.g. before they've left).
         const movingRecently =
-          !!m.lastUpdated && Date.now() - new Date(m.lastUpdated).getTime() < 2 * 60_000;
+          !!m.lastUpdated && nowTick.getTime() - new Date(m.lastUpdated).getTime() < 2 * 60_000;
         const solo =
           m.userId === user?.id && soloOverride !== null ? soloOverride : !!m.solo;
+        const freshness = locationFreshness(m.lastUpdated, nowTick.getTime());
+        const freshnessText =
+          freshness.unit === 'minutes'
+            ? t('locationUpdate.minutes', { minutes: freshness.value })
+            : freshness.unit === 'hours'
+              ? t('locationUpdate.hours', { hours: freshness.value })
+              : t(`locationUpdate.${freshness.unit}`);
         return {
           userId: m.userId,
           name: m.name || t('group.travelerFallback'),
@@ -986,6 +1008,7 @@ export default function MapScreen({ route, navigation }: Props) {
               : arrived
                 ? glass.ok
                 : glass.textSecondary,
+          freshnessText,
           // "—" for my own row (distance to myself is meaningless); everyone
           // else shows how far they are from me.
           eta: isSelf ? '' : dToMe != null ? shortEta(walkingEtaSeconds(dToMe)) : '',
@@ -993,7 +1016,7 @@ export default function MapScreen({ route, navigation }: Props) {
           arrived,
         };
       }),
-    [members, activePoint, accent, t, user?.id, soloOverride, fromCoords],
+    [members, activePoint, accent, t, user?.id, soloOverride, fromCoords, nowTick],
   );
 
   // Drop the override once the server value catches up, so a later toggle
@@ -1038,6 +1061,7 @@ export default function MapScreen({ route, navigation }: Props) {
           <View style={styles.grow}>
             <Text style={styles.flockName}>{f.name}</Text>
             <Text style={[styles.flockStatus, { color: f.statusColor }]}>{f.statusText}</Text>
+            <Text style={styles.flockFreshness}>{f.freshnessText}</Text>
           </View>
           <View style={styles.flockMeta}>
             <Text style={styles.flockEta}>{f.eta}</Text>
@@ -1144,11 +1168,29 @@ export default function MapScreen({ route, navigation }: Props) {
           <Text style={styles.sheetHeading}>
             {t('map.flockLabel')} · <Text style={{ fontFamily: DISPLAY_FONT }}>{members.length}</Text>
           </Text>
-          {!isPro && (
-            <Text style={styles.memberCapHint}>
-              {t('paywall.memberCap', { n: FREE_LIMITS.groupMembers })}
-            </Text>
-          )}
+          <View style={styles.memberHeadingActions}>
+            {!isPro && (
+              <Text style={styles.memberCapHint}>
+                {t('paywall.memberCap', { n: FREE_LIMITS.groupMembers })}
+              </Text>
+            )}
+            <Pressable
+              style={({ pressed }) => [
+                styles.refreshLocationsButton,
+                pressed && !refreshingLocations && styles.rowActionPressed,
+              ]}
+              onPress={() => void refreshAllLocations()}
+              disabled={refreshingLocations}
+              accessibilityRole="button"
+              accessibilityLabel={t('map.refreshLocationsA11y')}
+            >
+              {refreshingLocations ? (
+                <ActivityIndicator size="small" color={accent} />
+              ) : (
+                <Ionicons name="refresh" size={19} color={accent} />
+              )}
+            </Pressable>
+          </View>
         </View>
         {pendingInvites.length > 0 && (
           <View style={styles.list}>
@@ -1281,7 +1323,7 @@ export default function MapScreen({ route, navigation }: Props) {
         </Pressable>
     </>
   ), [
-    t, members.length, isPro, pendingInvites, accent, handleAcceptInvite, handleDeclineInvite, topFlock, renderFlockRow, subgroups, flock, mySubgroupId, sentInvites, group, shareCode, codeCopied, copyCode, destinations.length, canEditItinerary, isLeader, persistStragglerConfig, openPaywall, groupId, dark, styles
+    t, members.length, isPro, pendingInvites, accent, handleAcceptInvite, handleDeclineInvite, topFlock, renderFlockRow, subgroups, flock, mySubgroupId, sentInvites, group, shareCode, codeCopied, copyCode, destinations.length, canEditItinerary, isLeader, persistStragglerConfig, openPaywall, groupId, dark, styles, refreshAllLocations, refreshingLocations
   ]);
 
   const closeOverlay = useCallback(() => setOverlay(null), []);
@@ -2508,6 +2550,18 @@ const makeStyles = (accent: string) =>
       justifyContent: 'space-between',
       paddingRight: 4,
     },
+    memberHeadingActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    refreshLocationsButton: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: 16,
+      backgroundColor: accentMix(accent, 14),
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: accentMix(accent, 36),
+    },
     splitBar: {
       borderRadius: 16,
       padding: 12,
@@ -2642,6 +2696,7 @@ const makeStyles = (accent: string) =>
     flockInitial: { fontSize: 16, fontWeight: '600', color: '#fff' },
     flockName: { fontSize: 16, color: '#fff' },
     flockStatus: { fontSize: 13 },
+    flockFreshness: { fontSize: 11.5, color: glass.textTertiary, marginTop: 2 },
     flockMeta: { alignItems: 'flex-end' },
     flockEta: { fontFamily: DISPLAY_FONT, fontSize: 15, fontWeight: '600', color: '#fff', fontVariant: ['tabular-nums'] },
     flockDist: { fontSize: 12, color: glass.textTertiary },

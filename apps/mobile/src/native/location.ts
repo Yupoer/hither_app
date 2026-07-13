@@ -18,6 +18,7 @@
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import * as Location from 'expo-location';
 import type { Coordinates } from '../types';
+import { locationPolicy } from '../utils/locationPolicy';
 
 /**
  * Optional custom native module. `null` in Expo Go / when not built.
@@ -62,7 +63,19 @@ export async function requestPermission(): Promise<boolean> {
  * fix fails, so callers can fall back gracefully (the Map screen still works
  * without GPS by using a reference member).
  */
-export async function getCurrentLocation(): Promise<LocationSample | null> {
+function expoLocationOptions(highAccuracy: boolean): Location.LocationOptions {
+  const policy = locationPolicy(highAccuracy);
+  return {
+    accuracy:
+      policy.accuracy === 'high' ? Location.Accuracy.High : Location.Accuracy.Balanced,
+    distanceInterval: policy.distanceInterval,
+    timeInterval: policy.timeInterval,
+  };
+}
+
+export async function getCurrentLocation(
+  highAccuracy = false,
+): Promise<LocationSample | null> {
   // Prefer the custom native module (precise/background-capable) when built.
   if (HitherLocation) {
     try {
@@ -80,9 +93,9 @@ export async function getCurrentLocation(): Promise<LocationSample | null> {
     return null;
   }
   try {
-    const position = await Location.getCurrentPositionAsync({
-      accuracy: Location.Accuracy.Balanced,
-    });
+    const position = await Location.getCurrentPositionAsync(
+      expoLocationOptions(highAccuracy),
+    );
     return toSample(position);
   } catch {
     return null;
@@ -90,32 +103,14 @@ export async function getCurrentLocation(): Promise<LocationSample | null> {
 }
 
 /**
- * Continuous tracking presets. `normal` keeps teammates' dots moving in near
- * real time; `saver` trades freshness/precision for battery — coarser fixes,
- * bigger move threshold, slower cadence.
- */
-const WATCH_PROFILES = {
-  normal: {
-    accuracy: Location.Accuracy.High,
-    distanceInterval: 10,
-    timeInterval: 5000,
-  },
-  saver: {
-    accuracy: Location.Accuracy.Balanced,
-    distanceInterval: 50,
-    timeInterval: 30000,
-  },
-} as const;
-
-/**
  * Stream foreground position updates until the returned unsubscribe is called.
  * Returns a no-op unsubscribe if permission is denied, so callers can start it
  * unconditionally. Foreground only — background tracking is the native
- * module's job (Phase B). `powerSaver` picks the saver profile above.
+ * module's job (Phase B). High accuracy is opt-in; low power is the default.
  */
 export async function watchLocation(
   onSample: (sample: LocationSample) => void,
-  powerSaver: boolean,
+  highAccuracy = false,
 ): Promise<() => void> {
   const granted = await requestPermission();
   if (!granted) {
@@ -123,7 +118,7 @@ export async function watchLocation(
   }
   try {
     const sub = await Location.watchPositionAsync(
-      powerSaver ? WATCH_PROFILES.saver : WATCH_PROFILES.normal,
+      expoLocationOptions(highAccuracy),
       (position) => onSample(toSample(position)),
     );
     return () => sub.remove();

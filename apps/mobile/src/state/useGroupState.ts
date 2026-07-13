@@ -9,7 +9,7 @@ import type { GroupState } from '../types';
  * Fallback polling interval. Realtime (below) is the primary update mechanism;
  * this slow poll is a safety net for missed events / dropped websocket.
  */
-export const GROUP_POLL_INTERVAL_MS = 15000;
+export const GROUP_POLL_INTERVAL_MS = 5 * 60_000;
 
 /** Coalesce bursts of realtime events into a single refetch. */
 const REALTIME_DEBOUNCE_MS = 300;
@@ -30,7 +30,7 @@ interface UseGroupStateResult {
   loading: boolean;
   error: string | null;
   /** Force an immediate refresh (e.g. pull-to-refresh, recenter). */
-  refresh: () => void;
+  refresh: () => Promise<void>;
 }
 
 /**
