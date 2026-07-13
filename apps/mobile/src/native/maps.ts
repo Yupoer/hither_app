@@ -28,6 +28,11 @@ import { distanceMeters } from '../utils/geo';
 /** Custom native module; `null` in Expo Go / when not built. */
 const HitherMaps = requireOptionalNativeModule<{
   searchPlaces(query: string, region?: MapRegion): Promise<PlaceResult[]>;
+  getDirections(
+    from: Coordinates,
+    to: Coordinates,
+    travelMode: TravelMode,
+  ): Promise<DirectionsResult>;
 }>('HitherMaps');
 
 /** A search hit the "next gathering point" picker can drop on the map. */
@@ -44,6 +49,14 @@ export interface MapRegion {
   longitude: number;
   latitudeDelta: number;
   longitudeDelta: number;
+}
+
+export type TravelMode = 'walk' | 'drive' | 'transit';
+
+export interface DirectionsResult {
+  distanceMeters: number;
+  expectedTravelTimeSeconds: number;
+  points: Coordinates[];
 }
 
 const PHOTON = 'https://photon.komoot.io/api';
@@ -211,5 +224,21 @@ export async function searchPlaces(
     return rankByDistance(await searchNominatim(trimmed, region), region);
   } catch {
     return [];
+  }
+}
+
+export async function getDirections(
+  from: Coordinates,
+  to: Coordinates,
+  travelMode: TravelMode,
+): Promise<DirectionsResult | null> {
+  if (!HitherMaps) {
+    return null;
+  }
+  try {
+    const route = await HitherMaps.getDirections(from, to, travelMode);
+    return route.points.length > 0 ? route : null;
+  } catch {
+    return null;
   }
 }
