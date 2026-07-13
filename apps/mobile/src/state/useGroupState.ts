@@ -30,7 +30,7 @@ interface UseGroupStateResult {
   loading: boolean;
   error: string | null;
   /** Force an immediate refresh (e.g. pull-to-refresh, recenter). */
-  refresh: () => Promise<void>;
+  refresh: () => Promise<boolean>;
 }
 
 /**
@@ -56,9 +56,9 @@ export function useGroupState(groupId: string | null): UseGroupStateResult {
   // one shared (already-subscribed) realtime channel.
 
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<boolean> => {
     if (!groupId) {
-      return;
+      return false;
     }
     try {
       const next = await getGroupState(groupId);
@@ -73,10 +73,12 @@ export function useGroupState(groupId: string | null): UseGroupStateResult {
         setState(next);
         setError(null);
       }
+      return true;
     } catch (e) {
       if (activeRef.current) {
         setError(e instanceof Error ? e.message : '無法取得群組狀態');
       }
+      return false;
     } finally {
       if (activeRef.current) {
         setLoading(false);

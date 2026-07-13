@@ -90,6 +90,7 @@ import {
 import { dotWindow } from '../utils/pagination';
 import { minutesUntil } from '../utils/meetTime';
 import { locationFreshness } from '../utils/locationFreshness';
+import { refreshLocations } from '../utils/locationRefresh';
 import { groupHistoryByDay, type HistoryDayGroup } from '../utils/history';
 import { liquidGlass, location, notifications, type MapRegion, type PlaceResult } from '../native';
 import {
@@ -505,19 +506,21 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [refresh, refreshDeviceLocation, deviceCoords]);
 
   const [refreshingLocations, setRefreshingLocations] = useState(false);
+  const refreshLocationsInFlight = useRef(false);
   const refreshAllLocations = useCallback(async () => {
-    if (refreshingLocations) return;
+    if (refreshLocationsInFlight.current) return;
+    refreshLocationsInFlight.current = true;
     setRefreshingLocations(true);
     try {
-      const ownLocation = await refreshDeviceLocation().catch(() => null);
-      await refresh();
-      if (!ownLocation) {
+      const result = await refreshLocations(refreshDeviceLocation, refresh);
+      if (result !== 'ok') {
         Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
       }
     } finally {
+      refreshLocationsInFlight.current = false;
       setRefreshingLocations(false);
     }
-  }, [refresh, refreshDeviceLocation, refreshingLocations, t]);
+  }, [refresh, refreshDeviceLocation, t]);
 
   const fitAllMembers = useCallback(() => {
     mapRef.current?.fitToMembers();
