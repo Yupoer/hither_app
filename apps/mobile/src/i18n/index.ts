@@ -92,6 +92,8 @@ const zh = {
   'settings.themeNight': '夜燈',
   'settings.themeDay': '晨光',
   'settings.themeDusk': '暮色',
+  'settings.account': '帳號設定',
+  'settings.accountDescription': '管理登入方式與個人帳號資訊',
   'settings.roleLeader': '隊長',
   'settings.roleFollower': '成員',
   'settings.noDestinations': '尚未設定任何集合點。',
@@ -114,6 +116,12 @@ const zh = {
   'account.submit': '送出',
   'account.upgradeSent': '確認信已寄出，點擊信中連結完成註冊。',
   'account.signedInAs': '目前帳號：{email}',
+  'settings.customQuickCommand': '自訂快捷指令',
+  'settings.customQuickCommandName': '按鈕名稱',
+  'settings.customQuickCommandMessage': '通知內容',
+  'settings.customQuickCommandSave': '儲存',
+  'settings.customQuickCommandRequired': '請輸入按鈕名稱與通知內容。',
+  'settings.customQuickCommandSaveFailed': '自訂快捷指令儲存失敗，請再試一次。',
 
   // Map
   'role.demo': '測試模式 · 虛擬團隊',
@@ -229,6 +237,7 @@ const zh = {
   'command.need_break': '想休息',
   'command.need_help': '需要幫忙',
   'command.found_something': '發現東西',
+  'command.custom': '自訂',
   'command.sent': '已通知大家',
   'command.sendFailed': '通知傳送失敗，請再試一次。',
 
@@ -255,6 +264,7 @@ const zh = {
   'settings.locationSection': '定位追蹤',
   'settings.highAccuracy': '高精準模式',
   'settings.highAccuracyHint': '提高定位精度與更新頻率；預設關閉以降低耗電。',
+  'settings.highAccuracyCompact': '高精準',
 
   // Destination search
   'search.placeholder': '輸入地址或地點名稱',
@@ -510,6 +520,8 @@ const en: Record<keyof typeof zh, string> = {
   'settings.themeNight': 'Night',
   'settings.themeDay': 'Day',
   'settings.themeDusk': 'Dusk',
+  'settings.account': 'Account',
+  'settings.accountDescription': 'Manage sign-in and account details',
   'settings.roleLeader': 'Leader',
   'settings.roleFollower': 'Member',
   'settings.noDestinations': 'No gathering points yet.',
@@ -534,6 +546,12 @@ const en: Record<keyof typeof zh, string> = {
   'account.upgradeSent':
     'Confirmation email sent — click the link inside to finish signing up.',
   'account.signedInAs': 'Signed in as {email}',
+  'settings.customQuickCommand': 'Custom quick command',
+  'settings.customQuickCommandName': 'Button name',
+  'settings.customQuickCommandMessage': 'Notification message',
+  'settings.customQuickCommandSave': 'Save',
+  'settings.customQuickCommandRequired': 'Enter a button name and notification message.',
+  'settings.customQuickCommandSaveFailed': "Couldn't save the custom quick command. Try again.",
 
   'role.demo': 'Demo flock (testing)',
   'profile.title': 'Profile',
@@ -644,6 +662,7 @@ const en: Record<keyof typeof zh, string> = {
   'command.need_break': 'Need a break',
   'command.need_help': 'Need help',
   'command.found_something': 'Found something',
+  'command.custom': 'Custom',
   'command.sent': 'Everyone notified',
   'command.sendFailed': "Couldn't send the notification, please try again.",
 
@@ -668,6 +687,7 @@ const en: Record<keyof typeof zh, string> = {
   'settings.highAccuracy': 'High accuracy',
   'settings.highAccuracyHint':
     'Increase location accuracy and update rate; off by default to reduce battery use.',
+  'settings.highAccuracyCompact': 'High accuracy',
 
   'search.placeholder': 'Enter an address or place name',
   'search.searching': 'Searching…',

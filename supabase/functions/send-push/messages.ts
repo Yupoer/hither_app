@@ -26,6 +26,7 @@ const COMMAND_LABEL: Record<string, string> = {
   need_break: "想休息",
   need_help: "需要幫忙",
   found_something: "發現東西",
+  custom: "自訂指令",
 };
 
 /** Build the alert title/body for a push payload. */
