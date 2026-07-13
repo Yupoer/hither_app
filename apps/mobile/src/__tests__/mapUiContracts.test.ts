@@ -23,13 +23,17 @@ describe('map UI placement contracts', () => {
   });
 
   it('groups high accuracy with the refreshed member controls', () => {
-    const actions = mapScreen.indexOf('styles.memberHeadingActions');
-    const accuracy = mapScreen.indexOf("t('settings.highAccuracyCompact')", actions);
+    const heading = mapScreen.indexOf('styles.headingRow');
+    const actions = mapScreen.indexOf('styles.memberHeadingActions', heading);
+    const accuracy = mapScreen.indexOf('styles.accuracyRow', actions);
     const refresh = mapScreen.indexOf('styles.refreshLocationsButton', actions);
 
-    expect(actions).toBeGreaterThanOrEqual(0);
+    expect(heading).toBeGreaterThanOrEqual(0);
+    expect(actions).toBeGreaterThan(heading);
     expect(accuracy).toBeGreaterThan(actions);
-    expect(refresh).toBeGreaterThan(accuracy);
+    expect(refresh).toBeGreaterThan(actions);
+    expect(mapScreen).toContain("t('settings.preciseLocation')");
+    expect(mapScreen).toContain("t('settings.preciseLocationHint')");
   });
 
   it('keeps account and Hither Pro as the first settings rows', () => {
@@ -45,10 +49,18 @@ describe('map UI placement contracts', () => {
   });
 
   it('adds visible separation before viewing my teams', () => {
-    expect(roleSelect).toContain("marginTop: 48");
+    expect(roleSelect).toContain('styles.myTeamsSpacer');
+    expect(roleSelect).toContain('myTeamsSpacer: { height: 64 }');
   });
 
   it('uses a Traditional Chinese account label', () => {
-    expect(i18n).toContain("'settings.account': '帳號設定'");
+    expect(i18n).toContain("'settings.account': '帳號'");
+  });
+
+  it('returns from account details to settings and keeps the reorder sheet under KML', () => {
+    expect(mapScreen).toContain("onClose={() => setOverlay('settings')}");
+    expect(mapScreen).toContain("setKmlVisible(true)");
+    expect(settingsOverlay).not.toContain("t('account.section')");
+    expect(settingsOverlay).toContain('styles.reportButton');
   });
 });

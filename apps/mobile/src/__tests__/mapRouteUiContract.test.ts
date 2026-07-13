@@ -15,5 +15,6 @@ describe('MapKit route UI contract', () => {
     expect(mapScreen).toContain('useMapKitRoutes({');
     expect(mapScreen).toContain('memberRoutes[m.userId]');
     expect(mapScreen).toContain('focusOblique(pendingPlace.coordinates)');
+    expect(mapScreen).toContain('const liveDistance = selfRoute?.distanceMeters ?? numericDistance');
   });
 });

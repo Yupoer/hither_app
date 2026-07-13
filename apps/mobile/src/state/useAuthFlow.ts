@@ -2,6 +2,8 @@ import { useCallback } from 'react';
 import * as WebBrowser from 'expo-web-browser';
 import { makeRedirectUri } from 'expo-auth-session';
 import * as QueryParams from 'expo-auth-session/build/QueryParams';
+import * as AppleAuthentication from 'expo-apple-authentication';
+import * as Crypto from 'expo-crypto';
 import { supabase } from '../api/supabase';
 import {
   updateNickname as updateNicknameApi,
@@ -116,6 +118,87 @@ export function useAuthFlow({
     },
     [setUser, setIsAnonymous],
   );
+
+  const signInWithApple = useCallback(async (): Promise<User | null> => {
+    try {
+      const rawNonce = Crypto.randomUUID();
+      const hashedNonce = await Crypto.digestStringAsync(
+        Crypto.CryptoDigestAlgorithm.SHA256,
+        rawNonce,
+      );
+      const credential = await AppleAuthentication.signInAsync({
+        nonce: hashedNonce,
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+      if (!credential.identityToken) {
+        throw new Error('Apple 未提供登入憑證');
+      }
+
+      const { data, error } = await supabase.auth.signInWithIdToken({
+        provider: 'apple',
+        token: credential.identityToken,
+        nonce: rawNonce,
+      });
+      if (error || !data.user) {
+        throw new Error(error?.message ?? 'Apple 登入失敗');
+      }
+
+      const authUser = data.user;
+      const { data: existing } = await supabase
+        .from('profiles')
+        .select('nickname, avatar, preferences')
+        .eq('id', authUser.id)
+        .maybeSingle();
+      const existingRow = existing as {
+        nickname?: string;
+        avatar?: string | null;
+        preferences?: { quickCommand?: unknown } | null;
+      } | null;
+      const appleName = [
+        credential.fullName?.givenName,
+        credential.fullName?.middleName,
+        credential.fullName?.familyName,
+      ].filter(Boolean).join(' ');
+      const name = appleName
+        || existingRow?.nickname
+        || authUser.email?.split('@')[0]
+        || credential.email?.split('@')[0]
+        || 'Apple User';
+
+      if (appleName) {
+        const { error: metadataError } = await supabase.auth.updateUser({
+          data: {
+            full_name: appleName,
+            given_name: credential.fullName?.givenName,
+            family_name: credential.fullName?.familyName,
+          },
+        });
+        if (metadataError) throw new Error(metadataError.message);
+      }
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .upsert({ id: authUser.id, nickname: name }, { onConflict: 'id' });
+      if (profileError) throw new Error(profileError.message);
+
+      const quickCommand = normalizeCustomQuickCommand(existingRow?.preferences?.quickCommand);
+      const nextUser: User = {
+        id: authUser.id,
+        name,
+        email: authUser.email ?? credential.email ?? '',
+        avatar: existingRow?.avatar ?? avatarForUser(authUser.id),
+        preferences: quickCommand ? { quickCommand } : undefined,
+      };
+      setUser(nextUser);
+      setIsAnonymous(false);
+      return nextUser;
+    } catch (error) {
+      if ((error as { code?: string }).code === 'ERR_REQUEST_CANCELED') return null;
+      throw error;
+    }
+  }, [setIsAnonymous, setUser]);
 
   const signInWithEmail = useCallback(
     async ({ email, password }: any): Promise<User> => {
@@ -244,6 +327,7 @@ export function useAuthFlow({
   return {
     signIn,
     signInWithGoogle,
+    signInWithApple,
     signInWithEmail,
     signUpWithEmail,
     signOut,

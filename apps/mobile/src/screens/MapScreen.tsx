@@ -71,6 +71,7 @@ import { useTranslation, type TranslationKey } from '../i18n';
 import { useDeviceLocation } from './MapScreen/hooks/useDeviceLocation';
 import { useCarouselSelection } from './MapScreen/hooks/useCarouselSelection';
 import { useJourneyNavigation } from './MapScreen/hooks/useJourneyNavigation';
+import { useMapKitRoutes } from './MapScreen/hooks/useMapKitRoutes';
 import { SettingsOverlay } from './MapScreen/components/SettingsOverlay';
 import { ProfileOverlay } from './MapScreen/components/ProfileOverlay';
 import { SubgroupSection } from './MapScreen/components/SubgroupSection';
@@ -448,6 +449,22 @@ export default function MapScreen({ route, navigation }: Props) {
     setSelectedIndex,
   });
 
+  const { selfRoute, memberRoutes } = useMapKitRoutes({
+    selfCoordinates: fromCoords,
+    members,
+    gathering: activePoint,
+    travelMode,
+  });
+  const lastFittedRouteRef = useRef<string | null>(null);
+  useEffect(() => {
+    const key = activePoint ? `${activePoint.id}:${travelMode}` : null;
+    if (key && key !== lastFittedRouteRef.current && selfRoute?.points.length) {
+      lastFittedRouteRef.current = key;
+      mapRef.current?.fitRoute(selfRoute.points);
+    }
+    if (!key) lastFittedRouteRef.current = null;
+  }, [activePoint, selfRoute, travelMode]);
+
   // --- Straggler alerts ------------------------------------------------------
   // Reference is ME, not the gathering point — "fell behind" means fell
   // behind the flock (specifically me), not "hasn't reached the destination".
@@ -473,9 +490,10 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [stragglers, t, user?.id]);
 
 
+  const liveDistance = selfRoute?.distanceMeters ?? numericDistance;
   const liveProgress =
-    numericDistance != null
-      ? Math.max(0.05, Math.min(0.95, 1 - Math.min(1, numericDistance / PROGRESS_REF_M)))
+    liveDistance != null
+      ? Math.max(0.05, Math.min(0.95, 1 - Math.min(1, liveDistance / PROGRESS_REF_M)))
       : undefined;
   const liveGathered = navTarget
     ? members.filter(
@@ -487,8 +505,10 @@ export default function MapScreen({ route, navigation }: Props) {
   useLiveActivity(journeyActive, {
     groupName: membership?.group.name ?? '',
     gatheringTitle: navTarget?.title,
-    distanceMeters: numericDistance,
-    etaSeconds: numericDistance != null ? walkingEtaSeconds(numericDistance) : undefined,
+    distanceMeters: liveDistance,
+    etaSeconds:
+      selfRoute?.expectedTravelTimeSeconds ??
+      (liveDistance != null ? etaSecondsFor(liveDistance, travelMode) : undefined),
     gatheringCoordinates: navTarget?.coordinates,
     progress: liveProgress,
     gatheredCount: liveGathered,
@@ -966,10 +986,10 @@ export default function MapScreen({ route, navigation }: Props) {
             : null;
         // Displayed distance/ETA is "how far this member is from ME" — more
         // useful for keeping the flock together than distance-to-destination.
-        const dToMe =
-          !isSelf && m.coordinates && fromCoords
-            ? distanceMeters(m.coordinates, fromCoords)
-            : null;
+        const memberRoute = memberRoutes[m.userId];
+        const displayedDistance = memberRoute?.distanceMeters ?? d;
+        const displayedEta = memberRoute?.expectedTravelTimeSeconds
+          ?? (d != null ? etaSecondsFor(d, travelMode) : null);
         const arrived = d != null && d <= ARRIVAL_RADIUS_M;
         const isMemberLeader = m.role === 'leader';
         // Member status: arrived (within the radius) > moving (a fresh
@@ -1015,12 +1035,12 @@ export default function MapScreen({ route, navigation }: Props) {
           freshnessText,
           // "—" for my own row (distance to myself is meaningless); everyone
           // else shows how far they are from me.
-          eta: isSelf ? '' : dToMe != null ? shortEta(walkingEtaSeconds(dToMe)) : '',
-          dist: isSelf ? t('flock.you') : dToMe != null ? formatDistance(dToMe) : '',
+          eta: displayedEta != null ? shortEta(displayedEta) : '',
+          dist: displayedDistance != null ? formatDistance(displayedDistance) : isSelf ? t('flock.you') : '',
           arrived,
         };
       }),
-    [members, activePoint, accent, t, user?.id, soloOverride, fromCoords, nowTick],
+    [members, activePoint, accent, t, user?.id, soloOverride, nowTick, memberRoutes, travelMode],
   );
 
   // Drop the override once the server value catches up, so a later toggle
@@ -1183,20 +1203,6 @@ export default function MapScreen({ route, navigation }: Props) {
                 {t('paywall.memberCap', { n: FREE_LIMITS.groupMembers })}
               </Text>
             )}
-            <View style={styles.accuracyControl}>
-              <Ionicons name="locate-outline" size={16} color={highAccuracy ? accent : glass.textTertiary} />
-              <Text style={[styles.accuracyLabel, highAccuracy && { color: accent }]}>
-                {t('settings.highAccuracyCompact')}
-              </Text>
-              <Switch
-                value={highAccuracy}
-                onValueChange={setHighAccuracy}
-                trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
-                thumbColor="#fff"
-                ios_backgroundColor="rgba(120,120,128,0.32)"
-                accessibilityLabel={t('settings.highAccuracy')}
-              />
-            </View>
             <Pressable
               style={({ pressed }) => [
                 styles.refreshLocationsButton,
@@ -1214,6 +1220,25 @@ export default function MapScreen({ route, navigation }: Props) {
               )}
             </Pressable>
           </View>
+        </View>
+        <View style={styles.accuracyRow}>
+          <View style={styles.accuracyCopy}>
+            <View style={styles.accuracyTitleRow}>
+              <Ionicons name="locate-outline" size={18} color={highAccuracy ? accent : glass.textTertiary} />
+              <Text style={styles.accuracyLabel}>
+                {t('settings.preciseLocation')}
+              </Text>
+            </View>
+            <Text style={styles.accuracyBattery}>{t('settings.preciseLocationHint')}</Text>
+          </View>
+          <Switch
+            value={highAccuracy}
+            onValueChange={setHighAccuracy}
+            trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
+            thumbColor="#fff"
+            ios_backgroundColor="rgba(120,120,128,0.32)"
+            accessibilityLabel={t('settings.preciseLocation')}
+          />
         </View>
         {pendingInvites.length > 0 && (
           <View style={styles.list}>
@@ -1377,6 +1402,8 @@ export default function MapScreen({ route, navigation }: Props) {
         destinations={destinations}
         pendingPlace={pendingPlace}
         currentUserId={user?.id}
+        routePoints={selfRoute?.points}
+        routeColor={accent}
         // Capped at mid: at full the sheet covers the map anyway.
         // ponytail: updates once per detent settle (3 discrete values), not
         // per frame — per-frame MapView prop updates re-render the native map
@@ -1505,7 +1532,7 @@ export default function MapScreen({ route, navigation }: Props) {
                     { backgroundColor: accentMix(accent, 18) },
                     pressed && { opacity: 0.8 }
                   ]}
-                  onPress={() => mapRef.current?.centerOn(pendingPlace.coordinates)}
+                  onPress={() => mapRef.current?.focusOblique(pendingPlace.coordinates)}
                 >
                   <Ionicons name="navigate" size={28} color={accent} />
                 </Pressable>
@@ -1560,7 +1587,9 @@ export default function MapScreen({ route, navigation }: Props) {
           >
             {destinations.map((dest, index) => {
               const active = index === selectedIndex;
-              const d = fromCoords ? distanceMeters(fromCoords, dest.coordinates) : null;
+              const routeForDestination = activePoint?.id === dest.id ? selfRoute : null;
+              const d = routeForDestination?.distanceMeters
+                ?? (fromCoords ? distanceMeters(fromCoords, dest.coordinates) : null);
               // This card is the stop we're actively navigating to — its
               // button flips to "end navigation" (leader only; followers
               // can't change journey status).
@@ -1757,7 +1786,11 @@ export default function MapScreen({ route, navigation }: Props) {
                         <View style={styles.transitPillTop}>
                           <Ionicons name={modeIconName} size={16} color={accent} />
                           <Text style={styles.transitPillTime}>
-                            {d != null ? shortEta(etaSecondsFor(d, travelMode)) : '—'}
+                            {routeForDestination
+                              ? shortEta(routeForDestination.expectedTravelTimeSeconds)
+                              : d != null
+                                ? shortEta(etaSecondsFor(d, travelMode))
+                                : '—'}
                           </Text>
                         </View>
                         <Text style={styles.transitPillDist}>
@@ -1873,7 +1906,6 @@ export default function MapScreen({ route, navigation }: Props) {
             <Pressable
               style={styles.addStop}
               onPress={() => {
-                setOverlay(null);
                 setKmlVisible(true);
               }}
               accessibilityRole="button"
@@ -1903,7 +1935,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
       <AccountSheet
         visible={overlay === 'account'}
-        onClose={() => setOverlay(null)}
+        onClose={() => setOverlay('settings')}
         accent={accent}
       />
 
@@ -2309,21 +2341,6 @@ const makeStyles = (accent: string) =>
     roleWord: { fontSize: 14, fontWeight: '600', color: '#fff' },
 
     recenter: { position: 'absolute', right: 14, zIndex: 40 },
-    settingsSectionHeaderRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-    },
-    feedbackEntry: {
-      width: 34,
-      height: 34,
-      borderRadius: 17,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: glass.pill,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: glass.hairline,
-    },
     recenterCapsule: {
       width: 48,
       borderRadius: 24,
@@ -2594,20 +2611,22 @@ const makeStyles = (accent: string) =>
       marginBottom: 8,
     },
     memberHeadingActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-    accuracyControl: {
-      minHeight: 44,
+    accuracyRow: {
+      minHeight: 54,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 3,
-      paddingLeft: 8,
-      paddingRight: 2,
-      marginTop: 20,
-      borderRadius: 22,
+      gap: 12,
+      paddingHorizontal: 4,
+      marginBottom: 8,
+      borderRadius: 16,
       backgroundColor: glass.fill,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairline,
     },
-    accuracyLabel: { color: glass.textTertiary, fontSize: 11, fontWeight: '600' },
+    accuracyCopy: { flex: 1, minWidth: 0, paddingVertical: 9 },
+    accuracyTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+    accuracyLabel: { color: '#fff', fontSize: 15, fontWeight: '700', lineHeight: 20 },
+    accuracyBattery: { marginLeft: 25, marginTop: 2, color: glass.warn, fontSize: 11, fontWeight: '600', lineHeight: 15 },
     refreshLocationsButton: {
       width: 44,
       height: 44,
@@ -2881,10 +2900,17 @@ const makeStyles = (accent: string) =>
     settingsTopCopy: { flex: 1, gap: 3 },
     settingsTopTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
     settingsTopDescription: { color: glass.textSecondary, fontSize: 12.5 },
-    upgradeError: {
-      fontSize: 13,
-      color: glass.danger,
-      marginTop: 8,
-      marginHorizontal: 4,
+    reportButton: {
+      minHeight: 54,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      paddingHorizontal: 16,
+      marginTop: 20,
+      borderRadius: 16,
+      backgroundColor: glass.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
     },
+    reportButtonText: { flex: 1, color: '#fff', fontSize: 16, fontWeight: '600' },
   });

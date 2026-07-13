@@ -90,19 +90,19 @@ export default function RoleSelectScreen({ navigation }: Props) {
           </Animated.View>
 
           {joinedGroups.length > 0 && (
-            <Animated.View entering={FadeIn.duration(400)}>
-              <TouchableOpacity
-                activeOpacity={0.7}
-                onPress={() => { lightTap(); navigation.navigate('MyTeams', { initialGroups: joinedGroups }); }}
-                style={[
-                  styles.ctaMyTeams,
-                  { backgroundColor: 'rgba(255,255,255,0.12)', marginTop: 48 }
-                ]}
-              >
-                <Ionicons name="people-outline" size={20} color={accent} />
-                <Text style={styles.ctaMyTeamsText}>查看我的隊伍 ({joinedGroups.length})</Text>
-              </TouchableOpacity>
-            </Animated.View>
+            <>
+              <View style={styles.myTeamsSpacer} />
+              <Animated.View entering={FadeIn.duration(400)}>
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={() => { lightTap(); navigation.navigate('MyTeams', { initialGroups: joinedGroups }); }}
+                  style={[styles.ctaMyTeams, { backgroundColor: 'rgba(255,255,255,0.12)' }]}
+                >
+                  <Ionicons name="people-outline" size={20} color={accent} />
+                  <Text style={styles.ctaMyTeamsText}>查看我的隊伍 ({joinedGroups.length})</Text>
+                </TouchableOpacity>
+              </Animated.View>
+            </>
           )}
 
           <Animated.View entering={FadeIn.duration(600).delay(300)}>
@@ -193,6 +193,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.15)',
     marginBottom: 16,
   },
+  myTeamsSpacer: { height: 64 },
   ctaGlassBg: {
     ...StyleSheet.absoluteFillObject,
   },

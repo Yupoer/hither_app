@@ -75,7 +75,7 @@ describe('pure mappers (snake_case row -> camelCase type)', () => {
     ).toBe('paused');
   });
 
-  it('mapDestination maps position->order and lat/lng->coordinates', () => {
+  it('mapDestination maps position->order, day, and lat/lng->coordinates', () => {
     const d = mapDestination({
       id: 'd1',
       title: '集合點',
@@ -85,9 +85,10 @@ describe('pure mappers (snake_case row -> camelCase type)', () => {
       position: 1,
       day: 1,
     } as any);
-    expect(d.order).toBe(0);
+    expect(d.order).toBe(1);
+    expect(d.day).toBe(1);
     expect(d.title).toBe('集合點');
-    expect(d.coordinates).toEqual({ latitude: 25.04, longitude: 121.56 });
+    expect(d.coordinates).toEqual({ latitude: 25.033, longitude: 121.565 });
   });
 
   it('mapMember combines membership + profile nickname + location', () => {
@@ -226,6 +227,7 @@ describe('addDestination', () => {
       subgroup_id: null,
       title: '台北101',
       address: '台北市信義區',
+      day: 1,
       latitude: 25.034,
       longitude: 121.564,
       position: 3, // 2 + 1, after the current last stop

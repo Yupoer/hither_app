@@ -92,7 +92,7 @@ const zh = {
   'settings.themeNight': '夜燈',
   'settings.themeDay': '晨光',
   'settings.themeDusk': '暮色',
-  'settings.account': '帳號設定',
+  'settings.account': '帳號',
   'settings.accountDescription': '管理登入方式與個人帳號資訊',
   'settings.roleLeader': '隊長',
   'settings.roleFollower': '成員',
@@ -116,6 +116,8 @@ const zh = {
   'account.submit': '送出',
   'account.upgradeSent': '確認信已寄出，點擊信中連結完成註冊。',
   'account.signedInAs': '目前帳號：{email}',
+  'account.registeredEmail': '註冊信箱',
+  'account.unlinked': '尚未綁定',
   'settings.customQuickCommand': '自訂快捷指令',
   'settings.customQuickCommandName': '按鈕名稱',
   'settings.customQuickCommandMessage': '通知內容',
@@ -265,6 +267,8 @@ const zh = {
   'settings.highAccuracy': '高精準模式',
   'settings.highAccuracyHint': '提高定位精度與更新頻率；預設關閉以降低耗電。',
   'settings.highAccuracyCompact': '高精準',
+  'settings.preciseLocation': '開啟精準定位',
+  'settings.preciseLocationHint': '提高定位精度與更新頻率；高耗電。',
 
   // Destination search
   'search.placeholder': '輸入地址或地點名稱',
@@ -546,6 +550,8 @@ const en: Record<keyof typeof zh, string> = {
   'account.upgradeSent':
     'Confirmation email sent — click the link inside to finish signing up.',
   'account.signedInAs': 'Signed in as {email}',
+  'account.registeredEmail': 'Registered email',
+  'account.unlinked': 'Not linked',
   'settings.customQuickCommand': 'Custom quick command',
   'settings.customQuickCommandName': 'Button name',
   'settings.customQuickCommandMessage': 'Notification message',
@@ -688,6 +694,8 @@ const en: Record<keyof typeof zh, string> = {
   'settings.highAccuracyHint':
     'Increase location accuracy and update rate; off by default to reduce battery use.',
   'settings.highAccuracyCompact': 'High accuracy',
+  'settings.preciseLocation': 'Enable precise location',
+  'settings.preciseLocationHint': 'Improves accuracy and update frequency; uses more battery.',
 
   'search.placeholder': 'Enter an address or place name',
   'search.searching': 'Searching…',

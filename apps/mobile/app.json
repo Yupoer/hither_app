@@ -9,6 +9,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
+      "usesAppleSignIn": true,
       "bundleIdentifier": "app.hither.mobile",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Hither 需要你的位置，才能在地圖上顯示你與下一個集合點的距離。",
@@ -39,7 +40,8 @@
       "@bacons/apple-targets",
       "expo-web-browser",
       "@react-native-community/datetimepicker",
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-apple-authentication"
     ]
   }
 }

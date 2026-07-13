@@ -28,11 +28,14 @@ export default function AccountSheet({
   accent: string;
 }) {
   const insets = useSafeAreaInsets();
-  const { user, isPro, refreshProfile } = useSession();
+  const { user, isPro, isAnonymous, refreshProfile, upgradeToEmailAccount } = useSession();
   const { t } = useTranslation();
   
   const [promoCode, setPromoCode] = useState('');
   const [redeeming, setRedeeming] = useState(false);
+  const [upgradeEmail, setUpgradeEmail] = useState('');
+  const [upgradePassword, setUpgradePassword] = useState('');
+  const [upgradeBusy, setUpgradeBusy] = useState(false);
 
   // Compute registered days
   const registeredDays = user?.createdAt
@@ -56,6 +59,21 @@ export default function AccountSheet({
       Alert.alert('兌換失敗', e.message);
     } finally {
       setRedeeming(false);
+    }
+  }
+
+  async function handleUpgrade() {
+    if (!/\S+@\S+\.\S+/.test(upgradeEmail.trim()) || upgradePassword.length < 6 || upgradeBusy) return;
+    setUpgradeBusy(true);
+    try {
+      await upgradeToEmailAccount(upgradeEmail.trim(), upgradePassword);
+      Alert.alert(t('account.section'), t('account.upgradeSent'));
+      setUpgradeEmail('');
+      setUpgradePassword('');
+    } catch (e) {
+      Alert.alert(t('account.section'), e instanceof Error ? e.message : t('account.upgradeSent'));
+    } finally {
+      setUpgradeBusy(false);
     }
   }
 
@@ -85,10 +103,61 @@ export default function AccountSheet({
             </View>
             <View style={styles.divider} />
             <View style={styles.row}>
+              <Text style={styles.rowLabel}>{t('account.registeredEmail')}</Text>
+              <Text style={styles.rowValue} numberOfLines={1}>
+                {user?.email || t('account.unlinked')}
+              </Text>
+            </View>
+            <View style={styles.divider} />
+            <View style={styles.row}>
               <Text style={styles.rowLabel}>已註冊天數</Text>
               <Text style={styles.rowValue}>{registeredDays} 天</Text>
             </View>
           </View>
+
+          {isAnonymous && (
+            <>
+              <Text style={styles.sectionLabel}>{t('account.upgradeButton')}</Text>
+              <View style={styles.card}>
+                <Text style={styles.promoHint}>{t('anon.expiryWarning')}</Text>
+                <TextInput
+                  style={styles.accountInput}
+                  value={upgradeEmail}
+                  onChangeText={setUpgradeEmail}
+                  placeholder="you@example.com"
+                  placeholderTextColor={glass.textTertiary}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="email-address"
+                />
+                <TextInput
+                  style={[styles.accountInput, styles.accountPasswordInput]}
+                  value={upgradePassword}
+                  onChangeText={setUpgradePassword}
+                  placeholder={t('account.password')}
+                  placeholderTextColor={glass.textTertiary}
+                  autoCapitalize="none"
+                  secureTextEntry
+                />
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.upgradeButton,
+                    { backgroundColor: accentMix(accent, pressed ? 28 : 20) },
+                    (!/\S+@\S+\.\S+/.test(upgradeEmail.trim()) || upgradePassword.length < 6 || upgradeBusy) && styles.disabledButton,
+                  ]}
+                  onPress={() => void handleUpgrade()}
+                  disabled={!/\S+@\S+\.\S+/.test(upgradeEmail.trim()) || upgradePassword.length < 6 || upgradeBusy}
+                  accessibilityRole="button"
+                >
+                  {upgradeBusy ? (
+                    <ActivityIndicator color={accent} />
+                  ) : (
+                    <Text style={[styles.redeemText, { color: accent }]}>{t('account.submit')}</Text>
+                  )}
+                </Pressable>
+              </View>
+            </>
+          )}
 
           {/* Subscription Info */}
           <Text style={styles.sectionLabel}>訂閱狀態</Text>
@@ -193,6 +262,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: glass.textSecondary,
     fontWeight: '500',
+    flexShrink: 1,
+    marginLeft: 12,
   },
   divider: {
     height: 1,
@@ -220,6 +291,25 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: glass.hairlineStrong,
   },
+  accountInput: {
+    height: 44,
+    backgroundColor: glass.fill,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    color: '#fff',
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: glass.hairlineStrong,
+    marginBottom: 10,
+  },
+  accountPasswordInput: { marginBottom: 14 },
+  upgradeButton: {
+    height: 48,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  disabledButton: { opacity: 0.4 },
   redeemButton: {
     marginLeft: 12,
     height: 44,

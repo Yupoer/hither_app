@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -15,6 +15,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import CrookIcon from '../components/CrookIcon';
@@ -35,7 +36,7 @@ const MIN_PASSWORD = 6;
  * AuthScreen). On success every path lands on RoleSelect.
  */
 export default function LoginScreen({ navigation }: Props) {
-  const { signInWithEmail, signUpWithEmail, signInWithGoogle } = useSession();
+  const { signInWithEmail, signUpWithEmail, signInWithGoogle, signInWithApple } = useSession();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const { t } = useTranslation();
@@ -48,6 +49,11 @@ export default function LoginScreen({ navigation }: Props) {
   const [nickname, setNickname] = useState('');
   const [busy, setBusy] = useState(false);
   const [guestConfirmVisible, setGuestConfirmVisible] = useState(false);
+  const [appleAvailable, setAppleAvailable] = useState(false);
+
+  useEffect(() => {
+    void AppleAuthentication.isAvailableAsync().then(setAppleAvailable);
+  }, []);
 
   const isSignUp = mode === 'signup';
   const emailOk = /\S+@\S+\.\S+/.test(email.trim());
@@ -103,6 +109,22 @@ export default function LoginScreen({ navigation }: Props) {
         'Google',
         e instanceof Error ? e.message : t('login.signInFailed'),
       );
+      setBusy(false);
+    }
+  }
+
+  async function handleApple() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const user = await signInWithApple();
+      if (!user) {
+        setBusy(false);
+        return;
+      }
+      goToApp();
+    } catch (e) {
+      Alert.alert('Apple', e instanceof Error ? e.message : t('login.signInFailed'));
       setBusy(false);
     }
   }
@@ -219,21 +241,37 @@ export default function LoginScreen({ navigation }: Props) {
             <View style={styles.dividerLine} />
           </View>
 
-          {/* Google logo "ball" */}
-          <Pressable
-            onPress={handleGoogle}
-            disabled={busy}
-            accessibilityRole="button"
-            accessibilityLabel={t('login.google')}
-            style={({ pressed }) => [
-              styles.googleBall,
-              busy && styles.ctaDisabled,
-              pressed && !busy && styles.pressed,
-            ]}
-          >
-            <Ionicons name="logo-google" size={26} color="#fff" />
-          </Pressable>
-          <Text style={styles.googleCaption}>{t('login.google')}</Text>
+          <View style={styles.socialRow}>
+            <View style={styles.googleColumn}>
+              <Pressable
+                onPress={handleGoogle}
+                disabled={busy}
+                accessibilityRole="button"
+                accessibilityLabel={t('login.google')}
+                style={({ pressed }) => [
+                  styles.googleBall,
+                  busy && styles.ctaDisabled,
+                  pressed && !busy && styles.pressed,
+                ]}
+              >
+                <Ionicons name="logo-google" size={26} color="#fff" />
+              </Pressable>
+              <Text style={styles.googleCaption}>{t('login.google')}</Text>
+            </View>
+            {appleAvailable ? (
+              <View pointerEvents={busy ? 'none' : 'auto'} style={busy && styles.ctaDisabled}>
+                <AppleAuthentication.AppleAuthenticationButton
+                  buttonType={isSignUp
+                    ? AppleAuthentication.AppleAuthenticationButtonType.SIGN_UP
+                    : AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                  buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
+                  cornerRadius={18}
+                  style={styles.appleButton}
+                  onPress={handleApple}
+                />
+              </View>
+            ) : null}
+          </View>
 
           <Pressable
             onPress={() => setGuestConfirmVisible(true)}
@@ -379,13 +417,11 @@ const makeStyles = (accent: string) =>
       color: 'rgba(235,235,245,0.4)',
     },
     googleBall: {
-      alignSelf: 'center',
       width: 56,
       height: 56,
       borderRadius: 28,
       alignItems: 'center',
       justifyContent: 'center',
-      marginTop: 18,
       backgroundColor: 'rgba(255,255,255,0.08)',
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: 'rgba(255,255,255,0.22)',
@@ -396,6 +432,16 @@ const makeStyles = (accent: string) =>
       color: 'rgba(235,235,245,0.45)',
       marginTop: 8,
     },
+    socialRow: {
+      minHeight: 72,
+      marginTop: 18,
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      justifyContent: 'center',
+      gap: 16,
+    },
+    googleColumn: { alignItems: 'center' },
+    appleButton: { width: 176, height: 56 },
     guest: { alignSelf: 'center', marginTop: 28, padding: 8 },
     guestText: {
       fontSize: 14,

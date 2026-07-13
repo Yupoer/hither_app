@@ -77,6 +77,7 @@ interface SessionContextValue {
    * `null` if the user cancels the browser.
    */
   signInWithGoogle: (nickname?: string) => Promise<User | null>;
+  signInWithApple: () => Promise<User | null>;
   /** Sign in with an existing email + password account. */
   signInWithEmail: (input: { email: string; password: string }) => Promise<User>;
   /**
@@ -220,6 +221,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const {
     signIn,
     signInWithGoogle,
+    signInWithApple,
     signInWithEmail,
     signUpWithEmail,
     signOut,
@@ -258,6 +260,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       isPro,
       signIn,
       signInWithGoogle,
+      signInWithApple,
       signInWithEmail,
       signUpWithEmail,
       signOut,
@@ -309,6 +312,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       isPro,
       signIn,
       signInWithGoogle,
+      signInWithApple,
       signInWithEmail,
       signUpWithEmail,
       signOut,

@@ -65,6 +65,7 @@ function routeKey(from: Coordinates, to: Coordinates, mode: TravelMode): string 
 }
 
 export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
+  const { selfCoordinates, members, gathering, travelMode } = inputs;
   const [state, setState] = useState<MapKitRoutesState>({
     selfRoute: null,
     memberRoutes: {},
@@ -84,13 +85,16 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
       return request;
     };
 
-    void loadMapKitRoutes(inputs, cachedGetRoute).then((next) => {
+    void loadMapKitRoutes(
+      { selfCoordinates, members, gathering, travelMode },
+      cachedGetRoute,
+    ).then((next) => {
       if (active) setState(next);
     });
     return () => {
       active = false;
     };
-  }, [inputs.selfCoordinates, inputs.members, inputs.gathering, inputs.travelMode]);
+  }, [selfCoordinates, members, gathering, travelMode]);
 
   return state;
 }
