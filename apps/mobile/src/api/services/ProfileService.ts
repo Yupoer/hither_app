@@ -3,6 +3,7 @@
  */
 import { supabase } from '../supabase';
 import { requireUserId, orThrow } from './_helpers';
+import type { AccountPreferences } from '../../types';
 
 export async function updateNickname(nickname: string): Promise<string> {
   const uid = await requireUserId();
@@ -22,13 +23,20 @@ export async function updateProfile(fields: {
   nickname?: string;
   avatar?: string;
   avatarColor?: string;
+  preferences?: AccountPreferences;
 }): Promise<void> {
-  const patch: { nickname?: string; avatar?: string; avatar_color?: string } = {};
+  const patch: {
+    nickname?: string;
+    avatar?: string;
+    avatar_color?: string;
+    preferences?: AccountPreferences;
+  } = {};
   const nickname = fields.nickname?.trim();
   if (nickname) patch.nickname = nickname;
   if (fields.avatar) patch.avatar = fields.avatar;
   if (fields.avatarColor) patch.avatar_color = fields.avatarColor;
-  if (!patch.nickname && !patch.avatar && !patch.avatar_color) return;
+  if (fields.preferences) patch.preferences = fields.preferences;
+  if (!patch.nickname && !patch.avatar && !patch.avatar_color && !patch.preferences) return;
   const uid = await requireUserId();
   const { error } = await supabase
     .from('profiles')

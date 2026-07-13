@@ -3,6 +3,7 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useCallback,
   useState,
 } from 'react';
 import * as WebBrowser from 'expo-web-browser';
@@ -13,7 +14,14 @@ import {
   updateNickname as updateNicknameApi,
   updateProfile as updateProfileApi,
 } from '../api/client';
-import type { Group, MemberRole, User } from '../types';
+import {
+  normalizeCustomQuickCommand,
+  type AccountPreferences,
+  type CustomQuickCommand,
+  type Group,
+  type MemberRole,
+  type User,
+} from '../types';
 import { avatarForUser } from '../constants/avatars';
 import { syncOnboardingIfNeeded } from '../onboarding/sync';
 import { flushQueuedEvents } from '../utils/activityLog';
@@ -101,7 +109,10 @@ interface SessionContextValue {
     nickname?: string;
     avatar?: string;
     avatarColor?: string;
+    preferences?: AccountPreferences;
   }) => Promise<void>;
+  customQuickCommand: CustomQuickCommand | null;
+  setCustomQuickCommand: (command: CustomQuickCommand) => Promise<void>;
   /** Record the group the user just created (as leader) or joined (as follower). */
   setMembership: (membership: Membership) => void;
   leaveGroup: () => void;
@@ -151,8 +162,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
             pro_plan?: string | null;
             pro_purchased_at?: string | null;
             pro_expires_at?: string | null;
+            preferences?: { quickCommand?: unknown } | null;
           }
         | null;
+      const quickCommand = normalizeCustomQuickCommand(row?.preferences?.quickCommand);
       if (active) {
         setUser({
           id: authUser.id,
@@ -165,6 +178,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           proPlan: row?.pro_plan ?? undefined,
           proPurchasedAt: row?.pro_purchased_at ?? undefined,
           proExpiresAt: row?.pro_expires_at ?? undefined,
+          preferences: quickCommand ? { quickCommand } : undefined,
         });
         setIsAnonymous(!!authUser.is_anonymous);
         setIsPro(!!row?.pro);
@@ -220,6 +234,21 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setMembershipState,
   });
 
+  const customQuickCommand = user?.preferences?.quickCommand ?? null;
+  const setCustomQuickCommand = useCallback(
+    async (command: CustomQuickCommand) => {
+      const normalized = normalizeCustomQuickCommand(command);
+      if (!normalized) throw new Error('自訂快捷指令需要名稱與通知內容');
+      await updateProfile({
+        preferences: {
+          ...(user?.preferences ?? {}),
+          quickCommand: normalized,
+        },
+      });
+    },
+    [updateProfile, user?.preferences],
+  );
+
   const value = useMemo<SessionContextValue>(
     () => ({
       user,
@@ -235,6 +264,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       upgradeToEmailAccount,
       updateNickname,
       updateProfile,
+      customQuickCommand,
+      setCustomQuickCommand,
       setMembership: (next) => setMembershipState(next),
       leaveGroup: () => setMembershipState(null),
       setProStatusLocal: (pro) => setIsPro(pro),
@@ -260,6 +291,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
               proPlan: row?.pro_plan ?? prev.proPlan,
               proPurchasedAt: row?.pro_purchased_at ?? prev.proPurchasedAt,
               proExpiresAt: row?.pro_expires_at ?? prev.proExpiresAt,
+              preferences: (() => {
+                const quickCommand = normalizeCustomQuickCommand(row?.preferences?.quickCommand);
+                return quickCommand ? { quickCommand } : undefined;
+              })(),
             };
           });
           setIsPro(!!row?.pro);
@@ -280,6 +315,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       upgradeToEmailAccount,
       updateNickname,
       updateProfile,
+      customQuickCommand,
+      setCustomQuickCommand,
     ],
   );
 

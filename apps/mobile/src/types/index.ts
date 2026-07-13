@@ -11,6 +11,24 @@ export interface Coordinates {
   longitude: number;
 }
 
+export interface CustomQuickCommand {
+  label: string;
+  message: string;
+}
+
+export interface AccountPreferences {
+  quickCommand?: CustomQuickCommand;
+}
+
+export function normalizeCustomQuickCommand(value: unknown): CustomQuickCommand | null {
+  if (!value || typeof value !== 'object') return null;
+  const candidate = value as { label?: unknown; message?: unknown };
+  if (typeof candidate.label !== 'string' || typeof candidate.message !== 'string') return null;
+  const label = candidate.label.trim();
+  const message = candidate.message.trim();
+  return label && message ? { label, message } : null;
+}
+
 /**
  * The signed-in user. Auth is Supabase anonymous sign-in: `id` is the
  * Supabase `auth.uid()` and `name` is the anonymous nickname (per the MVP
@@ -21,6 +39,7 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  preferences?: AccountPreferences;
   /** Emoji avatar shown to other members (persisted in `profiles.avatar`). */
   avatar?: string;
   /** Avatar background colour hex (persisted in `profiles.avatar_color`). */
@@ -204,11 +223,17 @@ export const FOLLOWER_COMMANDS = [
 
 export type CommandType =
   | (typeof LEADER_COMMANDS)[number]
-  | (typeof FOLLOWER_COMMANDS)[number];
+  | (typeof FOLLOWER_COMMANDS)[number]
+  | 'custom';
 
 /** True if the command is a leader directive (vs a follower request). */
 export function isLeaderCommand(type: CommandType): boolean {
   return (LEADER_COMMANDS as readonly string[]).includes(type);
+}
+
+/** Replace the final role-specific shortcut with the account custom slot. */
+export function commandTypesWithCustomSlot(commands: readonly string[]): string[] {
+  return [...commands.slice(0, -1), 'custom'];
 }
 
 /**

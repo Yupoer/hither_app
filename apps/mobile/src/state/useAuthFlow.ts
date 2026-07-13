@@ -7,7 +7,7 @@ import {
   updateNickname as updateNicknameApi,
   updateProfile as updateProfileApi,
 } from '../api/client';
-import type { User } from '../types';
+import { normalizeCustomQuickCommand, type AccountPreferences, type User } from '../types';
 import type { Membership } from './SessionContext';
 import { avatarForUser } from '../constants/avatars';
 
@@ -79,10 +79,14 @@ export function useAuthFlow({
       const meta = authUser.user_metadata ?? {};
       const { data: existing } = await supabase
         .from('profiles')
-        .select('nickname, avatar')
+        .select('nickname, avatar, preferences')
         .eq('id', authUser.id)
         .maybeSingle();
-      const existingRow = existing as { nickname?: string; avatar?: string | null } | null;
+      const existingRow = existing as {
+        nickname?: string;
+        avatar?: string | null;
+        preferences?: { quickCommand?: unknown } | null;
+      } | null;
       const name =
         nickname?.trim() ||
         existingRow?.nickname ||
@@ -101,6 +105,10 @@ export function useAuthFlow({
         name,
         email: authUser.email ?? '',
         avatar: existingRow?.avatar ?? avatarForUser(authUser.id),
+        preferences: (() => {
+          const quickCommand = normalizeCustomQuickCommand(existingRow?.preferences?.quickCommand);
+          return quickCommand ? { quickCommand } : undefined;
+        })(),
       };
       setUser(nextUser);
       setIsAnonymous(false);
@@ -121,15 +129,23 @@ export function useAuthFlow({
       const userId = data.user.id;
       const { data: profile } = await supabase
         .from('profiles')
-        .select('nickname, avatar')
+        .select('nickname, avatar, preferences')
         .eq('id', userId)
         .maybeSingle();
-      const row = profile as { nickname?: string; avatar?: string | null } | null;
+      const row = profile as {
+        nickname?: string;
+        avatar?: string | null;
+        preferences?: { quickCommand?: unknown } | null;
+      } | null;
       const nextUser: User = {
         id: userId,
         name: row?.nickname ?? '',
         email: data.user.email ?? '',
         avatar: row?.avatar ?? undefined,
+        preferences: (() => {
+          const quickCommand = normalizeCustomQuickCommand(row?.preferences?.quickCommand);
+          return quickCommand ? { quickCommand } : undefined;
+        })(),
       };
       setUser(nextUser);
       setIsAnonymous(false);
@@ -196,7 +212,12 @@ export function useAuthFlow({
   );
 
   const updateProfile = useCallback(
-    async (fields: { nickname?: string; avatar?: string; avatarColor?: string }) => {
+    async (fields: {
+      nickname?: string;
+      avatar?: string;
+      avatarColor?: string;
+      preferences?: AccountPreferences;
+    }) => {
       const prev = user;
       const nickname = fields.nickname?.trim();
       setUser((u) =>
@@ -206,6 +227,7 @@ export function useAuthFlow({
               name: nickname || u.name,
               avatar: fields.avatar ?? u.avatar,
               avatarColor: fields.avatarColor ?? u.avatarColor,
+              preferences: fields.preferences ?? u.preferences,
             }
           : u,
       );
