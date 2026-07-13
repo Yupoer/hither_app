@@ -5,11 +5,13 @@
     "scheme": "hither",
     "version": "0.1.0",
     "orientation": "portrait",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "usesAppleSignIn": true,
+      "appleTeamId": "5LBPG5TUKP",
       "bundleIdentifier": "app.hither.mobile",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Hither 需要你的位置，才能在地圖上顯示你與下一個集合點的距離。",
@@ -21,14 +23,22 @@
         ]
       },
       "entitlements": {
-        "aps-environment": "production"
+        "aps-environment": "production",
+        "com.apple.developer.applesignin": [
+          "Default"
+        ]
       }
     },
     "android": {
       "package": "app.hither.mobile",
       "permissions": [
         "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION"
+        "ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION"
       ]
     },
     "plugins": [
@@ -47,6 +57,24 @@
       "@react-native-community/datetimepicker",
       "expo-secure-store",
       "expo-apple-authentication"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "bundleIdentifier": "app.hither.mobile.widget",
+                  "targetName": "HitherActivityWidget"
+                }
+              ]
+            }
+          }
+        },
+        "projectId": "0f62ed14-1f2e-4d7b-b5b6-4eda273f2e35"
+      }
+    },
+    "owner": "yupoer"
   }
 }

@@ -1,0 +1,30 @@
+# Dependencies and local build output
+node_modules/
+.expo/
+dist/
+web-build/
+coverage/
+
+# Local-only configuration
+.env
+.env.*
+.playwright-cli/
+*.log
+.DS_Store
+Thumbs.db
+ios/Pods/
+ios/build/
+ios/DerivedData/
+ios/xcuserdata/
+ios/**/*.xcuserstate
+
+# Development and documentation files
+__tests__/
+src/__tests__/
+docs/
+README.md
+generate_report.js
+jest.config.js
+jest.config.components.js
+jest.setup.components.js
+.eslintrc.js
