@@ -16,6 +16,7 @@ import OverlaySheet from './OverlaySheet';
 import { useSession } from '../state/SessionContext';
 import { redeemPromoCode } from '../api/client';
 import { glass, accentMix } from '../glass';
+import { useTranslation } from '../i18n';
 
 export default function AccountSheet({
   visible,
@@ -28,6 +29,7 @@ export default function AccountSheet({
 }) {
   const insets = useSafeAreaInsets();
   const { user, isPro, refreshProfile } = useSession();
+  const { t } = useTranslation();
   
   const [promoCode, setPromoCode] = useState('');
   const [redeeming, setRedeeming] = useState(false);
@@ -61,9 +63,9 @@ export default function AccountSheet({
     <OverlaySheet
       visible={visible}
       onClose={onClose}
-      title="帳號設定"
+      title={t('settings.account')}
       accent={accent}
-      doneLabel="完成"
+      doneLabel={t('map.done')}
     >
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}

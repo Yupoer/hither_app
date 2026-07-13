@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { ScrollView, Text, View, Switch, ActivityIndicator, TextInput, Alert, TouchableOpacity } from 'react-native';
+import { ScrollView, Text, View, ActivityIndicator, TextInput, Alert, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import OverlaySheet from '../../../components/OverlaySheet';
 import { Segmented } from './Segmented';
@@ -14,7 +14,6 @@ interface SettingsOverlayProps {
   visible: boolean;
   onClose: () => void;
   isLeader: boolean;
-  onOpenHistory: () => void;
   onArchiveAllForTest: () => void;
   onOpenFeedback: () => void;
   onConfirmResetPrefs: () => void;
@@ -29,7 +28,6 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
   visible,
   onClose,
   isLeader,
-  onOpenHistory,
   onArchiveAllForTest,
   onOpenFeedback,
   onConfirmResetPrefs,
@@ -44,10 +42,8 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
   const {
     language,
     themeName,
-    highAccuracy,
     setLanguage,
     setThemeName,
-    setHighAccuracy,
   } = usePreferences();
   const { colors } = useTheme();
   const accent = colors.accent;
@@ -93,14 +89,34 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
         doneLabel={t('map.done')}
       >
         <ScrollView contentContainerStyle={styles.overlayBody}>
-          <TouchableOpacity
-            style={[styles.accountBtn, { marginBottom: 24 }]}
-            onPress={onOpenAccount}
-            accessibilityRole="button"
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.accountBtnText, { color: accent }]}>{t('settings.account') || '帳號設定'}</Text>
-          </TouchableOpacity>
+          <View style={styles.settingsTopGroup}>
+            <TouchableOpacity
+              style={styles.settingsTopRow}
+              onPress={onOpenAccount}
+              accessibilityRole="button"
+              activeOpacity={0.7}
+            >
+              <View style={styles.settingsTopCopy}>
+                <Text style={styles.settingsTopTitle}>{t('settings.account')}</Text>
+                <Text style={styles.settingsTopDescription}>{t('settings.accountDescription')}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={glass.textTertiary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.settingsTopRow}
+              onPress={onOpenPaywall}
+              accessibilityRole="button"
+              activeOpacity={0.7}
+            >
+              <View style={styles.settingsTopCopy}>
+                <Text style={styles.settingsTopTitle}>{t('paywall.title')}</Text>
+                <Text style={styles.settingsTopDescription}>
+                  {isPro ? t('paywall.active') : t('paywall.upgrade')}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={glass.textTertiary} />
+            </TouchableOpacity>
+          </View>
 
           <Text style={styles.sectionLabel}>{t('settings.language')}</Text>
           <Segmented
@@ -132,33 +148,8 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             onChange={(v) => setThemeName(v as ThemeName)}
           />
 
-          <Text style={styles.sectionLabel}>{t('settings.locationSection')}</Text>
-          <View style={styles.settingSwitchRow}>
-            <View style={styles.settingSwitchText}>
-              <Text style={styles.settingSwitchLabel}>{t('settings.highAccuracy')}</Text>
-              <Text style={styles.settingSwitchHint}>{t('settings.highAccuracyHint')}</Text>
-            </View>
-            <Switch
-              value={highAccuracy}
-              onValueChange={setHighAccuracy}
-              trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
-              thumbColor="#fff"
-            />
-          </View>
-
           <Text style={styles.sectionLabel}>{t('settings.notifSection')}</Text>
           <NotificationPreferencesCard colors={{ ...themes.night, accent }} />
-
-
-          <Text style={styles.sectionLabel}>{t('history.title')}</Text>
-          <TouchableOpacity
-            style={styles.accountBtn}
-            onPress={onOpenHistory}
-            accessibilityRole="button"
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.accountBtnText, { color: accent }]}>{t('history.open')}</Text>
-          </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.accountBtn}
@@ -202,22 +193,6 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             <Text style={styles.overlayHint}>
               {t('account.signedInAs', { email: user?.email ?? '' })}
             </Text>
-          )}
-
-          <Text style={styles.sectionLabel}>{t('paywall.title')}</Text>
-          {isPro ? (
-            <Text style={styles.overlayHint}>{t('paywall.active')}</Text>
-          ) : (
-            <TouchableOpacity
-              style={styles.accountBtn}
-              onPress={onOpenPaywall}
-              accessibilityRole="button"
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.accountBtnText, { color: accent }]}>
-                {t('paywall.upgrade')}
-              </Text>
-            </TouchableOpacity>
           )}
 
           <TouchableOpacity style={styles.dangerBtn} onPress={onConfirmResetPrefs} accessibilityRole="button" activeOpacity={0.7}>

@@ -179,6 +179,7 @@ export default function MapScreen({ route, navigation }: Props) {
     highAccuracy,
     meetRedMin,
     setMeetRedMin,
+    setHighAccuracy,
   } = usePreferences();
   const { colors } = useTheme();
   const accent = colors.accent;
@@ -1163,6 +1164,11 @@ export default function MapScreen({ route, navigation }: Props) {
           </View>
   ), [pendingPlace, canEditItinerary, user, accent, openProfile, styles, t]);
 
+  const closeOverlay = useCallback(() => setOverlay(null), []);
+  const openHistoryOverlay = useCallback(() => setOverlay('history'), []);
+  const openAccountOverlay = useCallback(() => setOverlay('account'), []);
+  const openPaywallCb = useCallback(() => openPaywall(), [openPaywall]);
+
   const sheetChildren = useMemo(() => (
     <>
       {/* Flock — first section, Apple-Maps-style heading. Members with no
@@ -1177,6 +1183,20 @@ export default function MapScreen({ route, navigation }: Props) {
                 {t('paywall.memberCap', { n: FREE_LIMITS.groupMembers })}
               </Text>
             )}
+            <View style={styles.accuracyControl}>
+              <Ionicons name="locate-outline" size={16} color={highAccuracy ? accent : glass.textTertiary} />
+              <Text style={[styles.accuracyLabel, highAccuracy && { color: accent }]}>
+                {t('settings.highAccuracyCompact')}
+              </Text>
+              <Switch
+                value={highAccuracy}
+                onValueChange={setHighAccuracy}
+                trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
+                thumbColor="#fff"
+                ios_backgroundColor="rgba(120,120,128,0.32)"
+                accessibilityLabel={t('settings.highAccuracy')}
+              />
+            </View>
             <Pressable
               style={({ pressed }) => [
                 styles.refreshLocationsButton,
@@ -1294,6 +1314,16 @@ export default function MapScreen({ route, navigation }: Props) {
           </Pressable>
         )}
 
+        <Pressable style={styles.rowButton} onPress={() => { lightTap(); openHistoryOverlay(); }} accessibilityRole="button">
+          <View style={[styles.rowIcon, { backgroundColor: accentMix(accent, 20) }]}>
+            <Ionicons name="time-outline" size={20} color={accent} />
+          </View>
+          <View style={styles.grow}>
+            <Text style={styles.rowTitle}>{t('history.title')}</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
+        </Pressable>
+
         {/* Straggler alerts — also a gathering-point sub-item (moved out of the
             Settings overlay). Leader-only; threshold is paywall-gated. */}
         {isLeader && group && groupId && (
@@ -1326,13 +1356,8 @@ export default function MapScreen({ route, navigation }: Props) {
         </Pressable>
     </>
   ), [
-    t, members.length, isPro, pendingInvites, accent, handleAcceptInvite, handleDeclineInvite, topFlock, renderFlockRow, subgroups, flock, mySubgroupId, sentInvites, group, shareCode, codeCopied, copyCode, destinations.length, canEditItinerary, isLeader, persistStragglerConfig, openPaywall, groupId, dark, styles, refreshAllLocations, refreshingLocations
+    t, members.length, isPro, pendingInvites, accent, handleAcceptInvite, handleDeclineInvite, topFlock, renderFlockRow, subgroups, flock, mySubgroupId, sentInvites, group, shareCode, codeCopied, copyCode, destinations.length, canEditItinerary, isLeader, persistStragglerConfig, openPaywall, groupId, dark, styles, refreshAllLocations, refreshingLocations, highAccuracy, setHighAccuracy, openHistoryOverlay
   ]);
-
-  const closeOverlay = useCallback(() => setOverlay(null), []);
-  const openHistoryOverlay = useCallback(() => setOverlay('history'), []);
-  const openAccountOverlay = useCallback(() => setOverlay('account'), []);
-  const openPaywallCb = useCallback(() => openPaywall(), [openPaywall]);
 
   if (loading && !state) {
     return (
@@ -1844,6 +1869,21 @@ export default function MapScreen({ route, navigation }: Props) {
               <Text style={[styles.addStopText, { color: accent }]}>{t('map.addStop')}</Text>
             </Pressable>
           )}
+          {canEditItinerary && (
+            <Pressable
+              style={styles.addStop}
+              onPress={() => {
+                setOverlay(null);
+                setKmlVisible(true);
+              }}
+              accessibilityRole="button"
+            >
+              <View style={[styles.addStopIcon, { backgroundColor: accentMix(accent, 20) }]}>
+                <Ionicons name="document-attach-outline" size={16} color={accent} />
+              </View>
+              <Text style={[styles.addStopText, { color: accent }]}>{t('kml.entry')}</Text>
+            </Pressable>
+          )}
         </ScrollView>
       </OverlaySheet>
 
@@ -1851,7 +1891,6 @@ export default function MapScreen({ route, navigation }: Props) {
         visible={overlay === 'settings'}
         onClose={closeOverlay}
         isLeader={isLeader}
-        onOpenHistory={openHistoryOverlay}
         onArchiveAllForTest={archiveAllForTest}
         onOpenFeedback={openFeedback}
         onConfirmResetPrefs={confirmResetPrefs}
@@ -2552,18 +2591,33 @@ const makeStyles = (accent: string) =>
       alignItems: 'center',
       justifyContent: 'space-between',
       paddingRight: 4,
+      marginBottom: 8,
     },
     memberHeadingActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    accuracyControl: {
+      minHeight: 44,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 3,
+      paddingLeft: 8,
+      paddingRight: 2,
+      marginTop: 20,
+      borderRadius: 22,
+      backgroundColor: glass.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
+    },
+    accuracyLabel: { color: glass.textTertiary, fontSize: 11, fontWeight: '600' },
     refreshLocationsButton: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
+      width: 44,
+      height: 44,
+      borderRadius: 22,
       alignItems: 'center',
       justifyContent: 'center',
-      marginTop: 16,
-      backgroundColor: accentMix(accent, 14),
+      marginTop: 20,
+      backgroundColor: glass.fill,
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: accentMix(accent, 36),
+      borderColor: glass.hairlineStrong,
     },
     splitBar: {
       borderRadius: 16,
@@ -2811,6 +2865,22 @@ const makeStyles = (accent: string) =>
       borderColor: accentMix(accent, 40),
     },
     accountBtnText: { fontSize: 15, fontWeight: '600' },
+    settingsTopGroup: { gap: 10, marginBottom: 8 },
+    settingsTopRow: {
+      minHeight: 64,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderRadius: 18,
+      backgroundColor: glass.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
+    },
+    settingsTopCopy: { flex: 1, gap: 3 },
+    settingsTopTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
+    settingsTopDescription: { color: glass.textSecondary, fontSize: 12.5 },
     upgradeError: {
       fontSize: 13,
       color: glass.danger,

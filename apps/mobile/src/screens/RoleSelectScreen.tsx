@@ -96,7 +96,7 @@ export default function RoleSelectScreen({ navigation }: Props) {
                 onPress={() => { lightTap(); navigation.navigate('MyTeams', { initialGroups: joinedGroups }); }}
                 style={[
                   styles.ctaMyTeams,
-                  { backgroundColor: 'rgba(255,255,255,0.12)', marginTop: 32 }
+                  { backgroundColor: 'rgba(255,255,255,0.12)', marginTop: 48 }
                 ]}
               >
                 <Ionicons name="people-outline" size={20} color={accent} />
@@ -181,8 +181,9 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   ctaMyTeams: {
+    minHeight: 54,
     paddingHorizontal: 24,
-    paddingVertical: 14,
+    paddingVertical: 12,
     borderRadius: 24,
     flexDirection: 'row',
     alignItems: 'center',
