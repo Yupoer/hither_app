@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   Easing,
@@ -119,7 +119,16 @@ export default function StepShell({
         ) : null}
       </View>
 
-      <View style={styles.body}>{children}</View>
+      {/* Scroll so large titles + Theme cards stay tappable above the footer. */}
+      <ScrollView
+        style={styles.body}
+        contentContainerStyle={styles.bodyContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        bounces
+      >
+        {children}
+      </ScrollView>
       {footer ? (
         // Lifted a whole button-height off the bottom edge so the CTA doesn't
         // hug the home indicator across every onboarding step.
@@ -152,9 +161,10 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     marginBottom: 6,
   },
-  // Display-size for onboarding titles; Dynamic Type via typeRole=display (cap 1.2).
+  // Display-size for onboarding titles; Dynamic Type via typeRole=display.
   title: { fontSize: 27, fontWeight: '800', lineHeight: 34 },
   subtitle: { fontSize: 14, lineHeight: 20, marginTop: 6 },
   body: { flex: 1 },
+  bodyContent: { flexGrow: 1, paddingBottom: 8 },
   footer: { paddingTop: 12 },
 });

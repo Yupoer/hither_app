@@ -7,6 +7,7 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { glass } from '../../../glass';
+import { GLOBAL_FONT_SCALE_CAP } from '../../../theme/typeScale';
 
 interface SegmentedProps {
   options: { key: string; label: string }[];
@@ -21,6 +22,7 @@ interface SegmentedProps {
 const segStyles = StyleSheet.create({
   track: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 6,
     backgroundColor: glass.fill,
     borderRadius: 13,
@@ -29,22 +31,30 @@ const segStyles = StyleSheet.create({
   },
   seg: {
     flex: 1,
-    height: 38,
+    minWidth: 56,
+    minHeight: 38,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 4,
+    paddingVertical: 8,
     zIndex: 1,
   },
   highlight: {
     position: 'absolute',
     left: 4,
     top: 4,
-    height: 38,
+    minHeight: 38,
     borderRadius: 10,
     backgroundColor: 'rgba(255,255,255,0.16)',
   },
   segLocked: { opacity: 0.4 },
-  segText: { fontSize: 15, fontWeight: '600', color: glass.textSecondary },
+  segText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: glass.textSecondary,
+    textAlign: 'center',
+  },
 });
 
 export function Segmented({
@@ -109,7 +119,13 @@ export function Segmented({
             accessibilityRole="button"
             accessibilityState={{ selected: active, disabled: locked }}
           >
-            <Text style={[segStyles.segText, active && { color: '#fff' }]}>{o.label}</Text>
+            <Text
+              style={[segStyles.segText, active && { color: '#fff' }]}
+              numberOfLines={2}
+              maxFontSizeMultiplier={GLOBAL_FONT_SCALE_CAP}
+            >
+              {o.label}
+            </Text>
           </Pressable>
         );
       })}

@@ -59,7 +59,7 @@ function ThemePreviewCard({
     name === 'day' ? 'rgba(255,255,255,0.72)' : 'rgba(20,24,36,0.55)';
   const labelColor = name === 'day' ? palette.textPrimary : '#F5F7FB';
 
-  // Soft one-shot / slow breath only while selected — not a frantic loop.
+  // Soft breath only while selected — not a frantic loop.
   const pulse = useSharedValue(1);
   useEffect(() => {
     if (selected) {
@@ -87,25 +87,27 @@ function ThemePreviewCard({
       accessibilityState={{ selected }}
       accessibilityLabel={selected ? `${label}, selected` : label}
       onPress={onPress}
+      // Ensure the whole card is the hit target even when decorative layers stack.
+      hitSlop={4}
       style={({ pressed }) => [
         styles.card,
         selected && { ...styles.cardGlow, shadowColor: palette.accent },
-        selected && { transform: [{ scale: 1.03 }] },
-        pressed && { transform: [{ scale: 0.97 }], opacity: 0.95 },
-        !selected && { opacity: 0.92 },
+        { transform: [{ scale: pressed ? 0.97 : selected ? 1.03 : 1 }] },
+        pressed && { opacity: 0.95 },
+        !selected && !pressed && { opacity: 0.92 },
       ]}
     >
+      {/* Decorative layers must not steal touches from Pressable. */}
       <LinearGradient
         colors={[from, to]}
         start={{ x: 0.2, y: 0 }}
         end={{ x: 0.8, y: 1 }}
         style={StyleSheet.absoluteFill}
+        pointerEvents="none"
       />
 
-      {/* Soft path arc — polyline feel without MapView. */}
       <View style={[styles.path, { borderColor: pathColor }]} pointerEvents="none" />
 
-      {/* Accent beacon + crook. */}
       <Animated.View style={[styles.beaconWrap, beaconStyle]} pointerEvents="none">
         <View style={[styles.beaconRing, { borderColor: accentMix(palette.accent, 45) }]}>
           <View style={[styles.beaconDot, { backgroundColor: palette.accent }]} />
@@ -113,7 +115,6 @@ function ThemePreviewCard({
         <CrookIcon size={22} color={palette.accent} style={styles.crook} />
       </Animated.View>
 
-      {/* Fake glass sheet strip at bottom of the mini map. */}
       <View style={[styles.glassBar, { backgroundColor: glassBar }]} pointerEvents="none">
         <View style={[styles.glassGrabber, { backgroundColor: accentMix(palette.accent, 40) }]} />
         <HitherText
@@ -125,7 +126,6 @@ function ThemePreviewCard({
         </HitherText>
       </View>
 
-      {/* Accent soft ring — never pure white sticker border. */}
       {selected ? (
         <View
           style={[styles.cardRing, { borderColor: accentMix(palette.accent, 50) }]}
@@ -134,7 +134,7 @@ function ThemePreviewCard({
       ) : null}
 
       {selected ? (
-        <View style={[styles.cardCheck, { backgroundColor: palette.accent }]}>
+        <View style={[styles.cardCheck, { backgroundColor: palette.accent }]} pointerEvents="none">
           <Ionicons name="checkmark" size={12} color={palette.accentText} />
         </View>
       ) : null}
@@ -192,6 +192,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 14,
     justifyContent: 'space-between',
+    paddingBottom: 8,
   },
   card: {
     width: '47%',
@@ -222,6 +223,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: '34%',
     alignSelf: 'center',
+    left: 0,
+    right: 0,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -284,5 +287,6 @@ const styles = StyleSheet.create({
     borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 2,
   },
 });

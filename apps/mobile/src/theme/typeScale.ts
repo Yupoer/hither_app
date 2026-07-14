@@ -1,9 +1,9 @@
 /**
- * Dynamic Type roles for Hither.
+ * Dynamic Type policy for Hither.
  *
- * System font scale is allowed (true accessibility), but each role has a
- * multiplier cap so glass layouts stay usable. Emoji avatars never scale —
- * their shell owns layout size.
+ * System text may scale up to {@link GLOBAL_FONT_SCALE_CAP}. Beyond that,
+ * RN `maxFontSizeMultiplier` freezes visual size so glass layouts stay usable.
+ * Role multipliers never exceed the global cap.
  */
 
 export type TypeRole =
@@ -16,14 +16,20 @@ export type TypeRole =
   | 'metric' // ETA / distance numerals
   | 'emoji'; // avatar glyphs — no scaling
 
-/** Cap relative to design-token fontSize (iOS Accessibility largest ≈ this). */
+/**
+ * Hard ceiling for ALL Text / TextInput (App.tsx defaultProps).
+ * Within 1…this, type scales with the system; above system scale is ignored.
+ */
+export const GLOBAL_FONT_SCALE_CAP = 1.25;
+
+/** Per-role caps (always ≤ GLOBAL_FONT_SCALE_CAP). */
 export const TYPE_MAX_MULTIPLIER: Record<TypeRole, number> = {
-  display: 1.2,
-  title: 1.25,
-  body: 1.3,
-  callout: 1.3,
-  footnote: 1.25,
-  caption: 1.2,
+  display: 1.15,
+  title: 1.2,
+  body: GLOBAL_FONT_SCALE_CAP,
+  callout: GLOBAL_FONT_SCALE_CAP,
+  footnote: 1.2,
+  caption: 1.15,
   metric: 1.15,
   emoji: 1.0,
 };
@@ -49,9 +55,19 @@ export const AVATAR_SIZE = {
 
 export type FontScaleBucket = 'regular' | 'large' | 'xl';
 
-/** Map system fontScale → layout variant. */
+/** Effective scale used for layout — never above the global text cap. */
+export function cappedFontScale(scale: number): number {
+  if (!Number.isFinite(scale) || scale <= 0) return 1;
+  return Math.min(scale, GLOBAL_FONT_SCALE_CAP);
+}
+
+/**
+ * Map system fontScale → layout variant.
+ * Uses capped scale so layout matches what Text actually renders.
+ */
 export function fontScaleBucket(scale: number): FontScaleBucket {
-  if (scale < 1.15) return 'regular';
-  if (scale < 1.35) return 'large';
+  const s = cappedFontScale(scale);
+  if (s < 1.1) return 'regular';
+  if (s < 1.2) return 'large';
   return 'xl';
 }

@@ -1,6 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { TYPE_MAX_MULTIPLIER, fontScaleBucket } from '../theme/typeScale';
+import {
+  GLOBAL_FONT_SCALE_CAP,
+  TYPE_MAX_MULTIPLIER,
+  cappedFontScale,
+  fontScaleBucket,
+} from '../theme/typeScale';
 
 const root = join(__dirname, '..');
 const appTsx = readFileSync(join(__dirname, '../../App.tsx'), 'utf8');
@@ -12,16 +17,21 @@ describe('Dynamic Type contract', () => {
     expect(TYPE_MAX_MULTIPLIER.emoji).toBe(1);
   });
 
-  it('keeps body/title/display multipliers in the agreed range', () => {
-    expect(TYPE_MAX_MULTIPLIER.body).toBe(1.3);
-    expect(TYPE_MAX_MULTIPLIER.title).toBe(1.25);
-    expect(TYPE_MAX_MULTIPLIER.display).toBe(1.2);
-    expect(TYPE_MAX_MULTIPLIER.metric).toBe(1.15);
+  it('keeps a global ceiling and role multipliers within it', () => {
+    expect(GLOBAL_FONT_SCALE_CAP).toBe(1.25);
+    expect(TYPE_MAX_MULTIPLIER.body).toBe(GLOBAL_FONT_SCALE_CAP);
+    expect(TYPE_MAX_MULTIPLIER.display).toBeLessThanOrEqual(GLOBAL_FONT_SCALE_CAP);
+    expect(TYPE_MAX_MULTIPLIER.metric).toBeLessThanOrEqual(GLOBAL_FONT_SCALE_CAP);
+    for (const m of Object.values(TYPE_MAX_MULTIPLIER)) {
+      expect(m).toBeLessThanOrEqual(GLOBAL_FONT_SCALE_CAP);
+    }
   });
 
-  it('does not reintroduce a global maxFontSizeMultiplier = 1 in App.tsx', () => {
-    expect(appTsx).not.toMatch(/maxFontSizeMultiplier\s*:\s*1/);
-    expect(appTsx).not.toMatch(/defaultProps.*maxFontSizeMultiplier/);
+  it('installs GLOBAL_FONT_SCALE_CAP as App.tsx Text/TextInput default (not hard 1.0)', () => {
+    expect(appTsx).toContain('GLOBAL_FONT_SCALE_CAP');
+    expect(appTsx).toContain('maxFontSizeMultiplier: GLOBAL_FONT_SCALE_CAP');
+    // Never freeze all type at 1.0 again.
+    expect(appTsx).not.toMatch(/maxFontSizeMultiplier\s*:\s*1\b/);
   });
 
   it('marks MapScreen commandRow large/xl layout branches', () => {
@@ -43,12 +53,15 @@ describe('Dynamic Type contract', () => {
     expect(mapScreen).toContain('inviteRowStacked');
   });
 
-  it('maps fontScale thresholds to regular / large / xl', () => {
+  it('clamps font scale for layout and maps buckets under the global cap', () => {
+    expect(cappedFontScale(2)).toBe(GLOBAL_FONT_SCALE_CAP);
+    expect(cappedFontScale(1)).toBe(1);
     expect(fontScaleBucket(1)).toBe('regular');
-    expect(fontScaleBucket(1.14)).toBe('regular');
-    expect(fontScaleBucket(1.15)).toBe('large');
-    expect(fontScaleBucket(1.34)).toBe('large');
-    expect(fontScaleBucket(1.35)).toBe('xl');
+    expect(fontScaleBucket(1.09)).toBe('regular');
+    expect(fontScaleBucket(1.1)).toBe('large');
+    expect(fontScaleBucket(1.19)).toBe('large');
+    expect(fontScaleBucket(1.2)).toBe('xl');
+    // System accessibility sizes above the cap still bucket as xl (capped).
     expect(fontScaleBucket(2)).toBe('xl');
   });
 });

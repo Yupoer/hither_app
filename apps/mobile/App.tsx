@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, Text, TextInput, View } from 'react-native';
 import {
   DarkTheme,
   DefaultTheme,
@@ -21,9 +21,22 @@ import {
   PreferencesProvider,
   useTheme,
 } from './src/state/PreferencesContext';
+import { GLOBAL_FONT_SCALE_CAP } from './src/theme/typeScale';
 
-// Dynamic Type: follow system scale with role caps via HitherText /
-// TYPE_MAX_MULTIPLIER (see src/theme/typeScale.ts). No global maxFontSizeMultiplier.
+// Dynamic Type: scale with the system up to GLOBAL_FONT_SCALE_CAP, then freeze.
+// Per-role caps (HitherText) may be tighter. Never reintroduce a hard 1.0 cap.
+const textDefaults = Text as typeof Text & { defaultProps?: Record<string, unknown> };
+textDefaults.defaultProps = {
+  ...(textDefaults.defaultProps ?? {}),
+  maxFontSizeMultiplier: GLOBAL_FONT_SCALE_CAP,
+};
+const textInputDefaults = TextInput as typeof TextInput & {
+  defaultProps?: Record<string, unknown>;
+};
+textInputDefaults.defaultProps = {
+  ...(textInputDefaults.defaultProps ?? {}),
+  maxFontSizeMultiplier: GLOBAL_FONT_SCALE_CAP,
+};
 
 /**
  * Navigation theme + status bar follow the active palette, so the header and

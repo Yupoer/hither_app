@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AppState, PixelRatio, type AppStateStatus } from 'react-native';
-import { fontScaleBucket, type FontScaleBucket } from '../theme/typeScale';
+import {
+  cappedFontScale,
+  fontScaleBucket,
+  type FontScaleBucket,
+} from '../theme/typeScale';
 
 function readBucket(): FontScaleBucket {
-  return fontScaleBucket(PixelRatio.getFontScale());
+  // Layout buckets follow the *capped* scale (what Text actually renders).
+  return fontScaleBucket(cappedFontScale(PixelRatio.getFontScale()));
 }
 
 /**

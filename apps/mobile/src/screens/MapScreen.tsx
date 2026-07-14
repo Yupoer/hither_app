@@ -1851,7 +1851,11 @@ export default function MapScreen({ route, navigation }: Props) {
                           {index === 0 ? t('map.nextTag') + ' · ' : ''}
                           {t('map.destinationCounter', { index: index + 1, total: destinations.length })}
                         </Text>
-                        <Text style={styles.cardTitle} numberOfLines={expandedCardId === dest.id ? undefined : 1}>
+                        <Text
+                          style={styles.cardTitle}
+                          numberOfLines={expandedCardId === dest.id ? 3 : 2}
+                          ellipsizeMode="tail"
+                        >
                           {dest.title}
                         </Text>
                         {expandedCardId === dest.id && (
@@ -2014,6 +2018,8 @@ export default function MapScreen({ route, navigation }: Props) {
                             styles.navBtnText,
                             { color: navigatingThis ? glass.danger : '#0c1a12' },
                           ]}
+                          numberOfLines={1}
+                          ellipsizeMode="tail"
                         >
                           {navigatingThis
                             ? t('map.stopNav')
@@ -2590,16 +2596,36 @@ const makeStyles = (accent: string) =>
       borderWidth: StyleSheet.hairlineWidth,
     },
     grow: { flex: 1, minWidth: 0 },
-    cardKicker: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8 },
+    cardKicker: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8, flexShrink: 1 },
     // marginTop nudges the (system-font) CJK title clear of the kicker line —
     // Fredoka only covers Latin, so CJK sits higher and would otherwise crowd it.
-    cardTitle: { fontFamily: DISPLAY_FONT, fontSize: 20, color: '#fff', lineHeight: 23, marginTop: 4 },
+    // flexShrink + relaxed lineHeight keep titles inside the card at font cap.
+    cardTitle: {
+      fontFamily: DISPLAY_FONT,
+      fontSize: 20,
+      color: '#fff',
+      lineHeight: 26,
+      marginTop: 4,
+      flexShrink: 1,
+    },
     cardBadge: { color: glass.textSecondary, fontSize: 11, marginTop: 1 },
 
     // Arrival caption row (design 1b) — "隊伍抵達進度 · X / Y".
-    arrivalCaption: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 11, paddingLeft: 2 },
-    arrivalCaptionLabel: { fontSize: 12.5, color: glass.textSecondary },
-    arrivalCaptionValue: { fontFamily: DISPLAY_FONT, fontSize: 13, fontVariant: ['tabular-nums'] },
+    arrivalCaption: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flexWrap: 'wrap',
+      gap: 7,
+      marginTop: 11,
+      paddingLeft: 2,
+    },
+    arrivalCaptionLabel: { fontSize: 12.5, color: glass.textSecondary, flexShrink: 1 },
+    arrivalCaptionValue: {
+      fontFamily: DISPLAY_FONT,
+      fontSize: 13,
+      fontVariant: ['tabular-nums'],
+      flexShrink: 0,
+    },
 
     // The single command row and its four controls.
     // a11y-layout:commandRow — fixed height → minHeight for Dynamic Type.
@@ -2622,7 +2648,7 @@ const makeStyles = (accent: string) =>
     navBtnFull: { flex: 0, alignSelf: 'stretch' },
     // "End navigation" state — a soft danger tint over the accent-solid "go".
     navBtnEnd: { backgroundColor: 'rgba(255,107,107,0.14)', borderColor: 'rgba(255,107,107,0.4)' },
-    navBtnText: { fontSize: 15, fontWeight: '700' },
+    navBtnText: { fontSize: 15, fontWeight: '700', flexShrink: 1 },
     // Transit pill: tap to cycle mode; shows the live time · distance for it.
     transitPill: {
       width: 92,
@@ -2683,23 +2709,27 @@ const makeStyles = (accent: string) =>
     confirmBtnRow: { flexDirection: 'row', gap: 12, marginTop: 12 },
     confirmCancel: {
       flex: 1,
-      height: 52,
+      minHeight: 52,
       borderRadius: 26,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: 'rgba(255,69,58,0.16)',
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: 'rgba(255,69,58,0.5)',
+      paddingVertical: 12,
+      paddingHorizontal: 8,
     },
-    confirmCancelText: { fontSize: 16, fontWeight: '700', color: '#FF453A' },
+    confirmCancelText: { fontSize: 16, fontWeight: '700', color: '#FF453A', textAlign: 'center' },
     confirmAdd: {
       flex: 1,
-      height: 52,
+      minHeight: 52,
       borderRadius: 26,
       alignItems: 'center',
       justifyContent: 'center',
+      paddingVertical: 12,
+      paddingHorizontal: 8,
     },
-    confirmAddText: { fontSize: 16, fontWeight: '700', color: '#0c1a12' },
+    confirmAddText: { fontSize: 16, fontWeight: '700', color: '#0c1a12', textAlign: 'center' },
     // Meet-time editor sheet: roomy, full-width controls (not the old cramped
     // left-aligned chips).
     meetEditorBody: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 40, gap: 14 },
@@ -2715,23 +2745,27 @@ const makeStyles = (accent: string) =>
     meetQuickBtnText: { color: glass.textSecondary, fontSize: 14, fontWeight: '600' },
     meetPickerWrap: { alignItems: 'center', marginBottom: 4 },
     meetSetBtn: {
-      height: 52,
+      minHeight: 52,
       borderRadius: 15,
       alignItems: 'center',
       justifyContent: 'center',
       borderWidth: StyleSheet.hairlineWidth,
+      paddingVertical: 12,
+      paddingHorizontal: 12,
     },
-    meetSetText: { fontSize: 17, fontWeight: '700', color: '#fff' },
+    meetSetText: { fontSize: 17, fontWeight: '700', color: '#fff', textAlign: 'center' },
     meetClearBtn: {
-      height: 50,
+      minHeight: 50,
       borderRadius: 15,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: glass.fill,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairline,
+      paddingVertical: 12,
+      paddingHorizontal: 12,
     },
-    meetClearText: { fontSize: 17, fontWeight: '600', color: glass.textSecondary },
+    meetClearText: { fontSize: 17, fontWeight: '600', color: glass.textSecondary, textAlign: 'center' },
     dots: { flexDirection: 'row', gap: 6, alignItems: 'center' },
     dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.35)' },
     dotActive: { width: 18, backgroundColor: accent },
@@ -2748,17 +2782,18 @@ const makeStyles = (accent: string) =>
     },
     searchField: {
       flex: 1,
-      height: 44,
+      minHeight: 44,
       borderRadius: 22,
       flexDirection: 'row',
       alignItems: 'center',
       gap: 8,
       paddingHorizontal: 14,
+      paddingVertical: 10,
       backgroundColor: 'rgba(118,118,128,0.26)',
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: 'rgba(255,255,255,0.15)',
     },
-    searchPlaceholder: { fontSize: 15, color: 'rgba(235,235,245,0.5)' },
+    searchPlaceholder: { fontSize: 15, color: 'rgba(235,235,245,0.5)', flexShrink: 1 },
     avatar: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
     avatarText: { fontSize: 16, fontWeight: '700', color: '#fff' },
     avatarEmoji: { fontSize: 20 },
@@ -2837,10 +2872,18 @@ const makeStyles = (accent: string) =>
       borderColor: glass.hairline,
     },
     accuracyCopy: { flex: 1, minWidth: 0 },
-    accuracySwitch: { transform: [{ translateY: 4 }] },
-    accuracyTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-    accuracyLabel: { color: '#fff', fontSize: 15, fontWeight: '700', lineHeight: 20 },
-    accuracyBattery: { marginLeft: 25, marginTop: 2, color: glass.warn, fontSize: 11, fontWeight: '600', lineHeight: 15 },
+    accuracySwitch: { flexShrink: 0, transform: [{ translateY: 4 }] },
+    accuracyTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7, flexWrap: 'wrap' },
+    accuracyLabel: { color: '#fff', fontSize: 15, fontWeight: '700', lineHeight: 22, flexShrink: 1 },
+    accuracyBattery: {
+      marginLeft: 25,
+      marginTop: 2,
+      color: glass.warn,
+      fontSize: 11,
+      fontWeight: '600',
+      lineHeight: 16,
+      flexShrink: 1,
+    },
     refreshLocationsButton: {
       width: 44,
       height: 44,
@@ -2955,13 +2998,14 @@ const makeStyles = (accent: string) =>
       paddingHorizontal: 4,
       marginBottom: 18,
     },
-    settingSwitchText: { flex: 1 },
-    settingSwitchLabel: { fontSize: 15, fontWeight: '600', color: '#fff' },
-    settingSwitchHint: { fontSize: 12, color: glass.textTertiary, marginTop: 2 },
+    settingSwitchText: { flex: 1, minWidth: 0 },
+    settingSwitchLabel: { fontSize: 15, fontWeight: '600', color: '#fff', flexShrink: 1, lineHeight: 22 },
+    settingSwitchHint: { fontSize: 12, color: glass.textTertiary, marginTop: 2, flexShrink: 1 },
     codeText: { fontFamily: DISPLAY_FONT, fontSize: 24, fontWeight: '700', color: '#fff', letterSpacing: 2 },
     chip: {
-      height: 38,
+      minHeight: 38,
       paddingHorizontal: 16,
+      paddingVertical: 8,
       borderRadius: 19,
       flexDirection: 'row',
       alignItems: 'center',
