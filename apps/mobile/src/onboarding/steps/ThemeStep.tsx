@@ -1,7 +1,18 @@
-import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
 import { themes, THEME_ORDER, type ThemeName } from '../../theme';
+import { accentMix } from '../../glass';
+import CrookIcon from '../../components/CrookIcon';
+import { HitherText } from '../../components/HitherText';
 import { usePreferences, useTheme } from '../../state/PreferencesContext';
 import { useTranslation, type TranslationKey } from '../../i18n';
 import type { StepProps } from '../types';
@@ -21,6 +32,115 @@ const THEME_LABEL_KEY: Record<ThemeName, TranslationKey> = {
   dusk: 'onboarding.theme.dusk',
   forest: 'onboarding.theme.forest',
 };
+
+/** Mini basemap gradients — map preview, not solid accent chips. */
+const BASEMAP: Record<ThemeName, [string, string]> = {
+  night: ['#0E1320', '#16264A'],
+  day: ['#E8F0F8', '#F7F5F0'],
+  dusk: ['#15101F', '#2A1B3D'],
+  forest: ['#0D1A14', '#1A3326'],
+};
+
+function ThemePreviewCard({
+  name,
+  selected,
+  onPress,
+  label,
+}: {
+  name: ThemeName;
+  selected: boolean;
+  onPress: () => void;
+  label: string;
+}) {
+  const palette = themes[name];
+  const [from, to] = BASEMAP[name];
+  const pathColor = accentMix(palette.textSecondary, name === 'day' ? 35 : 22);
+  const glassBar =
+    name === 'day' ? 'rgba(255,255,255,0.72)' : 'rgba(20,24,36,0.55)';
+  const labelColor = name === 'day' ? palette.textPrimary : '#F5F7FB';
+
+  // Soft one-shot / slow breath only while selected — not a frantic loop.
+  const pulse = useSharedValue(1);
+  useEffect(() => {
+    if (selected) {
+      pulse.value = withRepeat(
+        withSequence(
+          withTiming(1.08, { duration: 1200 }),
+          withTiming(1, { duration: 1200 }),
+        ),
+        -1,
+        false,
+      );
+    } else {
+      pulse.value = withTiming(1, { duration: 200 });
+    }
+  }, [selected, pulse]);
+
+  const beaconStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pulse.value }],
+    opacity: 0.85 + (pulse.value - 1) * 1.5,
+  }));
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      accessibilityLabel={selected ? `${label}, selected` : label}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.card,
+        selected && { ...styles.cardGlow, shadowColor: palette.accent },
+        selected && { transform: [{ scale: 1.03 }] },
+        pressed && { transform: [{ scale: 0.97 }], opacity: 0.95 },
+        !selected && { opacity: 0.92 },
+      ]}
+    >
+      <LinearGradient
+        colors={[from, to]}
+        start={{ x: 0.2, y: 0 }}
+        end={{ x: 0.8, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+
+      {/* Soft path arc — polyline feel without MapView. */}
+      <View style={[styles.path, { borderColor: pathColor }]} pointerEvents="none" />
+
+      {/* Accent beacon + crook. */}
+      <Animated.View style={[styles.beaconWrap, beaconStyle]} pointerEvents="none">
+        <View style={[styles.beaconRing, { borderColor: accentMix(palette.accent, 45) }]}>
+          <View style={[styles.beaconDot, { backgroundColor: palette.accent }]} />
+        </View>
+        <CrookIcon size={22} color={palette.accent} style={styles.crook} />
+      </Animated.View>
+
+      {/* Fake glass sheet strip at bottom of the mini map. */}
+      <View style={[styles.glassBar, { backgroundColor: glassBar }]} pointerEvents="none">
+        <View style={[styles.glassGrabber, { backgroundColor: accentMix(palette.accent, 40) }]} />
+        <HitherText
+          typeRole="title"
+          style={[styles.cardLabel, { color: labelColor, fontFamily: DISPLAY_FONT }]}
+          numberOfLines={2}
+        >
+          {label}
+        </HitherText>
+      </View>
+
+      {/* Accent soft ring — never pure white sticker border. */}
+      {selected ? (
+        <View
+          style={[styles.cardRing, { borderColor: accentMix(palette.accent, 50) }]}
+          pointerEvents="none"
+        />
+      ) : null}
+
+      {selected ? (
+        <View style={[styles.cardCheck, { backgroundColor: palette.accent }]}>
+          <Ionicons name="checkmark" size={12} color={palette.accentText} />
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
 
 export default function ThemeStep({ answers, onAnswer, onSkip, onBack }: StepProps) {
   const { colors, themeName } = useTheme();
@@ -49,87 +169,112 @@ export default function ThemeStep({ answers, onAnswer, onSkip, onBack }: StepPro
       }
     >
       <View style={styles.grid}>
-        {THEME_ORDER.map((name) => {
-          const palette = themes[name];
-          const selected = themeName === name;
-          return (
-            <Pressable
-              key={name}
-              accessibilityRole="button"
-              accessibilityState={{ selected }}
-              onPress={() => {
-                selectionTick();
-                setThemeName(name);
-              }}
-              style={({ pressed }) => [
-                styles.card,
-                { backgroundColor: palette.accent },
-                // Design System: depth via a colored glow, not white borders.
-                selected && { ...styles.cardGlow, shadowColor: palette.accent },
-                selected && { transform: [{ scale: 1.04 }] },
-                pressed && { opacity: 0.9 },
-              ]}
-            >
-              {/* Soft top specular sheen — the Liquid-Glass highlight cue. */}
-              <View style={styles.cardSheen} pointerEvents="none" />
-              {/* Selection ring as an absolute overlay so it never reflows the
-                  label (the old borderWidth toggle shifted the text). */}
-              {selected ? <View style={styles.cardRing} pointerEvents="none" /> : null}
-              <Text
-                style={[styles.cardLabel, { color: palette.accentText }]}
-                numberOfLines={1}
-              >
-                {t(THEME_LABEL_KEY[name])}
-              </Text>
-              {selected ? (
-                <View style={[styles.cardCheck, { borderColor: palette.accentText }]}>
-                  <Ionicons name="checkmark" size={14} color={palette.accentText} />
-                </View>
-              ) : null}
-            </Pressable>
-          );
-        })}
+        {THEME_ORDER.map((name) => (
+          <ThemePreviewCard
+            key={name}
+            name={name}
+            selected={themeName === name}
+            label={t(THEME_LABEL_KEY[name])}
+            onPress={() => {
+              selectionTick();
+              setThemeName(name);
+            }}
+          />
+        ))}
       </View>
     </StepShell>
   );
 }
 
 const styles = StyleSheet.create({
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, justifyContent: 'space-between' },
-  // DS card: generous 24px radius, solid theme-colour fill.
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 14,
+    justifyContent: 'space-between',
+  },
   card: {
     width: '47%',
-    aspectRatio: 1.2,
+    aspectRatio: 0.92,
     borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
     overflow: 'hidden',
+    backgroundColor: '#0E1320',
   },
   cardGlow: {
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.55,
+    shadowOpacity: 0.45,
     shadowRadius: 16,
     elevation: 8,
   },
-  cardSheen: {
+  path: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: '45%',
-    backgroundColor: 'rgba(255,255,255,0.14)',
+    left: '12%',
+    right: '18%',
+    top: '28%',
+    height: 48,
+    borderRadius: 40,
+    borderWidth: 2,
+    borderBottomWidth: 0,
+    borderLeftWidth: 0,
+    transform: [{ rotate: '-12deg' }],
+  },
+  beaconWrap: {
+    position: 'absolute',
+    top: '34%',
+    alignSelf: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  beaconRing: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  beaconDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  crook: {
+    position: 'absolute',
+    right: -14,
+    top: -10,
+  },
+  glassBar: {
+    position: 'absolute',
+    left: 8,
+    right: 8,
+    bottom: 8,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingTop: 8,
+    paddingBottom: 10,
+    alignItems: 'center',
+  },
+  glassGrabber: {
+    width: 28,
+    height: 3,
+    borderRadius: 2,
+    marginBottom: 6,
+    opacity: 0.7,
+  },
+  cardLabel: {
+    fontSize: 17,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   cardRing: {
     position: 'absolute',
-    top: 6,
-    left: 6,
-    right: 6,
-    bottom: 6,
-    borderRadius: 18,
-    borderWidth: 2.5,
-    borderColor: 'rgba(255,255,255,0.9)',
+    top: 5,
+    left: 5,
+    right: 5,
+    bottom: 5,
+    borderRadius: 20,
+    borderWidth: 2,
   },
-  cardLabel: { fontFamily: DISPLAY_FONT, fontSize: 22, fontWeight: '600' },
   cardCheck: {
     position: 'absolute',
     top: 8,
@@ -137,7 +282,6 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 11,
-    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
   },
