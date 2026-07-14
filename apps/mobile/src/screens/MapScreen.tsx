@@ -2045,28 +2045,91 @@ export default function MapScreen({ route, navigation }: Props) {
                       />
                     </View>
                     <View style={styles.cardHead}>
-                      <View style={[styles.cardIcon, { backgroundColor: accentMix(accent, 22), borderColor: accentMix(accent, 45) }]}>
-                        <CrookIcon size={fontLayout.s(26, 22)} color={accent} />
-                      </View>
                       <View style={styles.grow}>
-                        <Text style={[styles.cardKicker, { color: accent }]}>
-                          {index === 0 ? t('map.nextTag') + ' · ' : ''}
-                          {(() => {
-                            // Counter is day-scoped: "stop N of M" among that day's stops only.
-                            const dayNum = dest.day || 1;
-                            let dayIndex = 0;
-                            let dayTotal = 0;
-                            for (const d of destinations) {
-                              if ((d.day || 1) !== dayNum) continue;
-                              dayTotal += 1;
-                              if (d.id === dest.id) dayIndex = dayTotal;
-                            }
-                            return t('map.destinationCounter', {
-                              index: dayIndex || 1,
-                              total: dayTotal || 1,
-                            });
-                          })()}
-                        </Text>
+                        {/* Kicker row: stop counter + pagination dots. No logo. */}
+                        <View style={styles.cardKickerRow}>
+                          <Text
+                            style={[styles.cardKicker, { color: accent }]}
+                            numberOfLines={1}
+                            ellipsizeMode="tail"
+                          >
+                            {index === 0 ? t('map.nextTag') + ' · ' : ''}
+                            {(() => {
+                              // Counter is day-scoped: "stop N of M" among that day's stops only.
+                              const dayNum = dest.day || 1;
+                              let dayIndex = 0;
+                              let dayTotal = 0;
+                              for (const d of destinations) {
+                                if ((d.day || 1) !== dayNum) continue;
+                                dayTotal += 1;
+                                if (d.id === dest.id) dayIndex = dayTotal;
+                              }
+                              return t('map.destinationCounter', {
+                                index: dayIndex || 1,
+                                total: dayTotal || 1,
+                              });
+                            })()}
+                          </Text>
+                          {destinations.length > 1 && (
+                            <Animated.View style={styles.dots} layout={LinearTransition.duration(100)}>
+                              {dotWindow(destinations.length, selectedIndex, DOTS_MAX_VISIBLE).map(
+                                (i2) => (
+                                  <Animated.View
+                                    key={`dot-${destinations[i2]?.id || i2}-${i2}`}
+                                    entering={FadeIn.duration(100)}
+                                    exiting={FadeOut.duration(100)}
+                                    layout={LinearTransition.springify().damping(14).stiffness(300)}
+                                    style={[styles.dot, i2 === selectedIndex && styles.dotActive]}
+                                  />
+                                ),
+                              )}
+                            </Animated.View>
+                          )}
+                        </View>
+                        {/* Primary metrics under the stop counter — always visible.
+                            Expand only enlarges type; stays left-aligned. */}
+                        <View
+                          style={[
+                            styles.cardRouteMeta,
+                            cardExpanded && styles.cardRouteMetaExpanded,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              cardExpanded
+                                ? styles.cardRouteMetaEtaExpanded
+                                : styles.cardRouteMetaEta,
+                              { color: accent },
+                            ]}
+                            numberOfLines={1}
+                            ellipsizeMode="tail"
+                          >
+                            {etaLabel}
+                          </Text>
+                          {distLabel ? (
+                            <>
+                              <Text
+                                style={[
+                                  styles.cardRouteMetaDot,
+                                  cardExpanded && styles.cardRouteMetaDotExpanded,
+                                ]}
+                              >
+                                ·
+                              </Text>
+                              <Text
+                                style={
+                                  cardExpanded
+                                    ? styles.cardRouteMetaDistExpanded
+                                    : styles.cardRouteMetaDist
+                                }
+                                numberOfLines={1}
+                                ellipsizeMode="tail"
+                              >
+                                {distLabel}
+                              </Text>
+                            </>
+                          ) : null}
+                        </View>
                         <Text
                           style={styles.cardTitle}
                           numberOfLines={cardExpanded ? 3 : 2}
@@ -2087,65 +2150,6 @@ export default function MapScreen({ route, navigation }: Props) {
                         ) : null}
                         {myScopeId != null && (
                           <Text style={styles.cardBadge}>{t('subgroup.itineraryBadge')}</Text>
-                        )}
-                      </View>
-                      {/* Right rail: ETA/distance always (compact → roomy on
-                          expand) + pagination dots. Not tied to sheet stage. */}
-                      <View style={styles.cardHeadEnd}>
-                        <View
-                          style={[
-                            styles.cardRouteMeta,
-                            cardExpanded && styles.cardRouteMetaExpanded,
-                          ]}
-                        >
-                          {cardExpanded && !chromeTight ? (
-                            <Ionicons
-                              name={modeIconName}
-                              size={18}
-                              color={accent}
-                              style={styles.cardRouteMetaIcon}
-                            />
-                          ) : null}
-                          <Text
-                            style={[
-                              cardExpanded
-                                ? styles.cardRouteMetaEtaExpanded
-                                : styles.cardRouteMetaEta,
-                              { color: accent },
-                            ]}
-                            numberOfLines={1}
-                            ellipsizeMode="tail"
-                          >
-                            {etaLabel}
-                          </Text>
-                          {distLabel ? (
-                            <Text
-                              style={
-                                cardExpanded
-                                  ? styles.cardRouteMetaDistExpanded
-                                  : styles.cardRouteMetaDist
-                              }
-                              numberOfLines={1}
-                              ellipsizeMode="tail"
-                            >
-                              {distLabel}
-                            </Text>
-                          ) : null}
-                        </View>
-                        {destinations.length > 1 && (
-                          <Animated.View style={styles.dots} layout={LinearTransition.duration(100)}>
-                            {dotWindow(destinations.length, selectedIndex, DOTS_MAX_VISIBLE).map(
-                              (i2) => (
-                                <Animated.View
-                                  key={`dot-${destinations[i2]?.id || i2}-${i2}`}
-                                  entering={FadeIn.duration(100)}
-                                  exiting={FadeOut.duration(100)}
-                                  layout={LinearTransition.springify().damping(14).stiffness(300)}
-                                  style={[styles.dot, i2 === selectedIndex && styles.dotActive]}
-                                />
-                              ),
-                            )}
-                          </Animated.View>
                         )}
                       </View>
                     </View>
@@ -2896,45 +2900,35 @@ const makeStyles = (
       zIndex: 2,
     },
     arrivalHairlineFill: { height: '100%' },
+    // No logo — kicker + primary metrics + title; dots on the kicker row.
     cardHead: {
       flexDirection: 'row',
       alignItems: 'flex-start',
-      gap: s(12, 8),
-    },
-    cardIcon: {
-      width: s(46, 40),
-      height: s(46, 40),
-      borderRadius: s(14, 12),
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderWidth: StyleSheet.hairlineWidth,
-      marginTop: s(2, 0),
+      minWidth: 0,
     },
     grow: { flex: 1, minWidth: 0 },
-    // Right rail of the card head: route metrics + pagination dots.
-    cardHeadEnd: {
-      alignItems: 'flex-end',
-      justifyContent: 'flex-start',
+    cardKickerRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
       gap: s(8, 6),
-      flexShrink: 0,
-      maxWidth: '42%',
+      minWidth: 0,
     },
     cardKicker: {
-      fontSize: 11,
+      fontSize: 12,
       fontWeight: '700',
-      letterSpacing: 0.8,
+      letterSpacing: 0.4,
       flexShrink: 1,
+      minWidth: 0,
       lineHeight: s(16, 14),
     },
-    // marginTop nudges the (system-font) CJK title clear of the kicker line —
-    // Fredoka only covers Latin, so CJK sits higher and would otherwise crowd it.
-    // flexShrink + relaxed lineHeight keep titles inside the card at font cap.
+    // Title sits under metrics — quieter than ETA/dist.
     cardTitle: {
       fontFamily: DISPLAY_FONT,
-      fontSize: 20,
+      fontSize: compact ? 17 : 18,
       color: '#fff',
-      lineHeight: s(28, 24),
-      marginTop: s(4, 2),
+      lineHeight: s(24, 22),
+      marginTop: s(6, 4),
       flexShrink: 1,
     },
     // Expanded day + calendar date under the title.
@@ -2945,62 +2939,64 @@ const makeStyles = (
       marginTop: s(4, 2),
       flexShrink: 1,
     },
-    // Route estimate — always on the right; compact collapsed, roomy expanded.
+    // Primary metrics directly under the stop counter.
     cardRouteMeta: {
-      alignItems: 'flex-end',
-      justifyContent: 'flex-start',
-      gap: 1,
+      flexDirection: 'row',
+      alignItems: 'baseline',
+      flexWrap: 'wrap',
+      gap: s(8, 6),
+      marginTop: s(6, 4),
       minWidth: 0,
-      maxWidth: '100%',
     },
     cardRouteMetaExpanded: {
-      gap: s(4, 2),
-      paddingTop: s(2, 0),
-      paddingBottom: s(2, 0),
+      gap: s(10, 8),
+      marginTop: s(8, 6),
     },
-    cardRouteMetaIcon: {
-      marginBottom: s(2, 0),
+    cardRouteMetaDot: {
+      fontFamily: DISPLAY_FONT,
+      fontSize: compact ? 20 : 22,
+      color: glass.textSecondary,
+      lineHeight: s(28, 24),
     },
-    // Collapsed: tight metrics so the title keeps room.
+    cardRouteMetaDotExpanded: {
+      fontSize: compact ? 22 : 24,
+      lineHeight: s(32, 28),
+    },
+    // Collapsed: still large — primary numbers on the card.
     cardRouteMetaEta: {
       fontFamily: DISPLAY_FONT,
-      fontSize: narrow ? 13 : 14,
+      fontSize: compact ? 22 : 24,
       fontVariant: ['tabular-nums'],
       flexShrink: 1,
       minWidth: 0,
-      textAlign: 'right',
-      lineHeight: s(18, 16),
+      lineHeight: s(30, 26),
     },
     cardRouteMetaDist: {
       fontFamily: DISPLAY_FONT,
-      fontSize: narrow ? 11.5 : 12.5,
+      fontSize: compact ? 20 : 22,
       color: glass.textSecondary,
       fontVariant: ['tabular-nums'],
       flexShrink: 1,
       minWidth: 0,
-      textAlign: 'right',
-      lineHeight: s(16, 14),
+      lineHeight: s(28, 24),
     },
-    // Expanded: larger, looser hierarchy on the right rail.
+    // Expanded: even larger when the card has room.
     cardRouteMetaEtaExpanded: {
       fontFamily: DISPLAY_FONT,
-      fontSize: narrow ? 20 : 22,
+      fontSize: compact ? 26 : 28,
       fontVariant: ['tabular-nums'],
       flexShrink: 1,
       minWidth: 0,
-      textAlign: 'right',
-      lineHeight: s(28, 24),
+      lineHeight: s(34, 30),
     },
     cardRouteMetaDistExpanded: {
       fontFamily: DISPLAY_FONT,
-      fontSize: narrow ? 15 : 17,
+      fontSize: compact ? 22 : 24,
       color: glass.textSecondary,
       fontVariant: ['tabular-nums'],
       flexShrink: 1,
       minWidth: 0,
-      textAlign: 'right',
-      lineHeight: s(22, 18),
-      marginTop: s(2, 0),
+      lineHeight: s(30, 26),
     },
     cardBadge: {
       color: glass.textSecondary,
