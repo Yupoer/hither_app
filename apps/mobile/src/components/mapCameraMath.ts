@@ -1,13 +1,13 @@
 /** Default region span used by centerOn / recenter. */
 export const DEFAULT_LATITUDE_DELTA = 0.01;
 
-/** Street-level camera used for locate-me. */
-export const LOCATE_ZOOM = 16.5;
-export const LOCATE_ALTITUDE = 900;
+/** Locate-me camera — neighborhood scale (not street-close). */
+export const LOCATE_ZOOM = 15;
+export const LOCATE_ALTITUDE = 1600;
 
-/** Wider framing when jumping to a searched / newly added place. */
-export const PLACE_ZOOM = 14;
-export const PLACE_ALTITUDE = 2500;
+/** Framing when jumping to a searched / newly added place — wider still. */
+export const PLACE_ZOOM = 13;
+export const PLACE_ALTITUDE = 4000;
 
 /**
  * Latitude shift so a target pin lands at the vertical midpoint of the
