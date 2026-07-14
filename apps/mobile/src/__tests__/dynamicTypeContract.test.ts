@@ -44,8 +44,14 @@ describe('Dynamic Type contract', () => {
 
   it('marks QuickCommandsCard bucket-aware grid', () => {
     expect(quickCommands).toContain('a11y-layout:quickCommands');
-    expect(quickCommands).toContain('useFontScaleBucket');
+    expect(quickCommands).toContain('useFontLayout');
     expect(quickCommands).toMatch(/bucket === 'xl'/);
+  });
+
+  it('rebuilds map styles from live font scale', () => {
+    expect(mapScreen).toContain('useFontLayout');
+    expect(mapScreen).toContain('makeStyles(accent, fontLayout.scale)');
+    expect(mapScreen).toContain('fontLayout.scale');
   });
 
   it('marks invite-row stacked layout for large Dynamic Type', () => {

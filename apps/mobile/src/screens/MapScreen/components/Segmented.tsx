@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -8,6 +8,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { glass } from '../../../glass';
 import { GLOBAL_FONT_SCALE_CAP } from '../../../theme/typeScale';
+import { useFontLayout } from '../../../a11y/useFontScaleBucket';
 
 interface SegmentedProps {
   options: { key: string; label: string }[];
@@ -19,44 +20,6 @@ interface SegmentedProps {
   onDisabledPress?: (key: string) => void;
 }
 
-const segStyles = StyleSheet.create({
-  track: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    backgroundColor: glass.fill,
-    borderRadius: 13,
-    padding: 4,
-    marginBottom: 4,
-  },
-  seg: {
-    flex: 1,
-    minWidth: 56,
-    minHeight: 38,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 4,
-    paddingVertical: 8,
-    zIndex: 1,
-  },
-  highlight: {
-    position: 'absolute',
-    left: 4,
-    top: 4,
-    minHeight: 38,
-    borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.16)',
-  },
-  segLocked: { opacity: 0.4 },
-  segText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: glass.textSecondary,
-    textAlign: 'center',
-  },
-});
-
 export function Segmented({
   options,
   value,
@@ -65,6 +28,8 @@ export function Segmented({
   disabledKeys,
   onDisabledPress,
 }: SegmentedProps) {
+  const { scale } = useFontLayout();
+  const styles = useMemo(() => makeSegStyles(scale), [scale]);
   const [localValue, setLocalValue] = useState(value);
 
   useEffect(() => {
@@ -88,13 +53,14 @@ export function Segmented({
   }, [activeIdx, segW, tx]);
 
   const highlightStyle = useAnimatedStyle(() => ({ transform: [{ translateX: tx.value }] }));
+  const segMinH = Math.max(36, Math.round(38 * scale));
 
   return (
-    <View style={segStyles.track} onLayout={(e) => setTrackW(e.nativeEvent.layout.width)}>
+    <View style={styles.track} onLayout={(e) => setTrackW(e.nativeEvent.layout.width)}>
       {segW > 0 ? (
         <Animated.View
           pointerEvents="none"
-          style={[segStyles.highlight, { width: segW }, highlightStyle]}
+          style={[styles.highlight, { width: segW, minHeight: segMinH }, highlightStyle]}
         />
       ) : null}
       {options.map((o) => {
@@ -104,8 +70,9 @@ export function Segmented({
           <Pressable
             key={o.key}
             style={({ pressed }) => [
-              segStyles.seg,
-              locked && segStyles.segLocked,
+              styles.seg,
+              { minHeight: segMinH },
+              locked && styles.segLocked,
               pressed && { opacity: 0.6 },
             ]}
             onPress={() => {
@@ -120,7 +87,7 @@ export function Segmented({
             accessibilityState={{ selected: active, disabled: locked }}
           >
             <Text
-              style={[segStyles.segText, active && { color: '#fff' }]}
+              style={[styles.segText, active && { color: '#fff' }]}
               numberOfLines={2}
               maxFontSizeMultiplier={GLOBAL_FONT_SCALE_CAP}
             >
@@ -132,3 +99,42 @@ export function Segmented({
     </View>
   );
 }
+
+const makeSegStyles = (scale: number) => {
+  const s = (n: number, min = 0) => Math.max(min, Math.round(n * scale));
+  return StyleSheet.create({
+    track: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: s(6, 4),
+      backgroundColor: glass.fill,
+      borderRadius: s(13, 10),
+      padding: s(4, 3),
+      marginBottom: s(4, 2),
+    },
+    seg: {
+      flex: 1,
+      minWidth: 56,
+      borderRadius: s(10, 8),
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: s(4, 2),
+      paddingVertical: s(8, 6),
+      zIndex: 1,
+    },
+    highlight: {
+      position: 'absolute',
+      left: 4,
+      top: 4,
+      borderRadius: s(10, 8),
+      backgroundColor: 'rgba(255,255,255,0.16)',
+    },
+    segLocked: { opacity: 0.4 },
+    segText: {
+      fontSize: 15,
+      fontWeight: '600',
+      color: glass.textSecondary,
+      textAlign: 'center',
+    },
+  });
+};

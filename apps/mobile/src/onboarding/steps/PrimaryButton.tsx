@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { Pressable, StyleSheet } from 'react-native';
 import Animated, {
   interpolateColor,
@@ -8,6 +8,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useTheme } from '../../state/PreferencesContext';
 import { HitherText } from '../../components/HitherText';
+import { useFontLayout } from '../../a11y/useFontScaleBucket';
 import { mediumTap } from '../../utils/haptics';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -22,6 +23,8 @@ export default function PrimaryButton({
   disabled?: boolean;
 }) {
   const { colors } = useTheme();
+  const { scale } = useFontLayout();
+  const styles = useMemo(() => makeStyles(scale), [scale]);
   // Ease the disabled→enabled colour change instead of snapping — goal-gradient
   // feedback the moment a valid choice is made.
   const p = useSharedValue(disabled ? 0 : 1);
@@ -51,15 +54,18 @@ export default function PrimaryButton({
   );
 }
 
-const styles = StyleSheet.create({
-  btn: {
-    alignSelf: 'stretch',
-    minHeight: 60,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-  },
-  label: { fontSize: 18, fontWeight: '700', textAlign: 'center' },
-});
+const makeStyles = (scale: number) => {
+  const s = (n: number, min = 0) => Math.max(min, Math.round(n * scale));
+  return StyleSheet.create({
+    btn: {
+      alignSelf: 'stretch',
+      minHeight: s(60, 52),
+      borderRadius: s(18, 14),
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: s(14, 10),
+      paddingHorizontal: s(16, 12),
+    },
+    label: { fontSize: 18, fontWeight: '700', textAlign: 'center' },
+  });
+};

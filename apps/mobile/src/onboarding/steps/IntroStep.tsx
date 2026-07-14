@@ -13,7 +13,7 @@ import Animated, {
 import { MEMBER_COLORS } from '../../glass';
 import CrookIcon from '../../components/CrookIcon';
 import { HitherText } from '../../components/HitherText';
-import { useFontScaleBucket } from '../../a11y/useFontScaleBucket';
+import { useFontLayout } from '../../a11y/useFontScaleBucket';
 import { useTheme } from '../../state/PreferencesContext';
 import { useTranslation } from '../../i18n';
 import type { StepProps } from '../types';
@@ -100,8 +100,9 @@ function accentGlow(accent: string): string {
 
 function GatherStage({ reduceMotion }: { reduceMotion: boolean }) {
   const { colors } = useTheme();
-  const fontBucket = useFontScaleBucket();
-  const stageH = fontBucket === 'xl' ? 170 : fontBucket === 'large' ? 200 : 240;
+  const { scale } = useFontLayout();
+  // Stage shrinks as type grows (and grows back when type shrinks) — continuous.
+  const stageH = Math.round(Math.min(240, Math.max(160, 240 / scale)));
 
   const beaconOpacity = useSharedValue(reduceMotion ? 1 : 0);
   const beaconScale = useSharedValue(reduceMotion ? 1 : 0.85);

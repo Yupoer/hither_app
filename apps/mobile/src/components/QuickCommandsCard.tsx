@@ -13,7 +13,7 @@ import {
 } from '../types';
 import { radius, spacing, type Palette } from '../theme';
 import { useSession } from '../state/SessionContext';
-import { useFontScaleBucket } from '../a11y/useFontScaleBucket';
+import { useFontLayout } from '../a11y/useFontScaleBucket';
 import { HitherText } from './HitherText';
 
 /**
@@ -60,9 +60,12 @@ export default function QuickCommandsCard({
 }) {
   const { t } = useTranslation();
   const { customQuickCommand } = useSession();
-  // a11y-layout:quickCommands — column count follows Dynamic Type bucket.
-  const fontBucket = useFontScaleBucket();
-  const styles = useMemo(() => makeStyles(colors, fontBucket), [colors, fontBucket]);
+  // a11y-layout:quickCommands — column count + sizes track live font scale.
+  const fontLayout = useFontLayout();
+  const styles = useMemo(
+    () => makeStyles(colors, fontLayout.scale, fontLayout.bucket),
+    [colors, fontLayout.scale, fontLayout.bucket],
+  );
   const [sending, setSending] = useState<CommandType | null>(null);
 
   const roleCommands = isLeader ? LEADER_COMMANDS : FOLLOWER_COMMANDS;
@@ -106,7 +109,7 @@ export default function QuickCommandsCard({
     }
   }
 
-  const labelLines = fontBucket === 'xl' ? 2 : 1;
+  const labelLines = fontLayout.bucket === 'xl' ? 2 : 1;
 
   return (
     <View style={styles.card}>
@@ -144,12 +147,14 @@ export default function QuickCommandsCard({
 
 const makeStyles = (
   colors: Palette,
+  scale: number,
   bucket: 'regular' | 'large' | 'xl',
 ) => {
+  const s = (n: number, min = 0) => Math.max(min, Math.round(n * scale));
   // regular ≈ 3-col, large = 3-col taller, xl = 2-col.
   const flexBasis = bucket === 'xl' ? '46%' : '30%';
-  const minHeight = bucket === 'regular' ? undefined : bucket === 'large' ? 72 : 80;
-  const padV = bucket === 'regular' ? spacing.md : spacing.lg;
+  const minHeight = s(bucket === 'xl' ? 72 : bucket === 'large' ? 64 : 56, 48);
+  const padV = s(bucket === 'regular' ? spacing.md : spacing.lg, spacing.sm);
 
   return StyleSheet.create({
     card: {
@@ -158,10 +163,10 @@ const makeStyles = (
       borderWidth: 1,
       borderColor: colors.border,
       padding: spacing.lg,
-      gap: spacing.md,
+      gap: s(spacing.md, spacing.sm),
     },
     hint: { color: colors.textSecondary, fontSize: 13 },
-    grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+    grid: { flexDirection: 'row', flexWrap: 'wrap', gap: s(spacing.sm, 6) },
     btn: {
       flexGrow: 1,
       flexBasis,

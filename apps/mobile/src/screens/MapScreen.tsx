@@ -62,7 +62,7 @@ import KmlImportSheet from '../components/KmlImportSheet';
 import FeedbackSheet from '../components/FeedbackSheet';
 import CrookIcon from '../components/CrookIcon';
 import { HitherText } from '../components/HitherText';
-import { useFontScaleBucket } from '../a11y/useFontScaleBucket';
+import { useFontLayout } from '../a11y/useFontScaleBucket';
 import { useSession } from '../state/SessionContext';
 import {
   usePreferences,
@@ -193,9 +193,14 @@ export default function MapScreen({ route, navigation }: Props) {
   const { colors } = useTheme();
   const accent = colors.accent;
   const { t } = useTranslation();
+  // Live Dynamic Type layout — rebuilds when system fontScale changes.
   // a11y-layout:commandRow — large/xl stack the gathering-point command controls.
-  const fontBucket = useFontScaleBucket();
-  const styles = useMemo(() => makeStyles(accent), [accent]);
+  const fontLayout = useFontLayout();
+  const fontBucket = fontLayout.bucket;
+  const styles = useMemo(
+    () => makeStyles(accent, fontLayout.scale),
+    [accent, fontLayout.scale],
+  );
   // Embedded themed components (reorder list, notifications, commands) always
   // render on the dark glass overlay — force the night palette so they stay dark.
   const dark = themes.night;
@@ -1278,9 +1283,10 @@ export default function MapScreen({ route, navigation }: Props) {
   const atFull = detent === detents.length - 1;
   // Peek (stage 1): leave a clear band above the sheet for locate + group
   // capsules so tall gathering-point cards (max Dynamic Type) never cover them.
-  const CAPSULE_CLEARANCE = 64;
+  // Clearance tracks live font scale so layout shrinks/grows with the system.
+  const CAPSULE_CLEARANCE = fontLayout.s(64, 56);
   const carouselMaxHeight = Math.max(
-    140,
+    fontLayout.s(140, 120),
     windowHeight - detents[0] - CAPSULE_CLEARANCE - (insets.top + 8) - 8,
   );
 
@@ -2480,14 +2486,16 @@ const segStyles = StyleSheet.create({
   segText: { fontSize: 15, fontWeight: '600', color: glass.textSecondary },
 });
 
-const makeStyles = (accent: string) =>
-  StyleSheet.create({
+/** Design sizes × live (capped) font scale — layout tracks Dynamic Type. */
+const makeStyles = (accent: string, scale: number) => {
+  const s = (n: number, min = 0) => Math.max(min, Math.round(n * scale));
+  return StyleSheet.create({
     flex: { flex: 1, backgroundColor: '#0c1118' },
     loading: {
       flex: 1,
       alignItems: 'center',
       justifyContent: 'center',
-      gap: 12,
+      gap: s(12, 8),
       backgroundColor: '#0c1118',
     },
     loadingText: { color: glass.textSecondary, fontSize: 15 },
@@ -2511,15 +2519,15 @@ const makeStyles = (accent: string) =>
     },
     groupPill: {
       flexShrink: 1,
-      minHeight: 44,
-      paddingLeft: 8,
-      paddingRight: 14,
-      paddingVertical: 6,
-      borderRadius: 22,
+      minHeight: s(44, 40),
+      paddingLeft: s(8, 6),
+      paddingRight: s(14, 10),
+      paddingVertical: s(6, 4),
+      borderRadius: s(22, 18),
       overflow: 'hidden',
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 9,
+      gap: s(9, 6),
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairlineSoft,
     },
@@ -2538,13 +2546,14 @@ const makeStyles = (accent: string) =>
     pillName: { fontSize: 15, fontWeight: '600', color: '#fff', flexShrink: 1, minWidth: 0 },
     pillCount: { fontFamily: DISPLAY_FONT, fontSize: 14, color: glass.textSecondary, fontVariant: ['tabular-nums'] },
     roleChip: {
-      height: 44,
-      paddingHorizontal: 16,
-      borderRadius: 22,
+      minHeight: s(44, 40),
+      paddingHorizontal: s(16, 12),
+      paddingVertical: s(6, 4),
+      borderRadius: s(22, 18),
       overflow: 'hidden',
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 7,
+      gap: s(7, 5),
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairlineSoft,
     },
@@ -2555,13 +2564,13 @@ const makeStyles = (accent: string) =>
     // carouselMaxHeight so stage-1 cards never cover locate / group chrome.
     recenter: { position: 'absolute', right: 14, zIndex: 62 },
     recenterCapsule: {
-      width: 48,
-      borderRadius: 24,
+      width: s(48, 44),
+      borderRadius: s(24, 22),
       overflow: 'hidden',
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairlineSoft,
     },
-    recenterHit: { height: 48, alignItems: 'center', justifyContent: 'center' },
+    recenterHit: { minHeight: s(48, 44), alignItems: 'center', justifyContent: 'center' },
     recenterDivider: { height: StyleSheet.hairlineWidth, backgroundColor: glass.hairlineStrong },
 
     teamCapsuleWrap: {
@@ -2599,9 +2608,9 @@ const makeStyles = (accent: string) =>
     arrivalHairlineFill: { height: '100%' },
     cardHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
     cardIcon: {
-      width: 46,
-      height: 46,
-      borderRadius: 14,
+      width: s(46, 40),
+      height: s(46, 40),
+      borderRadius: s(14, 12),
       alignItems: 'center',
       justifyContent: 'center',
       borderWidth: StyleSheet.hairlineWidth,
@@ -2615,8 +2624,8 @@ const makeStyles = (accent: string) =>
       fontFamily: DISPLAY_FONT,
       fontSize: 20,
       color: '#fff',
-      lineHeight: 26,
-      marginTop: 4,
+      lineHeight: s(26, 22),
+      marginTop: s(4, 2),
       flexShrink: 1,
     },
     cardBadge: { color: glass.textSecondary, fontSize: 11, marginTop: 1 },
@@ -2626,8 +2635,8 @@ const makeStyles = (accent: string) =>
       flexDirection: 'row',
       alignItems: 'center',
       flexWrap: 'wrap',
-      gap: 7,
-      marginTop: 11,
+      gap: s(7, 4),
+      marginTop: s(11, 8),
       paddingLeft: 2,
     },
     arrivalCaptionLabel: { fontSize: 12.5, color: glass.textSecondary, flexShrink: 1 },
@@ -2639,22 +2648,35 @@ const makeStyles = (accent: string) =>
     },
 
     // The single command row and its four controls.
-    // a11y-layout:commandRow — fixed height → minHeight for Dynamic Type.
-    commandRow: { flexDirection: 'row', alignItems: 'stretch', gap: 8, marginTop: 10 },
-    commandCol: { flexDirection: 'column', gap: 8, marginTop: 10 },
-    commandSecondaryRow: { flexDirection: 'row', alignItems: 'stretch', gap: 8 },
+    // a11y-layout:commandRow — minHeights track live font scale.
+    commandRow: {
+      flexDirection: 'row',
+      alignItems: 'stretch',
+      gap: s(8, 6),
+      marginTop: s(10, 8),
+    },
+    commandCol: {
+      flexDirection: 'column',
+      gap: s(8, 6),
+      marginTop: s(10, 8),
+    },
+    commandSecondaryRow: {
+      flexDirection: 'row',
+      alignItems: 'stretch',
+      gap: s(8, 6),
+    },
     navBtn: {
       flex: 1,
       minWidth: 0,
-      minHeight: 54,
-      borderRadius: 15,
+      minHeight: s(54, 48),
+      borderRadius: s(15, 12),
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      gap: 8,
+      gap: s(8, 6),
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: 'transparent',
-      paddingHorizontal: 8,
+      paddingHorizontal: s(8, 6),
     },
     navBtnFull: { flex: 0, alignSelf: 'stretch' },
     // "End navigation" state — a soft danger tint over the accent-solid "go".
@@ -2662,30 +2684,30 @@ const makeStyles = (accent: string) =>
     navBtnText: { fontSize: 15, fontWeight: '700', flexShrink: 1 },
     // Transit pill: tap to cycle mode; shows the live time · distance for it.
     transitPill: {
-      width: 92,
-      minHeight: 54,
-      borderRadius: 15,
+      width: s(92, 80),
+      minHeight: s(54, 48),
+      borderRadius: s(15, 12),
       alignItems: 'center',
       justifyContent: 'center',
       gap: 1,
       borderWidth: StyleSheet.hairlineWidth,
-      paddingVertical: 6,
+      paddingVertical: s(6, 4),
     },
-    transitPillTop: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+    transitPillTop: { flexDirection: 'row', alignItems: 'center', gap: s(5, 4) },
     transitPillTime: { fontFamily: DISPLAY_FONT, fontSize: 15, color: '#fff', fontVariant: ['tabular-nums'] },
     transitPillDist: { fontSize: 10.5, color: glass.textSecondary, fontVariant: ['tabular-nums'] },
     // Square secondary controls (Apple-Maps hand-off, gather-time clock).
     cmdSquare: {
-      width: 54,
-      minHeight: 54,
-      borderRadius: 15,
+      width: s(54, 48),
+      minHeight: s(54, 48),
+      borderRadius: s(15, 12),
       alignItems: 'center',
       justifyContent: 'center',
       gap: 2,
       backgroundColor: 'rgba(255,255,255,0.09)',
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairline,
-      paddingVertical: 6,
+      paddingVertical: s(6, 4),
     },
     cmdSecondaryFlex: { flex: 1, width: undefined, minWidth: 0 },
     cmdSquareLabel: { fontSize: 10, fontWeight: '700', color: glass.textSecondary, fontVariant: ['tabular-nums'] },
@@ -2756,25 +2778,25 @@ const makeStyles = (accent: string) =>
     meetQuickBtnText: { color: glass.textSecondary, fontSize: 14, fontWeight: '600' },
     meetPickerWrap: { alignItems: 'center', marginBottom: 4 },
     meetSetBtn: {
-      minHeight: 52,
-      borderRadius: 15,
+      minHeight: s(52, 48),
+      borderRadius: s(15, 12),
       alignItems: 'center',
       justifyContent: 'center',
       borderWidth: StyleSheet.hairlineWidth,
-      paddingVertical: 12,
-      paddingHorizontal: 12,
+      paddingVertical: s(12, 10),
+      paddingHorizontal: s(12, 10),
     },
     meetSetText: { fontSize: 17, fontWeight: '700', color: '#fff', textAlign: 'center' },
     meetClearBtn: {
-      minHeight: 50,
-      borderRadius: 15,
+      minHeight: s(50, 46),
+      borderRadius: s(15, 12),
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: glass.fill,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairline,
-      paddingVertical: 12,
-      paddingHorizontal: 12,
+      paddingVertical: s(12, 10),
+      paddingHorizontal: s(12, 10),
     },
     meetClearText: { fontSize: 17, fontWeight: '600', color: glass.textSecondary, textAlign: 'center' },
     dots: { flexDirection: 'row', gap: 6, alignItems: 'center' },
@@ -2793,19 +2815,25 @@ const makeStyles = (accent: string) =>
     },
     searchField: {
       flex: 1,
-      minHeight: 44,
-      borderRadius: 22,
+      minHeight: s(44, 40),
+      borderRadius: s(22, 18),
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 8,
-      paddingHorizontal: 14,
-      paddingVertical: 10,
+      gap: s(8, 6),
+      paddingHorizontal: s(14, 10),
+      paddingVertical: s(10, 8),
       backgroundColor: 'rgba(118,118,128,0.26)',
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: 'rgba(255,255,255,0.15)',
     },
     searchPlaceholder: { fontSize: 15, color: 'rgba(235,235,245,0.5)', flexShrink: 1 },
-    avatar: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+    avatar: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
     avatarText: { fontSize: 16, fontWeight: '700', color: '#fff' },
     avatarEmoji: { fontSize: 20 },
     flockEmoji: { fontSize: 20 },
@@ -3014,10 +3042,10 @@ const makeStyles = (accent: string) =>
     settingSwitchHint: { fontSize: 12, color: glass.textTertiary, marginTop: 2, flexShrink: 1 },
     codeText: { fontFamily: DISPLAY_FONT, fontSize: 24, fontWeight: '700', color: '#fff', letterSpacing: 2 },
     chip: {
-      minHeight: 38,
-      paddingHorizontal: 16,
-      paddingVertical: 8,
-      borderRadius: 19,
+      minHeight: s(38, 34),
+      paddingHorizontal: s(16, 12),
+      paddingVertical: s(8, 6),
+      borderRadius: s(19, 16),
       flexDirection: 'row',
       alignItems: 'center',
       gap: 7,
@@ -3207,3 +3235,4 @@ const makeStyles = (accent: string) =>
     },
     reportButtonText: { flex: 1, color: '#fff', fontSize: 16, fontWeight: '600' },
   });
+};
