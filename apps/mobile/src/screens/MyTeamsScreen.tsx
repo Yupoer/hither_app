@@ -141,7 +141,10 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
                 <View style={styles.teamCardHeader}>
                   <View style={styles.teamCardLeft}>
                     <Text style={styles.teamCardName} numberOfLines={1}>{info.group.name}</Text>
-                    <Text style={styles.teamCardSubtitle}>{info.memberCount} 人</Text>
+                    <Text style={styles.teamCardSubtitle}>
+                      {info.memberCount} 人
+                      {info.group.inviteCode ? ` · 代碼 ${info.group.inviteCode}` : ''}
+                    </Text>
                   </View>
                   <View style={styles.teamCardRight}>
                     <View style={styles.avatarStack}>
@@ -184,6 +187,13 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
                         ))}
                       </ScrollView>
                     </View>
+
+                    {info.group.inviteCode ? (
+                      <View style={styles.inviteCodeRow}>
+                        <Text style={styles.inviteCodeLabel}>加入代碼</Text>
+                        <Text style={styles.inviteCodeValue}>{info.group.inviteCode}</Text>
+                      </View>
+                    ) : null}
 
                     <View style={styles.expandedButtonsRow}>
                       <Pressable
@@ -327,6 +337,25 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.1)',
   },
   detailEmojiBig: { fontSize: 24 },
+  inviteCodeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+    paddingHorizontal: 4,
+  },
+  inviteCodeLabel: {
+    fontSize: 13,
+    color: 'rgba(235,235,245,0.55)',
+    fontWeight: '600',
+  },
+  inviteCodeValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#fff',
+    letterSpacing: 2,
+    fontVariant: ['tabular-nums'],
+  },
   expandedButtonsRow: {
     flexDirection: 'row',
     gap: 12,
