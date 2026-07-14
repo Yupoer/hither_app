@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View, ScrollView, Modal, Alert, Dimensions, TouchableOpacity } from 'react-native';
+import { Pressable, StyleSheet, Text, View, Alert, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,13 +7,12 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useTheme } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
-import { accentMix } from '../glass';
-import { lightTap, alertBuzz } from '../utils/haptics';
+import { lightTap } from '../utils/haptics';
 import { logEvent } from '../utils/activityLog';
 import CrookIcon from '../components/CrookIcon';
 import { useSession } from '../state/SessionContext';
 import { getMyJoinedGroups, JoinedGroupInfo } from '../api/client';
-import Animated, { FadeIn, FadeOut, SlideInDown, ZoomIn, LinearTransition } from 'react-native-reanimated';
+import Animated, { FadeIn, SlideInDown, ZoomIn } from 'react-native-reanimated';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RoleSelect'>;
 
@@ -25,11 +24,19 @@ export default function RoleSelectScreen({ navigation }: Props) {
   const { user, signOut } = useSession();
 
   const [joinedGroups, setJoinedGroups] = useState<JoinedGroupInfo[]>([]);
+  const [groupsLoading, setGroupsLoading] = useState(!!user);
 
   useEffect(() => {
-    if (user) {
-      getMyJoinedGroups().then(setJoinedGroups).catch((e) => console.log('Failed to fetch joined groups', e));
+    if (!user) {
+      setJoinedGroups([]);
+      setGroupsLoading(false);
+      return;
     }
+    setGroupsLoading(true);
+    getMyJoinedGroups()
+      .then(setJoinedGroups)
+      .catch((e) => console.log('Failed to fetch joined groups', e))
+      .finally(() => setGroupsLoading(false));
   }, [user]);
 
   return (
@@ -112,26 +119,29 @@ export default function RoleSelectScreen({ navigation }: Props) {
             </Pressable>
           </Animated.View>
 
+          {/* Reserve CTA height while groups load so primary tiles don't jump. */}
+          {user && groupsLoading ? <View style={styles.myTeamsSlot} /> : null}
+
           {joinedGroups.length > 0 && (
-            <>
-              <View style={styles.myTeamsSpacer} />
-              <Animated.View entering={FadeIn.duration(400)}>
-                <TouchableOpacity
-                  activeOpacity={0.7}
-                  onPress={() => { lightTap(); navigation.navigate('MyTeams', { initialGroups: joinedGroups }); }}
-                  style={[styles.ctaMyTeams, { backgroundColor: 'rgba(255,255,255,0.12)' }]}
-                >
-                  <Ionicons name="people-outline" size={20} color={accent} />
-                  <Text style={styles.ctaMyTeamsText}>查看我的隊伍 ({joinedGroups.length})</Text>
-                </TouchableOpacity>
-              </Animated.View>
-            </>
+            <Animated.View entering={FadeIn.duration(400)}>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => { lightTap(); navigation.navigate('MyTeams', { initialGroups: joinedGroups }); }}
+                style={[styles.ctaMyTeams, { backgroundColor: 'rgba(255,255,255,0.12)' }]}
+              >
+                <Ionicons name="people-outline" size={20} color={accent} />
+                <Text style={styles.ctaMyTeamsText}>查看我的隊伍 ({joinedGroups.length})</Text>
+              </TouchableOpacity>
+            </Animated.View>
           )}
 
           <Animated.View entering={FadeIn.duration(600).delay(300)}>
-            <Text style={[styles.footer, { marginTop: 16 }]}>{t('role.footer')}</Text>
+            <Text style={styles.footer}>{t('role.footer')}</Text>
           </Animated.View>
         </View>
+
+        {/* Leftover height stays below actions — not between primary tiles and my-teams. */}
+        <View style={styles.bottomSpacer} />
       </View>
     </LinearGradient>
   );
@@ -174,7 +184,6 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
     paddingHorizontal: 24,
   },
   headerArea: {
@@ -197,16 +206,15 @@ const styles = StyleSheet.create({
     marginTop: 12,
     maxWidth: 260,
   },
-  spacer: { flex: 1 },
   actionArea: {
     width: '100%',
     alignItems: 'center',
+    gap: 16,
   },
   actionRow: {
     flexDirection: 'row',
     width: '100%',
     gap: 14,
-    marginBottom: 16,
   },
   actionTile: {
     flex: 1,
@@ -233,18 +241,17 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255,255,255,0.15)',
-    marginBottom: 16,
   },
-  myTeamsSpacer: { height: 64 },
-  ctaGlassBg: {
-    ...StyleSheet.absoluteFillObject,
+  /** Same height as ctaMyTeams so load → show doesn't shift primary tiles. */
+  myTeamsSlot: {
+    minHeight: 54,
+    alignSelf: 'stretch',
   },
   ctaMyTeamsText: { fontSize: 15, fontWeight: '600', color: '#fff' },
   footer: {
     fontSize: 13,
     color: 'rgba(235,235,245,0.4)',
   },
+  bottomSpacer: { flex: 1 },
   pressed: { opacity: 0.8 },
-  
-
 });

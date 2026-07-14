@@ -59,10 +59,18 @@ describe('map UI placement contracts', () => {
     expect(settingsOverlay).toContain('value={obliqueLocate}');
   });
 
-  it('adds visible separation before viewing my teams', () => {
+  it('pins a far fixed gap before viewing my teams and does not vertical-center', () => {
     expect(roleSelect).toContain('styles.myTeamsSpacer');
     expect(roleSelect).toContain('myTeamsSpacer: { height: 64 }');
+    // Vertical center on `content` reflowed the create/join ↔ my-teams distance
+    // when the CTA mounted after fetch; layout must stay top-down with bottom flex.
+    const contentBlock = roleSelect.match(/content:\s*\{[^}]+\}/);
+    expect(contentBlock?.[0] ?? '').not.toContain("justifyContent: 'center'");
+    expect(roleSelect).toContain('bottomFlex');
+    expect(roleSelect).toContain('myTeamsSlot');
   });
+
+
 
   it('uses a Traditional Chinese account label', () => {
     expect(i18n).toContain("'settings.account': '帳號'");
