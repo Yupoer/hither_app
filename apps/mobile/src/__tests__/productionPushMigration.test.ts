@@ -35,7 +35,7 @@ describe('production push and live activity migration', () => {
   });
 
   it('creates owner-only live activity sessions with RLS', () => {
-    expect(migration).toContain('create table public.live_activity_sessions');
+    expect(migration).toMatch(/create table (if not exists )?public\.live_activity_sessions/);
     expect(migration).toContain('alter table public.live_activity_sessions enable row level security');
     expect(migration).toMatch(/live_activity_sessions: select own[\s\S]*auth\.uid\(\)/);
     expect(migration).toMatch(/live_activity_sessions: write own[\s\S]*auth\.uid\(\)/);

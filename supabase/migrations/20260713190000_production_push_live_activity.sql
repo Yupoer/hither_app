@@ -29,7 +29,7 @@ alter table public.commands
 -- Per-user Live Activity sessions
 -- -------------------------------------------------------------------------
 
-create table public.live_activity_sessions (
+create table if not exists public.live_activity_sessions (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   group_id uuid not null references public.groups(id) on delete cascade,
@@ -47,19 +47,21 @@ create table public.live_activity_sessions (
   unique (user_id, group_id)
 );
 
-create index idx_live_activity_sessions_group_id
+create index if not exists idx_live_activity_sessions_group_id
   on public.live_activity_sessions(group_id);
-create index idx_live_activity_sessions_destination_id
+create index if not exists idx_live_activity_sessions_destination_id
   on public.live_activity_sessions(destination_id);
-create index idx_live_activity_sessions_expires_at
+create index if not exists idx_live_activity_sessions_expires_at
   on public.live_activity_sessions(expires_at);
 
 alter table public.live_activity_sessions enable row level security;
 
+drop policy if exists "live_activity_sessions: select own" on public.live_activity_sessions;
 create policy "live_activity_sessions: select own"
   on public.live_activity_sessions for select to authenticated
   using (user_id = (select auth.uid()));
 
+drop policy if exists "live_activity_sessions: write own" on public.live_activity_sessions;
 create policy "live_activity_sessions: write own"
   on public.live_activity_sessions for all to authenticated
   using (user_id = (select auth.uid()))
@@ -71,8 +73,14 @@ create policy "live_activity_sessions: write own"
 grant select, insert, update, delete
   on public.live_activity_sessions to authenticated;
 
-alter publication supabase_realtime
-  add table public.live_activity_sessions;
+-- Idempotent: remote may already publish this table from an earlier ad-hoc migration.
+do $$
+begin
+  alter publication supabase_realtime add table public.live_activity_sessions;
+exception
+  when duplicate_object then null;
+end;
+$$;
 
 -- -------------------------------------------------------------------------
 -- Distance and journey RPC

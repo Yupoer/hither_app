@@ -34,7 +34,7 @@ pm run typecheck 通過且 commit 上 master 後記 done；原生未實機驗證
 | BUG-20 | done | fix/bug-06-09-13-17-20-nav | 7d7d9fe | allModeRoutes + alts |
 | BUG-21 | done-code | master | existing | send-push+triggers exist; needs vault/APNs secrets + Dev Build 實機 |
 | BUG-22 | done | fix/bug-07-11-12-16-22-teams | 5b72f20 | poll sent invites while pending |
-| BUG-23 | done | fix/bug-23-custom-cmd | b330303 | profile update upsert + error detail |
+| BUG-23 | done | fix/bug-23-custom-cmd | b330303 + remote push | client upsert + remote `profiles.preferences` migration applied |
 | BUG-24 | done | fix/bug-10-18-24-glass-ui | aac0f56 | pill 0.82 + hairlineSoft |
 
 ---
