@@ -53,6 +53,18 @@ describe('Dynamic Type contract', () => {
     expect(mapScreen).toContain('inviteRowStacked');
   });
 
+  it('keeps stage-1 locate capsules clear of the gathering-point carousel', () => {
+    expect(mapScreen).toContain('a11y-layout:carouselCapsuleClearance');
+    expect(mapScreen).toContain('carouselMaxHeight');
+    expect(mapScreen).toContain('CAPSULE_CLEARANCE');
+    // Capsules must paint above the carousel.
+    expect(mapScreen).toMatch(/recenter:\s*\{[^}]*zIndex:\s*62/);
+    expect(mapScreen).toMatch(/teamCapsuleWrap:\s*\{[^}]*zIndex:\s*62/s);
+    expect(mapScreen).toMatch(/carouselWrap:\s*\{[^}]*zIndex:\s*50/s);
+    // Peek never stacks the command row (keeps card short).
+    expect(mapScreen).toContain('detent > 0 && (fontBucket === \'large\' || fontBucket === \'xl\')');
+  });
+
   it('clamps font scale for layout and maps buckets under the global cap', () => {
     expect(cappedFontScale(2)).toBe(GLOBAL_FONT_SCALE_CAP);
     expect(cappedFontScale(1)).toBe(1);

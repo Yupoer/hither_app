@@ -129,7 +129,6 @@ import { captureScreen } from 'react-native-view-shot';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ONBOARDING_STORAGE_KEY } from '../onboarding/sync';
 import { isDemoGroup } from '../api/demo';
-import { isVirtualMember, assignVirtualToSubgroup } from '../api/virtualMates';
 import { confirmAction } from '../utils/confirm';
 import { logEvent, logError } from '../utils/activityLog';
 import { lightTap, mediumTap, rigidTap, selectionTick, alertBuzz } from '../utils/haptics';
@@ -839,15 +838,6 @@ export default function MapScreen({ route, navigation }: Props) {
   const handleInvite = useCallback(async (subgroupId: string, inviteeId: string) => {
     mediumTap();
     logEvent('invite_send', { subgroupId, inviteeId });
-    // Virtual mates aren't real Supabase users — mock the invite: they always
-    // accept, so drop them straight into my subgroup (client-side) and refresh.
-    if (isVirtualMember(inviteeId)) {
-      assignVirtualToSubgroup(inviteeId, subgroupId);
-      setInviteSheetOpen(false);
-      refresh();
-      Alert.alert(t('subgroup.inviteSent'));
-      return;
-    }
     try {
       await inviteToSubgroup(subgroupId, inviteeId);
       logEvent('invite_send_ok', { subgroupId, inviteeId });
@@ -861,7 +851,7 @@ export default function MapScreen({ route, navigation }: Props) {
       logError('invite_send_failed', e, { subgroupId, inviteeId });
       Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
     }
-  }, [refresh, t, groupId, refreshInvites, refreshSentInvites]);
+  }, [t, groupId, refreshInvites, refreshSentInvites]);
 
   // Any member can split themselves into their own new (collab, no-leader)
   // subgroup, or merge themselves back up a level — no leader say-so needed.
@@ -1199,8 +1189,7 @@ export default function MapScreen({ route, navigation }: Props) {
     return () => clearInterval(id);
   }, [mySubgroupId, refreshSentInvites, members.length]);
   // Co-members I could still pull into my team — anyone not me and not already
-  // in my subgroup. Virtual solo-test mates ARE invitable now: handleInvite
-  // mock-accepts them so a solo tester can exercise the whole team flow.
+  // in my subgroup.
   const invitable = flock.filter(
     (f) => f.userId !== user?.id && f.subgroupId !== mySubgroupId,
   );
@@ -1287,6 +1276,13 @@ export default function MapScreen({ route, navigation }: Props) {
     opacity: interpolate(heightSV.value, [detents[1], detents[2]], [1, 0], Extrapolation.CLAMP),
   }));
   const atFull = detent === detents.length - 1;
+  // Peek (stage 1): leave a clear band above the sheet for locate + group
+  // capsules so tall gathering-point cards (max Dynamic Type) never cover them.
+  const CAPSULE_CLEARANCE = 64;
+  const carouselMaxHeight = Math.max(
+    140,
+    windowHeight - detents[0] - CAPSULE_CLEARANCE - (insets.top + 8) - 8,
+  );
 
 
 
@@ -1744,13 +1740,17 @@ export default function MapScreen({ route, navigation }: Props) {
         );
       })()}
 
-      {/* Gathering-point carousel — takes over the top slot (where the group
-          pill was) instead of floating above the sheet, so it no longer
-          covers the recenter button. */}
+      {/* Gathering-point carousel — top of map; height capped so stage-1
+          locate/group capsules stay clear (cards must not cover them). */}
       {destinations.length > 0 && (
         <Animated.View
-          style={[styles.carouselWrap, { top: insets.top + 8 }, chromeOpacityStyle]}
-          pointerEvents={atFull ? 'none' : 'auto'}
+          // a11y-layout:carouselCapsuleClearance
+          style={[
+            styles.carouselWrap,
+            { top: insets.top + 8, maxHeight: carouselMaxHeight },
+            chromeOpacityStyle,
+          ]}
+          pointerEvents={atFull ? 'none' : 'box-none'}
         >
           <ScrollView
             ref={carouselRef}
@@ -1907,10 +1907,12 @@ export default function MapScreen({ route, navigation }: Props) {
 
                     {/* a11y-layout:commandRow
                         regular: single row; large/xl: nav full-width + secondary row.
-                        xl: secondary actions prefer icon-only (+ a11y labels). */}
+                        Peek (detent 0): never stack — keeps card short so it
+                        cannot cover locate/group capsules above the sheet. */}
                     {(() => {
-                      const stacked = fontBucket === 'large' || fontBucket === 'xl';
-                      const iconOnly = fontBucket === 'xl';
+                      const stacked =
+                        detent > 0 && (fontBucket === 'large' || fontBucket === 'xl');
+                      const iconOnly = fontBucket === 'xl' && detent > 0;
                       const etaLabel = routeForDestination
                         ? shortEta(routeForDestination.expectedTravelTimeSeconds)
                         : d != null
@@ -2549,7 +2551,9 @@ const makeStyles = (accent: string) =>
     roleDot: { width: 8, height: 8, borderRadius: 4 },
     roleWord: { fontSize: 14, fontWeight: '600', color: '#fff' },
 
-    recenter: { position: 'absolute', right: 14, zIndex: 40 },
+    // Capsules sit above the carousel (z) and in the reserved band under
+    // carouselMaxHeight so stage-1 cards never cover locate / group chrome.
+    recenter: { position: 'absolute', right: 14, zIndex: 62 },
     recenterCapsule: {
       width: 48,
       borderRadius: 24,
@@ -2563,10 +2567,17 @@ const makeStyles = (accent: string) =>
     teamCapsuleWrap: {
       position: 'absolute',
       left: 14,
-      zIndex: 50,
+      zIndex: 62,
     },
 
-    carouselWrap: { position: 'absolute', left: 0, right: 0, zIndex: 58 },
+    // a11y-layout:carouselCapsuleClearance — below capsules; maxHeight set inline.
+    carouselWrap: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      zIndex: 50,
+      overflow: 'hidden',
+    },
     card: {
       borderRadius: 30,
       overflow: 'hidden',
