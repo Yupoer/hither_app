@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { PixelRatio, Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
@@ -26,6 +26,10 @@ const DISPLAY_FONT = 'Fredoka_600SemiBold';
 // Warm off-white (米白) that replaces the stark pure-white of the light theme.
 const MILK_WHITE = '#F5F0E4';
 
+/** 1px physical hairline that stays sharp on 2x/3x screens. */
+const HAIR = StyleSheet.hairlineWidth * 2;
+const BORDER = Math.max(1.5, PixelRatio.roundToNearestPixel(1.5));
+
 const THEME_LABEL_KEY: Record<ThemeName, TranslationKey> = {
   night: 'onboarding.theme.night',
   day: 'onboarding.theme.day',
@@ -33,12 +37,26 @@ const THEME_LABEL_KEY: Record<ThemeName, TranslationKey> = {
   forest: 'onboarding.theme.forest',
 };
 
-/** Mini basemap gradients — map preview, not solid accent chips. */
-const BASEMAP: Record<ThemeName, [string, string]> = {
-  night: ['#0E1320', '#16264A'],
-  day: ['#E8F0F8', '#F7F5F0'],
-  dusk: ['#15101F', '#2A1B3D'],
-  forest: ['#0D1A14', '#1A3326'],
+/** 3-stop basemap — smoother than 2-stop, less banding on OLED. */
+const BASEMAP: Record<ThemeName, [string, string, string]> = {
+  night: ['#0B101C', '#141E36', '#1A2A4A'],
+  day: ['#DCE8F4', '#EBF1F6', '#F6F4EE'],
+  dusk: ['#120C1A', '#1F152E', '#2E1F42'],
+  forest: ['#0A1510', '#12241A', '#1A3326'],
+};
+
+/** Soft landmass / water blobs for map depth (not solid accent chips). */
+const LAND: Record<ThemeName, string> = {
+  night: 'rgba(80, 110, 160, 0.12)',
+  day: 'rgba(120, 160, 120, 0.18)',
+  dusk: 'rgba(140, 100, 180, 0.14)',
+  forest: 'rgba(70, 140, 90, 0.16)',
+};
+const WATER: Record<ThemeName, string> = {
+  night: 'rgba(90, 140, 200, 0.14)',
+  day: 'rgba(100, 160, 210, 0.22)',
+  dusk: 'rgba(100, 120, 180, 0.12)',
+  forest: 'rgba(70, 130, 150, 0.14)',
 };
 
 function ThemePreviewCard({
@@ -53,20 +71,22 @@ function ThemePreviewCard({
   label: string;
 }) {
   const palette = themes[name];
-  const [from, to] = BASEMAP[name];
-  const pathColor = accentMix(palette.textSecondary, name === 'day' ? 35 : 22);
+  const [c0, c1, c2] = BASEMAP[name];
+  const road = accentMix(palette.textSecondary, name === 'day' ? 28 : 18);
+  const roadStrong = accentMix(palette.textSecondary, name === 'day' ? 40 : 28);
   const glassBar =
-    name === 'day' ? 'rgba(255,255,255,0.72)' : 'rgba(20,24,36,0.55)';
+    name === 'day' ? 'rgba(255,255,255,0.78)' : 'rgba(16,20,30,0.62)';
   const labelColor = name === 'day' ? palette.textPrimary : '#F5F7FB';
 
-  // Soft breath only while selected — not a frantic loop.
+  // Soft breath on the beacon ring only — never scale the whole card
+  // (card-level scale + overflow:hidden rasterizes soft / low-res on iOS).
   const pulse = useSharedValue(1);
   useEffect(() => {
     if (selected) {
       pulse.value = withRepeat(
         withSequence(
-          withTiming(1.08, { duration: 1200 }),
-          withTiming(1, { duration: 1200 }),
+          withTiming(1.06, { duration: 1300 }),
+          withTiming(1, { duration: 1300 }),
         ),
         -1,
         false,
@@ -76,9 +96,9 @@ function ThemePreviewCard({
     }
   }, [selected, pulse]);
 
-  const beaconStyle = useAnimatedStyle(() => ({
+  const ringPulseStyle = useAnimatedStyle(() => ({
     transform: [{ scale: pulse.value }],
-    opacity: 0.85 + (pulse.value - 1) * 1.5,
+    opacity: 0.55 + (pulse.value - 1) * 4,
   }));
 
   return (
@@ -87,39 +107,68 @@ function ThemePreviewCard({
       accessibilityState={{ selected }}
       accessibilityLabel={selected ? `${label}, selected` : label}
       onPress={onPress}
-      // Ensure the whole card is the hit target even when decorative layers stack.
       hitSlop={4}
       style={({ pressed }) => [
         styles.card,
         selected && { ...styles.cardGlow, shadowColor: palette.accent },
-        { transform: [{ scale: pressed ? 0.97 : selected ? 1.03 : 1 }] },
-        pressed && { opacity: 0.95 },
-        !selected && !pressed && { opacity: 0.92 },
+        // Press only — no permanent selected scale (keeps edges crisp).
+        pressed && { transform: [{ scale: 0.98 }], opacity: 0.96 },
+        !selected && !pressed && { opacity: 0.94 },
       ]}
     >
       {/* In-flow scaffold: absolute-only kids collapse to 0 height in Yoga. */}
       <View style={styles.cardScaffold} pointerEvents="none" collapsable={false} />
 
-      {/* Decorative layers must not steal touches from Pressable. */}
       <LinearGradient
-        colors={[from, to]}
-        start={{ x: 0.2, y: 0 }}
-        end={{ x: 0.8, y: 1 }}
+        colors={[c0, c1, c2]}
+        locations={[0, 0.45, 1]}
+        start={{ x: 0.15, y: 0 }}
+        end={{ x: 0.85, y: 1 }}
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
       />
 
-      <View style={[styles.path, { borderColor: pathColor }]} pointerEvents="none" />
+      {/* Map terrain — soft water + land masses for depth without bitmaps. */}
+      <View
+        style={[styles.waterBlob, { backgroundColor: WATER[name] }]}
+        pointerEvents="none"
+      />
+      <View
+        style={[styles.landBlob, { backgroundColor: LAND[name] }]}
+        pointerEvents="none"
+      />
+      <View
+        style={[styles.landBlobSm, { backgroundColor: LAND[name] }]}
+        pointerEvents="none"
+      />
 
-      <Animated.View style={[styles.beaconWrap, beaconStyle]} pointerEvents="none">
-        <View style={[styles.beaconRing, { borderColor: accentMix(palette.accent, 45) }]}>
+      {/* Road grid — thin native strokes stay sharp at @2x/@3x. */}
+      <View style={[styles.roadH, { backgroundColor: road }]} pointerEvents="none" />
+      <View style={[styles.roadH2, { backgroundColor: road }]} pointerEvents="none" />
+      <View style={[styles.roadV, { backgroundColor: road }]} pointerEvents="none" />
+      <View style={[styles.roadArc, { borderColor: roadStrong }]} pointerEvents="none" />
+
+      {/* Building blocks — tiny sharp rects, map-chip feel. */}
+      <View style={[styles.block, styles.blockA, { backgroundColor: road }]} pointerEvents="none" />
+      <View style={[styles.block, styles.blockB, { backgroundColor: road }]} pointerEvents="none" />
+      <View style={[styles.block, styles.blockC, { backgroundColor: road }]} pointerEvents="none" />
+
+      <View style={styles.beaconWrap} pointerEvents="none">
+        <Animated.View
+          style={[
+            styles.beaconRingOuter,
+            { borderColor: accentMix(palette.accent, 35) },
+            ringPulseStyle,
+          ]}
+        />
+        <View style={[styles.beaconRing, { borderColor: accentMix(palette.accent, 55) }]}>
           <View style={[styles.beaconDot, { backgroundColor: palette.accent }]} />
         </View>
-        <CrookIcon size={22} color={palette.accent} style={styles.crook} />
-      </Animated.View>
+        <CrookIcon size={20} color={palette.accent} style={styles.crook} />
+      </View>
 
       <View style={[styles.glassBar, { backgroundColor: glassBar }]} pointerEvents="none">
-        <View style={[styles.glassGrabber, { backgroundColor: accentMix(palette.accent, 40) }]} />
+        <View style={[styles.glassGrabber, { backgroundColor: accentMix(palette.accent, 45) }]} />
         <HitherText
           typeRole="title"
           style={[styles.cardLabel, { color: labelColor, fontFamily: DISPLAY_FONT }]}
@@ -131,14 +180,14 @@ function ThemePreviewCard({
 
       {selected ? (
         <View
-          style={[styles.cardRing, { borderColor: accentMix(palette.accent, 50) }]}
+          style={[styles.cardRing, { borderColor: accentMix(palette.accent, 55) }]}
           pointerEvents="none"
         />
       ) : null}
 
       {selected ? (
         <View style={[styles.cardCheck, { backgroundColor: palette.accent }]} pointerEvents="none">
-          <Ionicons name="checkmark" size={12} color={palette.accentText} />
+          <Ionicons name="checkmark" size={13} color={palette.accentText} />
         </View>
       ) : null}
     </Pressable>
@@ -207,7 +256,7 @@ const styles = StyleSheet.create({
   card: {
     flex: 1,
     aspectRatio: 0.92,
-    minHeight: 148,
+    minHeight: 156,
     borderRadius: 24,
     overflow: 'hidden',
     backgroundColor: '#0E1320',
@@ -218,49 +267,111 @@ const styles = StyleSheet.create({
     aspectRatio: 0.92,
   },
   cardGlow: {
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.45,
-    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 14,
     elevation: 8,
   },
-  path: {
+  waterBlob: {
     position: 'absolute',
-    left: '12%',
-    right: '18%',
-    top: '28%',
-    height: 48,
+    width: '42%',
+    height: '28%',
     borderRadius: 40,
-    borderWidth: 2,
+    top: '12%',
+    right: '6%',
+  },
+  landBlob: {
+    position: 'absolute',
+    width: '48%',
+    height: '34%',
+    borderRadius: 28,
+    top: '38%',
+    left: '4%',
+  },
+  landBlobSm: {
+    position: 'absolute',
+    width: '26%',
+    height: '18%',
+    borderRadius: 18,
+    top: '18%',
+    left: '38%',
+  },
+  roadH: {
+    position: 'absolute',
+    left: '8%',
+    right: '10%',
+    top: '42%',
+    height: HAIR,
+    borderRadius: 1,
+  },
+  roadH2: {
+    position: 'absolute',
+    left: '18%',
+    right: '22%',
+    top: '58%',
+    height: HAIR,
+    borderRadius: 1,
+  },
+  roadV: {
+    position: 'absolute',
+    top: '22%',
+    bottom: '36%',
+    left: '48%',
+    width: HAIR,
+    borderRadius: 1,
+  },
+  roadArc: {
+    position: 'absolute',
+    left: '14%',
+    right: '20%',
+    top: '26%',
+    height: 52,
+    borderRadius: 40,
+    borderWidth: BORDER,
     borderBottomWidth: 0,
     borderLeftWidth: 0,
-    transform: [{ rotate: '-12deg' }],
+    transform: [{ rotate: '-14deg' }],
   },
+  block: {
+    position: 'absolute',
+    borderRadius: 2,
+  },
+  blockA: { width: 10, height: 8, top: '30%', left: '22%' },
+  blockB: { width: 8, height: 12, top: '48%', left: '62%' },
+  blockC: { width: 12, height: 7, top: '52%', left: '28%' },
   beaconWrap: {
     position: 'absolute',
-    top: '34%',
-    alignSelf: 'center',
+    top: '32%',
     left: 0,
     right: 0,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  beaconRingOuter: {
+    position: 'absolute',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: BORDER,
+  },
   beaconRing: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 2,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: BORDER,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.12)',
   },
   beaconDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    width: 11,
+    height: 11,
+    borderRadius: 5.5,
   },
   crook: {
     position: 'absolute',
-    right: -14,
-    top: -10,
+    right: -12,
+    top: -8,
   },
   glassBar: {
     position: 'absolute',
@@ -272,13 +383,16 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 10,
     alignItems: 'center',
+    // Thin top edge for glass depth without soft blur.
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.12)',
   },
   glassGrabber: {
     width: 28,
     height: 3,
     borderRadius: 2,
     marginBottom: 6,
-    opacity: 0.7,
+    opacity: 0.75,
   },
   cardLabel: {
     fontSize: 17,
@@ -292,15 +406,15 @@ const styles = StyleSheet.create({
     right: 5,
     bottom: 5,
     borderRadius: 20,
-    borderWidth: 2,
+    borderWidth: BORDER,
   },
   cardCheck: {
     position: 'absolute',
     top: 8,
     right: 8,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 2,

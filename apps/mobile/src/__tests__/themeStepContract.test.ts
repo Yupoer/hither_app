@@ -18,10 +18,16 @@ describe('ThemeStep layout contract', () => {
     expect(themeStep).toContain('THEME_ORDER.slice(0, 2)');
     expect(themeStep).toContain('THEME_ORDER.slice(2, 4)');
     expect(themeStep).toContain('flex: 1');
-    expect(themeStep).toContain('minHeight: 148');
+    expect(themeStep).toMatch(/minHeight:\s*15[68]/);
     expect(themeStep).toContain('cardScaffold');
     expect(themeStep).not.toMatch(/width:\s*'47%'/);
     expect(themeStep).not.toMatch(/flexWrap:\s*'wrap'/);
+  });
+
+  it('avoids whole-card selected scale (keeps edges crisp)', () => {
+    // Permanent selected scale + overflow:hidden looks soft/low-res on iOS.
+    expect(themeStep).not.toMatch(/selected\s*\?\s*1\.03/);
+    expect(themeStep).toContain('scale: 0.98');
   });
 
   it('keeps live theme apply and four a11y theme buttons', () => {
@@ -33,3 +39,4 @@ describe('ThemeStep layout contract', () => {
     expect(themeStep).toContain('onboarding.theme.forest');
   });
 });
+
