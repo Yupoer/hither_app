@@ -34,6 +34,8 @@ export interface GroupMapProps {
   currentUserId?: string;
   routePoints?: Coordinates[];
   routeColor?: string;
+  /** Secondary routes (other travel modes) drawn thinner under the primary. */
+  alternateRoutes?: { points: Coordinates[]; color: string }[];
   /** Sheet height overlapping the map — shifts the camera center up so
    *  markers stay inside the exposed strip, like Apple Maps. */
   bottomOverlap?: number;
@@ -176,7 +178,7 @@ const MemberMarker = React.memo(({ member, accent, styles }: any) => {
 });
 
 const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
-  { members, gathering, destinations, pendingPlace, routePoints, routeColor },
+  { members, gathering, destinations, pendingPlace, routePoints, routeColor, alternateRoutes },
   ref,
 ) {
   const mapRef = useRef<MapView | null>(null);
@@ -254,6 +256,19 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       mapPadding={{ top: 42, left: 32, right: 32, bottom: 42 }}
       showsCompass
     >
+      {alternateRoutes?.map((alt, i) =>
+        alt.points.length > 1 ? (
+          <Polyline
+            key={`alt-route-${i}`}
+            coordinates={alt.points}
+            strokeColor={alt.color}
+            strokeWidth={3}
+            lineCap="round"
+            lineJoin="round"
+            lineDashPattern={[8, 6]}
+          />
+        ) : null,
+      )}
       {routePoints && routePoints.length > 1 ? (
         <Polyline
           coordinates={routePoints}

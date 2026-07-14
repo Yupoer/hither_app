@@ -1,5 +1,6 @@
 /**
  * WaypointService — visited waypoint history (record + fetch).
+ * BUG-17: history is team-scoped via group_id (user_id still records who arrived).
  */
 import { supabase } from '../supabase';
 import { isDemoGroup } from '../demo';
@@ -17,6 +18,7 @@ export async function recordVisitedWaypoint(
   if (!userId) return;
   const { error } = await supabase.from('visited_waypoints').insert({
     user_id: userId,
+    group_id: groupId,
     name,
     latitude: coordinates.latitude,
     longitude: coordinates.longitude,
@@ -24,15 +26,24 @@ export async function recordVisitedWaypoint(
   orThrow(error);
 }
 
-export async function fetchVisitedWaypoints(): Promise<VisitedWaypoint[]> {
+export async function fetchVisitedWaypoints(groupId?: string): Promise<VisitedWaypoint[]> {
   const { data: userData } = await supabase.auth.getUser();
   const userId = userData.user?.id;
   if (!userId) return [];
-  const { data, error } = await supabase
+
+  let query = supabase
     .from('visited_waypoints')
-    .select('id, name, latitude, longitude, arrived_at')
-    .eq('user_id', userId)
+    .select('id, name, latitude, longitude, arrived_at, group_id')
     .order('arrived_at', { ascending: false });
+
+  if (groupId) {
+    query = query.eq('group_id', groupId);
+  } else {
+    // Fallback: personal history when no team context.
+    query = query.eq('user_id', userId);
+  }
+
+  const { data, error } = await query;
   orThrow(error);
   return ((data ?? []) as {
     id: string;

@@ -77,8 +77,25 @@ export function useJourneyNavigation({
   }, []);
 
   const [journeyBusy, setJourneyBusy] = useState(false);
+
+  /** Follower-only: local route plan without writing journey_status (BUG-13). */
+  const startLocalRoutePlan = useCallback(
+    (dest: Destination, index: number) => {
+      setPendingJourneyStatus('going');
+      setPendingTargetId(dest.id);
+      setSelectedIndex(index);
+      mapRef.current?.centerOn(dest.coordinates);
+    },
+    [mapRef, setSelectedIndex],
+  );
+
   const startNavigation = useCallback(
     async (dest: Destination, index: number) => {
+      // Followers only plan a local route; leader broadcast overrides later.
+      if (!isLeader) {
+        startLocalRoutePlan(dest, index);
+        return;
+      }
       if (!groupId || journeyBusy) return;
       setJourneyBusy(true);
       setPendingJourneyStatus('going');
@@ -90,8 +107,8 @@ export function useJourneyNavigation({
           const [moved] = ids.splice(index, 1);
           ids.unshift(moved);
           const updates = ids.map((id, i) => {
-            const dest = destinations.find((d) => d.id === id);
-            return { id, position: i, day: dest?.day ?? 1 };
+            const d = destinations.find((x) => x.id === id);
+            return { id, position: i, day: d?.day ?? 1 };
           });
           await reorderDestinations(groupId, updates);
         }
@@ -107,10 +124,27 @@ export function useJourneyNavigation({
         setJourneyBusy(false);
       }
     },
-    [groupId, journeyBusy, destinations, refresh, t, mapRef, carouselRef, setSelectedIndex],
+    [
+      isLeader,
+      startLocalRoutePlan,
+      groupId,
+      journeyBusy,
+      destinations,
+      refresh,
+      t,
+      mapRef,
+      carouselRef,
+      setSelectedIndex,
+    ],
   );
 
   const stopNavigation = useCallback(async () => {
+    // Followers only clear local follow state — leader owns the DB journey.
+    if (!isLeader) {
+      setPendingJourneyStatus('paused');
+      setPendingTargetId(null);
+      return;
+    }
     if (!groupId || journeyBusy) return;
     setJourneyBusy(true);
     setPendingJourneyStatus('paused');
@@ -125,7 +159,31 @@ export function useJourneyNavigation({
     } finally {
       setJourneyBusy(false);
     }
-  }, [groupId, journeyBusy, refresh, t]);
+  }, [groupId, journeyBusy, isLeader, refresh, t]);
+
+  // BUG-13: followers force-follow when leader sets journey going / active dest.
+  // Local "route plan" can exist via pending*; leader server state overrides it.
+  useEffect(() => {
+    if (isLeader) return;
+    if (serverJourneyStatus === 'going' && serverTargetId) {
+      setPendingJourneyStatus(null);
+      setPendingTargetId(undefined);
+      const index = destinations.findIndex((d) => d.id === serverTargetId);
+      if (index >= 0) {
+        setSelectedIndex(index);
+        carouselRef.current?.scrollTo({ x: index * 1, animated: true });
+        // MapScreen carousel uses page width; scroll by index is handled via selectedIndex effect below.
+      }
+    }
+  }, [isLeader, serverJourneyStatus, serverTargetId, destinations, setSelectedIndex, carouselRef]);
+
+  // Keep carousel scrolled to the leader's active stop for followers.
+  useEffect(() => {
+    if (isLeader || !serverTargetId || serverJourneyStatus !== 'going') return;
+    const index = destinations.findIndex((d) => d.id === serverTargetId);
+    if (index < 0) return;
+    setSelectedIndex(index);
+  }, [isLeader, serverTargetId, serverJourneyStatus, destinations, setSelectedIndex]);
 
   return {
     journeyStatus,
@@ -139,5 +197,6 @@ export function useJourneyNavigation({
     openInAppleMaps,
     startNavigation,
     stopNavigation,
+    startLocalRoutePlan,
   };
 }

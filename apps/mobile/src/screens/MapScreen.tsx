@@ -119,6 +119,7 @@ import {
   setJourneyStatus,
   setSolo,
   setStragglerConfig,
+  sendCommand,
   updateMyLocation,
   updateGroupTripDetails,
 } from '../api/client';
@@ -264,13 +265,14 @@ export default function MapScreen({ route, navigation }: Props) {
   useEffect(() => {
     if (overlay !== 'history') return;
     let cancelled = false;
-    void fetchVisitedWaypoints().then((items) => {
+    // BUG-17: history is team-scoped when we have a groupId.
+    void fetchVisitedWaypoints(groupId ?? undefined).then((items) => {
       if (!cancelled) setHistoryGroups(groupHistoryByDay(items));
     });
     return () => {
       cancelled = true;
     };
-  }, [overlay]);
+  }, [overlay, groupId]);
   // "Invite a teammate" picker, opened from my own subgroup card.
   const [inviteSheetOpen, setInviteSheetOpen] = useState(false);
   // Invites I've sent for my subgroup that are still pending — shown on the
@@ -462,12 +464,26 @@ export default function MapScreen({ route, navigation }: Props) {
     setSelectedIndex,
   });
 
-  const { selfRoute, memberRoutes } = useMapKitRoutes({
+  const { selfRoute, memberRoutes, allModeRoutes } = useMapKitRoutes({
     selfCoordinates: fromCoords,
     members,
     gathering: activePoint,
     travelMode,
   });
+  const alternateRoutes = useMemo(() => {
+    if (!journeyActive) return undefined;
+    const modeColors: Record<string, string> = {
+      walk: 'rgba(120, 200, 255, 0.55)',
+      transit: 'rgba(180, 140, 255, 0.55)',
+      drive: 'rgba(255, 180, 90, 0.55)',
+    };
+    return (['walk', 'transit', 'drive'] as const)
+      .filter((mode) => mode !== travelMode && allModeRoutes[mode]?.points?.length)
+      .map((mode) => ({
+        points: allModeRoutes[mode]!.points,
+        color: modeColors[mode],
+      }));
+  }, [journeyActive, travelMode, allModeRoutes]);
   const initialJourneyRef = useRef<{
     key: string;
     distanceM: number;
@@ -631,14 +647,42 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [biasCenter?.latitude, biasCenter?.longitude]);
 
   const closeSearch = useCallback(() => setSearchVisible(false), []);
-  const handleSearchPick = useCallback((place: PlaceResult) => {
-    setPendingPlace(place);
-    mapRef.current?.centerOn(place.coordinates);
-    return Promise.resolve();
-  }, []);
+
+  // BUG-14: non-editors notify the leader with a plain-text place suggestion.
+  const notifyLeaderPlace = useCallback(
+    async (label: string, source: 'search' | 'kml') => {
+      if (!groupId) return;
+      const message = `建議集合點：${label}`;
+      try {
+        await sendCommand(groupId, 'custom', message);
+        logEvent('destination_suggest', { source, label });
+        Alert.alert('已通知隊長', `已把「${label}」通知給隊長，請等待隊長加入行程。`);
+      } catch (e) {
+        logError('destination_suggest_failed', e, { source });
+        Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
+      }
+    },
+    [groupId, t],
+  );
+
+  const handleSearchPick = useCallback(
+    async (place: PlaceResult) => {
+      if (!canEditItinerary) {
+        await notifyLeaderPlace(place.name, 'search');
+        return;
+      }
+      setPendingPlace(place);
+      mapRef.current?.centerOn(place.coordinates);
+    },
+    [canEditItinerary, notifyLeaderPlace],
+  );
 
   const handlePickDestination = useCallback(async (place: PlaceResult) => {
     if (!groupId) return;
+    if (!canEditItinerary) {
+      await notifyLeaderPlace(place.name, 'search');
+      return;
+    }
     if (!isPro && destinations.length >= FREE_LIMITS.destinationsPerItinerary) {
       openPaywall('paywall.triggerDestinations');
       return;
@@ -661,10 +705,17 @@ export default function MapScreen({ route, navigation }: Props) {
       logError('destination_add_failed', e, { source: 'search' });
       Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
     }
-  }, [groupId, isPro, destinations.length, myScopeId, refresh, openPaywall, t]);
+  }, [groupId, canEditItinerary, notifyLeaderPlace, isPro, destinations.length, myScopeId, refresh, openPaywall, t]);
 
   const handleKmlImport = useCallback(async (items: KmlPlacemark[], onProgress: (done: number) => void) => {
     if (!groupId) return;
+    // BUG-15: non-editors notify captain with place names instead of writing itinerary.
+    if (!canEditItinerary) {
+      const names = items.map((i) => i.name).filter(Boolean).slice(0, 8);
+      await notifyLeaderPlace(names.join('、') || `${items.length} 個地點`, 'kml');
+      onProgress(items.length);
+      return;
+    }
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       await addDestination(
@@ -676,7 +727,7 @@ export default function MapScreen({ route, navigation }: Props) {
     }
     logEvent('kml_import', { count: items.length });
     refresh();
-  }, [groupId, myScopeId, refresh]);
+  }, [groupId, canEditItinerary, notifyLeaderPlace, myScopeId, refresh]);
 
 
 
@@ -1245,7 +1296,10 @@ export default function MapScreen({ route, navigation }: Props) {
             ) : (
               <Pressable
                 style={styles.searchField}
-                onPress={() => (canEditItinerary ? setSearchVisible(true) : undefined)}
+                onPress={() => {
+                  // BUG-14: everyone can search; non-editors notify the leader.
+                  setSearchVisible(true);
+                }}
                 accessibilityRole="button"
                 accessibilityLabel={t('map.searchA11y')}
               >
@@ -1501,6 +1555,7 @@ export default function MapScreen({ route, navigation }: Props) {
         currentUserId={user?.id}
         routePoints={selfRoute?.points}
         routeColor={accent}
+        alternateRoutes={alternateRoutes}
         // Capped at mid: at full the sheet covers the map anyway.
         // ponytail: updates once per detent settle (3 discrete values), not
         // per frame — per-frame MapView prop updates re-render the native map
@@ -1554,9 +1609,7 @@ export default function MapScreen({ route, navigation }: Props) {
       )}
 
 
-      {/* Recenter capsule — rides above the sheet. Fit-all on top, locate-me
-          below, sharing one pill-shaped glass surface. Hidden while the
-          add-gather-point confirm card owns the bottom of the screen. */}
+      {/* Recenter capsule — BUG-09: peek = locate-me only; mid/full = fit-all + locate. */}
       {!confirmCardReady && (
       <Animated.View
         style={[styles.recenter, recenterStyle]}
@@ -1568,18 +1621,28 @@ export default function MapScreen({ route, navigation }: Props) {
             style={StyleSheet.absoluteFill}
             pointerEvents="none"
           />
+          {detent > 0 && (
+            <>
+              <Pressable
+                style={styles.recenterHit}
+                onPress={() => {
+                  lightTap();
+                  fitAllMembers();
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={t('map.fitAllA11y')}
+              >
+                <Ionicons name="expand-outline" size={19} color="#fff" />
+              </Pressable>
+              <View style={styles.recenterDivider} />
+            </>
+          )}
           <Pressable
             style={styles.recenterHit}
-            onPress={fitAllMembers}
-            accessibilityRole="button"
-            accessibilityLabel={t('map.fitAllA11y')}
-          >
-            <Ionicons name="expand-outline" size={19} color="#fff" />
-          </Pressable>
-          <View style={styles.recenterDivider} />
-          <Pressable
-            style={styles.recenterHit}
-            onPress={locateMe}
+            onPress={() => {
+              lightTap();
+              locateMe();
+            }}
             accessibilityRole="button"
             accessibilityLabel={t('map.locateA11y')}
           >
@@ -1832,6 +1895,8 @@ export default function MapScreen({ route, navigation }: Props) {
                           navigatingThis ? styles.navBtnEnd : { backgroundColor: accent },
                         ]}
                         onPress={() => {
+                          // BUG-06
+                          mediumTap();
                           if (navigatingThis) {
                             void stopNavigation();
                           } else if (isLeader) {
@@ -1840,7 +1905,8 @@ export default function MapScreen({ route, navigation }: Props) {
                             // this — Apple Maps is a separate opt-in button.
                             startNavigation(dest, index);
                           } else {
-                            mapRef.current?.centerOn(dest.coordinates);
+                            // BUG-13: follower local route plan.
+                            startNavigation(dest, index);
                           }
                         }}
                         disabled={journeyBusy}
@@ -1861,7 +1927,7 @@ export default function MapScreen({ route, navigation }: Props) {
                             ? t('map.stopNav')
                             : isLeader
                               ? t('map.directions')
-                              : t('map.viewOnMap')}
+                              : '路徑規劃'}
                         </Text>
                       </Pressable>
 
@@ -1871,6 +1937,7 @@ export default function MapScreen({ route, navigation }: Props) {
                           { backgroundColor: accentMix(accent, 16), borderColor: accentMix(accent, 38) },
                         ]}
                         onPress={() => {
+                          lightTap();
                           const order = ['walk', 'transit', 'drive'] as const;
                           setTravelMode(order[(order.indexOf(travelMode) + 1) % order.length]);
                         }}
@@ -1981,35 +2048,35 @@ export default function MapScreen({ route, navigation }: Props) {
             emptyLabel={t('settings.noDestinations')}
             onDragActiveChange={(active) => setRouteScrollEnabled(!active)}
           />
-          {canEditItinerary && (
-            <Pressable
-              style={styles.addStop}
-              onPress={() => {
-                setOverlay(null);
-                setSearchVisible(true);
-              }}
-              accessibilityRole="button"
-            >
-              <View style={[styles.addStopIcon, { backgroundColor: accentMix(accent, 26) }]}>
-                <Ionicons name="add" size={16} color={accent} />
-              </View>
-              <Text style={[styles.addStopText, { color: accent }]}>{t('map.addStop')}</Text>
-            </Pressable>
-          )}
-          {canEditItinerary && (
-            <Pressable
-              style={styles.addStop}
-              onPress={() => {
-                setKmlVisible(true);
-              }}
-              accessibilityRole="button"
-            >
-              <View style={[styles.addStopIcon, { backgroundColor: accentMix(accent, 20) }]}>
-                <Ionicons name="document-attach-outline" size={16} color={accent} />
-              </View>
-              <Text style={[styles.addStopText, { color: accent }]}>{t('kml.entry')}</Text>
-            </Pressable>
-          )}
+          <Pressable
+            style={styles.addStop}
+            onPress={() => {
+              setOverlay(null);
+              setSearchVisible(true);
+            }}
+            accessibilityRole="button"
+          >
+            <View style={[styles.addStopIcon, { backgroundColor: accentMix(accent, 26) }]}>
+              <Ionicons name="add" size={16} color={accent} />
+            </View>
+            <Text style={[styles.addStopText, { color: accent }]}>
+              {canEditItinerary ? t('map.addStop') : '通知隊長'}
+            </Text>
+          </Pressable>
+          <Pressable
+            style={styles.addStop}
+            onPress={() => {
+              setKmlVisible(true);
+            }}
+            accessibilityRole="button"
+          >
+            <View style={[styles.addStopIcon, { backgroundColor: accentMix(accent, 20) }]}>
+              <Ionicons name="document-attach-outline" size={16} color={accent} />
+            </View>
+            <Text style={[styles.addStopText, { color: accent }]}>
+              {canEditItinerary ? t('kml.entry') : '匯入並通知隊長'}
+            </Text>
+          </Pressable>
         </ScrollView>
       </OverlaySheet>
 
