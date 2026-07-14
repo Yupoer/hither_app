@@ -30,7 +30,7 @@
 | BUG-20 | pending | | | multi travel-mode routes |
 | BUG-21 | pending | | | APNs fan-out audit |
 | BUG-22 | pending | | | sent invites refresh |
-| BUG-23 | pending | | | custom quick command save |
+| BUG-23 | done | fix/bug-23-custom-cmd | 1951583 | profile update upsert + error detail |
 | BUG-24 | done | fix/bug-10-18-24-glass-ui | 46cbc48 | pill 0.82 + hairlineSoft |
 
 ---

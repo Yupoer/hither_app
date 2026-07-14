@@ -34,8 +34,13 @@ export default function CustomQuickCommandSheet({
     try {
       await setCustomQuickCommand(command);
       onClose();
-    } catch {
-      Alert.alert(t('settings.customQuickCommand'), t('settings.customQuickCommandSaveFailed'));
+    } catch (e) {
+      // BUG-23: surface the real failure reason (RLS / missing column / network).
+      const detail = e instanceof Error && e.message ? e.message : undefined;
+      Alert.alert(
+        t('settings.customQuickCommand'),
+        detail ?? t('settings.customQuickCommandSaveFailed'),
+      );
     }
   }
 

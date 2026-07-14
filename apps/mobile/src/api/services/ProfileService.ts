@@ -35,14 +35,29 @@ export async function updateProfile(fields: {
   if (nickname) patch.nickname = nickname;
   if (fields.avatar) patch.avatar = fields.avatar;
   if (fields.avatarColor) patch.avatar_color = fields.avatarColor;
-  if (fields.preferences) patch.preferences = fields.preferences;
+  // BUG-23: always write preferences when provided (including nested quickCommand).
+  // Use a plain JSON object so PostgREST never rejects a class instance.
+  if (fields.preferences) {
+    patch.preferences = JSON.parse(JSON.stringify(fields.preferences)) as AccountPreferences;
+  }
   if (!patch.nickname && !patch.avatar && !patch.avatar_color && !patch.preferences) return;
   const uid = await requireUserId();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('profiles')
     .update(patch)
-    .eq('id', uid);
+    .eq('id', uid)
+    .select('id')
+    .maybeSingle();
   orThrow(error);
+  // No row updated usually means the profile row is missing — create it so
+  // custom quick-command / avatar writes still succeed after auth edge cases.
+  if (!data) {
+    const { error: insertError } = await supabase.from('profiles').upsert(
+      { id: uid, nickname: nickname || '旅人', ...patch },
+      { onConflict: 'id' },
+    );
+    orThrow(insertError);
+  }
 }
 
 export async function saveOnboardingProfile(answers: object): Promise<void> {

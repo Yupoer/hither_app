@@ -258,6 +258,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     async (command: CustomQuickCommand) => {
       const normalized = normalizeCustomQuickCommand(command);
       if (!normalized) throw new Error('自訂快捷指令需要名稱與通知內容');
+      // Always merge onto the latest known preferences object (not a stale
+      // partial) so concurrent profile edits don't wipe the custom slot.
       await updateProfile({
         preferences: {
           ...(user?.preferences ?? {}),
