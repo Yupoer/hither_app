@@ -34,10 +34,12 @@ describe('Dynamic Type contract', () => {
     expect(appTsx).not.toMatch(/maxFontSizeMultiplier\s*:\s*1\b/);
   });
 
-  it('marks MapScreen commandRow large/xl layout branches', () => {
+  it('marks MapScreen commandRow large/xl + narrow width layout branches', () => {
     expect(mapScreen).toContain('a11y-layout:commandRow');
+    expect(mapScreen).toContain('a11y-layout:narrowScreen');
     expect(mapScreen).toContain("fontBucket === 'large'");
     expect(mapScreen).toContain("fontBucket === 'xl'");
+    expect(mapScreen).toContain('narrowScreen');
     expect(mapScreen).toContain('commandCol');
     expect(mapScreen).toContain('commandSecondaryRow');
   });
@@ -48,18 +50,20 @@ describe('Dynamic Type contract', () => {
     expect(quickCommands).toMatch(/bucket === 'xl'/);
   });
 
-  it('rebuilds map styles from live font scale', () => {
+  it('rebuilds map styles from live font scale and narrow width', () => {
     expect(mapScreen).toContain('useFontLayout');
-    expect(mapScreen).toContain('makeStyles(accent, fontLayout.scale)');
+    expect(mapScreen).toContain('makeStyles(accent, fontLayout.scale, narrowScreen)');
     expect(mapScreen).toContain('fontLayout.scale');
+    expect(mapScreen).toContain('windowWidth < 400');
   });
 
   it('scales gathering-point card chrome and shows day + date when expanded', () => {
     expect(mapScreen).toContain('formatTripDayLine');
     expect(mapScreen).toContain('cardDayLine');
     expect(mapScreen).toContain('optimisticDepartureDate ?? group?.departureDate');
-    // Card padding / head gap must use the live scale helper `s(...)`.
-    expect(mapScreen).toMatch(/card:\s*\{[^}]*padding:\s*s\(/s);
+    // Card padding is scale-aware (via cardPad = s(...)); head gap uses s(...).
+    expect(mapScreen).toMatch(/cardPad\s*=\s*narrow\s*\?\s*s\(/);
+    expect(mapScreen).toMatch(/card:\s*\{[^}]*padding:\s*cardPad/s);
     expect(mapScreen).toMatch(/cardHead:\s*\{[^}]*gap:\s*s\(/s);
   });
 
@@ -76,8 +80,12 @@ describe('Dynamic Type contract', () => {
     expect(mapScreen).toMatch(/recenter:\s*\{[^}]*zIndex:\s*62/);
     expect(mapScreen).toMatch(/teamCapsuleWrap:\s*\{[^}]*zIndex:\s*62/s);
     expect(mapScreen).toMatch(/carouselWrap:\s*\{[^}]*zIndex:\s*50/s);
-    // Peek never stacks the command row (keeps card short).
-    expect(mapScreen).toContain('detent > 0 && (fontBucket === \'large\' || fontBucket === \'xl\')');
+    // Peek never stacks the command row (keeps card short); mid+ may stack for
+    // large/xl Dynamic Type OR narrow physical width (iPhone 15 / mini / SE).
+    expect(mapScreen).toMatch(
+      /detent\s*>\s*0\s*&&\s*[\s\S]*?(narrowScreen|fontBucket\s*===\s*'large')/,
+    );
+    expect(mapScreen).toContain('narrowScreen || fontBucket === \'large\' || fontBucket === \'xl\'');
   });
 
   it('clamps font scale for layout and maps buckets under the global cap', () => {

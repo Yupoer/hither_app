@@ -72,13 +72,13 @@ export interface GlassViewProps extends ViewProps {
  * background) and it renders Liquid Glass when available, else a `View`
  * with the opaque fallback background.
  *
- * The glass material is decoupled from the app's custom theme (night/day/dusk)
- * and follows the OS appearance instead, so we tint it with the active theme's
- * `colors.glass` to keep the surface readable in every theme, and render the
- * children as ordinary subviews ON TOP of the material (not as vibrancy
- * children — that turned emoji icons into "?" tofu). The border / radius /
- * padding from `style` live on the outer container so they match the rest of
- * the themed UI.
+ * Glass chrome is ALWAYS dark (see glass.ts) — independent of the app's map
+ * theme (night/day/dusk) and of the OS light/dark appearance. We force
+ * `colorScheme="dark"` on the system material and a dark blur tint so light
+ * mode never washes the sheet/cards or paints white edge halos. Children sit
+ * as ordinary subviews ON TOP of the material (not as vibrancy children —
+ * that turned emoji icons into "?" tofu). Border / radius / padding from
+ * `style` live on the outer container.
  */
 export function GlassView({
   glassStyle = 'regular',
@@ -87,13 +87,15 @@ export function GlassView({
   children,
   ...rest
 }: GlassViewProps) {
-  const { colors, themeName } = useTheme();
+  const { colors } = useTheme();
 
   // iOS 26+: the system Liquid Glass material. The native material treats
   // `tintColor` as a thin hint, not a literal alpha-composited backdrop, so a
   // near-opaque `glass.card`-style rgba read as fully transparent on-device.
   // A real backgroundColor layer underneath restores the caller's intended
   // opacity; the glass material still renders its blur/refraction on top.
+  // colorScheme="dark" locks the material to dark glass even when the OS is
+  // in light mode (otherwise white edge halos and washed sheet tints).
   if (isLiquidGlassAvailable()) {
     return (
       <View style={style} {...rest}>
@@ -109,6 +111,7 @@ export function GlassView({
         <ExpoGlassView
           glassEffectStyle={glassStyle}
           tintColor={tintColor}
+          colorScheme="dark"
           style={StyleSheet.absoluteFill}
           pointerEvents="none"
         />
@@ -119,13 +122,13 @@ export function GlassView({
 
   // iOS 16–25 / Android: real glassmorphism via the built-in UIBlurEffect
   // material (expo-blur) under a THIN translucent tint of the same hue, so the
-  // background shows through the blur. No gradient sheen (that read as an opaque
-  // panel). `overflow: hidden` keeps the blur inside the rounded corners.
-  const blurTint = themeName === 'day' ? 'light' : 'dark';
+  // background shows through the blur. Always dark — glass chrome never follows
+  // OS light mode or the day map theme. `overflow: hidden` keeps the blur
+  // inside the rounded corners.
   return (
     <View style={[{ overflow: 'hidden' }, style]} {...rest}>
       <BlurView
-        tint={blurTint}
+        tint="dark"
         intensity={28}
         style={StyleSheet.absoluteFill}
         pointerEvents="none"

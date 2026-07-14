@@ -216,12 +216,16 @@ export default function MapScreen({ route, navigation }: Props) {
   const accent = colors.accent;
   const { t } = useTranslation();
   // Live Dynamic Type layout — rebuilds when system fontScale changes.
-  // a11y-layout:commandRow — large/xl stack the gathering-point command controls.
+  // a11y-layout:commandRow — large/xl OR narrow width stack command controls.
+  // a11y-layout:narrowScreen — iPhone 15 / mini (~375) density + no overflow.
   const fontLayout = useFontLayout();
   const fontBucket = fontLayout.bucket;
+  // ≤390 ≈ iPhone 15 / mini / SE; slightly denser chrome so fixed command
+  // controls don't clip past the card edge on small physical widths.
+  const narrowScreen = windowWidth < 400;
   const styles = useMemo(
-    () => makeStyles(accent, fontLayout.scale),
-    [accent, fontLayout.scale],
+    () => makeStyles(accent, fontLayout.scale, narrowScreen),
+    [accent, fontLayout.scale, narrowScreen],
   );
   // Embedded themed components (reorder list, notifications, commands) always
   // render on the dark glass overlay — force the night palette so they stay dark.
@@ -1865,7 +1869,10 @@ export default function MapScreen({ route, navigation }: Props) {
                     ? 'car-outline'
                     : 'bus-outline';
               return (
-                <View key={`carousel-dest-${dest.id}-${index}`} style={{ width: windowWidth, paddingHorizontal: 14 }}>
+                <View
+                  key={`carousel-dest-${dest.id}-${index}`}
+                  style={{ width: windowWidth, paddingHorizontal: narrowScreen ? 10 : 14 }}
+                >
                   <Pressable
                     delayLongPress={300}
                     onPressIn={() => {
@@ -1983,13 +1990,20 @@ export default function MapScreen({ route, navigation }: Props) {
                     </View>
 
                     {/* a11y-layout:commandRow
-                        regular: single row; large/xl: nav full-width + secondary row.
+                        regular wide: single row; large/xl OR narrowScreen: nav
+                        full-width + secondary row so controls never clip.
+                        a11y-layout:narrowScreen — iPhone 15 / mini / SE.
                         Peek (detent 0): never stack — keeps card short so it
                         cannot cover locate/group capsules above the sheet. */}
                     {(() => {
                       const stacked =
-                        detent > 0 && (fontBucket === 'large' || fontBucket === 'xl');
-                      const iconOnly = fontBucket === 'xl' && detent > 0;
+                        detent > 0 &&
+                        (narrowScreen || fontBucket === 'large' || fontBucket === 'xl');
+                      // xl always icon-only; on narrow peeks also hide secondary
+                      // labels so the single row fits without horizontal overflow.
+                      const iconOnly =
+                        (fontBucket === 'xl' && detent > 0) ||
+                        (narrowScreen && !stacked);
                       const etaLabel = routeForDestination
                         ? shortEta(routeForDestination.expectedTravelTimeSeconds)
                         : d != null
@@ -2015,11 +2029,15 @@ export default function MapScreen({ route, navigation }: Props) {
                         <View style={styles.transitPillTop}>
                           <Ionicons name={modeIconName} size={16} color={accent} />
                           {!iconOnly ? (
-                            <Text style={styles.transitPillTime}>{etaLabel}</Text>
+                            <Text style={styles.transitPillTime} numberOfLines={1} ellipsizeMode="tail">
+                              {etaLabel}
+                            </Text>
                           ) : null}
                         </View>
                         {!iconOnly ? (
-                          <Text style={styles.transitPillDist}>{distLabel}</Text>
+                          <Text style={styles.transitPillDist} numberOfLines={1} ellipsizeMode="tail">
+                            {distLabel}
+                          </Text>
                         ) : null}
                       </Pressable>
 
@@ -2557,9 +2575,18 @@ const segStyles = StyleSheet.create({
   segText: { fontSize: 15, fontWeight: '600', color: glass.textSecondary },
 });
 
-/** Design sizes × live (capped) font scale — layout tracks Dynamic Type. */
-const makeStyles = (accent: string, scale: number) => {
+/**
+ * Design sizes × live (capped) font scale — layout tracks Dynamic Type.
+ * `narrow` densifies chrome for iPhone 15 / mini / SE so command controls
+ * stay inside the card and labels ellipsize instead of overflowing.
+ */
+const makeStyles = (accent: string, scale: number, narrow = false) => {
   const s = (n: number, min = 0) => Math.max(min, Math.round(n * scale));
+  // Slightly tighter bases on narrow physical widths (mini ~375, 15 ~390).
+  const cardPad = narrow ? s(10, 8) : s(14, 10);
+  const cmdGap = narrow ? s(6, 4) : s(8, 6);
+  const transitW = narrow ? s(76, 64) : s(92, 80);
+  const squareW = narrow ? s(46, 44) : s(54, 48);
   return StyleSheet.create({
     flex: { flex: 1, backgroundColor: '#0c1118' },
     loading: {
@@ -2660,10 +2687,12 @@ const makeStyles = (accent: string, scale: number) => {
       overflow: 'hidden',
     },
     // Gathering-point card — padding / radius / gaps track live font scale.
+    // overflow hidden clips glass radius; command row must flex so buttons
+    // never paint past the edge (untappable when clipped).
     card: {
-      borderRadius: s(30, 22),
+      borderRadius: narrow ? s(24, 18) : s(30, 22),
       overflow: 'hidden',
-      padding: s(14, 10),
+      padding: cardPad,
       borderWidth: StyleSheet.hairlineWidth,
       // BUG-10: inactive cards have no white halo; active border set inline.
       borderColor: 'transparent',
@@ -2752,25 +2781,33 @@ const makeStyles = (accent: string, scale: number) => {
 
     // The single command row and its four controls.
     // a11y-layout:commandRow — minHeights track live font scale.
+    // flexShrink on secondary controls so mini/narrow never overflows.
     commandRow: {
       flexDirection: 'row',
       alignItems: 'stretch',
-      gap: s(8, 6),
+      gap: cmdGap,
       marginTop: s(10, 8),
+      minWidth: 0,
+      width: '100%',
     },
     commandCol: {
       flexDirection: 'column',
-      gap: s(8, 6),
+      gap: cmdGap,
       marginTop: s(10, 8),
+      minWidth: 0,
+      width: '100%',
     },
     commandSecondaryRow: {
       flexDirection: 'row',
       alignItems: 'stretch',
-      gap: s(8, 6),
+      gap: cmdGap,
+      minWidth: 0,
+      width: '100%',
     },
     navBtn: {
       flex: 1,
       minWidth: 0,
+      flexShrink: 1,
       minHeight: s(54, 48),
       borderRadius: s(15, 12),
       flexDirection: 'row',
@@ -2780,14 +2817,23 @@ const makeStyles = (accent: string, scale: number) => {
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: 'transparent',
       paddingHorizontal: s(8, 6),
+      overflow: 'hidden',
     },
     navBtnFull: { flex: 0, alignSelf: 'stretch' },
     // "End navigation" state — a soft danger tint over the accent-solid "go".
     navBtnEnd: { backgroundColor: 'rgba(255,107,107,0.14)', borderColor: 'rgba(255,107,107,0.4)' },
-    navBtnText: { fontSize: 15, fontWeight: '700', flexShrink: 1 },
-    // Transit pill: tap to cycle mode; shows the live time · distance for it.
+    navBtnText: {
+      fontSize: narrow ? 14 : 15,
+      fontWeight: '700',
+      flexShrink: 1,
+      minWidth: 0,
+    },
+    // Transit pill: preferred width, may shrink on mini so the row fits.
     transitPill: {
-      width: s(92, 80),
+      width: transitW,
+      maxWidth: transitW,
+      minWidth: 44,
+      flexShrink: 1,
       minHeight: s(54, 48),
       borderRadius: s(15, 12),
       alignItems: 'center',
@@ -2795,13 +2841,29 @@ const makeStyles = (accent: string, scale: number) => {
       gap: 1,
       borderWidth: StyleSheet.hairlineWidth,
       paddingVertical: s(6, 4),
+      paddingHorizontal: 2,
+      overflow: 'hidden',
     },
-    transitPillTop: { flexDirection: 'row', alignItems: 'center', gap: s(5, 4) },
-    transitPillTime: { fontFamily: DISPLAY_FONT, fontSize: 15, color: '#fff', fontVariant: ['tabular-nums'] },
-    transitPillDist: { fontSize: 10.5, color: glass.textSecondary, fontVariant: ['tabular-nums'] },
+    transitPillTop: { flexDirection: 'row', alignItems: 'center', gap: s(5, 4), maxWidth: '100%' },
+    transitPillTime: {
+      fontFamily: DISPLAY_FONT,
+      fontSize: narrow ? 13 : 15,
+      color: '#fff',
+      fontVariant: ['tabular-nums'],
+      flexShrink: 1,
+    },
+    transitPillDist: {
+      fontSize: narrow ? 9.5 : 10.5,
+      color: glass.textSecondary,
+      fontVariant: ['tabular-nums'],
+      flexShrink: 1,
+    },
     // Square secondary controls (Apple-Maps hand-off, gather-time clock).
     cmdSquare: {
-      width: s(54, 48),
+      width: squareW,
+      maxWidth: squareW,
+      minWidth: 44,
+      flexShrink: 1,
       minHeight: s(54, 48),
       borderRadius: s(15, 12),
       alignItems: 'center',
@@ -2811,9 +2873,18 @@ const makeStyles = (accent: string, scale: number) => {
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairline,
       paddingVertical: s(6, 4),
+      paddingHorizontal: 2,
+      overflow: 'hidden',
     },
-    cmdSecondaryFlex: { flex: 1, width: undefined, minWidth: 0 },
-    cmdSquareLabel: { fontSize: 10, fontWeight: '700', color: glass.textSecondary, fontVariant: ['tabular-nums'] },
+    cmdSecondaryFlex: { flex: 1, width: undefined, maxWidth: undefined, minWidth: 0 },
+    cmdSquareLabel: {
+      fontSize: 10,
+      fontWeight: '700',
+      color: glass.textSecondary,
+      fontVariant: ['tabular-nums'],
+      flexShrink: 1,
+      maxWidth: '100%',
+    },
 
     // Add-gather-point confirm card — follower-nav layout, extra-round corners.
     confirmCard: { position: 'absolute', left: 14, right: 14, zIndex: 60 },
@@ -3093,7 +3164,14 @@ const makeStyles = (accent: string, scale: number) => {
       paddingBottom: 10,
     },
 
-    codeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
+    codeRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flexWrap: 'wrap',
+      gap: 12,
+      marginBottom: 16,
+      minWidth: 0,
+    },
     // Big bold white section headings on the main sheet (Apple Maps style).
     // Generous top margin so each section visibly separates from the last.
     sheetHeading: {
@@ -3153,7 +3231,14 @@ const makeStyles = (accent: string, scale: number) => {
     settingSwitchText: { flex: 1, minWidth: 0 },
     settingSwitchLabel: { fontSize: 15, fontWeight: '600', color: '#fff', flexShrink: 1, lineHeight: 22 },
     settingSwitchHint: { fontSize: 12, color: glass.textTertiary, marginTop: 2, flexShrink: 1 },
-    codeText: { fontFamily: DISPLAY_FONT, fontSize: 24, fontWeight: '700', color: '#fff', letterSpacing: 2 },
+    codeText: {
+      fontFamily: DISPLAY_FONT,
+      fontSize: narrow ? 20 : 24,
+      fontWeight: '700',
+      color: '#fff',
+      letterSpacing: narrow ? 1 : 2,
+      flexShrink: 1,
+    },
     chip: {
       minHeight: s(38, 34),
       paddingHorizontal: s(16, 12),
@@ -3162,6 +3247,7 @@ const makeStyles = (accent: string, scale: number) => {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 7,
+      flexShrink: 0,
       borderWidth: StyleSheet.hairlineWidth,
     },
     chipGhost: {
@@ -3252,7 +3338,7 @@ const makeStyles = (accent: string, scale: number) => {
       alignItems: 'center',
       justifyContent: 'center',
     },
-    rowTitle: { fontSize: 16, fontWeight: '600', color: '#fff' },
+    rowTitle: { fontSize: 16, fontWeight: '600', color: '#fff', flexShrink: 1 },
     rowSub: { fontSize: 13, color: glass.textSecondary },
     rowAction: { fontSize: 14, fontWeight: '600' },
     rowActionPressed: { opacity: 0.5 },
