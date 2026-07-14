@@ -15,10 +15,11 @@ function walkForward(steps: StepId[], answers: OnboardingAnswers) {
 }
 
 describe('onboarding flow', () => {
-  it('leader branch: intro -> theme -> role -> L1 -> L2 -> L3 -> celebration -> done', () => {
+  it('leader branch: intro -> permissions -> theme -> role -> L1 -> L2 -> L3 -> celebration -> done', () => {
     const answers: OnboardingAnswers = { role: 'leader' };
     const steps: StepId[] = [
       'intro',
+      'permissions',
       'theme',
       'role',
       'L1_purpose',
@@ -33,13 +34,15 @@ describe('onboarding flow', () => {
     expect(prevStep('L2_days', answers)).toBe('L1_purpose');
     expect(prevStep('L1_purpose', answers)).toBe('role');
     expect(prevStep('role', answers)).toBe('theme');
-    expect(prevStep('theme', answers)).toBe('intro');
+    expect(prevStep('theme', answers)).toBe('permissions');
+    expect(prevStep('permissions', answers)).toBe('intro');
   });
 
-  it('follower branch: intro -> theme -> role -> F1 -> F2 -> F3 -> mascot -> F4 -> celebration -> done', () => {
+  it('follower branch: intro -> permissions -> theme -> role -> F1 -> F2 -> F3 -> mascot -> F4 -> celebration -> done', () => {
     const answers: OnboardingAnswers = { role: 'follower' };
     const steps: StepId[] = [
       'intro',
+      'permissions',
       'theme',
       'role',
       'F1',
@@ -59,10 +62,11 @@ describe('onboarding flow', () => {
     expect(prevStep('F1', answers)).toBe('role');
   });
 
-  it('browser branch: intro -> theme -> role -> C1 -> C2 -> C3 -> celebration -> done', () => {
+  it('browser branch: intro -> permissions -> theme -> role -> C1 -> C2 -> C3 -> celebration -> done', () => {
     const answers: OnboardingAnswers = { role: 'browser' };
     const steps: StepId[] = [
       'intro',
+      'permissions',
       'theme',
       'role',
       'C1_why',

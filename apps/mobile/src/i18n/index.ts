@@ -310,6 +310,7 @@ const zh = {
   'onboarding.c2.kicker': '旅伴',
   'onboarding.c3.kicker': '最想要的功能',
   'onboarding.mascot.kicker': '你的旅伴',
+  'onboarding.permissions.kicker': '權限',
 
   'onboarding.intro.title': '牽起隊伍，不再走散',
   'onboarding.intro.body': '像牧羊人一樣，把散開的隊員輕鬆聚回同一個集合點。',
@@ -317,6 +318,13 @@ const zh = {
   'onboarding.celebration.title': '一切就緒！',
   'onboarding.celebration.subtitle': '你已完成所有步驟，準備好開始這趟旅程了。',
   'onboarding.celebration.cta': '出發',
+
+  'onboarding.permissions.title': '需要這些權限才能幫你帶隊',
+  'onboarding.permissions.subtitle': '點繼續後會跳出系統請求，之後可在設定更改。',
+  'onboarding.permissions.notifications.title': '通知',
+  'onboarding.permissions.notifications.body': '集合提醒與走散通知，幫大家準時會合。',
+  'onboarding.permissions.location.title': '定位',
+  'onboarding.permissions.location.body': '顯示你與集合點的距離。請選「使用 App 期間允許」。',
 
   'onboarding.theme.title': '選一個喜歡的主題',
   'onboarding.theme.night': '夜燈',
@@ -739,6 +747,7 @@ const en: Record<keyof typeof zh, string> = {
   'onboarding.c2.kicker': 'Travel buddies',
   'onboarding.c3.kicker': 'Most wanted',
   'onboarding.mascot.kicker': 'Your mascot',
+  'onboarding.permissions.kicker': 'Permissions',
 
   'onboarding.intro.title': 'Keep your flock together',
   'onboarding.intro.body': 'Like a shepherd, gently guide everyone back to the same gathering point.',
@@ -746,6 +755,13 @@ const en: Record<keyof typeof zh, string> = {
   'onboarding.celebration.title': "You're all set!",
   'onboarding.celebration.subtitle': "Every step is done — you're ready to start the journey.",
   'onboarding.celebration.cta': "Let's go",
+
+  'onboarding.permissions.title': 'These permissions help us keep the flock together',
+  'onboarding.permissions.subtitle': 'Continue to see system prompts. You can change them later in Settings.',
+  'onboarding.permissions.notifications.title': 'Notifications',
+  'onboarding.permissions.notifications.body': 'Meetup reminders and stray alerts so everyone reconvenes on time.',
+  'onboarding.permissions.location.title': 'Location',
+  'onboarding.permissions.location.body': 'Show your distance to the meetup point. Choose “While Using the App”.',
 
   'onboarding.theme.title': 'Pick a theme you like',
   'onboarding.theme.night': 'Night',

@@ -7,6 +7,7 @@ import { selectionTick } from '../utils/haptics';
 import { logEvent } from '../utils/activityLog';
 
 import IntroStep from './steps/IntroStep';
+import PermissionsStep from './steps/PermissionsStep';
 import ThemeStep from './steps/ThemeStep';
 import RoleStep from './steps/RoleStep';
 import L1PurposeStep from './steps/L1PurposeStep';
@@ -27,6 +28,7 @@ import CelebrationStep from './steps/CelebrationStep';
  */
 const STEP_RENDERERS: Record<StepId, ComponentType<StepProps>> = {
   intro: IntroStep,
+  permissions: PermissionsStep,
   theme: ThemeStep,
   role: RoleStep,
   L1_purpose: L1PurposeStep,

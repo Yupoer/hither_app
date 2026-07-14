@@ -5,7 +5,7 @@ import type { OnboardingAnswers, StepId } from './types';
  * "given where we are and what's been answered, what's next/previous".
  *
  * Branches:
- *   intro -> theme -> role
+ *   intro -> permissions -> theme -> role
  *   role=leader   -> L1_purpose -> L2_days -> L3_departure -> celebration -> done
  *   role=follower -> F1 -> F2 -> F3 -> mascot -> F4_prefs -> celebration -> done
  *   role=browser  -> C1_why -> C2_companions -> C3_wanted -> celebration -> done
@@ -14,6 +14,8 @@ import type { OnboardingAnswers, StepId } from './types';
 export function nextStep(current: StepId, answers: OnboardingAnswers): StepId | 'done' {
   switch (current) {
     case 'intro':
+      return 'permissions';
+    case 'permissions':
       return 'theme';
     case 'theme':
       return 'role';
@@ -63,8 +65,10 @@ export function nextStep(current: StepId, answers: OnboardingAnswers): StepId | 
 
 export function prevStep(current: StepId, answers: OnboardingAnswers): StepId {
   switch (current) {
-    case 'theme':
+    case 'permissions':
       return 'intro';
+    case 'theme':
+      return 'permissions';
     case 'role':
       return 'theme';
     // Leader branch

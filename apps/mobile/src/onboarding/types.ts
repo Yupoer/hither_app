@@ -8,6 +8,7 @@ export type OnboardingRole = 'leader' | 'follower' | 'browser';
 
 export type StepId =
   | 'intro'
+  | 'permissions'
   | 'theme'
   | 'role' // shared
   | 'L1_purpose'
