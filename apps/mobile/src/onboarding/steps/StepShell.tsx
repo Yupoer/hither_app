@@ -1,5 +1,12 @@
-import React, { useEffect } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import {
+  AccessibilityInfo,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+  type LayoutChangeEvent,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   Easing,
@@ -15,6 +22,12 @@ import { HitherText } from '../../components/HitherText';
 import { useTranslation } from '../../i18n';
 import { stepProgress } from '../progress';
 import type { OnboardingRole, StepId } from '../types';
+
+/**
+ * Survives StepShell remounts (each step mounts its own shell). Without this
+ * the shared value would init at the new target and withTiming would be a no-op.
+ */
+let lastBarPct = 0;
 
 /**
  * Shared chrome for every onboarding step: a round back button, a continuous
@@ -52,15 +65,46 @@ export default function StepShell({
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const { t } = useTranslation();
+  const [reduceMotion, setReduceMotion] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void AccessibilityInfo.isReduceMotionEnabled().then((v) => {
+      if (active) setReduceMotion(!!v);
+    });
+    const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', (v) => {
+      setReduceMotion(!!v);
+    });
+    return () => {
+      active = false;
+      sub.remove();
+    };
+  }, []);
 
   const { index, total } = stepProgress(step, role);
   // Goal-gradient: the bar is never empty — the first step already reads ~10%.
   const target = total > 1 ? 10 + (index / (total - 1)) * 90 : 100;
-  const prog = useSharedValue(target);
+  // Start from the previous step's pct so remounts still animate from→to.
+  const prog = useSharedValue(lastBarPct);
+  const trackW = useSharedValue(0);
+
   useEffect(() => {
-    prog.value = withTiming(target, { duration: 450, easing: Easing.out(Easing.cubic) });
-  }, [target, prog]);
-  const fillStyle = useAnimatedStyle(() => ({ width: `${prog.value}%` }));
+    if (reduceMotion) {
+      prog.value = target;
+    } else {
+      prog.value = withTiming(target, { duration: 450, easing: Easing.out(Easing.cubic) });
+    }
+    lastBarPct = target;
+  }, [target, prog, reduceMotion]);
+
+  const onTrackLayout = (e: LayoutChangeEvent) => {
+    trackW.value = e.nativeEvent.layout.width;
+  };
+
+  // Pixel width (not % string) so Reanimated can interpolate cleanly.
+  const fillStyle = useAnimatedStyle(() => ({
+    width: trackW.value > 0 ? (prog.value / 100) * trackW.value : 0,
+  }));
 
   return (
     <View
@@ -85,7 +129,10 @@ export default function StepShell({
         {step === 'intro' ? (
           <View style={styles.headerSpacer} />
         ) : (
-          <View style={[styles.track, { backgroundColor: colors.border }]}>
+          <View
+            style={[styles.track, { backgroundColor: colors.border }]}
+            onLayout={onTrackLayout}
+          >
             <Animated.View style={[styles.fillBar, fillStyle]}>
               <LinearGradient
                 colors={[shade(colors.accent, -0.15), shade(colors.accent, 0.25)]}
