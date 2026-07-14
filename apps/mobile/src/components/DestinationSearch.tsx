@@ -130,6 +130,7 @@ export default React.memo(function DestinationSearch({
               onChangeText={setQuery}
               placeholder={t('search.placeholder')}
               placeholderTextColor={glass.textTertiary}
+              keyboardAppearance="dark"
               autoFocus
               returnKeyType="search"
               accessibilityLabel={t('search.placeholder')}

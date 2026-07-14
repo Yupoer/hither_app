@@ -96,6 +96,7 @@ export function ProfileOverlay({
             maxLength={24}
             placeholder={t('auth.namePlaceholder')}
             placeholderTextColor={glass.textTertiary}
+            keyboardAppearance="dark"
             returnKeyType="done"
             onSubmitEditing={handleSaveAndClose}
           />

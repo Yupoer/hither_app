@@ -176,6 +176,7 @@ export default function LoginScreen({ navigation }: Props) {
               onChangeText={setEmail}
               placeholder={t('login.emailPlaceholder')}
               placeholderTextColor="rgba(235,235,245,0.4)"
+              keyboardAppearance="dark"
               autoCapitalize="none"
               autoCorrect={false}
               keyboardType="email-address"
@@ -192,6 +193,7 @@ export default function LoginScreen({ navigation }: Props) {
               onChangeText={setPassword}
               placeholder={t('login.passwordPlaceholder')}
               placeholderTextColor="rgba(235,235,245,0.4)"
+              keyboardAppearance="dark"
               autoCapitalize="none"
               secureTextEntry
               textContentType={isSignUp ? 'newPassword' : 'password'}
@@ -209,6 +211,7 @@ export default function LoginScreen({ navigation }: Props) {
                   onChangeText={setNickname}
                   placeholder={t('login.nicknamePlaceholder')}
                   placeholderTextColor="rgba(235,235,245,0.4)"
+                  keyboardAppearance="dark"
                   autoCapitalize="none"
                   accessibilityLabel={t('login.nickname')}
                 />

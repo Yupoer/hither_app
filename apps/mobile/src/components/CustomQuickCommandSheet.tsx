@@ -54,6 +54,7 @@ export default function CustomQuickCommandSheet({
           onChangeText={setLabel}
           placeholder={t('settings.customQuickCommandName')}
           placeholderTextColor={glass.textTertiary}
+          keyboardAppearance="dark"
           style={styles.input}
           maxLength={18}
           accessibilityLabel={t('settings.customQuickCommandName')}
@@ -63,6 +64,7 @@ export default function CustomQuickCommandSheet({
           onChangeText={setMessage}
           placeholder={t('settings.customQuickCommandMessage')}
           placeholderTextColor={glass.textTertiary}
+          keyboardAppearance="dark"
           style={[styles.input, styles.messageInput]}
           maxLength={80}
           multiline

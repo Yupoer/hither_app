@@ -147,6 +147,7 @@ export default function AuthScreen({ navigation, route }: Props) {
                 onChangeText={setName}
                 placeholder={t('auth.namePlaceholder')}
                 placeholderTextColor="rgba(235,235,245,0.4)"
+                keyboardAppearance="dark"
                 autoCapitalize="none"
                 autoFocus
                 returnKeyType="next"
@@ -168,6 +169,7 @@ export default function AuthScreen({ navigation, route }: Props) {
                     onChangeText={setGroupName}
                     placeholder={t('group.namePlaceholder')}
                     placeholderTextColor="rgba(235,235,245,0.4)"
+                    keyboardAppearance="dark"
                     autoCapitalize="none"
                     returnKeyType="go"
                     onSubmitEditing={handleSubmit}
@@ -211,6 +213,7 @@ export default function AuthScreen({ navigation, route }: Props) {
                         v.replace(/[^0-9a-z]/gi, '').toUpperCase().slice(0, CODE_LEN),
                       );
                     }}
+                    keyboardAppearance="dark"
                     autoCapitalize="characters"
                     autoCorrect={false}
                     returnKeyType="go"

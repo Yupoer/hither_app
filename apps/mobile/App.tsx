@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, Text, TextInput, View } from 'react-native';
 import {
   DarkTheme,
   DefaultTheme,
@@ -22,6 +22,17 @@ import {
   useTheme,
 } from './src/state/PreferencesContext';
 
+// BUG-01/02/03: cap iOS Dynamic Type so fixed glass layouts (emoji avatars,
+// sheet rows, quick-command grid) don't explode when the user maxes system text.
+// VoiceOver and other a11y still work; only font-size scaling is capped.
+// RN still honors defaultProps on Text/TextInput at runtime (New Arch included).
+const textDefaults = (Text as typeof Text & { defaultProps?: Record<string, unknown> });
+textDefaults.defaultProps = { ...(textDefaults.defaultProps ?? {}), maxFontSizeMultiplier: 1 };
+const textInputDefaults = (TextInput as typeof TextInput & { defaultProps?: Record<string, unknown> });
+textInputDefaults.defaultProps = {
+  ...(textInputDefaults.defaultProps ?? {}),
+  maxFontSizeMultiplier: 1,
+};
 
 /**
  * Navigation theme + status bar follow the active palette, so the header and
@@ -29,7 +40,7 @@ import {
  */
 function ThemedNavigation() {
 
-  const { colors, themeName } = useTheme();
+  const { colors } = useTheme();
   const { initializing, user, membership } = useSession();
   // Fredoka is the design's display face (gathering-point titles, ETA numerals,
   // Live Activity numbers). Held alongside the session/onboarding splash so the
@@ -99,12 +110,15 @@ function ThemedNavigation() {
     return (
       <>
         <OnboardingScreen onDone={() => setNeedsOnboarding(false)} />
-        <StatusBar style={themeName === 'day' ? 'dark' : 'light'} />
+        {/* BUG-04: glass chrome is always dark — force light status icons. */}
+        <StatusBar style="light" />
       </>
     );
   }
 
-  const base = themeName === 'day' ? DefaultTheme : DarkTheme;
+  // Glass UI is always dark (see glass.ts); map theme can still be day/dusk/night.
+  // Prefer DarkTheme for chrome so system-tinted controls don't go light.
+  const base = DarkTheme;
   const navTheme = {
     ...base,
     colors: {
@@ -120,7 +134,7 @@ function ThemedNavigation() {
   return (
     <NavigationContainer theme={navTheme}>
       <RootNavigator />
-      <StatusBar style={themeName === 'day' ? 'dark' : 'light'} />
+      <StatusBar style="light" />
     </NavigationContainer>
   );
 }

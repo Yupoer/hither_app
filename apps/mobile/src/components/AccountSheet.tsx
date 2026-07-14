@@ -185,6 +185,7 @@ export default function AccountSheet({
                   onChangeText={setUpgradeEmail}
                   placeholder="you@example.com"
                   placeholderTextColor={glass.textTertiary}
+                  keyboardAppearance="dark"
                   autoCapitalize="none"
                   autoCorrect={false}
                   keyboardType="email-address"
@@ -195,6 +196,7 @@ export default function AccountSheet({
                   onChangeText={setUpgradePassword}
                   placeholder={t('account.password')}
                   placeholderTextColor={glass.textTertiary}
+                  keyboardAppearance="dark"
                   autoCapitalize="none"
                   secureTextEntry
                 />
@@ -262,6 +264,7 @@ export default function AccountSheet({
                 style={styles.input}
                 placeholder="請輸入序號"
                 placeholderTextColor={glass.textTertiary}
+                keyboardAppearance="dark"
                 value={promoCode}
                 onChangeText={setPromoCode}
                 autoCapitalize="characters"

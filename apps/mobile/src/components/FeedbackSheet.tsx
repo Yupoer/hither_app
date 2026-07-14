@@ -147,6 +147,7 @@ export default function FeedbackSheet({
           onChangeText={setDescription}
           placeholder={t('feedback.placeholder')}
           placeholderTextColor={glass.textTertiary}
+          keyboardAppearance="dark"
           multiline
           numberOfLines={5}
           textAlignVertical="top"
