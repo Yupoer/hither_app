@@ -123,8 +123,9 @@ struct HitherLiveActivityWidget: Widget {
           .frame(maxWidth: .infinity, alignment: .leading)
         }
         DynamicIslandExpandedRegion(.bottom) {
+          // BUG-19: match Lock Screen — progress+percent, then avatar stack.
           VStack(spacing: 10) {
-            ProgressBar(value: context.state.clampedProgress, accent: accent)
+            ProgressRow(value: context.state.clampedProgress, accent: accent)
             HStack {
               AvatarStack(
                 emojis: context.state.avatarEmojis,
@@ -201,7 +202,8 @@ private struct LockScreenView: View {
         }
       }
 
-      ProgressBar(value: context.state.clampedProgress, accent: accent)
+      // BUG-05: progress percentage next to the bar (Lock Screen + Island share ProgressRow).
+      ProgressRow(value: context.state.clampedProgress, accent: accent)
 
       HStack {
         AvatarStack(
@@ -234,6 +236,22 @@ private struct ProgressBar: View {
       }
     }
     .frame(height: 6)
+  }
+}
+
+/// Progress bar + percent label — shared by Lock Screen and expanded Dynamic Island.
+private struct ProgressRow: View {
+  let value: Double
+  let accent: Color
+  var body: some View {
+    let pct = Int((min(1, max(0, value)) * 100).rounded())
+    return HStack(spacing: 8) {
+      ProgressBar(value: value, accent: accent)
+      Text("\(pct)%")
+        .font(.system(size: 12, weight: .semibold).monospacedDigit())
+        .foregroundStyle(Brand.textSecondary)
+        .frame(minWidth: 34, alignment: .trailing)
+    }
   }
 }
 

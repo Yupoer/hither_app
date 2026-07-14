@@ -16,10 +16,10 @@ pm run typecheck 通過且 commit 上 master 後記 done；原生未實機驗證
 | BUG-02 | done | fix/bug-01-04-font-theme | 2dbe1cb | same as 01 |
 | BUG-03 | done | fix/bug-01-04-font-theme | 2dbe1cb | same as 01 |
 | BUG-04 | done | fix/bug-01-04-font-theme | 2dbe1cb | userInterfaceStyle dark + keyboardAppearance |
-| BUG-05 | pending | | | LA emoji + progress % |
+| BUG-05 | done-code | fix/bug-05-08-19-live-activity | 6d66f0b | emoji sig + %; 未實機 |
 | BUG-06 | pending | | | nav haptics |
 | BUG-07 | done | fix/bug-07-11-12-16-22-teams | 5b72f20 | show inviteCode on cards |
-| BUG-08 | pending | | | avatar sync on login |
+| BUG-08 | done | fix/bug-05-08-19-live-activity | 6d66f0b | self avatar from session |
 | BUG-09 | pending | | | peek vs stage1 recenter |
 | BUG-10 | done | fix/bug-10-18-24-glass-ui | aac0f56 | transparent sheet/card borders |
 | BUG-11 | done | fix/bug-07-11-12-16-22-teams | 5b72f20 | main filter explicit |
@@ -30,7 +30,7 @@ pm run typecheck 通過且 commit 上 master 後記 done；原生未實機驗證
 | BUG-16 | done | fix/bug-07-11-12-16-22-teams | 5b72f20 | canEditItinerary already correct |
 | BUG-17 | pending | | | history group_id migration |
 | BUG-18 | done | fix/bug-10-18-24-glass-ui | aac0f56 | splitActions gap/padding |
-| BUG-19 | pending | | | Dynamic Island layout |
+| BUG-19 | done-code | fix/bug-05-08-19-live-activity | 6d66f0b | ProgressRow shared; 未實機 |
 | BUG-20 | pending | | | multi travel-mode routes |
 | BUG-21 | pending | | | APNs fan-out audit |
 | BUG-22 | done | fix/bug-07-11-12-16-22-teams | 5b72f20 | poll sent invites while pending |

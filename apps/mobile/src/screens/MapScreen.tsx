@@ -1081,13 +1081,15 @@ export default function MapScreen({ route, navigation }: Props) {
               : t(`locationUpdate.${freshness.unit}`);
         return {
           userId: m.userId,
-          name: m.name || t('group.travelerFallback'),
-          avatar: m.avatar,
+          name: (isSelf && user?.name) || m.name || t('group.travelerFallback'),
+          // BUG-08: prefer session profile for self so a just-saved avatar
+          // shows in the flock before realtime memberships refresh.
+          avatar: (isSelf && user?.avatar) || m.avatar,
           solo,
           subgroupId: m.subgroupId,
           // Prefer the member's chosen avatar background colour; fall back to the
           // deterministic per-user colour when they haven't picked one.
-          color: m.avatarColor ?? memberColor(m.userId),
+          color: (isSelf && user?.avatarColor) || m.avatarColor || memberColor(m.userId),
           isLeader: isMemberLeader,
           statusText: solo
             ? t('solo.badge')
@@ -1113,7 +1115,7 @@ export default function MapScreen({ route, navigation }: Props) {
           arrived,
         };
       }),
-    [members, activePoint, accent, t, user?.id, soloOverride, nowTick, memberRoutes, travelMode],
+    [members, activePoint, accent, t, user?.id, user?.name, user?.avatar, user?.avatarColor, soloOverride, nowTick, memberRoutes, travelMode],
   );
 
   // Drop the override once the server value catches up, so a later toggle

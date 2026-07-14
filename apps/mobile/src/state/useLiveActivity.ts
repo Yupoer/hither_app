@@ -124,6 +124,8 @@ export function useLiveActivity(
   const progressBucket =
     state.progress != null ? Math.round(state.progress * 20) : null;
   const arrivalSignature = state.memberArrived?.map((arrived) => (arrived ? '1' : '0')).join('');
+  // BUG-05: emoji changes must also push a Live Activity update.
+  const emojiSignature = state.memberEmojis?.join(',') ?? '';
 
   useEffect(() => {
     if (active && handleRef.current) {
@@ -143,5 +145,6 @@ export function useLiveActivity(
     state.accentHex,
     state.travelMode,
     arrivalSignature,
+    emojiSignature,
   ]);
 }
