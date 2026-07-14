@@ -14,22 +14,22 @@
 | BUG-04 | done | fix/bug-01-04-font-theme | 2dbe1cb | userInterfaceStyle dark + keyboardAppearance |
 | BUG-05 | pending | | | LA emoji + progress % |
 | BUG-06 | pending | | | nav haptics |
-| BUG-07 | pending | | | MyTeams invite code UI |
+| BUG-07 | done | fix/bug-07-11-12-16-22-teams | 777c6e0 | show inviteCode on cards |
 | BUG-08 | pending | | | avatar sync on login |
 | BUG-09 | pending | | | peek vs stage1 recenter |
 | BUG-10 | done | fix/bug-10-18-24-glass-ui | 46cbc48 | transparent sheet/card borders |
-| BUG-11 | pending | | | main destinations filter |
+| BUG-11 | done | fix/bug-07-11-12-16-22-teams | 777c6e0 | main filter explicit |
 | BUG-12 | pending | | | 主�???section |
 | BUG-13 | pending | | | leader nav force-follow |
 | BUG-14 | pending | | | search ??notify captain |
 | BUG-15 | pending | | | KML ??notify captain |
-| BUG-16 | pending | | | subgroup edit rights audit |
+| BUG-16 | done | fix/bug-07-11-12-16-22-teams | 777c6e0 | canEditItinerary already correct |
 | BUG-17 | pending | | | history group_id migration |
 | BUG-18 | done | fix/bug-10-18-24-glass-ui | 46cbc48 | splitActions gap/padding |
 | BUG-19 | pending | | | Dynamic Island layout |
 | BUG-20 | pending | | | multi travel-mode routes |
 | BUG-21 | pending | | | APNs fan-out audit |
-| BUG-22 | pending | | | sent invites refresh |
+| BUG-22 | done | fix/bug-07-11-12-16-22-teams | 777c6e0 | poll sent invites while pending |
 | BUG-23 | pending | | | custom quick command save |
 | BUG-24 | done | fix/bug-10-18-24-glass-ui | 46cbc48 | pill 0.82 + hairlineSoft |
 

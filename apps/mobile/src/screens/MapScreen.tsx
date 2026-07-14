@@ -216,13 +216,21 @@ export default function MapScreen({ route, navigation }: Props) {
   const myScopeId = me?.subgroupId;
   
   const [viewingScope, setViewingScope] = useState<'main' | 'sub'>('main');
+  // Leave a subgroup → force main scope so we never filter against a stale id.
+  useEffect(() => {
+    if (!myScopeId && viewingScope === 'sub') setViewingScope('main');
+  }, [myScopeId, viewingScope]);
   const activeScopeId = viewingScope === 'sub' ? myScopeId : undefined;
 
+  // BUG-11: main view always shows main-team destinations (subgroupId null),
+  // even when the current user is in a subgroup. Sub view is explicit only.
   const rawDestinations: Destination[] = useMemo(() => {
-    return (state?.destinations ?? []).filter(
-      (d) => (d.subgroupId ?? undefined) === (activeScopeId ?? undefined),
-    );
-  }, [state?.destinations, activeScopeId]);
+    const all = state?.destinations ?? [];
+    if (viewingScope === 'sub' && myScopeId) {
+      return all.filter((d) => d.subgroupId === myScopeId);
+    }
+    return all.filter((d) => d.subgroupId == null);
+  }, [state?.destinations, viewingScope, myScopeId]);
   
   const [optimisticDestinations, setOptimisticDestinations] = useState<Destination[] | null>(null);
   const destinations = optimisticDestinations ?? rawDestinations;
@@ -1122,6 +1130,17 @@ export default function MapScreen({ route, navigation }: Props) {
   useEffect(() => {
     void refreshSentInvites(mySubgroupId);
   }, [mySubgroupId, refreshSentInvites]);
+
+  // BUG-22: when invitee accepts/declines, inviter's pending list must drop
+  // the row without a manual refresh — poll while any invites are outstanding
+  // and also refetch on membership changes (accept updates memberships).
+  useEffect(() => {
+    if (!mySubgroupId) return;
+    const id = setInterval(() => {
+      void refreshSentInvites(mySubgroupId);
+    }, 4000);
+    return () => clearInterval(id);
+  }, [mySubgroupId, refreshSentInvites, members.length]);
   // Co-members I could still pull into my team — anyone not me and not already
   // in my subgroup. Virtual solo-test mates ARE invitable now: handleInvite
   // mock-accepts them so a solo tester can exercise the whole team flow.
@@ -1345,9 +1364,13 @@ export default function MapScreen({ route, navigation }: Props) {
             })}
           </View>
         )}
-        <View style={styles.list}>
-          {topFlock.map((f, i) => renderFlockRow(f, i === topFlock.length - 1, i))}
-        </View>
+        {/* When subgroups exist, main members render under SubgroupSection's
+            「主團隊」header (BUG-12) to avoid a duplicate unlabeled list. */}
+        {subgroups.length === 0 && (
+          <View style={styles.list}>
+            {topFlock.map((f, i) => renderFlockRow(f, i === topFlock.length - 1, i))}
+          </View>
+        )}
         <SubgroupSection
           subgroups={subgroups}
           flock={flock}
