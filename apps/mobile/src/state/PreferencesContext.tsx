@@ -32,6 +32,7 @@ const LANGUAGE_KEY = 'pref.language';
 const THEME_KEY = 'pref.theme';
 const HIGH_ACCURACY_KEY = 'pref.highAccuracy';
 const OBLIQUE_LOCATE_KEY = 'pref.obliqueLocate';
+const LIVE_ACTIVITY_KEY = 'pref.liveActivity';
 const MEET_RED_KEY = 'pref.meetRedMin';
 const DAY_COLORS_KEY = 'pref.dayColors';
 
@@ -46,6 +47,8 @@ interface PreferencesValue {
   highAccuracy: boolean;
   /** When true, locate-me tilts the camera to a 45° oblique view. */
   obliqueLocate: boolean;
+  /** When true, start iOS Live Activity during an active journey. Default on. */
+  liveActivityEnabled: boolean;
   /** Countdown turns red when this many minutes (or fewer) remain. */
   meetRedMin: number;
   /** Custom colors for each day */
@@ -56,6 +59,7 @@ interface PreferencesValue {
   setThemeName: (theme: ThemeName) => void;
   setHighAccuracy: (on: boolean) => void;
   setObliqueLocate: (on: boolean) => void;
+  setLiveActivityEnabled: (on: boolean) => void;
   setMeetRedMin: (min: number) => void;
   setDayColor: (day: number, color: string) => void;
 }
@@ -76,6 +80,8 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [highAccuracy, setHighAccuracyState] = useState(false);
   // Default on: locate-me tilts to 45° unless the user opts out in Settings.
   const [obliqueLocate, setObliqueLocateState] = useState(true);
+  // Default on: Live Activity during journey unless the user opts out.
+  const [liveActivityEnabled, setLiveActivityEnabledState] = useState(true);
   const [meetRedMin, setMeetRedMinState] = useState<number>(DEFAULT_MEET_RED_MIN);
   const [dayColors, setDayColorsState] = useState<Record<number, string>>({});
   const [ready, setReady] = useState(false);
@@ -90,6 +96,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
           storedTheme,
           storedHighAccuracy,
           storedObliqueLocate,
+          storedLiveActivity,
           storedMeetRed,
           storedDayColors,
         ] = await AsyncStorage.multiGet([
@@ -97,6 +104,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
           THEME_KEY,
           HIGH_ACCURACY_KEY,
           OBLIQUE_LOCATE_KEY,
+          LIVE_ACTIVITY_KEY,
           MEET_RED_KEY,
           DAY_COLORS_KEY,
         ]);
@@ -107,6 +115,8 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         // Only override default-on when the user has explicitly stored a value.
         if (storedObliqueLocate[1] === 'false') setObliqueLocateState(false);
         else if (storedObliqueLocate[1] === 'true') setObliqueLocateState(true);
+        if (storedLiveActivity[1] === 'false') setLiveActivityEnabledState(false);
+        else if (storedLiveActivity[1] === 'true') setLiveActivityEnabledState(true);
         const red = Number(storedMeetRed[1]);
         if ((MEET_RED_OPTIONS as readonly number[]).includes(red)) setMeetRedMinState(red);
         if (storedDayColors[1]) {
@@ -143,6 +153,11 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     void AsyncStorage.setItem(OBLIQUE_LOCATE_KEY, on ? 'true' : 'false');
   }, []);
 
+  const setLiveActivityEnabled = useCallback((on: boolean) => {
+    setLiveActivityEnabledState(on);
+    void AsyncStorage.setItem(LIVE_ACTIVITY_KEY, on ? 'true' : 'false');
+  }, []);
+
   const setMeetRedMin = useCallback((min: number) => {
     setMeetRedMinState(min);
     void AsyncStorage.setItem(MEET_RED_KEY, String(min));
@@ -162,6 +177,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       themeName,
       highAccuracy,
       obliqueLocate,
+      liveActivityEnabled,
       meetRedMin,
       dayColors,
       ready,
@@ -169,6 +185,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       setThemeName,
       setHighAccuracy,
       setObliqueLocate,
+      setLiveActivityEnabled,
       setMeetRedMin,
       setDayColor,
     }),
@@ -177,6 +194,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       themeName,
       highAccuracy,
       obliqueLocate,
+      liveActivityEnabled,
       meetRedMin,
       dayColors,
       ready,
@@ -184,6 +202,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       setThemeName,
       setHighAccuracy,
       setObliqueLocate,
+      setLiveActivityEnabled,
       setMeetRedMin,
       setDayColor,
     ],

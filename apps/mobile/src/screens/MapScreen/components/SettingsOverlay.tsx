@@ -43,9 +43,11 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
     language,
     themeName,
     obliqueLocate,
+    liveActivityEnabled,
     setLanguage,
     setThemeName,
     setObliqueLocate,
+    setLiveActivityEnabled,
   } = usePreferences();
   const { colors } = useTheme();
   const accent = colors.accent;
@@ -138,6 +140,30 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
               thumbColor="#fff"
               ios_backgroundColor="rgba(120,120,128,0.32)"
               accessibilityLabel={t('settings.obliqueLocate')}
+            />
+          </View>
+          <View style={styles.accuracyRow}>
+            <View style={styles.accuracyCopy}>
+              <View style={styles.accuracyTitleRow}>
+                <Ionicons
+                  name="phone-portrait-outline"
+                  size={18}
+                  color={liveActivityEnabled ? accent : glass.textTertiary}
+                />
+                <Text style={styles.accuracyLabel}>
+                  {t('settings.liveActivity')}
+                </Text>
+              </View>
+              <Text style={styles.accuracySubhint}>{t('settings.liveActivityHint')}</Text>
+            </View>
+            <Switch
+              style={styles.accuracySwitch}
+              value={liveActivityEnabled}
+              onValueChange={setLiveActivityEnabled}
+              trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
+              thumbColor="#fff"
+              ios_backgroundColor="rgba(120,120,128,0.32)"
+              accessibilityLabel={t('settings.liveActivity')}
             />
           </View>
 

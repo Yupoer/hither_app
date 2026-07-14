@@ -273,6 +273,8 @@ const zh = {
   'settings.preciseLocationHint': '提高定位精度與更新頻率；高耗電。',
   'settings.obliqueLocate': '定位時傾斜視角',
   'settings.obliqueLocateHint': '點定位按鈕時以 45° 俯視。',
+  'settings.liveActivity': '即時動態',
+  'settings.liveActivityHint': '在鎖定畫面與動態島顯示旅程進度。',
 
   // Destination search
   'search.placeholder': '輸入地址或地點名稱',
@@ -704,6 +706,8 @@ const en: Record<keyof typeof zh, string> = {
   'settings.preciseLocationHint': 'Improves accuracy and update frequency; uses more battery.',
   'settings.obliqueLocate': 'Tilt camera when locating',
   'settings.obliqueLocateHint': 'Locate-me uses a 45° oblique view.',
+  'settings.liveActivity': 'Live Activity',
+  'settings.liveActivityHint': 'Show journey progress on the Lock Screen and Dynamic Island.',
 
   'search.placeholder': 'Enter an address or place name',
   'search.searching': 'Searching…',

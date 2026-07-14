@@ -207,6 +207,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const {
     highAccuracy,
     obliqueLocate,
+    liveActivityEnabled,
     meetRedMin,
     setMeetRedMin,
     setHighAccuracy,
@@ -617,7 +618,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const liveGathered = navTarget
     ? members.filter((m) => m.status === 'arrived').length
     : undefined;
-  useLiveActivity(journeyActive, {
+  useLiveActivity(journeyActive && liveActivityEnabled, {
     groupName: membership?.group.name ?? '',
     gatheringTitle: navTarget?.title,
     distanceMeters: liveDistance,
