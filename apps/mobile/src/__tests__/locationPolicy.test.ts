@@ -1,8 +1,10 @@
 import {
   locationPolicy,
+  POWER_BUDGET_NOTE,
   quantizeCoordinates,
   shouldAcceptUiSample,
   shouldRecomputeRoute,
+  shouldRunBackgroundLocation,
   shouldUploadSample,
   shouldWatchLocation,
   type LocationGateState,
@@ -27,7 +29,7 @@ const atOrigin = (atMs: number): LocationGateState => ({
 });
 
 describe('locationPolicy', () => {
-  it('defaults to the low-power profile', () => {
+  it('defaults to the low-power foreground profile', () => {
     const p = locationPolicy(false);
     expect(p.accuracy).toBe('balanced');
     expect(p.distanceInterval).toBe(50);
@@ -38,7 +40,7 @@ describe('locationPolicy', () => {
     expect(p.realtimeLocationDebounceMs).toBe(2_500);
   });
 
-  it('uses the faster high-accuracy profile only when enabled', () => {
+  it('uses the faster high-accuracy profile only when enabled in foreground', () => {
     const p = locationPolicy(true);
     expect(p.accuracy).toBe('high');
     expect(p.distanceInterval).toBe(8);
@@ -48,14 +50,32 @@ describe('locationPolicy', () => {
     expect(p.routeCoordDecimals).toBe(5);
     expect(p.realtimeLocationDebounceMs).toBe(1_500);
   });
+
+  it('allDay ignores highAccuracy and uses Low GPS for the 8h budget', () => {
+    const p = locationPolicy(true, 'allDay');
+    expect(p.accuracy).toBe('low');
+    expect(p.distanceInterval).toBe(120);
+    expect(p.uploadHeartbeatMs).toBe(300_000);
+    expect(p.uploadMinDistanceM).toBe(120);
+    expect(POWER_BUDGET_NOTE.allDay8hTargetPct).toBe(20);
+  });
+
+  it('journey balanced is denser than allDay but not High', () => {
+    const p = locationPolicy(false, 'journey');
+    expect(p.accuracy).toBe('balanced');
+    expect(p.uploadHeartbeatMs).toBeLessThan(locationPolicy(false, 'allDay').uploadHeartbeatMs);
+  });
 });
 
-describe('shouldWatchLocation', () => {
-  it('watches only for an active app with a group', () => {
+describe('shouldWatchLocation / shouldRunBackgroundLocation', () => {
+  it('splits GPS ownership: FG watch only when active', () => {
     expect(shouldWatchLocation('group-1', 'active')).toBe(true);
     expect(shouldWatchLocation('group-1', 'background')).toBe(false);
-    expect(shouldWatchLocation('group-1', 'inactive')).toBe(false);
     expect(shouldWatchLocation(null, 'active')).toBe(false);
+
+    expect(shouldRunBackgroundLocation('group-1', 'background')).toBe(true);
+    expect(shouldRunBackgroundLocation('group-1', 'active')).toBe(false);
+    expect(shouldRunBackgroundLocation(null, 'background')).toBe(false);
   });
 });
 

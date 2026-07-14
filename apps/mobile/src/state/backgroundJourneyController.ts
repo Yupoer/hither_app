@@ -1,6 +1,9 @@
 import type { Coordinates } from '../types';
 import type { TravelMode } from '../utils/geo';
-import { locationPolicy } from '../utils/locationPolicy';
+import {
+  locationPolicy,
+  type LocationPowerMode,
+} from '../utils/locationPolicy';
 
 export const BACKGROUND_JOURNEY_TASK = 'hither-background-journey-location';
 export const BACKGROUND_JOURNEY_KEY = '@hither/background-journey';
@@ -11,8 +14,16 @@ export interface BackgroundJourneyConfig {
   destination: Coordinates;
   initialDistanceM: number;
   travelMode: TravelMode;
-  /** Align background GPS with the foreground accuracy preference. */
+  /**
+   * Only meaningful for `powerMode: 'journey'`.
+   * All-day presence always uses the Low-accuracy budget profile.
+   */
   highAccuracy?: boolean;
+  /**
+   * `allDay` — 8h≈20% budget group presence.
+   * `journey` — denser nav tracking while going to a point.
+   */
+  powerMode?: 'allDay' | 'journey';
 }
 
 interface PermissionResult {
@@ -33,35 +44,53 @@ export interface BackgroundStorageAdapter {
   removeItem(key: string): Promise<void>;
 }
 
-/** expo-location Accuracy.Balanced = 3, Accuracy.High = 4 */
-export function backgroundLocationOptions(highAccuracy: boolean): object {
-  const policy = locationPolicy(highAccuracy);
-  if (highAccuracy) {
-    return {
-      accuracy: 4,
-      distanceInterval: 15,
-      deferredUpdatesDistance: 25,
-      deferredUpdatesInterval: 12_000,
-      pausesUpdatesAutomatically: true,
-      showsBackgroundLocationIndicator: true,
-      foregroundService: {
-        notificationTitle: 'Hither 導航中',
-        notificationBody: '持續更新你與集合點的距離',
-      },
-    };
-  }
+/**
+ * expo-location Accuracy: Lowest=1 Low=2 Balanced=3 High=4 Highest=5 BestForNavigation=6
+ * Options tuned for the power budget — see locationPolicy POWER_BUDGET_NOTE.
+ */
+export function backgroundLocationOptions(
+  powerMode: 'allDay' | 'journey',
+  highAccuracy: boolean,
+): object {
+  const mode: LocationPowerMode = powerMode;
+  // Never allow highAccuracy to override allDay (budget).
+  const policy = locationPolicy(
+    powerMode === 'allDay' ? false : highAccuracy,
+    mode,
+  );
+
+  const accuracyCode =
+    policy.accuracy === 'high' ? 4 : policy.accuracy === 'low' ? 2 : 3;
+
+  const deferredInterval =
+    powerMode === 'allDay' ? 180_000 : highAccuracy ? 20_000 : 60_000;
+  const deferredDistance =
+    powerMode === 'allDay' ? 150 : highAccuracy ? 30 : 60;
+
   return {
-    accuracy: 3,
+    accuracy: accuracyCode,
     distanceInterval: policy.distanceInterval,
-    deferredUpdatesDistance: 50,
-    deferredUpdatesInterval: 30_000,
+    timeInterval: policy.timeInterval,
+    deferredUpdatesDistance: deferredDistance,
+    deferredUpdatesInterval: deferredInterval,
+    // Critical for 8h budget: let OS freeze GPS when the user is still.
     pausesUpdatesAutomatically: true,
     showsBackgroundLocationIndicator: true,
     foregroundService: {
-      notificationTitle: 'Hither 導航中',
-      notificationBody: '持續更新你與集合點的距離',
+      notificationTitle:
+        powerMode === 'allDay' ? 'Hither 群組定位中' : 'Hither 導航中',
+      notificationBody:
+        powerMode === 'allDay'
+          ? '以省電模式更新你在群組中的位置'
+          : '持續更新你與集合點的距離',
     },
   };
+}
+
+function powerProfileKey(config: BackgroundJourneyConfig): string {
+  const mode = config.powerMode ?? 'journey';
+  const high = mode === 'allDay' ? false : Boolean(config.highAccuracy);
+  return `${mode}:${high ? 'h' : 'n'}`;
 }
 
 export function createBackgroundJourneyController(
@@ -92,17 +121,22 @@ export function createBackgroundJourneyController(
       const alreadyStarted = await location.hasStartedLocationUpdatesAsync(
         BACKGROUND_JOURNEY_TASK,
       );
-      const nextHigh = Boolean(config.highAccuracy);
       const profileChanged =
-        alreadyStarted && Boolean(previous?.highAccuracy) !== nextHigh;
+        alreadyStarted &&
+        previous != null &&
+        powerProfileKey(previous) !== powerProfileKey(config);
 
       if (alreadyStarted && profileChanged) {
         await location.stopLocationUpdatesAsync(BACKGROUND_JOURNEY_TASK);
       }
       if (!alreadyStarted || profileChanged) {
+        const mode = config.powerMode ?? 'journey';
         await location.startLocationUpdatesAsync(
           BACKGROUND_JOURNEY_TASK,
-          backgroundLocationOptions(nextHigh),
+          backgroundLocationOptions(
+            mode,
+            mode === 'allDay' ? false : Boolean(config.highAccuracy),
+          ),
         );
       }
       return 'started';

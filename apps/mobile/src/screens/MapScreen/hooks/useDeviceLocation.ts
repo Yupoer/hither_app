@@ -95,6 +95,8 @@ export function useDeviceLocation({ groupId, highAccuracy }: UseDeviceLocationPa
     deviceCoords,
     /** Horizontal accuracy of the last accepted device fix, metres. */
     deviceAccuracyM,
+    /** Exposed so MapScreen can own a single GPS path (FG watch vs BG task). */
+    appState,
     refreshDeviceLocation,
   };
 }

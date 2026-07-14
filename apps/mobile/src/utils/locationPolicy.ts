@@ -1,8 +1,23 @@
 import type { Coordinates } from '../types';
 import { distanceMeters } from './geo';
 
+/**
+ * Power modes for the 8h ≈ 20% battery budget goal:
+ *
+ * - `foreground` — app open on map (UI-responsive).
+ * - `allDay` — phone locked / background group presence. Designed so a full
+ *   day of sharing (~8h) stays near ≤20% on modern phones when mostly walking
+ *   or idle. Uses Low accuracy + multi-minute deferred batches.
+ * - `journey` — navigating to a gathering point in background; denser than
+ *   allDay but still capped. `highAccuracy` only applies here / foreground.
+ *
+ * Continuous High accuracy for 8h will typically drain 40%+ and is intentionally
+ * outside this budget — the precise toggle is short-burst only.
+ */
+export type LocationPowerMode = 'foreground' | 'allDay' | 'journey';
+
 export interface LocationPolicy {
-  accuracy: 'balanced' | 'high';
+  accuracy: 'low' | 'balanced' | 'high';
   /** Native OS distance filter (metres). */
   distanceInterval: number;
   /** Android minimum interval between reports (ms). iOS largely ignores this. */
@@ -24,7 +39,71 @@ export interface LocationPolicy {
   realtimeLocationDebounceMs: number;
 }
 
-export function locationPolicy(highAccuracy: boolean): LocationPolicy {
+/**
+ * Rough expected drain share for GPS+radio alone (device-dependent).
+ * Not a guarantee — screen-on map time dominates if the app stays open.
+ */
+export const POWER_BUDGET_NOTE = {
+  allDay8hTargetPct: 20,
+  precise8hEstimatePct: 40,
+} as const;
+
+export function locationPolicy(
+  highAccuracy: boolean,
+  powerMode: LocationPowerMode = 'foreground',
+): LocationPolicy {
+  // All-day background: ignore highAccuracy — budget requires Low GPS.
+  if (powerMode === 'allDay') {
+    return {
+      accuracy: 'low',
+      distanceInterval: 120,
+      timeInterval: 120_000,
+      uiMinDistanceM: 40,
+      uiMinIntervalMs: 30_000,
+      uploadMinDistanceM: 120,
+      uploadMinIntervalMs: 120_000,
+      // ~16 uploads/hour when stationary; main radio budget control.
+      uploadHeartbeatMs: 300_000,
+      routeMinDistanceM: 80,
+      routeMinIntervalMs: 60_000,
+      routeCoordDecimals: 3,
+      realtimeLocationDebounceMs: 5_000,
+    };
+  }
+
+  if (powerMode === 'journey') {
+    return highAccuracy
+      ? {
+          accuracy: 'high',
+          distanceInterval: 20,
+          timeInterval: 10_000,
+          uiMinDistanceM: 8,
+          uiMinIntervalMs: 2_000,
+          uploadMinDistanceM: 25,
+          uploadMinIntervalMs: 15_000,
+          uploadHeartbeatMs: 90_000,
+          routeMinDistanceM: 20,
+          routeMinIntervalMs: 12_000,
+          routeCoordDecimals: 5,
+          realtimeLocationDebounceMs: 2_000,
+        }
+      : {
+          accuracy: 'balanced',
+          distanceInterval: 50,
+          timeInterval: 30_000,
+          uiMinDistanceM: 20,
+          uiMinIntervalMs: 5_000,
+          uploadMinDistanceM: 60,
+          uploadMinIntervalMs: 45_000,
+          uploadHeartbeatMs: 180_000,
+          routeMinDistanceM: 40,
+          routeMinIntervalMs: 30_000,
+          routeCoordDecimals: 4,
+          realtimeLocationDebounceMs: 3_000,
+        };
+  }
+
+  // Foreground (app open).
   return highAccuracy
     ? {
         accuracy: 'high',
@@ -38,7 +117,6 @@ export function locationPolicy(highAccuracy: boolean): LocationPolicy {
         routeMinDistanceM: 15,
         routeMinIntervalMs: 8_000,
         routeCoordDecimals: 5,
-        // Peers are patched from the realtime payload — debounce only merges bursts.
         realtimeLocationDebounceMs: 1_500,
       }
     : {
@@ -59,6 +137,14 @@ export function locationPolicy(highAccuracy: boolean): LocationPolicy {
 
 export function shouldWatchLocation(groupId: string | null, appState: string): boolean {
   return Boolean(groupId) && appState === 'active';
+}
+
+/** Background task should run only when the app is not active (single GPS owner). */
+export function shouldRunBackgroundLocation(
+  groupId: string | null,
+  appState: string,
+): boolean {
+  return Boolean(groupId) && appState !== 'active';
 }
 
 export interface LocationGateState {
@@ -82,9 +168,7 @@ export function shouldAcceptUiSample(
   if (nowMs - last.lastAtMs >= policy.uiMinIntervalMs && moved >= policy.uiMinDistanceM * 0.4) {
     return true;
   }
-  // Tiny jitter within min interval: drop.
   if (nowMs - last.lastAtMs < policy.uiMinIntervalMs) return false;
-  // Interval elapsed but still essentially stationary: skip UI churn.
   return false;
 }
 
@@ -104,7 +188,6 @@ export function shouldUploadSample(
   if (elapsed >= policy.uploadHeartbeatMs) return true;
   const moved = distanceMeters(last.lastCoords, sample);
   if (moved >= policy.uploadMinDistanceM && elapsed >= policy.uploadMinIntervalMs) return true;
-  // Significant move even if slightly under min interval (e.g. vehicle).
   if (moved >= policy.uploadMinDistanceM * 1.5 && elapsed >= policy.uploadMinIntervalMs * 0.5) {
     return true;
   }
@@ -159,4 +242,3 @@ export function isOwnLocationChange(
   if (typeof prevId === 'string' && prevId === myUserId && nextId == null) return true;
   return false;
 }
-

@@ -267,10 +267,12 @@ const zh = {
   'settings.locationSection': '定位追蹤',
   'settings.mapSection': '地圖',
   'settings.highAccuracy': '高精準模式',
-  'settings.highAccuracyHint': '提高定位精度與更新頻率；預設關閉以降低耗電。',
+  'settings.highAccuracyHint':
+    '僅建議短時間開啟。全天背景請關閉（目標 8 小時約 20% 電）；持續精準可能耗電 40% 以上。',
   'settings.highAccuracyCompact': '高精準',
   'settings.preciseLocation': '開啟精準定位',
-  'settings.preciseLocationHint': '提高定位精度與更新頻率；高耗電。',
+  'settings.preciseLocationHint':
+    '短時間提高精度與更新頻率。全天群組定位請關閉以省電。',
   'settings.obliqueLocate': '定位時傾斜視角',
   'settings.obliqueLocateHint': '點定位按鈕時以 45° 俯視。',
   'settings.liveActivity': '即時動態',
@@ -708,10 +710,11 @@ const en: Record<keyof typeof zh, string> = {
   'settings.mapSection': 'Map',
   'settings.highAccuracy': 'High accuracy',
   'settings.highAccuracyHint':
-    'Increase location accuracy and update rate; off by default to reduce battery use.',
+    'Short bursts only. Leave off for all-day background (~20% / 8h target); continuous precise can exceed 40%.',
   'settings.highAccuracyCompact': 'High accuracy',
   'settings.preciseLocation': 'Enable precise location',
-  'settings.preciseLocationHint': 'Improves accuracy and update frequency; uses more battery.',
+  'settings.preciseLocationHint':
+    'Raises accuracy and update rate briefly. Keep off for all-day group sharing.',
   'settings.obliqueLocate': 'Tilt camera when locating',
   'settings.obliqueLocateHint': 'Locate-me uses a 45° oblique view.',
   'settings.liveActivity': 'Live Activity',

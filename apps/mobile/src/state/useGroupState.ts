@@ -49,13 +49,13 @@ interface UseGroupStateResult {
 /**
  * Subscribe to a group's live state.
  *
- * Primary path: Realtime on member_locations / memberships / itinerary_items.
- * Peer location events are **patched in-memory** from the payload (no network).
- * Membership / itinerary / profile changes still debounced full-refetch.
+ * Primary path (foreground only): Realtime on member_locations / memberships /
+ * itinerary_items. Peer locations are patched in-memory from the payload.
  *
- * Own-device location upserts are ignored: local GPS owns self on the map.
+ * When AppState is not `active`, channels are torn down so the radio can sleep
+ * during all-day background sharing (upload is owned by the background task).
  *
- * Fallback: slow interval poll only while AppState is active.
+ * Fallback: slow interval poll only while foregrounded.
  */
 export function useGroupState(
   groupId: string | null,
@@ -65,6 +65,7 @@ export function useGroupState(
   const [state, setState] = useState<GroupState | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [appState, setAppState] = useState<AppStateStatus>(AppState.currentState);
   const activeRef = useRef(true);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const locationDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -101,6 +102,12 @@ export function useGroupState(
   loadRef.current = load;
 
   useEffect(() => {
+    const sub = AppState.addEventListener('change', setAppState);
+    return () => sub.remove();
+  }, []);
+
+  // Initial / group change load — even if briefly backgrounded, keep last state.
+  useEffect(() => {
     activeRef.current = true;
     setLoading(true);
     setState(null);
@@ -111,7 +118,23 @@ export function useGroupState(
       return;
     }
 
-    loadRef.current();
+    void loadRef.current();
+
+    return () => {
+      activeRef.current = false;
+    };
+  }, [groupId]);
+
+  // Realtime + poll only while the app is foregrounded (battery budget).
+  useEffect(() => {
+    if (!groupId || appState !== 'active') {
+      return;
+    }
+
+    activeRef.current = true;
+
+    // Soft refresh when returning from background so peer pins catch up.
+    void loadRef.current();
 
     const scheduleReload = () => {
       if (debounceRef.current) {
@@ -122,7 +145,6 @@ export function useGroupState(
       }, REALTIME_DEBOUNCE_MS);
     };
 
-    /** Flush buffered peer location patches into local state (zero HTTP). */
     const flushLocationPatches = () => {
       const buffered = Array.from(pendingPatchesRef.current.values());
       pendingPatchesRef.current.clear();
@@ -130,7 +152,6 @@ export function useGroupState(
 
       setState((prev) => {
         if (!prev) {
-          // No state yet — fall back to full load once.
           void loadRef.current();
           return prev;
         }
@@ -140,7 +161,6 @@ export function useGroupState(
           myUserIdRef.current,
         );
         if (next === null) {
-          // Unknown member id — need full membership snapshot.
           void loadRef.current();
           return prev;
         }
@@ -152,7 +172,8 @@ export function useGroupState(
       if (locationDebounceRef.current) {
         clearTimeout(locationDebounceRef.current);
       }
-      const ms = locationPolicy(highAccuracyRef.current).realtimeLocationDebounceMs;
+      const ms = locationPolicy(highAccuracyRef.current, 'foreground')
+        .realtimeLocationDebounceMs;
       locationDebounceRef.current = setTimeout(flushLocationPatches, ms);
     };
 
@@ -200,30 +221,16 @@ export function useGroupState(
       )
       .subscribe();
 
-    // Fallback poll only while foregrounded — avoid burning radio in background.
-    let timer: ReturnType<typeof setInterval> | null = null;
-    const armPoll = (appState: AppStateStatus) => {
-      if (timer) {
-        clearInterval(timer);
-        timer = null;
-      }
-      if (appState === 'active') {
-        timer = setInterval(() => loadRef.current(), GROUP_POLL_INTERVAL_MS);
-      }
-    };
-    armPoll(AppState.currentState);
-    const appSub = AppState.addEventListener('change', armPoll);
+    const timer = setInterval(() => loadRef.current(), GROUP_POLL_INTERVAL_MS);
 
     return () => {
-      activeRef.current = false;
       if (debounceRef.current) clearTimeout(debounceRef.current);
       if (locationDebounceRef.current) clearTimeout(locationDebounceRef.current);
-      if (timer) clearInterval(timer);
-      appSub.remove();
+      clearInterval(timer);
       supabase.removeChannel(channel);
       supabase.removeChannel(profilesChannel);
     };
-  }, [groupId]);
+  }, [groupId, appState]);
 
   return { state, loading, error, refresh: load };
 }

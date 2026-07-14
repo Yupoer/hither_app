@@ -36,7 +36,11 @@ if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
         longitude: latest.coords.longitude,
       };
       const now = Date.now();
-      const policy = locationPolicy(Boolean(config.highAccuracy));
+      const powerMode = config.powerMode === 'allDay' ? 'allDay' : 'journey';
+      const policy = locationPolicy(
+        powerMode === 'allDay' ? false : Boolean(config.highAccuracy),
+        powerMode,
+      );
       if (!shouldUploadSample(coords, now, uploadGate, policy)) return;
 
       uploadGate = { lastCoords: coords, lastAtMs: now };

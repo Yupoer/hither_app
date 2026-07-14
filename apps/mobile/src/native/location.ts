@@ -64,10 +64,15 @@ export async function requestPermission(): Promise<boolean> {
  * without GPS by using a reference member).
  */
 function expoLocationOptions(highAccuracy: boolean): Location.LocationOptions {
-  const policy = locationPolicy(highAccuracy);
+  const policy = locationPolicy(highAccuracy, 'foreground');
+  const accuracy =
+    policy.accuracy === 'high'
+      ? Location.Accuracy.High
+      : policy.accuracy === 'low'
+        ? Location.Accuracy.Low
+        : Location.Accuracy.Balanced;
   return {
-    accuracy:
-      policy.accuracy === 'high' ? Location.Accuracy.High : Location.Accuracy.Balanced,
+    accuracy,
     distanceInterval: policy.distanceInterval,
     timeInterval: policy.timeInterval,
   };

@@ -451,7 +451,12 @@ export default function MapScreen({ route, navigation }: Props) {
   const [routeScrollEnabled, setRouteScrollEnabled] = useState(true);
 
   // --- Device GPS ----------------------------------------------------------
-  const { deviceCoords, deviceAccuracyM, refreshDeviceLocation } = useDeviceLocation({
+  const {
+    deviceCoords,
+    deviceAccuracyM,
+    appState,
+    refreshDeviceLocation,
+  } = useDeviceLocation({
     groupId,
     highAccuracy,
   });
@@ -541,6 +546,8 @@ export default function MapScreen({ route, navigation }: Props) {
   const [distanceSource, setDistanceSource] = useState<DistanceSource | undefined>();
   const [progressDepartedStart, setProgressDepartedStart] = useState(false);
   const backgroundPermissionDeniedRef = useRef<string | null>(null);
+
+  // Journey progress baseline (foreground only) — separate from GPS ownership.
   useEffect(() => {
     if (!journeyActive || !groupId || !navTarget) {
       initialJourneyRef.current = null;
@@ -549,14 +556,10 @@ export default function MapScreen({ route, navigation }: Props) {
       setInitialDistanceM(undefined);
       setDistanceSource(undefined);
       setProgressDepartedStart(false);
-      backgroundPermissionDeniedRef.current = null;
-      void stopBackgroundJourney();
       return;
     }
 
     const key = `${groupId}:${navTarget.id}:${state?.group.journeyStartedAt ?? ''}`;
-    if (backgroundPermissionDeniedRef.current === key) return;
-
     // Never baseline progress from peer/stale pins — only real device GPS.
     if (!deviceCoords) return;
 
@@ -589,36 +592,73 @@ export default function MapScreen({ route, navigation }: Props) {
       setDistanceSource(source);
       setProgressDepartedStart(false);
     }
-    const initialJourney = initialJourneyRef.current;
-    // Background location can start on a provisional distance before accuracy
-    // is good enough to lock the progress bar start pin.
-    const backgroundInitialM = initialJourney?.distanceM ?? distanceM;
-
-    void startBackgroundJourney({
-      groupId,
-      destinationId: navTarget.id,
-      destination: navTarget.coordinates,
-      initialDistanceM: backgroundInitialM,
-      travelMode,
-      highAccuracy,
-    }).then((result) => {
-      if (result === 'permission_denied') {
-        backgroundPermissionDeniedRef.current = key;
-        Alert.alert(
-          '需要背景定位',
-          '請在「設定」允許永遠取用位置；否則鎖定螢幕後將無法持續更新距離與抵達狀態。',
-        );
-      }
-    });
   }, [
     deviceAccuracyM,
     deviceCoords,
     groupId,
     journeyActive,
-    highAccuracy,
     navTarget,
     selfRoute?.distanceMeters,
     state?.group.journeyStartedAt,
+  ]);
+
+  /**
+   * Single GPS owner for the 8h≈20% budget:
+   * - App active → foreground watch (useDeviceLocation); background task STOPPED.
+   * - App background → allDay group presence, or denser journey profile.
+   * Dual-tracking (watch + task) is the main heat source when navigating.
+   */
+  useEffect(() => {
+    if (!groupId) {
+      void stopBackgroundJourney();
+      return;
+    }
+
+    // Foreground owns GPS.
+    if (appState === 'active') {
+      void stopBackgroundJourney();
+      return;
+    }
+
+    const powerMode = journeyActive && navTarget ? 'journey' : 'allDay';
+    const dest =
+      navTarget?.coordinates ??
+      deviceCoords ??
+      { latitude: 0, longitude: 0 };
+    const key = `${groupId}:${powerMode}:${navTarget?.id ?? 'presence'}`;
+    if (backgroundPermissionDeniedRef.current === key) return;
+
+    const backgroundInitialM =
+      initialJourneyRef.current?.distanceM ??
+      (deviceCoords && navTarget
+        ? distanceMeters(deviceCoords, navTarget.coordinates)
+        : 0);
+
+    void startBackgroundJourney({
+      groupId,
+      destinationId: navTarget?.id ?? 'group-presence',
+      destination: dest,
+      initialDistanceM: backgroundInitialM,
+      travelMode,
+      // Precise never applies to all-day presence (budget).
+      highAccuracy: powerMode === 'journey' && highAccuracy,
+      powerMode,
+    }).then((result) => {
+      if (result === 'permission_denied') {
+        backgroundPermissionDeniedRef.current = key;
+        Alert.alert(
+          '需要背景定位',
+          '全天群組定位與鎖定螢幕導航需要「永遠」取用位置。請在設定允許後，鎖定螢幕仍可省電更新位置。',
+        );
+      }
+    });
+  }, [
+    appState,
+    deviceCoords,
+    groupId,
+    highAccuracy,
+    journeyActive,
+    navTarget,
     travelMode,
   ]);
 

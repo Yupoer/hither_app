@@ -54,11 +54,11 @@ describe('background journey controller', () => {
     expect(opts.pausesUpdatesAutomatically).toBe(true);
   });
 
-  it('uses High accuracy options when highAccuracy is enabled', async () => {
+  it('uses High accuracy options when highAccuracy is enabled on journey', async () => {
     const { controller, location } = harness();
 
     await expect(
-      controller.start({ ...config, highAccuracy: true }),
+      controller.start({ ...config, highAccuracy: true, powerMode: 'journey' }),
     ).resolves.toBe('started');
 
     const opts = location.startLocationUpdatesAsync.mock.calls[0][1] as {
@@ -66,17 +66,38 @@ describe('background journey controller', () => {
       distanceInterval: number;
     };
     expect(opts.accuracy).toBe(4);
-    expect(opts.distanceInterval).toBe(15);
+    expect(opts.distanceInterval).toBe(20);
+  });
+
+  it('allDay uses Low accuracy and ignores highAccuracy for the 8h budget', async () => {
+    const { controller, location } = harness();
+
+    await expect(
+      controller.start({
+        ...config,
+        highAccuracy: true,
+        powerMode: 'allDay',
+      }),
+    ).resolves.toBe('started');
+
+    const opts = location.startLocationUpdatesAsync.mock.calls[0][1] as {
+      accuracy: number;
+      deferredUpdatesInterval: number;
+      pausesUpdatesAutomatically: boolean;
+    };
+    expect(opts.accuracy).toBe(2);
+    expect(opts.deferredUpdatesInterval).toBe(180_000);
+    expect(opts.pausesUpdatesAutomatically).toBe(true);
   });
 
   it('restarts native updates when highAccuracy profile changes', async () => {
     const { controller, location, storage } = harness(true);
     storage.getItem.mockResolvedValue(
-      JSON.stringify({ ...config, highAccuracy: false }),
+      JSON.stringify({ ...config, highAccuracy: false, powerMode: 'journey' }),
     );
 
     await expect(
-      controller.start({ ...config, highAccuracy: true }),
+      controller.start({ ...config, highAccuracy: true, powerMode: 'journey' }),
     ).resolves.toBe('started');
 
     expect(location.stopLocationUpdatesAsync).toHaveBeenCalledTimes(1);
