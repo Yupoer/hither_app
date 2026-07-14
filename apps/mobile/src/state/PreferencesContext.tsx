@@ -74,7 +74,8 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [language, setLanguageState] = useState<Language>(DEFAULT_LANGUAGE);
   const [themeName, setThemeNameState] = useState<ThemeName>(DEFAULT_THEME);
   const [highAccuracy, setHighAccuracyState] = useState(false);
-  const [obliqueLocate, setObliqueLocateState] = useState(false);
+  // Default on: locate-me tilts to 45° unless the user opts out in Settings.
+  const [obliqueLocate, setObliqueLocateState] = useState(true);
   const [meetRedMin, setMeetRedMinState] = useState<number>(DEFAULT_MEET_RED_MIN);
   const [dayColors, setDayColorsState] = useState<Record<number, string>>({});
   const [ready, setReady] = useState(false);
@@ -103,7 +104,9 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         if (isLanguage(storedLang[1])) setLanguageState(storedLang[1]);
         if (isThemeName(storedTheme[1])) setThemeNameState(storedTheme[1]);
         if (storedHighAccuracy[1] === 'true') setHighAccuracyState(true);
-        if (storedObliqueLocate[1] === 'true') setObliqueLocateState(true);
+        // Only override default-on when the user has explicitly stored a value.
+        if (storedObliqueLocate[1] === 'false') setObliqueLocateState(false);
+        else if (storedObliqueLocate[1] === 'true') setObliqueLocateState(true);
         const red = Number(storedMeetRed[1]);
         if ((MEET_RED_OPTIONS as readonly number[]).includes(red)) setMeetRedMinState(red);
         if (storedDayColors[1]) {

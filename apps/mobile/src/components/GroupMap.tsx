@@ -230,11 +230,26 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
         }
       },
       centerOn: (coordinates) => {
-        mapRef.current?.animateToRegion(regionFor(coordinates, latOffset), 400);
+        // Flat top-down: animateCamera with pitch 0 so we leave any prior
+        // 45° oblique view cleanly (animateToRegion alone can leave pitch).
+        mapRef.current?.animateCamera(
+          {
+            center: {
+              latitude: coordinates.latitude - latOffset,
+              longitude: coordinates.longitude,
+            },
+            pitch: 0,
+            heading: 0,
+            zoom: 16.5,
+            altitude: 900,
+          },
+          { duration: 400 },
+        );
       },
       focusOblique: (coordinates) => {
         // Same visible-band lat shift as centerOn so the pin sits in the
         // strip between carousel and sheet while pitched to 45°.
+        // Set zoom (Android) + altitude (iOS); pitch needs pitchEnabled on MapView.
         mapRef.current?.animateCamera(
           {
             center: {
@@ -243,9 +258,10 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
             },
             pitch: 45,
             heading: 0,
-            altitude: 1200,
+            zoom: 16.5,
+            altitude: 900,
           },
-          { duration: 500 },
+          { duration: 600 },
         );
       },
       fitRoute: (coordinates) => {
@@ -299,6 +315,8 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       userInterfaceStyle={mapInterfaceStyle}
       mapPadding={{ top: 42, left: 32, right: 32, bottom: 42 }}
       showsCompass
+      pitchEnabled
+      rotateEnabled
     >
       {alternateRoutes?.map((alt, i) =>
         alt.points.length > 1 ? (

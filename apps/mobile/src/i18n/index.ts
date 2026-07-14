@@ -265,6 +265,7 @@ const zh = {
 
   // Settings · location tracking
   'settings.locationSection': '定位追蹤',
+  'settings.mapSection': '地圖',
   'settings.highAccuracy': '高精準模式',
   'settings.highAccuracyHint': '提高定位精度與更新頻率；預設關閉以降低耗電。',
   'settings.highAccuracyCompact': '高精準',
@@ -694,6 +695,7 @@ const en: Record<keyof typeof zh, string> = {
   'settings.notifJourney': 'Journey start / pause',
 
   'settings.locationSection': 'Location tracking',
+  'settings.mapSection': 'Map',
   'settings.highAccuracy': 'High accuracy',
   'settings.highAccuracyHint':
     'Increase location accuracy and update rate; off by default to reduce battery use.',

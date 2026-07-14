@@ -52,6 +52,13 @@ describe('map UI placement contracts', () => {
     expect(language).toBeGreaterThan(pro);
   });
 
+  it('exposes the oblique-locate toggle in Settings', () => {
+    expect(settingsOverlay).toContain("t('settings.mapSection')");
+    expect(settingsOverlay).toContain("t('settings.obliqueLocate')");
+    expect(settingsOverlay).toContain('setObliqueLocate');
+    expect(settingsOverlay).toContain('value={obliqueLocate}');
+  });
+
   it('adds visible separation before viewing my teams', () => {
     expect(roleSelect).toContain('styles.myTeamsSpacer');
     expect(roleSelect).toContain('myTeamsSpacer: { height: 64 }');

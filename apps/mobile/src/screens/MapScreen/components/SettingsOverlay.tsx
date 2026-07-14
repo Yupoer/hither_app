@@ -1,5 +1,5 @@
 import React from 'react';
-import { ScrollView, Text, View, TouchableOpacity } from 'react-native';
+import { ScrollView, Switch, Text, View, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import OverlaySheet from '../../../components/OverlaySheet';
 import { Segmented } from './Segmented';
@@ -42,8 +42,10 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
   const {
     language,
     themeName,
+    obliqueLocate,
     setLanguage,
     setThemeName,
+    setObliqueLocate,
   } = usePreferences();
   const { colors } = useTheme();
   const accent = colors.accent;
@@ -116,6 +118,28 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             value={themeName}
             onChange={(v) => setThemeName(v as ThemeName)}
           />
+
+          <Text style={styles.sectionLabel}>{t('settings.mapSection')}</Text>
+          <View style={styles.accuracyRow}>
+            <View style={styles.accuracyCopy}>
+              <View style={styles.accuracyTitleRow}>
+                <Ionicons name="cube-outline" size={18} color={obliqueLocate ? accent : glass.textTertiary} />
+                <Text style={styles.accuracyLabel}>
+                  {t('settings.obliqueLocate')}
+                </Text>
+              </View>
+              <Text style={styles.accuracySubhint}>{t('settings.obliqueLocateHint')}</Text>
+            </View>
+            <Switch
+              style={styles.accuracySwitch}
+              value={obliqueLocate}
+              onValueChange={setObliqueLocate}
+              trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
+              thumbColor="#fff"
+              ios_backgroundColor="rgba(120,120,128,0.32)"
+              accessibilityLabel={t('settings.obliqueLocate')}
+            />
+          </View>
 
           <Text style={styles.sectionLabel}>{t('settings.notifSection')}</Text>
           <NotificationPreferencesCard colors={{ ...themes.night, accent }} />
