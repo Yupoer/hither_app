@@ -97,6 +97,9 @@ function ThemePreviewCard({
         !selected && !pressed && { opacity: 0.92 },
       ]}
     >
+      {/* In-flow scaffold: absolute-only kids collapse to 0 height in Yoga. */}
+      <View style={styles.cardScaffold} pointerEvents="none" collapsable={false} />
+
       {/* Decorative layers must not steal touches from Pressable. */}
       <LinearGradient
         colors={[from, to]}
@@ -168,18 +171,24 @@ export default function ThemeStep({ answers, onAnswer, onSkip, onBack }: StepPro
         />
       }
     >
+      {/* Two fixed rows (not flexWrap + % width) so Yoga always gets a width
+          for flex:1 + aspectRatio — matches L3DepartureStep tile layout. */}
       <View style={styles.grid}>
-        {THEME_ORDER.map((name) => (
-          <ThemePreviewCard
-            key={name}
-            name={name}
-            selected={themeName === name}
-            label={t(THEME_LABEL_KEY[name])}
-            onPress={() => {
-              selectionTick();
-              setThemeName(name);
-            }}
-          />
+        {[THEME_ORDER.slice(0, 2), THEME_ORDER.slice(2, 4)].map((row, rowIndex) => (
+          <View key={rowIndex} style={styles.row}>
+            {row.map((name) => (
+              <ThemePreviewCard
+                key={name}
+                name={name}
+                selected={themeName === name}
+                label={t(THEME_LABEL_KEY[name])}
+                onPress={() => {
+                  selectionTick();
+                  setThemeName(name);
+                }}
+              />
+            ))}
+          </View>
         ))}
       </View>
     </StepShell>
@@ -188,18 +197,25 @@ export default function ThemeStep({ answers, onAnswer, onSkip, onBack }: StepPro
 
 const styles = StyleSheet.create({
   grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 14,
-    justifyContent: 'space-between',
     paddingBottom: 8,
   },
+  row: {
+    flexDirection: 'row',
+    gap: 14,
+  },
   card: {
-    width: '47%',
+    flex: 1,
     aspectRatio: 0.92,
+    minHeight: 148,
     borderRadius: 24,
     overflow: 'hidden',
     backgroundColor: '#0E1320',
+  },
+  // In-flow box so absolute decorative layers have a non-zero parent.
+  cardScaffold: {
+    width: '100%',
+    aspectRatio: 0.92,
   },
   cardGlow: {
     shadowOffset: { width: 0, height: 6 },
