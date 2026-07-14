@@ -50,10 +50,10 @@ export const OnboardingIcons = {
   memberBackpack: require('../../assets/icons/onboarding/member-backpack.png') as ImageSourcePropType,
 
   theme: {
-    night: require('../../assets/icons/night_light.png') as ImageSourcePropType,
-    day: require('../../assets/icons/morning_light.png') as ImageSourcePropType,
-    dusk: require('../../assets/icons/dusk.png') as ImageSourcePropType,
-    forest: require('../../assets/icons/forest.png') as ImageSourcePropType,
+    night: require('../../assets/icons/onboarding/theme-night.png') as ImageSourcePropType,
+    day: require('../../assets/icons/onboarding/theme-day.png') as ImageSourcePropType,
+    dusk: require('../../assets/icons/onboarding/theme-dusk.png') as ImageSourcePropType,
+    forest: require('../../assets/icons/onboarding/theme-forest.png') as ImageSourcePropType,
   } satisfies Record<ThemeName, ImageSourcePropType>,
 
   mascot: {
