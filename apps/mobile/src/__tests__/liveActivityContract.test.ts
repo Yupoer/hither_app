@@ -66,7 +66,8 @@ describe('ActivityKit remote push contract', () => {
 
   it('uses personal initial distance and persisted member status in MapScreen', () => {
     expect(mapScreen).not.toContain('PROGRESS_REF_M');
-    expect(mapScreen).toContain('journeyProgress(');
+    expect(mapScreen).toContain('gatedJourneyProgress(');
+    expect(mapScreen).toContain('shouldAnchorInitial(');
     expect(mapScreen).toContain("m.status === 'arrived'");
     expect(mapScreen).toContain('memberArrived:');
   });

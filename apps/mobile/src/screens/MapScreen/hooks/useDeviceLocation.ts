@@ -18,6 +18,7 @@ interface UseDeviceLocationParams {
 
 export function useDeviceLocation({ groupId, highAccuracy }: UseDeviceLocationParams) {
   const [deviceCoords, setDeviceCoords] = useState<Coordinates | null>(null);
+  const [deviceAccuracyM, setDeviceAccuracyM] = useState<number | null>(null);
   const [appState, setAppState] = useState<AppStateStatus>(AppState.currentState);
   const uiGateRef = useRef<LocationGateState>({ lastCoords: null, lastAtMs: 0 });
   const uploadGateRef = useRef<LocationGateState>({ lastCoords: null, lastAtMs: 0 });
@@ -28,6 +29,9 @@ export function useDeviceLocation({ groupId, highAccuracy }: UseDeviceLocationPa
     if (fix) {
       const now = Date.now();
       setDeviceCoords(fix.coordinates);
+      setDeviceAccuracyM(
+        fix.accuracy != null && Number.isFinite(fix.accuracy) ? fix.accuracy : null,
+      );
       uiGateRef.current = { lastCoords: fix.coordinates, lastAtMs: now };
       if (groupId) {
         await updateMyLocation(fix.coordinates, groupId);
@@ -55,13 +59,18 @@ export function useDeviceLocation({ groupId, highAccuracy }: UseDeviceLocationPa
     let stop = () => {};
     const policy = locationPolicy(highAccuracy);
     void location
-      .watchLocation((sample: { coordinates: Coordinates }) => {
+      .watchLocation((sample: { coordinates: Coordinates; accuracy?: number | null }) => {
         const now = Date.now();
         const coords = sample.coordinates;
 
         if (shouldAcceptUiSample(coords, now, uiGateRef.current, policy)) {
           uiGateRef.current = { lastCoords: coords, lastAtMs: now };
           setDeviceCoords(coords);
+          setDeviceAccuracyM(
+            sample.accuracy != null && Number.isFinite(sample.accuracy)
+              ? sample.accuracy
+              : null,
+          );
         }
 
         if (
@@ -84,6 +93,8 @@ export function useDeviceLocation({ groupId, highAccuracy }: UseDeviceLocationPa
 
   return {
     deviceCoords,
+    /** Horizontal accuracy of the last accepted device fix, metres. */
+    deviceAccuracyM,
     refreshDeviceLocation,
   };
 }

@@ -91,8 +91,11 @@ import {
 } from '../state/backgroundJourney';
 import {
   ARRIVAL_RADIUS_M,
+  gatedJourneyProgress,
   initialJourneyDistance,
-  journeyProgress,
+  sameMetricDistance,
+  shouldAnchorInitial,
+  type DistanceSource,
 } from '../utils/journeyProgress';
 import {
   distanceMeters,
@@ -448,7 +451,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const [routeScrollEnabled, setRouteScrollEnabled] = useState(true);
 
   // --- Device GPS ----------------------------------------------------------
-  const { deviceCoords, refreshDeviceLocation } = useDeviceLocation({
+  const { deviceCoords, deviceAccuracyM, refreshDeviceLocation } = useDeviceLocation({
     groupId,
     highAccuracy,
   });
@@ -529,14 +532,23 @@ export default function MapScreen({ route, navigation }: Props) {
   const initialJourneyRef = useRef<{
     key: string;
     distanceM: number;
-    source: 'route' | 'fallback';
+    source: DistanceSource;
+    startCoords: NonNullable<typeof deviceCoords>;
   } | null>(null);
+  const lastRouteDistanceRef = useRef<number | undefined>(undefined);
+  const departedStartRef = useRef(false);
   const [initialDistanceM, setInitialDistanceM] = useState<number | undefined>();
+  const [distanceSource, setDistanceSource] = useState<DistanceSource | undefined>();
+  const [progressDepartedStart, setProgressDepartedStart] = useState(false);
   const backgroundPermissionDeniedRef = useRef<string | null>(null);
   useEffect(() => {
     if (!journeyActive || !groupId || !navTarget) {
       initialJourneyRef.current = null;
+      lastRouteDistanceRef.current = undefined;
+      departedStartRef.current = false;
       setInitialDistanceM(undefined);
+      setDistanceSource(undefined);
+      setProgressDepartedStart(false);
       backgroundPermissionDeniedRef.current = null;
       void stopBackgroundJourney();
       return;
@@ -545,24 +557,48 @@ export default function MapScreen({ route, navigation }: Props) {
     const key = `${groupId}:${navTarget.id}:${state?.group.journeyStartedAt ?? ''}`;
     if (backgroundPermissionDeniedRef.current === key) return;
 
+    // Never baseline progress from peer/stale pins — only real device GPS.
+    if (!deviceCoords) return;
+
     const routeDistanceM = selfRoute?.distanceMeters;
-    const distanceM = initialJourneyDistance(routeDistanceM, numericDistance);
+    if (routeDistanceM != null && Number.isFinite(routeDistanceM)) {
+      lastRouteDistanceRef.current = routeDistanceM;
+    }
+    const deviceStraightM = distanceMeters(deviceCoords, navTarget.coordinates);
+    const distanceM = initialJourneyDistance(routeDistanceM, deviceStraightM);
     if (distanceM == null) return;
 
-    const source = routeDistanceM != null ? 'route' : 'fallback';
+    const source: DistanceSource = routeDistanceM != null ? 'route' : 'fallback';
+    const canLockProgress = shouldAnchorInitial({
+      hasDeviceGps: true,
+      accuracyM: deviceAccuracyM,
+    });
     const current = initialJourneyRef.current;
-    if (!current || current.key !== key || (current.source === 'fallback' && source === 'route')) {
-      initialJourneyRef.current = { key, distanceM, source };
+    if (
+      canLockProgress &&
+      (!current || current.key !== key || (current.source === 'fallback' && source === 'route'))
+    ) {
+      initialJourneyRef.current = {
+        key,
+        distanceM,
+        source,
+        startCoords: deviceCoords,
+      };
+      departedStartRef.current = false;
       setInitialDistanceM(distanceM);
+      setDistanceSource(source);
+      setProgressDepartedStart(false);
     }
     const initialJourney = initialJourneyRef.current;
-    if (!initialJourney) return;
+    // Background location can start on a provisional distance before accuracy
+    // is good enough to lock the progress bar start pin.
+    const backgroundInitialM = initialJourney?.distanceM ?? distanceM;
 
     void startBackgroundJourney({
       groupId,
       destinationId: navTarget.id,
       destination: navTarget.coordinates,
-      initialDistanceM: initialJourney.distanceM,
+      initialDistanceM: backgroundInitialM,
       travelMode,
       highAccuracy,
     }).then((result) => {
@@ -575,11 +611,12 @@ export default function MapScreen({ route, navigation }: Props) {
       }
     });
   }, [
+    deviceAccuracyM,
+    deviceCoords,
     groupId,
     journeyActive,
     highAccuracy,
     navTarget,
-    numericDistance,
     selfRoute?.distanceMeters,
     state?.group.journeyStartedAt,
     travelMode,
@@ -620,12 +657,41 @@ export default function MapScreen({ route, navigation }: Props) {
     }
   }, [stragglers, t, user?.id]);
 
+  // Same metric as locked initial (route stays route; never silent straight fallback).
+  const liveDistance =
+    distanceSource != null
+      ? sameMetricDistance(
+          distanceSource,
+          selfRoute?.distanceMeters,
+          deviceCoords && navTarget
+            ? distanceMeters(deviceCoords, navTarget.coordinates)
+            : numericDistance,
+          lastRouteDistanceRef.current,
+        )
+      : selfRoute?.distanceMeters ?? numericDistance;
 
-  const liveDistance = selfRoute?.distanceMeters ?? numericDistance;
-  const liveProgress =
+  const movedFromStartM =
+    deviceCoords && initialJourneyRef.current
+      ? distanceMeters(initialJourneyRef.current.startCoords, deviceCoords)
+      : 0;
+
+  const gatedProgress =
     liveDistance != null && initialDistanceM != null
-      ? journeyProgress(initialDistanceM, liveDistance)
+      ? gatedJourneyProgress({
+          initialM: initialDistanceM,
+          currentM: liveDistance,
+          movedFromStartM,
+          hasDepartedStart: departedStartRef.current || progressDepartedStart,
+        })
       : undefined;
+  const liveProgress = gatedProgress?.progress;
+
+  // Sticky "left start" so stepping back toward the pin does not snap to 0%.
+  useEffect(() => {
+    if (!gatedProgress?.departed) return;
+    departedStartRef.current = true;
+    if (!progressDepartedStart) setProgressDepartedStart(true);
+  }, [gatedProgress?.departed, progressDepartedStart]);
   const liveGathered = navTarget
     ? members.filter((m) => m.status === 'arrived').length
     : undefined;

@@ -234,7 +234,19 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
       },
       cachedGetRoute,
     ).then((next) => {
-      if (active) setState(next);
+      if (!active) return;
+      // Keep last good self route when a recompute returns null — dropping to
+      // straight-line mid-journey inflates Live Activity progress falsely.
+      setState((prev) => ({
+        ...next,
+        selfRoute: next.selfRoute ?? prev.selfRoute,
+        allModeRoutes: {
+          ...next.allModeRoutes,
+          ...(next.selfRoute || !prev.selfRoute
+            ? {}
+            : { [travelMode]: prev.allModeRoutes[travelMode] ?? prev.selfRoute }),
+        },
+      }));
     });
     return () => {
       active = false;
