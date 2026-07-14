@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
 import {
   DarkTheme,
   DefaultTheme,
@@ -22,17 +22,8 @@ import {
   useTheme,
 } from './src/state/PreferencesContext';
 
-// BUG-01/02/03: cap iOS Dynamic Type so fixed glass layouts (emoji avatars,
-// sheet rows, quick-command grid) don't explode when the user maxes system text.
-// VoiceOver and other a11y still work; only font-size scaling is capped.
-// RN still honors defaultProps on Text/TextInput at runtime (New Arch included).
-const textDefaults = (Text as typeof Text & { defaultProps?: Record<string, unknown> });
-textDefaults.defaultProps = { ...(textDefaults.defaultProps ?? {}), maxFontSizeMultiplier: 1 };
-const textInputDefaults = (TextInput as typeof TextInput & { defaultProps?: Record<string, unknown> });
-textInputDefaults.defaultProps = {
-  ...(textInputDefaults.defaultProps ?? {}),
-  maxFontSizeMultiplier: 1,
-};
+// Dynamic Type: follow system scale with role caps via HitherText /
+// TYPE_MAX_MULTIPLIER (see src/theme/typeScale.ts). No global maxFontSizeMultiplier.
 
 /**
  * Navigation theme + status bar follow the active palette, so the header and

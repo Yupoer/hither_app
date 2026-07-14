@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { ScrollView, View, Text, TextInput, Pressable, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import OverlaySheet from '../../../components/OverlaySheet';
+import { HitherText } from '../../../components/HitherText';
 import { AVATAR_EMOJI, AVATAR_COLORS } from '../../../constants/avatars';
 import { useSession } from '../../../state/SessionContext';
 import { useTheme } from '../../../state/PreferencesContext';
@@ -78,7 +79,7 @@ export function ProfileOverlay({
             ]}
           >
             {profileAvatar ? (
-              <Text style={styles.profilePreviewEmoji}>{profileAvatar}</Text>
+              <HitherText typeRole="emoji" style={styles.profilePreviewEmoji}>{profileAvatar}</HitherText>
             ) : (
               <Text style={styles.profilePreviewInitial}>
                 {(profileName || user?.name || '?').slice(0, 1).toUpperCase()}
@@ -118,7 +119,7 @@ export function ProfileOverlay({
                 },
               ]}
             >
-              <Text style={styles.emojiChar}>{e}</Text>
+              <HitherText typeRole="emoji" style={styles.emojiChar}>{e}</HitherText>
             </Pressable>
           ))}
         </View>

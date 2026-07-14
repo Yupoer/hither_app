@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { sendCommand } from '../api/client';
 import { notifications } from '../native';
@@ -13,6 +13,8 @@ import {
 } from '../types';
 import { radius, spacing, type Palette } from '../theme';
 import { useSession } from '../state/SessionContext';
+import { useFontScaleBucket } from '../a11y/useFontScaleBucket';
+import { HitherText } from './HitherText';
 
 /**
  * Vector-icon per command (replaces the old emoji glyphs, which rendered as "?"
@@ -58,7 +60,9 @@ export default function QuickCommandsCard({
 }) {
   const { t } = useTranslation();
   const { customQuickCommand } = useSession();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
+  // a11y-layout:quickCommands — column count follows Dynamic Type bucket.
+  const fontBucket = useFontScaleBucket();
+  const styles = useMemo(() => makeStyles(colors, fontBucket), [colors, fontBucket]);
   const [sending, setSending] = useState<CommandType | null>(null);
 
   const roleCommands = isLeader ? LEADER_COMMANDS : FOLLOWER_COMMANDS;
@@ -102,11 +106,13 @@ export default function QuickCommandsCard({
     }
   }
 
+  const labelLines = fontBucket === 'xl' ? 2 : 1;
+
   return (
     <View style={styles.card}>
-      <Text style={styles.hint}>
+      <HitherText typeRole="footnote" style={styles.hint}>
         {isLeader ? t('settings.quickHintLeader') : t('settings.quickHintFollower')}
-      </Text>
+      </HitherText>
       <View style={styles.grid}>
         {commands.map((type) => (
           <Pressable
@@ -122,7 +128,13 @@ export default function QuickCommandsCard({
               size={22}
               color={colors.textPrimary}
             />
-            <Text style={styles.label}>{labelFor(type)}</Text>
+            <HitherText
+              typeRole="footnote"
+              style={styles.label}
+              numberOfLines={labelLines}
+            >
+              {labelFor(type)}
+            </HitherText>
           </Pressable>
         ))}
       </View>
@@ -130,8 +142,16 @@ export default function QuickCommandsCard({
   );
 }
 
-const makeStyles = (colors: Palette) =>
-  StyleSheet.create({
+const makeStyles = (
+  colors: Palette,
+  bucket: 'regular' | 'large' | 'xl',
+) => {
+  // regular ≈ 3-col, large = 3-col taller, xl = 2-col.
+  const flexBasis = bucket === 'xl' ? '46%' : '30%';
+  const minHeight = bucket === 'regular' ? undefined : bucket === 'large' ? 72 : 80;
+  const padV = bucket === 'regular' ? spacing.md : spacing.lg;
+
+  return StyleSheet.create({
     card: {
       backgroundColor: colors.surface,
       borderRadius: radius.md,
@@ -144,10 +164,11 @@ const makeStyles = (colors: Palette) =>
     grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
     btn: {
       flexGrow: 1,
-      flexBasis: '30%',
+      flexBasis,
+      minHeight,
       alignItems: 'center',
       gap: spacing.xs,
-      paddingVertical: spacing.md,
+      paddingVertical: padV,
       paddingHorizontal: spacing.sm,
       borderRadius: radius.md,
       borderWidth: 1,
@@ -155,6 +176,11 @@ const makeStyles = (colors: Palette) =>
       backgroundColor: colors.background,
     },
     btnSending: { borderColor: colors.accent, backgroundColor: colors.glass },
-    icon: { fontSize: 22 },
-    label: { color: colors.textPrimary, fontSize: 13, fontWeight: '600' },
+    label: {
+      color: colors.textPrimary,
+      fontSize: 13,
+      fontWeight: '600',
+      textAlign: 'center',
+    },
   });
+};

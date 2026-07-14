@@ -61,6 +61,8 @@ import PaywallSheet from '../components/PaywallSheet';
 import KmlImportSheet from '../components/KmlImportSheet';
 import FeedbackSheet from '../components/FeedbackSheet';
 import CrookIcon from '../components/CrookIcon';
+import { HitherText } from '../components/HitherText';
+import { useFontScaleBucket } from '../a11y/useFontScaleBucket';
 import { useSession } from '../state/SessionContext';
 import {
   usePreferences,
@@ -192,6 +194,8 @@ export default function MapScreen({ route, navigation }: Props) {
   const { colors } = useTheme();
   const accent = colors.accent;
   const { t } = useTranslation();
+  // a11y-layout:commandRow — large/xl stack the gathering-point command controls.
+  const fontBucket = useFontScaleBucket();
   const styles = useMemo(() => makeStyles(accent), [accent]);
   // Embedded themed components (reorder list, notifications, commands) always
   // render on the dark glass overlay — force the night palette so they stay dark.
@@ -1214,7 +1218,7 @@ export default function MapScreen({ route, navigation }: Props) {
             ]}
           >
             {f.avatar ? (
-              <Text style={styles.flockEmoji}>{f.avatar}</Text>
+              <HitherText typeRole="emoji" style={styles.flockEmoji}>{f.avatar}</HitherText>
             ) : (
               <Text style={styles.flockInitial}>{f.name.slice(0, 1).toUpperCase()}</Text>
             )}
@@ -1314,7 +1318,7 @@ export default function MapScreen({ route, navigation }: Props) {
               accessibilityLabel={t('profile.title')}
             >
               {user?.avatar ? (
-                <Text style={styles.avatarEmoji}>{user.avatar}</Text>
+                <HitherText typeRole="emoji" style={styles.avatarEmoji}>{user.avatar}</HitherText>
               ) : (
                 <Text style={styles.avatarText}>
                   {(user?.name ?? '?').slice(0, 1).toUpperCase()}
@@ -1591,7 +1595,9 @@ export default function MapScreen({ route, navigation }: Props) {
                       key={f.userId}
                       style={[styles.pillAvatar, { backgroundColor: f.color, marginLeft: i ? -10 : 0 }]}
                     >
-                      {f.avatar ? <Text style={styles.pillEmoji}>{f.avatar}</Text> : null}
+                      {f.avatar ? (
+                        <HitherText typeRole="emoji" style={styles.pillEmoji}>{f.avatar}</HitherText>
+                      ) : null}
                     </View>
                   ));
                 })()}
@@ -1886,12 +1892,89 @@ export default function MapScreen({ route, navigation }: Props) {
                       </Text>
                     </View>
 
-                    {/* One command row: nav toggle · transit (cycles mode, shows
-                        live time·distance) · Apple Maps hand-off · gather-time. */}
-                    <View style={styles.commandRow}>
+                    {/* a11y-layout:commandRow
+                        regular: single row; large/xl: nav full-width + secondary row.
+                        xl: secondary actions prefer icon-only (+ a11y labels). */}
+                    {(() => {
+                      const stacked = fontBucket === 'large' || fontBucket === 'xl';
+                      const iconOnly = fontBucket === 'xl';
+                      const etaLabel = routeForDestination
+                        ? shortEta(routeForDestination.expectedTravelTimeSeconds)
+                        : d != null
+                          ? shortEta(etaSecondsFor(d, travelMode))
+                          : '—';
+                      const distLabel = d != null ? formatDistance(d) : '';
+                      const secondary = (
+                        <>
+                      <Pressable
+                        style={[
+                          styles.transitPill,
+                          stacked && styles.cmdSecondaryFlex,
+                          { backgroundColor: accentMix(accent, 16), borderColor: accentMix(accent, 38) },
+                        ]}
+                        onPress={() => {
+                          lightTap();
+                          const order = ['walk', 'transit', 'drive'] as const;
+                          setTravelMode(order[(order.indexOf(travelMode) + 1) % order.length]);
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${t(`map.travelMode.${travelMode}`)} ${etaLabel} ${distLabel}`.trim()}
+                      >
+                        <View style={styles.transitPillTop}>
+                          <Ionicons name={modeIconName} size={16} color={accent} />
+                          {!iconOnly ? (
+                            <Text style={styles.transitPillTime}>{etaLabel}</Text>
+                          ) : null}
+                        </View>
+                        {!iconOnly ? (
+                          <Text style={styles.transitPillDist}>{distLabel}</Text>
+                        ) : null}
+                      </Pressable>
+
+                      <Pressable
+                        style={[styles.cmdSquare, stacked && styles.cmdSecondaryFlex]}
+                        onPress={() => openInAppleMaps(dest)}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('map.openInAppleMaps')}
+                      >
+                        <Ionicons name="open-outline" size={18} color={glass.textSecondary} />
+                      </Pressable>
+
+                      <Pressable
+                        style={[styles.cmdSquare, stacked && styles.cmdSecondaryFlex]}
+                        onPress={() => openMeetTimePicker(dest)}
+                        disabled={!canEditItinerary}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('meetTime.set')}
+                      >
+                        <Ionicons
+                          name="time-outline"
+                          size={16}
+                          color={meetLabel ? accent : glass.textSecondary}
+                        />
+                        {!iconOnly ? (
+                          dest.meetAt ? (
+                            <MeetCountdown
+                              meetAtIso={dest.meetAt as string}
+                              redWithinMin={meetRedMin}
+                              redColor={glass.danger}
+                              baseStyle={[styles.cmdSquareLabel, { color: accent }]}
+                            />
+                          ) : (
+                            <Text style={styles.cmdSquareLabel} numberOfLines={1}>
+                              ——
+                            </Text>
+                          )
+                        ) : null}
+                      </Pressable>
+                        </>
+                      );
+                      return (
+                    <View style={stacked ? styles.commandCol : styles.commandRow}>
                       <Pressable
                         style={[
                           styles.navBtn,
+                          stacked && styles.navBtnFull,
                           navigatingThis ? styles.navBtnEnd : { backgroundColor: accent },
                         ]}
                         onPress={() => {
@@ -1930,70 +2013,14 @@ export default function MapScreen({ route, navigation }: Props) {
                               : '路徑規劃'}
                         </Text>
                       </Pressable>
-
-                      <Pressable
-                        style={[
-                          styles.transitPill,
-                          { backgroundColor: accentMix(accent, 16), borderColor: accentMix(accent, 38) },
-                        ]}
-                        onPress={() => {
-                          lightTap();
-                          const order = ['walk', 'transit', 'drive'] as const;
-                          setTravelMode(order[(order.indexOf(travelMode) + 1) % order.length]);
-                        }}
-                        accessibilityRole="button"
-                        accessibilityLabel={t(`map.travelMode.${travelMode}`)}
-                      >
-                        <View style={styles.transitPillTop}>
-                          <Ionicons name={modeIconName} size={16} color={accent} />
-                          <Text style={styles.transitPillTime}>
-                            {routeForDestination
-                              ? shortEta(routeForDestination.expectedTravelTimeSeconds)
-                              : d != null
-                                ? shortEta(etaSecondsFor(d, travelMode))
-                                : '—'}
-                          </Text>
-                        </View>
-                        <Text style={styles.transitPillDist}>
-                          {d != null ? formatDistance(d) : ''}
-                        </Text>
-                      </Pressable>
-
-                      <Pressable
-                        style={styles.cmdSquare}
-                        onPress={() => openInAppleMaps(dest)}
-                        accessibilityRole="button"
-                        accessibilityLabel={t('map.openInAppleMaps')}
-                      >
-                        <Ionicons name="open-outline" size={18} color={glass.textSecondary} />
-                      </Pressable>
-
-                      <Pressable
-                        style={styles.cmdSquare}
-                        onPress={() => openMeetTimePicker(dest)}
-                        disabled={!canEditItinerary}
-                        accessibilityRole="button"
-                        accessibilityLabel={t('meetTime.set')}
-                      >
-                        <Ionicons
-                          name="time-outline"
-                          size={16}
-                          color={meetLabel ? accent : glass.textSecondary}
-                        />
-                        {dest.meetAt ? (
-                          <MeetCountdown
-                            meetAtIso={dest.meetAt as string}
-                            redWithinMin={meetRedMin}
-                            redColor={glass.danger}
-                            baseStyle={[styles.cmdSquareLabel, { color: accent }]}
-                          />
-                        ) : (
-                          <Text style={styles.cmdSquareLabel} numberOfLines={1}>
-                            ——
-                          </Text>
-                        )}
-                      </Pressable>
+                      {stacked ? (
+                        <View style={styles.commandSecondaryRow}>{secondary}</View>
+                      ) : (
+                        secondary
+                      )}
                     </View>
+                      );
+                    })()}
                       </liquidGlass.GlassView>
                     </Animated.View>
                   </Pressable>
@@ -2189,7 +2216,7 @@ export default function MapScreen({ route, navigation }: Props) {
                   <View style={styles.flockRowMain}>
                     <View style={[styles.flockAvatar, { backgroundColor: f.color, borderColor: 'transparent' }]}>
                       {f.avatar ? (
-                        <Text style={styles.flockEmoji}>{f.avatar}</Text>
+                        <HitherText typeRole="emoji" style={styles.flockEmoji}>{f.avatar}</HitherText>
                       ) : (
                         <Text style={styles.flockInitial}>{f.name.slice(0, 1).toUpperCase()}</Text>
                       )}
@@ -2565,11 +2592,14 @@ const makeStyles = (accent: string) =>
     arrivalCaptionValue: { fontFamily: DISPLAY_FONT, fontSize: 13, fontVariant: ['tabular-nums'] },
 
     // The single command row and its four controls.
+    // a11y-layout:commandRow — fixed height → minHeight for Dynamic Type.
     commandRow: { flexDirection: 'row', alignItems: 'stretch', gap: 8, marginTop: 10 },
+    commandCol: { flexDirection: 'column', gap: 8, marginTop: 10 },
+    commandSecondaryRow: { flexDirection: 'row', alignItems: 'stretch', gap: 8 },
     navBtn: {
       flex: 1,
       minWidth: 0,
-      height: 54,
+      minHeight: 54,
       borderRadius: 15,
       flexDirection: 'row',
       alignItems: 'center',
@@ -2577,19 +2607,22 @@ const makeStyles = (accent: string) =>
       gap: 8,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: 'transparent',
+      paddingHorizontal: 8,
     },
+    navBtnFull: { flex: 0, alignSelf: 'stretch' },
     // "End navigation" state — a soft danger tint over the accent-solid "go".
     navBtnEnd: { backgroundColor: 'rgba(255,107,107,0.14)', borderColor: 'rgba(255,107,107,0.4)' },
     navBtnText: { fontSize: 15, fontWeight: '700' },
     // Transit pill: tap to cycle mode; shows the live time · distance for it.
     transitPill: {
       width: 92,
-      height: 54,
+      minHeight: 54,
       borderRadius: 15,
       alignItems: 'center',
       justifyContent: 'center',
       gap: 1,
       borderWidth: StyleSheet.hairlineWidth,
+      paddingVertical: 6,
     },
     transitPillTop: { flexDirection: 'row', alignItems: 'center', gap: 5 },
     transitPillTime: { fontFamily: DISPLAY_FONT, fontSize: 15, color: '#fff', fontVariant: ['tabular-nums'] },
@@ -2597,7 +2630,7 @@ const makeStyles = (accent: string) =>
     // Square secondary controls (Apple-Maps hand-off, gather-time clock).
     cmdSquare: {
       width: 54,
-      height: 54,
+      minHeight: 54,
       borderRadius: 15,
       alignItems: 'center',
       justifyContent: 'center',
@@ -2605,7 +2638,9 @@ const makeStyles = (accent: string) =>
       backgroundColor: 'rgba(255,255,255,0.09)',
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairline,
+      paddingVertical: 6,
     },
+    cmdSecondaryFlex: { flex: 1, width: undefined, minWidth: 0 },
     cmdSquareLabel: { fontSize: 10, fontWeight: '700', color: glass.textSecondary, fontVariant: ['tabular-nums'] },
 
     // Add-gather-point confirm card — follower-nav layout, extra-round corners.
