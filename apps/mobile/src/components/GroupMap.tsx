@@ -233,8 +233,18 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
         mapRef.current?.animateToRegion(regionFor(coordinates, latOffset), 400);
       },
       focusOblique: (coordinates) => {
+        // Same visible-band lat shift as centerOn so the pin sits in the
+        // strip between carousel and sheet while pitched to 45°.
         mapRef.current?.animateCamera(
-          { center: coordinates, pitch: 45, heading: 0, altitude: 1200 },
+          {
+            center: {
+              latitude: coordinates.latitude - latOffset,
+              longitude: coordinates.longitude,
+            },
+            pitch: 45,
+            heading: 0,
+            altitude: 1200,
+          },
           { duration: 500 },
         );
       },

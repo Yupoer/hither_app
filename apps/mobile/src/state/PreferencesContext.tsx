@@ -31,6 +31,7 @@ export const DEFAULT_LANGUAGE: Language = 'zh';
 const LANGUAGE_KEY = 'pref.language';
 const THEME_KEY = 'pref.theme';
 const HIGH_ACCURACY_KEY = 'pref.highAccuracy';
+const OBLIQUE_LOCATE_KEY = 'pref.obliqueLocate';
 const MEET_RED_KEY = 'pref.meetRedMin';
 const DAY_COLORS_KEY = 'pref.dayColors';
 
@@ -43,6 +44,8 @@ interface PreferencesValue {
   themeName: ThemeName;
   /** Opt-in location tracking with finer fixes and a faster cadence. */
   highAccuracy: boolean;
+  /** When true, locate-me tilts the camera to a 45° oblique view. */
+  obliqueLocate: boolean;
   /** Countdown turns red when this many minutes (or fewer) remain. */
   meetRedMin: number;
   /** Custom colors for each day */
@@ -52,6 +55,7 @@ interface PreferencesValue {
   setLanguage: (language: Language) => void;
   setThemeName: (theme: ThemeName) => void;
   setHighAccuracy: (on: boolean) => void;
+  setObliqueLocate: (on: boolean) => void;
   setMeetRedMin: (min: number) => void;
   setDayColor: (day: number, color: string) => void;
 }
@@ -70,6 +74,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [language, setLanguageState] = useState<Language>(DEFAULT_LANGUAGE);
   const [themeName, setThemeNameState] = useState<ThemeName>(DEFAULT_THEME);
   const [highAccuracy, setHighAccuracyState] = useState(false);
+  const [obliqueLocate, setObliqueLocateState] = useState(false);
   const [meetRedMin, setMeetRedMinState] = useState<number>(DEFAULT_MEET_RED_MIN);
   const [dayColors, setDayColorsState] = useState<Record<number, string>>({});
   const [ready, setReady] = useState(false);
@@ -79,18 +84,26 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     let active = true;
     (async () => {
       try {
-        const [storedLang, storedTheme, storedHighAccuracy, storedMeetRed, storedDayColors] =
-          await AsyncStorage.multiGet([
-            LANGUAGE_KEY,
-            THEME_KEY,
-            HIGH_ACCURACY_KEY,
-            MEET_RED_KEY,
-            DAY_COLORS_KEY,
-          ]);
+        const [
+          storedLang,
+          storedTheme,
+          storedHighAccuracy,
+          storedObliqueLocate,
+          storedMeetRed,
+          storedDayColors,
+        ] = await AsyncStorage.multiGet([
+          LANGUAGE_KEY,
+          THEME_KEY,
+          HIGH_ACCURACY_KEY,
+          OBLIQUE_LOCATE_KEY,
+          MEET_RED_KEY,
+          DAY_COLORS_KEY,
+        ]);
         if (!active) return;
         if (isLanguage(storedLang[1])) setLanguageState(storedLang[1]);
         if (isThemeName(storedTheme[1])) setThemeNameState(storedTheme[1]);
         if (storedHighAccuracy[1] === 'true') setHighAccuracyState(true);
+        if (storedObliqueLocate[1] === 'true') setObliqueLocateState(true);
         const red = Number(storedMeetRed[1]);
         if ((MEET_RED_OPTIONS as readonly number[]).includes(red)) setMeetRedMinState(red);
         if (storedDayColors[1]) {
@@ -122,6 +135,11 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     void AsyncStorage.setItem(HIGH_ACCURACY_KEY, on ? 'true' : 'false');
   }, []);
 
+  const setObliqueLocate = useCallback((on: boolean) => {
+    setObliqueLocateState(on);
+    void AsyncStorage.setItem(OBLIQUE_LOCATE_KEY, on ? 'true' : 'false');
+  }, []);
+
   const setMeetRedMin = useCallback((min: number) => {
     setMeetRedMinState(min);
     void AsyncStorage.setItem(MEET_RED_KEY, String(min));
@@ -140,12 +158,14 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       language,
       themeName,
       highAccuracy,
+      obliqueLocate,
       meetRedMin,
       dayColors,
       ready,
       setLanguage,
       setThemeName,
       setHighAccuracy,
+      setObliqueLocate,
       setMeetRedMin,
       setDayColor,
     }),
@@ -153,12 +173,14 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       language,
       themeName,
       highAccuracy,
+      obliqueLocate,
       meetRedMin,
       dayColors,
       ready,
       setLanguage,
       setThemeName,
       setHighAccuracy,
+      setObliqueLocate,
       setMeetRedMin,
       setDayColor,
     ],

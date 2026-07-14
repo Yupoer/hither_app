@@ -205,9 +205,11 @@ export default function MapScreen({ route, navigation }: Props) {
   } = useSession();
   const {
     highAccuracy,
+    obliqueLocate,
     meetRedMin,
     setMeetRedMin,
     setHighAccuracy,
+    setObliqueLocate,
   } = usePreferences();
   const { colors } = useTheme();
   const accent = colors.accent;
@@ -642,8 +644,11 @@ export default function MapScreen({ route, navigation }: Props) {
   const locateMe = useCallback(async () => {
     const coords = (await refreshDeviceLocation().catch(() => null)) ?? deviceCoords;
     await refresh();
-    if (coords) mapRef.current?.centerOn(coords);
-  }, [refresh, refreshDeviceLocation, deviceCoords]);
+    if (!coords) return;
+    // Settings toggle: flat top-down vs 45° oblique (Apple-Maps-style).
+    if (obliqueLocate) mapRef.current?.focusOblique(coords);
+    else mapRef.current?.centerOn(coords);
+  }, [refresh, refreshDeviceLocation, deviceCoords, obliqueLocate]);
 
   const [refreshingLocations, setRefreshingLocations] = useState(false);
   const refreshLocationsInFlight = useRef(false);
@@ -1421,6 +1426,26 @@ export default function MapScreen({ route, navigation }: Props) {
             accessibilityLabel={t('settings.preciseLocation')}
           />
         </View>
+        <View style={styles.accuracyRow}>
+          <View style={styles.accuracyCopy}>
+            <View style={styles.accuracyTitleRow}>
+              <Ionicons name="cube-outline" size={18} color={obliqueLocate ? accent : glass.textTertiary} />
+              <Text style={styles.accuracyLabel}>
+                {t('settings.obliqueLocate')}
+              </Text>
+            </View>
+            <Text style={styles.accuracySubhint}>{t('settings.obliqueLocateHint')}</Text>
+          </View>
+          <Switch
+            style={styles.accuracySwitch}
+            value={obliqueLocate}
+            onValueChange={setObliqueLocate}
+            trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
+            thumbColor="#fff"
+            ios_backgroundColor="rgba(120,120,128,0.32)"
+            accessibilityLabel={t('settings.obliqueLocate')}
+          />
+        </View>
         {pendingInvites.length > 0 && (
           <View style={styles.list}>
             {pendingInvites.map((inv, i) => {
@@ -1577,7 +1602,7 @@ export default function MapScreen({ route, navigation }: Props) {
         </Pressable>
     </>
   ), [
-    t, members.length, isPro, pendingInvites, accent, handleAcceptInvite, handleDeclineInvite, topFlock, renderFlockRow, subgroups, flock, mySubgroupId, sentInvites, group, shareCode, codeCopied, copyCode, destinations.length, canEditItinerary, isLeader, persistStragglerConfig, openPaywall, groupId, dark, styles, refreshAllLocations, refreshingLocations, highAccuracy, setHighAccuracy, openHistoryOverlay, openCustomQuickCommand
+    t, members.length, isPro, pendingInvites, accent, handleAcceptInvite, handleDeclineInvite, topFlock, renderFlockRow, subgroups, flock, mySubgroupId, sentInvites, group, shareCode, codeCopied, copyCode, destinations.length, canEditItinerary, isLeader, persistStragglerConfig, openPaywall, groupId, dark, styles, refreshAllLocations, refreshingLocations, highAccuracy, setHighAccuracy, obliqueLocate, setObliqueLocate, openHistoryOverlay, openCustomQuickCommand
   ]);
 
   if (loading && !state) {
@@ -1658,7 +1683,7 @@ export default function MapScreen({ route, navigation }: Props) {
       )}
 
 
-      {/* Recenter capsule — BUG-09: peek = locate-me only; mid/full = fit-all + locate. */}
+      {/* Recenter capsule — fit-all (top) + locate-me (bottom), always both. */}
       {!confirmCardReady && (
       <Animated.View
         style={[styles.recenter, recenterStyle]}
@@ -1670,22 +1695,18 @@ export default function MapScreen({ route, navigation }: Props) {
             style={StyleSheet.absoluteFill}
             pointerEvents="none"
           />
-          {detent > 0 && (
-            <>
-              <Pressable
-                style={styles.recenterHit}
-                onPress={() => {
-                  lightTap();
-                  fitAllMembers();
-                }}
-                accessibilityRole="button"
-                accessibilityLabel={t('map.fitAllA11y')}
-              >
-                <Ionicons name="expand-outline" size={19} color="#fff" />
-              </Pressable>
-              <View style={styles.recenterDivider} />
-            </>
-          )}
+          <Pressable
+            style={styles.recenterHit}
+            onPress={() => {
+              lightTap();
+              fitAllMembers();
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={t('map.fitAllA11y')}
+          >
+            <Ionicons name="expand-outline" size={19} color="#fff" />
+          </Pressable>
+          <View style={styles.recenterDivider} />
           <Pressable
             style={styles.recenterHit}
             onPress={() => {
@@ -2595,15 +2616,16 @@ const makeStyles = (accent: string, scale: number) => {
 
     // Capsules sit above the carousel (z) and in the reserved band under
     // carouselMaxHeight so stage-1 cards never cover locate / group chrome.
+    // Fully-rounded pill (width/2) holding fit-all + locate stacked.
     recenter: { position: 'absolute', right: 14, zIndex: 62 },
     recenterCapsule: {
-      width: s(48, 44),
-      borderRadius: s(24, 22),
+      width: 50,
+      borderRadius: 25,
       overflow: 'hidden',
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairlineSoft,
     },
-    recenterHit: { minHeight: s(48, 44), alignItems: 'center', justifyContent: 'center' },
+    recenterHit: { height: 48, alignItems: 'center', justifyContent: 'center' },
     recenterDivider: { height: StyleSheet.hairlineWidth, backgroundColor: glass.hairlineStrong },
 
     teamCapsuleWrap: {
@@ -2984,6 +3006,16 @@ const makeStyles = (accent: string, scale: number) => {
       color: glass.warn,
       fontSize: 11,
       fontWeight: '600',
+      lineHeight: 16,
+      flexShrink: 1,
+    },
+    // Non-warning secondary line under a settings toggle (e.g. oblique locate).
+    accuracySubhint: {
+      marginLeft: 25,
+      marginTop: 2,
+      color: glass.textSecondary,
+      fontSize: 11,
+      fontWeight: '500',
       lineHeight: 16,
       flexShrink: 1,
     },
