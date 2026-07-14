@@ -2044,9 +2044,14 @@ export default function MapScreen({ route, navigation }: Props) {
                         ]}
                       />
                     </View>
+                    {/* Layout:
+                        kicker · dots
+                        title (large; full when expanded)
+                        day line (expanded only)
+                        arrival progress ………… ETA · dist (Maps above metrics when expanded)
+                        [導航] [移動] [集合時間]  — always 3; Maps not in this row */}
                     <View style={styles.cardHead}>
                       <View style={styles.grow}>
-                        {/* Kicker row: stop counter + pagination dots. No logo. */}
                         <View style={styles.cardKickerRow}>
                           <Text
                             style={[styles.cardKicker, { color: accent }]}
@@ -2086,8 +2091,59 @@ export default function MapScreen({ route, navigation }: Props) {
                             </Animated.View>
                           )}
                         </View>
-                        {/* Primary metrics under the stop counter — always visible.
-                            Expand only enlarges type; stays left-aligned. */}
+                        <Text
+                          style={[styles.cardTitle, cardExpanded && styles.cardTitleExpanded]}
+                          numberOfLines={cardExpanded ? undefined : 2}
+                          ellipsizeMode="tail"
+                        >
+                          {dest.title}
+                        </Text>
+                        {cardExpanded ? (
+                          <Animated.Text
+                            entering={FadeIn.duration(200)}
+                            style={styles.cardDayLine}
+                          >
+                            {formatTripDayLine(
+                              dest.day || 1,
+                              optimisticDepartureDate ?? group?.departureDate,
+                            )}
+                          </Animated.Text>
+                        ) : null}
+                        {myScopeId != null && (
+                          <Text style={styles.cardBadge}>{t('subgroup.itineraryBadge')}</Text>
+                        )}
+                      </View>
+                    </View>
+
+                    {/* Arrival left · ETA/dist right. Expanded: Maps sits above ETA/dist. */}
+                    <View
+                      style={[
+                        styles.cardMetaRow,
+                        cardExpanded && styles.cardMetaRowExpanded,
+                      ]}
+                    >
+                      <View style={styles.arrivalCaption}>
+                        {!chromeTight ? (
+                          <Text style={styles.arrivalCaptionLabel}>{t('map.arrivalProgress')}</Text>
+                        ) : null}
+                        <Text style={[styles.arrivalCaptionValue, { color: accent }]}>
+                          {arrivedHere} / {totalMembers}
+                        </Text>
+                      </View>
+                      <View style={styles.cardRouteCol}>
+                        {cardExpanded ? (
+                          <Pressable
+                            style={styles.mapsChip}
+                            onPress={() => openInAppleMaps(dest)}
+                            accessibilityRole="button"
+                            accessibilityLabel={t('map.openInAppleMaps')}
+                          >
+                            <Ionicons name="open-outline" size={14} color={glass.textSecondary} />
+                            <Text style={styles.mapsChipText} numberOfLines={1}>
+                              Maps
+                            </Text>
+                          </Pressable>
+                        ) : null}
                         <View
                           style={[
                             styles.cardRouteMeta,
@@ -2130,47 +2186,12 @@ export default function MapScreen({ route, navigation }: Props) {
                             </>
                           ) : null}
                         </View>
-                        <Text
-                          style={styles.cardTitle}
-                          numberOfLines={cardExpanded ? 3 : 2}
-                          ellipsizeMode="tail"
-                        >
-                          {dest.title}
-                        </Text>
-                        {cardExpanded && !chromeTight ? (
-                          <Animated.Text
-                            entering={FadeIn.duration(200)}
-                            style={styles.cardDayLine}
-                          >
-                            {formatTripDayLine(
-                              dest.day || 1,
-                              optimisticDepartureDate ?? group?.departureDate,
-                            )}
-                          </Animated.Text>
-                        ) : null}
-                        {myScopeId != null && (
-                          <Text style={styles.cardBadge}>{t('subgroup.itineraryBadge')}</Text>
-                        )}
                       </View>
                     </View>
-                    {/* Arrival caption — mirrors the top hairline in words.
-                        Compact chrome: value-only (drop long label). */}
-                    <View style={styles.arrivalCaption}>
-                      {!chromeTight ? (
-                        <Text style={styles.arrivalCaptionLabel}>{t('map.arrivalProgress')}</Text>
-                      ) : null}
-                      <Text style={[styles.arrivalCaptionValue, { color: accent }]}>
-                        {arrivedHere} / {totalMembers}
-                      </Text>
-                    </View>
 
-                    {/* a11y-layout:commandRow
-                        ALWAYS a single row (never stacks to two rows).
-                        Collapsed: Nav · Mode · Meet (3).
-                        Expanded:  Nav · Mode · Apple Maps · Meet (4).
-                        Density (cmdSize / labels) tracks narrow + Dynamic Type.
-                        a11y-layout:narrowScreen — iPhone 15 / mini / SE.
-                        ETA/dist live in the head-end rail. */}
+                    {/* a11y-layout:commandRow — always one row, always 3 controls.
+                        Apple Maps lives above ETA/dist when expanded (not here).
+                        Density tracks narrow + Dynamic Type. */}
                     <View style={styles.commandRow}>
                       <Pressable
                         style={[
@@ -2245,23 +2266,6 @@ export default function MapScreen({ route, navigation }: Props) {
                           color={accent}
                         />
                       </Pressable>
-
-                      {/* Apple Maps hand-off only after expand — frees width
-                          for meet countdown in the default 3-button row. */}
-                      {cardExpanded ? (
-                        <Pressable
-                          style={styles.cmdSquare}
-                          onPress={() => openInAppleMaps(dest)}
-                          accessibilityRole="button"
-                          accessibilityLabel={t('map.openInAppleMaps')}
-                        >
-                          <Ionicons
-                            name="open-outline"
-                            size={chromeTight ? 18 : 20}
-                            color={glass.textSecondary}
-                          />
-                        </Pressable>
-                      ) : null}
 
                       <Pressable
                         style={styles.meetBtn}
@@ -2900,7 +2904,7 @@ const makeStyles = (
       zIndex: 2,
     },
     arrivalHairlineFill: { height: '100%' },
-    // No logo — kicker + primary metrics + title; dots on the kicker row.
+    // kicker → title → (day) → meta row (arrival | Maps+ETA).
     cardHead: {
       flexDirection: 'row',
       alignItems: 'flex-start',
@@ -2922,14 +2926,18 @@ const makeStyles = (
       minWidth: 0,
       lineHeight: s(16, 14),
     },
-    // Title sits under metrics — quieter than ETA/dist.
+    // Place name is the hero line.
     cardTitle: {
       fontFamily: DISPLAY_FONT,
-      fontSize: compact ? 17 : 18,
+      fontSize: compact ? 20 : 22,
       color: '#fff',
-      lineHeight: s(24, 22),
+      lineHeight: s(28, 26),
       marginTop: s(6, 4),
       flexShrink: 1,
+    },
+    cardTitleExpanded: {
+      fontSize: compact ? 21 : 23,
+      lineHeight: s(30, 28),
     },
     // Expanded day + calendar date under the title.
     cardDayLine: {
@@ -2939,65 +2947,6 @@ const makeStyles = (
       marginTop: s(4, 2),
       flexShrink: 1,
     },
-    // Primary metrics directly under the stop counter.
-    cardRouteMeta: {
-      flexDirection: 'row',
-      alignItems: 'baseline',
-      flexWrap: 'wrap',
-      gap: s(8, 6),
-      marginTop: s(6, 4),
-      minWidth: 0,
-    },
-    cardRouteMetaExpanded: {
-      gap: s(10, 8),
-      marginTop: s(8, 6),
-    },
-    cardRouteMetaDot: {
-      fontFamily: DISPLAY_FONT,
-      fontSize: compact ? 20 : 22,
-      color: glass.textSecondary,
-      lineHeight: s(28, 24),
-    },
-    cardRouteMetaDotExpanded: {
-      fontSize: compact ? 22 : 24,
-      lineHeight: s(32, 28),
-    },
-    // Collapsed: still large — primary numbers on the card.
-    cardRouteMetaEta: {
-      fontFamily: DISPLAY_FONT,
-      fontSize: compact ? 22 : 24,
-      fontVariant: ['tabular-nums'],
-      flexShrink: 1,
-      minWidth: 0,
-      lineHeight: s(30, 26),
-    },
-    cardRouteMetaDist: {
-      fontFamily: DISPLAY_FONT,
-      fontSize: compact ? 20 : 22,
-      color: glass.textSecondary,
-      fontVariant: ['tabular-nums'],
-      flexShrink: 1,
-      minWidth: 0,
-      lineHeight: s(28, 24),
-    },
-    // Expanded: even larger when the card has room.
-    cardRouteMetaEtaExpanded: {
-      fontFamily: DISPLAY_FONT,
-      fontSize: compact ? 26 : 28,
-      fontVariant: ['tabular-nums'],
-      flexShrink: 1,
-      minWidth: 0,
-      lineHeight: s(34, 30),
-    },
-    cardRouteMetaDistExpanded: {
-      fontFamily: DISPLAY_FONT,
-      fontSize: compact ? 22 : 24,
-      color: glass.textSecondary,
-      fontVariant: ['tabular-nums'],
-      flexShrink: 1,
-      minWidth: 0,
-      lineHeight: s(30, 26),
-    },
     cardBadge: {
       color: glass.textSecondary,
       fontSize: 11,
@@ -3005,14 +2954,27 @@ const makeStyles = (
       lineHeight: s(15, 13),
     },
 
-    // Arrival caption row (design 1b) — "隊伍抵達進度 · X / Y".
+    // Arrival (left) + route metrics (right). Maps chip sits above ETA when expanded.
+    cardMetaRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      justifyContent: 'space-between',
+      gap: s(10, 8),
+      marginTop: s(10, 8),
+      minWidth: 0,
+    },
+    cardMetaRowExpanded: {
+      alignItems: 'flex-end',
+      marginTop: s(12, 10),
+    },
     arrivalCaption: {
+      flex: 1,
       flexDirection: 'row',
       alignItems: 'center',
       flexWrap: 'wrap',
-      gap: s(7, 4),
-      marginTop: s(11, 8),
-      paddingLeft: 2,
+      gap: s(6, 4),
+      minWidth: 0,
+      paddingLeft: 0,
     },
     arrivalCaptionLabel: {
       fontSize: 12.5,
@@ -3026,6 +2988,87 @@ const makeStyles = (
       fontVariant: ['tabular-nums'],
       flexShrink: 0,
       lineHeight: s(18, 15),
+    },
+    cardRouteCol: {
+      alignItems: 'flex-end',
+      flexShrink: 0,
+      maxWidth: '58%',
+      gap: s(4, 2),
+    },
+    // Apple Maps hand-off — only when expanded, above ETA/dist.
+    mapsChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: s(8, 6),
+      paddingVertical: s(4, 3),
+      borderRadius: s(12, 10),
+      backgroundColor: 'rgba(255,255,255,0.09)',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
+    },
+    mapsChipText: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: glass.textSecondary,
+    },
+    cardRouteMeta: {
+      flexDirection: 'row',
+      alignItems: 'baseline',
+      flexWrap: 'nowrap',
+      gap: s(6, 4),
+      minWidth: 0,
+    },
+    cardRouteMetaExpanded: {
+      gap: s(8, 6),
+    },
+    cardRouteMetaDot: {
+      fontFamily: DISPLAY_FONT,
+      fontSize: compact ? 16 : 18,
+      color: glass.textSecondary,
+      lineHeight: s(24, 20),
+    },
+    cardRouteMetaDotExpanded: {
+      fontSize: compact ? 20 : 22,
+      lineHeight: s(28, 24),
+    },
+    cardRouteMetaEta: {
+      fontFamily: DISPLAY_FONT,
+      fontSize: compact ? 18 : 20,
+      fontVariant: ['tabular-nums'],
+      flexShrink: 1,
+      minWidth: 0,
+      lineHeight: s(26, 22),
+      textAlign: 'right',
+    },
+    cardRouteMetaDist: {
+      fontFamily: DISPLAY_FONT,
+      fontSize: compact ? 16 : 18,
+      color: glass.textSecondary,
+      fontVariant: ['tabular-nums'],
+      flexShrink: 1,
+      minWidth: 0,
+      lineHeight: s(24, 20),
+      textAlign: 'right',
+    },
+    cardRouteMetaEtaExpanded: {
+      fontFamily: DISPLAY_FONT,
+      fontSize: compact ? 24 : 26,
+      fontVariant: ['tabular-nums'],
+      flexShrink: 1,
+      minWidth: 0,
+      lineHeight: s(32, 28),
+      textAlign: 'right',
+    },
+    cardRouteMetaDistExpanded: {
+      fontFamily: DISPLAY_FONT,
+      fontSize: compact ? 20 : 22,
+      color: glass.textSecondary,
+      fontVariant: ['tabular-nums'],
+      flexShrink: 1,
+      minWidth: 0,
+      lineHeight: s(28, 24),
+      textAlign: 'right',
     },
 
     // a11y-layout:commandRow — single row always; density via cmdSize/labels.

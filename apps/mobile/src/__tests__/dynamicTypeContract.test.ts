@@ -63,19 +63,20 @@ describe('Dynamic Type contract', () => {
     expect(mapScreen).toContain('formatTripDayLine');
     expect(mapScreen).toContain('cardDayLine');
     expect(mapScreen).toContain('optimisticDepartureDate ?? group?.departureDate');
-    // ETA/distance on right rail; progressive density for narrow/xl.
+    // Title hero; ETA/dist share a row with arrival progress.
     expect(mapScreen).toContain('cardRouteMeta');
+    expect(mapScreen).toContain('cardMetaRow');
     expect(mapScreen).toContain('a11y-layout:commandRowCompact');
     expect(mapScreen).toContain('meetBtn');
-    // Apple Maps only after expand (default is 3 buttons).
+    // Apple Maps only after expand, above ETA/dist (not in the 3-button row).
+    expect(mapScreen).toContain('mapsChip');
     expect(mapScreen).toMatch(/cardExpanded\s*\?\s*\([\s\S]*?openInAppleMaps/);
     // Card padding is scale/density-aware; kicker row uses scale-aware gap.
     expect(mapScreen).toMatch(/cardPad\s*=\s*compact\s*\?\s*s\(/);
     expect(mapScreen).toMatch(/card:\s*\{[^}]*padding:\s*cardPad/s);
-    expect(mapScreen).toMatch(/cardKickerRow:\s*\{[^}]*gap:\s*s\(/s);
-    // Logo removed; ETA/dist sit under the stop counter.
-    expect(mapScreen).not.toMatch(/styles\.cardIcon/);
     expect(mapScreen).toContain('cardKickerRow');
+    // Logo removed.
+    expect(mapScreen).not.toMatch(/styles\.cardIcon/);
   });
 
   it('marks invite-row stacked layout for large Dynamic Type', () => {
