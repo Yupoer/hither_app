@@ -74,9 +74,10 @@ function ThemePreviewCard({
   const [c0, c1, c2] = BASEMAP[name];
   const road = accentMix(palette.textSecondary, name === 'day' ? 28 : 18);
   const roadStrong = accentMix(palette.textSecondary, name === 'day' ? 40 : 28);
-  const glassBar =
-    name === 'day' ? 'rgba(255,255,255,0.78)' : 'rgba(16,20,30,0.62)';
+  // Label sits on basemap directly (no glass sheet chrome / grabber bar).
   const labelColor = name === 'day' ? palette.textPrimary : '#F5F7FB';
+  const labelVeil =
+    name === 'day' ? ['rgba(247,245,240,0)', 'rgba(247,245,240,0.88)'] : ['rgba(10,14,22,0)', 'rgba(10,14,22,0.78)'];
 
   // Soft breath on the beacon ring only — never scale the whole card
   // (card-level scale + overflow:hidden rasterizes soft / low-res on iOS).
@@ -167,16 +168,19 @@ function ThemePreviewCard({
         <CrookIcon size={20} color={palette.accent} style={styles.crook} />
       </View>
 
-      <View style={[styles.glassBar, { backgroundColor: glassBar }]} pointerEvents="none">
-        <View style={[styles.glassGrabber, { backgroundColor: accentMix(palette.accent, 45) }]} />
-        <HitherText
-          typeRole="title"
-          style={[styles.cardLabel, { color: labelColor, fontFamily: DISPLAY_FONT }]}
-          numberOfLines={2}
-        >
-          {label}
-        </HitherText>
-      </View>
+      {/* Soft bottom veil so the name stays readable — no framed sheet / grabber. */}
+      <LinearGradient
+        colors={labelVeil as [string, string]}
+        style={styles.labelVeil}
+        pointerEvents="none"
+      />
+      <HitherText
+        typeRole="title"
+        style={[styles.cardLabel, { color: labelColor, fontFamily: DISPLAY_FONT }]}
+        numberOfLines={2}
+      >
+        {label}
+      </HitherText>
 
       {selected ? (
         <View
@@ -373,28 +377,18 @@ const styles = StyleSheet.create({
     right: -12,
     top: -8,
   },
-  glassBar: {
+  labelVeil: {
     position: 'absolute',
-    left: 8,
-    right: 8,
-    bottom: 8,
-    borderRadius: 14,
-    paddingHorizontal: 10,
-    paddingTop: 8,
-    paddingBottom: 10,
-    alignItems: 'center',
-    // Thin top edge for glass depth without soft blur.
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.12)',
-  },
-  glassGrabber: {
-    width: 28,
-    height: 3,
-    borderRadius: 2,
-    marginBottom: 6,
-    opacity: 0.75,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: '34%',
   },
   cardLabel: {
+    position: 'absolute',
+    left: 10,
+    right: 10,
+    bottom: 14,
     fontSize: 17,
     fontWeight: '600',
     textAlign: 'center',
