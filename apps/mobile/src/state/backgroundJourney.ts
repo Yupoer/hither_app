@@ -3,6 +3,11 @@ import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import { updateMyLocation } from '../api/services/LocationService';
 import {
+  locationPolicy,
+  shouldUploadSample,
+  type LocationGateState,
+} from '../utils/locationPolicy';
+import {
   BACKGROUND_JOURNEY_TASK,
   createBackgroundJourneyController,
   type BackgroundJourneyConfig,
@@ -14,6 +19,9 @@ interface BackgroundLocationTaskData {
 
 const controller = createBackgroundJourneyController(Location, AsyncStorage);
 
+/** Process-local gate so background batches don't spam upserts. */
+let uploadGate: LocationGateState = { lastCoords: null, lastAtMs: 0 };
+
 if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
   TaskManager.defineTask<BackgroundLocationTaskData>(
     BACKGROUND_JOURNEY_TASK,
@@ -23,13 +31,16 @@ if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
       if (!config) return;
 
       const latest = data.locations[data.locations.length - 1];
-      await updateMyLocation(
-        {
-          latitude: latest.coords.latitude,
-          longitude: latest.coords.longitude,
-        },
-        config.groupId,
-      );
+      const coords = {
+        latitude: latest.coords.latitude,
+        longitude: latest.coords.longitude,
+      };
+      const now = Date.now();
+      const policy = locationPolicy(Boolean(config.highAccuracy));
+      if (!shouldUploadSample(coords, now, uploadGate, policy)) return;
+
+      uploadGate = { lastCoords: coords, lastAtMs: now };
+      await updateMyLocation(coords, config.groupId);
     },
   );
 }
@@ -41,6 +52,7 @@ export function startBackgroundJourney(
 }
 
 export function stopBackgroundJourney(): Promise<void> {
+  uploadGate = { lastCoords: null, lastAtMs: 0 };
   return controller.stop();
 }
 

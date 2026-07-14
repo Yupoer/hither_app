@@ -230,7 +230,10 @@ export default function MapScreen({ route, navigation }: Props) {
   const groupId = route.params?.groupId ?? membership?.group.id ?? null;
   // The demo flock has no membership row; the tester drives it as leader.
   const isLeader = membership?.role === 'leader' || isDemoGroup(groupId);
-  const { state, loading, refresh } = useGroupState(groupId);
+  const { state, loading, refresh } = useGroupState(groupId, {
+    myUserId: user?.id ?? null,
+    highAccuracy,
+  });
   const group = state?.group ?? membership?.group ?? null;
 
   const mapRef = useRef<GroupMapHandle | null>(null);
@@ -502,6 +505,8 @@ export default function MapScreen({ route, navigation }: Props) {
     members,
     gathering: activePoint,
     travelMode,
+    journeyActive,
+    highAccuracy,
   });
   const alternateRoutes = useMemo(() => {
     if (!journeyActive) return undefined;
@@ -555,6 +560,7 @@ export default function MapScreen({ route, navigation }: Props) {
       destination: navTarget.coordinates,
       initialDistanceM: initialJourney.distanceM,
       travelMode,
+      highAccuracy,
     }).then((result) => {
       if (result === 'permission_denied') {
         backgroundPermissionDeniedRef.current = key;
@@ -567,6 +573,7 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [
     groupId,
     journeyActive,
+    highAccuracy,
     navTarget,
     numericDistance,
     selfRoute?.distanceMeters,

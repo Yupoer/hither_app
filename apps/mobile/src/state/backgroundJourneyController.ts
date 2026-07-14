@@ -1,5 +1,6 @@
 import type { Coordinates } from '../types';
 import type { TravelMode } from '../utils/geo';
+import { locationPolicy } from '../utils/locationPolicy';
 
 export const BACKGROUND_JOURNEY_TASK = 'hither-background-journey-location';
 export const BACKGROUND_JOURNEY_KEY = '@hither/background-journey';
@@ -10,6 +11,8 @@ export interface BackgroundJourneyConfig {
   destination: Coordinates;
   initialDistanceM: number;
   travelMode: TravelMode;
+  /** Align background GPS with the foreground accuracy preference. */
+  highAccuracy?: boolean;
 }
 
 interface PermissionResult {
@@ -30,6 +33,37 @@ export interface BackgroundStorageAdapter {
   removeItem(key: string): Promise<void>;
 }
 
+/** expo-location Accuracy.Balanced = 3, Accuracy.High = 4 */
+export function backgroundLocationOptions(highAccuracy: boolean): object {
+  const policy = locationPolicy(highAccuracy);
+  if (highAccuracy) {
+    return {
+      accuracy: 4,
+      distanceInterval: 15,
+      deferredUpdatesDistance: 25,
+      deferredUpdatesInterval: 12_000,
+      pausesUpdatesAutomatically: true,
+      showsBackgroundLocationIndicator: true,
+      foregroundService: {
+        notificationTitle: 'Hither 導航中',
+        notificationBody: '持續更新你與集合點的距離',
+      },
+    };
+  }
+  return {
+    accuracy: 3,
+    distanceInterval: policy.distanceInterval,
+    deferredUpdatesDistance: 50,
+    deferredUpdatesInterval: 30_000,
+    pausesUpdatesAutomatically: true,
+    showsBackgroundLocationIndicator: true,
+    foregroundService: {
+      notificationTitle: 'Hither 導航中',
+      notificationBody: '持續更新你與集合點的距離',
+    },
+  };
+}
+
 export function createBackgroundJourneyController(
   location: BackgroundLocationAdapter,
   storage: BackgroundStorageAdapter,
@@ -44,23 +78,32 @@ export function createBackgroundJourneyController(
       const background = await location.requestBackgroundPermissionsAsync();
       if (background.status !== 'granted') return 'permission_denied';
 
+      let previous: BackgroundJourneyConfig | null = null;
+      const rawPrevious = await storage.getItem(BACKGROUND_JOURNEY_KEY);
+      if (rawPrevious) {
+        try {
+          previous = JSON.parse(rawPrevious) as BackgroundJourneyConfig;
+        } catch {
+          previous = null;
+        }
+      }
+
       await storage.setItem(BACKGROUND_JOURNEY_KEY, JSON.stringify(config));
       const alreadyStarted = await location.hasStartedLocationUpdatesAsync(
         BACKGROUND_JOURNEY_TASK,
       );
-      if (!alreadyStarted) {
-        await location.startLocationUpdatesAsync(BACKGROUND_JOURNEY_TASK, {
-          accuracy: 4,
-          distanceInterval: 15,
-          deferredUpdatesDistance: 30,
-          deferredUpdatesInterval: 15_000,
-          pausesUpdatesAutomatically: false,
-          showsBackgroundLocationIndicator: true,
-          foregroundService: {
-            notificationTitle: 'Hither 導航中',
-            notificationBody: '持續更新你與集合點的距離',
-          },
-        });
+      const nextHigh = Boolean(config.highAccuracy);
+      const profileChanged =
+        alreadyStarted && Boolean(previous?.highAccuracy) !== nextHigh;
+
+      if (alreadyStarted && profileChanged) {
+        await location.stopLocationUpdatesAsync(BACKGROUND_JOURNEY_TASK);
+      }
+      if (!alreadyStarted || profileChanged) {
+        await location.startLocationUpdatesAsync(
+          BACKGROUND_JOURNEY_TASK,
+          backgroundLocationOptions(nextHigh),
+        );
       }
       return 'started';
     },

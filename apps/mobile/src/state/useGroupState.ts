@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { getGroupState } from '../api/client';
 import { supabase } from '../api/supabase';
 import type { GroupState } from '../types';
+import { isOwnLocationChange, locationPolicy } from '../utils/locationPolicy';
 
 /**
  * Fallback polling interval. Realtime (below) is the primary update mechanism;
@@ -9,7 +10,7 @@ import type { GroupState } from '../types';
  */
 export const GROUP_POLL_INTERVAL_MS = 5 * 60_000;
 
-/** Coalesce bursts of realtime events into a single refetch. */
+/** Coalesce bursts of non-location realtime events into a single refetch. */
 const REALTIME_DEBOUNCE_MS = 300;
 
 /**
@@ -21,6 +22,13 @@ const REALTIME_DEBOUNCE_MS = 300;
  * once, so we suffix the topic with a per-instance id to keep them distinct.
  */
 let channelSeq = 0;
+
+interface UseGroupStateOptions {
+  /** Current user id — own location pings are ignored to avoid full-state thrash. */
+  myUserId?: string | null;
+  /** Aligns location-event debounce with the accuracy profile. */
+  highAccuracy?: boolean;
+}
 
 interface UseGroupStateResult {
   state: GroupState | null;
@@ -38,21 +46,30 @@ interface UseGroupStateResult {
  * `member_locations`, `memberships`, and `itinerary_items` (scoped to this
  * group). Any change triggers a debounced refetch of the aggregated state.
  *
+ * Own-device location upserts are ignored: the map already tracks local GPS and
+ * a full getGroupState round-trip per self-ping is a major heat/battery cost.
+ *
  * Fallback path: a slow interval poll, in case a websocket event is missed.
  *
  * The fetch is isolated in api/client, so the snake_case→camelCase mapping and
  * aggregation stay in one place.
  */
-export function useGroupState(groupId: string | null): UseGroupStateResult {
+export function useGroupState(
+  groupId: string | null,
+  options: UseGroupStateOptions = {},
+): UseGroupStateResult {
+  const { myUserId = null, highAccuracy = false } = options;
   const [state, setState] = useState<GroupState | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   // Guards against setState after unmount and out-of-order responses.
   const activeRef = useRef(true);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Stable per-instance suffix so two hooks on the same group don't collide on
-  // one shared (already-subscribed) realtime channel.
-
+  const locationDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const myUserIdRef = useRef(myUserId);
+  myUserIdRef.current = myUserId;
+  const highAccuracyRef = useRef(highAccuracy);
+  highAccuracyRef.current = highAccuracy;
 
   const load = useCallback(async (): Promise<boolean> => {
     if (!groupId) {
@@ -92,7 +109,7 @@ export function useGroupState(groupId: string | null): UseGroupStateResult {
 
     loadRef.current();
 
-    // Debounced refetch shared by every realtime event for this group.
+    // Debounced refetch for membership / itinerary / profile edits (fast).
     const scheduleReload = () => {
       if (debounceRef.current) {
         clearTimeout(debounceRef.current);
@@ -102,6 +119,17 @@ export function useGroupState(groupId: string | null): UseGroupStateResult {
       }, REALTIME_DEBOUNCE_MS);
     };
 
+    // Longer debounce for peer location floods (aligned with accuracy profile).
+    const scheduleLocationReload = () => {
+      if (locationDebounceRef.current) {
+        clearTimeout(locationDebounceRef.current);
+      }
+      const ms = locationPolicy(highAccuracyRef.current).realtimeLocationDebounceMs;
+      locationDebounceRef.current = setTimeout(() => {
+        loadRef.current();
+      }, ms);
+    };
+
     const filter = `group_id=eq.${groupId}`;
     const subId = ++channelSeq;
     const channel = supabase
@@ -109,7 +137,10 @@ export function useGroupState(groupId: string | null): UseGroupStateResult {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'member_locations', filter },
-        scheduleReload,
+        (payload) => {
+          if (isOwnLocationChange(payload, myUserIdRef.current)) return;
+          scheduleLocationReload();
+        },
       )
       .on(
         'postgres_changes',
@@ -144,6 +175,9 @@ export function useGroupState(groupId: string | null): UseGroupStateResult {
       activeRef.current = false;
       if (debounceRef.current) {
         clearTimeout(debounceRef.current);
+      }
+      if (locationDebounceRef.current) {
+        clearTimeout(locationDebounceRef.current);
       }
       clearInterval(timer);
       supabase.removeChannel(channel);

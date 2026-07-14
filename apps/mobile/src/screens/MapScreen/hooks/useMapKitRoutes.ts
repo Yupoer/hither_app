@@ -5,6 +5,12 @@ import {
   type DirectionsResult,
   type TravelMode,
 } from '../../../native/maps';
+import {
+  locationPolicy,
+  quantizeCoordinates,
+  shouldRecomputeRoute,
+  type LocationGateState,
+} from '../../../utils/locationPolicy';
 
 interface RouteMember {
   userId: string;
@@ -20,6 +26,9 @@ interface MapKitRouteInputs {
   members: RouteMember[];
   gathering?: RouteTarget | null;
   travelMode: TravelMode;
+  /** When false, skip alternate-mode precompute (walk/transit/drive). */
+  journeyActive?: boolean;
+  highAccuracy?: boolean;
 }
 
 export interface MapKitRoutesState {
@@ -34,27 +43,45 @@ type RouteGetter = typeof getDirections;
 const ALL_MODES: TravelMode[] = ['walk', 'transit', 'drive'];
 
 export async function loadMapKitRoutes(
-  { selfCoordinates, members, gathering, travelMode }: MapKitRouteInputs,
+  {
+    selfCoordinates,
+    members,
+    gathering,
+    travelMode,
+    journeyActive = false,
+  }: MapKitRouteInputs,
   getRoute: RouteGetter = getDirections,
 ): Promise<MapKitRoutesState> {
   if (!gathering) {
     return { selfRoute: null, memberRoutes: {}, allModeRoutes: {} };
   }
 
+  const wantAllModes = journeyActive && !!selfCoordinates;
+
   const [selfRoute, entries, modeEntries] = await Promise.all([
     selfCoordinates
       ? getRoute(selfCoordinates, gathering.coordinates, travelMode)
       : Promise.resolve(null),
-    Promise.all(members.map(async (member) => {
-      if (!member.coordinates) return null;
-      const route = await getRoute(member.coordinates, gathering.coordinates, travelMode);
-      return route ? ([member.userId, route] as const) : null;
-    })),
-    // BUG-20: precompute walk/transit/drive for self when we have a position.
-    selfCoordinates
+    Promise.all(
+      members.map(async (member) => {
+        if (!member.coordinates) return null;
+        const route = await getRoute(
+          member.coordinates,
+          gathering.coordinates,
+          travelMode,
+        );
+        return route ? ([member.userId, route] as const) : null;
+      }),
+    ),
+    // Only precompute alternate modes while actively navigating.
+    wantAllModes
       ? Promise.all(
           ALL_MODES.map(async (mode) => {
-            const route = await getRoute(selfCoordinates, gathering.coordinates, mode);
+            const route = await getRoute(
+              selfCoordinates!,
+              gathering.coordinates,
+              mode,
+            );
             return route ? ([mode, route] as const) : null;
           }),
         )
@@ -75,18 +102,43 @@ export async function loadMapKitRoutes(
   };
 }
 
-function routeKey(from: Coordinates, to: Coordinates, mode: TravelMode): string {
+export function routeCacheKey(
+  from: Coordinates,
+  to: Coordinates,
+  mode: TravelMode,
+  decimals: number,
+): string {
   return [
     mode,
-    from.latitude.toFixed(5),
-    from.longitude.toFixed(5),
-    to.latitude.toFixed(5),
-    to.longitude.toFixed(5),
-  ].join(':');
+    quantizeCoordinates(from, decimals),
+    quantizeCoordinates(to, decimals),
+  ].join('|');
+}
+
+/** Stable signature of member positions for gate comparison. */
+export function membersRouteSignature(
+  members: RouteMember[],
+  decimals: number,
+): string {
+  return members
+    .map((m) =>
+      m.coordinates
+        ? `${m.userId}:${quantizeCoordinates(m.coordinates, decimals)}`
+        : `${m.userId}:-`,
+    )
+    .sort()
+    .join(';');
 }
 
 export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
-  const { selfCoordinates, members, gathering, travelMode } = inputs;
+  const {
+    selfCoordinates,
+    members,
+    gathering,
+    travelMode,
+    journeyActive = false,
+    highAccuracy = false,
+  } = inputs;
   const [state, setState] = useState<MapKitRoutesState>({
     selfRoute: null,
     memberRoutes: {},
@@ -95,11 +147,76 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
   // ponytail: cache lives for one MapScreen mount; cap/TTL only if large groups
   // make measured memory or stale-route behavior a problem.
   const cacheRef = useRef(new Map<string, Promise<DirectionsResult | null>>());
+  const selfRouteGateRef = useRef<LocationGateState>({
+    lastCoords: null,
+    lastAtMs: 0,
+  });
+  const routedSelfRef = useRef<Coordinates | undefined>(undefined);
+  const lastMembersSigRef = useRef<string>('');
+  const lastEffectKeyRef = useRef<string>('');
 
   useEffect(() => {
+    const policy = locationPolicy(highAccuracy);
+    const now = Date.now();
+    const decimals = policy.routeCoordDecimals;
+
+    // Stabilize self coords: skip tiny GPS jitter for MapKit.
+    let routedSelf = routedSelfRef.current;
+    if (selfCoordinates) {
+      if (
+        shouldRecomputeRoute(
+          selfCoordinates,
+          now,
+          selfRouteGateRef.current,
+          policy,
+        )
+      ) {
+        selfRouteGateRef.current = {
+          lastCoords: selfCoordinates,
+          lastAtMs: now,
+        };
+        routedSelf = selfCoordinates;
+        routedSelfRef.current = selfCoordinates;
+      } else if (!routedSelf) {
+        routedSelf = selfCoordinates;
+        routedSelfRef.current = selfCoordinates;
+        selfRouteGateRef.current = {
+          lastCoords: selfCoordinates,
+          lastAtMs: now,
+        };
+      }
+    } else {
+      routedSelf = undefined;
+      routedSelfRef.current = undefined;
+      selfRouteGateRef.current = { lastCoords: null, lastAtMs: 0 };
+    }
+
+    const membersSig = membersRouteSignature(members, decimals);
+    const gatheringKey = gathering
+      ? quantizeCoordinates(gathering.coordinates, decimals)
+      : '-';
+    const selfKey = routedSelf
+      ? quantizeCoordinates(routedSelf, decimals)
+      : '-';
+    const effectKey = [
+      selfKey,
+      membersSig,
+      gatheringKey,
+      travelMode,
+      journeyActive ? '1' : '0',
+      highAccuracy ? 'h' : 'n',
+    ].join('#');
+
+    // Identical quantized inputs: do not re-hit MapKit.
+    if (effectKey === lastEffectKeyRef.current && lastMembersSigRef.current) {
+      return;
+    }
+    lastEffectKeyRef.current = effectKey;
+    lastMembersSigRef.current = membersSig;
+
     let active = true;
     const cachedGetRoute: RouteGetter = (from, to, mode) => {
-      const key = routeKey(from, to, mode);
+      const key = routeCacheKey(from, to, mode, decimals);
       const cached = cacheRef.current.get(key);
       if (cached) return cached;
       const request = getDirections(from, to, mode);
@@ -108,7 +225,13 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
     };
 
     void loadMapKitRoutes(
-      { selfCoordinates, members, gathering, travelMode },
+      {
+        selfCoordinates: routedSelf,
+        members,
+        gathering,
+        travelMode,
+        journeyActive,
+      },
       cachedGetRoute,
     ).then((next) => {
       if (active) setState(next);
@@ -116,7 +239,14 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
     return () => {
       active = false;
     };
-  }, [selfCoordinates, members, gathering, travelMode]);
+  }, [
+    selfCoordinates,
+    members,
+    gathering,
+    travelMode,
+    journeyActive,
+    highAccuracy,
+  ]);
 
   return state;
 }

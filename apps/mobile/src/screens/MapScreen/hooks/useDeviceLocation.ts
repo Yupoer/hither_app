@@ -1,9 +1,15 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 import { location } from '../../../native';
 import { updateMyLocation } from '../../../api/client';
 import type { Coordinates } from '../../../types';
-import { shouldWatchLocation } from '../../../utils/locationPolicy';
+import {
+  locationPolicy,
+  shouldAcceptUiSample,
+  shouldUploadSample,
+  shouldWatchLocation,
+  type LocationGateState,
+} from '../../../utils/locationPolicy';
 
 interface UseDeviceLocationParams {
   groupId: string | null | undefined;
@@ -13,12 +19,20 @@ interface UseDeviceLocationParams {
 export function useDeviceLocation({ groupId, highAccuracy }: UseDeviceLocationParams) {
   const [deviceCoords, setDeviceCoords] = useState<Coordinates | null>(null);
   const [appState, setAppState] = useState<AppStateStatus>(AppState.currentState);
+  const uiGateRef = useRef<LocationGateState>({ lastCoords: null, lastAtMs: 0 });
+  const uploadGateRef = useRef<LocationGateState>({ lastCoords: null, lastAtMs: 0 });
 
   const refreshDeviceLocation = useCallback(async (): Promise<Coordinates | null> => {
+    // Manual refresh bypasses gates — force one-shot fix + upload.
     const fix = await location.getCurrentLocation(highAccuracy);
     if (fix) {
+      const now = Date.now();
       setDeviceCoords(fix.coordinates);
-      if (groupId) await updateMyLocation(fix.coordinates, groupId);
+      uiGateRef.current = { lastCoords: fix.coordinates, lastAtMs: now };
+      if (groupId) {
+        await updateMyLocation(fix.coordinates, groupId);
+        uploadGateRef.current = { lastCoords: fix.coordinates, lastAtMs: now };
+      }
       return fix.coordinates;
     }
     return null;
@@ -29,14 +43,34 @@ export function useDeviceLocation({ groupId, highAccuracy }: UseDeviceLocationPa
     return () => subscription.remove();
   }, []);
 
+  // Reset gates when profile changes so the next sample is accepted immediately.
+  useEffect(() => {
+    uiGateRef.current = { lastCoords: null, lastAtMs: 0 };
+    uploadGateRef.current = { lastCoords: null, lastAtMs: 0 };
+  }, [highAccuracy]);
+
   useEffect(() => {
     if (!shouldWatchLocation(groupId ?? null, appState)) return;
     let cancelled = false;
     let stop = () => {};
+    const policy = locationPolicy(highAccuracy);
     void location
       .watchLocation((sample: { coordinates: Coordinates }) => {
-        setDeviceCoords(sample.coordinates);
-        void updateMyLocation(sample.coordinates, groupId!).catch(() => {});
+        const now = Date.now();
+        const coords = sample.coordinates;
+
+        if (shouldAcceptUiSample(coords, now, uiGateRef.current, policy)) {
+          uiGateRef.current = { lastCoords: coords, lastAtMs: now };
+          setDeviceCoords(coords);
+        }
+
+        if (
+          groupId &&
+          shouldUploadSample(coords, now, uploadGateRef.current, policy)
+        ) {
+          uploadGateRef.current = { lastCoords: coords, lastAtMs: now };
+          void updateMyLocation(coords, groupId).catch(() => {});
+        }
       }, highAccuracy)
       .then((unsub: () => void) => {
         if (cancelled) unsub();
