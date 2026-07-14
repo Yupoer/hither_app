@@ -3,8 +3,9 @@ import type { ThemeName } from '../theme';
 import type { MascotId } from './content';
 
 /**
- * Claymorphic 2.5D icons for onboarding (design-system sticker style).
- * Generated to match `assets/icons/night_light.png` art direction.
+ * Flat solid color-block onboarding icons (style locked to approved samples
+ * 55/58/63). Assets ship on solid black for manual keying if needed —
+ * do not auto-debackground in the pipeline.
  */
 export const OnboardingIcons = {
   leader: require('../../assets/icons/onboarding/crook.png') as ImageSourcePropType,
