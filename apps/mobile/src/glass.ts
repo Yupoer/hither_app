@@ -20,7 +20,8 @@ export const glass = {
   /** Sheet header veil — thin, so content visibly blurs through beneath it. */
   headerVeil: 'rgba(22, 26, 34, 0.35)',
   /** Floating pills (group pill, role chip, recenter, FABs). */
-  pill: 'rgba(40, 44, 52, 0.55)',
+  // BUG-24: higher opacity so light system map / sky doesn't wash through.
+  pill: 'rgba(40, 44, 52, 0.82)',
   /** Carousel card, inactive. Near-opaque so the card reads over any map. */
   card: 'rgba(28, 32, 40, 0.9)',
   /** Carousel card, active (selected stop). */
@@ -31,6 +32,8 @@ export const glass = {
   fillStrong: 'rgba(255, 255, 255, 0.1)',
   /** Hairline separators / borders on glass. */
   hairline: 'rgba(255, 255, 255, 0.14)',
+  /** Soft hairline for sheet shells (BUG-10) — barely visible, no white halo. */
+  hairlineSoft: 'rgba(255, 255, 255, 0.06)',
   /** Brighter hairline (overlay top edge, active fields). */
   hairlineStrong: 'rgba(255, 255, 255, 0.22)',
   /** Dim scrim behind a raised overlay. */

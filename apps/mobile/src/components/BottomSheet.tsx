@@ -280,7 +280,7 @@ const styles = StyleSheet.create({
     zIndex: 60,
     overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: glass.hairline,
+    borderColor: 'transparent',
   },
   headerBlock: { position: 'absolute', top: 0, left: 0, right: 0 },
   grabZone: { paddingTop: 10, paddingBottom: 6, alignItems: 'center' },

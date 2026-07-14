@@ -2384,7 +2384,7 @@ const makeStyles = (accent: string) =>
       alignItems: 'center',
       gap: 9,
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: glass.hairlineStrong,
+      borderColor: glass.hairlineSoft,
     },
     pillAvatars: { flexDirection: 'row' },
     pillAvatar: {
@@ -2409,7 +2409,7 @@ const makeStyles = (accent: string) =>
       alignItems: 'center',
       gap: 7,
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: glass.hairlineStrong,
+      borderColor: glass.hairlineSoft,
     },
     roleDot: { width: 8, height: 8, borderRadius: 4 },
     roleWord: { fontSize: 14, fontWeight: '600', color: '#fff' },
@@ -2420,7 +2420,7 @@ const makeStyles = (accent: string) =>
       borderRadius: 24,
       overflow: 'hidden',
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: glass.hairlineStrong,
+      borderColor: glass.hairlineSoft,
     },
     recenterHit: { height: 48, alignItems: 'center', justifyContent: 'center' },
     recenterDivider: { height: StyleSheet.hairlineWidth, backgroundColor: glass.hairlineStrong },
@@ -2437,7 +2437,8 @@ const makeStyles = (accent: string) =>
       overflow: 'hidden',
       padding: 14,
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: glass.hairline,
+      // BUG-10: inactive cards have no white halo; active border set inline.
+      borderColor: 'transparent',
     },
     // Top arrival hairline (design 1b) — full-bleed above the padded content.
     arrivalHairline: {
@@ -2723,7 +2724,8 @@ const makeStyles = (accent: string) =>
       borderColor: glass.hairline,
     },
     splitHint: { fontSize: 13, color: glass.textSecondary },
-    splitActions: { flexDirection: 'row', gap: 8 },
+    // BUG-18: more room between accept/decline and the prompt text above.
+    splitActions: { flexDirection: 'row', gap: 12, marginTop: 10, flexWrap: 'wrap' },
     selectDot: {
       width: 22,
       height: 22,
@@ -2847,10 +2849,11 @@ const makeStyles = (accent: string) =>
       marginBottom: 20,
     },
     flockRow: {
-      paddingHorizontal: 14,
-      paddingVertical: 12,
+      paddingHorizontal: 16,
+      paddingVertical: 14,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: 'rgba(255,255,255,0.08)',
+      gap: 4,
     },
     flockRowLast: { borderBottomWidth: 0 },
     flockRowMain: { flexDirection: 'row', alignItems: 'center', gap: 12 },

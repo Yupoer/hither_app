@@ -190,8 +190,8 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
     overflow: 'hidden',
-    borderTopWidth: 1,
-    borderColor: glass.hairlineStrong,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderColor: glass.hairlineSoft,
   },
   // More breathing room so the title doesn't crowd the sheet's top edge.
   grabZone: { paddingTop: 14, paddingBottom: 6, alignItems: 'center' },
