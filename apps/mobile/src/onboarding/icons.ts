@@ -7,7 +7,7 @@ import type { MascotId } from './content';
  * Generated to match `assets/icons/night_light.png` art direction.
  */
 export const OnboardingIcons = {
-  leader: require('../../assets/icons/logo.png') as ImageSourcePropType,
+  leader: require('../../assets/icons/onboarding/crook.png') as ImageSourcePropType,
   follower: require('../../assets/icons/onboarding/sheep.png') as ImageSourcePropType,
   browser: require('../../assets/icons/onboarding/eyes.png') as ImageSourcePropType,
 
