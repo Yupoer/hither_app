@@ -4,8 +4,7 @@ import type { MascotId } from './content';
 
 /**
  * Flat solid color-block onboarding icons (style locked to approved samples
- * 55/58/63). Assets ship on solid black for manual keying if needed —
- * do not auto-debackground in the pipeline.
+ * 55/58/63). Transparent PNG assets (user-keyed).
  */
 export const OnboardingIcons = {
   leader: require('../../assets/icons/onboarding/crook.png') as ImageSourcePropType,
