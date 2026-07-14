@@ -243,7 +243,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
             zoom: 16.5,
             altitude: 900,
           },
-          { duration: 400 },
+          { duration: 280 },
         );
       },
       focusOblique: (coordinates) => {
@@ -261,7 +261,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
             zoom: 16.5,
             altitude: 900,
           },
-          { duration: 600 },
+          { duration: 320 },
         );
       },
       fitRoute: (coordinates) => {

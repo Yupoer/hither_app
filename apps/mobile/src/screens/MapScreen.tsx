@@ -641,13 +641,21 @@ export default function MapScreen({ route, navigation }: Props) {
 
 
 
-  const locateMe = useCallback(async () => {
-    const coords = (await refreshDeviceLocation().catch(() => null)) ?? deviceCoords;
-    await refresh();
-    if (!coords) return;
-    // Settings toggle: flat top-down vs 45° oblique (Apple-Maps-style).
-    if (obliqueLocate) mapRef.current?.focusOblique(coords);
-    else mapRef.current?.centerOn(coords);
+  const locateMe = useCallback(() => {
+    const go = (coords: NonNullable<typeof deviceCoords>) => {
+      // Settings toggle: flat top-down vs 45° oblique (Apple-Maps-style).
+      if (obliqueLocate) mapRef.current?.focusOblique(coords);
+      else mapRef.current?.centerOn(coords);
+    };
+    // Instant feedback from last known fix — don't wait on GPS / network.
+    if (deviceCoords) go(deviceCoords);
+    // Background: refine GPS + soft re-center; group refresh is non-blocking.
+    void (async () => {
+      const fresh = await refreshDeviceLocation().catch(() => null);
+      if (fresh) go(fresh);
+      else if (!deviceCoords) return;
+      void refresh();
+    })();
   }, [refresh, refreshDeviceLocation, deviceCoords, obliqueLocate]);
 
   const [refreshingLocations, setRefreshingLocations] = useState(false);
@@ -1912,7 +1920,21 @@ export default function MapScreen({ route, navigation }: Props) {
                       <View style={styles.grow}>
                         <Text style={[styles.cardKicker, { color: accent }]}>
                           {index === 0 ? t('map.nextTag') + ' · ' : ''}
-                          {t('map.destinationCounter', { index: index + 1, total: destinations.length })}
+                          {(() => {
+                            // Counter is day-scoped: "stop N of M" among that day's stops only.
+                            const dayNum = dest.day || 1;
+                            let dayIndex = 0;
+                            let dayTotal = 0;
+                            for (const d of destinations) {
+                              if ((d.day || 1) !== dayNum) continue;
+                              dayTotal += 1;
+                              if (d.id === dest.id) dayIndex = dayTotal;
+                            }
+                            return t('map.destinationCounter', {
+                              index: dayIndex || 1,
+                              total: dayTotal || 1,
+                            });
+                          })()}
                         </Text>
                         <Text
                           style={styles.cardTitle}
