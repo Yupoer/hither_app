@@ -2084,20 +2084,29 @@ export default function MapScreen({ route, navigation }: Props) {
                               entering={FadeIn.duration(200)}
                               style={styles.cardRouteMeta}
                             >
-                              {!chromeCompact ? (
-                                <Ionicons name={modeIconName} size={14} color={accent} />
+                              {!chromeTight ? (
+                                <Ionicons
+                                  name={modeIconName}
+                                  size={chromeCompact ? 18 : 20}
+                                  color={accent}
+                                />
                               ) : null}
                               <Text
-                                style={[styles.cardRouteMetaText, { color: accent }]}
+                                style={[styles.cardRouteMetaEta, { color: accent }]}
                                 numberOfLines={1}
                                 ellipsizeMode="tail"
                               >
-                                {chromeTight && distLabel
-                                  ? etaLabel
-                                  : distLabel
-                                    ? `${etaLabel} · ${distLabel}`
-                                    : etaLabel}
+                                {etaLabel}
                               </Text>
+                              {distLabel ? (
+                                <Text
+                                  style={styles.cardRouteMetaDist}
+                                  numberOfLines={1}
+                                  ellipsizeMode="tail"
+                                >
+                                  · {distLabel}
+                                </Text>
+                              ) : null}
                             </Animated.View>
                           </>
                         )}
@@ -2167,7 +2176,7 @@ export default function MapScreen({ route, navigation }: Props) {
                         accessibilityRole="button"
                         accessibilityLabel={`${t(`map.travelMode.${travelMode}`)} ${etaLabel} ${distLabel}`.trim()}
                       >
-                        <Ionicons name={modeIconName} size={16} color={accent} />
+                        <Ionicons name={modeIconName} size={20} color={accent} />
                       </Pressable>
 
                       <Pressable
@@ -2176,7 +2185,7 @@ export default function MapScreen({ route, navigation }: Props) {
                         accessibilityRole="button"
                         accessibilityLabel={t('map.openInAppleMaps')}
                       >
-                        <Ionicons name="open-outline" size={18} color={glass.textSecondary} />
+                        <Ionicons name="open-outline" size={20} color={glass.textSecondary} />
                       </Pressable>
 
                       <Pressable
@@ -2192,7 +2201,7 @@ export default function MapScreen({ route, navigation }: Props) {
                       >
                         <Ionicons
                           name="time-outline"
-                          size={chromeCompact ? 15 : 16}
+                          size={chromeCompact ? 17 : 18}
                           color={meetLabel ? accent : glass.textSecondary}
                         />
                         {dest.meetAt ? (
@@ -2733,9 +2742,10 @@ const makeStyles = (accent: string, scale: number, narrow = false) => {
   // Slightly tighter bases on narrow physical widths (mini ~375, 15 ~390).
   const cardPad = narrow ? s(10, 8) : s(14, 10);
   const cmdGap = narrow ? s(6, 4) : s(8, 6);
-  // Mode + Apple Maps share a square; meet grows so countdown stays readable.
-  const squareW = narrow ? s(44, 44) : s(48, 44);
-  const meetW = narrow ? s(76, 68) : s(96, 84);
+  // All four actions share this as the square floor (width & height ≥ cmdSize).
+  // Meet may grow wider so the countdown can scale up with the extra space.
+  const cmdSize = narrow ? s(52, 48) : s(56, 52);
+  const meetMinW = narrow ? s(88, 80) : s(112, 100);
   return StyleSheet.create({
     flex: { flex: 1, backgroundColor: '#0c1118' },
     loading: {
@@ -2898,22 +2908,32 @@ const makeStyles = (accent: string, scale: number, narrow = false) => {
       marginTop: s(4, 2),
       flexShrink: 1,
     },
-    // Expanded route estimate (moved off the travel-mode control).
+    // Expanded route estimate — primary metrics (ETA + distance).
     cardRouteMeta: {
       flexDirection: 'row',
-      alignItems: 'center',
+      alignItems: 'baseline',
+      flexWrap: 'wrap',
       gap: s(6, 4),
-      marginTop: s(4, 2),
+      marginTop: s(6, 4),
       minWidth: 0,
       flexShrink: 1,
     },
-    cardRouteMetaText: {
+    cardRouteMetaEta: {
       fontFamily: DISPLAY_FONT,
-      fontSize: narrow ? 12.5 : 13.5,
+      fontSize: narrow ? 18 : 20,
       fontVariant: ['tabular-nums'],
       flexShrink: 1,
       minWidth: 0,
-      lineHeight: s(18, 16),
+      lineHeight: s(26, 22),
+    },
+    cardRouteMetaDist: {
+      fontFamily: DISPLAY_FONT,
+      fontSize: narrow ? 16 : 18,
+      color: glass.textSecondary,
+      fontVariant: ['tabular-nums'],
+      flexShrink: 1,
+      minWidth: 0,
+      lineHeight: s(24, 20),
     },
     cardBadge: {
       color: glass.textSecondary,
@@ -2946,8 +2966,8 @@ const makeStyles = (accent: string, scale: number, narrow = false) => {
     },
 
     // The single command row and its four controls.
-    // a11y-layout:commandRow — minHeights track live font scale.
-    // Nav is content-sized; mode/maps stay square; meet grows for countdown.
+    // a11y-layout:commandRow — every control is at least cmdSize×cmdSize.
+    // Mode/maps stay exact squares; nav/meet may grow wider but never shorter.
     commandRow: {
       flexDirection: 'row',
       alignItems: 'stretch',
@@ -2973,8 +2993,9 @@ const makeStyles = (accent: string, scale: number, narrow = false) => {
     navBtn: {
       flexGrow: 0,
       flexShrink: 1,
-      minWidth: 0,
-      minHeight: s(54, 48),
+      minWidth: cmdSize,
+      minHeight: cmdSize,
+      height: cmdSize,
       borderRadius: s(15, 12),
       flexDirection: 'row',
       alignItems: 'center',
@@ -2985,12 +3006,20 @@ const makeStyles = (accent: string, scale: number, narrow = false) => {
       paddingHorizontal: s(10, 8),
       overflow: 'hidden',
     },
-    navBtnFull: { flexGrow: 0, flexShrink: 0, alignSelf: 'stretch', width: '100%' },
-    // Tight single-row chrome: icon-only so meet countdown keeps width.
+    navBtnFull: {
+      flexGrow: 0,
+      flexShrink: 0,
+      alignSelf: 'stretch',
+      width: '100%',
+      height: cmdSize,
+      minHeight: cmdSize,
+    },
+    // Tight single-row chrome: exact square (icon-only) so meet keeps width.
     navBtnIconOnly: {
-      width: squareW,
-      minWidth: squareW,
-      maxWidth: squareW,
+      width: cmdSize,
+      minWidth: cmdSize,
+      maxWidth: cmdSize,
+      height: cmdSize,
       paddingHorizontal: 0,
     },
     // "End navigation" state — a soft danger tint over the accent-solid "go".
@@ -3001,14 +3030,15 @@ const makeStyles = (accent: string, scale: number, narrow = false) => {
       flexShrink: 1,
       minWidth: 0,
     },
-    // Square secondary controls (travel mode, Apple-Maps hand-off).
+    // Exact square secondary controls (travel mode, Apple-Maps hand-off).
     cmdSquare: {
-      width: squareW,
-      maxWidth: squareW,
-      minWidth: 44,
+      width: cmdSize,
+      height: cmdSize,
+      minWidth: cmdSize,
+      minHeight: cmdSize,
+      maxWidth: cmdSize,
       flexGrow: 0,
       flexShrink: 0,
-      minHeight: s(54, 48),
       borderRadius: s(15, 12),
       alignItems: 'center',
       justifyContent: 'center',
@@ -3017,27 +3047,35 @@ const makeStyles = (accent: string, scale: number, narrow = false) => {
       borderColor: glass.hairline,
       overflow: 'hidden',
     },
-    // Meet-time control — wider so live countdown stays readable.
+    // Meet-time — at least square tall; wider min so countdown can go large.
     meetBtn: {
-      minWidth: meetW,
+      minWidth: meetMinW,
+      minHeight: cmdSize,
+      height: cmdSize,
       flexGrow: 1,
       flexShrink: 1,
-      minHeight: s(54, 48),
       borderRadius: s(15, 12),
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      gap: s(5, 4),
+      gap: s(6, 4),
       backgroundColor: 'rgba(255,255,255,0.09)',
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairline,
-      paddingHorizontal: s(8, 6),
+      paddingHorizontal: s(10, 8),
       overflow: 'hidden',
     },
-    meetBtnGrow: { flex: 1, width: undefined, maxWidth: undefined, minWidth: meetW },
+    meetBtnGrow: {
+      flex: 1,
+      width: undefined,
+      maxWidth: undefined,
+      minWidth: meetMinW,
+      height: cmdSize,
+      minHeight: cmdSize,
+    },
     meetBtnLabel: {
       fontFamily: DISPLAY_FONT,
-      fontSize: narrow ? 13 : 14,
+      fontSize: narrow ? 16 : 18,
       fontWeight: '700',
       color: glass.textSecondary,
       fontVariant: ['tabular-nums'],
@@ -3047,7 +3085,7 @@ const makeStyles = (accent: string, scale: number, narrow = false) => {
     },
     meetBtnLabelCompact: {
       fontFamily: DISPLAY_FONT,
-      fontSize: 12,
+      fontSize: narrow ? 14 : 15,
       fontWeight: '700',
       color: glass.textSecondary,
       fontVariant: ['tabular-nums'],
