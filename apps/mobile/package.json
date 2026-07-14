@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "main": "index.ts",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
@@ -10,7 +13,8 @@
     "web": "expo start --web",
     "test": "jest",
     "typecheck": "tsc --noEmit",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "verify:lock": "npm ci --include=dev --ignore-scripts"
   },
   "dependencies": {
     "@bacons/apple-targets": "^4.0.7",
@@ -60,7 +64,7 @@
     "expo-font": "~14.0.12"
   },
   "devDependencies": {
-    "@testing-library/react-native": "^14.0.1",
+    "@testing-library/react-native": "~13.3.3",
     "@types/jest": "^29.5.12",
     "@types/react": "~19.1.10",
     "babel-preset-expo": "~54.0.0",

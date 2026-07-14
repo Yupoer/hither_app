@@ -5,16 +5,19 @@
   },
   "build": {
     "development": {
+      "node": "22.16.0",
       "developmentClient": true,
       "distribution": "internal"
     },
     "preview": {
+      "node": "22.16.0",
       "distribution": "internal",
       "ios": {
         "simulator": false
       }
     },
     "production": {
+      "node": "22.16.0",
       "distribution": "store",
       "autoIncrement": true
     }
