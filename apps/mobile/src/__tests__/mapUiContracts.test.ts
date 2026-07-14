@@ -68,6 +68,9 @@ describe('map UI placement contracts', () => {
     expect(contentBlock?.[0] ?? '').not.toContain("justifyContent: 'center'");
     expect(roleSelect).toContain('bottomFlex');
     expect(roleSelect).toContain('myTeamsSlot');
+    // Instant paint: memory cache + lite fetch (skip profiles on this screen).
+    expect(roleSelect).toContain('getCachedMyJoinedGroups');
+    expect(roleSelect).toContain('includeProfiles: false');
   });
 
 

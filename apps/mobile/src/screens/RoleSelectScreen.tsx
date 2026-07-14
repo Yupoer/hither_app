@@ -11,7 +11,11 @@ import { lightTap } from '../utils/haptics';
 import { logEvent } from '../utils/activityLog';
 import CrookIcon from '../components/CrookIcon';
 import { useSession } from '../state/SessionContext';
-import { getMyJoinedGroups, JoinedGroupInfo } from '../api/client';
+import {
+  getCachedMyJoinedGroups,
+  getMyJoinedGroups,
+  JoinedGroupInfo,
+} from '../api/client';
 import Animated, { FadeIn, SlideInDown, ZoomIn } from 'react-native-reanimated';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RoleSelect'>;
@@ -23,8 +27,11 @@ export default function RoleSelectScreen({ navigation }: Props) {
   const accent = colors.accent;
   const { user, signOut } = useSession();
 
-  const [joinedGroups, setJoinedGroups] = useState<JoinedGroupInfo[]>([]);
-  const [groupsLoading, setGroupsLoading] = useState(!!user);
+  // Paint from in-memory cache immediately; refresh in background without
+  // waiting for the full (profiles) path.
+  const cached = user ? getCachedMyJoinedGroups(user.id) : null;
+  const [joinedGroups, setJoinedGroups] = useState<JoinedGroupInfo[]>(cached ?? []);
+  const [groupsLoading, setGroupsLoading] = useState(!!user && !cached);
 
   useEffect(() => {
     if (!user) {
@@ -32,12 +39,34 @@ export default function RoleSelectScreen({ navigation }: Props) {
       setGroupsLoading(false);
       return;
     }
-    setGroupsLoading(true);
-    getMyJoinedGroups()
-      .then(setJoinedGroups)
+
+    const fromCache = getCachedMyJoinedGroups(user.id);
+    if (fromCache) {
+      setJoinedGroups(fromCache);
+      setGroupsLoading(false);
+    } else {
+      setGroupsLoading(true);
+    }
+
+    let cancelled = false;
+    // RoleSelect only needs count + names; skip profiles for a faster first paint.
+    getMyJoinedGroups({ includeProfiles: false })
+      .then((list) => {
+        if (!cancelled) setJoinedGroups(list);
+      })
       .catch((e) => console.log('Failed to fetch joined groups', e))
-      .finally(() => setGroupsLoading(false));
+      .finally(() => {
+        if (!cancelled) setGroupsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [user]);
+
+  const showMyTeams = joinedGroups.length > 0;
+  // Keep the far gap reserved while loading so the CTA doesn't "pop" closer then jump away.
+  const reserveMyTeamsSlot = !!user && (groupsLoading || showMyTeams);
 
   return (
     <LinearGradient
@@ -119,29 +148,31 @@ export default function RoleSelectScreen({ navigation }: Props) {
             </Pressable>
           </Animated.View>
 
-          {/* Reserve CTA height while groups load so primary tiles don't jump. */}
-          {user && groupsLoading ? <View style={styles.myTeamsSlot} /> : null}
-
-          {joinedGroups.length > 0 && (
-            <Animated.View entering={FadeIn.duration(400)}>
-              <TouchableOpacity
-                activeOpacity={0.7}
-                onPress={() => { lightTap(); navigation.navigate('MyTeams', { initialGroups: joinedGroups }); }}
-                style={[styles.ctaMyTeams, { backgroundColor: 'rgba(255,255,255,0.12)' }]}
-              >
-                <Ionicons name="people-outline" size={20} color={accent} />
-                <Text style={styles.ctaMyTeamsText}>查看我的隊伍 ({joinedGroups.length})</Text>
-              </TouchableOpacity>
-            </Animated.View>
+          {reserveMyTeamsSlot && (
+            <>
+              <View style={styles.myTeamsSpacer} />
+              {showMyTeams ? (
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={() => { lightTap(); navigation.navigate('MyTeams', { initialGroups: joinedGroups }); }}
+                  style={[styles.ctaMyTeams, { backgroundColor: 'rgba(255,255,255,0.12)' }]}
+                >
+                  <Ionicons name="people-outline" size={20} color={accent} />
+                  <Text style={styles.ctaMyTeamsText}>查看我的隊伍 ({joinedGroups.length})</Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.myTeamsSlot} />
+              )}
+            </>
           )}
 
           <Animated.View entering={FadeIn.duration(600).delay(300)}>
-            <Text style={styles.footer}>{t('role.footer')}</Text>
+            <Text style={[styles.footer, { marginTop: 16 }]}>{t('role.footer')}</Text>
           </Animated.View>
         </View>
 
-        {/* Leftover height stays below actions — not between primary tiles and my-teams. */}
-        <View style={styles.bottomSpacer} />
+        {/* Leftover height stays below actions — keeps create/join ↔ my-teams distance fixed. */}
+        <View style={styles.bottomFlex} />
       </View>
     </LinearGradient>
   );
@@ -209,7 +240,6 @@ const styles = StyleSheet.create({
   actionArea: {
     width: '100%',
     alignItems: 'center',
-    gap: 16,
   },
   actionRow: {
     flexDirection: 'row',
@@ -230,6 +260,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#fff',
   },
+  /** Fixed far gap between primary tiles and the my-teams CTA. */
+  myTeamsSpacer: { height: 64 },
   ctaMyTeams: {
     minHeight: 54,
     paddingHorizontal: 24,
@@ -242,7 +274,7 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255,255,255,0.15)',
   },
-  /** Same height as ctaMyTeams so load → show doesn't shift primary tiles. */
+  /** Same height as ctaMyTeams so load → show keeps the far gap stable. */
   myTeamsSlot: {
     minHeight: 54,
     alignSelf: 'stretch',
@@ -252,6 +284,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: 'rgba(235,235,245,0.4)',
   },
-  bottomSpacer: { flex: 1 },
+  bottomFlex: { flex: 1 },
   pressed: { opacity: 0.8 },
 });

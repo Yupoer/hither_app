@@ -31,11 +31,14 @@ export {
   selfSplit,
   selfMerge,
   getMyJoinedGroups,
+  getCachedMyJoinedGroups,
+  invalidateMyJoinedGroupsCache,
   leaveGroups,
 } from './services/GroupService';
 
 export type {
   JoinedGroupInfo,
+  GetMyJoinedGroupsOptions,
   GroupRow,
   MembershipRow,
   SubgroupRow,

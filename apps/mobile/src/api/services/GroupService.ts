@@ -296,67 +296,113 @@ export interface JoinedGroupInfo {
   memberProfiles: { avatar?: string; avatarColor?: string }[];
 }
 
-export async function getMyJoinedGroups(): Promise<JoinedGroupInfo[]> {
-  const { data: userAuth } = await supabase.auth.getUser();
-  const uid = userAuth?.user?.id;
-  if (!uid) return [];
+export type GetMyJoinedGroupsOptions = {
+  /**
+   * When false, skip the profiles round-trip (RoleSelect only needs count +
+   * group metadata). MyTeams should keep the default true for avatars.
+   */
+  includeProfiles?: boolean;
+};
+
+/** In-memory cache so RoleSelect can paint the CTA immediately on re-entry. */
+let joinedGroupsCache: JoinedGroupInfo[] | null = null;
+let joinedGroupsCacheUserId: string | null = null;
+
+export function getCachedMyJoinedGroups(userId: string | undefined | null): JoinedGroupInfo[] | null {
+  if (!userId || userId !== joinedGroupsCacheUserId) return null;
+  return joinedGroupsCache;
+}
+
+export function invalidateMyJoinedGroupsCache(): void {
+  joinedGroupsCache = null;
+  joinedGroupsCacheUserId = null;
+}
+
+function rememberJoinedGroups(userId: string, list: JoinedGroupInfo[]): JoinedGroupInfo[] {
+  joinedGroupsCacheUserId = userId;
+  joinedGroupsCache = list;
+  return list;
+}
+
+/**
+ * Groups the current user belongs to (for RoleSelect / MyTeams).
+ * Uses the local session (no auth network hop), parallelizes group+member
+ * queries, and caches the last result for instant re-paint.
+ */
+export async function getMyJoinedGroups(
+  options: GetMyJoinedGroupsOptions = {},
+): Promise<JoinedGroupInfo[]> {
+  const includeProfiles = options.includeProfiles !== false;
+  let uid: string;
+  try {
+    uid = await requireUserId();
+  } catch {
+    return [];
+  }
 
   const { data: myMemberships } = await supabase
     .from('memberships')
     .select('group_id, role')
     .eq('user_id', uid);
 
-  if (!myMemberships || myMemberships.length === 0) return [];
+  if (!myMemberships || myMemberships.length === 0) {
+    return rememberJoinedGroups(uid, []);
+  }
 
   const groupIds = myMemberships.map((m) => m.group_id);
-  const roleByGroup = new Map(myMemberships.map((m) => [m.group_id, m.role]));
+  const roleByGroup = new Map(myMemberships.map((m) => [m.group_id, m.role as MemberRole]));
 
-  const { data: groups } = await supabase
-    .from('groups')
-    .select('id, name, invite_code, created_by, created_at, journey_status, active_destination_id, journey_started_at, straggler_alerts, straggler_threshold_m, trip_days, departure_date')
-    .in('id', groupIds);
+  // groups + membership rows in parallel (was sequential before).
+  const [groupsRes, membersRes] = await Promise.all([
+    supabase
+      .from('groups')
+      .select('id, name, invite_code, created_by, created_at, journey_status, active_destination_id, journey_started_at, straggler_alerts, straggler_threshold_m, trip_days, departure_date')
+      .in('id', groupIds),
+    supabase
+      .from('memberships')
+      .select('group_id, user_id')
+      .in('group_id', groupIds),
+  ]);
 
-  if (!groups || groups.length === 0) return [];
+  const groups = groupsRes.data;
+  if (!groups || groups.length === 0) {
+    return rememberJoinedGroups(uid, []);
+  }
 
-  const { data: members } = await supabase
-    .from('memberships')
-    .select('group_id, user_id')
-    .in('group_id', groupIds);
+  const members = membersRes.data ?? [];
+  const memberCounts = new Map<string, number>();
+  for (const m of members) {
+    memberCounts.set(m.group_id, (memberCounts.get(m.group_id) ?? 0) + 1);
+  }
 
-  const userIdsToFetch = Array.from(new Set(members?.map((m) => m.user_id) ?? []));
-
-  let profiles: { id: string; avatar?: string | null; avatar_color?: string | null }[] = [];
-  if (userIdsToFetch.length > 0) {
+  const membersByGroup = new Map<string, { avatar?: string; avatarColor?: string }[]>();
+  // RoleSelect skips profiles (one less round-trip); MyTeams keeps avatars.
+  if (includeProfiles && members.length > 0) {
+    const userIdsToFetch = Array.from(new Set(members.map((m) => m.user_id)));
     const { data: profileRows } = await supabase
       .from('profiles')
       .select('id, avatar, avatar_color')
       .in('id', userIdsToFetch);
-    profiles = profileRows ?? [];
-  }
-  const profileById = new Map(profiles.map((p) => [p.id, p]));
+    const profileById = new Map((profileRows ?? []).map((p) => [p.id, p]));
 
-  const membersByGroup = new Map<string, { avatar?: string; avatarColor?: string }[]>();
-  for (const m of (members ?? [])) {
-    if (!membersByGroup.has(m.group_id)) membersByGroup.set(m.group_id, []);
-    
-    const p = profileById.get(m.user_id);
-    membersByGroup.get(m.group_id)!.push({
-      avatar: p?.avatar || avatarForUser(m.user_id),
-      avatarColor: p?.avatar_color || memberColor(m.user_id),
-    });
+    for (const m of members) {
+      if (!membersByGroup.has(m.group_id)) membersByGroup.set(m.group_id, []);
+      const p = profileById.get(m.user_id);
+      membersByGroup.get(m.group_id)!.push({
+        avatar: p?.avatar || avatarForUser(m.user_id),
+        avatarColor: p?.avatar_color || memberColor(m.user_id),
+      });
+    }
   }
 
-  const memberCounts = new Map<string, number>();
-  for (const m of (members ?? [])) {
-    memberCounts.set(m.group_id, (memberCounts.get(m.group_id) ?? 0) + 1);
-  }
-
-  return groups.map((g) => ({
+  const list = groups.map((g) => ({
     group: mapGroup(g as GroupRow),
     memberCount: memberCounts.get(g.id) ?? 1,
-    role: roleByGroup.get(g.id) as MemberRole ?? 'follower',
+    role: roleByGroup.get(g.id) ?? ('follower' as MemberRole),
     memberProfiles: membersByGroup.get(g.id) ?? [],
   }));
+
+  return rememberJoinedGroups(uid, list);
 }
 
 export async function leaveGroups(groupIds: string[]): Promise<void> {
@@ -368,6 +414,13 @@ export async function leaveGroups(groupIds: string[]): Promise<void> {
     .eq('user_id', uid)
     .in('group_id', groupIds);
   orThrow(error);
+  // Drop cache so RoleSelect / MyTeams don't show groups we just left.
+  if (joinedGroupsCacheUserId === uid && joinedGroupsCache) {
+    const remaining = joinedGroupsCache.filter((g) => !groupIds.includes(g.group.id));
+    rememberJoinedGroups(uid, remaining);
+  } else {
+    invalidateMyJoinedGroupsCache();
+  }
 }
 
 export async function setJourneyStatus(
