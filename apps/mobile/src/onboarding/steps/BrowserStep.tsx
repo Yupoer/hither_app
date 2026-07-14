@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import type { ImageSourcePropType } from 'react-native';
 import { useTranslation, type TranslationKey } from '../../i18n';
 import type { StepProps, StepId } from '../types';
 import StepShell from './StepShell';
@@ -8,7 +9,7 @@ import PrimaryButton from './PrimaryButton';
 /**
  * Shared renderer for the browser branch's three single-select steps
  * (C1_why / C2_companions / C3_wanted) — same list-of-options layout, only
- * the kicker, question, options, emoji, and which answer field they write
+ * the kicker, question, options, icon, and which answer field they write
  * differ. Selecting marks the card; the Continue button advances.
  */
 function makeBrowserStep<K extends 'why' | 'companions' | 'wanted'>(
@@ -18,7 +19,7 @@ function makeBrowserStep<K extends 'why' | 'companions' | 'wanted'>(
   titleKey: TranslationKey,
   options: readonly string[],
   labelKeys: Record<string, TranslationKey>,
-  emojis: Record<string, string>,
+  icons: Record<string, ImageSourcePropType>,
 ) {
   return function BrowserStepImpl({ answers, onAnswer, onSkip, onBack }: StepProps) {
     const { t } = useTranslation();
@@ -42,7 +43,7 @@ function makeBrowserStep<K extends 'why' | 'companions' | 'wanted'>(
         {options.map((opt) => (
           <OptionCard
             key={opt}
-            emoji={emojis[opt]}
+            icon={icons[opt]}
             title={t(labelKeys[opt])}
             selected={sel === opt}
             onPress={() => setSel(opt)}

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { AccessibilityInfo, StyleSheet, View } from 'react-native';
+import { AccessibilityInfo, Image, StyleSheet, View, type ImageSourcePropType } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -16,11 +16,17 @@ import { HitherText } from '../../components/HitherText';
 import { useFontLayout } from '../../a11y/useFontScaleBucket';
 import { useTheme } from '../../state/PreferencesContext';
 import { useTranslation } from '../../i18n';
+import { OnboardingIcons } from '../icons';
 import type { StepProps } from '../types';
 import StepShell from './StepShell';
 import PrimaryButton from './PrimaryButton';
 
-const MEMBER_EMOJIS = ['😎', '🦊', '🧭', '🎒'] as const;
+const MEMBER_ICONS = [
+  OnboardingIcons.memberCool,
+  OnboardingIcons.memberFox,
+  OnboardingIcons.memberCompass,
+  OnboardingIcons.memberBackpack,
+] as const;
 const STAGE_W = 280;
 /** Scatter positions (from center) then settle on a soft arc. */
 const SCATTER: { x: number; y: number }[] = [
@@ -38,12 +44,12 @@ const GATHER: { x: number; y: number }[] = [
 
 function MemberDot({
   index,
-  emoji,
+  icon,
   color,
   reduceMotion,
 }: {
   index: number;
-  emoji: string;
+  icon: ImageSourcePropType;
   color: string;
   reduceMotion: boolean;
 }) {
@@ -83,9 +89,7 @@ function MemberDot({
 
   return (
     <Animated.View style={[styles.member, { backgroundColor: color }, style]}>
-      <HitherText typeRole="emoji" style={styles.memberEmoji}>
-        {emoji}
-      </HitherText>
+      <Image source={icon} style={styles.memberIcon} resizeMode="contain" accessibilityIgnoresInvertColors />
     </Animated.View>
   );
 }
@@ -157,15 +161,18 @@ function GatherStage({ reduceMotion }: { reduceMotion: boolean }) {
         <View style={[styles.beaconCore, { backgroundColor: colors.accent }]}>
           <CrookIcon size={28} color={colors.accentText} />
         </View>
-        <HitherText typeRole="emoji" style={styles.flag}>
-          🚩
-        </HitherText>
+        <Image
+          source={OnboardingIcons.flag}
+          style={styles.flag}
+          resizeMode="contain"
+          accessibilityIgnoresInvertColors
+        />
       </Animated.View>
-      {MEMBER_EMOJIS.map((emoji, i) => (
+      {MEMBER_ICONS.map((icon, i) => (
         <MemberDot
-          key={emoji}
+          key={i}
           index={i}
-          emoji={emoji}
+          icon={icon}
           color={MEMBER_COLORS[i % MEMBER_COLORS.length]}
           reduceMotion={reduceMotion}
         />
@@ -239,9 +246,10 @@ const styles = StyleSheet.create({
   },
   flag: {
     position: 'absolute',
-    right: -10,
-    top: -8,
-    fontSize: 16,
+    right: -12,
+    top: -10,
+    width: 20,
+    height: 20,
   },
   member: {
     position: 'absolute',
@@ -254,7 +262,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.55)',
     zIndex: 1,
   },
-  memberEmoji: { fontSize: 18 },
+  memberIcon: { width: 22, height: 22 },
   caption: {
     fontSize: 15,
     lineHeight: 22,

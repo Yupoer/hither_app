@@ -1,5 +1,7 @@
+import type { ImageSourcePropType } from 'react-native';
 import type { TranslationKey } from '../../i18n';
 import { COMPANION_OPTIONS, type CompanionOption } from '../content';
+import { OnboardingIcons } from '../icons';
 import makeBrowserStep from './BrowserStep';
 
 const LABEL_KEY: Record<CompanionOption, TranslationKey> = {
@@ -9,11 +11,11 @@ const LABEL_KEY: Record<CompanionOption, TranslationKey> = {
   colleagues: 'onboarding.c2.colleagues',
 };
 
-const EMOJI: Record<CompanionOption, string> = {
-  family: '👨‍👩‍👧',
-  friends: '🧑‍🤝‍🧑',
-  partner: '💑',
-  colleagues: '💼',
+const ICONS: Record<CompanionOption, ImageSourcePropType> = {
+  family: OnboardingIcons.family,
+  friends: OnboardingIcons.friends,
+  partner: OnboardingIcons.couple,
+  colleagues: OnboardingIcons.briefcase,
 };
 
 export default makeBrowserStep(
@@ -23,5 +25,5 @@ export default makeBrowserStep(
   'onboarding.c2.title',
   COMPANION_OPTIONS,
   LABEL_KEY,
-  EMOJI,
+  ICONS,
 );

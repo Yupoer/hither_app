@@ -1,5 +1,7 @@
+import type { ImageSourcePropType } from 'react-native';
 import type { TranslationKey } from '../../i18n';
 import { WANTED_OPTIONS, type WantedOption } from '../content';
+import { OnboardingIcons } from '../icons';
 import makeBrowserStep from './BrowserStep';
 
 const LABEL_KEY: Record<WantedOption, TranslationKey> = {
@@ -9,11 +11,11 @@ const LABEL_KEY: Record<WantedOption, TranslationKey> = {
   tripRecap: 'onboarding.c3.tripRecap',
 };
 
-const EMOJI: Record<WantedOption, string> = {
-  liveLocation: '📍',
-  meetReminders: '🔔',
-  sharedItinerary: '📝',
-  tripRecap: '📖',
+const ICONS: Record<WantedOption, ImageSourcePropType> = {
+  liveLocation: OnboardingIcons.pin,
+  meetReminders: OnboardingIcons.bell,
+  sharedItinerary: OnboardingIcons.notepad,
+  tripRecap: OnboardingIcons.book,
 };
 
 export default makeBrowserStep(
@@ -23,5 +25,5 @@ export default makeBrowserStep(
   'onboarding.c3.title',
   WANTED_OPTIONS,
   LABEL_KEY,
-  EMOJI,
+  ICONS,
 );

@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Image, StyleSheet, View, type ImageSourcePropType } from 'react-native';
 import { HitherText } from '../../components/HitherText';
 import Animated, {
   Easing,
@@ -15,17 +15,22 @@ import { useTheme } from '../../state/PreferencesContext';
 import { accentMix } from '../../glass';
 import { useTranslation, type TranslationKey } from '../../i18n';
 import { MASCOTS, resolveMascot } from '../content';
+import { OnboardingIcons } from '../icons';
 import type { OnboardingRole, StepProps } from '../types';
+import type { ThemeName } from '../../theme';
 import PrimaryButton from './PrimaryButton';
 
-const THEME_EMOJI: Record<string, string> = { night: '🌙', day: '🌅', dusk: '🌇', forest: '🌲' };
 const THEME_LABEL: Record<string, TranslationKey> = {
   night: 'onboarding.theme.night',
   day: 'onboarding.theme.day',
   dusk: 'onboarding.theme.dusk',
   forest: 'onboarding.theme.forest',
 };
-const ROLE_EMOJI: Record<OnboardingRole, string> = { leader: '🪝', follower: '🐑', browser: '👀' };
+const ROLE_ICON: Record<OnboardingRole, ImageSourcePropType> = {
+  leader: OnboardingIcons.leader,
+  follower: OnboardingIcons.follower,
+  browser: OnboardingIcons.browser,
+};
 const ROLE_LABEL: Record<OnboardingRole, TranslationKey> = {
   leader: 'onboarding.role.leaderTitle',
   follower: 'onboarding.role.followerTitle',
@@ -97,7 +102,7 @@ export default function CelebrationStep({ answers, onAnswer }: StepProps) {
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const emojiStyle = useAnimatedStyle(() => ({
+  const heroStyle = useAnimatedStyle(() => ({
     transform: [{ scale: pop.value }],
     opacity: pop.value === 0 ? 0 : 1,
   }));
@@ -121,7 +126,14 @@ export default function CelebrationStep({ answers, onAnswer }: StepProps) {
         ))}
       </View>
       <View style={styles.center}>
-        <Animated.Text allowFontScaling={false} style={[styles.emoji, emojiStyle]}>🎉</Animated.Text>
+        <Animated.View style={heroStyle}>
+          <Image
+            source={OnboardingIcons.party}
+            style={styles.hero}
+            resizeMode="contain"
+            accessibilityIgnoresInvertColors
+          />
+        </Animated.View>
         <HitherText typeRole="display" style={[styles.title, { color: colors.textPrimary }]}>
           {t('onboarding.celebration.title')}
         </HitherText>
@@ -131,7 +143,7 @@ export default function CelebrationStep({ answers, onAnswer }: StepProps) {
         <View style={styles.chips}>
           {chips.map((c, i) => (
             <View key={i} style={[styles.chip, { backgroundColor: accentMix(colors.accent, 14) }]}>
-              <HitherText typeRole="emoji" style={styles.chipEmoji}>{c.emoji}</HitherText>
+              <Image source={c.icon} style={styles.chipIcon} resizeMode="contain" accessibilityIgnoresInvertColors />
               <HitherText typeRole="footnote" style={[styles.chipText, { color: colors.textPrimary }]}>{c.label}</HitherText>
             </View>
           ))}
@@ -147,18 +159,23 @@ export default function CelebrationStep({ answers, onAnswer }: StepProps) {
 function buildChips(
   answers: StepProps['answers'],
   t: (key: TranslationKey, params?: Record<string, string | number>) => string,
-): { emoji: string; label: string }[] {
-  const chips: { emoji: string; label: string }[] = [];
+): { icon: ImageSourcePropType; label: string }[] {
+  const chips: { icon: ImageSourcePropType; label: string }[] = [];
   const role = answers.role;
-  if (role) chips.push({ emoji: ROLE_EMOJI[role], label: t(ROLE_LABEL[role]) });
+  if (role) chips.push({ icon: ROLE_ICON[role], label: t(ROLE_LABEL[role]) });
   if (answers.theme && THEME_LABEL[answers.theme]) {
-    chips.push({ emoji: THEME_EMOJI[answers.theme] ?? '🎨', label: t(THEME_LABEL[answers.theme]) });
+    const theme = answers.theme as ThemeName;
+    chips.push({
+      icon: OnboardingIcons.theme[theme] ?? OnboardingIcons.party,
+      label: t(THEME_LABEL[answers.theme]),
+    });
   }
   if (role === 'leader' && answers.days != null) {
-    chips.push({ emoji: '📅', label: t('onboarding.l2.days', { count: answers.days }) });
+    chips.push({ icon: OnboardingIcons.calendar, label: t('onboarding.l2.days', { count: answers.days }) });
   } else if (role === 'follower' && answers.quiz?.F1 && answers.quiz.F2 && answers.quiz.F3) {
-    const m = MASCOTS[resolveMascot(answers.quiz)];
-    chips.push({ emoji: m.emoji, label: t(m.nameKey as TranslationKey) });
+    const mascotId = resolveMascot(answers.quiz);
+    const m = MASCOTS[mascotId];
+    chips.push({ icon: OnboardingIcons.mascot[mascotId], label: t(m.nameKey as TranslationKey) });
   }
   return chips;
 }
@@ -167,7 +184,7 @@ const styles = StyleSheet.create({
   fill: { flex: 1, paddingHorizontal: 24 },
   confettiLayer: { ...StyleSheet.absoluteFillObject },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14 },
-  emoji: { fontSize: 96, textAlign: 'center' },
+  hero: { width: 112, height: 112 },
   title: { fontSize: 28, fontWeight: '800', textAlign: 'center' },
   subtitle: { fontSize: 16, lineHeight: 24, textAlign: 'center', paddingHorizontal: 8 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 8 },
@@ -179,7 +196,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 13,
     borderRadius: 17,
   },
-  chipEmoji: { fontSize: 15 },
+  chipIcon: { width: 18, height: 18 },
   chipText: { fontSize: 13.5, fontWeight: '600' },
   footer: { paddingTop: 8 },
 });

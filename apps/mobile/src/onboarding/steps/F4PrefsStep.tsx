@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, type ImageSourcePropType } from 'react-native';
 import { useTranslation, type TranslationKey } from '../../i18n';
 import { PREF_OPTIONS, type PrefOption } from '../content';
+import { OnboardingIcons } from '../icons';
 import type { StepProps } from '../types';
 import StepShell from './StepShell';
 import OptionCard from './OptionCard';
@@ -17,16 +18,16 @@ const LABEL_KEY: Record<PrefOption, TranslationKey> = {
   nightlife: 'onboarding.f4.nightlife',
 };
 
-const EMOJI: Record<PrefOption, string> = {
-  food: '🍜',
-  sights: '📸',
-  shopping: '🛍️',
-  nature: '🌿',
-  culture: '🏛️',
-  nightlife: '🌃',
+const ICONS: Record<PrefOption, ImageSourcePropType> = {
+  food: OnboardingIcons.ramen,
+  sights: OnboardingIcons.camera,
+  shopping: OnboardingIcons.shopping,
+  nature: OnboardingIcons.nature,
+  culture: OnboardingIcons.temple,
+  nightlife: OnboardingIcons.nightlife,
 };
 
-// Fixed colour block behind each emoji so the tiles read as categories rather
+// Fixed colour block behind each icon so the tiles read as categories rather
 // than bare stickers on the card. Theme-independent (decorative, not accent).
 const TILE_COLOR: Record<PrefOption, string> = {
   food: '#E8663C',
@@ -68,7 +69,7 @@ export default function F4PrefsStep({ answers, onAnswer, onSkip, onBack }: StepP
         {PREF_OPTIONS.map((opt) => (
           <View key={opt} style={styles.cell}>
             <OptionCard
-              emoji={EMOJI[opt]}
+              icon={ICONS[opt]}
               tileColor={TILE_COLOR[opt]}
               title={t(LABEL_KEY[opt])}
               selected={selected.includes(opt)}

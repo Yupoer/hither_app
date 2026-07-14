@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useTranslation } from '../../i18n';
 import type { OnboardingRole, StepProps } from '../types';
+import { OnboardingIcons } from '../icons';
 import StepShell from './StepShell';
 import OptionCard from './OptionCard';
 import PrimaryButton from './PrimaryButton';
@@ -26,21 +27,21 @@ export default function RoleStep({ answers, onAnswer, onSkip, onBack }: StepProp
       }
     >
       <OptionCard
-        emoji="🪝"
+        icon={OnboardingIcons.leader}
         title={t('onboarding.role.leaderTitle')}
         subtitle={t('onboarding.role.leaderBody')}
         selected={role === 'leader'}
         onPress={() => setRole('leader')}
       />
       <OptionCard
-        emoji="🐑"
+        icon={OnboardingIcons.follower}
         title={t('onboarding.role.followerTitle')}
         subtitle={t('onboarding.role.followerBody')}
         selected={role === 'follower'}
         onPress={() => setRole('follower')}
       />
       <OptionCard
-        emoji="👀"
+        icon={OnboardingIcons.browser}
         title={t('onboarding.role.browser')}
         selected={role === 'browser'}
         onPress={() => setRole('browser')}

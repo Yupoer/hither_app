@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
+import type { ImageSourcePropType } from 'react-native';
 import { useTranslation, type TranslationKey } from '../../i18n';
 import { PURPOSE_OPTIONS, type PurposeOption } from '../content';
+import { OnboardingIcons } from '../icons';
 import type { StepProps } from '../types';
 import StepShell from './StepShell';
 import OptionCard from './OptionCard';
@@ -13,11 +15,11 @@ const LABEL_KEY: Record<PurposeOption, TranslationKey> = {
   friends: 'onboarding.l1.friends',
 };
 
-const EMOJI: Record<PurposeOption, string> = {
-  abroad: '✈️',
-  city: '🏙️',
-  family: '👨‍👩‍👧',
-  friends: '🎉',
+const ICONS: Record<PurposeOption, ImageSourcePropType> = {
+  abroad: OnboardingIcons.plane,
+  city: OnboardingIcons.city,
+  family: OnboardingIcons.family,
+  friends: OnboardingIcons.party,
 };
 
 export default function L1PurposeStep({ answers, onAnswer, onSkip, onBack }: StepProps) {
@@ -42,7 +44,7 @@ export default function L1PurposeStep({ answers, onAnswer, onSkip, onBack }: Ste
       {PURPOSE_OPTIONS.map((opt) => (
         <OptionCard
           key={opt}
-          emoji={EMOJI[opt]}
+          icon={ICONS[opt]}
           title={t(LABEL_KEY[opt])}
           selected={purpose === opt}
           onPress={() => setPurpose(opt)}

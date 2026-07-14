@@ -1,5 +1,7 @@
+import type { ImageSourcePropType } from 'react-native';
 import type { TranslationKey } from '../../i18n';
 import { WHY_OPTIONS, type WhyOption } from '../content';
+import { OnboardingIcons } from '../icons';
 import makeBrowserStep from './BrowserStep';
 
 const LABEL_KEY: Record<WhyOption, TranslationKey> = {
@@ -9,11 +11,11 @@ const LABEL_KEY: Record<WhyOption, TranslationKey> = {
   curious: 'onboarding.c1.curious',
 };
 
-const EMOJI: Record<WhyOption, string> = {
-  findPeople: '🔍',
-  fearLost: '😰',
-  planTrip: '🗺️',
-  curious: '✨',
+const ICONS: Record<WhyOption, ImageSourcePropType> = {
+  findPeople: OnboardingIcons.search,
+  fearLost: OnboardingIcons.worried,
+  planTrip: OnboardingIcons.map,
+  curious: OnboardingIcons.sparkles,
 };
 
 export default makeBrowserStep(
@@ -23,5 +25,5 @@ export default makeBrowserStep(
   'onboarding.c1.title',
   WHY_OPTIONS,
   LABEL_KEY,
-  EMOJI,
+  ICONS,
 );

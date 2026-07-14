@@ -1,10 +1,11 @@
 import React, { useCallback, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Image, StyleSheet, View, type ImageSourcePropType } from 'react-native';
 import { HitherText } from '../../components/HitherText';
 import { useTheme } from '../../state/PreferencesContext';
 import { useTranslation } from '../../i18n';
 import { location, notifications } from '../../native';
 import { accentMix } from '../../glass';
+import { OnboardingIcons } from '../icons';
 import type { StepProps } from '../types';
 import StepShell from './StepShell';
 import PrimaryButton from './PrimaryButton';
@@ -16,11 +17,11 @@ import PrimaryButton from './PrimaryButton';
  * gracefully without either grant.
  */
 function PermissionInfoRow({
-  emoji,
+  icon,
   title,
   body,
 }: {
-  emoji: string;
+  icon: ImageSourcePropType;
   title: string;
   body: string;
 }) {
@@ -41,9 +42,7 @@ function PermissionInfoRow({
           { backgroundColor: accentMix(colors.textSecondary, 10) },
         ]}
       >
-        <HitherText typeRole="emoji" style={styles.emoji}>
-          {emoji}
-        </HitherText>
+        <Image source={icon} style={styles.icon} resizeMode="contain" accessibilityIgnoresInvertColors />
       </View>
       <View style={styles.textCol}>
         <HitherText typeRole="body" style={[styles.rowTitle, { color: colors.textPrimary }]}>
@@ -97,12 +96,12 @@ export default function PermissionsStep({ onAnswer, onSkip, onBack }: StepProps)
     >
       <View style={styles.list}>
         <PermissionInfoRow
-          emoji="🔔"
+          icon={OnboardingIcons.bell}
           title={t('onboarding.permissions.notifications.title')}
           body={t('onboarding.permissions.notifications.body')}
         />
         <PermissionInfoRow
-          emoji="📍"
+          icon={OnboardingIcons.pin}
           title={t('onboarding.permissions.location.title')}
           body={t('onboarding.permissions.location.body')}
         />
@@ -131,7 +130,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  emoji: { fontSize: 24 },
+  icon: { width: 30, height: 30 },
   textCol: { flex: 1, minWidth: 0 },
   rowTitle: { fontSize: 16.5, fontWeight: '700' },
   rowBody: { fontSize: 12.5, marginTop: 2, lineHeight: 18 },

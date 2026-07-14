@@ -30,8 +30,6 @@ export type MascotId = 'collie' | 'retriever' | 'koala' | 'cat';
 
 export interface Mascot {
   id: MascotId;
-  /** Shown large as the personality result (temporary emoji instead of art). */
-  emoji: string;
   nameKey: string;
   descriptionKey: string;
   bestLeaderKey: string;
@@ -40,28 +38,24 @@ export interface Mascot {
 export const MASCOTS: Record<MascotId, Mascot> = {
   collie: {
     id: 'collie',
-    emoji: '🐕',
     nameKey: 'onboarding.mascot.collie.name',
     descriptionKey: 'onboarding.mascot.collie.description',
     bestLeaderKey: 'onboarding.mascot.collie.bestLeader',
   },
   retriever: {
     id: 'retriever',
-    emoji: '🦮',
     nameKey: 'onboarding.mascot.retriever.name',
     descriptionKey: 'onboarding.mascot.retriever.description',
     bestLeaderKey: 'onboarding.mascot.retriever.bestLeader',
   },
   koala: {
     id: 'koala',
-    emoji: '🐨',
     nameKey: 'onboarding.mascot.koala.name',
     descriptionKey: 'onboarding.mascot.koala.description',
     bestLeaderKey: 'onboarding.mascot.koala.bestLeader',
   },
   cat: {
     id: 'cat',
-    emoji: '🐱',
     nameKey: 'onboarding.mascot.cat.name',
     descriptionKey: 'onboarding.mascot.cat.description',
     bestLeaderKey: 'onboarding.mascot.cat.bestLeader',

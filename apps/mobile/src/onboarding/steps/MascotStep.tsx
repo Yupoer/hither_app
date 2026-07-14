@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
 import { HitherText } from '../../components/HitherText';
 import Animated, {
   useAnimatedStyle,
@@ -10,6 +10,7 @@ import { useTheme } from '../../state/PreferencesContext';
 import { accentMix } from '../../glass';
 import { useTranslation } from '../../i18n';
 import { MASCOTS, resolveMascot } from '../content';
+import { OnboardingIcons } from '../icons';
 import type { StepProps } from '../types';
 import StepShell from './StepShell';
 import PrimaryButton from './PrimaryButton';
@@ -57,10 +58,12 @@ export default function MascotStep({ answers, onAnswer, onSkip, onBack }: StepPr
             },
           ]}
         >
-          <HitherText typeRole="emoji" style={styles.emoji}>{mascot.emoji}</HitherText>
-          <View style={[styles.slotHint, { backgroundColor: accentMix(colors.accent, 18) }]}>
-            <HitherText typeRole="caption" style={[styles.slotHintText, { color: colors.accent }]}>插畫待補 · art slot</HitherText>
-          </View>
+          <Image
+            source={OnboardingIcons.mascot[mascotId]}
+            style={styles.art}
+            resizeMode="contain"
+            accessibilityIgnoresInvertColors
+          />
         </View>
         <HitherText typeRole="body" style={[styles.description, { color: colors.textPrimary }]}>
           {t(mascot.descriptionKey as never)}
@@ -80,20 +83,12 @@ const styles = StyleSheet.create({
     height: 180,
     borderRadius: 30,
     borderWidth: 2,
-    borderStyle: 'dashed',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 20,
+    overflow: 'hidden',
   },
-  emoji: { fontSize: 92, textAlign: 'center' },
-  slotHint: {
-    position: 'absolute',
-    bottom: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 10,
-  },
-  slotHintText: { fontSize: 10.5, fontWeight: '700', letterSpacing: 0.4 },
+  art: { width: 140, height: 140 },
   description: { fontSize: 15, fontWeight: '600', marginBottom: 6, textAlign: 'center' },
   bestLeader: { fontSize: 14, fontWeight: '700', textAlign: 'center' },
 });

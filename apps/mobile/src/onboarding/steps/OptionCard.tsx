@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Image, Pressable, StyleSheet, View, type ImageSourcePropType } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../state/PreferencesContext';
 import { accentMix } from '../../glass';
@@ -7,7 +7,7 @@ import { HitherText } from '../../components/HitherText';
 import { selectionTick } from '../../utils/haptics';
 
 /**
- * Shared selectable card used by role/purpose/quiz/browser steps: an emoji
+ * Shared selectable card used by role/purpose/quiz/browser steps: a clay icon
  * tile, the label (+ optional subtitle) and a trailing check circle that fills
  * with the accent when selected. Selecting no longer advances on its own — a
  * step's Continue button carries the flow (goal-gradient pattern).
@@ -15,16 +15,16 @@ import { selectionTick } from '../../utils/haptics';
 export default function OptionCard({
   title,
   subtitle,
-  emoji,
+  icon,
   tileColor,
   selected,
   onPress,
 }: {
   title: string;
   subtitle?: string;
-  /** Optional leading emoji (temporary stand-in for step artwork). */
-  emoji?: string;
-  /** Fixed colour block behind the emoji (e.g. per-category interest colours). */
+  /** Leading claymorphic icon (onboarding art). */
+  icon?: ImageSourcePropType;
+  /** Fixed colour block behind the icon (e.g. per-category interest colours). */
   tileColor?: string;
   selected?: boolean;
   onPress: () => void;
@@ -48,7 +48,7 @@ export default function OptionCard({
         pressed && { opacity: 0.85 },
       ]}
     >
-      {emoji ? (
+      {icon ? (
         <View
           style={[
             styles.tile,
@@ -59,7 +59,7 @@ export default function OptionCard({
             },
           ]}
         >
-          <HitherText typeRole="emoji" style={styles.emoji}>{emoji}</HitherText>
+          <Image source={icon} style={styles.icon} resizeMode="contain" accessibilityIgnoresInvertColors />
         </View>
       ) : null}
       <View style={styles.textCol}>
@@ -120,7 +120,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  emoji: { fontSize: 24 },
+  icon: { width: 30, height: 30 },
   textCol: { flex: 1, minWidth: 0 },
   title: { fontSize: 16.5, fontWeight: '700' },
   subtitle: { fontSize: 12.5, marginTop: 2 },

@@ -1,28 +1,29 @@
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Image, Pressable, StyleSheet, View, type ImageSourcePropType } from 'react-native';
 import { HitherText } from '../../components/HitherText';
 import { useTheme } from '../../state/PreferencesContext';
 import { accentMix } from '../../glass';
 import { useTranslation, type TranslationKey } from '../../i18n';
 import type { QuizAnswer, StepProps, StepId } from '../types';
+import { OnboardingIcons } from '../icons';
 import StepShell from './StepShell';
 import PrimaryButton from './PrimaryButton';
 import { selectionTick } from '../../utils/haptics';
 
 /**
  * One of the two side-by-side answers on a scenario step. Horizontal A/B pair
- * (each half-width) with a corner letter tag, a big emoji and the label; the
+ * (each half-width) with a corner letter tag, a clay icon and the label; the
  * selected card gains the accent border + a soft glow.
  */
 function ScenarioCard({
   tag,
-  emoji,
+  icon,
   label,
   selected,
   onPress,
 }: {
   tag: 'A' | 'B';
-  emoji: string;
+  icon: ImageSourcePropType;
   label: string;
   selected: boolean;
   onPress: () => void;
@@ -49,7 +50,7 @@ function ScenarioCard({
       <HitherText typeRole="caption" style={[styles.tag, { color: selected ? colors.accent : colors.textSecondary }]}>
         {tag}
       </HitherText>
-      <HitherText typeRole="emoji" style={styles.emoji}>{emoji}</HitherText>
+      <Image source={icon} style={styles.icon} resizeMode="contain" accessibilityIgnoresInvertColors />
       <HitherText typeRole="body" style={[styles.label, { color: colors.textPrimary }]}>{label}</HitherText>
     </Pressable>
   );
@@ -66,8 +67,8 @@ function makeQuizStep(
   titleKey: TranslationKey,
   aKey: TranslationKey,
   bKey: TranslationKey,
-  emojiA: string,
-  emojiB: string,
+  iconA: ImageSourcePropType,
+  iconB: ImageSourcePropType,
 ) {
   return function QuizStepImpl({ answers, onAnswer, onSkip, onBack }: StepProps) {
     const { t } = useTranslation();
@@ -90,8 +91,8 @@ function makeQuizStep(
         }
       >
         <View style={styles.row}>
-          <ScenarioCard tag="A" emoji={emojiA} label={t(aKey)} selected={sel === 'A'} onPress={() => setSel('A')} />
-          <ScenarioCard tag="B" emoji={emojiB} label={t(bKey)} selected={sel === 'B'} onPress={() => setSel('B')} />
+          <ScenarioCard tag="A" icon={iconA} label={t(aKey)} selected={sel === 'A'} onPress={() => setSel('A')} />
+          <ScenarioCard tag="B" icon={iconB} label={t(bKey)} selected={sel === 'B'} onPress={() => setSel('B')} />
         </View>
       </StepShell>
     );
@@ -117,10 +118,34 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   tag: { position: 'absolute', top: 10, left: 12, fontSize: 12, fontWeight: '800' },
-  emoji: { fontSize: 42, lineHeight: 48 },
+  icon: { width: 52, height: 52 },
   label: { fontSize: 16.5, fontWeight: '700', marginTop: 14, textAlign: 'center' },
 });
 
-export const F1Step = makeQuizStep('F1', 1, 'onboarding.f1.title', 'onboarding.f1.a', 'onboarding.f1.b', '🍜', '🚶');
-export const F2Step = makeQuizStep('F2', 2, 'onboarding.f2.title', 'onboarding.f2.a', 'onboarding.f2.b', '🗺️', '🍃');
-export const F3Step = makeQuizStep('F3', 3, 'onboarding.f3.title', 'onboarding.f3.a', 'onboarding.f3.b', '⏰', '🐌');
+export const F1Step = makeQuizStep(
+  'F1',
+  1,
+  'onboarding.f1.title',
+  'onboarding.f1.a',
+  'onboarding.f1.b',
+  OnboardingIcons.ramen,
+  OnboardingIcons.walk,
+);
+export const F2Step = makeQuizStep(
+  'F2',
+  2,
+  'onboarding.f2.title',
+  'onboarding.f2.a',
+  'onboarding.f2.b',
+  OnboardingIcons.map,
+  OnboardingIcons.leaf,
+);
+export const F3Step = makeQuizStep(
+  'F3',
+  3,
+  'onboarding.f3.title',
+  'onboarding.f3.a',
+  'onboarding.f3.b',
+  OnboardingIcons.clock,
+  OnboardingIcons.snail,
+);
