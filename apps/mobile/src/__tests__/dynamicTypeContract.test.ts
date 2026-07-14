@@ -38,6 +38,11 @@ describe('Dynamic Type contract', () => {
     expect(quickCommands).toMatch(/bucket === 'xl'/);
   });
 
+  it('marks invite-row stacked layout for large Dynamic Type', () => {
+    expect(mapScreen).toContain('a11y-layout:inviteRow');
+    expect(mapScreen).toContain('inviteRowStacked');
+  });
+
   it('maps fontScale thresholds to regular / large / xl', () => {
     expect(fontScaleBucket(1)).toBe('regular');
     expect(fontScaleBucket(1.14)).toBe('regular');

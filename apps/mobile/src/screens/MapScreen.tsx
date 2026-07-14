@@ -1390,18 +1390,24 @@ export default function MapScreen({ route, navigation }: Props) {
           <View style={styles.list}>
             {pendingInvites.map((inv, i) => {
               const isRequest = inv.kind === 'request';
+              // a11y-layout:inviteRow — large+ stacks prompt full-width then actions.
+              const inviteStacked = fontBucket === 'large' || fontBucket === 'xl';
               return (
                 <View
                   key={`inv-${inv.id}-${i}`}
-                  style={[styles.flockRow, i === pendingInvites.length - 1 && styles.flockRowLast]}
+                  style={[
+                    styles.flockRow,
+                    i === pendingInvites.length - 1 && styles.flockRowLast,
+                    inviteStacked && styles.inviteRowStacked,
+                  ]}
                 >
-                  <Text style={styles.flockName}>
+                  <Text style={[styles.flockName, inviteStacked && styles.invitePromptFull]}>
                     {t(isRequest ? 'subgroup.requestPrompt' : 'subgroup.invitePrompt', {
                       name: inv.inviterName,
                       team: inv.subgroupName,
                     })}
                   </Text>
-                  <View style={styles.splitActions}>
+                  <View style={[styles.splitActions, inviteStacked && styles.inviteActionsRow]}>
                     <Pressable
                       style={[styles.chip, { backgroundColor: accentMix(accent, 24), borderColor: accentMix(accent, 50) }]}
                       onPress={() => void handleAcceptInvite(inv.id)}
@@ -1607,7 +1613,10 @@ export default function MapScreen({ route, navigation }: Props) {
                   ? (viewingScope === 'main' ? (group?.name ?? 'Hither') : '小隊')
                   : (group?.name ?? 'Hither')}
               </Text>
-              <Text style={styles.pillCount}>· {viewingScope === 'main' || !myScopeId ? members.length : flock.filter(f => f.subgroupId === myScopeId).length}</Text>
+              {/* large+: drop secondary count so the name can ellipsis cleanly */}
+              {fontBucket === 'regular' ? (
+                <Text style={styles.pillCount}>· {viewingScope === 'main' || !myScopeId ? members.length : flock.filter(f => f.subgroupId === myScopeId).length}</Text>
+              ) : null}
             </liquidGlass.GlassView>
           </Pressable>
         </View>
@@ -2494,9 +2503,10 @@ const makeStyles = (accent: string) =>
     },
     groupPill: {
       flexShrink: 1,
-      height: 44,
+      minHeight: 44,
       paddingLeft: 8,
       paddingRight: 14,
+      paddingVertical: 6,
       borderRadius: 22,
       overflow: 'hidden',
       flexDirection: 'row',
@@ -2759,9 +2769,10 @@ const makeStyles = (accent: string) =>
     profileRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
     profileInput: {
       flex: 1,
-      height: 48,
+      minHeight: 48,
       borderRadius: 14,
       paddingHorizontal: 14,
+      paddingVertical: 12,
       color: '#fff',
       fontSize: 16,
       backgroundColor: glass.fill,
@@ -2984,6 +2995,10 @@ const makeStyles = (accent: string) =>
     },
     flockRowLast: { borderBottomWidth: 0 },
     flockRowMain: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    // a11y-layout:inviteRow
+    inviteRowStacked: { flexDirection: 'column', alignItems: 'stretch', gap: 10 },
+    invitePromptFull: { flex: 0, width: '100%' },
+    inviteActionsRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     flockAvatar: {
       width: 40,
       height: 40,
