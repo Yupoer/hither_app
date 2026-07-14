@@ -15,7 +15,10 @@ import {
   updateProfile as updateProfileApi,
 } from '../api/client';
 import {
+  accountPreferencesFromSlots,
+  CUSTOM_QUICK_COMMAND_SLOTS,
   normalizeCustomQuickCommand,
+  normalizeCustomQuickCommands,
   type AccountPreferences,
   type CustomQuickCommand,
   type Group,
@@ -116,8 +119,11 @@ interface SessionContextValue {
     avatarColor?: string;
     preferences?: AccountPreferences;
   }) => Promise<void>;
+  /** Account custom shortcuts (length {@link CUSTOM_QUICK_COMMAND_SLOTS}). */
+  customQuickCommands: Array<CustomQuickCommand | null>;
+  /** @deprecated Prefer `customQuickCommands[0]`. */
   customQuickCommand: CustomQuickCommand | null;
-  setCustomQuickCommand: (command: CustomQuickCommand) => Promise<void>;
+  setCustomQuickCommand: (slot: number, command: CustomQuickCommand) => Promise<void>;
   /** Record the group the user just created (as leader) or joined (as follower). */
   setMembership: (membership: Membership) => void;
   leaveGroup: () => void;
@@ -167,10 +173,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
             pro_plan?: string | null;
             pro_purchased_at?: string | null;
             pro_expires_at?: string | null;
-            preferences?: { quickCommand?: unknown } | null;
+            preferences?: unknown;
           }
         | null;
-      const quickCommand = normalizeCustomQuickCommand(row?.preferences?.quickCommand);
+      const slots = normalizeCustomQuickCommands(row?.preferences);
       if (active) {
         setUser({
           id: authUser.id,
@@ -183,7 +189,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           proPlan: row?.pro_plan ?? undefined,
           proPurchasedAt: row?.pro_purchased_at ?? undefined,
           proExpiresAt: row?.pro_expires_at ?? undefined,
-          preferences: quickCommand ? { quickCommand } : undefined,
+          preferences: accountPreferencesFromSlots(slots),
         });
         setIsAnonymous(!!authUser.is_anonymous);
         setIsPro(!!row?.pro);
@@ -253,21 +259,26 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setMembershipState(null);
   }, []);
 
-  const customQuickCommand = user?.preferences?.quickCommand ?? null;
+  const customQuickCommands = useMemo(
+    () => normalizeCustomQuickCommands(user?.preferences),
+    [user?.preferences],
+  );
+  const customQuickCommand = customQuickCommands[0] ?? null;
   const setCustomQuickCommand = useCallback(
-    async (command: CustomQuickCommand) => {
+    async (slot: number, command: CustomQuickCommand) => {
       const normalized = normalizeCustomQuickCommand(command);
       if (!normalized) throw new Error('自訂快捷指令需要名稱與通知內容');
-      // Always merge onto the latest known preferences object (not a stale
-      // partial) so concurrent profile edits don't wipe the custom slot.
+      const safeSlot = Math.max(0, Math.min(CUSTOM_QUICK_COMMAND_SLOTS - 1, slot));
+      const nextSlots = [...customQuickCommands];
+      nextSlots[safeSlot] = normalized;
       await updateProfile({
         preferences: {
           ...(user?.preferences ?? {}),
-          quickCommand: normalized,
+          ...accountPreferencesFromSlots(nextSlots),
         },
       });
     },
-    [updateProfile, user?.preferences],
+    [updateProfile, user?.preferences, customQuickCommands],
   );
 
   const value = useMemo<SessionContextValue>(
@@ -288,6 +299,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       upgradeToEmailAccount,
       updateNickname,
       updateProfile,
+      customQuickCommands,
       customQuickCommand,
       setCustomQuickCommand,
       setMembership: (next) => setMembershipState(next),
@@ -315,10 +327,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
               proPlan: row?.pro_plan ?? prev.proPlan,
               proPurchasedAt: row?.pro_purchased_at ?? prev.proPurchasedAt,
               proExpiresAt: row?.pro_expires_at ?? prev.proExpiresAt,
-              preferences: (() => {
-                const quickCommand = normalizeCustomQuickCommand(row?.preferences?.quickCommand);
-                return quickCommand ? { quickCommand } : undefined;
-              })(),
+              preferences: accountPreferencesFromSlots(
+                normalizeCustomQuickCommands(row?.preferences),
+              ),
             };
           });
           setIsPro(!!row?.pro);
@@ -342,6 +353,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       upgradeToEmailAccount,
       updateNickname,
       updateProfile,
+      customQuickCommands,
       customQuickCommand,
       setCustomQuickCommand,
       leaveGroupWithJourneyCleanup,

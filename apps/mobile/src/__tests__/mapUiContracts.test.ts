@@ -102,7 +102,7 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain('onConfigureCustom={openCustomQuickCommand}');
     expect(mapScreen).toContain('onOpenCustomQuickCommand={openCustomQuickCommand}');
     expect(settingsOverlay).toContain('onOpenCustomQuickCommand');
-    expect(settingsOverlay).toContain('customQuickCommandConfigured');
+    expect(settingsOverlay).toContain('customQuickCommandConfiguredCount');
   });
 
   it('returns the report sheet to settings after cancel or submit', () => {
@@ -112,10 +112,17 @@ describe('map UI placement contracts', () => {
   });
 
   it('sends the custom command message to the group', () => {
-    expect(quickCommandsCard).toContain('sendCommand(groupId, type, message)');
+    expect(quickCommandsCard).toContain("sendCommand(groupId, 'custom', message)");
   });
 
-  it('lets users re-edit a configured custom command via long-press', () => {
-    expect(quickCommandsCard).toContain('onLongPress={isCustom ? onConfigureCustom : undefined}');
+  it('lets users re-edit a configured custom command via long-press with haptics', () => {
+    expect(quickCommandsCard).toContain('onLongPress={() => openEditor(item.slot)}');
+    expect(quickCommandsCard).toContain('mediumTap()');
+    expect(quickCommandsCard).toContain('function openEditor');
+  });
+
+  it('notifies everyone except the sender (not leader/member only copy)', () => {
+    expect(quickCommandsCard).toContain("t('settings.quickHintAll')");
+    expect(mapScreen).toContain("t('map.cmdTitle')");
   });
 });

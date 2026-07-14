@@ -5,25 +5,32 @@ import { useTranslation } from '../i18n';
 import { useSession } from '../state/SessionContext';
 import { useTheme } from '../state/PreferencesContext';
 import { glass } from '../glass';
+import { CUSTOM_QUICK_COMMAND_SLOTS } from '../types';
 
 export default function CustomQuickCommandSheet({
   visible,
+  slot,
   onClose,
 }: {
   visible: boolean;
+  /** Which of the account custom slots to edit (0-based). */
+  slot: number;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
   const { colors } = useTheme();
-  const { customQuickCommand, setCustomQuickCommand } = useSession();
+  const { customQuickCommands, setCustomQuickCommand } = useSession();
   const [label, setLabel] = useState('');
   const [message, setMessage] = useState('');
 
+  const safeSlot = Math.max(0, Math.min(CUSTOM_QUICK_COMMAND_SLOTS - 1, slot));
+
   useEffect(() => {
     if (!visible) return;
-    setLabel(customQuickCommand?.label ?? '');
-    setMessage(customQuickCommand?.message ?? '');
-  }, [visible, customQuickCommand]);
+    const existing = customQuickCommands[safeSlot];
+    setLabel(existing?.label ?? '');
+    setMessage(existing?.message ?? '');
+  }, [visible, customQuickCommands, safeSlot]);
 
   async function save() {
     const command = { label: label.trim(), message: message.trim() };
@@ -32,7 +39,7 @@ export default function CustomQuickCommandSheet({
       return;
     }
     try {
-      await setCustomQuickCommand(command);
+      await setCustomQuickCommand(safeSlot, command);
       onClose();
     } catch (e) {
       // BUG-23: surface the real failure reason (RLS / missing column / network).
@@ -44,16 +51,21 @@ export default function CustomQuickCommandSheet({
     }
   }
 
+  const title =
+    CUSTOM_QUICK_COMMAND_SLOTS > 1
+      ? t('settings.customQuickCommandSlot', { n: String(safeSlot + 1) })
+      : t('settings.customQuickCommand');
+
   return (
     <OverlaySheet
       visible={visible}
       onClose={onClose}
-      title={t('settings.customQuickCommand')}
+      title={title}
       accent={colors.accent}
       doneLabel={t('common.cancel')}
     >
       <ScrollView contentContainerStyle={styles.body}>
-        <Text style={styles.title}>{t('settings.customQuickCommand')}</Text>
+        <Text style={styles.title}>{title}</Text>
         <TextInput
           value={label}
           onChangeText={setLabel}

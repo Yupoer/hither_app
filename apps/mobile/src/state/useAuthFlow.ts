@@ -9,7 +9,12 @@ import {
   updateNickname as updateNicknameApi,
   updateProfile as updateProfileApi,
 } from '../api/client';
-import { normalizeCustomQuickCommand, type AccountPreferences, type User } from '../types';
+import {
+  accountPreferencesFromSlots,
+  normalizeCustomQuickCommands,
+  type AccountPreferences,
+  type User,
+} from '../types';
 import type { Membership } from './SessionContext';
 import { avatarForUser } from '../constants/avatars';
 
@@ -92,7 +97,7 @@ export function useAuthFlow({
       const existingRow = existing as {
         nickname?: string;
         avatar?: string | null;
-        preferences?: { quickCommand?: unknown } | null;
+        preferences?: unknown;
       } | null;
       const name =
         nickname?.trim() ||
@@ -112,10 +117,9 @@ export function useAuthFlow({
         name,
         email: authUser.email ?? '',
         avatar: existingRow?.avatar ?? avatarForUser(authUser.id),
-        preferences: (() => {
-          const quickCommand = normalizeCustomQuickCommand(existingRow?.preferences?.quickCommand);
-          return quickCommand ? { quickCommand } : undefined;
-        })(),
+        preferences: accountPreferencesFromSlots(
+          normalizeCustomQuickCommands(existingRow?.preferences),
+        ),
       };
       setUser(nextUser);
       setIsAnonymous(false);
@@ -160,7 +164,7 @@ export function useAuthFlow({
       const existingRow = existing as {
         nickname?: string;
         avatar?: string | null;
-        preferences?: { quickCommand?: unknown } | null;
+        preferences?: unknown;
       } | null;
       const appleName = [
         credential.fullName?.givenName,
@@ -188,13 +192,14 @@ export function useAuthFlow({
         .upsert({ id: authUser.id, nickname: name }, { onConflict: 'id' });
       if (profileError) throw new Error(profileError.message);
 
-      const quickCommand = normalizeCustomQuickCommand(existingRow?.preferences?.quickCommand);
       const nextUser: User = {
         id: authUser.id,
         name,
         email: authUser.email ?? credential.email ?? '',
         avatar: existingRow?.avatar ?? avatarForUser(authUser.id),
-        preferences: quickCommand ? { quickCommand } : undefined,
+        preferences: accountPreferencesFromSlots(
+          normalizeCustomQuickCommands(existingRow?.preferences),
+        ),
       };
       setUser(nextUser);
       setIsAnonymous(false);
@@ -317,17 +322,16 @@ export function useAuthFlow({
       const row = profile as {
         nickname?: string;
         avatar?: string | null;
-        preferences?: { quickCommand?: unknown } | null;
+        preferences?: unknown;
       } | null;
       const nextUser: User = {
         id: userId,
         name: row?.nickname ?? '',
         email: data.user.email ?? '',
         avatar: row?.avatar ?? undefined,
-        preferences: (() => {
-          const quickCommand = normalizeCustomQuickCommand(row?.preferences?.quickCommand);
-          return quickCommand ? { quickCommand } : undefined;
-        })(),
+        preferences: accountPreferencesFromSlots(
+          normalizeCustomQuickCommands(row?.preferences),
+        ),
       };
       setUser(nextUser);
       setIsAnonymous(false);

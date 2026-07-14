@@ -300,6 +300,8 @@ export default function MapScreen({ route, navigation }: Props) {
   const [overlay, setOverlay] = useState<
     null | 'route' | 'settings' | 'profile' | 'feedback' | 'history' | 'account' | 'custom'
   >(null);
+  /** Which custom quick-command slot the editor is targeting. */
+  const [customSlot, setCustomSlot] = useState(0);
   // Screenshot captured the instant the feedback entry is tapped (before the
   // form opens over the screen), handed to the sheet as evidence.
   const [feedbackShot, setFeedbackShot] = useState<string | null>(null);
@@ -1504,7 +1506,10 @@ export default function MapScreen({ route, navigation }: Props) {
   const closeOverlay = useCallback(() => setOverlay(null), []);
   const openHistoryOverlay = useCallback(() => setOverlay('history'), []);
   const openAccountOverlay = useCallback(() => setOverlay('account'), []);
-  const openCustomQuickCommand = useCallback(() => setOverlay('custom'), []);
+  const openCustomQuickCommand = useCallback((slot = 0) => {
+    setCustomSlot(typeof slot === 'number' ? slot : 0);
+    setOverlay('custom');
+  }, []);
   const openPaywallCb = useCallback(() => openPaywall(), [openPaywall]);
 
   const sheetChildren = useMemo(() => (
@@ -1695,9 +1700,7 @@ export default function MapScreen({ route, navigation }: Props) {
         )}
 
         {/* Quick commands. */}
-        <Text style={styles.sheetHeading}>
-          {isLeader ? t('map.cmdLeaderTitle') : t('map.cmdFollowerTitle')}
-        </Text>
+        <Text style={styles.sheetHeading}>{t('map.cmdTitle')}</Text>
         {groupId ? (
           <QuickCommandsCard
             groupId={groupId}
@@ -2461,6 +2464,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
       <CustomQuickCommandSheet
         visible={overlay === 'custom'}
+        slot={customSlot}
         onClose={() => setOverlay(null)}
       />
 

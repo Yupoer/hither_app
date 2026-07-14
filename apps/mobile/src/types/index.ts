@@ -16,7 +16,16 @@ export interface CustomQuickCommand {
   message: string;
 }
 
+/** How many account-scoped custom quick-command slots members get. */
+export const CUSTOM_QUICK_COMMAND_SLOTS = 3;
+
 export interface AccountPreferences {
+  /**
+   * Up to {@link CUSTOM_QUICK_COMMAND_SLOTS} custom shortcuts.
+   * Index-aligned; empty slots are `null`.
+   */
+  quickCommands?: Array<CustomQuickCommand | null>;
+  /** @deprecated Prefer `quickCommands[0]`; still read for older rows. */
   quickCommand?: CustomQuickCommand;
 }
 
@@ -27,6 +36,41 @@ export function normalizeCustomQuickCommand(value: unknown): CustomQuickCommand 
   const label = candidate.label.trim();
   const message = candidate.message.trim();
   return label && message ? { label, message } : null;
+}
+
+/** Normalize profile preferences into a fixed-length custom-slot array. */
+export function normalizeCustomQuickCommands(prefs: unknown): Array<CustomQuickCommand | null> {
+  const slots: Array<CustomQuickCommand | null> = Array.from(
+    { length: CUSTOM_QUICK_COMMAND_SLOTS },
+    () => null,
+  );
+  if (!prefs || typeof prefs !== 'object') return slots;
+  const row = prefs as {
+    quickCommands?: unknown;
+    quickCommand?: unknown;
+  };
+  if (Array.isArray(row.quickCommands)) {
+    for (let i = 0; i < CUSTOM_QUICK_COMMAND_SLOTS; i++) {
+      slots[i] = normalizeCustomQuickCommand(row.quickCommands[i]);
+    }
+    return slots;
+  }
+  // Legacy single-slot shape.
+  slots[0] = normalizeCustomQuickCommand(row.quickCommand);
+  return slots;
+}
+
+/** Build AccountPreferences for profile writes / session state. */
+export function accountPreferencesFromSlots(
+  slots: Array<CustomQuickCommand | null>,
+): AccountPreferences {
+  const quickCommands = Array.from({ length: CUSTOM_QUICK_COMMAND_SLOTS }, (_, i) => slots[i] ?? null);
+  const first = quickCommands.find((s) => s != null) ?? null;
+  return {
+    quickCommands,
+    // Keep legacy key so older clients / partial readers still see slot 0.
+    ...(first ? { quickCommand: first } : {}),
+  };
 }
 
 /**
@@ -228,6 +272,13 @@ export const FOLLOWER_COMMANDS = [
   'found_something',
 ] as const;
 
+/** Fixed follower shortcuts (custom slots are separate). */
+export const FOLLOWER_FIXED_COMMANDS = [
+  'need_restroom',
+  'need_break',
+  'need_help',
+] as const;
+
 export type CommandType =
   | (typeof LEADER_COMMANDS)[number]
   | (typeof FOLLOWER_COMMANDS)[number]
@@ -238,9 +289,35 @@ export function isLeaderCommand(type: CommandType): boolean {
   return (LEADER_COMMANDS as readonly string[]).includes(type);
 }
 
-/** Replace the final role-specific shortcut with the account custom slot. */
+/**
+ * Leader grid: keep fixed directives, replace the last one with a single
+ * custom slot (index 0). Member grid: fixed requests + three custom slots.
+ */
 export function commandTypesWithCustomSlot(commands: readonly string[]): string[] {
   return [...commands.slice(0, -1), 'custom'];
+}
+
+export type QuickCommandGridItem =
+  | { kind: 'fixed'; type: Exclude<CommandType, 'custom'> }
+  | { kind: 'custom'; slot: number };
+
+/** Role-scoped quick-command grid (fixed buttons + custom slots). */
+export function quickCommandGridItems(isLeader: boolean): QuickCommandGridItem[] {
+  if (isLeader) {
+    return [
+      ...LEADER_COMMANDS.slice(0, -1).map(
+        (type) => ({ kind: 'fixed' as const, type }),
+      ),
+      { kind: 'custom', slot: 0 },
+    ];
+  }
+  return [
+    ...FOLLOWER_FIXED_COMMANDS.map((type) => ({ kind: 'fixed' as const, type })),
+    ...Array.from({ length: CUSTOM_QUICK_COMMAND_SLOTS }, (_, slot) => ({
+      kind: 'custom' as const,
+      slot,
+    })),
+  ];
 }
 
 /**

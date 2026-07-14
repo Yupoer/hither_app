@@ -40,7 +40,14 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
   styles,
 }: SettingsOverlayProps) {
   const { t } = useTranslation();
-  const { isPro, customQuickCommand } = useSession();
+  const { isPro, customQuickCommands } = useSession();
+  const configuredCustomCount = customQuickCommands.filter(Boolean).length;
+  const customSummary = configuredCustomCount
+    ? t('settings.customQuickCommandConfiguredCount', {
+        count: String(configuredCustomCount),
+        total: String(customQuickCommands.length),
+      })
+    : t('settings.customQuickCommandEmpty');
   const {
     language,
     themeName,
@@ -100,13 +107,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             >
               <View style={styles.settingsTopCopy}>
                 <Text style={styles.settingsTopTitle}>{t('settings.customQuickCommand')}</Text>
-                <Text style={styles.settingsTopDescription}>
-                  {customQuickCommand
-                    ? t('settings.customQuickCommandConfigured', {
-                        label: customQuickCommand.label,
-                      })
-                    : t('settings.customQuickCommandEmpty')}
-                </Text>
+                <Text style={styles.settingsTopDescription}>{customSummary}</Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color={glass.textTertiary} />
             </TouchableOpacity>

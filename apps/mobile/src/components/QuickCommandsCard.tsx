@@ -6,9 +6,8 @@ import { notifications } from '../native';
 import { mediumTap } from '../utils/haptics';
 import { useTranslation } from '../i18n';
 import {
-  commandTypesWithCustomSlot,
-  FOLLOWER_COMMANDS,
-  LEADER_COMMANDS,
+  CUSTOM_QUICK_COMMAND_SLOTS,
+  quickCommandGridItems,
   type CommandType,
 } from '../types';
 import { radius, spacing, type Palette } from '../theme';
@@ -38,14 +37,12 @@ const COMMAND_ICON: Record<CommandType, keyof typeof Ionicons.glyphMap> = {
 };
 
 /**
- * Quick-notify grid in Settings. Tapping a button inserts a `command` row,
- * whose AFTER-INSERT trigger fans an APNs push to everyone else in the group
- * (minus the sender) — see migration 20260619000000 + the send-push Edge
- * Function. The button set is role-scoped: a leader sees directives
- * (集合/找集合點/…), a follower sees requests (廁所/休息/…).
+ * Quick-notify grid. Tapping a button inserts a `command` row whose trigger
+ * fans an APNs push to everyone else in the group (minus the sender) — see
+ * migration 20260619000000 + the send-push Edge Function.
  *
- * Sending is best-effort and fire-and-forget from the UI's view: a brief
- * disabled state during the insert, then a small confirmation / error alert.
+ * Leader: fixed directives + one custom slot.
+ * Follower: fixed requests + {@link CUSTOM_QUICK_COMMAND_SLOTS} custom slots.
  */
 export default function QuickCommandsCard({
   groupId,
@@ -56,58 +53,82 @@ export default function QuickCommandsCard({
   groupId: string;
   isLeader: boolean;
   colors: Palette;
-  onConfigureCustom: () => void;
+  onConfigureCustom: (slot: number) => void;
 }) {
   const { t } = useTranslation();
-  const { customQuickCommand } = useSession();
+  const { customQuickCommands } = useSession();
   // a11y-layout:quickCommands — column count + sizes track live font scale.
   const fontLayout = useFontLayout();
   const styles = useMemo(
     () => makeStyles(colors, fontLayout.scale, fontLayout.bucket),
     [colors, fontLayout.scale, fontLayout.bucket],
   );
-  const [sending, setSending] = useState<CommandType | null>(null);
+  const [sendingKey, setSendingKey] = useState<string | null>(null);
 
-  // Role-scoped set; last slot is always the account custom command.
-  // Leader keeps 9 cells (8 fixed + custom), follower keeps 4 (3 fixed + custom).
-  const roleCommands = isLeader ? LEADER_COMMANDS : FOLLOWER_COMMANDS;
-  const commands = commandTypesWithCustomSlot(roleCommands) as CommandType[];
+  const items = useMemo(() => quickCommandGridItems(isLeader), [isLeader]);
 
-  function labelFor(type: CommandType): string {
-    return type === 'custom'
-      ? customQuickCommand?.label ?? t('settings.customQuickCommand')
-      : t(`command.${type}` as const);
+  function labelForFixed(type: Exclude<CommandType, 'custom'>): string {
+    return t(`command.${type}` as const);
   }
 
-  async function send(type: CommandType) {
-    if (sending) return;
-    if (type === 'custom' && !customQuickCommand) {
-      onConfigureCustom();
-      return;
-    }
-    mediumTap(); // confirm the tap landed before the network round-trip
-    setSending(type);
-    const label = labelFor(type);
-    const message = type === 'custom' ? customQuickCommand?.message ?? label : label;
+  function labelForCustom(slot: number): string {
+    const cmd = customQuickCommands[slot];
+    if (cmd?.label) return cmd.label;
+    return CUSTOM_QUICK_COMMAND_SLOTS > 1
+      ? t('settings.customQuickCommandSlot', { n: String(slot + 1) })
+      : t('settings.customQuickCommand');
+  }
+
+  function openEditor(slot: number) {
+    mediumTap();
+    onConfigureCustom(slot);
+  }
+
+  async function sendFixed(type: Exclude<CommandType, 'custom'>) {
+    if (sendingKey) return;
+    mediumTap();
+    setSendingKey(`fixed:${type}`);
+    const label = labelForFixed(type);
     try {
-      // Self-notify: fire a local notification on THIS device immediately, so a
-      // tap is visible right away ("notify myself" simulation) without waiting
-      // on the realtime → APNs round-trip (the sender is otherwise skipped).
       await notifications.requestPermission();
       await notifications.scheduleLocalNotification({
-        title: isLeader
-          ? t('notif.leaderTitle', { label })
-          : t('notif.memberTitle', { label }),
-        body: message,
+        title: t('notif.commandTitle', { label }),
+        body: label,
         data: { type, groupId, selfNotify: true },
       });
-      // Still propagate to the rest of the group (best-effort).
-      await sendCommand(groupId, type, message);
+      await sendCommand(groupId, type, label);
       Alert.alert(t('command.sent'));
     } catch {
       Alert.alert(t('command.sendFailed'));
     } finally {
-      setSending(null);
+      setSendingKey(null);
+    }
+  }
+
+  async function sendCustom(slot: number) {
+    if (sendingKey) return;
+    const cmd = customQuickCommands[slot];
+    if (!cmd) {
+      openEditor(slot);
+      return;
+    }
+    mediumTap();
+    setSendingKey(`custom:${slot}`);
+    const label = cmd.label;
+    const message = cmd.message;
+    try {
+      await notifications.requestPermission();
+      await notifications.scheduleLocalNotification({
+        title: t('notif.commandTitle', { label }),
+        body: message,
+        data: { type: 'custom', groupId, selfNotify: true, slot },
+      });
+      await sendCommand(groupId, 'custom', message);
+      Alert.alert(t('command.sent'));
+    } catch {
+      Alert.alert(t('command.sendFailed'));
+    } finally {
+      setSendingKey(null);
     }
   }
 
@@ -116,36 +137,59 @@ export default function QuickCommandsCard({
   return (
     <View style={styles.card}>
       <HitherText typeRole="footnote" style={styles.hint}>
-        {isLeader ? t('settings.quickHintLeader') : t('settings.quickHintFollower')}
+        {t('settings.quickHintAll')}
       </HitherText>
       <HitherText typeRole="caption" style={styles.customHint}>
         {t('settings.customQuickCommandEditHint')}
       </HitherText>
       <View style={styles.grid}>
-        {commands.map((type) => {
-          const isCustom = type === 'custom';
-          const configured = isCustom && !!customQuickCommand;
+        {items.map((item) => {
+          if (item.kind === 'fixed') {
+            const key = `fixed:${item.type}`;
+            return (
+              <Pressable
+                key={key}
+                style={[styles.btn, sendingKey === key && styles.btnSending]}
+                onPress={() => void sendFixed(item.type)}
+                disabled={!!sendingKey}
+                accessibilityRole="button"
+                accessibilityLabel={labelForFixed(item.type)}
+              >
+                <Ionicons
+                  name={COMMAND_ICON[item.type]}
+                  size={22}
+                  color={colors.textPrimary}
+                />
+                <HitherText
+                  typeRole="footnote"
+                  style={styles.label}
+                  numberOfLines={labelLines}
+                >
+                  {labelForFixed(item.type)}
+                </HitherText>
+              </Pressable>
+            );
+          }
+
+          const key = `custom:${item.slot}`;
+          const configured = !!customQuickCommands[item.slot];
           return (
             <Pressable
-              key={type}
+              key={key}
               style={[
                 styles.btn,
-                sending === type && styles.btnSending,
+                sendingKey === key && styles.btnSending,
                 configured && styles.btnCustomConfigured,
               ]}
-              onPress={() => send(type)}
-              onLongPress={isCustom ? onConfigureCustom : undefined}
+              onPress={() => void sendCustom(item.slot)}
+              onLongPress={() => openEditor(item.slot)}
               delayLongPress={350}
-              disabled={!!sending}
+              disabled={!!sendingKey}
               accessibilityRole="button"
-              accessibilityLabel={
-                isCustom
-                  ? `${labelFor(type)}. ${t('settings.customQuickCommandEditHint')}`
-                  : labelFor(type)
-              }
+              accessibilityLabel={`${labelForCustom(item.slot)}. ${t('settings.customQuickCommandEditHint')}`}
             >
               <Ionicons
-                name={COMMAND_ICON[type]}
+                name={COMMAND_ICON.custom}
                 size={22}
                 color={configured ? colors.accent : colors.textPrimary}
               />
@@ -154,7 +198,7 @@ export default function QuickCommandsCard({
                 style={[styles.label, configured && styles.labelCustom]}
                 numberOfLines={labelLines}
               >
-                {labelFor(type)}
+                {labelForCustom(item.slot)}
               </HitherText>
             </Pressable>
           );
