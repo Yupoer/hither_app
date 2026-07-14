@@ -6,6 +6,7 @@ import React, {
   useState,
 } from 'react';
 import {
+  ActionSheetIOS,
   ActivityIndicator,
   Alert,
   LayoutAnimation,
@@ -84,7 +85,7 @@ import AccountSheet from '../components/AccountSheet';
 import { useGroupState } from '../state/useGroupState';
 import { useStragglerAlerts } from '../state/useStragglerAlerts';
 import { useSubgroupInvites } from '../state/useSubgroupInvites';
-import { useLiveActivity } from '../state/useLiveActivity';
+import { clearLiveActivities, useLiveActivity } from '../state/useLiveActivity';
 import {
   startBackgroundJourney,
   stopBackgroundJourney,
@@ -126,6 +127,7 @@ import {
   setSolo,
   setStragglerConfig,
   sendCommand,
+  leaveGroups,
   updateMyLocation,
   updateGroupTripDetails,
 } from '../api/client';
@@ -262,17 +264,18 @@ export default function MapScreen({ route, navigation }: Props) {
   useEffect(() => {
     if (!myScopeId && viewingScope === 'sub') setViewingScope('main');
   }, [myScopeId, viewingScope]);
-  const activeScopeId = viewingScope === 'sub' ? myScopeId : undefined;
 
-  // BUG-11: main view always shows main-team destinations (subgroupId null),
-  // even when the current user is in a subgroup. Sub view is explicit only.
+  // Subgroup / 暫時離隊: only that subgroup's itinerary (usually empty → hide
+  // main gathering-point cards). Main flock: only main-team destinations.
+  // viewingScope still toggles member-list scope on the group pill; it must
+  // not re-surface main gather cards while the user is away from the main team.
   const rawDestinations: Destination[] = useMemo(() => {
     const all = state?.destinations ?? [];
-    if (viewingScope === 'sub' && myScopeId) {
+    if (myScopeId) {
       return all.filter((d) => d.subgroupId === myScopeId);
     }
     return all.filter((d) => d.subgroupId == null);
-  }, [state?.destinations, viewingScope, myScopeId]);
+  }, [state?.destinations, myScopeId]);
   
   const [optimisticDestinations, setOptimisticDestinations] = useState<Destination[] | null>(null);
   const destinations = optimisticDestinations ?? rawDestinations;
@@ -295,12 +298,27 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [insets.top, windowHeight, sheetHeaderH]);
   const heightSV = useSharedValue(detents[0]);
   const [detent, setDetent] = useState(0);
+  /** Mid/Full sheet body: 成員 · 路線 · 工具. */
+  const [sheetPane, setSheetPane] = useState<'members' | 'route' | 'tools'>('members');
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
   const [pressedCardId, setPressedCardId] = useState<string | null>(null);
   const pendingExpandId = useRef<string | null>(null);
   const [overlay, setOverlay] = useState<
-    null | 'route' | 'settings' | 'profile' | 'feedback' | 'history' | 'account' | 'custom'
+    null
+    | 'route'
+    | 'settings'
+    | 'profile'
+    | 'feedback'
+    | 'history'
+    | 'account'
+    | 'custom'
+    | 'invite'
+    | 'commands'
+    | 'myStatus'
   >(null);
+  /** Draft selection in the my-status sheet; committed only via Done. */
+  const [draftMyStatus, setDraftMyStatus] = useState<'follow' | 'solo' | 'away' | null>(null);
+  const [statusApplying, setStatusApplying] = useState(false);
   /** Which custom quick-command slot the editor is targeting. */
   const [customSlot, setCustomSlot] = useState(0);
   // Screenshot captured the instant the feedback entry is tapped (before the
@@ -919,15 +937,21 @@ export default function MapScreen({ route, navigation }: Props) {
     await Share.share({ message: t('map.shareMsg', { code: group.inviteCode }) });
   }, [group, t]);
 
-  // --- Profile (nickname + emoji avatar) ------------------------------------
+  // --- Profile (nickname + emoji avatar) — avatar button only --------------
   const openProfile = useCallback(() => {
     lightTap();
     setOverlay('profile');
   }, []);
 
-  // --- Solo mode -------------------------------------------------------------
-  const toggleSolo = useCallback(async (next: boolean) => {
-    if (!groupId) return;
+  const switchGroup = useCallback(() => {
+    lightTap();
+    navigation.navigate('MyTeams');
+  }, [navigation]);
+
+  // --- Solo mode (global user status — not on member cards) -----------------
+  // Returns false if the RPC failed (caller should not close the status sheet).
+  const toggleSolo = useCallback(async (next: boolean): Promise<boolean> => {
+    if (!groupId) return false;
     selectionTick();
     logEvent('solo_toggle', { groupId, next });
     setSoloOverride(next);
@@ -936,12 +960,15 @@ export default function MapScreen({ route, navigation }: Props) {
       // memberships is realtime-subscribed (useGroupState); its debounced
       // reload refreshes `members` and clears the override above once it
       // matches — no need to force an extra fetch here.
+      return true;
     } catch (e) {
       logError('solo_toggle_failed', e, { groupId, next });
       setSoloOverride(null);
       Alert.alert(t('solo.failed'), e instanceof Error ? e.message : undefined);
+      return false;
     }
   }, [groupId, t]);
+
 
   // --- Subgroups (小隊：邀請制、無隊長) ---------------------------------------
   const subgroups = state?.subgroups ?? [];
@@ -1023,9 +1050,10 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // Any member can split themselves into their own new (collab, no-leader)
   // subgroup, or merge themselves back up a level — no leader say-so needed.
-  const doSelfSplit = useCallback(async () => {
-    if (!groupId) return;
-    if (!(await confirmLeaveMainGroup())) return;
+  // Returns false if the user cancelled the leave warning or the RPC failed.
+  const doSelfSplit = useCallback(async (): Promise<boolean> => {
+    if (!groupId) return false;
+    if (!(await confirmLeaveMainGroup())) return false;
     mediumTap();
     logEvent('team_create', { groupId });
     try {
@@ -1035,22 +1063,26 @@ export default function MapScreen({ route, navigation }: Props) {
       );
       logEvent('team_create_ok', { groupId });
       refresh();
+      return true;
     } catch (e) {
       logError('team_create_failed', e, { groupId });
       Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
+      return false;
     }
   }, [groupId, confirmLeaveMainGroup, user?.name, t, refresh]);
-  const doSelfMerge = useCallback(async () => {
-    if (!groupId) return;
+  const doSelfMerge = useCallback(async (): Promise<boolean> => {
+    if (!groupId) return false;
     selectionTick();
     logEvent('team_leave', { groupId });
     try {
       await selfMerge(groupId);
       logEvent('team_leave_ok', { groupId });
       refresh();
+      return true;
     } catch (e) {
       logError('team_leave_failed', e, { groupId });
       Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
+      return false;
     }
   }, [groupId, refresh, t]);
 
@@ -1160,17 +1192,27 @@ export default function MapScreen({ route, navigation }: Props) {
   );
 
   const confirmLeave = useCallback(() => {
+    // Red style only on the confirm button in the dialog — not on settings rows.
     confirmAction(
       {
-        title: t('group.leaveTitle'),
-        message: t('group.leaveMsg'),
-        confirmLabel: t('group.leaveConfirm'),
+        title: isLeader ? t('map.endGroupTitle') : t('group.leaveTitle'),
+        message: isLeader ? t('map.endGroupMsg') : t('group.leaveMsg'),
+        confirmLabel: isLeader ? t('map.endGroupConfirm') : t('group.leaveConfirm'),
+        cancelLabel: t('common.cancel'),
         destructive: true,
       },
       () => {
         logEvent('group_leave', { groupId, isLeader });
-        leaveGroup();
-        navigation.reset({ index: 0, routes: [{ name: 'RoleSelect' }] });
+        void (async () => {
+          if (groupId) {
+            await leaveGroups([groupId]).catch(() => undefined);
+            await clearLiveActivities({ groupIds: [groupId] });
+          } else {
+            await clearLiveActivities();
+          }
+          leaveGroup();
+          navigation.reset({ index: 0, routes: [{ name: 'RoleSelect' }] });
+        })();
       },
     );
   }, [t, groupId, isLeader, leaveGroup, navigation]);
@@ -1180,6 +1222,7 @@ export default function MapScreen({ route, navigation }: Props) {
         title: t('settings.signOutTitle'),
         message: t('settings.signOutMsg'),
         confirmLabel: t('settings.signOut'),
+        cancelLabel: t('common.cancel'),
         destructive: true,
       },
       () => {
@@ -1190,8 +1233,6 @@ export default function MapScreen({ route, navigation }: Props) {
     );
   }, [t, signOut, navigation]);
 
-
-
   const resetPrefs = useCallback(async () => {
     logEvent('reset_prefs');
     try {
@@ -1201,15 +1242,16 @@ export default function MapScreen({ route, navigation }: Props) {
       console.warn('[settings] resetPrefs saveOnboardingProfile failed', e);
     }
     await AsyncStorage.removeItem(ONBOARDING_STORAGE_KEY);
-    Alert.alert(t('settings.resetPrefs'), t('settings.resetPrefsDone'));
+    Alert.alert(t('settings.resetAllPrefs'), t('settings.resetPrefsDone'));
   }, [t]);
 
   const confirmResetPrefs = useCallback(() => {
     confirmAction(
       {
-        title: t('settings.resetPrefs'),
+        title: t('settings.resetAllPrefs'),
         message: t('settings.resetPrefsConfirm'),
-        confirmLabel: t('settings.resetPrefs'),
+        confirmLabel: t('settings.resetAllPrefs'),
+        cancelLabel: t('common.cancel'),
         destructive: true,
       },
       () => void resetPrefs(),
@@ -1313,13 +1355,12 @@ export default function MapScreen({ route, navigation }: Props) {
                 : movingRecently
                   ? t('memberStatus.moving')
                   : t('memberStatus.notStarted'),
+          // Color grade: secondary by default; green only arrived; warn only solo/straggler-like.
           statusColor: solo
             ? glass.warn
-            : isMemberLeader
-              ? accent
-              : arrived
-                ? glass.ok
-                : glass.textSecondary,
+            : arrived
+              ? glass.ok
+              : glass.textSecondary,
           freshnessText,
           // "—" for my own row (distance to myself is meaningless); everyone
           // else shows how far they are from me.
@@ -1342,6 +1383,135 @@ export default function MapScreen({ route, navigation }: Props) {
   const topFlock = flock.filter((f) => !f.subgroupId);
   // My own subgroup, if any — gates the "invite a teammate" entry on my card.
   const mySubgroupId = flock.find((f) => f.userId === user?.id)?.subgroupId;
+
+  const mySoloActive = useMemo(() => {
+    if (soloOverride !== null) return soloOverride;
+    return !!members.find((m) => m.userId === user?.id)?.solo;
+  }, [soloOverride, members, user?.id]);
+
+  /**
+   * My presence relative to the flock (UI + API mapping):
+   * - follow: solo=false and on main group itinerary
+   * - solo:   solo=true — still in structure, mute group pushes
+   * - away:   in a personal/subgroup split — main gather cards hidden
+   * Priority when both solo + subgroup: show solo (notifications muted is primary).
+   */
+  type MyStatusKind = 'follow' | 'solo' | 'away';
+  const myStatusKind: MyStatusKind = mySoloActive
+    ? 'solo'
+    : mySubgroupId
+      ? 'away'
+      : 'follow';
+
+  const myStatusLabel =
+    myStatusKind === 'solo'
+      ? t('solo.switch')
+      : myStatusKind === 'away'
+        ? t('solo.tempLeave')
+        : t('solo.followTeam');
+
+  const openMyStatusPicker = useCallback(() => {
+    lightTap();
+    setDraftMyStatus(myStatusKind);
+    setOverlay('myStatus');
+  }, [myStatusKind]);
+
+  const closeMyStatusPicker = useCallback(() => {
+    setOverlay(null);
+    setDraftMyStatus(null);
+    setStatusApplying(false);
+  }, []);
+
+  /**
+   * Commit a status change. Returns true if the sheet may close (no-op or success).
+   * Returns false if the user cancelled a confirm dialog or an RPC failed — keep
+   * the draft sheet open.
+   */
+  const applyMyStatus = useCallback(
+    async (next: MyStatusKind): Promise<boolean> => {
+      if (next === myStatusKind) return true;
+      lightTap();
+      try {
+        if (next === 'follow') {
+          // Full participation: clear solo, return to main itinerary if split away.
+          if (mySoloActive) {
+            if (!(await toggleSolo(false))) return false;
+          }
+          if (mySubgroupId) {
+            if (!(await doSelfMerge())) return false;
+          }
+        } else if (next === 'solo') {
+          // Soft step-away: stay where you are, mute group commands/pushes.
+          if (!mySoloActive) {
+            if (!(await toggleSolo(true))) return false;
+          }
+        } else {
+          // 暫時離隊: leave main itinerary (self-split). Clear solo so status reads as "away".
+          if (mySoloActive) {
+            if (!(await toggleSolo(false))) return false;
+          }
+          if (!mySubgroupId) {
+            if (!(await doSelfSplit())) return false;
+          }
+        }
+        return true;
+      } catch {
+        // Errors already alerted inside toggle / split / merge helpers.
+        return false;
+      }
+    },
+    [myStatusKind, mySoloActive, mySubgroupId, toggleSolo, doSelfMerge, doSelfSplit],
+  );
+
+  const commitMyStatus = useCallback(async () => {
+    if (statusApplying) return;
+    const next = draftMyStatus ?? myStatusKind;
+    setStatusApplying(true);
+    try {
+      const ok = await applyMyStatus(next);
+      if (ok) closeMyStatusPicker();
+    } finally {
+      setStatusApplying(false);
+    }
+  }, [statusApplying, draftMyStatus, myStatusKind, applyMyStatus, closeMyStatusPicker]);
+
+  const openGroupMenu = useCallback(() => {
+    lightTap();
+    const endLabel = isLeader ? t('map.endGroup') : t('group.leave');
+    const run = (action: 'invite' | 'settings' | 'end') => {
+      if (action === 'invite') setOverlay('invite');
+      else if (action === 'settings') setOverlay('settings');
+      else confirmLeave();
+    };
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          title: t('map.groupMenu'),
+          options: [
+            t('map.inviteMembers'),
+            t('map.overlaySettings'),
+            endLabel,
+            t('common.cancel'),
+          ],
+          cancelButtonIndex: 3,
+          destructiveButtonIndex: 2,
+        },
+        (idx) => {
+          if (idx === 0) run('invite');
+          else if (idx === 1) run('settings');
+          else if (idx === 2) run('end');
+        },
+      );
+    } else {
+      Alert.alert(t('map.groupMenu'), undefined, [
+        { text: t('map.inviteMembers'), onPress: () => run('invite') },
+        { text: t('map.overlaySettings'), onPress: () => run('settings') },
+        { text: endLabel, style: 'destructive', onPress: () => run('end') },
+        { text: t('common.cancel'), style: 'cancel' },
+      ]);
+    }
+  }, [t, isLeader, confirmLeave]);
+
   useEffect(() => {
     void refreshSentInvites(mySubgroupId);
   }, [mySubgroupId, refreshSentInvites]);
@@ -1363,15 +1533,21 @@ export default function MapScreen({ route, navigation }: Props) {
   );
 
   // One flock row, shared by the main list and the subgroup cards.
+  // Display: name + "角色 · 距離/狀態 · 最後更新". Solo is NOT on the card.
   const renderFlockRow = useCallback((f: (typeof flock)[number], last: boolean, index?: number) => {
     const isMe = f.userId === user?.id;
+    const role = f.isLeader ? t('map.leaderRole') : t('map.memberRole');
+    const distOrStatus = f.dist || f.statusText;
     return (
       <View key={`flock-${f.userId}-${index ?? 0}`} style={[styles.flockRow, last && styles.flockRowLast]}>
         <View style={styles.flockRowMain}>
           <View
             style={[
               styles.flockAvatar,
-              { backgroundColor: f.color, borderColor: f.isLeader ? accent : 'transparent' },
+              {
+                backgroundColor: f.color,
+                borderColor: f.isLeader ? 'rgba(255,255,255,0.55)' : 'transparent',
+              },
             ]}
           >
             {f.avatar ? (
@@ -1381,28 +1557,25 @@ export default function MapScreen({ route, navigation }: Props) {
             )}
           </View>
           <View style={styles.grow}>
-            <Text style={styles.flockName}>{f.name}</Text>
-            <Text style={[styles.flockStatus, { color: f.statusColor }]}>{f.statusText}</Text>
-            <Text style={styles.flockFreshness}>{f.freshnessText}</Text>
-          </View>
-          <View style={styles.flockMeta}>
-            <Text style={styles.flockEta}>{f.eta}</Text>
-            <Text style={styles.flockDist}>{f.dist}</Text>
+            <Text style={styles.flockName}>{f.name}{isMe ? ` · ${t('flock.you')}` : ''}</Text>
+            {/* 角色·距離白/灰 · 更新時間灰；脫隊/solo 才用警示色 */}
+            <Text style={styles.flockStatus} numberOfLines={2}>
+              <Text style={styles.flockMetaRole}>{role}</Text>
+              {distOrStatus ? (
+                <Text style={styles.flockMetaDist}>{` · ${distOrStatus}`}</Text>
+              ) : null}
+              {f.freshnessText ? (
+                <Text style={styles.flockMetaFresh}>{` · ${f.freshnessText}`}</Text>
+              ) : null}
+              {f.solo ? (
+                <Text style={styles.flockMetaWarn}>{` · ${t('solo.badge')}`}</Text>
+              ) : null}
+            </Text>
           </View>
         </View>
-        {/* Self-service: only on your own row. Everyone gets to choose Solo
-            mode or create/leave a team, independent of any leader. */}
+        {/* Individual actions: create/leave 小隊 only — not solo (solo is global). */}
         {isMe && (
           <View style={styles.selfControls}>
-            <View style={styles.selfSoloRow}>
-              <Text style={styles.selfControlLabel}>{t('solo.switch')}</Text>
-              <Switch
-                value={f.solo}
-                onValueChange={toggleSolo}
-                trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
-                thumbColor="#fff"
-              />
-            </View>
             {f.subgroupId ? (
               <Pressable
                 onPress={() => void doSelfMerge()}
@@ -1410,7 +1583,7 @@ export default function MapScreen({ route, navigation }: Props) {
                 accessibilityRole="button"
                 style={({ pressed }) => pressed && styles.rowActionPressed}
               >
-                <Text style={[styles.rowAction, { color: accent }]}>
+                <Text style={styles.rowActionSecondary}>
                   {t('subgroup.leaveTeam')}
                 </Text>
               </Pressable>
@@ -1421,7 +1594,7 @@ export default function MapScreen({ route, navigation }: Props) {
                 accessibilityRole="button"
                 style={({ pressed }) => pressed && styles.rowActionPressed}
               >
-                <Text style={[styles.rowAction, { color: accent }]}>
+                <Text style={styles.rowActionSecondary}>
                   {t('subgroup.createTeam')}
                 </Text>
               </Pressable>
@@ -1430,7 +1603,7 @@ export default function MapScreen({ route, navigation }: Props) {
         )}
       </View>
     );
-  }, [user?.id, accent, t, toggleSolo, doSelfMerge, doSelfSplit, styles]);
+  }, [user?.id, t, doSelfMerge, doSelfSplit, styles]);
 
   // Floating chrome rides just above the sheet's live top edge; its baseline
   // follows the sheet's animated gap to the screen bottom. At full the map
@@ -1466,43 +1639,108 @@ export default function MapScreen({ route, navigation }: Props) {
 
 
 
-  const sheetHeader = useMemo(() => (
-    /* Search row + account avatar — pinned over the scroll content on
-             BottomSheet's frosted header veil (Apple-Maps look). */
-          <View style={styles.searchRow}>
-            {pendingPlace ? (
-              // Search field hides while the add-gather-point confirm card is up.
-              <View style={styles.searchField} />
-            ) : (
-              <Pressable
-                style={styles.searchField}
-                onPress={() => {
-                  // BUG-14: everyone can search; non-editors notify the leader.
-                  setSearchVisible(true);
-                }}
-                accessibilityRole="button"
-                accessibilityLabel={t('map.searchA11y')}
+  const nextStopTitle = activePoint?.title ?? destinations[0]?.title;
+  const nextStopDistLabel = useMemo(() => {
+    if (!activePoint || !fromCoords) return null;
+    return formatDistance(distanceMeters(fromCoords, activePoint.coordinates));
+  }, [activePoint, fromCoords]);
+
+  const sheetHeader = useMemo(() => {
+    /* Fixed button roles (never swap meanings across screens):
+       - Group name → switch group
+       - ⋯ → group menu (invite / settings / end)
+       - Avatar → personal account only
+       - Search → place search only
+    */
+    const actions = (
+      <>
+        {!pendingPlace ? (
+          <Pressable
+            style={styles.headerIconBtn}
+            onPress={() => setSearchVisible(true)}
+            accessibilityRole="button"
+            accessibilityLabel={t('map.searchA11y')}
+          >
+            <Ionicons name="search" size={20} color="#fff" />
+          </Pressable>
+        ) : (
+          <View style={styles.headerIconBtn} />
+        )}
+        <Pressable
+          style={styles.headerIconBtn}
+          onPress={openGroupMenu}
+          accessibilityRole="button"
+          accessibilityLabel={t('map.groupMenu')}
+        >
+          <Ionicons name="ellipsis-horizontal" size={20} color="#fff" />
+        </Pressable>
+        <Pressable
+          style={[styles.headerAvatar, { backgroundColor: user?.avatarColor ?? accent }]}
+          onPress={openProfile}
+          accessibilityRole="button"
+          accessibilityLabel={t('profile.title')}
+        >
+          {user?.avatar ? (
+            <HitherText typeRole="emoji" style={styles.headerAvatarEmoji}>{user.avatar}</HitherText>
+          ) : (
+            <Text style={styles.headerAvatarText}>
+              {(user?.name ?? '?').slice(0, 1).toUpperCase()}
+            </Text>
+          )}
+        </Pressable>
+      </>
+    );
+
+    // Header is stable across detents (same tree / height) so peek↔mid spring
+    // never remeasures detents mid-flight (avoids hitch + reverse settle).
+    // Peek: others' avatars only. Stage 1+ discloses status/details in body.
+    const others = flock.filter((f) => f.userId !== user?.id);
+
+    return (
+      <View style={styles.sheetHeaderBlock}>
+        <View style={styles.sheetTitleRow}>
+          <View
+            style={styles.peekAvatarStack}
+            accessibilityLabel={t('map.tabMembers')}
+          >
+            {others.slice(0, 6).map((f, i) => (
+              <View
+                key={`peek-av-${f.userId}`}
+                style={[
+                  styles.peekStackAv,
+                  {
+                    backgroundColor: f.color,
+                    borderColor: 'rgba(255,255,255,0.9)',
+                    marginLeft: i === 0 ? 0 : -14,
+                    zIndex: 10 - i,
+                  },
+                ]}
               >
-                <Ionicons name="search" size={17} color={glass.textSecondary} />
-                <Text style={styles.searchPlaceholder}>{t('map.searchPlaces')}</Text>
-              </Pressable>
-            )}
-            <Pressable
-              style={[styles.avatar, { backgroundColor: user?.avatarColor ?? accent }]}
-              onPress={openProfile}
-              accessibilityRole="button"
-              accessibilityLabel={t('profile.title')}
-            >
-              {user?.avatar ? (
-                <HitherText typeRole="emoji" style={styles.avatarEmoji}>{user.avatar}</HitherText>
-              ) : (
-                <Text style={styles.avatarText}>
-                  {(user?.name ?? '?').slice(0, 1).toUpperCase()}
-                </Text>
-              )}
-            </Pressable>
+                {f.avatar ? (
+                  <HitherText typeRole="emoji" style={styles.peekStackEmoji}>{f.avatar}</HitherText>
+                ) : (
+                  <Text style={styles.peekStackInitial}>{f.name.slice(0, 1).toUpperCase()}</Text>
+                )}
+              </View>
+            ))}
+            {others.length > 6 ? (
+              <View style={[styles.peekStackAv, styles.peekStackMore, { marginLeft: -14, zIndex: 0 }]}>
+                <Text style={styles.peekStackInitial}>+{others.length - 6}</Text>
+              </View>
+            ) : null}
+            {others.length === 0 ? (
+              <Text style={styles.peekEmptyHint} numberOfLines={1}>
+                {t('map.tabMembers')}
+              </Text>
+            ) : null}
           </View>
-  ), [pendingPlace, canEditItinerary, user, accent, openProfile, styles, t]);
+          {actions}
+        </View>
+      </View>
+    );
+  }, [
+    styles, t, pendingPlace, user, accent, openProfile, openGroupMenu, flock,
+  ]);
 
   const closeOverlay = useCallback(() => setOverlay(null), []);
   const openHistoryOverlay = useCallback(() => setOverlay('history'), []);
@@ -1513,180 +1751,196 @@ export default function MapScreen({ route, navigation }: Props) {
   }, []);
   const openPaywallCb = useCallback(() => openPaywall(), [openPaywall]);
 
-  const sheetChildren = useMemo(() => (
+  const selectSheetPane = useCallback((key: 'members' | 'route' | 'tools') => {
+    if (key === sheetPane) return;
+    // Pill slide is handled by Segmented (same as 脫隊示警); no LayoutAnimation.
+    setSheetPane(key);
+  }, [sheetPane]);
+
+  // ─── 成員：位置、狀態、個別操作、小隊（無「成員」標題） ────────────────
+  const membersPaneBody = useMemo(() => (
     <>
-      {/* Flock — first section, Apple-Maps-style heading. Members with no
-            subgroup list first; each subgroup renders as its own card. */}
-        <View style={styles.headingRow}>
-          <Text style={styles.sheetHeading}>
-            {t('map.flockLabel')} · <Text style={{ fontFamily: DISPLAY_FONT }}>{members.length}</Text>
+      {/* My status + refresh on one row (stage 1+ body) */}
+      <View style={styles.myStatusBar}>
+        <Pressable
+          style={styles.myStatusRow}
+          onPress={openMyStatusPicker}
+          accessibilityRole="button"
+          accessibilityLabel={t('solo.statusTitle')}
+        >
+          <Text style={styles.myStatusText} numberOfLines={1}>
+            {t('solo.statusCurrent', { status: myStatusLabel })}
           </Text>
-          <View style={styles.memberHeadingActions}>
-            {!isPro && (
-              <Text style={styles.memberCapHint}>
-                {t('paywall.memberCap', { n: FREE_LIMITS.groupMembers })}
-              </Text>
-            )}
-            <Pressable
-              style={({ pressed }) => [
-                styles.refreshLocationsButton,
-                pressed && !refreshingLocations && styles.rowActionPressed,
-              ]}
-              onPress={() => void refreshAllLocations()}
-              disabled={refreshingLocations}
-              accessibilityRole="button"
-              accessibilityLabel={t('map.refreshLocationsA11y')}
-            >
-              {refreshingLocations ? (
-                <ActivityIndicator size="small" color={accent} />
-              ) : (
-                <Ionicons name="refresh" size={19} color={accent} />
-              )}
-            </Pressable>
-          </View>
-        </View>
-        <View style={styles.accuracyRow}>
-          <View style={styles.accuracyCopy}>
-            <View style={styles.accuracyTitleRow}>
-              <Ionicons name="locate-outline" size={18} color={highAccuracy ? accent : glass.textTertiary} />
-              <Text style={styles.accuracyLabel}>
-                {t('settings.preciseLocation')}
-              </Text>
-            </View>
-            <Text style={styles.accuracyBattery}>{t('settings.preciseLocationHint')}</Text>
-          </View>
-          <Switch
-            style={styles.accuracySwitch}
-            value={highAccuracy}
-            onValueChange={setHighAccuracy}
-            trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
-            thumbColor="#fff"
-            ios_backgroundColor="rgba(120,120,128,0.32)"
-            accessibilityLabel={t('settings.preciseLocation')}
-          />
-        </View>
-        {pendingInvites.length > 0 && (
-          <View style={styles.list}>
-            {pendingInvites.map((inv, i) => {
-              const isRequest = inv.kind === 'request';
-              // a11y-layout:inviteRow — large+ stacks prompt full-width then actions.
-              const inviteStacked = fontBucket === 'large' || fontBucket === 'xl';
-              return (
-                <View
-                  key={`inv-${inv.id}-${i}`}
-                  style={[
-                    styles.flockRow,
-                    i === pendingInvites.length - 1 && styles.flockRowLast,
-                    inviteStacked && styles.inviteRowStacked,
-                  ]}
-                >
-                  <Text style={[styles.flockName, inviteStacked && styles.invitePromptFull]}>
-                    {t(isRequest ? 'subgroup.requestPrompt' : 'subgroup.invitePrompt', {
-                      name: inv.inviterName,
-                      team: inv.subgroupName,
-                    })}
-                  </Text>
-                  <View style={[styles.splitActions, inviteStacked && styles.inviteActionsRow]}>
-                    <Pressable
-                      style={[styles.chip, { backgroundColor: accentMix(accent, 24), borderColor: accentMix(accent, 50) }]}
-                      onPress={() => void handleAcceptInvite(inv.id)}
-                      accessibilityRole="button"
-                    >
-                      <Text style={styles.chipText}>
-                        {t(isRequest ? 'subgroup.approve' : 'subgroup.accept')}
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      style={styles.chipGhost}
-                      onPress={() => void handleDeclineInvite(inv.id)}
-                      accessibilityRole="button"
-                    >
-                      <Text style={styles.chipText}>{t('subgroup.decline')}</Text>
-                    </Pressable>
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-        )}
-        {/* When subgroups exist, main members render under SubgroupSection's
-            「主團隊」header (BUG-12) to avoid a duplicate unlabeled list. */}
-        {subgroups.length === 0 && (
-          <View style={styles.list}>
-            {topFlock.map((f, i) => renderFlockRow(f, i === topFlock.length - 1, i))}
-          </View>
-        )}
-        <SubgroupSection
-          subgroups={subgroups}
-          flock={flock}
-          mySubgroupId={mySubgroupId}
-          sentInvites={sentInvites}
-          accent={accent}
-          setInviteSheetOpen={setInviteSheetOpen}
-          renderFlockRow={renderFlockRow}
-          styles={styles}
-        />
-
-        {/* Group code + share / copy. */}
-        <Text style={styles.sheetHeading}>{t('group.codeLabel')}</Text>
-        <View style={styles.codeRow}>
-          <View style={styles.grow}>
-            <Text style={styles.codeText}>{group?.inviteCode ?? '——'}</Text>
-          </View>
-          <Pressable
-            style={[styles.chip, { backgroundColor: accentMix(accent, 24), borderColor: accentMix(accent, 50) }]}
-            onPress={shareCode}
-            accessibilityRole="button"
-          >
-            <Ionicons name="share-outline" size={15} color="#fff" />
-            <Text style={styles.chipText}>{t('map.share')}</Text>
-          </Pressable>
-          <Pressable style={styles.chipGhost} onPress={copyCode} accessibilityRole="button">
-            <Text style={styles.chipText}>{codeCopied ? t('group.copied') : t('map.copy')}</Text>
-          </Pressable>
-        </View>
-
-        {/* Gathering points → route overlay. */}
-        <Text style={styles.sheetHeading}>{t('map.gatheringPoints')}</Text>
-        <Pressable style={styles.rowButton} onPress={() => { lightTap(); setOverlay('route'); }} accessibilityRole="button">
-          <View style={[styles.rowIcon, { backgroundColor: accentMix(accent, 20) }]}>
-            <CrookIcon size={22} color={accent} />
-          </View>
-          <View style={styles.grow}>
-            <Text style={styles.rowTitle}>
-              {t('map.stopsReorder', { count: destinations.length })}
-            </Text>
-          </View>
-          <Text style={[styles.rowAction, { color: accent }]}>{t('map.edit')}</Text>
+          <Ionicons name="chevron-down" size={14} color={glass.textSecondary} />
         </Pressable>
+        <Pressable
+          style={({ pressed }) => [
+            styles.refreshLocationsButton,
+            pressed && !refreshingLocations && styles.rowActionPressed,
+          ]}
+          onPress={() => void refreshAllLocations()}
+          disabled={refreshingLocations}
+          accessibilityRole="button"
+          accessibilityLabel={t('map.refreshLocationsA11y')}
+        >
+          {refreshingLocations ? (
+            <ActivityIndicator size="small" color={accent} />
+          ) : (
+            <Ionicons name="refresh" size={19} color={accent} />
+          )}
+        </Pressable>
+      </View>
+      {pendingInvites.length > 0 && (
+        <View style={styles.list}>
+          {pendingInvites.map((inv, i) => {
+            const isRequest = inv.kind === 'request';
+            const inviteStacked = fontBucket === 'large' || fontBucket === 'xl';
+            return (
+              <View
+                key={`inv-${inv.id}-${i}`}
+                style={[
+                  styles.flockRow,
+                  i === pendingInvites.length - 1 && styles.flockRowLast,
+                  inviteStacked && styles.inviteRowStacked,
+                ]}
+              >
+                <Text style={[styles.flockName, inviteStacked && styles.invitePromptFull]}>
+                  {t(isRequest ? 'subgroup.requestPrompt' : 'subgroup.invitePrompt', {
+                    name: inv.inviterName,
+                    team: inv.subgroupName,
+                  })}
+                </Text>
+                <View style={[styles.splitActions, inviteStacked && styles.inviteActionsRow]}>
+                  <Pressable
+                    style={[styles.chip, { backgroundColor: accentMix(accent, 24), borderColor: accentMix(accent, 50) }]}
+                    onPress={() => void handleAcceptInvite(inv.id)}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.chipText}>
+                      {t(isRequest ? 'subgroup.approve' : 'subgroup.accept')}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.chipGhost}
+                    onPress={() => void handleDeclineInvite(inv.id)}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.chipText}>{t('subgroup.decline')}</Text>
+                  </Pressable>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      )}
+      {subgroups.length === 0 && (
+        <View style={styles.list}>
+          {topFlock.map((f, i) => renderFlockRow(f, i === topFlock.length - 1, i))}
+        </View>
+      )}
+      <SubgroupSection
+        subgroups={subgroups}
+        flock={flock}
+        mySubgroupId={mySubgroupId}
+        sentInvites={sentInvites}
+        accent={accent}
+        setInviteSheetOpen={setInviteSheetOpen}
+        renderFlockRow={renderFlockRow}
+        styles={styles}
+      />
 
-        {/* KML import — a sub-item of gathering points (moved out of the reorder
-            overlay so it's reachable without opening "調整順序"). */}
-        {canEditItinerary && (
-          <Pressable style={styles.rowButton} onPress={() => { lightTap(); setKmlVisible(true); }} accessibilityRole="button">
-            <View style={[styles.rowIcon, { backgroundColor: accentMix(accent, 20) }]}>
-              <Ionicons name="document-attach-outline" size={20} color={accent} />
-            </View>
-            <View style={styles.grow}>
-              <Text style={styles.rowTitle}>{t('kml.entry')}</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
-          </Pressable>
-        )}
+      {/* 精準定位 — 成員欄最下方 */}
+      <View style={[styles.accuracyRow, styles.accuracyRowLast]}>
+        <View style={styles.accuracyCopy}>
+          <Text style={styles.accuracyLabel}>
+            {t('settings.preciseLocation')}
+          </Text>
+          <Text style={styles.accuracyBattery}>{t('settings.preciseLocationHint')}</Text>
+        </View>
+        <Switch
+          style={styles.accuracySwitch}
+          value={highAccuracy}
+          onValueChange={setHighAccuracy}
+          trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
+          thumbColor="#fff"
+          ios_backgroundColor="rgba(120,120,128,0.32)"
+          accessibilityLabel={t('settings.preciseLocation')}
+        />
+      </View>
+    </>
+  ), [
+    t, styles, refreshingLocations, refreshAllLocations, accent, highAccuracy,
+    setHighAccuracy, pendingInvites, fontBucket, handleAcceptInvite, handleDeclineInvite,
+    subgroups, topFlock, renderFlockRow, flock, mySubgroupId, sentInvites,
+    openMyStatusPicker, myStatusLabel,
+  ]);
 
-        <Pressable style={styles.rowButton} onPress={() => { lightTap(); openHistoryOverlay(); }} accessibilityRole="button">
-          <View style={[styles.rowIcon, { backgroundColor: accentMix(accent, 20) }]}>
-            <Ionicons name="time-outline" size={20} color={accent} />
-          </View>
-          <View style={styles.grow}>
-            <Text style={styles.rowTitle}>{t('history.title')}</Text>
-          </View>
+  // ─── 路線：集合點、排序、Google Maps 匯入、歷史 ───────────────────────
+  const routePaneBody = useMemo(() => (
+    <>
+      <Text style={[styles.sheetHeading, styles.sheetHeadingFirst]}>{t('map.gatheringPoints')}</Text>
+      {/* 下一站 — 唯一完整卡片（成組閱讀） */}
+      {nextStopTitle ? (
+        <View style={styles.tripSummaryCard}>
+          <Text style={styles.tripCardKicker}>{t('map.nextTag')}</Text>
+          <Text style={styles.tripCardTitle} numberOfLines={2}>{nextStopTitle}</Text>
+          <Text style={styles.tripCardMeta}>
+            {nextStopDistLabel ? `${nextStopDistLabel} · ` : ''}
+            {t('map.stopsReorder', { count: destinations.length })}
+          </Text>
+        </View>
+      ) : null}
+      {/* 導航入口 = 普通 List Row，無圖示色塊 */}
+      <View style={styles.listGroup}>
+        <Pressable style={styles.listRow} onPress={() => { lightTap(); setOverlay('route'); }} accessibilityRole="button">
+          <Text style={styles.listRowTitle}>
+            {t('map.stopsReorder', { count: destinations.length })}
+          </Text>
+          <Text style={styles.listRowTrailing}>{t('map.edit')}</Text>
           <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
         </Pressable>
+        {canEditItinerary ? (
+          <Pressable style={styles.listRow} onPress={() => { lightTap(); setKmlVisible(true); }} accessibilityRole="button">
+            <Text style={styles.listRowTitle}>{t('kml.entry')}</Text>
+            <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
+          </Pressable>
+        ) : null}
+        <Pressable
+          style={[styles.listRow, styles.listRowLast]}
+          onPress={() => { lightTap(); openHistoryOverlay(); }}
+          accessibilityRole="button"
+        >
+          <Text style={styles.listRowTitle}>{t('history.title')}</Text>
+          <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
+        </Pressable>
+      </View>
+    </>
+  ), [
+    t, styles, nextStopTitle, nextStopDistLabel, destinations.length, canEditItinerary,
+    openHistoryOverlay,
+  ]);
 
-        {/* Straggler alerts — also a gathering-point sub-item (moved out of the
-            Settings overlay). Leader-only; threshold is paywall-gated. */}
-        {isLeader && group && groupId && (
+  // ─── 工具：快捷指令、脫隊、分享群組、設定 ─────────────────────────────
+  const toolsPaneBody = useMemo(() => (
+    <>
+      <Text style={[styles.sheetHeading, styles.sheetHeadingFirst]}>{t('map.cmdTitle')}</Text>
+      {groupId ? (
+        <QuickCommandsCard
+          groupId={groupId}
+          isLeader={!!isLeader}
+          colors={dark}
+          onConfigureCustom={openCustomQuickCommand}
+          variant="preview"
+          onOpenAll={() => {
+            lightTap();
+            setOverlay('commands');
+          }}
+        />
+      ) : null}
+
+      {isLeader && group && groupId ? (
+        <>
+          <Text style={styles.sheetHeading}>{t('straggler.section')}</Text>
           <StragglerConfigSection
             groupId={groupId}
             groupAlerts={group.stragglerAlerts}
@@ -1698,28 +1952,79 @@ export default function MapScreen({ route, navigation }: Props) {
             styles={styles}
             t={t}
           />
-        )}
+        </>
+      ) : null}
 
-        {/* Quick commands. */}
-        <Text style={styles.sheetHeading}>{t('map.cmdTitle')}</Text>
-        {groupId ? (
-          <QuickCommandsCard
-            groupId={groupId}
-            isLeader={!!isLeader}
-            colors={dark}
-            onConfigureCustom={openCustomQuickCommand}
-          />
-        ) : null}
-
-        {/* Settings. */}
-        <Pressable style={styles.settingsButton} onPress={() => { lightTap(); setOverlay('settings'); }} accessibilityRole="button">
-          <Ionicons name="settings-sharp" size={20} color="#fff" />
-          <Text style={styles.settingsText}>{t('map.settingsAll')}</Text>
+      <View style={styles.listGroup}>
+        <Pressable
+          style={styles.listRow}
+          onPress={() => {
+            lightTap();
+            setOverlay('invite');
+          }}
+          accessibilityRole="button"
+        >
+          <Text style={styles.listRowTitle}>{t('map.inviteMembers')}</Text>
           <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
         </Pressable>
+        <Pressable
+          style={[styles.listRow, styles.listRowLast]}
+          onPress={() => {
+            lightTap();
+            setOverlay('settings');
+          }}
+          accessibilityRole="button"
+        >
+          <Text style={styles.listRowTitle}>{t('map.overlaySettings')}</Text>
+          <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
+        </Pressable>
+      </View>
     </>
   ), [
-    t, members.length, isPro, pendingInvites, accent, handleAcceptInvite, handleDeclineInvite, topFlock, renderFlockRow, subgroups, flock, mySubgroupId, sentInvites, group, shareCode, codeCopied, copyCode, destinations.length, canEditItinerary, isLeader, persistStragglerConfig, openPaywall, groupId, dark, styles, refreshAllLocations, refreshingLocations, highAccuracy, setHighAccuracy, openHistoryOverlay, openCustomQuickCommand
+    styles, t, groupId, isLeader, dark, openCustomQuickCommand, group, accent, isPro,
+    openPaywall, persistStragglerConfig,
+  ]);
+
+  const sheetChildren = useMemo(() => (
+    <>
+      {/* Same sliding-pill animation as 脫隊示警 Segmented */}
+      <View style={styles.sheetPaneToggleWrap}>
+        <Segmented
+          accent={accent}
+          options={[
+            { key: 'members', label: t('map.tabMembers') },
+            { key: 'route', label: t('map.tabRoute') },
+            { key: 'tools', label: t('map.tabTools') },
+          ]}
+          value={sheetPane}
+          onChange={(key) => selectSheetPane(key as 'members' | 'route' | 'tools')}
+        />
+      </View>
+
+      <View
+        style={sheetPane === 'members' ? undefined : styles.sheetPaneHidden}
+        pointerEvents={sheetPane === 'members' ? 'auto' : 'none'}
+        collapsable={false}
+      >
+        {membersPaneBody}
+      </View>
+      <View
+        style={sheetPane === 'route' ? undefined : styles.sheetPaneHidden}
+        pointerEvents={sheetPane === 'route' ? 'auto' : 'none'}
+        collapsable={false}
+      >
+        {routePaneBody}
+      </View>
+      <View
+        style={sheetPane === 'tools' ? undefined : styles.sheetPaneHidden}
+        pointerEvents={sheetPane === 'tools' ? 'auto' : 'none'}
+        collapsable={false}
+      >
+        {toolsPaneBody}
+      </View>
+    </>
+  ), [
+    styles, t, accent, sheetPane, selectSheetPane, membersPaneBody, routePaneBody, toolsPaneBody,
   ]);
 
   if (loading && !state) {
@@ -2048,7 +2353,8 @@ export default function MapScreen({ route, navigation }: Props) {
                         kicker · dots
                         title (large; full when expanded)
                         day line (expanded only)
-                        arrival progress ………… ETA · dist (Maps above metrics when expanded)
+                        小隊行程 badge (subgroup only)
+                        arrival progress ………… ETA · dist  ← flush under badge/day
                         [導航] [移動] [集合時間]  — always 3; Maps not in this row */}
                     <View style={styles.cardHead}>
                       <View style={styles.grow}>
@@ -2091,101 +2397,124 @@ export default function MapScreen({ route, navigation }: Props) {
                             </Animated.View>
                           )}
                         </View>
-                        <Text
-                          style={[styles.cardTitle, cardExpanded && styles.cardTitleExpanded]}
-                          numberOfLines={cardExpanded ? undefined : 2}
-                          ellipsizeMode="tail"
-                        >
-                          {dest.title}
-                        </Text>
+                        {/*
+                          Collapsed:
+                            kicker · dots
+                            地名              1hr   ← time tight above dist
+                            抵達進度        5.8km
+                          Expanded:
+                            title + Maps
+                            day
+                            小隊行程 (optional)
+                            抵達進度 …… ETA · dist  ← directly under badge
+                        */}
                         {cardExpanded ? (
-                          <Animated.Text
-                            entering={FadeIn.duration(200)}
-                            style={styles.cardDayLine}
-                          >
-                            {formatTripDayLine(
-                              dest.day || 1,
-                              optimisticDepartureDate ?? group?.departureDate,
-                            )}
-                          </Animated.Text>
-                        ) : null}
-                        {myScopeId != null && (
-                          <Text style={styles.cardBadge}>{t('subgroup.itineraryBadge')}</Text>
-                        )}
-                      </View>
-                    </View>
-
-                    {/* Arrival left · ETA/dist right. Expanded: Maps sits above ETA/dist. */}
-                    <View
-                      style={[
-                        styles.cardMetaRow,
-                        cardExpanded && styles.cardMetaRowExpanded,
-                      ]}
-                    >
-                      <View style={styles.arrivalCaption}>
-                        {!chromeTight ? (
-                          <Text style={styles.arrivalCaptionLabel}>{t('map.arrivalProgress')}</Text>
-                        ) : null}
-                        <Text style={[styles.arrivalCaptionValue, { color: accent }]}>
-                          {arrivedHere} / {totalMembers}
-                        </Text>
-                      </View>
-                      <View style={styles.cardRouteCol}>
-                        {cardExpanded ? (
-                          <Pressable
-                            style={styles.mapsChip}
-                            onPress={() => openInAppleMaps(dest)}
-                            accessibilityRole="button"
-                            accessibilityLabel={t('map.openInAppleMaps')}
-                          >
-                            <Ionicons name="open-outline" size={14} color={glass.textSecondary} />
-                            <Text style={styles.mapsChipText} numberOfLines={1}>
-                              Maps
-                            </Text>
-                          </Pressable>
-                        ) : null}
-                        <View
-                          style={[
-                            styles.cardRouteMeta,
-                            cardExpanded && styles.cardRouteMetaExpanded,
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              cardExpanded
-                                ? styles.cardRouteMetaEtaExpanded
-                                : styles.cardRouteMetaEta,
-                              { color: accent },
-                            ]}
-                            numberOfLines={1}
-                            ellipsizeMode="tail"
-                          >
-                            {etaLabel}
-                          </Text>
-                          {distLabel ? (
-                            <>
+                          <>
+                            <View style={styles.cardTitleRow}>
                               <Text
-                                style={[
-                                  styles.cardRouteMetaDot,
-                                  cardExpanded && styles.cardRouteMetaDotExpanded,
-                                ]}
+                                style={[styles.cardTitle, styles.cardTitleExpanded, styles.cardTitleFlex]}
+                                numberOfLines={3}
+                                ellipsizeMode="tail"
                               >
-                                ·
+                                {dest.title}
                               </Text>
+                              <Pressable
+                                style={styles.mapsChip}
+                                onPress={() => openInAppleMaps(dest)}
+                                accessibilityRole="button"
+                                accessibilityLabel={t('map.openInAppleMaps')}
+                              >
+                                <Ionicons name="map" size={22} color="#fff" />
+                              </Pressable>
+                            </View>
+                            <Animated.Text
+                              entering={FadeIn.duration(200)}
+                              style={styles.cardDayLine}
+                            >
+                              {formatTripDayLine(
+                                dest.day || 1,
+                                optimisticDepartureDate ?? group?.departureDate,
+                              )}
+                            </Animated.Text>
+                            {myScopeId != null && (
+                              <Text style={styles.cardBadge}>{t('subgroup.itineraryBadge')}</Text>
+                            )}
+                            {/* Arrival sits immediately under 小隊行程 (or day line). */}
+                            <View
+                              style={[
+                                styles.cardMetaRow,
+                                styles.cardMetaRowExpanded,
+                                myScopeId != null
+                                  ? styles.cardMetaRowAfterBadge
+                                  : styles.cardMetaRowAfterDay,
+                              ]}
+                            >
+                              <View style={styles.arrivalCaption}>
+                                <Text style={styles.arrivalCaptionLabel}>{t('map.arrivalProgress')}</Text>
+                                <Text style={[styles.arrivalCaptionValue, { color: accent }]}>
+                                  {arrivedHere} / {totalMembers}
+                                </Text>
+                              </View>
+                              <View style={styles.cardRouteColExpanded}>
+                                {etaLabel ? (
+                                  <Text
+                                    style={[styles.cardRouteMetaEtaExpanded, { color: glass.textSecondary }]}
+                                    numberOfLines={1}
+                                  >
+                                    {etaLabel}
+                                  </Text>
+                                ) : null}
+                                {etaLabel && distLabel ? (
+                                  <Text style={styles.cardRouteMetaDotExpanded}>·</Text>
+                                ) : null}
+                                {distLabel ? (
+                                  <Text
+                                    style={[styles.cardRouteMetaDistExpanded, { color: accent }]}
+                                    numberOfLines={1}
+                                  >
+                                    {distLabel}
+                                  </Text>
+                                ) : null}
+                              </View>
+                            </View>
+                          </>
+                        ) : (
+                          <View style={styles.cardDenseBody}>
+                            <View style={styles.grow}>
                               <Text
-                                style={
-                                  cardExpanded
-                                    ? styles.cardRouteMetaDistExpanded
-                                    : styles.cardRouteMetaDist
-                                }
+                                style={[styles.cardTitle, styles.cardTitleCollapsed]}
                                 numberOfLines={1}
                                 ellipsizeMode="tail"
                               >
-                                {distLabel}
+                                {dest.title}
                               </Text>
-                            </>
-                          ) : null}
-                        </View>
+                              <View style={styles.arrivalCaption}>
+                                <Text style={styles.arrivalCaptionLabel}>{t('map.arrivalProgress')}</Text>
+                                <Text style={[styles.arrivalCaptionValue, { color: accent }]}>
+                                  {arrivedHere} / {totalMembers}
+                                </Text>
+                              </View>
+                            </View>
+                            <View style={styles.cardMetricsStack}>
+                              {etaLabel ? (
+                                <Text
+                                  style={[styles.cardRouteMetaEta, { color: glass.textSecondary }]}
+                                  numberOfLines={1}
+                                >
+                                  {etaLabel}
+                                </Text>
+                              ) : null}
+                              {distLabel ? (
+                                <Text
+                                  style={[styles.cardRouteMetaDist, { color: accent }]}
+                                  numberOfLines={1}
+                                >
+                                  {distLabel}
+                                </Text>
+                              ) : null}
+                            </View>
+                          </View>
+                        )}
                       </View>
                     </View>
 
@@ -2334,7 +2663,10 @@ export default function MapScreen({ route, navigation }: Props) {
         index={detent}
         onIndexChange={setDetent}
         bottomInset={insets.bottom}
-        onHeaderHeight={setSheetHeaderH}
+        onHeaderHeight={(h) => {
+          // Ignore 1–2px jitter so detents don't thrash and reverse mid-spring.
+          setSheetHeaderH((prev) => (Math.abs(prev - h) > 2 ? h : prev));
+        }}
         header={sheetHeader}
       >
         {sheetChildren}
@@ -2411,8 +2743,149 @@ export default function MapScreen({ route, navigation }: Props) {
         onOpenPaywall={openPaywallCb}
         onOpenAccount={openAccountOverlay}
         onOpenCustomQuickCommand={openCustomQuickCommand}
+        onOpenStraggler={() => {
+          setOverlay(null);
+          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+          setSheetPane('tools');
+          if (detent === 0) setDetent(1);
+        }}
+        onSwitchGroup={() => {
+          setOverlay(null);
+          switchGroup();
+        }}
         styles={styles}
       />
+
+      {/* 邀請成員 — independent share sheet (code / share / copy). */}
+      <OverlaySheet
+        visible={overlay === 'invite'}
+        onClose={() => setOverlay(null)}
+        title={t('map.inviteMembers')}
+        accent={accent}
+        doneLabel={t('map.done')}
+      >
+        <ScrollView contentContainerStyle={styles.overlayBody}>
+          <Text style={styles.overlayHint}>{t('map.inviteMembersHint')}</Text>
+          <Text style={[styles.codeText, { textAlign: 'center', marginVertical: 20 }]}>
+            {group?.inviteCode ?? '——'}
+          </Text>
+          <Pressable
+            style={[styles.settingsButton, { marginBottom: 10 }]}
+            onPress={() => void shareCode()}
+            accessibilityRole="button"
+          >
+            <Ionicons name="share-outline" size={20} color="#fff" />
+            <Text style={styles.settingsText}>{t('map.shareInviteLink')}</Text>
+          </Pressable>
+          <Pressable
+            style={styles.settingsButton}
+            onPress={() => void copyCode()}
+            accessibilityRole="button"
+          >
+            <Ionicons name="copy-outline" size={20} color="#fff" />
+            <Text style={styles.settingsText}>
+              {codeCopied ? t('group.copied') : t('map.copyGroupCode')}
+            </Text>
+          </Pressable>
+        </ScrollView>
+      </OverlaySheet>
+
+      {/* 我的狀態 — 跟隨 / 獨自 / 暫時離隊；選取為草稿，完成才提交 */}
+      <OverlaySheet
+        visible={overlay === 'myStatus'}
+        onClose={closeMyStatusPicker}
+        onDone={() => { void commitMyStatus(); }}
+        title={t('solo.statusTitle')}
+        accent={accent}
+        doneLabel={t('map.done')}
+      >
+        <ScrollView contentContainerStyle={styles.overlayBody}>
+          <Text style={styles.overlayHint}>{t('solo.pickHint')}</Text>
+          {(
+            [
+              {
+                key: 'follow' as const,
+                title: t('solo.followTeam'),
+                hint: t('solo.followTeamHint'),
+                icon: 'people' as const,
+              },
+              {
+                key: 'solo' as const,
+                title: t('solo.switch'),
+                hint: t('solo.soloHint'),
+                icon: 'walk' as const,
+              },
+              {
+                key: 'away' as const,
+                title: t('solo.tempLeave'),
+                hint: t('solo.tempLeaveHint'),
+                icon: 'exit-outline' as const,
+              },
+            ] as const
+          ).map((opt) => {
+            const selected = (draftMyStatus ?? myStatusKind) === opt.key;
+            return (
+              <Pressable
+                key={opt.key}
+                style={[
+                  styles.statusOption,
+                  selected && { borderColor: accentMix(accent, 55), backgroundColor: accentMix(accent, 14) },
+                  statusApplying && { opacity: 0.6 },
+                ]}
+                onPress={() => {
+                  if (statusApplying) return;
+                  selectionTick();
+                  setDraftMyStatus(opt.key);
+                }}
+                disabled={statusApplying}
+                accessibilityRole="radio"
+                accessibilityState={{ selected, disabled: statusApplying }}
+                accessibilityLabel={`${opt.title}. ${opt.hint}`}
+              >
+                <View style={[styles.statusOptionIcon, selected && { backgroundColor: accentMix(accent, 28) }]}>
+                  <Ionicons
+                    name={opt.icon}
+                    size={22}
+                    color={selected ? accent : glass.textSecondary}
+                  />
+                </View>
+                <View style={styles.grow}>
+                  <Text style={styles.statusOptionTitle}>{opt.title}</Text>
+                  <Text style={styles.statusOptionHint}>{opt.hint}</Text>
+                </View>
+                {selected ? (
+                  <View style={[styles.statusOptionCheck, { backgroundColor: accent }]}>
+                    <Ionicons name="checkmark" size={14} color="#1a0a00" />
+                  </View>
+                ) : (
+                  <View style={styles.statusOptionRadio} />
+                )}
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </OverlaySheet>
+
+      {/* 全部快捷指令 */}
+      <OverlaySheet
+        visible={overlay === 'commands'}
+        onClose={() => setOverlay(null)}
+        title={t('map.cmdTitle')}
+        accent={accent}
+        doneLabel={t('map.done')}
+      >
+        <ScrollView contentContainerStyle={styles.overlayBody}>
+          {groupId ? (
+            <QuickCommandsCard
+              groupId={groupId}
+              isLeader={!!isLeader}
+              colors={dark}
+              onConfigureCustom={openCustomQuickCommand}
+              variant="full"
+            />
+          ) : null}
+        </ScrollView>
+      </OverlaySheet>
 
       <AccountSheet
         visible={overlay === 'account'}
@@ -2886,9 +3359,11 @@ const makeStyles = (
     // overflow hidden clips glass radius; command row must flex so buttons
     // never paint past the edge (untappable when clipped).
     card: {
-      borderRadius: narrow ? s(24, 18) : s(30, 22),
+      borderRadius: narrow ? s(22, 16) : s(26, 20),
       overflow: 'hidden',
-      padding: cardPad,
+      paddingHorizontal: cardPad,
+      paddingTop: s(compact ? 10 : 12, 8),
+      paddingBottom: s(compact ? 10 : 12, 8),
       borderWidth: StyleSheet.hairlineWidth,
       // BUG-10: inactive cards have no white halo; active border set inline.
       borderColor: 'transparent',
@@ -2904,7 +3379,7 @@ const makeStyles = (
       zIndex: 2,
     },
     arrivalHairlineFill: { height: '100%' },
-    // kicker → title → (day) → meta row (arrival | Maps+ETA).
+    // kicker → title → (day) → (小隊行程) → meta (arrival | ETA) flush under badge.
     cardHead: {
       flexDirection: 'row',
       alignItems: 'flex-start',
@@ -2919,53 +3394,97 @@ const makeStyles = (
       minWidth: 0,
     },
     cardKicker: {
-      fontSize: 12,
+      fontSize: 11,
       fontWeight: '700',
-      letterSpacing: 0.4,
+      letterSpacing: 0.3,
       flexShrink: 1,
       minWidth: 0,
-      lineHeight: s(16, 14),
+      lineHeight: s(15, 13),
     },
-    // Place name is the hero line.
+    // Place name — collapsed ≈1.1× base, expanded ≈1.3× base.
+    cardTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: s(8, 6),
+      marginTop: s(8, 6),
+      minWidth: 0,
+    },
+    cardDenseBody: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: s(10, 8),
+      marginTop: s(8, 6),
+      minWidth: 0,
+    },
+    // Time stacked flush above distance (right column).
+    cardMetricsStack: {
+      alignItems: 'flex-end',
+      justifyContent: 'flex-start',
+      flexShrink: 0,
+      gap: 0,
+      marginTop: s(2, 0),
+    },
     cardTitle: {
       fontFamily: DISPLAY_FONT,
       fontSize: compact ? 20 : 22,
       color: '#fff',
       lineHeight: s(28, 26),
-      marginTop: s(6, 4),
       flexShrink: 1,
     },
+    cardTitleCollapsed: {
+      fontSize: compact ? 20 : 22,
+      lineHeight: s(26, 24),
+      marginBottom: s(2, 1),
+    },
+    cardTitleFlex: {
+      flex: 1,
+      minWidth: 0,
+    },
     cardTitleExpanded: {
-      fontSize: compact ? 21 : 23,
-      lineHeight: s(30, 28),
+      fontSize: compact ? 27 : 29,
+      lineHeight: s(34, 32),
     },
     // Expanded day + calendar date under the title.
     cardDayLine: {
       color: glass.textSecondary,
       fontSize: 13,
-      lineHeight: s(18, 16),
-      marginTop: s(4, 2),
+      lineHeight: s(16, 15),
+      marginTop: s(2, 1),
       flexShrink: 1,
     },
     cardBadge: {
       color: glass.textSecondary,
       fontSize: 11,
-      marginTop: s(2, 1),
-      lineHeight: s(15, 13),
+      marginTop: s(1, 0),
+      marginBottom: 0,
+      lineHeight: s(14, 13),
     },
 
     // Arrival (left) + route metrics (right). Maps chip sits above ETA when expanded.
     cardMetaRow: {
       flexDirection: 'row',
-      alignItems: 'flex-end',
+      alignItems: 'center',
       justifyContent: 'space-between',
-      gap: s(10, 8),
+      gap: s(8, 6),
       marginTop: s(10, 8),
       minWidth: 0,
     },
+    cardMetaRowCollapsed: {
+      marginTop: s(2, 1),
+      marginBottom: s(2, 0),
+      alignItems: 'center',
+    },
+    // Expanded meta is in the same column as day/badge — keep it flush under them.
     cardMetaRowExpanded: {
       alignItems: 'flex-end',
-      marginTop: s(12, 10),
+    },
+    // Flush under 「小隊行程」.
+    cardMetaRowAfterBadge: {
+      marginTop: 0,
+    },
+    // Under day line when there is no subgroup badge.
+    cardMetaRowAfterDay: {
+      marginTop: s(1, 0),
     },
     arrivalCaption: {
       flex: 1,
@@ -2977,98 +3496,102 @@ const makeStyles = (
       paddingLeft: 0,
     },
     arrivalCaptionLabel: {
-      fontSize: 12.5,
+      fontSize: 12,
       color: glass.textSecondary,
       flexShrink: 1,
-      lineHeight: s(18, 15),
+      lineHeight: s(16, 14),
     },
     arrivalCaptionValue: {
       fontFamily: DISPLAY_FONT,
       fontSize: 13,
       fontVariant: ['tabular-nums'],
       flexShrink: 0,
-      lineHeight: s(18, 15),
+      lineHeight: s(16, 14),
     },
     cardRouteCol: {
       alignItems: 'flex-end',
+      justifyContent: 'flex-end',
       flexShrink: 0,
-      maxWidth: '58%',
-      gap: s(4, 2),
+      minWidth: s(88, 72),
+      maxWidth: '48%',
+      gap: s(2, 1),
     },
-    // Apple Maps hand-off — only when expanded, above ETA/dist.
-    mapsChip: {
+    // Expanded: time then distance on one row (right-aligned).
+    cardRouteColExpanded: {
       flexDirection: 'row',
+      alignItems: 'baseline',
+      justifyContent: 'flex-end',
+      flexShrink: 1,
+      flexWrap: 'nowrap',
+      gap: s(6, 4),
+      minWidth: 0,
+      maxWidth: '55%',
+    },
+    cardRouteMetaDotExpanded: {
+      fontFamily: DISPLAY_FONT,
+      fontSize: compact ? 20 : 22,
+      color: glass.textTertiary,
+      lineHeight: s(26, 24),
+    },
+    // Apple Maps — expanded only: larger square control next to title.
+    mapsChip: {
+      width: s(48, 44),
+      height: s(48, 44),
+      borderRadius: s(14, 12),
       alignItems: 'center',
-      gap: 4,
-      paddingHorizontal: s(8, 6),
-      paddingVertical: s(4, 3),
-      borderRadius: s(12, 10),
-      backgroundColor: 'rgba(255,255,255,0.09)',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(255,255,255,0.12)',
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: glass.hairline,
+      borderColor: glass.hairlineStrong,
+      flexShrink: 0,
+      marginLeft: 'auto',
     },
     mapsChipText: {
       fontSize: 12,
       fontWeight: '600',
       color: glass.textSecondary,
     },
-    cardRouteMeta: {
-      flexDirection: 'row',
-      alignItems: 'baseline',
-      flexWrap: 'nowrap',
-      gap: s(6, 4),
-      minWidth: 0,
-    },
-    cardRouteMetaExpanded: {
-      gap: s(8, 6),
-    },
-    cardRouteMetaDot: {
-      fontFamily: DISPLAY_FONT,
-      fontSize: compact ? 16 : 18,
-      color: glass.textSecondary,
-      lineHeight: s(24, 20),
-    },
-    cardRouteMetaDotExpanded: {
-      fontSize: compact ? 20 : 22,
-      lineHeight: s(28, 24),
-    },
+    // Collapsed ≈1.1×; expanded time/title 1.3×. Distance base stays moderate.
     cardRouteMetaEta: {
       fontFamily: DISPLAY_FONT,
       fontSize: compact ? 18 : 20,
       fontVariant: ['tabular-nums'],
-      flexShrink: 1,
-      minWidth: 0,
-      lineHeight: s(26, 22),
+      fontWeight: '600',
+      flexShrink: 0,
+      lineHeight: s(20, 18),
       textAlign: 'right',
+      includeFontPadding: false,
     },
     cardRouteMetaDist: {
       fontFamily: DISPLAY_FONT,
-      fontSize: compact ? 16 : 18,
-      color: glass.textSecondary,
+      fontSize: compact ? 20 : 22,
       fontVariant: ['tabular-nums'],
-      flexShrink: 1,
-      minWidth: 0,
-      lineHeight: s(24, 20),
+      fontWeight: '700',
+      flexShrink: 0,
+      lineHeight: s(24, 22),
       textAlign: 'right',
+      includeFontPadding: false,
+      marginTop: -1,
     },
     cardRouteMetaEtaExpanded: {
       fontFamily: DISPLAY_FONT,
-      fontSize: compact ? 24 : 26,
+      fontSize: compact ? 23 : 26,
       fontVariant: ['tabular-nums'],
+      fontWeight: '600',
       flexShrink: 1,
-      minWidth: 0,
-      lineHeight: s(32, 28),
+      lineHeight: s(28, 26),
       textAlign: 'right',
+      includeFontPadding: false,
     },
     cardRouteMetaDistExpanded: {
       fontFamily: DISPLAY_FONT,
-      fontSize: compact ? 20 : 22,
-      color: glass.textSecondary,
+      fontSize: compact ? 26 : 30,
       fontVariant: ['tabular-nums'],
+      fontWeight: '700',
       flexShrink: 1,
-      minWidth: 0,
-      lineHeight: s(28, 24),
+      lineHeight: s(32, 30),
       textAlign: 'right',
+      includeFontPadding: false,
     },
 
     // a11y-layout:commandRow — single row always; density via cmdSize/labels.
@@ -3078,7 +3601,7 @@ const makeStyles = (
       alignItems: 'stretch',
       flexWrap: 'nowrap',
       gap: cmdGap,
-      marginTop: s(10, 8),
+      marginTop: s(8, 6),
       minWidth: 0,
       width: '100%',
     },
@@ -3275,9 +3798,262 @@ const makeStyles = (
     dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.35)' },
     dotActive: { width: 18, backgroundColor: accent },
 
-    // Sheet content
-    // Slim Apple-Maps search capsule, pinned inside the sheet's frosted
-    // header block (BottomSheet's `header` prop supplies the veil).
+    // Peek chrome — larger controls, snug to sheet top edge (grabber is tighter too).
+    sheetHeaderBlock: {
+      paddingHorizontal: 12,
+      paddingTop: 0,
+      paddingBottom: 6,
+    },
+    sheetTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      minWidth: 0,
+    },
+    groupNameHit: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      minWidth: 0,
+      marginRight: 4,
+    },
+    sheetGroupTitle: {
+      fontFamily: DISPLAY_FONT,
+      fontSize: s(18, 16),
+      fontWeight: '600',
+      color: '#fff',
+      flexShrink: 1,
+    },
+    myStatusBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 8,
+      marginTop: 4,
+      marginBottom: 8,
+      minWidth: 0,
+    },
+    myStatusRow: {
+      // Hug content — no flex:1 stretch (was leaving empty space on the right).
+      flexGrow: 0,
+      flexShrink: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      minHeight: 44,
+      paddingVertical: 10,
+      paddingHorizontal: 14,
+      borderRadius: 999,
+      backgroundColor: 'rgba(255,255,255,0.07)',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
+      maxWidth: '78%',
+    },
+    myStatusText: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: glass.textSecondary,
+      flexShrink: 1,
+    },
+    statusOption: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 12,
+      paddingVertical: 14,
+      paddingHorizontal: 12,
+      marginBottom: 10,
+      borderRadius: 16,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'rgba(255,255,255,0.12)',
+      backgroundColor: 'rgba(255,255,255,0.04)',
+    },
+    statusOptionIcon: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(255,255,255,0.08)',
+      flexShrink: 0,
+    },
+    statusOptionTitle: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: '#fff',
+      marginBottom: 4,
+    },
+    statusOptionHint: {
+      fontSize: 13,
+      lineHeight: 18,
+      color: glass.textTertiary,
+      fontWeight: '500',
+    },
+    statusOptionCheck: {
+      width: 24,
+      height: 24,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+      marginTop: 8,
+    },
+    statusOptionRadio: {
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      borderWidth: 1.5,
+      borderColor: 'rgba(255,255,255,0.28)',
+      flexShrink: 0,
+      marginTop: 9,
+    },
+    headerIconBtn: {
+      width: 46,
+      height: 46,
+      borderRadius: 23,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(255,255,255,0.08)',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
+      flexShrink: 0,
+    },
+    headerAvatar: {
+      width: 46,
+      height: 46,
+      borderRadius: 23,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+    },
+    headerAvatarEmoji: { fontSize: 24 },
+    headerAvatarText: { fontSize: 18, fontWeight: '700', color: '#fff' },
+    peekAvatarStack: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      flexShrink: 1,
+      minWidth: 0,
+      marginRight: 6,
+    },
+    peekEmptyHint: {
+      fontSize: 14,
+      fontWeight: '500',
+      color: glass.textTertiary,
+    },
+    peekStackAv: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 2.5,
+    },
+    peekStackMore: {
+      backgroundColor: 'rgba(60,64,72,0.95)',
+      borderColor: 'rgba(255,255,255,0.35)',
+    },
+    peekStackEmoji: { fontSize: 20 },
+    peekStackInitial: { fontSize: 15, fontWeight: '700', color: '#fff' },
+    peekStatusList: {
+      flex: 1,
+      minWidth: 0,
+      gap: 1,
+    },
+    peekStatusLine: {
+      fontSize: 11,
+      fontWeight: '500',
+      color: glass.textSecondary,
+      lineHeight: 14,
+    },
+    peekStatusName: {
+      fontWeight: '700',
+      color: '#fff',
+    },
+    peekStatusMore: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: glass.textTertiary,
+    },
+    sheetPaneToggleWrap: {
+      marginTop: 14,
+      marginBottom: 8,
+    },
+    accuracyRowLast: {
+      marginTop: 12,
+      borderBottomWidth: 0,
+    },
+    /** Inactive toggle panes stay mounted but take no layout space. */
+    sheetPaneHidden: {
+      position: 'absolute',
+      opacity: 0,
+      left: 0,
+      right: 0,
+      height: 0,
+      overflow: 'hidden',
+      zIndex: -1,
+    },
+    sheetHeadingFirst: {
+      marginTop: 4,
+    },
+    // Full card only for grouped "next stop" reading.
+    tripSummaryCard: {
+      borderRadius: 16,
+      padding: 14,
+      marginBottom: 8,
+      backgroundColor: glass.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
+    },
+    tripCardKicker: {
+      fontSize: 11,
+      fontWeight: '700',
+      letterSpacing: 0.5,
+      color: accent,
+      marginBottom: 4,
+      textTransform: 'uppercase',
+    },
+    tripCardTitle: {
+      fontFamily: DISPLAY_FONT,
+      fontSize: 18,
+      fontWeight: '600',
+      color: '#fff',
+      marginBottom: 4,
+    },
+    tripCardMeta: {
+      fontSize: 13,
+      color: glass.textSecondary,
+    },
+    // Plain navigation list (Sheet → rows only, no icon tiles).
+    listGroup: {
+      marginBottom: 8,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: 'rgba(255,255,255,0.08)',
+    },
+    listRow: {
+      minHeight: 48,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingVertical: 13,
+      paddingHorizontal: 4,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: 'rgba(255,255,255,0.08)',
+    },
+    listRowLast: {},
+    listRowTitle: {
+      flex: 1,
+      fontSize: 16,
+      fontWeight: '500',
+      color: '#fff',
+      minWidth: 0,
+    },
+    listRowTrailing: {
+      fontSize: 15,
+      fontWeight: '500',
+      color: glass.textSecondary,
+    },
+    // Legacy search field styles (still used by overlays / confirm flows).
     searchRow: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -3370,36 +4146,34 @@ const makeStyles = (
       marginBottom: 8,
     },
     memberHeadingActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    // Toggle rows: flat list-style, no nested icon tile cards.
     accuracyRow: {
-      minHeight: 54,
+      minHeight: 52,
       flexDirection: 'row',
       alignItems: 'center',
       gap: 12,
-      padding: 12,
-      marginBottom: 8,
-      borderRadius: 16,
-      backgroundColor: glass.fill,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: glass.hairline,
+      paddingVertical: 10,
+      paddingHorizontal: 4,
+      marginBottom: 4,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: 'rgba(255,255,255,0.08)',
     },
     accuracyCopy: { flex: 1, minWidth: 0 },
-    accuracySwitch: { flexShrink: 0, transform: [{ translateY: 4 }] },
+    accuracySwitch: { flexShrink: 0, transform: [{ translateY: 2 }] },
     accuracyTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7, flexWrap: 'wrap' },
-    accuracyLabel: { color: '#fff', fontSize: 15, fontWeight: '700', lineHeight: 22, flexShrink: 1 },
+    accuracyLabel: { color: '#fff', fontSize: 15, fontWeight: '600', lineHeight: 22, flexShrink: 1 },
+    // Hint is secondary gray — not orange (orange reserved for primary / on).
     accuracyBattery: {
-      marginLeft: 25,
       marginTop: 2,
-      color: glass.warn,
+      color: glass.textTertiary,
       fontSize: 11,
-      fontWeight: '600',
+      fontWeight: '500',
       lineHeight: 16,
       flexShrink: 1,
     },
-    // Non-warning secondary line under a settings toggle (e.g. oblique locate).
     accuracySubhint: {
-      marginLeft: 25,
       marginTop: 2,
-      color: glass.textSecondary,
+      color: glass.textTertiary,
       fontSize: 11,
       fontWeight: '500',
       lineHeight: 16,
@@ -3411,10 +4185,7 @@ const makeStyles = (
       borderRadius: 22,
       alignItems: 'center',
       justifyContent: 'center',
-      marginTop: 20,
-      backgroundColor: glass.fill,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: glass.hairlineStrong,
+      marginTop: 0,
     },
     splitBar: {
       borderRadius: 16,
@@ -3470,14 +4241,15 @@ const makeStyles = (
       marginBottom: 16,
       minWidth: 0,
     },
-    // Big bold white section headings on the main sheet (Apple Maps style).
-    // Generous top margin so each section visibly separates from the last.
+    // Section labels — lighter than nested card chrome.
     sheetHeading: {
-      fontSize: 20,
+      fontSize: 13,
       fontWeight: '700',
-      color: '#fff',
-      marginTop: 24,
-      marginBottom: 12,
+      letterSpacing: 0.4,
+      textTransform: 'uppercase',
+      color: glass.textTertiary,
+      marginTop: 20,
+      marginBottom: 8,
       marginLeft: 4,
     },
     memberCapHint: {
@@ -3486,13 +4258,22 @@ const makeStyles = (
       marginTop: 24,
     },
     sectionLabel: {
-      fontSize: 15,
-      fontWeight: '800',
+      fontSize: 13,
+      fontWeight: '700',
       letterSpacing: 0.4,
-      color: glass.textSecondary,
-      marginBottom: 12,
+      textTransform: 'uppercase',
+      color: glass.textTertiary,
+      marginBottom: 8,
       marginLeft: 4,
-      marginTop: 26,
+      marginTop: 22,
+    },
+    settingsInlineLabel: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: glass.textSecondary,
+      marginBottom: 8,
+      marginLeft: 4,
+      marginTop: 8,
     },
     profileSectionLabel: {
       fontSize: 15,
@@ -3588,11 +4369,15 @@ const makeStyles = (
       borderWidth: 2,
     },
     flockInitial: { fontSize: 16, fontWeight: '600', color: '#fff' },
-    flockName: { fontSize: 16, color: '#fff' },
-    flockStatus: { fontSize: 13 },
+    flockName: { fontSize: 16, color: '#fff', fontWeight: '600' },
+    flockStatus: { fontSize: 13, marginTop: 2 },
+    flockMetaRole: { color: glass.textSecondary, fontWeight: '500' },
+    flockMetaDist: { color: 'rgba(255,255,255,0.85)', fontWeight: '500' },
+    flockMetaFresh: { color: glass.textTertiary, fontWeight: '500' },
+    flockMetaWarn: { color: glass.warn, fontWeight: '600' },
     flockFreshness: { fontSize: 11.5, color: glass.textTertiary, marginTop: 2 },
     flockMeta: { alignItems: 'flex-end' },
-    flockEta: { fontFamily: DISPLAY_FONT, fontSize: 15, fontWeight: '600', color: '#fff', fontVariant: ['tabular-nums'] },
+    flockEta: { fontFamily: DISPLAY_FONT, fontSize: 15, fontWeight: '600', color: 'rgba(255,255,255,0.9)', fontVariant: ['tabular-nums'] },
     flockDist: { fontSize: 12, color: glass.textTertiary },
     selfControls: {
       flexDirection: 'row',
@@ -3617,43 +4402,40 @@ const makeStyles = (
     },
     selfControlLabel: { fontSize: 13, color: glass.textSecondary },
 
+    // Legacy aliases (overlays may still reference these).
     rowButton: {
+      minHeight: 48,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 12,
-      height: 58,
-      borderRadius: 16,
-      paddingHorizontal: 14,
-      marginBottom: 20,
-      backgroundColor: glass.fill,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: glass.hairline,
+      gap: 8,
+      paddingVertical: 13,
+      paddingHorizontal: 4,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: 'rgba(255,255,255,0.08)',
     },
     rowIcon: {
-      width: 40,
-      height: 40,
-      borderRadius: 12,
+      width: 22,
+      height: 22,
       alignItems: 'center',
       justifyContent: 'center',
     },
-    rowTitle: { fontSize: 16, fontWeight: '600', color: '#fff', flexShrink: 1 },
-    rowSub: { fontSize: 13, color: glass.textSecondary },
-    rowAction: { fontSize: 14, fontWeight: '600' },
+    rowTitle: { flex: 1, fontSize: 16, fontWeight: '500', color: '#fff', flexShrink: 1 },
+    rowSub: { fontSize: 13, color: glass.textTertiary },
+    rowAction: { fontSize: 14, fontWeight: '500', color: glass.textSecondary },
+    rowActionSecondary: { fontSize: 14, fontWeight: '500', color: glass.textSecondary },
     rowActionPressed: { opacity: 0.5 },
 
     settingsButton: {
-      height: 54,
-      borderRadius: 16,
+      minHeight: 48,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 12,
-      paddingHorizontal: 16,
-      marginTop: 20,
-      backgroundColor: glass.fill,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: glass.hairline,
+      gap: 10,
+      paddingVertical: 12,
+      paddingHorizontal: 4,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: 'rgba(255,255,255,0.08)',
     },
-    settingsText: { flex: 1, fontSize: 16, fontWeight: '600', color: '#fff' },
+    settingsText: { flex: 1, fontSize: 16, fontWeight: '500', color: '#fff' },
 
     // Overlays
     overlayBody: { paddingHorizontal: 16, paddingBottom: 40 },
@@ -3702,22 +4484,25 @@ const makeStyles = (
       borderColor: accentMix(accent, 40),
     },
     accountBtnText: { fontSize: 15, fontWeight: '600' },
-    settingsTopGroup: { gap: 10, marginBottom: 8 },
+    settingsTopGroup: {
+      marginBottom: 4,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: 'rgba(255,255,255,0.08)',
+    },
     settingsTopRow: {
-      minHeight: 64,
+      minHeight: 52,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      paddingHorizontal: 16,
+      gap: 10,
+      paddingHorizontal: 4,
       paddingVertical: 12,
-      borderRadius: 18,
-      backgroundColor: glass.fill,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: glass.hairline,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: 'rgba(255,255,255,0.08)',
     },
-    settingsTopCopy: { flex: 1, gap: 3 },
-    settingsTopTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
-    settingsTopDescription: { color: glass.textSecondary, fontSize: 12.5 },
+    settingsTopCopy: { flex: 1, gap: 3, minWidth: 0 },
+    settingsTopTitle: { color: '#fff', fontSize: 16, fontWeight: '500' },
+    settingsTopDescription: { color: glass.textTertiary, fontSize: 12.5 },
     reportButton: {
       minHeight: 54,
       flexDirection: 'row',

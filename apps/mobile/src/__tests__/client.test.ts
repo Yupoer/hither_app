@@ -23,6 +23,8 @@ import {
   setStragglerConfig,
   upsertLiveActivitySession,
   deleteLiveActivitySession,
+  deleteMyLiveActivitySessions,
+  deleteMyLiveActivitySessionsForGroups,
 } from '../api/client';
 import { supabase } from '../api/supabase';
 
@@ -493,5 +495,27 @@ describe('live activity sessions', () => {
 
     expect(eqUser).toHaveBeenCalledWith('user_id', 'uid');
     expect(eqActivity).toHaveBeenCalledWith('activity_id', 'activity-1');
+  });
+
+  it('deletes all live activity sessions for the current user', async () => {
+    const eqUser = jest.fn().mockResolvedValue({ error: null });
+    const remove = jest.fn(() => ({ eq: eqUser }));
+    mockedFrom.mockImplementation(() => ({ delete: remove }));
+
+    await deleteMyLiveActivitySessions();
+
+    expect(eqUser).toHaveBeenCalledWith('user_id', 'uid');
+  });
+
+  it('deletes live activity sessions for selected groups', async () => {
+    const inGroups = jest.fn().mockResolvedValue({ error: null });
+    const eqUser = jest.fn(() => ({ in: inGroups }));
+    const remove = jest.fn(() => ({ eq: eqUser }));
+    mockedFrom.mockImplementation(() => ({ delete: remove }));
+
+    await deleteMyLiveActivitySessionsForGroups(['g1', 'g2']);
+
+    expect(eqUser).toHaveBeenCalledWith('user_id', 'uid');
+    expect(inGroups).toHaveBeenCalledWith('group_id', ['g1', 'g2']);
   });
 });

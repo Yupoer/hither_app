@@ -13,5 +13,6 @@ class HitherLiveActivityModule : Module() {
     AsyncFunction("startGroupActivity") { _: Map<String, Any?> -> null }
     AsyncFunction("updateGroupActivity") { _: String, _: Map<String, Any?> -> }
     AsyncFunction("endGroupActivity") { _: String -> }
+    AsyncFunction("endAllGroupActivities") { }
   }
 }

@@ -64,6 +64,24 @@ describe('ActivityKit remote push contract', () => {
     expect(liveHook).toContain('addPushTokenListener');
   });
 
+  it('can end every Live Activity without a JS handle (leave / orphan cleanup)', () => {
+    expect(nativeModule).toContain('endAllGroupActivities');
+    expect(jsBridge).toContain('endAllGroupActivities');
+    expect(liveHook).toContain('clearLiveActivities');
+    expect(liveHook).toContain('endAllGroupActivities');
+  });
+
+  it('clears Live Activities on leave, sign-out, and MyTeams leave', () => {
+    const session = readFileSync(join(__dirname, '../state/SessionContext.tsx'), 'utf8');
+    const myTeams = readFileSync(join(__dirname, '../screens/MyTeamsScreen.tsx'), 'utf8');
+    expect(session).toContain('clearLiveActivities');
+    expect(session).toContain('leaveGroupWithJourneyCleanup');
+    expect(session).toContain('signOutWithJourneyCleanup');
+    expect(myTeams).toContain('clearLiveActivities');
+    expect(mapScreen).toContain('clearLiveActivities');
+    expect(mapScreen).toContain('leaveGroups');
+  });
+
   it('uses personal initial distance and persisted member status in MapScreen', () => {
     expect(mapScreen).not.toContain('PROGRESS_REF_M');
     expect(mapScreen).toContain('gatedJourneyProgress(');

@@ -131,8 +131,8 @@ const makeSegStyles = (scale: number) => {
     },
     segLocked: { opacity: 0.4 },
     segText: {
-      fontSize: 15,
-      fontWeight: '600',
+      fontSize: s(16, 15),
+      fontWeight: '700',
       color: glass.textSecondary,
       textAlign: 'center',
     },

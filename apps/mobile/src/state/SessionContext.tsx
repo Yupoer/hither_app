@@ -30,6 +30,7 @@ import { syncOnboardingIfNeeded } from '../onboarding/sync';
 import { flushQueuedEvents } from '../utils/activityLog';
 import { useAuthFlow } from './useAuthFlow';
 import { stopBackgroundJourney } from './backgroundJourney';
+import { clearLiveActivities } from './useLiveActivity';
 
 // Dismisses a leftover auth browser tab if one is still open on launch.
 WebBrowser.maybeCompleteAuthSession();
@@ -199,6 +200,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     supabase.auth.getSession().then(({ data }) => {
       hydrate(data.session?.user).finally(() => {
         if (active) setInitializing(false);
+        // Drop orphaned lock-screen Live Activities left after a previous
+        // process death (in-memory handle is gone). Map restarts them if
+        // the user re-enters an active journey.
+        void clearLiveActivities();
       });
     });
 
@@ -251,11 +256,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   const signOutWithJourneyCleanup = useCallback(async () => {
     await stopBackgroundJourney().catch(() => undefined);
+    await clearLiveActivities();
     await signOut();
   }, [signOut]);
 
   const leaveGroupWithJourneyCleanup = useCallback(() => {
     void stopBackgroundJourney();
+    void clearLiveActivities();
     setMembershipState(null);
   }, []);
 

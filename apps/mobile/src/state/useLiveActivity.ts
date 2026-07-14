@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
 import {
   deleteLiveActivitySession,
+  deleteMyLiveActivitySessions,
+  deleteMyLiveActivitySessionsForGroups,
   upsertLiveActivitySession,
 } from '../api/services/LiveActivityService';
 import { liveActivity, type GroupActivityState } from '../native';
@@ -11,6 +13,22 @@ export interface LiveActivitySessionContext {
   destinationId: string;
   initialDistanceM: number;
   travelMode: TravelMode;
+}
+
+/**
+ * End every Hither Live Activity on device and drop matching DB sessions.
+ * Call on leave / sign-out / MyTeams leave / cold start so lock-screen
+ * orphans cannot stick after the in-memory activity handle is lost.
+ */
+export async function clearLiveActivities(opts?: {
+  groupIds?: string[];
+}): Promise<void> {
+  await liveActivity.endAllGroupActivities();
+  if (opts?.groupIds?.length) {
+    await deleteMyLiveActivitySessionsForGroups(opts.groupIds).catch(() => undefined);
+  } else {
+    await deleteMyLiveActivitySessions().catch(() => undefined);
+  }
 }
 
 export function useLiveActivity(
@@ -57,9 +75,9 @@ export function useLiveActivity(
     });
   };
 
-  const finishActivity = (activityId: string) => {
-    void liveActivity.endGroupActivity(activityId);
-    void deleteLiveActivitySession(activityId).catch(() => undefined);
+  const finishActivity = async (activityId: string) => {
+    await liveActivity.endGroupActivity(activityId);
+    await deleteLiveActivitySession(activityId).catch(() => undefined);
   };
 
   useEffect(() => {
@@ -87,30 +105,47 @@ export function useLiveActivity(
         };
       }
 
-      if (handleRef.current) {
-        finishActivity(handleRef.current);
-        handleRef.current = null;
-      }
       destinationRef.current = desiredDestination;
       pushTokenRef.current = undefined;
 
       void (async () => {
+        // Await end before start so a destination switch cannot leave zombies.
+        if (handleRef.current) {
+          const previousId = handleRef.current;
+          handleRef.current = null;
+          await finishActivity(previousId);
+        }
+        if (cancelled) return;
+
         const result = await liveActivity.startGroupActivity(stateRef.current);
         if (!result) return;
         if (cancelled) {
-          finishActivity(result.activityId);
+          await finishActivity(result.activityId);
+          // Belt: drop any other orphans from a race.
+          await liveActivity.endAllGroupActivities();
           return;
         }
         handleRef.current = result.activityId;
         pushTokenRef.current = result.pushToken;
         await persistSession(result.activityId, { force: true }).catch(() => undefined);
       })();
-    } else if (handleRef.current) {
+    } else if (!active || handleRef.current) {
+      // Journey off, or session dropped while an activity is running.
+      // Do NOT tear down while active but session is still hydrating (GPS baseline).
       const activityId = handleRef.current;
       handleRef.current = null;
       destinationRef.current = null;
       pushTokenRef.current = undefined;
-      finishActivity(activityId);
+      void (async () => {
+        if (activityId) {
+          await finishActivity(activityId);
+        }
+        // End-all covers lost handles and multi-start races.
+        await liveActivity.endAllGroupActivities();
+        if (!active) {
+          await deleteMyLiveActivitySessions().catch(() => undefined);
+        }
+      })();
     }
 
     return () => {
@@ -121,10 +156,14 @@ export function useLiveActivity(
 
   useEffect(() => {
     return () => {
-      if (!handleRef.current) return;
       const activityId = handleRef.current;
       handleRef.current = null;
-      finishActivity(activityId);
+      void (async () => {
+        if (activityId) {
+          await finishActivity(activityId);
+        }
+        await liveActivity.endAllGroupActivities();
+      })();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

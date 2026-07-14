@@ -49,3 +49,27 @@ export async function deleteLiveActivitySession(activityId: string): Promise<voi
     .eq('activity_id', activityId);
   orThrow(error);
 }
+
+/** Delete every live_activity_sessions row owned by the current user. */
+export async function deleteMyLiveActivitySessions(): Promise<void> {
+  const uid = await requireUserId();
+  const { error } = await supabase
+    .from('live_activity_sessions')
+    .delete()
+    .eq('user_id', uid);
+  orThrow(error);
+}
+
+/** Delete the current user's live_activity_sessions rows for the given groups. */
+export async function deleteMyLiveActivitySessionsForGroups(
+  groupIds: string[],
+): Promise<void> {
+  if (!groupIds.length) return;
+  const uid = await requireUserId();
+  const { error } = await supabase
+    .from('live_activity_sessions')
+    .delete()
+    .eq('user_id', uid)
+    .in('group_id', groupIds);
+  orThrow(error);
+}

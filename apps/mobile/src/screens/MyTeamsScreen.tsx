@@ -10,6 +10,7 @@ import { lightTap, alertBuzz } from '../utils/haptics';
 import { useSession } from '../state/SessionContext';
 import { getMyJoinedGroups, JoinedGroupInfo, leaveGroups } from '../api/client';
 import { GlassView } from '../native/liquidGlass';
+import { clearLiveActivities } from '../state/useLiveActivity';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'MyTeams'>;
@@ -53,6 +54,7 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
         onPress: async () => {
           try {
             await leaveGroups([groupId]);
+            await clearLiveActivities({ groupIds: [groupId] });
             setJoinedGroups((prev) => prev.filter((g) => g.group.id !== groupId));
             setExpandedGroupId(null);
           } catch (e) {
@@ -74,6 +76,7 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
           try {
             const groupIds = joinedGroups.map((g) => g.group.id);
             await leaveGroups(groupIds);
+            await clearLiveActivities({ groupIds });
             setJoinedGroups([]);
             navigation.goBack();
           } catch (e) {

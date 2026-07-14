@@ -9,9 +9,10 @@ import Foundation
 //
 // Exported names/shapes MUST match liveActivity.ts:
 //   isSupported(): boolean
-//   startGroupActivity(state): Promise<string | null>   // activity id
+//   startGroupActivity(state): Promise<{activityId, pushToken?} | null>
 //   updateGroupActivity(handle, state): Promise<void>
 //   endGroupActivity(handle): Promise<void>
+//   endAllGroupActivities(): Promise<void>
 //
 // All calls degrade safely below iOS 16.2 (isSupported() false, requests no-op).
 public class HitherLiveActivityModule: Module {
@@ -88,6 +89,16 @@ public class HitherLiveActivityModule: Module {
       guard #available(iOS 16.2, *) else { return }
       for activity in Activity<HitherGroupAttributes>.activities
       where activity.id == handle {
+        await activity.end(nil, dismissalPolicy: .immediate)
+      }
+    }
+
+    // Ends every Hither Live Activity regardless of JS handle. Used on leave,
+    // sign-out, and cold start so orphaned lock-screen activities cannot stick
+    // after the in-memory activity id is lost.
+    AsyncFunction("endAllGroupActivities") {
+      guard #available(iOS 16.2, *) else { return }
+      for activity in Activity<HitherGroupAttributes>.activities {
         await activity.end(nil, dismissalPolicy: .immediate)
       }
     }

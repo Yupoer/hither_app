@@ -91,5 +91,7 @@ export { updateMyLocation } from './services/LocationService';
 export {
   upsertLiveActivitySession,
   deleteLiveActivitySession,
+  deleteMyLiveActivitySessions,
+  deleteMyLiveActivitySessionsForGroups,
 } from './services/LiveActivityService';
 export type { LiveActivitySessionInput } from './services/LiveActivityService';

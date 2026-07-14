@@ -66,6 +66,9 @@ describe('Dynamic Type contract', () => {
     // Title hero; ETA/dist share a row with arrival progress.
     expect(mapScreen).toContain('cardRouteMeta');
     expect(mapScreen).toContain('cardMetaRow');
+    // Expanded: arrival progress sits directly under 小隊行程 badge.
+    expect(mapScreen).toContain('cardMetaRowAfterBadge');
+    expect(mapScreen).toContain("subgroup.itineraryBadge");
     expect(mapScreen).toContain('a11y-layout:commandRowCompact');
     expect(mapScreen).toContain('meetBtn');
     // Apple Maps only after expand, above ETA/dist (not in the 3-button row).

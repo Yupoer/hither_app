@@ -184,5 +184,6 @@ describe('background journey native wiring', () => {
     expect(mapScreen).toContain('stopBackgroundJourney');
     expect(session).toContain('signOutWithJourneyCleanup');
     expect(session).toContain('leaveGroupWithJourneyCleanup');
+    expect(session).toContain('clearLiveActivities');
   });
 });

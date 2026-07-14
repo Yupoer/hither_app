@@ -24,10 +24,14 @@ const DISMISS_VELOCITY = 0.6;
  * that slides up over the main sheet. Used for the search, route (reorder),
  * settings, feedback and meet-time surfaces. Dismiss by tapping the scrim or
  * "Done", OR by dragging the grabber/header straight down.
+ *
+ * When `onDone` is provided, the Done button commits via `onDone` while scrim
+ * tap / drag-dismiss still call `onClose` (cancel without committing).
  */
 export default function OverlaySheet({
   visible,
   onClose,
+  onDone,
   title,
   accent,
   doneLabel = 'Done',
@@ -35,6 +39,8 @@ export default function OverlaySheet({
 }: {
   visible: boolean;
   onClose: () => void;
+  /** If set, Done calls this instead of `onClose` (commit vs cancel). */
+  onDone?: () => void;
   title: string;
   accent: string;
   doneLabel?: string;
@@ -54,6 +60,7 @@ export default function OverlaySheet({
   heightRef.current = height;
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const handleDone = onDone ?? onClose;
 
   useEffect(() => {
     if (visible) {
@@ -162,7 +169,7 @@ export default function OverlaySheet({
             <View style={styles.headerSide} />
             <Text style={styles.title}>{title}</Text>
             <Pressable
-              onPress={onClose}
+              onPress={handleDone}
               accessibilityRole="button"
               style={styles.headerSide}
               hitSlop={8}

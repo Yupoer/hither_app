@@ -119,11 +119,11 @@ export default React.memo(function BottomSheet({
     onIndexChange(target);
   };
 
-  // Snap to the current detent whenever the detent *values* change (rotation,
-  // header re-measure). Gesture-driven index changes are settled by `settle`
-  // above, so they are deliberately NOT a dependency here.
+  // Snap when detent *values* change (rotation / header re-measure).
+  // Gesture-driven index changes settle via `settle` (not listed as a dep).
+  // Use zero restart velocity so a mid-flight remeasure doesn't "kick back".
   useEffect(() => {
-    height.value = withSpring(detents[index], SPRING);
+    height.value = withSpring(detents[index], { ...SPRING, velocity: 0 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detents[0], detents[1], detents[2]]);
 
@@ -283,11 +283,12 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   headerBlock: { position: 'absolute', top: 0, left: 0, right: 0 },
-  grabZone: { paddingTop: 10, paddingBottom: 6, alignItems: 'center' },
+  // Tighter top so peek chrome sits closer to the sheet edge.
+  grabZone: { paddingTop: 6, paddingBottom: 4, alignItems: 'center' },
   grabber: {
-    width: 40,
-    height: 5,
-    borderRadius: 3,
+    width: 36,
+    height: 4,
+    borderRadius: 2,
     backgroundColor: glass.grabber,
   },
 });

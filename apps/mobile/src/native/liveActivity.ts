@@ -35,6 +35,7 @@ type HitherLiveActivityModule = {
     state: GroupActivityState,
   ): Promise<void>;
   endGroupActivity(handle: ActivityHandle): Promise<void>;
+  endAllGroupActivities(): Promise<void>;
 };
 
 const HitherLiveActivity =
@@ -103,4 +104,9 @@ export async function updateGroupActivity(
 /** End a running Live Activity. No-op when unsupported. */
 export async function endGroupActivity(handle: ActivityHandle): Promise<void> {
   await HitherLiveActivity?.endGroupActivity(handle);
+}
+
+/** End every Hither Live Activity on this device. No-op when unsupported. */
+export async function endAllGroupActivities(): Promise<void> {
+  await HitherLiveActivity?.endAllGroupActivities();
 }
