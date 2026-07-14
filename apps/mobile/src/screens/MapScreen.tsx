@@ -219,16 +219,17 @@ export default function MapScreen({ route, navigation }: Props) {
   const accent = colors.accent;
   const { t } = useTranslation();
   // Live Dynamic Type layout — rebuilds when system fontScale changes.
-  // a11y-layout:commandRow — large/xl OR narrow width stack command controls.
-  // a11y-layout:narrowScreen — iPhone 15 / mini (~375) density + no overflow.
+  // a11y-layout:commandRow — always ONE row; density (size/labels) tracks
+  // font bucket + physical width, never multi-row stacking.
+  // a11y-layout:narrowScreen — iPhone 15 / mini (~375) denser chrome.
   const fontLayout = useFontLayout();
   const fontBucket = fontLayout.bucket;
   // ≤390 ≈ iPhone 15 / mini / SE; slightly denser chrome so fixed command
   // controls don't clip past the card edge on small physical widths.
   const narrowScreen = windowWidth < 400;
   const styles = useMemo(
-    () => makeStyles(accent, fontLayout.scale, narrowScreen),
-    [accent, fontLayout.scale, narrowScreen],
+    () => makeStyles(accent, fontLayout.scale, narrowScreen, fontBucket),
+    [accent, fontLayout.scale, narrowScreen, fontBucket],
   );
   // Embedded themed components (reorder list, notifications, commands) always
   // render on the dark glass overlay — force the night palette so they stay dark.
@@ -1985,17 +1986,17 @@ export default function MapScreen({ route, navigation }: Props) {
                   : '—';
               const distLabel = d != null ? formatDistance(d) : '';
               const cardExpanded = expandedCardId === dest.id;
-              // Progressive chrome: narrow width and/or large Dynamic Type
-              // drop secondary labels so the limited card width stays usable.
-              // Layout must NOT depend on sheet detent/stage — only device + font.
+              // Progressive density (single row always):
+              // - compact: narrow phone OR large Dynamic Type → smaller squares
+              // - tight: xl OR (narrow + large) → nav icon-only, smaller countdown
+              // Never multi-row. Not tied to sheet stage.
               // a11y-layout:commandRowCompact
               const chromeCompact =
                 narrowScreen || fontBucket === 'large' || fontBucket === 'xl';
               const chromeTight = fontBucket === 'xl' || (narrowScreen && fontBucket === 'large');
-              // Stack command controls for narrow/large type always (any stage).
-              // a11y-layout:commandRow — independent of sheet stage.
-              const stacked =
-                narrowScreen || fontBucket === 'large' || fontBucket === 'xl';
+              // On tight density, drop nav label so meet countdown + mode stay
+              // square-floor sized in one row (especially when Maps appears).
+              const navIconOnly = chromeTight;
               return (
                 <View
                   key={`carousel-dest-${dest.id}-${index}`}
@@ -2160,82 +2161,17 @@ export default function MapScreen({ route, navigation }: Props) {
                     </View>
 
                     {/* a11y-layout:commandRow
-                        regular wide: single row; large/xl OR narrowScreen: nav
-                        full-width + secondary row so controls never clip.
+                        ALWAYS a single row (never stacks to two rows).
+                        Collapsed: Nav · Mode · Meet (3).
+                        Expanded:  Nav · Mode · Apple Maps · Meet (4).
+                        Density (cmdSize / labels) tracks narrow + Dynamic Type.
                         a11y-layout:narrowScreen — iPhone 15 / mini / SE.
-                        Stacking follows device/font only — NOT sheet stage.
-                        Mode is icon-only; ETA/dist live in the head-end rail. */}
-                    {(() => {
-                      const secondary = (
-                        <>
-                      <Pressable
-                        style={[
-                          styles.cmdSquare,
-                          { backgroundColor: accentMix(accent, 16), borderColor: accentMix(accent, 38) },
-                        ]}
-                        onPress={() => {
-                          lightTap();
-                          const order = ['walk', 'transit', 'drive'] as const;
-                          setTravelMode(order[(order.indexOf(travelMode) + 1) % order.length]);
-                        }}
-                        accessibilityRole="button"
-                        accessibilityLabel={`${t(`map.travelMode.${travelMode}`)} ${etaLabel} ${distLabel}`.trim()}
-                      >
-                        <Ionicons name={modeIconName} size={20} color={accent} />
-                      </Pressable>
-
-                      <Pressable
-                        style={styles.cmdSquare}
-                        onPress={() => openInAppleMaps(dest)}
-                        accessibilityRole="button"
-                        accessibilityLabel={t('map.openInAppleMaps')}
-                      >
-                        <Ionicons name="open-outline" size={20} color={glass.textSecondary} />
-                      </Pressable>
-
-                      <Pressable
-                        style={[styles.meetBtn, stacked && styles.meetBtnGrow]}
-                        onPress={() => openMeetTimePicker(dest)}
-                        disabled={!canEditItinerary}
-                        accessibilityRole="button"
-                        accessibilityLabel={
-                          meetLabel
-                            ? `${t('meetTime.set')} ${meetLabel}`
-                            : t('meetTime.set')
-                        }
-                      >
-                        <Ionicons
-                          name="time-outline"
-                          size={chromeCompact ? 17 : 18}
-                          color={meetLabel ? accent : glass.textSecondary}
-                        />
-                        {dest.meetAt ? (
-                          <MeetCountdown
-                            meetAtIso={dest.meetAt as string}
-                            redWithinMin={meetRedMin}
-                            redColor={glass.danger}
-                            baseStyle={[
-                              chromeTight ? styles.meetBtnLabelCompact : styles.meetBtnLabel,
-                              { color: accent },
-                            ]}
-                          />
-                        ) : (
-                          <Text
-                            style={chromeTight ? styles.meetBtnLabelCompact : styles.meetBtnLabel}
-                            numberOfLines={1}
-                          >
-                            ——
-                          </Text>
-                        )}
-                      </Pressable>
-                        </>
-                      );
-                      return (
-                    <View style={stacked ? styles.commandCol : styles.commandRow}>
+                        ETA/dist live in the head-end rail. */}
+                    <View style={styles.commandRow}>
                       <Pressable
                         style={[
                           styles.navBtn,
-                          stacked && styles.navBtnFull,
+                          navIconOnly && styles.navBtnIconOnly,
                           navigatingThis ? styles.navBtnEnd : { backgroundColor: accent },
                         ]}
                         onPress={() => {
@@ -2265,32 +2201,110 @@ export default function MapScreen({ route, navigation }: Props) {
                       >
                         <Ionicons
                           name={navigatingThis ? 'stop' : isLeader ? 'play' : 'navigate'}
-                          size={15}
+                          size={chromeCompact ? 16 : 15}
                           color={navigatingThis ? glass.danger : '#0c1a12'}
                         />
-                        <Text
-                          style={[
-                            styles.navBtnText,
-                            { color: navigatingThis ? glass.danger : '#0c1a12' },
-                          ]}
-                          numberOfLines={1}
-                          ellipsizeMode="tail"
-                        >
-                          {navigatingThis
-                            ? t('map.stopNav')
-                            : isLeader
-                              ? t('map.directions')
-                              : '路徑規劃'}
-                        </Text>
+                        {!navIconOnly ? (
+                          <Text
+                            style={[
+                              styles.navBtnText,
+                              { color: navigatingThis ? glass.danger : '#0c1a12' },
+                            ]}
+                            numberOfLines={1}
+                            ellipsizeMode="tail"
+                          >
+                            {navigatingThis
+                              ? t('map.stopNav')
+                              : isLeader
+                                ? t('map.directions')
+                                : '路徑規劃'}
+                          </Text>
+                        ) : null}
                       </Pressable>
-                      {stacked ? (
-                        <View style={styles.commandSecondaryRow}>{secondary}</View>
-                      ) : (
-                        secondary
-                      )}
+
+                      <Pressable
+                        style={[
+                          styles.cmdSquare,
+                          { backgroundColor: accentMix(accent, 16), borderColor: accentMix(accent, 38) },
+                        ]}
+                        onPress={() => {
+                          lightTap();
+                          const order = ['walk', 'transit', 'drive'] as const;
+                          setTravelMode(order[(order.indexOf(travelMode) + 1) % order.length]);
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${t(`map.travelMode.${travelMode}`)} ${etaLabel} ${distLabel}`.trim()}
+                      >
+                        <Ionicons
+                          name={modeIconName}
+                          size={chromeTight ? 18 : 20}
+                          color={accent}
+                        />
+                      </Pressable>
+
+                      {/* Apple Maps hand-off only after expand — frees width
+                          for meet countdown in the default 3-button row. */}
+                      {cardExpanded ? (
+                        <Pressable
+                          style={styles.cmdSquare}
+                          onPress={() => openInAppleMaps(dest)}
+                          accessibilityRole="button"
+                          accessibilityLabel={t('map.openInAppleMaps')}
+                        >
+                          <Ionicons
+                            name="open-outline"
+                            size={chromeTight ? 18 : 20}
+                            color={glass.textSecondary}
+                          />
+                        </Pressable>
+                      ) : null}
+
+                      <Pressable
+                        style={styles.meetBtn}
+                        onPress={() => openMeetTimePicker(dest)}
+                        disabled={!canEditItinerary}
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          meetLabel
+                            ? `${t('meetTime.set')} ${meetLabel}`
+                            : t('meetTime.set')
+                        }
+                      >
+                        <Ionicons
+                          name="time-outline"
+                          size={chromeTight ? 16 : chromeCompact ? 17 : 18}
+                          color={meetLabel ? accent : glass.textSecondary}
+                        />
+                        {dest.meetAt ? (
+                          <MeetCountdown
+                            meetAtIso={dest.meetAt as string}
+                            redWithinMin={meetRedMin}
+                            redColor={glass.danger}
+                            baseStyle={[
+                              chromeTight
+                                ? styles.meetBtnLabelTight
+                                : chromeCompact
+                                  ? styles.meetBtnLabelCompact
+                                  : styles.meetBtnLabel,
+                              { color: accent },
+                            ]}
+                          />
+                        ) : (
+                          <Text
+                            style={
+                              chromeTight
+                                ? styles.meetBtnLabelTight
+                                : chromeCompact
+                                  ? styles.meetBtnLabelCompact
+                                  : styles.meetBtnLabel
+                            }
+                            numberOfLines={1}
+                          >
+                            ——
+                          </Text>
+                        )}
+                      </Pressable>
                     </View>
-                      );
-                    })()}
                       </liquidGlass.GlassView>
                     </Animated.View>
                   </Pressable>
@@ -2737,18 +2751,30 @@ const segStyles = StyleSheet.create({
 
 /**
  * Design sizes × live (capped) font scale — layout tracks Dynamic Type.
- * `narrow` densifies chrome for iPhone 15 / mini / SE so command controls
- * stay inside the card and labels ellipsize instead of overflowing.
+ * `narrow` densifies chrome for iPhone 15 / mini / SE.
+ * `bucket` chooses compact/tight density so the command row STAYS one row
+ * (never stacks) while still fitting large Dynamic Type + small widths.
  */
-const makeStyles = (accent: string, scale: number, narrow = false) => {
+const makeStyles = (
+  accent: string,
+  scale: number,
+  narrow = false,
+  bucket: 'regular' | 'large' | 'xl' = 'regular',
+) => {
   const s = (n: number, min = 0) => Math.max(min, Math.round(n * scale));
-  // Slightly tighter bases on narrow physical widths (mini ~375, 15 ~390).
-  const cardPad = narrow ? s(10, 8) : s(14, 10);
-  const cmdGap = narrow ? s(6, 4) : s(8, 6);
-  // All four actions share this as the square floor (width & height ≥ cmdSize).
-  // Meet may grow wider so the countdown can scale up with the extra space.
-  const cmdSize = narrow ? s(52, 48) : s(56, 52);
-  const meetMinW = narrow ? s(88, 80) : s(112, 100);
+  // Density ladder (single-row only):
+  // regular → full labels + larger meet
+  // compact → smaller squares (narrow OR large type)
+  // tight   → icon-only nav + smallest meet type (xl OR narrow+large)
+  const tight = bucket === 'xl' || (narrow && bucket === 'large');
+  const compact = tight || narrow || bucket === 'large';
+  const cardPad = compact ? s(10, 8) : s(14, 10);
+  const cmdGap = tight ? s(5, 4) : compact ? s(6, 4) : s(8, 6);
+  // Every control is at least cmdSize×cmdSize; mode/maps stay exact squares.
+  const cmdSize = tight ? s(48, 44) : compact ? s(52, 48) : s(56, 52);
+  // Meet grows with free width; min leaves room for countdown digits.
+  // Collapsed 3-btn row gets more meet width than expanded 4-btn.
+  const meetMinW = tight ? s(72, 64) : compact ? s(84, 76) : s(104, 92);
   return StyleSheet.create({
     flex: { flex: 1, backgroundColor: '#0c1118' },
     loading: {
@@ -3006,34 +3032,21 @@ const makeStyles = (accent: string, scale: number, narrow = false) => {
       lineHeight: s(18, 15),
     },
 
-    // The single command row and its four controls.
-    // a11y-layout:commandRow — every control is at least cmdSize×cmdSize.
-    // Mode/maps stay exact squares; nav/meet may grow wider but never shorter.
+    // a11y-layout:commandRow — single row always; density via cmdSize/labels.
+    // Every control ≥ cmdSize×cmdSize. Mode/maps exact squares; nav/meet grow.
     commandRow: {
       flexDirection: 'row',
       alignItems: 'stretch',
+      flexWrap: 'nowrap',
       gap: cmdGap,
       marginTop: s(10, 8),
-      minWidth: 0,
-      width: '100%',
-    },
-    commandCol: {
-      flexDirection: 'column',
-      gap: cmdGap,
-      marginTop: s(10, 8),
-      minWidth: 0,
-      width: '100%',
-    },
-    commandSecondaryRow: {
-      flexDirection: 'row',
-      alignItems: 'stretch',
-      gap: cmdGap,
       minWidth: 0,
       width: '100%',
     },
     navBtn: {
-      flexGrow: 0,
+      flexGrow: 1,
       flexShrink: 1,
+      flexBasis: 0,
       minWidth: cmdSize,
       minHeight: cmdSize,
       height: cmdSize,
@@ -3044,26 +3057,28 @@ const makeStyles = (accent: string, scale: number, narrow = false) => {
       gap: s(6, 4),
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: 'transparent',
-      paddingHorizontal: s(10, 8),
+      paddingHorizontal: compact ? s(8, 6) : s(10, 8),
       overflow: 'hidden',
     },
-    navBtnFull: {
+    // Tight density: exact square so meet keeps countdown width.
+    navBtnIconOnly: {
       flexGrow: 0,
       flexShrink: 0,
-      alignSelf: 'stretch',
-      width: '100%',
-      height: cmdSize,
-      minHeight: cmdSize,
+      flexBasis: cmdSize,
+      width: cmdSize,
+      minWidth: cmdSize,
+      maxWidth: cmdSize,
+      paddingHorizontal: 0,
     },
     // "End navigation" state — a soft danger tint over the accent-solid "go".
     navBtnEnd: { backgroundColor: 'rgba(255,107,107,0.14)', borderColor: 'rgba(255,107,107,0.4)' },
     navBtnText: {
-      fontSize: narrow ? 13 : 14,
+      fontSize: compact ? 13 : 14,
       fontWeight: '700',
       flexShrink: 1,
       minWidth: 0,
     },
-    // Exact square secondary controls (travel mode, Apple-Maps hand-off).
+    // Exact square secondary controls (travel mode, Apple-Maps when expanded).
     cmdSquare: {
       width: cmdSize,
       height: cmdSize,
@@ -3080,13 +3095,14 @@ const makeStyles = (accent: string, scale: number, narrow = false) => {
       borderColor: glass.hairline,
       overflow: 'hidden',
     },
-    // Meet-time — at least square tall; wider min so countdown can go large.
+    // Meet-time — square-tall; flex-grows so countdown scales with free width.
     meetBtn: {
+      flexGrow: 1.15,
+      flexShrink: 1,
+      flexBasis: 0,
       minWidth: meetMinW,
       minHeight: cmdSize,
       height: cmdSize,
-      flexGrow: 1,
-      flexShrink: 1,
       borderRadius: s(15, 12),
       flexDirection: 'row',
       alignItems: 'center',
@@ -3095,20 +3111,12 @@ const makeStyles = (accent: string, scale: number, narrow = false) => {
       backgroundColor: 'rgba(255,255,255,0.09)',
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairline,
-      paddingHorizontal: s(10, 8),
+      paddingHorizontal: compact ? s(8, 6) : s(10, 8),
       overflow: 'hidden',
-    },
-    meetBtnGrow: {
-      flex: 1,
-      width: undefined,
-      maxWidth: undefined,
-      minWidth: meetMinW,
-      height: cmdSize,
-      minHeight: cmdSize,
     },
     meetBtnLabel: {
       fontFamily: DISPLAY_FONT,
-      fontSize: narrow ? 16 : 18,
+      fontSize: 17,
       fontWeight: '700',
       color: glass.textSecondary,
       fontVariant: ['tabular-nums'],
@@ -3118,7 +3126,17 @@ const makeStyles = (accent: string, scale: number, narrow = false) => {
     },
     meetBtnLabelCompact: {
       fontFamily: DISPLAY_FONT,
-      fontSize: narrow ? 14 : 15,
+      fontSize: 15,
+      fontWeight: '700',
+      color: glass.textSecondary,
+      fontVariant: ['tabular-nums'],
+      flexShrink: 1,
+      minWidth: 0,
+      maxWidth: '100%',
+    },
+    meetBtnLabelTight: {
+      fontFamily: DISPLAY_FONT,
+      fontSize: 13,
       fontWeight: '700',
       color: glass.textSecondary,
       fontVariant: ['tabular-nums'],

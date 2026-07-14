@@ -34,14 +34,16 @@ describe('Dynamic Type contract', () => {
     expect(appTsx).not.toMatch(/maxFontSizeMultiplier\s*:\s*1\b/);
   });
 
-  it('marks MapScreen commandRow large/xl + narrow width layout branches', () => {
+  it('marks MapScreen commandRow single-row density branches', () => {
     expect(mapScreen).toContain('a11y-layout:commandRow');
     expect(mapScreen).toContain('a11y-layout:narrowScreen');
     expect(mapScreen).toContain("fontBucket === 'large'");
     expect(mapScreen).toContain("fontBucket === 'xl'");
     expect(mapScreen).toContain('narrowScreen');
-    expect(mapScreen).toContain('commandCol');
-    expect(mapScreen).toContain('commandSecondaryRow');
+    // Always one row — no multi-row stack styles in the gather card.
+    expect(mapScreen).not.toContain('commandCol');
+    expect(mapScreen).not.toContain('commandSecondaryRow');
+    expect(mapScreen).toContain('flexWrap: \'nowrap\'');
   });
 
   it('marks QuickCommandsCard bucket-aware grid', () => {
@@ -50,9 +52,9 @@ describe('Dynamic Type contract', () => {
     expect(quickCommands).toMatch(/bucket === 'xl'/);
   });
 
-  it('rebuilds map styles from live font scale and narrow width', () => {
+  it('rebuilds map styles from live font scale, narrow width, and font bucket', () => {
     expect(mapScreen).toContain('useFontLayout');
-    expect(mapScreen).toContain('makeStyles(accent, fontLayout.scale, narrowScreen)');
+    expect(mapScreen).toContain('makeStyles(accent, fontLayout.scale, narrowScreen, fontBucket)');
     expect(mapScreen).toContain('fontLayout.scale');
     expect(mapScreen).toContain('windowWidth < 400');
   });
@@ -61,12 +63,14 @@ describe('Dynamic Type contract', () => {
     expect(mapScreen).toContain('formatTripDayLine');
     expect(mapScreen).toContain('cardDayLine');
     expect(mapScreen).toContain('optimisticDepartureDate ?? group?.departureDate');
-    // ETA/distance move into expand; progressive compact chrome for narrow/xl.
+    // ETA/distance on right rail; progressive density for narrow/xl.
     expect(mapScreen).toContain('cardRouteMeta');
     expect(mapScreen).toContain('a11y-layout:commandRowCompact');
     expect(mapScreen).toContain('meetBtn');
-    // Card padding is scale-aware (via cardPad = s(...)); head gap uses s(...).
-    expect(mapScreen).toMatch(/cardPad\s*=\s*narrow\s*\?\s*s\(/);
+    // Apple Maps only after expand (default is 3 buttons).
+    expect(mapScreen).toMatch(/cardExpanded\s*\?\s*\([\s\S]*?openInAppleMaps/);
+    // Card padding is scale/density-aware; head gap uses s(...).
+    expect(mapScreen).toMatch(/cardPad\s*=\s*compact\s*\?\s*s\(/);
     expect(mapScreen).toMatch(/card:\s*\{[^}]*padding:\s*cardPad/s);
     expect(mapScreen).toMatch(/cardHead:\s*\{[^}]*gap:\s*s\(/s);
   });
@@ -84,11 +88,10 @@ describe('Dynamic Type contract', () => {
     expect(mapScreen).toMatch(/recenter:\s*\{[^}]*zIndex:\s*62/);
     expect(mapScreen).toMatch(/teamCapsuleWrap:\s*\{[^}]*zIndex:\s*62/s);
     expect(mapScreen).toMatch(/carouselWrap:\s*\{[^}]*zIndex:\s*50/s);
-    // Command-row stacking follows device/font only — not sheet stage/detent.
-    expect(mapScreen).toContain('narrowScreen || fontBucket === \'large\' || fontBucket === \'xl\'');
-    expect(mapScreen).not.toMatch(
-      /stacked\s*=\s*detent\s*>\s*0/,
-    );
+    // Command row density follows device/font — never multi-row / never detent.
+    expect(mapScreen).toContain('a11y-layout:commandRowCompact');
+    expect(mapScreen).not.toMatch(/stacked\s*=/);
+    expect(mapScreen).not.toMatch(/detent\s*>\s*0\s*&&/);
   });
 
   it('clamps font scale for layout and maps buckets under the global cap', () => {
