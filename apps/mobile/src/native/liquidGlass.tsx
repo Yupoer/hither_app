@@ -34,6 +34,20 @@ function thinTint(rgba: string, alpha = 0.28): string {
 }
 
 /**
+ * Underlay behind the iOS 26 Liquid Glass material.
+ * Near-opaque cards need the full tint or they wash out; translucent sheet /
+ * pill tints only get a light underlay so the map still shows through.
+ */
+function underlayForTint(rgba: string): string {
+  const m = rgba.match(/rgba?\(([^)]+)\)/i);
+  if (!m) return rgba;
+  const parts = m[1].split(',').map((s) => s.trim());
+  const a = Number(parts[3] ?? 1);
+  if (a >= 0.85) return rgba;
+  return `rgba(${parts[0]}, ${parts[1]}, ${parts[2]}, ${(a * 0.5).toFixed(3)})`;
+}
+
+/**
  * Whether the OS provides the Liquid Glass material (iOS 26+). Guarded so a
  * missing/older native module degrades to false instead of throwing.
  */
@@ -85,7 +99,10 @@ export function GlassView({
       <View style={style} {...rest}>
         {tintColor && (
           <View
-            style={[StyleSheet.absoluteFill, { backgroundColor: tintColor }]}
+            style={[
+              StyleSheet.absoluteFill,
+              { backgroundColor: underlayForTint(tintColor) },
+            ]}
             pointerEvents="none"
           />
         )}

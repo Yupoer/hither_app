@@ -210,7 +210,6 @@ export default function MapScreen({ route, navigation }: Props) {
     meetRedMin,
     setMeetRedMin,
     setHighAccuracy,
-    setObliqueLocate,
   } = usePreferences();
   const { colors } = useTheme();
   const accent = colors.accent;
@@ -1442,26 +1441,6 @@ export default function MapScreen({ route, navigation }: Props) {
             accessibilityLabel={t('settings.preciseLocation')}
           />
         </View>
-        <View style={styles.accuracyRow}>
-          <View style={styles.accuracyCopy}>
-            <View style={styles.accuracyTitleRow}>
-              <Ionicons name="cube-outline" size={18} color={obliqueLocate ? accent : glass.textTertiary} />
-              <Text style={styles.accuracyLabel}>
-                {t('settings.obliqueLocate')}
-              </Text>
-            </View>
-            <Text style={styles.accuracySubhint}>{t('settings.obliqueLocateHint')}</Text>
-          </View>
-          <Switch
-            style={styles.accuracySwitch}
-            value={obliqueLocate}
-            onValueChange={setObliqueLocate}
-            trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
-            thumbColor="#fff"
-            ios_backgroundColor="rgba(120,120,128,0.32)"
-            accessibilityLabel={t('settings.obliqueLocate')}
-          />
-        </View>
         {pendingInvites.length > 0 && (
           <View style={styles.list}>
             {pendingInvites.map((inv, i) => {
@@ -1618,7 +1597,7 @@ export default function MapScreen({ route, navigation }: Props) {
         </Pressable>
     </>
   ), [
-    t, members.length, isPro, pendingInvites, accent, handleAcceptInvite, handleDeclineInvite, topFlock, renderFlockRow, subgroups, flock, mySubgroupId, sentInvites, group, shareCode, codeCopied, copyCode, destinations.length, canEditItinerary, isLeader, persistStragglerConfig, openPaywall, groupId, dark, styles, refreshAllLocations, refreshingLocations, highAccuracy, setHighAccuracy, obliqueLocate, setObliqueLocate, openHistoryOverlay, openCustomQuickCommand
+    t, members.length, isPro, pendingInvites, accent, handleAcceptInvite, handleDeclineInvite, topFlock, renderFlockRow, subgroups, flock, mySubgroupId, sentInvites, group, shareCode, codeCopied, copyCode, destinations.length, canEditItinerary, isLeader, persistStragglerConfig, openPaywall, groupId, dark, styles, refreshAllLocations, refreshingLocations, highAccuracy, setHighAccuracy, openHistoryOverlay, openCustomQuickCommand
   ]);
 
   if (loading && !state) {
