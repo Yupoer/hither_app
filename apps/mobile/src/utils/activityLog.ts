@@ -7,13 +7,16 @@ import { supabase } from '../api/supabase';
  * never `await` `logEvent`, and every failure here is swallowed so logging
  * can never break the feature it's watching.
  *
- * Before login (Onboarding), events queue locally in AsyncStorage and are
- * flushed once a session exists (`flushQueuedEvents`, called from
- * SessionContext after sign-in).
+ * Events always land in a local queue and flush in batches (one multi-row
+ * insert) to cut radio chatter. Pre-login queues also flush after sign-in.
  */
 
 const QUEUE_KEY = 'hither.logQueue.v1';
 const QUEUE_MAX = 100;
+/** Max wait before sending a partial batch. */
+const FLUSH_DELAY_MS = 8_000;
+/** Flush immediately once this many events are queued. */
+const FLUSH_BATCH_SIZE = 8;
 
 interface QueuedEvent {
   event: string;
@@ -40,6 +43,17 @@ async function writeQueue(queue: QueuedEvent[]): Promise<void> {
   await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
 }
 
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+let flushInFlight: Promise<void> | null = null;
+
+function scheduleFlush(): void {
+  if (flushTimer) return;
+  flushTimer = setTimeout(() => {
+    flushTimer = null;
+    void flushQueuedEvents();
+  }, FLUSH_DELAY_MS);
+}
+
 /** Fire-and-forget: log a product event. Never throws, never awaited by callers. */
 export function logEvent(event: string, payload?: Record<string, unknown>): void {
   void logEventAsync(event, payload);
@@ -56,50 +70,79 @@ export function logError(event: string, e: unknown, extra?: Record<string, unkno
 
 async function logEventAsync(event: string, payload?: Record<string, unknown>): Promise<void> {
   try {
-    const { data } = await supabase.auth.getSession();
-    const userId = data.session?.user?.id;
-    if (!userId) {
-      const queue = await readQueue();
-      await writeQueue(enqueue(queue, { event, payload, ts: new Date().toISOString() }));
-      return;
+    // Always queue first — batch insert cuts per-event getSession + HTTP.
+    const queue = await readQueue();
+    const next = enqueue(queue, {
+      event,
+      payload,
+      ts: new Date().toISOString(),
+    });
+    await writeQueue(next);
+    if (next.length >= FLUSH_BATCH_SIZE) {
+      if (flushTimer) {
+        clearTimeout(flushTimer);
+        flushTimer = null;
+      }
+      void flushQueuedEvents();
+    } else {
+      scheduleFlush();
     }
-    const { error } = await supabase
-      .from('activity_logs')
-      .insert({ user_id: userId, event, payload: payload ?? null });
-    if (error) console.warn('[activityLog] insert failed', error.message);
   } catch (e) {
     console.warn('[activityLog] logEvent failed', e);
   }
 }
 
 /**
- * Flush any events queued before login. Called (not awaited) once a session
- * exists. Any failure mid-flush keeps the remaining (unsent) items queued
- * for the next attempt instead of dropping them.
+ * Flush queued events in a single multi-row insert when possible.
+ * Called on a timer, when the batch is full, and after sign-in.
  */
 export async function flushQueuedEvents(): Promise<void> {
-  try {
-    const { data } = await supabase.auth.getSession();
-    const userId = data.session?.user?.id;
-    if (!userId) return;
-    let queue = await readQueue();
-    while (queue.length > 0) {
-      const [item, ...rest] = queue;
-      const { error } = await supabase.from('activity_logs').insert({
+  if (flushInFlight) {
+    await flushInFlight;
+    return;
+  }
+  flushInFlight = (async () => {
+    try {
+      const { data } = await supabase.auth.getSession();
+      const userId = data.session?.user?.id;
+      if (!userId) return;
+
+      let queue = await readQueue();
+      if (queue.length === 0) return;
+
+      // One request for the whole batch.
+      const rows = queue.map((item) => ({
         user_id: userId,
         event: item.event,
         payload: { ...(item.payload ?? {}), queued_at: item.ts },
-      });
+      }));
+      const { error } = await supabase.from('activity_logs').insert(rows);
       if (error) {
-        await writeQueue(queue); // keep this + remaining items for next try
+        // Fallback: try one-by-one so a single bad row cannot block forever.
+        while (queue.length > 0) {
+          const [item, ...rest] = queue;
+          const { error: oneErr } = await supabase.from('activity_logs').insert({
+            user_id: userId,
+            event: item.event,
+            payload: { ...(item.payload ?? {}), queued_at: item.ts },
+          });
+          if (oneErr) {
+            await writeQueue(queue);
+            return;
+          }
+          queue = rest;
+          await writeQueue(queue);
+        }
         return;
       }
-      queue = rest;
-      await writeQueue(queue);
+      await writeQueue([]);
+    } catch (e) {
+      console.warn('[activityLog] flushQueuedEvents failed', e);
+    } finally {
+      flushInFlight = null;
     }
-  } catch (e) {
-    console.warn('[activityLog] flushQueuedEvents failed', e);
-  }
+  })();
+  await flushInFlight;
 }
 
 let globalErrorLoggerInstalled = false;

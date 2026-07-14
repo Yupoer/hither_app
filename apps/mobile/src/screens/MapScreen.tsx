@@ -1304,15 +1304,15 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [mySubgroupId, refreshSentInvites]);
 
   // BUG-22: when invitee accepts/declines, inviter's pending list must drop
-  // the row without a manual refresh — poll while any invites are outstanding
-  // and also refetch on membership changes (accept updates memberships).
+  // the row without a manual refresh — poll only while invites are outstanding
+  // (membership realtime already covers accept → members.length change).
   useEffect(() => {
-    if (!mySubgroupId) return;
+    if (!mySubgroupId || sentInvites.length === 0) return;
     const id = setInterval(() => {
       void refreshSentInvites(mySubgroupId);
-    }, 4000);
+    }, 15_000);
     return () => clearInterval(id);
-  }, [mySubgroupId, refreshSentInvites, members.length]);
+  }, [mySubgroupId, refreshSentInvites, sentInvites.length, members.length]);
   // Co-members I could still pull into my team — anyone not me and not already
   // in my subgroup.
   const invitable = flock.filter(

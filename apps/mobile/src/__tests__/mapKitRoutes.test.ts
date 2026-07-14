@@ -18,7 +18,27 @@ const members = [
 describe('loadMapKitRoutes', () => {
   beforeEach(() => mockGetDirections.mockReset());
 
-  it('calculates each member ETA from that member to the gathering point', async () => {
+  it('by default only routes self (no per-member MapKit calls)', async () => {
+    mockGetDirections.mockImplementation(async (from) => ({
+      distanceMeters: 1000,
+      expectedTravelTimeSeconds: 600,
+      points: [from, gathering.coordinates],
+    }));
+
+    const routes = await loadMapKitRoutes({
+      selfCoordinates: me,
+      members,
+      gathering,
+      travelMode: 'walk',
+    });
+
+    expect(mockGetDirections).toHaveBeenCalledTimes(1);
+    expect(mockGetDirections).toHaveBeenCalledWith(me, gathering.coordinates, 'walk');
+    expect(routes.memberRoutes).toEqual({});
+    expect(routes.selfRoute?.expectedTravelTimeSeconds).toBe(600);
+  });
+
+  it('calculates each member ETA only when includeMemberRoutes is true', async () => {
     mockGetDirections.mockImplementation(async (from) => ({
       distanceMeters: from.latitude === members[0].coordinates.latitude ? 1000 : 2000,
       expectedTravelTimeSeconds: from.latitude === members[0].coordinates.latitude ? 600 : 1200,
@@ -30,16 +50,13 @@ describe('loadMapKitRoutes', () => {
       members,
       gathering,
       travelMode: 'walk',
+      includeMemberRoutes: true,
     });
 
     expect(mockGetDirections).toHaveBeenCalledWith(members[0].coordinates, gathering.coordinates, 'walk');
     expect(mockGetDirections).toHaveBeenCalledWith(members[1].coordinates, gathering.coordinates, 'walk');
     expect(routes.memberRoutes.a.expectedTravelTimeSeconds).toBe(600);
     expect(routes.memberRoutes.b.expectedTravelTimeSeconds).toBe(1200);
-    // Non-journey: no alternate-mode precompute (only self + members).
-    expect(mockGetDirections).toHaveBeenCalledTimes(3);
-    expect(routes.allModeRoutes.walk?.expectedTravelTimeSeconds).toBeDefined();
-    expect(routes.allModeRoutes.drive).toBeUndefined();
   });
 
   it('precomputes all travel modes only while journey is active', async () => {
@@ -57,8 +74,6 @@ describe('loadMapKitRoutes', () => {
       journeyActive: true,
     });
 
-    // self walk + walk/transit/drive for all modes = 4 (self walk counted twice in list but both call getRoute)
-    // Implementation: selfRoute + 3 modes = 4 calls when members empty
     expect(mockGetDirections.mock.calls.length).toBeGreaterThanOrEqual(3);
     expect(routes.allModeRoutes.walk).toBeTruthy();
     expect(routes.allModeRoutes.transit).toBeTruthy();
@@ -81,6 +96,7 @@ describe('loadMapKitRoutes', () => {
       members,
       gathering,
       travelMode: 'walk',
+      includeMemberRoutes: true,
     });
 
     expect(routes.memberRoutes.a).toBeUndefined();

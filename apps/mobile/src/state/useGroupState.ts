@@ -1,12 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState, type AppStateStatus } from 'react-native';
 import { getGroupState } from '../api/client';
 import { supabase } from '../api/supabase';
 import type { GroupState } from '../types';
+import {
+  applyMemberLocationPatches,
+  locationPatchFromRealtimePayload,
+  mergeLocationPatches,
+  type MemberLocationPatch,
+} from '../utils/groupStatePatches';
 import { isOwnLocationChange, locationPolicy } from '../utils/locationPolicy';
 
 /**
- * Fallback polling interval. Realtime (below) is the primary update mechanism;
- * this slow poll is a safety net for missed events / dropped websocket.
+ * Fallback polling interval. Realtime is primary; this is a safety net only.
+ * Kept long because full getGroupState is multi-query and expensive.
  */
 export const GROUP_POLL_INTERVAL_MS = 5 * 60_000;
 
@@ -42,17 +49,13 @@ interface UseGroupStateResult {
 /**
  * Subscribe to a group's live state.
  *
- * Primary path: a Supabase Realtime channel listening to postgres_changes on
- * `member_locations`, `memberships`, and `itinerary_items` (scoped to this
- * group). Any change triggers a debounced refetch of the aggregated state.
+ * Primary path: Realtime on member_locations / memberships / itinerary_items.
+ * Peer location events are **patched in-memory** from the payload (no network).
+ * Membership / itinerary / profile changes still debounced full-refetch.
  *
- * Own-device location upserts are ignored: the map already tracks local GPS and
- * a full getGroupState round-trip per self-ping is a major heat/battery cost.
+ * Own-device location upserts are ignored: local GPS owns self on the map.
  *
- * Fallback path: a slow interval poll, in case a websocket event is missed.
- *
- * The fetch is isolated in api/client, so the snake_case→camelCase mapping and
- * aggregation stay in one place.
+ * Fallback: slow interval poll only while AppState is active.
  */
 export function useGroupState(
   groupId: string | null,
@@ -62,10 +65,10 @@ export function useGroupState(
   const [state, setState] = useState<GroupState | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  // Guards against setState after unmount and out-of-order responses.
   const activeRef = useRef(true);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const locationDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingPatchesRef = useRef(new Map<string, MemberLocationPatch>());
   const myUserIdRef = useRef(myUserId);
   myUserIdRef.current = myUserId;
   const highAccuracyRef = useRef(highAccuracy);
@@ -101,6 +104,7 @@ export function useGroupState(
     activeRef.current = true;
     setLoading(true);
     setState(null);
+    pendingPatchesRef.current.clear();
 
     if (!groupId) {
       setLoading(false);
@@ -109,7 +113,6 @@ export function useGroupState(
 
     loadRef.current();
 
-    // Debounced refetch for membership / itinerary / profile edits (fast).
     const scheduleReload = () => {
       if (debounceRef.current) {
         clearTimeout(debounceRef.current);
@@ -119,15 +122,38 @@ export function useGroupState(
       }, REALTIME_DEBOUNCE_MS);
     };
 
-    // Longer debounce for peer location floods (aligned with accuracy profile).
-    const scheduleLocationReload = () => {
+    /** Flush buffered peer location patches into local state (zero HTTP). */
+    const flushLocationPatches = () => {
+      const buffered = Array.from(pendingPatchesRef.current.values());
+      pendingPatchesRef.current.clear();
+      if (buffered.length === 0) return;
+
+      setState((prev) => {
+        if (!prev) {
+          // No state yet — fall back to full load once.
+          void loadRef.current();
+          return prev;
+        }
+        const next = applyMemberLocationPatches(
+          prev,
+          buffered,
+          myUserIdRef.current,
+        );
+        if (next === null) {
+          // Unknown member id — need full membership snapshot.
+          void loadRef.current();
+          return prev;
+        }
+        return next;
+      });
+    };
+
+    const scheduleLocationPatch = () => {
       if (locationDebounceRef.current) {
         clearTimeout(locationDebounceRef.current);
       }
       const ms = locationPolicy(highAccuracyRef.current).realtimeLocationDebounceMs;
-      locationDebounceRef.current = setTimeout(() => {
-        loadRef.current();
-      }, ms);
+      locationDebounceRef.current = setTimeout(flushLocationPatches, ms);
     };
 
     const filter = `group_id=eq.${groupId}`;
@@ -139,7 +165,18 @@ export function useGroupState(
         { event: '*', schema: 'public', table: 'member_locations', filter },
         (payload) => {
           if (isOwnLocationChange(payload, myUserIdRef.current)) return;
-          scheduleLocationReload();
+
+          const parsed = locationPatchFromRealtimePayload({
+            new: payload.new as Record<string, unknown> | null,
+            old: payload.old as Record<string, unknown> | null,
+            eventType: payload.eventType,
+          });
+          if (parsed === 'full-reload' || parsed === null) {
+            scheduleReload();
+            return;
+          }
+          mergeLocationPatches(pendingPatchesRef.current, parsed);
+          scheduleLocationPatch();
         },
       )
       .on(
@@ -154,11 +191,6 @@ export function useGroupState(
       )
       .subscribe();
 
-    // Nickname / avatar edits live in `profiles` (no group_id column — RLS
-    // already scopes visibility to co-members). Kept on its OWN channel so a
-    // backend without the profiles_avatar migration (table not yet in the
-    // realtime publication) only degrades this binding, not the group channel
-    // above; the fallback poll still picks profile edits up.
     const profilesChannel = supabase
       .channel(`profiles:${groupId}:${subId}`)
       .on(
@@ -168,18 +200,26 @@ export function useGroupState(
       )
       .subscribe();
 
-    // Fallback poll in case a realtime event is dropped.
-    const timer = setInterval(() => loadRef.current(), GROUP_POLL_INTERVAL_MS);
+    // Fallback poll only while foregrounded — avoid burning radio in background.
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const armPoll = (appState: AppStateStatus) => {
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+      if (appState === 'active') {
+        timer = setInterval(() => loadRef.current(), GROUP_POLL_INTERVAL_MS);
+      }
+    };
+    armPoll(AppState.currentState);
+    const appSub = AppState.addEventListener('change', armPoll);
 
     return () => {
       activeRef.current = false;
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
-      }
-      if (locationDebounceRef.current) {
-        clearTimeout(locationDebounceRef.current);
-      }
-      clearInterval(timer);
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      if (locationDebounceRef.current) clearTimeout(locationDebounceRef.current);
+      if (timer) clearInterval(timer);
+      appSub.remove();
       supabase.removeChannel(channel);
       supabase.removeChannel(profilesChannel);
     };

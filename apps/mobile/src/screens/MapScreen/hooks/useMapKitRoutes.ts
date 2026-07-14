@@ -49,7 +49,9 @@ export async function loadMapKitRoutes(
     gathering,
     travelMode,
     journeyActive = false,
-  }: MapKitRouteInputs,
+    /** Default false: flock uses haversine ETA; MapKit only for self path. */
+    includeMemberRoutes = false,
+  }: MapKitRouteInputs & { includeMemberRoutes?: boolean },
   getRoute: RouteGetter = getDirections,
 ): Promise<MapKitRoutesState> {
   if (!gathering) {
@@ -57,13 +59,16 @@ export async function loadMapKitRoutes(
   }
 
   const wantAllModes = journeyActive && !!selfCoordinates;
+  // Member MapKit directions are N network/native calls per tick — only when
+  // explicitly requested (off by default to save radio + CPU).
+  const memberList = includeMemberRoutes ? members : [];
 
   const [selfRoute, entries, modeEntries] = await Promise.all([
     selfCoordinates
       ? getRoute(selfCoordinates, gathering.coordinates, travelMode)
       : Promise.resolve(null),
     Promise.all(
-      members.map(async (member) => {
+      memberList.map(async (member) => {
         if (!member.coordinates) return null;
         const route = await getRoute(
           member.coordinates,
@@ -191,7 +196,8 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
       selfRouteGateRef.current = { lastCoords: null, lastAtMs: 0 };
     }
 
-    const membersSig = membersRouteSignature(members, decimals);
+    // Member positions no longer trigger MapKit (haversine flock ETA) — omit
+    // from the effect key so peer GPS pings do not re-hit directions.
     const gatheringKey = gathering
       ? quantizeCoordinates(gathering.coordinates, decimals)
       : '-';
@@ -200,7 +206,6 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
       : '-';
     const effectKey = [
       selfKey,
-      membersSig,
       gatheringKey,
       travelMode,
       journeyActive ? '1' : '0',
@@ -208,11 +213,11 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
     ].join('#');
 
     // Identical quantized inputs: do not re-hit MapKit.
-    if (effectKey === lastEffectKeyRef.current && lastMembersSigRef.current) {
+    if (effectKey === lastEffectKeyRef.current) {
       return;
     }
     lastEffectKeyRef.current = effectKey;
-    lastMembersSigRef.current = membersSig;
+    lastMembersSigRef.current = '';
 
     let active = true;
     const cachedGetRoute: RouteGetter = (from, to, mode) => {
@@ -227,10 +232,11 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
     void loadMapKitRoutes(
       {
         selfCoordinates: routedSelf,
-        members,
+        members: [],
         gathering,
         travelMode,
         journeyActive,
+        includeMemberRoutes: false,
       },
       cachedGetRoute,
     ).then((next) => {
@@ -253,7 +259,6 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
     };
   }, [
     selfCoordinates,
-    members,
     gathering,
     travelMode,
     journeyActive,

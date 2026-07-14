@@ -21,12 +21,19 @@ export function useLiveActivity(
   const handleRef = useRef<string | null>(null);
   const destinationRef = useRef<string | null>(null);
   const pushTokenRef = useRef<string | undefined>(undefined);
+  const lastPersistAtRef = useRef(0);
   const stateRef = useRef(state);
   const sessionRef = useRef(session);
   stateRef.current = state;
   sessionRef.current = session;
 
-  const persistSession = async (activityId: string): Promise<void> => {
+  /** Min interval between Supabase live_activity_sessions upserts (local LA still updates more often). */
+  const PERSIST_MIN_MS = 30_000;
+
+  const persistSession = async (
+    activityId: string,
+    opts?: { force?: boolean },
+  ): Promise<void> => {
     const currentSession = sessionRef.current;
     const currentState = stateRef.current;
     if (
@@ -36,6 +43,11 @@ export function useLiveActivity(
     ) {
       return;
     }
+    const now = Date.now();
+    if (!opts?.force && now - lastPersistAtRef.current < PERSIST_MIN_MS) {
+      return;
+    }
+    lastPersistAtRef.current = now;
     await upsertLiveActivitySession({
       ...currentSession,
       activityId,
@@ -54,7 +66,7 @@ export function useLiveActivity(
     const subscription = liveActivity.addPushTokenListener((event) => {
       if (event.activityId !== handleRef.current) return;
       pushTokenRef.current = event.pushToken;
-      void persistSession(event.activityId).catch(() => undefined);
+      void persistSession(event.activityId, { force: true }).catch(() => undefined);
     });
     return () => subscription.remove();
     // The listener reads mutable refs so token rotation never resubscribes.
@@ -91,7 +103,7 @@ export function useLiveActivity(
         }
         handleRef.current = result.activityId;
         pushTokenRef.current = result.pushToken;
-        await persistSession(result.activityId).catch(() => undefined);
+        await persistSession(result.activityId, { force: true }).catch(() => undefined);
       })();
     } else if (handleRef.current) {
       const activityId = handleRef.current;

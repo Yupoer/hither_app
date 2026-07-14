@@ -30,23 +30,23 @@ describe('locationPolicy', () => {
   it('defaults to the low-power profile', () => {
     const p = locationPolicy(false);
     expect(p.accuracy).toBe('balanced');
-    expect(p.distanceInterval).toBe(40);
-    expect(p.timeInterval).toBe(15_000);
-    expect(p.uploadMinDistanceM).toBe(40);
-    expect(p.uploadHeartbeatMs).toBe(90_000);
+    expect(p.distanceInterval).toBe(50);
+    expect(p.timeInterval).toBe(20_000);
+    expect(p.uploadMinDistanceM).toBe(50);
+    expect(p.uploadHeartbeatMs).toBe(120_000);
     expect(p.routeCoordDecimals).toBe(4);
-    expect(p.realtimeLocationDebounceMs).toBe(1_200);
+    expect(p.realtimeLocationDebounceMs).toBe(2_500);
   });
 
   it('uses the faster high-accuracy profile only when enabled', () => {
     const p = locationPolicy(true);
     expect(p.accuracy).toBe('high');
     expect(p.distanceInterval).toBe(8);
-    expect(p.timeInterval).toBe(4_000);
-    expect(p.uploadMinDistanceM).toBe(12);
-    expect(p.uploadHeartbeatMs).toBe(30_000);
+    expect(p.timeInterval).toBe(5_000);
+    expect(p.uploadMinDistanceM).toBe(15);
+    expect(p.uploadHeartbeatMs).toBe(45_000);
     expect(p.routeCoordDecimals).toBe(5);
-    expect(p.realtimeLocationDebounceMs).toBe(600);
+    expect(p.realtimeLocationDebounceMs).toBe(1_500);
   });
 });
 
@@ -67,7 +67,7 @@ describe('shouldAcceptUiSample', () => {
   });
 
   it('accepts a meaningful move past uiMinDistanceM', () => {
-    expect(shouldAcceptUiSample(moved(15), 2_000, atOrigin(1_000), policy)).toBe(true);
+    expect(shouldAcceptUiSample(moved(20), 2_000, atOrigin(1_000), policy)).toBe(true);
   });
 
   it('drops jitter within uiMinIntervalMs', () => {
@@ -91,7 +91,7 @@ describe('shouldUploadSample', () => {
   it('uploads after a large enough move and min interval', () => {
     expect(
       shouldUploadSample(
-        moved(45),
+        moved(55),
         1_000 + policy.uploadMinIntervalMs,
         atOrigin(1_000),
         policy,
@@ -131,7 +131,7 @@ describe('shouldRecomputeRoute', () => {
   it('recomputes after enough move past partial interval', () => {
     expect(
       shouldRecomputeRoute(
-        moved(40),
+        moved(50),
         1_000 + policy.routeMinIntervalMs * 0.5,
         atOrigin(1_000),
         policy,
