@@ -1977,20 +1977,25 @@ export default function MapScreen({ route, navigation }: Props) {
                   : travelMode === 'drive'
                     ? 'car-outline'
                     : 'bus-outline';
-              // Route ETA/distance — shown only when the card is expanded
-              // (collapsed mode pill is icon-only). Same source as before.
+              // Route ETA/distance — always visible; expand only scales layout.
               const etaLabel = routeForDestination
                 ? shortEta(routeForDestination.expectedTravelTimeSeconds)
                 : d != null
                   ? shortEta(etaSecondsFor(d, travelMode))
                   : '—';
               const distLabel = d != null ? formatDistance(d) : '';
+              const cardExpanded = expandedCardId === dest.id;
               // Progressive chrome: narrow width and/or large Dynamic Type
               // drop secondary labels so the limited card width stays usable.
+              // Layout must NOT depend on sheet detent/stage — only device + font.
               // a11y-layout:commandRowCompact
               const chromeCompact =
                 narrowScreen || fontBucket === 'large' || fontBucket === 'xl';
               const chromeTight = fontBucket === 'xl' || (narrowScreen && fontBucket === 'large');
+              // Stack command controls for narrow/large type always (any stage).
+              // a11y-layout:commandRow — independent of sheet stage.
+              const stacked =
+                narrowScreen || fontBucket === 'large' || fontBucket === 'xl';
               return (
                 <View
                   key={`carousel-dest-${dest.id}-${index}`}
@@ -2063,80 +2068,85 @@ export default function MapScreen({ route, navigation }: Props) {
                         </Text>
                         <Text
                           style={styles.cardTitle}
-                          numberOfLines={expandedCardId === dest.id ? 3 : 2}
+                          numberOfLines={cardExpanded ? 3 : 2}
                           ellipsizeMode="tail"
                         >
                           {dest.title}
                         </Text>
-                        {expandedCardId === dest.id && (
-                          <>
-                            {/* Compact: skip day/calendar line under xl + narrow
-                                so ETA/distance still fit in the expand band. */}
-                            {!chromeTight ? (
-                              <Animated.Text
-                                entering={FadeIn.duration(200)}
-                                style={styles.cardDayLine}
-                              >
-                                {formatTripDayLine(
-                                  dest.day || 1,
-                                  optimisticDepartureDate ?? group?.departureDate,
-                                )}
-                              </Animated.Text>
-                            ) : null}
-                            <Animated.View
-                              entering={FadeIn.duration(200)}
-                              style={styles.cardRouteMeta}
-                            >
-                              {!chromeTight ? (
-                                <Ionicons
-                                  name={modeIconName}
-                                  size={chromeCompact ? 18 : 20}
-                                  color={accent}
-                                />
-                              ) : null}
-                              <Text
-                                style={[styles.cardRouteMetaEta, { color: accent }]}
-                                numberOfLines={1}
-                                ellipsizeMode="tail"
-                              >
-                                {etaLabel}
-                              </Text>
-                              {distLabel ? (
-                                <Text
-                                  style={styles.cardRouteMetaDist}
-                                  numberOfLines={1}
-                                  ellipsizeMode="tail"
-                                >
-                                  · {distLabel}
-                                </Text>
-                              ) : null}
-                            </Animated.View>
-                          </>
-                        )}
+                        {cardExpanded && !chromeTight ? (
+                          <Animated.Text
+                            entering={FadeIn.duration(200)}
+                            style={styles.cardDayLine}
+                          >
+                            {formatTripDayLine(
+                              dest.day || 1,
+                              optimisticDepartureDate ?? group?.departureDate,
+                            )}
+                          </Animated.Text>
+                        ) : null}
                         {myScopeId != null && (
                           <Text style={styles.cardBadge}>{t('subgroup.itineraryBadge')}</Text>
                         )}
                       </View>
-                      {/* Pagination — lives inside the card now that the
-                          carousel sits at the screen's top edge, where there's
-                          no room below it for a separate dots row. Capped at
-                          DOTS_MAX_VISIBLE; the window slides to keep the
-                          active dot centered until it nears either end. */}
-                      {destinations.length > 1 && (
-                        <Animated.View style={styles.dots} layout={LinearTransition.duration(100)}>
-                          {dotWindow(destinations.length, selectedIndex, DOTS_MAX_VISIBLE).map(
-                            (i2) => (
-                              <Animated.View
-                                key={`dot-${destinations[i2]?.id || i2}-${i2}`}
-                                entering={FadeIn.duration(100)}
-                                exiting={FadeOut.duration(100)}
-                                layout={LinearTransition.springify().damping(14).stiffness(300)}
-                                style={[styles.dot, i2 === selectedIndex && styles.dotActive]}
-                              />
-                            ),
-                          )}
-                        </Animated.View>
-                      )}
+                      {/* Right rail: ETA/distance always (compact → roomy on
+                          expand) + pagination dots. Not tied to sheet stage. */}
+                      <View style={styles.cardHeadEnd}>
+                        <View
+                          style={[
+                            styles.cardRouteMeta,
+                            cardExpanded && styles.cardRouteMetaExpanded,
+                          ]}
+                        >
+                          {cardExpanded && !chromeTight ? (
+                            <Ionicons
+                              name={modeIconName}
+                              size={18}
+                              color={accent}
+                              style={styles.cardRouteMetaIcon}
+                            />
+                          ) : null}
+                          <Text
+                            style={[
+                              cardExpanded
+                                ? styles.cardRouteMetaEtaExpanded
+                                : styles.cardRouteMetaEta,
+                              { color: accent },
+                            ]}
+                            numberOfLines={1}
+                            ellipsizeMode="tail"
+                          >
+                            {etaLabel}
+                          </Text>
+                          {distLabel ? (
+                            <Text
+                              style={
+                                cardExpanded
+                                  ? styles.cardRouteMetaDistExpanded
+                                  : styles.cardRouteMetaDist
+                              }
+                              numberOfLines={1}
+                              ellipsizeMode="tail"
+                            >
+                              {distLabel}
+                            </Text>
+                          ) : null}
+                        </View>
+                        {destinations.length > 1 && (
+                          <Animated.View style={styles.dots} layout={LinearTransition.duration(100)}>
+                            {dotWindow(destinations.length, selectedIndex, DOTS_MAX_VISIBLE).map(
+                              (i2) => (
+                                <Animated.View
+                                  key={`dot-${destinations[i2]?.id || i2}-${i2}`}
+                                  entering={FadeIn.duration(100)}
+                                  exiting={FadeOut.duration(100)}
+                                  layout={LinearTransition.springify().damping(14).stiffness(300)}
+                                  style={[styles.dot, i2 === selectedIndex && styles.dotActive]}
+                                />
+                              ),
+                            )}
+                          </Animated.View>
+                        )}
+                      </View>
                     </View>
                     {/* Arrival caption — mirrors the top hairline in words.
                         Compact chrome: value-only (drop long label). */}
@@ -2153,17 +2163,9 @@ export default function MapScreen({ route, navigation }: Props) {
                         regular wide: single row; large/xl OR narrowScreen: nav
                         full-width + secondary row so controls never clip.
                         a11y-layout:narrowScreen — iPhone 15 / mini / SE.
-                        Peek (detent 0): never stack — keeps card short so it
-                        cannot cover locate/group capsules above the sheet.
-                        Mode is always icon-only; ETA/dist live in expand.
-                        Meet countdown stays visible (priority over nav width). */}
+                        Stacking follows device/font only — NOT sheet stage.
+                        Mode is icon-only; ETA/dist live in the head-end rail. */}
                     {(() => {
-                      const stacked =
-                        detent > 0 &&
-                        (narrowScreen || fontBucket === 'large' || fontBucket === 'xl');
-                      // On a single tight row, nav can drop its label and keep
-                      // the icon so meet countdown still fits.
-                      const navIconOnly = !stacked && chromeTight;
                       const secondary = (
                         <>
                       <Pressable
@@ -2234,7 +2236,6 @@ export default function MapScreen({ route, navigation }: Props) {
                         style={[
                           styles.navBtn,
                           stacked && styles.navBtnFull,
-                          navIconOnly && styles.navBtnIconOnly,
                           navigatingThis ? styles.navBtnEnd : { backgroundColor: accent },
                         ]}
                         onPress={() => {
@@ -2267,22 +2268,20 @@ export default function MapScreen({ route, navigation }: Props) {
                           size={15}
                           color={navigatingThis ? glass.danger : '#0c1a12'}
                         />
-                        {!navIconOnly ? (
-                          <Text
-                            style={[
-                              styles.navBtnText,
-                              { color: navigatingThis ? glass.danger : '#0c1a12' },
-                            ]}
-                            numberOfLines={1}
-                            ellipsizeMode="tail"
-                          >
-                            {navigatingThis
-                              ? t('map.stopNav')
-                              : isLeader
-                                ? t('map.directions')
-                                : '路徑規劃'}
-                          </Text>
-                        ) : null}
+                        <Text
+                          style={[
+                            styles.navBtnText,
+                            { color: navigatingThis ? glass.danger : '#0c1a12' },
+                          ]}
+                          numberOfLines={1}
+                          ellipsizeMode="tail"
+                        >
+                          {navigatingThis
+                            ? t('map.stopNav')
+                            : isLeader
+                              ? t('map.directions')
+                              : '路徑規劃'}
+                        </Text>
                       </Pressable>
                       {stacked ? (
                         <View style={styles.commandSecondaryRow}>{secondary}</View>
@@ -2886,6 +2885,14 @@ const makeStyles = (accent: string, scale: number, narrow = false) => {
       marginTop: s(2, 0),
     },
     grow: { flex: 1, minWidth: 0 },
+    // Right rail of the card head: route metrics + pagination dots.
+    cardHeadEnd: {
+      alignItems: 'flex-end',
+      justifyContent: 'flex-start',
+      gap: s(8, 6),
+      flexShrink: 0,
+      maxWidth: '42%',
+    },
     cardKicker: {
       fontSize: 11,
       fontWeight: '700',
@@ -2912,32 +2919,62 @@ const makeStyles = (accent: string, scale: number, narrow = false) => {
       marginTop: s(4, 2),
       flexShrink: 1,
     },
-    // Expanded route estimate — primary metrics (ETA + distance).
+    // Route estimate — always on the right; compact collapsed, roomy expanded.
     cardRouteMeta: {
-      flexDirection: 'row',
-      alignItems: 'baseline',
-      flexWrap: 'wrap',
-      gap: s(6, 4),
-      marginTop: s(6, 4),
+      alignItems: 'flex-end',
+      justifyContent: 'flex-start',
+      gap: 1,
       minWidth: 0,
-      flexShrink: 1,
+      maxWidth: '100%',
     },
+    cardRouteMetaExpanded: {
+      gap: s(4, 2),
+      paddingTop: s(2, 0),
+      paddingBottom: s(2, 0),
+    },
+    cardRouteMetaIcon: {
+      marginBottom: s(2, 0),
+    },
+    // Collapsed: tight metrics so the title keeps room.
     cardRouteMetaEta: {
       fontFamily: DISPLAY_FONT,
-      fontSize: narrow ? 18 : 20,
+      fontSize: narrow ? 13 : 14,
       fontVariant: ['tabular-nums'],
       flexShrink: 1,
       minWidth: 0,
-      lineHeight: s(26, 22),
+      textAlign: 'right',
+      lineHeight: s(18, 16),
     },
     cardRouteMetaDist: {
       fontFamily: DISPLAY_FONT,
-      fontSize: narrow ? 16 : 18,
+      fontSize: narrow ? 11.5 : 12.5,
       color: glass.textSecondary,
       fontVariant: ['tabular-nums'],
       flexShrink: 1,
       minWidth: 0,
-      lineHeight: s(24, 20),
+      textAlign: 'right',
+      lineHeight: s(16, 14),
+    },
+    // Expanded: larger, looser hierarchy on the right rail.
+    cardRouteMetaEtaExpanded: {
+      fontFamily: DISPLAY_FONT,
+      fontSize: narrow ? 20 : 22,
+      fontVariant: ['tabular-nums'],
+      flexShrink: 1,
+      minWidth: 0,
+      textAlign: 'right',
+      lineHeight: s(28, 24),
+    },
+    cardRouteMetaDistExpanded: {
+      fontFamily: DISPLAY_FONT,
+      fontSize: narrow ? 15 : 17,
+      color: glass.textSecondary,
+      fontVariant: ['tabular-nums'],
+      flexShrink: 1,
+      minWidth: 0,
+      textAlign: 'right',
+      lineHeight: s(22, 18),
+      marginTop: s(2, 0),
     },
     cardBadge: {
       color: glass.textSecondary,
@@ -3017,14 +3054,6 @@ const makeStyles = (accent: string, scale: number, narrow = false) => {
       width: '100%',
       height: cmdSize,
       minHeight: cmdSize,
-    },
-    // Tight single-row chrome: exact square (icon-only) so meet keeps width.
-    navBtnIconOnly: {
-      width: cmdSize,
-      minWidth: cmdSize,
-      maxWidth: cmdSize,
-      height: cmdSize,
-      paddingHorizontal: 0,
     },
     // "End navigation" state — a soft danger tint over the accent-solid "go".
     navBtnEnd: { backgroundColor: 'rgba(255,107,107,0.14)', borderColor: 'rgba(255,107,107,0.4)' },

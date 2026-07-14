@@ -84,12 +84,11 @@ describe('Dynamic Type contract', () => {
     expect(mapScreen).toMatch(/recenter:\s*\{[^}]*zIndex:\s*62/);
     expect(mapScreen).toMatch(/teamCapsuleWrap:\s*\{[^}]*zIndex:\s*62/s);
     expect(mapScreen).toMatch(/carouselWrap:\s*\{[^}]*zIndex:\s*50/s);
-    // Peek never stacks the command row (keeps card short); mid+ may stack for
-    // large/xl Dynamic Type OR narrow physical width (iPhone 15 / mini / SE).
-    expect(mapScreen).toMatch(
-      /detent\s*>\s*0\s*&&\s*[\s\S]*?(narrowScreen|fontBucket\s*===\s*'large')/,
-    );
+    // Command-row stacking follows device/font only — not sheet stage/detent.
     expect(mapScreen).toContain('narrowScreen || fontBucket === \'large\' || fontBucket === \'xl\'');
+    expect(mapScreen).not.toMatch(
+      /stacked\s*=\s*detent\s*>\s*0/,
+    );
   });
 
   it('clamps font scale for layout and maps buckets under the global cap', () => {
