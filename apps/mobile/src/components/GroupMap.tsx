@@ -6,13 +6,19 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, Polyline, type Region } from 'react-native-maps';
 import type { Coordinates, Destination, MemberLocation } from '../types';
 import { usePreferences, useTheme } from '../state/PreferencesContext';
 import { memberColor } from '../glass';
 import { DAY_COLORS, type Palette } from '../theme';
+import {
+  DEFAULT_LATITUDE_DELTA,
+  latOffsetForVisibleBand,
+} from './mapCameraMath';
+
+export { DEFAULT_LATITUDE_DELTA, latOffsetForVisibleBand } from './mapCameraMath';
 
 /** Imperative handle so the screen can drive the map camera. */
 export interface GroupMapHandle {
@@ -36,8 +42,10 @@ export interface GroupMapProps {
   routeColor?: string;
   /** Secondary routes (other travel modes) drawn thinner under the primary. */
   alternateRoutes?: { points: Coordinates[]; color: string }[];
-  /** Sheet height overlapping the map — shifts the camera center up so
-   *  markers stay inside the exposed strip, like Apple Maps. */
+  /** Top chrome overlapping the map (safe area + gathering-point carousel). */
+  topOverlap?: number;
+  /** Sheet height overlapping the map — with topOverlap, shifts the camera
+   *  center into the exposed strip between carousel and sheet. */
   bottomOverlap?: number;
 }
 
@@ -46,8 +54,8 @@ function regionFor(center: Coordinates, latOffset: number = 0): Region {
   return {
     latitude: center.latitude - latOffset,
     longitude: center.longitude,
-    latitudeDelta: 0.01,
-    longitudeDelta: 0.01,
+    latitudeDelta: DEFAULT_LATITUDE_DELTA,
+    longitudeDelta: DEFAULT_LATITUDE_DELTA,
   };
 }
 
@@ -177,19 +185,37 @@ const MemberMarker = React.memo(({ member, accent, styles }: any) => {
   );
 });
 
+const EDGE_BUFFER = 16;
+
 const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
-  { members, gathering, destinations, pendingPlace, routePoints, routeColor, alternateRoutes },
+  {
+    members,
+    gathering,
+    destinations,
+    pendingPlace,
+    routePoints,
+    routeColor,
+    alternateRoutes,
+    topOverlap = 0,
+    bottomOverlap = 0,
+  },
   ref,
 ) {
   const mapRef = useRef<MapView | null>(null);
   const centeredRef = useRef(false);
+  const { height: windowHeight } = useWindowDimensions();
   const { colors, themeName } = useTheme();
   const { dayColors } = usePreferences();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
-  // Shift the camera center up by moving the target coordinate down (subtracting from latitude).
-  // 0.01 is the latitudeDelta. We shift by half the overlap ratio so the point centers in the visible area.
-  const latOffset = 0; // Removed offset to keep targets perfectly centered at 1/2 height.
+  // Shift camera so the pin sits in the midpoint of the strip between the
+  // gathering-point carousel (top) and the bottom sheet (bottom).
+  const latOffset = latOffsetForVisibleBand(
+    DEFAULT_LATITUDE_DELTA,
+    topOverlap,
+    bottomOverlap,
+    windowHeight,
+  );
 
   // Match the map chrome to the app theme: the light "day" palette gets the
   // light Apple Maps style; the dark "night"/"dusk" palettes get the dark one.
@@ -215,7 +241,12 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       fitRoute: (coordinates) => {
         if (coordinates.length > 1) {
           mapRef.current?.fitToCoordinates(coordinates, {
-            edgePadding: { top: 120, right: 60, bottom: 240, left: 60 },
+            edgePadding: {
+              top: Math.max(120, topOverlap + EDGE_BUFFER),
+              right: 60,
+              bottom: Math.max(240, bottomOverlap + EDGE_BUFFER),
+              left: 60,
+            },
             animated: true,
           });
         }
@@ -223,16 +254,19 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       fitToMembers: () => {
         const coords = members.filter((m) => m.coordinates).map((m) => m.coordinates!);
         if (mapRef.current && coords.length > 0) {
-          // ponytail: fixed edge padding tuned for the peek/mid sheet height;
-          // revisit if a taller sheet ever covers markers this should frame.
           mapRef.current.fitToCoordinates(coords, {
-            edgePadding: { top: 80, right: 60, bottom: 220, left: 60 },
+            edgePadding: {
+              top: Math.max(80, topOverlap + EDGE_BUFFER),
+              right: 60,
+              bottom: Math.max(220, bottomOverlap + EDGE_BUFFER),
+              left: 60,
+            },
             animated: true,
           });
         }
       },
     }),
-    [gathering, members, latOffset],
+    [gathering, members, latOffset, topOverlap, bottomOverlap],
   );
 
   // Center on the gathering point the first time data arrives.
