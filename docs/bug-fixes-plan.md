@@ -16,22 +16,22 @@ pm run typecheck 通過且 commit 上 master 後記 done；原生未實機驗證
 | BUG-02 | done | fix/bug-01-04-font-theme | 2dbe1cb | same as 01 |
 | BUG-03 | done | fix/bug-01-04-font-theme | 2dbe1cb | same as 01 |
 | BUG-04 | done | fix/bug-01-04-font-theme | 2dbe1cb | userInterfaceStyle dark + keyboardAppearance |
-| BUG-05 | done-code | fix/bug-05-08-19-live-activity | 6d66f0b | emoji sig + %; 未實機 |
-| BUG-06 | done | fix/bug-06-09-13-17-20-nav | 06ed7a9 | mediumTap on nav |
+| BUG-05 | done-code | fix/bug-05-08-19-live-activity | 1f808df | emoji sig + %; 未實機 |
+| BUG-06 | done | fix/bug-06-09-13-17-20-nav | 7d7d9fe | mediumTap on nav |
 | BUG-07 | done | fix/bug-07-11-12-16-22-teams | 5b72f20 | show inviteCode on cards |
-| BUG-08 | done | fix/bug-05-08-19-live-activity | 6d66f0b | self avatar from session |
-| BUG-09 | done | fix/bug-06-09-13-17-20-nav | 06ed7a9 | peek locate-only |
+| BUG-08 | done | fix/bug-05-08-19-live-activity | 1f808df | self avatar from session |
+| BUG-09 | done | fix/bug-06-09-13-17-20-nav | 7d7d9fe | peek locate-only |
 | BUG-10 | done | fix/bug-10-18-24-glass-ui | aac0f56 | transparent sheet/card borders |
 | BUG-11 | done | fix/bug-07-11-12-16-22-teams | 5b72f20 | main filter explicit |
 | BUG-12 | done | fix/bug-07-11-12-16-22-teams | 5b72f20 | virtual 主團隊 block |
-| BUG-13 | done | fix/bug-06-09-13-17-20-nav | 06ed7a9 | follower local plan + follow |
-| BUG-14 | done | fix/bug-06-09-13-17-20-nav | 06ed7a9 | sendCommand suggest |
-| BUG-15 | done | fix/bug-06-09-13-17-20-nav | 06ed7a9 | KML notify path |
+| BUG-13 | done | fix/bug-06-09-13-17-20-nav | 7d7d9fe | follower local plan + follow |
+| BUG-14 | done | fix/bug-06-09-13-17-20-nav | 7d7d9fe | sendCommand suggest |
+| BUG-15 | done | fix/bug-06-09-13-17-20-nav | 7d7d9fe | KML notify path |
 | BUG-16 | done | fix/bug-07-11-12-16-22-teams | 5b72f20 | canEditItinerary already correct |
-| BUG-17 | done-code | fix/bug-06-09-13-17-20-nav | 06ed7a9 | migration file; apply CLI |
+| BUG-17 | done-code | fix/bug-06-09-13-17-20-nav | 7d7d9fe | migration file; apply CLI |
 | BUG-18 | done | fix/bug-10-18-24-glass-ui | aac0f56 | splitActions gap/padding |
-| BUG-19 | done-code | fix/bug-05-08-19-live-activity | 6d66f0b | ProgressRow shared; 未實機 |
-| BUG-20 | done | fix/bug-06-09-13-17-20-nav | 06ed7a9 | allModeRoutes + alts |
+| BUG-19 | done-code | fix/bug-05-08-19-live-activity | 1f808df | ProgressRow shared; 未實機 |
+| BUG-20 | done | fix/bug-06-09-13-17-20-nav | 7d7d9fe | allModeRoutes + alts |
 | BUG-21 | done-code | master | existing | send-push+triggers exist; needs vault/APNs secrets + Dev Build 實機 |
 | BUG-22 | done | fix/bug-07-11-12-16-22-teams | 5b72f20 | poll sent invites while pending |
 | BUG-23 | done | fix/bug-23-custom-cmd | b330303 | profile update upsert + error detail |
