@@ -79,16 +79,16 @@ export default function MascotStep({ answers, onAnswer, onSkip, onBack }: StepPr
 const styles = StyleSheet.create({
   card: { alignItems: 'center', marginTop: 8 },
   slot: {
-    width: 210,
-    height: 210,
-    borderRadius: 34,
+    width: 236,
+    height: 236,
+    borderRadius: 38,
     borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 20,
     overflow: 'hidden',
   },
-  art: { width: 176, height: 176 },
+  art: { width: 204, height: 204 },
   description: { fontSize: 15, fontWeight: '600', marginBottom: 6, textAlign: 'center' },
   bestLeader: { fontSize: 14, fontWeight: '700', textAlign: 'center' },
 });

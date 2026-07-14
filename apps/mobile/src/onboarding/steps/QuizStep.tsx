@@ -103,7 +103,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: 12 },
   card: {
     flex: 1,
-    minHeight: 168,
+    minHeight: 188,
     borderWidth: StyleSheet.hairlineWidth * 2,
     borderRadius: 20,
     paddingVertical: 22,
@@ -118,7 +118,7 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   tag: { position: 'absolute', top: 10, left: 12, fontSize: 12, fontWeight: '800' },
-  icon: { width: 72, height: 72 },
+  icon: { width: 92, height: 92 },
   label: { fontSize: 16.5, fontWeight: '700', marginTop: 14, textAlign: 'center' },
 });
 
