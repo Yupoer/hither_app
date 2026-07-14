@@ -28,8 +28,17 @@ export type Language = 'zh' | 'en';
 
 export const DEFAULT_LANGUAGE: Language = 'zh';
 
+/**
+ * In-app text size multiplier (Settings). Applied to design fontSize / layout
+ * chrome only — not as a second system Dynamic Type scale. Emoji avatars ignore this.
+ */
+export type TextScalePref = 0.9 | 1.0 | 1.1 | 1.2;
+export const TEXT_SCALE_OPTIONS = [0.9, 1.0, 1.1, 1.2] as const;
+export const DEFAULT_TEXT_SCALE: TextScalePref = 1.0;
+
 const LANGUAGE_KEY = 'pref.language';
 const THEME_KEY = 'pref.theme';
+const TEXT_SCALE_KEY = 'pref.textScale';
 const HIGH_ACCURACY_KEY = 'pref.highAccuracy';
 const OBLIQUE_LOCATE_KEY = 'pref.obliqueLocate';
 const LIVE_ACTIVITY_KEY = 'pref.liveActivity';
@@ -43,6 +52,8 @@ export const DEFAULT_MEET_RED_MIN = 5;
 interface PreferencesValue {
   language: Language;
   themeName: ThemeName;
+  /** App text size multiplier (0.9–1.2). Default 1.0 = design sizes. */
+  textScale: TextScalePref;
   /** Opt-in location tracking with finer fixes and a faster cadence. */
   highAccuracy: boolean;
   /** When true, locate-me tilts the camera to a 45° oblique view. */
@@ -57,6 +68,7 @@ interface PreferencesValue {
   ready: boolean;
   setLanguage: (language: Language) => void;
   setThemeName: (theme: ThemeName) => void;
+  setTextScale: (scale: TextScalePref) => void;
   setHighAccuracy: (on: boolean) => void;
   setObliqueLocate: (on: boolean) => void;
   setLiveActivityEnabled: (on: boolean) => void;
@@ -74,9 +86,18 @@ function isThemeName(value: string | null): value is ThemeName {
   return value != null && Object.prototype.hasOwnProperty.call(themes, value);
 }
 
+function parseTextScalePref(value: string | null): TextScalePref | null {
+  if (value == null) return null;
+  const n = Number(value);
+  return (TEXT_SCALE_OPTIONS as readonly number[]).includes(n)
+    ? (n as TextScalePref)
+    : null;
+}
+
 export function PreferencesProvider({ children }: { children: React.ReactNode }) {
   const [language, setLanguageState] = useState<Language>(DEFAULT_LANGUAGE);
   const [themeName, setThemeNameState] = useState<ThemeName>(DEFAULT_THEME);
+  const [textScale, setTextScaleState] = useState<TextScalePref>(DEFAULT_TEXT_SCALE);
   const [highAccuracy, setHighAccuracyState] = useState(false);
   // Default on: locate-me tilts to 45° unless the user opts out in Settings.
   const [obliqueLocate, setObliqueLocateState] = useState(true);
@@ -94,6 +115,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         const [
           storedLang,
           storedTheme,
+          storedTextScale,
           storedHighAccuracy,
           storedObliqueLocate,
           storedLiveActivity,
@@ -102,6 +124,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         ] = await AsyncStorage.multiGet([
           LANGUAGE_KEY,
           THEME_KEY,
+          TEXT_SCALE_KEY,
           HIGH_ACCURACY_KEY,
           OBLIQUE_LOCATE_KEY,
           LIVE_ACTIVITY_KEY,
@@ -111,6 +134,8 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         if (!active) return;
         if (isLanguage(storedLang[1])) setLanguageState(storedLang[1]);
         if (isThemeName(storedTheme[1])) setThemeNameState(storedTheme[1]);
+        const parsedTextScale = parseTextScalePref(storedTextScale[1]);
+        if (parsedTextScale != null) setTextScaleState(parsedTextScale);
         if (storedHighAccuracy[1] === 'true') setHighAccuracyState(true);
         // Only override default-on when the user has explicitly stored a value.
         if (storedObliqueLocate[1] === 'false') setObliqueLocateState(false);
@@ -141,6 +166,11 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const setThemeName = useCallback((next: ThemeName) => {
     setThemeNameState(next);
     void AsyncStorage.setItem(THEME_KEY, next);
+  }, []);
+
+  const setTextScale = useCallback((next: TextScalePref) => {
+    setTextScaleState(next);
+    void AsyncStorage.setItem(TEXT_SCALE_KEY, String(next));
   }, []);
 
   const setHighAccuracy = useCallback((on: boolean) => {
@@ -175,6 +205,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     () => ({
       language,
       themeName,
+      textScale,
       highAccuracy,
       obliqueLocate,
       liveActivityEnabled,
@@ -183,6 +214,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       ready,
       setLanguage,
       setThemeName,
+      setTextScale,
       setHighAccuracy,
       setObliqueLocate,
       setLiveActivityEnabled,
@@ -192,6 +224,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     [
       language,
       themeName,
+      textScale,
       highAccuracy,
       obliqueLocate,
       liveActivityEnabled,
@@ -200,6 +233,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       ready,
       setLanguage,
       setThemeName,
+      setTextScale,
       setHighAccuracy,
       setObliqueLocate,
       setLiveActivityEnabled,

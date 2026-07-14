@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -43,13 +43,25 @@ export function Segmented({
   const activeIdx = Math.max(0, options.findIndex((o) => o.key === localValue));
   const segW = trackW > 0 ? (trackW - SEG_PAD * 2 - SEG_GAP * (n - 1)) / n : 0;
   const tx = useSharedValue(0);
+  // Snap on first measure / width-only changes so hidden panes (height:0 →
+  // visible) don't "slide" the pill when the user only switched tabs.
+  const measuredRef = useRef(false);
+  const prevIdxRef = useRef(activeIdx);
 
   useEffect(() => {
-    // Slide the highlight to the active segment — smooth easing beats a hard cut.
-    tx.value = withTiming(activeIdx * (segW + SEG_GAP), {
-      duration: 220,
-      easing: Easing.out(Easing.cubic),
-    });
+    if (segW <= 0) return;
+    const next = activeIdx * (segW + SEG_GAP);
+    const idxChanged = prevIdxRef.current !== activeIdx;
+    prevIdxRef.current = activeIdx;
+    if (measuredRef.current && idxChanged) {
+      tx.value = withTiming(next, {
+        duration: 220,
+        easing: Easing.out(Easing.cubic),
+      });
+    } else {
+      tx.value = next;
+      measuredRef.current = true;
+    }
   }, [activeIdx, segW, tx]);
 
   const highlightStyle = useAnimatedStyle(() => ({ transform: [{ translateX: tx.value }] }));

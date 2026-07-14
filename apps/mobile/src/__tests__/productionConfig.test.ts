@@ -36,6 +36,27 @@ describe('production mobile configuration', () => {
     );
   });
 
+  it('wires EAS Update channels on build profiles', () => {
+    // Channel is set on the *build* profile; `eas update --channel X` must match.
+    // Top-level `update` key is not valid in eas.json schema.
+    expect(easConfig.build.production.channel).toBe('production');
+    expect(easConfig.build.preview.channel).toBe('preview');
+    expect(easConfig.build.development.channel).toBe('development');
+    expect(easConfig.update).toBeUndefined();
+  });
+
+  it('enables EAS Update (updates.url + manual runtimeVersion for bare workflow)', () => {
+    expect(appConfig.expo.updates?.url).toBe(
+      'https://u.expo.dev/0f62ed14-1f2e-4d7b-b5b6-4eda273f2e35',
+    );
+    // Bare workflow (checked-in ios/) cannot use runtimeVersion policies.
+    expect(typeof appConfig.expo.runtimeVersion).toBe('string');
+    expect(appConfig.expo.runtimeVersion).toBe(appConfig.expo.version);
+    expect(appConfig.expo.extra?.eas?.projectId).toBe(
+      '0f62ed14-1f2e-4d7b-b5b6-4eda273f2e35',
+    );
+  });
+
   it('requests production APNs entitlements for the upcoming archive', () => {
     expect(appConfig.expo.ios.entitlements['aps-environment']).toBe('production');
     expect(nativeEntitlements).toContain('<string>production</string>');

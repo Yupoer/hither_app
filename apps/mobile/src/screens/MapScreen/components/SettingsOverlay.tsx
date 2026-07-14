@@ -6,7 +6,12 @@ import OverlaySheet from '../../../components/OverlaySheet';
 import { Segmented } from './Segmented';
 import NotificationPreferencesCard from '../../../components/NotificationPreferencesCard';
 import { useSession } from '../../../state/SessionContext';
-import { usePreferences, useTheme, type Language } from '../../../state/PreferencesContext';
+import {
+  usePreferences,
+  useTheme,
+  type Language,
+  type TextScalePref,
+} from '../../../state/PreferencesContext';
 import { useTranslation } from '../../../i18n';
 import { THEME_ORDER, type ThemeName, themes } from '../../../theme';
 import { glass } from '../../../glass';
@@ -102,10 +107,12 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
   const {
     language,
     themeName,
+    textScale,
     obliqueLocate,
     liveActivityEnabled,
     setLanguage,
     setThemeName,
+    setTextScale,
     setObliqueLocate,
     setLiveActivityEnabled,
   } = usePreferences();
@@ -184,6 +191,18 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
           }))}
           value={themeName}
           onChange={(v) => setThemeName(v as ThemeName)}
+        />
+        <Text style={styles.settingsInlineLabel}>{t('settings.textSize')}</Text>
+        <Segmented
+          accent={accent}
+          options={[
+            { key: '0.9', label: t('settings.textSizeSm') },
+            { key: '1', label: t('settings.textSizeMd') },
+            { key: '1.1', label: t('settings.textSizeLg') },
+            { key: '1.2', label: t('settings.textSizeXl') },
+          ]}
+          value={String(textScale)}
+          onChange={(v) => setTextScale(Number(v) as TextScalePref)}
         />
 
         <SectionLabel label={t('settings.notifSection')} styles={styles} />

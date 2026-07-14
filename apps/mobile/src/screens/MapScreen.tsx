@@ -230,8 +230,15 @@ export default function MapScreen({ route, navigation }: Props) {
   // controls don't clip past the card edge on small physical widths.
   const narrowScreen = windowWidth < 400;
   const styles = useMemo(
-    () => makeStyles(accent, fontLayout.scale, narrowScreen, fontBucket),
-    [accent, fontLayout.scale, narrowScreen, fontBucket],
+    () =>
+      makeStyles(
+        accent,
+        fontLayout.scale,
+        narrowScreen,
+        fontBucket,
+        fontLayout.textScale,
+      ),
+    [accent, fontLayout.scale, fontLayout.textScale, narrowScreen, fontBucket],
   );
   // Embedded themed components (reorder list, notifications, commands) always
   // render on the dark glass overlay — force the night palette so they stay dark.
@@ -1849,6 +1856,20 @@ export default function MapScreen({ route, navigation }: Props) {
         styles={styles}
       />
 
+      <View style={styles.listGroup}>
+        <Pressable
+          style={[styles.listRow, styles.listRowLast]}
+          onPress={() => {
+            lightTap();
+            setOverlay('invite');
+          }}
+          accessibilityRole="button"
+        >
+          <Text style={styles.listRowTitle}>{t('map.inviteMembers')}</Text>
+          <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
+        </Pressable>
+      </View>
+
       {/* 精準定位 — 成員欄最下方 */}
       <View style={[styles.accuracyRow, styles.accuracyRowLast]}>
         <View style={styles.accuracyCopy}>
@@ -1879,15 +1900,14 @@ export default function MapScreen({ route, navigation }: Props) {
   const routePaneBody = useMemo(() => (
     <>
       <Text style={[styles.sheetHeading, styles.sheetHeadingFirst]}>{t('map.gatheringPoints')}</Text>
-      {/* 下一站 — 唯一完整卡片（成組閱讀） */}
+      {/* 下一站 — 唯一完整卡片；底部只顯示距離 */}
       {nextStopTitle ? (
         <View style={styles.tripSummaryCard}>
           <Text style={styles.tripCardKicker}>{t('map.nextTag')}</Text>
           <Text style={styles.tripCardTitle} numberOfLines={2}>{nextStopTitle}</Text>
-          <Text style={styles.tripCardMeta}>
-            {nextStopDistLabel ? `${nextStopDistLabel} · ` : ''}
-            {t('map.stopsReorder', { count: destinations.length })}
-          </Text>
+          {nextStopDistLabel ? (
+            <Text style={styles.tripCardMeta}>{nextStopDistLabel}</Text>
+          ) : null}
         </View>
       ) : null}
       {/* 導航入口 = 普通 List Row，無圖示色塊 */}
@@ -1956,17 +1976,6 @@ export default function MapScreen({ route, navigation }: Props) {
       ) : null}
 
       <View style={styles.listGroup}>
-        <Pressable
-          style={styles.listRow}
-          onPress={() => {
-            lightTap();
-            setOverlay('invite');
-          }}
-          accessibilityRole="button"
-        >
-          <Text style={styles.listRowTitle}>{t('map.inviteMembers')}</Text>
-          <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
-        </Pressable>
         <Pressable
           style={[styles.listRow, styles.listRowLast]}
           onPress={() => {
@@ -3236,11 +3245,48 @@ const segStyles = StyleSheet.create({
  * `bucket` chooses compact/tight density so the command row STAYS one row
  * (never stacks) while still fitting large Dynamic Type + small widths.
  */
+/**
+ * Apply app Settings textScale to design fontSize only.
+ * Do NOT multiply by full layout scale here — RN allowFontScaling still
+ * applies system Dynamic Type (would double-count system otherwise).
+ * Emoji styles are skipped so avatar glyphs stay fixed in their shells.
+ */
+function applyAppTextScale<T extends Record<string, any>>(
+  defs: T,
+  textScale: number,
+  emojiKeys: ReadonlySet<string>,
+): T {
+  if (!Number.isFinite(textScale) || textScale === 1 || textScale <= 0) return defs;
+  const out = { ...defs } as T;
+  for (const key of Object.keys(defs)) {
+    if (emojiKeys.has(key)) continue;
+    const entry = defs[key];
+    if (entry && typeof entry === 'object' && typeof entry.fontSize === 'number') {
+      (out as any)[key] = {
+        ...entry,
+        fontSize: Math.round(entry.fontSize * textScale),
+      };
+    }
+  }
+  return out;
+}
+
+const EMOJI_STYLE_KEYS = new Set([
+  'headerAvatarEmoji',
+  'peekStackEmoji',
+  'avatarEmoji',
+  'flockEmoji',
+  'pillEmoji',
+  'profilePreviewEmoji',
+  'emojiChar',
+]);
+
 const makeStyles = (
   accent: string,
   scale: number,
   narrow = false,
   bucket: 'regular' | 'large' | 'xl' = 'regular',
+  textScale = 1,
 ) => {
   const s = (n: number, min = 0) => Math.max(min, Math.round(n * scale));
   // Density ladder (single-row only):
@@ -3249,14 +3295,14 @@ const makeStyles = (
   // tight   → icon-only nav + smallest meet type (xl OR narrow+large)
   const tight = bucket === 'xl' || (narrow && bucket === 'large');
   const compact = tight || narrow || bucket === 'large';
-  const cardPad = compact ? s(10, 8) : s(14, 10);
+  const cardPad = compact ? s(14, 10) : s(18, 14);
   const cmdGap = tight ? s(5, 4) : compact ? s(6, 4) : s(8, 6);
   // Every control is at least cmdSize×cmdSize; mode/maps stay exact squares.
   const cmdSize = tight ? s(48, 44) : compact ? s(52, 48) : s(56, 52);
   // Meet grows with free width; min leaves room for countdown digits.
   // Collapsed 3-btn row gets more meet width than expanded 4-btn.
   const meetMinW = tight ? s(72, 64) : compact ? s(84, 76) : s(104, 92);
-  return StyleSheet.create({
+  const defs = {
     flex: { flex: 1, backgroundColor: '#0c1118' },
     loading: {
       flex: 1,
@@ -3303,8 +3349,6 @@ const makeStyles = (
       width: 26,
       height: 26,
       borderRadius: 13,
-      borderWidth: 1.5,
-      borderColor: 'rgba(20,24,32,0.9)',
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -3362,8 +3406,8 @@ const makeStyles = (
       borderRadius: narrow ? s(22, 16) : s(26, 20),
       overflow: 'hidden',
       paddingHorizontal: cardPad,
-      paddingTop: s(compact ? 10 : 12, 8),
-      paddingBottom: s(compact ? 10 : 12, 8),
+      paddingTop: s(compact ? 14 : 16, 10),
+      paddingBottom: s(compact ? 14 : 16, 10),
       borderWidth: StyleSheet.hairlineWidth,
       // BUG-10: inactive cards have no white halo; active border set inline.
       borderColor: 'transparent',
@@ -3924,6 +3968,7 @@ const makeStyles = (
       borderRadius: 23,
       alignItems: 'center',
       justifyContent: 'center',
+      overflow: 'hidden',
       flexShrink: 0,
     },
     headerAvatarEmoji: { fontSize: 24 },
@@ -3947,6 +3992,7 @@ const makeStyles = (
       borderRadius: 22,
       alignItems: 'center',
       justifyContent: 'center',
+      overflow: 'hidden',
       borderWidth: 2.5,
     },
     peekStackMore: {
@@ -4081,6 +4127,7 @@ const makeStyles = (
       borderRadius: 22,
       alignItems: 'center',
       justifyContent: 'center',
+      overflow: 'hidden',
     },
     avatarText: { fontSize: 16, fontWeight: '700', color: '#fff' },
     avatarEmoji: { fontSize: 20 },
@@ -4108,6 +4155,7 @@ const makeStyles = (
       borderRadius: 38,
       alignItems: 'center',
       justifyContent: 'center',
+      overflow: 'hidden',
     },
     profilePreviewEmoji: { fontSize: 40 },
     profilePreviewInitial: { fontSize: 32, fontWeight: '700', color: '#fff' },
@@ -4516,5 +4564,10 @@ const makeStyles = (
       borderColor: glass.hairline,
     },
     reportButtonText: { flex: 1, color: '#fff', fontSize: 16, fontWeight: '600' },
-  });
+  };
+  // applyAppTextScale spreads style objects; cast keeps StyleSheet.create happy
+  // with the wide inferred defs shape (alignItems string unions, etc.).
+  return StyleSheet.create(
+    applyAppTextScale(defs, textScale, EMOJI_STYLE_KEYS) as any,
+  );
 };

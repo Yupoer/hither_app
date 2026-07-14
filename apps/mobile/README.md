@@ -39,7 +39,14 @@ npm run typecheck # tsc --noEmit
 npm start        # expo start (then press a for Android, or scan QR for iOS/Expo Go)
 npm run android  # run on Android emulator/device
 npm run ios       # run via Expo on iOS
+npm run update:preview     # OTA → preview channel (after a channel-matched EAS build)
+npm run update:production  # OTA → production channel
 ```
+
+## OTA (EAS Update)
+
+Enabled via `expo-updates` + `app.json` `updates` / `runtimeVersion` (appVersion policy).
+See [docs/eas-update.md](./docs/eas-update.md). **First enablement needs a new EAS build**; then pure JS can ship with `eas update`.
 
 `npm test` deliberately covers only the pure-TypeScript logic so it passes on
 Windows without a native build. Screen/component tests can be added later with

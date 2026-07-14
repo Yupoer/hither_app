@@ -3,11 +3,17 @@
     "name": "Hither",
     "slug": "hither",
     "scheme": "hither",
-    "version": "0.1.0",
+    "version": "0.1.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
+    "runtimeVersion": "0.1.3",
+    "updates": {
+      "url": "https://u.expo.dev/0f62ed14-1f2e-4d7b-b5b6-4eda273f2e35",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    },
     "ios": {
       "supportsTablet": true,
       "usesAppleSignIn": true,

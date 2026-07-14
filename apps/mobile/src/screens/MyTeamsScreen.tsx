@@ -11,6 +11,7 @@ import { useSession } from '../state/SessionContext';
 import { getMyJoinedGroups, JoinedGroupInfo, leaveGroups } from '../api/client';
 import { GlassView } from '../native/liquidGlass';
 import { clearLiveActivities } from '../state/useLiveActivity';
+import { HitherText } from '../components/HitherText';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'MyTeams'>;
@@ -156,7 +157,9 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
                           {p.isPlaceholder ? (
                             <Ionicons name="person" size={14} color="rgba(255,255,255,0.2)" />
                           ) : (
-                            <Text style={styles.avatarEmoji}>{p.avatar || '😎'}</Text>
+                            <HitherText typeRole="emoji" style={styles.avatarEmoji}>
+                              {p.avatar || '😎'}
+                            </HitherText>
                           )}
                         </View>
                       ))}
@@ -184,7 +187,9 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
                             {p.isPlaceholder ? (
                               <Ionicons name="person" size={20} color="rgba(255,255,255,0.2)" />
                             ) : (
-                              <Text style={styles.detailEmojiBig}>{p.avatar || '😎'}</Text>
+                              <HitherText typeRole="emoji" style={styles.detailEmojiBig}>
+                                {p.avatar || '😎'}
+                              </HitherText>
                             )}
                           </View>
                         ))}
@@ -302,6 +307,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
     borderWidth: 2,
     borderColor: '#1e293b',
     marginLeft: -10,
@@ -336,6 +342,7 @@ const styles = StyleSheet.create({
     borderRadius: 23,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
     borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.1)',
   },

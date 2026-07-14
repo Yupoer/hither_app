@@ -13,6 +13,7 @@ import type { Coordinates, Destination, MemberLocation } from '../types';
 import { usePreferences, useTheme } from '../state/PreferencesContext';
 import { memberColor } from '../glass';
 import { DAY_COLORS, type Palette } from '../theme';
+import { HitherText } from './HitherText';
 import {
   DEFAULT_LATITUDE_DELTA,
   LOCATE_ALTITUDE,
@@ -188,9 +189,11 @@ const MemberMarker = React.memo(({ member, accent, styles }: any) => {
           ]}
         >
           {member.avatar ? (
-            <Text style={styles.memberEmoji}>{member.avatar}</Text>
+            <HitherText typeRole="emoji" style={styles.memberEmoji}>
+              {member.avatar}
+            </HitherText>
           ) : (
-            <Text style={styles.memberInitial}>
+            <Text style={styles.memberInitial} allowFontScaling={false}>
               {member.name.slice(0, 1).toUpperCase()}
             </Text>
           )}
@@ -424,6 +427,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   memberPinLeader: {
     shadowColor: colors.accent,
@@ -432,6 +436,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     shadowOffset: { width: 0, height: 0 },
   },
   memberInitial: { color: '#fff', fontWeight: '600', fontSize: 16 },
+  // Fixed glyph size — HitherText typeRole="emoji" disables Dynamic Type.
   memberEmoji: { fontSize: 20 },
 });
 

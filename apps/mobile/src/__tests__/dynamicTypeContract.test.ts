@@ -2,15 +2,25 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   GLOBAL_FONT_SCALE_CAP,
+  LAYOUT_SCALE_ABS_CAP,
   TYPE_MAX_MULTIPLIER,
   cappedFontScale,
   fontScaleBucket,
+  layoutFontScale,
 } from '../theme/typeScale';
 
 const root = join(__dirname, '..');
 const appTsx = readFileSync(join(__dirname, '../../App.tsx'), 'utf8');
 const mapScreen = readFileSync(join(root, 'screens/MapScreen.tsx'), 'utf8');
 const quickCommands = readFileSync(join(root, 'components/QuickCommandsCard.tsx'), 'utf8');
+const groupMap = readFileSync(join(root, 'components/GroupMap.tsx'), 'utf8');
+const myTeams = readFileSync(join(root, 'screens/MyTeamsScreen.tsx'), 'utf8');
+const settingsOverlay = readFileSync(
+  join(root, 'screens/MapScreen/components/SettingsOverlay.tsx'),
+  'utf8',
+);
+const preferences = readFileSync(join(root, 'state/PreferencesContext.tsx'), 'utf8');
+const hitherText = readFileSync(join(root, 'components/HitherText.tsx'), 'utf8');
 
 describe('Dynamic Type contract', () => {
   it('caps emoji at 1.0 so avatar shells stay fixed', () => {
@@ -52,11 +62,33 @@ describe('Dynamic Type contract', () => {
     expect(quickCommands).toMatch(/bucket === 'xl'/);
   });
 
-  it('rebuilds map styles from live font scale, narrow width, and font bucket', () => {
+  it('rebuilds map styles from live font scale, narrow width, font bucket, and app textScale', () => {
     expect(mapScreen).toContain('useFontLayout');
-    expect(mapScreen).toContain('makeStyles(accent, fontLayout.scale, narrowScreen, fontBucket)');
+    expect(mapScreen).toContain('fontLayout.textScale');
     expect(mapScreen).toContain('fontLayout.scale');
     expect(mapScreen).toContain('windowWidth < 400');
+    expect(mapScreen).toContain('applyAppTextScale');
+  });
+
+  it('clips avatar shells and freezes map/header emoji glyphs', () => {
+    expect(mapScreen).toMatch(/headerAvatar:\s*\{[\s\S]*?overflow:\s*'hidden'/);
+    expect(mapScreen).toMatch(/peekStackAv:\s*\{[\s\S]*?overflow:\s*'hidden'/);
+    expect(mapScreen).toContain("typeRole=\"emoji\"");
+    expect(groupMap).toContain("typeRole=\"emoji\"");
+    expect(groupMap).toMatch(/memberPin:\s*\{[\s\S]*?overflow:\s*'hidden'/);
+    expect(myTeams).toContain("typeRole=\"emoji\"");
+    expect(myTeams).toMatch(/avatarBubble:\s*\{[\s\S]*?overflow:\s*'hidden'/);
+    expect(myTeams).toMatch(/detailAvatarBig:\s*\{[\s\S]*?overflow:\s*'hidden'/);
+  });
+
+  it('exposes Settings text size multiplier preference', () => {
+    expect(preferences).toContain('pref.textScale');
+    expect(preferences).toContain('TextScalePref');
+    expect(preferences).toContain('setTextScale');
+    expect(settingsOverlay).toContain("settings.textSize");
+    expect(settingsOverlay).toContain('setTextScale');
+    expect(hitherText).toContain('textScale');
+    expect(hitherText).toContain("typeRole === 'emoji'");
   });
 
   it('scales gathering-point card chrome and shows day + date when expanded', () => {
@@ -111,5 +143,14 @@ describe('Dynamic Type contract', () => {
     expect(fontScaleBucket(1.2)).toBe('xl');
     // System accessibility sizes above the cap still bucket as xl (capped).
     expect(fontScaleBucket(2)).toBe('xl');
+  });
+
+  it('combines system + app textScale for layout without exceeding abs cap', () => {
+    expect(layoutFontScale(1, 1)).toBe(1);
+    expect(layoutFontScale(1, 1.2)).toBeCloseTo(1.2);
+    expect(layoutFontScale(1.25, 1.2)).toBe(LAYOUT_SCALE_ABS_CAP);
+    // System alone is still capped before multiply.
+    expect(layoutFontScale(2, 1)).toBe(GLOBAL_FONT_SCALE_CAP);
+    expect(LAYOUT_SCALE_ABS_CAP).toBe(1.5);
   });
 });
