@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getGroupState } from '../api/client';
-import { isDemoGroup } from '../api/demo';
 import { supabase } from '../api/supabase';
-import { virtualMates } from '../api/virtualMates';
 import type { GroupState } from '../types';
 
 /**
@@ -62,13 +60,6 @@ export function useGroupState(groupId: string | null): UseGroupStateResult {
     }
     try {
       const next = await getGroupState(groupId);
-      // __DEV__: pad REAL groups with client-only virtual teammates (anchored
-      // at the first located member — solo-testing, that's you) so the flock
-      // UI has people in it. The demo group ships its own fake members.
-      if (__DEV__ && !isDemoGroup(groupId)) {
-        const anchor = next.members.find((m) => m.coordinates)?.coordinates;
-        next.members = [...next.members, ...virtualMates(groupId, anchor)];
-      }
       if (activeRef.current) {
         setState(next);
         setError(null);
