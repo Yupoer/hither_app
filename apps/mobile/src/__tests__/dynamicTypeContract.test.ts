@@ -74,9 +74,9 @@ describe('Dynamic Type contract', () => {
     // Apple Maps only after expand, above ETA/dist (not in the 3-button row).
     expect(mapScreen).toContain('mapsChip');
     expect(mapScreen).toMatch(/cardExpanded\s*\?\s*\([\s\S]*?openInAppleMaps/);
-    // Card padding is scale/density-aware; kicker row uses scale-aware gap.
+    // Card padding is scale/density-aware (horizontal pad + top/bottom).
     expect(mapScreen).toMatch(/cardPad\s*=\s*compact\s*\?\s*s\(/);
-    expect(mapScreen).toMatch(/card:\s*\{[^}]*padding:\s*cardPad/s);
+    expect(mapScreen).toMatch(/card:\s*\{[\s\S]*?paddingHorizontal:\s*cardPad/);
     expect(mapScreen).toContain('cardKickerRow');
     // Logo removed.
     expect(mapScreen).not.toMatch(/styles\.cardIcon/);

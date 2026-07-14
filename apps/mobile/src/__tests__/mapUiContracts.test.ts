@@ -27,15 +27,14 @@ describe('map UI placement contracts', () => {
   });
 
   it('groups high accuracy with the refreshed member controls', () => {
-    const heading = mapScreen.indexOf('styles.headingRow');
-    const actions = mapScreen.indexOf('styles.memberHeadingActions', heading);
-    const accuracy = mapScreen.indexOf('styles.accuracyRow', actions);
-    const refresh = mapScreen.indexOf('styles.refreshLocationsButton', actions);
+    // Members pane: status bar + refresh, then precise-location at the bottom.
+    const statusBar = mapScreen.indexOf('styles.myStatusBar');
+    const refresh = mapScreen.indexOf('styles.refreshLocationsButton', statusBar);
+    const accuracy = mapScreen.indexOf('styles.accuracyRow', refresh);
 
-    expect(heading).toBeGreaterThanOrEqual(0);
-    expect(actions).toBeGreaterThan(heading);
-    expect(accuracy).toBeGreaterThan(actions);
-    expect(refresh).toBeGreaterThan(actions);
+    expect(statusBar).toBeGreaterThanOrEqual(0);
+    expect(refresh).toBeGreaterThan(statusBar);
+    expect(accuracy).toBeGreaterThan(refresh);
     expect(mapScreen).toContain("t('settings.preciseLocation')");
     expect(mapScreen).toContain("t('settings.preciseLocationHint')");
   });
@@ -53,7 +52,7 @@ describe('map UI placement contracts', () => {
   });
 
   it('exposes the oblique-locate toggle in Settings', () => {
-    expect(settingsOverlay).toContain("t('settings.mapSection')");
+    expect(settingsOverlay).toContain("t('settings.sectionMapJourney')");
     expect(settingsOverlay).toContain("t('settings.obliqueLocate')");
     expect(settingsOverlay).toContain('setObliqueLocate');
     expect(settingsOverlay).toContain('value={obliqueLocate}');
@@ -83,7 +82,9 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain("onClose={() => setOverlay('settings')}");
     expect(mapScreen).toContain("setKmlVisible(true)");
     expect(settingsOverlay).not.toContain("t('account.section')");
-    expect(settingsOverlay).toContain('styles.reportButton');
+    // Feedback lives under 支援 as a nav row (not a standalone report button).
+    expect(settingsOverlay).toContain("t('feedback.title')");
+    expect(settingsOverlay).toContain('onOpenFeedback');
   });
 
   it('updates the gathering-point navigation state before the network request finishes', () => {
