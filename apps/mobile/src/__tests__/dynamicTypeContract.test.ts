@@ -61,6 +61,10 @@ describe('Dynamic Type contract', () => {
     expect(mapScreen).toContain('formatTripDayLine');
     expect(mapScreen).toContain('cardDayLine');
     expect(mapScreen).toContain('optimisticDepartureDate ?? group?.departureDate');
+    // ETA/distance move into expand; progressive compact chrome for narrow/xl.
+    expect(mapScreen).toContain('cardRouteMeta');
+    expect(mapScreen).toContain('a11y-layout:commandRowCompact');
+    expect(mapScreen).toContain('meetBtn');
     // Card padding is scale-aware (via cardPad = s(...)); head gap uses s(...).
     expect(mapScreen).toMatch(/cardPad\s*=\s*narrow\s*\?\s*s\(/);
     expect(mapScreen).toMatch(/card:\s*\{[^}]*padding:\s*cardPad/s);

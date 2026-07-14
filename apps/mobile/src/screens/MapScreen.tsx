@@ -1974,6 +1974,20 @@ export default function MapScreen({ route, navigation }: Props) {
                   : travelMode === 'drive'
                     ? 'car-outline'
                     : 'bus-outline';
+              // Route ETA/distance — shown only when the card is expanded
+              // (collapsed mode pill is icon-only). Same source as before.
+              const etaLabel = routeForDestination
+                ? shortEta(routeForDestination.expectedTravelTimeSeconds)
+                : d != null
+                  ? shortEta(etaSecondsFor(d, travelMode))
+                  : '—';
+              const distLabel = d != null ? formatDistance(d) : '';
+              // Progressive chrome: narrow width and/or large Dynamic Type
+              // drop secondary labels so the limited card width stays usable.
+              // a11y-layout:commandRowCompact
+              const chromeCompact =
+                narrowScreen || fontBucket === 'large' || fontBucket === 'xl';
+              const chromeTight = fontBucket === 'xl' || (narrowScreen && fontBucket === 'large');
               return (
                 <View
                   key={`carousel-dest-${dest.id}-${index}`}
@@ -2052,15 +2066,40 @@ export default function MapScreen({ route, navigation }: Props) {
                           {dest.title}
                         </Text>
                         {expandedCardId === dest.id && (
-                          <Animated.Text
-                            entering={FadeIn.duration(200)}
-                            style={styles.cardDayLine}
-                          >
-                            {formatTripDayLine(
-                              dest.day || 1,
-                              optimisticDepartureDate ?? group?.departureDate,
-                            )}
-                          </Animated.Text>
+                          <>
+                            {/* Compact: skip day/calendar line under xl + narrow
+                                so ETA/distance still fit in the expand band. */}
+                            {!chromeTight ? (
+                              <Animated.Text
+                                entering={FadeIn.duration(200)}
+                                style={styles.cardDayLine}
+                              >
+                                {formatTripDayLine(
+                                  dest.day || 1,
+                                  optimisticDepartureDate ?? group?.departureDate,
+                                )}
+                              </Animated.Text>
+                            ) : null}
+                            <Animated.View
+                              entering={FadeIn.duration(200)}
+                              style={styles.cardRouteMeta}
+                            >
+                              {!chromeCompact ? (
+                                <Ionicons name={modeIconName} size={14} color={accent} />
+                              ) : null}
+                              <Text
+                                style={[styles.cardRouteMetaText, { color: accent }]}
+                                numberOfLines={1}
+                                ellipsizeMode="tail"
+                              >
+                                {chromeTight && distLabel
+                                  ? etaLabel
+                                  : distLabel
+                                    ? `${etaLabel} · ${distLabel}`
+                                    : etaLabel}
+                              </Text>
+                            </Animated.View>
+                          </>
                         )}
                         {myScopeId != null && (
                           <Text style={styles.cardBadge}>{t('subgroup.itineraryBadge')}</Text>
@@ -2087,9 +2126,12 @@ export default function MapScreen({ route, navigation }: Props) {
                         </Animated.View>
                       )}
                     </View>
-                    {/* Arrival caption — mirrors the top hairline in words. */}
+                    {/* Arrival caption — mirrors the top hairline in words.
+                        Compact chrome: value-only (drop long label). */}
                     <View style={styles.arrivalCaption}>
-                      <Text style={styles.arrivalCaptionLabel}>{t('map.arrivalProgress')}</Text>
+                      {!chromeTight ? (
+                        <Text style={styles.arrivalCaptionLabel}>{t('map.arrivalProgress')}</Text>
+                      ) : null}
                       <Text style={[styles.arrivalCaptionValue, { color: accent }]}>
                         {arrivedHere} / {totalMembers}
                       </Text>
@@ -2100,28 +2142,21 @@ export default function MapScreen({ route, navigation }: Props) {
                         full-width + secondary row so controls never clip.
                         a11y-layout:narrowScreen — iPhone 15 / mini / SE.
                         Peek (detent 0): never stack — keeps card short so it
-                        cannot cover locate/group capsules above the sheet. */}
+                        cannot cover locate/group capsules above the sheet.
+                        Mode is always icon-only; ETA/dist live in expand.
+                        Meet countdown stays visible (priority over nav width). */}
                     {(() => {
                       const stacked =
                         detent > 0 &&
                         (narrowScreen || fontBucket === 'large' || fontBucket === 'xl');
-                      // xl always icon-only; on narrow peeks also hide secondary
-                      // labels so the single row fits without horizontal overflow.
-                      const iconOnly =
-                        (fontBucket === 'xl' && detent > 0) ||
-                        (narrowScreen && !stacked);
-                      const etaLabel = routeForDestination
-                        ? shortEta(routeForDestination.expectedTravelTimeSeconds)
-                        : d != null
-                          ? shortEta(etaSecondsFor(d, travelMode))
-                          : '—';
-                      const distLabel = d != null ? formatDistance(d) : '';
+                      // On a single tight row, nav can drop its label and keep
+                      // the icon so meet countdown still fits.
+                      const navIconOnly = !stacked && chromeTight;
                       const secondary = (
                         <>
                       <Pressable
                         style={[
-                          styles.transitPill,
-                          stacked && styles.cmdSecondaryFlex,
+                          styles.cmdSquare,
                           { backgroundColor: accentMix(accent, 16), borderColor: accentMix(accent, 38) },
                         ]}
                         onPress={() => {
@@ -2132,23 +2167,11 @@ export default function MapScreen({ route, navigation }: Props) {
                         accessibilityRole="button"
                         accessibilityLabel={`${t(`map.travelMode.${travelMode}`)} ${etaLabel} ${distLabel}`.trim()}
                       >
-                        <View style={styles.transitPillTop}>
-                          <Ionicons name={modeIconName} size={16} color={accent} />
-                          {!iconOnly ? (
-                            <Text style={styles.transitPillTime} numberOfLines={1} ellipsizeMode="tail">
-                              {etaLabel}
-                            </Text>
-                          ) : null}
-                        </View>
-                        {!iconOnly ? (
-                          <Text style={styles.transitPillDist} numberOfLines={1} ellipsizeMode="tail">
-                            {distLabel}
-                          </Text>
-                        ) : null}
+                        <Ionicons name={modeIconName} size={16} color={accent} />
                       </Pressable>
 
                       <Pressable
-                        style={[styles.cmdSquare, stacked && styles.cmdSecondaryFlex]}
+                        style={styles.cmdSquare}
                         onPress={() => openInAppleMaps(dest)}
                         accessibilityRole="button"
                         accessibilityLabel={t('map.openInAppleMaps')}
@@ -2157,31 +2180,39 @@ export default function MapScreen({ route, navigation }: Props) {
                       </Pressable>
 
                       <Pressable
-                        style={[styles.cmdSquare, stacked && styles.cmdSecondaryFlex]}
+                        style={[styles.meetBtn, stacked && styles.meetBtnGrow]}
                         onPress={() => openMeetTimePicker(dest)}
                         disabled={!canEditItinerary}
                         accessibilityRole="button"
-                        accessibilityLabel={t('meetTime.set')}
+                        accessibilityLabel={
+                          meetLabel
+                            ? `${t('meetTime.set')} ${meetLabel}`
+                            : t('meetTime.set')
+                        }
                       >
                         <Ionicons
                           name="time-outline"
-                          size={16}
+                          size={chromeCompact ? 15 : 16}
                           color={meetLabel ? accent : glass.textSecondary}
                         />
-                        {!iconOnly ? (
-                          dest.meetAt ? (
-                            <MeetCountdown
-                              meetAtIso={dest.meetAt as string}
-                              redWithinMin={meetRedMin}
-                              redColor={glass.danger}
-                              baseStyle={[styles.cmdSquareLabel, { color: accent }]}
-                            />
-                          ) : (
-                            <Text style={styles.cmdSquareLabel} numberOfLines={1}>
-                              ——
-                            </Text>
-                          )
-                        ) : null}
+                        {dest.meetAt ? (
+                          <MeetCountdown
+                            meetAtIso={dest.meetAt as string}
+                            redWithinMin={meetRedMin}
+                            redColor={glass.danger}
+                            baseStyle={[
+                              chromeTight ? styles.meetBtnLabelCompact : styles.meetBtnLabel,
+                              { color: accent },
+                            ]}
+                          />
+                        ) : (
+                          <Text
+                            style={chromeTight ? styles.meetBtnLabelCompact : styles.meetBtnLabel}
+                            numberOfLines={1}
+                          >
+                            ——
+                          </Text>
+                        )}
                       </Pressable>
                         </>
                       );
@@ -2191,6 +2222,7 @@ export default function MapScreen({ route, navigation }: Props) {
                         style={[
                           styles.navBtn,
                           stacked && styles.navBtnFull,
+                          navIconOnly && styles.navBtnIconOnly,
                           navigatingThis ? styles.navBtnEnd : { backgroundColor: accent },
                         ]}
                         onPress={() => {
@@ -2210,26 +2242,35 @@ export default function MapScreen({ route, navigation }: Props) {
                         }}
                         disabled={journeyBusy}
                         accessibilityRole="button"
+                        accessibilityLabel={
+                          navigatingThis
+                            ? t('map.stopNav')
+                            : isLeader
+                              ? t('map.directions')
+                              : '路徑規劃'
+                        }
                       >
                         <Ionicons
                           name={navigatingThis ? 'stop' : isLeader ? 'play' : 'navigate'}
                           size={15}
                           color={navigatingThis ? glass.danger : '#0c1a12'}
                         />
-                        <Text
-                          style={[
-                            styles.navBtnText,
-                            { color: navigatingThis ? glass.danger : '#0c1a12' },
-                          ]}
-                          numberOfLines={1}
-                          ellipsizeMode="tail"
-                        >
-                          {navigatingThis
-                            ? t('map.stopNav')
-                            : isLeader
-                              ? t('map.directions')
-                              : '路徑規劃'}
-                        </Text>
+                        {!navIconOnly ? (
+                          <Text
+                            style={[
+                              styles.navBtnText,
+                              { color: navigatingThis ? glass.danger : '#0c1a12' },
+                            ]}
+                            numberOfLines={1}
+                            ellipsizeMode="tail"
+                          >
+                            {navigatingThis
+                              ? t('map.stopNav')
+                              : isLeader
+                                ? t('map.directions')
+                                : '路徑規劃'}
+                          </Text>
+                        ) : null}
                       </Pressable>
                       {stacked ? (
                         <View style={styles.commandSecondaryRow}>{secondary}</View>
@@ -2692,8 +2733,9 @@ const makeStyles = (accent: string, scale: number, narrow = false) => {
   // Slightly tighter bases on narrow physical widths (mini ~375, 15 ~390).
   const cardPad = narrow ? s(10, 8) : s(14, 10);
   const cmdGap = narrow ? s(6, 4) : s(8, 6);
-  const transitW = narrow ? s(76, 64) : s(92, 80);
-  const squareW = narrow ? s(46, 44) : s(54, 48);
+  // Mode + Apple Maps share a square; meet grows so countdown stays readable.
+  const squareW = narrow ? s(44, 44) : s(48, 44);
+  const meetW = narrow ? s(76, 68) : s(96, 84);
   return StyleSheet.create({
     flex: { flex: 1, backgroundColor: '#0c1118' },
     loading: {
@@ -2856,6 +2898,23 @@ const makeStyles = (accent: string, scale: number, narrow = false) => {
       marginTop: s(4, 2),
       flexShrink: 1,
     },
+    // Expanded route estimate (moved off the travel-mode control).
+    cardRouteMeta: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: s(6, 4),
+      marginTop: s(4, 2),
+      minWidth: 0,
+      flexShrink: 1,
+    },
+    cardRouteMetaText: {
+      fontFamily: DISPLAY_FONT,
+      fontSize: narrow ? 12.5 : 13.5,
+      fontVariant: ['tabular-nums'],
+      flexShrink: 1,
+      minWidth: 0,
+      lineHeight: s(18, 16),
+    },
     cardBadge: {
       color: glass.textSecondary,
       fontSize: 11,
@@ -2888,7 +2947,7 @@ const makeStyles = (accent: string, scale: number, narrow = false) => {
 
     // The single command row and its four controls.
     // a11y-layout:commandRow — minHeights track live font scale.
-    // flexShrink on secondary controls so mini/narrow never overflows.
+    // Nav is content-sized; mode/maps stay square; meet grows for countdown.
     commandRow: {
       flexDirection: 'row',
       alignItems: 'stretch',
@@ -2912,84 +2971,88 @@ const makeStyles = (accent: string, scale: number, narrow = false) => {
       width: '100%',
     },
     navBtn: {
-      flex: 1,
+      flexGrow: 0,
+      flexShrink: 1,
       minWidth: 0,
+      minHeight: s(54, 48),
+      borderRadius: s(15, 12),
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: s(6, 4),
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'transparent',
+      paddingHorizontal: s(10, 8),
+      overflow: 'hidden',
+    },
+    navBtnFull: { flexGrow: 0, flexShrink: 0, alignSelf: 'stretch', width: '100%' },
+    // Tight single-row chrome: icon-only so meet countdown keeps width.
+    navBtnIconOnly: {
+      width: squareW,
+      minWidth: squareW,
+      maxWidth: squareW,
+      paddingHorizontal: 0,
+    },
+    // "End navigation" state — a soft danger tint over the accent-solid "go".
+    navBtnEnd: { backgroundColor: 'rgba(255,107,107,0.14)', borderColor: 'rgba(255,107,107,0.4)' },
+    navBtnText: {
+      fontSize: narrow ? 13 : 14,
+      fontWeight: '700',
+      flexShrink: 1,
+      minWidth: 0,
+    },
+    // Square secondary controls (travel mode, Apple-Maps hand-off).
+    cmdSquare: {
+      width: squareW,
+      maxWidth: squareW,
+      minWidth: 44,
+      flexGrow: 0,
+      flexShrink: 0,
+      minHeight: s(54, 48),
+      borderRadius: s(15, 12),
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(255,255,255,0.09)',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
+      overflow: 'hidden',
+    },
+    // Meet-time control — wider so live countdown stays readable.
+    meetBtn: {
+      minWidth: meetW,
+      flexGrow: 1,
       flexShrink: 1,
       minHeight: s(54, 48),
       borderRadius: s(15, 12),
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      gap: s(8, 6),
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: 'transparent',
-      paddingHorizontal: s(8, 6),
-      overflow: 'hidden',
-    },
-    navBtnFull: { flex: 0, alignSelf: 'stretch' },
-    // "End navigation" state — a soft danger tint over the accent-solid "go".
-    navBtnEnd: { backgroundColor: 'rgba(255,107,107,0.14)', borderColor: 'rgba(255,107,107,0.4)' },
-    navBtnText: {
-      fontSize: narrow ? 14 : 15,
-      fontWeight: '700',
-      flexShrink: 1,
-      minWidth: 0,
-    },
-    // Transit pill: preferred width, may shrink on mini so the row fits.
-    transitPill: {
-      width: transitW,
-      maxWidth: transitW,
-      minWidth: 44,
-      flexShrink: 1,
-      minHeight: s(54, 48),
-      borderRadius: s(15, 12),
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 1,
-      borderWidth: StyleSheet.hairlineWidth,
-      paddingVertical: s(6, 4),
-      paddingHorizontal: 2,
-      overflow: 'hidden',
-    },
-    transitPillTop: { flexDirection: 'row', alignItems: 'center', gap: s(5, 4), maxWidth: '100%' },
-    transitPillTime: {
-      fontFamily: DISPLAY_FONT,
-      fontSize: narrow ? 13 : 15,
-      color: '#fff',
-      fontVariant: ['tabular-nums'],
-      flexShrink: 1,
-    },
-    transitPillDist: {
-      fontSize: narrow ? 9.5 : 10.5,
-      color: glass.textSecondary,
-      fontVariant: ['tabular-nums'],
-      flexShrink: 1,
-    },
-    // Square secondary controls (Apple-Maps hand-off, gather-time clock).
-    cmdSquare: {
-      width: squareW,
-      maxWidth: squareW,
-      minWidth: 44,
-      flexShrink: 1,
-      minHeight: s(54, 48),
-      borderRadius: s(15, 12),
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 2,
+      gap: s(5, 4),
       backgroundColor: 'rgba(255,255,255,0.09)',
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairline,
-      paddingVertical: s(6, 4),
-      paddingHorizontal: 2,
+      paddingHorizontal: s(8, 6),
       overflow: 'hidden',
     },
-    cmdSecondaryFlex: { flex: 1, width: undefined, maxWidth: undefined, minWidth: 0 },
-    cmdSquareLabel: {
-      fontSize: 10,
+    meetBtnGrow: { flex: 1, width: undefined, maxWidth: undefined, minWidth: meetW },
+    meetBtnLabel: {
+      fontFamily: DISPLAY_FONT,
+      fontSize: narrow ? 13 : 14,
       fontWeight: '700',
       color: glass.textSecondary,
       fontVariant: ['tabular-nums'],
       flexShrink: 1,
+      minWidth: 0,
+      maxWidth: '100%',
+    },
+    meetBtnLabelCompact: {
+      fontFamily: DISPLAY_FONT,
+      fontSize: 12,
+      fontWeight: '700',
+      color: glass.textSecondary,
+      fontVariant: ['tabular-nums'],
+      flexShrink: 1,
+      minWidth: 0,
       maxWidth: '100%',
     },
 
