@@ -170,6 +170,7 @@ export default function L3DepartureStep({ answers, onAnswer, onSkip, onBack }: S
               style={styles.picker}
               onChange={(_event, selected) => {
                 if (selected) {
+                  selectionTick();
                   setCustomDate(selected);
                   setKey('custom');
                 }

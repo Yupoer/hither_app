@@ -7,7 +7,6 @@ import type { StepProps } from '../types';
 import StepShell from './StepShell';
 import OptionCard from './OptionCard';
 import PrimaryButton from './PrimaryButton';
-import { selectionTick } from '../../utils/haptics';
 
 const LABEL_KEY: Record<PrefOption, TranslationKey> = {
   food: 'onboarding.f4.food',
@@ -42,8 +41,8 @@ export default function F4PrefsStep({ answers, onAnswer, onSkip, onBack }: StepP
   const { t } = useTranslation();
   const [selected, setSelected] = useState<string[]>(answers.prefs ?? []);
 
+  // Haptic lives in OptionCard — do not tick again here (would double-fire).
   const toggle = (opt: PrefOption) => {
-    selectionTick();
     setSelected((prev) =>
       prev.includes(opt) ? prev.filter((p) => p !== opt) : [...prev, opt],
     );
