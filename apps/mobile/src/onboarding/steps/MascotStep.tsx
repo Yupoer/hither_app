@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { HitherText } from '../../components/HitherText';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -56,17 +57,17 @@ export default function MascotStep({ answers, onAnswer, onSkip, onBack }: StepPr
             },
           ]}
         >
-          <Text style={styles.emoji}>{mascot.emoji}</Text>
+          <HitherText typeRole="emoji" style={styles.emoji}>{mascot.emoji}</HitherText>
           <View style={[styles.slotHint, { backgroundColor: accentMix(colors.accent, 18) }]}>
-            <Text style={[styles.slotHintText, { color: colors.accent }]}>插畫待補 · art slot</Text>
+            <HitherText typeRole="caption" style={[styles.slotHintText, { color: colors.accent }]}>插畫待補 · art slot</HitherText>
           </View>
         </View>
-        <Text style={[styles.description, { color: colors.textPrimary }]}>
+        <HitherText typeRole="body" style={[styles.description, { color: colors.textPrimary }]}>
           {t(mascot.descriptionKey as never)}
-        </Text>
-        <Text style={[styles.bestLeader, { color: colors.accent }]}>
+        </HitherText>
+        <HitherText typeRole="callout" style={[styles.bestLeader, { color: colors.accent }]}>
           {t(mascot.bestLeaderKey as never)}
-        </Text>
+        </HitherText>
       </Animated.View>
     </StepShell>
   );

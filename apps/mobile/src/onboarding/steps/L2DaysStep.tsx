@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { useTheme } from '../../state/PreferencesContext';
+import { HitherText } from '../../components/HitherText';
 import { useTranslation } from '../../i18n';
 import { MAX_DAYS, MIN_DAYS } from '../content';
 import type { StepProps } from '../types';
@@ -40,18 +41,18 @@ export default function L2DaysStep({ answers, onAnswer, onSkip, onBack }: StepPr
             onPress={() => change(-1)}
             style={[styles.stepBtn, { borderColor: colors.border, opacity: days <= MIN_DAYS ? 0.4 : 1 }]}
           >
-            <Text style={[styles.stepBtnText, { color: colors.textPrimary }]}>−</Text>
+            <HitherText typeRole="title" style={[styles.stepBtnText, { color: colors.textPrimary }]}>−</HitherText>
           </Pressable>
-          <Text style={[styles.count, { color: colors.accent }]}>
+          <HitherText typeRole="display" style={[styles.count, { color: colors.accent }]}>
             {t('onboarding.l2.days', { count: days })}
-          </Text>
+          </HitherText>
           <Pressable
             accessibilityRole="button"
             disabled={days >= MAX_DAYS}
             onPress={() => change(1)}
             style={[styles.stepBtn, { borderColor: colors.border, opacity: days >= MAX_DAYS ? 0.4 : 1 }]}
           >
-            <Text style={[styles.stepBtnText, { color: colors.textPrimary }]}>+</Text>
+            <HitherText typeRole="title" style={[styles.stepBtnText, { color: colors.textPrimary }]}>+</HitherText>
           </Pressable>
         </View>
       </View>
@@ -67,7 +68,7 @@ const styles = StyleSheet.create({
   count: { minWidth: 140, fontSize: 56, fontWeight: '800', textAlign: 'center' },
   stepBtn: {
     width: 56,
-    height: 56,
+    minHeight: 56,
     borderRadius: 28,
     borderWidth: StyleSheet.hairlineWidth * 2,
     alignItems: 'center',

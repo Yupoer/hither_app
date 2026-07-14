@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { HitherText } from '../../components/HitherText';
 import DateTimePicker, {
   DateTimePickerAndroid,
 } from '@react-native-community/datetimepicker';
@@ -98,14 +99,15 @@ export default function L3DepartureStep({ answers, onAnswer, onSkip, onBack }: S
             size={22}
             color={key === 'now' ? colors.accentText : colors.accent}
           />
-          <Text
+          <HitherText
+            typeRole="callout"
             style={[
               styles.tileLabel,
               { color: key === 'now' ? colors.accentText : colors.textPrimary },
             ]}
           >
             {t('onboarding.l3.optNow')}
-          </Text>
+          </HitherText>
         </Pressable>
 
         <Pressable
@@ -123,7 +125,8 @@ export default function L3DepartureStep({ answers, onAnswer, onSkip, onBack }: S
             size={22}
             color={key === 'custom' ? '#fff' : CUSTOM_COLOR}
           />
-          <Text
+          <HitherText
+            typeRole="callout"
             style={[
               styles.tileLabel,
               { color: key === 'custom' ? '#fff' : colors.textPrimary },
@@ -133,7 +136,7 @@ export default function L3DepartureStep({ answers, onAnswer, onSkip, onBack }: S
             {key === 'custom' && customDate
               ? customDate.toLocaleDateString()
               : t('onboarding.l3.optCustom')}
-          </Text>
+          </HitherText>
         </Pressable>
       </View>
 
@@ -141,9 +144,9 @@ export default function L3DepartureStep({ answers, onAnswer, onSkip, onBack }: S
         <View style={styles.countdownWrap}>
           <View style={[styles.countdownPill, { backgroundColor: accentMix(colors.accent, 16), borderColor: accentMix(colors.accent, 40) }]}>
             <Ionicons name="hourglass-outline" size={20} color={colors.accent} />
-            <Text style={[styles.countdownText, { color: colors.accent }]}>
+            <HitherText typeRole="callout" style={[styles.countdownText, { color: colors.accent }]}>
               {t('onboarding.l3.countdown', { days: daysUntil(effectiveDate) })}
-            </Text>
+            </HitherText>
           </View>
         </View>
       ) : null}

@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { Pressable, StyleSheet } from 'react-native';
 import Animated, {
   interpolateColor,
   useAnimatedStyle,
@@ -7,6 +7,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useTheme } from '../../state/PreferencesContext';
+import { HitherText } from '../../components/HitherText';
 import { mediumTap } from '../../utils/haptics';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -40,9 +41,12 @@ export default function PrimaryButton({
       }}
       style={[styles.btn, bgStyle]}
     >
-      <Text style={[styles.label, { color: disabled ? colors.textSecondary : colors.accentText }]}>
+      <HitherText
+        typeRole="title"
+        style={[styles.label, { color: disabled ? colors.textSecondary : colors.accentText }]}
+      >
         {label}
-      </Text>
+      </HitherText>
     </AnimatedPressable>
   );
 }
@@ -50,10 +54,12 @@ export default function PrimaryButton({
 const styles = StyleSheet.create({
   btn: {
     alignSelf: 'stretch',
-    height: 60,
+    minHeight: 60,
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
   },
-  label: { fontSize: 18, fontWeight: '700' },
+  label: { fontSize: 18, fontWeight: '700', textAlign: 'center' },
 });

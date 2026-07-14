@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { HitherText } from '../../components/HitherText';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -120,18 +121,18 @@ export default function CelebrationStep({ answers, onAnswer }: StepProps) {
         ))}
       </View>
       <View style={styles.center}>
-        <Animated.Text style={[styles.emoji, emojiStyle]}>🎉</Animated.Text>
-        <Text style={[styles.title, { color: colors.textPrimary }]}>
+        <Animated.Text allowFontScaling={false} style={[styles.emoji, emojiStyle]}>🎉</Animated.Text>
+        <HitherText typeRole="display" style={[styles.title, { color: colors.textPrimary }]}>
           {t('onboarding.celebration.title')}
-        </Text>
-        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+        </HitherText>
+        <HitherText typeRole="body" style={[styles.subtitle, { color: colors.textSecondary }]}>
           {t('onboarding.celebration.subtitle')}
-        </Text>
+        </HitherText>
         <View style={styles.chips}>
           {chips.map((c, i) => (
             <View key={i} style={[styles.chip, { backgroundColor: accentMix(colors.accent, 14) }]}>
-              <Text style={styles.chipEmoji}>{c.emoji}</Text>
-              <Text style={[styles.chipText, { color: colors.textPrimary }]}>{c.label}</Text>
+              <HitherText typeRole="emoji" style={styles.chipEmoji}>{c.emoji}</HitherText>
+              <HitherText typeRole="footnote" style={[styles.chipText, { color: colors.textPrimary }]}>{c.label}</HitherText>
             </View>
           ))}
         </View>

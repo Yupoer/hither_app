@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { HitherText } from '../../components/HitherText';
 import { useTheme } from '../../state/PreferencesContext';
 import { accentMix } from '../../glass';
 import { useTranslation, type TranslationKey } from '../../i18n';
@@ -45,11 +46,11 @@ function ScenarioCard({
         pressed && { opacity: 0.85 },
       ]}
     >
-      <Text style={[styles.tag, { color: selected ? colors.accent : colors.textSecondary }]}>
+      <HitherText typeRole="caption" style={[styles.tag, { color: selected ? colors.accent : colors.textSecondary }]}>
         {tag}
-      </Text>
-      <Text style={styles.emoji}>{emoji}</Text>
-      <Text style={[styles.label, { color: colors.textPrimary }]}>{label}</Text>
+      </HitherText>
+      <HitherText typeRole="emoji" style={styles.emoji}>{emoji}</HitherText>
+      <HitherText typeRole="body" style={[styles.label, { color: colors.textPrimary }]}>{label}</HitherText>
     </Pressable>
   );
 }

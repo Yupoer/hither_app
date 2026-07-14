@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   Easing,
@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../../state/PreferencesContext';
 import { shade } from '../../glass';
+import { HitherText } from '../../components/HitherText';
 import { useTranslation } from '../../i18n';
 import { stepProgress } from '../progress';
 import type { OnboardingRole, StepId } from '../types';
@@ -96,19 +97,25 @@ export default function StepShell({
           </View>
         )}
         <Pressable onPress={onSkip} accessibilityRole="button" hitSlop={8}>
-          <Text style={[styles.skip, { color: colors.textSecondary }]}>
+          <HitherText typeRole="footnote" style={[styles.skip, { color: colors.textSecondary }]}>
             {t('onboarding.skip')}
-          </Text>
+          </HitherText>
         </Pressable>
       </View>
 
       <View style={styles.heading}>
         {kicker ? (
-          <Text style={[styles.kicker, { color: colors.accent }]}>{kicker}</Text>
+          <HitherText typeRole="caption" style={[styles.kicker, { color: colors.accent }]}>
+            {kicker}
+          </HitherText>
         ) : null}
-        <Text style={[styles.title, { color: colors.textPrimary }]}>{title}</Text>
+        <HitherText typeRole="display" style={[styles.title, { color: colors.textPrimary }]}>
+          {title}
+        </HitherText>
         {subtitle ? (
-          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{subtitle}</Text>
+          <HitherText typeRole="body" style={[styles.subtitle, { color: colors.textSecondary }]}>
+            {subtitle}
+          </HitherText>
         ) : null}
       </View>
 
@@ -124,7 +131,7 @@ export default function StepShell({
 
 const styles = StyleSheet.create({
   fill: { flex: 1, paddingHorizontal: 24 },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 12, height: 40 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 40 },
   backBtn: {
     width: 36,
     height: 36,
@@ -145,7 +152,8 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     marginBottom: 6,
   },
-  title: { fontSize: 27, fontWeight: '800', lineHeight: 33 },
+  // Display-size for onboarding titles; Dynamic Type via typeRole=display (cap 1.2).
+  title: { fontSize: 27, fontWeight: '800', lineHeight: 34 },
   subtitle: { fontSize: 14, lineHeight: 20, marginTop: 6 },
   body: { flex: 1 },
   footer: { paddingTop: 12 },

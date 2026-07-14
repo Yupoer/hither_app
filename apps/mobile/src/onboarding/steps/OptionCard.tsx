@@ -1,8 +1,9 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../state/PreferencesContext';
 import { accentMix } from '../../glass';
+import { HitherText } from '../../components/HitherText';
 import { selectionTick } from '../../utils/haptics';
 
 /**
@@ -58,20 +59,25 @@ export default function OptionCard({
             },
           ]}
         >
-          <Text style={styles.emoji}>{emoji}</Text>
+          <HitherText typeRole="emoji" style={styles.emoji}>{emoji}</HitherText>
         </View>
       ) : null}
       <View style={styles.textCol}>
-        <Text style={[styles.title, { color: colors.textPrimary }]} numberOfLines={1}>
+        <HitherText
+          typeRole="body"
+          style={[styles.title, { color: colors.textPrimary }]}
+          numberOfLines={2}
+        >
           {title}
-        </Text>
+        </HitherText>
         {subtitle ? (
-          <Text
+          <HitherText
+            typeRole="footnote"
             style={[styles.subtitle, { color: colors.textSecondary }]}
-            numberOfLines={1}
+            numberOfLines={2}
           >
             {subtitle}
-          </Text>
+          </HitherText>
         ) : null}
       </View>
       <View
