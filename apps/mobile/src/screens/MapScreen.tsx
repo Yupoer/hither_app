@@ -166,6 +166,25 @@ function shortEta(seconds: number): string {
 }
 
 /**
+ * Expanded gathering-card line: "第 N 天 · M月D號" when a trip departure date
+ * exists (aligned with DestinationReorderList day headers).
+ * Date-only ISO is parsed at local noon to avoid TZ day-shift.
+ */
+function formatTripDayLine(dayNum: number, departureDate?: string | null): string {
+  const day = Math.max(1, dayNum || 1);
+  const dayPart = `第 ${day} 天`;
+  if (!departureDate) return dayPart;
+  const raw = departureDate.trim();
+  const base = /^\d{4}-\d{2}-\d{2}$/.test(raw)
+    ? new Date(`${raw}T12:00:00`)
+    : new Date(raw);
+  if (Number.isNaN(base.getTime())) return dayPart;
+  base.setDate(base.getDate() + (day - 1));
+  const datePart = `${base.getMonth() + 1}月${base.getDate()}號`;
+  return `${dayPart} · ${datePart}`;
+}
+
+/**
  * The whole app: a live map with an Apple-Maps pull-up glass sheet. Peek shows a
  * search bar + the floating gathering-point carousel; drag up for the group,
  * flock, gathering points and quick commands. Search / route-reorder / settings
@@ -250,6 +269,9 @@ export default function MapScreen({ route, navigation }: Props) {
   // Measured height of the sheet's pinned header (grabber + search row) —
   // peek shows exactly that block, floating high off the screen edges.
   const [sheetHeaderH, setSheetHeaderH] = useState(78);
+  // Measured height of the gathering-point carousel card strip (for camera
+  // centering into the visible band between carousel and sheet).
+  const [carouselHeight, setCarouselHeight] = useState(0);
   const detents = useMemo(() => {
     // Full fills the screen flush, leaving only the status bar.
     const peek = sheetHeaderH;
@@ -1290,6 +1312,17 @@ export default function MapScreen({ route, navigation }: Props) {
     windowHeight - detents[0] - CAPSULE_CLEARANCE - (insets.top + 8) - 8,
   );
 
+  // Camera insets: midpoint of the strip between gathering-point cards (top)
+  // and the settled sheet (bottom). Used by locate-me / fit-all so pins land
+  // in the unobstructed band rather than geometric screen center.
+  const sheetH = detents[detent] ?? detents[0];
+  const bottomPad = sheetH + sheetBottomOffset(sheetH, detents, insets.bottom);
+  const carouselFallback = fontLayout.s(160, 140);
+  const topPad =
+    destinations.length > 0
+      ? insets.top + 8 + (carouselHeight > 0 ? carouselHeight : carouselFallback)
+      : insets.top + 8;
+
 
 
   const sheetHeader = useMemo(() => (
@@ -1568,11 +1601,10 @@ export default function MapScreen({ route, navigation }: Props) {
         routePoints={selfRoute?.points}
         routeColor={accent}
         alternateRoutes={alternateRoutes}
-        // Capped at mid: at full the sheet covers the map anyway.
-        // ponytail: updates once per detent settle (3 discrete values), not
-        // per frame — per-frame MapView prop updates re-render the native map
-        // 60×/s; switch to a heightAnim listener if the step reads harsh.
-        bottomOverlap={detents[1]}
+        // Settled detent only (not heightSV) so we don't re-render the map
+        // mid-drag; top tracks measured carousel card height.
+        topOverlap={topPad}
+        bottomOverlap={bottomPad}
       />
 
       {/* Group pill — moved to bottom left, tracking sheet like recenter capsule. */}
@@ -1757,6 +1789,10 @@ export default function MapScreen({ route, navigation }: Props) {
             chromeOpacityStyle,
           ]}
           pointerEvents={atFull ? 'none' : 'box-none'}
+          onLayout={(e) => {
+            const h = e.nativeEvent.layout.height;
+            if (h > 0) setCarouselHeight(h);
+          }}
         >
           <ScrollView
             ref={carouselRef}
@@ -1850,7 +1886,7 @@ export default function MapScreen({ route, navigation }: Props) {
                     </View>
                     <View style={styles.cardHead}>
                       <View style={[styles.cardIcon, { backgroundColor: accentMix(accent, 22), borderColor: accentMix(accent, 45) }]}>
-                        <CrookIcon size={26} color={accent} />
+                        <CrookIcon size={fontLayout.s(26, 22)} color={accent} />
                       </View>
                       <View style={styles.grow}>
                         <Text style={[styles.cardKicker, { color: accent }]}>
@@ -1865,17 +1901,14 @@ export default function MapScreen({ route, navigation }: Props) {
                           {dest.title}
                         </Text>
                         {expandedCardId === dest.id && (
-                          <Animated.Text entering={FadeIn.duration(200)} style={{ color: glass.textSecondary, fontSize: 13, marginTop: 4 }}>
-                            {(() => {
-                              const dayNum = dest.day || 1;
-                              let dateStr = '';
-                              if (group?.departureDate) {
-                                const d = new Date(group.departureDate);
-                                d.setDate(d.getDate() + (dayNum - 1));
-                                dateStr = `${d.getMonth() + 1}月${d.getDate()}號`;
-                              }
-                              return `第${dayNum}天${dateStr ? ` · ${dateStr}` : ''}`;
-                            })()}
+                          <Animated.Text
+                            entering={FadeIn.duration(200)}
+                            style={styles.cardDayLine}
+                          >
+                            {formatTripDayLine(
+                              dest.day || 1,
+                              optimisticDepartureDate ?? group?.departureDate,
+                            )}
                           </Animated.Text>
                         )}
                         {myScopeId != null && (
@@ -2587,10 +2620,11 @@ const makeStyles = (accent: string, scale: number) => {
       zIndex: 50,
       overflow: 'hidden',
     },
+    // Gathering-point card — padding / radius / gaps track live font scale.
     card: {
-      borderRadius: 30,
+      borderRadius: s(30, 22),
       overflow: 'hidden',
-      padding: 14,
+      padding: s(14, 10),
       borderWidth: StyleSheet.hairlineWidth,
       // BUG-10: inactive cards have no white halo; active border set inline.
       borderColor: 'transparent',
@@ -2606,7 +2640,11 @@ const makeStyles = (accent: string, scale: number) => {
       zIndex: 2,
     },
     arrivalHairlineFill: { height: '100%' },
-    cardHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    cardHead: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: s(12, 8),
+    },
     cardIcon: {
       width: s(46, 40),
       height: s(46, 40),
@@ -2614,9 +2652,16 @@ const makeStyles = (accent: string, scale: number) => {
       alignItems: 'center',
       justifyContent: 'center',
       borderWidth: StyleSheet.hairlineWidth,
+      marginTop: s(2, 0),
     },
     grow: { flex: 1, minWidth: 0 },
-    cardKicker: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8, flexShrink: 1 },
+    cardKicker: {
+      fontSize: 11,
+      fontWeight: '700',
+      letterSpacing: 0.8,
+      flexShrink: 1,
+      lineHeight: s(16, 14),
+    },
     // marginTop nudges the (system-font) CJK title clear of the kicker line —
     // Fredoka only covers Latin, so CJK sits higher and would otherwise crowd it.
     // flexShrink + relaxed lineHeight keep titles inside the card at font cap.
@@ -2624,11 +2669,24 @@ const makeStyles = (accent: string, scale: number) => {
       fontFamily: DISPLAY_FONT,
       fontSize: 20,
       color: '#fff',
-      lineHeight: s(26, 22),
+      lineHeight: s(28, 24),
       marginTop: s(4, 2),
       flexShrink: 1,
     },
-    cardBadge: { color: glass.textSecondary, fontSize: 11, marginTop: 1 },
+    // Expanded day + calendar date under the title.
+    cardDayLine: {
+      color: glass.textSecondary,
+      fontSize: 13,
+      lineHeight: s(18, 16),
+      marginTop: s(4, 2),
+      flexShrink: 1,
+    },
+    cardBadge: {
+      color: glass.textSecondary,
+      fontSize: 11,
+      marginTop: s(2, 1),
+      lineHeight: s(15, 13),
+    },
 
     // Arrival caption row (design 1b) — "隊伍抵達進度 · X / Y".
     arrivalCaption: {
@@ -2639,12 +2697,18 @@ const makeStyles = (accent: string, scale: number) => {
       marginTop: s(11, 8),
       paddingLeft: 2,
     },
-    arrivalCaptionLabel: { fontSize: 12.5, color: glass.textSecondary, flexShrink: 1 },
+    arrivalCaptionLabel: {
+      fontSize: 12.5,
+      color: glass.textSecondary,
+      flexShrink: 1,
+      lineHeight: s(18, 15),
+    },
     arrivalCaptionValue: {
       fontFamily: DISPLAY_FONT,
       fontSize: 13,
       fontVariant: ['tabular-nums'],
       flexShrink: 0,
+      lineHeight: s(18, 15),
     },
 
     // The single command row and its four controls.

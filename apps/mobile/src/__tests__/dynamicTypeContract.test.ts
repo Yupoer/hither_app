@@ -54,6 +54,15 @@ describe('Dynamic Type contract', () => {
     expect(mapScreen).toContain('fontLayout.scale');
   });
 
+  it('scales gathering-point card chrome and shows day + date when expanded', () => {
+    expect(mapScreen).toContain('formatTripDayLine');
+    expect(mapScreen).toContain('cardDayLine');
+    expect(mapScreen).toContain('optimisticDepartureDate ?? group?.departureDate');
+    // Card padding / head gap must use the live scale helper `s(...)`.
+    expect(mapScreen).toMatch(/card:\s*\{[^}]*padding:\s*s\(/s);
+    expect(mapScreen).toMatch(/cardHead:\s*\{[^}]*gap:\s*s\(/s);
+  });
+
   it('marks invite-row stacked layout for large Dynamic Type', () => {
     expect(mapScreen).toContain('a11y-layout:inviteRow');
     expect(mapScreen).toContain('inviteRowStacked');
