@@ -69,10 +69,13 @@ describe('Dynamic Type contract', () => {
     expect(mapScreen).toContain('meetBtn');
     // Apple Maps only after expand (default is 3 buttons).
     expect(mapScreen).toMatch(/cardExpanded\s*\?\s*\([\s\S]*?openInAppleMaps/);
-    // Card padding is scale/density-aware; head gap uses s(...).
+    // Card padding is scale/density-aware; kicker row uses scale-aware gap.
     expect(mapScreen).toMatch(/cardPad\s*=\s*compact\s*\?\s*s\(/);
     expect(mapScreen).toMatch(/card:\s*\{[^}]*padding:\s*cardPad/s);
-    expect(mapScreen).toMatch(/cardHead:\s*\{[^}]*gap:\s*s\(/s);
+    expect(mapScreen).toMatch(/cardKickerRow:\s*\{[^}]*gap:\s*s\(/s);
+    // Logo removed; ETA/dist sit under the stop counter.
+    expect(mapScreen).not.toMatch(/styles\.cardIcon/);
+    expect(mapScreen).toContain('cardKickerRow');
   });
 
   it('marks invite-row stacked layout for large Dynamic Type', () => {
