@@ -49,6 +49,7 @@ import * as Clipboard from 'expo-clipboard';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import GroupMap, { type GroupMapHandle } from '../components/GroupMap';
+import { PLACE_ALTITUDE, PLACE_ZOOM } from '../components/mapCameraMath';
 import DestinationSearch from '../components/DestinationSearch';
 import MeetCountdown from '../components/MeetCountdown';
 import DestinationReorderList from '../components/DestinationReorderList';
@@ -715,7 +716,11 @@ export default function MapScreen({ route, navigation }: Props) {
         return;
       }
       setPendingPlace(place);
-      mapRef.current?.centerOn(place.coordinates);
+      // Wider than locate-me so the new pin has neighborhood context, not street-close.
+      mapRef.current?.centerOn(place.coordinates, {
+        zoom: PLACE_ZOOM,
+        altitude: PLACE_ALTITUDE,
+      });
     },
     [canEditItinerary, notifyLeaderPlace],
   );
@@ -742,7 +747,10 @@ export default function MapScreen({ route, navigation }: Props) {
       );
       logEvent('destination_add', { source: 'search' });
       setSelectedIndex(destinations.length);
-      mapRef.current?.centerOn(place.coordinates);
+      mapRef.current?.centerOn(place.coordinates, {
+        zoom: PLACE_ZOOM,
+        altitude: PLACE_ALTITUDE,
+      });
       refresh();
     } catch (e) {
       logError('destination_add_failed', e, { source: 'search' });

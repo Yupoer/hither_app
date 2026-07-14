@@ -15,17 +15,32 @@ import { memberColor } from '../glass';
 import { DAY_COLORS, type Palette } from '../theme';
 import {
   DEFAULT_LATITUDE_DELTA,
+  LOCATE_ALTITUDE,
+  LOCATE_ZOOM,
   latOffsetForVisibleBand,
 } from './mapCameraMath';
 
-export { DEFAULT_LATITUDE_DELTA, latOffsetForVisibleBand } from './mapCameraMath';
+export {
+  DEFAULT_LATITUDE_DELTA,
+  LOCATE_ALTITUDE,
+  LOCATE_ZOOM,
+  PLACE_ALTITUDE,
+  PLACE_ZOOM,
+  latOffsetForVisibleBand,
+} from './mapCameraMath';
+
+/** Optional camera framing for centerOn (defaults = locate-me street level). */
+export type CenterOnOptions = {
+  zoom?: number;
+  altitude?: number;
+};
 
 /** Imperative handle so the screen can drive the map camera. */
 export interface GroupMapHandle {
   /** Frame the next gathering point (used on first data load). */
   recenter: () => void;
   /** Center the map on an arbitrary coordinate, e.g. the user's own position. */
-  centerOn: (coordinates: Coordinates) => void;
+  centerOn: (coordinates: Coordinates, options?: CenterOnOptions) => void;
   /** Zoom/pan so every member with a known location is visible at once. */
   fitToMembers: () => void;
   focusOblique: (coordinates: Coordinates) => void;
@@ -229,9 +244,10 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
           mapRef.current.animateToRegion(regionFor(gathering.coordinates, latOffset), 400);
         }
       },
-      centerOn: (coordinates) => {
+      centerOn: (coordinates, options) => {
         // Flat top-down: animateCamera with pitch 0 so we leave any prior
         // 45° oblique view cleanly (animateToRegion alone can leave pitch).
+        // Place picks pass wider zoom/altitude; locate keeps street-level defaults.
         mapRef.current?.animateCamera(
           {
             center: {
@@ -240,8 +256,8 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
             },
             pitch: 0,
             heading: 0,
-            zoom: 16.5,
-            altitude: 900,
+            zoom: options?.zoom ?? LOCATE_ZOOM,
+            altitude: options?.altitude ?? LOCATE_ALTITUDE,
           },
           { duration: 280 },
         );
@@ -258,8 +274,8 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
             },
             pitch: 45,
             heading: 0,
-            zoom: 16.5,
-            altitude: 900,
+            zoom: LOCATE_ZOOM,
+            altitude: LOCATE_ALTITUDE,
           },
           { duration: 320 },
         );
