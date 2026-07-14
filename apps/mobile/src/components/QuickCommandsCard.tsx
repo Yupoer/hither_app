@@ -68,6 +68,8 @@ export default function QuickCommandsCard({
   );
   const [sending, setSending] = useState<CommandType | null>(null);
 
+  // Role-scoped set; last slot is always the account custom command.
+  // Leader keeps 9 cells (8 fixed + custom), follower keeps 4 (3 fixed + custom).
   const roleCommands = isLeader ? LEADER_COMMANDS : FOLLOWER_COMMANDS;
   const commands = commandTypesWithCustomSlot(roleCommands) as CommandType[];
 
@@ -116,30 +118,47 @@ export default function QuickCommandsCard({
       <HitherText typeRole="footnote" style={styles.hint}>
         {isLeader ? t('settings.quickHintLeader') : t('settings.quickHintFollower')}
       </HitherText>
+      <HitherText typeRole="caption" style={styles.customHint}>
+        {t('settings.customQuickCommandEditHint')}
+      </HitherText>
       <View style={styles.grid}>
-        {commands.map((type) => (
-          <Pressable
-            key={type}
-            style={[styles.btn, sending === type && styles.btnSending]}
-            onPress={() => send(type)}
-            disabled={!!sending}
-            accessibilityRole="button"
-            accessibilityLabel={labelFor(type)}
-          >
-            <Ionicons
-              name={COMMAND_ICON[type]}
-              size={22}
-              color={colors.textPrimary}
-            />
-            <HitherText
-              typeRole="footnote"
-              style={styles.label}
-              numberOfLines={labelLines}
+        {commands.map((type) => {
+          const isCustom = type === 'custom';
+          const configured = isCustom && !!customQuickCommand;
+          return (
+            <Pressable
+              key={type}
+              style={[
+                styles.btn,
+                sending === type && styles.btnSending,
+                configured && styles.btnCustomConfigured,
+              ]}
+              onPress={() => send(type)}
+              onLongPress={isCustom ? onConfigureCustom : undefined}
+              delayLongPress={350}
+              disabled={!!sending}
+              accessibilityRole="button"
+              accessibilityLabel={
+                isCustom
+                  ? `${labelFor(type)}. ${t('settings.customQuickCommandEditHint')}`
+                  : labelFor(type)
+              }
             >
-              {labelFor(type)}
-            </HitherText>
-          </Pressable>
-        ))}
+              <Ionicons
+                name={COMMAND_ICON[type]}
+                size={22}
+                color={configured ? colors.accent : colors.textPrimary}
+              />
+              <HitherText
+                typeRole="footnote"
+                style={[styles.label, configured && styles.labelCustom]}
+                numberOfLines={labelLines}
+              >
+                {labelFor(type)}
+              </HitherText>
+            </Pressable>
+          );
+        })}
       </View>
     </View>
   );
@@ -166,6 +185,7 @@ const makeStyles = (
       gap: s(spacing.md, spacing.sm),
     },
     hint: { color: colors.textSecondary, fontSize: 13 },
+    customHint: { color: colors.textSecondary, fontSize: 11, opacity: 0.85 },
     grid: { flexDirection: 'row', flexWrap: 'wrap', gap: s(spacing.sm, 6) },
     btn: {
       flexGrow: 1,
@@ -181,11 +201,16 @@ const makeStyles = (
       backgroundColor: colors.background,
     },
     btnSending: { borderColor: colors.accent, backgroundColor: colors.glass },
+    btnCustomConfigured: {
+      borderColor: colors.accent,
+      backgroundColor: colors.glass,
+    },
     label: {
       color: colors.textPrimary,
       fontSize: 13,
       fontWeight: '600',
       textAlign: 'center',
     },
+    labelCustom: { color: colors.accent },
   });
 };

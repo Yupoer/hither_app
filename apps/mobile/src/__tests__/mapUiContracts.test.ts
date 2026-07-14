@@ -92,10 +92,17 @@ describe('map UI placement contracts', () => {
       join(__dirname, '../components/CustomQuickCommandSheet.tsx'),
       'utf8',
     );
+    const settingsOverlay = readFileSync(
+      join(__dirname, '../screens/MapScreen/components/SettingsOverlay.tsx'),
+      'utf8',
+    );
 
     expect(quickCommands).toContain('<OverlaySheet');
     expect(quickCommands).toContain('visible={visible}');
     expect(mapScreen).toContain('onConfigureCustom={openCustomQuickCommand}');
+    expect(mapScreen).toContain('onOpenCustomQuickCommand={openCustomQuickCommand}');
+    expect(settingsOverlay).toContain('onOpenCustomQuickCommand');
+    expect(settingsOverlay).toContain('customQuickCommandConfigured');
   });
 
   it('returns the report sheet to settings after cancel or submit', () => {
@@ -106,5 +113,9 @@ describe('map UI placement contracts', () => {
 
   it('sends the custom command message to the group', () => {
     expect(quickCommandsCard).toContain('sendCommand(groupId, type, message)');
+  });
+
+  it('lets users re-edit a configured custom command via long-press', () => {
+    expect(quickCommandsCard).toContain('onLongPress={isCustom ? onConfigureCustom : undefined}');
   });
 });

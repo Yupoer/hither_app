@@ -21,6 +21,7 @@ interface SettingsOverlayProps {
   onConfirmSignOut: () => void;
   onOpenPaywall: () => void;
   onOpenAccount: () => void;
+  onOpenCustomQuickCommand: () => void;
   styles: any;
 }
 
@@ -35,10 +36,11 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
   onConfirmSignOut,
   onOpenPaywall,
   onOpenAccount,
+  onOpenCustomQuickCommand,
   styles,
 }: SettingsOverlayProps) {
   const { t } = useTranslation();
-  const { isPro } = useSession();
+  const { isPro, customQuickCommand } = useSession();
   const {
     language,
     themeName,
@@ -85,6 +87,25 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
                 <Text style={styles.settingsTopTitle}>{t('paywall.title')}</Text>
                 <Text style={styles.settingsTopDescription}>
                   {isPro ? t('paywall.active') : t('paywall.upgrade')}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={glass.textTertiary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.settingsTopRow}
+              onPress={onOpenCustomQuickCommand}
+              accessibilityRole="button"
+              accessibilityLabel={t('settings.customQuickCommand')}
+              activeOpacity={0.7}
+            >
+              <View style={styles.settingsTopCopy}>
+                <Text style={styles.settingsTopTitle}>{t('settings.customQuickCommand')}</Text>
+                <Text style={styles.settingsTopDescription}>
+                  {customQuickCommand
+                    ? t('settings.customQuickCommandConfigured', {
+                        label: customQuickCommand.label,
+                      })
+                    : t('settings.customQuickCommandEmpty')}
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color={glass.textTertiary} />

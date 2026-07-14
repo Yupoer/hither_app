@@ -125,6 +125,9 @@ const zh = {
   'settings.customQuickCommandSave': '儲存',
   'settings.customQuickCommandRequired': '請輸入按鈕名稱與通知內容。',
   'settings.customQuickCommandSaveFailed': '自訂快捷指令儲存失敗，請再試一次。',
+  'settings.customQuickCommandEmpty': '尚未設定。點此編輯按鈕名稱與通知內容。',
+  'settings.customQuickCommandConfigured': '目前：{label}',
+  'settings.customQuickCommandEditHint': '最後一格為自訂；長按可重新編輯。',
 
   // Map
   'role.demo': '測試模式 · 虛擬團隊',
@@ -575,6 +578,9 @@ const en: Record<keyof typeof zh, string> = {
   'settings.customQuickCommandSave': 'Save',
   'settings.customQuickCommandRequired': 'Enter a button name and notification message.',
   'settings.customQuickCommandSaveFailed': "Couldn't save the custom quick command. Try again.",
+  'settings.customQuickCommandEmpty': 'Not set yet. Tap to edit the button name and message.',
+  'settings.customQuickCommandConfigured': 'Current: {label}',
+  'settings.customQuickCommandEditHint': 'Last slot is custom. Long-press to edit.',
 
   'role.demo': 'Demo flock (testing)',
   'profile.title': 'Profile',

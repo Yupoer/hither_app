@@ -2336,6 +2336,7 @@ export default function MapScreen({ route, navigation }: Props) {
         onConfirmSignOut={confirmSignOut}
         onOpenPaywall={openPaywallCb}
         onOpenAccount={openAccountOverlay}
+        onOpenCustomQuickCommand={openCustomQuickCommand}
         styles={styles}
       />
 
