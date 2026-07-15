@@ -14,6 +14,7 @@ interface UseJourneyNavigationParams {
   groupId: string | null | undefined;
   isLeader: boolean;
   destinations: Destination[];
+  navigationDestinations?: Destination[];
   selectedDestination: Destination | undefined;
   fromCoords: Coordinates | undefined;
   refresh: () => void;
@@ -28,6 +29,7 @@ export function useJourneyNavigation({
   groupId,
   isLeader,
   destinations,
+  navigationDestinations = destinations,
   selectedDestination,
   fromCoords,
   refresh,
@@ -47,8 +49,8 @@ export function useJourneyNavigation({
   const navTargetId = pendingTargetId !== undefined ? pendingTargetId : serverTargetId;
   
   const navTarget = useMemo<Destination | undefined>(
-    () => destinations.find((d) => d.id === navTargetId),
-    [destinations, navTargetId],
+    () => navigationDestinations.find((d) => d.id === navTargetId),
+    [navigationDestinations, navTargetId],
   );
 
   useEffect(() => {
@@ -102,12 +104,13 @@ export function useJourneyNavigation({
       setPendingTargetId(dest.id);
       mapRef.current?.centerOn(dest.coordinates);
       try {
-        if (index > 0) {
-          const ids = destinations.map((d) => d.id);
-          const [moved] = ids.splice(index, 1);
+        const navigationIndex = navigationDestinations.findIndex((item) => item.id === dest.id);
+        if (navigationIndex > 0) {
+          const ids = navigationDestinations.map((d) => d.id);
+          const [moved] = ids.splice(navigationIndex, 1);
           ids.unshift(moved);
           const updates = ids.map((id, i) => {
-            const d = destinations.find((x) => x.id === id);
+            const d = navigationDestinations.find((x) => x.id === id);
             return { id, position: i, day: d?.day ?? 1 };
           });
           await reorderDestinations(groupId, updates);
@@ -129,7 +132,7 @@ export function useJourneyNavigation({
       startLocalRoutePlan,
       groupId,
       journeyBusy,
-      destinations,
+      navigationDestinations,
       refresh,
       t,
       mapRef,
@@ -163,6 +166,7 @@ export function useJourneyNavigation({
 
   // BUG-13: followers force-follow when leader sets journey going / active dest.
   // Local "route plan" can exist via pending*; leader server state overrides it.
+  // Carousel scroll is handled by useCarouselSelection when selectedIndex changes.
   useEffect(() => {
     if (isLeader) return;
     if (serverJourneyStatus === 'going' && serverTargetId) {
@@ -171,13 +175,23 @@ export function useJourneyNavigation({
       const index = destinations.findIndex((d) => d.id === serverTargetId);
       if (index >= 0) {
         setSelectedIndex(index);
-        carouselRef.current?.scrollTo({ x: index * 1, animated: true });
-        // MapScreen carousel uses page width; scroll by index is handled via selectedIndex effect below.
+        const dest = destinations[index];
+        if (dest) mapRef.current?.centerOn(dest.coordinates);
       }
     }
-  }, [isLeader, serverJourneyStatus, serverTargetId, destinations, setSelectedIndex, carouselRef]);
+  }, [
+    isLeader,
+    serverJourneyStatus,
+    serverTargetId,
+    destinations,
+    setSelectedIndex,
+    mapRef,
+  ]);
 
-  // Keep carousel scrolled to the leader's active stop for followers.
+  // Keep carousel on the leader's active stop while the server journey is live.
+  // When leader pauses, pending is already null (force-follow cleared it) so
+  // journeyStatus falls back to server `paused` and shared routes drop.
+  // Independent follower local plans (pending going + server paused) stay local.
   useEffect(() => {
     if (isLeader || !serverTargetId || serverJourneyStatus !== 'going') return;
     const index = destinations.findIndex((d) => d.id === serverTargetId);

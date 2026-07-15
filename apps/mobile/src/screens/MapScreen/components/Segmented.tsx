@@ -28,19 +28,25 @@ export function Segmented({
   disabledKeys,
   onDisabledPress,
 }: SegmentedProps) {
-  const { scale } = useFontLayout();
-  const styles = useMemo(() => makeSegStyles(scale), [scale]);
+  const { scale, boldText } = useFontLayout();
+  const dense = options.length >= 5 || boldText || scale >= 1.15;
+  const styles = useMemo(
+    () => makeSegStyles(scale, dense, boldText),
+    [scale, dense, boldText],
+  );
   const [localValue, setLocalValue] = useState(value);
 
   useEffect(() => {
     setLocalValue(value);
   }, [value]);
 
-  const SEG_PAD = 4;
-  const SEG_GAP = 6;
+  const SEG_PAD = dense ? 3 : 4;
+  const SEG_GAP = dense ? 4 : 6;
   const [trackW, setTrackW] = useState(0);
   const n = options.length;
   const activeIdx = Math.max(0, options.findIndex((o) => o.key === localValue));
+  // Equal-width segments on one row — no flexWrap, so highlight stays aligned
+  // even with 5 options + Bold Text wider glyphs.
   const segW = trackW > 0 ? (trackW - SEG_PAD * 2 - SEG_GAP * (n - 1)) / n : 0;
   const tx = useSharedValue(0);
   // Snap on first measure / width-only changes so hidden panes (height:0 →
@@ -62,17 +68,29 @@ export function Segmented({
       tx.value = next;
       measuredRef.current = true;
     }
-  }, [activeIdx, segW, tx]);
+  }, [activeIdx, segW, SEG_GAP, tx]);
 
   const highlightStyle = useAnimatedStyle(() => ({ transform: [{ translateX: tx.value }] }));
-  const segMinH = Math.max(36, Math.round(38 * scale));
+  const segMinH = Math.max(36, Math.round((dense ? 34 : 38) * scale));
 
   return (
-    <View style={styles.track} onLayout={(e) => setTrackW(e.nativeEvent.layout.width)}>
+    <View
+      style={[styles.track, { padding: SEG_PAD, gap: SEG_GAP }]}
+      onLayout={(e) => setTrackW(e.nativeEvent.layout.width)}
+    >
       {segW > 0 ? (
         <Animated.View
           pointerEvents="none"
-          style={[styles.highlight, { width: segW, minHeight: segMinH }, highlightStyle]}
+          style={[
+            styles.highlight,
+            {
+              width: segW,
+              minHeight: segMinH,
+              left: SEG_PAD,
+              top: SEG_PAD,
+            },
+            highlightStyle,
+          ]}
         />
       ) : null}
       {options.map((o) => {
@@ -83,7 +101,7 @@ export function Segmented({
             key={o.key}
             style={({ pressed }) => [
               styles.seg,
-              { minHeight: segMinH },
+              { minHeight: segMinH, width: segW > 0 ? segW : undefined },
               locked && styles.segLocked,
               pressed && { opacity: 0.6 },
             ]}
@@ -100,7 +118,9 @@ export function Segmented({
           >
             <Text
               style={[styles.segText, active && { color: '#fff' }]}
-              numberOfLines={2}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.7}
               maxFontSizeMultiplier={GLOBAL_FONT_SCALE_CAP}
             >
               {o.label}
@@ -112,39 +132,37 @@ export function Segmented({
   );
 }
 
-const makeSegStyles = (scale: number) => {
+const makeSegStyles = (scale: number, dense: boolean, boldText: boolean) => {
   const s = (n: number, min = 0) => Math.max(min, Math.round(n * scale));
+  // Bold Text widens glyphs; drop type a step so 5-up labels still fit one line.
+  const labelBase = dense ? (boldText ? 12 : 13) : boldText ? 14 : 16;
   return StyleSheet.create({
     track: {
       flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: s(6, 4),
+      flexWrap: 'nowrap',
       backgroundColor: glass.fill,
       borderRadius: s(13, 10),
-      padding: s(4, 3),
       marginBottom: s(4, 2),
     },
     seg: {
-      flex: 1,
-      minWidth: 56,
       borderRadius: s(10, 8),
       alignItems: 'center',
       justifyContent: 'center',
-      paddingHorizontal: s(4, 2),
-      paddingVertical: s(8, 6),
+      paddingHorizontal: dense ? s(2, 1) : s(4, 2),
+      paddingVertical: dense ? s(6, 5) : s(8, 6),
       zIndex: 1,
     },
     highlight: {
       position: 'absolute',
-      left: 4,
-      top: 4,
       borderRadius: s(10, 8),
       backgroundColor: 'rgba(255,255,255,0.16)',
     },
     segLocked: { opacity: 0.4 },
     segText: {
-      fontSize: s(16, 15),
-      fontWeight: '700',
+      fontSize: s(labelBase, dense ? 11 : 13),
+      // Slightly lighter weight under system Bold Text so OS bold + 700
+      // doesn't double-thicken into unreadable blobs on short labels.
+      fontWeight: boldText ? '600' : '700',
       color: glass.textSecondary,
       textAlign: 'center',
     },

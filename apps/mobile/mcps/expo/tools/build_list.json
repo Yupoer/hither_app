@@ -1,0 +1,43 @@
+{
+  "name": "build_list",
+  "description": "Lists EAS builds for a project. Provide either appId (from app.json \"extra.eas.projectId\") OR appFullName (e.g., \"@owner/my-app\"). Use this to see recent builds, their status, and available artifacts.",
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "appId": {
+        "description": "The Expo project/app ID (UUID). Get this from app.json at \"extra.eas.projectId\". Either appId or appFullName is required.",
+        "type": "string"
+      },
+      "appFullName": {
+        "description": "The full name of the app (e.g., \"@owner/my-app\"). Use this if you don't have access to app.json. Either appId or appFullName is required.",
+        "type": "string"
+      },
+      "platform": {
+        "description": "Filter builds by platform (ANDROID or IOS)",
+        "type": "string",
+        "enum": [
+          "ANDROID",
+          "IOS"
+        ]
+      },
+      "status": {
+        "description": "Filter builds by status (IN_QUEUE, IN_PROGRESS, FINISHED, ERRORED, CANCELED)",
+        "type": "string",
+        "enum": [
+          "CANCELED",
+          "ERRORED",
+          "FINISHED",
+          "IN_PROGRESS",
+          "IN_QUEUE",
+          "NEW",
+          "PENDING_CANCEL"
+        ]
+      },
+      "limit": {
+        "description": "Maximum number of builds to return (default: 10)",
+        "type": "number"
+      }
+    }
+  }
+}

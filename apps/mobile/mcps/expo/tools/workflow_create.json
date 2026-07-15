@@ -1,0 +1,33 @@
+{
+  "name": "workflow_create",
+  "description": "Creates a new EAS workflow YAML file for Expo projects or fetches workflow syntax documentation. Use this when users want to create CI/CD workflows in .eas/workflows/ or need to learn EAS workflow syntax. After creating, use workflow_validate to validate the file.",
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "create",
+          "learn"
+        ],
+        "description": "Action to perform: \"create\" to create a new EAS workflow YML file, \"learn\" to get EAS workflow syntax documentation and examples. Use \"learn\" first to get the syntax and examples before creating a new workflow"
+      },
+      "projectRoot": {
+        "description": "Root directory of the project (required for create action)",
+        "type": "string"
+      },
+      "fileName": {
+        "description": "Workflow file name (e.g., \"build-and-deploy.yml\") (required for create action)",
+        "type": "string"
+      },
+      "workflowYaml": {
+        "description": "Complete YAML content for the EAS workflow (multi-line string, required for create action). EAS workflows must be formatted with jobs that have a \"type:\" (e.g., type: build, type: submit, type: fingerprint) and \"params:\" sections. When a job depends on another job, use \"needs: [first_job]\" Example job structure:\n\n```yaml\njobs:\n  job_name:\n    name: Job Display Name\n    type: build  # or submit, fingerprint, build, etc.\n    params:\n      platform: ios  # or android\n      profile: production\n    depends_on: [job_name_of_dependent_job]\n```",
+        "type": "string"
+      }
+    },
+    "required": [
+      "action"
+    ]
+  }
+}

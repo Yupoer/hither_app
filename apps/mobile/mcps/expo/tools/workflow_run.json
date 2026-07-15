@@ -1,0 +1,30 @@
+{
+  "name": "workflow_run",
+  "description": "Triggers an EAS workflow run from a git reference. Provide either appId (from app.json \"extra.eas.projectId\") OR appFullName (e.g., \"@owner/my-app\"). The workflow file must exist at the specified git reference.",
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "appId": {
+        "description": "The Expo project/app ID (UUID). Get this from app.json at \"extra.eas.projectId\". Either appId or appFullName is required.",
+        "type": "string"
+      },
+      "appFullName": {
+        "description": "The full name of the app (e.g., \"@owner/my-app\"). Use this if you don't have access to app.json. Either appId or appFullName is required.",
+        "type": "string"
+      },
+      "fileName": {
+        "type": "string",
+        "description": "Workflow file name (e.g., \"build.yml\")"
+      },
+      "gitRef": {
+        "type": "string",
+        "description": "Git reference (branch, tag, or commit SHA) to run the workflow from. The workflow file must exist at this reference in the repository."
+      }
+    },
+    "required": [
+      "fileName",
+      "gitRef"
+    ]
+  }
+}

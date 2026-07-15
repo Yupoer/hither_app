@@ -33,7 +33,7 @@ export async function fetchVisitedWaypoints(groupId?: string): Promise<VisitedWa
 
   let query = supabase
     .from('visited_waypoints')
-    .select('id, name, latitude, longitude, arrived_at, group_id')
+    .select('id, user_id, destination_id, name, latitude, longitude, arrived_at, group_id')
     .order('arrived_at', { ascending: false });
 
   if (groupId) {
@@ -47,14 +47,23 @@ export async function fetchVisitedWaypoints(groupId?: string): Promise<VisitedWa
   orThrow(error);
   return ((data ?? []) as {
     id: string;
+    user_id: string;
+    destination_id: string | null;
     name: string;
     latitude: number;
     longitude: number;
     arrived_at: string;
   }[]).map((row) => ({
     id: row.id,
+    userId: row.user_id,
+    destinationId: row.destination_id ?? undefined,
     name: row.name,
     coordinates: { latitude: row.latitude, longitude: row.longitude },
     arrivedAt: row.arrived_at,
   }));
+}
+
+export async function deleteVisitedWaypoint(id: string): Promise<void> {
+  const { error } = await supabase.from('visited_waypoints').delete().eq('id', id);
+  orThrow(error);
 }

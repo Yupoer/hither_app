@@ -1,3 +1,24 @@
+/** Align a local clock time to a destination's date within the trip. */
+export function alignMeetTimeToTripDay(
+  value: Date,
+  departureDate: string | null | undefined,
+  day: number,
+): Date {
+  const aligned = new Date(value);
+  aligned.setSeconds(0, 0);
+  if (!departureDate) return aligned;
+
+  const raw = departureDate.trim();
+  const tripStart = /^\d{4}-\d{2}-\d{2}$/.test(raw)
+    ? new Date(`${raw}T12:00:00`)
+    : new Date(raw);
+  if (Number.isNaN(tripStart.getTime())) return aligned;
+
+  tripStart.setDate(tripStart.getDate() + Math.max(1, day || 1) - 1);
+  aligned.setFullYear(tripStart.getFullYear(), tripStart.getMonth(), tripStart.getDate());
+  return aligned;
+}
+
 /** Minutes until meetAt (negative = overdue). Rounds toward zero. */
 export function minutesUntil(meetAtIso: string, now: Date): number {
   const diffMs = new Date(meetAtIso).getTime() - now.getTime();

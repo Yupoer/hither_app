@@ -1,0 +1,17 @@
+{
+  "name": "build_logs",
+  "description": "Fetches the logs for a specific EAS build. The build must be completed (finished or errored) to have logs available.",
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "buildId": {
+        "type": "string",
+        "description": "The ID of the build to fetch logs for"
+      }
+    },
+    "required": [
+      "buildId"
+    ]
+  }
+}

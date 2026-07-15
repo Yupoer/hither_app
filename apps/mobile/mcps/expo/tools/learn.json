@@ -1,0 +1,19 @@
+{
+  "name": "learn",
+  "description": "Learn Expo how-to for a specific topic and remember it for future conversations. Use this to teach the assistant about specific Expo features or workflows.",
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "topic": {
+        "type": "string",
+        "enum": [
+          "expo-router"
+        ]
+      }
+    },
+    "required": [
+      "topic"
+    ]
+  }
+}

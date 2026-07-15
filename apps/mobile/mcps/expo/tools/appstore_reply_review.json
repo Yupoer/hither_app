@@ -1,0 +1,24 @@
+{
+  "name": "appstore_reply_review",
+  "description": "Post or edit the public developer response to an App Store customer review. This is a write action: the response is visible to everyone on the App Store, and Apple publishes it after a short review. App Store Connect allows a single response per review, so any existing response is replaced.",
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "reviewId": {
+        "type": "string",
+        "description": "The ID of the customer review to respond to (from appstore_reviews)"
+      },
+      "responseBody": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 5970,
+        "description": "The response text, posted publicly as the developer response (max 5970 characters)"
+      }
+    },
+    "required": [
+      "reviewId",
+      "responseBody"
+    ]
+  }
+}

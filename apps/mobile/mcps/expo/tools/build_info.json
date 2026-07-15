@@ -1,0 +1,17 @@
+{
+  "name": "build_info",
+  "description": "Fetches the status and detailed information about a specific EAS build by ID. Use this to check build status, errors, artifacts, and other details.",
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "buildId": {
+        "type": "string",
+        "description": "The ID of the build to fetch details for"
+      }
+    },
+    "required": [
+      "buildId"
+    ]
+  }
+}

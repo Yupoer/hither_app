@@ -31,9 +31,10 @@ export const DEFAULT_LANGUAGE: Language = 'zh';
 /**
  * In-app text size multiplier (Settings). Applied to design fontSize / layout
  * chrome only — not as a second system Dynamic Type scale. Emoji avatars ignore this.
+ * Range: 0.8 (smallest) … 1.2 (largest). Default 1.0 = design sizes.
  */
-export type TextScalePref = 0.9 | 1.0 | 1.1 | 1.2;
-export const TEXT_SCALE_OPTIONS = [0.9, 1.0, 1.1, 1.2] as const;
+export type TextScalePref = 0.8 | 0.9 | 1.0 | 1.1 | 1.2;
+export const TEXT_SCALE_OPTIONS = [0.8, 0.9, 1.0, 1.1, 1.2] as const;
 export const DEFAULT_TEXT_SCALE: TextScalePref = 1.0;
 
 const LANGUAGE_KEY = 'pref.language';
@@ -44,6 +45,7 @@ const OBLIQUE_LOCATE_KEY = 'pref.obliqueLocate';
 const LIVE_ACTIVITY_KEY = 'pref.liveActivity';
 const MEET_RED_KEY = 'pref.meetRedMin';
 const DAY_COLORS_KEY = 'pref.dayColors';
+const GATHER_CARD_DEFAULT_EXPANDED_KEY = 'pref.gatherCardDefaultExpanded';
 
 /** Minutes-remaining at which the meet-time countdown turns red. */
 export const MEET_RED_OPTIONS = [3, 5, 10] as const;
@@ -52,7 +54,7 @@ export const DEFAULT_MEET_RED_MIN = 5;
 interface PreferencesValue {
   language: Language;
   themeName: ThemeName;
-  /** App text size multiplier (0.9–1.2). Default 1.0 = design sizes. */
+  /** App text size multiplier (0.8–1.2). Default 1.0 = design sizes. */
   textScale: TextScalePref;
   /** Opt-in location tracking with finer fixes and a faster cadence. */
   highAccuracy: boolean;
@@ -64,6 +66,8 @@ interface PreferencesValue {
   meetRedMin: number;
   /** Custom colors for each day */
   dayColors: Record<number, string>;
+  /** Default gathering-card density on this device. */
+  gatherCardDefaultExpanded: boolean;
   /** True once the persisted preferences have been loaded from storage. */
   ready: boolean;
   setLanguage: (language: Language) => void;
@@ -74,6 +78,7 @@ interface PreferencesValue {
   setLiveActivityEnabled: (on: boolean) => void;
   setMeetRedMin: (min: number) => void;
   setDayColor: (day: number, color: string) => void;
+  setGatherCardDefaultExpanded: (expanded: boolean) => void;
 }
 
 const PreferencesContext = createContext<PreferencesValue | undefined>(undefined);
@@ -105,6 +110,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [liveActivityEnabled, setLiveActivityEnabledState] = useState(true);
   const [meetRedMin, setMeetRedMinState] = useState<number>(DEFAULT_MEET_RED_MIN);
   const [dayColors, setDayColorsState] = useState<Record<number, string>>({});
+  const [gatherCardDefaultExpanded, setGatherCardDefaultExpandedState] = useState(false);
   const [ready, setReady] = useState(false);
 
   // Restore persisted preferences on launch.
@@ -121,6 +127,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
           storedLiveActivity,
           storedMeetRed,
           storedDayColors,
+          storedGatherCardDefaultExpanded,
         ] = await AsyncStorage.multiGet([
           LANGUAGE_KEY,
           THEME_KEY,
@@ -130,6 +137,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
           LIVE_ACTIVITY_KEY,
           MEET_RED_KEY,
           DAY_COLORS_KEY,
+          GATHER_CARD_DEFAULT_EXPANDED_KEY,
         ]);
         if (!active) return;
         if (isLanguage(storedLang[1])) setLanguageState(storedLang[1]);
@@ -148,6 +156,9 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
           try {
             setDayColorsState(JSON.parse(storedDayColors[1]));
           } catch {}
+        }
+        if (storedGatherCardDefaultExpanded[1] === 'true') {
+          setGatherCardDefaultExpandedState(true);
         }
       } finally {
         if (active) setReady(true);
@@ -201,6 +212,14 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     });
   }, []);
 
+  const setGatherCardDefaultExpanded = useCallback((expanded: boolean) => {
+    setGatherCardDefaultExpandedState(expanded);
+    void AsyncStorage.setItem(
+      GATHER_CARD_DEFAULT_EXPANDED_KEY,
+      expanded ? 'true' : 'false',
+    );
+  }, []);
+
   const value = useMemo<PreferencesValue>(
     () => ({
       language,
@@ -211,6 +230,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       liveActivityEnabled,
       meetRedMin,
       dayColors,
+      gatherCardDefaultExpanded,
       ready,
       setLanguage,
       setThemeName,
@@ -220,6 +240,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       setLiveActivityEnabled,
       setMeetRedMin,
       setDayColor,
+      setGatherCardDefaultExpanded,
     }),
     [
       language,
@@ -230,6 +251,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       liveActivityEnabled,
       meetRedMin,
       dayColors,
+      gatherCardDefaultExpanded,
       ready,
       setLanguage,
       setThemeName,
@@ -239,6 +261,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       setLiveActivityEnabled,
       setMeetRedMin,
       setDayColor,
+      setGatherCardDefaultExpanded,
     ],
   );
 

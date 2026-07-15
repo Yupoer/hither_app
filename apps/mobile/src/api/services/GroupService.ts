@@ -233,7 +233,9 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
       .eq('group_id', groupId),
     supabase
       .from('itinerary_items')
-      .select('id, title, address, latitude, longitude, position, day, meet_at, subgroup_id')
+      .select(
+        'id, title, address, latitude, longitude, position, day, meet_at, meet_red_minutes, subgroup_id',
+      )
       .eq('group_id', groupId)
       .order('position', { ascending: true }),
     supabase

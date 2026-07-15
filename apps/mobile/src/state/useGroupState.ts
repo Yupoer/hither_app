@@ -178,6 +178,8 @@ export function useGroupState(
     };
 
     const filter = `group_id=eq.${groupId}`;
+    // groups PK is `id`, not group_id — journey_status / active_destination_id live here.
+    const groupRowFilter = `id=eq.${groupId}`;
     const subId = ++channelSeq;
     const channel = supabase
       .channel(`group:${groupId}:${subId}`)
@@ -208,6 +210,14 @@ export function useGroupState(
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'itinerary_items', filter },
+        scheduleReload,
+      )
+      // Leader start/stop nav writes groups.journey_status + active_destination_id.
+      // Without this, followers only learn via the 5-minute poll and never show
+      // the planned route polyline / multi-mode alts / Live Activity in time.
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'groups', filter: groupRowFilter },
         scheduleReload,
       )
       .subscribe();

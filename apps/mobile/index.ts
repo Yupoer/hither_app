@@ -1,5 +1,6 @@
 import { registerRootComponent } from 'expo';
 import './src/state/backgroundJourney';
+import './src/state/backgroundLocationRefresh';
 import App from './App';
 
 // registerRootComponent calls AppRegistry.registerComponent('main', () => App)

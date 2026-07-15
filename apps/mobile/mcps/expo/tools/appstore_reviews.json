@@ -1,0 +1,28 @@
+{
+  "name": "appstore_reviews",
+  "description": "Fetch public App Store customer reviews for an app (rating, title, body, reviewer, territory). For TestFlight beta feedback use testflight_feedback instead.",
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "bundleId": {
+        "type": "string",
+        "description": "The bundle ID of the app (e.g., com.example.myapp)"
+      },
+      "limit": {
+        "default": 20,
+        "description": "Maximum number of reviews to return (default: 20, max: 100)",
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100
+      },
+      "cursor": {
+        "description": "Pagination cursor from a previous response, to fetch the next page",
+        "type": "string"
+      }
+    },
+    "required": [
+      "bundleId"
+    ]
+  }
+}

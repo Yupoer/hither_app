@@ -1,0 +1,17 @@
+{
+  "name": "workflow_info",
+  "description": "Fetches detailed information about a specific EAS workflow run by ID. Use this to check the status, job results, errors, and artifacts of a workflow run. If workflow has multiple jobs, draw them in a diagram to show the dependencies between jobs.",
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "workflowRunId": {
+        "type": "string",
+        "description": "The ID of the workflow run to fetch details for"
+      }
+    },
+    "required": [
+      "workflowRunId"
+    ]
+  }
+}

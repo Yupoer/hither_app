@@ -97,6 +97,10 @@ export interface LiveActivityPayload {
   contentState: LiveActivityContentState;
 }
 
+export interface BackgroundLocationRefreshPayload {
+  groupId: string;
+}
+
 function apnsHost(cfg: ApnsConfig): string {
   return cfg.env === "production"
     ? "api.push.apple.com"
@@ -159,6 +163,32 @@ export function buildLiveActivityRequest(
   };
 }
 
+export function buildBackgroundLocationRefreshRequest(
+  cfg: ApnsConfig,
+  jwt: string,
+  deviceToken: string,
+  payload: BackgroundLocationRefreshPayload,
+): { url: string; init: RequestInit } {
+  return {
+    url: `https://${apnsHost(cfg)}/3/device/${deviceToken}`,
+    init: {
+      method: "POST",
+      headers: {
+        authorization: `bearer ${jwt}`,
+        "apns-topic": cfg.bundleId,
+        "apns-push-type": "background",
+        "apns-priority": "5",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        aps: { "content-available": 1 },
+        category: "location_refresh",
+        groupId: payload.groupId,
+      }),
+    },
+  };
+}
+
 async function resultFromResponse(
   token: string,
   res: Response,
@@ -192,6 +222,24 @@ export async function sendLiveActivityApns(
   const request = buildLiveActivityRequest(cfg, jwt, activityToken, payload);
   return resultFromResponse(
     activityToken,
+    await fetch(request.url, request.init),
+  );
+}
+
+export async function sendBackgroundLocationRefresh(
+  cfg: ApnsConfig,
+  jwt: string,
+  deviceToken: string,
+  payload: BackgroundLocationRefreshPayload,
+): Promise<ApnsResult> {
+  const request = buildBackgroundLocationRefreshRequest(
+    cfg,
+    jwt,
+    deviceToken,
+    payload,
+  );
+  return resultFromResponse(
+    deviceToken,
     await fetch(request.url, request.init),
   );
 }

@@ -1,4 +1,37 @@
-import { minutesUntil, meetCountdownShort } from '../utils/meetTime';
+import {
+  alignMeetTimeToTripDay,
+  minutesUntil,
+  meetCountdownShort,
+} from '../utils/meetTime';
+
+describe('alignMeetTimeToTripDay', () => {
+  it('moves the date to the destination trip day while preserving hour and minute', () => {
+    const original = new Date(2026, 6, 31, 14, 45, 37, 900);
+
+    const aligned = alignMeetTimeToTripDay(original, '2026-07-31', 2);
+
+    expect(aligned.getFullYear()).toBe(2026);
+    expect(aligned.getMonth()).toBe(7);
+    expect(aligned.getDate()).toBe(1);
+    expect(aligned.getHours()).toBe(14);
+    expect(aligned.getMinutes()).toBe(45);
+    expect(aligned.getSeconds()).toBe(0);
+    expect(aligned.getMilliseconds()).toBe(0);
+  });
+
+  it('uses day one and leaves the original date intact when departure date is invalid', () => {
+    const original = new Date(2026, 11, 20, 9, 5, 12, 300);
+
+    const aligned = alignMeetTimeToTripDay(original, 'not-a-date', 0);
+
+    expect(aligned.getFullYear()).toBe(2026);
+    expect(aligned.getMonth()).toBe(11);
+    expect(aligned.getDate()).toBe(20);
+    expect(aligned.getHours()).toBe(9);
+    expect(aligned.getMinutes()).toBe(5);
+    expect(aligned.getSeconds()).toBe(0);
+  });
+});
 
 describe('minutesUntil', () => {
   it('returns a positive count for a future meetAt', () => {

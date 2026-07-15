@@ -1,0 +1,32 @@
+{
+  "name": "playstore_crashes",
+  "description": "Fetch crash and ANR data from Google Play (Android Vitals). Without issueId, lists recent crash/ANR issues. With issueId, returns the full error report with stack trace.",
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "packageName": {
+        "type": "string",
+        "description": "The Android package name of the app (e.g., com.example.myapp)"
+      },
+      "issueId": {
+        "description": "Specific error issue ID to fetch the full report for. If omitted, lists recent issues.",
+        "type": "string"
+      },
+      "limit": {
+        "default": 20,
+        "description": "Maximum number of issues to list (default: 20, max: 100, ignored when issueId is provided)",
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100
+      },
+      "cursor": {
+        "description": "Pagination cursor from a previous response, to fetch the next page",
+        "type": "string"
+      }
+    },
+    "required": [
+      "packageName"
+    ]
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "build_cancel",
+  "description": "Cancels an EAS build that is queued or in progress. Use build_info to check the current status first.",
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "buildId": {
+        "type": "string",
+        "description": "The ID of the build to cancel"
+      }
+    },
+    "required": [
+      "buildId"
+    ]
+  }
+}

@@ -123,6 +123,45 @@ describe('useJourneyNavigation', () => {
     expect(navigation?.navTarget?.id).toBe(destination.id);
   });
 
+  it('keeps the persisted target active after its completed card leaves the carousel', () => {
+    const next = { ...destination, id: 'destination-2', order: 1 };
+    const goingState = {
+      ...pausedState,
+      group: {
+        ...pausedState.group,
+        journeyStatus: 'going',
+        activeDestinationId: destination.id,
+      },
+      destinations: [destination, next],
+    } as GroupState;
+    let navigation: ReturnType<typeof useJourneyNavigation> | undefined;
+
+    function Harness() {
+      navigation = useJourneyNavigation({
+        state: goingState,
+        groupId: 'group-1',
+        isLeader: true,
+        destinations: [next],
+        navigationDestinations: [destination, next],
+        selectedDestination: next,
+        fromCoords: undefined,
+        refresh: jest.fn(),
+        t: (key) => key,
+        mapRef: { current: null },
+        carouselRef: { current: null },
+        setSelectedIndex: jest.fn(),
+      });
+      return null;
+    }
+
+    act(() => {
+      create(React.createElement(Harness));
+    });
+
+    expect(navigation?.navTarget?.id).toBe(destination.id);
+    expect(navigation?.journeyActive).toBe(true);
+  });
+
   it('does not delete or auto-advance the gathering point at 30 metres', () => {
     const goingState = {
       ...pausedState,
@@ -155,6 +194,95 @@ describe('useJourneyNavigation', () => {
     });
 
     expect(deleteDestination).not.toHaveBeenCalled();
+  });
+
+  it('followers mirror leader journey so the route polyline target is shared', () => {
+    const goingState = {
+      ...pausedState,
+      group: {
+        ...pausedState.group,
+        journeyStatus: 'going',
+        activeDestinationId: destination.id,
+      },
+    } as GroupState;
+    let navigation: ReturnType<typeof useJourneyNavigation> | undefined;
+    const setSelectedIndex = jest.fn();
+
+    function Harness() {
+      navigation = useJourneyNavigation({
+        state: goingState,
+        groupId: 'group-1',
+        isLeader: false,
+        destinations: [destination],
+        selectedDestination: destination,
+        fromCoords: { latitude: 25.04, longitude: 121.51 },
+        refresh: jest.fn(),
+        t: (key) => key,
+        mapRef: { current: null },
+        carouselRef: { current: null },
+        setSelectedIndex,
+      });
+      return null;
+    }
+
+    act(() => {
+      create(React.createElement(Harness));
+    });
+
+    expect(navigation?.journeyActive).toBe(true);
+    expect(navigation?.journeyGoing).toBe(true);
+    expect(navigation?.navTarget?.id).toBe(destination.id);
+    expect(navigation?.activePoint?.id).toBe(destination.id);
+    expect(setSelectedIndex).toHaveBeenCalledWith(0);
+  });
+
+  it('followers end shared navigation when the leader pauses the server journey', () => {
+    const goingState = {
+      ...pausedState,
+      group: {
+        ...pausedState.group,
+        journeyStatus: 'going',
+        activeDestinationId: destination.id,
+      },
+    } as GroupState;
+    const pausedFromServer = {
+      ...pausedState,
+      group: {
+        ...pausedState.group,
+        journeyStatus: 'paused',
+        activeDestinationId: undefined,
+      },
+    } as GroupState;
+    let navigation: ReturnType<typeof useJourneyNavigation> | undefined;
+
+    function Harness({ state }: { state: GroupState }) {
+      navigation = useJourneyNavigation({
+        state,
+        groupId: 'group-1',
+        isLeader: false,
+        destinations: [destination],
+        selectedDestination: destination,
+        fromCoords: undefined,
+        refresh: jest.fn(),
+        t: (key) => key,
+        mapRef: { current: null },
+        carouselRef: { current: null },
+        setSelectedIndex: jest.fn(),
+      });
+      return null;
+    }
+
+    let renderer: { update: (nextElement: React.ReactElement) => void };
+    act(() => {
+      renderer = create(React.createElement(Harness, { state: goingState }));
+    });
+    expect(navigation?.journeyActive).toBe(true);
+
+    act(() => {
+      renderer.update(React.createElement(Harness, { state: pausedFromServer }));
+    });
+    expect(navigation?.journeyActive).toBe(false);
+    expect(navigation?.navTarget).toBeUndefined();
   });
 
   it('restores the persisted target when stopping navigation fails', async () => {

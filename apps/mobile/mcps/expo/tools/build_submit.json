@@ -1,0 +1,42 @@
+{
+  "name": "build_submit",
+  "description": "Submits an EAS build to the app store (Google Play Store for Android, App Store for iOS). The build must be a finished build with the appropriate distribution type. Provide either appId (from app.json \"extra.eas.projectId\") OR appFullName (e.g., \"@owner/my-app\").",
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "appId": {
+        "description": "The Expo project/app ID (UUID). Get this from app.json at \"extra.eas.projectId\". Either appId or appFullName is required.",
+        "type": "string"
+      },
+      "appFullName": {
+        "description": "The full name of the app (e.g., \"@owner/my-app\"). Use this if you don't have access to app.json. Either appId or appFullName is required.",
+        "type": "string"
+      },
+      "buildId": {
+        "type": "string",
+        "description": "The ID of the build to submit"
+      },
+      "platform": {
+        "type": "string",
+        "enum": [
+          "ANDROID",
+          "IOS"
+        ],
+        "description": "The platform to submit to (ANDROID or IOS)"
+      },
+      "track": {
+        "description": "For Android: The release track (internal, alpha, beta, production). Required for Android submissions.",
+        "type": "string"
+      },
+      "ascAppIdentifier": {
+        "description": "For iOS: The App Store Connect app identifier (Apple ID of the app). Required for iOS submissions.",
+        "type": "string"
+      }
+    },
+    "required": [
+      "buildId",
+      "platform"
+    ]
+  }
+}

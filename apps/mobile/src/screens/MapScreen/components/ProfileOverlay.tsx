@@ -70,7 +70,7 @@ export function ProfileOverlay({
       accent={accent}
       doneLabel={t('map.done')}
     >
-      <ScrollView contentContainerStyle={styles.overlayBody}>
+      <ScrollView contentContainerStyle={styles.profileBody}>
         <View style={styles.profilePreviewRow}>
           <View
             style={[
@@ -88,7 +88,29 @@ export function ProfileOverlay({
           </View>
         </View>
 
-        <Text style={styles.sectionLabel}>{t('settings.nickname')}</Text>
+        {/* Color sits under the preview so the swatches aren't buried under emoji. */}
+        <Text style={styles.profileColorLabel}>{t('profile.avatarColor')}</Text>
+        <View style={styles.colorRow}>
+          {AVATAR_COLORS.map((c) => (
+            <Pressable
+              key={c}
+              onPress={() => { selectionTick(); setProfileColor(c); }}
+              accessibilityRole="button"
+              accessibilityState={{ selected: profileColor === c }}
+              style={[
+                styles.colorSwatch,
+                { backgroundColor: c },
+                profileColor === c && { borderColor: '#fff' },
+              ]}
+            >
+              {profileColor === c && (
+                <Ionicons name="checkmark" size={18} color="#fff" />
+              )}
+            </Pressable>
+          ))}
+        </View>
+
+        <Text style={styles.profileNickLabel}>{t('settings.nickname')}</Text>
         <View style={styles.profileRow}>
           <TextInput
             style={styles.profileInput}
@@ -120,27 +142,6 @@ export function ProfileOverlay({
               ]}
             >
               <HitherText typeRole="emoji" style={styles.emojiChar}>{e}</HitherText>
-            </Pressable>
-          ))}
-        </View>
-
-        <Text style={styles.profileColorLabel}>{t('profile.avatarColor')}</Text>
-        <View style={styles.colorRow}>
-          {AVATAR_COLORS.map((c) => (
-            <Pressable
-              key={c}
-              onPress={() => { selectionTick(); setProfileColor(c); }}
-              accessibilityRole="button"
-              accessibilityState={{ selected: profileColor === c }}
-              style={[
-                styles.colorSwatch,
-                { backgroundColor: c },
-                profileColor === c && { borderColor: '#fff' },
-              ]}
-            >
-              {profileColor === c && (
-                <Ionicons name="checkmark" size={18} color="#fff" />
-              )}
             </Pressable>
           ))}
         </View>

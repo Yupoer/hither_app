@@ -1,0 +1,29 @@
+{
+  "name": "playstore_reply_review",
+  "description": "Post a public developer reply to a Google Play user review, or edit the existing reply. This is a write action: the reply is visible to users on the store listing. Each review has a single developer reply, so replying again replaces it. Reply text is limited to 350 characters.",
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "packageName": {
+        "type": "string",
+        "description": "The Android package name of the app (e.g., com.example.myapp)"
+      },
+      "reviewId": {
+        "type": "string",
+        "description": "The ID of the review to reply to (from playstore_reviews)"
+      },
+      "replyText": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 350,
+        "description": "The reply text, posted publicly as the developer reply (max 350 characters)"
+      }
+    },
+    "required": [
+      "packageName",
+      "reviewId",
+      "replyText"
+    ]
+  }
+}

@@ -7,6 +7,7 @@ import {
   providerToken,
   readApnsConfig,
   sendApns,
+  sendBackgroundLocationRefresh,
   sendLiveActivityApns,
   type LiveActivityContentState,
 } from "./apns.ts";
@@ -14,6 +15,7 @@ import { buildMessage, prefColumn, type PushPayload } from "./messages.ts";
 
 interface MembershipRow {
   user_id: string;
+  role: "leader" | "follower";
   subgroup_id: string | null;
   solo: boolean;
   status: "active" | "idle" | "arrived" | "offline";
@@ -71,7 +73,7 @@ Deno.serve(async (req) => {
   try {
     const { data: memberData, error: memberError } = await supabase
       .from("memberships")
-      .select("user_id, subgroup_id, solo, status")
+      .select("user_id, role, subgroup_id, solo, status")
       .eq("group_id", payload.group_id);
     if (memberError) throw memberError;
 
@@ -80,16 +82,48 @@ Deno.serve(async (req) => {
     const sender = memberByUser.get(payload.sender_id);
     if (!sender) return json({ error: "sender is not a group member" }, 403);
 
+    const { data: senderProfile, error: senderProfileError } = await supabase
+      .from("profiles")
+      .select("nickname")
+      .eq("id", payload.sender_id)
+      .maybeSingle();
+    if (senderProfileError) throw senderProfileError;
+    const senderName = (senderProfile?.nickname as string | undefined)?.trim() || "隊員";
+    payload = { ...payload, sender_name: senderName };
+
     const inSenderScope = (member: MembershipRow) =>
       member.subgroup_id === sender.subgroup_id;
 
+    // Meet-time alerts go to everyone in the sender's team/subgroup (including
+    // the leader who set the clock — "notify all"). Other alerts exclude the
+    // sender and solo members.
+    const meetBroadcast =
+      payload.category === "meet_time_set" ||
+      payload.category === "meet_time_cleared" ||
+      payload.category === "meet_warning" ||
+      payload.category === "meet_due";
+    const wholeGroupCommand =
+      payload.category === "leader_commands" || payload.category === "follower_requests";
+
     // Alerts are scoped to the sender's main team/subgroup. Solo members and
-    // the sender never receive the corresponding general notification.
-    const alertCandidates = payload.category === "live_activity"
+    // the sender never receive the corresponding general notification (except
+    // meet-time broadcasts).
+    const alertCandidates = payload.category === "live_activity" ||
+        payload.category === "location_refresh"
       ? []
       : members
-        .filter(inSenderScope)
-        .filter((member) => member.user_id !== payload.sender_id && !member.solo)
+        .filter((member) =>
+          payload.category === "gathering_request"
+            ? member.role === "leader"
+            : wholeGroupCommand
+              ? true
+              : inSenderScope(member)
+        )
+        .filter((member) =>
+          meetBroadcast
+            ? true
+            : member.user_id !== payload.sender_id && !member.solo
+        )
         .map((member) => member.user_id);
 
     const allowedAlertUsers = await filterNotificationPreferences(
@@ -106,9 +140,23 @@ Deno.serve(async (req) => {
     if (tokenError) throw tokenError;
 
     const tokenRows = (tokenData ?? []) as Array<{ user_id: string; token: string }>;
+    const refreshCandidates = payload.category === "location_refresh"
+      ? members
+        .filter((member) => member.user_id !== payload.sender_id)
+        .filter((member) => member.status !== "offline")
+        .map((member) => member.user_id)
+      : [];
+    const { data: refreshTokenData, error: refreshTokenError } = refreshCandidates.length > 0
+      ? await supabase
+        .from("push_tokens")
+        .select("user_id, token")
+        .in("user_id", refreshCandidates)
+      : { data: [], error: null };
+    if (refreshTokenError) throw refreshTokenError;
+    const refreshTokenRows = (refreshTokenData ?? []) as Array<{ user_id: string; token: string }>;
     const liveSessions = await loadLiveSessions(payload, members, sender);
 
-    if (tokenRows.length === 0 && liveSessions.length === 0) {
+    if (tokenRows.length === 0 && refreshTokenRows.length === 0 && liveSessions.length === 0) {
       return json({ sent: 0, liveActivitySent: 0, reason: "no tokens" });
     }
 
@@ -118,11 +166,14 @@ Deno.serve(async (req) => {
     const alertResults = tokenRows.length > 0
       ? await sendAlerts(cfg, jwt, tokenRows, payload)
       : [];
+    const refreshResults = refreshTokenRows.length > 0
+      ? await sendBackgroundLocationRefreshes(cfg, jwt, refreshTokenRows, payload)
+      : [];
     const liveResults = liveSessions.length > 0
       ? await sendLiveActivities(cfg, jwt, liveSessions, members, memberByUser, payload)
       : [];
 
-    const deadDeviceTokens = alertResults
+    const deadDeviceTokens = [...alertResults, ...refreshResults]
       .filter((result) => result.dead)
       .map((result) => result.token);
     if (deadDeviceTokens.length > 0) {
@@ -149,6 +200,8 @@ Deno.serve(async (req) => {
     return json({
       sent: alertResults.filter((result) => result.status === 200).length,
       total: tokenRows.length,
+      locationRefreshSent: refreshResults.filter((result) => result.status === 200).length,
+      locationRefreshTotal: refreshTokenRows.length,
       liveActivitySent: liveResults.filter((result) => result.status === 200).length,
       liveActivityTotal: liveSessions.length,
       pruned: deadDeviceTokens.length + deadActivityTokens.length,
@@ -159,6 +212,20 @@ Deno.serve(async (req) => {
     return json({ error: message }, 500);
   }
 });
+
+async function sendBackgroundLocationRefreshes(
+  cfg: ReturnType<typeof readApnsConfig>,
+  jwt: string,
+  tokenRows: Array<{ user_id: string; token: string }>,
+  payload: PushPayload,
+) {
+  return await Promise.all(
+    tokenRows.map(({ token }) =>
+      sendBackgroundLocationRefresh(cfg, jwt, token, {
+        groupId: payload.group_id,
+      })),
+  );
+}
 
 async function filterNotificationPreferences(
   userIds: string[],
@@ -227,11 +294,13 @@ async function sendAlerts(
   payload: PushPayload,
 ) {
   const { title, body } = buildMessage(payload);
-  const data = {
-    category: payload.category,
-    groupId: payload.group_id,
-    memberId: payload.member_id,
-  };
+    const data = {
+      category: payload.category,
+      groupId: payload.group_id,
+      memberId: payload.member_id,
+      senderId: payload.sender_id,
+      requestId: payload.request_id,
+    };
   return await Promise.all(
     tokenRows.map(({ token }) => sendApns(cfg, jwt, token, { title, body, data })),
   );

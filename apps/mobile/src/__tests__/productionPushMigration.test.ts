@@ -22,8 +22,43 @@ const triggerHardeningMigration = readFileSync(
   ),
   'utf8',
 );
+const locationRefreshMigration = readFileSync(
+  join(
+    __dirname,
+    '../../../../supabase/migrations/20260715100000_location_refresh.sql',
+  ),
+  'utf8',
+);
+const pushIndex = readFileSync(
+  join(__dirname, '../../../../supabase/functions/send-push/index.ts'),
+  'utf8',
+);
+const pushApns = readFileSync(
+  join(__dirname, '../../../../supabase/functions/send-push/apns.ts'),
+  'utf8',
+);
 
 describe('production push and live activity migration', () => {
+  it('adds an atomic group-wide one-minute location refresh RPC', () => {
+    expect(locationRefreshMigration).toContain(
+      'create table if not exists public.location_refresh_requests',
+    );
+    expect(locationRefreshMigration).toContain(
+      'create or replace function public.request_group_location_refresh',
+    );
+    expect(locationRefreshMigration).toContain("interval '60 seconds'");
+    expect(locationRefreshMigration).toContain("'location_refresh'");
+  });
+
+  it('sends location refresh as a silent APNs background push to other members', () => {
+    expect(pushIndex).toContain('location_refresh');
+    expect(pushIndex).toContain('member.user_id !== payload.sender_id');
+    expect(pushIndex).toContain('sendBackgroundLocationRefresh');
+    expect(pushApns).toContain('buildBackgroundLocationRefreshRequest');
+    expect(pushApns).toContain('apns-push-type": "background"');
+    expect(pushApns).toContain('"content-available": 1');
+  });
+
   it('persists one authoritative journey destination', () => {
     expect(migration).toContain('active_destination_id uuid');
     expect(migration).toContain('journey_started_at timestamptz');

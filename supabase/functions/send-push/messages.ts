@@ -10,7 +10,13 @@ export interface PushPayload {
     | "journey"
     | "arrival"
     | "straggler"
-    | "live_activity";
+    | "live_activity"
+    | "location_refresh"
+    | "meet_time_set"
+    | "meet_time_cleared"
+    | "meet_warning"
+    | "meet_due"
+    | "gathering_request";
   group_id: string;
   sender_id: string;
   target_user_id?: string | null;
@@ -20,6 +26,13 @@ export interface PushPayload {
   message?: string | null;
   title?: string | null;
   status?: string | null;
+  /** ISO meet clock (meet_time_set / meet_warning / meet_due). */
+  meet_at?: string | null;
+  /** Minutes remaining (meet_warning) or red threshold (meet_time_set). */
+  minutes?: number | null;
+  request_id?: string | null;
+  count?: number | null;
+  sender_name?: string;
 }
 
 const COMMAND_LABEL: Record<string, string> = {
@@ -39,6 +52,29 @@ const COMMAND_LABEL: Record<string, string> = {
   custom: "自訂指令",
 };
 
+/** Format an ISO timestamp as 月/日 時:分 in Asia/Taipei (app default locale). */
+function formatMeetClock(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("zh-TW", {
+    timeZone: "Asia/Taipei",
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(d);
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value ?? "";
+  const month = get("month");
+  const day = get("day");
+  const hour = get("hour").padStart(2, "0");
+  const minute = get("minute").padStart(2, "0");
+  if (!month || !day) return null;
+  return `${month}月${day}日 ${hour}:${minute}`;
+}
+
 /** Build the alert title/body for a push payload. */
 export function buildMessage(p: PushPayload): { title: string; body: string } {
   switch (p.category) {
@@ -57,13 +93,54 @@ export function buildMessage(p: PushPayload): { title: string; body: string } {
       return { title: "隊友已脫隊", body: "一位隊友已離開主隊伍" };
     case "live_activity":
       return { title: "Hither", body: "集合進度已更新" };
+    case "location_refresh":
+      return { title: "Hither", body: "" };
+    case "meet_time_set": {
+      const clock = formatMeetClock(p.meet_at);
+      const place = p.title ? `「${p.title}」` : "集合點";
+      return {
+        title: "集合時間已設定",
+        body: clock
+          ? `${place} ${clock} 集合`
+          : `${place} 集合時間已更新`,
+      };
+    }
+    case "meet_time_cleared":
+      return {
+        title: "集合時間已清除",
+        body: p.title ? `「${p.title}」的集合時間已取消` : "集合時間已取消",
+      };
+    case "meet_warning": {
+      const mins = typeof p.minutes === "number" ? p.minutes : null;
+      const place = p.title ? `「${p.title}」` : "集合點";
+      return {
+        title: "集合時間快到了",
+        body: mins != null
+          ? `${place} 還剩 ${mins} 分鐘集合`
+          : `${place} 集合時間快到了`,
+      };
+    }
+    case "meet_due": {
+      const place = p.title ? `「${p.title}」` : "集合點";
+      return {
+        title: "集合時間到了",
+        body: `該前往${place}集合了`,
+      };
+    }
+    case "gathering_request": {
+      const count = typeof p.count === "number" ? p.count : 1;
+      return {
+        title: "集合點加入請求",
+        body: `${p.sender_name ?? "隊員"}請求加入${count > 1 ? `${count} 個` : ""}集合點`,
+      };
+    }
     case "leader_commands": {
       const label = (p.type && COMMAND_LABEL[p.type]) || "指令";
-      return { title: `隊長：${label}`, body: p.message ?? label };
+      return { title: `${p.sender_name ?? "隊員"}：${label}`, body: p.message ?? label };
     }
     case "follower_requests": {
       const label = (p.type && COMMAND_LABEL[p.type]) || "請求";
-      return { title: `成員：${label}`, body: p.message ?? label };
+      return { title: `${p.sender_name ?? "隊員"}：${label}`, body: p.message ?? label };
     }
     default:
       return { title: "Hither", body: p.message ?? "" };
@@ -83,6 +160,13 @@ export function prefColumn(category: PushPayload["category"]): string {
     case "arrival":
     case "straggler":
     case "live_activity":
+    case "location_refresh":
+    case "meet_time_set":
+    case "meet_time_cleared":
+    case "meet_warning":
+    case "meet_due":
       return "journey";
+    case "gathering_request":
+      return "follower_requests";
   }
 }

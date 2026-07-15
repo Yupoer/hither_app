@@ -1,0 +1,32 @@
+{
+  "name": "testflight_crashes",
+  "description": "Fetch TestFlight crash data. Without crashId, lists recent crashes. With crashId, returns the full crash log with stack trace.",
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "bundleId": {
+        "type": "string",
+        "description": "The bundle ID of the app (e.g., com.example.myapp)"
+      },
+      "crashId": {
+        "description": "Specific crash ID to fetch full details for. If omitted, lists recent crashes.",
+        "type": "string"
+      },
+      "limit": {
+        "default": 20,
+        "description": "Maximum number of crashes to list (default: 20, max: 100, ignored when crashId is provided)",
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100
+      },
+      "cursor": {
+        "description": "Pagination cursor from a previous response, to fetch the next page",
+        "type": "string"
+      }
+    },
+    "required": [
+      "bundleId"
+    ]
+  }
+}

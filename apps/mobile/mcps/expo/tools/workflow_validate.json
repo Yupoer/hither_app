@@ -1,0 +1,25 @@
+{
+  "name": "workflow_validate",
+  "description": "Validates EAS workflow YAML syntax and configuration. Use this after creating a workflow to ensure it is valid. Provide either appId (from app.json \"extra.eas.projectId\") OR appFullName (e.g., \"@owner/my-app\").",
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "appId": {
+        "description": "The Expo project/app ID (UUID). Get this from app.json at \"extra.eas.projectId\". Either appId or appFullName is required.",
+        "type": "string"
+      },
+      "appFullName": {
+        "description": "The full name of the app (e.g., \"@owner/my-app\"). Use this if you don't have access to app.json. Either appId or appFullName is required.",
+        "type": "string"
+      },
+      "workflowYaml": {
+        "type": "string",
+        "description": "The YAML content to validate"
+      }
+    },
+    "required": [
+      "workflowYaml"
+    ]
+  }
+}
