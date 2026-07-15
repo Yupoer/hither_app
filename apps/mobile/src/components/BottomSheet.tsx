@@ -180,16 +180,14 @@ export default React.memo(function BottomSheet({
   // Apple-Maps stage morphing, all on the UI thread: peek floats far off every
   // edge (small and dainty), mid hugs the edges at the search bar's gap, full
   // fills the screen flush so all 4 corners coincide with the physical screen
-  // corners and curve to match the device bezel instead of squaring off.
+  // corners. Corner radius stays constant across detents (match device bezel).
   const sheetStyle = useAnimatedStyle(() => {
     const h = height.value;
-    const side = interpolate(h, detents, [20, 10, 0], Extrapolation.CLAMP);
-    const radius = interpolate(
-      h,
-      detents,
-      [30, 34, SCREEN_CORNER_RADIUS],
-      Extrapolation.CLAMP,
-    );
+    // peek/mid share the same horizontal inset so sheet chrome (e.g. 成員/路線/工具
+    // Segmented) does not appear to scale when moving between stage 1 and 2.
+    // Full still goes edge-to-edge.
+    const side = interpolate(h, detents, [10, 10, 0], Extrapolation.CLAMP);
+    const radius = SCREEN_CORNER_RADIUS; // peek / mid / full — all 44
     return {
       height: h,
       bottom: sheetBottomOffset(h, detents, bottomInset),
@@ -280,7 +278,8 @@ const styles = StyleSheet.create({
     zIndex: 60,
     overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'transparent',
+    // Apple-like separator gray (not transparent → material white halo).
+    borderColor: glass.hairlineSoft,
   },
   headerBlock: { position: 'absolute', top: 0, left: 0, right: 0 },
   // Tighter top so peek chrome sits closer to the sheet edge.

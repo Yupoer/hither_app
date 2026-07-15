@@ -7,27 +7,63 @@ interface UseStragglerAlertsResult {
   stragglers: Straggler[];
 }
 
+export interface UseStragglerAlertsOptions {
+  /**
+   * Role gate — pass `false` for non-leaders so followers never run distance
+   * logic (they only receive APNs from the leader device).
+   */
+  enabled?: boolean;
+  leaderUserId?: string;
+  /**
+   * UI-first override for the on/off switch. When set, distance calc uses this
+   * instead of waiting for `group.stragglerAlerts` from DB/realtime.
+   */
+  alertsEnabled?: boolean;
+  /**
+   * UI-first override for the distance threshold (meters). Same rationale as
+   * `alertsEnabled` — toggle UI must not wait on DB round-trip.
+   */
+  thresholdM?: number;
+}
+
 /**
  * Leader-side straggler state. Wraps `findStragglers` with hysteresis:
  * a member who trips the threshold stays flagged until they close back inside
  * 80% of it. Data-only — callers fire APN via RPC. Pass `enabled: false` for
  * non-leaders so followers never run distance logic.
+ *
+ * Locations: member coords from group state (DB cache); leader GPS is
+ * `leaderCoordinates` from the device. DB only stores the shared group setting
+ * (on/off + threshold), not live distances.
  */
 export function useStragglerAlerts(
   groupState: GroupState | null,
   leaderCoordinates: Coordinates | undefined,
-  options?: { enabled?: boolean; leaderUserId?: string },
+  options?: UseStragglerAlertsOptions,
 ): UseStragglerAlertsResult {
-  const enabled = options?.enabled ?? true;
+  const roleEnabled = options?.enabled ?? true;
   const leaderUserId = options?.leaderUserId;
+  const alertsOverride = options?.alertsEnabled;
+  const thresholdOverride = options?.thresholdM;
   const alertingRef = useRef<Set<string>>(new Set());
 
   const stragglers = useMemo(() => {
-    if (!enabled || !groupState || !groupState.group.stragglerAlerts || !leaderCoordinates) {
+    if (!roleEnabled || !groupState || !leaderCoordinates) {
       alertingRef.current = new Set();
       return [];
     }
-    const thresholdM = groupState.group.stragglerThresholdM;
+    const alertsOn =
+      alertsOverride !== undefined
+        ? alertsOverride
+        : groupState.group.stragglerAlerts;
+    if (!alertsOn) {
+      alertingRef.current = new Set();
+      return [];
+    }
+    const thresholdM =
+      thresholdOverride !== undefined
+        ? thresholdOverride
+        : groupState.group.stragglerThresholdM;
     const overThreshold = findStragglers({
       members: groupState.members,
       target: leaderCoordinates,
@@ -53,7 +89,14 @@ export function useStragglerAlerts(
     alertingRef.current = stillAlerting;
 
     return overRelease.filter((s) => stillAlerting.has(s.userId));
-  }, [enabled, groupState, leaderCoordinates, leaderUserId]);
+  }, [
+    roleEnabled,
+    groupState,
+    leaderCoordinates,
+    leaderUserId,
+    alertsOverride,
+    thresholdOverride,
+  ]);
 
   return { stragglers };
 }

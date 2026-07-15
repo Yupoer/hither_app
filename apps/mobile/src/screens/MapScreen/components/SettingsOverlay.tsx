@@ -1,5 +1,13 @@
-import React, { useMemo } from 'react';
-import { ScrollView, Switch, Text, View, TouchableOpacity } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  ScrollView,
+  Switch,
+  Text,
+  View,
+  TouchableOpacity,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import * as Updates from 'expo-updates';
@@ -16,6 +24,8 @@ import {
 import { useTranslation } from '../../../i18n';
 import { THEME_ORDER, type ThemeName, themes } from '../../../theme';
 import { glass } from '../../../glass';
+
+const OTA_UPDATES_USABLE = !__DEV__ && Updates.isEnabled;
 
 interface SettingsOverlayProps {
   visible: boolean;
@@ -132,6 +142,45 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
     Constants.expoConfig?.version ??
     Constants.nativeAppVersion ??
     '—';
+
+  const { isUpdateAvailable, isUpdatePending } = Updates.useUpdates();
+  const [otaAvailable, setOtaAvailable] = useState(false);
+  const [applyingOta, setApplyingOta] = useState(false);
+
+  // Manual check when settings opens; useUpdates also reflects background downloads.
+  useEffect(() => {
+    if (!visible || !OTA_UPDATES_USABLE) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const result = await Updates.checkForUpdateAsync();
+        if (!cancelled) setOtaAvailable(result.isAvailable);
+      } catch {
+        // Network / rate-limit: keep prior state from useUpdates.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [visible]);
+
+  const showOtaApply =
+    OTA_UPDATES_USABLE &&
+    (otaAvailable || isUpdateAvailable || isUpdatePending);
+
+  const applyOtaUpdate = useCallback(async () => {
+    if (!OTA_UPDATES_USABLE || applyingOta) return;
+    setApplyingOta(true);
+    try {
+      if (!isUpdatePending) {
+        await Updates.fetchUpdateAsync();
+      }
+      await Updates.reloadAsync();
+    } catch {
+      setApplyingOta(false);
+      Alert.alert(t('settings.otaApplyFailed'));
+    }
+  }, [applyingOta, isUpdatePending, t]);
 
   const otaSummary = useMemo(() => {
     // Expo Go / dev client: Updates may be disabled — still show a clear label.
@@ -313,6 +362,37 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
 
         {/* ── 支援 ─────────────────────────────────────────────── */}
         <SectionLabel label={t('settings.sectionSupport')} styles={styles} />
+        {showOtaApply ? (
+          <TouchableOpacity
+            style={[
+              styles.accountBtn,
+              {
+                backgroundColor: accent,
+                borderColor: accent,
+                opacity: applyingOta ? 0.7 : 1,
+                marginBottom: 8,
+              },
+            ]}
+            onPress={applyOtaUpdate}
+            disabled={applyingOta}
+            accessibilityRole="button"
+            accessibilityLabel={t('settings.applyOta')}
+            activeOpacity={0.85}
+          >
+            {applyingOta ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <ActivityIndicator color="#fff" />
+                <Text style={[styles.accountBtnText, { color: '#fff' }]}>
+                  {t('settings.applyingOta')}
+                </Text>
+              </View>
+            ) : (
+              <Text style={[styles.accountBtnText, { color: '#fff' }]}>
+                {t('settings.applyOta')}
+              </Text>
+            )}
+          </TouchableOpacity>
+        ) : null}
         <View style={styles.settingsTopGroup}>
           <NavRow
             title={t('feedback.title')}

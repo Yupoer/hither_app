@@ -2,6 +2,11 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const bottomSheet = readFileSync(join(__dirname, '../components/BottomSheet.tsx'), 'utf8');
+const segmented = readFileSync(
+  join(__dirname, '../screens/MapScreen/components/Segmented.tsx'),
+  'utf8',
+);
 const quickCommandsCard = readFileSync(
   join(__dirname, '../components/QuickCommandsCard.tsx'),
   'utf8',
@@ -67,6 +72,17 @@ describe('map UI placement contracts', () => {
     expect(language).toBeGreaterThan(pro);
   });
 
+  it('exposes a settings OTA apply CTA only when an update is available', () => {
+    expect(settingsOverlay).toContain('checkForUpdateAsync');
+    expect(settingsOverlay).toContain('fetchUpdateAsync');
+    expect(settingsOverlay).toContain('reloadAsync');
+    expect(settingsOverlay).toContain('showOtaApply');
+    expect(settingsOverlay).toContain("t('settings.applyOta')");
+    expect(settingsOverlay).toContain("t('settings.applyingOta')");
+    expect(i18n).toContain("'settings.applyOta': '立即更新'");
+    expect(i18n).toContain("'settings.applyOta': 'Update now'");
+  });
+
   it('exposes create-or-join home from settings without forcing leave/sign-out', () => {
     expect(settingsOverlay).toContain("t('settings.createOrJoin')");
     expect(settingsOverlay).toContain("t('settings.createOrJoinHint')");
@@ -112,6 +128,47 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).not.toContain("index === 0 ? t('map.nextTag')");
     expect(mapScreen).toContain('cardExpanded && (');
     expect(mapScreen).toContain('styles.cardCollapsedMetrics');
+  });
+
+  it('avoids Zoom enter/exit on gathering-card body (no shrink-then-pop)', () => {
+    expect(mapScreen).not.toContain('ZoomIn');
+    expect(mapScreen).not.toContain('ZoomOut');
+    expect(mapScreen).not.toMatch(/entering=\{ZoomIn/);
+    expect(mapScreen).not.toMatch(/exiting=\{ZoomOut/);
+  });
+
+  it('uses direction-aware gathering-card press (no 0.96 shrink rebound)', () => {
+    expect(mapScreen).toContain('GatheringCardPressable');
+    expect(mapScreen).not.toContain('scale: 0.96');
+    expect(mapScreen).not.toContain('pressedCardId');
+    // Collapse path may scale up slightly; expand path leaves scale at 1.
+    expect(mapScreen).toContain('withTiming(1.02');
+    expect(mapScreen).toContain('scale.value = 1');
+  });
+
+  it('keeps straggler toggle UI-first with dirty/last-write-wins (not forced by DB props)', () => {
+    expect(mapScreen).toContain('dirtyRef');
+    expect(mapScreen).toContain('lastSubmittedRef');
+    expect(mapScreen).toContain('seqRef');
+    expect(mapScreen).toContain('onLocalChange');
+    expect(mapScreen).toContain('stragglerOverride');
+    expect(mapScreen).toContain('alertsEnabled: effectiveStragglerAlerts');
+    expect(mapScreen).toContain('thresholdM: effectiveStragglerThresholdM');
+    // Must not full-refresh after setStragglerConfig success (causes snap-back).
+    const persistIdx = mapScreen.indexOf('const persistStragglerConfig');
+    const persistBlock = mapScreen.slice(persistIdx, persistIdx + 400);
+    expect(persistBlock).toContain('setStragglerConfig');
+    expect(persistBlock).not.toContain('refresh()');
+  });
+
+  it('keeps peek/mid sheet width stable so tab Segmented does not scale between stages', () => {
+    expect(bottomSheet).toContain('interpolate(h, detents, [10, 10, 0]');
+    expect(bottomSheet).not.toContain('interpolate(h, detents, [20, 10, 0]');
+  });
+
+  it('snaps Segmented pill when track width appears (tools pane reveal)', () => {
+    expect(segmented).toContain('widthAppeared');
+    expect(segmented).toContain('prevSegWRef');
   });
 
   it('keeps arrival beside navigation controls and offers timestamp choices', () => {

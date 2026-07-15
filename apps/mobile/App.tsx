@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Text, TextInput, View } from 'react-native';
+import { Text, TextInput, View } from 'react-native';
 import {
   DarkTheme,
   DefaultTheme,
@@ -12,6 +12,7 @@ import { useFonts, Fredoka_500Medium, Fredoka_600SemiBold } from '@expo-google-f
 import RootNavigator from './src/navigation/RootNavigator';
 import OnboardingScreen from './src/onboarding/OnboardingScreen';
 import { readOnboardingState } from './src/onboarding/sync';
+import CrookIcon from './src/components/CrookIcon';
 import { installGlobalErrorLogger } from './src/utils/activityLog';
 import { SessionProvider, useSession } from './src/state/SessionContext';
 import { usePushRegistration } from './src/state/usePushRegistration';
@@ -105,7 +106,7 @@ function ThemedNavigation() {
           backgroundColor: colors.background,
         }}
       >
-        <ActivityIndicator color={colors.accent} />
+        <CrookIcon size={96} color={colors.accent} glow />
       </View>
     );
   }

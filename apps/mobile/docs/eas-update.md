@@ -45,8 +45,9 @@ eas update --channel production --message "…"
 
 - 冷啟動時檢查 update（`checkAutomatically: ON_LOAD`）
 - 下載後**下次重開**才套用（`fallbackToCacheTimeout: 0`，不阻塞首屏）
+- 設定頁偵測到可用 OTA 時會顯示「立即更新」；點選後 `fetchUpdateAsync` + `reloadAsync` **立刻套用並重載**（無更新時不顯示按鈕）
 
-手動驗證：強制關閉 app 再開 1–2 次。
+手動驗證：強制關閉 app 再開 1–2 次；或開設定頁用「立即更新」。
 
 ## 什麼可以 OTA / 什麼不行
 

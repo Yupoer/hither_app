@@ -51,15 +51,24 @@ export function Segmented({
   const tx = useSharedValue(0);
   // Snap on first measure / width-only changes so hidden panes (height:0 →
   // visible) don't "slide" the pill when the user only switched tabs.
+  // Also snap whenever width was zero and becomes positive (tools pane reveal).
   const measuredRef = useRef(false);
   const prevIdxRef = useRef(activeIdx);
+  const prevSegWRef = useRef(0);
 
   useEffect(() => {
-    if (segW <= 0) return;
+    if (segW <= 0) {
+      prevSegWRef.current = 0;
+      return;
+    }
     const next = activeIdx * (segW + SEG_GAP);
     const idxChanged = prevIdxRef.current !== activeIdx;
+    const widthAppeared = prevSegWRef.current <= 0;
     prevIdxRef.current = activeIdx;
-    if (measuredRef.current && idxChanged) {
+    prevSegWRef.current = segW;
+    // Animate only when the user changed the selected segment on a stable track.
+    // Never animate on first measure, remount, pane unhide (0→width), or pure resize.
+    if (measuredRef.current && idxChanged && !widthAppeared) {
       tx.value = withTiming(next, {
         duration: 220,
         easing: Easing.out(Easing.cubic),

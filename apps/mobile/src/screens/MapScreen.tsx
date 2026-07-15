@@ -39,10 +39,8 @@ import Animated, {
   Extrapolation,
   withTiming,
   withSpring,
+  withSequence,
   Easing,
-  FadeIn,
-  FadeOut,
-  LinearTransition,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -388,7 +386,6 @@ export default function MapScreen({ route, navigation }: Props) {
   const [detent, setDetent] = useState(0);
   /** Mid/Full sheet body: 成員 · 路線 · 工具. */
   const [sheetPane, setSheetPane] = useState<'members' | 'route' | 'tools'>('members');
-  const [pressedCardId, setPressedCardId] = useState<string | null>(null);
   const [overlay, setOverlay] = useState<
     null
     | 'route'
@@ -876,9 +873,29 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // --- Straggler alerts (leader-only, 1:N vs leader GPS) ----------------------
   // Followers never run distance logic; they only receive APNs from the leader.
+  // UI toggle is source of truth while dirty; DB only persists the setting.
+  const [stragglerOverride, setStragglerOverride] = useState<{
+    alerts: boolean;
+    thresholdM: number;
+  } | null>(null);
+  useEffect(() => {
+    if (!group || !stragglerOverride) return;
+    if (
+      group.stragglerAlerts === stragglerOverride.alerts &&
+      group.stragglerThresholdM === stragglerOverride.thresholdM
+    ) {
+      setStragglerOverride(null);
+    }
+  }, [group?.stragglerAlerts, group?.stragglerThresholdM, stragglerOverride]);
+  const effectiveStragglerAlerts =
+    stragglerOverride?.alerts ?? group?.stragglerAlerts ?? true;
+  const effectiveStragglerThresholdM =
+    stragglerOverride?.thresholdM ?? group?.stragglerThresholdM ?? 500;
   const { stragglers } = useStragglerAlerts(state, fromCoords ?? undefined, {
     enabled: !!isLeader,
     leaderUserId: user?.id,
+    alertsEnabled: effectiveStragglerAlerts,
+    thresholdM: effectiveStragglerThresholdM,
   });
   // On newly flagged members (hysteresis in the hook), leader fans out APNs
   // via RPC — no local notification (would double-fire for the leader).
@@ -1698,17 +1715,24 @@ export default function MapScreen({ route, navigation }: Props) {
        }
     }
   }, [groupId, rawDestinations, refresh]);
+  // Persist group setting only — not the live distance loop. UI stays optimistic;
+  // never call refresh() here (realtime would also thrash the toggle).
   const persistStragglerConfig = useCallback(async (enabled: boolean, thresholdM: number) => {
     if (!groupId) return;
     try {
-      // Optimistic UI lives in StragglerConfigSection; skip full refresh so the
-      // switch does not lag / snap back while group state reloads.
       await setStragglerConfig(groupId, enabled, thresholdM);
     } catch (e) {
       Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
       throw e;
     }
   }, [groupId, t]);
+
+  const handleStragglerLocalChange = useCallback(
+    (config: { alerts: boolean; thresholdM: number } | null) => {
+      setStragglerOverride(config);
+    },
+    [],
+  );
 
   // --- Derived view models --------------------------------------------------
   // Optimistic flip for the Solo switch — server round trip + realtime
@@ -2380,13 +2404,13 @@ export default function MapScreen({ route, navigation }: Props) {
         <>
           <Text style={styles.sheetHeading}>{t('straggler.section')}</Text>
           <StragglerConfigSection
-            groupId={groupId}
             groupAlerts={group.stragglerAlerts}
             groupThreshold={group.stragglerThresholdM}
             accent={accent}
             isPro={isPro}
             openPaywall={openPaywall}
             onPersist={persistStragglerConfig}
+            onLocalChange={handleStragglerLocalChange}
             styles={styles}
             t={t}
           />
@@ -2395,7 +2419,7 @@ export default function MapScreen({ route, navigation }: Props) {
     </>
   ), [
     styles, t, groupId, isLeader, dark, openCustomQuickCommand, group, accent, isPro,
-    openPaywall, persistStragglerConfig,
+    openPaywall, persistStragglerConfig, handleStragglerLocalChange,
   ]);
 
   const sheetChildren = useMemo(() => (
@@ -2733,34 +2757,17 @@ export default function MapScreen({ route, navigation }: Props) {
                   key={`carousel-dest-${dest.id}-${index}`}
                   style={{ width: windowWidth, paddingHorizontal: narrowScreen ? 10 : 14 }}
                 >
-                  <Pressable
-                    onPressIn={() => {
-                      setPressedCardId(dest.id);
-                    }}
-                    onPressOut={() => {
-                      setPressedCardId(null);
-                    }}
-                    onPress={() => {
-                      rigidTap();
-                      LayoutAnimation.configureNext({
-                        duration: 300,
-                        create: { type: 'linear', property: 'opacity' },
-                        update: { type: 'linear' },
-                        delete: { type: 'linear', property: 'opacity' },
-                      });
-                      toggleCard(dest.id);
-                    }}
-                    accessibilityRole="button"
+                  <GatheringCardPressable
+                    expanded={cardExpanded}
+                    onToggle={() => toggleCard(dest.id)}
                     accessibilityLabel={dest.title}
                     accessibilityHint={cardExpanded ? '收合集合點卡片' : '展開集合點卡片'}
                   >
-                    <Animated.View layout={LinearTransition.duration(300)}>
                       <liquidGlass.GlassView
                         tintColor={active ? glass.cardActive : glass.card}
                         style={[
                           styles.card,
                           active && { borderColor: accentMix(accent, 50) },
-                          pressedCardId === dest.id && { transform: [{ scale: 0.96 }] }
                         ]}
                       >
                     {/* Top arrival hairline — team progress toward this stop. */}
@@ -2806,34 +2813,21 @@ export default function MapScreen({ route, navigation }: Props) {
                             })()}
                           </Text>
                           {destinations.length > 1 && (
-                            <Animated.View style={styles.dots} layout={LinearTransition.duration(100)}>
+                            <View style={styles.dots}>
                               {dotWindow(destinations.length, selectedIndex, DOTS_MAX_VISIBLE).map(
                                 (i2) => (
-                                  <Animated.View
+                                  <View
                                     key={`dot-${destinations[i2]?.id || i2}-${i2}`}
-                                    entering={FadeIn.duration(100)}
-                                    exiting={FadeOut.duration(100)}
-                                    layout={LinearTransition.springify().damping(14).stiffness(300)}
                                     style={[styles.dot, i2 === selectedIndex && styles.dotActive]}
                                   />
                                 ),
                               )}
-                            </Animated.View>
+                            </View>
                           )}
                         </View>
-                        {/*
-                          Collapsed:
-                            kicker · dots
-                            地名              1hr   ← time tight above dist
-                            抵達進度        5.8km
-                          Expanded:
-                            title + Maps
-                            day
-                            小隊行程 (optional)
-                            抵達進度 …… ETA · dist  ← directly under badge
-                        */}
+                        {/* Collapsed / expanded swap in-tree — one shot, no Zoom / layout morph. */}
                         {cardExpanded ? (
-                          <>
+                          <View>
                             <View style={styles.cardTitleRow}>
                               <Text
                                 style={[styles.cardTitle, styles.cardTitleExpanded, styles.cardTitleFlex]}
@@ -2855,15 +2849,12 @@ export default function MapScreen({ route, navigation }: Props) {
                                 <Ionicons name="map" size={22} color="#fff" />
                               </Pressable>
                             </View>
-                            <Animated.Text
-                              entering={FadeIn.duration(200)}
-                              style={styles.cardDayLine}
-                            >
+                            <Text style={styles.cardDayLine}>
                               {formatTripDayLine(
                                 dest.day || 1,
                                 optimisticDepartureDate ?? group?.departureDate,
                               )}
-                            </Animated.Text>
+                            </Text>
                             {myScopeId != null && (
                               <Text style={styles.cardBadge}>{t('subgroup.itineraryBadge')}</Text>
                             )}
@@ -2914,7 +2905,7 @@ export default function MapScreen({ route, navigation }: Props) {
                                 ) : null}
                               </View>
                             </View>
-                          </>
+                          </View>
                         ) : (
                           <View style={styles.cardDenseBody}>
                             <Text
@@ -3123,8 +3114,7 @@ export default function MapScreen({ route, navigation }: Props) {
                     </View>
                     )}
                       </liquidGlass.GlassView>
-                    </Animated.View>
-                  </Pressable>
+                  </GatheringCardPressable>
                 </View>
               );
             })}
@@ -3765,54 +3755,157 @@ export default function MapScreen({ route, navigation }: Props) {
   );
 }
 
+/**
+ * Gathering-point card press shell — direction-aware, no artificial delay.
+ *
+ * Collapse → expand: haptic → expand once (no shrink, no rebound scale).
+ * Expand → collapse: haptic → brief scale-up (expand a bit) + collapse in parallel
+ * (scale settles to 1; never shrinks first, never rebounds larger after collapse).
+ */
+function GatheringCardPressable({
+  expanded,
+  onToggle,
+  accessibilityLabel,
+  accessibilityHint,
+  children,
+}: {
+  expanded: boolean;
+  onToggle: () => void;
+  accessibilityLabel: string;
+  accessibilityHint: string;
+  children: React.ReactNode;
+}) {
+  const scale = useSharedValue(1);
+  const scaleStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  const handlePress = useCallback(() => {
+    rigidTap();
+    if (expanded) {
+      // Expand a little then collapse — both start immediately (no setTimeout).
+      scale.value = withSequence(
+        withTiming(1.02, { duration: 40, easing: Easing.out(Easing.quad) }),
+        withTiming(1, { duration: 80, easing: Easing.out(Easing.cubic) }),
+      );
+      onToggle();
+    } else {
+      // One-shot expand — leave scale at 1 so there is no shrink / end rebound.
+      scale.value = 1;
+      onToggle();
+    }
+  }, [expanded, onToggle, scale]);
+
+  return (
+    <Pressable
+      onPress={handlePress}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityHint={accessibilityHint}
+    >
+      <Animated.View style={scaleStyle}>{children}</Animated.View>
+    </Pressable>
+  );
+}
+
 interface StragglerConfigSectionProps {
-  groupId: string;
   groupAlerts: boolean;
   groupThreshold: number;
   accent: string;
   isPro: boolean;
   openPaywall: (trigger?: TranslationKey) => void;
+  /** Background write of group setting (not live distance). UI does not await this to render. */
   onPersist: (enabled: boolean, thresholdM: number) => Promise<void>;
+  /** Immediate local config for distance calc; null clears override after rollback. */
+  onLocalChange?: (config: { alerts: boolean; thresholdM: number } | null) => void;
   styles: any;
   t: any;
 }
 
+/**
+ * Leader-only straggler setting UI.
+ * UI is source of truth while the user is interacting; DB/realtime must not yank
+ * the Switch/Segmented back mid-tap. `groups.straggler_*` only persists the
+ * preference so reopen / other devices / distance gate stay consistent.
+ */
 const StragglerConfigSection = React.memo(function StragglerConfigSection({
-  groupId,
   groupAlerts,
   groupThreshold,
   accent,
   isPro,
   openPaywall,
   onPersist,
+  onLocalChange,
   styles,
   t,
 }: StragglerConfigSectionProps) {
   const [localAlerts, setLocalAlerts] = useState(groupAlerts);
   const [localThreshold, setLocalThreshold] = useState(groupThreshold);
+  const dirtyRef = useRef(false);
+  const seqRef = useRef(0);
+  const lastSubmittedRef = useRef({ alerts: groupAlerts, threshold: groupThreshold });
+  const localAlertsRef = useRef(localAlerts);
+  const localThresholdRef = useRef(localThreshold);
+  const groupAlertsRef = useRef(groupAlerts);
+  const groupThresholdRef = useRef(groupThreshold);
+  localAlertsRef.current = localAlerts;
+  localThresholdRef.current = localThreshold;
+  groupAlertsRef.current = groupAlerts;
+  groupThresholdRef.current = groupThreshold;
 
+  // Accept server → UI only when idle, or when server has caught up to our last submit.
   useEffect(() => {
+    if (dirtyRef.current) {
+      if (
+        groupAlerts === lastSubmittedRef.current.alerts &&
+        groupThreshold === lastSubmittedRef.current.threshold
+      ) {
+        dirtyRef.current = false;
+        setLocalAlerts(groupAlerts);
+        setLocalThreshold(groupThreshold);
+      }
+      return;
+    }
     setLocalAlerts(groupAlerts);
-  }, [groupAlerts]);
-
-  useEffect(() => {
     setLocalThreshold(groupThreshold);
-  }, [groupThreshold]);
+  }, [groupAlerts, groupThreshold]);
 
-  const handleToggle = useCallback((v: boolean) => {
-    setLocalAlerts(v);
-    onPersist(v, localThreshold).catch(() => {
-      setLocalAlerts(groupAlerts);
-    });
-  }, [localThreshold, onPersist, groupAlerts]);
+  const commit = useCallback(
+    (alerts: boolean, thresholdM: number) => {
+      dirtyRef.current = true;
+      lastSubmittedRef.current = { alerts, threshold: thresholdM };
+      onLocalChange?.({ alerts, thresholdM });
+      const seq = ++seqRef.current;
+      onPersist(alerts, thresholdM).catch(() => {
+        // Last-write-wins: only the latest in-flight request may roll back UI.
+        if (seq !== seqRef.current) return;
+        dirtyRef.current = false;
+        setLocalAlerts(groupAlertsRef.current);
+        setLocalThreshold(groupThresholdRef.current);
+        onLocalChange?.(null);
+      });
+    },
+    [onPersist, onLocalChange],
+  );
 
-  const handleThresholdChange = useCallback((v: string) => {
-    const nextVal = Number(v);
-    setLocalThreshold(nextVal);
-    onPersist(localAlerts, nextVal).catch(() => {
-      setLocalThreshold(groupThreshold);
-    });
-  }, [localAlerts, onPersist, groupThreshold]);
+  const handleToggle = useCallback(
+    (v: boolean) => {
+      setLocalAlerts(v);
+      localAlertsRef.current = v;
+      commit(v, localThresholdRef.current);
+    },
+    [commit],
+  );
+
+  const handleThresholdChange = useCallback(
+    (v: string) => {
+      const nextVal = Number(v);
+      setLocalThreshold(nextVal);
+      localThresholdRef.current = nextVal;
+      commit(localAlertsRef.current, nextVal);
+    },
+    [commit],
+  );
 
   return (
     <>
@@ -4087,7 +4180,7 @@ const makeStyles = (
       left: 0,
       right: 0,
       height: 3,
-      backgroundColor: 'rgba(255,255,255,0.08)',
+      backgroundColor: glass.hairlineSoft,
       zIndex: 2,
     },
     arrivalHairlineFill: { height: '100%' },

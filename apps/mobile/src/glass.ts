@@ -31,16 +31,19 @@ export const glass = {
   fill: 'rgba(255, 255, 255, 0.07)',
   /** Stronger inset fill (secondary buttons). */
   fillStrong: 'rgba(255, 255, 255, 0.1)',
-  /** Hairline separators / borders on glass. */
-  hairline: 'rgba(255, 255, 255, 0.14)',
-  /** Soft hairline for sheet shells (BUG-10) — barely visible, no white halo. */
-  hairlineSoft: 'rgba(255, 255, 255, 0.06)',
-  /** Brighter hairline (overlay top edge, active fields). */
-  hairlineStrong: 'rgba(255, 255, 255, 0.22)',
+  /**
+   * Hairlines use Apple systemGray / separator grays — not white specular rims.
+   * Matches native menus, capsules, and sheet chrome (UIColor.systemGray ≈ #8E8E93).
+   */
+  hairline: 'rgba(142, 142, 147, 0.36)',
+  /** Soft outer shells (pills, cards, peek sheet) — muted gray, not white halo. */
+  hairlineSoft: 'rgba(142, 142, 147, 0.22)',
+  /** Stronger hairline (dividers, emphasized fields). */
+  hairlineStrong: 'rgba(142, 142, 147, 0.48)',
   /** Dim scrim behind a raised overlay. */
   scrim: 'rgba(4, 7, 12, 0.5)',
-  /** Grabber handle. */
-  grabber: 'rgba(255, 255, 255, 0.32)',
+  /** Grabber handle — system-gray tone, not bright white. */
+  grabber: 'rgba(142, 142, 147, 0.55)',
 
   // Text on the dark glass (theme-independent — always light).
   textPrimary: '#FFFFFF',
