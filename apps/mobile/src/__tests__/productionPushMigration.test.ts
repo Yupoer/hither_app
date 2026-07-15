@@ -25,7 +25,7 @@ const triggerHardeningMigration = readFileSync(
 const locationRefreshMigration = readFileSync(
   join(
     __dirname,
-    '../../../../supabase/migrations/20260715100000_location_refresh.sql',
+    '../../../../supabase/migrations/20260715133351_location_refresh.sql',
   ),
   'utf8',
 );
