@@ -134,6 +134,7 @@ import {
   setJourneyStatus,
   setSolo,
   setStragglerConfig,
+  reportStraggler,
   leaveGroups,
   requestGroupLocationRefresh,
   resolveGatherPointRequest,
@@ -400,9 +401,12 @@ export default function MapScreen({ route, navigation }: Props) {
     | 'invite'
     | 'commands'
     | 'myStatus'
+    | 'arrivalManage'
     | 'arrival'
   >(null);
   const [arrivalDestination, setArrivalDestination] = useState<Destination | null>(null);
+  /** When set, closing the per-destination arrival sheet returns here. */
+  const [arrivalReturnTo, setArrivalReturnTo] = useState<null | 'arrivalManage'>(null);
   /** Draft selection in the my-status sheet; committed only via Done. */
   const [draftMyStatus, setDraftMyStatus] = useState<'follow' | 'solo' | 'away' | null>(null);
   const [statusApplying, setStatusApplying] = useState(false);
@@ -872,29 +876,30 @@ export default function MapScreen({ route, navigation }: Props) {
     if (!key) lastFittedRouteRef.current = null;
   }, [activePoint, selfRoute, travelMode]);
 
-  // --- Straggler alerts ------------------------------------------------------
-  // Reference is ME, not the gathering point — "fell behind" means fell
-  // behind the flock (specifically me), not "hasn't reached the destination".
-  const { stragglers } = useStragglerAlerts(state, fromCoords ?? undefined);
-  // Fire a native OS notification per NEWLY-flagged straggler (hysteresis in
-  // the hook already prevents re-firing while still over the release band) —
-  // no in-app banner; the system notification is the only surface for this.
+  // --- Straggler alerts (leader-only, 1:N vs leader GPS) ----------------------
+  // Followers never run distance logic; they only receive APNs from the leader.
+  const { stragglers } = useStragglerAlerts(state, fromCoords ?? undefined, {
+    enabled: !!isLeader,
+    leaderUserId: user?.id,
+  });
+  // On newly flagged members (hysteresis in the hook), leader fans out APNs
+  // via RPC — no local notification (would double-fire for the leader).
   const lastStragglerIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
+    if (!isLeader || !groupId) {
+      lastStragglerIdsRef.current = new Set();
+      return;
+    }
     const ids = new Set(stragglers.map((s) => s.userId));
     const newOnes = stragglers.filter((s) => !lastStragglerIdsRef.current.has(s.userId));
     lastStragglerIdsRef.current = ids;
     for (const s of newOnes) {
-      void notifications.scheduleLocalNotification({
-        title: t('straggler.notifyTitle'),
-        body: t(s.userId === user?.id ? 'straggler.selfWarning' : 'straggler.banner', {
-          name: s.name,
-          distance: formatDistance(s.distanceM),
-        }),
-        data: { kind: 'straggler', userId: s.userId },
+      void reportStraggler(groupId, s.userId, s.distanceM).catch(() => {
+        // Soft-fail: network blip should not crash the map; next entry after
+        // release band will re-report.
       });
     }
-  }, [stragglers, t, user?.id]);
+  }, [stragglers, isLeader, groupId]);
 
   // Same metric as locked initial (route stays route; never silent straight fallback).
   const liveDistance =
@@ -1698,13 +1703,14 @@ export default function MapScreen({ route, navigation }: Props) {
   const persistStragglerConfig = useCallback(async (enabled: boolean, thresholdM: number) => {
     if (!groupId) return;
     try {
+      // Optimistic UI lives in StragglerConfigSection; skip full refresh so the
+      // switch does not lag / snap back while group state reloads.
       await setStragglerConfig(groupId, enabled, thresholdM);
-      refresh();
     } catch (e) {
       Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
       throw e;
     }
-  }, [groupId, refresh, t]);
+  }, [groupId, t]);
 
   // --- Derived view models --------------------------------------------------
   // Optimistic flip for the Solo switch — server round trip + realtime
@@ -2103,7 +2109,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
     // Header is stable across detents (same tree / height) so peek↔mid spring
     // never remeasures detents mid-flight (avoids hitch + reverse settle).
-    // Peek: others' avatars only. Stage 1+ discloses status/details in body.
+    // Peek: others' avatars only. Solo: no「成員」label — spacer keeps actions right.
     const others = flock.filter((f) => f.userId !== user?.id);
 
     return (
@@ -2111,7 +2117,7 @@ export default function MapScreen({ route, navigation }: Props) {
         <View style={styles.sheetTitleRow}>
           <View
             style={styles.peekAvatarStack}
-            accessibilityLabel={t('map.tabMembers')}
+            accessibilityLabel={others.length > 0 ? t('map.tabMembers') : undefined}
           >
             {others.slice(0, 6).map((f, i) => (
               <View
@@ -2138,13 +2144,8 @@ export default function MapScreen({ route, navigation }: Props) {
                 <Text style={styles.peekStackInitial}>+{others.length - 6}</Text>
               </View>
             ) : null}
-            {others.length === 0 ? (
-              <Text style={styles.peekEmptyHint} numberOfLines={1}>
-                {t('map.tabMembers')}
-              </Text>
-            ) : null}
           </View>
-          {actions}
+          <View style={styles.peekActions}>{actions}</View>
         </View>
       </View>
     );
@@ -2873,6 +2874,7 @@ export default function MapScreen({ route, navigation }: Props) {
                                 onPress={(event) => {
                                   event.stopPropagation();
                                   registerCardActivity(dest.id);
+                                  setArrivalReturnTo(null);
                                   setArrivalDestination(dest);
                                   setOverlay('arrival');
                                 }}
@@ -3197,24 +3199,18 @@ export default function MapScreen({ route, navigation }: Props) {
           ) : null}
           {isLeader && (state?.destinations.length ?? 0) > 0 ? (
             <View style={styles.listGroup}>
-              <Text style={styles.sectionLabel}>{t('arrival.manage')}</Text>
-              {state?.destinations.map((destination) => (
-                <Pressable
-                  key={`arrival-manage-${destination.id}`}
-                  style={styles.listRow}
-                  onPress={() => {
-                    setArrivalDestination(destination);
-                    setOverlay('arrival');
-                  }}
-                  accessibilityRole="button"
-                >
-                  <Text style={[styles.listRowTitle, styles.grow]}>{destination.title}</Text>
-                  <Text style={styles.listRowTrailing}>
-                    {destinationArrivals.filter((entry) => entry.destinationId === destination.id).length}
-                  </Text>
-                  <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
-                </Pressable>
-              ))}
+              <Pressable
+                style={styles.listRow}
+                onPress={() => setOverlay('arrivalManage')}
+                accessibilityRole="button"
+                accessibilityLabel={t('arrival.manage')}
+              >
+                <Text style={[styles.listRowTitle, styles.grow]}>{t('arrival.manage')}</Text>
+                <Text style={styles.listRowTrailing}>
+                  {state?.destinations.length ?? 0}
+                </Text>
+                <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
+              </Pressable>
             </View>
           ) : null}
           <DestinationReorderList
@@ -3435,11 +3431,45 @@ export default function MapScreen({ route, navigation }: Props) {
         styles={styles}
       />
 
+      {/* Arrival management hub — entry from route sheet; lists destinations. */}
+      <OverlaySheet
+        visible={overlay === 'arrivalManage'}
+        onClose={() => setOverlay('route')}
+        title={t('arrival.manage')}
+        accent={accent}
+        doneLabel={t('map.done')}
+      >
+        <ScrollView contentContainerStyle={styles.overlayBody}>
+          <View style={styles.listGroup}>
+            {(state?.destinations ?? []).map((destination) => (
+              <Pressable
+                key={`arrival-manage-${destination.id}`}
+                style={styles.listRow}
+                onPress={() => {
+                  setArrivalReturnTo('arrivalManage');
+                  setArrivalDestination(destination);
+                  setOverlay('arrival');
+                }}
+                accessibilityRole="button"
+              >
+                <Text style={[styles.listRowTitle, styles.grow]}>{destination.title}</Text>
+                <Text style={styles.listRowTrailing}>
+                  {destinationArrivals.filter((entry) => entry.destinationId === destination.id).length}
+                </Text>
+                <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
+              </Pressable>
+            ))}
+          </View>
+        </ScrollView>
+      </OverlaySheet>
+
       <OverlaySheet
         visible={overlay === 'arrival'}
         onClose={() => {
-          setOverlay(null);
+          const back = arrivalReturnTo;
           setArrivalDestination(null);
+          setArrivalReturnTo(null);
+          setOverlay(back);
         }}
         title={arrivalDestination?.title ?? t('map.arrivalProgress')}
         accent={accent}
@@ -4524,6 +4554,13 @@ const makeStyles = (
       alignItems: 'center',
       gap: 6,
       minWidth: 0,
+      minHeight: 46,
+    },
+    peekActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      flexShrink: 0,
     },
     groupNameHit: {
       flex: 1,
@@ -4632,6 +4669,7 @@ const makeStyles = (
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairline,
       flexShrink: 0,
+      marginTop: 0,
     },
     headerAvatar: {
       width: 46,
@@ -4641,6 +4679,7 @@ const makeStyles = (
       justifyContent: 'center',
       overflow: 'hidden',
       flexShrink: 0,
+      marginTop: 0,
     },
     headerAvatarEmoji: { fontSize: 24 },
     headerAvatarText: { fontSize: 18, fontWeight: '700', color: '#fff' },

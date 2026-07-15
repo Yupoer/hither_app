@@ -467,6 +467,24 @@ export async function setStragglerConfig(
   orThrow(error);
 }
 
+/**
+ * Leader-only: fan-out an APNs straggler alert after local distance judgment.
+ * No-ops on demo groups. Throws if the caller is not the group leader (RPC).
+ */
+export async function reportStraggler(
+  groupId: string,
+  memberId: string,
+  distanceM?: number,
+): Promise<void> {
+  if (isDemoGroup(groupId)) return;
+  const { error } = await supabase.rpc('report_straggler', {
+    p_group_id: groupId,
+    p_member_id: memberId,
+    p_distance_m: distanceM ?? null,
+  });
+  orThrow(error);
+}
+
 export async function updateGroupTripDetails(
   groupId: string,
   tripDays: number,

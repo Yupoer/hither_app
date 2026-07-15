@@ -13,8 +13,8 @@ function member(overrides: Partial<MemberLocation>): MemberLocation {
 }
 
 describe('findStragglers', () => {
-  it('flags a member beyond the threshold from the target', () => {
-    const leader = member({ userId: 'leader', name: 'Leader' });
+  it('flags a member beyond the threshold from the leader target', () => {
+    const leader = member({ userId: 'leader', name: 'Leader', role: 'leader' });
     // ~555m north of the target (0.005 deg lat ~= 555m).
     const far = member({
       userId: 'far',
@@ -25,8 +25,25 @@ describe('findStragglers', () => {
       members: [leader, far],
       target: { latitude: 25.0478, longitude: 121.517 },
       thresholdM: 500,
+      leaderUserId: 'leader',
     });
     expect(result.map((s) => s.userId)).toEqual(['far']);
+  });
+
+  it('never flags the leader even if they appear in members', () => {
+    const leader = member({
+      userId: 'leader',
+      role: 'leader',
+      coordinates: { latitude: 25.0478 + 0.01, longitude: 121.517 },
+    });
+    const near = member({ userId: 'near' });
+    const result = findStragglers({
+      members: [leader, near],
+      // Centroid would pull between them; exclude leader explicitly.
+      thresholdM: 100,
+      leaderUserId: 'leader',
+    });
+    expect(result.map((s) => s.userId)).not.toContain('leader');
   });
 
   it('does not flag a member within the threshold from the target', () => {
@@ -39,13 +56,12 @@ describe('findStragglers', () => {
       members: [leader, near],
       target: { latitude: 25.0478, longitude: 121.517 },
       thresholdM: 500,
+      leaderUserId: 'leader',
     });
     expect(result).toEqual([]);
   });
 
   it('falls back to the flock centroid when no target is given', () => {
-    // A cluster of 9 members keeps the centroid close to (25.0, 121.0) even
-    // with one far-off member pulling on the average.
     const cluster = Array.from({ length: 9 }, (_, i) =>
       member({ userId: `cluster-${i}`, coordinates: { latitude: 25.0, longitude: 121.0 } }),
     );
@@ -78,16 +94,18 @@ describe('findStragglers', () => {
       members: [leader, soloFar, subgroupFar, noCoords, far],
       target: { latitude: 25.0478, longitude: 121.517 },
       thresholdM: 500,
+      leaderUserId: 'leader',
     });
     expect(result.map((s) => s.userId)).toEqual(['far']);
   });
 
-  it('returns empty when fewer than 2 eligible members remain', () => {
+  it('returns empty when fewer than 2 eligible flock members remain', () => {
     const onlyOne = member({ userId: 'solo-leader' });
     const result = findStragglers({
       members: [onlyOne],
       target: { latitude: 25.0478, longitude: 121.517 },
       thresholdM: 500,
+      leaderUserId: 'solo-leader',
     });
     expect(result).toEqual([]);
   });
@@ -106,6 +124,7 @@ describe('findStragglers', () => {
       members: [leader, mid, farthest],
       target: { latitude: 25.0478, longitude: 121.517 },
       thresholdM: 500,
+      leaderUserId: 'leader',
     });
     expect(result.map((s) => s.userId)).toEqual(['farthest', 'mid']);
     expect(result[0].distanceM).toBeGreaterThan(result[1].distanceM);

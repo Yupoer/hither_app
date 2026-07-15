@@ -26,6 +26,7 @@ export {
   setJourneyStatus,
   setJourneyTarget,
   setStragglerConfig,
+  reportStraggler,
   updateGroupTripDetails,
   setSolo,
   selfSplit,

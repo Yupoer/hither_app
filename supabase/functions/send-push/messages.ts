@@ -33,6 +33,10 @@ export interface PushPayload {
   request_id?: string | null;
   count?: number | null;
   sender_name?: string;
+  /** Nickname of the member who fell behind (straggler). */
+  member_name?: string;
+  /** Optional distance in metres for straggler copy. */
+  distance_m?: number | null;
 }
 
 const COMMAND_LABEL: Record<string, string> = {
@@ -89,8 +93,13 @@ export function buildMessage(p: PushPayload): { title: string; body: string } {
         : { title: "暫停", body: "隊長已暫停前往集合點" };
     case "arrival":
       return { title: "隊友已抵達", body: "一位隊友已抵達集合點" };
-    case "straggler":
-      return { title: "隊友已脫隊", body: "一位隊友已離開主隊伍" };
+    case "straggler": {
+      const name = p.member_name?.trim();
+      return {
+        title: "隊友已脫隊",
+        body: name ? `${name} 已脫隊` : "一位隊友已離開主隊伍",
+      };
+    }
     case "live_activity":
       return { title: "Hither", body: "集合進度已更新" };
     case "location_refresh":

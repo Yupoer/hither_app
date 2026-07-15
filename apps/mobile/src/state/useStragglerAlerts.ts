@@ -8,36 +8,37 @@ interface UseStragglerAlertsResult {
 }
 
 /**
- * Straggler alert state for a group. Wraps `findStragglers` with hysteresis:
+ * Leader-side straggler state. Wraps `findStragglers` with hysteresis:
  * a member who trips the threshold stays flagged until they close back inside
- * 80% of it, so they don't flicker in/out near the boundary. Data-only — no
- * haptics or push here, callers decide how to surface it.
+ * 80% of it. Data-only — callers fire APN via RPC. Pass `enabled: false` for
+ * non-leaders so followers never run distance logic.
  */
 export function useStragglerAlerts(
   groupState: GroupState | null,
-  myCoordinates?: Coordinates,
+  leaderCoordinates: Coordinates | undefined,
+  options?: { enabled?: boolean; leaderUserId?: string },
 ): UseStragglerAlertsResult {
-  // userIds currently considered "alerting" (hysteresis state).
+  const enabled = options?.enabled ?? true;
+  const leaderUserId = options?.leaderUserId;
   const alertingRef = useRef<Set<string>>(new Set());
 
   const stragglers = useMemo(() => {
-    if (!groupState || !groupState.group.stragglerAlerts) {
+    if (!enabled || !groupState || !groupState.group.stragglerAlerts || !leaderCoordinates) {
       alertingRef.current = new Set();
       return [];
     }
     const thresholdM = groupState.group.stragglerThresholdM;
-    // Two bands: the full threshold (who newly qualifies) and the release
-    // band at 80% of it (who's still far enough to stay flagged). The release
-    // list is always a superset of the threshold list.
     const overThreshold = findStragglers({
       members: groupState.members,
-      target: myCoordinates,
+      target: leaderCoordinates,
       thresholdM,
+      leaderUserId,
     });
     const overRelease = findStragglers({
       members: groupState.members,
-      target: myCoordinates,
+      target: leaderCoordinates,
       thresholdM: thresholdM * 0.8,
+      leaderUserId,
     });
     const overThresholdIds = new Set(overThreshold.map((s) => s.userId));
     const overReleaseIds = new Set(overRelease.map((s) => s.userId));
@@ -52,7 +53,7 @@ export function useStragglerAlerts(
     alertingRef.current = stillAlerting;
 
     return overRelease.filter((s) => stillAlerting.has(s.userId));
-  }, [groupState, myCoordinates]);
+  }, [enabled, groupState, leaderCoordinates, leaderUserId]);
 
   return { stragglers };
 }

@@ -94,20 +94,20 @@ Deno.serve(async (req) => {
     const inSenderScope = (member: MembershipRow) =>
       member.subgroup_id === sender.subgroup_id;
 
-    // Meet-time alerts go to everyone in the sender's team/subgroup (including
-    // the leader who set the clock — "notify all"). Other alerts exclude the
-    // sender and solo members.
-    const meetBroadcast =
+    // Meet-time + straggler: notify everyone in scope including the sender
+    // (leader who set the clock / who detected the straggler). Other alerts
+    // exclude the sender and solo members.
+    const includeSenderBroadcast =
       payload.category === "meet_time_set" ||
       payload.category === "meet_time_cleared" ||
       payload.category === "meet_warning" ||
-      payload.category === "meet_due";
+      payload.category === "meet_due" ||
+      payload.category === "straggler";
     const wholeGroupCommand =
       payload.category === "leader_commands" || payload.category === "follower_requests";
 
-    // Alerts are scoped to the sender's main team/subgroup. Solo members and
-    // the sender never receive the corresponding general notification (except
-    // meet-time broadcasts).
+    // Alerts are scoped to the sender's main team/subgroup. Solo members never
+    // receive general notifications (except pure meet-time, which includes all).
     const alertCandidates = payload.category === "live_activity" ||
         payload.category === "location_refresh"
       ? []
@@ -119,11 +119,17 @@ Deno.serve(async (req) => {
               ? true
               : inSenderScope(member)
         )
-        .filter((member) =>
-          meetBroadcast
-            ? true
-            : member.user_id !== payload.sender_id && !member.solo
-        )
+        .filter((member) => {
+          if (payload.category === "meet_time_set" ||
+            payload.category === "meet_time_cleared" ||
+            payload.category === "meet_warning" ||
+            payload.category === "meet_due") {
+            return true;
+          }
+          if (member.solo) return false;
+          if (includeSenderBroadcast) return true;
+          return member.user_id !== payload.sender_id;
+        })
         .map((member) => member.user_id);
 
     const allowedAlertUsers = await filterNotificationPreferences(

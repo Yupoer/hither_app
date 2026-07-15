@@ -29,6 +29,17 @@ const locationRefreshMigration = readFileSync(
   ),
   'utf8',
 );
+const reportStragglerMigration = readFileSync(
+  join(
+    __dirname,
+    '../../../../supabase/migrations/20260716120000_report_straggler.sql',
+  ),
+  'utf8',
+);
+const pushMessages = readFileSync(
+  join(__dirname, '../../../../supabase/functions/send-push/messages.ts'),
+  'utf8',
+);
 const pushIndex = readFileSync(
   join(__dirname, '../../../../supabase/functions/send-push/index.ts'),
   'utf8',
@@ -117,5 +128,24 @@ describe('production push and live activity migration', () => {
         `revoke execute on function public.${functionName}() from public, anon, authenticated`,
       );
     }
+  });
+
+  it('adds a leader-only report_straggler RPC that fans out APNs', () => {
+    expect(reportStragglerMigration).toContain(
+      'create or replace function public.report_straggler',
+    );
+    expect(reportStragglerMigration).toContain("m.role = 'leader'");
+    expect(reportStragglerMigration).toContain("'straggler'");
+    expect(reportStragglerMigration).toContain('grant execute on function public.report_straggler');
+  });
+
+  it('includes the leader (sender) in straggler APNs recipients', () => {
+    expect(pushIndex).toContain('payload.category === "straggler"');
+    expect(pushIndex).toContain('includeSenderBroadcast');
+  });
+
+  it('names the straggler member in push copy when available', () => {
+    expect(pushMessages).toContain('member_name');
+    expect(pushMessages).toContain('已脫隊');
   });
 });
