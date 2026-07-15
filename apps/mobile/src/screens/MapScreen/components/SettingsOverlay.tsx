@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { ScrollView, Switch, Text, View, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
+import * as Updates from 'expo-updates';
 import OverlaySheet from '../../../components/OverlaySheet';
 import { Segmented } from './Segmented';
 import NotificationPreferencesCard from '../../../components/NotificationPreferencesCard';
@@ -131,6 +132,18 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
     Constants.expoConfig?.version ??
     Constants.nativeAppVersion ??
     '—';
+
+  const otaSummary = useMemo(() => {
+    // Expo Go / dev client: Updates may be disabled — still show a clear label.
+    if (__DEV__ || !Updates.isEnabled) {
+      return t('settings.otaDev');
+    }
+    if (Updates.isEmbeddedLaunch || !Updates.updateId) {
+      return t('settings.otaEmbedded');
+    }
+    const shortId = Updates.updateId.replace(/-/g, '').slice(0, 8);
+    return t('settings.otaUpdate', { id: shortId });
+  }, [t]);
 
   return (
     <OverlaySheet
@@ -312,6 +325,9 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
               <Text style={styles.settingsTopTitle}>{t('settings.aboutHither')}</Text>
               <Text style={styles.settingsTopDescription}>
                 {t('settings.version', { version: appVersion })}
+              </Text>
+              <Text style={styles.settingsTopDescription}>
+                {t('settings.otaLabel', { detail: otaSummary })}
               </Text>
             </View>
           </View>

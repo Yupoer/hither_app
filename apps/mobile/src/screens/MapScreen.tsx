@@ -405,8 +405,6 @@ export default function MapScreen({ route, navigation }: Props) {
     | 'arrival'
   >(null);
   const [arrivalDestination, setArrivalDestination] = useState<Destination | null>(null);
-  /** When set, closing the per-destination arrival sheet returns here. */
-  const [arrivalReturnTo, setArrivalReturnTo] = useState<null | 'arrivalManage'>(null);
   /** Draft selection in the my-status sheet; committed only via Done. */
   const [draftMyStatus, setDraftMyStatus] = useState<'follow' | 'solo' | 'away' | null>(null);
   const [statusApplying, setStatusApplying] = useState(false);
@@ -2328,6 +2326,17 @@ export default function MapScreen({ route, navigation }: Props) {
           <Text style={styles.listRowTrailing}>{t('map.edit')}</Text>
           <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
         </Pressable>
+        {isLeader && allScopedDestinations.length > 0 ? (
+          <Pressable
+            style={styles.listRow}
+            onPress={() => { lightTap(); setOverlay('arrivalManage'); }}
+            accessibilityRole="button"
+            accessibilityLabel={t('arrival.manage')}
+          >
+            <Text style={styles.listRowTitle}>{t('arrival.manage')}</Text>
+            <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
+          </Pressable>
+        ) : null}
         <Pressable style={styles.listRow} onPress={() => { lightTap(); setKmlVisible(true); }} accessibilityRole="button">
           <Text style={styles.listRowTitle}>
             {canEditItinerary ? t('kml.entry') : '匯入並請求隊長同意'}
@@ -2346,7 +2355,7 @@ export default function MapScreen({ route, navigation }: Props) {
     </>
   ), [
     t, styles, nextStopTitle, nextStopDistLabel, allScopedDestinations.length, canEditItinerary,
-    openHistoryOverlay,
+    openHistoryOverlay, isLeader,
   ]);
 
   // ─── 工具：快捷指令、脫隊示警（設定改走頭像旁 ⋯ 選單）────────────────
@@ -2874,7 +2883,6 @@ export default function MapScreen({ route, navigation }: Props) {
                                 onPress={(event) => {
                                   event.stopPropagation();
                                   registerCardActivity(dest.id);
-                                  setArrivalReturnTo(null);
                                   setArrivalDestination(dest);
                                   setOverlay('arrival');
                                 }}
@@ -3197,22 +3205,6 @@ export default function MapScreen({ route, navigation }: Props) {
               ))}
             </View>
           ) : null}
-          {isLeader && (state?.destinations.length ?? 0) > 0 ? (
-            <View style={styles.listGroup}>
-              <Pressable
-                style={styles.listRow}
-                onPress={() => setOverlay('arrivalManage')}
-                accessibilityRole="button"
-                accessibilityLabel={t('arrival.manage')}
-              >
-                <Text style={[styles.listRowTitle, styles.grow]}>{t('arrival.manage')}</Text>
-                <Text style={styles.listRowTrailing}>
-                  {state?.destinations.length ?? 0}
-                </Text>
-                <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
-              </Pressable>
-            </View>
-          ) : null}
           <DestinationReorderList
             groupId={groupId ?? undefined}
             destinations={allScopedDestinations}
@@ -3226,35 +3218,6 @@ export default function MapScreen({ route, navigation }: Props) {
             emptyLabel={t('settings.noDestinations')}
             onDragActiveChange={(active) => setRouteScrollEnabled(!active)}
           />
-          <Pressable
-            style={styles.addStop}
-            onPress={() => {
-              setOverlay(null);
-              setSearchVisible(true);
-            }}
-            accessibilityRole="button"
-          >
-            <View style={[styles.addStopIcon, { backgroundColor: accentMix(accent, 26) }]}>
-              <Ionicons name="add" size={16} color={accent} />
-            </View>
-            <Text style={[styles.addStopText, { color: accent }]}>
-              {canEditItinerary ? t('map.addStop') : '加入並請求隊長同意'}
-            </Text>
-          </Pressable>
-          <Pressable
-            style={styles.addStop}
-            onPress={() => {
-              setKmlVisible(true);
-            }}
-            accessibilityRole="button"
-          >
-            <View style={[styles.addStopIcon, { backgroundColor: accentMix(accent, 20) }]}>
-              <Ionicons name="document-attach-outline" size={16} color={accent} />
-            </View>
-            <Text style={[styles.addStopText, { color: accent }]}>
-              {canEditItinerary ? t('kml.entry') : '匯入並請求隊長同意'}
-            </Text>
-          </Pressable>
         </ScrollView>
       </OverlaySheet>
 
@@ -3431,45 +3394,77 @@ export default function MapScreen({ route, navigation }: Props) {
         styles={styles}
       />
 
-      {/* Arrival management hub — entry from route sheet; lists destinations. */}
+      {/* Arrival management — one page: every stop + member mark/undo on the right. */}
       <OverlaySheet
         visible={overlay === 'arrivalManage'}
-        onClose={() => setOverlay('route')}
+        onClose={() => setOverlay(null)}
         title={t('arrival.manage')}
         accent={accent}
         doneLabel={t('map.done')}
       >
         <ScrollView contentContainerStyle={styles.overlayBody}>
-          <View style={styles.listGroup}>
-            {(state?.destinations ?? []).map((destination) => (
-              <Pressable
-                key={`arrival-manage-${destination.id}`}
-                style={styles.listRow}
-                onPress={() => {
-                  setArrivalReturnTo('arrivalManage');
-                  setArrivalDestination(destination);
-                  setOverlay('arrival');
-                }}
-                accessibilityRole="button"
-              >
-                <Text style={[styles.listRowTitle, styles.grow]}>{destination.title}</Text>
-                <Text style={styles.listRowTrailing}>
-                  {destinationArrivals.filter((entry) => entry.destinationId === destination.id).length}
-                </Text>
-                <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
-              </Pressable>
-            ))}
-          </View>
+          {(state?.destinations ?? []).length === 0 ? (
+            <Text style={styles.overlayHint}>{t('settings.noDestinations')}</Text>
+          ) : (
+            (state?.destinations ?? []).map((destination) => {
+              const scopedMembers = members.filter(
+                (member) => member.subgroupId === destination.subgroupId,
+              );
+              const arrivedCount = destinationArrivals.filter(
+                (entry) => entry.destinationId === destination.id,
+              ).length;
+              return (
+                <View key={`arrival-manage-${destination.id}`} style={styles.listGroup}>
+                  <View style={styles.listRow}>
+                    <Text style={[styles.listRowTitle, styles.grow]} numberOfLines={2}>
+                      {destination.title}
+                    </Text>
+                    <Text style={styles.listRowTrailing}>
+                      {arrivedCount}/{scopedMembers.length}
+                    </Text>
+                  </View>
+                  {scopedMembers.map((member, index) => {
+                    const arrived = destinationArrivals.some(
+                      (entry) =>
+                        entry.destinationId === destination.id && entry.userId === member.userId,
+                    );
+                    return (
+                      <View
+                        key={`${destination.id}-${member.userId}`}
+                        style={[
+                          styles.flockRow,
+                          index === scopedMembers.length - 1 && styles.flockRowLast,
+                        ]}
+                      >
+                        <Text style={[styles.flockName, styles.grow]} numberOfLines={1}>
+                          {member.name}
+                        </Text>
+                        <Pressable
+                          style={styles.chip}
+                          onPress={() => handleArrival(destination, member.userId, !arrived)}
+                          accessibilityRole="button"
+                          accessibilityLabel={t(arrived ? 'arrival.undo' : 'arrival.mark')}
+                        >
+                          <Text style={styles.chipText}>
+                            {t(arrived ? 'arrival.undo' : 'arrival.mark')}
+                          </Text>
+                        </Pressable>
+                      </View>
+                    );
+                  })}
+                </View>
+              );
+            })
+          )}
         </ScrollView>
       </OverlaySheet>
 
+      {/* Single-destination arrival (gathering-card shortcut only). */}
       <OverlaySheet
         visible={overlay === 'arrival'}
         onClose={() => {
-          const back = arrivalReturnTo;
           setArrivalDestination(null);
-          setArrivalReturnTo(null);
-          setOverlay(back);
+          setOverlay(null);
         }}
         title={arrivalDestination?.title ?? t('map.arrivalProgress')}
         accent={accent}
@@ -4543,11 +4538,13 @@ const makeStyles = (
     dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.35)' },
     dotActive: { width: 18, backgroundColor: accent },
 
-    // Peek chrome — larger controls, snug to sheet top edge (grabber is tighter too).
+    // Peek chrome: bottom pad = top pad + BottomSheet grabZone height so the
+    // grabber (paddingTop 6 + bar 4 + paddingBottom 4 ≈ 14) is included in the
+    // visual balance — equal pads leave the action row looking low.
     sheetHeaderBlock: {
       paddingHorizontal: 12,
-      paddingTop: 0,
-      paddingBottom: 6,
+      paddingTop: 8,
+      paddingBottom: 8 + 14,
     },
     sheetTitleRow: {
       flexDirection: 'row',
