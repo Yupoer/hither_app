@@ -1,0 +1,32 @@
+{
+  "name": "workflow_logs",
+  "description": "Fetches logs for a specific job in an EAS workflow run. Call without sectionIndex or phase to get a summary of log sections (phase names and line ranges); then call again with sectionIndex or phase to fetch that section.",
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "workflowRunId": {
+        "type": "string",
+        "description": "The ID of the workflow run"
+      },
+      "jobKey": {
+        "type": "string",
+        "description": "The key or ID of the job to fetch logs for. Use workflow_info to see available job keys."
+      },
+      "sectionIndex": {
+        "description": "1-based index of a log section to fetch (from the summary). Omit to get a summary of sections first.",
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 9007199254740991
+      },
+      "phase": {
+        "description": "Phase name to fetch (e.g. RUN_GRADLEW, SPIN_UP_BUILDER). Omit to get a summary of sections first.",
+        "type": "string"
+      }
+    },
+    "required": [
+      "workflowRunId",
+      "jobKey"
+    ]
+  }
+}

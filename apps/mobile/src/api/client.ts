@@ -60,7 +60,16 @@ export type { ItineraryRow } from './services/DestinationService';
 export {
   recordVisitedWaypoint,
   fetchVisitedWaypoints,
+  deleteVisitedWaypoint,
 } from './services/WaypointService';
+
+export {
+  submitGatherPointRequest,
+  fetchPendingGatherPointRequests,
+  resolveGatherPointRequest,
+  fetchDestinationArrivals,
+  setDestinationArrival,
+} from './services/GatheringWorkflowService';
 
 export {
   updateNickname,
@@ -86,7 +95,10 @@ export {
   setNotificationPreferences,
 } from './services/NotificationService';
 
-export { updateMyLocation } from './services/LocationService';
+export {
+  requestGroupLocationRefresh,
+  updateMyLocation,
+} from './services/LocationService';
 
 export {
   upsertLiveActivitySession,

@@ -30,6 +30,17 @@ export function useCarouselSelection({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [destinations.length, windowWidth]);
 
+  // Programmatic selection (leader journey broadcast → follower force-follow,
+  // startNavigation reorder) must move the carousel; user swipes already land
+  // on the same offset so re-scrolling is a no-op.
+  useEffect(() => {
+    if (destinations.length === 0) return;
+    carouselRef.current?.scrollTo({
+      x: selectedIndex * windowWidth,
+      animated: true,
+    });
+  }, [selectedIndex, windowWidth, destinations.length, carouselRef]);
+
   const selectedDestination: Destination | undefined = destinations[selectedIndex];
 
   const handleMomentumEnd = useCallback(

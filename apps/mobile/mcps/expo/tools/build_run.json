@@ -1,0 +1,51 @@
+{
+  "name": "build_run",
+  "description": "Triggers a new EAS build using a build profile from eas.json. Requires a GitHub repository to be connected to the project. Provide either appId (from app.json \"extra.eas.projectId\") OR appFullName (e.g., \"@owner/my-app\").",
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "appId": {
+        "description": "The Expo project/app ID (UUID). Get this from app.json at \"extra.eas.projectId\". Either appId or appFullName is required.",
+        "type": "string"
+      },
+      "appFullName": {
+        "description": "The full name of the app (e.g., \"@owner/my-app\"). Use this if you don't have access to app.json. Either appId or appFullName is required.",
+        "type": "string"
+      },
+      "platform": {
+        "type": "string",
+        "enum": [
+          "ANDROID",
+          "IOS"
+        ],
+        "description": "The platform to build for (ANDROID or IOS)"
+      },
+      "buildProfile": {
+        "type": "string",
+        "description": "The build profile name from eas.json (e.g., \"development\", \"preview\", \"production\")"
+      },
+      "gitRef": {
+        "type": "string",
+        "description": "Git reference (branch name, tag, or commit SHA) to build from"
+      },
+      "baseDirectory": {
+        "description": "Base directory for monorepos (e.g., \"apps/mobile\")",
+        "type": "string"
+      },
+      "autoSubmit": {
+        "description": "Whether to automatically submit the build after completion",
+        "type": "boolean"
+      },
+      "submitProfile": {
+        "description": "Submit profile to use if autoSubmit is true",
+        "type": "string"
+      }
+    },
+    "required": [
+      "platform",
+      "buildProfile",
+      "gitRef"
+    ]
+  }
+}

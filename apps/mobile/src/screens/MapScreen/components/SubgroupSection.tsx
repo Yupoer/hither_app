@@ -28,10 +28,15 @@ export function SubgroupSection({
   styles,
 }: SubgroupSectionProps) {
   const { t } = useTranslation();
-  // BUG-12: when any subgroup exists, surface the main-team remainder so the
-  // sheet doesn't look like only small teams exist.
+  // Only occupied teams count. Empty leftovers after leave/self-merge must not
+  // leave a "0 人" card (or keep the virtual 主團隊 block alive).
+  const occupiedSubgroups = subgroups.filter((sg) =>
+    flock.some((f) => f.subgroupId === sg.id),
+  );
+  // BUG-12: when any live subgroup exists, surface the main-team remainder so
+  // the sheet doesn't look like only small teams exist.
   const mainMembers = flock.filter((f) => !f.subgroupId);
-  const showMainTeam = subgroups.length > 0;
+  const showMainTeam = occupiedSubgroups.length > 0;
 
   return (
     <>
@@ -48,9 +53,9 @@ export function SubgroupSection({
           {mainMembers.map((f, i) => renderFlockRow(f, i === mainMembers.length - 1, i))}
         </View>
       )}
-      {subgroups.map((sg) => {
+      {occupiedSubgroups.map((sg) => {
         const memberRows = flock.filter((f) => f.subgroupId === sg.id);
-        const parentName = subgroups.find((s) => s.id === sg.parentId)?.name;
+        const parentName = occupiedSubgroups.find((s) => s.id === sg.parentId)?.name;
         return (
           <View key={sg.id} style={styles.subgroupCard}>
             <View style={styles.subgroupHead}>

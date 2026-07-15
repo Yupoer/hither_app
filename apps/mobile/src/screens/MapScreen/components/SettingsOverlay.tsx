@@ -34,6 +34,11 @@ interface SettingsOverlayProps {
   onOpenStraggler?: () => void;
   /** Switch active group (MyTeams) — not on the map sheet header. */
   onSwitchGroup?: () => void;
+  /**
+   * Return to RoleSelect (create / join) without leaving the current group.
+   * Membership stays so MyTeams and the back stack can re-enter the map.
+   */
+  onGoHome?: () => void;
   styles: any;
 }
 
@@ -93,6 +98,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
   onOpenCustomQuickCommand,
   onOpenStraggler,
   onSwitchGroup,
+  onGoHome,
   styles,
 }: SettingsOverlayProps) {
   const { t } = useTranslation();
@@ -110,11 +116,13 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
     textScale,
     obliqueLocate,
     liveActivityEnabled,
+    gatherCardDefaultExpanded,
     setLanguage,
     setThemeName,
     setTextScale,
     setObliqueLocate,
     setLiveActivityEnabled,
+    setGatherCardDefaultExpanded,
   } = usePreferences();
   const { colors } = useTheme();
   const accent = colors.accent;
@@ -153,6 +161,14 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
               title={t('map.switchGroup')}
               description={t('settings.switchGroupHint')}
               onPress={onSwitchGroup}
+              styles={styles}
+            />
+          ) : null}
+          {onGoHome ? (
+            <NavRow
+              title={t('settings.createOrJoin')}
+              description={t('settings.createOrJoinHint')}
+              onPress={onGoHome}
               styles={styles}
             />
           ) : null}
@@ -196,6 +212,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
         <Segmented
           accent={accent}
           options={[
+            { key: '0.8', label: t('settings.textSizeXs') },
             { key: '0.9', label: t('settings.textSizeSm') },
             { key: '1', label: t('settings.textSizeMd') },
             { key: '1.1', label: t('settings.textSizeLg') },
@@ -238,6 +255,25 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             thumbColor="#fff"
             ios_backgroundColor="rgba(120,120,128,0.32)"
             accessibilityLabel={t('settings.liveActivity')}
+          />
+        </View>
+        <View style={styles.accuracyRow}>
+          <View style={styles.accuracyCopy}>
+            <Text style={styles.accuracyLabel}>
+              {t('settings.gatherCardDefaultExpanded')}
+            </Text>
+            <Text style={styles.accuracySubhint}>
+              {t('settings.gatherCardDefaultExpandedHint')}
+            </Text>
+          </View>
+          <Switch
+            style={styles.accuracySwitch}
+            value={gatherCardDefaultExpanded}
+            onValueChange={setGatherCardDefaultExpanded}
+            trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
+            thumbColor="#fff"
+            ios_backgroundColor="rgba(120,120,128,0.32)"
+            accessibilityLabel={t('settings.gatherCardDefaultExpanded')}
           />
         </View>
         {isLeader && onOpenStraggler ? (

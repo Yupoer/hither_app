@@ -70,6 +70,7 @@ import {
   usePreferences,
   useTheme,
   MEET_RED_OPTIONS,
+  DEFAULT_MEET_RED_MIN,
   type Language,
 } from '../state/PreferencesContext';
 import { useTranslation, type TranslationKey } from '../i18n';
@@ -77,6 +78,7 @@ import { useDeviceLocation } from './MapScreen/hooks/useDeviceLocation';
 import { useCarouselSelection } from './MapScreen/hooks/useCarouselSelection';
 import { useJourneyNavigation } from './MapScreen/hooks/useJourneyNavigation';
 import { useMapKitRoutes } from './MapScreen/hooks/useMapKitRoutes';
+import { useGatherCardExpansion } from './MapScreen/hooks/useGatherCardExpansion';
 import { SettingsOverlay } from './MapScreen/components/SettingsOverlay';
 import { ProfileOverlay } from './MapScreen/components/ProfileOverlay';
 import { SubgroupSection } from './MapScreen/components/SubgroupSection';
@@ -91,7 +93,11 @@ import {
   stopBackgroundJourney,
 } from '../state/backgroundJourney';
 import {
-  ARRIVAL_RADIUS_M,
+  consumePendingLocationPermission,
+  consumePendingLocationRefresh,
+  rememberPendingLocationPermission,
+} from '../state/backgroundLocationRefresh';
+import {
   gatedJourneyProgress,
   initialJourneyDistance,
   sameMetricDistance,
@@ -106,9 +112,8 @@ import {
   type TravelMode,
 } from '../utils/geo';
 import { dotWindow } from '../utils/pagination';
-import { minutesUntil } from '../utils/meetTime';
+import { alignMeetTimeToTripDay, minutesUntil } from '../utils/meetTime';
 import { locationFreshness } from '../utils/locationFreshness';
-import { refreshLocations } from '../utils/locationRefresh';
 import { groupHistoryByDay, type HistoryDayGroup } from '../utils/history';
 import { liquidGlass, location, notifications, type MapRegion, type PlaceResult } from '../native';
 import {
@@ -116,6 +121,9 @@ import {
   deleteDestination,
   fetchSentInvites,
   fetchVisitedWaypoints,
+  deleteVisitedWaypoint,
+  fetchDestinationArrivals,
+  fetchPendingGatherPointRequests,
   inviteToSubgroup,
   recordVisitedWaypoint,
   reorderDestinations,
@@ -126,11 +134,15 @@ import {
   setJourneyStatus,
   setSolo,
   setStragglerConfig,
-  sendCommand,
   leaveGroups,
+  requestGroupLocationRefresh,
+  resolveGatherPointRequest,
+  setDestinationArrival,
+  submitGatherPointRequest,
   updateMyLocation,
   updateGroupTripDetails,
 } from '../api/client';
+import { supabase } from '../api/supabase';
 import { captureScreen } from 'react-native-view-shot';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ONBOARDING_STORAGE_KEY } from '../onboarding/sync';
@@ -139,7 +151,15 @@ import { confirmAction } from '../utils/confirm';
 import { logEvent, logError } from '../utils/activityLog';
 import { lightTap, mediumTap, rigidTap, selectionTick, alertBuzz } from '../utils/haptics';
 import { AVATAR_EMOJI, AVATAR_COLORS } from '../constants/avatars';
-import type { Coordinates, Destination, MemberLocation } from '../types';
+import type {
+  Coordinates,
+  Destination,
+  DestinationArrival,
+  GatherPointRequest,
+  GatherPointRequestItem,
+  MemberLocation,
+  VisitedWaypoint,
+} from '../types';
 import type { KmlPlacemark } from '../utils/kml';
 import { FREE_LIMITS } from '../entitlements';
 import { themes, THEME_ORDER, type ThemeName } from '../theme';
@@ -148,7 +168,7 @@ import { glass, accentMix, memberColor } from '../glass';
 type Props = NativeStackScreenProps<RootStackParamList, 'Map'>;
 
 // Auto-advance to the next gathering point once the leader is this close —
-// separate from ARRIVAL_RADIUS_M, which drives the flock's "arrived" status.
+// separate from the server's 30 m arrival boundary.
 const AUTO_ADVANCE_RADIUS_M = 50;
 // Cap on gathering-point pagination dots shown at once (see utils/pagination.ts).
 const DOTS_MAX_VISIBLE = 5;
@@ -214,9 +234,12 @@ export default function MapScreen({ route, navigation }: Props) {
     obliqueLocate,
     liveActivityEnabled,
     meetRedMin,
+    gatherCardDefaultExpanded,
     setMeetRedMin,
     setHighAccuracy,
   } = usePreferences();
+  const { isCardExpanded, toggleCard, registerCardActivity } =
+    useGatherCardExpansion(gatherCardDefaultExpanded);
   const { colors } = useTheme();
   const accent = colors.accent;
   const { t } = useTranslation();
@@ -237,8 +260,16 @@ export default function MapScreen({ route, navigation }: Props) {
         narrowScreen,
         fontBucket,
         fontLayout.textScale,
+        fontLayout.boldText,
       ),
-    [accent, fontLayout.scale, fontLayout.textScale, narrowScreen, fontBucket],
+    [
+      accent,
+      fontLayout.scale,
+      fontLayout.textScale,
+      fontLayout.boldText,
+      narrowScreen,
+      fontBucket,
+    ],
   );
   // Embedded themed components (reorder list, notifications, commands) always
   // render on the dark glass overlay — force the night palette so they stay dark.
@@ -285,9 +316,57 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [state?.destinations, myScopeId]);
   
   const [optimisticDestinations, setOptimisticDestinations] = useState<Destination[] | null>(null);
-  const destinations = optimisticDestinations ?? rawDestinations;
+  const allScopedDestinations = optimisticDestinations ?? rawDestinations;
+  const [destinationArrivals, setDestinationArrivals] = useState<DestinationArrival[]>([]);
+  const [gatherPointRequests, setGatherPointRequests] = useState<GatherPointRequest[]>([]);
+  const myCompletedDestinationIds = useMemo(
+    () => new Set(
+      destinationArrivals
+        .filter((arrival) => arrival.userId === user?.id)
+        .map((arrival) => arrival.destinationId),
+    ),
+    [destinationArrivals, user?.id],
+  );
+  const destinations = useMemo(
+    () => allScopedDestinations.filter((dest) => !myCompletedDestinationIds.has(dest.id)),
+    [allScopedDestinations, myCompletedDestinationIds],
+  );
   const optimisticTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
-  const canEditItinerary = isLeader || myScopeId != null;
+  const canEditItinerary = !!isLeader;
+
+  const loadGatheringWorkflow = useCallback(async () => {
+    if (!groupId || isDemoGroup(groupId)) return;
+    const [arrivals, requests] = await Promise.all([
+      fetchDestinationArrivals(groupId),
+      isLeader ? fetchPendingGatherPointRequests(groupId) : Promise.resolve([]),
+    ]);
+    setDestinationArrivals(arrivals);
+    setGatherPointRequests(requests);
+  }, [groupId, isLeader]);
+
+  useEffect(() => {
+    if (!groupId || isDemoGroup(groupId)) return;
+    void loadGatheringWorkflow().catch(() => undefined);
+    const channel = supabase
+      .channel(`gathering-workflow:${groupId}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'destination_arrivals', filter: `group_id=eq.${groupId}`,
+      }, () => void loadGatheringWorkflow())
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'gather_point_requests', filter: `group_id=eq.${groupId}`,
+      }, (payload) => {
+        void loadGatheringWorkflow();
+        if (
+          isLeader
+          && payload.eventType === 'INSERT'
+          && payload.new.requester_id !== user?.id
+        ) {
+          Alert.alert(t('gatherRequest.newTitle'), t('gatherRequest.newBody'));
+        }
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [groupId, isLeader, loadGatheringWorkflow, t, user?.id]);
 
   // --- Sheet / overlay / island UI state -----------------------------------
   // Measured height of the sheet's pinned header (grabber + search row) —
@@ -307,9 +386,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const [detent, setDetent] = useState(0);
   /** Mid/Full sheet body: 成員 · 路線 · 工具. */
   const [sheetPane, setSheetPane] = useState<'members' | 'route' | 'tools'>('members');
-  const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
   const [pressedCardId, setPressedCardId] = useState<string | null>(null);
-  const pendingExpandId = useRef<string | null>(null);
   const [overlay, setOverlay] = useState<
     null
     | 'route'
@@ -322,7 +399,9 @@ export default function MapScreen({ route, navigation }: Props) {
     | 'invite'
     | 'commands'
     | 'myStatus'
+    | 'arrival'
   >(null);
+  const [arrivalDestination, setArrivalDestination] = useState<Destination | null>(null);
   /** Draft selection in the my-status sheet; committed only via Done. */
   const [draftMyStatus, setDraftMyStatus] = useState<'follow' | 'solo' | 'away' | null>(null);
   const [statusApplying, setStatusApplying] = useState(false);
@@ -333,17 +412,18 @@ export default function MapScreen({ route, navigation }: Props) {
   const [feedbackShot, setFeedbackShot] = useState<string | null>(null);
   // Visited-waypoint history — fetched fresh each time the overlay opens.
   const [historyGroups, setHistoryGroups] = useState<HistoryDayGroup[]>([]);
+  const loadHistory = useCallback(async () => {
+    const items = await fetchVisitedWaypoints(groupId ?? undefined);
+    const named = items.map((item) => ({
+      ...item,
+      userName: members.find((member) => member.userId === item.userId)?.name,
+    }));
+    setHistoryGroups(groupHistoryByDay(named));
+  }, [groupId, members]);
   useEffect(() => {
     if (overlay !== 'history') return;
-    let cancelled = false;
-    // BUG-17: history is team-scoped when we have a groupId.
-    void fetchVisitedWaypoints(groupId ?? undefined).then((items) => {
-      if (!cancelled) setHistoryGroups(groupHistoryByDay(items));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [overlay, groupId]);
+    void loadHistory().catch(() => undefined);
+  }, [overlay, loadHistory]);
   // "Invite a teammate" picker, opened from my own subgroup card.
   const [inviteSheetOpen, setInviteSheetOpen] = useState(false);
   // Invites I've sent for my subgroup that are still pending — shown on the
@@ -401,11 +481,12 @@ export default function MapScreen({ route, navigation }: Props) {
     setPaywallVisible(true);
   }, []);
 
-  // --- Meet-time countdown + editor (iOS embeds a spinner overlay; Android
-  // opens the native dialog imperatively) -------------------------------------
-  const [meetTimeEditor, setMeetTimeEditor] = useState<{ id: string; value: Date } | null>(
-    null,
-  );
+  // --- Meet-time countdown + editor (date + time; red threshold shared via DB)
+  const [meetTimeEditor, setMeetTimeEditor] = useState<{
+    id: string;
+    value: Date;
+    redMin: number;
+  } | null>(null);
   const [nowTick, setNowTick] = useState(() => new Date());
   const hasMeetTimes = destinations.some((d) => d.meetAt);
   const hasChangingLocationAges = members.some((m) => {
@@ -418,8 +499,8 @@ export default function MapScreen({ route, navigation }: Props) {
     return () => clearInterval(id);
   }, [hasMeetTimes, hasChangingLocationAges]);
 
-  // The soonest gathering point whose meet time is still ahead — the one worth
-  // scheduling an "it's time" alert for.
+  // The soonest gathering point whose meet time is still ahead — schedule local
+  // due + red-threshold warning as a device-side backup to server APNs.
   const nextMeet = useMemo(() => {
     const now = Date.now();
     return (
@@ -433,13 +514,34 @@ export default function MapScreen({ route, navigation }: Props) {
     );
   }, [destinations]);
 
-  // Fire a local notification + buzz when that meet time arrives. OS-scheduled,
-  // so it shows (and vibrates, per the user's notification settings) even from
-  // the lock screen; the foreground listener adds an in-app buzz on top.
   useEffect(() => {
     if (!nextMeet?.meetAt) return;
-    let id: string | null = null;
+    const meetAt = new Date(nextMeet.meetAt as string);
+    const redMin = nextMeet.meetRedMinutes ?? meetRedMin ?? DEFAULT_MEET_RED_MIN;
+    const warnAt = new Date(meetAt.getTime() - redMin * 60_000);
+    const ids: string[] = [];
     let cancelled = false;
+
+    const track = (nid: string | null) => {
+      if (!nid) return;
+      if (cancelled) void notifications.cancelScheduledNotification(nid);
+      else ids.push(nid);
+    };
+
+    // Red-zone warning (e.g. enter 9:59 when threshold is 10 min).
+    if (warnAt.getTime() > Date.now()) {
+      void notifications
+        .scheduleLocalNotificationAt(
+          {
+            title: t('meetTime.warnTitle'),
+            body: t('meetTime.warnBody', { title: nextMeet.title, minutes: redMin }),
+            data: { kind: 'meetTimeWarn', destinationId: nextMeet.id },
+          },
+          warnAt,
+        )
+        .then(track);
+    }
+
     void notifications
       .scheduleLocalNotificationAt(
         {
@@ -447,33 +549,83 @@ export default function MapScreen({ route, navigation }: Props) {
           body: t('meetTime.notifyBody', { title: nextMeet.title }),
           data: { kind: 'meetTime', destinationId: nextMeet.id },
         },
-        new Date(nextMeet.meetAt as string),
+        meetAt,
       )
-      .then((nid) => {
-        if (cancelled && nid) void notifications.cancelScheduledNotification(nid);
-        else id = nid;
-      });
+      .then(track);
+
     const off = notifications.addForegroundListener((data) => {
-      if (data.kind === 'meetTime') alertBuzz();
+      if (data.kind === 'meetTime' || data.kind === 'meetTimeWarn') alertBuzz();
     });
     return () => {
       cancelled = true;
-      if (id) void notifications.cancelScheduledNotification(id);
+      for (const id of ids) void notifications.cancelScheduledNotification(id);
       off();
     };
-  }, [nextMeet?.id, nextMeet?.meetAt, t]);
+  }, [nextMeet?.id, nextMeet?.meetAt, nextMeet?.meetRedMinutes, nextMeet?.title, meetRedMin, t]);
 
-  const persistMeetTime = useCallback((destinationId: string, value: Date | null) => {
-    setDestinationMeetTime(destinationId, value ? value.toISOString() : null)
-      .then(() => refresh())
-      .catch(() => Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg')));
-  }, [refresh, t]);
+  const persistMeetTime = useCallback(
+    (destinationId: string, value: Date | null, redMin?: number) => {
+      setDestinationMeetTime(
+        destinationId,
+        value ? value.toISOString() : null,
+        value ? (redMin ?? meetRedMin ?? DEFAULT_MEET_RED_MIN) : null,
+      )
+        .then(() => {
+          if (typeof redMin === 'number') setMeetRedMin(redMin);
+          return refresh();
+        })
+        .catch(() => Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg')));
+    },
+    [refresh, t, meetRedMin, setMeetRedMin],
+  );
 
-  const openMeetTimePicker = useCallback((dest: Destination) => {
-    if (!canEditItinerary) return;
-    const initial = dest.meetAt ? new Date(dest.meetAt) : new Date();
-    setMeetTimeEditor({ id: dest.id, value: initial });
-  }, [canEditItinerary]);
+  const openMeetTimePicker = useCallback(
+    (dest: Destination) => {
+      if (!canEditItinerary) return;
+      const initial = alignMeetTimeToTripDay(
+        dest.meetAt ? new Date(dest.meetAt) : new Date(),
+        group?.departureDate,
+        dest.day || 1,
+      );
+      const red =
+        dest.meetRedMinutes ??
+        ((MEET_RED_OPTIONS as readonly number[]).includes(meetRedMin)
+          ? meetRedMin
+          : DEFAULT_MEET_RED_MIN);
+      setMeetTimeEditor({ id: dest.id, value: initial, redMin: red });
+    },
+    [canEditItinerary, group?.departureDate, meetRedMin],
+  );
+
+  const openAndroidMeetDate = useCallback(() => {
+    if (!meetTimeEditor) return;
+    DateTimePickerAndroid.open({
+      value: meetTimeEditor.value,
+      mode: 'date',
+      minimumDate: new Date(new Date().setHours(0, 0, 0, 0)),
+      onChange: (event, selected) => {
+        if (event.type !== 'set' || !selected) return;
+        const next = new Date(meetTimeEditor.value);
+        next.setFullYear(selected.getFullYear(), selected.getMonth(), selected.getDate());
+        setMeetTimeEditor((s) => (s ? { ...s, value: next } : s));
+        // Chain into time picker so date+time is one flow on Android.
+        DateTimePickerAndroid.open({
+          value: next,
+          mode: 'time',
+          is24Hour: true,
+          onChange: (timeEvent, timeSelected) => {
+            if (timeEvent.type !== 'set' || !timeSelected) return;
+            setMeetTimeEditor((s) => {
+              if (!s) return s;
+              const merged = new Date(s.value);
+              merged.setHours(timeSelected.getHours(), timeSelected.getMinutes(), 0, 0);
+              return { ...s, value: merged };
+            });
+          },
+        });
+      },
+    });
+  }, [meetTimeEditor]);
   // Freeze the route overlay's scroll while a stop is being drag-reordered so
   // the two vertical gestures never fight.
   const [routeScrollEnabled, setRouteScrollEnabled] = useState(true);
@@ -531,6 +683,7 @@ export default function MapScreen({ route, navigation }: Props) {
     groupId,
     isLeader,
     destinations,
+    navigationDestinations: allScopedDestinations,
     selectedDestination,
     fromCoords,
     refresh,
@@ -574,6 +727,25 @@ export default function MapScreen({ route, navigation }: Props) {
   const [distanceSource, setDistanceSource] = useState<DistanceSource | undefined>();
   const [progressDepartedStart, setProgressDepartedStart] = useState(false);
   const backgroundPermissionDeniedRef = useRef<string | null>(null);
+  const showLocationPermissionAlert = useCallback(
+    (
+      title = t('location.permissionTitle'),
+      body = t('location.permissionBody'),
+    ) => {
+      Alert.alert(
+        title,
+        body,
+        [
+          { text: t('common.cancel'), style: 'cancel' },
+          {
+            text: t('location.openSettings'),
+            onPress: () => void Linking.openSettings().catch(() => undefined),
+          },
+        ],
+      );
+    },
+    [t],
+  );
 
   // Journey progress baseline (foreground only) — separate from GPS ownership.
   useEffect(() => {
@@ -674,10 +846,7 @@ export default function MapScreen({ route, navigation }: Props) {
     }).then((result) => {
       if (result === 'permission_denied') {
         backgroundPermissionDeniedRef.current = key;
-        Alert.alert(
-          '需要背景定位',
-          '全天群組定位與鎖定螢幕導航需要「永遠」取用位置。請在設定允許後，鎖定螢幕仍可省電更新位置。',
-        );
+        void rememberPendingLocationPermission();
       }
     });
   }, [
@@ -687,6 +856,7 @@ export default function MapScreen({ route, navigation }: Props) {
     highAccuracy,
     journeyActive,
     navTarget,
+    showLocationPermissionAlert,
     travelMode,
   ]);
 
@@ -805,21 +975,105 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [refresh, refreshDeviceLocation, deviceCoords, obliqueLocate]);
 
   const [refreshingLocations, setRefreshingLocations] = useState(false);
-  const refreshLocationsInFlight = useRef(false);
+  const [refreshCooldownUntil, setRefreshCooldownUntil] = useState(0);
+  const [refreshClock, setRefreshClock] = useState(() => Date.now());
+  const refreshCooldownRemaining = Math.max(
+    0,
+    Math.ceil((refreshCooldownUntil - refreshClock) / 1000),
+  );
+
+  useEffect(() => {
+    if (refreshCooldownUntil <= Date.now()) return;
+    const timer = setInterval(() => setRefreshClock(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [refreshCooldownUntil]);
+
+  const handleLocationRefreshRequest = useCallback(async (refreshGroupId = groupId) => {
+    if (!refreshGroupId) return;
+    const permission = await location.getPermissionState().catch(() => null);
+    if (!permission || permission.foregroundStatus !== 'granted') {
+      if (permission?.foregroundCanAskAgain !== false) {
+        const granted = await location.requestPermission();
+        if (granted) return handleLocationRefreshRequest(refreshGroupId);
+      }
+      showLocationPermissionAlert();
+      return;
+    }
+
+    const fix = await location.getCurrentLocation(false).catch(() => null);
+    if (!fix) {
+      showLocationPermissionAlert();
+      return;
+    }
+    await updateMyLocation(fix.coordinates, refreshGroupId).catch(() => undefined);
+    await refresh().catch(() => undefined);
+  }, [groupId, refresh, showLocationPermissionAlert]);
+
+  useEffect(() => {
+    const remove = notifications.addForegroundListener((data) => {
+      if (data.category !== 'location_refresh') return;
+      void handleLocationRefreshRequest(
+        typeof data.groupId === 'string' ? data.groupId : groupId,
+      );
+    });
+    return remove;
+  }, [groupId, handleLocationRefreshRequest]);
+
+  useEffect(() => {
+    if (appState !== 'active') return;
+    void Promise.all([
+      location.getPermissionState().catch(() => null),
+      consumePendingLocationPermission(),
+    ]).then(([permission, pending]) => {
+      if (permission?.backgroundStatus === 'granted') {
+        backgroundPermissionDeniedRef.current = null;
+      }
+      if (pending && permission?.backgroundStatus !== 'granted') {
+        showLocationPermissionAlert(
+          '需要背景定位',
+          '全天群組定位與鎖定螢幕導航需要「永遠」取用位置。請在設定允許後，鎖定螢幕仍可省電更新位置。',
+        );
+      }
+    });
+    void consumePendingLocationRefresh(groupId).then((pendingGroupId) => {
+      if (pendingGroupId && pendingGroupId === groupId) {
+        void handleLocationRefreshRequest(pendingGroupId);
+      }
+    });
+  }, [
+    appState,
+    groupId,
+    handleLocationRefreshRequest,
+    showLocationPermissionAlert,
+  ]);
+
   const refreshAllLocations = useCallback(async () => {
-    if (refreshLocationsInFlight.current) return;
-    refreshLocationsInFlight.current = true;
+    if (!groupId || refreshingLocations || refreshCooldownRemaining > 0) return;
     setRefreshingLocations(true);
     try {
-      const result = await refreshLocations(refreshDeviceLocation, refresh);
-      if (result !== 'ok') {
-        Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
+      if (isDemoGroup(groupId)) {
+        await refresh();
+        return;
       }
+
+      const result = await requestGroupLocationRefresh(groupId);
+      const retryAfter = Math.max(0, result.retryAfterSeconds);
+      setRefreshCooldownUntil(Date.now() + retryAfter * 1000);
+      setRefreshClock(Date.now());
+      if (result.accepted) {
+        await refresh();
+        Alert.alert(t('map.refreshLocationsAccepted'));
+      } else {
+        Alert.alert(
+          t('map.refreshLocationsCooldown', { seconds: retryAfter }),
+        );
+      }
+    } catch {
+      Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
     } finally {
-      refreshLocationsInFlight.current = false;
       setRefreshingLocations(false);
     }
-  }, [refresh, refreshDeviceLocation, t]);
+  }, [groupId, refresh, refreshingLocations, refreshCooldownRemaining, t]);
 
   const fitAllMembers = useCallback(() => {
     mapRef.current?.fitToMembers();
@@ -837,27 +1091,31 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const closeSearch = useCallback(() => setSearchVisible(false), []);
 
-  // BUG-14: non-editors notify the leader with a plain-text place suggestion.
+  // Followers submit durable, actionable requests instead of plain-text commands.
   const notifyLeaderPlace = useCallback(
-    async (label: string, source: 'search' | 'kml') => {
+    async (items: GatherPointRequestItem[], source: 'search' | 'kml') => {
       if (!groupId) return;
-      const message = `建議集合點：${label}`;
+      const label = items.length === 1 ? items[0].title : `${items.length} 個地點`;
       try {
-        await sendCommand(groupId, 'custom', message);
+        await submitGatherPointRequest(groupId, myScopeId, items);
         logEvent('destination_suggest', { source, label });
-        Alert.alert('已通知隊長', `已把「${label}」通知給隊長，請等待隊長加入行程。`);
+        Alert.alert(t('gatherRequest.sentTitle'), t('gatherRequest.sentBody'));
       } catch (e) {
         logError('destination_suggest_failed', e, { source });
         Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
       }
     },
-    [groupId, t],
+    [groupId, myScopeId, t],
   );
 
   const handleSearchPick = useCallback(
     async (place: PlaceResult) => {
       if (!canEditItinerary) {
-        await notifyLeaderPlace(place.name, 'search');
+        await notifyLeaderPlace([{
+          title: place.name,
+          address: place.address,
+          coordinates: place.coordinates,
+        }], 'search');
         return;
       }
       setPendingPlace(place);
@@ -873,10 +1131,14 @@ export default function MapScreen({ route, navigation }: Props) {
   const handlePickDestination = useCallback(async (place: PlaceResult) => {
     if (!groupId) return;
     if (!canEditItinerary) {
-      await notifyLeaderPlace(place.name, 'search');
+      await notifyLeaderPlace([{
+        title: place.name,
+        address: place.address,
+        coordinates: place.coordinates,
+      }], 'search');
       return;
     }
-    if (!isPro && destinations.length >= FREE_LIMITS.destinationsPerItinerary) {
+    if (!isPro && allScopedDestinations.length >= FREE_LIMITS.destinationsPerItinerary) {
       openPaywall('paywall.triggerDestinations');
       return;
     }
@@ -901,14 +1163,16 @@ export default function MapScreen({ route, navigation }: Props) {
       logError('destination_add_failed', e, { source: 'search' });
       Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
     }
-  }, [groupId, canEditItinerary, notifyLeaderPlace, isPro, destinations.length, myScopeId, refresh, openPaywall, t]);
+  }, [groupId, canEditItinerary, notifyLeaderPlace, isPro, destinations.length, allScopedDestinations.length, myScopeId, refresh, openPaywall, t]);
 
   const handleKmlImport = useCallback(async (items: KmlPlacemark[], onProgress: (done: number) => void) => {
     if (!groupId) return;
     // BUG-15: non-editors notify captain with place names instead of writing itinerary.
     if (!canEditItinerary) {
-      const names = items.map((i) => i.name).filter(Boolean).slice(0, 8);
-      await notifyLeaderPlace(names.join('、') || `${items.length} 個地點`, 'kml');
+      await notifyLeaderPlace(items.map((item) => ({
+        title: item.name,
+        coordinates: { latitude: item.latitude, longitude: item.longitude },
+      })), 'kml');
       onProgress(items.length);
       return;
     }
@@ -924,6 +1188,47 @@ export default function MapScreen({ route, navigation }: Props) {
     logEvent('kml_import', { count: items.length });
     refresh();
   }, [groupId, canEditItinerary, notifyLeaderPlace, myScopeId, refresh]);
+
+  const handleGatherPointRequest = useCallback(async (requestId: string, approve: boolean) => {
+    try {
+      await resolveGatherPointRequest(requestId, approve);
+      await Promise.all([loadGatheringWorkflow(), refresh()]);
+    } catch (error) {
+      Alert.alert(t('map.setFailedTitle'), error instanceof Error ? error.message : t('map.setFailedMsg'));
+    }
+  }, [loadGatheringWorkflow, refresh, t]);
+
+  const handleArrival = useCallback((destination: Destination, targetUserId: string, arrived: boolean) => {
+    confirmAction({
+      title: t(arrived ? 'arrival.markTitle' : 'arrival.undoTitle'),
+      message: destination.title,
+      confirmLabel: t(arrived ? 'arrival.mark' : 'arrival.undo'),
+      destructive: !arrived,
+    }, () => {
+      void setDestinationArrival(destination.id, targetUserId, arrived)
+        .then(loadGatheringWorkflow)
+        .catch((error) => Alert.alert(
+          t('map.setFailedTitle'),
+          error instanceof Error ? error.message : t('map.setFailedMsg'),
+        ));
+    });
+  }, [loadGatheringWorkflow, t]);
+
+  const handleDeleteHistory = useCallback((item: VisitedWaypoint) => {
+    confirmAction({
+      title: t('history.deleteTitle'),
+      message: item.name,
+      confirmLabel: t('common.delete'),
+      destructive: true,
+    }, () => {
+      void deleteVisitedWaypoint(item.id)
+        .then(loadHistory)
+        .catch((error) => Alert.alert(
+          t('map.setFailedTitle'),
+          error instanceof Error ? error.message : t('map.setFailedMsg'),
+        ));
+    });
+  }, [loadHistory, t]);
 
 
 
@@ -955,6 +1260,13 @@ export default function MapScreen({ route, navigation }: Props) {
     navigation.navigate('MyTeams');
   }, [navigation]);
 
+  /** RoleSelect create/join home — keep membership so user is not forced to leave. */
+  const goHomeCreateOrJoin = useCallback(() => {
+    lightTap();
+    logEvent('settings_go_home_create_or_join');
+    navigation.navigate('RoleSelect');
+  }, [navigation]);
+
   // --- Solo mode (global user status — not on member cards) -----------------
   // Returns false if the RPC failed (caller should not close the status sheet).
   const toggleSolo = useCallback(async (next: boolean): Promise<boolean> => {
@@ -978,7 +1290,12 @@ export default function MapScreen({ route, navigation }: Props) {
 
 
   // --- Subgroups (小隊：邀請制、無隊長) ---------------------------------------
-  const subgroups = state?.subgroups ?? [];
+  // Drop empty leftovers so the members list never shows "X 的小隊 · 0" after
+  // leave; server also deletes empty rows, this is the client-side safety net.
+  const subgroups = useMemo(() => {
+    const all = state?.subgroups ?? [];
+    return all.filter((sg) => members.some((m) => m.subgroupId === sg.id));
+  }, [state?.subgroups, members]);
   const {
     invites: pendingInvites,
     accept: acceptInvite,
@@ -1084,7 +1401,10 @@ export default function MapScreen({ route, navigation }: Props) {
     try {
       await selfMerge(groupId);
       logEvent('team_leave_ok', { groupId });
-      refresh();
+      // Leave wipes subgroup-scoped UI: itinerary optimistic list, team pill scope.
+      setOptimisticDestinations(null);
+      setViewingScope('main');
+      await refresh();
       return true;
     } catch (e) {
       logError('team_leave_failed', e, { groupId });
@@ -1139,13 +1459,32 @@ export default function MapScreen({ route, navigation }: Props) {
     async (updates: { id: string; position: number; day: number }[]) => {
       if (!groupId) return;
       logEvent('destination_reorder', { count: updates.length });
-      
+
+      const departureDate = group?.departureDate;
+      const persistedUpdates: {
+        id: string;
+        position: number;
+        day: number;
+        meetAt?: string;
+      }[] = updates.map((update) => {
+        const original = rawDestinations.find((dest) => dest.id === update.id);
+        if (!departureDate || !original?.meetAt || (original.day || 1) === update.day) {
+          return update;
+        }
+        const alignedMeetAt = alignMeetTimeToTripDay(
+          new Date(original.meetAt),
+          departureDate,
+          update.day,
+        );
+        return { ...update, meetAt: alignedMeetAt.toISOString() };
+      });
       const newDests = rawDestinations.map(d => ({ ...d }));
-      updates.forEach(u => {
+      persistedUpdates.forEach(u => {
          const dest = newDests.find(d => d.id === u.id);
          if (dest) {
             dest.order = u.position;
             dest.day = u.day;
+            if (u.meetAt !== undefined) dest.meetAt = u.meetAt;
          }
       });
       newDests.sort((a, b) => {
@@ -1160,7 +1499,7 @@ export default function MapScreen({ route, navigation }: Props) {
       }, 3000);
 
       try {
-        await reorderDestinations(groupId, updates);
+        await reorderDestinations(groupId, persistedUpdates);
         refresh();
       } catch (e) {
         logError('destination_reorder_failed', e);
@@ -1169,7 +1508,13 @@ export default function MapScreen({ route, navigation }: Props) {
         refresh();
       }
     },
-    [groupId, t, refresh, rawDestinations],
+    [
+      groupId,
+      t,
+      refresh,
+      rawDestinations,
+      group?.departureDate,
+    ],
   );
   const handleDelete = useCallback(
     (id: string) => {
@@ -1284,6 +1629,24 @@ export default function MapScreen({ route, navigation }: Props) {
        setOptimisticDepartureDate(date);
        try {
          await updateGroupTripDetails(groupId, days, date);
+         const meetUpdates = rawDestinations
+           .filter((destination) => destination.meetAt)
+           .map((destination) => {
+             const alignedMeetAt = alignMeetTimeToTripDay(
+               new Date(destination.meetAt as string),
+               date,
+               destination.day || 1,
+             );
+             return {
+               id: destination.id,
+               position: destination.order,
+               day: destination.day || 1,
+               meetAt: alignedMeetAt.toISOString(),
+             };
+           });
+         if (meetUpdates.length > 0) {
+           await reorderDestinations(groupId, meetUpdates);
+         }
          refresh();
        } catch(e) {
          setOptimisticTripDays(null);
@@ -1291,7 +1654,7 @@ export default function MapScreen({ route, navigation }: Props) {
          Alert.alert('更新失敗', e instanceof Error ? e.message : String(e));
        }
     }
-  }, [groupId, refresh]);
+  }, [groupId, rawDestinations, refresh]);
   const persistStragglerConfig = useCallback(async (enabled: boolean, thresholdM: number) => {
     if (!groupId) return;
     try {
@@ -1484,9 +1847,9 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const openGroupMenu = useCallback(() => {
     lightTap();
-    const endLabel = isLeader ? t('map.endGroup') : t('group.leave');
-    const run = (action: 'invite' | 'settings' | 'end') => {
-      if (action === 'invite') setOverlay('invite');
+    // ⋯ next to avatar: home / settings / leave — invite lives in Members only.
+    const run = (action: 'home' | 'settings' | 'end') => {
+      if (action === 'home') goHomeCreateOrJoin();
       else if (action === 'settings') setOverlay('settings');
       else confirmLeave();
     };
@@ -1495,29 +1858,29 @@ export default function MapScreen({ route, navigation }: Props) {
         {
           title: t('map.groupMenu'),
           options: [
-            t('map.inviteMembers'),
+            t('map.backToHome'),
             t('map.overlaySettings'),
-            endLabel,
+            t('group.leave'),
             t('common.cancel'),
           ],
           cancelButtonIndex: 3,
           destructiveButtonIndex: 2,
         },
         (idx) => {
-          if (idx === 0) run('invite');
+          if (idx === 0) run('home');
           else if (idx === 1) run('settings');
           else if (idx === 2) run('end');
         },
       );
     } else {
       Alert.alert(t('map.groupMenu'), undefined, [
-        { text: t('map.inviteMembers'), onPress: () => run('invite') },
+        { text: t('map.backToHome'), onPress: () => run('home') },
         { text: t('map.overlaySettings'), onPress: () => run('settings') },
-        { text: endLabel, style: 'destructive', onPress: () => run('end') },
+        { text: t('group.leave'), style: 'destructive', onPress: () => run('end') },
         { text: t('common.cancel'), style: 'cancel' },
       ]);
     }
-  }, [t, isLeader, confirmLeave]);
+  }, [t, confirmLeave, goHomeCreateOrJoin]);
 
   useEffect(() => {
     void refreshSentInvites(mySubgroupId);
@@ -1655,7 +2018,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const sheetHeader = useMemo(() => {
     /* Fixed button roles (never swap meanings across screens):
        - Group name → switch group
-       - ⋯ → group menu (invite / settings / end)
+       - ⋯ → group menu (home / settings / leave)
        - Avatar → personal account only
        - Search → place search only
     */
@@ -1786,9 +2149,14 @@ export default function MapScreen({ route, navigation }: Props) {
             pressed && !refreshingLocations && styles.rowActionPressed,
           ]}
           onPress={() => void refreshAllLocations()}
-          disabled={refreshingLocations}
+          disabled={refreshingLocations || refreshCooldownRemaining > 0}
           accessibilityRole="button"
           accessibilityLabel={t('map.refreshLocationsA11y')}
+          accessibilityHint={
+            refreshCooldownRemaining > 0
+              ? t('map.refreshLocationsCooldown', { seconds: refreshCooldownRemaining })
+              : undefined
+          }
         >
           {refreshingLocations ? (
             <ActivityIndicator size="small" color={accent} />
@@ -1914,17 +2282,17 @@ export default function MapScreen({ route, navigation }: Props) {
       <View style={styles.listGroup}>
         <Pressable style={styles.listRow} onPress={() => { lightTap(); setOverlay('route'); }} accessibilityRole="button">
           <Text style={styles.listRowTitle}>
-            {t('map.stopsReorder', { count: destinations.length })}
+            {t('map.stopsReorder', { count: allScopedDestinations.length })}
           </Text>
           <Text style={styles.listRowTrailing}>{t('map.edit')}</Text>
           <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
         </Pressable>
-        {canEditItinerary ? (
-          <Pressable style={styles.listRow} onPress={() => { lightTap(); setKmlVisible(true); }} accessibilityRole="button">
-            <Text style={styles.listRowTitle}>{t('kml.entry')}</Text>
-            <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
-          </Pressable>
-        ) : null}
+        <Pressable style={styles.listRow} onPress={() => { lightTap(); setKmlVisible(true); }} accessibilityRole="button">
+          <Text style={styles.listRowTitle}>
+            {canEditItinerary ? t('kml.entry') : '匯入並請求隊長同意'}
+          </Text>
+          <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
+        </Pressable>
         <Pressable
           style={[styles.listRow, styles.listRowLast]}
           onPress={() => { lightTap(); openHistoryOverlay(); }}
@@ -1936,11 +2304,11 @@ export default function MapScreen({ route, navigation }: Props) {
       </View>
     </>
   ), [
-    t, styles, nextStopTitle, nextStopDistLabel, destinations.length, canEditItinerary,
+    t, styles, nextStopTitle, nextStopDistLabel, allScopedDestinations.length, canEditItinerary,
     openHistoryOverlay,
   ]);
 
-  // ─── 工具：快捷指令、脫隊、分享群組、設定 ─────────────────────────────
+  // ─── 工具：快捷指令、脫隊示警（設定改走頭像旁 ⋯ 選單）────────────────
   const toolsPaneBody = useMemo(() => (
     <>
       <Text style={[styles.sheetHeading, styles.sheetHeadingFirst]}>{t('map.cmdTitle')}</Text>
@@ -1974,20 +2342,6 @@ export default function MapScreen({ route, navigation }: Props) {
           />
         </>
       ) : null}
-
-      <View style={styles.listGroup}>
-        <Pressable
-          style={[styles.listRow, styles.listRowLast]}
-          onPress={() => {
-            lightTap();
-            setOverlay('settings');
-          }}
-          accessibilityRole="button"
-        >
-          <Text style={styles.listRowTitle}>{t('map.overlaySettings')}</Text>
-          <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
-        </Pressable>
-      </View>
     </>
   ), [
     styles, t, groupId, isLeader, dark, openCustomQuickCommand, group, accent, isPro,
@@ -2054,6 +2408,9 @@ export default function MapScreen({ route, navigation }: Props) {
         destinations={destinations}
         pendingPlace={pendingPlace}
         currentUserId={user?.id}
+        // Show the planned path for everyone while journey is live (leader
+        // broadcast or local follower plan). When paused, keep a light path
+        // to the selected card so ETA still makes sense.
         routePoints={selfRoute?.points}
         routeColor={accent}
         alternateRoutes={alternateRoutes}
@@ -2259,11 +2616,12 @@ export default function MapScreen({ route, navigation }: Props) {
               const routeForDestination = activePoint?.id === dest.id ? selfRoute : null;
               const d = routeForDestination?.distanceMeters
                 ?? (fromCoords ? distanceMeters(fromCoords, dest.coordinates) : null);
-              // This card is the stop we're actively navigating to — its
-              // button flips to "end navigation" (leader only; followers
-              // can't change journey status).
-              const navigatingThis =
-                isLeader && (journeyActive || journeyBusy) && navTarget?.id === dest.id;
+              // This card is the stop the flock is actively navigating to.
+              // Leader button flips to "end navigation"; followers keep plan
+              // affordance but still share the same route polyline / alts.
+              const flockNavigatingThis =
+                (journeyActive || (isLeader && journeyBusy)) && navTarget?.id === dest.id;
+              const navigatingThis = isLeader && flockNavigatingThis;
               // Leader-set target meet time, formatted as a live countdown /
               // overdue label. Recomputed every 30s by the nowTick interval.
               const meetLabel = dest.meetAt
@@ -2277,11 +2635,11 @@ export default function MapScreen({ route, navigation }: Props) {
               // Team arrival toward THIS stop — how many of the flock are
               // already within the arrival radius. Drives the top hairline and
               // the "隊伍抵達進度" caption (design 1b).
-              const arrivedHere = members.filter(
-                (m) =>
-                  m.coordinates &&
-                  distanceMeters(m.coordinates, dest.coordinates) <= ARRIVAL_RADIUS_M,
-              ).length;
+              const arrivedHere = new Set(
+                destinationArrivals
+                  .filter((arrival) => arrival.destinationId === dest.id)
+                  .map((arrival) => arrival.userId),
+              ).size;
               const totalMembers = members.length;
               const arrivalPct = totalMembers
                 ? Math.round((arrivedHere / totalMembers) * 100)
@@ -2299,7 +2657,7 @@ export default function MapScreen({ route, navigation }: Props) {
                   ? shortEta(etaSecondsFor(d, travelMode))
                   : '—';
               const distLabel = d != null ? formatDistance(d) : '';
-              const cardExpanded = expandedCardId === dest.id;
+              const cardExpanded = isCardExpanded(dest.id);
               // Progressive density (single row always):
               // - compact: narrow phone OR large Dynamic Type → smaller squares
               // - tight: xl OR (narrow + large) → nav icon-only, smaller countdown
@@ -2311,34 +2669,40 @@ export default function MapScreen({ route, navigation }: Props) {
               // On tight density, drop nav label so meet countdown + mode stay
               // square-floor sized in one row (especially when Maps appears).
               const navIconOnly = chromeTight;
+              const arrivedBoundary = Math.max(
+                navTarget && navTarget.subgroupId === dest.subgroupId ? navTarget.order : -1,
+                ...destinationArrivals
+                  .map((arrival) => allScopedDestinations.find((item) => item.id === arrival.destinationId))
+                  .filter((item): item is Destination => item?.subgroupId === dest.subgroupId)
+                  .map((item) => item.order),
+              );
+              const firstOrder = Math.min(...allScopedDestinations.map((item) => item.order));
+              const canMarkArrival = dest.order <= (arrivedBoundary >= 0 ? arrivedBoundary : firstOrder);
               return (
                 <View
                   key={`carousel-dest-${dest.id}-${index}`}
                   style={{ width: windowWidth, paddingHorizontal: narrowScreen ? 10 : 14 }}
                 >
                   <Pressable
-                    delayLongPress={300}
                     onPressIn={() => {
                       setPressedCardId(dest.id);
-                      pendingExpandId.current = null;
                     }}
                     onPressOut={() => {
                       setPressedCardId(null);
-                      if (pendingExpandId.current === dest.id) {
-                        LayoutAnimation.configureNext({
-                          duration: 300,
-                          create: { type: 'linear', property: 'opacity' },
-                          update: { type: 'linear' },
-                          delete: { type: 'linear', property: 'opacity' },
-                        });
-                        setExpandedCardId((prev) => (prev === dest.id ? null : dest.id));
-                        pendingExpandId.current = null;
-                      }
                     }}
-                    onLongPress={() => {
+                    onPress={() => {
                       rigidTap();
-                      pendingExpandId.current = dest.id;
+                      LayoutAnimation.configureNext({
+                        duration: 300,
+                        create: { type: 'linear', property: 'opacity' },
+                        update: { type: 'linear' },
+                        delete: { type: 'linear', property: 'opacity' },
+                      });
+                      toggleCard(dest.id);
                     }}
+                    accessibilityRole="button"
+                    accessibilityLabel={dest.title}
+                    accessibilityHint={cardExpanded ? '收合集合點卡片' : '展開集合點卡片'}
                   >
                     <Animated.View layout={LinearTransition.duration(300)}>
                       <liquidGlass.GlassView
@@ -2350,14 +2714,16 @@ export default function MapScreen({ route, navigation }: Props) {
                         ]}
                       >
                     {/* Top arrival hairline — team progress toward this stop. */}
-                    <View style={styles.arrivalHairline}>
-                      <View
-                        style={[
-                          styles.arrivalHairlineFill,
-                          { width: `${arrivalPct}%`, backgroundColor: accent },
-                        ]}
-                      />
-                    </View>
+                    {cardExpanded ? (
+                      <View style={styles.arrivalHairline}>
+                        <View
+                          style={[
+                            styles.arrivalHairlineFill,
+                            { width: `${arrivalPct}%`, backgroundColor: accent },
+                          ]}
+                        />
+                      </View>
+                    ) : null}
                     {/* Layout:
                         kicker · dots
                         title (large; full when expanded)
@@ -2373,7 +2739,6 @@ export default function MapScreen({ route, navigation }: Props) {
                             numberOfLines={1}
                             ellipsizeMode="tail"
                           >
-                            {index === 0 ? t('map.nextTag') + ' · ' : ''}
                             {(() => {
                               // Counter is day-scoped: "stop N of M" among that day's stops only.
                               const dayNum = dest.day || 1;
@@ -2429,7 +2794,11 @@ export default function MapScreen({ route, navigation }: Props) {
                               </Text>
                               <Pressable
                                 style={styles.mapsChip}
-                                onPress={() => openInAppleMaps(dest)}
+                                onPress={(event) => {
+                                  event.stopPropagation();
+                                  registerCardActivity(dest.id);
+                                  openInAppleMaps(dest);
+                                }}
                                 accessibilityRole="button"
                                 accessibilityLabel={t('map.openInAppleMaps')}
                               >
@@ -2458,12 +2827,21 @@ export default function MapScreen({ route, navigation }: Props) {
                                   : styles.cardMetaRowAfterDay,
                               ]}
                             >
-                              <View style={styles.arrivalCaption}>
+                              <Pressable
+                                style={styles.arrivalCaption}
+                                disabled={!isLeader}
+                                onPress={(event) => {
+                                  event.stopPropagation();
+                                  registerCardActivity(dest.id);
+                                  setArrivalDestination(dest);
+                                  setOverlay('arrival');
+                                }}
+                              >
                                 <Text style={styles.arrivalCaptionLabel}>{t('map.arrivalProgress')}</Text>
                                 <Text style={[styles.arrivalCaptionValue, { color: accent }]}>
                                   {arrivedHere} / {totalMembers}
                                 </Text>
-                              </View>
+                              </Pressable>
                               <View style={styles.cardRouteColExpanded}>
                                 {etaLabel ? (
                                   <Text
@@ -2489,22 +2867,14 @@ export default function MapScreen({ route, navigation }: Props) {
                           </>
                         ) : (
                           <View style={styles.cardDenseBody}>
-                            <View style={styles.grow}>
-                              <Text
-                                style={[styles.cardTitle, styles.cardTitleCollapsed]}
-                                numberOfLines={1}
-                                ellipsizeMode="tail"
-                              >
-                                {dest.title}
-                              </Text>
-                              <View style={styles.arrivalCaption}>
-                                <Text style={styles.arrivalCaptionLabel}>{t('map.arrivalProgress')}</Text>
-                                <Text style={[styles.arrivalCaptionValue, { color: accent }]}>
-                                  {arrivedHere} / {totalMembers}
-                                </Text>
-                              </View>
-                            </View>
-                            <View style={styles.cardMetricsStack}>
+                            <Text
+                              style={[styles.cardTitle, styles.cardTitleCollapsed, styles.grow]}
+                              numberOfLines={1}
+                              ellipsizeMode="tail"
+                            >
+                              {dest.title}
+                            </Text>
+                            <View style={styles.cardCollapsedMetrics}>
                               {etaLabel ? (
                                 <Text
                                   style={[styles.cardRouteMetaEta, { color: glass.textSecondary }]}
@@ -2512,6 +2882,9 @@ export default function MapScreen({ route, navigation }: Props) {
                                 >
                                   {etaLabel}
                                 </Text>
+                              ) : null}
+                              {etaLabel && distLabel ? (
+                                <Text style={styles.cardRouteMetaDotExpanded}>·</Text>
                               ) : null}
                               {distLabel ? (
                                 <Text
@@ -2530,6 +2903,7 @@ export default function MapScreen({ route, navigation }: Props) {
                     {/* a11y-layout:commandRow — always one row, always 3 controls.
                         Apple Maps lives above ETA/dist when expanded (not here).
                         Density tracks narrow + Dynamic Type. */}
+                    {cardExpanded && (
                     <View style={styles.commandRow}>
                       <Pressable
                         style={[
@@ -2537,7 +2911,9 @@ export default function MapScreen({ route, navigation }: Props) {
                           navIconOnly && styles.navBtnIconOnly,
                           navigatingThis ? styles.navBtnEnd : { backgroundColor: accent },
                         ]}
-                        onPress={() => {
+                        onPress={(event) => {
+                          event.stopPropagation();
+                          registerCardActivity(dest.id);
                           // BUG-06
                           mediumTap();
                           if (navigatingThis) {
@@ -2557,13 +2933,23 @@ export default function MapScreen({ route, navigation }: Props) {
                         accessibilityLabel={
                           navigatingThis
                             ? t('map.stopNav')
-                            : isLeader
+                            : flockNavigatingThis
                               ? t('map.directions')
-                              : '路徑規劃'
+                              : isLeader
+                                ? t('map.directions')
+                                : '路徑規劃'
                         }
                       >
                         <Ionicons
-                          name={navigatingThis ? 'stop' : isLeader ? 'play' : 'navigate'}
+                          name={
+                            navigatingThis
+                              ? 'stop'
+                              : flockNavigatingThis
+                                ? 'navigate'
+                                : isLeader
+                                  ? 'play'
+                                  : 'navigate'
+                          }
                           size={chromeCompact ? 16 : 15}
                           color={navigatingThis ? glass.danger : '#0c1a12'}
                         />
@@ -2578,9 +2964,11 @@ export default function MapScreen({ route, navigation }: Props) {
                           >
                             {navigatingThis
                               ? t('map.stopNav')
-                              : isLeader
+                              : flockNavigatingThis
                                 ? t('map.directions')
-                                : '路徑規劃'}
+                                : isLeader
+                                  ? t('map.directions')
+                                  : '路徑規劃'}
                           </Text>
                         ) : null}
                       </Pressable>
@@ -2590,7 +2978,9 @@ export default function MapScreen({ route, navigation }: Props) {
                           styles.cmdSquare,
                           { backgroundColor: accentMix(accent, 16), borderColor: accentMix(accent, 38) },
                         ]}
-                        onPress={() => {
+                        onPress={(event) => {
+                          event.stopPropagation();
+                          registerCardActivity(dest.id);
                           lightTap();
                           const order = ['walk', 'transit', 'drive'] as const;
                           setTravelMode(order[(order.indexOf(travelMode) + 1) % order.length]);
@@ -2607,7 +2997,11 @@ export default function MapScreen({ route, navigation }: Props) {
 
                       <Pressable
                         style={styles.meetBtn}
-                        onPress={() => openMeetTimePicker(dest)}
+                        onPress={(event) => {
+                          event.stopPropagation();
+                          registerCardActivity(dest.id);
+                          openMeetTimePicker(dest);
+                        }}
                         disabled={!canEditItinerary}
                         accessibilityRole="button"
                         accessibilityLabel={
@@ -2624,7 +3018,9 @@ export default function MapScreen({ route, navigation }: Props) {
                         {dest.meetAt ? (
                           <MeetCountdown
                             meetAtIso={dest.meetAt as string}
-                            redWithinMin={meetRedMin}
+                            redWithinMin={
+                              dest.meetRedMinutes ?? meetRedMin ?? DEFAULT_MEET_RED_MIN
+                            }
                             redColor={glass.danger}
                             baseStyle={[
                               chromeTight
@@ -2651,6 +3047,21 @@ export default function MapScreen({ route, navigation }: Props) {
                         )}
                       </Pressable>
                     </View>
+                    )}
+                    {cardExpanded && user?.id && canMarkArrival ? (
+                      <Pressable
+                        style={styles.addStop}
+                        onPress={(event) => {
+                          event.stopPropagation();
+                          registerCardActivity(dest.id);
+                          handleArrival(dest, user.id, true);
+                        }}
+                        accessibilityRole="button"
+                      >
+                        <Ionicons name="checkmark-circle-outline" size={18} color={accent} />
+                        <Text style={[styles.addStopText, { color: accent }]}>{t('arrival.mark')}</Text>
+                      </Pressable>
+                    ) : null}
                       </liquidGlass.GlassView>
                     </Animated.View>
                   </Pressable>
@@ -2695,9 +3106,70 @@ export default function MapScreen({ route, navigation }: Props) {
           scrollEnabled={routeScrollEnabled}
         >
           <Text style={styles.overlayHint}>{t('map.routeHint')}</Text>
+          {isLeader && gatherPointRequests.length > 0 ? (
+            <View style={styles.listGroup}>
+              <Text style={styles.sectionLabel}>{t('gatherRequest.pending')}</Text>
+              {gatherPointRequests.map((request) => (
+                <View key={request.id} style={styles.flockRow}>
+                  <View style={styles.grow}>
+                    <Text style={styles.flockName}>
+                      {members.find((member) => member.userId === request.requesterId)?.name ?? '隊員'}
+                    </Text>
+                    <Text style={styles.overlayHint}>
+                      {t('gatherRequest.target', {
+                        team: request.subgroupId
+                          ? subgroups.find((item) => item.id === request.subgroupId)?.name
+                            ?? t('gatherRequest.unknownTeam')
+                          : t('gatherRequest.mainTeam'),
+                      })}
+                    </Text>
+                    <Text style={styles.overlayHint}>
+                      {request.items.map((item) => item.title).join('、')}
+                    </Text>
+                  </View>
+                  <Pressable
+                    style={styles.chip}
+                    onPress={() => void handleGatherPointRequest(request.id, false)}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.chipText}>{t('gatherRequest.reject')}</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.chip, { backgroundColor: accentMix(accent, 24) }]}
+                    onPress={() => void handleGatherPointRequest(request.id, true)}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.chipText}>{t('gatherRequest.approve')}</Text>
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+          ) : null}
+          {isLeader && (state?.destinations.length ?? 0) > 0 ? (
+            <View style={styles.listGroup}>
+              <Text style={styles.sectionLabel}>{t('arrival.manage')}</Text>
+              {state?.destinations.map((destination) => (
+                <Pressable
+                  key={`arrival-manage-${destination.id}`}
+                  style={styles.listRow}
+                  onPress={() => {
+                    setArrivalDestination(destination);
+                    setOverlay('arrival');
+                  }}
+                  accessibilityRole="button"
+                >
+                  <Text style={[styles.listRowTitle, styles.grow]}>{destination.title}</Text>
+                  <Text style={styles.listRowTrailing}>
+                    {destinationArrivals.filter((entry) => entry.destinationId === destination.id).length}
+                  </Text>
+                  <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
           <DestinationReorderList
             groupId={groupId ?? undefined}
-            destinations={destinations}
+            destinations={allScopedDestinations}
             canReorder={canEditItinerary}
             tripDays={optimisticTripDays ?? group?.tripDays}
             departureDate={optimisticDepartureDate ?? group?.departureDate}
@@ -2720,7 +3192,7 @@ export default function MapScreen({ route, navigation }: Props) {
               <Ionicons name="add" size={16} color={accent} />
             </View>
             <Text style={[styles.addStopText, { color: accent }]}>
-              {canEditItinerary ? t('map.addStop') : '通知隊長'}
+              {canEditItinerary ? t('map.addStop') : '加入並請求隊長同意'}
             </Text>
           </Pressable>
           <Pressable
@@ -2734,7 +3206,7 @@ export default function MapScreen({ route, navigation }: Props) {
               <Ionicons name="document-attach-outline" size={16} color={accent} />
             </View>
             <Text style={[styles.addStopText, { color: accent }]}>
-              {canEditItinerary ? t('kml.entry') : '匯入並通知隊長'}
+              {canEditItinerary ? t('kml.entry') : '匯入並請求隊長同意'}
             </Text>
           </Pressable>
         </ScrollView>
@@ -2761,6 +3233,10 @@ export default function MapScreen({ route, navigation }: Props) {
         onSwitchGroup={() => {
           setOverlay(null);
           switchGroup();
+        }}
+        onGoHome={() => {
+          setOverlay(null);
+          goHomeCreateOrJoin();
         }}
         styles={styles}
       />
@@ -2909,6 +3385,41 @@ export default function MapScreen({ route, navigation }: Props) {
         styles={styles}
       />
 
+      <OverlaySheet
+        visible={overlay === 'arrival'}
+        onClose={() => {
+          setOverlay(null);
+          setArrivalDestination(null);
+        }}
+        title={arrivalDestination?.title ?? t('map.arrivalProgress')}
+        accent={accent}
+        doneLabel={t('map.done')}
+      >
+        <ScrollView contentContainerStyle={styles.overlayBody}>
+          {arrivalDestination ? members
+            .filter((member) => member.subgroupId === arrivalDestination.subgroupId)
+            .map((member) => {
+              const arrived = destinationArrivals.some(
+                (entry) => entry.destinationId === arrivalDestination.id && entry.userId === member.userId,
+              );
+              return (
+                <View key={member.userId} style={styles.flockRow}>
+                  <Text style={[styles.flockName, styles.grow]}>{member.name}</Text>
+                  <Pressable
+                    style={styles.chip}
+                    onPress={() => handleArrival(arrivalDestination, member.userId, !arrived)}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.chipText}>
+                      {t(arrived ? 'arrival.undo' : 'arrival.mark')}
+                    </Text>
+                  </Pressable>
+                </View>
+              );
+            }) : null}
+        </ScrollView>
+      </OverlaySheet>
+
       {/* History overlay: gathering points actually reached, grouped by day. */}
       <OverlaySheet
         visible={overlay === 'history'}
@@ -2939,6 +3450,9 @@ export default function MapScreen({ route, navigation }: Props) {
                         <View style={styles.flockRowMain}>
                           <View style={styles.grow}>
                             <Text style={styles.flockName}>{item.name}</Text>
+                            {item.userName ? (
+                              <Text style={styles.overlayHint}>{item.userName}</Text>
+                            ) : null}
                           </View>
                           <Text style={styles.historyTime}>
                             {new Date(item.arrivedAt).toLocaleTimeString([], {
@@ -2946,6 +3460,16 @@ export default function MapScreen({ route, navigation }: Props) {
                               minute: '2-digit',
                             })}
                           </Text>
+                          {(item.userId === user?.id || isLeader) ? (
+                            <Pressable
+                              style={styles.cmdSquare}
+                              onPress={() => handleDeleteHistory(item)}
+                              accessibilityRole="button"
+                              accessibilityLabel={t('common.delete')}
+                            >
+                              <Ionicons name="trash-outline" size={18} color={glass.danger} />
+                            </Pressable>
+                          ) : null}
                         </View>
                       </View>
                     ))}
@@ -3033,7 +3557,7 @@ export default function MapScreen({ route, navigation }: Props) {
       <KmlImportSheet
         visible={kmlVisible}
         onClose={() => setKmlVisible(false)}
-        currentCount={destinations.length}
+        currentCount={allScopedDestinations.length}
         isPro={isPro}
         onImport={handleKmlImport}
         onUpgrade={() => {
@@ -3042,7 +3566,7 @@ export default function MapScreen({ route, navigation }: Props) {
         }}
       />
 
-      {/* Meet-time editor: embedded spinner + Set/Clear + Quick Shortcuts */}
+      {/* Meet-time editor: date + time + red-threshold warning + Set/Clear */}
       <OverlaySheet
         visible={!!meetTimeEditor}
         onClose={() => setMeetTimeEditor(null)}
@@ -3059,9 +3583,10 @@ export default function MapScreen({ route, navigation }: Props) {
                   style={styles.meetQuickBtn}
                   onPress={() => {
                     lightTap();
-                    const d = new Date();
-                    d.setMinutes(d.getMinutes() + m);
-                    setMeetTimeEditor((s) => (s ? { ...s, value: d } : s));
+                    const shortcut = new Date(meetTimeEditor.value);
+                    shortcut.setMinutes(shortcut.getMinutes() + m);
+                    shortcut.setSeconds(0, 0);
+                    setMeetTimeEditor((s) => (s ? { ...s, value: shortcut } : s));
                   }}
                   accessibilityRole="button"
                 >
@@ -3071,55 +3596,95 @@ export default function MapScreen({ route, navigation }: Props) {
                 </Pressable>
               ))}
             </View>
-            <View style={styles.meetPickerWrap}>
-              <DateTimePicker
+
+            <Text style={styles.meetSelectedClock}>
+              {t('meetTime.selected', {
+                datetime: meetTimeEditor.value.toLocaleString(undefined, {
+                  month: 'numeric',
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  hour12: false,
+                }),
+              })}
+            </Text>
+
+            {Platform.OS === 'android' ? (
+              <Pressable
+                style={styles.meetAndroidPickBtn}
+                onPress={() => {
+                  lightTap();
+                  openAndroidMeetDate();
+                }}
+                accessibilityRole="button"
+              >
+                <Ionicons name="calendar-outline" size={18} color={accent} />
+                <Text style={[styles.meetAndroidPickText, { color: accent }]}>
+                  {t('meetTime.pickDateTime')}
+                </Text>
+              </Pressable>
+            ) : (
+              <View style={styles.meetPickerWrap}>
+                <DateTimePicker
                   value={meetTimeEditor.value}
-                  mode="time"
+                  mode="datetime"
                   display="spinner"
+                  minuteInterval={1}
+                  minimumDate={new Date(new Date().setHours(0, 0, 0, 0))}
                   onChange={(_event, selected) =>
-                    selected && setMeetTimeEditor((s) => (s ? { ...s, value: selected } : s))
+                    selected &&
+                    setMeetTimeEditor((s) => (s ? { ...s, value: selected } : s))
                   }
                 />
               </View>
-              <View style={{ marginTop: 10, marginBottom: 6 }}>
-                <Text style={[styles.sectionLabel, { marginTop: 0, marginBottom: 8 }]}>
-                  {t('meetTime.redSection')}
-                </Text>
-                <Segmented
-                  accent={accent}
-                  options={MEET_RED_OPTIONS.map((m) => ({
-                    key: String(m),
-                    label: t('meetTime.redOption', { minutes: m }),
-                  }))}
-                  value={String(meetRedMin)}
-                  onChange={(v) => setMeetRedMin(Number(v))}
-                />
-              </View>
-              <Pressable
-                style={[
-                  styles.meetSetBtn,
-                  { backgroundColor: accentMix(accent, 90), borderColor: accentMix(accent, 50) },
-                ]}
-                onPress={() => {
-                  persistMeetTime(meetTimeEditor.id, meetTimeEditor.value);
-                  setMeetTimeEditor(null);
-                }}
-                accessibilityRole="button"
-              >
-                <Text style={styles.meetSetText}>{t('meetTime.set')}</Text>
-              </Pressable>
-              <Pressable
-                style={styles.meetClearBtn}
-                onPress={() => {
-                  persistMeetTime(meetTimeEditor.id, null);
-                  setMeetTimeEditor(null);
-                }}
-                accessibilityRole="button"
-              >
-                <Text style={styles.meetClearText}>{t('meetTime.clear')}</Text>
-              </Pressable>
+            )}
+
+            <View style={{ marginTop: 10, marginBottom: 6 }}>
+              <Text style={[styles.sectionLabel, { marginTop: 0, marginBottom: 8 }]}>
+                {t('meetTime.redSection')}
+              </Text>
+              <Text style={styles.meetRedHint}>{t('meetTime.redHint')}</Text>
+              <Segmented
+                accent={accent}
+                options={MEET_RED_OPTIONS.map((m) => ({
+                  key: String(m),
+                  label: t('meetTime.redOption', { minutes: m }),
+                }))}
+                value={String(meetTimeEditor.redMin)}
+                onChange={(v) =>
+                  setMeetTimeEditor((s) => (s ? { ...s, redMin: Number(v) } : s))
+                }
+              />
             </View>
-          )}
+            <Pressable
+              style={[
+                styles.meetSetBtn,
+                { backgroundColor: accentMix(accent, 90), borderColor: accentMix(accent, 50) },
+              ]}
+              onPress={() => {
+                persistMeetTime(
+                  meetTimeEditor.id,
+                  meetTimeEditor.value,
+                  meetTimeEditor.redMin,
+                );
+                setMeetTimeEditor(null);
+              }}
+              accessibilityRole="button"
+            >
+              <Text style={styles.meetSetText}>{t('meetTime.set')}</Text>
+            </Pressable>
+            <Pressable
+              style={styles.meetClearBtn}
+              onPress={() => {
+                persistMeetTime(meetTimeEditor.id, null);
+                setMeetTimeEditor(null);
+              }}
+              accessibilityRole="button"
+            >
+              <Text style={styles.meetClearText}>{t('meetTime.clear')}</Text>
+            </Pressable>
+          </View>
+        )}
       </OverlaySheet>
     </View>
   );
@@ -3244,6 +3809,8 @@ const segStyles = StyleSheet.create({
  * `narrow` densifies chrome for iPhone 15 / mini / SE.
  * `bucket` chooses compact/tight density so the command row STAYS one row
  * (never stacks) while still fitting large Dynamic Type + small widths.
+ * `boldText` (iOS Bold Text) is already folded into `scale`/`bucket` via
+ * layoutFontScale; we also soften 700→600 so OS bold doesn't double-thicken.
  */
 /**
  * Apply app Settings textScale to design fontSize only.
@@ -3271,6 +3838,30 @@ function applyAppTextScale<T extends Record<string, any>>(
   return out;
 }
 
+/**
+ * When system Bold Text is on, drop design-time 700/bold to 600 so SF Pro
+ * doesn't render double-thick (OS bold + explicit heavy weight) and clip
+ * short labels in pills / command chrome.
+ */
+function applyBoldTextWeights<T extends Record<string, any>>(
+  defs: T,
+  boldText: boolean,
+  emojiKeys: ReadonlySet<string>,
+): T {
+  if (!boldText) return defs;
+  const out = { ...defs } as T;
+  for (const key of Object.keys(defs)) {
+    if (emojiKeys.has(key)) continue;
+    const entry = defs[key];
+    if (!entry || typeof entry !== 'object') continue;
+    const w = entry.fontWeight;
+    if (w === '700' || w === 'bold' || w === 700) {
+      (out as any)[key] = { ...entry, fontWeight: '600' };
+    }
+  }
+  return out;
+}
+
 const EMOJI_STYLE_KEYS = new Set([
   'headerAvatarEmoji',
   'peekStackEmoji',
@@ -3287,12 +3878,14 @@ const makeStyles = (
   narrow = false,
   bucket: 'regular' | 'large' | 'xl' = 'regular',
   textScale = 1,
+  boldText = false,
 ) => {
   const s = (n: number, min = 0) => Math.max(min, Math.round(n * scale));
   // Density ladder (single-row only):
   // regular → full labels + larger meet
-  // compact → smaller squares (narrow OR large type)
+  // compact → smaller squares (narrow OR large type OR Bold Text via bucket)
   // tight   → icon-only nav + smallest meet type (xl OR narrow+large)
+  // Bold Text is already reflected in `scale`/`bucket` (layoutFontScale factor).
   const tight = bucket === 'xl' || (narrow && bucket === 'large');
   const compact = tight || narrow || bucket === 'large';
   const cardPad = compact ? s(14, 10) : s(18, 14);
@@ -3455,18 +4048,17 @@ const makeStyles = (
     },
     cardDenseBody: {
       flexDirection: 'row',
-      alignItems: 'flex-start',
+      alignItems: 'center',
       gap: s(10, 8),
       marginTop: s(8, 6),
       minWidth: 0,
     },
-    // Time stacked flush above distance (right column).
-    cardMetricsStack: {
-      alignItems: 'flex-end',
-      justifyContent: 'flex-start',
+    cardCollapsedMetrics: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'flex-end',
       flexShrink: 0,
-      gap: 0,
-      marginTop: s(2, 0),
+      gap: 4,
     },
     cardTitle: {
       fontFamily: DISPLAY_FONT,
@@ -3815,6 +4407,32 @@ const makeStyles = (
       borderColor: glass.hairline,
     },
     meetQuickBtnText: { color: glass.textSecondary, fontSize: 14, fontWeight: '600' },
+    meetSelectedClock: {
+      textAlign: 'center',
+      fontSize: 16,
+      fontWeight: '600',
+      color: glass.textPrimary,
+      fontVariant: ['tabular-nums'],
+    },
+    meetAndroidPickBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      minHeight: 48,
+      borderRadius: 14,
+      backgroundColor: glass.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
+      paddingHorizontal: 14,
+    },
+    meetAndroidPickText: { fontSize: 16, fontWeight: '600' },
+    meetRedHint: {
+      fontSize: 13,
+      color: glass.textSecondary,
+      marginBottom: 10,
+      lineHeight: 18,
+    },
     meetPickerWrap: { alignItems: 'center', marginBottom: 4 },
     meetSetBtn: {
       minHeight: s(52, 48),
@@ -4148,7 +4766,8 @@ const makeStyles = (
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairline,
     },
-    profilePreviewRow: { alignItems: 'center', marginBottom: 16 },
+    profileBody: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 28 },
+    profilePreviewRow: { alignItems: 'center', marginBottom: 8 },
     profilePreviewAvatar: {
       width: 76,
       height: 76,
@@ -4160,12 +4779,12 @@ const makeStyles = (
     profilePreviewEmoji: { fontSize: 40 },
     profilePreviewInitial: { fontSize: 32, fontWeight: '700', color: '#fff' },
     // 5 columns × 6 rows filling edge-to-edge: 5 × (18% + 1% + 1%) = 100%.
-    emojiGrid: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 12 },
+    emojiGrid: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 },
     emojiCell: {
       width: '18%',
       aspectRatio: 1,
       marginHorizontal: '1%',
-      marginVertical: 4,
+      marginVertical: 3,
       borderRadius: 14,
       alignItems: 'center',
       justifyContent: 'center',
@@ -4174,7 +4793,7 @@ const makeStyles = (
       borderColor: 'transparent',
     },
     emojiChar: { fontSize: 26 },
-    colorRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 12 },
+    colorRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 8 },
     colorSwatch: {
       width: 40,
       height: 40,
@@ -4323,23 +4942,32 @@ const makeStyles = (
       marginLeft: 4,
       marginTop: 8,
     },
+    profileNickLabel: {
+      fontSize: 13,
+      fontWeight: '700',
+      letterSpacing: 0.3,
+      color: glass.textTertiary,
+      marginBottom: 6,
+      marginLeft: 4,
+      marginTop: 10,
+    },
     profileSectionLabel: {
       fontSize: 15,
       fontWeight: '800',
       letterSpacing: 0.4,
       color: '#fff',
-      marginBottom: 12,
+      marginBottom: 8,
       marginLeft: 4,
-      marginTop: 26,
+      marginTop: 12,
     },
     profileColorLabel: {
       fontSize: 15,
       fontWeight: '800',
       letterSpacing: 0.4,
       color: '#fff',
-      marginBottom: 12,
+      marginBottom: 8,
       marginLeft: 4,
-      marginTop: 10,
+      marginTop: 0,
     },
     historyDayBlock: { marginBottom: 16 },
     historyTime: {
@@ -4565,9 +5193,10 @@ const makeStyles = (
     },
     reportButtonText: { flex: 1, color: '#fff', fontSize: 16, fontWeight: '600' },
   };
-  // applyAppTextScale spreads style objects; cast keeps StyleSheet.create happy
-  // with the wide inferred defs shape (alignItems string unions, etc.).
+  // applyAppTextScale / applyBoldTextWeights spread style objects; cast keeps
+  // StyleSheet.create happy with the wide inferred defs shape.
+  const scaled = applyAppTextScale(defs, textScale, EMOJI_STYLE_KEYS);
   return StyleSheet.create(
-    applyAppTextScale(defs, textScale, EMOJI_STYLE_KEYS) as any,
+    applyBoldTextWeights(scaled, boldText, EMOJI_STYLE_KEYS) as any,
   );
 };

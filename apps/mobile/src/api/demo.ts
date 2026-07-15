@@ -130,13 +130,19 @@ export function demoAddDestination(input: {
   title: string;
   address?: string;
   coordinates: Coordinates;
+  /** Scope stop to a 小隊; omit/undefined = main team itinerary. */
+  subgroupId?: string;
 }): void {
+  const scoped = state.destinations.filter((d) =>
+    input.subgroupId ? d.subgroupId === input.subgroupId : d.subgroupId == null,
+  );
   state.destinations.push({
     id: `demo-dest-${++destSeq}`,
     title: input.title,
     address: input.address,
     coordinates: input.coordinates,
-    order: state.destinations.length,
+    order: scoped.length,
+    subgroupId: input.subgroupId,
   } as Destination);
 }
 
@@ -245,11 +251,18 @@ export function demoFetchMyInvites(_userId: string): PendingInvite[] {
 export function demoSelfMerge(): void {
   const me = state.members[0];
   if (!me.subgroupId) return;
-  const sg = state.subgroups.find((s) => s.id === me.subgroupId);
+  const leavingId = me.subgroupId;
+  const sg = state.subgroups.find((s) => s.id === leavingId);
   state.members[0] = { ...me, subgroupId: sg?.parentId };
-  const stillOccupied = state.members.some((m) => m.subgroupId === me.subgroupId);
-  const hasChildren = state.subgroups.some((s) => s.parentId === me.subgroupId);
+  const stillOccupied = state.members.some((m) => m.subgroupId === leavingId);
+  const hasChildren = state.subgroups.some((s) => s.parentId === leavingId);
   if (!stillOccupied && !hasChildren) {
-    state.subgroups = state.subgroups.filter((s) => s.id !== me.subgroupId);
+    // Last person out: drop the empty team, its itinerary, and dangling invites
+    // so the members sheet no longer shows "0 人" and orphan stops.
+    state.subgroups = state.subgroups.filter((s) => s.id !== leavingId);
+    state.destinations = state.destinations
+      .filter((d) => d.subgroupId !== leavingId)
+      .map((d, i) => ({ ...d, order: i }));
+    demoPending = demoPending.filter((p) => p.subgroupId !== leavingId);
   }
 }

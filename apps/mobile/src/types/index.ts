@@ -214,10 +214,40 @@ export interface PendingInvite extends SubgroupInvite {
  */
 export interface VisitedWaypoint {
   id: string;
+  userId?: string;
+  userName?: string;
+  destinationId?: string;
   name: string;
   coordinates: Coordinates;
   /** ISO-8601 timestamp of arrival. */
   arrivedAt: string;
+}
+
+export interface GatherPointRequestItem {
+  title: string;
+  address?: string;
+  coordinates: Coordinates;
+  day?: number;
+}
+
+export interface GatherPointRequest {
+  id: string;
+  groupId: string;
+  subgroupId?: string;
+  requesterId: string;
+  items: GatherPointRequestItem[];
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+}
+
+export interface DestinationArrival {
+  id: string;
+  groupId: string;
+  destinationId: string;
+  userId: string;
+  arrivedAt: string;
+  source: 'automatic' | 'manual';
+  markedBy: string;
 }
 
 /** A gathering point / itinerary stop. */
@@ -230,8 +260,13 @@ export interface Destination {
   day: number;
   address?: string;
   coordinates: Coordinates;
-  /** ISO-8601 target time to gather, set by the leader. Optional. */
+  /** ISO-8601 target date+time to gather, set by the leader. Optional. */
   meetAt?: string;
+  /**
+   * Minutes remaining at which the countdown turns red and a meet_warning
+   * APNs fires. Leader-set, shared with the flock (default 5).
+   */
+  meetRedMinutes?: number;
   /** Owning subgroup's list; undefined = the main group's itinerary. */
   subgroupId?: string;
 }

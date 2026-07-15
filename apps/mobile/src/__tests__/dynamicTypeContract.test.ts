@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  BOLD_TEXT_LAYOUT_FACTOR,
   GLOBAL_FONT_SCALE_CAP,
   LAYOUT_SCALE_ABS_CAP,
   TYPE_MAX_MULTIPLIER,
@@ -62,12 +63,14 @@ describe('Dynamic Type contract', () => {
     expect(quickCommands).toMatch(/bucket === 'xl'/);
   });
 
-  it('rebuilds map styles from live font scale, narrow width, font bucket, and app textScale', () => {
+  it('rebuilds map styles from live font scale, narrow width, font bucket, app textScale, and boldText', () => {
     expect(mapScreen).toContain('useFontLayout');
     expect(mapScreen).toContain('fontLayout.textScale');
     expect(mapScreen).toContain('fontLayout.scale');
+    expect(mapScreen).toContain('fontLayout.boldText');
     expect(mapScreen).toContain('windowWidth < 400');
     expect(mapScreen).toContain('applyAppTextScale');
+    expect(mapScreen).toContain('applyBoldTextWeights');
   });
 
   it('clips avatar shells and freezes map/header emoji glyphs', () => {
@@ -81,11 +84,15 @@ describe('Dynamic Type contract', () => {
     expect(myTeams).toMatch(/detailAvatarBig:\s*\{[\s\S]*?overflow:\s*'hidden'/);
   });
 
-  it('exposes Settings text size multiplier preference', () => {
+  it('exposes Settings text size multiplier preference (incl. smallest 0.8)', () => {
     expect(preferences).toContain('pref.textScale');
     expect(preferences).toContain('TextScalePref');
     expect(preferences).toContain('setTextScale');
+    expect(preferences).toContain('0.8');
+    expect(preferences).toMatch(/TEXT_SCALE_OPTIONS\s*=\s*\[[^\]]*0\.8/);
     expect(settingsOverlay).toContain("settings.textSize");
+    expect(settingsOverlay).toContain("settings.textSizeXs");
+    expect(settingsOverlay).toContain("key: '0.8'");
     expect(settingsOverlay).toContain('setTextScale');
     expect(hitherText).toContain('textScale');
     expect(hitherText).toContain("typeRole === 'emoji'");
@@ -148,9 +155,29 @@ describe('Dynamic Type contract', () => {
   it('combines system + app textScale for layout without exceeding abs cap', () => {
     expect(layoutFontScale(1, 1)).toBe(1);
     expect(layoutFontScale(1, 1.2)).toBeCloseTo(1.2);
+    expect(layoutFontScale(1, 0.8)).toBeCloseTo(0.8);
     expect(layoutFontScale(1.25, 1.2)).toBe(LAYOUT_SCALE_ABS_CAP);
     // System alone is still capped before multiply.
     expect(layoutFontScale(2, 1)).toBe(GLOBAL_FONT_SCALE_CAP);
     expect(LAYOUT_SCALE_ABS_CAP).toBe(1.5);
+  });
+
+  it('folds iOS Bold Text into layout scale (not Text fontSize) and densifies early', () => {
+    expect(BOLD_TEXT_LAYOUT_FACTOR).toBeGreaterThan(1);
+    // Default size + bold should land at least in the `large` density bucket.
+    const boldDefault = layoutFontScale(1, 1, true);
+    expect(boldDefault).toBeCloseTo(BOLD_TEXT_LAYOUT_FACTOR);
+    expect(fontScaleBucket(boldDefault)).not.toBe('regular');
+    // Bold does not raise beyond abs cap with large system × app scale.
+    expect(layoutFontScale(1.25, 1.2, true)).toBe(LAYOUT_SCALE_ABS_CAP);
+    // Smallest app scale + bold stays under large unless system is already big.
+    expect(layoutFontScale(1, 0.8, true)).toBeCloseTo(0.8 * BOLD_TEXT_LAYOUT_FACTOR);
+    // Hook + MapScreen must observe boldText for live re-layout.
+    const fontHook = readFileSync(join(root, 'a11y/useFontScaleBucket.ts'), 'utf8');
+    expect(fontHook).toContain('isBoldTextEnabled');
+    expect(fontHook).toContain('boldTextChanged');
+    expect(fontHook).toContain('boldText');
+    expect(mapScreen).toContain('fontLayout.boldText');
+    expect(mapScreen).toContain('applyBoldTextWeights');
   });
 });

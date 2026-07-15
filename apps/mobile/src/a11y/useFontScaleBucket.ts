@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  AccessibilityInfo,
   AppState,
   Dimensions,
   PixelRatio,
+  Platform,
   useWindowDimensions,
   type AppStateStatus,
 } from 'react-native';
@@ -60,16 +62,73 @@ function useSystemFontScale(): number {
 }
 
 /**
- * Layout scale = capped(system Dynamic Type) × app Settings textScale.
+ * iOS Bold Text / Android high-contrast text.
+ * Glyphs get wider without changing fontScale — layout must densify earlier.
+ */
+export function useBoldTextEnabled(): boolean {
+  const [bold, setBold] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    const read = () => {
+      const probe = Platform.OS === 'android'
+        ? AccessibilityInfo.isHighTextContrastEnabled?.()
+        : AccessibilityInfo.isBoldTextEnabled();
+      if (!probe) return;
+      void probe
+        .then((on) => {
+          if (active) setBold(!!on);
+        })
+        .catch(() => {
+          /* native module missing on some hosts — treat as off */
+        });
+    };
+
+    read();
+
+    const onApp = (state: AppStateStatus) => {
+      if (state === 'active') read();
+    };
+    const appSub = AppState.addEventListener('change', onApp);
+
+    // Event name differs by platform; fall back to AppState re-read.
+    const eventName =
+      Platform.OS === 'android' ? 'highTextContrastChanged' : 'boldTextChanged';
+    let eventSub: { remove: () => void } | undefined;
+    try {
+      eventSub = AccessibilityInfo.addEventListener(
+        eventName as 'boldTextChanged',
+        (on: boolean) => {
+          if (active) setBold(!!on);
+        },
+      );
+    } catch {
+      eventSub = undefined;
+    }
+
+    return () => {
+      active = false;
+      appSub.remove();
+      eventSub?.remove();
+    };
+  }, []);
+
+  return bold;
+}
+
+/**
+ * Layout scale = capped(system Dynamic Type) × app Settings textScale × bold.
  * Use for minHeights, gaps, and chrome — not as Text fontSize when
  * allowFontScaling is also enabled (would double-apply system scale).
  */
 export function useFontScale(): number {
   const system = useSystemFontScale();
+  const boldText = useBoldTextEnabled();
   const { textScale } = usePreferences();
   return useMemo(
-    () => layoutFontScale(system, textScale),
-    [system, textScale],
+    () => layoutFontScale(system, textScale, boldText),
+    [system, textScale, boldText],
   );
 }
 
@@ -83,11 +142,12 @@ export function useFontScaleBucket(): FontScaleBucket {
 }
 
 /**
- * Layout helpers that scale with Dynamic Type + app textScale.
+ * Layout helpers that scale with Dynamic Type + app textScale + Bold Text.
  * Use for minHeights, gaps, and stage sizes so chrome shrinks/grows with text.
  */
 export function useFontLayout() {
   const scale = useFontScale();
+  const boldText = useBoldTextEnabled();
   const { textScale } = usePreferences();
   const bucket = useMemo(() => fontScaleBucket(scale), [scale]);
 
@@ -98,6 +158,8 @@ export function useFontLayout() {
       scale,
       /** App Settings multiplier only (for design fontSize × user pref). */
       textScale,
+      /** True when iOS Bold Text / Android high-contrast text is on. */
+      boldText,
       bucket,
       s,
       /** Comfortable control min height (nav, chips, search). */
@@ -109,7 +171,7 @@ export function useFontLayout() {
       /** Vertical rhythm between chrome rows. */
       gap: s(8, 6),
     };
-  }, [scale, textScale, bucket]);
+  }, [scale, textScale, boldText, bucket]);
 }
 
 export { fontScaleBucket };

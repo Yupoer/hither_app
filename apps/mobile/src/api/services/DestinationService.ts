@@ -17,6 +17,7 @@ export interface ItineraryRow {
   latitude: number;
   longitude: number;
   meet_at?: string | null;
+  meet_red_minutes?: number | null;
   subgroup_id?: string | null;
 }
 
@@ -34,6 +35,8 @@ export function mapDestination(row: ItineraryRow): Destination {
       longitude: row.longitude ?? 0,
     },
     meetAt: row.meet_at ?? undefined,
+    meetRedMinutes:
+      typeof row.meet_red_minutes === 'number' ? row.meet_red_minutes : undefined,
     subgroupId: row.subgroup_id ?? undefined,
   };
 }
@@ -46,7 +49,7 @@ export async function addDestination(
   subgroupId?: string,
 ): Promise<void> {
   if (isDemoGroup(groupId)) {
-    demoAddDestination(input);
+    demoAddDestination({ ...input, subgroupId });
     return;
   }
   let scopedQuery = supabase
@@ -93,30 +96,48 @@ export async function deleteDestination(
 
 export async function reorderDestinations(
   groupId: string,
-  updates: { id: string; position: number; day: number }[],
+  updates: { id: string; position: number; day: number; meetAt?: string }[],
 ): Promise<void> {
   if (isDemoGroup(groupId)) {
     return;
   }
   const results = await Promise.all(
-    updates.map((up) =>
-      supabase
+    updates.map((up) => {
+      const patch: { position: number; day: number; meet_at?: string } = {
+        position: up.position,
+        day: up.day,
+      };
+      if (up.meetAt !== undefined) patch.meet_at = up.meetAt;
+      return supabase
         .from('itinerary_items')
-        .update({ position: up.position, day: up.day })
+        .update(patch)
         .eq('id', up.id)
-        .eq('group_id', groupId),
-    ),
+        .eq('group_id', groupId);
+    }),
   );
   orThrow(results.find((r) => r.error)?.error ?? null);
 }
 
+/**
+ * Set or clear the gathering-point meet clock. When setting, also persists the
+ * red-countdown threshold (minutes) so all members share the same warning window
+ * and server-side APNs can fire at that boundary.
+ */
 export async function setDestinationMeetTime(
   destinationId: string,
   meetAt: string | null,
+  meetRedMinutes?: number | null,
 ): Promise<void> {
+  const patch: {
+    meet_at: string | null;
+    meet_red_minutes?: number;
+  } = { meet_at: meetAt };
+  if (meetAt != null && typeof meetRedMinutes === 'number') {
+    patch.meet_red_minutes = meetRedMinutes;
+  }
   const { error } = await supabase
     .from('itinerary_items')
-    .update({ meet_at: meetAt })
+    .update(patch)
     .eq('id', destinationId);
   orThrow(error);
 }

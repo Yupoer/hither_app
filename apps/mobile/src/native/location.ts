@@ -38,6 +38,13 @@ export interface LocationSample {
   timestamp: number;
 }
 
+export interface LocationPermissionState {
+  foregroundStatus: Location.PermissionStatus;
+  foregroundCanAskAgain: boolean;
+  backgroundStatus: Location.PermissionStatus | null;
+  backgroundCanAskAgain: boolean;
+}
+
 function toSample(p: Location.LocationObject): LocationSample {
   return {
     coordinates: {
@@ -56,6 +63,35 @@ function toSample(p: Location.LocationObject): LocationSample {
 export async function requestPermission(): Promise<boolean> {
   const { status } = await Location.requestForegroundPermissionsAsync();
   return status === 'granted';
+}
+
+export async function getPermissionState(): Promise<LocationPermissionState> {
+  const foreground = await Location.getForegroundPermissionsAsync();
+  if (foreground.status !== 'granted') {
+    return {
+      foregroundStatus: foreground.status,
+      foregroundCanAskAgain: foreground.canAskAgain,
+      backgroundStatus: null,
+      backgroundCanAskAgain: true,
+    };
+  }
+
+  try {
+    const background = await Location.getBackgroundPermissionsAsync();
+    return {
+      foregroundStatus: foreground.status,
+      foregroundCanAskAgain: foreground.canAskAgain,
+      backgroundStatus: background.status,
+      backgroundCanAskAgain: background.canAskAgain,
+    };
+  } catch {
+    return {
+      foregroundStatus: foreground.status,
+      foregroundCanAskAgain: foreground.canAskAgain,
+      backgroundStatus: null,
+      backgroundCanAskAgain: true,
+    };
+  }
 }
 
 /**

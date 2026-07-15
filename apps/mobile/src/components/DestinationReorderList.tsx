@@ -248,6 +248,7 @@ export default function DestinationReorderList({
                    pan={pan}
                    styles={styles}
                    bgColor={bgColor}
+                   canEditColors={canReorder}
                    onColorPress={() => setColorPickerDay(item.day)}
                    onGrant={onGrant}
                    onMove={onMove}
@@ -342,6 +343,7 @@ const HeaderRow = memo(function HeaderRow({
   pan,
   styles,
   bgColor,
+  canEditColors,
   onColorPress,
   onGrant,
   onMove,
@@ -353,6 +355,7 @@ const HeaderRow = memo(function HeaderRow({
   pan: Animated.Value;
   styles: any;
   bgColor: string;
+  canEditColors: boolean;
   onColorPress: () => void;
   onGrant: (id: string) => void;
   onMove: (id: string, dy: number) => void;
@@ -406,7 +409,12 @@ const HeaderRow = memo(function HeaderRow({
       >
         <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 16 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Pressable onPress={onColorPress} style={[styles.colorDot, { backgroundColor: bgColor }]} />
+            <Pressable
+              onPress={onColorPress}
+              disabled={!canEditColors}
+              accessibilityRole={canEditColors ? 'button' : undefined}
+              style={[styles.colorDot, { backgroundColor: bgColor }]}
+            />
             <Text style={styles.headerTitle}>{item.title}</Text>
           </View>
           <Text style={styles.headerDate}>{item.dateStr}</Text>

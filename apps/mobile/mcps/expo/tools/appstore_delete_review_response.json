@@ -1,0 +1,17 @@
+{
+  "name": "appstore_delete_review_response",
+  "description": "Delete the public developer response on an App Store customer review. This is a write action: it removes the response from the App Store. No-op-safe — if the review has no response, it reports that nothing was deleted.",
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "reviewId": {
+        "type": "string",
+        "description": "The ID of the customer review whose response should be deleted"
+      }
+    },
+    "required": [
+      "reviewId"
+    ]
+  }
+}

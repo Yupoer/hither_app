@@ -229,6 +229,14 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
       return request;
     };
 
+    // No target → clear polylines (nav stopped / arrived / next stop not set).
+    if (!gathering) {
+      setState({ selfRoute: null, memberRoutes: {}, allModeRoutes: {} });
+      return () => {
+        active = false;
+      };
+    }
+
     void loadMapKitRoutes(
       {
         selfCoordinates: routedSelf,
@@ -243,6 +251,7 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
       if (!active) return;
       // Keep last good self route when a recompute returns null — dropping to
       // straight-line mid-journey inflates Live Activity progress falsely.
+      // Only sticky while we still have a gathering target.
       setState((prev) => ({
         ...next,
         selfRoute: next.selfRoute ?? prev.selfRoute,

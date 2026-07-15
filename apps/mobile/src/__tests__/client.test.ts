@@ -19,8 +19,14 @@ import {
   setNotificationPreferences,
   setJourneyStatus,
   setJourneyTarget,
+  reorderDestinations,
   setDestinationMeetTime,
   setStragglerConfig,
+  requestGroupLocationRefresh,
+  submitGatherPointRequest,
+  resolveGatherPointRequest,
+  setDestinationArrival,
+  deleteVisitedWaypoint,
   upsertLiveActivitySession,
   deleteLiveActivitySession,
   deleteMyLiveActivitySessions,
@@ -344,6 +350,70 @@ describe('notifications, commands & journey', () => {
     });
   });
 
+  it('requests a group-wide location refresh through the server cooldown RPC', async () => {
+    mockedRpc.mockResolvedValue({
+      data: { accepted: true, retry_after_seconds: 60 },
+      error: null,
+    });
+
+    await expect(requestGroupLocationRefresh('g1')).resolves.toEqual({
+      accepted: true,
+      retryAfterSeconds: 60,
+    });
+    expect(mockedRpc).toHaveBeenCalledWith('request_group_location_refresh', {
+      p_group_id: 'g1',
+    });
+  });
+
+  it('submits a coordinate-preserving gathering-point request', async () => {
+    mockedRpc.mockResolvedValue({ data: 'request-1', error: null });
+    await expect(submitGatherPointRequest('g1', 'sg1', [{
+      title: '車站',
+      address: '台北市',
+      coordinates: { latitude: 25.1, longitude: 121.5 },
+    }])).resolves.toBe('request-1');
+    expect(mockedRpc).toHaveBeenCalledWith('submit_gather_point_request', {
+      p_group_id: 'g1',
+      p_subgroup_id: 'sg1',
+      p_items: [{
+        title: '車站', address: '台北市', latitude: 25.1, longitude: 121.5, day: 1,
+      }],
+    });
+  });
+
+  it('resolves gathering requests and manual arrivals through guarded RPCs', async () => {
+    mockedRpc.mockResolvedValue({ data: null, error: null });
+    await resolveGatherPointRequest('request-1', true);
+    await setDestinationArrival('destination-1', 'member-1', true);
+    expect(mockedRpc).toHaveBeenNthCalledWith(1, 'resolve_gather_point_request', {
+      p_request_id: 'request-1', p_approve: true,
+    });
+    expect(mockedRpc).toHaveBeenNthCalledWith(2, 'set_destination_arrival', {
+      p_destination_id: 'destination-1', p_target_user_id: 'member-1', p_arrived: true,
+    });
+  });
+
+  it('deletes a history row without touching destination arrivals', async () => {
+    const eq = jest.fn().mockResolvedValue({ error: null });
+    const remove = jest.fn(() => ({ eq }));
+    mockedFrom.mockImplementation(() => ({ delete: remove }));
+    await deleteVisitedWaypoint('history-1');
+    expect(remove).toHaveBeenCalledWith();
+    expect(eq).toHaveBeenCalledWith('id', 'history-1');
+  });
+
+  it('returns the server cooldown when another member already requested a refresh', async () => {
+    mockedRpc.mockResolvedValue({
+      data: { accepted: false, retry_after_seconds: 37 },
+      error: null,
+    });
+
+    await expect(requestGroupLocationRefresh('g1')).resolves.toEqual({
+      accepted: false,
+      retryAfterSeconds: 37,
+    });
+  });
+
   it('getNotificationPreferences returns all-on defaults when no row exists', async () => {
     const maybeSingle = jest.fn().mockResolvedValue({ data: null, error: null });
     mockedFrom.mockImplementation(() => ({
@@ -421,12 +491,48 @@ describe('notifications, commands & journey', () => {
     });
   });
 
-  it('setDestinationMeetTime updates itinerary_items.meet_at', async () => {
+  it('setDestinationMeetTime updates itinerary_items.meet_at and red minutes', async () => {
     const update = jest.fn(() => ({ eq: () => Promise.resolve({ error: null }) }));
     mockedFrom.mockImplementation(() => ({ update }));
 
-    await setDestinationMeetTime('d1', '2026-07-09T10:00:00.000Z');
-    expect(update).toHaveBeenCalledWith({ meet_at: '2026-07-09T10:00:00.000Z' });
+    await setDestinationMeetTime('d1', '2026-07-09T10:00:00.000Z', 10);
+    expect(update).toHaveBeenCalledWith({
+      meet_at: '2026-07-09T10:00:00.000Z',
+      meet_red_minutes: 10,
+    });
+  });
+
+  it('reorderDestinations writes an aligned meet time when supplied', async () => {
+    const eqGroup = jest.fn().mockResolvedValue({ error: null });
+    const eqId = jest.fn(() => ({ eq: eqGroup }));
+    const update = jest.fn(() => ({ eq: eqId }));
+    mockedFrom.mockImplementation(() => ({ update }));
+
+    await reorderDestinations('g1', [
+      {
+        id: 'd1',
+        position: 2,
+        day: 3,
+        meetAt: '2026-08-02T06:30:00.000Z',
+      },
+    ]);
+
+    expect(update).toHaveBeenCalledWith({
+      position: 2,
+      day: 3,
+      meet_at: '2026-08-02T06:30:00.000Z',
+    });
+  });
+
+  it('reorderDestinations does not overwrite meet_at when no value is supplied', async () => {
+    const eqGroup = jest.fn().mockResolvedValue({ error: null });
+    const eqId = jest.fn(() => ({ eq: eqGroup }));
+    const update = jest.fn(() => ({ eq: eqId }));
+    mockedFrom.mockImplementation(() => ({ update }));
+
+    await reorderDestinations('g1', [{ id: 'd1', position: 1, day: 1 }]);
+
+    expect(update).toHaveBeenCalledWith({ position: 1, day: 1 });
   });
 
   it('setDestinationMeetTime(null) clears the meet time', async () => {
