@@ -24,16 +24,29 @@ EXPO_PUBLIC_SUPABASE_URL=https://htqrucnjafhhvxdqslbv.supabase.co
 EXPO_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_xxx
 ```
 
-## 3. 重建 pre-push hook
+## 3. 重建 git hooks
 
-寫入 `.git/hooks/pre-push`（記得 `chmod +x`）：
-
-```sh
-#!/bin/sh
-cd "$(git rev-parse --show-toplevel)/apps/mobile" || exit 1
-npm test -- --silent || exit 1
-npm run typecheck || exit 1
+```bash
+cd hither_app
+bash scripts/install-git-hooks.sh
 ```
+
+會安裝：
+
+| Hook | 行為 |
+|------|------|
+| **pre-push** | `apps/mobile` 跑 jest + tsc，失敗擋 push |
+| **post-commit** | 若 **HEAD 僅含 OTA 可推送變更**（`apps/mobile/src/**`、assets 等；**不含** ios/android/modules/targets、package.json、app.json…），則：feature branch → merge 進 `master` 並 push；已在 `master` → 直接 push；接著 `eas update` 到 `production` + `preview` |
+
+腳本本體：`scripts/ota-auto-ship.sh`（可手動 `bash scripts/ota-auto-ship.sh` 或 `--force`）。
+
+暫時關閉自動 OTA：
+
+```bash
+OTA_AUTO_SHIP=0 git commit ...
+```
+
+**注意：** post-commit 會真的 push + 發 OTA；純文件／supabase／native 變更會自動 skip。
 
 ## 4. 重建 `.claude/agents/`（多模型調度）
 
