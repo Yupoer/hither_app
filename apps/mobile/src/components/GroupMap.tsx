@@ -56,8 +56,6 @@ export interface GroupMapProps {
   currentUserId?: string;
   routePoints?: Coordinates[];
   routeColor?: string;
-  /** Secondary routes (other travel modes) drawn thinner under the primary. */
-  alternateRoutes?: { points: Coordinates[]; color: string }[];
   /** Top chrome overlapping the map (safe area + gathering-point carousel). */
   topOverlap?: number;
   /** Sheet height overlapping the map — with topOverlap, shifts the camera
@@ -213,7 +211,6 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     pendingPlace,
     routePoints,
     routeColor,
-    alternateRoutes,
     topOverlap = 0,
     bottomOverlap = 0,
   },
@@ -337,19 +334,6 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       pitchEnabled
       rotateEnabled
     >
-      {alternateRoutes?.map((alt, i) =>
-        alt.points.length > 1 ? (
-          <Polyline
-            key={`alt-route-${i}`}
-            coordinates={alt.points}
-            strokeColor={alt.color}
-            strokeWidth={3}
-            lineCap="round"
-            lineJoin="round"
-            lineDashPattern={[8, 6]}
-          />
-        ) : null,
-      )}
       {routePoints && routePoints.length > 1 ? (
         <Polyline
           coordinates={routePoints}

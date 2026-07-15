@@ -681,28 +681,13 @@ export default function MapScreen({ route, navigation }: Props) {
     setSelectedIndex,
   });
 
-  const { selfRoute, memberRoutes, allModeRoutes } = useMapKitRoutes({
+  const { selfRoute, memberRoutes } = useMapKitRoutes({
     selfCoordinates: fromCoords,
     members,
     gathering: activePoint,
     travelMode,
-    journeyActive,
     highAccuracy,
   });
-  const alternateRoutes = useMemo(() => {
-    if (!journeyActive) return undefined;
-    const modeColors: Record<string, string> = {
-      walk: 'rgba(120, 200, 255, 0.55)',
-      transit: 'rgba(180, 140, 255, 0.55)',
-      drive: 'rgba(255, 180, 90, 0.55)',
-    };
-    return (['walk', 'transit', 'drive'] as const)
-      .filter((mode) => mode !== travelMode && allModeRoutes[mode]?.points?.length)
-      .map((mode) => ({
-        points: allModeRoutes[mode]!.points,
-        color: modeColors[mode],
-      }));
-  }, [journeyActive, travelMode, allModeRoutes]);
   const initialJourneyRef = useRef<{
     key: string;
     distanceM: number;
@@ -2394,7 +2379,6 @@ export default function MapScreen({ route, navigation }: Props) {
         // to the selected card so ETA still makes sense.
         routePoints={selfRoute?.points}
         routeColor={accent}
-        alternateRoutes={alternateRoutes}
         // Settled detent only (not heightSV) so we don't re-render the map
         // mid-drag; top tracks measured carousel card height.
         topOverlap={topPad}

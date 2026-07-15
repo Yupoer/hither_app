@@ -59,7 +59,7 @@ describe('loadMapKitRoutes', () => {
     expect(routes.memberRoutes.b.expectedTravelTimeSeconds).toBe(1200);
   });
 
-  it('precomputes all travel modes only while journey is active', async () => {
+  it('fetches only the selected travel mode (no multi-mode overlay routes)', async () => {
     mockGetDirections.mockImplementation(async (from, _to, mode) => ({
       distanceMeters: 1000,
       expectedTravelTimeSeconds: mode === 'drive' ? 300 : 600,
@@ -71,13 +71,11 @@ describe('loadMapKitRoutes', () => {
       members: [],
       gathering,
       travelMode: 'walk',
-      journeyActive: true,
     });
 
-    expect(mockGetDirections.mock.calls.length).toBeGreaterThanOrEqual(3);
-    expect(routes.allModeRoutes.walk).toBeTruthy();
-    expect(routes.allModeRoutes.transit).toBeTruthy();
-    expect(routes.allModeRoutes.drive).toBeTruthy();
+    expect(mockGetDirections).toHaveBeenCalledTimes(1);
+    expect(mockGetDirections).toHaveBeenCalledWith(me, gathering.coordinates, 'walk');
+    expect(routes.selfRoute?.expectedTravelTimeSeconds).toBe(600);
   });
 
   it('keeps other member ETAs when one route is unavailable', async () => {

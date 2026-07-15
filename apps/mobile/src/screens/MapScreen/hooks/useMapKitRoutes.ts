@@ -26,21 +26,15 @@ interface MapKitRouteInputs {
   members: RouteMember[];
   gathering?: RouteTarget | null;
   travelMode: TravelMode;
-  /** When false, skip alternate-mode precompute (walk/transit/drive). */
-  journeyActive?: boolean;
   highAccuracy?: boolean;
 }
 
 export interface MapKitRoutesState {
   selfRoute: DirectionsResult | null;
   memberRoutes: Record<string, DirectionsResult>;
-  /** BUG-20: self routes for every travel mode while navigating. */
-  allModeRoutes: Partial<Record<TravelMode, DirectionsResult>>;
 }
 
 type RouteGetter = typeof getDirections;
-
-const ALL_MODES: TravelMode[] = ['walk', 'transit', 'drive'];
 
 export async function loadMapKitRoutes(
   {
@@ -48,22 +42,20 @@ export async function loadMapKitRoutes(
     members,
     gathering,
     travelMode,
-    journeyActive = false,
     /** Default false: flock uses haversine ETA; MapKit only for self path. */
     includeMemberRoutes = false,
   }: MapKitRouteInputs & { includeMemberRoutes?: boolean },
   getRoute: RouteGetter = getDirections,
 ): Promise<MapKitRoutesState> {
   if (!gathering) {
-    return { selfRoute: null, memberRoutes: {}, allModeRoutes: {} };
+    return { selfRoute: null, memberRoutes: {} };
   }
 
-  const wantAllModes = journeyActive && !!selfCoordinates;
   // Member MapKit directions are N network/native calls per tick — only when
   // explicitly requested (off by default to save radio + CPU).
   const memberList = includeMemberRoutes ? members : [];
 
-  const [selfRoute, entries, modeEntries] = await Promise.all([
+  const [selfRoute, entries] = await Promise.all([
     selfCoordinates
       ? getRoute(selfCoordinates, gathering.coordinates, travelMode)
       : Promise.resolve(null),
@@ -78,32 +70,11 @@ export async function loadMapKitRoutes(
         return route ? ([member.userId, route] as const) : null;
       }),
     ),
-    // Only precompute alternate modes while actively navigating.
-    wantAllModes
-      ? Promise.all(
-          ALL_MODES.map(async (mode) => {
-            const route = await getRoute(
-              selfCoordinates!,
-              gathering.coordinates,
-              mode,
-            );
-            return route ? ([mode, route] as const) : null;
-          }),
-        )
-      : Promise.resolve([] as const),
   ]);
-
-  const allModeRoutes: Partial<Record<TravelMode, DirectionsResult>> = {};
-  for (const entry of modeEntries) {
-    if (entry) allModeRoutes[entry[0]] = entry[1];
-  }
-  // Prefer the dedicated current-mode result if multi-mode failed for it.
-  if (selfRoute) allModeRoutes[travelMode] = selfRoute;
 
   return {
     selfRoute,
     memberRoutes: Object.fromEntries(entries.filter((entry) => entry !== null)),
-    allModeRoutes,
   };
 }
 
@@ -138,16 +109,13 @@ export function membersRouteSignature(
 export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
   const {
     selfCoordinates,
-    members,
     gathering,
     travelMode,
-    journeyActive = false,
     highAccuracy = false,
   } = inputs;
   const [state, setState] = useState<MapKitRoutesState>({
     selfRoute: null,
     memberRoutes: {},
-    allModeRoutes: {},
   });
   // ponytail: cache lives for one MapScreen mount; cap/TTL only if large groups
   // make measured memory or stale-route behavior a problem.
@@ -157,8 +125,9 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
     lastAtMs: 0,
   });
   const routedSelfRef = useRef<Coordinates | undefined>(undefined);
-  const lastMembersSigRef = useRef<string>('');
   const lastEffectKeyRef = useRef<string>('');
+  // Track last travel mode so sticky selfRoute does not keep a different mode's path.
+  const lastTravelModeRef = useRef(travelMode);
 
   useEffect(() => {
     const policy = locationPolicy(highAccuracy);
@@ -208,7 +177,6 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
       selfKey,
       gatheringKey,
       travelMode,
-      journeyActive ? '1' : '0',
       highAccuracy ? 'h' : 'n',
     ].join('#');
 
@@ -217,7 +185,6 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
       return;
     }
     lastEffectKeyRef.current = effectKey;
-    lastMembersSigRef.current = '';
 
     let active = true;
     const cachedGetRoute: RouteGetter = (from, to, mode) => {
@@ -231,10 +198,18 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
 
     // No target → clear polylines (nav stopped / arrived / next stop not set).
     if (!gathering) {
-      setState({ selfRoute: null, memberRoutes: {}, allModeRoutes: {} });
+      setState({ selfRoute: null, memberRoutes: {} });
+      lastTravelModeRef.current = travelMode;
       return () => {
         active = false;
       };
+    }
+
+    const modeChanged = lastTravelModeRef.current !== travelMode;
+    lastTravelModeRef.current = travelMode;
+    // Drop previous mode's geometry immediately so only the selected mode shows.
+    if (modeChanged) {
+      setState((prev) => ({ ...prev, selfRoute: null }));
     }
 
     void loadMapKitRoutes(
@@ -243,7 +218,6 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
         members: [],
         gathering,
         travelMode,
-        journeyActive,
         includeMemberRoutes: false,
       },
       cachedGetRoute,
@@ -251,16 +225,11 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
       if (!active) return;
       // Keep last good self route when a recompute returns null — dropping to
       // straight-line mid-journey inflates Live Activity progress falsely.
-      // Only sticky while we still have a gathering target.
+      // Do not stick across travel-mode changes (would show the wrong path).
       setState((prev) => ({
-        ...next,
-        selfRoute: next.selfRoute ?? prev.selfRoute,
-        allModeRoutes: {
-          ...next.allModeRoutes,
-          ...(next.selfRoute || !prev.selfRoute
-            ? {}
-            : { [travelMode]: prev.allModeRoutes[travelMode] ?? prev.selfRoute }),
-        },
+        selfRoute:
+          next.selfRoute ?? (modeChanged ? null : prev.selfRoute),
+        memberRoutes: next.memberRoutes,
       }));
     });
     return () => {
@@ -270,7 +239,6 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
     selfCoordinates,
     gathering,
     travelMode,
-    journeyActive,
     highAccuracy,
   ]);
 
