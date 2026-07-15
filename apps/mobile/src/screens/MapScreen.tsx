@@ -37,10 +37,7 @@ import Animated, {
   useAnimatedStyle,
   interpolate,
   Extrapolation,
-  withTiming,
   withSpring,
-  withSequence,
-  Easing,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -487,17 +484,8 @@ export default function MapScreen({ route, navigation }: Props) {
     value: Date;
     redMin: number;
   } | null>(null);
-  const [nowTick, setNowTick] = useState(() => new Date());
-  const hasMeetTimes = destinations.some((d) => d.meetAt);
-  const hasChangingLocationAges = members.some((m) => {
-    const unit = locationFreshness(m.lastUpdated, nowTick.getTime()).unit;
-    return unit !== 'missing' && unit !== 'stale';
-  });
-  useEffect(() => {
-    if (!hasMeetTimes && !hasChangingLocationAges) return;
-    const id = setInterval(() => setNowTick(new Date()), 30_000);
-    return () => clearInterval(id);
-  }, [hasMeetTimes, hasChangingLocationAges]);
+  // Meet labels / location freshness tick inside small memo children
+  // (MeetCountdown, LocationFreshnessText) so MapScreen is not re-rendered on a timer.
 
   // The soonest gathering point whose meet time is still ahead — schedule local
   // due + red-threshold warning as a device-side backup to server APNs.
@@ -997,17 +985,6 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const [refreshingLocations, setRefreshingLocations] = useState(false);
   const [refreshCooldownUntil, setRefreshCooldownUntil] = useState(0);
-  const [refreshClock, setRefreshClock] = useState(() => Date.now());
-  const refreshCooldownRemaining = Math.max(
-    0,
-    Math.ceil((refreshCooldownUntil - refreshClock) / 1000),
-  );
-
-  useEffect(() => {
-    if (refreshCooldownUntil <= Date.now()) return;
-    const timer = setInterval(() => setRefreshClock(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [refreshCooldownUntil]);
 
   const handleLocationRefreshRequest = useCallback(async (refreshGroupId = groupId) => {
     if (!refreshGroupId) return;
@@ -1069,7 +1046,7 @@ export default function MapScreen({ route, navigation }: Props) {
   ]);
 
   const refreshAllLocations = useCallback(async () => {
-    if (!groupId || refreshingLocations || refreshCooldownRemaining > 0) return;
+    if (!groupId || refreshingLocations || refreshCooldownUntil > Date.now()) return;
     setRefreshingLocations(true);
     try {
       if (isDemoGroup(groupId)) {
@@ -1080,7 +1057,6 @@ export default function MapScreen({ route, navigation }: Props) {
       const result = await requestGroupLocationRefresh(groupId);
       const retryAfter = Math.max(0, result.retryAfterSeconds);
       setRefreshCooldownUntil(Date.now() + retryAfter * 1000);
-      setRefreshClock(Date.now());
       if (result.accepted) {
         await refresh();
         Alert.alert(t('map.refreshLocationsAccepted'));
@@ -1094,7 +1070,7 @@ export default function MapScreen({ route, navigation }: Props) {
     } finally {
       setRefreshingLocations(false);
     }
-  }, [groupId, refresh, refreshingLocations, refreshCooldownRemaining, t]);
+  }, [groupId, refresh, refreshingLocations, refreshCooldownUntil, t]);
 
   const fitAllMembers = useCallback(() => {
     mapRef.current?.fitToMembers();
@@ -1758,20 +1734,10 @@ export default function MapScreen({ route, navigation }: Props) {
           ?? (d != null ? etaSecondsFor(d, travelMode) : null);
         const arrived = m.status === 'arrived';
         const isMemberLeader = m.role === 'leader';
-        // Member status: arrived (within the radius) > moving (a fresh
-        // location ping in the last 2 minutes) > not started (no recent ping —
-        // the app hasn't sent a location update, e.g. before they've left).
-        const movingRecently =
-          !!m.lastUpdated && nowTick.getTime() - new Date(m.lastUpdated).getTime() < 2 * 60_000;
+        // Member status strings that depend on "how recent is lastUpdated" are
+        // resolved in FlockRow (30s local tick) so MapScreen is not on a timer.
         const solo =
           m.userId === user?.id && soloOverride !== null ? soloOverride : !!m.solo;
-        const freshness = locationFreshness(m.lastUpdated, nowTick.getTime());
-        const freshnessText =
-          freshness.unit === 'minutes'
-            ? t('locationUpdate.minutes', { minutes: freshness.value })
-            : freshness.unit === 'hours'
-              ? t('locationUpdate.hours', { hours: freshness.value })
-              : t(`locationUpdate.${freshness.unit}`);
         return {
           userId: m.userId,
           name: (isSelf && user?.name) || m.name || t('group.travelerFallback'),
@@ -1784,30 +1750,21 @@ export default function MapScreen({ route, navigation }: Props) {
           // deterministic per-user colour when they haven't picked one.
           color: (isSelf && user?.avatarColor) || m.avatarColor || memberColor(m.userId),
           isLeader: isMemberLeader,
-          statusText: solo
-            ? t('solo.badge')
-            : isMemberLeader
-              ? t('flock.leading')
-              : arrived
-                ? t('memberStatus.arrived')
-                : movingRecently
-                  ? t('memberStatus.moving')
-                  : t('memberStatus.notStarted'),
+          arrived,
+          lastUpdated: m.lastUpdated,
           // Color grade: secondary by default; green only arrived; warn only solo/straggler-like.
           statusColor: solo
             ? glass.warn
             : arrived
               ? glass.ok
               : glass.textSecondary,
-          freshnessText,
           // "—" for my own row (distance to myself is meaningless); everyone
           // else shows how far they are from me.
           eta: displayedEta != null ? shortEta(displayedEta) : '',
           dist: displayedDistance != null ? formatDistance(displayedDistance) : isSelf ? t('flock.you') : '',
-          arrived,
         };
       }),
-    [members, activePoint, accent, t, user?.id, user?.name, user?.avatar, user?.avatarColor, soloOverride, nowTick, memberRoutes, travelMode],
+    [members, activePoint, t, user?.id, user?.name, user?.avatar, user?.avatarColor, soloOverride, memberRoutes, travelMode],
   );
 
   // Drop the override once the server value catches up, so a later toggle
@@ -1818,7 +1775,6 @@ export default function MapScreen({ route, navigation }: Props) {
     if (mine && !!mine.solo === soloOverride) setSoloOverride(null);
   }, [members, soloOverride, user?.id]);
 
-  const topFlock = flock.filter((f) => !f.subgroupId);
   // My own subgroup, if any — gates the "invite a teammate" entry on my card.
   const mySubgroupId = flock.find((f) => f.userId === user?.id)?.subgroupId;
 
@@ -1966,80 +1922,39 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [mySubgroupId, refreshSentInvites, sentInvites.length, members.length]);
   // Co-members I could still pull into my team — anyone not me and not already
   // in my subgroup.
-  const invitable = flock.filter(
-    (f) => f.userId !== user?.id && f.subgroupId !== mySubgroupId,
+  const invitable = useMemo(
+    () => flock.filter((f) => f.userId !== user?.id && f.subgroupId !== mySubgroupId),
+    [flock, user?.id, mySubgroupId],
+  );
+
+  const topFlockMemo = useMemo(
+    () => flock.filter((f) => !f.subgroupId),
+    [flock],
   );
 
   // One flock row, shared by the main list and the subgroup cards.
   // Display: name + "角色 · 距離/狀態 · 最後更新". Solo is NOT on the card.
   const renderFlockRow = useCallback((f: (typeof flock)[number], last: boolean, index?: number) => {
-    const isMe = f.userId === user?.id;
-    const role = f.isLeader ? t('map.leaderRole') : t('map.memberRole');
-    const distOrStatus = f.dist || f.statusText;
     return (
-      <View key={`flock-${f.userId}-${index ?? 0}`} style={[styles.flockRow, last && styles.flockRowLast]}>
-        <View style={styles.flockRowMain}>
-          <View
-            style={[
-              styles.flockAvatar,
-              {
-                backgroundColor: f.color,
-                borderColor: f.isLeader ? 'rgba(255,255,255,0.55)' : 'transparent',
-              },
-            ]}
-          >
-            {f.avatar ? (
-              <HitherText typeRole="emoji" style={styles.flockEmoji}>{f.avatar}</HitherText>
-            ) : (
-              <Text style={styles.flockInitial}>{f.name.slice(0, 1).toUpperCase()}</Text>
-            )}
-          </View>
-          <View style={styles.grow}>
-            <Text style={styles.flockName}>{f.name}{isMe ? ` · ${t('flock.you')}` : ''}</Text>
-            {/* 角色·距離白/灰 · 更新時間灰；脫隊/solo 才用警示色 */}
-            <Text style={styles.flockStatus} numberOfLines={2}>
-              <Text style={styles.flockMetaRole}>{role}</Text>
-              {distOrStatus ? (
-                <Text style={styles.flockMetaDist}>{` · ${distOrStatus}`}</Text>
-              ) : null}
-              {f.freshnessText ? (
-                <Text style={styles.flockMetaFresh}>{` · ${f.freshnessText}`}</Text>
-              ) : null}
-              {f.solo ? (
-                <Text style={styles.flockMetaWarn}>{` · ${t('solo.badge')}`}</Text>
-              ) : null}
-            </Text>
-          </View>
-        </View>
-        {/* Individual actions: create/leave 小隊 only — not solo (solo is global). */}
-        {isMe && (
-          <View style={styles.selfControls}>
-            {f.subgroupId ? (
-              <Pressable
-                onPress={() => void doSelfMerge()}
-                hitSlop={8}
-                accessibilityRole="button"
-                style={({ pressed }) => pressed && styles.rowActionPressed}
-              >
-                <Text style={styles.rowActionSecondary}>
-                  {t('subgroup.leaveTeam')}
-                </Text>
-              </Pressable>
-            ) : (
-              <Pressable
-                onPress={() => void doSelfSplit()}
-                hitSlop={8}
-                accessibilityRole="button"
-                style={({ pressed }) => pressed && styles.rowActionPressed}
-              >
-                <Text style={styles.rowActionSecondary}>
-                  {t('subgroup.createTeam')}
-                </Text>
-              </Pressable>
-            )}
-          </View>
-        )}
-      </View>
+      <FlockRow
+        key={`flock-${f.userId}-${index ?? 0}`}
+        userId={f.userId}
+        name={f.name}
+        avatar={f.avatar}
+        color={f.color}
+        isLeader={f.isLeader}
+        solo={f.solo}
+        subgroupId={f.subgroupId}
+        dist={f.dist}
+        arrived={f.arrived}
+        lastUpdated={f.lastUpdated}
+        isMe={f.userId === user?.id}
+        last={last}
+        styles={styles}
+        t={t}
+        onSelfMerge={doSelfMerge}
+        onSelfSplit={doSelfSplit}
+      />
     );
   }, [user?.id, t, doSelfMerge, doSelfSplit, styles]);
 
@@ -2206,27 +2121,14 @@ export default function MapScreen({ route, navigation }: Props) {
           </Text>
           <Ionicons name="chevron-down" size={14} color={glass.textSecondary} />
         </Pressable>
-        <Pressable
-          style={({ pressed }) => [
-            styles.refreshLocationsButton,
-            pressed && !refreshingLocations && styles.rowActionPressed,
-          ]}
-          onPress={() => void refreshAllLocations()}
-          disabled={refreshingLocations || refreshCooldownRemaining > 0}
-          accessibilityRole="button"
-          accessibilityLabel={t('map.refreshLocationsA11y')}
-          accessibilityHint={
-            refreshCooldownRemaining > 0
-              ? t('map.refreshLocationsCooldown', { seconds: refreshCooldownRemaining })
-              : undefined
-          }
-        >
-          {refreshingLocations ? (
-            <ActivityIndicator size="small" color={accent} />
-          ) : (
-            <Ionicons name="refresh" size={19} color={accent} />
-          )}
-        </Pressable>
+        <RefreshLocationsButton
+          refreshing={refreshingLocations}
+          cooldownUntil={refreshCooldownUntil}
+          accent={accent}
+          styles={styles}
+          t={t}
+          onPress={refreshAllLocations}
+        />
       </View>
       {pendingInvites.length > 0 && (
         <View style={styles.list}>
@@ -2273,7 +2175,7 @@ export default function MapScreen({ route, navigation }: Props) {
       )}
       {subgroups.length === 0 && (
         <View style={styles.list}>
-          {topFlock.map((f, i) => renderFlockRow(f, i === topFlock.length - 1, i))}
+          {topFlockMemo.map((f, i) => renderFlockRow(f, i === topFlockMemo.length - 1, i))}
         </View>
       )}
       <SubgroupSection
@@ -2321,9 +2223,9 @@ export default function MapScreen({ route, navigation }: Props) {
       </View>
     </>
   ), [
-    t, styles, refreshingLocations, refreshAllLocations, accent, highAccuracy,
+    t, styles, refreshingLocations, refreshAllLocations, refreshCooldownUntil, accent, highAccuracy,
     setHighAccuracy, pendingInvites, fontBucket, handleAcceptInvite, handleDeclineInvite,
-    subgroups, topFlock, renderFlockRow, flock, mySubgroupId, sentInvites,
+    subgroups, topFlockMemo, renderFlockRow, flock, mySubgroupId, sentInvites,
     openMyStatusPicker, myStatusLabel,
   ]);
 
@@ -2422,19 +2324,24 @@ export default function MapScreen({ route, navigation }: Props) {
     openPaywall, persistStragglerConfig, handleStragglerLocalChange,
   ]);
 
+  const sheetPaneOptions = useMemo(
+    () => [
+      { key: 'members', label: t('map.tabMembers') },
+      { key: 'route', label: t('map.tabRoute') },
+      { key: 'tools', label: t('map.tabTools') },
+    ],
+    [t],
+  );
+
   const sheetChildren = useMemo(() => (
     <>
       {/* Same sliding-pill animation as 脫隊示警 Segmented */}
       <View style={styles.sheetPaneToggleWrap}>
         <Segmented
           accent={accent}
-          options={[
-            { key: 'members', label: t('map.tabMembers') },
-            { key: 'route', label: t('map.tabRoute') },
-            { key: 'tools', label: t('map.tabTools') },
-          ]}
+          options={sheetPaneOptions}
           value={sheetPane}
-          onChange={(key) => selectSheetPane(key as 'members' | 'route' | 'tools')}
+          onChange={selectSheetPane as (key: string) => void}
         />
       </View>
 
@@ -2461,7 +2368,7 @@ export default function MapScreen({ route, navigation }: Props) {
       </View>
     </>
   ), [
-    styles, t, accent, sheetPane, selectSheetPane, membersPaneBody, routePaneBody, toolsPaneBody,
+    styles, accent, sheetPane, sheetPaneOptions, selectSheetPane, membersPaneBody, routePaneBody, toolsPaneBody,
   ]);
 
   if (loading && !state) {
@@ -2696,11 +2603,11 @@ export default function MapScreen({ route, navigation }: Props) {
               const flockNavigatingThis =
                 (journeyActive || (isLeader && journeyBusy)) && navTarget?.id === dest.id;
               const navigatingThis = isLeader && flockNavigatingThis;
-              // Leader-set target meet time, formatted as a live countdown /
-              // overdue label. Recomputed every 30s by the nowTick interval.
+              // Live countdown UI is MeetCountdown (own 1s timer). a11y uses
+              // a one-shot label on each parent render — no MapScreen clock.
               const meetLabel = dest.meetAt
                 ? (() => {
-                    const mins = minutesUntil(dest.meetAt as string, nowTick);
+                    const mins = minutesUntil(dest.meetAt as string, new Date());
                     return mins >= 0
                       ? t('meetTime.countdown', { minutes: mins })
                       : t('meetTime.overdue', { minutes: Math.abs(mins) });
@@ -2758,7 +2665,6 @@ export default function MapScreen({ route, navigation }: Props) {
                   style={{ width: windowWidth, paddingHorizontal: narrowScreen ? 10 : 14 }}
                 >
                   <GatheringCardPressable
-                    expanded={cardExpanded}
                     onToggle={() => toggleCard(dest.id)}
                     accessibilityLabel={dest.title}
                     accessibilityHint={cardExpanded ? '收合集合點卡片' : '展開集合點卡片'}
@@ -3755,46 +3661,22 @@ export default function MapScreen({ route, navigation }: Props) {
   );
 }
 
-/**
- * Gathering-point card press shell — direction-aware, no artificial delay.
- *
- * Collapse → expand: haptic → expand once (no shrink, no rebound scale).
- * Expand → collapse: haptic → brief scale-up (expand a bit) + collapse in parallel
- * (scale settles to 1; never shrinks first, never rebounds larger after collapse).
- */
+/** Gathering-point card press shell — haptic only, no scale animation. */
 function GatheringCardPressable({
-  expanded,
   onToggle,
   accessibilityLabel,
   accessibilityHint,
   children,
 }: {
-  expanded: boolean;
   onToggle: () => void;
   accessibilityLabel: string;
   accessibilityHint: string;
   children: React.ReactNode;
 }) {
-  const scale = useSharedValue(1);
-  const scaleStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
   const handlePress = useCallback(() => {
     rigidTap();
-    if (expanded) {
-      // Expand a little then collapse — both start immediately (no setTimeout).
-      scale.value = withSequence(
-        withTiming(1.02, { duration: 40, easing: Easing.out(Easing.quad) }),
-        withTiming(1, { duration: 80, easing: Easing.out(Easing.cubic) }),
-      );
-      onToggle();
-    } else {
-      // One-shot expand — leave scale at 1 so there is no shrink / end rebound.
-      scale.value = 1;
-      onToggle();
-    }
-  }, [expanded, onToggle, scale]);
+    onToggle();
+  }, [onToggle]);
 
   return (
     <Pressable
@@ -3803,10 +3685,191 @@ function GatheringCardPressable({
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
     >
-      <Animated.View style={scaleStyle}>{children}</Animated.View>
+      {children}
     </Pressable>
   );
 }
+
+/**
+ * Location-refresh control owns the 1 Hz cooldown clock so MapScreen is not
+ * re-rendered every second while the button counts down.
+ */
+const RefreshLocationsButton = React.memo(function RefreshLocationsButton({
+  refreshing,
+  cooldownUntil,
+  accent,
+  styles,
+  t,
+  onPress,
+}: {
+  refreshing: boolean;
+  cooldownUntil: number;
+  accent: string;
+  styles: any;
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string;
+  onPress: () => void;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (cooldownUntil <= Date.now()) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [cooldownUntil]);
+  const remaining = Math.max(0, Math.ceil((cooldownUntil - now) / 1000));
+  const cooling = remaining > 0;
+
+  return (
+    <Pressable
+      style={({ pressed }) => [
+        styles.refreshLocationsButton,
+        pressed && !refreshing && styles.rowActionPressed,
+      ]}
+      onPress={() => void onPress()}
+      disabled={refreshing || cooling}
+      accessibilityRole="button"
+      accessibilityLabel={t('map.refreshLocationsA11y')}
+      accessibilityHint={
+        cooling ? t('map.refreshLocationsCooldown', { seconds: remaining }) : undefined
+      }
+    >
+      {refreshing ? (
+        <ActivityIndicator size="small" color={accent} />
+      ) : (
+        <Ionicons name="refresh" size={19} color={accent} />
+      )}
+    </Pressable>
+  );
+});
+
+/**
+ * One flock member row. Owns a 30s tick for freshness / "moving" status so the
+ * parent MapScreen tree is not on a location-age interval.
+ */
+const FlockRow = React.memo(function FlockRow({
+  name,
+  avatar,
+  color,
+  isLeader,
+  solo,
+  subgroupId,
+  dist,
+  arrived,
+  lastUpdated,
+  isMe,
+  last,
+  styles,
+  t,
+  onSelfMerge,
+  onSelfSplit,
+}: {
+  userId: string;
+  name: string;
+  avatar?: string | null;
+  color: string;
+  isLeader: boolean;
+  solo: boolean;
+  subgroupId?: string | null;
+  dist: string;
+  arrived: boolean;
+  lastUpdated?: string;
+  isMe: boolean;
+  last: boolean;
+  styles: any;
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string;
+  onSelfMerge: () => void | Promise<unknown>;
+  onSelfSplit: () => void | Promise<unknown>;
+}) {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const movingRecently =
+    !!lastUpdated && nowMs - new Date(lastUpdated).getTime() < 2 * 60_000;
+  const statusText = solo
+    ? t('solo.badge')
+    : isLeader
+      ? t('flock.leading')
+      : arrived
+        ? t('memberStatus.arrived')
+        : movingRecently
+          ? t('memberStatus.moving')
+          : t('memberStatus.notStarted');
+  const role = isLeader ? t('map.leaderRole') : t('map.memberRole');
+  const distOrStatus = dist || statusText;
+  const freshness = locationFreshness(lastUpdated, nowMs);
+  const freshnessText =
+    freshness.unit === 'minutes'
+      ? t('locationUpdate.minutes', { minutes: freshness.value })
+      : freshness.unit === 'hours'
+        ? t('locationUpdate.hours', { hours: freshness.value })
+        : t(`locationUpdate.${freshness.unit}`);
+
+  return (
+    <View style={[styles.flockRow, last && styles.flockRowLast]}>
+      <View style={styles.flockRowMain}>
+        <View
+          style={[
+            styles.flockAvatar,
+            {
+              backgroundColor: color,
+              borderColor: isLeader ? 'rgba(255,255,255,0.55)' : 'transparent',
+            },
+          ]}
+        >
+          {avatar ? (
+            <HitherText typeRole="emoji" style={styles.flockEmoji}>{avatar}</HitherText>
+          ) : (
+            <Text style={styles.flockInitial}>{name.slice(0, 1).toUpperCase()}</Text>
+          )}
+        </View>
+        <View style={styles.grow}>
+          <Text style={styles.flockName}>{name}{isMe ? ` · ${t('flock.you')}` : ''}</Text>
+          <Text style={styles.flockStatus} numberOfLines={2}>
+            <Text style={styles.flockMetaRole}>{role}</Text>
+            {distOrStatus ? (
+              <Text style={styles.flockMetaDist}>{` · ${distOrStatus}`}</Text>
+            ) : null}
+            {freshnessText ? (
+              <Text style={styles.flockMetaFresh}>{` · ${freshnessText}`}</Text>
+            ) : null}
+            {solo ? (
+              <Text style={styles.flockMetaWarn}>{` · ${t('solo.badge')}`}</Text>
+            ) : null}
+          </Text>
+        </View>
+      </View>
+      {isMe && (
+        <View style={styles.selfControls}>
+          {subgroupId ? (
+            <Pressable
+              onPress={() => void onSelfMerge()}
+              hitSlop={8}
+              accessibilityRole="button"
+              style={({ pressed }) => pressed && styles.rowActionPressed}
+            >
+              <Text style={styles.rowActionSecondary}>
+                {t('subgroup.leaveTeam')}
+              </Text>
+            </Pressable>
+          ) : (
+            <Pressable
+              onPress={() => void onSelfSplit()}
+              hitSlop={8}
+              accessibilityRole="button"
+              style={({ pressed }) => pressed && styles.rowActionPressed}
+            >
+              <Text style={styles.rowActionSecondary}>
+                {t('subgroup.createTeam')}
+              </Text>
+            </Pressable>
+          )}
+        </View>
+      )}
+    </View>
+  );
+});
 
 interface StragglerConfigSectionProps {
   groupAlerts: boolean;

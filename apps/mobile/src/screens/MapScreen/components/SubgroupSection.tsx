@@ -17,7 +17,7 @@ interface SubgroupSectionProps {
   styles: any;
 }
 
-export function SubgroupSection({
+export const SubgroupSection = React.memo(function SubgroupSection({
   subgroups,
   flock,
   mySubgroupId,
@@ -105,4 +105,4 @@ export function SubgroupSection({
       })}
     </>
   );
-}
+});

@@ -20,7 +20,7 @@ interface SegmentedProps {
   onDisabledPress?: (key: string) => void;
 }
 
-export function Segmented({
+export const Segmented = React.memo(function Segmented({
   options,
   value,
   onChange,
@@ -139,7 +139,7 @@ export function Segmented({
       })}
     </View>
   );
-}
+});
 
 const makeSegStyles = (scale: number, dense: boolean, boldText: boolean) => {
   const s = (n: number, min = 0) => Math.max(min, Math.round(n * scale));

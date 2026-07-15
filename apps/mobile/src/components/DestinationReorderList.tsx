@@ -64,6 +64,10 @@ export default function DestinationReorderList({
   const draggingRef = useRef(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [colorPickerDay, setColorPickerDay] = useState<number | null>(null);
+  // Stable so memo(HeaderRow) is not busted by a new lambda each parent render.
+  const onHeaderColorPress = useCallback((day: number) => {
+    setColorPickerDay(day);
+  }, []);
   const startIndexRef = useRef(0);
   const pan = useRef(new Animated.Value(0)).current;
 
@@ -249,7 +253,7 @@ export default function DestinationReorderList({
                    styles={styles}
                    bgColor={bgColor}
                    canEditColors={canReorder}
-                   onColorPress={() => setColorPickerDay(item.day)}
+                   onColorPress={onHeaderColorPress}
                    onGrant={onGrant}
                    onMove={onMove}
                    onRelease={onRelease}
@@ -356,7 +360,7 @@ const HeaderRow = memo(function HeaderRow({
   styles: any;
   bgColor: string;
   canEditColors: boolean;
-  onColorPress: () => void;
+  onColorPress: (day: number) => void;
   onGrant: (id: string) => void;
   onMove: (id: string, dy: number) => void;
   onRelease: () => void;
@@ -410,7 +414,7 @@ const HeaderRow = memo(function HeaderRow({
         <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 16 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Pressable
-              onPress={onColorPress}
+              onPress={() => onColorPress(item.day)}
               disabled={!canEditColors}
               accessibilityRole={canEditColors ? 'button' : undefined}
               style={[styles.colorDot, { backgroundColor: bgColor }]}

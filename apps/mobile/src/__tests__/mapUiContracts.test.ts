@@ -49,8 +49,9 @@ describe('map UI placement contracts', () => {
 
   it('groups high accuracy with the refreshed member controls', () => {
     // Members pane: status bar + refresh, then precise-location at the bottom.
+    // Refresh control is isolated as RefreshLocationsButton (1 Hz clock stays local).
     const statusBar = mapScreen.indexOf('styles.myStatusBar');
-    const refresh = mapScreen.indexOf('styles.refreshLocationsButton', statusBar);
+    const refresh = mapScreen.indexOf('RefreshLocationsButton', statusBar);
     const accuracy = mapScreen.indexOf('styles.accuracyRow', refresh);
 
     expect(statusBar).toBeGreaterThanOrEqual(0);
@@ -58,6 +59,7 @@ describe('map UI placement contracts', () => {
     expect(accuracy).toBeGreaterThan(refresh);
     expect(mapScreen).toContain("t('settings.preciseLocation')");
     expect(mapScreen).toContain("t('settings.preciseLocationHint')");
+    expect(mapScreen).toContain('styles.refreshLocationsButton');
   });
 
   it('keeps account and Hither Pro as the first settings rows', () => {
@@ -137,13 +139,12 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).not.toMatch(/exiting=\{ZoomOut/);
   });
 
-  it('uses direction-aware gathering-card press (no 0.96 shrink rebound)', () => {
+  it('uses gathering-card press without scale bounce on expand or collapse', () => {
     expect(mapScreen).toContain('GatheringCardPressable');
     expect(mapScreen).not.toContain('scale: 0.96');
     expect(mapScreen).not.toContain('pressedCardId');
-    // Collapse path may scale up slightly; expand path leaves scale at 1.
-    expect(mapScreen).toContain('withTiming(1.02');
-    expect(mapScreen).toContain('scale.value = 1');
+    expect(mapScreen).not.toContain('withTiming(1.02');
+    expect(mapScreen).not.toContain('withSequence');
   });
 
   it('keeps straggler toggle UI-first with dirty/last-write-wins (not forced by DB props)', () => {
@@ -162,8 +163,9 @@ describe('map UI placement contracts', () => {
   });
 
   it('keeps peek/mid sheet width stable so tab Segmented does not scale between stages', () => {
-    expect(bottomSheet).toContain('interpolate(h, detents, [10, 10, 0]');
-    expect(bottomSheet).not.toContain('interpolate(h, detents, [20, 10, 0]');
+    // detents may be read via SharedValue alias `d` (stable pan) but side insets stay [10,10,0].
+    expect(bottomSheet).toMatch(/interpolate\(h, \w+, \[10, 10, 0\]/);
+    expect(bottomSheet).not.toMatch(/interpolate\(h, \w+, \[20, 10, 0\]/);
   });
 
   it('snaps Segmented pill when track width appears (tools pane reveal)', () => {

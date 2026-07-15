@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView as RNScrollView, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector, ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import Animated, {
@@ -98,6 +98,13 @@ export default React.memo(function BottomSheet({
     scrollOffset.value = e.contentOffset.y;
   });
 
+  // Mirror props into SharedValues so pan / sheetStyle worklets always read
+  // current detents & inset without rebuilding Gesture.Pan() every render.
+  const detentsSV = useSharedValue(detents);
+  const bottomInsetSV = useSharedValue(bottomInset);
+  detentsSV.value = detents;
+  bottomInsetSV.value = bottomInset;
+
   // Per-gesture state (worklet-owned; reset each onBegin, read through onEnd).
   const gStartH = useSharedValue(detents[index]);
   const gStartScroll = useSharedValue(0);
@@ -109,15 +116,26 @@ export default React.memo(function BottomSheet({
   const onHeaderHeightRef = useRef(onHeaderHeight);
   onHeaderHeightRef.current = onHeaderHeight;
 
+  // JS settle reads latest detents / onIndexChange via refs so pan can stay
+  // memoized (not recreated when parent passes a new detents array identity).
+  const detentsRef = useRef(detents);
+  detentsRef.current = detents;
+  const onIndexChangeRef = useRef(onIndexChange);
+  onIndexChangeRef.current = onIndexChange;
+
   // Settle a released sheet-drag on the JS thread — reuses the unit-tested pure
   // helpers, then springs the shared height (carrying the fling velocity) and
   // reports the eager index. gh velocityY is px/s, down-positive; sheetMath
   // wants px/ms with the same sign, and the height grows as the finger rises.
-  const settle = (endH: number, velocityY: number) => {
-    const target = settleTarget({ vy: velocityY / 1000 }, endH, detents);
-    height.value = withSpring(detents[target], { ...SPRING, velocity: -velocityY });
-    onIndexChange(target);
-  };
+  const settle = useCallback(
+    (endH: number, velocityY: number) => {
+      const d = detentsRef.current;
+      const target = settleTarget({ vy: velocityY / 1000 }, endH, d);
+      height.value = withSpring(d[target], { ...SPRING, velocity: -velocityY });
+      onIndexChangeRef.current(target);
+    },
+    [height],
+  );
 
   // Snap when detent *values* change (rotation / header re-measure).
   // Gesture-driven index changes settle via `settle` (not listed as a dep).
@@ -127,55 +145,64 @@ export default React.memo(function BottomSheet({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detents[0], detents[1], detents[2]]);
 
-  const pan = Gesture.Pan()
-    .activeOffsetY([-8, 8])
-    // AnimatedRef isn't a plain React ref; GH only reads the handler tag off it.
-    .simultaneousWithExternalGesture(scrollRef as unknown as React.RefObject<React.ComponentType>)
-    .onBegin(() => {
-      'worklet';
-      cancelAnimation(height);
-      gStartH.value = height.value;
-      gMode.value = MODE_NONE;
-    })
-    .onUpdate((e) => {
-      'worklet';
-      const last = detents.length - 1;
-      if (gMode.value === MODE_NONE) {
-        if (Math.abs(e.translationY) < DECIDE_PX) return;
-        const atFull = height.value >= detents[last] - EPS;
-        const goingDown = e.translationY > 0;
-        // Apple-Maps decision table, content-first in BOTH directions:
-        //  ↓ + list scrolled (any detent) → scroll the list (content priority)
-        //  ↓ + list at top                → collapse the sheet one step
-        //  ↑ + below full                 → expand the sheet one step
-        //  ↑ + at full                    → scroll the list
-        if (goingDown && scrollOffset.value > TOP_EPS) gMode.value = MODE_SCROLL;
-        else if (goingDown) gMode.value = MODE_SHEET;
-        else if (!atFull) gMode.value = MODE_SHEET;
-        else gMode.value = MODE_SCROLL;
-        gStartScroll.value = scrollOffset.value;
-      }
-      if (gMode.value === MODE_SHEET) {
-        // Position-based: the sheet tracks the finger across the whole detent
-        // range (rubber-banding only past the outer ends), so a long drag can
-        // jump straight from peek to full instead of stopping one stage on.
-        const lo = detents[0] - 40;
-        const hi = detents[last] + 60;
-        height.value = Math.max(lo, Math.min(hi, gStartH.value - e.translationY));
-        // Hold the list still while the finger resizes the sheet, so a
-        // simultaneous native scroll can't leak through. Not a reset-to-top:
-        // it pins to wherever the drag started (≈0 whenever a sheet-drag is
-        // possible), and only for the life of this gesture.
-        scrollTo(scrollRef, 0, gStartScroll.value, false);
-      }
-    })
-    .onEnd((e) => {
-      'worklet';
-      if (gMode.value === MODE_SHEET) {
-        runOnJS(settle)(height.value, e.velocityY);
-      }
-      gMode.value = MODE_NONE;
-    });
+  // Build pan once: worklets read detentsSV / height / gesture shared values.
+  // Do NOT depend on detents array identity — that would recreate every render.
+  const pan = useMemo(
+    () =>
+      Gesture.Pan()
+        .activeOffsetY([-8, 8])
+        // AnimatedRef isn't a plain React ref; GH only reads the handler tag off it.
+        .simultaneousWithExternalGesture(scrollRef as unknown as React.RefObject<React.ComponentType>)
+        .onBegin(() => {
+          'worklet';
+          cancelAnimation(height);
+          gStartH.value = height.value;
+          gMode.value = MODE_NONE;
+        })
+        .onUpdate((e) => {
+          'worklet';
+          const d = detentsSV.value;
+          const last = d.length - 1;
+          if (gMode.value === MODE_NONE) {
+            if (Math.abs(e.translationY) < DECIDE_PX) return;
+            const atFull = height.value >= d[last] - EPS;
+            const goingDown = e.translationY > 0;
+            // Apple-Maps decision table, content-first in BOTH directions:
+            //  ↓ + list scrolled (any detent) → scroll the list (content priority)
+            //  ↓ + list at top                → collapse the sheet one step
+            //  ↑ + below full                 → expand the sheet one step
+            //  ↑ + at full                    → scroll the list
+            if (goingDown && scrollOffset.value > TOP_EPS) gMode.value = MODE_SCROLL;
+            else if (goingDown) gMode.value = MODE_SHEET;
+            else if (!atFull) gMode.value = MODE_SHEET;
+            else gMode.value = MODE_SCROLL;
+            gStartScroll.value = scrollOffset.value;
+          }
+          if (gMode.value === MODE_SHEET) {
+            // Position-based: the sheet tracks the finger across the whole detent
+            // range (rubber-banding only past the outer ends), so a long drag can
+            // jump straight from peek to full instead of stopping one stage on.
+            const lo = d[0] - 40;
+            const hi = d[last] + 60;
+            height.value = Math.max(lo, Math.min(hi, gStartH.value - e.translationY));
+            // Hold the list still while the finger resizes the sheet, so a
+            // simultaneous native scroll can't leak through. Not a reset-to-top:
+            // it pins to wherever the drag started (≈0 whenever a sheet-drag is
+            // possible), and only for the life of this gesture.
+            scrollTo(scrollRef, 0, gStartScroll.value, false);
+          }
+        })
+        .onEnd((e) => {
+          'worklet';
+          if (gMode.value === MODE_SHEET) {
+            runOnJS(settle)(height.value, e.velocityY);
+          }
+          gMode.value = MODE_NONE;
+        }),
+    // Stable shared values + settle + height + scrollRef only — not detents[].
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [height, settle, scrollRef, detentsSV, gStartH, gMode, gStartScroll, scrollOffset],
+  );
 
   // Apple-Maps stage morphing, all on the UI thread: peek floats far off every
   // edge (small and dainty), mid hugs the edges at the search bar's gap, full
@@ -183,14 +210,15 @@ export default React.memo(function BottomSheet({
   // corners. Corner radius stays constant across detents (match device bezel).
   const sheetStyle = useAnimatedStyle(() => {
     const h = height.value;
+    const d = detentsSV.value;
     // peek/mid share the same horizontal inset so sheet chrome (e.g. 成員/路線/工具
     // Segmented) does not appear to scale when moving between stage 1 and 2.
     // Full still goes edge-to-edge.
-    const side = interpolate(h, detents, [10, 10, 0], Extrapolation.CLAMP);
+    const side = interpolate(h, d, [10, 10, 0], Extrapolation.CLAMP);
     const radius = SCREEN_CORNER_RADIUS; // peek / mid / full — all 44
     return {
       height: h,
-      bottom: sheetBottomOffset(h, detents, bottomInset),
+      bottom: sheetBottomOffset(h, d, bottomInsetSV.value),
       left: side,
       right: side,
       borderTopLeftRadius: radius,

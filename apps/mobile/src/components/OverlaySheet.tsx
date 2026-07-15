@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   NativeScrollEvent,
@@ -61,17 +61,27 @@ export default function OverlaySheet({
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const handleDone = onDone ?? onClose;
+  // Keep heavy children mounted through the close animation; drop them only
+  // after t has fully settled at 0 while still hidden.
+  const [contentMounted, setContentMounted] = useState(visible);
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
 
   useEffect(() => {
     if (visible) {
       dragY.setValue(0);
       atTop.current = true;
+      setContentMounted(true);
     }
     Animated.timing(t, {
       toValue: visible ? 1 : 0,
       duration: 320,
       useNativeDriver: true,
-    }).start();
+    }).start(({ finished }) => {
+      if (finished && !visibleRef.current) {
+        setContentMounted(false);
+      }
+    });
   }, [visible, t, dragY]);
 
   // Two drag-to-dismiss responders sharing one release rule: one on the
@@ -117,6 +127,11 @@ export default function OverlaySheet({
       };
     })(),
   ).current;
+
+  // Fully closed: no glass, children, or cloneElement work.
+  if (!contentMounted && !visible) {
+    return <View style={StyleSheet.absoluteFill} pointerEvents="none" />;
+  }
 
   // Clone the child (each caller passes a ScrollView) to track whether it's at
   // the top, without every caller having to wire this up.
