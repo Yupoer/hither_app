@@ -18,16 +18,28 @@ const roleSelect = readFileSync(join(__dirname, '../screens/RoleSelectScreen.tsx
 const i18n = readFileSync(join(__dirname, '../i18n/index.ts'), 'utf8');
 
 describe('map UI placement contracts', () => {
-  it('keeps history in the gathering-points section and preserves both KML entries', () => {
-    const gatheringPoints = mapScreen.indexOf("t('map.gatheringPoints')");
-    const history = mapScreen.indexOf("t('history.title')", gatheringPoints);
-    const routeAddStop = mapScreen.indexOf('t(\'map.addStop\')');
-    const routeKml = mapScreen.indexOf('t(\'kml.entry\')', routeAddStop);
+  it('keeps history and KML on the route pane with arrival manage; no add/import on reorder overlay', () => {
+    // Route sheet pane body (not the full-screen reorder overlay).
+    const routePane = mapScreen.indexOf('// ─── 路線');
+    const toolsPane = mapScreen.indexOf('// ─── 工具', routePane);
+    const routeBlock = mapScreen.slice(routePane, toolsPane > 0 ? toolsPane : routePane + 2500);
 
-    expect(gatheringPoints).toBeGreaterThanOrEqual(0);
-    expect(history).toBeGreaterThan(gatheringPoints);
-    expect(routeAddStop).toBeGreaterThanOrEqual(0);
-    expect(routeKml).toBeGreaterThan(routeAddStop);
+    expect(routeBlock).toContain("t('map.stopsReorder'");
+    expect(routeBlock).toContain("t('arrival.manage')");
+    expect(routeBlock).toContain("t('kml.entry')");
+    expect(routeBlock).toContain("t('history.title')");
+    expect(routeBlock).toContain("setOverlay('arrivalManage')");
+
+    // Reorder overlay lists destinations only — no bottom add/import rows.
+    const overlayRoute = mapScreen.indexOf("visible={overlay === 'route'}");
+    const overlayRouteEnd = mapScreen.indexOf('<SettingsOverlay', overlayRoute);
+    const overlayBlock = mapScreen.slice(
+      overlayRoute,
+      overlayRouteEnd > 0 ? overlayRouteEnd : overlayRoute + 3500,
+    );
+    expect(overlayBlock).toContain('DestinationReorderList');
+    expect(overlayBlock).not.toContain("t('map.addStop')");
+    expect(overlayBlock).not.toContain("t('kml.entry')");
   });
 
   it('groups high accuracy with the refreshed member controls', () => {
