@@ -26,6 +26,7 @@ import {
   submitGatherPointRequest,
   resolveGatherPointRequest,
   setDestinationArrival,
+  setDestinationArrivalAt,
   deleteVisitedWaypoint,
   upsertLiveActivitySession,
   deleteLiveActivitySession,
@@ -390,6 +391,22 @@ describe('notifications, commands & journey', () => {
     });
     expect(mockedRpc).toHaveBeenNthCalledWith(2, 'set_destination_arrival', {
       p_destination_id: 'destination-1', p_target_user_id: 'member-1', p_arrived: true,
+    });
+  });
+
+  it('submits an explicit arrival timestamp through the timestamp-aware RPC', async () => {
+    mockedRpc.mockResolvedValue({ data: null, error: null });
+    await setDestinationArrivalAt(
+      'destination-1',
+      'member-1',
+      true,
+      '2026-07-15T08:30:00.000Z',
+    );
+    expect(mockedRpc).toHaveBeenCalledWith('set_destination_arrival_at', {
+      p_destination_id: 'destination-1',
+      p_target_user_id: 'member-1',
+      p_arrived: true,
+      p_arrived_at: '2026-07-15T08:30:00.000Z',
     });
   });
 

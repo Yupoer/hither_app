@@ -69,6 +69,7 @@ export {
   resolveGatherPointRequest,
   fetchDestinationArrivals,
   setDestinationArrival,
+  setDestinationArrivalAt,
 } from './services/GatheringWorkflowService';
 
 export {

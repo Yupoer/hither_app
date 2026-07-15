@@ -102,6 +102,20 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain('styles.cardCollapsedMetrics');
   });
 
+  it('keeps arrival beside navigation controls and offers timestamp choices', () => {
+    const commandRow = mapScreen.indexOf('styles.commandRow');
+    const arrivalButton = mapScreen.indexOf('arrivalCmdSquare', commandRow);
+    const meetButton = mapScreen.indexOf('styles.meetBtn', commandRow);
+
+    expect(arrivalButton).toBeGreaterThan(commandRow);
+    expect(arrivalButton).toBeLessThan(meetButton);
+    expect(mapScreen).toContain('setDestinationArrivalAt');
+    expect(mapScreen).toContain("arrival.timeLeader");
+    expect(mapScreen).toContain("arrival.timeNow");
+    expect(mapScreen).toContain("arrival.timeAutomatic");
+    expect(mapScreen).not.toContain('handleArrival(dest, user.id, true)');
+  });
+
   it('pins a far fixed gap before viewing my teams and does not vertical-center', () => {
     expect(roleSelect).toContain('styles.myTeamsSpacer');
     expect(roleSelect).toContain('myTeamsSpacer: { height: 64 }');

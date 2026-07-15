@@ -118,3 +118,21 @@ export async function setDestinationArrival(
   });
   orThrow(error);
 }
+
+/** Manually mark an arrival with an explicit timestamp policy. Passing null
+ * delegates timestamp creation to Postgres (`now()`), which is the automatic
+ * server-time option. */
+export async function setDestinationArrivalAt(
+  destinationId: string,
+  targetUserId: string,
+  arrived: boolean,
+  arrivedAt: string | null,
+): Promise<void> {
+  const { error } = await supabase.rpc('set_destination_arrival_at', {
+    p_destination_id: destinationId,
+    p_target_user_id: targetUserId,
+    p_arrived: arrived,
+    p_arrived_at: arrivedAt,
+  });
+  orThrow(error);
+}

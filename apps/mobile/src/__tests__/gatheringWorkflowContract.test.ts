@@ -36,6 +36,10 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(migrations).toContain('create table public.destination_arrivals');
     expect(migrations).toContain('unique (destination_id, user_id)');
     expect(migrations).toContain('public.set_destination_arrival');
+    expect(migrations).toContain('public.set_destination_arrival_at');
+    expect(migrations).toContain('p_arrived_at timestamptz');
+    expect(migrations).toContain('set arrived_at = p_arrived_at');
+    expect(migrations).toContain("v_journey_status = 'paused' and not p_arrived");
     expect(migrations).toContain("v_journey_status = 'paused'");
     expect(migrations).toContain('paused destination requires an existing arrival');
     expect(migrations).toContain('m.subgroup_id is not distinct from i.subgroup_id');
@@ -43,6 +47,7 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
       /on_member_location_arrival[\s\S]*insert into public\.destination_arrivals/,
     );
     expect(client).toContain('setDestinationArrival');
+    expect(client).toContain('setDestinationArrivalAt');
     expect(mapScreen).toContain('destinationArrivals');
     expect(mapScreen).toContain("t('arrival.mark')");
   });

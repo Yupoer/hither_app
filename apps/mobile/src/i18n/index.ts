@@ -18,6 +18,10 @@ export type TranslationKey = keyof typeof translations.zh;
 type Dict = Record<string, string>;
 
 const zh = {
+  'arrival.timeTitle': '選擇抵達時間',
+  'arrival.timeLeader': '使用隊長抵達時間',
+  'arrival.timeNow': '以現在時間為準',
+  'arrival.timeAutomatic': '自動時間（伺服器記錄）',
   // Common
   'common.cancel': '取消',
   'common.delete': '刪除',
@@ -798,6 +802,10 @@ const en: Record<keyof typeof zh, string> = {
   'arrival.undo': 'Undo arrival',
   'arrival.undoTitle': 'Undo this arrival?',
   'arrival.manage': 'Arrival management',
+  'arrival.timeTitle': 'Choose arrival time',
+  'arrival.timeLeader': "Use the leader's arrival time",
+  'arrival.timeNow': 'Use the current time',
+  'arrival.timeAutomatic': 'Automatic time (server recorded)',
   'map.directions': 'Directions',
   'map.stopNav': 'End navigation',
   'map.viewOnMap': 'View on map',

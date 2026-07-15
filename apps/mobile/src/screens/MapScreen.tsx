@@ -138,6 +138,7 @@ import {
   requestGroupLocationRefresh,
   resolveGatherPointRequest,
   setDestinationArrival,
+  setDestinationArrivalAt,
   submitGatherPointRequest,
   updateMyLocation,
   updateGroupTripDetails,
@@ -1213,6 +1214,45 @@ export default function MapScreen({ route, navigation }: Props) {
         ));
     });
   }, [loadGatheringWorkflow, t]);
+
+  const submitArrivalWithTimestamp = useCallback((
+    destination: Destination,
+    targetUserId: string,
+    arrivedAt: string | null,
+  ) => {
+    void setDestinationArrivalAt(destination.id, targetUserId, true, arrivedAt)
+      .then(loadGatheringWorkflow)
+      .catch((error) => Alert.alert(
+        t('map.setFailedTitle'),
+        error instanceof Error ? error.message : t('map.setFailedMsg'),
+      ));
+  }, [loadGatheringWorkflow, t]);
+
+  const handleSelfArrival = useCallback((destination: Destination, targetUserId: string) => {
+    const leaderArrival = destinationArrivals.find((arrival) => (
+      arrival.destinationId === destination.id
+      && members.some((member) => member.userId === arrival.userId && member.role === 'leader')
+    ));
+    const buttons: Array<{ text: string; onPress?: () => void; style?: 'cancel' }> = [];
+    if (leaderArrival) {
+      buttons.push({
+        text: t('arrival.timeLeader'),
+        onPress: () => submitArrivalWithTimestamp(destination, targetUserId, leaderArrival.arrivedAt),
+      });
+    }
+    buttons.push(
+      {
+        text: t('arrival.timeNow'),
+        onPress: () => submitArrivalWithTimestamp(destination, targetUserId, new Date().toISOString()),
+      },
+      {
+        text: t('arrival.timeAutomatic'),
+        onPress: () => submitArrivalWithTimestamp(destination, targetUserId, null),
+      },
+      { text: t('common.cancel'), style: 'cancel' },
+    );
+    Alert.alert(t('arrival.timeTitle'), destination.title, buttons);
+  }, [destinationArrivals, members, submitArrivalWithTimestamp, t]);
 
   const handleDeleteHistory = useCallback((item: VisitedWaypoint) => {
     confirmAction({
@@ -2900,7 +2940,7 @@ export default function MapScreen({ route, navigation }: Props) {
                       </View>
                     </View>
 
-                    {/* a11y-layout:commandRow — always one row, always 3 controls.
+                    {/* a11y-layout:commandRow — always one row, always 4 controls.
                         Apple Maps lives above ETA/dist when expanded (not here).
                         Density tracks narrow + Dynamic Type. */}
                     {cardExpanded && (
@@ -2995,6 +3035,30 @@ export default function MapScreen({ route, navigation }: Props) {
                         />
                       </Pressable>
 
+                      {user?.id && canMarkArrival ? (
+                        <Pressable
+                          style={[
+                            styles.cmdSquare,
+                            styles.arrivalCmdSquare,
+                            { backgroundColor: accentMix(accent, 16), borderColor: accentMix(accent, 38) },
+                          ]}
+                          onPress={(event) => {
+                            event.stopPropagation();
+                            registerCardActivity(dest.id);
+                            lightTap();
+                            handleSelfArrival(dest, user.id);
+                          }}
+                          accessibilityRole="button"
+                          accessibilityLabel={t('arrival.mark')}
+                        >
+                          <Ionicons
+                            name="checkmark-circle-outline"
+                            size={chromeTight ? 18 : 20}
+                            color={accent}
+                          />
+                        </Pressable>
+                      ) : null}
+
                       <Pressable
                         style={styles.meetBtn}
                         onPress={(event) => {
@@ -3048,20 +3112,6 @@ export default function MapScreen({ route, navigation }: Props) {
                       </Pressable>
                     </View>
                     )}
-                    {cardExpanded && user?.id && canMarkArrival ? (
-                      <Pressable
-                        style={styles.addStop}
-                        onPress={(event) => {
-                          event.stopPropagation();
-                          registerCardActivity(dest.id);
-                          handleArrival(dest, user.id, true);
-                        }}
-                        accessibilityRole="button"
-                      >
-                        <Ionicons name="checkmark-circle-outline" size={18} color={accent} />
-                        <Text style={[styles.addStopText, { color: accent }]}>{t('arrival.mark')}</Text>
-                      </Pressable>
-                    ) : null}
                       </liquidGlass.GlassView>
                     </Animated.View>
                   </Pressable>
@@ -4367,6 +4417,9 @@ const makeStyles = (
       borderRadius: 26,
       alignItems: 'center',
       justifyContent: 'center',
+    },
+    arrivalCmdSquare: {
+      borderWidth: StyleSheet.hairlineWidth,
     },
     confirmMin: { fontFamily: DISPLAY_FONT, fontSize: 36, includeFontPadding: false },
     confirmDist: { fontSize: 16, color: glass.textSecondary },
