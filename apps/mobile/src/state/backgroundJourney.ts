@@ -1,7 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
-import { updateMyLocation } from '../api/services/LocationService';
 import {
   locationPolicy,
   shouldUploadSample,
@@ -10,8 +9,13 @@ import {
 import {
   BACKGROUND_JOURNEY_TASK,
   createBackgroundJourneyController,
+  resolveBackgroundTrackingMode,
   type BackgroundJourneyConfig,
 } from './backgroundJourneyController';
+import {
+  enqueueLocationOutbox,
+  flushLocationOutbox,
+} from './locationOutbox';
 
 interface BackgroundLocationTaskData {
   locations: Location.LocationObject[];
@@ -30,28 +34,43 @@ if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
       const config = await controller.load();
       if (!config) return;
 
+      const trackingMode = resolveBackgroundTrackingMode(config);
+      if (trackingMode === 'hidden') return;
+
       const latest = data.locations[data.locations.length - 1];
       const coords = {
         latitude: latest.coords.latitude,
         longitude: latest.coords.longitude,
       };
       const now = Date.now();
-      const powerMode = config.powerMode === 'allDay' ? 'allDay' : 'journey';
+      await flushLocationOutbox().catch(() => undefined);
+      const powerMode =
+        trackingMode === 'passiveBackground' && config.powerMode === 'allDay'
+          ? 'allDay'
+          : 'journey';
       const policy = locationPolicy(
-        powerMode === 'allDay' ? false : Boolean(config.highAccuracy),
+        trackingMode === 'teamNavigation' ||
+          trackingMode === 'navigationMax' ||
+          trackingMode === 'manualHighAccuracy' ||
+          (powerMode === 'journey' && Boolean(config.highAccuracy)),
         powerMode,
       );
       if (!shouldUploadSample(coords, now, uploadGate, policy)) return;
 
+      await enqueueLocationOutbox({
+        groupId: config.groupId,
+        coordinates: coords,
+        capturedAt: latest.timestamp,
+      });
       uploadGate = { lastCoords: coords, lastAtMs: now };
-      await updateMyLocation(coords, config.groupId);
+      await flushLocationOutbox().catch(() => undefined);
     },
   );
 }
 
 export function startBackgroundJourney(
   config: BackgroundJourneyConfig,
-): Promise<'started' | 'permission_denied'> {
+): Promise<'started' | 'permission_denied' | 'hidden'> {
   return controller.start(config);
 }
 

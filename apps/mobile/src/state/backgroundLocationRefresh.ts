@@ -2,8 +2,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import * as TaskManager from 'expo-task-manager';
 import { AppState } from 'react-native';
-import { updateMyLocation } from '../api/services/LocationService';
 import { location } from '../native';
+import {
+  enqueueLocationOutbox,
+  flushLocationOutbox,
+} from './locationOutbox';
 
 export const BACKGROUND_LOCATION_REFRESH_TASK =
   'hither-background-location-refresh';
@@ -63,7 +66,12 @@ if (!TaskManager.isTaskDefined(BACKGROUND_LOCATION_REFRESH_TASK)) {
       }
 
       try {
-        await updateMyLocation(fix.coordinates, payload.groupId);
+        await enqueueLocationOutbox({
+          groupId: payload.groupId,
+          coordinates: fix.coordinates,
+          capturedAt: fix.timestamp,
+        });
+        await flushLocationOutbox();
         await AsyncStorage.removeItem(PENDING_LOCATION_REFRESH_KEY);
       } catch {
         await rememberPendingRefresh(payload.groupId).catch(() => undefined);

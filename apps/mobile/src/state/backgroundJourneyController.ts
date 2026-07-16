@@ -2,7 +2,9 @@ import type { Coordinates } from '../types';
 import type { TravelMode } from '../utils/geo';
 import {
   locationPolicy,
+  resolveTrackingMode,
   type LocationPowerMode,
+  type TrackingMode,
 } from '../utils/locationPolicy';
 
 export const BACKGROUND_JOURNEY_TASK = 'hither-background-journey-location';
@@ -24,6 +26,12 @@ export interface BackgroundJourneyConfig {
    * `journey` — denser nav tracking while going to a point.
    */
   powerMode?: 'allDay' | 'journey';
+  /** Location sharing is explicit; omitted keeps legacy callers sharing. */
+  sharingEnabled?: boolean;
+  /** True when the group has an active leader navigation session. */
+  teamNavigationActive?: boolean;
+  /** App state at the time the background task was configured. */
+  appState?: 'active' | 'background' | 'inactive';
 }
 
 interface PermissionResult {
@@ -44,6 +52,26 @@ export interface BackgroundStorageAdapter {
   removeItem(key: string): Promise<void>;
 }
 
+export function resolveBackgroundTrackingMode(
+  config: BackgroundJourneyConfig,
+): TrackingMode {
+  const powerMode = config.powerMode ?? 'journey';
+  const explicitMode =
+    config.sharingEnabled != null ||
+    config.teamNavigationActive != null ||
+    config.appState != null;
+  return resolveTrackingMode({
+    sharingEnabled: config.sharingEnabled ?? true,
+    teamNavigationActive: config.teamNavigationActive ?? false,
+    // The legacy all-day profile intentionally ignores the high-accuracy
+    // preference; navigation is the only background mode that can opt in.
+    manualHighAccuracy: explicitMode
+      ? Boolean(config.highAccuracy)
+      : powerMode !== 'allDay' && Boolean(config.highAccuracy),
+    appState: config.appState ?? 'background',
+  });
+}
+
 /**
  * expo-location Accuracy: Lowest=1 Low=2 Balanced=3 High=4 Highest=5 BestForNavigation=6
  * Options tuned for the power budget — see locationPolicy POWER_BUDGET_NOTE.
@@ -51,21 +79,58 @@ export interface BackgroundStorageAdapter {
 export function backgroundLocationOptions(
   powerMode: 'allDay' | 'journey',
   highAccuracy: boolean,
+  trackingMode?: TrackingMode,
 ): object {
-  const mode: LocationPowerMode = powerMode;
+  const explicitMode = trackingMode != null;
+  const mode: TrackingMode = trackingMode ?? (
+    powerMode === 'allDay'
+      ? 'passiveBackground'
+      : highAccuracy
+        ? 'manualHighAccuracy'
+        : 'foreground'
+  );
+  const powerProfile: LocationPowerMode =
+    mode === 'passiveBackground' ? 'allDay' : 'journey';
   // Never allow highAccuracy to override allDay (budget).
   const policy = locationPolicy(
-    powerMode === 'allDay' ? false : highAccuracy,
-    mode,
+    mode === 'navigationMax' || mode === 'manualHighAccuracy' || mode === 'teamNavigation',
+    powerProfile,
   );
 
-  const accuracyCode =
-    policy.accuracy === 'high' ? 4 : policy.accuracy === 'low' ? 2 : 3;
+  const accuracyCode = !explicitMode
+    ? policy.accuracy === 'high'
+      ? 4
+      : policy.accuracy === 'low'
+        ? 2
+        : 3
+    : mode === 'navigationMax'
+      ? 6
+      : mode === 'teamNavigation' || mode === 'manualHighAccuracy'
+        ? 5
+        : policy.accuracy === 'high'
+          ? 4
+          : policy.accuracy === 'low'
+            ? 2
+            : 3;
 
-  const deferredInterval =
-    powerMode === 'allDay' ? 180_000 : highAccuracy ? 20_000 : 60_000;
-  const deferredDistance =
-    powerMode === 'allDay' ? 150 : highAccuracy ? 30 : 60;
+  const deferredInterval = mode === 'passiveBackground'
+    ? 180_000
+    : mode === 'navigationMax'
+      ? 15_000
+      : mode === 'teamNavigation' || mode === 'manualHighAccuracy'
+        ? 30_000
+        : highAccuracy
+          ? 20_000
+          : 60_000;
+  const deferredDistance = mode === 'passiveBackground'
+    ? 150
+    : mode === 'navigationMax'
+      ? 20
+      : mode === 'teamNavigation' || mode === 'manualHighAccuracy'
+        ? 30
+        : highAccuracy
+          ? 30
+          : 60;
 
   return {
     accuracy: accuracyCode,
@@ -73,9 +138,13 @@ export function backgroundLocationOptions(
     timeInterval: policy.timeInterval,
     deferredUpdatesDistance: deferredDistance,
     deferredUpdatesInterval: deferredInterval,
-    // Critical for 8h budget: let OS freeze GPS when the user is still.
-    pausesUpdatesAutomatically: true,
-    showsBackgroundLocationIndicator: true,
+    // Passive sharing may pause; navigation must continue while locked.
+    pausesUpdatesAutomatically: explicitMode
+      ? mode === 'passiveBackground'
+      : true,
+    showsBackgroundLocationIndicator: explicitMode
+      ? mode !== 'passiveBackground'
+      : true,
     foregroundService: {
       notificationTitle:
         powerMode === 'allDay' ? 'Hither 群組定位中' : 'Hither 導航中',
@@ -88,9 +157,16 @@ export function backgroundLocationOptions(
 }
 
 function powerProfileKey(config: BackgroundJourneyConfig): string {
-  const mode = config.powerMode ?? 'journey';
-  const high = mode === 'allDay' ? false : Boolean(config.highAccuracy);
-  return `${mode}:${high ? 'h' : 'n'}`;
+  if (
+    config.sharingEnabled == null &&
+    config.teamNavigationActive == null &&
+    config.appState == null
+  ) {
+    const legacyMode = config.powerMode ?? 'journey';
+    return `${legacyMode}:${legacyMode === 'allDay' ? 'n' : config.highAccuracy ? 'h' : 'n'}`;
+  }
+  const mode = resolveBackgroundTrackingMode(config);
+  return mode;
 }
 
 export function createBackgroundJourneyController(
@@ -100,7 +176,20 @@ export function createBackgroundJourneyController(
   return {
     async start(
       config: BackgroundJourneyConfig,
-    ): Promise<'started' | 'permission_denied'> {
+    ): Promise<'started' | 'permission_denied' | 'hidden'> {
+      const nextMode = resolveBackgroundTrackingMode(config);
+      const alreadyStarted = await location.hasStartedLocationUpdatesAsync(
+        BACKGROUND_JOURNEY_TASK,
+      );
+
+      if (nextMode === 'hidden') {
+        if (alreadyStarted) {
+          await location.stopLocationUpdatesAsync(BACKGROUND_JOURNEY_TASK);
+        }
+        await storage.removeItem(BACKGROUND_JOURNEY_KEY);
+        return 'hidden';
+      }
+
       const foreground = await location.requestForegroundPermissionsAsync();
       if (foreground.status !== 'granted') return 'permission_denied';
 
@@ -118,9 +207,6 @@ export function createBackgroundJourneyController(
       }
 
       await storage.setItem(BACKGROUND_JOURNEY_KEY, JSON.stringify(config));
-      const alreadyStarted = await location.hasStartedLocationUpdatesAsync(
-        BACKGROUND_JOURNEY_TASK,
-      );
       const profileChanged =
         alreadyStarted &&
         previous != null &&
@@ -130,12 +216,16 @@ export function createBackgroundJourneyController(
         await location.stopLocationUpdatesAsync(BACKGROUND_JOURNEY_TASK);
       }
       if (!alreadyStarted || profileChanged) {
-        const mode = config.powerMode ?? 'journey';
         await location.startLocationUpdatesAsync(
           BACKGROUND_JOURNEY_TASK,
           backgroundLocationOptions(
-            mode,
-            mode === 'allDay' ? false : Boolean(config.highAccuracy),
+            config.powerMode ?? 'journey',
+            Boolean(config.highAccuracy),
+            config.sharingEnabled == null &&
+              config.teamNavigationActive == null &&
+              config.appState == null
+              ? undefined
+              : nextMode,
           ),
         );
       }

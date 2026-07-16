@@ -1,8 +1,12 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 import { location } from '../../../native';
-import { updateMyLocation } from '../../../api/client';
+import type { LocationSample } from '../../../native/location';
 import type { Coordinates } from '../../../types';
+import {
+  enqueueLocationOutbox,
+  flushLocationOutbox,
+} from '../../../state/locationOutbox';
 import {
   locationPolicy,
   shouldAcceptUiSample,
@@ -34,7 +38,12 @@ export function useDeviceLocation({ groupId, highAccuracy }: UseDeviceLocationPa
       );
       uiGateRef.current = { lastCoords: fix.coordinates, lastAtMs: now };
       if (groupId) {
-        await updateMyLocation(fix.coordinates, groupId);
+        await enqueueLocationOutbox({
+          groupId,
+          coordinates: fix.coordinates,
+          capturedAt: fix.timestamp,
+        });
+        await flushLocationOutbox();
         uploadGateRef.current = { lastCoords: fix.coordinates, lastAtMs: now };
       }
       return fix.coordinates;
@@ -54,12 +63,18 @@ export function useDeviceLocation({ groupId, highAccuracy }: UseDeviceLocationPa
   }, [highAccuracy]);
 
   useEffect(() => {
+    if (groupId && appState === 'active') {
+      void flushLocationOutbox().catch(() => undefined);
+    }
+  }, [appState, groupId]);
+
+  useEffect(() => {
     if (!shouldWatchLocation(groupId ?? null, appState)) return;
     let cancelled = false;
     let stop = () => {};
     const policy = locationPolicy(highAccuracy);
     void location
-      .watchLocation((sample: { coordinates: Coordinates; accuracy?: number | null }) => {
+      .watchLocation((sample: LocationSample) => {
         const now = Date.now();
         const coords = sample.coordinates;
 
@@ -77,8 +92,16 @@ export function useDeviceLocation({ groupId, highAccuracy }: UseDeviceLocationPa
           groupId &&
           shouldUploadSample(coords, now, uploadGateRef.current, policy)
         ) {
-          uploadGateRef.current = { lastCoords: coords, lastAtMs: now };
-          void updateMyLocation(coords, groupId).catch(() => {});
+          void enqueueLocationOutbox({
+            groupId,
+            coordinates: coords,
+            capturedAt: sample.timestamp,
+          })
+            .then(() => flushLocationOutbox())
+            .then(() => {
+              uploadGateRef.current = { lastCoords: coords, lastAtMs: now };
+            })
+            .catch(() => undefined);
         }
       }, highAccuracy)
       .then((unsub: () => void) => {

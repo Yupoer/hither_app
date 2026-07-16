@@ -22,7 +22,8 @@ describe('remote location refresh wiring', () => {
     expect(task).toContain('TaskManager.defineTask');
     expect(task).toContain('Notifications.registerTaskAsync');
     expect(task).toContain('location.getCurrentLocation');
-    expect(task).toContain('updateMyLocation');
+    expect(task).toContain('enqueueLocationOutbox');
+    expect(task).toContain('flushLocationOutbox');
     expect(task).toContain('rememberPendingLocationPermission');
     expect(task).toContain('consumePendingLocationPermission');
     expect(mapScreen).toContain('consumePendingLocationPermission');

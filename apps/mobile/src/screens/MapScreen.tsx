@@ -859,9 +859,12 @@ export default function MapScreen({ route, navigation }: Props) {
       destination: dest,
       initialDistanceM: backgroundInitialM,
       travelMode,
-      // Precise never applies to all-day presence (budget).
-      highAccuracy: powerMode === 'journey' && highAccuracy,
+      // Explicit high accuracy is a user opt-in even without team navigation.
+      highAccuracy,
       powerMode,
+      sharingEnabled: true,
+      teamNavigationActive: Boolean(journeyActive && navTarget),
+      appState: appState === 'background' ? 'background' : 'inactive',
     }).then((result) => {
       if (result === 'permission_denied') {
         backgroundPermissionDeniedRef.current = key;

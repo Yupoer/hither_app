@@ -1,6 +1,7 @@
 import {
   BACKGROUND_JOURNEY_KEY,
   createBackgroundJourneyController,
+  resolveBackgroundTrackingMode,
   type BackgroundJourneyConfig,
 } from '../state/backgroundJourneyController';
 import { readFileSync } from 'node:fs';
@@ -35,6 +36,45 @@ function harness(started = false) {
 }
 
 describe('background journey controller', () => {
+  it('maps an active team session to a non-pausing navigation profile', async () => {
+    const { controller, location } = harness();
+
+    await expect(
+      controller.start({
+        ...config,
+        powerMode: 'journey',
+        teamNavigationActive: true,
+        appState: 'background',
+      }),
+    ).resolves.toBe('started');
+
+    expect(
+      resolveBackgroundTrackingMode({
+        ...config,
+        teamNavigationActive: true,
+        appState: 'background',
+      }),
+    ).toBe('teamNavigation');
+    const opts = location.startLocationUpdatesAsync.mock.calls[0][1] as {
+      accuracy: number;
+      pausesUpdatesAutomatically: boolean;
+    };
+    expect(opts.accuracy).toBe(5);
+    expect(opts.pausesUpdatesAutomatically).toBe(false);
+  });
+
+  it('stops the task immediately when sharing is disabled', async () => {
+    const { controller, location, storage } = harness(true);
+
+    await expect(
+      controller.start({ ...config, sharingEnabled: false }),
+    ).resolves.toBe('hidden');
+
+    expect(location.stopLocationUpdatesAsync).toHaveBeenCalledTimes(1);
+    expect(location.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
+    expect(storage.removeItem).toHaveBeenCalledWith(BACKGROUND_JOURNEY_KEY);
+  });
+
   it('persists the active journey and starts native updates', async () => {
     const { controller, location, storage } = harness();
 
@@ -163,7 +203,8 @@ describe('background journey native wiring', () => {
 
   it('defines the task at module scope before the app is registered', () => {
     expect(taskModule).toContain('TaskManager.defineTask');
-    expect(taskModule).toContain('updateMyLocation');
+    expect(taskModule).toContain('enqueueLocationOutbox');
+    expect(taskModule).toContain('flushLocationOutbox');
     expect(entry.indexOf("import './src/state/backgroundJourney';")).toBeLessThan(
       entry.indexOf("import App from './App';"),
     );
