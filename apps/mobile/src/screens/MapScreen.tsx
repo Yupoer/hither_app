@@ -2448,6 +2448,7 @@ export default function MapScreen({ route, navigation }: Props) {
         destinations={destinations}
         pendingPlace={pendingPlace}
         currentUserId={user?.id}
+        initialCenter={fromCoords}
         // Show the planned path for everyone while journey is live (leader
         // broadcast or local follower plan). When paused, keep a light path
         // to the selected card so ETA still makes sense.
