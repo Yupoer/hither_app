@@ -23,6 +23,14 @@ const roleSelect = readFileSync(join(__dirname, '../screens/RoleSelectScreen.tsx
 const i18n = readFileSync(join(__dirname, '../i18n/index.ts'), 'utf8');
 
 describe('map UI placement contracts', () => {
+  it('lets the leader see subgroup destinations after approving a request', () => {
+    const scopeStart = mapScreen.indexOf('const rawDestinations');
+    const scopeEnd = mapScreen.indexOf('const [optimisticDestinations', scopeStart);
+    const scopeBlock = mapScreen.slice(scopeStart, scopeEnd);
+
+    expect(scopeBlock).toContain('if (isLeader) return all;');
+  });
+
   it('keeps history and KML on the route pane with arrival manage; no add/import on reorder overlay', () => {
     // Route sheet pane body (not the full-screen reorder overlay).
     const routePane = mapScreen.indexOf('// ─── 路線');

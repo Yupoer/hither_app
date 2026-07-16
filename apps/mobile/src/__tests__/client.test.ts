@@ -8,6 +8,7 @@ import {
   addDestination,
   createGroup,
   joinGroup,
+  getGroupState,
   generateInviteCode,
   mapGroup,
   mapDestination,
@@ -140,6 +141,63 @@ describe('pure mappers (snake_case row -> camelCase type)', () => {
     );
     expect(m.coordinates).toBeUndefined();
     expect(m.name).toBe('');
+  });
+});
+
+describe('group state', () => {
+  it('loads persisted trip details for every group-state viewer', async () => {
+    const groupRow = {
+      id: 'g1',
+      name: '旅行團',
+      invite_code: 'ABC234',
+      created_by: 'u1',
+      created_at: '2026-01-01T00:00:00Z',
+      journey_status: 'paused',
+      trip_days: 4,
+      departure_date: '2026-08-01',
+    };
+    let selectedGroupFields = '';
+    const groups = {} as {
+      select: jest.Mock;
+      eq: jest.Mock;
+      single: jest.Mock;
+    };
+    groups.select = jest.fn((fields: string) => {
+      selectedGroupFields = fields;
+      return groups;
+    });
+    groups.eq = jest.fn(() => groups);
+    groups.single = jest.fn(async () => ({
+      data: selectedGroupFields.includes('trip_days')
+        ? groupRow
+        : { ...groupRow, trip_days: undefined, departure_date: undefined },
+      error: null,
+    }));
+    const empty = (data: unknown[] = []) => ({
+      select: jest.fn(() => ({
+        eq: jest.fn(async () => ({ data, error: null })),
+      })),
+    });
+    mockedFrom.mockImplementation((table: string) => {
+      if (table === 'groups') return groups;
+      if (table === 'memberships') return empty();
+      if (table === 'member_locations') return empty();
+      if (table === 'subgroups') return empty();
+      return {
+        select: jest.fn(() => ({
+          eq: jest.fn(() => ({
+            order: jest.fn(async () => ({ data: [], error: null })),
+          })),
+        })),
+      };
+    });
+
+    const state = await getGroupState('g1');
+
+    expect(selectedGroupFields).toContain('trip_days');
+    expect(selectedGroupFields).toContain('departure_date');
+    expect(state.group.tripDays).toBe(4);
+    expect(state.group.departureDate).toBe('2026-08-01');
   });
 });
 

@@ -326,11 +326,12 @@ export default function MapScreen({ route, navigation }: Props) {
   // not re-surface main gather cards while the user is away from the main team.
   const rawDestinations: Destination[] = useMemo(() => {
     const all = state?.destinations ?? [];
+    if (isLeader) return all;
     if (myScopeId) {
       return all.filter((d) => d.subgroupId === myScopeId);
     }
     return all.filter((d) => d.subgroupId == null);
-  }, [state?.destinations, myScopeId]);
+  }, [state?.destinations, isLeader, myScopeId]);
   
   const [optimisticDestinations, setOptimisticDestinations] = useState<Destination[] | null>(null);
   const allScopedDestinations = optimisticDestinations ?? rawDestinations;

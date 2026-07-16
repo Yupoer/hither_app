@@ -223,7 +223,7 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
     supabase
       .from('groups')
       .select(
-        'id, name, invite_code, created_by, created_at, journey_status, active_destination_id, journey_started_at, straggler_alerts, straggler_threshold_m',
+        'id, name, invite_code, created_by, created_at, journey_status, active_destination_id, journey_started_at, straggler_alerts, straggler_threshold_m, trip_days, departure_date',
       )
       .eq('id', groupId)
       .single(),
