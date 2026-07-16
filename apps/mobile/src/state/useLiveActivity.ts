@@ -3,6 +3,8 @@ import {
   deleteLiveActivitySession,
   deleteMyLiveActivitySessions,
   deleteMyLiveActivitySessionsForGroups,
+  getOrCreateLiveActivityDeviceId,
+  upsertDeviceActivityToken,
   upsertLiveActivitySession,
 } from '../api/services/LiveActivityService';
 import { liveActivity, type GroupActivityState } from '../native';
@@ -35,6 +37,7 @@ export function useLiveActivity(
   active: boolean,
   state: GroupActivityState,
   session?: LiveActivitySessionContext,
+  liveActivitiesEnabled = true,
 ): void {
   const handleRef = useRef<string | null>(null);
   const destinationRef = useRef<string | null>(null);
@@ -42,8 +45,12 @@ export function useLiveActivity(
   const lastPersistAtRef = useRef(0);
   const stateRef = useRef(state);
   const sessionRef = useRef(session);
+  const pushToStartTokenRef = useRef<string | null>(null);
+  const deviceIdRef = useRef<string | null>(null);
+  const enabledRef = useRef(liveActivitiesEnabled);
   stateRef.current = state;
   sessionRef.current = session;
+  enabledRef.current = liveActivitiesEnabled;
 
   /** Min interval between Supabase live_activity_sessions upserts (local LA still updates more often). */
   const PERSIST_MIN_MS = 30_000;
@@ -90,6 +97,39 @@ export function useLiveActivity(
     // The listener reads mutable refs so token rotation never resubscribes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const persistToken = async (token: string | null) => {
+      pushToStartTokenRef.current = token;
+      const deviceId = deviceIdRef.current ??
+        await getOrCreateLiveActivityDeviceId();
+      if (cancelled) return;
+      deviceIdRef.current = deviceId;
+      await upsertDeviceActivityToken(deviceId, token, enabledRef.current);
+    };
+    const subscription = liveActivity.addPushToStartTokenListener(({ token }) => {
+      void persistToken(token).catch(() => undefined);
+    });
+    void getOrCreateLiveActivityDeviceId().then((deviceId) => {
+      if (!cancelled) deviceIdRef.current = deviceId;
+    }).catch(() => undefined);
+    void liveActivity.startPushToStartTokenObservation().catch(() => undefined);
+    return () => {
+      cancelled = true;
+      subscription.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    const deviceId = deviceIdRef.current;
+    if (!deviceId) return;
+    void upsertDeviceActivityToken(
+      deviceId,
+      pushToStartTokenRef.current,
+      liveActivitiesEnabled,
+    ).catch(() => undefined);
+  }, [liveActivitiesEnabled]);
 
   useEffect(() => {
     let cancelled = false;

@@ -46,6 +46,17 @@ describe('ActivityKit remote push contract', () => {
     expect(nativeModule).toContain('pushToken');
   });
 
+  it('observes iOS 17.2 push-to-start token startup and rotations', () => {
+    expect(nativeModule).toContain('Activity<HitherGroupAttributes>.pushToStartTokenUpdates');
+    expect(nativeModule).toContain('#available(iOS 17.2, *)');
+    expect(nativeModule).toContain('onPushToStartToken');
+    expect(nativeModule).toContain('pushToStartTask');
+    expect(nativeModule).toContain('OnCreate');
+    expect(nativeModule).toContain('OnDestroy');
+    expect(jsBridge).toContain('addPushToStartTokenListener');
+    expect(liveHook).toContain('upsertDeviceActivityToken');
+  });
+
   it('keeps app and widget ContentState shapes synchronized', () => {
     expect(contentStateShape(appAttributes)).toBe(contentStateShape(widgetAttributes));
     expect(contentStateShape(appAttributes)).toContain('memberArrived: [Bool]?');

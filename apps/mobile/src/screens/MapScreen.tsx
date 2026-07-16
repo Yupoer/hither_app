@@ -1033,7 +1033,7 @@ export default function MapScreen({ route, navigation }: Props) {
     destinationId: navTarget.id,
     initialDistanceM,
     travelMode,
-  } : undefined);
+  } : undefined, liveActivityEnabled);
 
 
 

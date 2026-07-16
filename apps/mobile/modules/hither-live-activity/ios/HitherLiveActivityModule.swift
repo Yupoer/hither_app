@@ -20,6 +20,21 @@ public class HitherLiveActivityModule: Module {
   // explicitly on pause/leave, so a long staleness window avoids premature
   // "stale" UI without leaving zombies (the end call removes them).
   private static let staleInterval: TimeInterval = 2 * 60 * 60
+  private var pushToStartTask: Task<Void, Never>?
+  private var latestPushToStartToken: String?
+
+  @available(iOS 17.2, *)
+  private func observePushToStartTokens() {
+    guard pushToStartTask == nil else { return }
+    pushToStartTask = Task { [weak self] in
+      for await token in Activity<HitherGroupAttributes>.pushToStartTokenUpdates {
+        guard !Task.isCancelled else { return }
+        let tokenString = token.hexString
+        self?.latestPushToStartToken = tokenString
+        self?.sendEvent("onPushToStartToken", ["token": tokenString])
+      }
+    }
+  }
 
   @available(iOS 16.2, *)
   private func observePushToken(for activity: Activity<HitherGroupAttributes>) {
@@ -35,7 +50,29 @@ public class HitherLiveActivityModule: Module {
 
   public func definition() -> ModuleDefinition {
     Name("HitherLiveActivity")
-    Events("onPushToken")
+    Events("onPushToken", "onPushToStartToken")
+
+    OnCreate {
+      if #available(iOS 17.2, *) {
+        self.observePushToStartTokens()
+      }
+    }
+
+    OnDestroy {
+      self.pushToStartTask?.cancel()
+      self.pushToStartTask = nil
+    }
+
+    AsyncFunction("startPushToStartTokenObservation") {
+      guard #available(iOS 17.2, *) else {
+        self.sendEvent("onPushToStartToken", ["token": NSNull()])
+        return
+      }
+      self.observePushToStartTokens()
+      if let token = self.latestPushToStartToken {
+        self.sendEvent("onPushToStartToken", ["token": token])
+      }
+    }
 
     Function("isSupported") { () -> Bool in
       if #available(iOS 16.2, *) {
