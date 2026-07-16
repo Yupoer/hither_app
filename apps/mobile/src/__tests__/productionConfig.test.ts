@@ -102,4 +102,12 @@ describe('production mobile configuration', () => {
     expect(xcodeProject).toContain('HitherActivityWidget.appex in Embed Foundation Extensions');
     expect(xcodeProject).toContain('PRODUCT_BUNDLE_IDENTIFIER = app.hither.mobile.widget');
   });
+
+  it('keeps every native iOS target on the app.json marketing version', () => {
+    const marketingVersions = [
+      ...xcodeProject.matchAll(/MARKETING_VERSION = ([^;]+);/g),
+    ].map((match) => match[1]);
+    expect(marketingVersions.length).toBeGreaterThanOrEqual(4);
+    expect(new Set(marketingVersions)).toEqual(new Set([appConfig.expo.version]));
+  });
 });
