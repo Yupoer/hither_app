@@ -37,6 +37,8 @@ jest.mock('../api/supabase', () => ({
 import { useAuthFlow } from '../state/useAuthFlow';
 
 function makeFlow() {
+  // This test invokes the hook-shaped service factory without rendering React.
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   return useAuthFlow({
     user: null,
     setUser: jest.fn(),

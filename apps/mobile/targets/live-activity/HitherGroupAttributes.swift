@@ -12,6 +12,8 @@ import Foundation
 @available(iOS 16.1, *)
 public struct HitherGroupAttributes: ActivityAttributes {
   public struct ContentState: Codable, Hashable {
+    public var navigationSessionId: String?
+    public var status: String?
     public var gatheringTitle: String?
     public var distanceMeters: Double?
     public var etaSeconds: Double?
@@ -32,6 +34,8 @@ public struct HitherGroupAttributes: ActivityAttributes {
     public var memberArrived: [Bool]?
 
     public init(
+      navigationSessionId: String? = nil,
+      status: String? = nil,
       gatheringTitle: String? = nil,
       distanceMeters: Double? = nil,
       etaSeconds: Double? = nil,
@@ -43,6 +47,8 @@ public struct HitherGroupAttributes: ActivityAttributes {
       memberEmojis: [String]? = nil,
       memberArrived: [Bool]? = nil
     ) {
+      self.navigationSessionId = navigationSessionId
+      self.status = status
       self.gatheringTitle = gatheringTitle
       self.distanceMeters = distanceMeters
       self.etaSeconds = etaSeconds
@@ -56,6 +62,8 @@ public struct HitherGroupAttributes: ActivityAttributes {
     }
 
     public init(from state: [String: Any]) {
+      self.navigationSessionId = state["navigationSessionId"] as? String
+      self.status = state["status"] as? String
       self.gatheringTitle = state["gatheringTitle"] as? String
       self.distanceMeters = (state["distanceMeters"] as? NSNumber)?.doubleValue
       self.etaSeconds = (state["etaSeconds"] as? NSNumber)?.doubleValue

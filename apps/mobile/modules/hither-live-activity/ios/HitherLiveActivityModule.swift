@@ -20,14 +20,32 @@ public class HitherLiveActivityModule: Module {
   // explicitly on pause/leave, so a long staleness window avoids premature
   // "stale" UI without leaving zombies (the end call removes them).
   private static let staleInterval: TimeInterval = 2 * 60 * 60
+  private var pushToStartTask: Task<Void, Never>?
+  private var activityTokenTasks: [String: Task<Void, Never>] = [:]
+  private var latestPushToStartToken: String?
+
+  @available(iOS 17.2, *)
+  private func observePushToStartTokens() {
+    guard pushToStartTask == nil else { return }
+    pushToStartTask = Task { [weak self] in
+      for await token in Activity<HitherGroupAttributes>.pushToStartTokenUpdates {
+        guard !Task.isCancelled else { return }
+        let tokenString = token.hexString
+        self?.latestPushToStartToken = tokenString
+        self?.sendEvent("onPushToStartToken", ["token": tokenString])
+      }
+    }
+  }
 
   @available(iOS 16.2, *)
   private func observePushToken(for activity: Activity<HitherGroupAttributes>) {
-    Task { [weak self] in
+    guard activityTokenTasks[activity.id] == nil else { return }
+    activityTokenTasks[activity.id] = Task { [weak self] in
       for await token in activity.pushTokenUpdates {
         self?.sendEvent("onPushToken", [
           "activityId": activity.id,
           "pushToken": token.hexString,
+          "navigationSessionId": activity.content.state.navigationSessionId as Any,
         ])
       }
     }
@@ -35,7 +53,43 @@ public class HitherLiveActivityModule: Module {
 
   public func definition() -> ModuleDefinition {
     Name("HitherLiveActivity")
-    Events("onPushToken")
+    Events("onPushToken", "onPushToStartToken")
+
+    OnCreate {
+      if #available(iOS 16.2, *) {
+        for activity in Activity<HitherGroupAttributes>.activities {
+          self.observePushToken(for: activity)
+        }
+      }
+      if #available(iOS 17.2, *) {
+        self.observePushToStartTokens()
+      }
+    }
+
+    OnDestroy {
+      self.pushToStartTask?.cancel()
+      self.pushToStartTask = nil
+      self.activityTokenTasks.values.forEach { $0.cancel() }
+      self.activityTokenTasks.removeAll()
+    }
+
+    AsyncFunction("startPushToStartTokenObservation") {
+      guard #available(iOS 17.2, *) else {
+        self.sendEvent("onPushToStartToken", ["token": NSNull()])
+        return
+      }
+      self.observePushToStartTokens()
+      if let token = self.latestPushToStartToken {
+        self.sendEvent("onPushToStartToken", ["token": token])
+      }
+    }
+
+    AsyncFunction("observeExistingActivities") {
+      guard #available(iOS 16.2, *) else { return }
+      for activity in Activity<HitherGroupAttributes>.activities {
+        self.observePushToken(for: activity)
+      }
+    }
 
     Function("isSupported") { () -> Bool in
       if #available(iOS 16.2, *) {
@@ -81,6 +135,19 @@ public class HitherLiveActivityModule: Module {
       )
       for activity in Activity<HitherGroupAttributes>.activities
       where activity.id == handle {
+        await activity.update(content)
+      }
+    }
+
+    // Headless background location callbacks do not retain the JS activity
+    // handle. ActivityKit can safely enumerate this app's own activities.
+    AsyncFunction("updateAllGroupActivities") { (state: [String: Any]) in
+      guard #available(iOS 16.2, *) else { return }
+      let content = ActivityContent(
+        state: HitherGroupAttributes.ContentState(from: state),
+        staleDate: Date().addingTimeInterval(Self.staleInterval)
+      )
+      for activity in Activity<HitherGroupAttributes>.activities {
         await activity.update(content)
       }
     }

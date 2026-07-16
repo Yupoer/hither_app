@@ -100,7 +100,7 @@ function useTracksViewChanges(deps: any[]) {
   return tracksViewChanges;
 }
 
-const DestinationMarker = React.memo(({ dest, bgColor, styles }: any) => {
+const DestinationMarker = React.memo(function DestinationMarker({ dest, bgColor, styles }: any) {
   const tracksViewChanges = useTracksViewChanges([bgColor, dest.title]);
 
   return (
@@ -124,7 +124,7 @@ const DestinationMarker = React.memo(({ dest, bgColor, styles }: any) => {
   );
 });
 
-const PendingPlaceMarker = React.memo(({ pendingPlace, accent, styles }: any) => {
+const PendingPlaceMarker = React.memo(function PendingPlaceMarker({ pendingPlace, accent, styles }: any) {
   const tracksViewChanges = useTracksViewChanges([pendingPlace.name, accent]);
 
   return (
@@ -141,7 +141,7 @@ const PendingPlaceMarker = React.memo(({ pendingPlace, accent, styles }: any) =>
   );
 });
 
-const MemberMarker = React.memo(({ member, accent, styles }: any) => {
+const MemberMarker = React.memo(function MemberMarker({ member, accent, styles }: any) {
   const isLeader = member.role === 'leader';
   const ringColor = isLeader ? accent : '#FFFFFF';
   const bgColor = memberColor(member.userId);

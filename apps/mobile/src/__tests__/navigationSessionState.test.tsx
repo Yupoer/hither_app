@@ -1,0 +1,117 @@
+import React from 'react';
+import type {
+  MemberNavigationState,
+  NavigationSession,
+} from '../types/navigation';
+import { useNavigationSession } from '../state/useNavigationSession';
+
+const callbacks: {
+  session?: (session: NavigationSession) => void;
+  member?: (state: MemberNavigationState) => void;
+} = {};
+
+jest.mock('../api/services/NavigationService', () => ({
+  getActiveNavigationSession: jest.fn(),
+  getMyNavigationMemberState: jest.fn(),
+  subscribeNavigationSession: jest.fn(
+    async (
+      _groupId: string,
+      onSession: (session: NavigationSession) => void,
+      onMember: (state: MemberNavigationState) => void,
+    ) => {
+      callbacks.session = onSession;
+      callbacks.member = onMember;
+      return jest.fn();
+    },
+  ),
+  startNavigationSession: jest.fn(),
+  cancelNavigationSession: jest.fn(),
+  completeNavigationSession: jest.fn(),
+  ackNavigationSession: jest.fn(),
+}));
+
+import {
+  getActiveNavigationSession,
+  getMyNavigationMemberState,
+} from '../api/services/NavigationService';
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { act, create } = require('react-test-renderer') as {
+  act: (callback: () => void | Promise<void>) => void | Promise<void>;
+  create: (element: React.ReactElement) => unknown;
+};
+
+const session = (version: number, status: NavigationSession['status'] = 'active') => ({
+  id: 'session-1',
+  groupId: 'group-1',
+  destinationId: 'destination-1',
+  destination: {
+    name: '車站',
+    coordinates: { latitude: 25.0478, longitude: 121.517 },
+    arrivalRadiusMeters: 50,
+  },
+  startedBy: 'leader-1',
+  requestId: 'request-1',
+  startedAt: '2026-07-17T00:00:00Z',
+  expiresAt: '2026-07-17T06:00:00Z',
+  status,
+  version,
+});
+
+describe('useNavigationSession', () => {
+  beforeEach(() => {
+    callbacks.session = undefined;
+    callbacks.member = undefined;
+    jest.clearAllMocks();
+    jest.mocked(getActiveNavigationSession).mockResolvedValue(session(2));
+    jest.mocked(getMyNavigationMemberState).mockResolvedValue(null);
+  });
+
+  it('hydrates the active session and ignores stale realtime versions', async () => {
+    let value: ReturnType<typeof useNavigationSession> | undefined;
+    function Harness() {
+      value = useNavigationSession('group-1');
+      return null;
+    }
+
+    await act(async () => {
+      create(React.createElement(Harness));
+    });
+    expect(value?.session?.version).toBe(2);
+
+    act(() => callbacks.session?.(session(1)));
+    expect(value?.session?.version).toBe(2);
+
+    act(() => callbacks.session?.(session(3)));
+    expect(value?.session?.version).toBe(3);
+  });
+
+  it('clears terminal sessions and ignores member events for another session', async () => {
+    let value: ReturnType<typeof useNavigationSession> | undefined;
+    function Harness() {
+      value = useNavigationSession('group-1');
+      return null;
+    }
+    await act(async () => {
+      create(React.createElement(Harness));
+    });
+
+    act(() => callbacks.member?.({
+      navigationSessionId: 'other-session',
+      userId: 'user-1',
+      localStatus: 'tracking_active',
+      detail: {},
+      latestDistanceMeters: null,
+      latestAccuracyMeters: null,
+      liveActivityId: null,
+      acknowledgedAt: null,
+      arrivedAt: null,
+      updatedAt: '2026-07-17T00:00:01Z',
+    }));
+    expect(value?.memberState).toBeNull();
+
+    act(() => callbacks.session?.(session(3, 'cancelled')));
+    expect(value?.session).toBeNull();
+    expect(value?.memberState).toBeNull();
+  });
+});

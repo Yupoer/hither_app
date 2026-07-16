@@ -1,11 +1,15 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Crypto from 'expo-crypto';
 import * as Notifications from 'expo-notifications';
 import * as TaskManager from 'expo-task-manager';
 import { AppState } from 'react-native';
 import { location } from '../native';
+import { LOCATION_SHARING_KEY } from './locationPrivacy';
+import { diagnostics } from './diagnostics';
 import {
   enqueueLocationOutbox,
   flushLocationOutbox,
+  purgeLocationOutbox,
 } from './locationOutbox';
 
 export const BACKGROUND_LOCATION_REFRESH_TASK =
@@ -54,10 +58,25 @@ if (!TaskManager.isTaskDefined(BACKGROUND_LOCATION_REFRESH_TASK)) {
   TaskManager.defineTask<Notifications.NotificationTaskPayload>(
     BACKGROUND_LOCATION_REFRESH_TASK,
     async ({ data, error }) => {
+      await diagnostics.write({
+        event: 'refresh_request_received',
+        success: !error,
+        errorCode: error ? 'notification_task_error' : undefined,
+        source: 'location_push',
+      });
       if (error || AppState.currentState === 'active') return;
 
       const payload = parsePayload(data);
       if (payload?.category !== 'location_refresh' || !payload.groupId) return;
+      const sharingEnabled = await AsyncStorage.getItem(LOCATION_SHARING_KEY) !== 'false';
+      if (!sharingEnabled) {
+        await purgeLocationOutbox();
+        await diagnostics.write({
+          event: 'location_rejected_sharing_disabled',
+          source: 'location_push',
+        });
+        return;
+      }
 
       const fix = await location.getCurrentLocation(false).catch(() => null);
       if (!fix) {
@@ -67,13 +86,38 @@ if (!TaskManager.isTaskDefined(BACKGROUND_LOCATION_REFRESH_TASK)) {
 
       try {
         await enqueueLocationOutbox({
+          id: Crypto.randomUUID(),
           groupId: payload.groupId,
-          coordinates: fix.coordinates,
+          navigationSessionId: null,
           capturedAt: fix.timestamp,
+          coords: {
+            ...fix.coordinates,
+            accuracy: Math.max(0, fix.accuracy ?? 0),
+          },
+          trackingMode: 'passiveBackground',
+          source: 'refresh_request',
+          sequence: fix.timestamp,
         });
-        await flushLocationOutbox();
+        await diagnostics.write({
+          event: 'location_outbox_enqueued',
+          source: 'refresh_request',
+          sequence: fix.timestamp,
+        });
+        const upload = await flushLocationOutbox();
+        await diagnostics.write({
+          event: 'refresh_request_completed',
+          source: 'refresh_request',
+          sent: upload.sent,
+          remaining: upload.remaining,
+        });
         await AsyncStorage.removeItem(PENDING_LOCATION_REFRESH_KEY);
+        await diagnostics.flush().catch(() => undefined);
       } catch {
+        await diagnostics.write({
+          event: 'refresh_request_timeout',
+          source: 'refresh_request',
+          errorCode: 'refresh_failed',
+        });
         await rememberPendingRefresh(payload.groupId).catch(() => undefined);
       }
     },

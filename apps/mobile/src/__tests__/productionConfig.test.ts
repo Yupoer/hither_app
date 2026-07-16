@@ -12,8 +12,17 @@ const appConfig = JSON.parse(
 const easConfig = JSON.parse(
   readFileSync(join(__dirname, '../../eas.json'), 'utf8'),
 );
+const packageConfig = JSON.parse(
+  readFileSync(join(__dirname, '../../package.json'), 'utf8'),
+);
 const nativeEntitlements = readFileSync(
   join(__dirname, '../../ios/Hither/Hither.entitlements'),
+  'utf8',
+);
+const nativeInfoPlist = readFileSync(join(__dirname, '../../ios/Hither/Info.plist'), 'utf8');
+const diagnosticStore = readFileSync(join(__dirname, '../state/diagnostics.ts'), 'utf8');
+const xcodeProject = readFileSync(
+  join(__dirname, '../../ios/Hither.xcodeproj/project.pbxproj'),
   'utf8',
 );
 
@@ -34,6 +43,17 @@ describe('production mobile configuration', () => {
     expect(easConfig.build.preview).toEqual(
       expect.objectContaining({ distribution: 'internal' }),
     );
+  });
+
+  it('separates verbose diagnostic builds from minimal production telemetry', () => {
+    expect(easConfig.build.diagnostic).toEqual(
+      expect.objectContaining({ distribution: 'store', channel: 'diagnostic' }),
+    );
+    expect(easConfig.build.diagnostic.env.EXPO_PUBLIC_DIAGNOSTICS_ENABLED).toBe('true');
+    expect(easConfig.build.diagnostic.env.EXPO_PUBLIC_DIAGNOSTIC_LEVEL).toBe('verbose');
+    expect(easConfig.build.production.env.EXPO_PUBLIC_DIAGNOSTICS_ENABLED).toBe('false');
+    expect(easConfig.build.production.env.EXPO_PUBLIC_DIAGNOSTIC_LEVEL).toBe('minimal');
+    expect(diagnosticStore).toContain('process.env.EXPO_PUBLIC_DIAGNOSTIC_LEVEL');
   });
 
   it('wires EAS Update channels on build profiles', () => {
@@ -60,5 +80,26 @@ describe('production mobile configuration', () => {
   it('requests production APNs entitlements for the upcoming archive', () => {
     expect(appConfig.expo.ios.entitlements['aps-environment']).toBe('production');
     expect(nativeEntitlements).toContain('<string>production</string>');
+    expect(appConfig.expo.ios.infoPlist.NSSupportsLiveActivitiesFrequentUpdates).toBe(true);
+    expect(nativeInfoPlist).toContain('<key>NSSupportsLiveActivitiesFrequentUpdates</key>');
+    expect(nativeInfoPlist).toMatch(/<key>UIBackgroundModes<\/key>[\s\S]*<string>location<\/string>/);
+  });
+
+  it('keeps checked-in bare iOS configuration aligned before disabling the CNG warning', () => {
+    expect(packageConfig.expo.doctor.appConfigFieldsNotSyncedCheck.enabled).toBe(false);
+    expect(nativeInfoPlist).toContain('<string>hither</string>');
+    expect(nativeInfoPlist).toContain(appConfig.expo.ios.infoPlist.NSLocationWhenInUseUsageDescription);
+    expect(nativeInfoPlist).toContain(
+      appConfig.expo.ios.infoPlist.NSLocationAlwaysAndWhenInUseUsageDescription,
+    );
+    expect(nativeInfoPlist).toContain('<string>Dark</string>');
+    expect(nativeInfoPlist).toContain('<string>UIInterfaceOrientationPortrait</string>');
+  });
+
+  it('ships the checked-in widget target without a runtime Prebuild generator', () => {
+    expect(packageConfig.dependencies['@bacons/apple-targets']).toBeUndefined();
+    expect(appConfig.expo.plugins).not.toContain('@bacons/apple-targets');
+    expect(xcodeProject).toContain('HitherActivityWidget.appex in Embed Foundation Extensions');
+    expect(xcodeProject).toContain('PRODUCT_BUNDLE_IDENTIFIER = app.hither.mobile.widget');
   });
 });

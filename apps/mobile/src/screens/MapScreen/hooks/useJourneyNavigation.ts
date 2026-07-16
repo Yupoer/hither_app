@@ -1,11 +1,10 @@
+import * as Crypto from 'expo-crypto';
 import { useState, useMemo, useEffect, useCallback, useRef, RefObject } from 'react';
 import { Alert, Linking } from 'react-native';
-import {
-  setJourneyTarget,
-  reorderDestinations,
-} from '../../../api/client';
+import { reorderDestinations } from '../../../api/client';
 import { distanceMeters } from '../../../utils/geo';
 import type { Coordinates, Destination, GroupState, JourneyStatus } from '../../../types';
+import type { NavigationSession } from '../../../types/navigation';
 import type { ScrollView } from 'react-native';
 import type { GroupMapHandle } from '../../../components/GroupMap';
 
@@ -22,6 +21,11 @@ interface UseJourneyNavigationParams {
   mapRef: RefObject<GroupMapHandle | null>;
   carouselRef: RefObject<ScrollView | null>;
   setSelectedIndex: (index: number) => void;
+  /** Undefined means legacy data is still hydrating; null means no active session. */
+  navigationSession?: NavigationSession | null;
+  startSession?: (destinationId: string, requestId: string) => Promise<NavigationSession>;
+  cancelSession?: () => Promise<NavigationSession | null>;
+  createRequestId?: () => string;
 }
 
 export function useJourneyNavigation({
@@ -32,44 +36,50 @@ export function useJourneyNavigation({
   navigationDestinations = destinations,
   selectedDestination,
   fromCoords,
-  refresh,
+  refresh: _refresh,
   t,
   mapRef,
   carouselRef,
   setSelectedIndex,
+  navigationSession,
+  startSession,
+  cancelSession,
+  createRequestId = Crypto.randomUUID,
 }: UseJourneyNavigationParams) {
-  const serverJourneyStatus = state?.group.journeyStatus;
-  const [pendingJourneyStatus, setPendingJourneyStatus] = useState<JourneyStatus | null>(null);
-  const journeyStatus = pendingJourneyStatus ?? serverJourneyStatus ?? 'paused';
-  const journeyGoing = journeyStatus === 'going';
-  const serverTargetId = state?.group.activeDestinationId ?? null;
-  const [pendingTargetId, setPendingTargetId] = useState<string | null | undefined>(
-    undefined,
-  );
+  const legacyMode = navigationSession === undefined;
+  const legacySharedTargetId = legacyMode && state?.group.journeyStatus === 'going'
+    ? state.group.activeDestinationId ?? null
+    : null;
+  const sharedTargetId = navigationSession?.status === 'active'
+    ? navigationSession.destinationId
+    : legacySharedTargetId;
+  const [localTargetId, setLocalTargetId] = useState<string | null>(null);
+  const [pendingLeaderTargetId, setPendingLeaderTargetId] = useState<string | null>(null);
+  const [pendingLeaderStop, setPendingLeaderStop] = useState(false);
   const lastFollowerCenterKeyRef = useRef<string | null>(null);
-  const navTargetId = pendingTargetId !== undefined ? pendingTargetId : serverTargetId;
-  
-  const navTarget = useMemo<Destination | undefined>(
-    () => navigationDestinations.find((d) => d.id === navTargetId),
-    [navigationDestinations, navTargetId],
-  );
+  const requestRef = useRef<{ destinationId: string; requestId: string } | null>(null);
 
   useEffect(() => {
-    if (
-      pendingJourneyStatus &&
-      serverJourneyStatus === pendingJourneyStatus &&
-      serverTargetId === pendingTargetId
-    ) {
-      setPendingJourneyStatus(null);
-      setPendingTargetId(undefined);
+    if (sharedTargetId && pendingLeaderTargetId === sharedTargetId) {
+      setPendingLeaderTargetId(null);
     }
-  }, [pendingJourneyStatus, pendingTargetId, serverJourneyStatus, serverTargetId]);
+    if (sharedTargetId) setPendingLeaderStop(false);
+  }, [pendingLeaderTargetId, sharedTargetId]);
 
-  const journeyActive = journeyGoing && !!navTarget;
-  const activePoint = useMemo(() => navTarget ?? selectedDestination, [navTarget, selectedDestination]);
-
-  const numericDistance =
-    fromCoords && navTarget ? distanceMeters(fromCoords, navTarget.coordinates) : undefined;
+  const navTargetId = sharedTargetId ??
+    (isLeader ? pendingLeaderTargetId : localTargetId);
+  const navTarget = useMemo<Destination | undefined>(
+    () => navigationDestinations.find((destination) => destination.id === navTargetId),
+    [navigationDestinations, navTargetId],
+  );
+  const journeyGoing = !pendingLeaderStop && Boolean(navTargetId);
+  const journeyStatus: JourneyStatus = journeyGoing ? 'going' : 'paused';
+  const journeyActive = journeyGoing && Boolean(navTarget);
+  const activePoint = navTarget ?? selectedDestination;
+  const numericDistance = fromCoords && navTarget
+    ? distanceMeters(fromCoords, navTarget.coordinates)
+    : undefined;
+  const [journeyBusy, setJourneyBusy] = useState(false);
 
   const openInAppleMaps = useCallback((dest: Destination) => {
     const { latitude, longitude } = dest.coordinates;
@@ -79,13 +89,9 @@ export function useJourneyNavigation({
     Linking.openURL(scheme).catch(() => void Linking.openURL(universal));
   }, []);
 
-  const [journeyBusy, setJourneyBusy] = useState(false);
-
-  /** Follower-only: local route plan without writing journey_status (BUG-13). */
   const startLocalRoutePlan = useCallback(
     (dest: Destination, index: number) => {
-      setPendingJourneyStatus('going');
-      setPendingTargetId(dest.id);
+      setLocalTargetId(dest.id);
       setSelectedIndex(index);
       mapRef.current?.centerOn(dest.coordinates);
     },
@@ -94,35 +100,41 @@ export function useJourneyNavigation({
 
   const startNavigation = useCallback(
     async (dest: Destination, index: number) => {
-      // Followers only plan a local route; leader broadcast overrides later.
       if (!isLeader) {
         startLocalRoutePlan(dest, index);
         return;
       }
-      if (!groupId || journeyBusy) return;
+      if (!groupId || journeyBusy || !startSession) return;
       setJourneyBusy(true);
-      setPendingJourneyStatus('going');
-      setPendingTargetId(dest.id);
+      setPendingLeaderStop(false);
+      setPendingLeaderTargetId(dest.id);
       mapRef.current?.centerOn(dest.coordinates);
       try {
-        const navigationIndex = navigationDestinations.findIndex((item) => item.id === dest.id);
+        const navigationIndex = navigationDestinations.findIndex(
+          (item) => item.id === dest.id,
+        );
         if (navigationIndex > 0) {
-          const ids = navigationDestinations.map((d) => d.id);
+          const ids = navigationDestinations.map((item) => item.id);
           const [moved] = ids.splice(navigationIndex, 1);
           ids.unshift(moved);
-          const updates = ids.map((id, i) => {
-            const d = navigationDestinations.find((x) => x.id === id);
-            return { id, position: i, day: d?.day ?? 1 };
-          });
-          await reorderDestinations(groupId, updates);
+          await reorderDestinations(
+            groupId,
+            ids.map((id, position) => ({
+              id,
+              position,
+              day: navigationDestinations.find((item) => item.id === id)?.day ?? 1,
+            })),
+          );
         }
         setSelectedIndex(0);
         carouselRef.current?.scrollTo({ x: 0, animated: true });
-        await setJourneyTarget(groupId, dest.id);
-        await refresh();
+        if (!requestRef.current || requestRef.current.destinationId !== dest.id) {
+          requestRef.current = { destinationId: dest.id, requestId: createRequestId() };
+        }
+        await startSession(dest.id, requestRef.current.requestId);
+        requestRef.current = null;
       } catch {
-        setPendingJourneyStatus(null);
-        setPendingTargetId(undefined);
+        setPendingLeaderTargetId(null);
         Alert.alert(t('map.setFailedTitle'), t('map.journeyFailed'));
       } finally {
         setJourneyBusy(false);
@@ -133,80 +145,49 @@ export function useJourneyNavigation({
       startLocalRoutePlan,
       groupId,
       journeyBusy,
+      startSession,
       navigationDestinations,
-      refresh,
       t,
       mapRef,
       carouselRef,
       setSelectedIndex,
+      createRequestId,
     ],
   );
 
   const stopNavigation = useCallback(async () => {
-    // Followers only clear local follow state — leader owns the DB journey.
     if (!isLeader) {
-      setPendingJourneyStatus('paused');
-      setPendingTargetId(null);
+      setLocalTargetId(null);
       return;
     }
-    if (!groupId || journeyBusy) return;
+    if (!groupId || journeyBusy || !cancelSession) return;
     setJourneyBusy(true);
-    setPendingJourneyStatus('paused');
-    setPendingTargetId(null);
+    setPendingLeaderStop(true);
     try {
-      await setJourneyTarget(groupId, null);
-      await refresh();
+      await cancelSession();
+      setPendingLeaderTargetId(null);
     } catch {
-      setPendingJourneyStatus(null);
-      setPendingTargetId(undefined);
+      setPendingLeaderStop(false);
       Alert.alert(t('map.setFailedTitle'), t('map.journeyFailed'));
     } finally {
       setJourneyBusy(false);
     }
-  }, [groupId, journeyBusy, isLeader, refresh, t]);
+  }, [cancelSession, groupId, journeyBusy, isLeader, t]);
 
-  // BUG-13: followers follow the leader's target once, then keep map gestures
-  // under the user's control. Realtime member/location updates rebuild
-  // `destinations`; without this guard each update would recenter the map.
   useEffect(() => {
-    if (isLeader) {
+    if (isLeader || !sharedTargetId) {
       lastFollowerCenterKeyRef.current = null;
       return;
     }
-    if (serverJourneyStatus !== 'going' || !serverTargetId) {
-      lastFollowerCenterKeyRef.current = null;
-      return;
-    }
-    const index = destinations.findIndex((d) => d.id === serverTargetId);
-    const dest = destinations[index];
-    if (!dest) return;
-
-    const centerKey = `${serverTargetId}:${dest.coordinates.latitude}:${dest.coordinates.longitude}`;
+    const index = destinations.findIndex((destination) => destination.id === sharedTargetId);
+    const destination = destinations[index];
+    if (!destination) return;
+    const centerKey = `${navigationSession?.id ?? 'legacy'}:${sharedTargetId}`;
     if (lastFollowerCenterKeyRef.current === centerKey) return;
     lastFollowerCenterKeyRef.current = centerKey;
-    setPendingJourneyStatus(null);
-    setPendingTargetId(undefined);
     setSelectedIndex(index);
-    mapRef.current?.centerOn(dest.coordinates);
-  }, [
-    isLeader,
-    serverJourneyStatus,
-    serverTargetId,
-    destinations,
-    setSelectedIndex,
-    mapRef,
-  ]);
-
-  // Keep carousel on the leader's active stop while the server journey is live.
-  // When leader pauses, pending is already null (force-follow cleared it) so
-  // journeyStatus falls back to server `paused` and shared routes drop.
-  // Independent follower local plans (pending going + server paused) stay local.
-  useEffect(() => {
-    if (isLeader || !serverTargetId || serverJourneyStatus !== 'going') return;
-    const index = destinations.findIndex((d) => d.id === serverTargetId);
-    if (index < 0) return;
-    setSelectedIndex(index);
-  }, [isLeader, serverTargetId, serverJourneyStatus, destinations, setSelectedIndex]);
+    mapRef.current?.centerOn(destination.coordinates);
+  }, [destinations, isLeader, mapRef, navigationSession?.id, setSelectedIndex, sharedTargetId]);
 
   return {
     journeyStatus,

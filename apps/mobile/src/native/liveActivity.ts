@@ -18,10 +18,16 @@ import type { Coordinates } from '../types';
 interface PushTokenEvent {
   activityId: string;
   pushToken: string;
+  navigationSessionId?: string;
+}
+
+interface PushToStartTokenEvent {
+  token: string | null;
 }
 
 type HitherLiveActivityEvents = {
   onPushToken: (event: PushTokenEvent) => void;
+  onPushToStartToken: (event: PushToStartTokenEvent) => void;
 };
 
 type HitherLiveActivityModule = {
@@ -29,11 +35,14 @@ type HitherLiveActivityModule = {
     eventName: EventName,
     listener: HitherLiveActivityEvents[EventName],
   ): EventSubscription;
+  startPushToStartTokenObservation(): Promise<void>;
+  observeExistingActivities(): Promise<void>;
   startGroupActivity(state: GroupActivityState): Promise<ActivityStartResult | null>;
   updateGroupActivity(
     handle: ActivityHandle,
     state: GroupActivityState,
   ): Promise<void>;
+  updateAllGroupActivities(state: GroupActivityState): Promise<void>;
   endGroupActivity(handle: ActivityHandle): Promise<void>;
   endAllGroupActivities(): Promise<void>;
 };
@@ -43,6 +52,8 @@ const HitherLiveActivity =
 
 export interface GroupActivityState {
   groupName: string;
+  navigationSessionId?: string;
+  status?: string;
   gatheringTitle?: string;
   /** Distance from the user to the gathering point, in metres. */
   distanceMeters?: number;
@@ -99,6 +110,29 @@ export async function updateGroupActivity(
   state: GroupActivityState,
 ): Promise<void> {
   await HitherLiveActivity?.updateGroupActivity(handle, state);
+}
+
+export function addPushToStartTokenListener(
+  listener: (event: PushToStartTokenEvent) => void,
+): EventSubscription {
+  return HitherLiveActivity?.addListener('onPushToStartToken', listener) ?? {
+    remove() {},
+  };
+}
+
+export async function startPushToStartTokenObservation(): Promise<void> {
+  await HitherLiveActivity?.startPushToStartTokenObservation();
+}
+
+export async function observeExistingActivities(): Promise<void> {
+  await HitherLiveActivity?.observeExistingActivities();
+}
+
+/** Update every Hither activity from a headless background location callback. */
+export async function updateAllGroupActivities(
+  state: GroupActivityState,
+): Promise<void> {
+  await HitherLiveActivity?.updateAllGroupActivities(state);
 }
 
 /** End a running Live Activity. No-op when unsupported. */

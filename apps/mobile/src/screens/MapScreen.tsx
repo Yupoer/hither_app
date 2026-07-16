@@ -75,11 +75,13 @@ import { useJourneyNavigation } from './MapScreen/hooks/useJourneyNavigation';
 import { useMapKitRoutes } from './MapScreen/hooks/useMapKitRoutes';
 import { useGatherCardExpansion } from './MapScreen/hooks/useGatherCardExpansion';
 import { SettingsOverlay } from './MapScreen/components/SettingsOverlay';
+import { DiagnosticsOverlay } from './MapScreen/components/DiagnosticsOverlay';
 import { ProfileOverlay } from './MapScreen/components/ProfileOverlay';
 import { SubgroupSection } from './MapScreen/components/SubgroupSection';
 import { Segmented } from './MapScreen/components/Segmented';
 import AccountSheet from '../components/AccountSheet';
 import { useGroupState } from '../state/useGroupState';
+import { useNavigationSession } from '../state/useNavigationSession';
 import { useStragglerAlerts } from '../state/useStragglerAlerts';
 import { useSubgroupInvites } from '../state/useSubgroupInvites';
 import { clearLiveActivities, useLiveActivity } from '../state/useLiveActivity';
@@ -87,6 +89,12 @@ import {
   startBackgroundJourney,
   stopBackgroundJourney,
 } from '../state/backgroundJourney';
+import { purgeLocationOutbox } from '../state/locationOutbox';
+import { diagnostics } from '../state/diagnostics';
+import {
+  getLocationSharingEnabled,
+  setLocationSharingEnabled,
+} from '../api/services/NavigationService';
 import {
   consumePendingLocationPermission,
   consumePendingLocationRefresh,
@@ -248,12 +256,15 @@ export default function MapScreen({ route, navigation }: Props) {
   } = useSession();
   const {
     highAccuracy,
+    sharingEnabled,
+    ready: preferencesReady,
     obliqueLocate,
     liveActivityEnabled,
     meetRedMin,
     gatherCardDefaultExpanded,
     setMeetRedMin,
     setHighAccuracy,
+    setSharingEnabled,
   } = usePreferences();
   const { isCardExpanded, toggleCard, registerCardActivity } =
     useGatherCardExpansion(gatherCardDefaultExpanded);
@@ -299,6 +310,7 @@ export default function MapScreen({ route, navigation }: Props) {
     myUserId: user?.id ?? null,
     highAccuracy,
   });
+  const navigationSessionState = useNavigationSession(groupId);
   const group = state?.group ?? membership?.group ?? null;
 
   const mapRef = useRef<GroupMapHandle | null>(null);
@@ -443,6 +455,7 @@ export default function MapScreen({ route, navigation }: Props) {
     | 'myStatus'
     | 'arrivalManage'
     | 'arrival'
+    | 'diagnostics'
   >(null);
   const [arrivalDestination, setArrivalDestination] = useState<Destination | null>(null);
   /** Draft selection in the my-status sheet; committed only via Done. */
@@ -725,7 +738,74 @@ export default function MapScreen({ route, navigation }: Props) {
     mapRef,
     carouselRef,
     setSelectedIndex,
+    navigationSession: navigationSessionState.loading
+      ? undefined
+      : navigationSessionState.session,
+    startSession: navigationSessionState.start,
+    cancelSession: navigationSessionState.cancel,
   });
+
+  const navigationAckRef = useRef<string | null>(null);
+  const privacyHydratedUserRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!preferencesReady || !user?.id || privacyHydratedUserRef.current === user.id) {
+      return;
+    }
+    privacyHydratedUserRef.current = user.id;
+    void getLocationSharingEnabled()
+      .then(async (remoteValue) => {
+        if (remoteValue == null) {
+          await setLocationSharingEnabled(sharingEnabled);
+        } else {
+          setSharingEnabled(remoteValue);
+        }
+      })
+      .catch(() => {
+        privacyHydratedUserRef.current = null;
+      });
+  }, [preferencesReady, setSharingEnabled, sharingEnabled, user?.id]);
+
+  const handleSharingEnabledChange = async (enabled: boolean) => {
+    setSharingEnabled(enabled);
+    if (!enabled) {
+      await stopBackgroundJourney().catch(() => undefined);
+      await purgeLocationOutbox().catch(() => undefined);
+      if (navigationSessionState.session) {
+        await navigationSessionState.ack('sharing_disabled', {
+          source: 'settings_privacy_switch',
+        }).catch(() => undefined);
+      }
+    }
+    try {
+      await setLocationSharingEnabled(enabled);
+    } catch (error) {
+      await diagnostics.write({
+        event: 'diagnostic_error',
+        errorCode: 'privacy_sync_failed',
+        success: false,
+      }).catch(() => undefined);
+      // Enabling must fail closed if the server-side ingestion gate could not sync.
+      if (enabled) setSharingEnabled(false);
+      Alert.alert(t('settings.locationSharingSyncFailed'));
+    }
+  };
+
+  useEffect(() => {
+    if (isLeader || !navigationSessionState.session) {
+      navigationAckRef.current = null;
+      return;
+    }
+    const key = `${navigationSessionState.session.id}:${sharingEnabled ? 'tracking' : 'disabled'}`;
+    if (navigationAckRef.current === key) return;
+    navigationAckRef.current = key;
+    void navigationSessionState.ack(
+      sharingEnabled ? 'tracking_active' : 'sharing_disabled',
+      { source: 'foreground_session_effect' },
+    ).catch(() => {
+      navigationAckRef.current = null;
+    });
+  }, [isLeader, navigationSessionState, sharingEnabled]);
 
   const { selfRoute, memberRoutes } = useMapKitRoutes({
     selfCoordinates: fromCoords,
@@ -855,17 +935,26 @@ export default function MapScreen({ route, navigation }: Props) {
 
     void startBackgroundJourney({
       groupId,
+      navigationSessionId: navigationSessionState.session?.id ?? null,
       destinationId: navTarget?.id ?? 'group-presence',
       destination: dest,
+      arrivalRadiusMeters:
+        navigationSessionState.session?.destination.arrivalRadiusMeters ?? 50,
       initialDistanceM: backgroundInitialM,
+      sequence: 0,
       travelMode,
       // Explicit high accuracy is a user opt-in even without team navigation.
       highAccuracy,
       powerMode,
-      sharingEnabled: true,
-      teamNavigationActive: Boolean(journeyActive && navTarget),
+      sharingEnabled,
+      teamNavigationActive: Boolean(
+        navigationSessionState.session || (journeyActive && navTarget),
+      ),
       appState: appState === 'background' ? 'background' : 'inactive',
     }).then((result) => {
+      if (result === 'hidden') {
+        void purgeLocationOutbox();
+      }
       if (result === 'permission_denied') {
         backgroundPermissionDeniedRef.current = key;
         void rememberPendingLocationPermission();
@@ -878,6 +967,8 @@ export default function MapScreen({ route, navigation }: Props) {
     highAccuracy,
     journeyActive,
     navTarget,
+    navigationSessionState.session,
+    sharingEnabled,
     showLocationPermissionAlert,
     travelMode,
   ]);
@@ -978,6 +1069,8 @@ export default function MapScreen({ route, navigation }: Props) {
     : undefined;
   useLiveActivity(journeyActive && liveActivityEnabled, {
     groupName: membership?.group.name ?? '',
+    navigationSessionId: navigationSessionState.session?.id,
+    status: navigationSessionState.session ? 'active' : undefined,
     gatheringTitle: navTarget?.title,
     distanceMeters: liveDistance,
     etaSeconds:
@@ -993,10 +1086,11 @@ export default function MapScreen({ route, navigation }: Props) {
     memberArrived: members.map((m) => m.status === 'arrived'),
   }, groupId && navTarget && initialDistanceM != null ? {
     groupId,
+    navigationSessionId: navigationSessionState.session?.id,
     destinationId: navTarget.id,
     initialDistanceM,
     travelMode,
-  } : undefined);
+  } : undefined, liveActivityEnabled);
 
 
 
@@ -3195,6 +3289,10 @@ export default function MapScreen({ route, navigation }: Props) {
         onOpenPaywall={openPaywallCb}
         onOpenAccount={openAccountOverlay}
         onOpenCustomQuickCommand={openCustomQuickCommand}
+        onSharingEnabledChange={(enabled) => {
+          void handleSharingEnabledChange(enabled);
+        }}
+        onOpenDiagnostics={() => setOverlay('diagnostics')}
         onOpenStraggler={() => {
           setOverlay(null);
           LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -3210,6 +3308,27 @@ export default function MapScreen({ route, navigation }: Props) {
           goHomeCreateOrJoin();
         }}
         styles={styles}
+      />
+
+      <DiagnosticsOverlay
+        visible={overlay === 'diagnostics'}
+        onClose={closeOverlay}
+        accent={accent}
+        navigationSessionId={navigationSessionState.session?.id ?? null}
+        trackingMode={
+          !sharingEnabled
+            ? 'hidden'
+            : navigationSessionState.session
+              ? 'teamNavigation'
+              : journeyActive
+                ? 'navigationMax'
+                : appState === 'active'
+                  ? 'foreground'
+                  : 'passiveBackground'
+        }
+        liveActivityStatus={
+          journeyActive && liveActivityEnabled ? 'active/requested' : 'inactive'
+        }
       />
 
       {/* 邀請成員 — independent share sheet (code / share / copy). */}

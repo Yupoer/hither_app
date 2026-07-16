@@ -16,6 +16,7 @@ export * as maps from './maps';
 export * as notifications from './notifications';
 export * as liveActivity from './liveActivity';
 export * as liquidGlass from './liquidGlass';
+export * as metrics from './metrics';
 export * as purchases from './purchases';
 
 export type { LocationSample } from './location';

@@ -9,10 +9,14 @@ import { join } from 'node:path';
 
 const config: BackgroundJourneyConfig = {
   groupId: 'group-1',
+  navigationSessionId: null,
   destinationId: 'destination-1',
   destination: { latitude: 25.0478, longitude: 121.517 },
+  arrivalRadiusMeters: 50,
   initialDistanceM: 1000,
+  sequence: 0,
   travelMode: 'walk',
+  sharingEnabled: true,
 };
 
 function harness(started = false) {
@@ -210,6 +214,25 @@ describe('background journey native wiring', () => {
     );
   });
 
+  it('orders background work locally before any navigation acknowledgement', () => {
+    const callback = taskModule.slice(taskModule.indexOf('async ({ data'));
+    expect(callback.indexOf('diagnostics.write')).toBeLessThan(
+      callback.indexOf('reduceArrival'),
+    );
+    expect(callback.indexOf('reduceArrival')).toBeLessThan(
+      callback.indexOf('updateAllGroupActivities'),
+    );
+    expect(callback.indexOf('updateAllGroupActivities')).toBeLessThan(
+      callback.indexOf('enqueueLocationOutbox'),
+    );
+    expect(callback.indexOf('enqueueLocationOutbox')).toBeLessThan(
+      callback.indexOf('flushLocationOutbox'),
+    );
+    expect(callback.indexOf('flushLocationOutbox')).toBeLessThan(
+      callback.indexOf('ackNavigationSession'),
+    );
+  });
+
   it('starts from MapScreen and stops on pause, leave, or sign-out', () => {
     const mapScreen = readFileSync(
       join(__dirname, '../screens/MapScreen.tsx'),
@@ -223,6 +246,8 @@ describe('background journey native wiring', () => {
     expect(mapScreen).toContain('startBackgroundJourney');
     expect(mapScreen).toContain('initialJourneyDistance');
     expect(mapScreen).toContain('stopBackgroundJourney');
+    expect(mapScreen).toContain('sharingEnabled,');
+    expect(mapScreen).not.toContain('sharingEnabled: true');
     expect(session).toContain('signOutWithJourneyCleanup');
     expect(session).toContain('leaveGroupWithJourneyCleanup');
     expect(session).toContain('clearLiveActivities');

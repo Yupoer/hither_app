@@ -1,6 +1,46 @@
+import * as Crypto from 'expo-crypto';
+import * as SecureStore from 'expo-secure-store';
 import type { TravelMode } from '../../utils/geo';
 import { supabase } from '../supabase';
 import { orThrow, requireUserId } from './_helpers';
+
+const LIVE_ACTIVITY_DEVICE_ID_KEY = 'hither.live-activity-device-id';
+let deviceIdPromise: Promise<string> | null = null;
+
+export function getOrCreateLiveActivityDeviceId(): Promise<string> {
+  if (!deviceIdPromise) {
+    deviceIdPromise = (async () => {
+      const stored = await SecureStore.getItemAsync(LIVE_ACTIVITY_DEVICE_ID_KEY);
+      if (stored) return stored;
+      const created = Crypto.randomUUID();
+      await SecureStore.setItemAsync(LIVE_ACTIVITY_DEVICE_ID_KEY, created);
+      return created;
+    })().catch((error) => {
+      deviceIdPromise = null;
+      throw error;
+    });
+  }
+  return deviceIdPromise;
+}
+
+export async function upsertDeviceActivityToken(
+  deviceId: string,
+  pushToStartToken: string | null,
+  enabled: boolean,
+): Promise<void> {
+  const uid = await requireUserId();
+  const { error } = await supabase.from('device_live_activity_tokens').upsert(
+    {
+      user_id: uid,
+      device_id: deviceId,
+      push_to_start_token: pushToStartToken,
+      live_activities_enabled: pushToStartToken === null ? false : enabled,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'user_id,device_id' },
+  );
+  orThrow(error);
+}
 
 export interface LiveActivitySessionInput {
   groupId: string;

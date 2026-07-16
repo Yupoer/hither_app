@@ -11,6 +11,7 @@ export interface PushPayload {
     | "arrival"
     | "straggler"
     | "live_activity"
+    | "navigation_session"
     | "location_refresh"
     | "meet_time_set"
     | "meet_time_cleared"
@@ -26,6 +27,8 @@ export interface PushPayload {
   message?: string | null;
   title?: string | null;
   status?: string | null;
+  session_id?: string | null;
+  version?: number | null;
   /** ISO meet clock (meet_time_set / meet_warning / meet_due). */
   meet_at?: string | null;
   /** Minutes remaining (meet_warning) or red threshold (meet_time_set). */
@@ -102,6 +105,10 @@ export function buildMessage(p: PushPayload): { title: string; body: string } {
     }
     case "live_activity":
       return { title: "Hither", body: "集合進度已更新" };
+    case "navigation_session":
+      return p.status === "active"
+        ? { title: "開始集合導航", body: "隊長已開始前往集合點" }
+        : { title: "集合導航已結束", body: "這次集合導航已結束" };
     case "location_refresh":
       return { title: "Hither", body: "" };
     case "meet_time_set": {
@@ -169,6 +176,7 @@ export function prefColumn(category: PushPayload["category"]): string {
     case "arrival":
     case "straggler":
     case "live_activity":
+    case "navigation_session":
     case "location_refresh":
     case "meet_time_set":
     case "meet_time_cleared":

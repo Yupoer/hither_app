@@ -3,6 +3,8 @@ import {
   deleteLiveActivitySession,
   deleteMyLiveActivitySessions,
   deleteMyLiveActivitySessionsForGroups,
+  getOrCreateLiveActivityDeviceId,
+  upsertDeviceActivityToken,
   upsertLiveActivitySession,
 } from '../api/services/LiveActivityService';
 import { liveActivity, type GroupActivityState } from '../native';
@@ -10,6 +12,7 @@ import type { TravelMode } from '../utils/geo';
 
 export interface LiveActivitySessionContext {
   groupId: string;
+  navigationSessionId?: string;
   destinationId: string;
   initialDistanceM: number;
   travelMode: TravelMode;
@@ -35,6 +38,7 @@ export function useLiveActivity(
   active: boolean,
   state: GroupActivityState,
   session?: LiveActivitySessionContext,
+  liveActivitiesEnabled = true,
 ): void {
   const handleRef = useRef<string | null>(null);
   const destinationRef = useRef<string | null>(null);
@@ -42,8 +46,12 @@ export function useLiveActivity(
   const lastPersistAtRef = useRef(0);
   const stateRef = useRef(state);
   const sessionRef = useRef(session);
+  const pushToStartTokenRef = useRef<string | null>(null);
+  const deviceIdRef = useRef<string | null>(null);
+  const enabledRef = useRef(liveActivitiesEnabled);
   stateRef.current = state;
   sessionRef.current = session;
+  enabledRef.current = liveActivitiesEnabled;
 
   /** Min interval between Supabase live_activity_sessions upserts (local LA still updates more often). */
   const PERSIST_MIN_MS = 30_000;
@@ -82,14 +90,62 @@ export function useLiveActivity(
 
   useEffect(() => {
     const subscription = liveActivity.addPushTokenListener((event) => {
-      if (event.activityId !== handleRef.current) return;
+      if (
+        event.activityId !== handleRef.current &&
+        (!event.navigationSessionId ||
+          event.navigationSessionId !== sessionRef.current?.navigationSessionId)
+      ) return;
+      const previousId = handleRef.current;
+      handleRef.current = event.activityId;
       pushTokenRef.current = event.pushToken;
+      if (previousId && previousId !== event.activityId) {
+        void finishActivity(previousId).catch(() => undefined);
+      }
       void persistSession(event.activityId, { force: true }).catch(() => undefined);
     });
     return () => subscription.remove();
     // The listener reads mutable refs so token rotation never resubscribes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (session?.navigationSessionId) {
+      void liveActivity.observeExistingActivities().catch(() => undefined);
+    }
+  }, [session?.navigationSessionId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const persistToken = async (token: string | null) => {
+      pushToStartTokenRef.current = token;
+      const deviceId = deviceIdRef.current ??
+        await getOrCreateLiveActivityDeviceId();
+      if (cancelled) return;
+      deviceIdRef.current = deviceId;
+      await upsertDeviceActivityToken(deviceId, token, enabledRef.current);
+    };
+    const subscription = liveActivity.addPushToStartTokenListener(({ token }) => {
+      void persistToken(token).catch(() => undefined);
+    });
+    void getOrCreateLiveActivityDeviceId().then((deviceId) => {
+      if (!cancelled) deviceIdRef.current = deviceId;
+    }).catch(() => undefined);
+    void liveActivity.startPushToStartTokenObservation().catch(() => undefined);
+    return () => {
+      cancelled = true;
+      subscription.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    const deviceId = deviceIdRef.current;
+    if (!deviceId) return;
+    void upsertDeviceActivityToken(
+      deviceId,
+      pushToStartTokenRef.current,
+      liveActivitiesEnabled,
+    ).catch(() => undefined);
+  }, [liveActivitiesEnabled]);
 
   useEffect(() => {
     let cancelled = false;

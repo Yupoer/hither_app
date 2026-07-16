@@ -26,6 +26,8 @@ import { THEME_ORDER, type ThemeName, themes } from '../../../theme';
 import { glass } from '../../../glass';
 
 const OTA_UPDATES_USABLE = !__DEV__ && Updates.isEnabled;
+const diagnosticsEnabled =
+  __DEV__ || process.env.EXPO_PUBLIC_DIAGNOSTICS_ENABLED === 'true';
 
 interface SettingsOverlayProps {
   visible: boolean;
@@ -41,6 +43,8 @@ interface SettingsOverlayProps {
   onOpenPaywall: () => void;
   onOpenAccount: () => void;
   onOpenCustomQuickCommand: () => void;
+  onSharingEnabledChange: (enabled: boolean) => void;
+  onOpenDiagnostics: () => void;
   /** Group-scoped straggler lives under tools; settings only deep-links there. */
   onOpenStraggler?: () => void;
   /** Switch active group (MyTeams) — not on the map sheet header. */
@@ -107,6 +111,8 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
   onOpenPaywall,
   onOpenAccount,
   onOpenCustomQuickCommand,
+  onSharingEnabledChange,
+  onOpenDiagnostics,
   onOpenStraggler,
   onSwitchGroup,
   onGoHome,
@@ -125,6 +131,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
     language,
     themeName,
     textScale,
+    sharingEnabled,
     obliqueLocate,
     liveActivityEnabled,
     gatherCardDefaultExpanded,
@@ -291,6 +298,21 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
         <SectionLabel label={t('settings.sectionMapJourney')} styles={styles} />
         <View style={styles.accuracyRow}>
           <View style={styles.accuracyCopy}>
+            <Text style={styles.accuracyLabel}>{t('settings.locationSharing')}</Text>
+            <Text style={styles.accuracySubhint}>{t('settings.locationSharingHint')}</Text>
+          </View>
+          <Switch
+            style={styles.accuracySwitch}
+            value={sharingEnabled}
+            onValueChange={onSharingEnabledChange}
+            trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
+            thumbColor="#fff"
+            ios_backgroundColor="rgba(120,120,128,0.32)"
+            accessibilityLabel={t('settings.locationSharing')}
+          />
+        </View>
+        <View style={styles.accuracyRow}>
+          <View style={styles.accuracyCopy}>
             <Text style={styles.accuracyLabel}>{t('settings.obliqueLocate')}</Text>
             <Text style={styles.accuracySubhint}>{t('settings.obliqueLocateHint')}</Text>
           </View>
@@ -400,6 +422,14 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             styles={styles}
             accessibilityLabel={t('feedback.title')}
           />
+          {diagnosticsEnabled ? (
+            <NavRow
+              title={t('diagnostics.title')}
+              description={t('diagnostics.settingsHint')}
+              onPress={onOpenDiagnostics}
+              styles={styles}
+            />
+          ) : null}
           <View style={styles.settingsTopRow}>
             <View style={styles.settingsTopCopy}>
               <Text style={styles.settingsTopTitle}>{t('settings.aboutHither')}</Text>
