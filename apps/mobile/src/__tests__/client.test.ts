@@ -3,6 +3,11 @@
 jest.mock('../api/supabase', () => ({
   supabase: { from: jest.fn(), rpc: jest.fn(), auth: { getSession: jest.fn() } },
 }));
+jest.mock('expo-crypto', () => ({ randomUUID: jest.fn(() => 'test-device-id') }));
+jest.mock('expo-secure-store', () => ({
+  getItemAsync: jest.fn(async () => null),
+  setItemAsync: jest.fn(async () => undefined),
+}));
 
 import {
   addDestination,
