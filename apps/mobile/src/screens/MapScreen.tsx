@@ -350,6 +350,7 @@ export default function MapScreen({ route, navigation }: Props) {
     [allScopedDestinations, myCompletedDestinationIds],
   );
   const optimisticTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
+  const workflowReloadRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const canEditItinerary = !!isLeader;
 
   const loadGatheringWorkflow = useCallback(async () => {
@@ -362,6 +363,14 @@ export default function MapScreen({ route, navigation }: Props) {
     setGatherPointRequests(requests);
   }, [groupId, isLeader]);
 
+  const scheduleWorkflowReload = useCallback(() => {
+    if (workflowReloadRef.current) return;
+    workflowReloadRef.current = setTimeout(() => {
+      workflowReloadRef.current = null;
+      void loadGatheringWorkflow().catch(() => undefined);
+    }, 300);
+  }, [loadGatheringWorkflow]);
+
   useEffect(() => {
     if (!groupId || isDemoGroup(groupId)) return;
     void loadGatheringWorkflow().catch(() => undefined);
@@ -369,11 +378,11 @@ export default function MapScreen({ route, navigation }: Props) {
       .channel(`gathering-workflow:${groupId}`)
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'destination_arrivals', filter: `group_id=eq.${groupId}`,
-      }, () => void loadGatheringWorkflow())
+      }, scheduleWorkflowReload)
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'gather_point_requests', filter: `group_id=eq.${groupId}`,
       }, (payload) => {
-        void loadGatheringWorkflow();
+        scheduleWorkflowReload();
         if (
           isLeader
           && payload.eventType === 'INSERT'
@@ -383,8 +392,12 @@ export default function MapScreen({ route, navigation }: Props) {
         }
       })
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [groupId, isLeader, loadGatheringWorkflow, t, user?.id]);
+    return () => {
+      if (workflowReloadRef.current) clearTimeout(workflowReloadRef.current);
+      workflowReloadRef.current = null;
+      supabase.removeChannel(channel);
+    };
+  }, [groupId, isLeader, loadGatheringWorkflow, scheduleWorkflowReload, t, user?.id]);
 
   // --- Sheet / overlay / island UI state -----------------------------------
   // Measured height of the sheet's pinned header (grabber + search row) —
@@ -1161,7 +1174,7 @@ export default function MapScreen({ route, navigation }: Props) {
         zoom: PLACE_ZOOM,
         altitude: PLACE_ALTITUDE,
       });
-      refresh();
+      await refresh();
     } catch (e) {
       logError('destination_add_failed', e, { source: 'search' });
       Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
@@ -1189,7 +1202,7 @@ export default function MapScreen({ route, navigation }: Props) {
       onProgress(i + 1);
     }
     logEvent('kml_import', { count: items.length });
-    refresh();
+    await refresh();
   }, [groupId, canEditItinerary, notifyLeaderPlace, myScopeId, refresh]);
 
   const handleGatherPointRequest = useCallback(async (requestId: string, approve: boolean) => {
@@ -1586,7 +1599,7 @@ export default function MapScreen({ route, navigation }: Props) {
   );
   const handleDelete = useCallback(
     (id: string) => {
-      if (!groupId) return;
+      if (!groupId || !canEditItinerary) return;
       const target = destinations.find((d) => d.id === id);
       confirmAction(
         {
@@ -1599,16 +1612,16 @@ export default function MapScreen({ route, navigation }: Props) {
           logEvent('destination_delete', { id });
           try {
             await deleteDestination(groupId, id);
-            refresh();
+            await refresh();
           } catch (e) {
             logError('destination_delete_failed', e, { id });
             Alert.alert(t('settings.deleteFailed'));
-            refresh();
+            await refresh();
           }
         },
       );
     },
-    [groupId, destinations, refresh, t],
+    [canEditItinerary, groupId, destinations, refresh, t],
   );
 
   const confirmLeave = useCallback(() => {

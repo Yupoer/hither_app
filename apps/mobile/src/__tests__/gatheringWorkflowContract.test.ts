@@ -8,6 +8,7 @@ const migrations = readdirSync(join(root, 'supabase/migrations'))
   .join('\n');
 const client = readFileSync(join(__dirname, '../api/client.ts'), 'utf8');
 const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const groupState = readFileSync(join(__dirname, '../state/useGroupState.ts'), 'utf8');
 const i18n = readFileSync(join(__dirname, '../i18n/index.ts'), 'utf8');
 const reorderList = readFileSync(
   join(__dirname, '../components/DestinationReorderList.tsx'),
@@ -78,6 +79,21 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(mapScreen).toContain('const canEditItinerary = !!isLeader');
     expect(reorderList).toContain('canEditColors={canReorder}');
     expect(migrations).toContain('drop policy if exists "itinerary_items: insert if in that subgroup"');
+  });
+
+  it('reloads group state when Realtime is unavailable instead of waiting five minutes', () => {
+    expect(groupState).toContain('realtimeReadyRef');
+    expect(groupState).toContain("status === 'SUBSCRIBED'");
+    expect(groupState).toContain("status === 'TIMED_OUT'");
+    expect(groupState).toContain("status === 'CHANNEL_ERROR'");
+    expect(groupState).toContain("status === 'CLOSED'");
+    expect(groupState).toContain('if (!realtimeReadyRef.current)');
+    expect(groupState).not.toContain('const profilesChannel');
+  });
+
+  it('coalesces workflow events and guards destination deletion to leaders', () => {
+    expect(mapScreen).toContain('scheduleWorkflowReload');
+    expect(mapScreen).toContain('if (!canEditItinerary) return;');
   });
 
   it('allows authorized history deletion without deleting arrival completion', () => {

@@ -13,9 +13,9 @@ import { isOwnLocationChange, locationPolicy } from '../utils/locationPolicy';
 
 /**
  * Fallback polling interval. Realtime is primary; this is a safety net only.
- * Kept long because full getGroupState is multi-query and expensive.
+ * Used only while the Realtime subscription is unavailable.
  */
-export const GROUP_POLL_INTERVAL_MS = 5 * 60_000;
+export const GROUP_POLL_INTERVAL_MS = 30_000;
 
 /** Coalesce bursts of non-location realtime events into a single refetch. */
 const REALTIME_DEBOUNCE_MS = 300;
@@ -69,6 +69,7 @@ export function useGroupState(
   const activeRef = useRef(true);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const locationDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const realtimeReadyRef = useRef(false);
   const pendingPatchesRef = useRef(new Map<string, MemberLocationPatch>());
   const myUserIdRef = useRef(myUserId);
   myUserIdRef.current = myUserId;
@@ -109,6 +110,7 @@ export function useGroupState(
   // Initial / group change load — even if briefly backgrounded, keep last state.
   useEffect(() => {
     activeRef.current = true;
+    realtimeReadyRef.current = false;
     setLoading(true);
     setState(null);
     pendingPatchesRef.current.clear();
@@ -220,25 +222,35 @@ export function useGroupState(
         { event: 'UPDATE', schema: 'public', table: 'groups', filter: groupRowFilter },
         scheduleReload,
       )
-      .subscribe();
-
-    const profilesChannel = supabase
-      .channel(`profiles:${groupId}:${subId}`)
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'profiles' },
         scheduleReload,
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          realtimeReadyRef.current = true;
+          void loadRef.current();
+          return;
+        }
+        if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR' || status === 'CLOSED') {
+          realtimeReadyRef.current = false;
+          void loadRef.current();
+        }
+      });
 
-    const timer = setInterval(() => loadRef.current(), GROUP_POLL_INTERVAL_MS);
+    const timer = setInterval(() => {
+      if (!realtimeReadyRef.current) {
+        void loadRef.current();
+      }
+    }, GROUP_POLL_INTERVAL_MS);
 
     return () => {
+      realtimeReadyRef.current = false;
       if (debounceRef.current) clearTimeout(debounceRef.current);
       if (locationDebounceRef.current) clearTimeout(locationDebounceRef.current);
       clearInterval(timer);
       supabase.removeChannel(channel);
-      supabase.removeChannel(profilesChannel);
     };
   }, [groupId, appState]);
 
