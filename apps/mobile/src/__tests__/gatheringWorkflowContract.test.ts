@@ -96,6 +96,15 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(mapScreen).toContain('if (!canEditItinerary) return;');
   });
 
+  it('offers database reconciliation and refreshes before arrival writes', () => {
+    expect(reorderList).toContain('onSync?: () => Promise<void>');
+    expect(reorderList).toContain('同步資料庫');
+    expect(mapScreen).toContain('const syncFromDatabase = useCallback');
+    expect(mapScreen).toContain('setOptimisticDestinations(null)');
+    expect(mapScreen).toContain('syncFromDatabase()');
+    expect(mapScreen).toContain('onSync={syncFromDatabase}');
+  });
+
   it('allows authorized history deletion without deleting arrival completion', () => {
     expect(migrations).toContain('arrival_id uuid');
     expect(migrations).toContain('destination_id uuid');

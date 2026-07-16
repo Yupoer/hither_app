@@ -30,6 +30,7 @@ interface Props {
   onUpdateTripDetails: (days: number, date: string) => void;
   onReorder: (updates: { id: string; position: number; day: number }[]) => void;
   onDelete?: (id: string) => void;
+  onSync?: () => Promise<void>;
   colors: Palette;
   emptyLabel: string;
   dragHint?: string;
@@ -49,6 +50,7 @@ export default function DestinationReorderList({
   onUpdateTripDetails,
   onReorder,
   onDelete,
+  onSync,
   colors,
   emptyLabel,
   dragHint,
@@ -72,8 +74,21 @@ export default function DestinationReorderList({
   const pan = useRef(new Animated.Value(0)).current;
 
   const [showSettings, setShowSettings] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [editDays, setEditDays] = useState(tripDays ?? 1);
   const [editDate, setEditDate] = useState(departureDate ? new Date(departureDate) : new Date());
+
+  const handleSync = useCallback(async () => {
+    if (!onSync || syncing) return;
+    setSyncing(true);
+    try {
+      await onSync();
+    } catch {
+      Alert.alert('同步失敗', '目前無法取得資料庫集合點，請稍後再試。');
+    } finally {
+      setSyncing(false);
+    }
+  }, [onSync, syncing]);
 
   // Wait for onboarding
   useEffect(() => {
@@ -223,17 +238,27 @@ export default function DestinationReorderList({
 
   return (
     <View>
-      {canReorder && (
-         <View style={styles.topActions}>
-           <Pressable style={styles.setDaysBtn} onPress={() => {
-               setEditDays(tripDays ?? 1);
-               setEditDate(departureDate ? new Date(departureDate) : new Date());
-               setShowSettings(true);
-           }}>
-              <Ionicons name="calendar-outline" size={16} color={colors.accent} style={{ marginRight: 6 }} />
-              <Text style={styles.setDaysText}>設定天數與日期</Text>
-           </Pressable>
-         </View>
+      {(canReorder || onSync) && (
+        <View style={styles.topActions}>
+          {canReorder && <Pressable style={styles.setDaysBtn} onPress={() => {
+            setEditDays(tripDays ?? 1);
+            setEditDate(departureDate ? new Date(departureDate) : new Date());
+            setShowSettings(true);
+          }}>
+            <Ionicons name="calendar-outline" size={16} color={colors.accent} style={{ marginRight: 6 }} />
+            <Text style={styles.setDaysText}>設定天數與日期</Text>
+          </Pressable>}
+          {onSync && <Pressable
+            style={[styles.setDaysBtn, syncing && { opacity: 0.5 }]}
+            onPress={() => void handleSync()}
+            disabled={syncing}
+            accessibilityRole="button"
+            accessibilityLabel="同步資料庫集合點"
+          >
+            <Ionicons name="refresh-outline" size={16} color={colors.accent} style={{ marginRight: 6 }} />
+            <Text style={styles.setDaysText}>{syncing ? '同步中…' : '同步資料庫'}</Text>
+          </Pressable>}
+        </View>
       )}
 
       {order.length === 0 ? (
@@ -575,6 +600,7 @@ const makeStyles = (colors: Palette) =>
     topActions: {
       flexDirection: 'row',
       justifyContent: 'flex-end',
+      gap: spacing.sm,
       marginBottom: spacing.sm,
     },
     hint: {

@@ -352,7 +352,18 @@ export default function MapScreen({ route, navigation }: Props) {
   );
   const optimisticTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const workflowReloadRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [optimisticTripDays, setOptimisticTripDays] = useState<number | null>(null);
+  const [optimisticDepartureDate, setOptimisticDepartureDate] = useState<string | null>(null);
   const canEditItinerary = !!isLeader;
+
+  const syncFromDatabase = useCallback(async () => {
+    setOptimisticDestinations(null);
+    setOptimisticTripDays(null);
+    setOptimisticDepartureDate(null);
+    if (!(await refresh())) {
+      throw new Error('資料庫同步失敗');
+    }
+  }, [refresh]);
 
   const loadGatheringWorkflow = useCallback(async () => {
     if (!groupId || isDemoGroup(groupId)) return;
@@ -1248,27 +1259,29 @@ export default function MapScreen({ route, navigation }: Props) {
       cancelLabel: t('common.cancel'),
       destructive: !arrived,
     }, () => {
-      void setDestinationArrival(destination.id, targetUserId, arrived)
+      void syncFromDatabase()
+        .then(() => setDestinationArrival(destination.id, targetUserId, arrived))
         .then(loadGatheringWorkflow)
         .catch((error) => Alert.alert(
           t('arrival.failedTitle'),
           arrivalErrorMessage(error, t),
         ));
     });
-  }, [loadGatheringWorkflow, members, t]);
+  }, [loadGatheringWorkflow, members, syncFromDatabase, t]);
 
   const submitArrivalWithTimestamp = useCallback((
     destination: Destination,
     targetUserId: string,
     arrivedAt: string | null,
   ) => {
-    void setDestinationArrivalAt(destination.id, targetUserId, true, arrivedAt)
+    void syncFromDatabase()
+      .then(() => setDestinationArrivalAt(destination.id, targetUserId, true, arrivedAt))
       .then(loadGatheringWorkflow)
       .catch((error) => Alert.alert(
         t('arrival.failedTitle'),
         arrivalErrorMessage(error, t),
       ));
-  }, [loadGatheringWorkflow, t]);
+  }, [loadGatheringWorkflow, syncFromDatabase, t]);
 
   const handleSelfArrival = useCallback((destination: Destination, targetUserId: string) => {
     const leaderArrival = destinationArrivals.find((arrival) => (
@@ -1695,9 +1708,6 @@ export default function MapScreen({ route, navigation }: Props) {
   // Optimistic flip for the straggler-alert switch — the server round trip +
   // realtime refetch otherwise reads as a 1-2s lag. Cleared once server truth
   // (group.stragglerAlerts) matches, in the effect below.
-  const [optimisticTripDays, setOptimisticTripDays] = useState<number | null>(null);
-  const [optimisticDepartureDate, setOptimisticDepartureDate] = useState<string | null>(null);
-
   useEffect(() => {
     if (group && group.tripDays === optimisticTripDays && group.departureDate === optimisticDepartureDate) {
       setOptimisticTripDays(null);
@@ -3161,6 +3171,7 @@ export default function MapScreen({ route, navigation }: Props) {
             onUpdateTripDetails={handleUpdateTripDetails}
             onReorder={handleReorder}
             onDelete={canEditItinerary ? handleDelete : undefined}
+            onSync={syncFromDatabase}
             colors={dark}
             emptyLabel={t('settings.noDestinations')}
             onDragActiveChange={(active) => setRouteScrollEnabled(!active)}
