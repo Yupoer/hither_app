@@ -2,6 +2,7 @@ import {
   locationPolicy,
   POWER_BUDGET_NOTE,
   quantizeCoordinates,
+  resolveTrackingMode,
   shouldAcceptUiSample,
   shouldRecomputeRoute,
   shouldRunBackgroundLocation,
@@ -64,6 +65,64 @@ describe('locationPolicy', () => {
     const p = locationPolicy(false, 'journey');
     expect(p.accuracy).toBe('balanced');
     expect(p.uploadHeartbeatMs).toBeLessThan(locationPolicy(false, 'allDay').uploadHeartbeatMs);
+  });
+});
+
+describe('resolveTrackingMode', () => {
+  const base = {
+    teamNavigationActive: false,
+    manualHighAccuracy: false,
+    appState: 'background' as const,
+  };
+
+  it('gives privacy mode precedence over every accuracy request', () => {
+    expect(
+      resolveTrackingMode({
+        ...base,
+        sharingEnabled: false,
+        teamNavigationActive: true,
+        manualHighAccuracy: true,
+      }),
+    ).toBe('hidden');
+  });
+
+  it('escalates navigation only when the team session is active', () => {
+    expect(
+      resolveTrackingMode({
+        ...base,
+        sharingEnabled: true,
+        teamNavigationActive: true,
+        manualHighAccuracy: false,
+      }),
+    ).toBe('teamNavigation');
+    expect(
+      resolveTrackingMode({
+        ...base,
+        sharingEnabled: true,
+        teamNavigationActive: true,
+        manualHighAccuracy: true,
+      }),
+    ).toBe('navigationMax');
+  });
+
+  it('uses foreground/passive modes when navigation is inactive', () => {
+    expect(
+      resolveTrackingMode({ ...base, sharingEnabled: true }),
+    ).toBe('passiveBackground');
+    expect(
+      resolveTrackingMode({
+        ...base,
+        appState: 'active',
+        sharingEnabled: true,
+      }),
+    ).toBe('foreground');
+    expect(
+      resolveTrackingMode({
+        ...base,
+        sharingEnabled: true,
+        manualHighAccuracy: true,
+      }),
+    ).toBe('manualHighAccuracy');
   });
 });
 

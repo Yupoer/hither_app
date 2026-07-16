@@ -16,6 +16,36 @@ import { distanceMeters } from './geo';
  */
 export type LocationPowerMode = 'foreground' | 'allDay' | 'journey';
 
+/**
+ * Product-level tracking state. `LocationPowerMode` remains the low-level
+ * battery profile; this type describes why that profile is active.
+ */
+export type TrackingMode =
+  | 'hidden'
+  | 'passiveBackground'
+  | 'foreground'
+  | 'teamNavigation'
+  | 'navigationMax'
+  | 'manualHighAccuracy';
+
+export interface TrackingModeInput {
+  sharingEnabled: boolean;
+  teamNavigationActive: boolean;
+  manualHighAccuracy: boolean;
+  appState: 'active' | 'background' | 'inactive';
+}
+
+/** Resolve one authoritative mode before configuring any location consumer. */
+export function resolveTrackingMode(input: TrackingModeInput): TrackingMode {
+  if (!input.sharingEnabled) return 'hidden';
+  if (input.teamNavigationActive && input.manualHighAccuracy) {
+    return 'navigationMax';
+  }
+  if (input.teamNavigationActive) return 'teamNavigation';
+  if (input.manualHighAccuracy) return 'manualHighAccuracy';
+  return input.appState === 'active' ? 'foreground' : 'passiveBackground';
+}
+
 export interface LocationPolicy {
   accuracy: 'low' | 'balanced' | 'high';
   /** Native OS distance filter (metres). */
