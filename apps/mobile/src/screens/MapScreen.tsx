@@ -87,6 +87,7 @@ import {
   startBackgroundJourney,
   stopBackgroundJourney,
 } from '../state/backgroundJourney';
+import { purgeLocationOutbox } from '../state/locationOutbox';
 import {
   consumePendingLocationPermission,
   consumePendingLocationRefresh,
@@ -248,6 +249,7 @@ export default function MapScreen({ route, navigation }: Props) {
   } = useSession();
   const {
     highAccuracy,
+    sharingEnabled,
     obliqueLocate,
     liveActivityEnabled,
     meetRedMin,
@@ -855,17 +857,23 @@ export default function MapScreen({ route, navigation }: Props) {
 
     void startBackgroundJourney({
       groupId,
+      navigationSessionId: null,
       destinationId: navTarget?.id ?? 'group-presence',
       destination: dest,
+      arrivalRadiusMeters: 50,
       initialDistanceM: backgroundInitialM,
+      sequence: 0,
       travelMode,
       // Explicit high accuracy is a user opt-in even without team navigation.
       highAccuracy,
       powerMode,
-      sharingEnabled: true,
+      sharingEnabled,
       teamNavigationActive: Boolean(journeyActive && navTarget),
       appState: appState === 'background' ? 'background' : 'inactive',
     }).then((result) => {
+      if (result === 'hidden') {
+        void purgeLocationOutbox();
+      }
       if (result === 'permission_denied') {
         backgroundPermissionDeniedRef.current = key;
         void rememberPendingLocationPermission();
@@ -878,6 +886,7 @@ export default function MapScreen({ route, navigation }: Props) {
     highAccuracy,
     journeyActive,
     navTarget,
+    sharingEnabled,
     showLocationPermissionAlert,
     travelMode,
   ]);

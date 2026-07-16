@@ -85,6 +85,19 @@ public class HitherLiveActivityModule: Module {
       }
     }
 
+    // Headless background location callbacks do not retain the JS activity
+    // handle. ActivityKit can safely enumerate this app's own activities.
+    AsyncFunction("updateAllGroupActivities") { (state: [String: Any]) in
+      guard #available(iOS 16.2, *) else { return }
+      let content = ActivityContent(
+        state: HitherGroupAttributes.ContentState(from: state),
+        staleDate: Date().addingTimeInterval(Self.staleInterval)
+      )
+      for activity in Activity<HitherGroupAttributes>.activities {
+        await activity.update(content)
+      }
+    }
+
     AsyncFunction("endGroupActivity") { (handle: String) in
       guard #available(iOS 16.2, *) else { return }
       for activity in Activity<HitherGroupAttributes>.activities

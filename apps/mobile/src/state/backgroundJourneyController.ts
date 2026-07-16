@@ -6,16 +6,22 @@ import {
   type LocationPowerMode,
   type TrackingMode,
 } from '../utils/locationPolicy';
+import type { ArrivalState } from '../utils/navigationArrival';
 
 export const BACKGROUND_JOURNEY_TASK = 'hither-background-journey-location';
 export const BACKGROUND_JOURNEY_KEY = '@hither/background-journey';
 
 export interface BackgroundJourneyConfig {
   groupId: string;
+  navigationSessionId: string | null;
   destinationId: string;
   destination: Coordinates;
+  arrivalRadiusMeters: number;
   initialDistanceM: number;
+  sequence: number;
   travelMode: TravelMode;
+  sharingEnabled: boolean;
+  arrivalState?: ArrivalState;
   /**
    * Only meaningful for `powerMode: 'journey'`.
    * All-day presence always uses the Low-accuracy budget profile.
@@ -26,8 +32,6 @@ export interface BackgroundJourneyConfig {
    * `journey` — denser nav tracking while going to a point.
    */
   powerMode?: 'allDay' | 'journey';
-  /** Location sharing is explicit; omitted keeps legacy callers sharing. */
-  sharingEnabled?: boolean;
   /** True when the group has an active leader navigation session. */
   teamNavigationActive?: boolean;
   /** App state at the time the background task was configured. */
@@ -57,7 +61,7 @@ export function resolveBackgroundTrackingMode(
 ): TrackingMode {
   const powerMode = config.powerMode ?? 'journey';
   const explicitMode =
-    config.sharingEnabled != null ||
+    config.sharingEnabled === false ||
     config.teamNavigationActive != null ||
     config.appState != null;
   return resolveTrackingMode({
@@ -158,7 +162,7 @@ export function backgroundLocationOptions(
 
 function powerProfileKey(config: BackgroundJourneyConfig): string {
   if (
-    config.sharingEnabled == null &&
+    config.sharingEnabled !== false &&
     config.teamNavigationActive == null &&
     config.appState == null
   ) {
@@ -206,7 +210,20 @@ export function createBackgroundJourneyController(
         }
       }
 
-      await storage.setItem(BACKGROUND_JOURNEY_KEY, JSON.stringify(config));
+      const persistedConfig = previous &&
+        previous.groupId === config.groupId &&
+        previous.destinationId === config.destinationId &&
+        previous.navigationSessionId === config.navigationSessionId
+        ? {
+            ...config,
+            sequence: Math.max(config.sequence, previous.sequence),
+            arrivalState: config.arrivalState ?? previous.arrivalState,
+          }
+        : config;
+      await storage.setItem(
+        BACKGROUND_JOURNEY_KEY,
+        JSON.stringify(persistedConfig),
+      );
       const profileChanged =
         alreadyStarted &&
         previous != null &&
@@ -221,7 +238,7 @@ export function createBackgroundJourneyController(
           backgroundLocationOptions(
             config.powerMode ?? 'journey',
             Boolean(config.highAccuracy),
-            config.sharingEnabled == null &&
+            config.sharingEnabled !== false &&
               config.teamNavigationActive == null &&
               config.appState == null
               ? undefined

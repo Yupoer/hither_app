@@ -34,6 +34,7 @@ type HitherLiveActivityModule = {
     handle: ActivityHandle,
     state: GroupActivityState,
   ): Promise<void>;
+  updateAllGroupActivities(state: GroupActivityState): Promise<void>;
   endGroupActivity(handle: ActivityHandle): Promise<void>;
   endAllGroupActivities(): Promise<void>;
 };
@@ -99,6 +100,13 @@ export async function updateGroupActivity(
   state: GroupActivityState,
 ): Promise<void> {
   await HitherLiveActivity?.updateGroupActivity(handle, state);
+}
+
+/** Update every Hither activity from a headless background location callback. */
+export async function updateAllGroupActivities(
+  state: GroupActivityState,
+): Promise<void> {
+  await HitherLiveActivity?.updateAllGroupActivities(state);
 }
 
 /** End a running Live Activity. No-op when unsupported. */
