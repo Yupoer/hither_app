@@ -25,6 +25,8 @@ import {
   requestGroupLocationRefresh,
   submitGatherPointRequest,
   resolveGatherPointRequest,
+  resolveGatherPointRequestResilient,
+  isNetworkRequestError,
   setDestinationArrival,
   setDestinationArrivalAt,
   deleteVisitedWaypoint,
@@ -383,8 +385,15 @@ describe('notifications, commands & journey', () => {
   });
 
   it('resolves gathering requests and manual arrivals through guarded RPCs', async () => {
+    mockedRpc.mockResolvedValue({
+      data: { status: 'approved', inserted_count: 2 },
+      error: null,
+    });
+    await expect(resolveGatherPointRequest('request-1', true)).resolves.toEqual({
+      status: 'approved',
+      insertedCount: 2,
+    });
     mockedRpc.mockResolvedValue({ data: null, error: null });
-    await resolveGatherPointRequest('request-1', true);
     await setDestinationArrival('destination-1', 'member-1', true);
     expect(mockedRpc).toHaveBeenNthCalledWith(1, 'resolve_gather_point_request', {
       p_request_id: 'request-1', p_approve: true,
@@ -392,6 +401,29 @@ describe('notifications, commands & journey', () => {
     expect(mockedRpc).toHaveBeenNthCalledWith(2, 'set_destination_arrival', {
       p_destination_id: 'destination-1', p_target_user_id: 'member-1', p_arrived: true,
     });
+  });
+
+  it('detects RN network transport failures', () => {
+    expect(isNetworkRequestError(new Error('TypeError: Network request failed'))).toBe(true);
+    expect(isNetworkRequestError(new Error('leader membership required'))).toBe(false);
+  });
+
+  it('recovers gather resolve when the request is no longer pending after a network blip', async () => {
+    // Transport fails after the server already applied the write.
+    mockedRpc.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'TypeError: Network request failed' },
+    });
+    mockedFrom.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      order: jest.fn().mockResolvedValue({ data: [], error: null }),
+    });
+    await expect(
+      resolveGatherPointRequestResilient('request-1', true, { groupId: 'g1' }),
+    ).resolves.toEqual({ status: 'approved', insertedCount: 0 });
+    // Recovery short-circuits before a second RPC attempt.
+    expect(mockedRpc).toHaveBeenCalledTimes(1);
   });
 
   it('submits an explicit arrival timestamp through the timestamp-aware RPC', async () => {

@@ -48,6 +48,52 @@ OTA_AUTO_SHIP=0 git commit ...
 
 **注意：** post-commit 會真的 push + 發 OTA；純文件／supabase／native 變更會自動 skip。
 
+## 3b. Grok 任務結束 hook（Stop → commit / merge / push / OTA）
+
+掛在**系統全域** `~/.grok/hooks/`（Windows：`%USERPROFILE%\.grok\hooks\`），Grok CLI 的 `/hooks-add` 只接受這個目錄。
+
+| 步驟 | 行為 |
+|------|------|
+| 1 | 有安全可提交變更 → auto-commit（略過 `.env` / `*.p8` / `node_modules` / `dist`） |
+| 2 | 僅 OTA 安全變更（`apps/mobile/src/**` 等）才繼續；含 native 則 skip OTA |
+| 3 | patch-bump `apps/mobile/app.json` 的 `expo.version`（**不改** `runtimeVersion`，既有 binary 仍能收 OTA） |
+| 4 | feature branch / worktree → **worktree-safe** merge 進 `master` 並 push；已在 `master` → 直接 push |
+| 5 | `eas update` → `production` + `preview`（timeout 900s） |
+
+檔案（全域，Always trusted）：
+
+- `~/.grok/hooks/task-end-ship.json`
+- `~/.grok/hooks/run-hook.cmd` + `task-end-ship`（進入點）
+- 本體仍在 repo：`hither_app/scripts/task-end-ship.sh`（hook 會依 workspace 自動找到）
+
+換機時把上述三個檔複製到新機器的 `~/.grok/hooks/`，或在 Grok 執行：
+
+```text
+/hooks-add %USERPROFILE%\.grok\hooks
+```
+
+然後 `/hooks` 確認 Stop → task-end-ship 已載入；改完檔可按 `r` reload。全域 hook 不需 `/hooks-trust`。
+
+手動試跑（不寫入）：
+
+```bash
+cd hither_app
+bash scripts/task-end-ship.sh --dry-run
+```
+
+暫時關閉：
+
+```bash
+# 整段 pipeline
+set TASK_END_SHIP=0          # PowerShell: $env:TASK_END_SHIP=0
+# 或只關 OTA / 版號 / commit
+TASK_END_SHIP_OTA=0
+TASK_END_SHIP_BUMP=0
+TASK_END_SHIP_COMMIT=0
+```
+
+與 post-commit 的關係：`task-end-ship` 執行期間固定 `OTA_AUTO_SHIP=0`，避免 commit 時再觸發 `ota-auto-ship` 雙重發佈。
+
 ## 4. 重建 `.claude/agents/`（多模型調度）
 
 見 CLAUDE.md「多模型調度」章節。兩個 agent 定義檔：

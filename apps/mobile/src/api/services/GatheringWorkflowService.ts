@@ -4,7 +4,7 @@ import type {
   GatherPointRequest,
   GatherPointRequestItem,
 } from '../../types';
-import { orThrow } from './_helpers';
+import { isNetworkRequestError, orThrow, sleep } from './_helpers';
 
 interface RequestRow {
   id: string;
@@ -20,6 +20,11 @@ interface RequestRow {
   }[];
   status: GatherPointRequest['status'];
   created_at: string;
+}
+
+export interface ResolveGatherPointResult {
+  status: 'approved' | 'rejected';
+  insertedCount: number;
 }
 
 export async function submitGatherPointRequest(
@@ -68,15 +73,80 @@ export async function fetchPendingGatherPointRequests(
   }));
 }
 
+function mapResolveResult(
+  data: unknown,
+  approve: boolean,
+): ResolveGatherPointResult {
+  if (data && typeof data === 'object') {
+    const row = data as { status?: string; inserted_count?: number };
+    return {
+      status: row.status === 'rejected' ? 'rejected' : 'approved',
+      insertedCount:
+        typeof row.inserted_count === 'number' ? row.inserted_count : 0,
+    };
+  }
+  return {
+    status: approve ? 'approved' : 'rejected',
+    insertedCount: 0,
+  };
+}
+
 export async function resolveGatherPointRequest(
   requestId: string,
   approve: boolean,
-): Promise<void> {
-  const { error } = await supabase.rpc('resolve_gather_point_request', {
+): Promise<ResolveGatherPointResult> {
+  const { data, error } = await supabase.rpc('resolve_gather_point_request', {
     p_request_id: requestId,
     p_approve: approve,
   });
   orThrow(error);
+  return mapResolveResult(data, approve);
+}
+
+/**
+ * Resolve with one network retry and false-failure recovery: if the request is
+ * no longer pending after a flaky response, treat the action as succeeded.
+ */
+export async function resolveGatherPointRequestResilient(
+  requestId: string,
+  approve: boolean,
+  options?: { groupId?: string },
+): Promise<ResolveGatherPointResult> {
+  const recover = async (): Promise<ResolveGatherPointResult | null> => {
+    const groupId = options?.groupId;
+    if (!groupId) return null;
+    try {
+      const pending = await fetchPendingGatherPointRequests(groupId);
+      if (!pending.some((row) => row.id === requestId)) {
+        return {
+          status: approve ? 'approved' : 'rejected',
+          insertedCount: 0,
+        };
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  };
+
+  try {
+    return await resolveGatherPointRequest(requestId, approve);
+  } catch (first) {
+    // Server already applied the change but client only saw a transport blip.
+    const recoveredEarly = await recover();
+    if (recoveredEarly) return recoveredEarly;
+
+    if (!isNetworkRequestError(first)) throw first;
+
+    await sleep(500);
+    try {
+      return await resolveGatherPointRequest(requestId, approve);
+    } catch (second) {
+      const recovered = await recover();
+      if (recovered) return recovered;
+      throw second;
+    }
+  }
 }
 
 export async function fetchDestinationArrivals(

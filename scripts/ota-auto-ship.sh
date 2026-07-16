@@ -122,16 +122,52 @@ echo "[ota-auto-ship] OTA-eligible commit on $BRANCH: $MSG"
 # Avoid infinite loop if something re-triggers commit during merge.
 export OTA_AUTO_SHIP=0
 
+# Worktree-safe merge: never checkout $MAIN_BRANCH if another worktree holds it.
+is_linked_worktree() {
+  git_dir="$(git rev-parse --git-dir 2>/dev/null)" || return 1
+  common="$(git rev-parse --git-common-dir 2>/dev/null)" || return 1
+  if [ -d "$git_dir" ] && [ -d "$common" ]; then
+    git_dir="$(cd "$git_dir" && pwd)"
+    common="$(cd "$common" && pwd)"
+  fi
+  [ "$git_dir" != "$common" ]
+}
+
 if [ "$BRANCH" != "$MAIN_BRANCH" ] && [ "$BRANCH" != "main" ]; then
   echo "[ota-auto-ship] feature branch → merge into $MAIN_BRANCH and push"
-  # Stash is not needed: post-commit working tree is clean of this commit.
   git fetch origin "$MAIN_BRANCH" 2>/dev/null || true
-  git checkout "$MAIN_BRANCH"
-  git pull --ff-only origin "$MAIN_BRANCH" 2>/dev/null || true
-  git merge --no-ff "$BRANCH" -m "merge: $BRANCH (ota-auto-ship)"
-  git push origin "$MAIN_BRANCH"
-  # Optional: push feature branch tip too
   git push origin "$BRANCH" 2>/dev/null || true
+
+  main_wt="$(
+    git worktree list --porcelain 2>/dev/null | awk -v ref="refs/heads/$MAIN_BRANCH" '
+      /^worktree / { wt = substr($0, 10) }
+      /^branch / && $2 == ref { print wt; exit }
+    '
+  )"
+
+  if [ -n "${main_wt:-}" ] && [ -d "$main_wt" ]; then
+    echo "[ota-auto-ship] merge via $MAIN_BRANCH worktree: $main_wt"
+    git -C "$main_wt" pull --ff-only origin "$MAIN_BRANCH" 2>/dev/null || true
+    git -C "$main_wt" merge --no-ff "$BRANCH" -m "merge: $BRANCH (ota-auto-ship)"
+    git -C "$main_wt" push origin "$MAIN_BRANCH"
+  elif ! is_linked_worktree; then
+    git checkout "$MAIN_BRANCH"
+    git pull --ff-only origin "$MAIN_BRANCH" 2>/dev/null || true
+    git merge --no-ff "$BRANCH" -m "merge: $BRANCH (ota-auto-ship)"
+    git push origin "$MAIN_BRANCH"
+    git checkout "$BRANCH" 2>/dev/null || true
+  else
+    tmp="${TMPDIR:-/tmp}/ota-auto-ship-merge-$$"
+    echo "[ota-auto-ship] merge via temporary worktree: $tmp"
+    if git rev-parse --verify "origin/$MAIN_BRANCH" >/dev/null 2>&1; then
+      git worktree add --detach "$tmp" "origin/$MAIN_BRANCH"
+    else
+      git worktree add --detach "$tmp" "$MAIN_BRANCH"
+    fi
+    git -C "$tmp" merge --no-ff "$BRANCH" -m "merge: $BRANCH (ota-auto-ship)"
+    git -C "$tmp" push origin "HEAD:refs/heads/$MAIN_BRANCH"
+    git worktree remove --force "$tmp" 2>/dev/null || rm -rf "$tmp"
+  fi
 else
   echo "[ota-auto-ship] on $BRANCH → push"
   git push origin "$BRANCH"

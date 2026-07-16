@@ -132,7 +132,8 @@ import {
   reportStraggler,
   leaveGroups,
   requestGroupLocationRefresh,
-  resolveGatherPointRequest,
+  resolveGatherPointRequestResilient,
+  isNetworkRequestError,
   setDestinationArrival,
   setDestinationArrivalAt,
   submitGatherPointRequest,
@@ -176,6 +177,25 @@ const DISPLAY_FONT = 'Fredoka_600SemiBold';
 
 /** Persisted "don't warn me again" flag for the leave-the-main-group notice. */
 const LEAVE_GROUP_WARN_KEY = 'hither.subgroupLeaveWarnDismissed';
+
+/** Map known Postgres / RPC exception text to i18n keys (server keeps EN contract). */
+const ARRIVAL_RPC_ERRORS: Array<{ needle: string; key: TranslationKey }> = [
+  { needle: 'future destination cannot be completed', key: 'arrival.errFuture' },
+  { needle: 'cannot mark this member', key: 'arrival.errCannotMark' },
+  { needle: 'destination outside member scope', key: 'arrival.errOutsideScope' },
+  { needle: 'paused destination requires an existing arrival', key: 'arrival.errPausedUndo' },
+];
+
+function arrivalErrorMessage(
+  error: unknown,
+  t: (key: TranslationKey) => string,
+): string {
+  const raw = error instanceof Error ? error.message : '';
+  for (const { needle, key } of ARRIVAL_RPC_ERRORS) {
+    if (raw.includes(needle)) return t(key);
+  }
+  return raw || t('arrival.failedMsg');
+}
 
 /** Preset straggler-alert distance chips shown in settings. */
 const STRAGGLER_THRESHOLD_OPTIONS = [300, 500, 1000, 2000];
@@ -316,6 +336,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const allScopedDestinations = optimisticDestinations ?? rawDestinations;
   const [destinationArrivals, setDestinationArrivals] = useState<DestinationArrival[]>([]);
   const [gatherPointRequests, setGatherPointRequests] = useState<GatherPointRequest[]>([]);
+  const [resolvingGatherRequestId, setResolvingGatherRequestId] = useState<string | null>(null);
   const myCompletedDestinationIds = useMemo(
     () => new Set(
       destinationArrivals
@@ -1172,29 +1193,55 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [groupId, canEditItinerary, notifyLeaderPlace, myScopeId, refresh]);
 
   const handleGatherPointRequest = useCallback(async (requestId: string, approve: boolean) => {
+    if (resolvingGatherRequestId) return;
+    setResolvingGatherRequestId(requestId);
+    // Optimistic remove so double-taps cannot re-fire the same pending card.
+    setGatherPointRequests((prev) => prev.filter((row) => row.id !== requestId));
     try {
-      await resolveGatherPointRequest(requestId, approve);
-      await Promise.all([loadGatheringWorkflow(), refresh()]);
+      await resolveGatherPointRequestResilient(requestId, approve, {
+        groupId: groupId ?? undefined,
+      });
+      logEvent('gather_request_resolve', { approve, requestId });
+      // Refresh is best-effort: approval already committed if we got here.
+      try {
+        await Promise.all([loadGatheringWorkflow(), refresh()]);
+      } catch (refreshError) {
+        logError('gather_request_refresh_failed', refreshError, { requestId, approve });
+      }
     } catch (error) {
-      Alert.alert(t('map.setFailedTitle'), error instanceof Error ? error.message : t('map.setFailedMsg'));
+      logError('gather_request_resolve_failed', error, { requestId, approve });
+      // Restore pending list from server if the RPC truly failed.
+      void loadGatheringWorkflow().catch(() => undefined);
+      Alert.alert(
+        t('map.setFailedTitle'),
+        isNetworkRequestError(error)
+          ? t('gatherRequest.networkFailed')
+          : error instanceof Error
+            ? error.message
+            : t('map.setFailedMsg'),
+      );
+    } finally {
+      setResolvingGatherRequestId(null);
     }
-  }, [loadGatheringWorkflow, refresh, t]);
+  }, [groupId, loadGatheringWorkflow, refresh, resolvingGatherRequestId, t]);
 
   const handleArrival = useCallback((destination: Destination, targetUserId: string, arrived: boolean) => {
+    const memberName = members.find((m) => m.userId === targetUserId)?.name;
     confirmAction({
       title: t(arrived ? 'arrival.markTitle' : 'arrival.undoTitle'),
-      message: destination.title,
-      confirmLabel: t(arrived ? 'arrival.mark' : 'arrival.undo'),
+      message: memberName ? `${memberName} · ${destination.title}` : destination.title,
+      confirmLabel: t('common.confirm'),
+      cancelLabel: t('common.cancel'),
       destructive: !arrived,
     }, () => {
       void setDestinationArrival(destination.id, targetUserId, arrived)
         .then(loadGatheringWorkflow)
         .catch((error) => Alert.alert(
-          t('map.setFailedTitle'),
-          error instanceof Error ? error.message : t('map.setFailedMsg'),
+          t('arrival.failedTitle'),
+          arrivalErrorMessage(error, t),
         ));
     });
-  }, [loadGatheringWorkflow, t]);
+  }, [loadGatheringWorkflow, members, t]);
 
   const submitArrivalWithTimestamp = useCallback((
     destination: Destination,
@@ -1204,8 +1251,8 @@ export default function MapScreen({ route, navigation }: Props) {
     void setDestinationArrivalAt(destination.id, targetUserId, true, arrivedAt)
       .then(loadGatheringWorkflow)
       .catch((error) => Alert.alert(
-        t('map.setFailedTitle'),
-        error instanceof Error ? error.message : t('map.setFailedMsg'),
+        t('arrival.failedTitle'),
+        arrivalErrorMessage(error, t),
       ));
   }, [loadGatheringWorkflow, t]);
 
@@ -3068,15 +3115,21 @@ export default function MapScreen({ route, navigation }: Props) {
                     </Text>
                   </View>
                   <Pressable
-                    style={styles.chip}
+                    style={[styles.chip, resolvingGatherRequestId ? { opacity: 0.5 } : null]}
                     onPress={() => void handleGatherPointRequest(request.id, false)}
+                    disabled={!!resolvingGatherRequestId}
                     accessibilityRole="button"
                   >
                     <Text style={styles.chipText}>{t('gatherRequest.reject')}</Text>
                   </Pressable>
                   <Pressable
-                    style={[styles.chip, { backgroundColor: accentMix(accent, 24) }]}
+                    style={[
+                      styles.chip,
+                      { backgroundColor: accentMix(accent, 24) },
+                      resolvingGatherRequestId ? { opacity: 0.5 } : null,
+                    ]}
                     onPress={() => void handleGatherPointRequest(request.id, true)}
+                    disabled={!!resolvingGatherRequestId}
                     accessibilityRole="button"
                   >
                     <Text style={styles.chipText}>{t('gatherRequest.approve')}</Text>
@@ -3313,6 +3366,7 @@ export default function MapScreen({ route, navigation }: Props) {
                         key={`${destination.id}-${member.userId}`}
                         style={[
                           styles.flockRow,
+                          styles.arrivalMemberRow,
                           index === scopedMembers.length - 1 && styles.flockRowLast,
                         ]}
                       >
@@ -3320,14 +3374,17 @@ export default function MapScreen({ route, navigation }: Props) {
                           {member.name}
                         </Text>
                         <Pressable
-                          style={styles.chip}
+                          style={styles.arrivalToggleBtn}
                           onPress={() => handleArrival(destination, member.userId, !arrived)}
                           accessibilityRole="button"
                           accessibilityLabel={t(arrived ? 'arrival.undo' : 'arrival.mark')}
+                          accessibilityState={{ checked: arrived }}
                         >
-                          <Text style={styles.chipText}>
-                            {t(arrived ? 'arrival.undo' : 'arrival.mark')}
-                          </Text>
+                          <Ionicons
+                            name={arrived ? 'checkmark-circle' : 'checkmark-circle-outline'}
+                            size={26}
+                            color={arrived ? glass.ok : glass.textTertiary}
+                          />
                         </Pressable>
                       </View>
                     );
@@ -3358,16 +3415,22 @@ export default function MapScreen({ route, navigation }: Props) {
                 (entry) => entry.destinationId === arrivalDestination.id && entry.userId === member.userId,
               );
               return (
-                <View key={member.userId} style={styles.flockRow}>
-                  <Text style={[styles.flockName, styles.grow]}>{member.name}</Text>
+                <View key={member.userId} style={[styles.flockRow, styles.arrivalMemberRow]}>
+                  <Text style={[styles.flockName, styles.grow]} numberOfLines={1}>
+                    {member.name}
+                  </Text>
                   <Pressable
-                    style={styles.chip}
+                    style={styles.arrivalToggleBtn}
                     onPress={() => handleArrival(arrivalDestination, member.userId, !arrived)}
                     accessibilityRole="button"
+                    accessibilityLabel={t(arrived ? 'arrival.undo' : 'arrival.mark')}
+                    accessibilityState={{ checked: arrived }}
                   >
-                    <Text style={styles.chipText}>
-                      {t(arrived ? 'arrival.undo' : 'arrival.mark')}
-                    </Text>
+                    <Ionicons
+                      name={arrived ? 'checkmark-circle' : 'checkmark-circle-outline'}
+                      size={26}
+                      color={arrived ? glass.ok : glass.textTertiary}
+                    />
                   </Pressable>
                 </View>
               );
@@ -5261,6 +5324,19 @@ const makeStyles = (
     },
     flockRowLast: { borderBottomWidth: 0 },
     flockRowMain: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    arrivalMemberRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 12,
+    },
+    arrivalToggleBtn: {
+      width: 40,
+      height: 40,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+    },
     // a11y-layout:inviteRow
     inviteRowStacked: { flexDirection: 'column', alignItems: 'stretch', gap: 10 },
     invitePromptFull: { flex: 0, width: '100%' },

@@ -25,7 +25,33 @@ export async function requireUserId(): Promise<string> {
   return uid;
 }
 
+/** True when the failure is a transport-level fetch/network error (RN common). */
+export function isNetworkRequestError(error: unknown): boolean {
+  const msg = (error instanceof Error ? error.message : String(error ?? '')).toLowerCase();
+  return (
+    msg.includes('network request failed')
+    || msg.includes('failed to fetch')
+    || msg.includes('networkerror')
+    || msg.includes('fetch failed')
+    || msg.includes('the network connection was lost')
+  );
+}
+
 /** Throw a clean Error when a Supabase response reports one. */
-export function orThrow(error: { message: string } | null): void {
-  if (error) throw new Error(error.message);
+export function orThrow(
+  error: { message: string; code?: string; details?: string | null } | null,
+): void {
+  if (!error) return;
+  const err = new Error(error.message) as Error & {
+    code?: string;
+    details?: string | null;
+  };
+  if (error.code) err.code = error.code;
+  if (error.details !== undefined) err.details = error.details;
+  throw err;
+}
+
+/** Short pause used for one-shot retries after flaky mobile network blips. */
+export function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

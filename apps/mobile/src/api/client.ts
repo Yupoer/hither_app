@@ -13,7 +13,13 @@
  *   import { addDestination } from '../api/services/DestinationService';
  */
 
-export { generateInviteCode, requireUserId, orThrow } from './services/_helpers';
+export {
+  generateInviteCode,
+  requireUserId,
+  orThrow,
+  isNetworkRequestError,
+  sleep,
+} from './services/_helpers';
 
 export {
   mapGroup,
@@ -68,10 +74,12 @@ export {
   submitGatherPointRequest,
   fetchPendingGatherPointRequests,
   resolveGatherPointRequest,
+  resolveGatherPointRequestResilient,
   fetchDestinationArrivals,
   setDestinationArrival,
   setDestinationArrivalAt,
 } from './services/GatheringWorkflowService';
+export type { ResolveGatherPointResult } from './services/GatheringWorkflowService';
 
 export {
   updateNickname,

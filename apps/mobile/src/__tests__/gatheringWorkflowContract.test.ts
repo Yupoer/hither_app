@@ -8,6 +8,7 @@ const migrations = readdirSync(join(root, 'supabase/migrations'))
   .join('\n');
 const client = readFileSync(join(__dirname, '../api/client.ts'), 'utf8');
 const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const i18n = readFileSync(join(__dirname, '../i18n/index.ts'), 'utf8');
 const reorderList = readFileSync(
   join(__dirname, '../components/DestinationReorderList.tsx'),
   'utf8',
@@ -28,8 +29,22 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(migrations).toContain('public.resolve_gather_point_request');
     expect(migrations).toContain("status in ('pending', 'approved', 'rejected')");
     expect(migrations).toContain('subgroup does not belong to group');
+    expect(migrations).toContain("returns jsonb");
+    expect(migrations).toContain("'inserted_count'");
+    expect(migrations).toMatch(
+      /create or replace function extensions\.notify_push[\s\S]*exception[\s\S]*when others then/i,
+    );
     expect(client).toContain('submitGatherPointRequest');
     expect(client).toContain('resolveGatherPointRequest');
+    expect(client).toContain('resolveGatherPointRequestResilient');
+  });
+
+  it('keeps gather-approve UI resilient to network blips', () => {
+    expect(mapScreen).toContain('resolveGatherPointRequestResilient');
+    expect(mapScreen).toContain('isNetworkRequestError');
+    expect(mapScreen).toContain('gather_request_resolve');
+    expect(mapScreen).toContain('resolvingGatherRequestId');
+    expect(mapScreen).toContain("t('gatherRequest.networkFailed')");
   });
 
   it('stores per-member destination arrivals and supports manual marking', () => {
@@ -50,6 +65,13 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(client).toContain('setDestinationArrivalAt');
     expect(mapScreen).toContain('destinationArrivals');
     expect(mapScreen).toContain("t('arrival.mark')");
+    expect(mapScreen).toContain("t('common.confirm')");
+    expect(mapScreen).toContain('arrivalErrorMessage');
+    expect(mapScreen).toContain('future destination cannot be completed');
+    expect(mapScreen).toContain('arrivalMemberRow');
+    expect(mapScreen).toContain('checkmark-circle');
+    expect(i18n).toContain("'arrival.errFuture'");
+    expect(i18n).toContain("'arrival.failedTitle'");
   });
 
   it('keeps itinerary editing and flag colours leader-only', () => {
