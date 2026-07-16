@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback, RefObject } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef, RefObject } from 'react';
 import { Alert, Linking } from 'react-native';
 import {
   setJourneyTarget,
@@ -46,6 +46,7 @@ export function useJourneyNavigation({
   const [pendingTargetId, setPendingTargetId] = useState<string | null | undefined>(
     undefined,
   );
+  const lastFollowerCenterKeyRef = useRef<string | null>(null);
   const navTargetId = pendingTargetId !== undefined ? pendingTargetId : serverTargetId;
   
   const navTarget = useMemo<Destination | undefined>(
@@ -164,21 +165,29 @@ export function useJourneyNavigation({
     }
   }, [groupId, journeyBusy, isLeader, refresh, t]);
 
-  // BUG-13: followers force-follow when leader sets journey going / active dest.
-  // Local "route plan" can exist via pending*; leader server state overrides it.
-  // Carousel scroll is handled by useCarouselSelection when selectedIndex changes.
+  // BUG-13: followers follow the leader's target once, then keep map gestures
+  // under the user's control. Realtime member/location updates rebuild
+  // `destinations`; without this guard each update would recenter the map.
   useEffect(() => {
-    if (isLeader) return;
-    if (serverJourneyStatus === 'going' && serverTargetId) {
-      setPendingJourneyStatus(null);
-      setPendingTargetId(undefined);
-      const index = destinations.findIndex((d) => d.id === serverTargetId);
-      if (index >= 0) {
-        setSelectedIndex(index);
-        const dest = destinations[index];
-        if (dest) mapRef.current?.centerOn(dest.coordinates);
-      }
+    if (isLeader) {
+      lastFollowerCenterKeyRef.current = null;
+      return;
     }
+    if (serverJourneyStatus !== 'going' || !serverTargetId) {
+      lastFollowerCenterKeyRef.current = null;
+      return;
+    }
+    const index = destinations.findIndex((d) => d.id === serverTargetId);
+    const dest = destinations[index];
+    if (!dest) return;
+
+    const centerKey = `${serverTargetId}:${dest.coordinates.latitude}:${dest.coordinates.longitude}`;
+    if (lastFollowerCenterKeyRef.current === centerKey) return;
+    lastFollowerCenterKeyRef.current = centerKey;
+    setPendingJourneyStatus(null);
+    setPendingTargetId(undefined);
+    setSelectedIndex(index);
+    mapRef.current?.centerOn(dest.coordinates);
   }, [
     isLeader,
     serverJourneyStatus,

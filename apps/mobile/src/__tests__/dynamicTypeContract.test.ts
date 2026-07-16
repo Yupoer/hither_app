@@ -102,9 +102,10 @@ describe('Dynamic Type contract', () => {
     expect(mapScreen).toContain('formatTripDayLine');
     expect(mapScreen).toContain('cardDayLine');
     expect(mapScreen).toContain('optimisticDepartureDate ?? group?.departureDate');
-    // Title hero; ETA/dist share a row with arrival progress.
+    // Title hero; ETA/dist stack vertically beside arrival progress.
     expect(mapScreen).toContain('cardRouteMeta');
     expect(mapScreen).toContain('cardMetaRow');
+    expect(mapScreen).toMatch(/cardRouteColExpanded:\s*\{[\s\S]*?flexDirection:\s*'column'/);
     // Expanded: arrival progress sits directly under 小隊行程 badge.
     expect(mapScreen).toContain('cardMetaRowAfterBadge');
     expect(mapScreen).toContain("subgroup.itineraryBadge");
