@@ -23,6 +23,9 @@ import {
   useTheme,
 } from './src/state/PreferencesContext';
 import { GLOBAL_FONT_SCALE_CAP } from './src/theme/typeScale';
+import { metrics } from './src/native';
+import { diagnostics } from './src/state/diagnostics';
+import { uploadMetricPayload } from './src/api/services/DiagnosticService';
 
 // Dynamic Type: scale with the system up to GLOBAL_FONT_SCALE_CAP, then freeze.
 // Per-role caps (HitherText) may be tighter. Never reintroduce a hard 1.0 cap.
@@ -61,6 +64,37 @@ function ThemedNavigation() {
   // instance too (for the accept/decline UI) — see useSubgroupInvites for
   // how duplicate notifications across the two instances are avoided.
   useSubgroupInvites();
+
+  useEffect(() => {
+    if (initializing || !user) return;
+    let cancelled = false;
+    void (async () => {
+      const payloads = await metrics.drainPayloads();
+      const acknowledgedIds: string[] = [];
+      for (const payload of payloads) {
+        if (cancelled) return;
+        await diagnostics.write({
+          event: 'metric_payload_received',
+          source: payload.kind,
+          count: payload.json.length,
+        });
+        try {
+          await uploadMetricPayload(payload);
+          acknowledgedIds.push(payload.id);
+        } catch {
+          await diagnostics.write({
+            event: 'diagnostic_error',
+            errorCode: 'metric_upload_failed',
+            source: payload.kind,
+          });
+        }
+      }
+      if (!cancelled) await metrics.removePayloads(acknowledgedIds);
+    })().catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [initializing, user]);
 
   // First-launch Onboarding gate: a local AsyncStorage flag
   // (hither.onboarding.v1), independent of session/auth. `null` means

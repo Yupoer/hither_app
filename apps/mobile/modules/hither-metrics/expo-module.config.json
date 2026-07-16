@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["HitherMetricsModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.hithermetrics.HitherMetricsModule"]
+  }
+}

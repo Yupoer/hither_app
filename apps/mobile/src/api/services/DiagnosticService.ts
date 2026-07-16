@@ -1,5 +1,6 @@
 import { supabase } from '../supabase';
 import { orThrow, requireUserId } from './_helpers';
+import { getOrCreateLiveActivityDeviceId } from './LiveActivityService';
 
 export interface DiagnosticUploadMetadata {
   deviceId: string;
@@ -36,4 +37,27 @@ export async function ingestDiagnosticBatch(
     acceptedIds: Array.isArray(result.acceptedIds) ? result.acceptedIds : [],
     rejected: Array.isArray(result.rejected) ? result.rejected : [],
   };
+}
+
+export async function uploadMetricPayload(input: {
+  id: string;
+  kind: 'metric' | 'diagnostic';
+  json: string;
+  receivedAt: number;
+}): Promise<void> {
+  const uid = await requireUserId();
+  const deviceId = await getOrCreateLiveActivityDeviceId();
+  const parsed: unknown = JSON.parse(input.json);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('MetricKit payload must be a JSON object');
+  }
+  const { error } = await supabase.from('metric_payloads').insert({
+    id: input.id,
+    user_id: uid,
+    device_id: deviceId,
+    kind: input.kind,
+    payload: parsed,
+    received_at: new Date(input.receivedAt).toISOString(),
+  });
+  orThrow(error);
 }
