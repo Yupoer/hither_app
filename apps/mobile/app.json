@@ -59,7 +59,6 @@
         }
       ],
       "expo-notifications",
-      "@bacons/apple-targets",
       "expo-web-browser",
       "@react-native-community/datetimepicker",
       "expo-secure-store",

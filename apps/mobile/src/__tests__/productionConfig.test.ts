@@ -12,12 +12,19 @@ const appConfig = JSON.parse(
 const easConfig = JSON.parse(
   readFileSync(join(__dirname, '../../eas.json'), 'utf8'),
 );
+const packageConfig = JSON.parse(
+  readFileSync(join(__dirname, '../../package.json'), 'utf8'),
+);
 const nativeEntitlements = readFileSync(
   join(__dirname, '../../ios/Hither/Hither.entitlements'),
   'utf8',
 );
 const nativeInfoPlist = readFileSync(join(__dirname, '../../ios/Hither/Info.plist'), 'utf8');
 const diagnosticStore = readFileSync(join(__dirname, '../state/diagnostics.ts'), 'utf8');
+const xcodeProject = readFileSync(
+  join(__dirname, '../../ios/Hither.xcodeproj/project.pbxproj'),
+  'utf8',
+);
 
 describe('production mobile configuration', () => {
   it('uses the exact standalone OAuth callback for sign-in and identity linking', () => {
@@ -76,5 +83,23 @@ describe('production mobile configuration', () => {
     expect(appConfig.expo.ios.infoPlist.NSSupportsLiveActivitiesFrequentUpdates).toBe(true);
     expect(nativeInfoPlist).toContain('<key>NSSupportsLiveActivitiesFrequentUpdates</key>');
     expect(nativeInfoPlist).toMatch(/<key>UIBackgroundModes<\/key>[\s\S]*<string>location<\/string>/);
+  });
+
+  it('keeps checked-in bare iOS configuration aligned before disabling the CNG warning', () => {
+    expect(packageConfig.expo.doctor.appConfigFieldsNotSyncedCheck.enabled).toBe(false);
+    expect(nativeInfoPlist).toContain('<string>hither</string>');
+    expect(nativeInfoPlist).toContain(appConfig.expo.ios.infoPlist.NSLocationWhenInUseUsageDescription);
+    expect(nativeInfoPlist).toContain(
+      appConfig.expo.ios.infoPlist.NSLocationAlwaysAndWhenInUseUsageDescription,
+    );
+    expect(nativeInfoPlist).toContain('<string>Dark</string>');
+    expect(nativeInfoPlist).toContain('<string>UIInterfaceOrientationPortrait</string>');
+  });
+
+  it('ships the checked-in widget target without a runtime Prebuild generator', () => {
+    expect(packageConfig.dependencies['@bacons/apple-targets']).toBeUndefined();
+    expect(appConfig.expo.plugins).not.toContain('@bacons/apple-targets');
+    expect(xcodeProject).toContain('HitherActivityWidget.appex in Embed Foundation Extensions');
+    expect(xcodeProject).toContain('PRODUCT_BUNDLE_IDENTIFIER = app.hither.mobile.widget');
   });
 });

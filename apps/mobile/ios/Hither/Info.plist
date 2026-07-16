@@ -46,9 +46,9 @@
       <true/>
     </dict>
     <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-    <string>Allow $(PRODUCT_NAME) to access your location</string>
+    <string>導航期間即使鎖定螢幕，Hither 仍需要你的位置來更新與集合點的距離和抵達狀態。</string>
     <key>NSLocationAlwaysUsageDescription</key>
-    <string>Allow $(PRODUCT_NAME) to access your location</string>
+    <string>導航期間即使鎖定螢幕，Hither 仍需要你的位置來更新與集合點的距離和抵達狀態。</string>
     <key>NSLocationWhenInUseUsageDescription</key>
     <string>Hither 需要你的位置，才能在地圖上顯示你與下一個集合點的距離。</string>
     <key>NSSupportsLiveActivities</key>
