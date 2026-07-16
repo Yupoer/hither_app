@@ -16,6 +16,8 @@ const nativeEntitlements = readFileSync(
   join(__dirname, '../../ios/Hither/Hither.entitlements'),
   'utf8',
 );
+const nativeInfoPlist = readFileSync(join(__dirname, '../../ios/Hither/Info.plist'), 'utf8');
+const diagnosticStore = readFileSync(join(__dirname, '../state/diagnostics.ts'), 'utf8');
 
 describe('production mobile configuration', () => {
   it('uses the exact standalone OAuth callback for sign-in and identity linking', () => {
@@ -34,6 +36,17 @@ describe('production mobile configuration', () => {
     expect(easConfig.build.preview).toEqual(
       expect.objectContaining({ distribution: 'internal' }),
     );
+  });
+
+  it('separates verbose diagnostic builds from minimal production telemetry', () => {
+    expect(easConfig.build.diagnostic).toEqual(
+      expect.objectContaining({ distribution: 'store', channel: 'diagnostic' }),
+    );
+    expect(easConfig.build.diagnostic.env.EXPO_PUBLIC_DIAGNOSTICS_ENABLED).toBe('true');
+    expect(easConfig.build.diagnostic.env.EXPO_PUBLIC_DIAGNOSTIC_LEVEL).toBe('verbose');
+    expect(easConfig.build.production.env.EXPO_PUBLIC_DIAGNOSTICS_ENABLED).toBe('false');
+    expect(easConfig.build.production.env.EXPO_PUBLIC_DIAGNOSTIC_LEVEL).toBe('minimal');
+    expect(diagnosticStore).toContain('process.env.EXPO_PUBLIC_DIAGNOSTIC_LEVEL');
   });
 
   it('wires EAS Update channels on build profiles', () => {
@@ -60,5 +73,8 @@ describe('production mobile configuration', () => {
   it('requests production APNs entitlements for the upcoming archive', () => {
     expect(appConfig.expo.ios.entitlements['aps-environment']).toBe('production');
     expect(nativeEntitlements).toContain('<string>production</string>');
+    expect(appConfig.expo.ios.infoPlist.NSSupportsLiveActivitiesFrequentUpdates).toBe(true);
+    expect(nativeInfoPlist).toContain('<key>NSSupportsLiveActivitiesFrequentUpdates</key>');
+    expect(nativeInfoPlist).toMatch(/<key>UIBackgroundModes<\/key>[\s\S]*<string>location<\/string>/);
   });
 });

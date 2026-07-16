@@ -351,5 +351,8 @@ export const diagnostics = createDiagnostics(
   Date.now,
   metadata,
   Crypto.randomUUID,
-  typeof __DEV__ !== 'undefined' && __DEV__ ? 'verbose' : 'minimal',
+  process.env.EXPO_PUBLIC_DIAGNOSTIC_LEVEL === 'verbose' ||
+    (typeof __DEV__ !== 'undefined' && __DEV__)
+    ? 'verbose'
+    : 'minimal',
 );

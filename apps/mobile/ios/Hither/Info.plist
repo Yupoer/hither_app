@@ -53,10 +53,13 @@
     <string>Hither 需要你的位置，才能在地圖上顯示你與下一個集合點的距離。</string>
     <key>NSSupportsLiveActivities</key>
     <true/>
+    <key>NSSupportsLiveActivitiesFrequentUpdates</key>
+    <true/>
     <key>RCTNewArchEnabled</key>
     <true/>
     <key>UIBackgroundModes</key>
     <array>
+      <string>location</string>
       <string>remote-notification</string>
     </array>
     <key>UILaunchStoryboardName</key>

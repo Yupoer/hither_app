@@ -23,6 +23,7 @@
         "NSLocationWhenInUseUsageDescription": "Hither 需要你的位置，才能在地圖上顯示你與下一個集合點的距離。",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "導航期間即使鎖定螢幕，Hither 仍需要你的位置來更新與集合點的距離和抵達狀態。",
         "NSSupportsLiveActivities": true,
+        "NSSupportsLiveActivitiesFrequentUpdates": true,
         "UIBackgroundModes": [
           "location",
           "remote-notification"

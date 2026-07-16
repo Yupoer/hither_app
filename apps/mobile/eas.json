@@ -18,11 +18,25 @@
       },
       "channel": "preview"
     },
+    "diagnostic": {
+      "node": "22.16.0",
+      "distribution": "store",
+      "autoIncrement": true,
+      "channel": "diagnostic",
+      "env": {
+        "EXPO_PUBLIC_DIAGNOSTICS_ENABLED": "true",
+        "EXPO_PUBLIC_DIAGNOSTIC_LEVEL": "verbose"
+      }
+    },
     "production": {
       "node": "22.16.0",
       "distribution": "store",
       "autoIncrement": true,
-      "channel": "production"
+      "channel": "production",
+      "env": {
+        "EXPO_PUBLIC_DIAGNOSTICS_ENABLED": "false",
+        "EXPO_PUBLIC_DIAGNOSTIC_LEVEL": "minimal"
+      }
     }
   },
   "submit": {
