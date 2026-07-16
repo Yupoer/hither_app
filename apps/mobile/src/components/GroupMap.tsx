@@ -8,7 +8,7 @@ import React, {
 } from 'react';
 import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import MapView, { Marker, Polyline, type Region } from 'react-native-maps';
+import MapView, { Marker, Polyline } from 'react-native-maps';
 import type { Coordinates, Destination, MemberLocation } from '../types';
 import { usePreferences, useTheme } from '../state/PreferencesContext';
 import { memberColor } from '../glass';
@@ -18,6 +18,7 @@ import {
   DEFAULT_LATITUDE_DELTA,
   LOCATE_ALTITUDE,
   LOCATE_ZOOM,
+  initialRegionFor,
   latOffsetForVisibleBand,
 } from './mapCameraMath';
 
@@ -54,6 +55,8 @@ export interface GroupMapProps {
   destinations?: Destination[];
   pendingPlace?: { coordinates: Coordinates; name: string } | null;
   currentUserId?: string;
+  /** First available user location, used before a gathering point exists. */
+  initialCenter?: Coordinates;
   routePoints?: Coordinates[];
   routeColor?: string;
   /** Top chrome overlapping the map (safe area + gathering-point carousel). */
@@ -61,16 +64,6 @@ export interface GroupMapProps {
   /** Sheet height overlapping the map — with topOverlap, shifts the camera
    *  center into the exposed strip between carousel and sheet. */
   bottomOverlap?: number;
-}
-
-/** Region that comfortably frames a single gathering point. */
-function regionFor(center: Coordinates, latOffset: number = 0): Region {
-  return {
-    latitude: center.latitude - latOffset,
-    longitude: center.longitude,
-    latitudeDelta: DEFAULT_LATITUDE_DELTA,
-    longitudeDelta: DEFAULT_LATITUDE_DELTA,
-  };
 }
 
 /**
@@ -209,6 +202,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     gathering,
     destinations,
     pendingPlace,
+    initialCenter,
     routePoints,
     routeColor,
     topOverlap = 0,
@@ -217,7 +211,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
   ref,
 ) {
   const mapRef = useRef<MapView | null>(null);
-  const centeredRef = useRef(false);
+  const centeredModeRef = useRef<'fallback' | 'gathering' | null>(null);
   const { height: windowHeight } = useWindowDimensions();
   const { colors, themeName } = useTheme();
   const { dayColors } = usePreferences();
@@ -235,13 +229,16 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
   // Match the map chrome to the app theme: the light "day" palette gets the
   // light Apple Maps style; the dark "night"/"dusk" palettes get the dark one.
   const mapInterfaceStyle: 'light' | 'dark' = themeName === 'day' ? 'light' : 'dark';
+  const memberCenter = members.find((member) => member.coordinates)?.coordinates;
+  const fallbackCenter = initialCenter ?? memberCenter;
+  const mapInitialRegion = initialRegionFor(gathering?.coordinates ?? fallbackCenter, latOffset);
 
   useImperativeHandle(
     ref,
     () => ({
       recenter: () => {
         if (gathering && mapRef.current) {
-          mapRef.current.animateToRegion(regionFor(gathering.coordinates, latOffset), 400);
+          mapRef.current.animateToRegion(initialRegionFor(gathering.coordinates, latOffset), 400);
         }
       },
       centerOn: (coordinates, options) => {
@@ -311,13 +308,23 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     [gathering, members, latOffset, topOverlap, bottomOverlap],
   );
 
-  // Center on the gathering point the first time data arrives.
+  // A fresh group has neither a gathering point nor a member location yet.
+  // Mount it with a valid fallback camera, then center once when GPS or the
+  // first gathering point becomes available. Never follow every GPS tick.
   useEffect(() => {
-    if (!centeredRef.current && gathering && mapRef.current) {
-      mapRef.current.animateToRegion(regionFor(gathering.coordinates, latOffset), 600);
-      centeredRef.current = true;
+    if (!mapRef.current) return;
+    if (gathering) {
+      if (centeredModeRef.current !== 'gathering') {
+        mapRef.current.animateToRegion(initialRegionFor(gathering.coordinates, latOffset), 600);
+        centeredModeRef.current = 'gathering';
+      }
+      return;
     }
-  }, [gathering, latOffset]);
+    if (fallbackCenter && centeredModeRef.current === null) {
+      mapRef.current.animateToRegion(initialRegionFor(fallbackCenter, latOffset), 600);
+      centeredModeRef.current = 'fallback';
+    }
+  }, [fallbackCenter, gathering, latOffset]);
 
   return (
     <MapView
@@ -327,7 +334,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       key={mapInterfaceStyle}
       ref={mapRef}
       style={StyleSheet.absoluteFill}
-      initialRegion={gathering ? regionFor(gathering.coordinates, latOffset) : undefined}
+      initialRegion={mapInitialRegion}
       userInterfaceStyle={mapInterfaceStyle}
       mapPadding={{ top: 42, left: 32, right: 32, bottom: 42 }}
       showsCompass
