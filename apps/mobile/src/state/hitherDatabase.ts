@@ -22,6 +22,18 @@ async function openHitherDatabase(): Promise<SQLite.SQLiteDatabase> {
     );
     CREATE INDEX IF NOT EXISTS location_outbox_due
       ON location_outbox(next_attempt_at, captured_at, sequence);
+    CREATE TABLE IF NOT EXISTS diagnostic_events (
+      id TEXT PRIMARY KEY NOT NULL,
+      timestamp INTEGER NOT NULL,
+      session_id TEXT NOT NULL,
+      event TEXT NOT NULL,
+      navigation_session_id TEXT,
+      payload TEXT NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      uploaded_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS diagnostic_events_pending
+      ON diagnostic_events(uploaded_at, timestamp);
   `);
   return database;
 }
