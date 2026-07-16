@@ -18,6 +18,7 @@ import type { Coordinates } from '../types';
 interface PushTokenEvent {
   activityId: string;
   pushToken: string;
+  navigationSessionId?: string;
 }
 
 interface PushToStartTokenEvent {
@@ -35,6 +36,7 @@ type HitherLiveActivityModule = {
     listener: HitherLiveActivityEvents[EventName],
   ): EventSubscription;
   startPushToStartTokenObservation(): Promise<void>;
+  observeExistingActivities(): Promise<void>;
   startGroupActivity(state: GroupActivityState): Promise<ActivityStartResult | null>;
   updateGroupActivity(
     handle: ActivityHandle,
@@ -50,6 +52,8 @@ const HitherLiveActivity =
 
 export interface GroupActivityState {
   groupName: string;
+  navigationSessionId?: string;
+  status?: string;
   gatheringTitle?: string;
   /** Distance from the user to the gathering point, in metres. */
   distanceMeters?: number;
@@ -118,6 +122,10 @@ export function addPushToStartTokenListener(
 
 export async function startPushToStartTokenObservation(): Promise<void> {
   await HitherLiveActivity?.startPushToStartTokenObservation();
+}
+
+export async function observeExistingActivities(): Promise<void> {
+  await HitherLiveActivity?.observeExistingActivities();
 }
 
 /** Update every Hither activity from a headless background location callback. */

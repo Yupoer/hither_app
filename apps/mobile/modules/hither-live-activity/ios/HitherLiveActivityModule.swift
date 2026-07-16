@@ -21,6 +21,7 @@ public class HitherLiveActivityModule: Module {
   // "stale" UI without leaving zombies (the end call removes them).
   private static let staleInterval: TimeInterval = 2 * 60 * 60
   private var pushToStartTask: Task<Void, Never>?
+  private var activityTokenTasks: [String: Task<Void, Never>] = [:]
   private var latestPushToStartToken: String?
 
   @available(iOS 17.2, *)
@@ -38,11 +39,13 @@ public class HitherLiveActivityModule: Module {
 
   @available(iOS 16.2, *)
   private func observePushToken(for activity: Activity<HitherGroupAttributes>) {
-    Task { [weak self] in
+    guard activityTokenTasks[activity.id] == nil else { return }
+    activityTokenTasks[activity.id] = Task { [weak self] in
       for await token in activity.pushTokenUpdates {
         self?.sendEvent("onPushToken", [
           "activityId": activity.id,
           "pushToken": token.hexString,
+          "navigationSessionId": activity.content.state.navigationSessionId as Any,
         ])
       }
     }
@@ -53,6 +56,11 @@ public class HitherLiveActivityModule: Module {
     Events("onPushToken", "onPushToStartToken")
 
     OnCreate {
+      if #available(iOS 16.2, *) {
+        for activity in Activity<HitherGroupAttributes>.activities {
+          self.observePushToken(for: activity)
+        }
+      }
       if #available(iOS 17.2, *) {
         self.observePushToStartTokens()
       }
@@ -61,6 +69,8 @@ public class HitherLiveActivityModule: Module {
     OnDestroy {
       self.pushToStartTask?.cancel()
       self.pushToStartTask = nil
+      self.activityTokenTasks.values.forEach { $0.cancel() }
+      self.activityTokenTasks.removeAll()
     }
 
     AsyncFunction("startPushToStartTokenObservation") {
@@ -71,6 +81,13 @@ public class HitherLiveActivityModule: Module {
       self.observePushToStartTokens()
       if let token = self.latestPushToStartToken {
         self.sendEvent("onPushToStartToken", ["token": token])
+      }
+    }
+
+    AsyncFunction("observeExistingActivities") {
+      guard #available(iOS 16.2, *) else { return }
+      for activity in Activity<HitherGroupAttributes>.activities {
+        self.observePushToken(for: activity)
       }
     }
 

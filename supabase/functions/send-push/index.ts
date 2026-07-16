@@ -9,6 +9,7 @@ import {
   sendApns,
   sendBackgroundLocationRefresh,
   sendLiveActivityApns,
+  sendLiveActivityStartApns,
   type LiveActivityContentState,
 } from "./apns.ts";
 import { buildMessage, prefColumn, type PushPayload } from "./messages.ts";
@@ -30,6 +31,12 @@ interface LiveSessionRow {
   current_distance_m: number;
   eta_seconds: number | null;
   travel_mode: "walk" | "transit" | "drive";
+}
+
+interface DeviceLiveActivityTokenRow {
+  user_id: string;
+  device_id: string;
+  push_to_start_token: string;
 }
 
 function readSupabaseAdminKey(): string {
@@ -90,6 +97,15 @@ Deno.serve(async (req) => {
     if (senderProfileError) throw senderProfileError;
     const senderName = (senderProfile?.nickname as string | undefined)?.trim() || "隊員";
     payload = { ...payload, sender_name: senderName };
+
+    if (payload.category === "navigation_session") {
+      return await handleNavigationSession(
+        payload,
+        members,
+        sender,
+        memberByUser,
+      );
+    }
 
     const inSenderScope = (member: MembershipRow) =>
       member.subgroup_id === sender.subgroup_id;
@@ -219,6 +235,144 @@ Deno.serve(async (req) => {
   }
 });
 
+async function handleNavigationSession(
+  payload: PushPayload,
+  members: MembershipRow[],
+  sender: MembershipRow,
+  memberByUser: Map<string, MembershipRow>,
+): Promise<Response> {
+  if (!payload.session_id || !payload.destination_id || !payload.status) {
+    return json({ error: "navigation session payload is incomplete" }, 400);
+  }
+
+  const eligibleUserIds = await filterNotificationPreferences(
+    members.filter((member) => !member.solo).map((member) => member.user_id),
+    "navigation_session",
+  );
+  const cfg = readApnsConfig();
+  const jwt = await providerToken(cfg);
+  const isStart = payload.status === "active" && payload.version === 1;
+
+  if (isStart) {
+    const [tokenResponse, groupResponse, destinationResponse] = await Promise.all([
+      eligibleUserIds.length > 0
+        ? supabase
+          .from("device_live_activity_tokens")
+          .select("user_id, device_id, push_to_start_token")
+          .eq("live_activities_enabled", true)
+          .not("push_to_start_token", "is", null)
+          .in("user_id", eligibleUserIds)
+        : Promise.resolve({ data: [], error: null }),
+      supabase.from("groups").select("name").eq("id", payload.group_id).maybeSingle(),
+      supabase.from("itinerary_items").select("title").eq("id", payload.destination_id)
+        .maybeSingle(),
+    ]);
+    if (tokenResponse.error) throw tokenResponse.error;
+    if (groupResponse.error) throw groupResponse.error;
+    if (destinationResponse.error) throw destinationResponse.error;
+
+    const startRows = (tokenResponse.data ?? []) as DeviceLiveActivityTokenRow[];
+    const usersWithStartToken = new Set(startRows.map((row) => row.user_id));
+    const fallbackUserIds = eligibleUserIds.filter(
+      (userId) => !usersWithStartToken.has(userId),
+    );
+    const { data: fallbackTokenData, error: fallbackTokenError } = fallbackUserIds.length > 0
+      ? await supabase.from("push_tokens").select("user_id, token").in(
+        "user_id",
+        fallbackUserIds,
+      )
+      : { data: [], error: null };
+    if (fallbackTokenError) throw fallbackTokenError;
+
+    const timestamp = Math.floor(Date.now() / 1000);
+    const groupName = (groupResponse.data?.name as string | undefined) ?? "Hither";
+    const gatheringTitle = (destinationResponse.data?.title as string | undefined) ?? "集合點";
+    const startResults = await Promise.all(
+      startRows.map((row) =>
+        sendLiveActivityStartApns(cfg, jwt, row.push_to_start_token, {
+          timestamp,
+          attributesType: "HitherGroupAttributes",
+          attributes: { groupName },
+          contentState: {
+            navigationSessionId: payload.session_id,
+            status: "starting",
+            gatheringTitle,
+            progress: 0,
+          },
+        })),
+    );
+    let fallbackResults = await sendAlerts(
+      cfg,
+      jwt,
+      (fallbackTokenData ?? []) as Array<{ user_id: string; token: string }>,
+      payload,
+    );
+    const deadStartTokens = startResults
+      .filter((result) => result.dead)
+      .map((result) => result.token);
+    if (deadStartTokens.length > 0) {
+      await supabase
+        .from("device_live_activity_tokens")
+        .update({ push_to_start_token: null, live_activities_enabled: false })
+        .in("push_to_start_token", deadStartTokens);
+      const deadStartUsers = startRows
+        .filter((row) => deadStartTokens.includes(row.push_to_start_token))
+        .map((row) => row.user_id);
+      const { data: deadStartFallbackData, error: deadStartFallbackError } =
+        await supabase.from("push_tokens").select("user_id, token").in(
+          "user_id",
+          deadStartUsers,
+        );
+      if (deadStartFallbackError) throw deadStartFallbackError;
+      fallbackResults = [
+        ...fallbackResults,
+        ...await sendAlerts(
+          cfg,
+          jwt,
+          (deadStartFallbackData ?? []) as Array<{ user_id: string; token: string }>,
+          payload,
+        ),
+      ];
+    }
+    const deadFallbackTokens = fallbackResults
+      .filter((result) => result.dead)
+      .map((result) => result.token);
+    if (deadFallbackTokens.length > 0) {
+      await supabase.from("push_tokens").delete().in("token", deadFallbackTokens);
+    }
+    return json({
+      sent: fallbackResults.filter((result) => result.status === 200).length,
+      liveActivitySent: startResults.filter((result) => result.status === 200).length,
+      fallbackTotal: fallbackUserIds.length,
+      liveActivityTotal: startRows.length,
+      pruned: deadStartTokens.length + deadFallbackTokens.length,
+    });
+  }
+
+  const sessions = await loadLiveSessions(payload, members, sender);
+  const activityResults = sessions.length > 0
+    ? await sendLiveActivities(cfg, jwt, sessions, members, memberByUser, payload)
+    : [];
+  const deadActivityTokens = activityResults
+    .filter((result) => result.dead)
+    .map((result) => result.token);
+  if (deadActivityTokens.length > 0) {
+    await supabase
+      .from("live_activity_sessions")
+      .delete()
+      .in("push_token", deadActivityTokens);
+  }
+  if (payload.status !== "active") {
+    await supabase.from("live_activity_sessions").delete().eq("group_id", payload.group_id);
+  }
+  return json({
+    sent: 0,
+    liveActivitySent: activityResults.filter((result) => result.status === 200).length,
+    liveActivityTotal: sessions.length,
+    pruned: deadActivityTokens.length,
+  });
+}
+
 async function sendBackgroundLocationRefreshes(
   cfg: ReturnType<typeof readApnsConfig>,
   jwt: string,
@@ -259,7 +413,7 @@ async function loadLiveSessions(
   members: MembershipRow[],
   sender: MembershipRow,
 ): Promise<LiveSessionRow[]> {
-  if (!["live_activity", "arrival", "straggler", "journey"].includes(payload.category)) {
+  if (!["live_activity", "arrival", "straggler", "journey", "navigation_session"].includes(payload.category)) {
     return [];
   }
 
@@ -269,8 +423,11 @@ async function loadLiveSessions(
       "user_id, group_id, destination_id, push_token, initial_distance_m, current_distance_m, eta_seconds, travel_mode",
     )
     .eq("group_id", payload.group_id)
-    .not("push_token", "is", null)
-    .gt("expires_at", new Date().toISOString());
+    .not("push_token", "is", null);
+
+  if (payload.category !== "navigation_session" || payload.status === "active") {
+    query = query.gt("expires_at", new Date().toISOString());
+  }
 
   if (payload.category === "live_activity") {
     if (!payload.target_user_id) return [];
@@ -337,9 +494,11 @@ async function sendLiveActivities(
   const avatarByUser = new Map(
     (profiles ?? []).map((row) => [row.id as string, (row.avatar as string | null) ?? "🙂"]),
   );
-  const event = payload.category === "journey" && payload.status === "paused"
-    ? "end" as const
-    : "update" as const;
+  const event = payload.category === "navigation_session"
+    ? payload.status === "active" ? "update" as const : "end" as const
+    : payload.category === "journey" && payload.status === "paused"
+      ? "end" as const
+      : "update" as const;
   const timestamp = Math.floor(Date.now() / 1000);
 
   return await Promise.all(
@@ -349,6 +508,12 @@ async function sendLiveActivities(
         ? members.filter((member) => member.subgroup_id === owner.subgroup_id && !member.solo)
         : [];
       const contentState: LiveActivityContentState = {
+        navigationSessionId: payload.category === "navigation_session"
+          ? payload.session_id ?? undefined
+          : undefined,
+        status: payload.category === "navigation_session"
+          ? payload.status ?? undefined
+          : undefined,
         gatheringTitle: titleByDestination.get(session.destination_id) ?? "集合點",
         distanceMeters: Math.max(0, Math.round(session.current_distance_m)),
         etaSeconds: Math.max(0, session.eta_seconds ?? 0),

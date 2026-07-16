@@ -12,6 +12,7 @@ import type { TravelMode } from '../utils/geo';
 
 export interface LiveActivitySessionContext {
   groupId: string;
+  navigationSessionId?: string;
   destinationId: string;
   initialDistanceM: number;
   travelMode: TravelMode;
@@ -89,14 +90,29 @@ export function useLiveActivity(
 
   useEffect(() => {
     const subscription = liveActivity.addPushTokenListener((event) => {
-      if (event.activityId !== handleRef.current) return;
+      if (
+        event.activityId !== handleRef.current &&
+        (!event.navigationSessionId ||
+          event.navigationSessionId !== sessionRef.current?.navigationSessionId)
+      ) return;
+      const previousId = handleRef.current;
+      handleRef.current = event.activityId;
       pushTokenRef.current = event.pushToken;
+      if (previousId && previousId !== event.activityId) {
+        void finishActivity(previousId).catch(() => undefined);
+      }
       void persistSession(event.activityId, { force: true }).catch(() => undefined);
     });
     return () => subscription.remove();
     // The listener reads mutable refs so token rotation never resubscribes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (session?.navigationSessionId) {
+      void liveActivity.observeExistingActivities().catch(() => undefined);
+    }
+  }, [session?.navigationSessionId]);
 
   useEffect(() => {
     let cancelled = false;

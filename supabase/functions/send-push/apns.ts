@@ -79,6 +79,8 @@ export interface AlertPayload {
 }
 
 export interface LiveActivityContentState {
+  navigationSessionId?: string;
+  status?: string;
   gatheringTitle: string;
   distanceMeters: number;
   etaSeconds: number;
@@ -95,6 +97,13 @@ export interface LiveActivityPayload {
   event: "update" | "end";
   timestamp: number;
   contentState: LiveActivityContentState;
+}
+
+export interface LiveActivityStartPayload {
+  timestamp: number;
+  attributesType: string;
+  attributes: Record<string, unknown>;
+  contentState: Record<string, unknown>;
 }
 
 export interface BackgroundLocationRefreshPayload {
@@ -163,6 +172,36 @@ export function buildLiveActivityRequest(
   };
 }
 
+export function buildLiveActivityStartRequest(
+  cfg: ApnsConfig,
+  jwt: string,
+  pushToStartToken: string,
+  payload: LiveActivityStartPayload,
+): { url: string; init: RequestInit } {
+  return {
+    url: `https://${apnsHost(cfg)}/3/device/${pushToStartToken}`,
+    init: {
+      method: "POST",
+      headers: {
+        authorization: `bearer ${jwt}`,
+        "apns-topic": `${cfg.bundleId}.push-type.liveactivity`,
+        "apns-push-type": "liveactivity",
+        "apns-priority": "10",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        aps: {
+          timestamp: payload.timestamp,
+          event: "start",
+          "attributes-type": payload.attributesType,
+          attributes: payload.attributes,
+          "content-state": payload.contentState,
+        },
+      }),
+    },
+  };
+}
+
 export function buildBackgroundLocationRefreshRequest(
   cfg: ApnsConfig,
   jwt: string,
@@ -222,6 +261,24 @@ export async function sendLiveActivityApns(
   const request = buildLiveActivityRequest(cfg, jwt, activityToken, payload);
   return resultFromResponse(
     activityToken,
+    await fetch(request.url, request.init),
+  );
+}
+
+export async function sendLiveActivityStartApns(
+  cfg: ApnsConfig,
+  jwt: string,
+  pushToStartToken: string,
+  payload: LiveActivityStartPayload,
+): Promise<ApnsResult> {
+  const request = buildLiveActivityStartRequest(
+    cfg,
+    jwt,
+    pushToStartToken,
+    payload,
+  );
+  return resultFromResponse(
+    pushToStartToken,
     await fetch(request.url, request.init),
   );
 }

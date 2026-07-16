@@ -1015,6 +1015,8 @@ export default function MapScreen({ route, navigation }: Props) {
     : undefined;
   useLiveActivity(journeyActive && liveActivityEnabled, {
     groupName: membership?.group.name ?? '',
+    navigationSessionId: navigationSessionState.session?.id,
+    status: navigationSessionState.session ? 'active' : undefined,
     gatheringTitle: navTarget?.title,
     distanceMeters: liveDistance,
     etaSeconds:
@@ -1030,6 +1032,7 @@ export default function MapScreen({ route, navigation }: Props) {
     memberArrived: members.map((m) => m.status === 'arrived'),
   }, groupId && navTarget && initialDistanceM != null ? {
     groupId,
+    navigationSessionId: navigationSessionState.session?.id,
     destinationId: navTarget.id,
     initialDistanceM,
     travelMode,
