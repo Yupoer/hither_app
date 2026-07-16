@@ -145,6 +145,33 @@ export async function ackNavigationSession(
   return mapNavigationMemberState(requireMemberStateRow(data));
 }
 
+/**
+ * Persist the account-level location sharing gate. Local navigation remains
+ * enabled by design; the location ingestion RPC independently enforces this
+ * row so a stale/background client cannot bypass the user's choice.
+ */
+export async function setLocationSharingEnabled(enabled: boolean): Promise<void> {
+  const userId = await requireUserId();
+  const { error } = await supabase.from('member_privacy_settings').upsert({
+    user_id: userId,
+    sharing_enabled: enabled,
+    local_navigation_enabled: true,
+    updated_at: new Date().toISOString(),
+  });
+  orThrow(error);
+}
+
+export async function getLocationSharingEnabled(): Promise<boolean | null> {
+  const userId = await requireUserId();
+  const { data, error } = await supabase
+    .from('member_privacy_settings')
+    .select('sharing_enabled')
+    .eq('user_id', userId)
+    .maybeSingle();
+  orThrow(error);
+  return data?.sharing_enabled ?? null;
+}
+
 export async function getActiveNavigationSession(
   groupId: string,
 ): Promise<NavigationSession | null> {

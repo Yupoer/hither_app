@@ -13,7 +13,10 @@ import {
   type Palette,
   type ThemeName,
 } from '../theme';
-import { LOCATION_SHARING_KEY } from './locationPrivacy';
+import {
+  LEGACY_LOCATION_SHARING_KEY,
+  LOCATION_SHARING_KEY,
+} from './locationPrivacy';
 
 /**
  * Device-local user preferences: the UI language and the colour theme.
@@ -129,6 +132,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
           storedTextScale,
           storedHighAccuracy,
           storedSharingEnabled,
+          storedLegacySharingEnabled,
           storedObliqueLocate,
           storedLiveActivity,
           storedMeetRed,
@@ -140,6 +144,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
           TEXT_SCALE_KEY,
           HIGH_ACCURACY_KEY,
           LOCATION_SHARING_KEY,
+          LEGACY_LOCATION_SHARING_KEY,
           OBLIQUE_LOCATE_KEY,
           LIVE_ACTIVITY_KEY,
           MEET_RED_KEY,
@@ -152,7 +157,17 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         const parsedTextScale = parseTextScalePref(storedTextScale[1]);
         if (parsedTextScale != null) setTextScaleState(parsedTextScale);
         if (storedHighAccuracy[1] === 'true') setHighAccuracyState(true);
-        if (storedSharingEnabled[1] === 'false') setSharingEnabledState(false);
+        const persistedSharing =
+          storedSharingEnabled[1] ?? storedLegacySharingEnabled[1];
+        if (persistedSharing === 'false') setSharingEnabledState(false);
+        else if (persistedSharing === 'true') setSharingEnabledState(true);
+        if (storedSharingEnabled[1] == null && storedLegacySharingEnabled[1] != null) {
+          await AsyncStorage.setItem(
+            LOCATION_SHARING_KEY,
+            storedLegacySharingEnabled[1],
+          );
+          await AsyncStorage.removeItem(LEGACY_LOCATION_SHARING_KEY);
+        }
         // Only override default-on when the user has explicitly stored a value.
         if (storedObliqueLocate[1] === 'false') setObliqueLocateState(false);
         else if (storedObliqueLocate[1] === 'true') setObliqueLocateState(true);
