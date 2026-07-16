@@ -110,4 +110,10 @@ describe('production mobile configuration', () => {
     expect(marketingVersions.length).toBeGreaterThanOrEqual(4);
     expect(new Set(marketingVersions)).toEqual(new Set([appConfig.expo.version]));
   });
+
+  it('derives the archived iOS short version from MARKETING_VERSION', () => {
+    expect(nativeInfoPlist).toMatch(
+      /<key>CFBundleShortVersionString<\/key>\s*<string>\$\(MARKETING_VERSION\)<\/string>/,
+    );
+  });
 });
