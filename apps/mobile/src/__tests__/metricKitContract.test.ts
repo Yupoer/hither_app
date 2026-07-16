@@ -13,9 +13,10 @@ describe('MetricKit native spool contract', () => {
     expect(existsSync(swiftPath)).toBe(true);
     const swift = readFileSync(swiftPath, 'utf8');
     expect(swift).toContain('import MetricKit');
-    expect(swift).toContain('MXMetricManagerSubscriber');
-    expect(swift).toContain('MXMetricManager.shared.add(self)');
-    expect(swift).toContain('MXMetricManager.shared.remove(self)');
+    expect(swift).toContain('class MetricKitSubscriber: NSObject, MXMetricManagerSubscriber');
+    expect(swift).not.toContain('class HitherMetricsModule: Module, MXMetricManagerSubscriber');
+    expect(swift).toContain('MXMetricManager.shared.add(subscriber)');
+    expect(swift).toContain('MXMetricManager.shared.remove(subscriber)');
     expect(swift).toContain('didReceive(_ payloads: [MXMetricPayload])');
     expect(swift).toContain('didReceive(_ payloads: [MXDiagnosticPayload])');
     expect(swift).toContain('payload.jsonRepresentation()');

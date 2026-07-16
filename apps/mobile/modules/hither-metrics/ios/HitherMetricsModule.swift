@@ -2,7 +2,7 @@ import ExpoModulesCore
 import Foundation
 import MetricKit
 
-public final class HitherMetricsModule: Module, MXMetricManagerSubscriber {
+private final class MetricKitSubscriber: NSObject, MXMetricManagerSubscriber {
   private let queue = DispatchQueue(label: "app.hither.metrics-spool")
   private let maximumPayloadFiles = 20
 
@@ -19,58 +19,49 @@ public final class HitherMetricsModule: Module, MXMetricManagerSubscriber {
     return directory
   }()
 
-  public func definition() -> ModuleDefinition {
-    Name("HitherMetrics")
+  func prepare() {
+    _ = spoolDirectory
+  }
 
-    OnCreate {
-      _ = self.spoolDirectory
-      MXMetricManager.shared.add(self)
-    }
-
-    OnDestroy {
-      MXMetricManager.shared.remove(self)
-    }
-
-    AsyncFunction("drainPayloads") { () -> [[String: Any]] in
-      self.queue.sync {
-        self.payloadFiles().compactMap { url in
-          guard let json = try? String(contentsOf: url, encoding: .utf8) else {
-            return nil
-          }
-          let parts = url.deletingPathExtension().lastPathComponent.split(
-            separator: "_",
-            maxSplits: 2
-          )
-          guard parts.count == 3, let receivedAt = Int64(parts[0]) else {
-            return nil
-          }
-          return [
-            "id": String(parts[2]),
-            "kind": String(parts[1]),
-            "json": json,
-            "receivedAt": receivedAt,
-          ]
+  func drainPayloads() -> [[String: Any]] {
+    queue.sync {
+      payloadFiles().compactMap { url in
+        guard let json = try? String(contentsOf: url, encoding: .utf8) else {
+          return nil
         }
+        let parts = url.deletingPathExtension().lastPathComponent.split(
+          separator: "_",
+          maxSplits: 2
+        )
+        guard parts.count == 3, let receivedAt = Int64(parts[0]) else {
+          return nil
+        }
+        return [
+          "id": String(parts[2]),
+          "kind": String(parts[1]),
+          "json": json,
+          "receivedAt": receivedAt,
+        ]
       }
     }
+  }
 
-    AsyncFunction("removePayloads") { (ids: [String]) in
-      self.queue.sync {
-        let accepted = Set(ids)
-        for url in self.payloadFiles() {
-          let parts = url.deletingPathExtension().lastPathComponent.split(
-            separator: "_",
-            maxSplits: 2
-          )
-          if parts.count == 3 && accepted.contains(String(parts[2])) {
-            try? FileManager.default.removeItem(at: url)
-          }
+  func removePayloads(ids: [String]) {
+    queue.sync {
+      let accepted = Set(ids)
+      for url in payloadFiles() {
+        let parts = url.deletingPathExtension().lastPathComponent.split(
+          separator: "_",
+          maxSplits: 2
+        )
+        if parts.count == 3 && accepted.contains(String(parts[2])) {
+          try? FileManager.default.removeItem(at: url)
         }
       }
     }
   }
 
-  public func didReceive(_ payloads: [MXMetricPayload]) {
+  func didReceive(_ payloads: [MXMetricPayload]) {
     queue.async {
       for payload in payloads {
         self.write(payload.jsonRepresentation(), kind: "metric")
@@ -78,7 +69,7 @@ public final class HitherMetricsModule: Module, MXMetricManagerSubscriber {
     }
   }
 
-  public func didReceive(_ payloads: [MXDiagnosticPayload]) {
+  func didReceive(_ payloads: [MXDiagnosticPayload]) {
     queue.async {
       for diagnosticPayload in payloads {
         self.write(diagnosticPayload.jsonRepresentation(), kind: "diagnostic")
@@ -122,6 +113,33 @@ public final class HitherMetricsModule: Module, MXMetricManagerSubscriber {
     guard files.count > maximumPayloadFiles else { return }
     for url in files.prefix(files.count - maximumPayloadFiles) {
       try? FileManager.default.removeItem(at: url)
+    }
+  }
+}
+
+public final class HitherMetricsModule: Module {
+  private let subscriber = MetricKitSubscriber()
+
+  public func definition() -> ModuleDefinition {
+    Name("HitherMetrics")
+
+    OnCreate {
+      let subscriber = self.subscriber
+      subscriber.prepare()
+      MXMetricManager.shared.add(subscriber)
+    }
+
+    OnDestroy {
+      let subscriber = self.subscriber
+      MXMetricManager.shared.remove(subscriber)
+    }
+
+    AsyncFunction("drainPayloads") { () -> [[String: Any]] in
+      self.subscriber.drainPayloads()
+    }
+
+    AsyncFunction("removePayloads") { (ids: [String]) in
+      self.subscriber.removePayloads(ids: ids)
     }
   }
 }
