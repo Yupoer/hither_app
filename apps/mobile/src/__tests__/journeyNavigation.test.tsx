@@ -1,7 +1,8 @@
 import React from 'react';
-import { deleteDestination, setJourneyTarget } from '../api/client';
+import { deleteDestination } from '../api/client';
 import { useJourneyNavigation } from '../screens/MapScreen/hooks/useJourneyNavigation';
 import type { Destination, GroupState } from '../types';
+import type { NavigationSession } from '../types/navigation';
 
 // react-test-renderer is installed but this project does not ship its typings.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -19,7 +20,6 @@ jest.mock('../native', () => ({
 }));
 
 jest.mock('../api/client', () => ({
-  setJourneyTarget: jest.fn(),
   reorderDestinations: jest.fn(),
   recordVisitedWaypoint: jest.fn(),
   deleteDestination: jest.fn(),
@@ -42,12 +42,12 @@ const pausedState = {
 } as unknown as GroupState;
 
 describe('useJourneyNavigation', () => {
-  beforeEach(() => {
-    jest.mocked(setJourneyTarget).mockResolvedValue(undefined);
-  });
-
   it('keeps navigation active when refresh still returns the old paused snapshot', async () => {
     const refresh = jest.fn().mockResolvedValue(true);
+    const startSession = jest.fn().mockResolvedValue({
+      id: 'session-1',
+      status: 'active',
+    } as NavigationSession);
     let navigation: ReturnType<typeof useJourneyNavigation> | undefined;
     function Harness({ state }: { state: GroupState }) {
       navigation = useJourneyNavigation({
@@ -62,6 +62,8 @@ describe('useJourneyNavigation', () => {
         mapRef: { current: null },
         carouselRef: { current: null },
         setSelectedIndex: jest.fn(),
+        startSession,
+        createRequestId: () => 'request-1',
       });
       return null;
     }
@@ -83,7 +85,7 @@ describe('useJourneyNavigation', () => {
     expect(navigation?.journeyStatus).toBe('going');
     expect(navigation?.navTarget?.id).toBe(destination.id);
     expect(navigation?.journeyActive).toBe(true);
-    expect(setJourneyTarget).toHaveBeenCalledWith('group-1', destination.id);
+    expect(startSession).toHaveBeenCalledWith(destination.id, 'request-1');
   });
 
   it('uses the persisted active destination instead of the local carousel selection', () => {
@@ -286,7 +288,7 @@ describe('useJourneyNavigation', () => {
   });
 
   it('restores the persisted target when stopping navigation fails', async () => {
-    jest.mocked(setJourneyTarget).mockRejectedValueOnce(new Error('network'));
+    const cancelSession = jest.fn().mockRejectedValueOnce(new Error('network'));
     const goingState = {
       ...pausedState,
       group: {
@@ -310,6 +312,7 @@ describe('useJourneyNavigation', () => {
         mapRef: { current: null },
         carouselRef: { current: null },
         setSelectedIndex: jest.fn(),
+        cancelSession,
       });
       return null;
     }

@@ -80,6 +80,7 @@ import { SubgroupSection } from './MapScreen/components/SubgroupSection';
 import { Segmented } from './MapScreen/components/Segmented';
 import AccountSheet from '../components/AccountSheet';
 import { useGroupState } from '../state/useGroupState';
+import { useNavigationSession } from '../state/useNavigationSession';
 import { useStragglerAlerts } from '../state/useStragglerAlerts';
 import { useSubgroupInvites } from '../state/useSubgroupInvites';
 import { clearLiveActivities, useLiveActivity } from '../state/useLiveActivity';
@@ -301,6 +302,7 @@ export default function MapScreen({ route, navigation }: Props) {
     myUserId: user?.id ?? null,
     highAccuracy,
   });
+  const navigationSessionState = useNavigationSession(groupId);
   const group = state?.group ?? membership?.group ?? null;
 
   const mapRef = useRef<GroupMapHandle | null>(null);
@@ -727,7 +729,29 @@ export default function MapScreen({ route, navigation }: Props) {
     mapRef,
     carouselRef,
     setSelectedIndex,
+    navigationSession: navigationSessionState.loading
+      ? undefined
+      : navigationSessionState.session,
+    startSession: navigationSessionState.start,
+    cancelSession: navigationSessionState.cancel,
   });
+
+  const navigationAckRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (isLeader || !navigationSessionState.session) {
+      navigationAckRef.current = null;
+      return;
+    }
+    const key = `${navigationSessionState.session.id}:${sharingEnabled ? 'tracking' : 'disabled'}`;
+    if (navigationAckRef.current === key) return;
+    navigationAckRef.current = key;
+    void navigationSessionState.ack(
+      sharingEnabled ? 'tracking_active' : 'sharing_disabled',
+      { source: 'foreground_session_effect' },
+    ).catch(() => {
+      navigationAckRef.current = null;
+    });
+  }, [isLeader, navigationSessionState, sharingEnabled]);
 
   const { selfRoute, memberRoutes } = useMapKitRoutes({
     selfCoordinates: fromCoords,
@@ -857,10 +881,11 @@ export default function MapScreen({ route, navigation }: Props) {
 
     void startBackgroundJourney({
       groupId,
-      navigationSessionId: null,
+      navigationSessionId: navigationSessionState.session?.id ?? null,
       destinationId: navTarget?.id ?? 'group-presence',
       destination: dest,
-      arrivalRadiusMeters: 50,
+      arrivalRadiusMeters:
+        navigationSessionState.session?.destination.arrivalRadiusMeters ?? 50,
       initialDistanceM: backgroundInitialM,
       sequence: 0,
       travelMode,
@@ -868,7 +893,9 @@ export default function MapScreen({ route, navigation }: Props) {
       highAccuracy,
       powerMode,
       sharingEnabled,
-      teamNavigationActive: Boolean(journeyActive && navTarget),
+      teamNavigationActive: Boolean(
+        navigationSessionState.session || (journeyActive && navTarget),
+      ),
       appState: appState === 'background' ? 'background' : 'inactive',
     }).then((result) => {
       if (result === 'hidden') {
@@ -886,6 +913,7 @@ export default function MapScreen({ route, navigation }: Props) {
     highAccuracy,
     journeyActive,
     navTarget,
+    navigationSessionState.session,
     sharingEnabled,
     showLocationPermissionAlert,
     travelMode,
