@@ -22,6 +22,7 @@ import {
   type BackgroundJourneyConfig,
 } from './backgroundJourneyController';
 import { diagnostics } from './diagnostics';
+import { clearLiveActivities } from './useLiveActivity';
 import {
   enqueueLocationOutbox,
   flushLocationOutbox,
@@ -168,6 +169,21 @@ if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
           accuracyM,
           sequence,
         }).catch(() => undefined);
+      }
+      if (config.navigationSessionId && arrival.status === 'arrived') {
+        // A background arrival ends both local activities and the matching
+        // Supabase rows; the closed itinerary point remains historical.
+        await clearLiveActivities({ groupIds: [config.groupId] });
+        await AsyncStorage.setItem(
+          BACKGROUND_JOURNEY_KEY,
+          JSON.stringify({
+            ...config,
+            navigationSessionId: null,
+            teamNavigationActive: false,
+            powerMode: 'allDay',
+            arrivalState: arrival,
+          }),
+        );
       }
       await diagnostics.flush().catch(() => undefined);
     },

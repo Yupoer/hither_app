@@ -214,9 +214,14 @@ export default function DestinationReorderList({
     }
 
     let changed = false;
+    const openIndexById = new Map(
+      [...destinations]
+        .sort((a, b) => a.order - b.order)
+        .map((destination, index) => [destination.id, index]),
+    );
     for (const u of updates) {
        const orig = destinations.find(d => d.id === u.id);
-       if (!orig || orig.order !== u.position || (orig.day || 1) !== u.day) {
+       if (!orig || openIndexById.get(u.id) !== u.position || (orig.day || 1) !== u.day) {
            changed = true;
            break;
        }

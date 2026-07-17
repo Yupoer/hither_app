@@ -1,7 +1,8 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(14);
+set local search_path = extensions, public, auth;
+select plan(32);
 
 select has_table('public', 'navigation_sessions', 'navigation_sessions exists');
 select has_table('public', 'navigation_member_states', 'navigation_member_states exists');
@@ -31,6 +32,20 @@ insert into public.itinerary_items (
   25.0478,
   121.517,
   0
+), (
+  'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2',
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'Next station',
+  25.0488,
+  121.518,
+  1
+), (
+  'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3',
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'Third station',
+  25.0498,
+  121.519,
+  2
 );
 
 set local role authenticated;
@@ -67,15 +82,14 @@ select is(
   'session seeds every group member state'
 );
 
-select throws_ok(
-  $$ select public.start_navigation_session(
+select is(
+  (public.start_navigation_session(
     'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
     'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
-  ) $$,
-  '55000',
-  'active navigation session exists',
-  'a group cannot have two active sessions'
+  )).id,
+  (select id from test_session),
+  'same active destination returns the active session'
 );
 
 select set_config('request.jwt.claim.sub', '22222222-2222-4222-8222-222222222222', true);
@@ -97,6 +111,28 @@ select is(
   'tracking_active',
   'ack updates only the current member state'
 );
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
+select lives_ok(
+  format(
+    'select public.ack_navigation_session(%L, %L, %L::jsonb)',
+    (select id from test_session),
+    'arrived',
+    '{"source":"foreground"}'
+  ),
+  'leader arrival ACK is accepted'
+);
+select is(
+  (select local_status from public.navigation_member_states
+    where navigation_session_id = (select id from test_session)
+      and user_id = '11111111-1111-4111-8111-111111111111'),
+  'arrived',
+  'arrived member remains arrived when session later closes'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '22222222-2222-4222-8222-222222222222', true);
 
 insert into public.member_privacy_settings (user_id, sharing_enabled)
 values ('22222222-2222-4222-8222-222222222222', false);
@@ -143,6 +179,123 @@ select lives_ok(
     ))
   ),
   'duplicate location event does not raise'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
+create temporary table switched_session as
+select (public.start_navigation_session(
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2',
+  'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
+)).id;
+
+select is(
+  (select status from public.navigation_sessions where id = (select id from test_session)),
+  'completed',
+  'switching destination completes the previous session atomically'
+);
+select is(
+  (select closed_at is not null from public.itinerary_items
+    where id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),
+  true,
+  'switching destination closes the previous itinerary item'
+);
+select is(
+  (select position from public.itinerary_items
+    where id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),
+  0,
+  'switching destination does not reorder the previous item'
+);
+select is(
+  (select position from public.itinerary_items
+    where id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2'),
+  1,
+  'switching destination preserves the next item position'
+);
+select is(
+  (select local_status from public.navigation_member_states
+    where navigation_session_id = (select id from test_session)
+      and user_id = '22222222-2222-4222-8222-222222222222'),
+  'missed',
+  'members without arrival become missed on switch'
+);
+select is(
+  (select local_status from public.navigation_member_states
+    where navigation_session_id = (select id from test_session)
+      and user_id = '11111111-1111-4111-8111-111111111111'),
+  'arrived',
+  'arrived members are not rewritten as missed on switch'
+);
+select is(
+  (select count(*) from public.navigation_sessions
+    where group_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' and status = 'active'),
+  1::bigint,
+  'a group has one active session after a switch'
+);
+select is(
+  (select destination_id from public.navigation_sessions where id = (select id from switched_session)),
+  'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2'::uuid,
+  'switch creates the requested next session'
+);
+
+select is(
+  (public.complete_navigation_session(
+    (select id from switched_session), 1
+  )).status,
+  'completed',
+  'completing navigation closes the current session'
+);
+select is(
+  (select closed_at is not null from public.itinerary_items
+    where id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2'),
+  true,
+  'completing navigation closes the destination'
+);
+
+create temporary table cancelled_session as
+select (public.start_navigation_session(
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3',
+  'ffffffff-ffff-4fff-8fff-ffffffffffff'
+)).id;
+select is(
+  (public.cancel_navigation_session(
+    (select id from cancelled_session), 1
+  )).status,
+  'cancelled',
+  'cancelling navigation stops the session'
+);
+select is(
+  (select closed_at is null from public.itinerary_items
+    where id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3'),
+  true,
+  'cancelling navigation does not close the destination'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '22222222-2222-4222-8222-222222222222', true);
+select lives_ok(
+  $$ select public.set_destination_arrival_at(
+    'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    '22222222-2222-4222-8222-222222222222',
+    true,
+    null
+  ) $$,
+  'a missed member can be corrected after the stop is closed'
+);
+select is(
+  (select local_status from public.navigation_member_states
+    where navigation_session_id = (select id from test_session)
+      and user_id = '22222222-2222-4222-8222-222222222222'),
+  'arrived',
+  'correction changes missed to arrived'
+);
+select is(
+  (select closed_at is not null from public.itinerary_items
+    where id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),
+  true,
+  'correcting a missed member does not reopen the stop'
 );
 
 select is(

@@ -19,6 +19,8 @@ export interface ItineraryRow {
   meet_at?: string | null;
   meet_red_minutes?: number | null;
   subgroup_id?: string | null;
+  closed_at?: string | null;
+  closed_by_session_id?: string | null;
 }
 
 // ── Mapper ─────────────────────────────────────────────────────────────────
@@ -38,6 +40,8 @@ export function mapDestination(row: ItineraryRow): Destination {
     meetRedMinutes:
       typeof row.meet_red_minutes === 'number' ? row.meet_red_minutes : undefined,
     subgroupId: row.subgroup_id ?? undefined,
+    closedAt: row.closed_at ?? undefined,
+    closedBySessionId: row.closed_by_session_id ?? undefined,
   };
 }
 

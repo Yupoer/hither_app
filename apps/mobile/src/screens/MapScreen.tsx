@@ -118,6 +118,7 @@ import { dotWindow } from '../utils/pagination';
 import { alignMeetTimeToTripDay, minutesUntil } from '../utils/meetTime';
 import { locationFreshness } from '../utils/locationFreshness';
 import { groupHistoryByDay, type HistoryDayGroup } from '../utils/history';
+import { createArrivalState, reduceArrival, type ArrivalState } from '../utils/navigationArrival';
 import { liquidGlass, location, notifications, type MapRegion, type PlaceResult } from '../native';
 import {
   addDestination,
@@ -359,8 +360,8 @@ export default function MapScreen({ route, navigation }: Props) {
     [destinationArrivals, user?.id],
   );
   const destinations = useMemo(
-    () => allScopedDestinations.filter((dest) => !myCompletedDestinationIds.has(dest.id)),
-    [allScopedDestinations, myCompletedDestinationIds],
+    () => allScopedDestinations.filter((dest) => !dest.closedAt),
+    [allScopedDestinations],
   );
   const optimisticTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const workflowReloadRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -730,7 +731,7 @@ export default function MapScreen({ route, navigation }: Props) {
     groupId,
     isLeader,
     destinations,
-    navigationDestinations: allScopedDestinations,
+    navigationDestinations: destinations,
     selectedDestination,
     fromCoords,
     refresh,
@@ -814,6 +815,46 @@ export default function MapScreen({ route, navigation }: Props) {
     travelMode,
     highAccuracy,
   });
+
+  // Foreground arrival uses the same two accurate-fix reducer as background
+  // tracking. The ACK is deliberately independent from the shared card
+  // closure: one member may arrive while the rest of the team is still en
+  // route.
+  const foregroundArrivalRef = useRef<{ key: string; state: ArrivalState } | null>(null);
+  useEffect(() => {
+    const session = navigationSessionState.session;
+    if (!session || !navTarget || !deviceCoords || deviceAccuracyM == null) {
+      foregroundArrivalRef.current = null;
+      return;
+    }
+    const key = `${session.id}:${navTarget.id}`;
+    const previous = foregroundArrivalRef.current?.key === key
+      ? foregroundArrivalRef.current.state
+      : createArrivalState(distanceMeters(deviceCoords, navTarget.coordinates));
+    const next = reduceArrival(
+      previous,
+      {
+        distanceM: distanceMeters(deviceCoords, navTarget.coordinates),
+        accuracyM: deviceAccuracyM,
+      },
+      { radiusM: session.destination.arrivalRadiusMeters },
+    );
+    foregroundArrivalRef.current = { key, state: next };
+    if (next.status === 'arriving' || next.status === 'arrived') {
+      void navigationSessionState.ack(next.status, {
+        source: 'foreground_arrival_reducer',
+        distanceM: next.lastDistanceM,
+        accuracyM: deviceAccuracyM,
+        consecutiveFixes: next.consecutiveFixes,
+      }).catch(() => undefined);
+    }
+  }, [
+    deviceAccuracyM,
+    deviceCoords,
+    navTarget,
+    navigationSessionState.ack,
+    navigationSessionState.session,
+  ]);
   const initialJourneyRef = useRef<{
     key: string;
     distanceM: number;
@@ -1067,7 +1108,13 @@ export default function MapScreen({ route, navigation }: Props) {
   const liveGathered = navTarget
     ? members.filter((m) => m.status === 'arrived').length
     : undefined;
-  useLiveActivity(journeyActive && liveActivityEnabled, {
+  const localNavigationArrived = Boolean(
+    navTarget && (
+      myCompletedDestinationIds.has(navTarget.id) ||
+      navigationSessionState.memberState?.localStatus === 'arrived'
+    ),
+  );
+  useLiveActivity(journeyActive && !localNavigationArrived && liveActivityEnabled, {
     groupName: membership?.group.name ?? '',
     navigationSessionId: navigationSessionState.session?.id,
     status: navigationSessionState.session ? 'active' : undefined,
@@ -1131,8 +1178,10 @@ export default function MapScreen({ route, navigation }: Props) {
       showLocationPermissionAlert();
       return;
     }
-    await updateMyLocation(fix.coordinates, refreshGroupId).catch(() => undefined);
-    await refresh().catch(() => undefined);
+    // A manual refresh must surface a failed self update; otherwise the UI can
+    // falsely report the old timestamp as if the tap had worked.
+    await updateMyLocation(fix.coordinates, refreshGroupId);
+    await refresh();
   }, [groupId, refresh, showLocationPermissionAlert]);
 
   useEffect(() => {
@@ -1140,7 +1189,10 @@ export default function MapScreen({ route, navigation }: Props) {
       if (data.category !== 'location_refresh') return;
       void handleLocationRefreshRequest(
         typeof data.groupId === 'string' ? data.groupId : groupId,
-      );
+      ).catch((error) => Alert.alert(
+        t('map.setFailedTitle'),
+        error instanceof Error ? error.message : t('map.setFailedMsg'),
+      ));
     });
     return remove;
   }, [groupId, handleLocationRefreshRequest]);
@@ -1163,7 +1215,7 @@ export default function MapScreen({ route, navigation }: Props) {
     });
     void consumePendingLocationRefresh(groupId).then((pendingGroupId) => {
       if (pendingGroupId && pendingGroupId === groupId) {
-        void handleLocationRefreshRequest(pendingGroupId);
+        void handleLocationRefreshRequest(pendingGroupId).catch(() => undefined);
       }
     });
   }, [
@@ -1174,14 +1226,17 @@ export default function MapScreen({ route, navigation }: Props) {
   ]);
 
   const refreshAllLocations = useCallback(async () => {
-    if (!groupId || refreshingLocations || refreshCooldownUntil > Date.now()) return;
+    if (!groupId || refreshingLocations) return;
     setRefreshingLocations(true);
     try {
       if (isDemoGroup(groupId)) {
-        await refresh();
+        await handleLocationRefreshRequest(groupId);
         return;
       }
 
+      // Always refresh the initiator immediately. The server cooldown only
+      // governs the fan-out request to peers.
+      await handleLocationRefreshRequest(groupId);
       const result = await requestGroupLocationRefresh(groupId);
       const retryAfter = Math.max(0, result.retryAfterSeconds);
       setRefreshCooldownUntil(Date.now() + retryAfter * 1000);
@@ -1198,7 +1253,7 @@ export default function MapScreen({ route, navigation }: Props) {
     } finally {
       setRefreshingLocations(false);
     }
-  }, [groupId, refresh, refreshingLocations, refreshCooldownUntil, t]);
+  }, [groupId, handleLocationRefreshRequest, refreshingLocations, t]);
 
   const fitAllMembers = useCallback(() => {
     mapRef.current?.fitToMembers();
@@ -1653,22 +1708,29 @@ export default function MapScreen({ route, navigation }: Props) {
       logEvent('destination_reorder', { count: updates.length });
 
       const departureDate = group?.departureDate;
+      // Closed stops are intentionally absent from the editor, but their
+      // original position slots remain reserved so editing open stops cannot
+      // move anything across a historical closure or create duplicate slots.
+      const openPositionSlots = [...destinations]
+        .sort((a, b) => a.order - b.order)
+        .map((destination) => destination.order);
       const persistedUpdates: {
         id: string;
         position: number;
         day: number;
         meetAt?: string;
-      }[] = updates.map((update) => {
+      }[] = updates.map((update, index) => {
         const original = rawDestinations.find((dest) => dest.id === update.id);
+        const position = openPositionSlots[index] ?? update.position;
         if (!departureDate || !original?.meetAt || (original.day || 1) === update.day) {
-          return update;
+          return { ...update, position };
         }
         const alignedMeetAt = alignMeetTimeToTripDay(
           new Date(original.meetAt),
           departureDate,
           update.day,
         );
-        return { ...update, meetAt: alignedMeetAt.toISOString() };
+        return { ...update, position, meetAt: alignedMeetAt.toISOString() };
       });
       const newDests = rawDestinations.map(d => ({ ...d }));
       persistedUpdates.forEach(u => {
@@ -1705,6 +1767,7 @@ export default function MapScreen({ route, navigation }: Props) {
       t,
       refresh,
       rawDestinations,
+      destinations,
       group?.departureDate,
     ],
   );
@@ -2400,12 +2463,12 @@ export default function MapScreen({ route, navigation }: Props) {
       <View style={styles.listGroup}>
         <Pressable style={styles.listRow} onPress={() => { lightTap(); setOverlay('route'); }} accessibilityRole="button">
           <Text style={styles.listRowTitle}>
-            {t('map.stopsReorder', { count: allScopedDestinations.length })}
+            {t('map.stopsReorder', { count: destinations.length })}
           </Text>
           <Text style={styles.listRowTrailing}>{t('map.edit')}</Text>
           <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
         </Pressable>
-        {isLeader && allScopedDestinations.length > 0 ? (
+        {isLeader && destinations.length > 0 ? (
           <Pressable
             style={styles.listRow}
             onPress={() => { lightTap(); setOverlay('arrivalManage'); }}
@@ -2433,7 +2496,7 @@ export default function MapScreen({ route, navigation }: Props) {
       </View>
     </>
   ), [
-    t, styles, nextStopTitle, nextStopDistLabel, allScopedDestinations.length, canEditItinerary,
+    t, styles, nextStopTitle, nextStopDistLabel, destinations.length, canEditItinerary,
     openHistoryOverlay, isLeader,
   ]);
 
@@ -2812,6 +2875,10 @@ export default function MapScreen({ route, navigation }: Props) {
               );
               const firstOrder = Math.min(...allScopedDestinations.map((item) => item.order));
               const canMarkArrival = dest.order <= (arrivedBoundary >= 0 ? arrivedBoundary : firstOrder);
+              const personallyArrived = myCompletedDestinationIds.has(dest.id) || (
+                navTarget?.id === dest.id &&
+                navigationSessionState.memberState?.localStatus === 'arrived'
+              );
               return (
                 <View
                   key={`carousel-dest-${dest.id}-${index}`}
@@ -2950,9 +3017,6 @@ export default function MapScreen({ route, navigation }: Props) {
                                   >
                                     {etaLabel}
                                   </Text>
-                                ) : null}
-                                {etaLabel && distLabel ? (
-                                  <Text style={styles.cardRouteMetaDotExpanded}>·</Text>
                                 ) : null}
                                 {distLabel ? (
                                   <Text
@@ -3095,7 +3159,23 @@ export default function MapScreen({ route, navigation }: Props) {
                         />
                       </Pressable>
 
-                      {user?.id && canMarkArrival ? (
+                      {user?.id && canMarkArrival ? personallyArrived ? (
+                        <View
+                          style={[
+                            styles.cmdSquare,
+                            styles.arrivalCmdSquare,
+                            { backgroundColor: accentMix(glass.ok, 16), borderColor: accentMix(glass.ok, 38) },
+                          ]}
+                          accessible
+                          accessibilityLabel={t('map.arriveTitle')}
+                        >
+                          <Ionicons
+                            name="checkmark-circle"
+                            size={chromeTight ? 18 : 20}
+                            color={glass.ok}
+                          />
+                        </View>
+                      ) : (
                         <Pressable
                           style={[
                             styles.cmdSquare,
@@ -3262,7 +3342,7 @@ export default function MapScreen({ route, navigation }: Props) {
           ) : null}
           <DestinationReorderList
             groupId={groupId ?? undefined}
-            destinations={allScopedDestinations}
+            destinations={destinations}
             canReorder={canEditItinerary}
             tripDays={optimisticTripDays ?? group?.tripDays}
             departureDate={optimisticDepartureDate ?? group?.departureDate}
@@ -3509,6 +3589,11 @@ export default function MapScreen({ route, navigation }: Props) {
                       (entry) =>
                         entry.destinationId === destination.id && entry.userId === member.userId,
                     );
+                    const memberStateKey = arrived
+                      ? 'memberStatus.arrived'
+                      : destination.closedAt
+                        ? 'memberStatus.missed'
+                        : 'memberStatus.pending';
                     return (
                       <View
                         key={`${destination.id}-${member.userId}`}
@@ -3518,9 +3603,10 @@ export default function MapScreen({ route, navigation }: Props) {
                           index === scopedMembers.length - 1 && styles.flockRowLast,
                         ]}
                       >
-                        <Text style={[styles.flockName, styles.grow]} numberOfLines={1}>
-                          {member.name}
-                        </Text>
+                        <View style={styles.grow}>
+                          <Text style={styles.flockName} numberOfLines={1}>{member.name}</Text>
+                          <Text style={styles.overlayHint}>{t(memberStateKey)}</Text>
+                        </View>
                         <Pressable
                           style={styles.arrivalToggleBtn}
                           onPress={() => handleArrival(destination, member.userId, !arrived)}
@@ -3562,11 +3648,17 @@ export default function MapScreen({ route, navigation }: Props) {
               const arrived = destinationArrivals.some(
                 (entry) => entry.destinationId === arrivalDestination.id && entry.userId === member.userId,
               );
+              const memberStateKey = arrived
+                ? 'memberStatus.arrived'
+                : arrivalDestination.closedAt
+                  ? 'memberStatus.missed'
+                  : 'memberStatus.pending';
               return (
                 <View key={member.userId} style={[styles.flockRow, styles.arrivalMemberRow]}>
-                  <Text style={[styles.flockName, styles.grow]} numberOfLines={1}>
-                    {member.name}
-                  </Text>
+                  <View style={styles.grow}>
+                    <Text style={styles.flockName} numberOfLines={1}>{member.name}</Text>
+                    <Text style={styles.overlayHint}>{t(memberStateKey)}</Text>
+                  </View>
                   <Pressable
                     style={styles.arrivalToggleBtn}
                     onPress={() => handleArrival(arrivalDestination, member.userId, !arrived)}
@@ -3920,7 +4012,7 @@ const RefreshLocationsButton = React.memo(function RefreshLocationsButton({
         pressed && !refreshing && styles.rowActionPressed,
       ]}
       onPress={() => void onPress()}
-      disabled={refreshing || cooling}
+      disabled={refreshing}
       accessibilityRole="button"
       accessibilityLabel={t('map.refreshLocationsA11y')}
       accessibilityHint={

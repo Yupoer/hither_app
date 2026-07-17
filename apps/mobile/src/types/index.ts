@@ -269,6 +269,9 @@ export interface Destination {
   meetRedMinutes?: number;
   /** Owning subgroup's list; undefined = the main group's itinerary. */
   subgroupId?: string;
+  /** Shared team-level navigation closure; null/undefined means open. */
+  closedAt?: string;
+  closedBySessionId?: string;
 }
 
 /** Aggregated live view of a group, consumed by the Map screen. */
