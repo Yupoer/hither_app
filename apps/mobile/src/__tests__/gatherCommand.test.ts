@@ -1,10 +1,98 @@
 import {
+  deriveCardNavFlags,
   LEADER_COMPLETED_NOTICE,
   mergeAvatarProfiles,
   projectHistoryForViewer,
   resolveCompletePrompt,
   resolveNavCommand,
 } from '../utils/gatherCommand';
+
+describe('deriveCardNavFlags (shared vs local — MapScreen wiring inputs)', () => {
+  it('member local plan is localRouteThis, not flock 導航中', () => {
+    // journeyActive would be true for localTargetId, but sharedTargetId is null.
+    const flags = deriveCardNavFlags({
+      destId: 'stop-a',
+      isLeader: false,
+      sharedTargetId: null,
+      localTargetId: 'stop-a',
+    });
+    expect(flags).toEqual({ flockNavigatingThis: false, localRouteThis: true });
+    expect(
+      resolveNavCommand({
+        isLeader: false,
+        personallyArrived: false,
+        ...flags,
+        pendingComplete: false,
+      }),
+    ).toMatchObject({ kind: 'member_close_plan', label: '關閉路線圖' });
+  });
+
+  it('shared session wins over member local plan on the same stop', () => {
+    const flags = deriveCardNavFlags({
+      destId: 'stop-a',
+      isLeader: false,
+      sharedTargetId: 'stop-a',
+      localTargetId: 'stop-a',
+    });
+    expect(flags).toEqual({ flockNavigatingThis: true, localRouteThis: false });
+    expect(
+      resolveNavCommand({
+        isLeader: false,
+        personallyArrived: false,
+        ...flags,
+        pendingComplete: false,
+      }),
+    ).toMatchObject({ kind: 'member_navigating', label: '導航中', disabled: true });
+  });
+
+  it('member path-plan when neither shared nor local is set', () => {
+    const flags = deriveCardNavFlags({
+      destId: 'stop-a',
+      isLeader: false,
+      sharedTargetId: null,
+      localTargetId: null,
+    });
+    expect(flags).toEqual({ flockNavigatingThis: false, localRouteThis: false });
+    expect(
+      resolveNavCommand({
+        isLeader: false,
+        personallyArrived: false,
+        ...flags,
+        pendingComplete: false,
+      }).label,
+    ).toBe('路徑規劃');
+  });
+
+  it('leader flock uses shared or pending busy target only', () => {
+    expect(
+      deriveCardNavFlags({
+        destId: 'stop-a',
+        isLeader: true,
+        sharedTargetId: 'stop-a',
+        localTargetId: null,
+      }).flockNavigatingThis,
+    ).toBe(true);
+    expect(
+      deriveCardNavFlags({
+        destId: 'stop-a',
+        isLeader: true,
+        sharedTargetId: null,
+        localTargetId: null,
+        pendingLeaderTargetId: 'stop-a',
+        journeyBusy: true,
+      }).flockNavigatingThis,
+    ).toBe(true);
+    // Local target alone must not mark flock nav for anyone.
+    expect(
+      deriveCardNavFlags({
+        destId: 'stop-a',
+        isLeader: true,
+        sharedTargetId: null,
+        localTargetId: 'stop-a',
+      }).flockNavigatingThis,
+    ).toBe(false);
+  });
+});
 
 describe('resolveNavCommand', () => {
   it('gives leaders start/stop nav only (never path-plan labels)', () => {

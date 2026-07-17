@@ -178,6 +178,12 @@ export function useJourneyNavigation({
     journeyActive,
     navTarget,
     navTargetId,
+    /** Shared flock session / legacy journey target (not member local plan). */
+    sharedTargetId: sharedTargetId ?? null,
+    /** Member local path-plan target. */
+    localTargetId,
+    /** Leader optimistic target while start is in flight. */
+    pendingLeaderTargetId,
     activePoint,
     numericDistance,
     journeyBusy,

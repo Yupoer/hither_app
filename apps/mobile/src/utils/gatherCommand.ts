@@ -38,6 +38,41 @@ export interface NavCommandResult {
 }
 
 /**
+ * Derive per-card flock vs local-route flags from shared session + local plan.
+ * MapScreen must use this so local 路徑規劃 is not misclassified as 導航中
+ * (journeyActive is true for local plans too).
+ */
+export function deriveCardNavFlags(input: {
+  destId: string;
+  isLeader: boolean;
+  /** Active shared navigation destination (session / legacy journey). */
+  sharedTargetId: string | null | undefined;
+  /** Member-only local path-plan destination. */
+  localTargetId: string | null | undefined;
+  /** Leader optimistic target while startSession is in flight. */
+  pendingLeaderTargetId?: string | null;
+  journeyBusy?: boolean;
+}): { flockNavigatingThis: boolean; localRouteThis: boolean } {
+  const {
+    destId,
+    isLeader,
+    sharedTargetId = null,
+    localTargetId = null,
+    pendingLeaderTargetId = null,
+    journeyBusy = false,
+  } = input;
+  const flockNavigatingThis =
+    sharedTargetId === destId
+    || (isLeader && journeyBusy && pendingLeaderTargetId === destId);
+  // Local plan only when this stop is the member's plan AND not the shared target.
+  const localRouteThis =
+    !isLeader
+    && localTargetId === destId
+    && sharedTargetId !== destId;
+  return { flockNavigatingThis, localRouteThis };
+}
+
+/**
  * Resolve the primary navigation/path control for one gather card.
  */
 export function resolveNavCommand(input: NavCommandInput): NavCommandResult {

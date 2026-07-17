@@ -230,10 +230,20 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain('OverflowMarquee');
     expect(mapScreen).toContain('endPauseMs={2000}');
     expect(mapScreen).toContain('resolveNavCommand');
+    expect(mapScreen).toContain('deriveCardNavFlags');
+    expect(mapScreen).toContain('sharedTargetId');
+    expect(mapScreen).toContain('localTargetId');
     expect(mapScreen).toContain('startLocalRoutePlan');
     expect(mapScreen).toContain('pendingCompleteDestIds');
     expect(mapScreen).toContain('runCompleteGatheringStop');
     expect(mapScreen).toContain('resolveCompletePrompt');
+    // Must not gate flock nav on journeyActive (true for local plans).
+    expect(mapScreen).not.toMatch(
+      /flockNavigatingThis\s*=\s*\(\s*journeyActive/,
+    );
+    // Member confirm never calls leader-only complete RPC.
+    expect(mapScreen).toContain("prompt.kind === 'member_leader_already_done'");
+    expect(mapScreen).toContain('member_leader_already_done');
     // Arrived green check is pressable for undo (anti mis-tap).
     expect(mapScreen).toContain("handleArrival(dest, user.id, false)");
     expect(mapScreen).toContain("accessibilityLabel={t('arrival.undo')}");
@@ -275,11 +285,12 @@ describe('map UI placement contracts', () => {
   });
 
   it('updates the gathering-point navigation state before the network request finishes', () => {
-    // Leader busy/optimistic + all roles when journeyActive share the flock target.
+    // Shared flock vs local plan derived from sharedTargetId / localTargetId
+    // (not journeyActive — that is true for member local plans too).
     expect(mapScreen).toContain('flockNavigatingThis');
-    expect(mapScreen).toContain(
-      '(journeyActive || (isLeader && journeyBusy)) && navTarget?.id === dest.id',
-    );
+    expect(mapScreen).toContain('deriveCardNavFlags');
+    expect(mapScreen).toContain('pendingLeaderTargetId');
+    expect(mapScreen).toContain('sharedTargetId');
   });
 
   it('reloads group state when the groups row changes so followers get journey routes', () => {
