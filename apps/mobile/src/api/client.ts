@@ -58,6 +58,7 @@ export {
   mapDestination,
   addDestination,
   deleteDestination,
+  completeGatheringStop,
   reorderDestinations,
   setDestinationMeetTime,
 } from './services/DestinationService';

@@ -218,6 +218,31 @@ describe('map UI placement contracts', () => {
     expect(roleSelect).toContain('includeProfiles: false');
   });
 
+  it('keeps create/join static and only fades in My Teams', () => {
+    expect(roleSelect).not.toContain('SlideInDown');
+    // Create/join action row is a plain View (no entering animation).
+    expect(roleSelect).toContain('<View style={styles.actionRow}>');
+    expect(roleSelect).toContain('entering={FadeIn.duration(400)}');
+    expect(roleSelect).toContain('查看我的隊伍');
+  });
+
+  it('marquees overflow collapsed titles and uses role-correct nav labels', () => {
+    expect(mapScreen).toContain('OverflowMarquee');
+    expect(mapScreen).toContain('endPauseMs={2000}');
+    expect(mapScreen).toContain('resolveNavCommand');
+    expect(mapScreen).toContain('startLocalRoutePlan');
+    expect(mapScreen).toContain('pendingCompleteDestIds');
+    expect(mapScreen).toContain('runCompleteGatheringStop');
+    expect(mapScreen).toContain('resolveCompletePrompt');
+    // Arrived green check is pressable for undo (anti mis-tap).
+    expect(mapScreen).toContain("handleArrival(dest, user.id, false)");
+    expect(mapScreen).toContain("accessibilityLabel={t('arrival.undo')}");
+    // ETA/dist sit near maps; day line above arrival progress.
+    expect(mapScreen).toContain('styles.cardMapsCol');
+    expect(mapScreen).toContain('styles.cardDayLine');
+    expect(mapScreen).toContain('styles.cardMetaRowAfterDay');
+  });
+
 
 
   it('uses a Traditional Chinese account label', () => {

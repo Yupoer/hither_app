@@ -130,6 +130,24 @@ export async function deleteDestination(
   orThrow(error);
 }
 
+/**
+ * Leader marks a gathering stop complete for the whole team:
+ * cancel nav, set closed_at, notify non-arrived members.
+ */
+export async function completeGatheringStop(
+  groupId: string,
+  destinationId: string,
+): Promise<void> {
+  if (isDemoGroup(groupId)) {
+    return;
+  }
+  const { error } = await supabase.rpc('complete_gathering_stop', {
+    p_group_id: groupId,
+    p_destination_id: destinationId,
+  });
+  orThrow(error);
+}
+
 export async function reorderDestinations(
   groupId: string,
   updates: { id: string; position: number; day: number; meetAt?: string }[],

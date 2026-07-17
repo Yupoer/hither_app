@@ -91,6 +91,14 @@ export function buildMessage(p: PushPayload): { title: string; body: string } {
         body: p.title ? `集合點：${p.title}` : "隊長新增了一個集合點",
       };
     case "journey":
+      if (p.status === "gathering_completed") {
+        return {
+          title: "集合點已完成",
+          body:
+            p.message?.trim() ||
+            "隊長已完成此卡片，將前往下一個集合點",
+        };
+      }
       return p.status === "going"
         ? { title: "出發囉", body: "隊長已開始前往集合點" }
         : { title: "暫停", body: "隊長已暫停前往集合點" };

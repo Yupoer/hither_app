@@ -16,7 +16,7 @@ import {
   getMyJoinedGroups,
   JoinedGroupInfo,
 } from '../api/client';
-import Animated, { FadeIn, SlideInDown, ZoomIn } from 'react-native-reanimated';
+import Animated, { FadeIn, ZoomIn } from 'react-native-reanimated';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RoleSelect'>;
 
@@ -122,7 +122,8 @@ export default function RoleSelectScreen({ navigation }: Props) {
         <View style={{ height: 56 }} />
 
         <View style={styles.actionArea}>
-          <Animated.View entering={SlideInDown.duration(600).springify().delay(200)} style={styles.actionRow}>
+          {/* Create / join stay fixed — no slide-up entrance. */}
+          <View style={styles.actionRow}>
             <Pressable
               onPress={() => { lightTap(); logEvent('role_select', { role: 'leader' }); navigation.navigate('Auth', { role: 'leader' }); }}
               style={({ pressed }) => [
@@ -146,20 +147,22 @@ export default function RoleSelectScreen({ navigation }: Props) {
               <Ionicons name="keypad" size={32} color="#fff" />
               <Text style={styles.actionTileText}>{t('role.join')}</Text>
             </Pressable>
-          </Animated.View>
+          </View>
 
           {reserveMyTeamsSlot && (
             <>
               <View style={styles.myTeamsSpacer} />
               {showMyTeams ? (
-                <TouchableOpacity
-                  activeOpacity={0.7}
-                  onPress={() => { lightTap(); navigation.navigate('MyTeams', { initialGroups: joinedGroups }); }}
-                  style={[styles.ctaMyTeams, { backgroundColor: 'rgba(255,255,255,0.12)' }]}
-                >
-                  <Ionicons name="people-outline" size={20} color={accent} />
-                  <Text style={styles.ctaMyTeamsText}>查看我的隊伍 ({joinedGroups.length})</Text>
-                </TouchableOpacity>
+                <Animated.View entering={FadeIn.duration(400)}>
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => { lightTap(); navigation.navigate('MyTeams', { initialGroups: joinedGroups }); }}
+                    style={[styles.ctaMyTeams, { backgroundColor: 'rgba(255,255,255,0.12)' }]}
+                  >
+                    <Ionicons name="people-outline" size={20} color={accent} />
+                    <Text style={styles.ctaMyTeamsText}>查看我的隊伍 ({joinedGroups.length})</Text>
+                  </TouchableOpacity>
+                </Animated.View>
               ) : (
                 <View style={styles.myTeamsSlot} />
               )}

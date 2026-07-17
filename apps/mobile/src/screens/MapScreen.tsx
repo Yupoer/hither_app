@@ -59,6 +59,12 @@ import KmlImportSheet from '../components/KmlImportSheet';
 import FeedbackSheet from '../components/FeedbackSheet';
 import CrookIcon from '../components/CrookIcon';
 import { HitherText } from '../components/HitherText';
+import OverflowMarquee from '../components/OverflowMarquee';
+import {
+  projectHistoryForViewer,
+  resolveCompletePrompt,
+  resolveNavCommand,
+} from '../utils/gatherCommand';
 import { useFontLayout } from '../a11y/useFontScaleBucket';
 import { useSession } from '../state/SessionContext';
 import {
@@ -131,6 +137,7 @@ import { createArrivalState, reduceArrival, type ArrivalState } from '../utils/n
 import { liquidGlass, location, notifications, type MapRegion, type PlaceResult } from '../native';
 import {
   addDestination,
+  completeGatheringStop,
   deleteDestination,
   fetchSentInvites,
   fetchVisitedWaypoints,
@@ -358,6 +365,10 @@ export default function MapScreen({ route, navigation }: Props) {
   const [optimisticDestinations, setOptimisticDestinations] = useState<Destination[] | null>(null);
   const allScopedDestinations = optimisticDestinations ?? rawDestinations;
   const [destinationArrivals, setDestinationArrivals] = useState<DestinationArrival[]>([]);
+  /** Dest ids where leader chose「先不要完成」after arriving — shows「標註完成」. */
+  const [pendingCompleteDestIds, setPendingCompleteDestIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [gatherPointRequests, setGatherPointRequests] = useState<GatherPointRequest[]>([]);
   const [resolvingGatherRequestId, setResolvingGatherRequestId] = useState<string | null>(null);
   const optimisticTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
@@ -494,7 +505,12 @@ export default function MapScreen({ route, navigation }: Props) {
   const [historyGroups, setHistoryGroups] = useState<HistoryDayGroup[]>([]);
   const loadHistory = useCallback(async () => {
     const items = await fetchVisitedWaypoints(groupId ?? undefined);
-    const named = items.map((item) => ({
+    // Same events, role-projected: members own rows; leaders see team rows.
+    const projected = projectHistoryForViewer(items, {
+      viewerId: user?.id,
+      isGroupLeader: !!isLeader,
+    });
+    const named = projected.map((item) => ({
       ...item,
       userName: members.find((member) => member.userId === item.userId)?.name,
       status: item.status ?? ('arrived' as const),
@@ -514,6 +530,7 @@ export default function MapScreen({ route, navigation }: Props) {
     group?.departureDate,
     group?.tripDays,
     user?.id,
+    isLeader,
   ]);
   useEffect(() => {
     if (overlay !== 'history') return;
@@ -764,6 +781,7 @@ export default function MapScreen({ route, navigation }: Props) {
     openInAppleMaps,
     startNavigation,
     stopNavigation,
+    startLocalRoutePlan,
   } = useJourneyNavigation({
     state,
     groupId,
@@ -1476,6 +1494,80 @@ export default function MapScreen({ route, navigation }: Props) {
     }
   }, [groupId, loadGatheringWorkflow, refresh, resolvingGatherRequestId, t]);
 
+  const runCompleteGatheringStop = useCallback(async (destination: Destination) => {
+    if (!groupId) return;
+    try {
+      await completeGatheringStop(groupId, destination.id);
+      setPendingCompleteDestIds((prev) => {
+        if (!prev.has(destination.id)) return prev;
+        const next = new Set(prev);
+        next.delete(destination.id);
+        return next;
+      });
+      await stopNavigation();
+      await refresh();
+      await loadGatheringWorkflow();
+    } catch (error) {
+      Alert.alert(
+        t('map.setFailedTitle'),
+        error instanceof Error ? error.message : t('map.setFailedMsg'),
+      );
+    }
+  }, [groupId, loadGatheringWorkflow, refresh, stopNavigation, t]);
+
+  const promptCompleteAfterArrival = useCallback((destination: Destination) => {
+    const arrivedIds = new Set(
+      destinationArrivals
+        .filter((a) => a.destinationId === destination.id)
+        .map((a) => a.userId),
+    );
+    // Self just marked arrived — include them even if workflow not yet reloaded.
+    if (user?.id) arrivedIds.add(user.id);
+    const missingMemberNames = members
+      .filter((m) => !arrivedIds.has(m.userId))
+      .map((m) => m.name || t('group.travelerFallback'));
+    const stopAlreadyComplete = !!destination.closedAt
+      || allScopedDestinations.find((d) => d.id === destination.id)?.closedAt != null;
+    const prompt = resolveCompletePrompt({
+      isLeader,
+      missingMemberNames,
+      allArrived: missingMemberNames.length === 0,
+      stopAlreadyComplete: !!stopAlreadyComplete,
+    });
+    if (prompt.kind === 'none') return;
+
+    const buttons: Array<{ text: string; onPress?: () => void; style?: 'cancel' | 'destructive' }> = [
+      {
+        text: prompt.confirmLabel,
+        onPress: () => {
+          void runCompleteGatheringStop(destination);
+        },
+      },
+    ];
+    if (prompt.deferLabel) {
+      buttons.push({
+        text: prompt.deferLabel,
+        onPress: () => {
+          setPendingCompleteDestIds((prev) => {
+            const next = new Set(prev);
+            next.add(destination.id);
+            return next;
+          });
+        },
+      });
+    }
+    buttons.push({ text: t('common.cancel'), style: 'cancel' });
+    Alert.alert(prompt.title, prompt.message, buttons);
+  }, [
+    allScopedDestinations,
+    destinationArrivals,
+    isLeader,
+    members,
+    runCompleteGatheringStop,
+    t,
+    user?.id,
+  ]);
+
   const handleArrival = useCallback((destination: Destination, targetUserId: string, arrived: boolean) => {
     const memberName = members.find((m) => m.userId === targetUserId)?.name;
     confirmAction({
@@ -1485,29 +1577,59 @@ export default function MapScreen({ route, navigation }: Props) {
       cancelLabel: t('common.cancel'),
       destructive: !arrived,
     }, () => {
-      void syncFromDatabase()
-        .then(() => setDestinationArrival(destination.id, targetUserId, arrived))
-        .then(loadGatheringWorkflow)
-        .catch((error) => Alert.alert(
-          t('arrival.failedTitle'),
-          arrivalErrorMessage(error, t),
-        ));
+      void (async () => {
+        try {
+          if (!arrived && targetUserId === user?.id) {
+            setPendingCompleteDestIds((prev) => {
+              if (!prev.has(destination.id)) return prev;
+              const next = new Set(prev);
+              next.delete(destination.id);
+              return next;
+            });
+          }
+          await syncFromDatabase();
+          await setDestinationArrival(destination.id, targetUserId, arrived);
+          await loadGatheringWorkflow();
+        } catch (error) {
+          Alert.alert(
+            t('arrival.failedTitle'),
+            arrivalErrorMessage(error, t),
+          );
+        }
+      })();
     });
-  }, [loadGatheringWorkflow, members, syncFromDatabase, t]);
+  }, [loadGatheringWorkflow, members, syncFromDatabase, t, user?.id]);
 
   const submitArrivalWithTimestamp = useCallback((
     destination: Destination,
     targetUserId: string,
     arrivedAt: string | null,
   ) => {
-    void syncFromDatabase()
-      .then(() => setDestinationArrivalAt(destination.id, targetUserId, true, arrivedAt))
-      .then(loadGatheringWorkflow)
-      .catch((error) => Alert.alert(
-        t('arrival.failedTitle'),
-        arrivalErrorMessage(error, t),
-      ));
-  }, [loadGatheringWorkflow, syncFromDatabase, t]);
+    void (async () => {
+      try {
+        // Arriving stops navigation (shared for leader, local plan for member).
+        if (navTarget?.id === destination.id) {
+          await stopNavigation();
+        }
+        await syncFromDatabase();
+        await setDestinationArrivalAt(destination.id, targetUserId, true, arrivedAt);
+        await loadGatheringWorkflow();
+        promptCompleteAfterArrival(destination);
+      } catch (error) {
+        Alert.alert(
+          t('arrival.failedTitle'),
+          arrivalErrorMessage(error, t),
+        );
+      }
+    })();
+  }, [
+    loadGatheringWorkflow,
+    navTarget?.id,
+    promptCompleteAfterArrival,
+    stopNavigation,
+    syncFromDatabase,
+    t,
+  ]);
 
   const handleSelfArrival = useCallback((destination: Destination, targetUserId: string) => {
     const leaderArrival = destinationArrivals.find((arrival) => (
@@ -2898,7 +3020,6 @@ export default function MapScreen({ route, navigation }: Props) {
               // affordance but still share the same route polyline / alts.
               const flockNavigatingThis =
                 (journeyActive || (isLeader && journeyBusy)) && navTarget?.id === dest.id;
-              const navigatingThis = isLeader && flockNavigatingThis;
               // Live countdown UI is MeetCountdown (own 1s timer). a11y uses
               // a one-shot label on each parent render — no MapScreen clock.
               const meetLabel = dest.meetAt
@@ -2959,6 +3080,18 @@ export default function MapScreen({ route, navigation }: Props) {
                 navTarget?.id === dest.id &&
                 navigationSessionState.memberState?.localStatus === 'arrived'
               );
+              // Member local route: navTarget is local-only when flock is not navigating.
+              const localRouteThis =
+                !isLeader &&
+                !flockNavigatingThis &&
+                navTarget?.id === dest.id;
+              const navCmd = resolveNavCommand({
+                isLeader,
+                personallyArrived,
+                flockNavigatingThis,
+                localRouteThis,
+                pendingComplete: pendingCompleteDestIds.has(dest.id),
+              });
               return (
                 <View
                   key={`carousel-dest-${dest.id}-${index}`}
@@ -3034,6 +3167,7 @@ export default function MapScreen({ route, navigation }: Props) {
                         {/* Collapsed / expanded swap in-tree — one shot, no Zoom / layout morph. */}
                         {cardExpanded ? (
                           <View>
+                            {/* Title + maps chip; ETA/dist hug the maps control. */}
                             <View style={styles.cardTitleRow}>
                               <Text
                                 style={[styles.cardTitle, styles.cardTitleExpanded, styles.cardTitleFlex]}
@@ -3042,19 +3176,40 @@ export default function MapScreen({ route, navigation }: Props) {
                               >
                                 {dest.title}
                               </Text>
-                              <Pressable
-                                style={styles.mapsChip}
-                                onPress={(event) => {
-                                  event.stopPropagation();
-                                  registerCardActivity(dest.id);
-                                  openInAppleMaps(dest);
-                                }}
-                                accessibilityRole="button"
-                                accessibilityLabel={t('map.openInAppleMaps')}
-                              >
-                                <Ionicons name="map" size={22} color="#fff" />
-                              </Pressable>
+                              <View style={styles.cardMapsCol}>
+                                <Pressable
+                                  style={styles.mapsChip}
+                                  onPress={(event) => {
+                                    event.stopPropagation();
+                                    registerCardActivity(dest.id);
+                                    openInAppleMaps(dest);
+                                  }}
+                                  accessibilityRole="button"
+                                  accessibilityLabel={t('map.openInAppleMaps')}
+                                >
+                                  <Ionicons name="map" size={22} color="#fff" />
+                                </Pressable>
+                                <View style={styles.cardRouteColExpanded}>
+                                  {etaLabel ? (
+                                    <Text
+                                      style={[styles.cardRouteMetaEtaExpanded, { color: glass.textSecondary }]}
+                                      numberOfLines={1}
+                                    >
+                                      {etaLabel}
+                                    </Text>
+                                  ) : null}
+                                  {distLabel ? (
+                                    <Text
+                                      style={[styles.cardRouteMetaDistExpanded, { color: accent }]}
+                                      numberOfLines={1}
+                                    >
+                                      {distLabel}
+                                    </Text>
+                                  ) : null}
+                                </View>
+                              </View>
                             </View>
+                            {/* Day line flush above arrival progress. */}
                             <Text style={styles.cardDayLine}>
                               {formatTripDayLine(
                                 dest.day || 1,
@@ -3064,7 +3219,6 @@ export default function MapScreen({ route, navigation }: Props) {
                             {myScopeId != null && (
                               <Text style={styles.cardBadge}>{t('subgroup.itineraryBadge')}</Text>
                             )}
-                            {/* Arrival sits immediately under 小隊行程 (or day line). */}
                             <View
                               style={[
                                 styles.cardMetaRow,
@@ -3089,35 +3243,15 @@ export default function MapScreen({ route, navigation }: Props) {
                                   {arrivedHere} / {totalMembers}
                                 </Text>
                               </Pressable>
-                              <View style={styles.cardRouteColExpanded}>
-                                {etaLabel ? (
-                                  <Text
-                                    style={[styles.cardRouteMetaEtaExpanded, { color: glass.textSecondary }]}
-                                    numberOfLines={1}
-                                  >
-                                    {etaLabel}
-                                  </Text>
-                                ) : null}
-                                {distLabel ? (
-                                  <Text
-                                    style={[styles.cardRouteMetaDistExpanded, { color: accent }]}
-                                    numberOfLines={1}
-                                  >
-                                    {distLabel}
-                                  </Text>
-                                ) : null}
-                              </View>
                             </View>
                           </View>
                         ) : (
                           <View style={styles.cardDenseBody}>
-                            <Text
-                              style={[styles.cardTitle, styles.cardTitleCollapsed, styles.grow]}
-                              numberOfLines={1}
-                              ellipsizeMode="tail"
-                            >
-                              {dest.title}
-                            </Text>
+                            <OverflowMarquee
+                              text={dest.title}
+                              endPauseMs={2000}
+                              style={[styles.cardTitle, styles.cardTitleCollapsed]}
+                            />
                             <View style={styles.cardCollapsedMetrics}>
                               {etaLabel ? (
                                 <Text
@@ -3149,73 +3283,78 @@ export default function MapScreen({ route, navigation }: Props) {
                         Density tracks narrow + Dynamic Type. */}
                     {cardExpanded && (
                     <View style={styles.commandRow}>
-                      <Pressable
-                        style={[
-                          styles.navBtn,
-                          navIconOnly && styles.navBtnIconOnly,
-                          navigatingThis ? styles.navBtnEnd : { backgroundColor: accent },
-                        ]}
-                        onPress={(event) => {
-                          event.stopPropagation();
-                          registerCardActivity(dest.id);
-                          // BUG-06
-                          mediumTap();
-                          if (navigatingThis) {
-                            void stopNavigation();
-                          } else if (isLeader) {
-                            // In-app journey: flock "going" state, arrival
-                            // detection, and the Live Activity all drive off
-                            // this — Apple Maps is a separate opt-in button.
-                            startNavigation(dest, index);
-                          } else {
-                            // BUG-13: follower local route plan.
-                            startNavigation(dest, index);
-                          }
-                        }}
-                        disabled={journeyBusy}
-                        accessibilityRole="button"
-                        accessibilityLabel={
-                          navigatingThis
-                            ? t('map.stopNav')
-                            : flockNavigatingThis
-                              ? t('map.directions')
-                              : isLeader
-                                ? t('map.directions')
-                                : '路徑規劃'
-                        }
-                      >
-                        <Ionicons
-                          name={
-                            navigatingThis
-                              ? 'stop'
-                              : flockNavigatingThis
-                                ? 'navigate'
-                                : isLeader
-                                  ? 'play'
-                                  : 'navigate'
-                          }
-                          size={chromeCompact ? 16 : 15}
-                          color={navigatingThis ? glass.danger : '#0c1a12'}
-                        />
-                        {!navIconOnly ? (
-                          <Text
-                            style={[
-                              styles.navBtnText,
-                              { color: navigatingThis ? glass.danger : '#0c1a12' },
-                            ]}
-                            numberOfLines={1}
-                            ellipsizeMode="tail"
-                          >
-                            {navigatingThis
-                              ? t('map.stopNav')
-                              : flockNavigatingThis
-                                ? t('map.directions')
-                                : isLeader
-                                  ? t('map.directions')
-                                  : '路徑規劃'}
-                          </Text>
-                        ) : null}
-                      </Pressable>
+                      {navCmd.kind !== 'hidden' ? (
+                        <Pressable
+                          style={[
+                            styles.navBtn,
+                            navIconOnly && styles.navBtnIconOnly,
+                            navCmd.kind === 'leader_stop' || navCmd.kind === 'member_close_plan'
+                              ? styles.navBtnEnd
+                              : navCmd.kind === 'member_navigating'
+                                ? styles.navBtnDisabled
+                                : { backgroundColor: accent },
+                          ]}
+                          onPress={(event) => {
+                            event.stopPropagation();
+                            registerCardActivity(dest.id);
+                            mediumTap();
+                            if (navCmd.action === 'stop_nav' || navCmd.action === 'close_plan') {
+                              void stopNavigation();
+                            } else if (navCmd.action === 'start_nav') {
+                              startNavigation(dest, index);
+                            } else if (navCmd.action === 'start_plan') {
+                              startLocalRoutePlan(dest, index);
+                            } else if (navCmd.action === 'mark_complete') {
+                              void runCompleteGatheringStop(dest);
+                            }
+                          }}
+                          disabled={journeyBusy || navCmd.disabled}
+                          accessibilityRole="button"
+                          accessibilityLabel={navCmd.label}
+                          accessibilityState={{ disabled: journeyBusy || navCmd.disabled }}
+                        >
+                          <Ionicons
+                            name={
+                              navCmd.kind === 'leader_stop' || navCmd.kind === 'member_close_plan'
+                                ? 'stop'
+                                : navCmd.kind === 'leader_mark_complete'
+                                  ? 'checkmark-done'
+                                  : navCmd.kind === 'member_navigating'
+                                    ? 'navigate'
+                                    : isLeader
+                                      ? 'play'
+                                      : 'navigate'
+                            }
+                            size={chromeCompact ? 16 : 15}
+                            color={
+                              navCmd.kind === 'leader_stop' || navCmd.kind === 'member_close_plan'
+                                ? glass.danger
+                                : navCmd.kind === 'member_navigating'
+                                  ? glass.textSecondary
+                                  : '#0c1a12'
+                            }
+                          />
+                          {!navIconOnly ? (
+                            <Text
+                              style={[
+                                styles.navBtnText,
+                                {
+                                  color:
+                                    navCmd.kind === 'leader_stop' || navCmd.kind === 'member_close_plan'
+                                      ? glass.danger
+                                      : navCmd.kind === 'member_navigating'
+                                        ? glass.textSecondary
+                                        : '#0c1a12',
+                                },
+                              ]}
+                              numberOfLines={1}
+                              ellipsizeMode="tail"
+                            >
+                              {navCmd.label}
+                            </Text>
+                          ) : null}
+                        </Pressable>
+                      ) : null}
 
                       <Pressable
                         style={[
@@ -3240,21 +3379,27 @@ export default function MapScreen({ route, navigation }: Props) {
                       </Pressable>
 
                       {user?.id && canMarkArrival ? personallyArrived ? (
-                        <View
+                        <Pressable
                           style={[
                             styles.cmdSquare,
                             styles.arrivalCmdSquare,
                             { backgroundColor: accentMix(glass.ok, 16), borderColor: accentMix(glass.ok, 38) },
                           ]}
-                          accessible
-                          accessibilityLabel={t('map.arriveTitle')}
+                          onPress={(event) => {
+                            event.stopPropagation();
+                            registerCardActivity(dest.id);
+                            lightTap();
+                            handleArrival(dest, user.id, false);
+                          }}
+                          accessibilityRole="button"
+                          accessibilityLabel={t('arrival.undo')}
                         >
                           <Ionicons
                             name="checkmark-circle"
                             size={chromeTight ? 18 : 20}
                             color={glass.ok}
                           />
-                        </View>
+                        </Pressable>
                       ) : (
                         <Pressable
                           style={[
@@ -4654,10 +4799,17 @@ const makeStyles = (
     // Place name — collapsed ≈1.1× base, expanded ≈1.3× base.
     cardTitleRow: {
       flexDirection: 'row',
-      alignItems: 'center',
+      alignItems: 'flex-start',
       gap: s(8, 6),
-      marginTop: s(8, 6),
+      marginTop: s(6, 4),
       minWidth: 0,
+    },
+    // Maps chip + ETA/dist stacked flush under it (expanded).
+    cardMapsCol: {
+      alignItems: 'flex-end',
+      flexShrink: 0,
+      gap: s(2, 1),
+      maxWidth: '42%',
     },
     cardDenseBody: {
       flexDirection: 'row',
@@ -4693,12 +4845,13 @@ const makeStyles = (
       fontSize: compact ? 27 : 29,
       lineHeight: s(34, 32),
     },
-    // Expanded day + calendar date under the title.
+    // Expanded day + calendar date — sits directly above arrival progress.
     cardDayLine: {
       color: glass.textSecondary,
       fontSize: 13,
       lineHeight: s(16, 15),
-      marginTop: s(2, 1),
+      marginTop: s(4, 2),
+      marginBottom: 0,
       flexShrink: 1,
     },
     cardBadge: {
@@ -4709,11 +4862,11 @@ const makeStyles = (
       lineHeight: s(14, 13),
     },
 
-    // Arrival (left) + route metrics (right). Maps chip sits above ETA when expanded.
+    // Arrival progress only (ETA/dist live under maps chip).
     cardMetaRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'space-between',
+      justifyContent: 'flex-start',
       gap: s(8, 6),
       marginTop: s(10, 8),
       minWidth: 0,
@@ -4723,17 +4876,15 @@ const makeStyles = (
       marginBottom: s(2, 0),
       alignItems: 'center',
     },
-    // Expanded meta is in the same column as day/badge — keep it flush under them.
     cardMetaRowExpanded: {
-      alignItems: 'flex-end',
+      alignItems: 'center',
     },
-    // Flush under 「小隊行程」.
+    // Flush under 「小隊行程」 / day line — minimize mid-card air.
     cardMetaRowAfterBadge: {
       marginTop: 0,
     },
-    // Under day line when there is no subgroup badge.
     cardMetaRowAfterDay: {
-      marginTop: s(1, 0),
+      marginTop: 0,
     },
     arrivalCaption: {
       flex: 1,
@@ -4765,15 +4916,15 @@ const makeStyles = (
       maxWidth: '48%',
       gap: s(2, 1),
     },
-    // Expanded: time over distance so Dynamic Type does not squeeze either value.
+    // Expanded: time over distance, tucked under maps chip.
     cardRouteColExpanded: {
       flexDirection: 'column',
       alignItems: 'flex-end',
-      justifyContent: 'flex-end',
+      justifyContent: 'flex-start',
       flexShrink: 0,
       gap: 0,
       minWidth: 0,
-      maxWidth: '55%',
+      width: '100%',
     },
     cardRouteMetaDotExpanded: {
       fontFamily: DISPLAY_FONT,
@@ -4792,7 +4943,6 @@ const makeStyles = (
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairlineStrong,
       flexShrink: 0,
-      marginLeft: 'auto',
     },
     mapsChipText: {
       fontSize: 12,
@@ -4849,7 +4999,7 @@ const makeStyles = (
       alignItems: 'stretch',
       flexWrap: 'nowrap',
       gap: cmdGap,
-      marginTop: s(8, 6),
+      marginTop: s(6, 4),
       minWidth: 0,
       width: '100%',
     },
@@ -4869,6 +5019,10 @@ const makeStyles = (
       borderColor: 'transparent',
       paddingHorizontal: compact ? s(8, 6) : s(10, 8),
       overflow: 'hidden',
+    },
+    navBtnDisabled: {
+      backgroundColor: 'rgba(255,255,255,0.12)',
+      opacity: 0.85,
     },
     // Tight density: exact square so meet keeps countdown width.
     navBtnIconOnly: {
