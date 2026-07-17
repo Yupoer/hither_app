@@ -90,11 +90,12 @@ export async function deleteDestination(
   if (isDemoGroup(groupId)) {
     return;
   }
-  const { error } = await supabase
-    .from('itinerary_items')
-    .delete()
-    .eq('id', destinationId)
-    .eq('group_id', groupId);
+  // RPC cancels any active navigation_session for this stop, then deletes.
+  // FK is ON DELETE SET NULL so historical sessions no longer block delete.
+  const { error } = await supabase.rpc('delete_destination', {
+    p_group_id: groupId,
+    p_destination_id: destinationId,
+  });
   orThrow(error);
 }
 

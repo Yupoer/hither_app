@@ -36,6 +36,7 @@ import {
   setDestinationArrival,
   setDestinationArrivalAt,
   deleteVisitedWaypoint,
+  deleteDestination,
   upsertLiveActivitySession,
   deleteLiveActivitySession,
   deleteMyLiveActivitySessions,
@@ -512,6 +513,16 @@ describe('notifications, commands & journey', () => {
     await deleteVisitedWaypoint('history-1');
     expect(remove).toHaveBeenCalledWith();
     expect(eq).toHaveBeenCalledWith('id', 'history-1');
+  });
+
+  it('deleteDestination cancels nav + deletes via RPC (not raw table delete)', async () => {
+    mockedRpc.mockResolvedValue({ data: null, error: null });
+    await deleteDestination('g1', 'destination-1');
+    expect(mockedRpc).toHaveBeenCalledWith('delete_destination', {
+      p_group_id: 'g1',
+      p_destination_id: 'destination-1',
+    });
+    expect(mockedFrom).not.toHaveBeenCalled();
   });
 
   it('returns the server cooldown when another member already requested a refresh', async () => {
