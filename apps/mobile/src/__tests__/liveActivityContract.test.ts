@@ -103,11 +103,14 @@ describe('ActivityKit remote push contract', () => {
 
   it('matches the approved black capsule information hierarchy', () => {
     expect(widget).toContain('static let card = Color.black');
-    expect(widget).toContain('前往集合點 · GATHERING AT');
+    expect(widget).toContain('前往集合點');
+    expect(widget).not.toContain('GATHERING AT');
     expect(widget).toContain('已抵達');
     expect(widget).toContain('ProgressBar');
     expect(widget).toContain('formattedDistance');
     expect(widget).toContain('etaText');
+    expect(widget).toContain('compactDuration');
+    expect(widgetAttributes).toContain('1d12hr');
   });
 
   it('dims each member from its own arrived boolean', () => {

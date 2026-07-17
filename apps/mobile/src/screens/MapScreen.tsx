@@ -38,6 +38,9 @@ import Animated, {
   interpolate,
   Extrapolation,
   withSpring,
+  FadeIn,
+  FadeOut,
+  LinearTransition,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -122,7 +125,12 @@ import {
   type TravelMode,
 } from '../utils/geo';
 import { dotWindow } from '../utils/pagination';
-import { alignMeetTimeToTripDay, minutesUntil } from '../utils/meetTime';
+import {
+  alignMeetTimeToTripDay,
+  clampDateNotBeforeToday,
+  minutesUntil,
+  startOfTodayLocal,
+} from '../utils/meetTime';
 import { locationFreshness } from '../utils/locationFreshness';
 import {
   groupHistoryByDay,
@@ -234,6 +242,22 @@ function shortEta(seconds: number): string {
   return `${Math.floor(m / 60)} hr`;
 }
 
+/** Expanded metrics: big number + small unit (e.g. 334.7 + km). */
+function splitDistanceParts(distanceM: number | null): { value: string; unit: string } {
+  if (distanceM == null) return { value: '—', unit: '' };
+  if (distanceM < 1000) return { value: String(Math.round(distanceM)), unit: 'm' };
+  return { value: (distanceM / 1000).toFixed(1), unit: 'km' };
+}
+
+/** Expanded metrics: big number + small unit (e.g. 66 + hr). */
+function splitEtaParts(seconds: number | null): { value: string; unit: string } {
+  if (seconds == null) return { value: '—', unit: '' };
+  const m = Math.round(seconds / 60);
+  if (m < 1) return { value: 'now', unit: '' };
+  if (m < 60) return { value: String(m), unit: 'min' };
+  return { value: String(Math.floor(m / 60)), unit: 'hr' };
+}
+
 /**
  * Expanded gathering-card line: "第 N 天 · M月D號" when a trip departure date
  * exists (aligned with DestinationReorderList day headers).
@@ -280,6 +304,8 @@ export default function MapScreen({ route, navigation }: Props) {
     liveActivityEnabled,
     meetRedMin,
     gatherCardDefaultExpanded,
+    gatherCardTitleMarquee,
+    gatherCardMarqueeSpeed,
     setMeetRedMin,
     setHighAccuracy,
     setSharingEnabled,
@@ -669,10 +695,11 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const persistMeetTime = useCallback(
     (destinationId: string, value: Date | null, redMin?: number) => {
+      const clamped = value ? clampDateNotBeforeToday(value) : null;
       setDestinationMeetTime(
         destinationId,
-        value ? value.toISOString() : null,
-        value ? (redMin ?? meetRedMin ?? DEFAULT_MEET_RED_MIN) : null,
+        clamped ? clamped.toISOString() : null,
+        clamped ? (redMin ?? meetRedMin ?? DEFAULT_MEET_RED_MIN) : null,
       )
         .then(() => {
           if (typeof redMin === 'number') setMeetRedMin(redMin);
@@ -686,10 +713,12 @@ export default function MapScreen({ route, navigation }: Props) {
   const openMeetTimePicker = useCallback(
     (dest: Destination) => {
       if (!canEditItinerary) return;
-      const initial = alignMeetTimeToTripDay(
-        dest.meetAt ? new Date(dest.meetAt) : new Date(),
-        group?.departureDate,
-        dest.day || 1,
+      const initial = clampDateNotBeforeToday(
+        alignMeetTimeToTripDay(
+          dest.meetAt ? new Date(dest.meetAt) : new Date(),
+          group?.departureDate,
+          dest.day || 1,
+        ),
       );
       const red =
         dest.meetRedMinutes ??
@@ -703,18 +732,20 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const openAndroidMeetDate = useCallback(() => {
     if (!meetTimeEditor) return;
+    const minDate = startOfTodayLocal();
     DateTimePickerAndroid.open({
       value: meetTimeEditor.value,
       mode: 'date',
-      minimumDate: new Date(new Date().setHours(0, 0, 0, 0)),
+      minimumDate: minDate,
       onChange: (event, selected) => {
         if (event.type !== 'set' || !selected) return;
         const next = new Date(meetTimeEditor.value);
         next.setFullYear(selected.getFullYear(), selected.getMonth(), selected.getDate());
-        setMeetTimeEditor((s) => (s ? { ...s, value: next } : s));
+        const clamped = clampDateNotBeforeToday(next);
+        setMeetTimeEditor((s) => (s ? { ...s, value: clamped } : s));
         // Chain into time picker so date+time is one flow on Android.
         DateTimePickerAndroid.open({
-          value: next,
+          value: clamped,
           mode: 'time',
           is24Hour: true,
           onChange: (timeEvent, timeSelected) => {
@@ -723,7 +754,7 @@ export default function MapScreen({ route, navigation }: Props) {
               if (!s) return s;
               const merged = new Date(s.value);
               merged.setHours(timeSelected.getHours(), timeSelected.getMinutes(), 0, 0);
-              return { ...s, value: merged };
+              return { ...s, value: clampDateNotBeforeToday(merged) };
             });
           },
         });
@@ -2085,6 +2116,8 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const handleUpdateTripDetails = useCallback(async (days: number, date: string) => {
     if (groupId) {
+       // Departure picker enforces ≥ today for new choices. Existing past
+       // departures can be re-saved unchanged so in-progress trips don't jump.
        setOptimisticTripDays(days);
        setOptimisticDepartureDate(date);
        try {
@@ -2394,10 +2427,11 @@ export default function MapScreen({ route, navigation }: Props) {
     opacity: interpolate(heightSV.value, [detents[1], detents[2]], [1, 0], Extrapolation.CLAMP),
   }));
   const atFull = detent === detents.length - 1;
-  // Peek (stage 1): leave a clear band above the sheet for locate + group
-  // capsules so tall gathering-point cards (max Dynamic Type) never cover them.
-  // Clearance tracks live font scale so layout shrinks/grows with the system.
-  const CAPSULE_CLEARANCE = fontLayout.s(64, 56);
+  // Peek (stage 1): cards may grow into the capsule band (cards paint above
+  // capsules; sheet still paints above cards). Cap height so cards don't
+  // swallow the whole map between safe top and the peek sheet.
+  // a11y-layout:carouselCapsuleClearance
+  const CAPSULE_CLEARANCE = fontLayout.s(24, 16);
   const carouselMaxHeight = Math.max(
     fontLayout.s(140, 120),
     windowHeight - detents[0] - CAPSULE_CLEARANCE - (insets.top + 8) - 8,
@@ -2998,8 +3032,8 @@ export default function MapScreen({ route, navigation }: Props) {
         );
       })()}
 
-      {/* Gathering-point carousel — top of map; height capped so stage-1
-          locate/group capsules stay clear (cards must not cover them). */}
+      {/* Gathering-point carousel — above locate/group capsules; sheet wrapper
+          zIndex is higher so the sheet covers cards on overlap. */}
       {destinations.length > 0 && (
         <Animated.View
           // a11y-layout:carouselCapsuleClearance
@@ -3066,12 +3100,15 @@ export default function MapScreen({ route, navigation }: Props) {
                     ? 'car-outline'
                     : 'bus-outline';
               // Route ETA/distance — always visible; expand only scales layout.
-              const etaLabel = routeForDestination
-                ? shortEta(routeForDestination.expectedTravelTimeSeconds)
+              const etaSeconds = routeForDestination
+                ? routeForDestination.expectedTravelTimeSeconds
                 : d != null
-                  ? shortEta(etaSecondsFor(d, travelMode))
-                  : '—';
+                  ? etaSecondsFor(d, travelMode)
+                  : null;
+              const etaLabel = etaSeconds != null ? shortEta(etaSeconds) : '—';
               const distLabel = d != null ? formatDistance(d) : '';
+              const distParts = splitDistanceParts(d);
+              const etaParts = splitEtaParts(etaSeconds);
               const cardExpanded = isCardExpanded(dest.id);
               // Progressive density (single row always):
               // - compact: narrow phone OR large Dynamic Type → smaller squares
@@ -3132,13 +3169,14 @@ export default function MapScreen({ route, navigation }: Props) {
                         />
                       </View>
                     ) : null}
-                    {/* Layout:
+                    {/* Layout (expanded):
                         kicker · dots
-                        title (large; full when expanded)
-                        day line (expanded only)
+                        title full-width
+                        day line ····· people N/M
                         小隊行程 badge (subgroup only)
-                        arrival progress ………… ETA · dist  ← flush under badge/day
-                        [導航] [移動] [集合時間]  — always 3; Maps not in this row */}
+                        📍 dist | 🚗 eta | map
+                        [導航] [移動] [抵達?] [集合倒數]
+                       Collapsed: title marquee + compact ETA·dist only. */}
                     <View style={styles.cardHead}>
                       <View style={styles.grow}>
                         <View style={styles.cardKickerRow}>
@@ -3164,84 +3202,46 @@ export default function MapScreen({ route, navigation }: Props) {
                             })()}
                           </Text>
                           {destinations.length > 1 && (
-                            <View style={styles.dots}>
+                            <Animated.View
+                              style={styles.dots}
+                              layout={LinearTransition.duration(160)}
+                            >
                               {dotWindow(destinations.length, selectedIndex, DOTS_MAX_VISIBLE).map(
                                 (i2) => (
-                                  <View
+                                  <Animated.View
                                     key={`dot-${destinations[i2]?.id || i2}-${i2}`}
+                                    entering={FadeIn.duration(160)}
+                                    exiting={FadeOut.duration(160)}
+                                    layout={LinearTransition.springify()
+                                      .damping(28)
+                                      .stiffness(240)
+                                      .mass(0.85)}
                                     style={[styles.dot, i2 === selectedIndex && styles.dotActive]}
                                   />
                                 ),
                               )}
-                            </View>
+                            </Animated.View>
                           )}
                         </View>
                         {/* Collapsed / expanded swap in-tree — one shot, no Zoom / layout morph. */}
                         {cardExpanded ? (
                           <View>
-                            {/* Title + maps chip; ETA/dist hug the maps control. */}
-                            <View style={styles.cardTitleRow}>
-                              <Text
-                                style={[styles.cardTitle, styles.cardTitleExpanded, styles.cardTitleFlex]}
-                                numberOfLines={3}
-                                ellipsizeMode="tail"
-                              >
-                                {dest.title}
-                              </Text>
-                              <View style={styles.cardMapsCol}>
-                                <Pressable
-                                  style={styles.mapsChip}
-                                  onPress={(event) => {
-                                    event.stopPropagation();
-                                    registerCardActivity(dest.id);
-                                    openInAppleMaps(dest);
-                                  }}
-                                  accessibilityRole="button"
-                                  accessibilityLabel={t('map.openInAppleMaps')}
-                                >
-                                  <Ionicons name="map" size={22} color="#fff" />
-                                </Pressable>
-                                <View style={styles.cardRouteColExpanded}>
-                                  {etaLabel ? (
-                                    <Text
-                                      style={[styles.cardRouteMetaEtaExpanded, { color: glass.textSecondary }]}
-                                      numberOfLines={1}
-                                    >
-                                      {etaLabel}
-                                    </Text>
-                                  ) : null}
-                                  {distLabel ? (
-                                    <Text
-                                      style={[styles.cardRouteMetaDistExpanded, { color: accent }]}
-                                      numberOfLines={1}
-                                    >
-                                      {distLabel}
-                                    </Text>
-                                  ) : null}
-                                </View>
-                              </View>
-                            </View>
-                            {/* Day line flush above arrival progress. */}
-                            <Text style={styles.cardDayLine}>
-                              {formatTripDayLine(
-                                dest.day || 1,
-                                optimisticDepartureDate ?? group?.departureDate,
-                              )}
-                            </Text>
-                            {myScopeId != null && (
-                              <Text style={styles.cardBadge}>{t('subgroup.itineraryBadge')}</Text>
-                            )}
-                            <View
-                              style={[
-                                styles.cardMetaRow,
-                                styles.cardMetaRowExpanded,
-                                myScopeId != null
-                                  ? styles.cardMetaRowAfterBadge
-                                  : styles.cardMetaRowAfterDay,
-                              ]}
+                            <Text
+                              style={[styles.cardTitle, styles.cardTitleExpanded]}
+                              numberOfLines={3}
+                              ellipsizeMode="tail"
                             >
+                              {dest.title}
+                            </Text>
+                            <View style={styles.cardSubRow}>
+                              <Text style={styles.cardDayLine} numberOfLines={1}>
+                                {formatTripDayLine(
+                                  dest.day || 1,
+                                  optimisticDepartureDate ?? group?.departureDate,
+                                )}
+                              </Text>
                               <Pressable
-                                style={styles.arrivalCaption}
+                                style={styles.arrivalPeopleChip}
                                 disabled={!isLeader}
                                 onPress={(event) => {
                                   event.stopPropagation();
@@ -3249,11 +3249,110 @@ export default function MapScreen({ route, navigation }: Props) {
                                   setArrivalDestination(dest);
                                   setOverlay('arrival');
                                 }}
+                                accessibilityRole="button"
+                                accessibilityLabel={`${t('map.arrivalProgress')} ${arrivedHere}/${totalMembers}`}
                               >
-                                <Text style={styles.arrivalCaptionLabel}>{t('map.arrivalProgress')}</Text>
-                                <Text style={[styles.arrivalCaptionValue, { color: accent }]}>
-                                  {arrivedHere} / {totalMembers}
+                                <Ionicons name="people-outline" size={16} color={accent} />
+                                <Text style={[styles.arrivalPeopleValue, { color: accent }]}>
+                                  {arrivedHere}/{totalMembers}
                                 </Text>
+                              </Pressable>
+                            </View>
+                            {myScopeId != null && (
+                              <Text style={styles.cardBadge}>{t('subgroup.itineraryBadge')}</Text>
+                            )}
+                            <View style={styles.metricsRow}>
+                              <View style={styles.metricCol}>
+                                <View style={styles.metricValueRow}>
+                                  <Ionicons name="location" size={chromeCompact ? 16 : 18} color={accent} />
+                                  <View style={styles.metricNumUnit}>
+                                    <Text
+                                      style={[styles.metricValue, { color: accent }]}
+                                      numberOfLines={1}
+                                      adjustsFontSizeToFit
+                                      minimumFontScale={0.85}
+                                      maxFontSizeMultiplier={1.15}
+                                    >
+                                      {distParts.value}
+                                    </Text>
+                                    {distParts.unit ? (
+                                      <Text
+                                        style={[styles.metricUnit, { color: accent }]}
+                                        numberOfLines={1}
+                                        maxFontSizeMultiplier={1.15}
+                                      >
+                                        {distParts.unit}
+                                      </Text>
+                                    ) : null}
+                                  </View>
+                                </View>
+                                <Text
+                                  style={styles.metricCaption}
+                                  numberOfLines={2}
+                                  maxFontSizeMultiplier={1.15}
+                                >
+                                  {t('map.distanceToGather')}
+                                </Text>
+                              </View>
+                              <View style={styles.metricDivider} />
+                              <View style={styles.metricCol}>
+                                <View style={styles.metricValueRow}>
+                                  <Ionicons
+                                    name={
+                                      travelMode === 'walk'
+                                        ? 'walk'
+                                        : travelMode === 'drive'
+                                          ? 'car'
+                                          : 'bus'
+                                    }
+                                    size={chromeCompact ? 14 : 16}
+                                    color={accent}
+                                  />
+                                  <View style={styles.metricNumUnit}>
+                                    <Text
+                                      style={[styles.metricValue, { color: accent }]}
+                                      numberOfLines={1}
+                                      adjustsFontSizeToFit
+                                      minimumFontScale={0.85}
+                                      maxFontSizeMultiplier={1.15}
+                                    >
+                                      {etaParts.value}
+                                    </Text>
+                                    {etaParts.unit ? (
+                                      <Text
+                                        style={[styles.metricUnit, { color: accent }]}
+                                        numberOfLines={1}
+                                        maxFontSizeMultiplier={1.15}
+                                      >
+                                        {etaParts.unit}
+                                      </Text>
+                                    ) : null}
+                                  </View>
+                                </View>
+                                <Text
+                                  style={styles.metricCaption}
+                                  numberOfLines={2}
+                                  maxFontSizeMultiplier={1.15}
+                                >
+                                  {travelMode === 'walk'
+                                    ? t('map.etaWalk')
+                                    : travelMode === 'transit'
+                                      ? t('map.etaTransit')
+                                      : t('map.etaDrive')}
+                                </Text>
+                              </View>
+                              <View style={styles.metricDivider} />
+                              <Pressable
+                                style={styles.mapsChip}
+                                onPress={(event) => {
+                                  event.stopPropagation();
+                                  registerCardActivity(dest.id);
+                                  openInAppleMaps(dest);
+                                }}
+                                accessibilityRole="button"
+                                accessibilityLabel={t('map.openInAppleMaps')}
+                              >
+                                <Ionicons name="map" size={22} color="#fff" />
                               </Pressable>
                             </View>
                           </View>
@@ -3261,8 +3360,15 @@ export default function MapScreen({ route, navigation }: Props) {
                           <View style={styles.cardDenseBody}>
                             <OverflowMarquee
                               text={dest.title}
-                              endPauseMs={2000}
-                              style={[styles.cardTitle, styles.cardTitleCollapsed]}
+                              enabled={gatherCardTitleMarquee}
+                              active={active}
+                              activationDelayMs={1600}
+                              pixelsPerSecond={gatherCardMarqueeSpeed}
+                              startPauseMs={1000}
+                              endPauseMs={1500}
+                              // Single stable style object (not an inline array) so
+                              // MapScreen re-renders do not thrash marquee measure.
+                              style={styles.cardTitleCollapsed}
                             />
                             <View style={styles.cardCollapsedMetrics}>
                               {etaLabel ? (
@@ -3290,8 +3396,8 @@ export default function MapScreen({ route, navigation }: Props) {
                       </View>
                     </View>
 
-                    {/* a11y-layout:commandRow — always one row, always 4 controls.
-                        Apple Maps lives above ETA/dist when expanded (not here).
+                    {/* a11y-layout:commandRow — always one row.
+                        Maps lives in the metrics row when expanded.
                         Density tracks narrow + Dynamic Type. */}
                     {cardExpanded && (
                     <View style={styles.commandRow}>
@@ -3451,41 +3557,61 @@ export default function MapScreen({ route, navigation }: Props) {
                             : t('meetTime.set')
                         }
                       >
-                        <Ionicons
-                          name="time-outline"
-                          size={chromeTight ? 16 : chromeCompact ? 17 : 18}
-                          color={meetLabel ? accent : glass.textSecondary}
-                        />
-                        {dest.meetAt ? (
-                          <MeetCountdown
-                            meetAtIso={dest.meetAt as string}
-                            redWithinMin={
-                              dest.meetRedMinutes ?? meetRedMin ?? DEFAULT_MEET_RED_MIN
-                            }
-                            redColor={glass.danger}
-                            baseStyle={[
-                              chromeTight
-                                ? styles.meetBtnLabelTight
-                                : chromeCompact
-                                  ? styles.meetBtnLabelCompact
-                                  : styles.meetBtnLabel,
-                              { color: accent },
-                            ]}
-                          />
-                        ) : (
+                        <View style={styles.meetBtnStack}>
+                          <View style={styles.meetBtnTimeRow}>
+                            <Ionicons
+                              name="time-outline"
+                              size={chromeTight ? 14 : chromeCompact ? 15 : 16}
+                              color={meetLabel ? accent : glass.textSecondary}
+                            />
+                            {dest.meetAt ? (
+                              <MeetCountdown
+                                meetAtIso={dest.meetAt as string}
+                                redWithinMin={
+                                  dest.meetRedMinutes ?? meetRedMin ?? DEFAULT_MEET_RED_MIN
+                                }
+                                redColor={glass.danger}
+                                variant="minutes"
+                                formatMinutes={(minutes) =>
+                                  t('map.meetMinutes', { minutes })
+                                }
+                                adjustsFontSizeToFit
+                                minimumFontScale={0.7}
+                                baseStyle={[
+                                  chromeTight
+                                    ? styles.meetBtnLabelTight
+                                    : chromeCompact
+                                      ? styles.meetBtnLabelCompact
+                                      : styles.meetBtnLabel,
+                                  { color: accent },
+                                ]}
+                              />
+                            ) : (
+                              <Text
+                                style={
+                                  chromeTight
+                                    ? styles.meetBtnLabelTight
+                                    : chromeCompact
+                                      ? styles.meetBtnLabelCompact
+                                      : styles.meetBtnLabel
+                                }
+                                numberOfLines={1}
+                                adjustsFontSizeToFit
+                                minimumFontScale={0.7}
+                              >
+                                ——
+                              </Text>
+                            )}
+                          </View>
                           <Text
-                            style={
-                              chromeTight
-                                ? styles.meetBtnLabelTight
-                                : chromeCompact
-                                  ? styles.meetBtnLabelCompact
-                                  : styles.meetBtnLabel
-                            }
+                            style={styles.meetBtnCaption}
                             numberOfLines={1}
+                            adjustsFontSizeToFit
+                            minimumFontScale={0.8}
                           >
-                            ——
+                            {t('map.meetCountdown')}
                           </Text>
-                        )}
+                        </View>
                       </Pressable>
                     </View>
                     )}
@@ -3501,8 +3627,17 @@ export default function MapScreen({ route, navigation }: Props) {
       {/* Straggler alerts fire as a native OS notification (see the effect
           above) — no in-app banner, so they don't cover the map. */}
       {/* The pull-up sheet — hidden while the add-gather-point confirm card
-          owns the screen (search bar + recenter capsule disappear). */}
-      <Animated.View style={[StyleSheet.absoluteFill, confirmCardReady && styles.sheetHidden]} pointerEvents={confirmCardReady ? 'none' : 'box-none'}>
+          owns the screen (search bar + recenter capsule disappear).
+          Wrapper zIndex must beat carousel (58): child BottomSheet zIndex alone
+          cannot win against a sibling with higher zIndex. */}
+      <Animated.View
+        style={[
+          StyleSheet.absoluteFill,
+          styles.sheetLayer,
+          confirmCardReady && styles.sheetHidden,
+        ]}
+        pointerEvents={confirmCardReady ? 'none' : 'box-none'}
+      >
       <BottomSheet
         height={heightSV}
         detents={detents}
@@ -4140,10 +4275,12 @@ export default function MapScreen({ route, navigation }: Props) {
                   mode="datetime"
                   display="spinner"
                   minuteInterval={1}
-                  minimumDate={new Date(new Date().setHours(0, 0, 0, 0))}
+                  minimumDate={startOfTodayLocal()}
                   onChange={(_event, selected) =>
                     selected &&
-                    setMeetTimeEditor((s) => (s ? { ...s, value: selected } : s))
+                    setMeetTimeEditor((s) =>
+                      s ? { ...s, value: clampDateNotBeforeToday(selected) } : s,
+                    )
                   }
                 />
               </View>
@@ -4212,7 +4349,12 @@ function GatheringCardPressable({
   accessibilityHint: string;
   children: React.ReactNode;
 }) {
+  // Guard against double-fire (expand then instant collapse) from a single gesture.
+  const lastPressAtRef = useRef(0);
   const handlePress = useCallback(() => {
+    const now = Date.now();
+    if (now - lastPressAtRef.current < 300) return;
+    lastPressAtRef.current = now;
     rigidTap();
     onToggle();
   }, [onToggle]);
@@ -4665,6 +4807,13 @@ const makeStyles = (
   // Meet grows with free width; min leaves room for countdown digits.
   // Collapsed 3-btn row gets more meet width than expanded 4-btn.
   const meetMinW = tight ? s(72, 64) : compact ? s(84, 76) : s(104, 92);
+  // Expanded metric numerals — drop size under large Dynamic Type / Bold so
+  // distance + ETA never clip inside the two metric columns.
+  // Caption floor stays ≥11 so 「距離集合點」「預估步行」 never go microscopic.
+  const metricNumSize = tight ? 18 : compact ? 22 : 28;
+  const metricUnitSize = tight ? 11 : compact ? 12 : 14;
+  const metricCaptionSize = tight ? 11 : compact ? 11 : 12;
+  const mapsChipSize = tight ? s(44, 40) : compact ? s(48, 44) : s(52, 48);
   const defs = {
     flex: { flex: 1, backgroundColor: '#0c1118' },
     loading: {
@@ -4734,10 +4883,9 @@ const makeStyles = (
     roleDot: { width: 8, height: 8, borderRadius: 4 },
     roleWord: { fontSize: 14, fontWeight: '600', color: '#fff' },
 
-    // Capsules sit above the carousel (z) and in the reserved band under
-    // carouselMaxHeight so stage-1 cards never cover locate / group chrome.
+    // Stack (low → high): capsules (50) < gathering cards (58) < sheet layer (70).
     // Fully-rounded pill (width/2) holding fit-all + locate stacked.
-    recenter: { position: 'absolute', right: 14, zIndex: 62 },
+    recenter: { position: 'absolute', right: 14, zIndex: 50 },
     recenterCapsule: {
       width: 50,
       borderRadius: 25,
@@ -4751,16 +4899,21 @@ const makeStyles = (
     teamCapsuleWrap: {
       position: 'absolute',
       left: 14,
-      zIndex: 62,
+      zIndex: 50,
     },
 
-    // a11y-layout:carouselCapsuleClearance — below capsules; maxHeight set inline.
+    // a11y-layout:carouselCapsuleClearance — cards above capsules; maxHeight inline.
+    // Must stay below sheetLayer (70).
     carouselWrap: {
       position: 'absolute',
       left: 0,
       right: 0,
-      zIndex: 50,
-      overflow: 'hidden',
+      zIndex: 58,
+      overflow: 'visible',
+    },
+    // Parent of BottomSheet — zIndex on this sibling beats carousel 58.
+    sheetLayer: {
+      zIndex: 70,
     },
     // Gathering-point card — padding / radius / gaps track live font scale.
     // overflow hidden clips glass radius; command row must flex so buttons
@@ -4786,7 +4939,7 @@ const makeStyles = (
       zIndex: 2,
     },
     arrivalHairlineFill: { height: '100%' },
-    // kicker → title → (day) → (小隊行程) → meta (arrival | ETA) flush under badge.
+    // kicker → title → day+people → metrics → command row.
     cardHead: {
       flexDirection: 'row',
       alignItems: 'flex-start',
@@ -4808,27 +4961,14 @@ const makeStyles = (
       minWidth: 0,
       lineHeight: s(15, 13),
     },
-    // Place name — collapsed ≈1.1× base, expanded ≈1.3× base.
-    cardTitleRow: {
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-      gap: s(8, 6),
-      marginTop: s(6, 4),
-      minWidth: 0,
-    },
-    // Maps chip + ETA/dist stacked flush under it (expanded).
-    cardMapsCol: {
-      alignItems: 'flex-end',
-      flexShrink: 0,
-      gap: s(2, 1),
-      maxWidth: '42%',
-    },
     cardDenseBody: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: s(10, 8),
       marginTop: s(8, 6),
       minWidth: 0,
+      width: '100%',
+      overflow: 'hidden',
     },
     cardCollapsedMetrics: {
       flexDirection: 'row',
@@ -4844,27 +4984,53 @@ const makeStyles = (
       lineHeight: s(28, 26),
       flexShrink: 1,
     },
+    // Full title style for collapsed marquee (single object — not merged at call site).
     cardTitleCollapsed: {
+      fontFamily: DISPLAY_FONT,
       fontSize: compact ? 20 : 22,
+      color: '#fff',
       lineHeight: s(26, 24),
       marginBottom: s(2, 1),
-    },
-    cardTitleFlex: {
-      flex: 1,
-      minWidth: 0,
+      flexShrink: 0,
     },
     cardTitleExpanded: {
       fontSize: compact ? 27 : 29,
       lineHeight: s(34, 32),
+      marginTop: s(6, 4),
     },
-    // Expanded day + calendar date — sits directly above arrival progress.
+    // Expanded: day line left · people N/M right-aligned.
+    cardSubRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: s(8, 6),
+      marginTop: s(2, 1),
+      minWidth: 0,
+    },
     cardDayLine: {
       color: glass.textSecondary,
       fontSize: 13,
       lineHeight: s(16, 15),
-      marginTop: s(4, 2),
+      marginTop: 0,
       marginBottom: 0,
+      flex: 1,
       flexShrink: 1,
+      minWidth: 0,
+    },
+    arrivalPeopleChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'flex-end',
+      gap: s(4, 3),
+      flexShrink: 0,
+      marginLeft: s(8, 6),
+    },
+    arrivalPeopleValue: {
+      fontFamily: DISPLAY_FONT,
+      fontSize: 15,
+      fontVariant: ['tabular-nums'],
+      fontWeight: '700',
+      lineHeight: s(18, 16),
     },
     cardBadge: {
       color: glass.textSecondary,
@@ -4874,144 +5040,122 @@ const makeStyles = (
       lineHeight: s(14, 13),
     },
 
-    // Arrival progress only (ETA/dist live under maps chip).
-    cardMetaRow: {
+    // Expanded metrics: 📍 dist | 🚗 eta | map — numbers large, units small, centered.
+    metricsRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'flex-start',
       gap: s(8, 6),
-      marginTop: s(10, 8),
-      minWidth: 0,
-    },
-    cardMetaRowCollapsed: {
-      marginTop: s(2, 1),
-      marginBottom: s(2, 0),
-      alignItems: 'center',
-    },
-    cardMetaRowExpanded: {
-      alignItems: 'center',
-    },
-    // Flush under 「小隊行程」 / day line — minimize mid-card air.
-    cardMetaRowAfterBadge: {
-      marginTop: 0,
-    },
-    cardMetaRowAfterDay: {
-      marginTop: 0,
-    },
-    arrivalCaption: {
-      flex: 1,
-      flexDirection: 'row',
-      alignItems: 'center',
-      flexWrap: 'wrap',
-      gap: s(6, 4),
-      minWidth: 0,
-      paddingLeft: 0,
-    },
-    arrivalCaptionLabel: {
-      fontSize: 12,
-      color: glass.textSecondary,
-      flexShrink: 1,
-      lineHeight: s(16, 14),
-    },
-    arrivalCaptionValue: {
-      fontFamily: DISPLAY_FONT,
-      fontSize: 13,
-      fontVariant: ['tabular-nums'],
-      flexShrink: 0,
-      lineHeight: s(16, 14),
-    },
-    cardRouteCol: {
-      alignItems: 'flex-end',
-      justifyContent: 'flex-end',
-      flexShrink: 0,
-      minWidth: s(88, 72),
-      maxWidth: '48%',
-      gap: s(2, 1),
-    },
-    // Expanded: time over distance, tucked under maps chip.
-    cardRouteColExpanded: {
-      flexDirection: 'column',
-      alignItems: 'flex-end',
-      justifyContent: 'flex-start',
-      flexShrink: 0,
-      gap: 0,
+      marginTop: s(8, 6),
       minWidth: 0,
       width: '100%',
     },
-    cardRouteMetaDotExpanded: {
-      fontFamily: DISPLAY_FONT,
-      fontSize: compact ? 20 : 22,
-      color: glass.textTertiary,
-      lineHeight: s(26, 24),
+    metricCol: {
+      flex: 1,
+      minWidth: s(64, 56),
+      alignItems: 'center',
+      gap: s(3, 2),
     },
-    // Apple Maps — expanded only: larger square control next to title.
-    mapsChip: {
-      width: s(48, 44),
-      height: s(48, 44),
-      borderRadius: s(14, 12),
+    metricValueRow: {
+      flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: 'rgba(255,255,255,0.12)',
+      gap: s(3, 2),
+      minWidth: 0,
+      width: '100%',
+    },
+    metricNumUnit: {
+      flexDirection: 'row',
+      alignItems: 'baseline',
+      gap: s(3, 2),
+      minWidth: 0,
+      flexShrink: 1,
+    },
+    metricValue: {
+      fontFamily: DISPLAY_FONT,
+      fontSize: metricNumSize,
+      fontVariant: ['tabular-nums'],
+      fontWeight: '700',
+      lineHeight: Math.round(metricNumSize * 1.15),
+      flexShrink: 1,
+      minWidth: 0,
+      includeFontPadding: false,
+    },
+    metricUnit: {
+      fontFamily: DISPLAY_FONT,
+      fontSize: metricUnitSize,
+      fontVariant: ['tabular-nums'],
+      fontWeight: '600',
+      lineHeight: Math.round(metricUnitSize * 1.25),
+      flexShrink: 0,
+      includeFontPadding: false,
+      opacity: 0.9,
+    },
+    metricCaption: {
+      fontSize: metricCaptionSize,
+      color: glass.textSecondary,
+      lineHeight: Math.round(metricCaptionSize * 1.3),
+      textAlign: 'center',
+      alignSelf: 'stretch',
+      width: '100%',
+    },
+    metricDivider: {
+      width: StyleSheet.hairlineWidth,
+      alignSelf: 'stretch',
+      backgroundColor: glass.hairlineStrong,
+      marginVertical: s(2, 1),
+    },
+    cardRouteMetaDotExpanded: {
+      fontFamily: DISPLAY_FONT,
+      fontSize: compact ? 18 : 20,
+      color: glass.textTertiary,
+      lineHeight: s(24, 22),
+    },
+    // Apple Maps — expanded metrics row square.
+    mapsChip: {
+      width: mapsChipSize,
+      height: mapsChipSize,
+      borderRadius: s(16, 14),
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(255,255,255,0.10)',
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairlineStrong,
       flexShrink: 0,
+      marginLeft: s(2, 0),
     },
-    mapsChipText: {
-      fontSize: 12,
-      fontWeight: '600',
-      color: glass.textSecondary,
-    },
-    // Collapsed ≈1.1×; expanded time/title 1.3×. Distance base stays moderate.
+    // Collapsed route meta — may shrink under large Dynamic Type so digits stay visible.
     cardRouteMetaEta: {
       fontFamily: DISPLAY_FONT,
-      fontSize: compact ? 18 : 20,
+      fontSize: tight ? 14 : compact ? 16 : 20,
       fontVariant: ['tabular-nums'],
       fontWeight: '600',
-      flexShrink: 0,
-      lineHeight: s(20, 18),
+      flexShrink: 1,
+      minWidth: 0,
+      lineHeight: tight ? s(18, 16) : compact ? s(20, 18) : s(22, 20),
       textAlign: 'right',
       includeFontPadding: false,
     },
     cardRouteMetaDist: {
       fontFamily: DISPLAY_FONT,
-      fontSize: compact ? 20 : 22,
+      fontSize: tight ? 15 : compact ? 18 : 22,
       fontVariant: ['tabular-nums'],
       fontWeight: '700',
-      flexShrink: 0,
-      lineHeight: s(24, 22),
+      flexShrink: 1,
+      minWidth: 0,
+      lineHeight: tight ? s(18, 16) : compact ? s(22, 20) : s(24, 22),
       textAlign: 'right',
       includeFontPadding: false,
       marginTop: -1,
     },
-    cardRouteMetaEtaExpanded: {
-      fontFamily: DISPLAY_FONT,
-      fontSize: compact ? 23 : 26,
-      fontVariant: ['tabular-nums'],
-      fontWeight: '600',
-      flexShrink: 0,
-      lineHeight: s(28, 26),
-      textAlign: 'right',
-      includeFontPadding: false,
-    },
-    cardRouteMetaDistExpanded: {
-      fontFamily: DISPLAY_FONT,
-      fontSize: compact ? 26 : 30,
-      fontVariant: ['tabular-nums'],
-      fontWeight: '700',
-      flexShrink: 0,
-      lineHeight: s(32, 30),
-      textAlign: 'right',
-      includeFontPadding: false,
-    },
 
     // a11y-layout:commandRow — single row always; density via cmdSize/labels.
-    // Every control ≥ cmdSize×cmdSize. Mode/maps exact squares; nav/meet grow.
+    // Mode exact square; nav/meet grow. Meet may grow taller than cmdSize under large type.
     commandRow: {
       flexDirection: 'row',
       alignItems: 'stretch',
       flexWrap: 'nowrap',
       gap: cmdGap,
-      marginTop: s(6, 4),
+      marginTop: s(12, 8),
       minWidth: 0,
       width: '100%',
     },
@@ -5021,7 +5165,6 @@ const makeStyles = (
       flexBasis: 0,
       minWidth: cmdSize,
       minHeight: cmdSize,
-      height: cmdSize,
       borderRadius: s(15, 12),
       flexDirection: 'row',
       alignItems: 'center',
@@ -5054,13 +5197,13 @@ const makeStyles = (
       flexShrink: 1,
       minWidth: 0,
     },
-    // Exact square secondary controls (travel mode, Apple-Maps when expanded).
+    // Exact square secondary controls (travel mode). minHeight only so row can
+    // stretch when meet grows taller under large Dynamic Type.
     cmdSquare: {
       width: cmdSize,
-      height: cmdSize,
       minWidth: cmdSize,
-      minHeight: cmdSize,
       maxWidth: cmdSize,
+      minHeight: cmdSize,
       flexGrow: 0,
       flexShrink: 0,
       borderRadius: s(15, 12),
@@ -5071,46 +5214,62 @@ const makeStyles = (
       borderColor: glass.hairline,
       overflow: 'hidden',
     },
-    // Meet-time — square-tall; flex-grows so countdown scales with free width.
+    // Meet-time — flex-grows; minHeight floor only (no fixed height) so
+    // countdown +「集合倒數」never clip under large/bold system type.
     meetBtn: {
-      flexGrow: 1.15,
+      flexGrow: 1.35,
       flexShrink: 1,
       flexBasis: 0,
       minWidth: meetMinW,
       minHeight: cmdSize,
-      height: cmdSize,
       borderRadius: s(15, 12),
-      flexDirection: 'row',
+      flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
-      gap: s(6, 4),
+      gap: 0,
       backgroundColor: 'rgba(255,255,255,0.09)',
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairline,
       paddingHorizontal: compact ? s(8, 6) : s(10, 8),
-      overflow: 'hidden',
+      paddingVertical: s(6, 4),
+      overflow: 'visible',
+    },
+    meetBtnStack: {
+      flexShrink: 1,
+      minWidth: 0,
+      maxWidth: '100%',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    meetBtnTimeRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: s(4, 3),
+      minWidth: 0,
+      maxWidth: '100%',
+    },
+    meetBtnCaption: {
+      fontSize: tight ? 9 : 10,
+      fontWeight: '600',
+      color: glass.textSecondary,
+      lineHeight: tight ? s(11, 10) : s(12, 11),
+      marginTop: 1,
+      textAlign: 'center',
+      width: '100%',
     },
     meetBtnLabel: {
       fontFamily: DISPLAY_FONT,
-      fontSize: 17,
+      fontSize: tight ? 13 : compact ? 14 : 16,
       fontWeight: '700',
       color: glass.textSecondary,
       fontVariant: ['tabular-nums'],
       flexShrink: 1,
       minWidth: 0,
       maxWidth: '100%',
+      textAlign: 'center',
     },
     meetBtnLabelCompact: {
-      fontFamily: DISPLAY_FONT,
-      fontSize: 15,
-      fontWeight: '700',
-      color: glass.textSecondary,
-      fontVariant: ['tabular-nums'],
-      flexShrink: 1,
-      minWidth: 0,
-      maxWidth: '100%',
-    },
-    meetBtnLabelTight: {
       fontFamily: DISPLAY_FONT,
       fontSize: 13,
       fontWeight: '700',
@@ -5119,6 +5278,18 @@ const makeStyles = (
       flexShrink: 1,
       minWidth: 0,
       maxWidth: '100%',
+      textAlign: 'center',
+    },
+    meetBtnLabelTight: {
+      fontFamily: DISPLAY_FONT,
+      fontSize: 12,
+      fontWeight: '700',
+      color: glass.textSecondary,
+      fontVariant: ['tabular-nums'],
+      flexShrink: 1,
+      minWidth: 0,
+      maxWidth: '100%',
+      textAlign: 'center',
     },
 
     // Add-gather-point confirm card — follower-nav layout, extra-round corners.
@@ -5637,6 +5808,21 @@ const makeStyles = (
       fontWeight: '500',
       lineHeight: 16,
       flexShrink: 1,
+    },
+    marqueeSpeedBlock: {
+      paddingHorizontal: 4,
+      paddingTop: 4,
+      paddingBottom: 12,
+      marginBottom: 4,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: 'rgba(255,255,255,0.08)',
+      gap: 6,
+    },
+    marqueeSpeedLabels: { gap: 2 },
+    marqueeSpeedEnds: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
     },
     refreshLocationsButton: {
       width: 44,

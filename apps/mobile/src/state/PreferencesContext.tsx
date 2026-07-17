@@ -50,6 +50,18 @@ const LIVE_ACTIVITY_KEY = 'pref.liveActivity';
 const MEET_RED_KEY = 'pref.meetRedMin';
 const DAY_COLORS_KEY = 'pref.dayColors';
 const GATHER_CARD_DEFAULT_EXPANDED_KEY = 'pref.gatherCardDefaultExpanded';
+const GATHER_CARD_TITLE_MARQUEE_KEY = 'pref.gatherCardTitleMarquee';
+const GATHER_CARD_MARQUEE_SPEED_KEY = 'pref.gatherCardMarqueeSpeed';
+
+/** Marquee scroll speed (px/s). Same constant speed for every gathering title. */
+export const MARQUEE_SPEED_MIN = 20;
+export const MARQUEE_SPEED_MAX = 80;
+export const DEFAULT_MARQUEE_SPEED = 40;
+
+export function clampMarqueeSpeed(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_MARQUEE_SPEED;
+  return Math.min(MARQUEE_SPEED_MAX, Math.max(MARQUEE_SPEED_MIN, Math.round(value)));
+}
 
 /** Minutes-remaining at which the meet-time countdown turns red. */
 export const MEET_RED_OPTIONS = [3, 5, 10] as const;
@@ -74,6 +86,10 @@ interface PreferencesValue {
   dayColors: Record<number, string>;
   /** Default gathering-card density on this device. */
   gatherCardDefaultExpanded: boolean;
+  /** Scroll long collapsed gathering-card titles. Default on. */
+  gatherCardTitleMarquee: boolean;
+  /** Constant marquee speed in px/s (20–80). Default 40. */
+  gatherCardMarqueeSpeed: number;
   /** True once the persisted preferences have been loaded from storage. */
   ready: boolean;
   setLanguage: (language: Language) => void;
@@ -86,6 +102,8 @@ interface PreferencesValue {
   setMeetRedMin: (min: number) => void;
   setDayColor: (day: number, color: string) => void;
   setGatherCardDefaultExpanded: (expanded: boolean) => void;
+  setGatherCardTitleMarquee: (on: boolean) => void;
+  setGatherCardMarqueeSpeed: (pxPerSec: number) => void;
 }
 
 const PreferencesContext = createContext<PreferencesValue | undefined>(undefined);
@@ -119,6 +137,10 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [meetRedMin, setMeetRedMinState] = useState<number>(DEFAULT_MEET_RED_MIN);
   const [dayColors, setDayColorsState] = useState<Record<number, string>>({});
   const [gatherCardDefaultExpanded, setGatherCardDefaultExpandedState] = useState(false);
+  // Default on: long collapsed titles marquee unless the user opts out.
+  const [gatherCardTitleMarquee, setGatherCardTitleMarqueeState] = useState(true);
+  const [gatherCardMarqueeSpeed, setGatherCardMarqueeSpeedState] =
+    useState(DEFAULT_MARQUEE_SPEED);
   const [ready, setReady] = useState(false);
 
   // Restore persisted preferences on launch.
@@ -138,6 +160,8 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
           storedMeetRed,
           storedDayColors,
           storedGatherCardDefaultExpanded,
+          storedGatherCardTitleMarquee,
+          storedGatherCardMarqueeSpeed,
         ] = await AsyncStorage.multiGet([
           LANGUAGE_KEY,
           THEME_KEY,
@@ -150,6 +174,8 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
           MEET_RED_KEY,
           DAY_COLORS_KEY,
           GATHER_CARD_DEFAULT_EXPANDED_KEY,
+          GATHER_CARD_TITLE_MARQUEE_KEY,
+          GATHER_CARD_MARQUEE_SPEED_KEY,
         ]);
         if (!active) return;
         if (isLanguage(storedLang[1])) setLanguageState(storedLang[1]);
@@ -182,6 +208,18 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         }
         if (storedGatherCardDefaultExpanded[1] === 'true') {
           setGatherCardDefaultExpandedState(true);
+        }
+        // Default on; only override when the user has explicitly stored a value.
+        if (storedGatherCardTitleMarquee[1] === 'false') {
+          setGatherCardTitleMarqueeState(false);
+        } else if (storedGatherCardTitleMarquee[1] === 'true') {
+          setGatherCardTitleMarqueeState(true);
+        }
+        if (storedGatherCardMarqueeSpeed[1] != null) {
+          const speed = Number(storedGatherCardMarqueeSpeed[1]);
+          if (Number.isFinite(speed)) {
+            setGatherCardMarqueeSpeedState(clampMarqueeSpeed(speed));
+          }
         }
       } finally {
         if (active) setReady(true);
@@ -248,6 +286,21 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     );
   }, []);
 
+  const setGatherCardTitleMarquee = useCallback((on: boolean) => {
+    const next = Boolean(on);
+    setGatherCardTitleMarqueeState(next);
+    void AsyncStorage.setItem(
+      GATHER_CARD_TITLE_MARQUEE_KEY,
+      next ? 'true' : 'false',
+    );
+  }, []);
+
+  const setGatherCardMarqueeSpeed = useCallback((pxPerSec: number) => {
+    const next = clampMarqueeSpeed(pxPerSec);
+    setGatherCardMarqueeSpeedState(next);
+    void AsyncStorage.setItem(GATHER_CARD_MARQUEE_SPEED_KEY, String(next));
+  }, []);
+
   const value = useMemo<PreferencesValue>(
     () => ({
       language,
@@ -260,6 +313,8 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       meetRedMin,
       dayColors,
       gatherCardDefaultExpanded,
+      gatherCardTitleMarquee,
+      gatherCardMarqueeSpeed,
       ready,
       setLanguage,
       setThemeName,
@@ -271,6 +326,8 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       setMeetRedMin,
       setDayColor,
       setGatherCardDefaultExpanded,
+      setGatherCardTitleMarquee,
+      setGatherCardMarqueeSpeed,
     }),
     [
       language,
@@ -283,6 +340,8 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       meetRedMin,
       dayColors,
       gatherCardDefaultExpanded,
+      gatherCardTitleMarquee,
+      gatherCardMarqueeSpeed,
       ready,
       setLanguage,
       setThemeName,
@@ -294,6 +353,8 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       setMeetRedMin,
       setDayColor,
       setGatherCardDefaultExpanded,
+      setGatherCardTitleMarquee,
+      setGatherCardMarqueeSpeed,
     ],
   );
 

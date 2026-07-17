@@ -18,6 +18,7 @@ import { radius, spacing, DAY_COLORS, type Palette } from '../theme';
 import { readOnboardingState } from '../onboarding/sync';
 import { usePreferences } from '../state/PreferencesContext';
 import { resolveVisibleStartDay } from '../utils/tripDay';
+import { clampDateNotBeforeToday, startOfTodayLocal } from '../utils/meetTime';
 
 const ROW_HEIGHT = 56;
 const REVEAL_WIDTH = 76;
@@ -346,8 +347,9 @@ export default function DestinationReorderList({
                      value={editDate}
                      mode="date"
                      display="default"
+                     minimumDate={startOfTodayLocal()}
                      onChange={(e, date) => {
-                         if (date) setEditDate(date);
+                         if (date) setEditDate(clampDateNotBeforeToday(date));
                      }}
                   />
                </View>
@@ -369,7 +371,21 @@ export default function DestinationReorderList({
                   </Pressable>
                   <Pressable onPress={() => {
                       setShowSettings(false);
-                      onUpdateTripDetails(editDays, editDate.toISOString());
+                      // New picks are clamped to ≥ today; an already-past trip
+                      // start is kept if the user never changed the date.
+                      const min = startOfTodayLocal();
+                      const existing = departureDate ? new Date(departureDate) : null;
+                      const unchangedPast =
+                        existing &&
+                        !Number.isNaN(existing.getTime()) &&
+                        editDate.getFullYear() === existing.getFullYear() &&
+                        editDate.getMonth() === existing.getMonth() &&
+                        editDate.getDate() === existing.getDate() &&
+                        editDate.getTime() < min.getTime();
+                      const toSave = unchangedPast
+                        ? existing
+                        : clampDateNotBeforeToday(editDate);
+                      onUpdateTripDetails(editDays, toSave.toISOString());
                   }} style={[styles.modalActionBtn, { backgroundColor: colors.accent }]}>
                      <Text style={[styles.modalActionText, { color: '#fff' }]}>儲存</Text>
                   </Pressable>

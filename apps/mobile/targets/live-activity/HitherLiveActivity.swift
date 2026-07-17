@@ -5,11 +5,11 @@ import WidgetKit
 // Live Activity UI: the lock-screen banner + Dynamic Island presentations for
 // the group "heading to gathering point" journey. Styled after the Hither
 // "Gather Card" redesign — a dark glass surface, the shepherd-crook brand mark,
-// the transit glyph, "前往集合點 · GATHERING AT" + ETA, a flock progress bar and
-// member-emoji avatars. The accent follows the app's active theme (passed as
-// `accentHex` in the state); everything else reads from the same live stop as
-// the in-app gather card. Data comes from `HitherGroupAttributes` (started /
-// updated by the app's HitherLiveActivity module); this target only draws it.
+// the transit glyph, "前往集合點" + ETA, a flock progress bar and member-emoji
+// avatars. The accent follows the app's active theme (passed as `accentHex` in
+// the state); everything else reads from the same live stop as the in-app
+// gather card. Data comes from `HitherGroupAttributes` (started / updated by
+// the app's HitherLiveActivity module); this target only draws it.
 
 // MARK: - Brand
 
@@ -100,7 +100,7 @@ struct HitherLiveActivityWidget: Widget {
         DynamicIslandExpandedRegion(.trailing) {
           VStack(alignment: .trailing, spacing: 0) {
             if let eta = context.state.etaText {
-              Text("\(eta.value) \(eta.unit)")
+              Text(eta.unit.isEmpty ? eta.value : "\(eta.value) \(eta.unit)")
                 .font(.system(size: 22, weight: .bold))
                 .foregroundStyle(Brand.textPrimary)
               if let d = context.state.formattedDistance {
@@ -111,7 +111,7 @@ struct HitherLiveActivityWidget: Widget {
         }
         DynamicIslandExpandedRegion(.center) {
           VStack(alignment: .leading, spacing: 2) {
-            Text("前往集合點 · GATHERING AT")
+            Text("前往集合點")
               .font(.system(size: 11, weight: .bold))
               .tracking(0.6)
               .foregroundStyle(accent)
@@ -177,7 +177,7 @@ private struct LockScreenView: View {
           HStack(spacing: 5) {
             Image(systemName: context.state.modeSymbol)
               .font(.system(size: 10, weight: .bold))
-            Text("前往集合點 · GATHERING AT")
+            Text("前往集合點")
           }
           .font(.system(size: 10.5, weight: .bold))
           .tracking(0.45)
@@ -190,7 +190,7 @@ private struct LockScreenView: View {
         Spacer(minLength: 6)
         if let eta = context.state.etaText {
           VStack(alignment: .trailing, spacing: 1) {
-            Text("\(eta.value) \(eta.unit)")
+            Text(eta.unit.isEmpty ? eta.value : "\(eta.value) \(eta.unit)")
               .font(.system(size: 22, weight: .bold))
               .foregroundStyle(Brand.textPrimary)
             if let distance = context.state.formattedDistance {
@@ -308,24 +308,23 @@ private extension HitherGroupAttributes.ContentState {
     return (0..<count).map { arrived.indices.contains($0) && arrived[$0] }
   }
 
-  /// Compact ETA for the narrow Dynamic Island regions ("4 min", "now", "2 hr").
+  /// Compact ETA for the narrow Dynamic Island regions ("4 min", "now", "1d12hr").
   var shortEta: String? {
     guard let s = etaSeconds else { return nil }
-    let m = Int((s / 60).rounded())
-    if m < 1 { return "now" }
-    if m < 60 { return "\(m) min" }
-    return "\(m / 60) hr"
+    return HitherGroupAttributes.ContentState.compactDuration(fromSeconds: s)
   }
 
-  /// Big number + small unit for the hero ETA block ("12" / "min").
+  /// Hero ETA block: under 1h keeps value+unit ("12" / "min"); longer is a
+  /// single compact string in value with empty unit ("1hr30", "1d12hr").
   var etaText: (value: String, unit: String)? {
     guard let s = etaSeconds else { return nil }
     let m = Int((s / 60).rounded())
     if m < 1 { return (value: "<1", unit: "min") }
     if m < 60 { return (value: "\(m)", unit: "min") }
-    let h = m / 60
-    let mm = m % 60
-    return mm == 0 ? (value: "\(h)", unit: "hr") : (value: "\(h):\(String(format: "%02d", mm))", unit: "hr")
+    return (
+      value: HitherGroupAttributes.ContentState.compactDuration(fromMinutes: m),
+      unit: ""
+    )
   }
 
   /// Progress clamped to 0...1, defaulting to 0 when unknown.

@@ -53,3 +53,32 @@ export function formatDistance(distanceM: number): string {
   }
   return `${(distanceM / 1000).toFixed(1)} km`;
 }
+
+/**
+ * Compact duration from whole minutes (≥60):
+ * 90 → "1hr30", 300 → "5hr", 2160 → "1d12hr".
+ * Day scale drops remaining minutes (25h30 → "1d1hr").
+ */
+export function formatCompactDurationFromMinutes(minutes: number): string {
+  const m = Math.max(0, Math.floor(minutes));
+  if (m < 60) return `${m}min`;
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  if (h < 24) {
+    return mm === 0 ? `${h}hr` : `${h}hr${mm}`;
+  }
+  const d = Math.floor(h / 24);
+  const rh = h % 24;
+  return rh === 0 ? `${d}d` : `${d}d${rh}hr`;
+}
+
+/**
+ * Short ETA for cards / flock rows / Live Activity parity:
+ * "now", "12 min", "1hr30", "5hr", "1d12hr".
+ */
+export function formatShortEta(seconds: number): string {
+  const m = Math.round(seconds / 60);
+  if (m < 1) return 'now';
+  if (m < 60) return `${m} min`;
+  return formatCompactDurationFromMinutes(m);
+}

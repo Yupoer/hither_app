@@ -102,16 +102,19 @@ describe('Dynamic Type contract', () => {
     expect(mapScreen).toContain('formatTripDayLine');
     expect(mapScreen).toContain('cardDayLine');
     expect(mapScreen).toContain('optimisticDepartureDate ?? group?.departureDate');
-    // Title hero; ETA/dist stack vertically beside arrival progress.
-    expect(mapScreen).toContain('cardRouteMeta');
-    expect(mapScreen).toContain('cardMetaRow');
-    expect(mapScreen).toMatch(/cardRouteColExpanded:\s*\{[\s\S]*?flexDirection:\s*'column'/);
-    // Expanded: arrival progress sits directly under 小隊行程 badge.
-    expect(mapScreen).toContain('cardMetaRowAfterBadge');
+    // Expanded mock layout: day + people chip, metrics row (dist | eta | map).
+    expect(mapScreen).toContain('cardSubRow');
+    expect(mapScreen).toContain('arrivalPeopleChip');
+    expect(mapScreen).toContain('metricsRow');
+    expect(mapScreen).toContain('metricValue');
+    expect(mapScreen).toContain("map.distanceToGather");
+    expect(mapScreen).toContain("map.etaDrive");
+    expect(mapScreen).toContain("map.meetCountdown");
     expect(mapScreen).toContain("subgroup.itineraryBadge");
     expect(mapScreen).toContain('a11y-layout:commandRowCompact');
     expect(mapScreen).toContain('meetBtn');
-    // Apple Maps only after expand, above ETA/dist (not in the 3-button row).
+    expect(mapScreen).toContain('meetBtnStack');
+    // Apple Maps only after expand, in metrics row (not in the command row).
     expect(mapScreen).toContain('mapsChip');
     expect(mapScreen).toMatch(/cardExpanded\s*\?\s*\([\s\S]*?openInAppleMaps/);
     // Card padding is scale/density-aware (horizontal pad + top/bottom).
@@ -127,18 +130,35 @@ describe('Dynamic Type contract', () => {
     expect(mapScreen).toContain('inviteRowStacked');
   });
 
-  it('keeps stage-1 locate capsules clear of the gathering-point carousel', () => {
+  it('stacks gathering cards above capsules and below the sheet layer', () => {
     expect(mapScreen).toContain('a11y-layout:carouselCapsuleClearance');
     expect(mapScreen).toContain('carouselMaxHeight');
     expect(mapScreen).toContain('CAPSULE_CLEARANCE');
-    // Capsules must paint above the carousel.
-    expect(mapScreen).toMatch(/recenter:\s*\{[^}]*zIndex:\s*62/);
-    expect(mapScreen).toMatch(/teamCapsuleWrap:\s*\{[^}]*zIndex:\s*62/s);
-    expect(mapScreen).toMatch(/carouselWrap:\s*\{[^}]*zIndex:\s*50/s);
+    // cards (58) > capsules (50); sheet wrapper sibling must beat carousel.
+    expect(mapScreen).toMatch(/carouselWrap:\s*\{[\s\S]*?zIndex:\s*58/);
+    expect(mapScreen).toMatch(/recenter:\s*\{[^}]*zIndex:\s*50/);
+    expect(mapScreen).toMatch(/teamCapsuleWrap:\s*\{[\s\S]*?zIndex:\s*50/);
+    expect(mapScreen).toMatch(/sheetLayer:\s*\{[\s\S]*?zIndex:\s*70/);
+    // No permanent black fog strip under the carousel.
+    expect(mapScreen).not.toContain('carouselFog');
     // Command row density follows device/font — never multi-row / never detent.
     expect(mapScreen).toContain('a11y-layout:commandRowCompact');
     expect(mapScreen).not.toMatch(/stacked\s*=/);
     expect(mapScreen).not.toMatch(/detent\s*>\s*0\s*&&/);
+  });
+
+  it('lets meet countdown grow instead of clipping under large Dynamic Type', () => {
+    expect(mapScreen).toMatch(/meetBtn:\s*\{[\s\S]*?minHeight:\s*cmdSize/);
+    expect(mapScreen).toMatch(/meetBtn:\s*\{[\s\S]*?overflow:\s*'visible'/);
+    // Fixed height would clip 集合倒數 under bold/large type.
+    expect(mapScreen).not.toMatch(/meetBtn:\s*\{[\s\S]*?height:\s*cmdSize/);
+    expect(mapScreen).toContain('metricNumSize');
+    expect(mapScreen).toContain('adjustsFontSizeToFit');
+    // Metric values must not shrink to unreadable; captions wrap + floor size.
+    expect(mapScreen).toContain('minimumFontScale={0.85}');
+    expect(mapScreen).not.toContain('minimumFontScale={0.65}');
+    expect(mapScreen).toMatch(/metricCaption[\s\S]{0,80}numberOfLines=\{2\}/);
+    expect(mapScreen).toMatch(/const metricCaptionSize = tight \? 11/);
   });
 
   it('clamps font scale for layout and maps buckets under the global cap', () => {
