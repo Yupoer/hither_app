@@ -8,5 +8,6 @@ class HitherMetricsModule : Module() {
     Name("HitherMetrics")
     AsyncFunction("drainPayloads") { emptyList<Map<String, Any>>() }
     AsyncFunction("removePayloads") { _: List<String> -> Unit }
+    AsyncFunction("samplePerformance") { _: Double -> emptyMap<String, Any?>() }
   }
 }

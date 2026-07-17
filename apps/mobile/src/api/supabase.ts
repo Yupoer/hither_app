@@ -2,6 +2,7 @@
 import 'react-native-url-polyfill/auto';
 import * as SecureStore from 'expo-secure-store';
 import { createClient } from '@supabase/supabase-js';
+import { withSupabasePerformanceTracing } from './instrumentedSupabase';
 
 /**
  * 單例 Supabase client，RN 端直連（不經 Vapor，Vapor 已退役）。
@@ -35,7 +36,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+export const baseSupabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     storage: ExpoSecureStoreAdapter,
     autoRefreshToken: true,
@@ -43,3 +44,5 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: false,
   },
 });
+
+export const supabase = withSupabasePerformanceTracing(baseSupabase);

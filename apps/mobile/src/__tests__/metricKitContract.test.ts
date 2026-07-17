@@ -38,6 +38,7 @@ describe('MetricKit native spool contract', () => {
     expect(app).toContain('metrics.drainPayloads()');
     expect(app).toContain('uploadMetricPayload');
     expect(app).toContain('metrics.removePayloads(acknowledgedIds)');
-    expect(app).toContain("event: 'metric_payload_received'");
+    expect(app).toContain("errorCode: 'metric_upload_failed'");
+    expect(app).not.toContain("event: 'metric_payload_received'");
   });
 });
