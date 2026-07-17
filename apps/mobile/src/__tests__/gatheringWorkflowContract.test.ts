@@ -113,6 +113,17 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(mapScreen).toContain('handleDeleteHistory');
   });
 
+  it('projects history as own-or-leader and completes stops for the whole team', () => {
+    expect(migrations).toContain('visited_waypoints: select own or leader');
+    expect(migrations).toContain('complete_gathering_stop');
+    expect(client).toContain('completeGatheringStop');
+    expect(mapScreen).toContain('projectHistoryForViewer');
+    expect(mapScreen).toContain('completeGatheringStop');
+    expect(mapScreen).toContain('標註完成');
+    expect(pushMessages).toContain('gathering_completed');
+    expect(pushMessages).toContain('隊長已完成此卡片');
+  });
+
   it('fans quick commands to the whole group and names the sender', () => {
     expect(pushIndex).toContain('wholeGroupCommand');
     expect(pushIndex).toContain('senderName');

@@ -20,12 +20,23 @@ interface UseDeviceLocationParams {
   highAccuracy: boolean;
 }
 
+const OUTBOX_FLUSH_DELAY_MS = 5_000;
+
 export function useDeviceLocation({ groupId, highAccuracy }: UseDeviceLocationParams) {
   const [deviceCoords, setDeviceCoords] = useState<Coordinates | null>(null);
   const [deviceAccuracyM, setDeviceAccuracyM] = useState<number | null>(null);
   const [appState, setAppState] = useState<AppStateStatus>(AppState.currentState);
   const uiGateRef = useRef<LocationGateState>({ lastCoords: null, lastAtMs: 0 });
   const uploadGateRef = useRef<LocationGateState>({ lastCoords: null, lastAtMs: 0 });
+  const outboxFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const scheduleOutboxFlush = useCallback(() => {
+    if (outboxFlushTimerRef.current) return;
+    outboxFlushTimerRef.current = setTimeout(() => {
+      outboxFlushTimerRef.current = null;
+      void flushLocationOutbox().catch(() => undefined);
+    }, OUTBOX_FLUSH_DELAY_MS);
+  }, []);
 
   const refreshDeviceLocation = useCallback(async (): Promise<Coordinates | null> => {
     // Manual refresh bypasses gates — force one-shot fix + upload.
@@ -92,27 +103,31 @@ export function useDeviceLocation({ groupId, highAccuracy }: UseDeviceLocationPa
           groupId &&
           shouldUploadSample(coords, now, uploadGateRef.current, policy)
         ) {
-          void enqueueLocationOutbox({
-            groupId,
-            coordinates: coords,
-            capturedAt: sample.timestamp,
-          })
-            .then(() => flushLocationOutbox())
-            .then(() => {
-              uploadGateRef.current = { lastCoords: coords, lastAtMs: now };
-            })
-            .catch(() => undefined);
+              void enqueueLocationOutbox({
+                groupId,
+                coordinates: coords,
+                capturedAt: sample.timestamp,
+              })
+                .then(() => {
+                  uploadGateRef.current = { lastCoords: coords, lastAtMs: now };
+                  scheduleOutboxFlush();
+                })
+                .catch(() => undefined);
         }
       }, highAccuracy)
       .then((unsub: () => void) => {
         if (cancelled) unsub();
         else stop = unsub;
       });
-    return () => {
-      cancelled = true;
-      stop();
-    };
-  }, [appState, groupId, highAccuracy]);
+        return () => {
+          cancelled = true;
+          if (outboxFlushTimerRef.current) {
+            clearTimeout(outboxFlushTimerRef.current);
+            outboxFlushTimerRef.current = null;
+          }
+          stop();
+        };
+  }, [appState, groupId, highAccuracy, scheduleOutboxFlush]);
 
   return {
     deviceCoords,

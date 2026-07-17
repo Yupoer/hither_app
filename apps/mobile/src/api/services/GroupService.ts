@@ -4,9 +4,11 @@
  * Extracted from the monolithic client.ts for maintainability. Every export is
  * re-exported from `../client.ts` so existing imports stay unchanged.
  */
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../supabase';
 import { avatarForUser } from '../../constants/avatars';
 import { memberColor } from '../../glass';
+import { mergeAvatarProfiles } from '../../utils/gatherCommand';
 import {
   demoSetJourneyStatus,
   demoSetJourneyTarget,
@@ -310,6 +312,33 @@ export type GetMyJoinedGroupsOptions = {
 let joinedGroupsCache: JoinedGroupInfo[] | null = null;
 let joinedGroupsCacheUserId: string | null = null;
 
+/** Disk cache of avatar emoji/color per group — survives cold start. */
+export function joinedGroupAvatarsKey(userId: string): string {
+  return `@hither/joined-group-avatars:${userId}`;
+}
+
+type AvatarDiskCache = Record<string, { avatar?: string; avatarColor?: string }[]>;
+
+async function readAvatarDiskCache(userId: string): Promise<AvatarDiskCache> {
+  try {
+    const raw = await AsyncStorage.getItem(joinedGroupAvatarsKey(userId));
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object') return {};
+    return parsed as AvatarDiskCache;
+  } catch {
+    return {};
+  }
+}
+
+async function writeAvatarDiskCache(userId: string, cache: AvatarDiskCache): Promise<void> {
+  try {
+    await AsyncStorage.setItem(joinedGroupAvatarsKey(userId), JSON.stringify(cache));
+  } catch {
+    // Best-effort; cold-start black avatars are recoverable on next full fetch.
+  }
+}
+
 export function getCachedMyJoinedGroups(userId: string | undefined | null): JoinedGroupInfo[] | null {
   if (!userId || userId !== joinedGroupsCacheUserId) return null;
   return joinedGroupsCache;
@@ -378,6 +407,8 @@ export async function getMyJoinedGroups(
   }
 
   const membersByGroup = new Map<string, { avatar?: string; avatarColor?: string }[]>();
+  const diskAvatars = await readAvatarDiskCache(uid);
+
   // RoleSelect skips profiles (one less round-trip); MyTeams keeps avatars.
   if (includeProfiles && members.length > 0) {
     const userIdsToFetch = Array.from(new Set(members.map((m) => m.user_id)));
@@ -395,14 +426,28 @@ export async function getMyJoinedGroups(
         avatarColor: p?.avatar_color || memberColor(m.user_id),
       });
     }
+    // Persist full avatars for next cold start / lite RoleSelect paint.
+    const nextDisk: AvatarDiskCache = { ...diskAvatars };
+    for (const [gid, profiles] of membersByGroup) {
+      nextDisk[gid] = profiles;
+    }
+    void writeAvatarDiskCache(uid, nextDisk);
   }
 
-  const list = groups.map((g) => ({
-    group: mapGroup(g as GroupRow),
-    memberCount: memberCounts.get(g.id) ?? 1,
-    role: roleByGroup.get(g.id) ?? ('follower' as MemberRole),
-    memberProfiles: membersByGroup.get(g.id) ?? [],
-  }));
+  const list = groups.map((g) => {
+    const live = membersByGroup.get(g.id) ?? [];
+    const cached = diskAvatars[g.id];
+    // Lite fetch (no profiles): paint from disk cache so icons are not blank.
+    const memberProfiles = includeProfiles
+      ? live
+      : mergeAvatarProfiles(live, cached);
+    return {
+      group: mapGroup(g as GroupRow),
+      memberCount: memberCounts.get(g.id) ?? 1,
+      role: roleByGroup.get(g.id) ?? ('follower' as MemberRole),
+      memberProfiles,
+    };
+  });
 
   return rememberJoinedGroups(uid, list);
 }
