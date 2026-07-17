@@ -61,6 +61,7 @@ import CrookIcon from '../components/CrookIcon';
 import { HitherText } from '../components/HitherText';
 import OverflowMarquee from '../components/OverflowMarquee';
 import {
+  deriveCardNavFlags,
   projectHistoryForViewer,
   resolveCompletePrompt,
   resolveNavCommand,
@@ -775,6 +776,9 @@ export default function MapScreen({ route, navigation }: Props) {
     journeyActive,
     navTarget,
     navTargetId,
+    sharedTargetId,
+    localTargetId,
+    pendingLeaderTargetId,
     activePoint,
     numericDistance,
     journeyBusy,
@@ -1540,6 +1544,12 @@ export default function MapScreen({ route, navigation }: Props) {
       {
         text: prompt.confirmLabel,
         onPress: () => {
+          // Leader RPC only — members already have arrival/history; just refresh.
+          if (prompt.kind === 'member_leader_already_done') {
+            void refresh();
+            void loadGatheringWorkflow();
+            return;
+          }
           void runCompleteGatheringStop(destination);
         },
       },
@@ -1562,7 +1572,9 @@ export default function MapScreen({ route, navigation }: Props) {
     allScopedDestinations,
     destinationArrivals,
     isLeader,
+    loadGatheringWorkflow,
     members,
+    refresh,
     runCompleteGatheringStop,
     t,
     user?.id,
@@ -3015,11 +3027,16 @@ export default function MapScreen({ route, navigation }: Props) {
               const routeForDestination = activePoint?.id === dest.id ? selfRoute : null;
               const d = routeForDestination?.distanceMeters
                 ?? (fromCoords ? distanceMeters(fromCoords, dest.coordinates) : null);
-              // This card is the stop the flock is actively navigating to.
-              // Leader button flips to "end navigation"; followers keep plan
-              // affordance but still share the same route polyline / alts.
-              const flockNavigatingThis =
-                (journeyActive || (isLeader && journeyBusy)) && navTarget?.id === dest.id;
+              // Shared flock vs member local plan — must not use journeyActive
+              // (true for localTargetId too) or 路徑規劃 becomes 導航中.
+              const { flockNavigatingThis, localRouteThis } = deriveCardNavFlags({
+                destId: dest.id,
+                isLeader,
+                sharedTargetId,
+                localTargetId,
+                pendingLeaderTargetId,
+                journeyBusy,
+              });
               // Live countdown UI is MeetCountdown (own 1s timer). a11y uses
               // a one-shot label on each parent render — no MapScreen clock.
               const meetLabel = dest.meetAt
@@ -3080,11 +3097,6 @@ export default function MapScreen({ route, navigation }: Props) {
                 navTarget?.id === dest.id &&
                 navigationSessionState.memberState?.localStatus === 'arrived'
               );
-              // Member local route: navTarget is local-only when flock is not navigating.
-              const localRouteThis =
-                !isLeader &&
-                !flockNavigatingThis &&
-                navTarget?.id === dest.id;
               const navCmd = resolveNavCommand({
                 isLeader,
                 personallyArrived,
