@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const migration = readFileSync(
-  join(__dirname, '../../../../supabase/migrations/20260717140000_performance_tracing.sql'),
+  join(__dirname, '../../../../supabase/migrations/20260717050721_performance_tracing.sql'),
   'utf8',
 ).toLowerCase();
 
