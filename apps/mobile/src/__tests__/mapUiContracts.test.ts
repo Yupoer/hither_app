@@ -140,6 +140,15 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain('styles.cardCollapsedMetrics');
   });
 
+  it('sheet next-stop summary uses ordered first active stop, not activePoint/card', () => {
+    expect(mapScreen).toContain('nextOrderedDestination(destinations)');
+    expect(mapScreen).toContain('const nextStopTitle = nextStop?.title');
+    expect(mapScreen).not.toContain('activePoint?.title ?? destinations[0]?.title');
+    expect(mapScreen).toContain('filterActiveDestinations');
+    expect(mapScreen).toContain('resolveAddDay');
+    expect(mapScreen).toContain('mergeHistoryWithPastStops');
+  });
+
   it('avoids Zoom enter/exit on gathering-card body (no shrink-then-pop)', () => {
     expect(mapScreen).not.toContain('ZoomIn');
     expect(mapScreen).not.toContain('ZoomOut');

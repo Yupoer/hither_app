@@ -56,29 +56,60 @@ export async function addDestination(
     demoAddDestination({ ...input, subgroupId });
     return;
   }
+  const targetDay = Math.max(1, input.day ?? 1);
   let scopedQuery = supabase
     .from('itinerary_items')
-    .select('position')
+    .select('id, position, day')
     .eq('group_id', groupId);
   scopedQuery = subgroupId
     ? scopedQuery.eq('subgroup_id', subgroupId)
     : scopedQuery.is('subgroup_id', null);
-  const { data: maxRow, error: maxError } = await scopedQuery
-    .order('position', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  orThrow(maxError);
+  const { data: rows, error: listError } = await scopedQuery.order('position', {
+    ascending: true,
+  });
+  orThrow(listError);
 
-  const maxPosition = maxRow?.position ?? -1;
+  const existing = ((rows ?? []) as { id: string; position: number; day: number }[]).map(
+    (row) => ({
+      id: row.id,
+      order: row.position,
+      day: row.day ?? 1,
+    }),
+  );
+
+  // Inline append plan (keep service free of utils import cycles in tests).
+  const sameDay = existing.filter((d) => d.day === targetDay);
+  let insertPosition: number;
+  if (sameDay.length > 0) {
+    insertPosition = Math.max(...sameDay.map((d) => d.order)) + 1;
+  } else {
+    const earlier = existing.filter((d) => d.day < targetDay);
+    insertPosition =
+      earlier.length > 0 ? Math.max(...earlier.map((d) => d.order)) + 1 : 0;
+  }
+
+  // Shift later rows high→low so positions never collide mid-update.
+  const toShift = existing
+    .filter((d) => d.order >= insertPosition)
+    .sort((a, b) => b.order - a.order);
+  for (const row of toShift) {
+    const { error: shiftError } = await supabase
+      .from('itinerary_items')
+      .update({ position: row.order + 1 })
+      .eq('id', row.id)
+      .eq('group_id', groupId);
+    orThrow(shiftError);
+  }
+
   const { error } = await supabase.from('itinerary_items').insert({
     group_id: groupId,
     subgroup_id: subgroupId ?? null,
     title: input.title,
     address: input.address ?? null,
-    day: input.day ?? 1,
+    day: targetDay,
     latitude: input.coordinates.latitude,
     longitude: input.coordinates.longitude,
-    position: maxPosition + 1,
+    position: insertPosition,
   });
   orThrow(error);
 }

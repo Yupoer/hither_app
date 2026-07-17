@@ -17,6 +17,7 @@ import type { Destination } from '../types';
 import { radius, spacing, DAY_COLORS, type Palette } from '../theme';
 import { readOnboardingState } from '../onboarding/sync';
 import { usePreferences } from '../state/PreferencesContext';
+import { resolveVisibleStartDay } from '../utils/tripDay';
 
 const ROW_HEIGHT = 56;
 const REVEAL_WIDTH = 76;
@@ -109,25 +110,52 @@ export default function DestinationReorderList({
     if (!draggingRef.current) {
       const nextOrder: ListItem[] = [];
       const days = Math.max(1, tripDays || 1);
-      
-      const sortedDests = [...destinations].sort((a, b) => a.order - b.order);
-      
-      for (let d = 1; d <= days; d++) {
-        let dateStr = '';
-        if (departureDate) {
-           const dateObj = new Date(departureDate);
-           dateObj.setDate(dateObj.getDate() + (d - 1));
-           dateStr = `${dateObj.getMonth() + 1}月${dateObj.getDate()}號`;
-        }
-        nextOrder.push({ type: 'header', day: d, id: `header-${d}`, title: `第 ${d} 天`, dateStr });
-        const dayDests = sortedDests.filter(dest => (dest.day || 1) === d);
-        for (const dest of dayDests) {
-          nextOrder.push({ type: 'dest', item: dest, id: dest.id });
+      // Past trip days are hidden from the active itinerary; start headers at today.
+      const startDay = Math.min(
+        days,
+        Math.max(1, resolveVisibleStartDay(departureDate, tripDays)),
+      );
+      // If the whole trip is already past, show no day headers (list may be empty).
+      const gatePastTrip = resolveVisibleStartDay(departureDate, tripDays) > days;
+
+      const sortedDests = [...destinations].sort((a, b) => {
+        const dayA = a.day || 1;
+        const dayB = b.day || 1;
+        if (dayA !== dayB) return dayA - dayB;
+        return a.order - b.order;
+      });
+
+      if (!gatePastTrip) {
+        for (let d = startDay; d <= days; d++) {
+          let dateStr = '';
+          if (departureDate) {
+            const dateObj = /^\d{4}-\d{2}-\d{2}$/.test(departureDate.trim())
+              ? new Date(`${departureDate.trim()}T12:00:00`)
+              : new Date(departureDate);
+            if (!Number.isNaN(dateObj.getTime())) {
+              dateObj.setDate(dateObj.getDate() + (d - 1));
+              dateStr = `${dateObj.getMonth() + 1}月${dateObj.getDate()}號`;
+            }
+          }
+          nextOrder.push({
+            type: 'header',
+            day: d,
+            id: `header-${d}`,
+            title: `第 ${d} 天`,
+            dateStr,
+          });
+          const dayDests = sortedDests.filter((dest) => (dest.day || 1) === d);
+          for (const dest of dayDests) {
+            nextOrder.push({ type: 'dest', item: dest, id: dest.id });
+          }
         }
       }
-      const dangling = sortedDests.filter(dest => (dest.day || 1) > days);
-      for (const dest of dangling) {
-          nextOrder.push({ type: 'dest', item: dest, id: dest.id });
+      const dangling = sortedDests.filter(
+        (dest) => (dest.day || 1) > days || (dest.day || 1) < startDay,
+      );
+      // Only surface dangling future-over days; past days stay out of the active list.
+      for (const dest of dangling.filter((d) => (d.day || 1) > days)) {
+        nextOrder.push({ type: 'dest', item: dest, id: dest.id });
       }
 
       setOrder(nextOrder);

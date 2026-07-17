@@ -276,30 +276,49 @@ describe('joinGroup', () => {
 });
 
 describe('addDestination', () => {
-  // Chainable mock for the `itinerary_items` table: the edge-position read
-  // (max position) ends in .maybeSingle(); .insert(...) resolves to
-  // `insertResult` and records its payload.
-  function itineraryTable(edgePosition: number | null, insertResult: unknown) {
+  // Chainable mock: list existing stops (id/position/day), optional shifts,
+  // then insert. `order` resolves the select; `update().eq().eq()` shifts.
+  function itineraryTable(
+    existing: { id: string; position: number; day: number }[] | null,
+    insertResult: unknown,
+  ) {
     const obj: Record<string, unknown> = {};
     const self = () => obj;
+    const updateChain: Record<string, unknown> = {};
+    Object.assign(updateChain, {
+      eq: jest.fn(() => updateChain),
+      then: undefined,
+    });
+    // Make update().eq().eq() awaitable as a thenable result.
+    (updateChain as { eq: jest.Mock }).eq.mockImplementation(() => ({
+      eq: jest.fn(() => Promise.resolve({ error: null })),
+    }));
+
     Object.assign(obj, {
       select: self,
       eq: self,
       is: self,
-      order: self,
-      limit: self,
-      maybeSingle: () =>
+      order: () =>
         Promise.resolve({
-          data: edgePosition === null ? null : { position: edgePosition },
+          data: existing,
           error: null,
         }),
+      limit: self,
+      update: jest.fn(() => updateChain),
       insert: jest.fn(() => Promise.resolve(insertResult)),
     });
-    return obj as { insert: jest.Mock };
+    return obj as { insert: jest.Mock; update: jest.Mock };
   }
 
-  it('appends the new stop to the end (maxPosition + 1)', async () => {
-    const itinerary = itineraryTable(2, { error: null });
+  it('appends the new stop to the end of the target day (and shifts later rows)', async () => {
+    const itinerary = itineraryTable(
+      [
+        { id: 'a', position: 0, day: 1 },
+        { id: 'b', position: 1, day: 1 },
+        { id: 'c', position: 2, day: 1 },
+      ],
+      { error: null },
+    );
     mockedFrom.mockImplementation(() => itinerary);
 
     await addDestination('g1', {
@@ -316,12 +335,18 @@ describe('addDestination', () => {
       day: 1,
       latitude: 25.034,
       longitude: 121.564,
-      position: 3, // 2 + 1, after the current last stop
+      position: 3, // after day-1 last (position 2)
     });
   });
 
-  it('with a subgroupId: inserts subgroup_id and scopes max-position to that subgroup', async () => {
-    const itinerary = itineraryTable(1, { error: null });
+  it('with a subgroupId: inserts subgroup_id and scopes list to that subgroup', async () => {
+    const itinerary = itineraryTable(
+      [
+        { id: 's1', position: 0, day: 1 },
+        { id: 's2', position: 1, day: 1 },
+      ],
+      { error: null },
+    );
     mockedFrom.mockImplementation(() => itinerary);
 
     await addDestination(
@@ -336,7 +361,7 @@ describe('addDestination', () => {
   });
 
   it('uses position 0 when the itinerary is empty', async () => {
-    const itinerary = itineraryTable(null, { error: null });
+    const itinerary = itineraryTable([], { error: null });
     mockedFrom.mockImplementation(() => itinerary);
 
     await addDestination('g1', {
@@ -349,8 +374,31 @@ describe('addDestination', () => {
     );
   });
 
+  it('inserts at end of target day and shifts later-day positions', async () => {
+    const itinerary = itineraryTable(
+      [
+        { id: 'd1', position: 0, day: 1 },
+        { id: 'd2', position: 1, day: 2 },
+        { id: 'd3', position: 2, day: 3 },
+      ],
+      { error: null },
+    );
+    mockedFrom.mockImplementation(() => itinerary);
+
+    await addDestination('g1', {
+      title: 'Day2 new',
+      coordinates: { latitude: 1, longitude: 2 },
+      day: 2,
+    });
+
+    expect(itinerary.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ day: 2, position: 2 }),
+    );
+    expect(itinerary.update).toHaveBeenCalled();
+  });
+
   it('throws when the insert is rejected (e.g. a follower hitting RLS)', async () => {
-    const itinerary = itineraryTable(0, {
+    const itinerary = itineraryTable([{ id: 'x', position: 0, day: 1 }], {
       error: { code: '42501', message: 'new row violates row-level security' },
     });
     mockedFrom.mockImplementation(() => itinerary);
