@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { usePreferences, type Language } from '../state/PreferencesContext';
 
 /**
@@ -536,7 +537,9 @@ const zh = {
   'history.title': '歷史行程',
   'history.deleteTitle': '刪除歷史紀錄？',
   'history.open': '查看歷史行程',
-  'history.empty': '還沒有抵達紀錄。',
+  'history.empty': '還沒有行程紀錄。',
+  'history.statusMissed': '未抵達',
+  'history.statusIncomplete': '未完成',
 
   // Straggler alerts
   'straggler.section': '脫隊示警',
@@ -1102,7 +1105,9 @@ const en: Record<keyof typeof zh, string> = {
   'history.title': 'Trip history',
   'history.deleteTitle': 'Delete this history entry?',
   'history.open': 'View trip history',
-  'history.empty': 'No arrivals recorded yet.',
+  'history.empty': 'No trip history yet.',
+  'history.statusMissed': 'Missed',
+  'history.statusIncomplete': 'Incomplete',
 
   // Straggler alerts
   'straggler.section': 'Straggler alerts',
@@ -1183,8 +1188,8 @@ export interface Translator {
 export function useTranslation(): Translator {
   const { language } = usePreferences();
   const dict = translations[language];
-  return {
+  return useMemo(() => ({
     language,
     t: (key, params) => interpolate(dict[key] ?? translations.zh[key] ?? key, params),
-  };
+  }), [dict, language]);
 }

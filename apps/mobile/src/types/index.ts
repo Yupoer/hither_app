@@ -209,8 +209,9 @@ export interface PendingInvite extends SubgroupInvite {
 }
 
 /**
- * A gathering point the user has actually reached, kept for the "歷史行程"
- * list (grouped by day, sorted by time). Personal — not scoped to a group.
+ * A gathering point kept for the "歷史行程" list (grouped by day, sorted by
+ * time). Real rows come from arrivals; synthetic past-day rows may use
+ * status missed/incomplete when the viewer never arrived.
  */
 export interface VisitedWaypoint {
   id: string;
@@ -219,8 +220,12 @@ export interface VisitedWaypoint {
   destinationId?: string;
   name: string;
   coordinates: Coordinates;
-  /** ISO-8601 timestamp of arrival. */
+  /** ISO-8601 timestamp of arrival (or synthetic sort key for non-arrivals). */
   arrivedAt: string;
+  /** arrived (default) | missed 未抵達 | incomplete 未完成 */
+  status?: 'arrived' | 'missed' | 'incomplete';
+  /** True when projected from a past itinerary stop, not a DB history row. */
+  synthetic?: boolean;
 }
 
 export interface GatherPointRequestItem {

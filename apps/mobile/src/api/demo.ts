@@ -130,18 +130,36 @@ export function demoAddDestination(input: {
   title: string;
   address?: string;
   coordinates: Coordinates;
+  day?: number;
   /** Scope stop to a 小隊; omit/undefined = main team itinerary. */
   subgroupId?: string;
 }): void {
+  const targetDay = Math.max(1, input.day ?? 1);
   const scoped = state.destinations.filter((d) =>
     input.subgroupId ? d.subgroupId === input.subgroupId : d.subgroupId == null,
   );
+  const sameDay = scoped.filter((d) => (d.day || 1) === targetDay);
+  let insertOrder: number;
+  if (sameDay.length > 0) {
+    insertOrder = Math.max(...sameDay.map((d) => d.order)) + 1;
+  } else {
+    const earlier = scoped.filter((d) => (d.day || 1) < targetDay);
+    insertOrder =
+      earlier.length > 0 ? Math.max(...earlier.map((d) => d.order)) + 1 : 0;
+  }
+  state.destinations = state.destinations.map((d) => {
+    if (input.subgroupId ? d.subgroupId !== input.subgroupId : d.subgroupId != null) {
+      return d;
+    }
+    return d.order >= insertOrder ? { ...d, order: d.order + 1 } : d;
+  });
   state.destinations.push({
     id: `demo-dest-${++destSeq}`,
     title: input.title,
     address: input.address,
     coordinates: input.coordinates,
-    order: scoped.length,
+    order: insertOrder,
+    day: targetDay,
     subgroupId: input.subgroupId,
   } as Destination);
 }

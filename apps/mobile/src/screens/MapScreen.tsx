@@ -117,7 +117,16 @@ import {
 import { dotWindow } from '../utils/pagination';
 import { alignMeetTimeToTripDay, minutesUntil } from '../utils/meetTime';
 import { locationFreshness } from '../utils/locationFreshness';
-import { groupHistoryByDay, type HistoryDayGroup } from '../utils/history';
+import {
+  groupHistoryByDay,
+  mergeHistoryWithPastStops,
+  type HistoryDayGroup,
+} from '../utils/history';
+import {
+  filterActiveDestinations,
+  nextOrderedDestination,
+  resolveAddDay,
+} from '../utils/tripDay';
 import { createArrivalState, reduceArrival, type ArrivalState } from '../utils/navigationArrival';
 import { liquidGlass, location, notifications, type MapRegion, type PlaceResult } from '../native';
 import {
@@ -351,6 +360,10 @@ export default function MapScreen({ route, navigation }: Props) {
   const [destinationArrivals, setDestinationArrivals] = useState<DestinationArrival[]>([]);
   const [gatherPointRequests, setGatherPointRequests] = useState<GatherPointRequest[]>([]);
   const [resolvingGatherRequestId, setResolvingGatherRequestId] = useState<string | null>(null);
+  const optimisticTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
+  const workflowReloadRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [optimisticTripDays, setOptimisticTripDays] = useState<number | null>(null);
+  const [optimisticDepartureDate, setOptimisticDepartureDate] = useState<string | null>(null);
   const myCompletedDestinationIds = useMemo(
     () => new Set(
       destinationArrivals
@@ -359,14 +372,23 @@ export default function MapScreen({ route, navigation }: Props) {
     ),
     [destinationArrivals, user?.id],
   );
+  // Open stops on today + future trip days (local device date). Past days
+  // leave the carousel / reorder list and surface in 歷史行程 instead.
   const destinations = useMemo(
-    () => allScopedDestinations.filter((dest) => !dest.closedAt),
-    [allScopedDestinations],
+    () =>
+      filterActiveDestinations(
+        allScopedDestinations,
+        optimisticDepartureDate ?? group?.departureDate,
+        optimisticTripDays ?? group?.tripDays,
+      ),
+    [
+      allScopedDestinations,
+      optimisticDepartureDate,
+      optimisticTripDays,
+      group?.departureDate,
+      group?.tripDays,
+    ],
   );
-  const optimisticTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
-  const workflowReloadRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [optimisticTripDays, setOptimisticTripDays] = useState<number | null>(null);
-  const [optimisticDepartureDate, setOptimisticDepartureDate] = useState<string | null>(null);
   const canEditItinerary = !!isLeader;
 
   const syncFromDatabase = useCallback(async () => {
@@ -468,15 +490,31 @@ export default function MapScreen({ route, navigation }: Props) {
   // form opens over the screen), handed to the sheet as evidence.
   const [feedbackShot, setFeedbackShot] = useState<string | null>(null);
   // Visited-waypoint history — fetched fresh each time the overlay opens.
+  // Past trip-day stops the viewer never reached are merged in as 未抵達/未完成.
   const [historyGroups, setHistoryGroups] = useState<HistoryDayGroup[]>([]);
   const loadHistory = useCallback(async () => {
     const items = await fetchVisitedWaypoints(groupId ?? undefined);
     const named = items.map((item) => ({
       ...item,
       userName: members.find((member) => member.userId === item.userId)?.name,
+      status: item.status ?? ('arrived' as const),
     }));
-    setHistoryGroups(groupHistoryByDay(named));
-  }, [groupId, members]);
+    const merged = mergeHistoryWithPastStops(named, allScopedDestinations, {
+      departureDate: optimisticDepartureDate ?? group?.departureDate,
+      tripDays: optimisticTripDays ?? group?.tripDays,
+      userId: user?.id,
+    });
+    setHistoryGroups(groupHistoryByDay(merged));
+  }, [
+    groupId,
+    members,
+    allScopedDestinations,
+    optimisticDepartureDate,
+    optimisticTripDays,
+    group?.departureDate,
+    group?.tripDays,
+    user?.id,
+  ]);
   useEffect(() => {
     if (overlay !== 'history') return;
     void loadHistory().catch(() => undefined);
@@ -1288,6 +1326,20 @@ export default function MapScreen({ route, navigation }: Props) {
     [groupId, myScopeId, t],
   );
 
+  const tripDayForAdd = useCallback(
+    () =>
+      resolveAddDay(
+        optimisticDepartureDate ?? group?.departureDate,
+        optimisticTripDays ?? group?.tripDays,
+      ),
+    [
+      optimisticDepartureDate,
+      optimisticTripDays,
+      group?.departureDate,
+      group?.tripDays,
+    ],
+  );
+
   const handleSearchPick = useCallback(
     async (place: PlaceResult) => {
       if (!canEditItinerary) {
@@ -1295,6 +1347,7 @@ export default function MapScreen({ route, navigation }: Props) {
           title: place.name,
           address: place.address,
           coordinates: place.coordinates,
+          day: tripDayForAdd(),
         }], 'search');
         return;
       }
@@ -1305,16 +1358,18 @@ export default function MapScreen({ route, navigation }: Props) {
         altitude: PLACE_ALTITUDE,
       });
     },
-    [canEditItinerary, notifyLeaderPlace],
+    [canEditItinerary, notifyLeaderPlace, tripDayForAdd],
   );
 
   const handlePickDestination = useCallback(async (place: PlaceResult) => {
     if (!groupId) return;
+    const addDay = tripDayForAdd();
     if (!canEditItinerary) {
       await notifyLeaderPlace([{
         title: place.name,
         address: place.address,
         coordinates: place.coordinates,
+        day: addDay,
       }], 'search');
       return;
     }
@@ -1329,10 +1384,11 @@ export default function MapScreen({ route, navigation }: Props) {
           title: place.name,
           address: place.address,
           coordinates: place.coordinates,
+          day: addDay,
         },
         myScopeId,
       );
-      logEvent('destination_add', { source: 'search' });
+      logEvent('destination_add', { source: 'search', day: addDay });
       setSelectedIndex(destinations.length);
       mapRef.current?.centerOn(place.coordinates, {
         zoom: PLACE_ZOOM,
@@ -1343,15 +1399,29 @@ export default function MapScreen({ route, navigation }: Props) {
       logError('destination_add_failed', e, { source: 'search' });
       Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
     }
-  }, [groupId, canEditItinerary, notifyLeaderPlace, isPro, destinations.length, allScopedDestinations.length, myScopeId, refresh, openPaywall, t]);
+  }, [
+    groupId,
+    canEditItinerary,
+    notifyLeaderPlace,
+    isPro,
+    destinations.length,
+    allScopedDestinations.length,
+    myScopeId,
+    refresh,
+    openPaywall,
+    t,
+    tripDayForAdd,
+  ]);
 
   const handleKmlImport = useCallback(async (items: KmlPlacemark[], onProgress: (done: number) => void) => {
     if (!groupId) return;
+    const addDay = tripDayForAdd();
     // BUG-15: non-editors notify captain with place names instead of writing itinerary.
     if (!canEditItinerary) {
       await notifyLeaderPlace(items.map((item) => ({
         title: item.name,
         coordinates: { latitude: item.latitude, longitude: item.longitude },
+        day: addDay,
       })), 'kml');
       onProgress(items.length);
       return;
@@ -1360,14 +1430,18 @@ export default function MapScreen({ route, navigation }: Props) {
       const item = items[i];
       await addDestination(
         groupId,
-        { title: item.name, coordinates: { latitude: item.latitude, longitude: item.longitude } },
+        {
+          title: item.name,
+          coordinates: { latitude: item.latitude, longitude: item.longitude },
+          day: addDay,
+        },
         myScopeId,
       );
       onProgress(i + 1);
     }
-    logEvent('kml_import', { count: items.length });
+    logEvent('kml_import', { count: items.length, day: addDay });
     await refresh();
-  }, [groupId, canEditItinerary, notifyLeaderPlace, myScopeId, refresh]);
+  }, [groupId, canEditItinerary, notifyLeaderPlace, myScopeId, refresh, tripDayForAdd]);
 
   const handleGatherPointRequest = useCallback(async (requestId: string, approve: boolean) => {
     if (resolvingGatherRequestId) return;
@@ -2208,11 +2282,17 @@ export default function MapScreen({ route, navigation }: Props) {
 
 
 
-  const nextStopTitle = activePoint?.title ?? destinations[0]?.title;
+  // Sheet "下一站" is the first ordered active stop — not the carousel card
+  // or current navigation target the user may be viewing.
+  const nextStop = useMemo(
+    () => nextOrderedDestination(destinations),
+    [destinations],
+  );
+  const nextStopTitle = nextStop?.title;
   const nextStopDistLabel = useMemo(() => {
-    if (!activePoint || !fromCoords) return null;
-    return formatDistance(distanceMeters(fromCoords, activePoint.coordinates));
-  }, [activePoint, fromCoords]);
+    if (!nextStop || !fromCoords) return null;
+    return formatDistance(distanceMeters(fromCoords, nextStop.coordinates));
+  }, [nextStop, fromCoords]);
 
   const sheetHeader = useMemo(() => {
     /* Fixed button roles (never swap meanings across screens):
@@ -3697,7 +3777,15 @@ export default function MapScreen({ route, navigation }: Props) {
                 <View key={group.day} style={styles.historyDayBlock}>
                   <Text style={styles.sectionLabel}>{dayLabel}</Text>
                   <View style={styles.list}>
-                    {group.items.map((item, i) => (
+                    {group.items.map((item, i) => {
+                      const status = item.status ?? 'arrived';
+                      const statusLabel =
+                        status === 'missed'
+                          ? t('history.statusMissed')
+                          : status === 'incomplete'
+                            ? t('history.statusIncomplete')
+                            : null;
+                      return (
                       <View
                         key={item.id}
                         style={[
@@ -3712,13 +3800,19 @@ export default function MapScreen({ route, navigation }: Props) {
                               <Text style={styles.overlayHint}>{item.userName}</Text>
                             ) : null}
                           </View>
-                          <Text style={styles.historyTime}>
-                            {new Date(item.arrivedAt).toLocaleTimeString([], {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}
-                          </Text>
-                          {(item.userId === user?.id || isLeader) ? (
+                          {statusLabel ? (
+                            <Text style={[styles.historyTime, { color: glass.textTertiary }]}>
+                              {statusLabel}
+                            </Text>
+                          ) : (
+                            <Text style={styles.historyTime}>
+                              {new Date(item.arrivedAt).toLocaleTimeString([], {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </Text>
+                          )}
+                          {!item.synthetic && (item.userId === user?.id || isLeader) ? (
                             <Pressable
                               style={styles.cmdSquare}
                               onPress={() => handleDeleteHistory(item)}
@@ -3730,7 +3824,8 @@ export default function MapScreen({ route, navigation }: Props) {
                           ) : null}
                         </View>
                       </View>
-                    ))}
+                      );
+                    })}
                   </View>
                 </View>
               );
