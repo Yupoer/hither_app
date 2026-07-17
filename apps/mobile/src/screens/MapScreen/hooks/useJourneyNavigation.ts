@@ -1,7 +1,6 @@
 import * as Crypto from 'expo-crypto';
 import { useState, useMemo, useEffect, useCallback, useRef, RefObject } from 'react';
 import { Alert, Linking } from 'react-native';
-import { reorderDestinations } from '../../../api/client';
 import { distanceMeters } from '../../../utils/geo';
 import type { Coordinates, Destination, GroupState, JourneyStatus } from '../../../types';
 import type { NavigationSession } from '../../../types/navigation';
@@ -110,24 +109,9 @@ export function useJourneyNavigation({
       setPendingLeaderTargetId(dest.id);
       mapRef.current?.centerOn(dest.coordinates);
       try {
-        const navigationIndex = navigationDestinations.findIndex(
-          (item) => item.id === dest.id,
-        );
-        if (navigationIndex > 0) {
-          const ids = navigationDestinations.map((item) => item.id);
-          const [moved] = ids.splice(navigationIndex, 1);
-          ids.unshift(moved);
-          await reorderDestinations(
-            groupId,
-            ids.map((id, position) => ({
-              id,
-              position,
-              day: navigationDestinations.find((item) => item.id === id)?.day ?? 1,
-            })),
-          );
-        }
-        setSelectedIndex(0);
-        carouselRef.current?.scrollTo({ x: 0, animated: true });
+        // Navigation is a shared progress transition, not an itinerary edit.
+        // Keep the persisted position/day untouched when starting a later stop.
+        setSelectedIndex(index);
         if (!requestRef.current || requestRef.current.destinationId !== dest.id) {
           requestRef.current = { destinationId: dest.id, requestId: createRequestId() };
         }
@@ -146,7 +130,6 @@ export function useJourneyNavigation({
       groupId,
       journeyBusy,
       startSession,
-      navigationDestinations,
       t,
       mapRef,
       carouselRef,

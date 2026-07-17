@@ -1,5 +1,5 @@
 import React from 'react';
-import { deleteDestination } from '../api/client';
+import { deleteDestination, reorderDestinations } from '../api/client';
 import { useJourneyNavigation } from '../screens/MapScreen/hooks/useJourneyNavigation';
 import type { Destination, GroupState } from '../types';
 import type { NavigationSession } from '../types/navigation';
@@ -86,6 +86,39 @@ describe('useJourneyNavigation', () => {
     expect(navigation?.navTarget?.id).toBe(destination.id);
     expect(navigation?.journeyActive).toBe(true);
     expect(startSession).toHaveBeenCalledWith(destination.id, 'request-1');
+  });
+
+  it('does not reorder the persisted itinerary when starting a later stop', async () => {
+    const later = { ...destination, id: 'destination-2', order: 1 };
+    const startSession = jest.fn().mockResolvedValue({
+      id: 'session-2',
+      status: 'active',
+      destinationId: later.id,
+    } as NavigationSession);
+    let navigation: ReturnType<typeof useJourneyNavigation> | undefined;
+    function Harness() {
+      navigation = useJourneyNavigation({
+        state: pausedState,
+        groupId: 'group-1',
+        isLeader: true,
+        destinations: [destination, later],
+        selectedDestination: destination,
+        fromCoords: undefined,
+        refresh: jest.fn(),
+        t: (key) => key,
+        mapRef: { current: null },
+        carouselRef: { current: null },
+        setSelectedIndex: jest.fn(),
+        startSession,
+        createRequestId: () => 'request-2',
+      });
+      return null;
+    }
+    act(() => { create(React.createElement(Harness)); });
+    await act(async () => { await navigation?.startNavigation(later, 1); });
+
+    expect(reorderDestinations).not.toHaveBeenCalled();
+    expect(startSession).toHaveBeenCalledWith(later.id, 'request-2');
   });
 
   it('uses the persisted active destination instead of the local carousel selection', () => {

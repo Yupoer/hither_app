@@ -18,6 +18,7 @@ export type NavigationMemberStatus =
   | 'sharing_disabled'
   | 'arriving'
   | 'arrived'
+  | 'missed'
   | 'cancelled';
 
 export interface NavigationSession {
