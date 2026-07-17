@@ -1,7 +1,9 @@
 import {
   alignMeetTimeToTripDay,
+  clampDateNotBeforeToday,
   minutesUntil,
   meetCountdownShort,
+  startOfTodayLocal,
 } from '../utils/meetTime';
 
 describe('alignMeetTimeToTripDay', () => {
@@ -30,6 +32,37 @@ describe('alignMeetTimeToTripDay', () => {
     expect(aligned.getHours()).toBe(9);
     expect(aligned.getMinutes()).toBe(5);
     expect(aligned.getSeconds()).toBe(0);
+  });
+});
+
+describe('clampDateNotBeforeToday', () => {
+  it('leaves today and future dates unchanged', () => {
+    const now = new Date(2026, 6, 18, 15, 30, 0, 0);
+    const todayMorning = new Date(2026, 6, 18, 8, 0, 0, 0);
+    const tomorrow = new Date(2026, 6, 19, 9, 0, 0, 0);
+    expect(clampDateNotBeforeToday(todayMorning, now).getTime()).toBe(todayMorning.getTime());
+    expect(clampDateNotBeforeToday(tomorrow, now).getTime()).toBe(tomorrow.getTime());
+  });
+
+  it('bumps calendar days before today up to today while keeping clock time', () => {
+    const now = new Date(2026, 6, 18, 15, 30, 0, 0);
+    const yesterday = new Date(2026, 6, 17, 14, 45, 0, 0);
+    const clamped = clampDateNotBeforeToday(yesterday, now);
+    expect(clamped.getFullYear()).toBe(2026);
+    expect(clamped.getMonth()).toBe(6);
+    expect(clamped.getDate()).toBe(18);
+    expect(clamped.getHours()).toBe(14);
+    expect(clamped.getMinutes()).toBe(45);
+  });
+
+  it('startOfTodayLocal is midnight local', () => {
+    const now = new Date(2026, 6, 18, 15, 30, 12, 500);
+    const start = startOfTodayLocal(now);
+    expect(start.getHours()).toBe(0);
+    expect(start.getMinutes()).toBe(0);
+    expect(start.getSeconds()).toBe(0);
+    expect(start.getMilliseconds()).toBe(0);
+    expect(start.getDate()).toBe(18);
   });
 });
 
@@ -62,12 +95,18 @@ describe('meetCountdownShort', () => {
     expect(meetCountdownShort('2026-07-09T10:45:00Z', now)).toBe('45分');
     expect(meetCountdownShort('2026-07-09T10:00:00Z', now)).toBe('0分');
   });
-  it('shows h:mm at or over an hour', () => {
-    expect(meetCountdownShort('2026-07-09T11:30:00Z', now)).toBe('1h30');
-    expect(meetCountdownShort('2026-07-09T12:05:00Z', now)).toBe('2h05');
+  it('shows compact hr at or over an hour', () => {
+    expect(meetCountdownShort('2026-07-09T11:30:00Z', now)).toBe('1hr30');
+    expect(meetCountdownShort('2026-07-09T12:05:00Z', now)).toBe('2hr5');
+    expect(meetCountdownShort('2026-07-09T15:00:00Z', now)).toBe('5hr');
+  });
+  it('shows days when at or over 24 hours', () => {
+    expect(meetCountdownShort('2026-07-10T22:00:00Z', now)).toBe('1d12hr');
+    expect(meetCountdownShort('2026-07-11T10:00:00Z', now)).toBe('2d');
   });
   it('marks overdue', () => {
     expect(meetCountdownShort('2026-07-09T09:55:00Z', now)).toBe('遲5');
-    expect(meetCountdownShort('2026-07-09T08:30:00Z', now)).toBe('遲1h');
+    expect(meetCountdownShort('2026-07-09T08:30:00Z', now)).toBe('遲1hr30');
+    expect(meetCountdownShort('2026-07-07T22:00:00Z', now)).toBe('遲1d12hr');
   });
 });

@@ -12,12 +12,15 @@ import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import * as Updates from 'expo-updates';
 import OverlaySheet from '../../../components/OverlaySheet';
+import PrefSlider from '../../../components/PrefSlider';
 import { Segmented } from './Segmented';
 import NotificationPreferencesCard from '../../../components/NotificationPreferencesCard';
 import { useSession } from '../../../state/SessionContext';
 import {
   usePreferences,
   useTheme,
+  MARQUEE_SPEED_MAX,
+  MARQUEE_SPEED_MIN,
   type Language,
   type TextScalePref,
 } from '../../../state/PreferencesContext';
@@ -135,12 +138,16 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
     obliqueLocate,
     liveActivityEnabled,
     gatherCardDefaultExpanded,
+    gatherCardTitleMarquee,
+    gatherCardMarqueeSpeed,
     setLanguage,
     setThemeName,
     setTextScale,
     setObliqueLocate,
     setLiveActivityEnabled,
     setGatherCardDefaultExpanded,
+    setGatherCardTitleMarquee,
+    setGatherCardMarqueeSpeed,
   } = usePreferences();
   const { colors } = useTheme();
   const accent = colors.accent;
@@ -360,6 +367,52 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             accessibilityLabel={t('settings.gatherCardDefaultExpanded')}
           />
         </View>
+        <View style={styles.accuracyRow} pointerEvents="box-none">
+          <View style={styles.accuracyCopy} pointerEvents="none">
+            <Text style={styles.accuracyLabel}>
+              {t('settings.gatherCardTitleMarquee')}
+            </Text>
+            <Text style={styles.accuracySubhint}>
+              {t('settings.gatherCardTitleMarqueeHint')}
+            </Text>
+          </View>
+          <Switch
+            style={styles.accuracySwitch}
+            value={Boolean(gatherCardTitleMarquee)}
+            onValueChange={(v) => setGatherCardTitleMarquee(Boolean(v))}
+            trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
+            thumbColor="#fff"
+            ios_backgroundColor="rgba(120,120,128,0.32)"
+            accessibilityLabel={t('settings.gatherCardTitleMarquee')}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: Boolean(gatherCardTitleMarquee) }}
+          />
+        </View>
+        {Boolean(gatherCardTitleMarquee) ? (
+          <View style={styles.marqueeSpeedBlock} pointerEvents="box-none">
+            <View style={styles.marqueeSpeedLabels} pointerEvents="none">
+              <Text style={styles.accuracyLabel}>
+                {t('settings.gatherCardMarqueeSpeed')}
+              </Text>
+              <View style={styles.marqueeSpeedEnds}>
+                <Text style={styles.accuracySubhint}>
+                  {t('settings.gatherCardMarqueeSpeedSlow')}
+                </Text>
+                <Text style={styles.accuracySubhint}>
+                  {t('settings.gatherCardMarqueeSpeedFast')}
+                </Text>
+              </View>
+            </View>
+            <PrefSlider
+              value={gatherCardMarqueeSpeed}
+              min={MARQUEE_SPEED_MIN}
+              max={MARQUEE_SPEED_MAX}
+              onChange={setGatherCardMarqueeSpeed}
+              accent={accent}
+              accessibilityLabel={t('settings.gatherCardMarqueeSpeed')}
+            />
+          </View>
+        ) : null}
         {isLeader && onOpenStraggler ? (
           <View style={styles.settingsTopGroup}>
             <NavRow

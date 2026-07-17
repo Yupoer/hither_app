@@ -91,11 +91,32 @@ public struct HitherGroupAttributes: ActivityAttributes {
       return String(format: "%.1f km", d / 1000)
     }
 
-    /// "about 4 min" — rough walking ETA for the lock-screen line.
+    /// Compact ETA: "now" / "12 min" / "1hr30" / "1d12hr" — matches in-app formatShortEta.
     public var formattedEta: String? {
       guard let s = etaSeconds else { return nil }
-      let minutes = Int((s / 60).rounded())
-      return minutes < 1 ? "< 1 min" : "about \(minutes) min"
+      return Self.compactDuration(fromSeconds: s)
+    }
+
+    /// Shared compact duration used by the widget presentation helpers too.
+    public static func compactDuration(fromSeconds seconds: Double) -> String {
+      let m = Int((seconds / 60).rounded())
+      if m < 1 { return "now" }
+      if m < 60 { return "\(m) min" }
+      return compactDuration(fromMinutes: m)
+    }
+
+    /// 90 → "1hr30", 300 → "5hr", 2160 → "1d12hr". Day scale drops remaining minutes.
+    public static func compactDuration(fromMinutes minutes: Int) -> String {
+      let m = max(0, minutes)
+      if m < 60 { return "\(m)min" }
+      let h = m / 60
+      let mm = m % 60
+      if h < 24 {
+        return mm == 0 ? "\(h)hr" : "\(h)hr\(mm)"
+      }
+      let d = h / 24
+      let rh = h % 24
+      return rh == 0 ? "\(d)d" : "\(d)d\(rh)hr"
     }
   }
 

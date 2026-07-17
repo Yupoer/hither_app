@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Task-end ship pipeline for Grok/Claude Stop hooks (and manual runs):
-#   1) auto-commit dirty work (safe paths only)
+#   1) auto-commit dirty work (OTA-safe paths only — never native/binary)
 #   2) patch-bump expo.version (keeps runtimeVersion for OTA compatibility)
 #   3) if feature branch / worktree → merge into master (worktree-safe)
 #   4) push
@@ -16,6 +16,8 @@
 #   TASK_END_SHIP_COMMIT=0    skip auto-commit (still merge/push/OTA if commits exist)
 #   TASK_END_SHIP_BUMP=0      skip version bump
 #   TASK_END_SHIP_OTA=0       skip EAS Update
+#   TASK_END_SHIP_GIT_NAME    fallback author name (WSL / missing identity)
+#   TASK_END_SHIP_GIT_EMAIL   fallback author email
 #   OTA_CHANNELS="production preview"
 #   OTA_MAIN_BRANCH=master
 #   OTA_AUTO_SHIP=0           always set while this script runs (avoid post-commit loop)
@@ -86,6 +88,18 @@ is_worktree() {
   [ "$git_dir" != "$common" ]
 }
 
+# Normalize paths from Windows/WSL/Git Bash (\, CR, ./ prefix).
+normalize_repo_path() {
+  local p
+  p="$(printf '%s' "${1-}" | tr -d '\r' | tr '\\' '/')"
+  p="${p#./}"
+  # If tools report paths under a parent monorepo folder name
+  case "$p" in
+    hither_app/*) p="${p#hither_app/}" ;;
+  esac
+  printf '%s' "$p"
+}
+
 is_binary_path() {
   case "$1" in
     apps/mobile/ios/*|apps/mobile/android/*) return 0 ;;
@@ -147,6 +161,8 @@ classify_paths_text() {
   [ -z "$text" ] && return 0
   while IFS= read -r f || [ -n "$f" ]; do
     [ -z "$f" ] && continue
+    f="$(normalize_repo_path "$f")"
+    [ -z "$f" ] && continue
     should_never_commit "$f" && continue
     HAS_ANY=1
     if is_binary_path "$f"; then
@@ -161,11 +177,127 @@ $text
 EOF
 }
 
+# Collect OTA-safe paths from a newline-separated list into OTA_PATHS_TEXT.
+filter_ota_paths_text() {
+  OTA_PATHS_TEXT=""
+  local f text
+  text="${1-}"
+  [ -z "$text" ] && return 0
+  while IFS= read -r f || [ -n "$f" ]; do
+    [ -z "$f" ] && continue
+    f="$(normalize_repo_path "$f")"
+    [ -z "$f" ] && continue
+    should_never_commit "$f" && continue
+    is_ota_path "$f" || continue
+    OTA_PATHS_TEXT="${OTA_PATHS_TEXT}${f}
+"
+  done <<EOF
+$text
+EOF
+}
+
+unstage_paths_text() {
+  local f text
+  text="${1-}"
+  [ -z "$text" ] && return 0
+  while IFS= read -r f || [ -n "$f" ]; do
+    [ -z "$f" ] && continue
+    git restore --staged -- "$f" 2>/dev/null \
+      || git reset -q HEAD -- "$f" 2>/dev/null \
+      || true
+  done <<EOF
+$text
+EOF
+}
+
+# True if index already has staged non-OTA paths (we must not auto-commit them).
+index_has_non_ota_staged() {
+  local f
+  while IFS= read -r f || [ -n "$f" ]; do
+    [ -z "$f" ] && continue
+    f="$(normalize_repo_path "$f")"
+    [ -z "$f" ] && continue
+    # Version-bump commits app.json deliberately later; treat as allowed if alone.
+    case "$f" in
+      apps/mobile/app.json) continue ;;
+    esac
+    if ! is_ota_path "$f"; then
+      return 0
+    fi
+  done <<EOF
+$(git diff --cached --name-only 2>/dev/null || true)
+EOF
+  return 1
+}
+
+# Ensure author identity for commit (WSL often lacks user.name/email).
+# Sets local repo config + GIT_* env; never writes global config.
+ensure_git_identity() {
+  local name email win_cfg cand user_guess
+
+  name="$(git config user.name 2>/dev/null || true)"
+  email="$(git config user.email 2>/dev/null || true)"
+  if [ -n "$name" ] && [ -n "$email" ]; then
+    export GIT_AUTHOR_NAME="${GIT_AUTHOR_NAME:-$name}"
+    export GIT_AUTHOR_EMAIL="${GIT_AUTHOR_EMAIL:-$email}"
+    export GIT_COMMITTER_NAME="${GIT_COMMITTER_NAME:-$name}"
+    export GIT_COMMITTER_EMAIL="${GIT_COMMITTER_EMAIL:-$email}"
+    return 0
+  fi
+
+  name="${GIT_AUTHOR_NAME:-${GIT_COMMITTER_NAME:-${TASK_END_SHIP_GIT_NAME:-$name}}}"
+  email="${GIT_AUTHOR_EMAIL:-${GIT_COMMITTER_EMAIL:-${TASK_END_SHIP_GIT_EMAIL:-$email}}}"
+
+  if [ -z "$name" ] || [ -z "$email" ]; then
+    user_guess="$(whoami 2>/dev/null || true)"
+    for cand in \
+      "${USERPROFILE:+${USERPROFILE}/.gitconfig}" \
+      "/mnt/c/Users/${user_guess}/.gitconfig" \
+      "/mnt/c/Users/${USER:-}/.gitconfig" \
+      "$HOME/.gitconfig"
+    do
+      [ -n "${cand:-}" ] || continue
+      # Git Bash: USERPROFILE may use backslashes
+      win_cfg="$(printf '%s' "$cand" | tr '\\' '/')"
+      [ -f "$win_cfg" ] || continue
+      [ -z "$name" ] && name="$(git config --file "$win_cfg" --get user.name 2>/dev/null || true)"
+      [ -z "$email" ] && email="$(git config --file "$win_cfg" --get user.email 2>/dev/null || true)"
+      if [ -n "$name" ] && [ -n "$email" ]; then
+        log "git identity loaded from $win_cfg"
+        break
+      fi
+    done
+  fi
+
+  if [ -z "$name" ] || [ -z "$email" ]; then
+    warn "git identity missing (user.name/email) — skip auto-commit"
+    warn "set git config, or TASK_END_SHIP_GIT_NAME / TASK_END_SHIP_GIT_EMAIL"
+    return 1
+  fi
+
+  # Local only — do not touch global (WSL vs Windows split is intentional)
+  git config user.name "$name" 2>/dev/null || true
+  git config user.email "$email" 2>/dev/null || true
+  export GIT_AUTHOR_NAME="$name"
+  export GIT_AUTHOR_EMAIL="$email"
+  export GIT_COMMITTER_NAME="$name"
+  export GIT_COMMITTER_EMAIL="$email"
+  log "git identity ready: $name <$email>"
+  return 0
+}
+
 DIRTY_TEXT="$(collect_changed_paths)"
 classify_paths_text "$DIRTY_TEXT"
 DIRTY_HAS_OTA=$HAS_OTA
 DIRTY_HAS_BINARY=$HAS_BINARY
 DIRTY_HAS_ANY=$HAS_ANY
+
+filter_ota_paths_text "$DIRTY_TEXT"
+DIRTY_OTA_TEXT="$OTA_PATHS_TEXT"
+DIRTY_OTA_COUNT=0
+if [ -n "$DIRTY_OTA_TEXT" ]; then
+  DIRTY_OTA_COUNT="$(printf '%s' "$DIRTY_OTA_TEXT" | sed '/^$/d' | wc -l | tr -d ' ')"
+fi
 
 BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)"
 IN_WT=0
@@ -176,44 +308,91 @@ else
   log "main worktree (branch=$BRANCH)"
 fi
 
-# --- Step 1: auto-commit -----------------------------------------------------
+# --- Step 1: auto-commit (OTA-safe paths only) --------------------------------
 COMMITTED=0
+STAGED_BY_US_TEXT=""
 if [ "${TASK_END_SHIP_COMMIT:-1}" = "1" ] && [ "$DIRTY_HAS_ANY" = "1" ]; then
   if [ "$DRY_RUN" = "1" ]; then
-    COUNT="$(printf '%s\n' "$DIRTY_TEXT" | sed '/^$/d' | wc -l | tr -d ' ')"
-    log "dry-run: would commit ${COUNT} path(s)"
+    if [ "$DIRTY_OTA_COUNT" -gt 0 ]; then
+      log "dry-run: would commit ${DIRTY_OTA_COUNT} OTA-safe path(s)"
+      printf '%s' "$DIRTY_OTA_TEXT" | sed '/^$/d' | while IFS= read -r f; do
+        log "dry-run:   + $f"
+      done
+    else
+      log "dry-run: no OTA-safe paths to commit"
+    fi
+    if [ "$DIRTY_HAS_BINARY" = "1" ]; then
+      log "dry-run: native/binary paths present — will leave unstaged"
+    fi
   else
-    STAGED=0
-    while IFS= read -r f || [ -n "$f" ]; do
-      [ -z "$f" ] && continue
-      if should_never_commit "$f"; then
-        warn "skip staging secret/build path: $f"
-        continue
-      fi
-      git add -- "$f" 2>/dev/null || true
-      STAGED=1
-    done <<EOF
+    if [ "$DIRTY_OTA_COUNT" = "0" ] || [ -z "$DIRTY_OTA_TEXT" ]; then
+      log "no OTA-safe paths to commit (native/docs left unstaged)"
+    elif ! ensure_git_identity; then
+      log "auto-commit skipped (no git identity)"
+    elif index_has_non_ota_staged; then
+      warn "index already has non-OTA staged paths — skip auto-commit (manual cleanup)"
+      warn "tip: git restore --staged <native-paths>  then re-run, or reset index"
+    else
+      STAGED_BY_US_TEXT=""
+      while IFS= read -r f || [ -n "$f" ]; do
+        [ -z "$f" ] && continue
+        f="$(normalize_repo_path "$f")"
+        [ -z "$f" ] && continue
+        if should_never_commit "$f"; then
+          warn "skip staging secret/build path: $f"
+          continue
+        fi
+        if is_binary_path "$f"; then
+          warn "skip staging native/binary: $f"
+          continue
+        fi
+        if ! is_ota_path "$f"; then
+          log "leave unstaged (non-OTA): $f"
+          continue
+        fi
+        if git add -- "$f" 2>/dev/null; then
+          STAGED_BY_US_TEXT="${STAGED_BY_US_TEXT}${f}
+"
+        else
+          warn "git add failed: $f"
+        fi
+      done <<EOF
 $DIRTY_TEXT
 EOF
-    if [ "$STAGED" = "1" ] && ! git diff --cached --quiet 2>/dev/null; then
-      MSG="chore: task-end auto commit"
-      SHORT_STAT="$(git diff --cached --stat | tail -n 1 | tr -s ' ' || true)"
-      [ -n "$SHORT_STAT" ] && MSG="chore: task-end auto commit —${SHORT_STAT}"
-      if ! git commit -m "$MSG" --no-verify; then
-        warn "commit failed"
+
+      if [ -n "$STAGED_BY_US_TEXT" ] && ! git diff --cached --quiet 2>/dev/null; then
+        # Guard: never commit if index somehow picked up non-OTA
+        if index_has_non_ota_staged; then
+          warn "refusing commit: non-OTA paths in index — unstaging our adds"
+          unstage_paths_text "$STAGED_BY_US_TEXT"
+          STAGED_BY_US_TEXT=""
+        else
+          MSG="chore: task-end auto commit"
+          SHORT_STAT="$(git diff --cached --stat | tail -n 1 | tr -s ' ' || true)"
+          [ -n "$SHORT_STAT" ] && MSG="chore: task-end auto commit —${SHORT_STAT}"
+          if ! git commit -m "$MSG" --no-verify; then
+            warn "commit failed — resetting index for paths we staged"
+            unstage_paths_text "$STAGED_BY_US_TEXT"
+            STAGED_BY_US_TEXT=""
+          else
+            COMMITTED=1
+            STAGED_BY_US_TEXT=""
+            log "committed: $MSG"
+          fi
+        fi
       else
-        COMMITTED=1
-        log "committed: $MSG"
+        log "nothing OTA-safe to commit"
       fi
-    else
-      log "nothing safe to commit"
     fi
   fi
 elif [ "$DIRTY_HAS_ANY" != "1" ]; then
   log "working tree clean — no auto-commit"
 fi
 
-# Eligibility: dirty (pre-commit / dry-run) OR latest HEAD OR unpushed range
+# Eligibility:
+#   OTA: dirty OTA (still on disk / dry-run) OR committed HEAD/range
+#   BINARY block: only committed content (HEAD/range) — leftover unstaged
+#   native in the working tree must not block shipping pure-JS OTA.
 HEAD_TEXT="$(git diff-tree --no-commit-id --name-only -r HEAD 2>/dev/null || true)"
 classify_paths_text "$HEAD_TEXT"
 HEAD_HAS_OTA=$HAS_OTA
@@ -234,7 +413,8 @@ HAS_BINARY=0
 if [ "$DIRTY_HAS_OTA" = "1" ] || [ "$HEAD_HAS_OTA" = "1" ] || [ "$RANGE_HAS_OTA" = "1" ]; then
   HAS_OTA=1
 fi
-if [ "$DIRTY_HAS_BINARY" = "1" ] || [ "$HEAD_HAS_BINARY" = "1" ] || [ "$RANGE_HAS_BINARY" = "1" ]; then
+# Only committed binary/native blocks OTA (not unstaged leftover native)
+if [ "$HEAD_HAS_BINARY" = "1" ] || [ "$RANGE_HAS_BINARY" = "1" ]; then
   HAS_BINARY=1
 fi
 
@@ -247,7 +427,7 @@ if [ "$FORCE" != "1" ]; then
     exit 0
   fi
   if [ "$HAS_BINARY" = "1" ] && [ "$HAS_OTA" = "1" ]; then
-    log "mixed OTA + binary paths — skip OTA (need EAS Build for native)"
+    log "mixed OTA + binary in commits — skip OTA (need EAS Build for native)"
     if [ "$COMMITTED" = "1" ] && [ "$DRY_RUN" != "1" ]; then
       git push -u origin "$BRANCH" || warn "push failed"
     fi
