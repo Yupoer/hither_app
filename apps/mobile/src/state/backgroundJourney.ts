@@ -59,15 +59,6 @@ if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
       if (!config) return;
 
       const trackingMode = resolveBackgroundTrackingMode(config);
-      if (!config.sharingEnabled || trackingMode === 'hidden') {
-        await purgeLocationOutbox();
-        await diagnostics.write({
-          event: 'location_rejected_sharing_disabled',
-          source: 'background_task',
-        });
-        return;
-      }
-
       const latest = data.locations[data.locations.length - 1];
       const coords = {
         latitude: latest.coords.latitude,
@@ -88,8 +79,12 @@ if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
         BACKGROUND_JOURNEY_KEY,
         JSON.stringify({ ...config, sequence, arrivalState: arrival }),
       );
+      // Local Live Activity always updates from device GPS — works offline and
+      // when cloud sharing is off. Upload is gated separately below.
       await liveActivity.updateAllGroupActivities({
         groupName: '',
+        navigationSessionId: config.navigationSessionId ?? undefined,
+        status: 'active',
         distanceMeters: distanceM,
         progress: arrival.progress,
         travelMode: config.travelMode,
@@ -103,6 +98,19 @@ if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
           sequence,
         });
       }
+
+      const uploadAllowed =
+        config.sharingEnabled && trackingMode !== 'hidden';
+      if (!uploadAllowed) {
+        await purgeLocationOutbox();
+        await diagnostics.write({
+          event: 'location_rejected_sharing_disabled',
+          source: 'background_task',
+          navigationSessionId: config.navigationSessionId,
+        });
+        return;
+      }
+
       const powerMode =
         trackingMode === 'passiveBackground' && config.powerMode === 'allDay'
           ? 'allDay'

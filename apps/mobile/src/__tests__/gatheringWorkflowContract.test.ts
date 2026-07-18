@@ -59,6 +59,9 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(migrations).toContain("v_journey_status = 'paused'");
     expect(migrations).toContain('paused destination requires an existing arrival');
     expect(migrations).toContain('m.subgroup_id is not distinct from i.subgroup_id');
+    // Sequential mark: earlier open stops for this user, not active_destination max.
+    expect(migrations).toContain('i.position < v_destination.position');
+    expect(migrations).toContain('i.closed_at is null');
     expect(migrations).toMatch(
       /on_member_location_arrival[\s\S]*insert into public\.destination_arrivals/,
     );
