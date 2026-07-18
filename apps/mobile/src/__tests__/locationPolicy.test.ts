@@ -1,13 +1,16 @@
 import {
+  createMotionState,
   locationPolicy,
   POWER_BUDGET_NOTE,
   quantizeCoordinates,
+  reduceMotionState,
   resolveTrackingMode,
   shouldAcceptUiSample,
   shouldRecomputeRoute,
   shouldRunBackgroundLocation,
   shouldUploadSample,
   shouldWatchLocation,
+  uploadHeartbeatForCadence,
   type LocationGateState,
 } from '../utils/locationPolicy';
 import type { Coordinates } from '../types';
@@ -30,13 +33,16 @@ const atOrigin = (atMs: number): LocationGateState => ({
 });
 
 describe('locationPolicy', () => {
-  it('defaults to the low-power foreground profile', () => {
+  it('defaults to the motion-aware foreground balanced profile', () => {
     const p = locationPolicy(false);
     expect(p.accuracy).toBe('balanced');
-    expect(p.distanceInterval).toBe(50);
-    expect(p.timeInterval).toBe(20_000);
-    expect(p.uploadMinDistanceM).toBe(50);
-    expect(p.uploadHeartbeatMs).toBe(120_000);
+    expect(p.distanceInterval).toBe(30);
+    expect(p.timeInterval).toBe(15_000);
+    expect(p.uploadMinDistanceM).toBe(30);
+    expect(p.uploadHeartbeatMs).toBe(45_000);
+    expect(p.uploadHeartbeatStationaryMs).toBe(90_000);
+    expect(p.stationaryAfterMs).toBe(60_000);
+    expect(p.uploadHeartbeatStationaryMs).toBeGreaterThan(p.uploadHeartbeatMs);
     expect(p.routeCoordDecimals).toBe(4);
     expect(p.realtimeLocationDebounceMs).toBe(2_500);
   });
@@ -46,8 +52,9 @@ describe('locationPolicy', () => {
     expect(p.accuracy).toBe('high');
     expect(p.distanceInterval).toBe(8);
     expect(p.timeInterval).toBe(5_000);
-    expect(p.uploadMinDistanceM).toBe(15);
-    expect(p.uploadHeartbeatMs).toBe(45_000);
+    expect(p.uploadMinDistanceM).toBe(12);
+    expect(p.uploadHeartbeatMs).toBe(20_000);
+    expect(p.uploadHeartbeatStationaryMs).toBe(60_000);
     expect(p.routeCoordDecimals).toBe(5);
     expect(p.realtimeLocationDebounceMs).toBe(1_500);
   });
@@ -56,7 +63,8 @@ describe('locationPolicy', () => {
     const p = locationPolicy(true, 'allDay');
     expect(p.accuracy).toBe('low');
     expect(p.distanceInterval).toBe(120);
-    expect(p.uploadHeartbeatMs).toBe(300_000);
+    expect(p.uploadHeartbeatMs).toBe(180_000);
+    expect(p.uploadHeartbeatStationaryMs).toBe(300_000);
     expect(p.uploadMinDistanceM).toBe(120);
     expect(POWER_BUDGET_NOTE.allDay8hTargetPct).toBe(20);
   });
@@ -65,6 +73,56 @@ describe('locationPolicy', () => {
     const p = locationPolicy(false, 'journey');
     expect(p.accuracy).toBe('balanced');
     expect(p.uploadHeartbeatMs).toBeLessThan(locationPolicy(false, 'allDay').uploadHeartbeatMs);
+  });
+});
+
+describe('motion cadence', () => {
+  const policy = locationPolicy(false);
+
+  it('starts moving and stays moving while significantly relocating', () => {
+    let state = createMotionState(1_000);
+    state = reduceMotionState(state, origin, 1_000, policy);
+    expect(state.cadence).toBe('moving');
+    state = reduceMotionState(state, moved(40), 10_000, policy);
+    expect(state.cadence).toBe('moving');
+  });
+
+  it('becomes stationary after a quiet span without significant move', () => {
+    let state = createMotionState(1_000);
+    state = reduceMotionState(state, origin, 1_000, policy);
+    state = reduceMotionState(
+      state,
+      moved(2),
+      1_000 + policy.stationaryAfterMs,
+      policy,
+    );
+    expect(state.cadence).toBe('stationary');
+  });
+
+  it('returns to moving on a significant move after rest', () => {
+    let state = createMotionState(1_000);
+    state = reduceMotionState(state, origin, 1_000, policy);
+    state = reduceMotionState(
+      state,
+      moved(1),
+      1_000 + policy.stationaryAfterMs + 1_000,
+      policy,
+    );
+    expect(state.cadence).toBe('stationary');
+    state = reduceMotionState(
+      state,
+      moved(50),
+      1_000 + policy.stationaryAfterMs + 2_000,
+      policy,
+    );
+    expect(state.cadence).toBe('moving');
+  });
+
+  it('picks denser heartbeat while moving and calmer while stationary', () => {
+    expect(uploadHeartbeatForCadence(policy, 'moving')).toBe(policy.uploadHeartbeatMs);
+    expect(uploadHeartbeatForCadence(policy, 'stationary')).toBe(
+      policy.uploadHeartbeatStationaryMs,
+    );
   });
 });
 
@@ -184,13 +242,35 @@ describe('shouldUploadSample', () => {
     ).toBe(false);
   });
 
-  it('uploads on heartbeat while nearly stationary', () => {
+  it('uploads on moving heartbeat while nearly stationary', () => {
     expect(
       shouldUploadSample(
         moved(1),
         1_000 + policy.uploadHeartbeatMs,
         atOrigin(1_000),
         policy,
+        'moving',
+      ),
+    ).toBe(true);
+  });
+
+  it('waits longer for heartbeat while stationary', () => {
+    expect(
+      shouldUploadSample(
+        moved(1),
+        1_000 + policy.uploadHeartbeatMs,
+        atOrigin(1_000),
+        policy,
+        'stationary',
+      ),
+    ).toBe(false);
+    expect(
+      shouldUploadSample(
+        moved(1),
+        1_000 + policy.uploadHeartbeatStationaryMs,
+        atOrigin(1_000),
+        policy,
+        'stationary',
       ),
     ).toBe(true);
   });

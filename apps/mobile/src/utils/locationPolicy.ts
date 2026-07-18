@@ -13,6 +13,10 @@ import { distanceMeters } from './geo';
  *
  * Continuous High accuracy for 8h will typically drain 40%+ and is intentionally
  * outside this budget — the precise toggle is short-burst only.
+ *
+ * Upload cadence is **dynamic**: while the device is moving, use the denser
+ * `uploadHeartbeatMs`; after a quiet period, switch to
+ * `uploadHeartbeatStationaryMs` (still a real heartbeat — not "off").
  */
 export type LocationPowerMode = 'foreground' | 'allDay' | 'journey';
 
@@ -27,6 +31,9 @@ export type TrackingMode =
   | 'teamNavigation'
   | 'navigationMax'
   | 'manualHighAccuracy';
+
+/** Motion-aware upload tier. Independent of power mode / tracking mode. */
+export type MotionCadence = 'moving' | 'stationary';
 
 export interface TrackingModeInput {
   sharingEnabled: boolean;
@@ -58,8 +65,20 @@ export interface LocationPolicy {
   /** Accept sample for Supabase upload. */
   uploadMinDistanceM: number;
   uploadMinIntervalMs: number;
-  /** Upload even if nearly stationary so teammates see liveness. */
+  /**
+   * Upload heartbeat while **moving** (or right after a move).
+   * Also used as the independent timer tick base.
+   */
   uploadHeartbeatMs: number;
+  /**
+   * Upload heartbeat while **stationary** for a while.
+   * Still reports liveness — just less often than moving.
+   */
+  uploadHeartbeatStationaryMs: number;
+  /**
+   * After this quiet span with no significant move, cadence becomes stationary.
+   */
+  stationaryAfterMs: number;
   /** Recompute MapKit routes only after this move / interval. */
   routeMinDistanceM: number;
   routeMinIntervalMs: number;
@@ -92,8 +111,10 @@ export function locationPolicy(
       uiMinIntervalMs: 30_000,
       uploadMinDistanceM: 120,
       uploadMinIntervalMs: 120_000,
-      // ~16 uploads/hour when stationary; main radio budget control.
-      uploadHeartbeatMs: 300_000,
+      // Moving: ~1–2 uploads / 3 min; stationary rest: 5 min liveness.
+      uploadHeartbeatMs: 180_000,
+      uploadHeartbeatStationaryMs: 300_000,
+      stationaryAfterMs: 120_000,
       routeMinDistanceM: 80,
       routeMinIntervalMs: 60_000,
       routeCoordDecimals: 3,
@@ -111,7 +132,9 @@ export function locationPolicy(
           uiMinIntervalMs: 2_000,
           uploadMinDistanceM: 25,
           uploadMinIntervalMs: 15_000,
-          uploadHeartbeatMs: 90_000,
+          uploadHeartbeatMs: 25_000,
+          uploadHeartbeatStationaryMs: 60_000,
+          stationaryAfterMs: 45_000,
           routeMinDistanceM: 20,
           routeMinIntervalMs: 12_000,
           routeCoordDecimals: 5,
@@ -119,13 +142,15 @@ export function locationPolicy(
         }
       : {
           accuracy: 'balanced',
-          distanceInterval: 50,
-          timeInterval: 30_000,
+          distanceInterval: 40,
+          timeInterval: 25_000,
           uiMinDistanceM: 20,
           uiMinIntervalMs: 5_000,
-          uploadMinDistanceM: 60,
-          uploadMinIntervalMs: 45_000,
-          uploadHeartbeatMs: 180_000,
+          uploadMinDistanceM: 45,
+          uploadMinIntervalMs: 30_000,
+          uploadHeartbeatMs: 45_000,
+          uploadHeartbeatStationaryMs: 90_000,
+          stationaryAfterMs: 60_000,
           routeMinDistanceM: 40,
           routeMinIntervalMs: 30_000,
           routeCoordDecimals: 4,
@@ -133,7 +158,7 @@ export function locationPolicy(
         };
   }
 
-  // Foreground (app open).
+  // Foreground (app open). Tighter while walking; calm when resting.
   return highAccuracy
     ? {
         accuracy: 'high',
@@ -141,9 +166,11 @@ export function locationPolicy(
         timeInterval: 5_000,
         uiMinDistanceM: 5,
         uiMinIntervalMs: 1_500,
-        uploadMinDistanceM: 15,
+        uploadMinDistanceM: 12,
         uploadMinIntervalMs: 8_000,
-        uploadHeartbeatMs: 45_000,
+        uploadHeartbeatMs: 20_000,
+        uploadHeartbeatStationaryMs: 60_000,
+        stationaryAfterMs: 45_000,
         routeMinDistanceM: 15,
         routeMinIntervalMs: 8_000,
         routeCoordDecimals: 5,
@@ -151,15 +178,18 @@ export function locationPolicy(
       }
     : {
         accuracy: 'balanced',
-        distanceInterval: 50,
-        timeInterval: 20_000,
-        uiMinDistanceM: 15,
+        distanceInterval: 30,
+        timeInterval: 15_000,
+        uiMinDistanceM: 12,
         uiMinIntervalMs: 4_000,
-        uploadMinDistanceM: 50,
-        uploadMinIntervalMs: 30_000,
-        uploadHeartbeatMs: 120_000,
-        routeMinDistanceM: 40,
-        routeMinIntervalMs: 25_000,
+        uploadMinDistanceM: 30,
+        uploadMinIntervalMs: 20_000,
+        // Walking: ~every 45s if GPS quiet; resting: ~90s liveness.
+        uploadHeartbeatMs: 45_000,
+        uploadHeartbeatStationaryMs: 90_000,
+        stationaryAfterMs: 60_000,
+        routeMinDistanceM: 35,
+        routeMinIntervalMs: 20_000,
         routeCoordDecimals: 4,
         realtimeLocationDebounceMs: 2_500,
       };
@@ -180,6 +210,58 @@ export function shouldRunBackgroundLocation(
 export interface LocationGateState {
   lastCoords: Coordinates | null;
   lastAtMs: number;
+}
+
+export interface MotionState {
+  cadence: MotionCadence;
+  /** Last time a significant move (uploadMinDistanceM) was observed. */
+  lastSignificantMoveAtMs: number;
+  lastCoords: Coordinates | null;
+}
+
+export function createMotionState(nowMs = 0): MotionState {
+  return {
+    cadence: 'moving',
+    lastSignificantMoveAtMs: nowMs,
+    lastCoords: null,
+  };
+}
+
+/**
+ * Update motion cadence from a new fix. Pure — callers own the ref.
+ * Significant move → `moving` immediately; quiet for `stationaryAfterMs` → `stationary`.
+ */
+export function reduceMotionState(
+  prev: MotionState,
+  sample: Coordinates,
+  nowMs: number,
+  policy: LocationPolicy,
+): MotionState {
+  const moved = prev.lastCoords
+    ? distanceMeters(prev.lastCoords, sample)
+    : Number.POSITIVE_INFINITY;
+  const significant = !prev.lastCoords || moved >= policy.uploadMinDistanceM;
+  const lastSignificantMoveAtMs = significant
+    ? nowMs
+    : prev.lastSignificantMoveAtMs;
+  const quietMs = nowMs - lastSignificantMoveAtMs;
+  const cadence: MotionCadence =
+    quietMs >= policy.stationaryAfterMs ? 'stationary' : 'moving';
+  return {
+    cadence,
+    lastSignificantMoveAtMs,
+    lastCoords: sample,
+  };
+}
+
+/** Heartbeat interval for the current motion cadence. */
+export function uploadHeartbeatForCadence(
+  policy: LocationPolicy,
+  cadence: MotionCadence,
+): number {
+  return cadence === 'stationary'
+    ? policy.uploadHeartbeatStationaryMs
+    : policy.uploadHeartbeatMs;
 }
 
 /**
@@ -204,7 +286,8 @@ export function shouldAcceptUiSample(
 
 /**
  * Whether a sample should be uploaded to Supabase.
- * First sample always accepted. Heartbeat keeps liveness when stationary.
+ * First sample always accepted. Heartbeat keeps liveness when stationary,
+ * using the motion-aware interval when `cadence` is provided.
  * Manual refresh bypasses this at the call site.
  */
 export function shouldUploadSample(
@@ -212,10 +295,12 @@ export function shouldUploadSample(
   nowMs: number,
   last: LocationGateState,
   policy: LocationPolicy,
+  cadence: MotionCadence = 'moving',
 ): boolean {
   if (!last.lastCoords) return true;
   const elapsed = nowMs - last.lastAtMs;
-  if (elapsed >= policy.uploadHeartbeatMs) return true;
+  const heartbeatMs = uploadHeartbeatForCadence(policy, cadence);
+  if (elapsed >= heartbeatMs) return true;
   const moved = distanceMeters(last.lastCoords, sample);
   if (moved >= policy.uploadMinDistanceM && elapsed >= policy.uploadMinIntervalMs) return true;
   if (moved >= policy.uploadMinDistanceM * 1.5 && elapsed >= policy.uploadMinIntervalMs * 0.5) {
