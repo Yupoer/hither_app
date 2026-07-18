@@ -13,11 +13,34 @@ const groupService = readFileSync(
   'utf8',
 );
 
+const mapScreen = readFileSync(
+  join(__dirname, '../screens/MapScreen.tsx'),
+  'utf8',
+);
+
 describe('measured performance regressions', () => {
   it('keeps the translator stable so effects do not resubscribe on every render', () => {
     expect(i18n).toContain("import { useMemo } from 'react'");
     expect(i18n).toMatch(/return useMemo\(\(\) => \(\{[\s\S]*?language,[\s\S]*?t:/);
     expect(i18n).toContain('}), [dict, language])');
+  });
+
+  it('does not put translator identity in gathering-workflow effect deps', () => {
+    expect(mapScreen).toContain('tRef.current');
+    expect(mapScreen).toContain('WORKFLOW_MIN_INTERVAL_MS');
+    expect(mapScreen).toContain('workflowInFlightRef');
+    // Effect deps must not include bare `t` (historical SELECT storm).
+    expect(mapScreen).toMatch(
+      /}, \[groupId, loadGatheringWorkflow, scheduleWorkflowReload\]\);/,
+    );
+  });
+
+  it('force-syncs on foreground and keeps an independent motion-aware heartbeat', () => {
+    expect(locationHook).toContain('refreshDeviceLocation');
+    expect(locationHook).toContain('HEARTBEAT_TICK_MS');
+    expect(locationHook).toContain('reduceMotionState');
+    expect(locationHook).toContain('uploadHeartbeatForCadence');
+    expect(locationHook).toContain('immediate: true');
   });
 
   it('coalesces location outbox uploads instead of flushing after every sample', () => {

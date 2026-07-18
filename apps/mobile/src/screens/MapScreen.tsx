@@ -438,26 +438,56 @@ export default function MapScreen({ route, navigation }: Props) {
     }
   }, [refresh]);
 
+  // Keep translator out of effect deps — unstable `t` historically re-subscribed
+  // gathering Realtime and hammered destination_arrivals (~5–6 SELECT/s).
+  const tRef = useRef(t);
+  tRef.current = t;
+  const isLeaderRef = useRef(isLeader);
+  isLeaderRef.current = isLeader;
+  const userIdRef = useRef(user?.id);
+  userIdRef.current = user?.id;
+  const workflowInFlightRef = useRef<Promise<void> | null>(null);
+  const workflowLastLoadAtRef = useRef(0);
+  const WORKFLOW_MIN_INTERVAL_MS = 2_500;
+
   const loadGatheringWorkflow = useCallback(async () => {
     if (!groupId || isDemoGroup(groupId)) return;
-    const [arrivals, requests] = await Promise.all([
-      fetchDestinationArrivals(groupId),
-      isLeader ? fetchPendingGatherPointRequests(groupId) : Promise.resolve([]),
-    ]);
-    setDestinationArrivals(arrivals);
-    setGatherPointRequests(requests);
-  }, [groupId, isLeader]);
+    // Single-flight: coalesce concurrent reloads into one network round-trip.
+    if (workflowInFlightRef.current) {
+      await workflowInFlightRef.current;
+      return;
+    }
+    const run = (async () => {
+      const [arrivals, requests] = await Promise.all([
+        fetchDestinationArrivals(groupId),
+        isLeaderRef.current
+          ? fetchPendingGatherPointRequests(groupId)
+          : Promise.resolve([]),
+      ]);
+      setDestinationArrivals(arrivals);
+      setGatherPointRequests(requests);
+      workflowLastLoadAtRef.current = Date.now();
+    })();
+    workflowInFlightRef.current = run.finally(() => {
+      workflowInFlightRef.current = null;
+    });
+    await workflowInFlightRef.current;
+  }, [groupId]);
 
   const scheduleWorkflowReload = useCallback(() => {
     if (workflowReloadRef.current) return;
     workflowReloadRef.current = setTimeout(() => {
       workflowReloadRef.current = null;
+      // Realtime-driven only: skip if we just loaded (stops SELECT storms).
+      if (Date.now() - workflowLastLoadAtRef.current < WORKFLOW_MIN_INTERVAL_MS) return;
       void loadGatheringWorkflow().catch(() => undefined);
     }, 300);
   }, [loadGatheringWorkflow]);
 
   useEffect(() => {
     if (!groupId || isDemoGroup(groupId)) return;
+    // Mount / group change only — not on every render or translator identity.
+    workflowLastLoadAtRef.current = 0;
     void loadGatheringWorkflow().catch(() => undefined);
     const channel = supabase
       .channel(`gathering-workflow:${groupId}`)
@@ -469,11 +499,14 @@ export default function MapScreen({ route, navigation }: Props) {
       }, (payload) => {
         scheduleWorkflowReload();
         if (
-          isLeader
+          isLeaderRef.current
           && payload.eventType === 'INSERT'
-          && payload.new.requester_id !== user?.id
+          && (payload.new as { requester_id?: string } | null)?.requester_id !== userIdRef.current
         ) {
-          Alert.alert(t('gatherRequest.newTitle'), t('gatherRequest.newBody'));
+          Alert.alert(
+            tRef.current('gatherRequest.newTitle'),
+            tRef.current('gatherRequest.newBody'),
+          );
         }
       })
       .subscribe();
@@ -482,7 +515,7 @@ export default function MapScreen({ route, navigation }: Props) {
       workflowReloadRef.current = null;
       supabase.removeChannel(channel);
     };
-  }, [groupId, isLeader, loadGatheringWorkflow, scheduleWorkflowReload, t, user?.id]);
+  }, [groupId, loadGatheringWorkflow, scheduleWorkflowReload]);
 
   // --- Sheet / overlay / island UI state -----------------------------------
   // Measured height of the sheet's pinned header (grabber + search row) —

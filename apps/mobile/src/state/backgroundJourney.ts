@@ -6,9 +6,12 @@ import { ackNavigationSession } from '../api/services/NavigationService';
 import { liveActivity } from '../native';
 import { distanceMeters } from '../utils/geo';
 import {
+  createMotionState,
   locationPolicy,
+  reduceMotionState,
   shouldUploadSample,
   type LocationGateState,
+  type MotionState,
 } from '../utils/locationPolicy';
 import {
   createArrivalState,
@@ -37,6 +40,8 @@ const controller = createBackgroundJourneyController(Location, AsyncStorage);
 
 /** Process-local gate so background batches don't spam upserts. */
 let uploadGate: LocationGateState = { lastCoords: null, lastAtMs: 0 };
+/** Motion cadence for dynamic background upload heartbeat. */
+let motionState: MotionState = createMotionState();
 
 if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
   TaskManager.defineTask<BackgroundLocationTaskData>(
@@ -109,7 +114,14 @@ if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
           (powerMode === 'journey' && Boolean(config.highAccuracy)),
         powerMode,
       );
-      const shouldUpload = shouldUploadSample(coords, now, uploadGate, policy);
+      motionState = reduceMotionState(motionState, coords, now, policy);
+      const shouldUpload = shouldUploadSample(
+        coords,
+        now,
+        uploadGate,
+        policy,
+        motionState.cadence,
+      );
       if (!shouldUpload && arrival.status === 'enRoute') {
         await diagnostics.write({
           event: 'location_rejected_distance',
@@ -198,6 +210,7 @@ export function startBackgroundJourney(
 
 export function stopBackgroundJourney(): Promise<void> {
   uploadGate = { lastCoords: null, lastAtMs: 0 };
+  motionState = createMotionState();
   return controller.stop();
 }
 
