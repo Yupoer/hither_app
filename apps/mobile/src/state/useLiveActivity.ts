@@ -165,19 +165,21 @@ export function useLiveActivity(
       pushTokenRef.current = undefined;
 
       void (async () => {
-        // Await end before start so a destination switch cannot leave zombies.
+        // Always clear every Hither activity first. Push-to-start (APNs) can
+        // already have created a minimal lock-screen activity; starting another
+        // without end-all left two Live Activities (team+progress vs full ETA).
         if (handleRef.current) {
           const previousId = handleRef.current;
           handleRef.current = null;
-          await finishActivity(previousId);
+          await finishActivity(previousId).catch(() => undefined);
         }
+        await liveActivity.endAllGroupActivities();
         if (cancelled) return;
 
         const result = await liveActivity.startGroupActivity(stateRef.current);
         if (!result) return;
         if (cancelled) {
           await finishActivity(result.activityId);
-          // Belt: drop any other orphans from a race.
           await liveActivity.endAllGroupActivities();
           return;
         }

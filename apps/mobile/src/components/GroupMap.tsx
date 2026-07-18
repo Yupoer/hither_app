@@ -257,6 +257,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     gathering,
     destinations,
     pendingPlace,
+    currentUserId,
     initialCenter,
     routePoints,
     routeColor,
@@ -392,6 +393,10 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       initialRegion={mapInitialRegion}
       userInterfaceStyle={mapInterfaceStyle}
       mapPadding={{ top: 42, left: 32, right: 32, bottom: 42 }}
+      // Continuous local blue-dot from device GPS (offline). Self is not drawn
+      // as a flock emoji pin — that would lag on cloud upload cadence.
+      showsUserLocation
+      showsMyLocationButton={false}
       showsCompass
       pitchEnabled
       rotateEnabled
@@ -428,6 +433,8 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
 
       {members.map((m) => {
         if (!m.coordinates) return null;
+        // Self uses native showsUserLocation — no avatar pin.
+        if (currentUserId && m.userId === currentUserId) return null;
         return (
           <MemberMarker
             key={m.userId}

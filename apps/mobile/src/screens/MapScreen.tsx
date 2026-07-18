@@ -76,8 +76,13 @@ import {
   useTheme,
   MEET_RED_OPTIONS,
   DEFAULT_MEET_RED_MIN,
+  ARRIVAL_RADIUS_MIN_M,
+  ARRIVAL_RADIUS_MAX_M,
   type Language,
 } from '../state/PreferencesContext';
+import PrefSlider from '../components/PrefSlider';
+import { canMarkDestinationArrival } from '../utils/arrivalMarking';
+import { hasArrived } from '../utils/journeyProgress';
 import { useTranslation, type TranslationKey } from '../i18n';
 import { useDeviceLocation } from './MapScreen/hooks/useDeviceLocation';
 import { useCarouselSelection } from './MapScreen/hooks/useCarouselSelection';
@@ -306,9 +311,11 @@ export default function MapScreen({ route, navigation }: Props) {
     gatherCardDefaultExpanded,
     gatherCardTitleMarquee,
     gatherCardMarqueeSpeed,
+    arrivalRadiusM,
     setMeetRedMin,
     setHighAccuracy,
     setSharingEnabled,
+    setArrivalRadiusM,
   } = usePreferences();
   const { isCardExpanded, toggleCard, registerCardActivity } =
     useGatherCardExpansion(gatherCardDefaultExpanded);
@@ -940,44 +947,74 @@ export default function MapScreen({ route, navigation }: Props) {
     highAccuracy,
   });
 
-  // Foreground arrival uses the same two accurate-fix reducer as background
-  // tracking. The ACK is deliberately independent from the shared card
-  // closure: one member may arrive while the rest of the team is still en
-  // route.
+  // Foreground arrival: local GPS + tools radius. Works without session (local
+  // plan) and with null accuracy. ACK + DB mark when status becomes arrived.
+  const effectiveArrivalRadiusM = Math.max(
+    ARRIVAL_RADIUS_MIN_M,
+    Math.min(
+      ARRIVAL_RADIUS_MAX_M,
+      navigationSessionState.session?.destination.arrivalRadiusMeters ?? arrivalRadiusM,
+    ),
+  );
+  // Prefer the tighter of session default and the tools slider so a user who
+  // set 30m still auto-arrives inside 30m even if the session row says 50.
+  const localArrivalRadiusM = Math.min(effectiveArrivalRadiusM, arrivalRadiusM);
   const foregroundArrivalRef = useRef<{ key: string; state: ArrivalState } | null>(null);
+  const autoArrivalMarkedRef = useRef<string | null>(null);
+  const [autoArrivedDestId, setAutoArrivedDestId] = useState<string | null>(null);
   useEffect(() => {
-    const session = navigationSessionState.session;
-    if (!session || !navTarget || !deviceCoords || deviceAccuracyM == null) {
+    if (!journeyActive || !navTarget || !deviceCoords) {
       foregroundArrivalRef.current = null;
       return;
     }
-    const key = `${session.id}:${navTarget.id}`;
+    const session = navigationSessionState.session;
+    const key = `${session?.id ?? 'local'}:${navTarget.id}`;
+    const straightM = distanceMeters(deviceCoords, navTarget.coordinates);
     const previous = foregroundArrivalRef.current?.key === key
       ? foregroundArrivalRef.current.state
-      : createArrivalState(distanceMeters(deviceCoords, navTarget.coordinates));
+      : createArrivalState(straightM);
     const next = reduceArrival(
       previous,
       {
-        distanceM: distanceMeters(deviceCoords, navTarget.coordinates),
+        distanceM: straightM,
         accuracyM: deviceAccuracyM,
       },
-      { radiusM: session.destination.arrivalRadiusMeters },
+      { radiusM: localArrivalRadiusM },
     );
     foregroundArrivalRef.current = { key, state: next };
     if (next.status === 'arriving' || next.status === 'arrived') {
-      void navigationSessionState.ack(next.status, {
-        source: 'foreground_arrival_reducer',
-        distanceM: next.lastDistanceM,
-        accuracyM: deviceAccuracyM,
-        consecutiveFixes: next.consecutiveFixes,
-      }).catch(() => undefined);
+      if (session) {
+        void navigationSessionState.ack(next.status, {
+          source: 'foreground_arrival_reducer',
+          distanceM: next.lastDistanceM,
+          accuracyM: deviceAccuracyM,
+          consecutiveFixes: next.consecutiveFixes,
+        }).catch(() => undefined);
+      }
+    }
+    if (next.status === 'arrived' && user?.id) {
+      setAutoArrivedDestId(navTarget.id);
+      // Persist personal arrival so the checkmark does not depend only on ACK.
+      if (autoArrivalMarkedRef.current !== navTarget.id) {
+        autoArrivalMarkedRef.current = navTarget.id;
+        void setDestinationArrival(navTarget.id, user.id, true)
+          .then(() => loadGatheringWorkflow())
+          .catch(() => {
+            // Offline / sequential RPC: keep local auto-arrived UI.
+            autoArrivalMarkedRef.current = null;
+          });
+      }
     }
   }, [
     deviceAccuracyM,
     deviceCoords,
+    journeyActive,
+    loadGatheringWorkflow,
+    localArrivalRadiusM,
     navTarget,
     navigationSessionState.ack,
     navigationSessionState.session,
+    user?.id,
   ]);
   const initialJourneyRef = useRef<{
     key: string;
@@ -1103,8 +1140,7 @@ export default function MapScreen({ route, navigation }: Props) {
       navigationSessionId: navigationSessionState.session?.id ?? null,
       destinationId: navTarget?.id ?? 'group-presence',
       destination: dest,
-      arrivalRadiusMeters:
-        navigationSessionState.session?.destination.arrivalRadiusMeters ?? 50,
+      arrivalRadiusMeters: localArrivalRadiusM,
       initialDistanceM: backgroundInitialM,
       sequence: 0,
       travelMode,
@@ -1221,7 +1257,6 @@ export default function MapScreen({ route, navigation }: Props) {
           hasDepartedStart: departedStartRef.current || progressDepartedStart,
         })
       : undefined;
-  const liveProgress = gatedProgress?.progress;
 
   // Sticky "left start" so stepping back toward the pin does not snap to 0%.
   useEffect(() => {
@@ -1232,12 +1267,23 @@ export default function MapScreen({ route, navigation }: Props) {
   const liveGathered = navTarget
     ? members.filter((m) => m.status === 'arrived').length
     : undefined;
+  const straightToTargetM =
+    deviceCoords && navTarget
+      ? distanceMeters(deviceCoords, navTarget.coordinates)
+      : undefined;
   const localNavigationArrived = Boolean(
     navTarget && (
       myCompletedDestinationIds.has(navTarget.id) ||
-      navigationSessionState.memberState?.localStatus === 'arrived'
+      autoArrivedDestId === navTarget.id ||
+      navigationSessionState.memberState?.localStatus === 'arrived' ||
+      (straightToTargetM != null && hasArrived(straightToTargetM, localArrivalRadiusM))
     ),
   );
+  // Near the pin, force 100% even if MapKit route distance still lags.
+  const liveProgress =
+    localNavigationArrived
+      ? 1
+      : gatedProgress?.progress;
   useLiveActivity(journeyActive && !localNavigationArrived && liveActivityEnabled, {
     groupName: membership?.group.name ?? '',
     navigationSessionId: navigationSessionState.session?.id,
@@ -2781,10 +2827,32 @@ export default function MapScreen({ route, navigation }: Props) {
     openHistoryOverlay, isLeader,
   ]);
 
-  // ─── 工具：快捷指令、脫隊示警（設定改走頭像旁 ⋯ 選單）────────────────
+  // ─── 工具：抵達距離、快捷指令、脫隊示警（設定改走頭像旁 ⋯ 選單）──────
   const toolsPaneBody = useMemo(() => (
     <>
-      <Text style={[styles.sheetHeading, styles.sheetHeadingFirst]}>{t('map.cmdTitle')}</Text>
+      <Text style={[styles.sheetHeading, styles.sheetHeadingFirst]}>
+        {t('arrival.radiusSection')}
+      </Text>
+      <View style={styles.accuracyRow}>
+        <View style={styles.accuracyCopy}>
+          <Text style={styles.accuracyLabel}>
+            {t('arrival.radiusValue', { meters: String(arrivalRadiusM) })}
+          </Text>
+          <Text style={styles.accuracyHint}>{t('arrival.radiusHint')}</Text>
+        </View>
+      </View>
+      <View style={styles.marqueeSpeedBlock}>
+        <PrefSlider
+          value={arrivalRadiusM}
+          min={ARRIVAL_RADIUS_MIN_M}
+          max={ARRIVAL_RADIUS_MAX_M}
+          onChange={setArrivalRadiusM}
+          accent={accent}
+          accessibilityLabel={t('arrival.radiusSection')}
+        />
+      </View>
+
+      <Text style={styles.sheetHeading}>{t('map.cmdTitle')}</Text>
       {groupId ? (
         <QuickCommandsCard
           groupId={groupId}
@@ -2819,6 +2887,7 @@ export default function MapScreen({ route, navigation }: Props) {
   ), [
     styles, t, groupId, isLeader, dark, openCustomQuickCommand, group, accent, isPro,
     openPaywall, persistStragglerConfig, handleStragglerLocalChange,
+    arrivalRadiusM, setArrivalRadiusM,
   ]);
 
   const sheetPaneOptions = useMemo(
@@ -3154,18 +3223,19 @@ export default function MapScreen({ route, navigation }: Props) {
               // On tight density, drop nav label so meet countdown + mode stay
               // square-floor sized in one row (especially when Maps appears).
               const navIconOnly = chromeTight;
-              const arrivedBoundary = Math.max(
-                navTarget && navTarget.subgroupId === dest.subgroupId ? navTarget.order : -1,
-                ...destinationArrivals
-                  .map((arrival) => allScopedDestinations.find((item) => item.id === arrival.destinationId))
-                  .filter((item): item is Destination => item?.subgroupId === dest.subgroupId)
-                  .map((item) => item.order),
-              );
-              const firstOrder = Math.min(...allScopedDestinations.map((item) => item.order));
-              const canMarkArrival = dest.order <= (arrivedBoundary >= 0 ? arrivedBoundary : firstOrder);
+              const canMarkArrival = canMarkDestinationArrival({
+                destId: dest.id,
+                destOrder: dest.order,
+                destSubgroupId: dest.subgroupId,
+                scopedDestinations: allScopedDestinations,
+                myArrivedDestinationIds: myCompletedDestinationIds,
+              });
               const personallyArrived = myCompletedDestinationIds.has(dest.id) || (
-                navTarget?.id === dest.id &&
-                navigationSessionState.memberState?.localStatus === 'arrived'
+                navTarget?.id === dest.id && (
+                  autoArrivedDestId === dest.id ||
+                  navigationSessionState.memberState?.localStatus === 'arrived' ||
+                  (straightToTargetM != null && hasArrived(straightToTargetM, localArrivalRadiusM))
+                )
               );
               const navCmd = resolveNavCommand({
                 isLeader,

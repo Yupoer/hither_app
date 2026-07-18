@@ -13,15 +13,20 @@ import {
 
 describe('journey arrival boundary', () => {
   it.each([
-    [29.99, true],
-    [30, true],
-    [30.01, false],
-  ])('treats %s metres as arrived=%s', (distance, expected) => {
+    [49.99, true],
+    [50, true],
+    [50.01, false],
+  ])('treats %s metres as arrived=%s at default radius', (distance, expected) => {
     expect(hasArrived(distance)).toBe(expected);
   });
 
-  it('keeps the approved radius at exactly 30 metres', () => {
-    expect(ARRIVAL_RADIUS_M).toBe(30);
+  it('accepts a custom radius (tools slider)', () => {
+    expect(hasArrived(3, 10)).toBe(true);
+    expect(hasArrived(12, 10)).toBe(false);
+  });
+
+  it('defaults to 50 metres', () => {
+    expect(ARRIVAL_RADIUS_M).toBe(50);
   });
 });
 

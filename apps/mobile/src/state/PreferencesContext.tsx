@@ -52,11 +52,25 @@ const DAY_COLORS_KEY = 'pref.dayColors';
 const GATHER_CARD_DEFAULT_EXPANDED_KEY = 'pref.gatherCardDefaultExpanded';
 const GATHER_CARD_TITLE_MARQUEE_KEY = 'pref.gatherCardTitleMarquee';
 const GATHER_CARD_MARQUEE_SPEED_KEY = 'pref.gatherCardMarqueeSpeed';
+const ARRIVAL_RADIUS_KEY = 'pref.arrivalRadiusM';
 
 /** Marquee scroll speed (px/s). Same constant speed for every gathering title. */
 export const MARQUEE_SPEED_MIN = 20;
 export const MARQUEE_SPEED_MAX = 80;
 export const DEFAULT_MARQUEE_SPEED = 40;
+
+/** Local geofence radius for "arrived" (metres). Matches DB session clamp. */
+export const ARRIVAL_RADIUS_MIN_M = 10;
+export const ARRIVAL_RADIUS_MAX_M = 200;
+export const DEFAULT_ARRIVAL_RADIUS_M = 50;
+
+export function clampArrivalRadiusM(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_ARRIVAL_RADIUS_M;
+  return Math.min(
+    ARRIVAL_RADIUS_MAX_M,
+    Math.max(ARRIVAL_RADIUS_MIN_M, Math.round(value)),
+  );
+}
 
 export function clampMarqueeSpeed(value: number): number {
   if (!Number.isFinite(value)) return DEFAULT_MARQUEE_SPEED;
@@ -90,6 +104,11 @@ interface PreferencesValue {
   gatherCardTitleMarquee: boolean;
   /** Constant marquee speed in px/s (20–80). Default 40. */
   gatherCardMarqueeSpeed: number;
+  /**
+   * How close (metres) counts as arrived for local auto-arrival + tools
+   * geofence. Device preference; does not require network.
+   */
+  arrivalRadiusM: number;
   /** True once the persisted preferences have been loaded from storage. */
   ready: boolean;
   setLanguage: (language: Language) => void;
@@ -104,6 +123,7 @@ interface PreferencesValue {
   setGatherCardDefaultExpanded: (expanded: boolean) => void;
   setGatherCardTitleMarquee: (on: boolean) => void;
   setGatherCardMarqueeSpeed: (pxPerSec: number) => void;
+  setArrivalRadiusM: (meters: number) => void;
 }
 
 const PreferencesContext = createContext<PreferencesValue | undefined>(undefined);
@@ -141,6 +161,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [gatherCardTitleMarquee, setGatherCardTitleMarqueeState] = useState(true);
   const [gatherCardMarqueeSpeed, setGatherCardMarqueeSpeedState] =
     useState(DEFAULT_MARQUEE_SPEED);
+  const [arrivalRadiusM, setArrivalRadiusMState] = useState(DEFAULT_ARRIVAL_RADIUS_M);
   const [ready, setReady] = useState(false);
 
   // Restore persisted preferences on launch.
@@ -162,6 +183,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
           storedGatherCardDefaultExpanded,
           storedGatherCardTitleMarquee,
           storedGatherCardMarqueeSpeed,
+          storedArrivalRadius,
         ] = await AsyncStorage.multiGet([
           LANGUAGE_KEY,
           THEME_KEY,
@@ -176,6 +198,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
           GATHER_CARD_DEFAULT_EXPANDED_KEY,
           GATHER_CARD_TITLE_MARQUEE_KEY,
           GATHER_CARD_MARQUEE_SPEED_KEY,
+          ARRIVAL_RADIUS_KEY,
         ]);
         if (!active) return;
         if (isLanguage(storedLang[1])) setLanguageState(storedLang[1]);
@@ -219,6 +242,12 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
           const speed = Number(storedGatherCardMarqueeSpeed[1]);
           if (Number.isFinite(speed)) {
             setGatherCardMarqueeSpeedState(clampMarqueeSpeed(speed));
+          }
+        }
+        if (storedArrivalRadius[1] != null) {
+          const radius = Number(storedArrivalRadius[1]);
+          if (Number.isFinite(radius)) {
+            setArrivalRadiusMState(clampArrivalRadiusM(radius));
           }
         }
       } finally {
@@ -301,6 +330,12 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     void AsyncStorage.setItem(GATHER_CARD_MARQUEE_SPEED_KEY, String(next));
   }, []);
 
+  const setArrivalRadiusM = useCallback((meters: number) => {
+    const next = clampArrivalRadiusM(meters);
+    setArrivalRadiusMState(next);
+    void AsyncStorage.setItem(ARRIVAL_RADIUS_KEY, String(next));
+  }, []);
+
   const value = useMemo<PreferencesValue>(
     () => ({
       language,
@@ -315,6 +350,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       gatherCardDefaultExpanded,
       gatherCardTitleMarquee,
       gatherCardMarqueeSpeed,
+      arrivalRadiusM,
       ready,
       setLanguage,
       setThemeName,
@@ -328,6 +364,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       setGatherCardDefaultExpanded,
       setGatherCardTitleMarquee,
       setGatherCardMarqueeSpeed,
+      setArrivalRadiusM,
     }),
     [
       language,
@@ -342,6 +379,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       gatherCardDefaultExpanded,
       gatherCardTitleMarquee,
       gatherCardMarqueeSpeed,
+      arrivalRadiusM,
       ready,
       setLanguage,
       setThemeName,
@@ -355,6 +393,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       setGatherCardDefaultExpanded,
       setGatherCardTitleMarquee,
       setGatherCardMarqueeSpeed,
+      setArrivalRadiusM,
     ],
   );
 

@@ -1,4 +1,5 @@
-export const ARRIVAL_RADIUS_M = 30;
+/** Default when no tools preference / session radius is available. */
+export const ARRIVAL_RADIUS_M = 50;
 
 /** Reject cold/poor fixes when anchoring journey baseline (metres). */
 export const ANCHOR_MAX_ACCURACY_M = 50;
@@ -95,8 +96,11 @@ export function gatedJourneyProgress(opts: {
   };
 }
 
-export function hasArrived(distanceM: number): boolean {
-  return Number.isFinite(distanceM) && distanceM <= ARRIVAL_RADIUS_M;
+export function hasArrived(
+  distanceM: number,
+  radiusM: number = ARRIVAL_RADIUS_M,
+): boolean {
+  return Number.isFinite(distanceM) && distanceM <= radiusM;
 }
 
 export function initialJourneyDistance(
