@@ -197,7 +197,7 @@ export default React.memo(function DestinationSearch({
 // there), independent of the light/dark map theme. Accent still follows theme.
 const makeStyles = (colors: Palette) => StyleSheet.create({
   flex: { flex: 1, justifyContent: 'flex-end' },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: glass.scrim },
+  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: glass.scrim },
   sheet: {
     overflow: 'hidden',
     borderTopLeftRadius: 30,

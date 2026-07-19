@@ -182,7 +182,7 @@ function buildChips(
 
 const styles = StyleSheet.create({
   fill: { flex: 1, paddingHorizontal: 24 },
-  confettiLayer: { ...StyleSheet.absoluteFillObject },
+  confettiLayer: { ...StyleSheet.absoluteFill },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14 },
   hero: { width: 180, height: 180 },
   title: { fontSize: 28, fontWeight: '800', textAlign: 'center' },

@@ -721,7 +721,7 @@ const makeStyles = (colors: Palette) =>
     rowAddress: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
     handle: { color: colors.textSecondary, fontSize: 22, paddingHorizontal: spacing.xs },
     deleteBg: {
-      ...StyleSheet.absoluteFillObject,
+      ...StyleSheet.absoluteFill,
       backgroundColor: colors.danger,
       alignItems: 'flex-end',
       justifyContent: 'center',

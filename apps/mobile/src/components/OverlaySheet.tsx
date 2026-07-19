@@ -202,7 +202,7 @@ export default function OverlaySheet({
 }
 
 const styles = StyleSheet.create({
-  scrim: { ...StyleSheet.absoluteFillObject, backgroundColor: glass.scrim },
+  scrim: { ...StyleSheet.absoluteFill, backgroundColor: glass.scrim },
   panel: {
     position: 'absolute',
     left: 8,

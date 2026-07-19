@@ -214,7 +214,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
   },
   countdownText: { fontSize: 20, fontWeight: '800' },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
+  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.5)' },
   // Minimal side padding + centered card so the inline calendar is never
   // clipped on the right.
   modalWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 10 },

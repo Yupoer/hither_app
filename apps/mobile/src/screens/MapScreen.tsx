@@ -5515,7 +5515,7 @@ const makeStyles = (
       minWidth: 0,
     },
     arrivalConfettiLayer: {
-      ...StyleSheet.absoluteFillObject,
+      ...StyleSheet.absoluteFill,
       zIndex: 4,
       overflow: 'hidden',
     },

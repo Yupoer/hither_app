@@ -5,7 +5,7 @@ Pod::Spec.new do |s|
   s.description    = 'Thin Expo module backing src/native/notifications.ts on iOS.'
   s.author         = ''
   s.homepage       = 'https://hither.app'
-  s.platforms      = { :ios => '15.1' }
+  s.platforms      = { :ios => '16.4' }
   s.source         = { git: '' }
   s.static_framework = true
 

@@ -115,4 +115,25 @@ describe('production mobile configuration', () => {
       /<key>CFBundleShortVersionString<\/key>\s*<string>\$\(MARKETING_VERSION\)<\/string>/,
     );
   });
+
+  it('keeps custom iOS modules on the Expo SDK 56 deployment floor', () => {
+    const podspecs = [
+      'hither-metrics/ios/HitherMetrics.podspec',
+      'hither-location/ios/HitherLocation.podspec',
+      'hither-live-activity/ios/HitherLiveActivity.podspec',
+      'hither-maps/ios/HitherMaps.podspec',
+      'hither-notifications/ios/HitherNotifications.podspec',
+    ];
+    for (const path of podspecs) {
+      expect(readFileSync(join(__dirname, '../../modules', path), 'utf8'))
+        .toMatch(/:ios\s*=>\s*'16\.4'/);
+    }
+  });
+
+  it('ships Expo SDK 56 / RN 0.85 Hermes as the remediation runtime', () => {
+    expect(packageConfig.dependencies.expo).toMatch(/^[~^]?56\./);
+    expect(packageConfig.dependencies['react-native']).toMatch(/^0\.85\./);
+    expect(JSON.parse(readFileSync(join(__dirname, '../../ios/Podfile.properties.json'), 'utf8'))['expo.jsEngine'])
+      .toBe('hermes');
+  });
 });

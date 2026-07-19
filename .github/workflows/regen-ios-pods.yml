@@ -1,13 +1,13 @@
-name: Regen iOS Pods (JSC)
+name: Regen iOS Pods (Hermes / SDK)
 
-# One-shot macOS pod install so Podfile.lock matches expo.jsEngine=jsc.
+# macOS pod install so Podfile.lock matches package.json react-native / Hermes.
 # Trigger: workflow_dispatch only. Uploads Podfile.lock as artifact.
 
 on:
   workflow_dispatch:
 
 jobs:
-  pod-install-jsc:
+  pod-install:
     runs-on: macos-15
     defaults:
       run:
@@ -22,20 +22,24 @@ jobs:
           cache-dependency-path: apps/mobile/package-lock.json
 
       - name: Install JS deps
-        run: npm ci
+        run: npm ci --legacy-peer-deps
 
-      - name: Confirm JSC engine config
+      - name: Confirm Hermes engine + SDK 56 floor
         run: |
           python3 - <<'PY'
-          import json, pathlib, sys
+          import json, pathlib
           pods = json.loads(pathlib.Path("ios/Podfile.properties.json").read_text())
-          app = json.loads(pathlib.Path("app.json").read_text())["expo"]
-          assert pods.get("expo.jsEngine") == "jsc", pods
-          assert app.get("ios", {}).get("jsEngine") == "jsc", app.get("ios")
-          print("engine config ok: jsc")
+          pkg = json.loads(pathlib.Path("package.json").read_text())
+          assert pods.get("expo.jsEngine") == "hermes", pods
+          assert pods.get("ios.deploymentTarget") == "16.4", pods
+          rn = pkg["dependencies"]["react-native"]
+          assert rn.startswith("0.85."), rn
+          expo = pkg["dependencies"]["expo"]
+          assert "56" in expo, expo
+          print("engine hermes; RN", rn, "expo", expo)
           PY
 
-      - name: CocoaPods install (regenerate lock for JSC)
+      - name: CocoaPods install (regenerate lock for current RN/Hermes)
         run: |
           gem install cocoapods -N
           cd ios
@@ -43,27 +47,23 @@ jobs:
         env:
           COCOAPODS_DISABLE_STATS: "true"
 
-      - name: Assert no hermes-engine in lock
+      - name: Assert Hermes matches package.json RN
         run: |
           python3 - <<'PY'
+          import json
           from pathlib import Path
+          rn = json.loads(Path("package.json").read_text())["dependencies"]["react-native"]
           lock = Path("ios/Podfile.lock").read_text(encoding="utf-8")
           assert not lock.startswith("\ufeff"), "BOM present"
-          assert "hermes-engine (" not in lock, "hermes-engine still locked"
-          # Real JSC graph should drop hermes runtime pods
-          for needle in ("React-RuntimeHermes", "React-hermes ("):
-              if needle in lock:
-                  print(f"warning: still contains {needle}")
-          print("lock header:", lock.splitlines()[0])
-          print("hermes-engine (:", lock.count("hermes-engine ("))
-          print("React-RuntimeHermes count:", lock.count("React-RuntimeHermes"))
-          print("runtime alignment check strings ok")
+          needle = f"hermes-engine ({rn})"
+          assert needle in lock, f"missing {needle}"
+          print("ok", needle)
           PY
           node scripts/verify-runtime-alignment.mjs
 
       - name: Upload Podfile.lock
         uses: actions/upload-artifact@v4
         with:
-          name: podfile-lock-jsc
+          name: podfile-lock-sdk56-hermes
           path: apps/mobile/ios/Podfile.lock
           if-no-files-found: error
