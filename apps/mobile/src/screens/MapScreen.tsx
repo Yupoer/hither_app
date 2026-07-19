@@ -83,6 +83,7 @@ import {
 import PrefSlider from '../components/PrefSlider';
 import { canMarkDestinationArrival } from '../utils/arrivalMarking';
 import { hasArrived } from '../utils/journeyProgress';
+import { uploadLocalLogs } from '../utils/uploadLocalLogs';
 import { useTranslation, type TranslationKey } from '../i18n';
 import { useDeviceLocation } from './MapScreen/hooks/useDeviceLocation';
 import { useCarouselSelection } from './MapScreen/hooks/useCarouselSelection';
@@ -436,14 +437,55 @@ export default function MapScreen({ route, navigation }: Props) {
   );
   const canEditItinerary = !!isLeader;
 
+  /** Pull destinations/group state only — used before arrival writes too. */
   const syncFromDatabase = useCallback(async () => {
     setOptimisticDestinations(null);
     setOptimisticTripDays(null);
     setOptimisticDepartureDate(null);
     if (!(await refresh())) {
-      throw new Error('資料庫同步失敗');
+      throw new Error(t('map.syncDbFailedMsg'));
     }
-  }, [refresh]);
+  }, [refresh, t]);
+
+  /**
+   * Reorder-list "同步資料庫與日誌": refresh itinerary, then drain local
+   * diagnostic/performance queues. Log failure never fails the DB sync.
+   */
+  const syncFromDatabaseAndUploadLogs = useCallback(async () => {
+    await syncFromDatabase();
+    let logResult: Awaited<ReturnType<typeof uploadLocalLogs>> | null = null;
+    try {
+      logResult = await uploadLocalLogs({ source: 'destination_reorder_sync' });
+    } catch {
+      logResult = null;
+    }
+    if (!logResult) {
+      Alert.alert(t('map.syncDbOkTitle'), t('map.syncDbOkLogsFailed'));
+      return;
+    }
+    if (logResult.diagnosticRemaining < 0 || !logResult.performanceOk) {
+      Alert.alert(t('map.syncDbOkTitle'), t('map.syncDbOkLogsFailed'));
+      return;
+    }
+    if (logResult.diagnosticSent === 0 && logResult.diagnosticRemaining === 0) {
+      Alert.alert(t('map.syncDbOkTitle'), t('map.syncDbOkNoLogs'));
+      return;
+    }
+    if (logResult.diagnosticRemaining > 0) {
+      Alert.alert(
+        t('map.syncDbOkTitle'),
+        t('map.syncDbOkPartial', {
+          sent: String(logResult.diagnosticSent),
+          remaining: String(logResult.diagnosticRemaining),
+        }),
+      );
+      return;
+    }
+    Alert.alert(
+      t('map.syncDbOkTitle'),
+      t('map.syncDbOkFull', { sent: String(logResult.diagnosticSent) }),
+    );
+  }, [syncFromDatabase, t]);
 
   // Keep translator out of effect deps — unstable `t` historically re-subscribed
   // gathering Realtime and hammered destination_arrivals (~5–6 SELECT/s).
@@ -3824,7 +3866,7 @@ export default function MapScreen({ route, navigation }: Props) {
             onUpdateTripDetails={handleUpdateTripDetails}
             onReorder={handleReorder}
             onDelete={canEditItinerary ? handleDelete : undefined}
-            onSync={syncFromDatabase}
+            onSync={syncFromDatabaseAndUploadLogs}
             colors={dark}
             emptyLabel={t('settings.noDestinations')}
             onDragActiveChange={(active) => setRouteScrollEnabled(!active)}
