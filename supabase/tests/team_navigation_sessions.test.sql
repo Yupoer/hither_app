@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, auth;
-select plan(38);
+select plan(37);
 
 select has_table('public', 'navigation_sessions', 'navigation_sessions exists');
 select has_table('public', 'navigation_member_states', 'navigation_member_states exists');
@@ -313,10 +313,12 @@ select throws_ok(
   'complete does not claim success for a cancelled session'
 );
 
+-- bbb3 is still open after cancel (cancel does not close the stop); do not
+-- reuse bbbb...bbbb / bbb2 which were closed by switch/complete.
 create temporary table active_stale_session as
 select (public.start_navigation_session(
   'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-  'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+  'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3',
   '99999999-9999-4999-8999-999999999999'
 )).id;
 

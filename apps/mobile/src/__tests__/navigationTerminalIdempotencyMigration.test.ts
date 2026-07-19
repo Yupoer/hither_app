@@ -56,7 +56,26 @@ describe('navigation terminal idempotency migration', () => {
   });
 
   it('extends pgTAP with replay, opposite-terminal, and stale-active coverage', () => {
-    expect(pgtap).toContain('select plan(38);');
+    expect(pgtap).toContain('select plan(37);');
+    const assertionCount = (
+      pgtap.match(
+        /^select\s+(?:has_table|is|lives_ok|throws_ok)\s*\(/gim,
+      ) ?? []
+    ).length;
+    expect(assertionCount).toBe(37);
+
+    // Stale-active fixture must use an open stop (bbb3 after cancel), not a closed one.
+    const staleStart = pgtap.indexOf('create temporary table active_stale_session');
+    const staleEnd = pgtap.indexOf(
+      'a genuinely stale active version still raises 40001',
+    );
+    expect(staleStart).toBeGreaterThanOrEqual(0);
+    expect(staleEnd).toBeGreaterThan(staleStart);
+    const staleBlock = pgtap.slice(staleStart, staleEnd);
+    expect(staleBlock).toContain('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3');
+    expect(staleBlock).not.toContain('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
+    expect(staleBlock).not.toContain('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2');
+
     expect(pgtap).toContain(
       'replaying complete returns the already-completed session',
     );
