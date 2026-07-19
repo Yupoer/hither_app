@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, auth;
-select plan(32);
+select plan(38);
 
 select has_table('public', 'navigation_sessions', 'navigation_sessions exists');
 select has_table('public', 'navigation_member_states', 'navigation_member_states exists');
@@ -271,6 +271,63 @@ select is(
     where id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3'),
   true,
   'cancelling navigation does not close the destination'
+);
+
+select is(
+  (public.complete_navigation_session(
+    (select id from switched_session), 1
+  )).status,
+  'completed',
+  'replaying complete returns the already-completed session'
+);
+
+select is(
+  (select version from public.navigation_sessions
+   where id = (select id from switched_session)),
+  2,
+  'replaying complete does not increment the terminal version'
+);
+
+select is(
+  (public.cancel_navigation_session(
+    (select id from cancelled_session), 1
+  )).status,
+  'cancelled',
+  'replaying cancel returns the already-cancelled session'
+);
+
+select is(
+  (select version from public.navigation_sessions
+   where id = (select id from cancelled_session)),
+  2,
+  'replaying cancel does not increment the terminal version'
+);
+
+select throws_ok(
+  format(
+    'select public.complete_navigation_session(%L, 1)',
+    (select id from cancelled_session)
+  ),
+  'P0001',
+  'navigation session is already cancelled',
+  'complete does not claim success for a cancelled session'
+);
+
+create temporary table active_stale_session as
+select (public.start_navigation_session(
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+  '99999999-9999-4999-8999-999999999999'
+)).id;
+
+select throws_ok(
+  format(
+    'select public.cancel_navigation_session(%L, 0)',
+    (select id from active_stale_session)
+  ),
+  '40001',
+  'active navigation session version mismatch',
+  'a genuinely stale active version still raises 40001'
 );
 
 set local role authenticated;

@@ -230,4 +230,36 @@ describe('bounded diagnostics', () => {
       byEvent: { location_upload_failed: 1, tracking_mode_changed: 1 },
     });
   });
+
+  it('allowlists navigation conflict release attribution only with consent', async () => {
+    const database = new MemoryDiagnosticDatabase();
+    const diagnostics = createDiagnostics(
+      database,
+      jest.fn(),
+      () => 1_000,
+      metadata,
+      () => 'conflict-1',
+    );
+
+    await diagnostics.write({
+      event: 'navigation_terminal_conflict',
+      source: 'cancel',
+      navigationSessionId: '11111111-1111-4111-8111-111111111111',
+      expectedVersion: 1,
+      updateId: 'eas-update-1',
+      runtimeVersion: '56.0.0',
+      appVersion: '0.1.3',
+    });
+    expect(database.records.get('conflict-1')?.payload).toEqual({
+      source: 'cancel',
+      expectedVersion: 1,
+      updateId: 'eas-update-1',
+      runtimeVersion: '56.0.0',
+      appVersion: '0.1.3',
+    });
+
+    consentEnabled.value = false;
+    await diagnostics.write({ event: 'navigation_terminal_conflict' });
+    expect(database.records.size).toBe(1);
+  });
 });

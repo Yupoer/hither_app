@@ -37,6 +37,10 @@ export interface DiagnosticInput {
   mode?: string;
   status?: string;
   success?: boolean;
+  expectedVersion?: number;
+  updateId?: string;
+  runtimeVersion?: string;
+  appVersion?: string;
 }
 
 export interface DiagnosticRecord {
@@ -215,6 +219,10 @@ const ALLOWED_FIELDS = [
   'mode',
   'status',
   'success',
+  'expectedVersion',
+  'updateId',
+  'runtimeVersion',
+  'appVersion',
 ] as const;
 
 function sanitize(input: DiagnosticInput): DiagnosticPayload {

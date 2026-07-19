@@ -1,3 +1,5 @@
+import Constants from 'expo-constants';
+import * as Updates from 'expo-updates';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ackNavigationSession,
@@ -13,6 +15,8 @@ import type {
   NavigationMemberStatus,
   NavigationSession,
 } from '../types/navigation';
+import { diagnostics } from './diagnostics';
+import { runNavigationTerminalMutation } from './navigationTerminalMutation';
 
 export function useNavigationSession(groupId: string | null) {
   const [session, setSession] = useState<NavigationSession | null>(null);
@@ -21,7 +25,6 @@ export function useNavigationSession(groupId: string | null) {
   const [error, setError] = useState<string | null>(null);
   const activeSessionIdRef = useRef<string | null>(null);
   const sessionRef = useRef<NavigationSession | null>(null);
-  const mutationInFlightRef = useRef<Promise<NavigationSession | null> | null>(null);
 
   const acceptSession = useCallback((next: NavigationSession) => {
     if (next.status !== 'active') {
@@ -108,26 +111,21 @@ export function useNavigationSession(groupId: string | null) {
     };
   }, [acceptSession, groupId, refresh]);
 
-  const runMutation = useCallback((
-    work: () => Promise<NavigationSession>,
-  ): Promise<NavigationSession | null> => {
-    if (mutationInFlightRef.current) return mutationInFlightRef.current;
-    const run = work()
-      .then((next) => {
-        acceptSession(next);
-        return next;
-      })
-      .catch(async (cause: { code?: string }) => {
-        if (cause?.code !== '40001') throw cause;
-        await refresh();
-        return null;
-      })
-      .finally(() => {
-        mutationInFlightRef.current = null;
-      });
-    mutationInFlightRef.current = run;
-    return run;
-  }, [acceptSession, refresh]);
+  const reconcileTerminalConflict = useCallback(async (
+    action: 'cancel' | 'complete',
+    current: NavigationSession,
+  ) => {
+    await diagnostics.write({
+      event: 'navigation_terminal_conflict',
+      source: action,
+      navigationSessionId: current.id,
+      expectedVersion: current.version,
+      updateId: Updates.updateId ?? 'embedded',
+      runtimeVersion: String(Updates.runtimeVersion ?? 'unknown'),
+      appVersion: Constants.expoConfig?.version ?? 'development',
+    }).catch(() => undefined);
+    await refresh();
+  }, [refresh]);
 
   const start = useCallback(async (
     destinationId: string,
@@ -142,14 +140,32 @@ export function useNavigationSession(groupId: string | null) {
   const cancel = useCallback(async () => {
     const current = sessionRef.current;
     if (!current) return null;
-    return runMutation(() => cancelNavigationSession(current.id, current.version));
-  }, [runMutation]);
+    const next = await runNavigationTerminalMutation(
+      'cancel',
+      current.id,
+      current.version,
+      () => cancelNavigationSession(current.id, current.version),
+      () => reconcileTerminalConflict('cancel', current),
+    );
+    if (!next) return null;
+    acceptSession(next);
+    return next;
+  }, [acceptSession, reconcileTerminalConflict]);
 
   const complete = useCallback(async () => {
     const current = sessionRef.current;
     if (!current) return null;
-    return runMutation(() => completeNavigationSession(current.id, current.version));
-  }, [runMutation]);
+    const next = await runNavigationTerminalMutation(
+      'complete',
+      current.id,
+      current.version,
+      () => completeNavigationSession(current.id, current.version),
+      () => reconcileTerminalConflict('complete', current),
+    );
+    if (!next) return null;
+    acceptSession(next);
+    return next;
+  }, [acceptSession, reconcileTerminalConflict]);
 
   const ack = useCallback(async (
     status: NavigationMemberStatus,

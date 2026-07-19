@@ -3,12 +3,29 @@ import type {
   MemberNavigationState,
   NavigationSession,
 } from '../types/navigation';
+import { clearNavigationTerminalMutationStateForTests } from '../state/navigationTerminalMutation';
 import { useNavigationSession } from '../state/useNavigationSession';
 
 const callbacks: {
   session?: (session: NavigationSession) => void;
   member?: (state: MemberNavigationState) => void;
 } = {};
+
+jest.mock('expo-constants', () => ({
+  __esModule: true,
+  default: {
+    sessionId: 'device-session-1234',
+    nativeBuildVersion: '42',
+    expoConfig: { version: '0.1.3' },
+  },
+}));
+jest.mock('expo-updates', () => ({
+  updateId: 'eas-update-test',
+  runtimeVersion: '56.0.0',
+}));
+jest.mock('../state/diagnostics', () => ({
+  diagnostics: { write: jest.fn().mockResolvedValue(undefined) },
+}));
 
 jest.mock('../api/services/NavigationService', () => ({
   getActiveNavigationSession: jest.fn(),
@@ -61,6 +78,7 @@ const session = (version: number, status: NavigationSession['status'] = 'active'
 
 describe('useNavigationSession', () => {
   beforeEach(() => {
+    clearNavigationTerminalMutationStateForTests();
     callbacks.session = undefined;
     callbacks.member = undefined;
     jest.clearAllMocks();
@@ -168,5 +186,12 @@ describe('useNavigationSession', () => {
     expect(cancelNavigationSession).toHaveBeenCalledTimes(1);
     // initial hydrate + one refresh after 40001
     expect(getActiveNavigationSession).toHaveBeenCalledTimes(2);
+
+    // Synthetic realtime reintroduces the same stale session/version after reconcile.
+    act(() => callbacks.session?.(session(2)));
+    await act(async () => {
+      await value!.cancel();
+    });
+    expect(cancelNavigationSession).toHaveBeenCalledTimes(1);
   });
 });
