@@ -1,17 +1,14 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
-import {
-  LayoutChangeEvent,
-  PanResponder,
-  StyleSheet,
-  View,
-  type StyleProp,
-  type ViewStyle,
-} from 'react-native';
+import React, { useCallback, useRef } from 'react';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import Slider from '@react-native-community/slider';
+import { selectionTick } from '../utils/haptics';
 
 type Props = {
   value: number;
-  min: number;
-  max: number;
+  /** Discrete detents (arrival radius). Prefer over min/max when provided. */
+  values?: readonly number[];
+  min?: number;
+  max?: number;
   onChange: (value: number) => void;
   /** Accent for fill + thumb. */
   accent: string;
@@ -20,87 +17,71 @@ type Props = {
 };
 
 /**
- * OTA-safe continuous slider (no native Slider module).
- * Track tap + drag; value rounded to nearest integer.
+ * Stepped or continuous preference slider backed by the native community Slider.
+ * When `values` is set, maps a uniform index to non-uniform meter options and
+ * fires one selection haptic per detent change.
  */
 export default function PrefSlider({
   value,
-  min,
-  max,
+  values,
+  min = 0,
+  max = 1,
   onChange,
   accent,
   style,
   accessibilityLabel,
 }: Props) {
-  const [trackW, setTrackW] = useState(0);
-  const trackWRef = useRef(0);
-  const minRef = useRef(min);
-  const maxRef = useRef(max);
-  const onChangeRef = useRef(onChange);
-  minRef.current = min;
-  maxRef.current = max;
-  onChangeRef.current = onChange;
+  const lastIndexRef = useRef<number | null>(null);
 
-  const span = Math.max(1, max - min);
-  const ratio = Math.min(1, Math.max(0, (value - min) / span));
+  const useDetents = Array.isArray(values) && values.length > 0;
+  const selectedIndex = useDetents
+    ? Math.max(0, values.findIndex((v) => v === value))
+    : 0;
+  // If value is not an exact option, snap display index to nearest.
+  const displayIndex = useDetents
+    ? selectedIndex >= 0
+      ? selectedIndex
+      : values.reduce((best, option, index) => {
+          const bestDist = Math.abs(values[best]! - value);
+          const dist = Math.abs(option - value);
+          return dist < bestDist || (dist === bestDist && option < values[best]!)
+            ? index
+            : best;
+        }, 0)
+    : value;
 
-  const valueFromX = useCallback((x: number) => {
-    const w = trackWRef.current;
-    if (w <= 0) return minRef.current;
-    const r = Math.min(1, Math.max(0, x / w));
-    const raw = minRef.current + r * (maxRef.current - minRef.current);
-    return Math.round(raw);
-  }, []);
-
-  const pan = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
-        onPanResponderGrant: (e) => {
-          onChangeRef.current(valueFromX(e.nativeEvent.locationX));
-        },
-        onPanResponderMove: (e) => {
-          onChangeRef.current(valueFromX(e.nativeEvent.locationX));
-        },
-      }),
-    [valueFromX],
+  const handleIndexChange = useCallback(
+    (raw: number) => {
+      if (useDetents && values) {
+        const index = Math.round(raw);
+        if (index === lastIndexRef.current) return;
+        if (index < 0 || index >= values.length) return;
+        lastIndexRef.current = index;
+        selectionTick();
+        onChange(values[index]!);
+        return;
+      }
+      const next = Math.round(raw);
+      if (next === lastIndexRef.current) return;
+      lastIndexRef.current = next;
+      selectionTick();
+      onChange(next);
+    },
+    [onChange, useDetents, values],
   );
 
-  const onTrackLayout = (e: LayoutChangeEvent) => {
-    const w = e.nativeEvent.layout.width;
-    trackWRef.current = w;
-    if (w > 0) setTrackW(w);
-  };
-
-  const thumbLeft = trackW > 0 ? ratio * trackW : 0;
-
   return (
-    <View
-      style={[styles.wrap, style]}
-      accessibilityRole="adjustable"
-      accessibilityLabel={accessibilityLabel}
-      accessibilityValue={{ min, max, now: value }}
-      {...pan.panHandlers}
-      onLayout={onTrackLayout}
-    >
-      <View style={styles.track}>
-        <View
-          style={[
-            styles.fill,
-            { width: `${ratio * 100}%`, backgroundColor: accent },
-          ]}
-        />
-      </View>
-      <View
-        pointerEvents="none"
-        style={[
-          styles.thumb,
-          {
-            left: Math.max(0, thumbLeft - 10),
-            borderColor: accent,
-          },
-        ]}
+    <View style={[styles.wrap, style]} accessibilityLabel={accessibilityLabel}>
+      <Slider
+        style={styles.slider}
+        minimumValue={useDetents ? 0 : min}
+        maximumValue={useDetents ? values!.length - 1 : max}
+        step={1}
+        value={displayIndex}
+        minimumTrackTintColor={accent}
+        maximumTrackTintColor="rgba(120,120,128,0.32)"
+        onValueChange={handleIndexChange}
+        accessibilityLabel={accessibilityLabel}
       />
     </View>
   );
@@ -108,27 +89,11 @@ export default function PrefSlider({
 
 const styles = StyleSheet.create({
   wrap: {
-    height: 36,
-    justifyContent: 'center',
     width: '100%',
+    justifyContent: 'center',
   },
-  track: {
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(120,120,128,0.32)',
-    overflow: 'hidden',
-  },
-  fill: {
-    height: '100%',
-    borderRadius: 2,
-  },
-  thumb: {
-    position: 'absolute',
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#fff',
-    borderWidth: 2,
-    top: 8,
+  slider: {
+    width: '100%',
+    height: 40,
   },
 });

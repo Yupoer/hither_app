@@ -76,6 +76,7 @@ import {
   useTheme,
   MEET_RED_OPTIONS,
   DEFAULT_MEET_RED_MIN,
+  ARRIVAL_RADIUS_OPTIONS,
   ARRIVAL_RADIUS_MIN_M,
   ARRIVAL_RADIUS_MAX_M,
   type Language,
@@ -452,6 +453,7 @@ export default function MapScreen({ route, navigation }: Props) {
    * diagnostic/performance queues. Log failure never fails the DB sync.
    */
   const syncFromDatabaseAndUploadLogs = useCallback(async () => {
+    // Database refresh is authoritative: log upload failure must not fail DB sync.
     await syncFromDatabase();
     let logResult: Awaited<ReturnType<typeof uploadLocalLogs>> | null = null;
     try {
@@ -463,27 +465,33 @@ export default function MapScreen({ route, navigation }: Props) {
       Alert.alert(t('map.syncDbOkTitle'), t('map.syncDbOkLogsFailed'));
       return;
     }
-    if (logResult.diagnosticRemaining < 0 || !logResult.performanceOk) {
+    const logsFailed =
+      logResult.diagnosticRemaining < 0 || logResult.performanceRemaining < 0;
+    if (logsFailed) {
       Alert.alert(t('map.syncDbOkTitle'), t('map.syncDbOkLogsFailed'));
       return;
     }
-    if (logResult.diagnosticSent === 0 && logResult.diagnosticRemaining === 0) {
+    const totalSent = logResult.diagnosticSent + logResult.performanceSent;
+    const totalRemaining =
+      logResult.diagnosticRemaining + logResult.performanceRemaining;
+    if (totalSent === 0 && totalRemaining === 0) {
       Alert.alert(t('map.syncDbOkTitle'), t('map.syncDbOkNoLogs'));
       return;
     }
-    if (logResult.diagnosticRemaining > 0) {
+    // Complete only when both queues report remaining === 0.
+    if (totalRemaining > 0) {
       Alert.alert(
         t('map.syncDbOkTitle'),
         t('map.syncDbOkPartial', {
-          sent: String(logResult.diagnosticSent),
-          remaining: String(logResult.diagnosticRemaining),
+          sent: String(totalSent),
+          remaining: String(totalRemaining),
         }),
       );
       return;
     }
     Alert.alert(
       t('map.syncDbOkTitle'),
-      t('map.syncDbOkFull', { sent: String(logResult.diagnosticSent) }),
+      t('map.syncDbOkFull', { sent: String(totalSent) }),
     );
   }, [syncFromDatabase, t]);
 
@@ -882,6 +890,11 @@ export default function MapScreen({ route, navigation }: Props) {
   );
   const fromCoords = deviceCoords ?? reference?.coordinates;
 
+  // Bridge: handleReorder is declared later; navigation promote needs it first.
+  const reorderForNavigationRef = useRef<
+    (updates: { id: string; position: number; day: number }[]) => Promise<boolean>
+  >(async () => false);
+
   // --- Journey navigation + Live Activity ----------------------------------
   const {
     journeyStatus,
@@ -917,6 +930,8 @@ export default function MapScreen({ route, navigation }: Props) {
       : navigationSessionState.session,
     startSession: navigationSessionState.start,
     cancelSession: navigationSessionState.cancel,
+    // handleReorder is defined later; keep a stable bridge via ref.
+    reorderForNavigation: (updates) => reorderForNavigationRef.current(updates),
   });
 
   const navigationAckRef = useRef<string | null>(null);
@@ -2063,8 +2078,8 @@ export default function MapScreen({ route, navigation }: Props) {
   }, []);
 
   const handleReorder = useCallback(
-    async (updates: { id: string; position: number; day: number }[]) => {
-      if (!groupId) return;
+    async (updates: { id: string; position: number; day: number }[]): Promise<boolean> => {
+      if (!groupId) return false;
       logEvent('destination_reorder', { count: updates.length });
 
       const departureDate = group?.departureDate;
@@ -2115,11 +2130,13 @@ export default function MapScreen({ route, navigation }: Props) {
       try {
         await reorderDestinations(groupId, persistedUpdates);
         refresh();
+        return true;
       } catch (e) {
         logError('destination_reorder_failed', e);
         Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
         setOptimisticDestinations(null);
         refresh();
+        return false;
       }
     },
     [
@@ -2131,6 +2148,7 @@ export default function MapScreen({ route, navigation }: Props) {
       group?.departureDate,
     ],
   );
+  reorderForNavigationRef.current = handleReorder;
   const handleDelete = useCallback(
     (id: string) => {
       if (!groupId || !canEditItinerary) return;
@@ -2880,14 +2898,13 @@ export default function MapScreen({ route, navigation }: Props) {
           <Text style={styles.accuracyLabel}>
             {t('arrival.radiusValue', { meters: String(arrivalRadiusM) })}
           </Text>
-          <Text style={styles.accuracyHint}>{t('arrival.radiusHint')}</Text>
+          <Text style={styles.accuracySubhint}>{t('arrival.radiusHint')}</Text>
         </View>
       </View>
       <View style={styles.marqueeSpeedBlock}>
         <PrefSlider
           value={arrivalRadiusM}
-          min={ARRIVAL_RADIUS_MIN_M}
-          max={ARRIVAL_RADIUS_MAX_M}
+          values={ARRIVAL_RADIUS_OPTIONS}
           onChange={setArrivalRadiusM}
           accent={accent}
           accessibilityLabel={t('arrival.radiusSection')}
@@ -3926,6 +3943,8 @@ export default function MapScreen({ route, navigation }: Props) {
         liveActivityStatus={
           journeyActive && liveActivityEnabled ? 'active/requested' : 'inactive'
         }
+        destinations={destinations}
+        activeDestinationId={navTargetId ?? selectedDestination?.id ?? null}
       />
 
       {/* 邀請成員 — independent share sheet (code / share / copy). */}

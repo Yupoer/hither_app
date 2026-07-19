@@ -92,6 +92,37 @@ export function sortDestinationsByDayOrder(destinations: Destination[]): Destina
 }
 
 /**
+ * Promote `destinationId` to the first open slot of its own day.
+ * Never moves items across days. Unknown id returns day/order sort unchanged.
+ * Returned `position` is the visible-order index; MapScreen.handleReorder maps
+ * it onto existing open position slots so closed historical stops stay put.
+ */
+export function promoteDestinationWithinDay(
+  destinations: Destination[],
+  destinationId: string,
+): { id: string; position: number; day: number }[] {
+  const sorted = sortDestinationsByDayOrder(destinations);
+  const target = sorted.find((item) => item.id === destinationId);
+  if (!target) {
+    return sorted.map((item, position) => ({
+      id: item.id,
+      position,
+      day: item.day || 1,
+    }));
+  }
+  const day = target.day || 1;
+  const withoutTarget = sorted.filter((item) => item.id !== destinationId);
+  const dayStart = withoutTarget.findIndex((item) => (item.day || 1) === day);
+  const insertAt = dayStart < 0 ? withoutTarget.length : dayStart;
+  withoutTarget.splice(insertAt, 0, target);
+  return withoutTarget.map((item, position) => ({
+    id: item.id,
+    position,
+    day: item.day || 1,
+  }));
+}
+
+/**
  * Active itinerary for carousel / sheet / reorder: open stops on today and
  * future trip days. Past days are hidden (they surface in history instead).
  */

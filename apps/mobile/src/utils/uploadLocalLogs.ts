@@ -6,15 +6,15 @@
 import { diagnostics } from '../state/diagnostics';
 import { flushPerformance as flushPerformanceDefault } from '../state/performance';
 
-/** Safety cap: flush() is 100/batch → at most ~5k diagnostic rows per tap. */
+/** Safety cap: flush() is 100/batch → at most ~5k rows per tap per queue. */
 export const MAX_DIAGNOSTIC_FLUSH_ROUNDS = 50;
-/** Performance flush has no remaining count; retry a few times after first. */
-export const MAX_PERFORMANCE_FLUSH_ROUNDS = 3;
+export const MAX_PERFORMANCE_FLUSH_ROUNDS = 50;
 
 export interface UploadLocalLogsResult {
   diagnosticSent: number;
   diagnosticRemaining: number;
-  performanceOk: boolean;
+  performanceSent: number;
+  performanceRemaining: number;
 }
 
 export interface UploadLocalLogsDeps {
@@ -26,7 +26,7 @@ export interface UploadLocalLogsDeps {
     remaining?: number;
   }) => Promise<void>;
   flushDiagnostics?: () => Promise<{ sent: number; remaining: number }>;
-  flushPerformance?: () => Promise<void>;
+  flushPerformance?: () => Promise<{ sent: number; remaining: number }>;
   maxDiagnosticRounds?: number;
   maxPerformanceRounds?: number;
   source?: string;
@@ -75,27 +75,26 @@ export async function uploadLocalLogs(
     if (result.remaining <= 0 || result.sent === 0) break;
   }
 
-  let performanceOk = true;
+  let performanceSent = 0;
+  let performanceRemaining = 0;
+
   for (let round = 0; round < maxPerf; round += 1) {
+    let result: { sent: number; remaining: number };
     try {
-      await flushPerf();
+      result = await flushPerf();
     } catch {
-      performanceOk = false;
+      performanceRemaining = -1;
       break;
     }
+    performanceSent += Math.max(0, result.sent);
+    performanceRemaining = Math.max(0, result.remaining);
+    if (result.remaining <= 0 || result.sent === 0) break;
   }
-
-  await write({
-    event: 'manual_log_upload_done',
-    source,
-    success: performanceOk && diagnosticRemaining === 0,
-    sent: diagnosticSent,
-    remaining: diagnosticRemaining < 0 ? 0 : diagnosticRemaining,
-  }).catch(() => undefined);
 
   return {
     diagnosticSent,
     diagnosticRemaining,
-    performanceOk,
+    performanceSent,
+    performanceRemaining,
   };
 }

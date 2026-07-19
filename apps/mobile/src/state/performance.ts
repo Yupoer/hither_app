@@ -43,7 +43,12 @@ let active = false;
 let initialization: Promise<boolean> | null = null;
 let uploader: PerformanceUploader | null = null;
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
-let flushInFlight: Promise<void> | null = null;
+export interface PerformanceFlushResult {
+  sent: number;
+  remaining: number;
+}
+
+let flushInFlight: Promise<PerformanceFlushResult> | null = null;
 let writeSerial = Promise.resolve();
 let activeInteraction: { id: string; operation: string } | null = null;
 let nativeSampleInFlight = false;
@@ -208,14 +213,27 @@ async function resolveUpload(
   });
 }
 
-export async function flushPerformance(): Promise<void> {
-  if (!uploader || flushInFlight) {
-    if (flushInFlight) await flushInFlight;
-    return;
+async function countPending(): Promise<number> {
+  const database = await getHitherDatabase();
+  const rows = await database.getAllAsync<{ count: number }>(
+    'SELECT COUNT(*) as count FROM performance_events WHERE uploaded_at IS NULL',
+  );
+  const raw = rows[0]?.count;
+  return typeof raw === 'number' && Number.isFinite(raw) ? raw : 0;
+}
+
+export async function flushPerformance(): Promise<PerformanceFlushResult> {
+  if (flushInFlight) {
+    return flushInFlight;
   }
-  flushInFlight = (async () => {
+  if (!uploader) {
+    return { sent: 0, remaining: await countPending().catch(() => 0) };
+  }
+  flushInFlight = (async (): Promise<PerformanceFlushResult> => {
     const pending = await getPending();
-    if (pending.length === 0) return;
+    if (pending.length === 0) {
+      return { sent: 0, remaining: 0 };
+    }
     let acceptedIds: string[] = [];
     try {
       acceptedIds = await uploader!(pending);
@@ -229,10 +247,14 @@ export async function flushPerformance(): Promise<void> {
       .filter((record) => !acceptedSet.has(record.id))
       .map((record) => record.id);
     await resolveUpload(accepted, failed);
+    return {
+      sent: accepted.length,
+      remaining: await countPending(),
+    };
   })().finally(() => {
     flushInFlight = null;
   });
-  await flushInFlight;
+  return flushInFlight;
 }
 
 function scheduleFlush(): void {

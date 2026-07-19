@@ -24,6 +24,11 @@ const i18n = readFileSync(join(__dirname, '../i18n/index.ts'), 'utf8');
 const overflowMarquee = readFileSync(join(__dirname, '../components/OverflowMarquee.tsx'), 'utf8');
 
 describe('map UI placement contracts', () => {
+  it('renders arrival radius hint with tertiary subhint style', () => {
+    expect(mapScreen).toContain("styles.accuracySubhint}>{t('arrival.radiusHint')}");
+    expect(mapScreen).toMatch(/accuracySubhint:\s*\{[\s\S]*?color:\s*glass\.textTertiary/);
+  });
+
   it('lets the leader see subgroup destinations after approving a request', () => {
     const scopeStart = mapScreen.indexOf('const rawDestinations');
     const scopeEnd = mapScreen.indexOf('const [optimisticDestinations', scopeStart);
