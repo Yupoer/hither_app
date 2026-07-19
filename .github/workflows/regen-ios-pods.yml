@@ -1,6 +1,6 @@
 name: Regen iOS Pods (Hermes / SDK)
 
-# macOS pod install so Podfile.lock matches package.json react-native / Hermes.
+# macOS pod install so Podfile.lock matches package.json Hermes / RN.
 # Trigger: workflow_dispatch only. Uploads Podfile.lock as artifact.
 
 on:
@@ -39,24 +39,28 @@ jobs:
           print("engine hermes; RN", rn, "expo", expo)
           PY
 
-      - name: CocoaPods install (regenerate lock for current RN/Hermes)
+      - name: CocoaPods install (fresh lock for RN/Hermes)
         run: |
           gem install cocoapods -N
           cd ios
+          # Drop stale snapshot from prior RN so prebuilt pods can re-resolve.
+          rm -f Podfile.lock
+          rm -rf Pods
           pod install --repo-update
         env:
           COCOAPODS_DISABLE_STATS: "true"
 
-      - name: Assert Hermes matches package.json RN
+      - name: Assert Hermes lock + verify:runtime
         run: |
           python3 - <<'PY'
           import json
           from pathlib import Path
-          rn = json.loads(Path("package.json").read_text())["dependencies"]["react-native"]
+          rn_pkg = json.loads(Path("node_modules/react-native/package.json").read_text())
+          expected = rn_pkg.get("dependencies", {}).get("hermes-compiler") or rn_pkg["version"]
           lock = Path("ios/Podfile.lock").read_text(encoding="utf-8")
           assert not lock.startswith("\ufeff"), "BOM present"
-          needle = f"hermes-engine ({rn})"
-          assert needle in lock, f"missing {needle}"
+          needle = f"hermes-engine ({expected})"
+          assert needle in lock, f"missing {needle} in lock"
           print("ok", needle)
           PY
           node scripts/verify-runtime-alignment.mjs
