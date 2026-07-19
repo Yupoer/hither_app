@@ -20,10 +20,13 @@ export function useNavigationSession(groupId: string | null) {
   const [loading, setLoading] = useState(Boolean(groupId));
   const [error, setError] = useState<string | null>(null);
   const activeSessionIdRef = useRef<string | null>(null);
+  const sessionRef = useRef<NavigationSession | null>(null);
+  const mutationInFlightRef = useRef<Promise<NavigationSession | null> | null>(null);
 
   const acceptSession = useCallback((next: NavigationSession) => {
     if (next.status !== 'active') {
       activeSessionIdRef.current = null;
+      sessionRef.current = null;
       setSession(null);
       setMemberState(null);
       return;
@@ -36,6 +39,7 @@ export function useNavigationSession(groupId: string | null) {
         return previous;
       }
       activeSessionIdRef.current = next.id;
+      sessionRef.current = next;
       if (previous?.id !== next.id) setMemberState(null);
       return next;
     });
@@ -44,6 +48,7 @@ export function useNavigationSession(groupId: string | null) {
   const refresh = useCallback(async () => {
     if (!groupId) {
       activeSessionIdRef.current = null;
+      sessionRef.current = null;
       setSession(null);
       setMemberState(null);
       setLoading(false);
@@ -54,6 +59,7 @@ export function useNavigationSession(groupId: string | null) {
       const next = await getActiveNavigationSession(groupId);
       if (!next) {
         activeSessionIdRef.current = null;
+        sessionRef.current = null;
         setSession(null);
         setMemberState(null);
         setError(null);
@@ -102,6 +108,27 @@ export function useNavigationSession(groupId: string | null) {
     };
   }, [acceptSession, groupId, refresh]);
 
+  const runMutation = useCallback((
+    work: () => Promise<NavigationSession>,
+  ): Promise<NavigationSession | null> => {
+    if (mutationInFlightRef.current) return mutationInFlightRef.current;
+    const run = work()
+      .then((next) => {
+        acceptSession(next);
+        return next;
+      })
+      .catch(async (cause: { code?: string }) => {
+        if (cause?.code !== '40001') throw cause;
+        await refresh();
+        return null;
+      })
+      .finally(() => {
+        mutationInFlightRef.current = null;
+      });
+    mutationInFlightRef.current = run;
+    return run;
+  }, [acceptSession, refresh]);
+
   const start = useCallback(async (
     destinationId: string,
     requestId: string,
@@ -113,18 +140,16 @@ export function useNavigationSession(groupId: string | null) {
   }, [acceptSession, groupId]);
 
   const cancel = useCallback(async () => {
-    if (!session) return null;
-    const next = await cancelNavigationSession(session.id, session.version);
-    acceptSession(next);
-    return next;
-  }, [acceptSession, session]);
+    const current = sessionRef.current;
+    if (!current) return null;
+    return runMutation(() => cancelNavigationSession(current.id, current.version));
+  }, [runMutation]);
 
   const complete = useCallback(async () => {
-    if (!session) return null;
-    const next = await completeNavigationSession(session.id, session.version);
-    acceptSession(next);
-    return next;
-  }, [acceptSession, session]);
+    const current = sessionRef.current;
+    if (!current) return null;
+    return runMutation(() => completeNavigationSession(current.id, current.version));
+  }, [runMutation]);
 
   const ack = useCallback(async (
     status: NavigationMemberStatus,

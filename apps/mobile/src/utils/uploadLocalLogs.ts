@@ -1,14 +1,11 @@
 /**
- * Drain local diagnostic + performance queues to the backend.
- * Used by "同步資料庫" so a single tap also ships on-device logs.
+ * Bounded single-round diagnostic + performance flush for the opt-in Log lane.
+ * Routine upload is owned by logBatchScheduler; this is the flush unit.
  */
 
+import { getDiagnosticConsentEnabled } from '../state/diagnosticConsent';
 import { diagnostics } from '../state/diagnostics';
 import { flushPerformance as flushPerformanceDefault } from '../state/performance';
-
-/** Safety cap: flush() is 100/batch → at most ~5k rows per tap per queue. */
-export const MAX_DIAGNOSTIC_FLUSH_ROUNDS = 50;
-export const MAX_PERFORMANCE_FLUSH_ROUNDS = 50;
 
 export interface UploadLocalLogsResult {
   diagnosticSent: number;
@@ -18,6 +15,14 @@ export interface UploadLocalLogsResult {
 }
 
 export interface UploadLocalLogsDeps {
+  getConsent?: () => Promise<boolean>;
+  flushDiagnostics?: () => Promise<{ sent: number; remaining: number }>;
+  flushPerformance?: () => Promise<{ sent: number; remaining: number }>;
+  /** @deprecated no multi-round drain; ignored */
+  maxDiagnosticRounds?: number;
+  /** @deprecated no multi-round drain; ignored */
+  maxPerformanceRounds?: number;
+  source?: string;
   writeDiagnostic?: (input: {
     event: string;
     source?: string;
@@ -25,70 +30,49 @@ export interface UploadLocalLogsDeps {
     sent?: number;
     remaining?: number;
   }) => Promise<void>;
-  flushDiagnostics?: () => Promise<{ sent: number; remaining: number }>;
-  flushPerformance?: () => Promise<{ sent: number; remaining: number }>;
-  maxDiagnosticRounds?: number;
-  maxPerformanceRounds?: number;
-  source?: string;
 }
 
 /**
- * Flush pending on-device logs. Does not throw on network failure for individual
- * flushes; returns remaining counts so callers can surface partial success.
+ * One diagnostic batch and one performance batch per call (≤100 each via flush).
+ * Consent off → no network and no queue work.
  */
 export async function uploadLocalLogs(
   deps: UploadLocalLogsDeps = {},
 ): Promise<UploadLocalLogsResult> {
-  const write =
-    deps.writeDiagnostic ??
-    ((input: {
-      event: string;
-      source?: string;
-      success?: boolean;
-      sent?: number;
-      remaining?: number;
-    }) => diagnostics.write(input));
+  const consented =
+    deps.getConsent != null
+      ? await deps.getConsent()
+      : await getDiagnosticConsentEnabled();
+  if (!consented) {
+    return {
+      diagnosticSent: 0,
+      diagnosticRemaining: 0,
+      performanceSent: 0,
+      performanceRemaining: 0,
+    };
+  }
+
   const flushDiag = deps.flushDiagnostics ?? (() => diagnostics.flush());
   const flushPerf = deps.flushPerformance ?? (() => flushPerformanceDefault());
-  const maxDiag = deps.maxDiagnosticRounds ?? MAX_DIAGNOSTIC_FLUSH_ROUNDS;
-  const maxPerf = deps.maxPerformanceRounds ?? MAX_PERFORMANCE_FLUSH_ROUNDS;
-  const source = deps.source ?? 'destination_reorder_sync';
-
-  await write({
-    event: 'manual_log_upload',
-    source,
-  }).catch(() => undefined);
 
   let diagnosticSent = 0;
   let diagnosticRemaining = 0;
-
-  for (let round = 0; round < maxDiag; round += 1) {
-    let result: { sent: number; remaining: number };
-    try {
-      result = await flushDiag();
-    } catch {
-      diagnosticRemaining = -1;
-      break;
-    }
-    diagnosticSent += Math.max(0, result.sent);
-    diagnosticRemaining = Math.max(0, result.remaining);
-    if (result.remaining <= 0 || result.sent === 0) break;
+  try {
+    const diagnostic = await flushDiag();
+    diagnosticSent = Math.max(0, diagnostic.sent);
+    diagnosticRemaining = Math.max(0, diagnostic.remaining);
+  } catch {
+    diagnosticRemaining = -1;
   }
 
   let performanceSent = 0;
   let performanceRemaining = 0;
-
-  for (let round = 0; round < maxPerf; round += 1) {
-    let result: { sent: number; remaining: number };
-    try {
-      result = await flushPerf();
-    } catch {
-      performanceRemaining = -1;
-      break;
-    }
-    performanceSent += Math.max(0, result.sent);
-    performanceRemaining = Math.max(0, result.remaining);
-    if (result.remaining <= 0 || result.sent === 0) break;
+  try {
+    const performance = await flushPerf();
+    performanceSent = Math.max(0, performance.sent);
+    performanceRemaining = Math.max(0, performance.remaining);
+  } catch {
+    performanceRemaining = -1;
   }
 
   return {

@@ -34,7 +34,7 @@ export interface LocationUploadEvent {
   navigationSessionId: string | null;
   capturedAt: number;
   coords: Coordinates & {
-    accuracy: number;
+    accuracy?: number | null;
     speed?: number | null;
     course?: number | null;
   };
@@ -238,7 +238,9 @@ function normalizeInput(
     coords: {
       latitude: input.coordinates.latitude,
       longitude: input.coordinates.longitude,
-      accuracy: input.coordinates.accuracy ?? 0,
+      ...(input.coordinates.accuracy != null && Number.isFinite(input.coordinates.accuracy)
+        ? { accuracy: input.coordinates.accuracy }
+        : {}),
       speed: input.coordinates.speed,
       course: input.coordinates.course,
     },
@@ -262,7 +264,7 @@ function legacyToEvent(value: unknown): LocationUploadEvent | null {
     groupId: entry.groupId,
     navigationSessionId: null,
     capturedAt: entry.capturedAt,
-    coords: { ...entry.coordinates, accuracy: 0 },
+    coords: { ...entry.coordinates },
     trackingMode: 'foreground',
     source: 'foreground',
     sequence: entry.capturedAt,

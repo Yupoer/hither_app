@@ -56,8 +56,23 @@ describe('measured performance regressions', () => {
 
   it('coalesces location outbox uploads instead of flushing after every sample', () => {
     expect(locationHook).toContain('scheduleOutboxFlush');
-    expect(locationHook).toContain('OUTBOX_FLUSH_DELAY_MS');
+    expect(locationHook).toContain('const OUTBOX_FLUSH_DELAY_MS = 20_000');
     expect(locationHook).not.toContain('.then(() => flushLocationOutbox())');
+  });
+
+  it('keeps debug route local and removes eager multi-round log drain patterns', () => {
+    const debugStart = locationHook.indexOf('// DEV debug route');
+    const debugEnd = locationHook.indexOf('// Expo watch is fallback', debugStart);
+    const debugBlock = locationHook.slice(debugStart, debugEnd);
+    expect(debugStart).toBeGreaterThanOrEqual(0);
+    expect(debugBlock).toContain('applySampleToUi');
+    expect(debugBlock).not.toContain('enqueueUpload');
+    const performance = readFileSync(join(__dirname, '../state/performance.ts'), 'utf8');
+    const uploadLocalLogs = readFileSync(join(__dirname, '../utils/uploadLocalLogs.ts'), 'utf8');
+    const app = readFileSync(join(__dirname, '../../App.tsx'), 'utf8');
+    expect(performance).not.toContain('FLUSH_DELAY_MS');
+    expect(uploadLocalLogs).not.toContain('MAX_DIAGNOSTIC_FLUSH_ROUNDS');
+    expect(app).not.toMatch(/if \(initializing \|\| !user\) return;[\s\S]*drainPayloads/);
   });
 
   it('animates member markers between real coordinate endpoints only', () => {

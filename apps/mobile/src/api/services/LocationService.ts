@@ -19,7 +19,7 @@ export interface LocationBatchEvent {
   coords: {
     latitude: number;
     longitude: number;
-    accuracy: number;
+    accuracy?: number | null;
     speed?: number | null;
     course?: number | null;
   };

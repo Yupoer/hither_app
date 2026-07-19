@@ -20,6 +20,7 @@ import { useGroupNotifications } from './src/state/useGroupNotifications';
 import { useSubgroupInvites } from './src/state/useSubgroupInvites';
 import {
   PreferencesProvider,
+  usePreferences,
   useTheme,
 } from './src/state/PreferencesContext';
 import { GLOBAL_FONT_SCALE_CAP } from './src/theme/typeScale';
@@ -29,9 +30,16 @@ import { uploadMetricPayload } from './src/api/services/DiagnosticService';
 import { uploadPerformanceBatch } from './src/api/services/PerformanceService';
 import {
   configurePerformanceTracing,
-  flushPerformance,
+  purgePerformance,
   startPerformanceMonitor,
 } from './src/state/performance';
+import {
+  configureLogBatchScheduler,
+  setLogBatchSchedulerEnabled,
+  stopLogBatchScheduler,
+} from './src/state/logBatchScheduler';
+import { setDiagnosticConsentEnabled } from './src/state/diagnosticConsent';
+import { uploadLocalLogs } from './src/utils/uploadLocalLogs';
 
 // Dynamic Type: scale with the system up to GLOBAL_FONT_SCALE_CAP, then freeze.
 // Per-role caps (HitherText) may be tighter. Never reintroduce a hard 1.0 cap.
@@ -55,6 +63,7 @@ textInputDefaults.defaultProps = {
 function ThemedNavigation() {
 
   const { colors } = useTheme();
+  const { ready, diagnosticUploadEnabled } = usePreferences();
   const { initializing, user, membership } = useSession();
   // Fredoka is the design's display face (gathering-point titles, ETA numerals,
   // Live Activity numbers). Held alongside the session/onboarding splash so the
@@ -77,39 +86,46 @@ function ThemedNavigation() {
   }, [initializing]);
 
   useEffect(() => {
-    if (initializing || !user) return;
-    configurePerformanceTracing(uploadPerformanceBatch);
-    return startPerformanceMonitor();
-  }, [initializing, user]);
+    if (!ready || initializing || !user) return;
 
-  useEffect(() => {
-    if (initializing || !user) return;
-    let cancelled = false;
-    void (async () => {
-      const payloads = await metrics.drainPayloads();
-      const acknowledgedIds: string[] = [];
+    if (!diagnosticUploadEnabled) {
+      void setDiagnosticConsentEnabled(false);
+      stopLogBatchScheduler();
+      setLogBatchSchedulerEnabled(false);
+      void diagnostics.purge().catch(() => undefined);
+      void purgePerformance().catch(() => undefined);
+      void metrics.setCollectionEnabled(false).catch(() => undefined);
+      void metrics.purgePayloads().catch(() => undefined);
+      return;
+    }
+
+    configurePerformanceTracing(uploadPerformanceBatch);
+    configureLogBatchScheduler(async () => {
+      const logs = await uploadLocalLogs();
+      const allPayloads = await metrics.drainPayloads();
+      const payloads = allPayloads.slice(0, 5);
+      const acknowledged: string[] = [];
       for (const payload of payloads) {
-        if (cancelled) return;
         try {
           await uploadMetricPayload(payload);
-          acknowledgedIds.push(payload.id);
+          acknowledged.push(payload.id);
         } catch {
-          await diagnostics.write({
-            event: 'diagnostic_error',
-            errorCode: 'metric_upload_failed',
-            source: payload.kind,
-          });
+          break;
         }
       }
-      if (!cancelled) {
-        await metrics.removePayloads(acknowledgedIds);
-        await flushPerformance();
-      }
-    })().catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [initializing, user]);
+      await metrics.removePayloads(acknowledged);
+      return {
+        sent: logs.diagnosticSent + logs.performanceSent + acknowledged.length,
+        remaining:
+          logs.diagnosticRemaining +
+          logs.performanceRemaining +
+          Math.max(0, allPayloads.length - acknowledged.length),
+      };
+    });
+    setLogBatchSchedulerEnabled(true);
+    void metrics.setCollectionEnabled(true).catch(() => undefined);
+    return startPerformanceMonitor();
+  }, [ready, diagnosticUploadEnabled, initializing, user]);
 
   // First-launch Onboarding gate: a local AsyncStorage flag
   // (hither.onboarding.v1), independent of session/auth. `null` means

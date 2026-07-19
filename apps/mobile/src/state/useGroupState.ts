@@ -76,27 +76,32 @@ export function useGroupState(
   const highAccuracyRef = useRef(highAccuracy);
   highAccuracyRef.current = highAccuracy;
 
-  const load = useCallback(async (): Promise<boolean> => {
-    if (!groupId) {
-      return false;
-    }
-    try {
-      const next = await getGroupState(groupId);
-      if (activeRef.current) {
-        setState(next);
-        setError(null);
+  const loadInFlightRef = useRef<Promise<boolean> | null>(null);
+
+  const load = useCallback((): Promise<boolean> => {
+    if (!groupId) return Promise.resolve(false);
+    if (loadInFlightRef.current) return loadInFlightRef.current;
+    const run = (async () => {
+      try {
+        const next = await getGroupState(groupId);
+        if (activeRef.current) {
+          setState(next);
+          setError(null);
+        }
+        return true;
+      } catch (cause) {
+        if (activeRef.current) {
+          setError(cause instanceof Error ? cause.message : '無法取得群組狀態');
+        }
+        return false;
+      } finally {
+        if (activeRef.current) setLoading(false);
       }
-      return true;
-    } catch (e) {
-      if (activeRef.current) {
-        setError(e instanceof Error ? e.message : '無法取得群組狀態');
-      }
-      return false;
-    } finally {
-      if (activeRef.current) {
-        setLoading(false);
-      }
-    }
+    })().finally(() => {
+      loadInFlightRef.current = null;
+    });
+    loadInFlightRef.current = run;
+    return run;
   }, [groupId]);
 
   const loadRef = useRef(load);
@@ -230,12 +235,10 @@ export function useGroupState(
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           realtimeReadyRef.current = true;
-          void loadRef.current();
           return;
         }
         if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR' || status === 'CLOSED') {
           realtimeReadyRef.current = false;
-          void loadRef.current();
         }
       });
 

@@ -1,3 +1,7 @@
+jest.mock('../state/diagnosticConsent', () => ({
+  getDiagnosticConsentEnabled: jest.fn().mockResolvedValue(true),
+}));
+
 jest.mock('../state/diagnostics', () => ({
   diagnostics: {
     write: jest.fn().mockResolvedValue(undefined),
@@ -9,73 +13,63 @@ jest.mock('../state/performance', () => ({
   flushPerformance: jest.fn().mockResolvedValue({ sent: 0, remaining: 0 }),
 }));
 
+import { getDiagnosticConsentEnabled } from '../state/diagnosticConsent';
 import { uploadLocalLogs } from '../utils/uploadLocalLogs';
 
 describe('uploadLocalLogs', () => {
-  it('drains diagnostic batches until remaining is zero', async () => {
-    const flushDiagnostics = jest
-      .fn()
-      .mockResolvedValueOnce({ sent: 100, remaining: 50 })
-      .mockResolvedValueOnce({ sent: 50, remaining: 0 });
-    const flushPerformance = jest.fn().mockResolvedValue({ sent: 0, remaining: 0 });
-    const writeDiagnostic = jest.fn().mockResolvedValue(undefined);
+  beforeEach(() => {
+    jest.mocked(getDiagnosticConsentEnabled).mockResolvedValue(true);
+  });
+
+  it('sends at most one diagnostic batch and one performance batch', async () => {
+    const flushDiagnostics = jest.fn().mockResolvedValue({ sent: 100, remaining: 50 });
+    const flushPerformance = jest.fn().mockResolvedValue({ sent: 40, remaining: 10 });
 
     const result = await uploadLocalLogs({
-      writeDiagnostic,
       flushDiagnostics,
       flushPerformance,
     });
 
-    expect(flushDiagnostics).toHaveBeenCalledTimes(2);
+    expect(flushDiagnostics).toHaveBeenCalledTimes(1);
     expect(flushPerformance).toHaveBeenCalledTimes(1);
     expect(result).toEqual({
-      diagnosticSent: 150,
+      diagnosticSent: 100,
+      diagnosticRemaining: 50,
+      performanceSent: 40,
+      performanceRemaining: 10,
+    });
+  });
+
+  it('skips flush when consent is off', async () => {
+    const flushDiagnostics = jest.fn();
+    const flushPerformance = jest.fn();
+    const result = await uploadLocalLogs({
+      getConsent: async () => false,
+      flushDiagnostics,
+      flushPerformance,
+    });
+    expect(flushDiagnostics).not.toHaveBeenCalled();
+    expect(flushPerformance).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      diagnosticSent: 0,
       diagnosticRemaining: 0,
       performanceSent: 0,
       performanceRemaining: 0,
     });
-    expect(writeDiagnostic).toHaveBeenCalledWith(
-      expect.objectContaining({ event: 'manual_log_upload' }),
-    );
-    expect(writeDiagnostic).not.toHaveBeenCalledWith(
-      expect.objectContaining({ event: 'manual_log_upload_done' }),
-    );
   });
 
-  it('drains performance across batches until empty', async () => {
-    const flushPerformance = jest
-      .fn()
-      .mockResolvedValueOnce({ sent: 100, remaining: 250 })
-      .mockResolvedValueOnce({ sent: 100, remaining: 150 })
-      .mockResolvedValueOnce({ sent: 100, remaining: 50 })
-      .mockResolvedValueOnce({ sent: 50, remaining: 0 });
-
-    const result = await uploadLocalLogs({
-      writeDiagnostic: jest.fn().mockResolvedValue(undefined),
-      flushDiagnostics: jest.fn().mockResolvedValue({ sent: 0, remaining: 0 }),
-      flushPerformance,
-    });
-
-    expect(flushPerformance).toHaveBeenCalledTimes(4);
-    expect(result.performanceSent).toBe(350);
-    expect(result.performanceRemaining).toBe(0);
-  });
-
-  it('stops when a flush sends nothing while remaining stays positive', async () => {
-    const flushDiagnostics = jest.fn().mockResolvedValue({ sent: 0, remaining: 12 });
-    const result = await uploadLocalLogs({
-      writeDiagnostic: jest.fn().mockResolvedValue(undefined),
-      flushDiagnostics,
+  it('does not write manual_log_upload markers', async () => {
+    const writeDiagnostic = jest.fn();
+    await uploadLocalLogs({
+      writeDiagnostic,
+      flushDiagnostics: jest.fn().mockResolvedValue({ sent: 1, remaining: 0 }),
       flushPerformance: jest.fn().mockResolvedValue({ sent: 0, remaining: 0 }),
     });
-    expect(flushDiagnostics).toHaveBeenCalledTimes(1);
-    expect(result.diagnosticSent).toBe(0);
-    expect(result.diagnosticRemaining).toBe(12);
+    expect(writeDiagnostic).not.toHaveBeenCalled();
   });
 
-  it('reports performance remaining -1 when flush throws', async () => {
+  it('reports remaining -1 when a flush throws', async () => {
     const result = await uploadLocalLogs({
-      writeDiagnostic: jest.fn().mockResolvedValue(undefined),
       flushDiagnostics: jest.fn().mockResolvedValue({ sent: 3, remaining: 0 }),
       flushPerformance: jest.fn().mockRejectedValue(new Error('network')),
     });
@@ -84,24 +78,12 @@ describe('uploadLocalLogs', () => {
     expect(result.diagnosticSent).toBe(3);
   });
 
-  it('respects max diagnostic rounds', async () => {
-    const flushDiagnostics = jest.fn().mockResolvedValue({ sent: 100, remaining: 999 });
-    await uploadLocalLogs({
-      writeDiagnostic: jest.fn().mockResolvedValue(undefined),
-      flushDiagnostics,
-      flushPerformance: jest.fn().mockResolvedValue({ sent: 0, remaining: 0 }),
-      maxDiagnosticRounds: 3,
-      maxPerformanceRounds: 1,
-    });
-    expect(flushDiagnostics).toHaveBeenCalledTimes(3);
-  });
-
-  it('marks remaining negative when diagnostic flush throws', async () => {
-    const result = await uploadLocalLogs({
-      writeDiagnostic: jest.fn().mockResolvedValue(undefined),
-      flushDiagnostics: jest.fn().mockRejectedValue(new Error('offline')),
-      flushPerformance: jest.fn().mockResolvedValue({ sent: 0, remaining: 0 }),
-    });
-    expect(result.diagnosticRemaining).toBe(-1);
+  it('source does not contain multi-round drain constants', () => {
+    const source = require('node:fs').readFileSync(
+      require('node:path').join(__dirname, '../utils/uploadLocalLogs.ts'),
+      'utf8',
+    );
+    expect(source).not.toContain('MAX_DIAGNOSTIC_FLUSH_ROUNDS');
+    expect(source).not.toContain('MAX_PERFORMANCE_FLUSH_ROUNDS');
   });
 });

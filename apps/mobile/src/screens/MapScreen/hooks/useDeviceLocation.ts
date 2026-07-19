@@ -1,6 +1,10 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 import { location } from '../../../native';
+import {
+  isDebugRouteActive,
+  subscribeDebugLocation,
+} from '../../../native/debugLocation';
 import type { LocationSample } from '../../../native/location';
 import type { Coordinates } from '../../../types';
 import {
@@ -30,7 +34,7 @@ interface UseDeviceLocationParams {
 }
 
 /** Coalesce passive outbox flushes; force-sync bypasses this delay. */
-const OUTBOX_FLUSH_DELAY_MS = 5_000;
+const OUTBOX_FLUSH_DELAY_MS = 20_000;
 /** Independent timer tick — picks the active motion heartbeat each fire. */
 const HEARTBEAT_TICK_MS = 15_000;
 
@@ -85,7 +89,12 @@ export function useDeviceLocation({
       if (!gid) return;
       await enqueueLocationOutbox({
         groupId: gid,
-        coordinates: sample.coordinates,
+        coordinates: {
+          ...sample.coordinates,
+          ...(sample.accuracy != null && Number.isFinite(sample.accuracy)
+            ? { accuracy: sample.accuracy }
+            : {}),
+        },
         capturedAt: sample.timestamp,
       });
       uploadGateRef.current = {
@@ -269,6 +278,24 @@ export function useDeviceLocation({
     const timer = setInterval(tick, HEARTBEAT_TICK_MS);
     return () => clearInterval(timer);
   }, [appState, groupId, applySampleToUi, enqueueUpload]);
+
+  // DEV debug route: always feed samples into UI, even when MapKit owns real GPS.
+  // Debug samples stay local — they must not enter the team location outbox.
+  useEffect(() => {
+    if (!shouldWatchLocation(groupId ?? null, appState)) return;
+    return subscribeDebugLocation((sample: LocationSample) => {
+      if (!isDebugRouteActive()) return;
+      const now = Date.now();
+      const policy = locationPolicy(highAccuracyRef.current);
+      motionRef.current = reduceMotionState(
+        motionRef.current,
+        sample.coordinates,
+        now,
+        policy,
+      );
+      applySampleToUi(sample, now);
+    });
+  }, [appState, groupId, applySampleToUi]);
 
   // Expo watch is fallback only when MapKit is not the foreground owner.
   useEffect(() => {

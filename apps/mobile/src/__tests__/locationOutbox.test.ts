@@ -206,7 +206,7 @@ describe('SQLite location outbox', () => {
     expect(storage.getItem).toHaveBeenCalledTimes(1);
     expect(storage.removeItem).toHaveBeenCalledWith(LOCATION_OUTBOX_KEY);
     expect(database.entries.get('00000000-0000-4000-8000-000000000099')).toMatchObject({
-      coords: { latitude: 25.04, longitude: 121.5, accuracy: 0 },
+      coords: { latitude: 25.04, longitude: 121.5 },
       trackingMode: 'foreground',
       source: 'foreground',
       sequence: 1_000,

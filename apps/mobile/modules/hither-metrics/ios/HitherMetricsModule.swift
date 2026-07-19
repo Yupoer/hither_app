@@ -64,6 +64,14 @@ private final class MetricKitSubscriber: NSObject, MXMetricManagerSubscriber {
     }
   }
 
+  func purgePayloads() {
+    queue.sync {
+      for url in payloadFiles() {
+        try? FileManager.default.removeItem(at: url)
+      }
+    }
+  }
+
   func didReceive(_ payloads: [MXMetricPayload]) {
     queue.async {
       for payload in payloads {
@@ -329,19 +337,42 @@ public final class HitherMetricsModule: Module {
   private let subscriber = MetricKitSubscriber()
   private let sampler = PerformanceSampler()
   private let launch = LaunchBreadcrumbStore()
+  private let collectionLock = NSLock()
+  private var collectionEnabled = false
 
   public func definition() -> ModuleDefinition {
     Name("HitherMetrics")
 
     OnCreate {
-      let subscriber = self.subscriber
-      subscriber.prepare()
-      MXMetricManager.shared.add(subscriber)
+      self.subscriber.prepare()
     }
 
     OnDestroy {
-      let subscriber = self.subscriber
-      MXMetricManager.shared.remove(subscriber)
+      self.collectionLock.lock()
+      let wasEnabled = self.collectionEnabled
+      self.collectionEnabled = false
+      self.collectionLock.unlock()
+      if wasEnabled {
+        MXMetricManager.shared.remove(self.subscriber)
+      }
+    }
+
+    AsyncFunction("setCollectionEnabled") { (enabled: Bool) -> Bool in
+      self.collectionLock.lock()
+      defer { self.collectionLock.unlock() }
+      guard enabled != self.collectionEnabled else { return true }
+      self.collectionEnabled = enabled
+      if enabled {
+        MXMetricManager.shared.add(self.subscriber)
+      } else {
+        MXMetricManager.shared.remove(self.subscriber)
+        self.subscriber.purgePayloads()
+      }
+      return true
+    }
+
+    AsyncFunction("purgePayloads") {
+      self.subscriber.purgePayloads()
     }
 
     AsyncFunction("drainPayloads") { () -> [[String: Any]] in
@@ -353,6 +384,13 @@ public final class HitherMetricsModule: Module {
     }
 
     AsyncFunction("samplePerformance") { (windowMs: Double, promise: Promise) in
+      self.collectionLock.lock()
+      let enabled = self.collectionEnabled
+      self.collectionLock.unlock()
+      guard enabled else {
+        promise.resolve(nil)
+        return
+      }
       self.sampler.sample(windowMs: windowMs) { result in
         promise.resolve(result)
       }

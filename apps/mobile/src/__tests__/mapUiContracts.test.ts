@@ -22,8 +22,20 @@ const preferences = readFileSync(
 const roleSelect = readFileSync(join(__dirname, '../screens/RoleSelectScreen.tsx'), 'utf8');
 const i18n = readFileSync(join(__dirname, '../i18n/index.ts'), 'utf8');
 const overflowMarquee = readFileSync(join(__dirname, '../components/OverflowMarquee.tsx'), 'utf8');
+const useGroupState = readFileSync(join(__dirname, '../state/useGroupState.ts'), 'utf8');
 
 describe('map UI placement contracts', () => {
+  it('coalesces full group-state reloads at a single-flight root', () => {
+    expect(useGroupState).toContain('loadInFlightRef');
+    expect(useGroupState).toContain('if (loadInFlightRef.current) return loadInFlightRef.current');
+    const subStart = useGroupState.indexOf('.subscribe((status)');
+    const subEnd = useGroupState.indexOf('const timer = setInterval', subStart);
+    const statusCallback = useGroupState.slice(subStart, subEnd);
+    expect(subStart).toBeGreaterThanOrEqual(0);
+    expect(statusCallback).toContain("status === 'SUBSCRIBED'");
+    expect(statusCallback).toContain("status === 'CHANNEL_ERROR'");
+    expect(statusCallback).not.toContain('loadRef.current()');
+  });
   it('renders arrival radius hint with tertiary subhint style', () => {
     expect(mapScreen).toContain("styles.accuracySubhint}>{t('arrival.radiusHint')}");
     expect(mapScreen).toMatch(/accuracySubhint:\s*\{[\s\S]*?color:\s*glass\.textTertiary/);

@@ -2,7 +2,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import * as Crypto from 'expo-crypto';
 import { metrics } from '../native';
+import { getDiagnosticConsentEnabled } from './diagnosticConsent';
 import { getHitherDatabase } from './hitherDatabase';
+import { notifyLogRecorded } from './logBatchScheduler';
 
 const TRACE_START_KEY = 'hither.performance.trace.startedAt.v1';
 const TRACE_TTL_MS = 2 * 60 * 60 * 1_000;
@@ -12,7 +14,6 @@ const MAX_LOCAL_RECORDS = 10_000;
 const MAX_UPLOAD_BATCH = 100;
 const SAMPLE_WINDOW_MS = 1_000;
 const SAMPLE_INTERVAL_MS = 5 * 60_000;
-const FLUSH_DELAY_MS = 60_000;
 const RETENTION_CLEANUP_INTERVAL_MS = 15 * 60 * 1_000;
 
 export type PerformanceValue = string | number | boolean | null;
@@ -46,7 +47,6 @@ const sessionId = Crypto.randomUUID();
 let active = false;
 let initialization: Promise<boolean> | null = null;
 let uploader: PerformanceUploader | null = null;
-let flushTimer: ReturnType<typeof setTimeout> | null = null;
 export interface PerformanceFlushResult {
   sent: number;
   remaining: number;
@@ -185,6 +185,7 @@ export function configurePerformanceTracing(nextUploader: PerformanceUploader): 
 
 function insertEvent(event: PerformanceUploadRecord): Promise<void> {
   const next = writeSerial.then(async () => {
+    if (!(await getDiagnosticConsentEnabled())) return;
     const database = await getHitherDatabase();
     await database.runAsync(
       `INSERT OR IGNORE INTO performance_events
@@ -200,9 +201,17 @@ function insertEvent(event: PerformanceUploadRecord): Promise<void> {
       null,
     );
     await maybeCleanupRetention(database);
+    notifyLogRecorded();
   });
   writeSerial = next.then(() => undefined, () => undefined);
   return next;
+}
+
+export async function purgePerformance(): Promise<void> {
+  const database = await getHitherDatabase();
+  await database.runAsync(
+    'DELETE FROM performance_events WHERE uploaded_at IS NULL',
+  );
 }
 
 async function getPending(limit = MAX_UPLOAD_BATCH): Promise<PerformanceUploadRecord[]> {
@@ -256,6 +265,9 @@ async function countPending(): Promise<number> {
 }
 
 export async function flushPerformance(): Promise<PerformanceFlushResult> {
+  if (!(await getDiagnosticConsentEnabled())) {
+    return { sent: 0, remaining: 0 };
+  }
   if (flushInFlight) {
     return flushInFlight;
   }
@@ -290,14 +302,6 @@ export async function flushPerformance(): Promise<PerformanceFlushResult> {
   return flushInFlight;
 }
 
-function scheduleFlush(): void {
-  if (!uploader || flushTimer) return;
-  flushTimer = setTimeout(() => {
-    flushTimer = null;
-    void flushPerformance();
-  }, FLUSH_DELAY_MS);
-}
-
 async function record(
   eventType: PerformanceUploadRecord['eventType'],
   operation: string,
@@ -305,6 +309,7 @@ async function record(
   id = Crypto.randomUUID(),
 ): Promise<void> {
   if (!active) return;
+  if (!(await getDiagnosticConsentEnabled())) return;
   await insertEvent({
     id,
     timestamp: Date.now(),
@@ -317,7 +322,6 @@ async function record(
       appVersion: Constants.expoConfig?.version ?? 'development',
     },
   });
-  scheduleFlush();
 }
 
 async function measureJsFps(windowMs: number): Promise<number | null> {
@@ -351,12 +355,14 @@ async function collectSample(
   traceId?: string,
 ): Promise<void> {
   if (!active || nativeSampleInFlight) return;
+  if (!(await getDiagnosticConsentEnabled())) return;
   nativeSampleInFlight = true;
   try {
     const [nativeSample, jsFps] = await Promise.all([
       metrics.samplePerformance(SAMPLE_WINDOW_MS).catch(() => null),
       measureJsFps(SAMPLE_WINDOW_MS),
     ]);
+    if (!nativeSample && jsFps == null) return;
     await record(eventType, operation, {
       ...(nativeSample ?? {}),
       jsFps,
@@ -376,9 +382,11 @@ async function collectEnergySample(
   },
 ): Promise<void> {
   if (nativeSampleInFlight) return;
+  if (!(await getDiagnosticConsentEnabled())) return;
   nativeSampleInFlight = true;
   try {
     const nativeSample = await metrics.samplePerformance(SAMPLE_WINDOW_MS).catch(() => null);
+    if (!nativeSample) return;
     await insertEvent({
       id: Crypto.randomUUID(),
       timestamp: Date.now(),
@@ -387,7 +395,7 @@ async function collectEnergySample(
       operation: normalizeOperation(operation),
       payload: {
         ...sanitizePayload({
-          ...(nativeSample ?? {}),
+          ...nativeSample,
           navigationSessionId: context.navigationSessionId,
           trackingMode: context.trackingMode,
           sampleWindowMs: SAMPLE_WINDOW_MS,
@@ -397,7 +405,6 @@ async function collectEnergySample(
         appVersion: Constants.expoConfig?.version ?? 'development',
       },
     });
-    scheduleFlush();
   } finally {
     nativeSampleInFlight = false;
   }
@@ -463,6 +470,7 @@ export function startPerformanceMonitor(): () => void {
   let timer: ReturnType<typeof setInterval> | null = null;
   void ensureEnabled().then(async (enabled) => {
     if (!enabled || stopped) return;
+    if (!(await getDiagnosticConsentEnabled())) return;
     await collectSample('sample', 'runtime.sample');
     if (!stopped) {
       timer = setInterval(() => {
@@ -473,7 +481,6 @@ export function startPerformanceMonitor(): () => void {
   return () => {
     stopped = true;
     if (timer) clearInterval(timer);
-    void flushPerformance();
   };
 }
 
@@ -496,6 +503,5 @@ export function startNavigationEnergyMonitor(context: {
     stopped = true;
     clearInterval(timer);
     void collectEnergySample('navigation.energy.end', context);
-    void flushPerformance();
   };
 }
