@@ -72,6 +72,11 @@ function ThemedNavigation() {
   useSubgroupInvites();
 
   useEffect(() => {
+    if (initializing) return;
+    void metrics.markLaunchPhase('session_resolved');
+  }, [initializing]);
+
+  useEffect(() => {
     if (initializing || !user) return;
     configurePerformanceTracing(uploadPerformanceBatch);
     return startPerformanceMonitor();
@@ -136,6 +141,18 @@ function ThemedNavigation() {
     };
   }, [user, membership]);
 
+  const navigatorReady =
+    !initializing && needsOnboarding === false && fontsLoaded;
+
+  useEffect(() => {
+    if (!navigatorReady) return;
+    void metrics.markLaunchPhase('navigation_ready');
+    const timer = setTimeout(() => {
+      void metrics.markLaunchPhase('stable');
+    }, 30_000);
+    return () => clearTimeout(timer);
+  }, [navigatorReady]);
+
   // Hold the navigator until the persisted session AND the onboarding flag
   // are resolved, so RootNavigator's initialRouteName sees the correct
   // logged-in/out state (a restored user skips Login) instead of flashing
@@ -191,6 +208,21 @@ function ThemedNavigation() {
 installGlobalErrorLogger();
 
 export default function App() {
+  useEffect(() => {
+    void metrics.markLaunchPhase('js_root_mounted');
+    void metrics
+      .previousLaunch()
+      .then((previous) => {
+        if (!previous) return;
+        return diagnostics.write({
+          event: 'previous_launch_incomplete',
+          source: previous.phase,
+          mode: previous.build,
+        });
+      })
+      .catch(() => undefined);
+  }, []);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>

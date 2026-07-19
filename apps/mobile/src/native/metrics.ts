@@ -24,10 +24,24 @@ export interface PerformanceSample {
   osVersion: string | null;
 }
 
+export type LaunchPhase =
+  | 'js_root_mounted'
+  | 'session_resolved'
+  | 'navigation_ready'
+  | 'stable';
+
+export interface PreviousLaunch {
+  phase: string;
+  build: string;
+  recordedAt: number;
+}
+
 interface HitherMetricsModule {
   drainPayloads(): Promise<MetricPayloadFile[]>;
   removePayloads(ids: string[]): Promise<void>;
   samplePerformance(windowMs: number): Promise<PerformanceSample>;
+  previousLaunch(): Promise<PreviousLaunch | null>;
+  markLaunchPhase(phase: LaunchPhase): Promise<void>;
 }
 
 const HitherMetrics = requireOptionalNativeModule<HitherMetricsModule>('HitherMetrics');
@@ -42,4 +56,12 @@ export async function removePayloads(ids: string[]): Promise<void> {
 
 export async function samplePerformance(windowMs: number): Promise<PerformanceSample | null> {
   return await HitherMetrics?.samplePerformance(windowMs) ?? null;
+}
+
+export async function previousLaunch(): Promise<PreviousLaunch | null> {
+  return await HitherMetrics?.previousLaunch() ?? null;
+}
+
+export async function markLaunchPhase(phase: LaunchPhase): Promise<void> {
+  await HitherMetrics?.markLaunchPhase(phase);
 }

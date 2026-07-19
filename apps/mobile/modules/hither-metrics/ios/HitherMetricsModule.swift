@@ -289,9 +289,46 @@ private final class PerformanceSampler: NSObject {
   }
 }
 
+private enum LaunchPhase: String, CaseIterable {
+  case nativeModuleCreated = "native_module_created"
+  case jsRootMounted = "js_root_mounted"
+  case sessionResolved = "session_resolved"
+  case navigationReady = "navigation_ready"
+  case stable = "stable"
+}
+
+private final class LaunchBreadcrumbStore {
+  private let defaults = UserDefaults.standard
+  private let phaseKey = "hither.launch.phase.v1"
+  private let buildKey = "hither.launch.build.v1"
+  private let recordedAtKey = "hither.launch.recordedAt.v1"
+  private(set) var previous: [String: Any]?
+
+  init() {
+    if let phase = defaults.string(forKey: phaseKey), phase != LaunchPhase.stable.rawValue {
+      previous = [
+        "phase": phase,
+        "build": defaults.string(forKey: buildKey) ?? "unknown",
+        "recordedAt": defaults.object(forKey: recordedAtKey) as? Double ?? 0,
+      ]
+    }
+    mark(.nativeModuleCreated)
+  }
+
+  func mark(_ phase: LaunchPhase) {
+    defaults.set(phase.rawValue, forKey: phaseKey)
+    defaults.set(
+      Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown",
+      forKey: buildKey
+    )
+    defaults.set(Date().timeIntervalSince1970 * 1_000, forKey: recordedAtKey)
+  }
+}
+
 public final class HitherMetricsModule: Module {
   private let subscriber = MetricKitSubscriber()
   private let sampler = PerformanceSampler()
+  private let launch = LaunchBreadcrumbStore()
 
   public func definition() -> ModuleDefinition {
     Name("HitherMetrics")
@@ -319,6 +356,15 @@ public final class HitherMetricsModule: Module {
       self.sampler.sample(windowMs: windowMs) { result in
         promise.resolve(result)
       }
+    }
+
+    AsyncFunction("previousLaunch") { () -> [String: Any]? in
+      self.launch.previous
+    }
+
+    AsyncFunction("markLaunchPhase") { (phase: String) in
+      guard let value = LaunchPhase(rawValue: phase) else { return }
+      self.launch.mark(value)
     }
   }
 }
