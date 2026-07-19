@@ -24,8 +24,7 @@ Candidate must complete the linked QA script on the original device with zero EX
 | Crash baseline | (TF 17/24) | hermes | 54.0.x | 0.81.5 | 4.1.1 | 0.5.1 | Original EXC_BAD_ACCESS reports |
 | Control (Hermes) | master tip | hermes | 54.0.36 | 0.81.5 | 4.1.1 | 0.5.1 | Fingerprint OTA + breadcrumbs + CI gates; no claim of fix |
 | JSC mitigation candidate | blocked | n/a | 54.0.36 | 0.81.5 | 4.1.1 | 0.5.1 | See A/B — not shippable on RN 0.81 |
-| SDK 56 Hermes | not started | hermes | 56.x | 0.85.x | Expo-aligned | Expo-aligned | Next single-hypothesis replacement |
-
+| SDK 56 Hermes | master tip | hermes V1 | 56.x | 0.85.3 | Expo-aligned | 0.8.3 | In-repo; original-device gate pending |
 ## A/B results
 
 ### Task 4 JSC (static / CI pod install — not original device)
@@ -52,4 +51,4 @@ Candidate must complete the linked QA script on the original device with zero EX
 
 ## Status
 
-Status: OPEN — Task 4 JSC mitigation is **blocked** on RN 0.81.5 (real `pod install` still locks hermes-engine; third-party JSC not adopted). Hermes control retained with honest Podfile.lock. SDK 56 / RN 0.85 Hermes replacement remains the next single hypothesis. Original-device TestFlight Release gate has **not** been completed. Do not treat as RESOLVED.
+Status: OPEN — Task 4 JSC blocked on RN 0.81. Task 5 **in-repo**: Expo SDK 56 / RN 0.85.3 / Hermes V1 (`hermes-engine 250829098.0.10`) with fingerprint OTA, launch breadcrumbs, and CI runtime gates. Original-device TestFlight Release gate has **not** been completed. Do not treat as RESOLVED.
