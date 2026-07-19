@@ -11,6 +11,6 @@
     <key>EXUpdatesURL</key>
     <string>https://u.expo.dev/0f62ed14-1f2e-4d7b-b5b6-4eda273f2e35</string>
     <key>EXUpdatesRuntimeVersion</key>
-    <string>0.1.3</string>
+    <string>file:fingerprint</string>
   </dict>
 </plist>
