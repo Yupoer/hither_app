@@ -1,15 +1,15 @@
 name: CI
 
-# Hither CI — gates on the things that have historically broken this project:
-#   1. Expo Go native-module version drift  -> `expo install --check`
-#      (the recurring "works on my machine, crashes in Expo Go" bug; see CLAUDE.md rule 4)
-#   2. TypeScript regressions                -> `tsc --noEmit`
-#   3. Logic regressions                     -> jest (incl. nativeModuleVersions guard)
-# expo-doctor runs as a non-blocking advisory (2 known structural warnings on this repo).
+# Hither CI — gates required before store/TestFlight release:
+#   1. Logic regressions                     -> jest (incl. nativeModuleVersions guard)
+#   2. TypeScript regressions                -> tsc --noEmit
+#   3. iOS runtime / OTA alignment           -> verify:runtime
+#   4. Expo dependency version drift         -> expo install --check
+#   5. Expo doctor                           -> expo-doctor (blocking)
 #
-# No CD: the app is exercised through Expo Go (Metro serves the JS bundle directly),
-# so there is no artifact to build/submit. Add EAS Build/Submit here when you move to
-# Dev Builds or store releases.
+# Store/TestFlight release must pass runtime alignment so incompatible native
+# binaries cannot load an OTA built for a different engine/RN/Hermes set.
+# EAS Build/Submit remains a separate release step (not auto-triggered here).
 #
 # On failure on the default branch, the `open-issue` job files a deduped GitHub issue
 # labelled `ci-failure` + `claude-fix`, which the claude-fix workflow picks up to open a
@@ -49,11 +49,13 @@ jobs:
       - name: Typecheck (tsc)
         run: npm run typecheck
 
+      - name: Verify iOS runtime alignment
+        run: npm run verify:runtime
+
       - name: Expo dependency check (version drift = Expo Go crashes)
         run: npx --yes expo install --check
 
-      - name: Expo doctor (advisory)
-        continue-on-error: true
+      - name: Expo doctor
         run: npx --yes expo-doctor
 
   # Turn a red build on the default branch into an actionable, deduped issue.
@@ -77,7 +79,7 @@ jobs:
               ``,
               `@claude The CI pipeline (\`.github/workflows/ci.yml\`) is red. Open the run above,`,
               `read the failing step's logs, find the root cause, and open a PR that fixes it.`,
-              `Gates are: jest, tsc --noEmit, \`expo install --check\`. Keep the fix minimal.`,
+              `Gates are: jest, tsc --noEmit, verify:runtime, expo install --check, expo-doctor. Keep the fix minimal.`,
             ].join("\n");
             // Dedupe: skip if an open ci-failure issue already exists for this sha.
             const existing = await github.rest.issues.listForRepo({

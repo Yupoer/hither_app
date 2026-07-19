@@ -22,6 +22,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "expo lint",
     "verify:lock": "npm ci --include=dev --ignore-scripts",
+    "verify:runtime": "node scripts/verify-runtime-alignment.mjs",
     "update:preview": "eas update --channel preview",
     "update:production": "eas update --channel production"
   },

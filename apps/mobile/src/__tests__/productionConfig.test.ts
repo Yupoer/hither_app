@@ -66,13 +66,11 @@ describe('production mobile configuration', () => {
     expect(easConfig.update).toBeUndefined();
   });
 
-  it('enables EAS Update (updates.url + manual runtimeVersion for bare workflow)', () => {
+  it('fingerprints every native runtime so an incompatible OTA cannot load', () => {
     expect(appConfig.expo.updates?.url).toBe(
       'https://u.expo.dev/0f62ed14-1f2e-4d7b-b5b6-4eda273f2e35',
     );
-    // Bare workflow (checked-in ios/) cannot use runtimeVersion policies.
-    expect(typeof appConfig.expo.runtimeVersion).toBe('string');
-    expect(appConfig.expo.runtimeVersion).toBe(appConfig.expo.version);
+    expect(appConfig.expo.runtimeVersion).toEqual({ policy: 'fingerprint' });
     expect(appConfig.expo.extra?.eas?.projectId).toBe(
       '0f62ed14-1f2e-4d7b-b5b6-4eda273f2e35',
     );
