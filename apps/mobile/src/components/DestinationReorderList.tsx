@@ -17,6 +17,7 @@ import type { Destination } from '../types';
 import { radius, spacing, DAY_COLORS, type Palette } from '../theme';
 import { readOnboardingState } from '../onboarding/sync';
 import { usePreferences } from '../state/PreferencesContext';
+import { useTranslation } from '../i18n';
 import { resolveVisibleStartDay } from '../utils/tripDay';
 import { clampDateNotBeforeToday, startOfTodayLocal } from '../utils/meetTime';
 
@@ -59,6 +60,7 @@ export default function DestinationReorderList({
   onDragActiveChange,
 }: Props) {
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const { t } = useTranslation();
   const { dayColors, setDayColor } = usePreferences();
 
   const [order, setOrder] = useState<ListItem[]>([]);
@@ -86,11 +88,11 @@ export default function DestinationReorderList({
     try {
       await onSync();
     } catch {
-      Alert.alert('同步失敗', '目前無法取得資料庫集合點，請稍後再試。');
+      Alert.alert(t('map.syncDbFailedTitle'), t('map.syncDbFailedMsg'));
     } finally {
       setSyncing(false);
     }
-  }, [onSync, syncing]);
+  }, [onSync, syncing, t]);
 
   // Wait for onboarding
   useEffect(() => {
@@ -287,10 +289,12 @@ export default function DestinationReorderList({
             onPress={() => void handleSync()}
             disabled={syncing}
             accessibilityRole="button"
-            accessibilityLabel="同步資料庫集合點"
+            accessibilityLabel={t('map.syncDbA11y')}
           >
             <Ionicons name="refresh-outline" size={16} color={colors.accent} style={{ marginRight: 6 }} />
-            <Text style={styles.setDaysText}>{syncing ? '同步中…' : '同步資料庫'}</Text>
+            <Text style={styles.setDaysText}>
+              {syncing ? t('map.syncDbSyncing') : t('map.syncDb')}
+            </Text>
           </Pressable>}
         </View>
       )}

@@ -101,11 +101,14 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
 
   it('offers database reconciliation and refreshes before arrival writes', () => {
     expect(reorderList).toContain('onSync?: () => Promise<void>');
-    expect(reorderList).toContain('同步資料庫');
+    expect(reorderList).toContain("t('map.syncDb')");
     expect(mapScreen).toContain('const syncFromDatabase = useCallback');
     expect(mapScreen).toContain('setOptimisticDestinations(null)');
     expect(mapScreen).toContain('syncFromDatabase()');
-    expect(mapScreen).toContain('onSync={syncFromDatabase}');
+    expect(mapScreen).toContain('onSync={syncFromDatabaseAndUploadLogs}');
+    expect(mapScreen).toContain('uploadLocalLogs');
+    expect(mapScreen).toContain('const syncFromDatabaseAndUploadLogs');
+    expect(i18n).toContain("'map.syncDb'");
   });
 
   it('allows authorized history deletion without deleting arrival completion', () => {
