@@ -47,14 +47,17 @@ if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
   TaskManager.defineTask<BackgroundLocationTaskData>(
     BACKGROUND_JOURNEY_TASK,
     async ({ data, error }) => {
-      await diagnostics.write({
-        event: 'location_callback',
-        success: !error && Boolean(data?.locations?.length),
-        errorCode: error ? 'background_task_error' : undefined,
-        count: data?.locations?.length ?? 0,
-        source: 'background_task',
-      });
-      if (error || !data?.locations?.length) return;
+      if (error) {
+        await diagnostics.write({
+          event: 'location_callback',
+          success: false,
+          errorCode: 'background_task_error',
+          count: data?.locations?.length ?? 0,
+          source: 'background_task',
+        });
+        return;
+      }
+      if (!data?.locations?.length) return;
       const config = await controller.load();
       if (!config) return;
 
@@ -165,20 +168,26 @@ if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
         sequence,
       });
       uploadGate = { lastCoords: coords, lastAtMs: now };
-      await diagnostics.write({
-        event: 'location_upload_started',
-        navigationSessionId: config.navigationSessionId,
-        sequence,
-      });
       const upload = await flushLocationOutbox();
-      await diagnostics.write({
-        event: upload.sent > 0 ? 'location_upload_succeeded' : 'location_upload_failed',
-        navigationSessionId: config.navigationSessionId,
-        sent: upload.sent,
-        remaining: upload.remaining,
-        errorCode: upload.sent > 0 ? undefined : 'pending_retry',
-        sequence,
-      });
+      if (upload.retryScheduled > 0) {
+        await diagnostics.write({
+          event: 'location_upload_failed',
+          navigationSessionId: config.navigationSessionId,
+          count: upload.retryScheduled,
+          remaining: upload.remaining,
+          errorCode: 'retry_scheduled',
+          sequence,
+        });
+      } else if (upload.discarded > 0) {
+        await diagnostics.write({
+          event: 'location_upload_discarded',
+          navigationSessionId: config.navigationSessionId,
+          count: upload.discarded,
+          remaining: upload.remaining,
+          errorCode: 'permanent_reject',
+          sequence,
+        });
+      }
       if (
         config.navigationSessionId &&
         arrival.status !== previousArrival.status &&
@@ -205,7 +214,6 @@ if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
           }),
         );
       }
-      await diagnostics.flush().catch(() => undefined);
     },
   );
 }

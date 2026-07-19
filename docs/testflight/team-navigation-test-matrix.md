@@ -12,10 +12,16 @@ tokens, coordinates, email addresses, or exported JSON into this document.
 - Realtime loss or force quit must not be treated as session cancellation; server
   state remains authoritative until complete, cancel, or expiry.
 - SQLite outbox replay is idempotent and preserves sequence order after reconnect.
+- Permanent RPC rejects are discarded (not retried for 24h); only transport failures back off.
 - Arrival requires two qualifying fixes (accuracy <= 50 m) without route-progress
   regression greater than 0.03.
 - Push-to-start, update, and end are verified on lock screen and Dynamic Island.
 - Exported diagnostics contain no coordinates, tokens, email, or free-form errors.
+- Walking team navigation defaults to High + Fitness activity with auto-pause;
+  never `BestForNavigation` unless explicitly re-enabled after measurement.
+- iOS foreground map uses MapKit `showsUserLocation` as the single continuous
+  location owner (no second Expo `watchPositionAsync` while the map is active).
+- Energy acceptance: see `navigation-energy-acceptance.md` (30 min smoke / 90 min gate).
 
 ## Execution matrix
 
@@ -36,6 +42,8 @@ tokens, coordinates, email addresses, or exported JSON into this document.
 | 13 | JSON export | Diagnostic build | Open Settings → Diagnostics → export | Summary fields present; sensitive values absent; share sheet opens |  |  |  |  |  |  |
 | 14 | MetricKit delivery | Diagnostic build, next day | Use app, induce normal workload, reopen after iOS delivery | Metric/diagnostic payload spooled atomically, uploaded once, then removed |  |  |  |  |  |  |
 | 15 | APNs fallback | Invalid ActivityKit token | Start shared navigation | Exact dead token pruned; regular notification fallback is sent |  |  |  |  |  |  |
+| 16 | Energy smoke | Fixed 50% brightness, no full tracing | 30 min team navigation on fixed route | See `navigation-energy-acceptance.md` smoke gates |  |  |  |  |  |  |
+| 17 | Energy acceptance | Same device as baseline | 90 min route (FG continuous; FG+lock split) | See `navigation-energy-acceptance.md` acceptance gates |  |  |  |  |  |  |
 
 ## Result sign-off
 

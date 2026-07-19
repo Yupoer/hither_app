@@ -83,7 +83,12 @@ describe('SQLite location outbox', () => {
     await outbox.enqueue(event({ id: 'c', capturedAt: 1_000, sequence: 3 }));
     await outbox.enqueue(event({ id: 'a', capturedAt: 1_000, sequence: 1 }));
 
-    await expect(outbox.flush()).resolves.toEqual({ sent: 3, remaining: 0 });
+    await expect(outbox.flush()).resolves.toEqual({
+      sent: 3,
+      discarded: 0,
+      remaining: 0,
+      retryScheduled: 0,
+    });
     expect(upload).toHaveBeenCalledTimes(1);
     expect(upload.mock.calls[0][0].map((item) => item.id)).toEqual(['a', 'c', 'b']);
   });
@@ -101,7 +106,12 @@ describe('SQLite location outbox', () => {
     const outbox = createLocationOutbox(database, upload, () => now);
 
     await outbox.enqueue(event());
-    await expect(outbox.flush()).resolves.toEqual({ sent: 0, remaining: 1 });
+    await expect(outbox.flush()).resolves.toEqual({
+      sent: 0,
+      discarded: 0,
+      remaining: 1,
+      retryScheduled: 1,
+    });
     expect(database.entries.values().next().value).toMatchObject({
       id: '00000000-0000-4000-8000-000000000001',
       attempts: 1,
@@ -109,13 +119,37 @@ describe('SQLite location outbox', () => {
     });
 
     now = 3_001;
-    await expect(outbox.flush()).resolves.toEqual({ sent: 1, remaining: 0 });
+    await expect(outbox.flush()).resolves.toEqual({
+      sent: 1,
+      discarded: 0,
+      remaining: 0,
+      retryScheduled: 0,
+    });
     expect(upload.mock.calls[0][0][0].id).toBe(upload.mock.calls[1][0][0].id);
 
     const capped = createLocationOutbox(database, jest.fn().mockRejectedValue(new Error('offline')), () => now);
     await database.insert({ ...event({ id: 'cap' }), attempts: 20, nextAttemptAt: now, expiresAt: now + 86_400_000 });
     await capped.flush();
     expect(database.entries.get('cap')?.nextAttemptAt).toBe(now + 15 * 60_000);
+  });
+
+  it('deletes permanent RPC rejects and retries only transport failures', async () => {
+    const database = new MemoryLocationOutboxDatabase();
+    const upload = jest.fn(async (events: LocationUploadEvent[]) => ({
+      acceptedIds: [events[0]!.id],
+      rejected: [{ id: events[1]!.id, reason: 'invalid_event' }],
+    }));
+    const outbox = createLocationOutbox(database, upload, () => 10_000);
+    await outbox.enqueue(event({ id: '00000000-0000-4000-8000-000000000001' }));
+    await outbox.enqueue(event({ id: '00000000-0000-4000-8000-000000000002' }));
+
+    await expect(outbox.flush()).resolves.toEqual({
+      sent: 1,
+      discarded: 1,
+      remaining: 0,
+      retryScheduled: 0,
+    });
+    expect(database.entries.size).toBe(0);
   });
 
   it('drops entries after the 24-hour TTL without uploading them', async () => {
@@ -130,7 +164,12 @@ describe('SQLite location outbox', () => {
     const upload = jest.fn();
     const outbox = createLocationOutbox(database, upload, () => now);
 
-    await expect(outbox.flush()).resolves.toEqual({ sent: 0, remaining: 0 });
+    await expect(outbox.flush()).resolves.toEqual({
+      sent: 0,
+      discarded: 0,
+      remaining: 0,
+      retryScheduled: 0,
+    });
     expect(upload).not.toHaveBeenCalled();
   });
 

@@ -249,6 +249,7 @@ const zh = {
   // Map · journey (start/pause) + arrival
   'map.journeyFailed': '無法更新行程狀態，請確認你是隊長並再試一次。',
   'map.arriveTitle': '已抵達',
+  'map.arriveBody': '你已經抵達集合點「{title}」',
   'map.autoAdvanceBody': '已抵達「{title}」，自動前往下一站「{next}」',
   'map.journeyCompleteBody': '已抵達「{title}」，行程結束',
 
@@ -853,6 +854,7 @@ const en: Record<keyof typeof zh, string> = {
   'map.destinationCounter': 'Stop {index} of {total}',
   'map.journeyFailed': "Couldn't update journey status. Make sure you're the leader and try again.",
   'map.arriveTitle': 'Arrived',
+  'map.arriveBody': 'You have arrived at "{title}"',
   'map.autoAdvanceBody': 'Arrived at "{title}" — heading to "{next}" next',
   'map.journeyCompleteBody': 'Arrived at "{title}" — journey complete',
 

@@ -7,7 +7,7 @@ export async function uploadPerformanceBatch(
 ): Promise<string[]> {
   if (records.length === 0) return [];
   const userId = await requireUserId();
-  const { error } = await baseSupabase.from('performance_events').insert(
+  const { error } = await baseSupabase.from('performance_events').upsert(
     records.map((record) => ({
       id: record.id,
       user_id: userId,
@@ -17,6 +17,7 @@ export async function uploadPerformanceBatch(
       operation: record.operation,
       payload: record.payload,
     })),
+    { onConflict: 'id', ignoreDuplicates: true },
   );
   orThrow(error);
   return records.map((record) => record.id);

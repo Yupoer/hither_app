@@ -5,10 +5,10 @@ import {
 } from '../utils/navigationArrival';
 
 describe('navigation arrival reducer', () => {
-  it('arrives on one fix when clearly inside half the radius (e.g. 3m in 50m)', () => {
+  it('arrives on one fix when inside the tools radius (e.g. 49m in 50m)', () => {
     const arrived = reduceArrival(
       createArrivalState(1_000),
-      { distanceM: 3, accuracyM: 20 },
+      { distanceM: 49, accuracyM: 20 },
       { radiusM: 50 },
     );
     expect(arrived.status).toBe('arrived');
@@ -16,16 +16,26 @@ describe('navigation arrival reducer', () => {
     expect(arrived.progress).toBe(1);
   });
 
-  it('requires two consecutive fixes near the edge of the radius', () => {
+  it('arrives on one fix when clearly deep inside (e.g. 3m in 50m)', () => {
+    const arrived = reduceArrival(
+      createArrivalState(1_000),
+      { distanceM: 3, accuracyM: 20 },
+      { radiusM: 50 },
+    );
+    expect(arrived.status).toBe('arrived');
+    expect(arrived.consecutiveFixes).toBe(1);
+  });
+
+  it('requires two consecutive fixes when accuracy is poor relative to radius', () => {
     const initial = createArrivalState(1_000);
     const arriving = reduceArrival(
       initial,
-      { distanceM: 49, accuracyM: 20 },
+      { distanceM: 40, accuracyM: 70 },
       { radiusM: 50 },
     );
     const arrived = reduceArrival(
       arriving,
-      { distanceM: 48, accuracyM: 20 },
+      { distanceM: 38, accuracyM: 70 },
       { radiusM: 50 },
     );
 
@@ -56,12 +66,14 @@ describe('navigation arrival reducer', () => {
     expect(result.consecutiveFixes).toBe(0);
   });
 
-  it('resets a candidate when the next fix is outside the radius', () => {
+  it('resets a pre-arrival candidate when the next fix is outside the radius', () => {
+    // Poor accuracy forces a two-fix edge band before arrived is terminal.
     const arriving = reduceArrival(
       createArrivalState(1_000),
-      { distanceM: 49, accuracyM: 10 },
+      { distanceM: 40, accuracyM: 70 },
       { radiusM: 50 },
     );
+    expect(arriving.status).toBe('arriving');
 
     expect(
       reduceArrival(

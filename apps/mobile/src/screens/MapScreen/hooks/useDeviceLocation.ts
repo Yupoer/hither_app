@@ -22,6 +22,11 @@ import {
 interface UseDeviceLocationParams {
   groupId: string | null | undefined;
   highAccuracy: boolean;
+  /**
+   * When true (iOS MapKit `showsUserLocation`), skip the second Expo
+   * `watchPositionAsync` owner and consume MapKit samples instead.
+   */
+  nativeMapLocationEnabled?: boolean;
 }
 
 /** Coalesce passive outbox flushes; force-sync bypasses this delay. */
@@ -29,7 +34,11 @@ const OUTBOX_FLUSH_DELAY_MS = 5_000;
 /** Independent timer tick — picks the active motion heartbeat each fire. */
 const HEARTBEAT_TICK_MS = 15_000;
 
-export function useDeviceLocation({ groupId, highAccuracy }: UseDeviceLocationParams) {
+export function useDeviceLocation({
+  groupId,
+  highAccuracy,
+  nativeMapLocationEnabled = false,
+}: UseDeviceLocationParams) {
   const [deviceCoords, setDeviceCoords] = useState<Coordinates | null>(null);
   const [deviceAccuracyM, setDeviceAccuracyM] = useState<number | null>(null);
   const [appState, setAppState] = useState<AppStateStatus>(AppState.currentState);
@@ -46,6 +55,8 @@ export function useDeviceLocation({ groupId, highAccuracy }: UseDeviceLocationPa
   deviceCoordsRef.current = deviceCoords;
   const deviceAccuracyRef = useRef(deviceAccuracyM);
   deviceAccuracyRef.current = deviceAccuracyM;
+  const nativeMapLocationEnabledRef = useRef(nativeMapLocationEnabled);
+  nativeMapLocationEnabledRef.current = nativeMapLocationEnabled;
 
   const scheduleOutboxFlush = useCallback(() => {
     if (outboxFlushTimerRef.current) return;
@@ -92,6 +103,37 @@ export function useDeviceLocation({ groupId, highAccuracy }: UseDeviceLocationPa
       }
     },
     [scheduleOutboxFlush],
+  );
+
+  /**
+   * Apply one foreground sample (MapKit or Expo watch) through existing UI/upload gates.
+   * Never calls getCurrentLocation — caller owns the sample source.
+   */
+  const consumeForegroundSample = useCallback(
+    (sample: LocationSample): void => {
+      const now = Date.now();
+      const policy = locationPolicy(highAccuracyRef.current);
+      const coords = sample.coordinates;
+      motionRef.current = reduceMotionState(motionRef.current, coords, now, policy);
+
+      if (shouldAcceptUiSample(coords, now, uiGateRef.current, policy)) {
+        applySampleToUi(sample, now);
+      }
+
+      if (
+        groupIdRef.current &&
+        shouldUploadSample(
+          coords,
+          now,
+          uploadGateRef.current,
+          policy,
+          motionRef.current.cadence,
+        )
+      ) {
+        void enqueueUpload(sample, now, { immediate: false }).catch(() => undefined);
+      }
+    },
+    [applySampleToUi, enqueueUpload],
   );
 
   /**
@@ -182,6 +224,13 @@ export function useDeviceLocation({ groupId, highAccuracy }: UseDeviceLocationPa
             accuracy: deviceAccuracyRef.current,
             timestamp: now,
           };
+        } else if (nativeMapLocationEnabledRef.current && lastKnown) {
+          // MapKit owns continuous GPS; heartbeat only reuses last known.
+          sample = {
+            coordinates: lastKnown,
+            accuracy: deviceAccuracyRef.current,
+            timestamp: now,
+          };
         } else {
           sample = await location.getCurrentLocation(highAccuracyRef.current).catch(() => null);
           if (!sample && lastKnown) {
@@ -221,33 +270,15 @@ export function useDeviceLocation({ groupId, highAccuracy }: UseDeviceLocationPa
     return () => clearInterval(timer);
   }, [appState, groupId, applySampleToUi, enqueueUpload]);
 
+  // Expo watch is fallback only when MapKit is not the foreground owner.
   useEffect(() => {
+    if (nativeMapLocationEnabled) return;
     if (!shouldWatchLocation(groupId ?? null, appState)) return;
     let cancelled = false;
     let stop = () => {};
-    const policy = locationPolicy(highAccuracy);
     void location
       .watchLocation((sample: LocationSample) => {
-        const now = Date.now();
-        const coords = sample.coordinates;
-        motionRef.current = reduceMotionState(motionRef.current, coords, now, policy);
-
-        if (shouldAcceptUiSample(coords, now, uiGateRef.current, policy)) {
-          applySampleToUi(sample, now);
-        }
-
-        if (
-          groupId &&
-          shouldUploadSample(
-            coords,
-            now,
-            uploadGateRef.current,
-            policy,
-            motionRef.current.cadence,
-          )
-        ) {
-          void enqueueUpload(sample, now, { immediate: false }).catch(() => undefined);
-        }
+        consumeForegroundSample(sample);
       }, highAccuracy)
       .then((unsub: () => void) => {
         if (cancelled) unsub();
@@ -261,7 +292,7 @@ export function useDeviceLocation({ groupId, highAccuracy }: UseDeviceLocationPa
       }
       stop();
     };
-  }, [appState, groupId, highAccuracy, applySampleToUi, enqueueUpload]);
+  }, [appState, groupId, highAccuracy, nativeMapLocationEnabled, consumeForegroundSample]);
 
   return {
     deviceCoords,
@@ -270,5 +301,6 @@ export function useDeviceLocation({ groupId, highAccuracy }: UseDeviceLocationPa
     /** Exposed so MapScreen can own a single GPS path (FG watch vs BG task). */
     appState,
     refreshDeviceLocation,
+    consumeForegroundSample,
   };
 }

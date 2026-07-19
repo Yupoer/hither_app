@@ -64,6 +64,15 @@ export interface GroupMapProps {
   /** Sheet height overlapping the map — with topOverlap, shifts the camera
    *  center into the exposed strip between carousel and sheet. */
   bottomOverlap?: number;
+  /**
+   * MapKit user-location samples for the single foreground owner path.
+   * Does not redraw the self marker — native blue dot stays system-owned.
+   */
+  onUserLocationSample?: (sample: {
+    coordinates: Coordinates;
+    accuracy: number | null;
+    timestamp: number;
+  }) => void;
 }
 
 /**
@@ -263,6 +272,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     routeColor,
     topOverlap = 0,
     bottomOverlap = 0,
+    onUserLocationSample,
   },
   ref,
 ) {
@@ -400,6 +410,17 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       showsCompass
       pitchEnabled
       rotateEnabled
+      onUserLocationChange={(event) => {
+        const coordinate = event.nativeEvent.coordinate;
+        if (!coordinate) return;
+        const { latitude, longitude, accuracy, timestamp } = coordinate;
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+        onUserLocationSample?.({
+          coordinates: { latitude, longitude },
+          accuracy: Number.isFinite(accuracy) ? accuracy : null,
+          timestamp: Number.isFinite(timestamp) ? timestamp : Date.now(),
+        });
+      }}
     >
       {routePoints && routePoints.length > 1 ? (
         <Polyline

@@ -11,6 +11,7 @@ export type NavCommandKind =
   | 'member_plan'
   | 'member_close_plan'
   | 'member_navigating'
+  | 'member_waiting_complete'
   | 'hidden';
 
 export interface NavCommandInput {
@@ -22,8 +23,8 @@ export interface NavCommandInput {
   /** Local member route plan is drawn for this stop. */
   localRouteThis: boolean;
   /**
-   * Leader marked arrived and chose "先不要完成" — nav control becomes
-   * 「標註完成」 until arrival is undone.
+   * Leader deferred completing the stop after arrival — still shows
+   * 「完成此行程」 so they can finish later without undoing arrival.
    */
   pendingComplete: boolean;
 }
@@ -85,10 +86,11 @@ export function resolveNavCommand(input: NavCommandInput): NavCommandResult {
   } = input;
 
   if (isLeader) {
-    if (personallyArrived && pendingComplete) {
+    // Arrive ≠ complete: once the leader has arrived, offer complete (not hide).
+    if (personallyArrived) {
       return {
         kind: 'leader_mark_complete',
-        label: '標註完成',
+        label: '完成此行程',
         disabled: false,
         action: 'mark_complete',
       };
@@ -101,16 +103,6 @@ export function resolveNavCommand(input: NavCommandInput): NavCommandResult {
         action: 'stop_nav',
       };
     }
-    if (personallyArrived && !pendingComplete) {
-      // Arrived but not deferred-complete: complete prompt already handled on
-      // arrival. Hide nav until undo re-opens start.
-      return {
-        kind: 'hidden',
-        label: '',
-        disabled: true,
-        action: 'none',
-      };
-    }
     return {
       kind: 'leader_start',
       label: '導航',
@@ -119,11 +111,11 @@ export function resolveNavCommand(input: NavCommandInput): NavCommandResult {
     };
   }
 
-  // Member
+  // Member: arrived → wait for leader to complete the stop (personal check-in only).
   if (personallyArrived) {
     return {
-      kind: 'hidden',
-      label: '',
+      kind: 'member_waiting_complete',
+      label: '正在等待隊長完成此行程',
       disabled: true,
       action: 'none',
     };

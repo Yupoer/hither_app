@@ -90,6 +90,7 @@ import { useDeviceLocation } from './MapScreen/hooks/useDeviceLocation';
 import { useCarouselSelection } from './MapScreen/hooks/useCarouselSelection';
 import { useJourneyNavigation } from './MapScreen/hooks/useJourneyNavigation';
 import { useMapKitRoutes } from './MapScreen/hooks/useMapKitRoutes';
+import { startNavigationEnergyMonitor } from '../state/performance';
 import { useGatherCardExpansion } from './MapScreen/hooks/useGatherCardExpansion';
 import { SettingsOverlay } from './MapScreen/components/SettingsOverlay';
 import { DiagnosticsOverlay } from './MapScreen/components/DiagnosticsOverlay';
@@ -323,7 +324,7 @@ export default function MapScreen({ route, navigation }: Props) {
     useGatherCardExpansion(gatherCardDefaultExpanded);
   const { colors } = useTheme();
   const accent = colors.accent;
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   // Live Dynamic Type layout — rebuilds when system fontScale changes.
   // a11y-layout:commandRow — always ONE row; density (size/labels) tracks
   // font bucket + physical width, never multi-row stacking.
@@ -401,7 +402,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const [optimisticDestinations, setOptimisticDestinations] = useState<Destination[] | null>(null);
   const allScopedDestinations = optimisticDestinations ?? rawDestinations;
   const [destinationArrivals, setDestinationArrivals] = useState<DestinationArrival[]>([]);
-  /** Dest ids where leader chose「先不要完成」after arriving — shows「標註完成」. */
+  /** Dest ids where leader chose「先不要完成」after arriving — still shows「完成此行程」. */
   const [pendingCompleteDestIds, setPendingCompleteDestIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -861,9 +862,11 @@ export default function MapScreen({ route, navigation }: Props) {
     deviceAccuracyM,
     appState,
     refreshDeviceLocation,
+    consumeForegroundSample,
   } = useDeviceLocation({
     groupId,
     highAccuracy,
+    nativeMapLocationEnabled: Platform.OS === 'ios',
   });
 
   // --- Carousel selection ---------------------------------------------------
@@ -1005,7 +1008,7 @@ export default function MapScreen({ route, navigation }: Props) {
   });
 
   // Foreground arrival: local GPS + tools radius. Works without session (local
-  // plan) and with null accuracy. ACK + DB mark when status becomes arrived.
+  // plan) and with null accuracy. ACK + DB mark when inside radius.
   const effectiveArrivalRadiusM = Math.max(
     ARRIVAL_RADIUS_MIN_M,
     Math.min(
@@ -1018,7 +1021,15 @@ export default function MapScreen({ route, navigation }: Props) {
   const localArrivalRadiusM = Math.min(effectiveArrivalRadiusM, arrivalRadiusM);
   const foregroundArrivalRef = useRef<{ key: string; state: ArrivalState } | null>(null);
   const autoArrivalMarkedRef = useRef<string | null>(null);
+  const arrivalFeedbackShownRef = useRef<string | null>(null);
   const [autoArrivedDestId, setAutoArrivedDestId] = useState<string | null>(null);
+  const [arrivalCelebrateDestId, setArrivalCelebrateDestId] = useState<string | null>(null);
+
+  // Wired after promptCompleteAfterArrival is defined (see below).
+  const afterPersonalArrivalRef = useRef<
+    (destination: Destination, opts?: { stopNav?: boolean; promptComplete?: boolean }) => void
+  >(() => undefined);
+
   useEffect(() => {
     if (!journeyActive || !navTarget || !deviceCoords) {
       foregroundArrivalRef.current = null;
@@ -1027,6 +1038,8 @@ export default function MapScreen({ route, navigation }: Props) {
     const session = navigationSessionState.session;
     const key = `${session?.id ?? 'local'}:${navTarget.id}`;
     const straightM = distanceMeters(deviceCoords, navTarget.coordinates);
+    // Product: tools radius is the geofence (e.g. 50 m) — not only distance 0.
+    const insideRadius = hasArrived(straightM, localArrivalRadiusM);
     const previous = foregroundArrivalRef.current?.key === key
       ? foregroundArrivalRef.current.state
       : createArrivalState(straightM);
@@ -1038,26 +1051,49 @@ export default function MapScreen({ route, navigation }: Props) {
       },
       { radiusM: localArrivalRadiusM },
     );
-    foregroundArrivalRef.current = { key, state: next };
-    if (next.status === 'arriving' || next.status === 'arrived') {
+    // Prefer the product threshold; still keep reducer for ACK telemetry.
+    const arrivedNow = insideRadius || next.status === 'arrived';
+    foregroundArrivalRef.current = {
+      key,
+      state: arrivedNow
+        ? {
+            ...next,
+            status: 'arrived',
+            progress: 1,
+            consecutiveFixes: Math.max(1, next.consecutiveFixes),
+            lastDistanceM: straightM,
+          }
+        : next,
+    };
+    if (arrivedNow || next.status === 'arriving') {
       if (session) {
-        void navigationSessionState.ack(next.status, {
+        void navigationSessionState.ack(arrivedNow ? 'arrived' : 'arriving', {
           source: 'foreground_arrival_reducer',
-          distanceM: next.lastDistanceM,
+          distanceM: straightM,
           accuracyM: deviceAccuracyM,
           consecutiveFixes: next.consecutiveFixes,
         }).catch(() => undefined);
       }
     }
-    if (next.status === 'arrived' && user?.id) {
+    if (arrivedNow && user?.id) {
       setAutoArrivedDestId(navTarget.id);
       // Persist personal arrival so the checkmark does not depend only on ACK.
       if (autoArrivalMarkedRef.current !== navTarget.id) {
         autoArrivalMarkedRef.current = navTarget.id;
         void setDestinationArrival(navTarget.id, user.id, true)
-          .then(() => loadGatheringWorkflow())
+          .then(() => {
+            void loadGatheringWorkflow();
+            afterPersonalArrivalRef.current(navTarget, {
+              stopNav: true,
+              promptComplete: true,
+            });
+          })
           .catch(() => {
-            // Offline / sequential RPC: keep local auto-arrived UI.
+            // Offline / sequential RPC: keep local auto-arrived UI + feedback.
+            afterPersonalArrivalRef.current(navTarget, {
+              stopNav: true,
+              promptComplete: true,
+            });
             autoArrivalMarkedRef.current = null;
           });
       }
@@ -1232,6 +1268,29 @@ export default function MapScreen({ route, navigation }: Props) {
   ]);
 
   useEffect(() => () => void stopBackgroundJourney(), []);
+
+  // Low-overhead energy samples while navigating in the foreground (no full API tracing).
+  useEffect(() => {
+    if (!journeyActive || appState !== 'active') return;
+    const trackingMode = navigationSessionState.session
+      ? highAccuracy
+        ? 'navigationMax'
+        : 'teamNavigation'
+      : highAccuracy
+        ? 'manualHighAccuracy'
+        : 'foreground';
+    return startNavigationEnergyMonitor({
+      navigationSessionId: navigationSessionState.session?.id ?? null,
+      trackingMode,
+    });
+  }, [
+    appState,
+    groupId,
+    highAccuracy,
+    journeyActive,
+    navigationSessionState.session,
+  ]);
+
   const lastFittedRouteRef = useRef<string | null>(null);
   useEffect(() => {
     const key = activePoint ? `${activePoint.id}:${travelMode}` : null;
@@ -1747,6 +1806,42 @@ export default function MapScreen({ route, navigation }: Props) {
     user?.id,
   ]);
 
+  // Shared arrive feedback: confetti + haptic; optional stop nav / complete prompt.
+  // Leader: skip the 「已抵達」Alert and open complete dialog only (arrive ≠ complete).
+  // Member: one arrive notice. Never show raw i18n keys like "map.arriveBody".
+  afterPersonalArrivalRef.current = (destination, opts) => {
+    const alreadyShown = arrivalFeedbackShownRef.current === destination.id;
+    if (!alreadyShown) {
+      arrivalFeedbackShownRef.current = destination.id;
+      setArrivalCelebrateDestId(destination.id);
+      alertBuzz();
+      setTimeout(() => {
+        setArrivalCelebrateDestId((cur) => (cur === destination.id ? null : cur));
+      }, 2_400);
+    }
+    if (opts?.stopNav) void stopNavigation();
+
+    if (opts?.promptComplete && isLeader) {
+      promptCompleteAfterArrival(destination);
+      return;
+    }
+
+    if (!alreadyShown) {
+      const fallback =
+        language === 'en'
+          ? `You have arrived at "${destination.title}"`
+          : `你已經抵達集合點「${destination.title}」`;
+      const raw = t('map.arriveBody', { title: destination.title });
+      const body = !raw || raw === 'map.arriveBody' || raw.includes('map.arriveBody')
+        ? fallback
+        : raw;
+      Alert.alert(t('map.arriveTitle'), body);
+    }
+    if (opts?.promptComplete && !isLeader) {
+      promptCompleteAfterArrival(destination);
+    }
+  };
+
   const handleArrival = useCallback((destination: Destination, targetUserId: string, arrived: boolean) => {
     const memberName = members.find((m) => m.userId === targetUserId)?.name;
     confirmAction({
@@ -1765,6 +1860,13 @@ export default function MapScreen({ route, navigation }: Props) {
               next.delete(destination.id);
               return next;
             });
+            setAutoArrivedDestId((cur) => (cur === destination.id ? null : cur));
+            if (autoArrivalMarkedRef.current === destination.id) {
+              autoArrivalMarkedRef.current = null;
+            }
+            if (arrivalFeedbackShownRef.current === destination.id) {
+              arrivalFeedbackShownRef.current = null;
+            }
           }
           await syncFromDatabase();
           await setDestinationArrival(destination.id, targetUserId, arrived);
@@ -1786,14 +1888,13 @@ export default function MapScreen({ route, navigation }: Props) {
   ) => {
     void (async () => {
       try {
-        // Arriving stops navigation (shared for leader, local plan for member).
-        if (navTarget?.id === destination.id) {
-          await stopNavigation();
-        }
         await syncFromDatabase();
         await setDestinationArrivalAt(destination.id, targetUserId, true, arrivedAt);
         await loadGatheringWorkflow();
-        promptCompleteAfterArrival(destination);
+        afterPersonalArrivalRef.current(destination, {
+          stopNav: navTarget?.id === destination.id,
+          promptComplete: true,
+        });
       } catch (error) {
         Alert.alert(
           t('arrival.failedTitle'),
@@ -1804,8 +1905,6 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [
     loadGatheringWorkflow,
     navTarget?.id,
-    promptCompleteAfterArrival,
-    stopNavigation,
     syncFromDatabase,
     t,
   ]);
@@ -3024,6 +3123,9 @@ export default function MapScreen({ route, navigation }: Props) {
         // mid-drag; top tracks measured carousel card height.
         topOverlap={topPad}
         bottomOverlap={bottomPad}
+        onUserLocationSample={
+          Platform.OS === 'ios' ? consumeForegroundSample : undefined
+        }
       />
 
       {/* Group pill — moved to bottom left, tracking sheet like recenter capsule. */}
@@ -3282,11 +3384,13 @@ export default function MapScreen({ route, navigation }: Props) {
               // On tight density, drop nav label so meet countdown + mode stay
               // square-floor sized in one row (especially when Maps appears).
               const navIconOnly = chromeTight;
+              // Use active itinerary (carousel list), not raw history-inclusive
+              // scope — past-day open rows must not hide the arrive control.
               const canMarkArrival = canMarkDestinationArrival({
                 destId: dest.id,
                 destOrder: dest.order,
                 destSubgroupId: dest.subgroupId,
-                scopedDestinations: allScopedDestinations,
+                scopedDestinations: destinations,
                 myArrivedDestinationIds: myCompletedDestinationIds,
               });
               const personallyArrived = myCompletedDestinationIds.has(dest.id) || (
@@ -3320,6 +3424,21 @@ export default function MapScreen({ route, navigation }: Props) {
                           active && { borderColor: accentMix(accent, 50) },
                         ]}
                       >
+                    {arrivalCelebrateDestId === dest.id ? (
+                      <View pointerEvents="none" style={styles.arrivalConfettiLayer}>
+                        {['🎊', '✨', '🎉', '✨', '🎊'].map((emoji, i) => (
+                          <Text
+                            key={`confetti-${dest.id}-${i}`}
+                            style={[
+                              styles.arrivalConfettiPiece,
+                              { left: `${10 + i * 18}%`, top: 8 + (i % 3) * 14 },
+                            ]}
+                          >
+                            {emoji}
+                          </Text>
+                        ))}
+                      </View>
+                    ) : null}
                     {/* Top arrival hairline — team progress toward this stop. */}
                     {cardExpanded ? (
                       <View style={styles.arrivalHairline}>
@@ -3567,12 +3686,18 @@ export default function MapScreen({ route, navigation }: Props) {
                         <Pressable
                           style={[
                             styles.navBtn,
-                            navIconOnly && styles.navBtnIconOnly,
+                            navCmd.kind === 'member_waiting_complete'
+                              ? styles.navBtnWide
+                              : navIconOnly
+                                ? styles.navBtnIconOnly
+                                : null,
                             navCmd.kind === 'leader_stop' || navCmd.kind === 'member_close_plan'
                               ? styles.navBtnEnd
-                              : navCmd.kind === 'member_navigating'
+                              : navCmd.kind === 'member_navigating' || navCmd.kind === 'member_waiting_complete'
                                 ? styles.navBtnDisabled
-                                : { backgroundColor: accent },
+                                : navCmd.kind === 'leader_mark_complete'
+                                  ? { backgroundColor: glass.ok }
+                                  : { backgroundColor: accent },
                           ]}
                           onPress={(event) => {
                             event.stopPropagation();
@@ -3585,7 +3710,7 @@ export default function MapScreen({ route, navigation }: Props) {
                             } else if (navCmd.action === 'start_plan') {
                               startLocalRoutePlan(dest, index);
                             } else if (navCmd.action === 'mark_complete') {
-                              void runCompleteGatheringStop(dest);
+                              promptCompleteAfterArrival(dest);
                             }
                           }}
                           disabled={journeyBusy || navCmd.disabled}
@@ -3599,22 +3724,26 @@ export default function MapScreen({ route, navigation }: Props) {
                                 ? 'stop'
                                 : navCmd.kind === 'leader_mark_complete'
                                   ? 'checkmark-done'
-                                  : navCmd.kind === 'member_navigating'
-                                    ? 'navigate'
-                                    : isLeader
-                                      ? 'play'
-                                      : 'navigate'
+                                  : navCmd.kind === 'member_waiting_complete'
+                                    ? 'hourglass-outline'
+                                    : navCmd.kind === 'member_navigating'
+                                      ? 'navigate'
+                                      : isLeader
+                                        ? 'play'
+                                        : 'navigate'
                             }
                             size={chromeCompact ? 16 : 15}
                             color={
                               navCmd.kind === 'leader_stop' || navCmd.kind === 'member_close_plan'
                                 ? glass.danger
-                                : navCmd.kind === 'member_navigating'
+                                : navCmd.kind === 'member_navigating' || navCmd.kind === 'member_waiting_complete'
                                   ? glass.textSecondary
-                                  : '#0c1a12'
+                                  : navCmd.kind === 'leader_mark_complete'
+                                    ? '#0c1a12'
+                                    : '#0c1a12'
                             }
                           />
-                          {!navIconOnly ? (
+                          {navCmd.kind === 'member_waiting_complete' || !navIconOnly ? (
                             <Text
                               style={[
                                 styles.navBtnText,
@@ -3622,12 +3751,13 @@ export default function MapScreen({ route, navigation }: Props) {
                                   color:
                                     navCmd.kind === 'leader_stop' || navCmd.kind === 'member_close_plan'
                                       ? glass.danger
-                                      : navCmd.kind === 'member_navigating'
+                                      : navCmd.kind === 'member_navigating' || navCmd.kind === 'member_waiting_complete'
                                         ? glass.textSecondary
                                         : '#0c1a12',
+                                  flexShrink: 1,
                                 },
                               ]}
-                              numberOfLines={1}
+                              numberOfLines={navCmd.kind === 'member_waiting_complete' ? 2 : 1}
                               ellipsizeMode="tail"
                             >
                               {navCmd.label}
@@ -3658,12 +3788,17 @@ export default function MapScreen({ route, navigation }: Props) {
                         />
                       </Pressable>
 
+                      {/* Personal check-in (arrive ≠ complete). Always visible
+                          for open stops when sequential rules allow marking. */}
                       {user?.id && canMarkArrival ? personallyArrived ? (
                         <Pressable
                           style={[
                             styles.cmdSquare,
                             styles.arrivalCmdSquare,
-                            { backgroundColor: accentMix(glass.ok, 16), borderColor: accentMix(glass.ok, 38) },
+                            {
+                              backgroundColor: accentMix(glass.ok, 28),
+                              borderColor: glass.ok,
+                            },
                           ]}
                           onPress={(event) => {
                             event.stopPropagation();
@@ -5355,11 +5490,26 @@ const makeStyles = (
     },
     // "End navigation" state — a soft danger tint over the accent-solid "go".
     navBtnEnd: { backgroundColor: 'rgba(255,107,107,0.14)', borderColor: 'rgba(255,107,107,0.4)' },
+    // Member waiting-for-leader label needs more width than icon-only nav.
+    navBtnWide: {
+      flexGrow: 1.4,
+      minWidth: cmdSize * 1.6,
+      paddingHorizontal: s(8, 6),
+    },
     navBtnText: {
       fontSize: compact ? 13 : 14,
       fontWeight: '700',
       flexShrink: 1,
       minWidth: 0,
+    },
+    arrivalConfettiLayer: {
+      ...StyleSheet.absoluteFillObject,
+      zIndex: 4,
+      overflow: 'hidden',
+    },
+    arrivalConfettiPiece: {
+      position: 'absolute',
+      fontSize: 18,
     },
     // Exact square secondary controls (travel mode). minHeight only so row can
     // stretch when meet grows taller under large Dynamic Type.

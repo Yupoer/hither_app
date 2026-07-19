@@ -125,7 +125,7 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(client).toContain('completeGatheringStop');
     expect(mapScreen).toContain('projectHistoryForViewer');
     expect(mapScreen).toContain('completeGatheringStop');
-    expect(mapScreen).toContain('標註完成');
+    expect(mapScreen).toContain('完成此行程');
     expect(pushMessages).toContain('gathering_completed');
     expect(pushMessages).toContain('隊長已完成此卡片');
   });

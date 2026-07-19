@@ -40,7 +40,7 @@ function harness(started = false) {
 }
 
 describe('background journey controller', () => {
-  it('maps an active team session to a non-pausing navigation profile', async () => {
+  it('uses fitness High accuracy for walking team navigation', async () => {
     const { controller, location } = harness();
 
     await expect(
@@ -61,10 +61,51 @@ describe('background journey controller', () => {
     ).toBe('teamNavigation');
     const opts = location.startLocationUpdatesAsync.mock.calls[0][1] as {
       accuracy: number;
+      activityType: number;
+      pausesUpdatesAutomatically: boolean;
+      deferredUpdatesDistance: number;
+      deferredUpdatesInterval: number;
+    };
+    expect(opts).toMatchObject({
+      accuracy: 4,
+      activityType: 3,
+      pausesUpdatesAutomatically: true,
+      deferredUpdatesDistance: 30,
+      deferredUpdatesInterval: 30_000,
+    });
+  });
+
+  it('never promotes manual walking precision to BestForNavigation', async () => {
+    const { controller, location } = harness();
+
+    await expect(
+      controller.start({
+        ...config,
+        powerMode: 'journey',
+        highAccuracy: true,
+        teamNavigationActive: true,
+        appState: 'background',
+      }),
+    ).resolves.toBe('started');
+
+    expect(
+      resolveBackgroundTrackingMode({
+        ...config,
+        highAccuracy: true,
+        teamNavigationActive: true,
+        appState: 'background',
+      }),
+    ).toBe('navigationMax');
+    const opts = location.startLocationUpdatesAsync.mock.calls[0][1] as {
+      accuracy: number;
+      activityType: number;
       pausesUpdatesAutomatically: boolean;
     };
-    expect(opts.accuracy).toBe(5);
-    expect(opts.pausesUpdatesAutomatically).toBe(false);
+    expect(opts).toMatchObject({
+      accuracy: 5,
+      activityType: 3,
+      pausesUpdatesAutomatically: true,
+    });
   });
 
   it('stops the task immediately when sharing is disabled', async () => {
@@ -98,7 +139,7 @@ describe('background journey controller', () => {
     expect(opts.pausesUpdatesAutomatically).toBe(true);
   });
 
-  it('uses High accuracy options when highAccuracy is enabled on journey', async () => {
+  it('uses Highest accuracy options when highAccuracy is enabled on journey', async () => {
     const { controller, location } = harness();
 
     await expect(
@@ -109,7 +150,8 @@ describe('background journey controller', () => {
       accuracy: number;
       distanceInterval: number;
     };
-    expect(opts.accuracy).toBe(4);
+    // Legacy highAccuracy maps to manualHighAccuracy (Highest=5), never BestForNavigation=6.
+    expect(opts.accuracy).toBe(5);
     expect(opts.distanceInterval).toBe(20);
   });
 
@@ -216,9 +258,6 @@ describe('background journey native wiring', () => {
 
   it('orders background work locally before any navigation acknowledgement', () => {
     const callback = taskModule.slice(taskModule.indexOf('async ({ data'));
-    expect(callback.indexOf('diagnostics.write')).toBeLessThan(
-      callback.indexOf('reduceArrival'),
-    );
     expect(callback.indexOf('reduceArrival')).toBeLessThan(
       callback.indexOf('updateAllGroupActivities'),
     );
@@ -231,6 +270,11 @@ describe('background journey native wiring', () => {
     expect(callback.indexOf('flushLocationOutbox')).toBeLessThan(
       callback.indexOf('ackNavigationSession'),
     );
+    // Permanent rejects are discarded; no per-callback diagnostics.flush storm.
+    expect(callback).toContain('retryScheduled');
+    expect(callback).toContain('location_upload_discarded');
+    expect(callback).not.toContain('location_upload_started');
+    expect(callback).not.toContain('diagnostics.flush()');
   });
 
   it('starts from MapScreen and stops on pause, leave, or sign-out', () => {

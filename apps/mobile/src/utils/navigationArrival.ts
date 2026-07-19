@@ -84,11 +84,14 @@ export function reduceArrival(
     };
   }
 
-  // Clearly inside: half-radius, or full radius with usable accuracy → one fix.
-  // Edge band (half…radius) with known accuracy still wants a second sample.
-  const clearlyInside = distanceM <= radiusM * 0.5;
+  // Inside the product geofence (distance ≤ radius) → arrived.
+  // Keep a single-fix edge confirm only when accuracy is poor but still usable.
   const consecutiveFixes = previous.consecutiveFixes + 1;
-  const needFixes = clearlyInside ? 1 : EDGE_CONFIRM_FIXES;
+  const poorAccuracy =
+    sample.accuracyM != null
+    && Number.isFinite(sample.accuracyM)
+    && sample.accuracyM > radiusM;
+  const needFixes = poorAccuracy ? EDGE_CONFIRM_FIXES : 1;
   const status: ArrivalStatus = consecutiveFixes >= needFixes
     ? 'arrived'
     : 'arriving';

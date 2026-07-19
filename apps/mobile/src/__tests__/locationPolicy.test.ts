@@ -1,3 +1,4 @@
+import { backgroundLocationOptions } from '../state/backgroundJourneyController';
 import {
   createMotionState,
   locationPolicy,
@@ -73,6 +74,24 @@ describe('locationPolicy', () => {
     const p = locationPolicy(false, 'journey');
     expect(p.accuracy).toBe('balanced');
     expect(p.uploadHeartbeatMs).toBeLessThan(locationPolicy(false, 'allDay').uploadHeartbeatMs);
+  });
+
+  it('uses fitness High accuracy for walking team navigation', () => {
+    expect(backgroundLocationOptions('journey', false, 'teamNavigation')).toMatchObject({
+      accuracy: 4,
+      activityType: 3,
+      pausesUpdatesAutomatically: true,
+      deferredUpdatesDistance: 30,
+      deferredUpdatesInterval: 30_000,
+    });
+  });
+
+  it('never promotes manual walking precision to BestForNavigation', () => {
+    expect(backgroundLocationOptions('journey', true, 'navigationMax')).toMatchObject({
+      accuracy: 5,
+      activityType: 3,
+      pausesUpdatesAutomatically: true,
+    });
   });
 });
 

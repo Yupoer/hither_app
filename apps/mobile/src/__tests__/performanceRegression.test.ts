@@ -43,6 +43,17 @@ describe('measured performance regressions', () => {
     expect(locationHook).toContain('immediate: true');
   });
 
+  it('uses MapKit as the iOS foreground location owner and keeps the native blue dot', () => {
+    expect(groupMap).toContain('showsUserLocation');
+    expect(groupMap).toContain('onUserLocationChange');
+    expect(groupMap).toContain('onUserLocationSample');
+    expect(locationHook).toContain('nativeMapLocationEnabled');
+    expect(locationHook).toContain('consumeForegroundSample');
+    expect(mapScreen).toContain("nativeMapLocationEnabled: Platform.OS === 'ios'");
+    expect(mapScreen).toContain('consumeForegroundSample');
+    expect(mapScreen).toContain('startNavigationEnergyMonitor');
+  });
+
   it('coalesces location outbox uploads instead of flushing after every sample', () => {
     expect(locationHook).toContain('scheduleOutboxFlush');
     expect(locationHook).toContain('OUTBOX_FLUSH_DELAY_MS');

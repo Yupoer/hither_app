@@ -117,7 +117,7 @@ describe('resolveNavCommand', () => {
     ).toMatchObject({ kind: 'leader_stop', label: '結束導航', action: 'stop_nav' });
   });
 
-  it('shows 標註完成 after leader defers complete while still arrived', () => {
+  it('shows 完成此行程 once the leader has arrived (with or without defer)', () => {
     expect(
       resolveNavCommand({
         isLeader: true,
@@ -128,9 +128,22 @@ describe('resolveNavCommand', () => {
       }),
     ).toMatchObject({
       kind: 'leader_mark_complete',
-      label: '標註完成',
+      label: '完成此行程',
       action: 'mark_complete',
       disabled: false,
+    });
+    expect(
+      resolveNavCommand({
+        isLeader: true,
+        personallyArrived: true,
+        flockNavigatingThis: true,
+        localRouteThis: false,
+        pendingComplete: false,
+      }),
+    ).toMatchObject({
+      kind: 'leader_mark_complete',
+      label: '完成此行程',
+      action: 'mark_complete',
     });
   });
 
@@ -173,7 +186,7 @@ describe('resolveNavCommand', () => {
     });
   });
 
-  it('hides nav control once the viewer has arrived', () => {
+  it('shows waiting copy once a member has arrived', () => {
     expect(
       resolveNavCommand({
         isLeader: false,
@@ -181,8 +194,13 @@ describe('resolveNavCommand', () => {
         flockNavigatingThis: true,
         localRouteThis: false,
         pendingComplete: false,
-      }).kind,
-    ).toBe('hidden');
+      }),
+    ).toMatchObject({
+      kind: 'member_waiting_complete',
+      label: '正在等待隊長完成此行程',
+      disabled: true,
+      action: 'none',
+    });
   });
 });
 

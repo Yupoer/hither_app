@@ -94,15 +94,24 @@ jest.mock('expo-constants', () => ({
 
 jest.mock('expo-asset', () => ({}));
 
+const samplePerformance = jest.fn().mockResolvedValue({
+  cpuPercent: 1,
+  memoryMb: 100,
+  batteryLevel: 0.8,
+  thermalState: 'nominal',
+});
+
 jest.mock('../native', () => ({
   metrics: {
     sampleNativeMetrics: jest.fn().mockResolvedValue(null),
+    samplePerformance: (...args: unknown[]) => samplePerformance(...args),
   },
 }));
 
 import {
   configurePerformanceTracing,
   flushPerformance,
+  startNavigationEnergyMonitor,
 } from '../state/performance';
 import { getHitherDatabase } from '../state/hitherDatabase';
 
@@ -159,5 +168,30 @@ describe('flushPerformance', () => {
   it('returns remaining 0 when the queue is empty', async () => {
     configurePerformanceTracing(async () => []);
     await expect(flushPerformance()).resolves.toEqual({ sent: 0, remaining: 0 });
+  });
+
+  it('records navigation energy at start and at five-minute cadence only', async () => {
+    jest.useFakeTimers();
+    samplePerformance.mockClear();
+    const stop = startNavigationEnergyMonitor({
+      navigationSessionId: '00000000-0000-4000-8000-000000000001',
+      trackingMode: 'teamNavigation',
+    });
+
+    // Allow the initial async sample to start.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(samplePerformance).toHaveBeenCalledTimes(1);
+
+    await jest.advanceTimersByTimeAsync(4 * 60_000);
+    expect(samplePerformance).toHaveBeenCalledTimes(1);
+
+    await jest.advanceTimersByTimeAsync(60_000);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(samplePerformance).toHaveBeenCalledTimes(2);
+
+    stop();
+    jest.useRealTimers();
   });
 });

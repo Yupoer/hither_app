@@ -11,8 +11,15 @@ import { getHitherDatabase } from './hitherDatabase';
 
 export const LOCATION_OUTBOX_KEY = '@hither/location-outbox';
 const TTL_MS = 24 * 60 * 60 * 1_000;
-const MAX_BATCH = 10;
+const MAX_BATCH = 50;
 const MAX_BACKOFF_MS = 15 * 60 * 1_000;
+
+export interface LocationFlushResult {
+  sent: number;
+  discarded: number;
+  remaining: number;
+  retryScheduled: number;
+}
 
 export type UploadTrackingMode = Exclude<TrackingMode, 'hidden'>;
 export type LocationUploadSource =
@@ -327,18 +334,27 @@ export function createLocationOutbox(
       });
     },
 
-    flush(maxEntries = MAX_BATCH): Promise<{ sent: number; remaining: number }> {
+    flush(maxEntries = MAX_BATCH): Promise<LocationFlushResult> {
       return runSerial(async () => {
         await initialize();
         const current = now();
         await database.removeExpired(current);
         const due = await database.getDue(current, Math.max(0, maxEntries));
-        if (due.length === 0) return { sent: 0, remaining: await database.count() };
+        if (due.length === 0) {
+          return {
+            sent: 0,
+            discarded: 0,
+            remaining: await database.count(),
+            retryScheduled: 0,
+          };
+        }
 
+        let threw = false;
         let result: LocationBatchResult;
         try {
           result = await upload(due.map(eventOf));
         } catch {
+          threw = true;
           result = { acceptedIds: [], rejected: [] };
         }
 
@@ -346,8 +362,16 @@ export function createLocationOutbox(
         const accepted = new Set(
           result.acceptedIds.filter((id) => dueIds.has(id)),
         );
+        const discarded = new Set(
+          threw
+            ? []
+            : result.rejected
+                .map((item) => item.id)
+                .filter((id) => dueIds.has(id)),
+        );
+        const resolvedIds = [...accepted, ...discarded];
         const failed = due
-          .filter((entry) => !accepted.has(entry.id))
+          .filter((entry) => !accepted.has(entry.id) && !discarded.has(entry.id))
           .map((entry) => {
             const attempts = entry.attempts + 1;
             return {
@@ -356,8 +380,13 @@ export function createLocationOutbox(
               nextAttemptAt: current + Math.min(MAX_BACKOFF_MS, 2 ** attempts * 1_000),
             };
           });
-        await database.resolveBatch([...accepted], failed);
-        return { sent: accepted.size, remaining: await database.count() };
+        await database.resolveBatch(resolvedIds, failed);
+        return {
+          sent: accepted.size,
+          discarded: discarded.size,
+          remaining: await database.count(),
+          retryScheduled: failed.length,
+        };
       });
     },
 
@@ -385,7 +414,7 @@ export function enqueueLocationOutbox(
 
 export function flushLocationOutbox(
   maxEntries = MAX_BATCH,
-): Promise<{ sent: number; remaining: number }> {
+): Promise<LocationFlushResult> {
   return outbox.flush(maxEntries);
 }
 
