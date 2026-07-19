@@ -31,6 +31,7 @@ jest.mock('../api/services/NavigationService', () => ({
 }));
 
 import {
+  cancelNavigationSession,
   getActiveNavigationSession,
   getMyNavigationMemberState,
 } from '../api/services/NavigationService';
@@ -113,5 +114,59 @@ describe('useNavigationSession', () => {
     act(() => callbacks.session?.(session(3, 'cancelled')));
     expect(value?.session).toBeNull();
     expect(value?.memberState).toBeNull();
+  });
+
+  it('coalesces concurrent cancel calls', async () => {
+    let value: ReturnType<typeof useNavigationSession> | undefined;
+    function Harness() {
+      value = useNavigationSession('group-1');
+      return null;
+    }
+    await act(async () => {
+      create(React.createElement(Harness));
+    });
+
+    let resolveCancel!: (session: NavigationSession) => void;
+    const cancelPromise = new Promise<NavigationSession>((resolve) => {
+      resolveCancel = resolve;
+    });
+    jest.mocked(cancelNavigationSession).mockReturnValue(cancelPromise);
+    const cancelledSession = session(4, 'cancelled');
+
+    let first!: Promise<NavigationSession | null>;
+    let second!: Promise<NavigationSession | null>;
+    await act(async () => {
+      first = value!.cancel();
+      second = value!.cancel();
+    });
+    expect(cancelNavigationSession).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      resolveCancel(cancelledSession);
+      await Promise.all([first, second]);
+    });
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      cancelledSession,
+      cancelledSession,
+    ]);
+  });
+
+  it('refreshes once instead of retrying a stale version', async () => {
+    let value: ReturnType<typeof useNavigationSession> | undefined;
+    function Harness() {
+      value = useNavigationSession('group-1');
+      return null;
+    }
+    await act(async () => {
+      create(React.createElement(Harness));
+    });
+
+    jest.mocked(cancelNavigationSession).mockRejectedValue({ code: '40001' });
+    jest.mocked(getActiveNavigationSession).mockResolvedValue(null);
+    await act(async () => {
+      await value!.cancel();
+    });
+    expect(cancelNavigationSession).toHaveBeenCalledTimes(1);
+    // initial hydrate + one refresh after 40001
+    expect(getActiveNavigationSession).toHaveBeenCalledTimes(2);
   });
 });

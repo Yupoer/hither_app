@@ -55,6 +55,15 @@ describe('location privacy and diagnostics UI contract', () => {
     expect(diagnostics).toContain('Sharing.share({ message: json })');
   });
 
+  it('exposes opt-in diagnostic upload Switch with warning Alert and default-off preference', () => {
+    expect(preferences).toContain('diagnosticUploadEnabled');
+    expect(preferences).toContain('setDiagnosticUploadEnabled');
+    expect(settings).toContain("t('settings.diagnosticUploadWarningBody')");
+    expect(settings).toContain('accessibilityRole="switch"');
+    expect(settings).toContain('accessibilityState={{ checked: diagnosticUploadEnabled }}');
+    expect(settings).toContain('onDiagnosticSwitchChange');
+  });
+
   it('exposes DEV-only debug route controls with start/stop and warning', () => {
     const diagnostics = read('screens/MapScreen/components/DiagnosticsOverlay.tsx');
     expect(diagnostics).toContain('__DEV__');

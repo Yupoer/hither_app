@@ -140,6 +140,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
     gatherCardDefaultExpanded,
     gatherCardTitleMarquee,
     gatherCardMarqueeSpeed,
+    diagnosticUploadEnabled,
     setLanguage,
     setThemeName,
     setTextScale,
@@ -147,10 +148,31 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
     setLiveActivityEnabled,
     setGatherCardDefaultExpanded,
     setGatherCardTitleMarquee,
+    setDiagnosticUploadEnabled,
     setGatherCardMarqueeSpeed,
   } = usePreferences();
   const { colors } = useTheme();
   const accent = colors.accent;
+
+  const onDiagnosticSwitchChange = React.useCallback((next: boolean) => {
+    if (!next) {
+      void setDiagnosticUploadEnabled(false);
+      return;
+    }
+    Alert.alert(
+      t('settings.diagnosticUploadWarningTitle'),
+      t('settings.diagnosticUploadWarningBody'),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('settings.diagnosticUploadEnable'),
+          onPress: () => {
+            void setDiagnosticUploadEnabled(true);
+          },
+        },
+      ],
+    );
+  }, [setDiagnosticUploadEnabled, t]);
 
   const appVersion =
     Constants.expoConfig?.version ??
@@ -437,6 +459,23 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
 
         {/* ── 支援 ─────────────────────────────────────────────── */}
         <SectionLabel label={t('settings.sectionSupport')} styles={styles} />
+        <View style={styles.accuracyRow}>
+          <View style={styles.accuracyCopy}>
+            <Text style={styles.accuracyLabel}>{t('settings.diagnosticUpload')}</Text>
+            <Text style={styles.accuracySubhint}>{t('settings.diagnosticUploadHint')}</Text>
+          </View>
+          <Switch
+            style={styles.accuracySwitch}
+            value={diagnosticUploadEnabled}
+            onValueChange={onDiagnosticSwitchChange}
+            trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
+            thumbColor="#fff"
+            ios_backgroundColor="rgba(120,120,128,0.32)"
+            accessibilityRole="switch"
+            accessibilityState={{ checked: diagnosticUploadEnabled }}
+            accessibilityLabel={t('settings.diagnosticUpload')}
+          />
+        </View>
         {showOtaApply ? (
           <TouchableOpacity
             style={[

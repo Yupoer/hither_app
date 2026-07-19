@@ -14,6 +14,17 @@ jest.mock('../api/services/DiagnosticService', () => ({
   ingestDiagnosticBatch: jest.fn(),
 }));
 
+const consentEnabled = { value: true };
+jest.mock('../state/diagnosticConsent', () => ({
+  getDiagnosticConsentEnabled: jest.fn(async () => consentEnabled.value),
+  setDiagnosticConsentEnabled: jest.fn(async (next: boolean) => {
+    consentEnabled.value = next;
+  }),
+}));
+jest.mock('../state/logBatchScheduler', () => ({
+  notifyLogRecorded: jest.fn(),
+}));
+
 import {
   createDiagnostics,
   type DiagnosticDatabase,
@@ -65,6 +76,12 @@ class MemoryDiagnosticDatabase implements DiagnosticDatabase {
   async pendingCount(): Promise<number> {
     return [...this.records.values()].filter((record) => record.uploadedAt === null).length;
   }
+
+  async purgeUnuploaded(): Promise<void> {
+    for (const [id, record] of [...this.records.entries()]) {
+      if (record.uploadedAt === null) this.records.delete(id);
+    }
+  }
 }
 
 const metadata = {
@@ -75,6 +92,27 @@ const metadata = {
 };
 
 describe('bounded diagnostics', () => {
+  beforeEach(() => {
+    consentEnabled.value = true;
+  });
+
+  it('skips insert and upload when diagnostic consent is off', async () => {
+    consentEnabled.value = false;
+    const database = new MemoryDiagnosticDatabase();
+    const upload = jest.fn();
+    const diagnostics = createDiagnostics(
+      database,
+      upload,
+      () => 1_000,
+      metadata,
+      () => 'id-1',
+    );
+    await diagnostics.write({ event: 'location_callback' });
+    expect(database.records.size).toBe(0);
+    await expect(diagnostics.flush()).resolves.toEqual({ sent: 0, remaining: 0 });
+    expect(upload).not.toHaveBeenCalled();
+  });
+
   it('redacts secrets, exact coordinates, email and raw error messages', async () => {
     const diagnostics = createDiagnostics(
       new MemoryDiagnosticDatabase(),

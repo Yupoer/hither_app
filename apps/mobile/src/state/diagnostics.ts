@@ -6,7 +6,9 @@ import {
   type DiagnosticBatchResult,
   type DiagnosticUploadMetadata,
 } from '../api/services/DiagnosticService';
+import { getDiagnosticConsentEnabled } from './diagnosticConsent';
 import { getHitherDatabase } from './hitherDatabase';
+import { notifyLogRecorded } from './logBatchScheduler';
 
 const RETENTION_MS = 72 * 60 * 60 * 1_000;
 const MAX_RECORDS = 10_000;
@@ -67,6 +69,7 @@ export interface DiagnosticDatabase {
     uploadedAt: number,
   ): Promise<void>;
   pendingCount(): Promise<number>;
+  purgeUnuploaded(): Promise<void>;
 }
 
 interface DiagnosticRow {
@@ -186,6 +189,13 @@ export class SQLiteDiagnosticDatabase implements DiagnosticDatabase {
     );
     return row?.count ?? 0;
   }
+
+  async purgeUnuploaded(): Promise<void> {
+    const database = await this.openDatabase();
+    await database.runAsync(
+      'DELETE FROM diagnostic_events WHERE uploaded_at IS NULL',
+    );
+  }
 }
 
 const ALLOWED_FIELDS = [
@@ -260,6 +270,7 @@ export function createDiagnostics(
   return {
     write(input: DiagnosticInput): Promise<void> {
       return runSerial(async () => {
+        if (!(await getDiagnosticConsentEnabled())) return;
         await initialize();
         if (
           mode === 'minimal' &&
@@ -279,6 +290,7 @@ export function createDiagnostics(
           uploadedAt: null,
         });
         await database.cleanup(timestamp - RETENTION_MS, MAX_RECORDS);
+        notifyLogRecorded();
       });
     },
 
@@ -286,6 +298,9 @@ export function createDiagnostics(
 
     flush(): Promise<{ sent: number; remaining: number }> {
       return runSerial(async () => {
+        if (!(await getDiagnosticConsentEnabled())) {
+          return { sent: 0, remaining: 0 };
+        }
         await initialize();
         const pending = await database.getPending(MAX_UPLOAD_BATCH);
         if (pending.length === 0) {
@@ -311,6 +326,11 @@ export function createDiagnostics(
           remaining: await database.pendingCount(),
         };
       });
+    },
+
+    async purge(): Promise<void> {
+      await initialize();
+      await database.purgeUnuploaded();
     },
 
     async summary(): Promise<DiagnosticSummary> {

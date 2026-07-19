@@ -108,6 +108,14 @@ jest.mock('../native', () => ({
   },
 }));
 
+const consentEnabled = { value: true };
+jest.mock('../state/diagnosticConsent', () => ({
+  getDiagnosticConsentEnabled: jest.fn(async () => consentEnabled.value),
+}));
+jest.mock('../state/logBatchScheduler', () => ({
+  notifyLogRecorded: jest.fn(),
+}));
+
 import {
   configurePerformanceTracing,
   flushPerformance,
@@ -141,6 +149,23 @@ async function seedPending(count: number): Promise<string[]> {
 describe('flushPerformance', () => {
   beforeEach(() => {
     rows.length = 0;
+    consentEnabled.value = true;
+  });
+
+  it('skips flush and energy samples when consent is off', async () => {
+    consentEnabled.value = false;
+    await seedPending(2);
+    configurePerformanceTracing(async (records) => records.map((r) => r.id));
+    await expect(flushPerformance()).resolves.toEqual({ sent: 0, remaining: 0 });
+    samplePerformance.mockClear();
+    const stop = startNavigationEnergyMonitor({
+      navigationSessionId: '00000000-0000-4000-8000-000000000001',
+      trackingMode: 'teamNavigation',
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(samplePerformance).not.toHaveBeenCalled();
+    stop();
   });
 
   it('returns sent and remaining when the uploader accepts all ids', async () => {

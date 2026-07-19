@@ -39,7 +39,9 @@ export interface PreviousLaunch {
 interface HitherMetricsModule {
   drainPayloads(): Promise<MetricPayloadFile[]>;
   removePayloads(ids: string[]): Promise<void>;
-  samplePerformance(windowMs: number): Promise<PerformanceSample>;
+  samplePerformance(windowMs: number): Promise<PerformanceSample | null>;
+  setCollectionEnabled(enabled: boolean): Promise<boolean>;
+  purgePayloads(): Promise<void>;
   previousLaunch(): Promise<PreviousLaunch | null>;
   markLaunchPhase(phase: LaunchPhase): Promise<void>;
 }
@@ -56,6 +58,14 @@ export async function removePayloads(ids: string[]): Promise<void> {
 
 export async function samplePerformance(windowMs: number): Promise<PerformanceSample | null> {
   return await HitherMetrics?.samplePerformance(windowMs) ?? null;
+}
+
+export async function setCollectionEnabled(enabled: boolean): Promise<boolean> {
+  return await HitherMetrics?.setCollectionEnabled(enabled) ?? false;
+}
+
+export async function purgePayloads(): Promise<void> {
+  await HitherMetrics?.purgePayloads();
 }
 
 export async function previousLaunch(): Promise<PreviousLaunch | null> {

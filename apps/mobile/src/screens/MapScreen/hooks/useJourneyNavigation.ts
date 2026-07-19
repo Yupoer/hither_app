@@ -85,6 +85,7 @@ export function useJourneyNavigation({
     ? distanceMeters(fromCoords, navTarget.coordinates)
     : undefined;
   const [journeyBusy, setJourneyBusy] = useState(false);
+  const stopInFlightRef = useRef<Promise<void> | null>(null);
 
   const openInAppleMaps = useCallback((dest: Destination) => {
     const { latitude, longitude } = dest.coordinates;
@@ -159,18 +160,25 @@ export function useJourneyNavigation({
       setLocalTargetId(null);
       return;
     }
-    if (!groupId || journeyBusy || !cancelSession) return;
+    if (!groupId || !cancelSession) return;
+    if (stopInFlightRef.current) return stopInFlightRef.current;
+    if (journeyBusy) return;
     setJourneyBusy(true);
     setPendingLeaderStop(true);
-    try {
-      await cancelSession();
-      setPendingLeaderTargetId(null);
-    } catch {
-      setPendingLeaderStop(false);
-      Alert.alert(t('map.setFailedTitle'), t('map.journeyFailed'));
-    } finally {
-      setJourneyBusy(false);
-    }
+    const run = (async () => {
+      try {
+        await cancelSession();
+        setPendingLeaderTargetId(null);
+      } catch {
+        setPendingLeaderStop(false);
+        Alert.alert(t('map.setFailedTitle'), t('map.journeyFailed'));
+      } finally {
+        setJourneyBusy(false);
+        stopInFlightRef.current = null;
+      }
+    })();
+    stopInFlightRef.current = run;
+    return run;
   }, [cancelSession, groupId, journeyBusy, isLeader, t]);
 
   // Re-center leader and followers when shared target order changes (post-promote).

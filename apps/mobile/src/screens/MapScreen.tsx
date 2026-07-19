@@ -450,14 +450,14 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [refresh, t]);
 
   /**
-   * Reorder-list "同步資料庫與日誌": refresh itinerary, then drain local
-   * diagnostic/performance queues. Log failure never fails the DB sync.
+   * Reorder-list "同步資料庫": refresh itinerary only (business data).
+   * Opt-in diagnostic Log batch is owned by logBatchScheduler, not this control.
    */
   const syncFromDatabaseAndUploadLogs = useCallback(async () => {
-    // Database refresh is authoritative: log upload failure must not fail DB sync.
     await syncFromDatabase();
     let logResult: Awaited<ReturnType<typeof uploadLocalLogs>> | null = null;
     try {
+      // No-op when consent is off; never multi-round drain.
       logResult = await uploadLocalLogs({ source: 'destination_reorder_sync' });
     } catch {
       logResult = null;
@@ -1020,6 +1020,7 @@ export default function MapScreen({ route, navigation }: Props) {
   // set 30m still auto-arrives inside 30m even if the session row says 50.
   const localArrivalRadiusM = Math.min(effectiveArrivalRadiusM, arrivalRadiusM);
   const foregroundArrivalRef = useRef<{ key: string; state: ArrivalState } | null>(null);
+  const foregroundAckRef = useRef<string | null>(null);
   const autoArrivalMarkedRef = useRef<string | null>(null);
   const arrivalFeedbackShownRef = useRef<string | null>(null);
   const [autoArrivedDestId, setAutoArrivedDestId] = useState<string | null>(null);
@@ -1037,6 +1038,12 @@ export default function MapScreen({ route, navigation }: Props) {
     }
     const session = navigationSessionState.session;
     const key = `${session?.id ?? 'local'}:${navTarget.id}`;
+    if (session?.id && foregroundAckRef.current && !foregroundAckRef.current.startsWith(`${session.id}:`)) {
+      foregroundAckRef.current = null;
+    }
+    if (!session) {
+      foregroundAckRef.current = null;
+    }
     const straightM = distanceMeters(deviceCoords, navTarget.coordinates);
     // Product: tools radius is the geofence (e.g. 50 m) — not only distance 0.
     const insideRadius = hasArrived(straightM, localArrivalRadiusM);
@@ -1065,15 +1072,20 @@ export default function MapScreen({ route, navigation }: Props) {
           }
         : next,
     };
-    if (arrivedNow || next.status === 'arriving') {
-      if (session) {
-        void navigationSessionState.ack(arrivedNow ? 'arrived' : 'arriving', {
-          source: 'foreground_arrival_reducer',
-          distanceM: straightM,
-          accuracyM: deviceAccuracyM,
-          consecutiveFixes: next.consecutiveFixes,
-        }).catch(() => undefined);
-      }
+    const ackStatus: 'arrived' | 'arriving' | null = arrivedNow
+      ? 'arrived'
+      : next.status === 'arriving'
+        ? 'arriving'
+        : null;
+    const ackKey = session && ackStatus ? `${session.id}:${ackStatus}` : null;
+    if (session && ackStatus && ackKey && foregroundAckRef.current !== ackKey) {
+      foregroundAckRef.current = ackKey;
+      void navigationSessionState.ack(ackStatus, {
+        source: 'foreground_arrival_reducer',
+        distanceM: straightM,
+        accuracyM: deviceAccuracyM,
+        consecutiveFixes: next.consecutiveFixes,
+      }).catch(() => undefined);
     }
     if (arrivedNow && user?.id) {
       setAutoArrivedDestId(navTarget.id);

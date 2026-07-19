@@ -14,6 +14,10 @@ import {
   type ThemeName,
 } from '../theme';
 import {
+  getDiagnosticConsentEnabled,
+  setDiagnosticConsentEnabled,
+} from './diagnosticConsent';
+import {
   LEGACY_LOCATION_SHARING_KEY,
   LOCATION_SHARING_KEY,
 } from './locationPrivacy';
@@ -117,6 +121,11 @@ interface PreferencesValue {
    * geofence. Device preference; does not require network.
    */
   arrivalRadiusM: number;
+  /**
+   * Opt-in diagnostic / performance / MetricKit logging + batch upload.
+   * Default off; enable only after explicit warning confirmation.
+   */
+  diagnosticUploadEnabled: boolean;
   /** True once the persisted preferences have been loaded from storage. */
   ready: boolean;
   setLanguage: (language: Language) => void;
@@ -132,6 +141,7 @@ interface PreferencesValue {
   setGatherCardTitleMarquee: (on: boolean) => void;
   setGatherCardMarqueeSpeed: (pxPerSec: number) => void;
   setArrivalRadiusM: (meters: number) => void;
+  setDiagnosticUploadEnabled: (enabled: boolean) => Promise<void>;
 }
 
 const PreferencesContext = createContext<PreferencesValue | undefined>(undefined);
@@ -170,6 +180,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [gatherCardMarqueeSpeed, setGatherCardMarqueeSpeedState] =
     useState(DEFAULT_MARQUEE_SPEED);
   const [arrivalRadiusM, setArrivalRadiusMState] = useState(DEFAULT_ARRIVAL_RADIUS_M);
+  const [diagnosticUploadEnabled, setDiagnosticUploadEnabledState] = useState(false);
   const [ready, setReady] = useState(false);
 
   // Restore persisted preferences on launch.
@@ -208,7 +219,9 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
           GATHER_CARD_MARQUEE_SPEED_KEY,
           ARRIVAL_RADIUS_KEY,
         ]);
+        const diagnosticConsent = await getDiagnosticConsentEnabled();
         if (!active) return;
+        setDiagnosticUploadEnabledState(diagnosticConsent);
         if (isLanguage(storedLang[1])) setLanguageState(storedLang[1]);
         if (isThemeName(storedTheme[1])) setThemeNameState(storedTheme[1]);
         const parsedTextScale = parseTextScalePref(storedTextScale[1]);
@@ -344,6 +357,11 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     void AsyncStorage.setItem(ARRIVAL_RADIUS_KEY, String(next));
   }, []);
 
+  const setDiagnosticUploadEnabled = useCallback(async (next: boolean) => {
+    await setDiagnosticConsentEnabled(next);
+    setDiagnosticUploadEnabledState(next);
+  }, []);
+
   const value = useMemo<PreferencesValue>(
     () => ({
       language,
@@ -359,6 +377,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       gatherCardTitleMarquee,
       gatherCardMarqueeSpeed,
       arrivalRadiusM,
+      diagnosticUploadEnabled,
       ready,
       setLanguage,
       setThemeName,
@@ -373,6 +392,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       setGatherCardTitleMarquee,
       setGatherCardMarqueeSpeed,
       setArrivalRadiusM,
+      setDiagnosticUploadEnabled,
     }),
     [
       language,
@@ -388,6 +408,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       gatherCardTitleMarquee,
       gatherCardMarqueeSpeed,
       arrivalRadiusM,
+      diagnosticUploadEnabled,
       ready,
       setLanguage,
       setThemeName,
@@ -402,6 +423,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       setGatherCardTitleMarquee,
       setGatherCardMarqueeSpeed,
       setArrivalRadiusM,
+      setDiagnosticUploadEnabled,
     ],
   );
 

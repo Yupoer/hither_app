@@ -111,6 +111,12 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(i18n).toContain("'map.syncDb'");
   });
 
+  it('gates foreground arrival ACK to session/status transitions', () => {
+    expect(mapScreen).toContain('foregroundAckRef');
+    expect(mapScreen).toContain("source: 'foreground_arrival_reducer'");
+    expect(mapScreen).toContain('foregroundAckRef.current !== ackKey');
+  });
+
   it('allows authorized history deletion without deleting arrival completion', () => {
     expect(migrations).toContain('arrival_id uuid');
     expect(migrations).toContain('destination_id uuid');

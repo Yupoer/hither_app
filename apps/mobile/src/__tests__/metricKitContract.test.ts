@@ -15,8 +15,8 @@ describe('MetricKit native spool contract', () => {
     expect(swift).toContain('import MetricKit');
     expect(swift).toContain('class MetricKitSubscriber: NSObject, MXMetricManagerSubscriber');
     expect(swift).not.toContain('class HitherMetricsModule: Module, MXMetricManagerSubscriber');
-    expect(swift).toContain('MXMetricManager.shared.add(subscriber)');
-    expect(swift).toContain('MXMetricManager.shared.remove(subscriber)');
+    expect(swift).toContain('MXMetricManager.shared.add');
+    expect(swift).toContain('MXMetricManager.shared.remove');
     expect(swift).toContain('didReceive(_ payloads: [MXMetricPayload])');
     expect(swift).toContain('didReceive(_ payloads: [MXDiagnosticPayload])');
     expect(swift).toContain('payload.jsonRepresentation()');
@@ -25,9 +25,14 @@ describe('MetricKit native spool contract', () => {
     expect(swift).toContain('maximumPayloadFiles = 20');
     expect(swift).toContain('OnCreate');
     expect(swift).toContain('OnDestroy');
+    expect(swift).toContain('AsyncFunction("setCollectionEnabled")');
+    expect(swift).toContain('AsyncFunction("purgePayloads")');
+    const onCreate = swift.match(/OnCreate\s*\{[\s\S]*?\n\s*\}/);
+    expect(onCreate?.[0] ?? '').toContain('prepare()');
+    expect(onCreate?.[0] ?? '').not.toContain('MXMetricManager.shared.add');
   });
 
-  it('exposes drain/remove on both native platforms and startup ingestion in App', () => {
+  it('gates collection via consent in App and optional JS bridge', () => {
     expect(existsSync(androidPath)).toBe(true);
     const android = readFileSync(androidPath, 'utf8');
     const bridge = readFileSync(join(root, 'src/native/metrics.ts'), 'utf8');
@@ -35,11 +40,25 @@ describe('MetricKit native spool contract', () => {
     expect(android).toContain('emptyList');
     expect(bridge).toContain('drainPayloads');
     expect(bridge).toContain('removePayloads');
-    expect(app).toContain('metrics.drainPayloads()');
-    expect(app).toContain('uploadMetricPayload');
-    expect(app).toContain('metrics.removePayloads(acknowledgedIds)');
-    expect(app).toContain("errorCode: 'metric_upload_failed'");
-    expect(app).not.toContain("event: 'metric_payload_received'");
+    expect(bridge).toContain('setCollectionEnabled');
+    expect(bridge).toContain('purgePayloads');
+    expect(app).toContain('diagnosticUploadEnabled');
+    expect(app).toContain('setLogBatchSchedulerEnabled');
+    expect(app).toContain('configureLogBatchScheduler');
+    expect(app).toContain('metrics.setCollectionEnabled');
+    expect(app).not.toMatch(/if \(initializing \|\| !user\) return;[\s\S]*drainPayloads/);
+    expect(app).not.toContain("errorCode: 'metric_upload_failed'");
+  });
+
+  it('reports false when HitherMetrics native module is absent', async () => {
+    jest.resetModules();
+    jest.doMock('expo-modules-core', () => ({
+      requireOptionalNativeModule: () => null,
+    }));
+    const metrics = await import('../native/metrics');
+    await expect(metrics.setCollectionEnabled(true)).resolves.toBe(false);
+    await expect(metrics.purgePayloads()).resolves.toBeUndefined();
+    await expect(metrics.drainPayloads()).resolves.toEqual([]);
   });
 
   it('persists only bounded launch phases and reports the previous incomplete launch', () => {
