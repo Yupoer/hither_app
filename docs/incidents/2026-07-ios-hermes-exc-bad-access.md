@@ -22,17 +22,34 @@ Candidate must complete the linked QA script on the original device with zero EX
 | Role | Git SHA | Engine | Expo | RN | Reanimated | Worklets | Notes |
 |---|---|---|---|---|---|---|---|
 | Crash baseline | (TF 17/24) | hermes | 54.0.x | 0.81.5 | 4.1.1 | 0.5.1 | Original EXC_BAD_ACCESS reports |
-| Control (Hermes) | pending EAS | hermes | 54.0.36 | 0.81.5 | 4.1.1 | 0.5.1 | Same device matrix, no claim of fix |
-| JSC mitigation candidate | pending EAS | jsc (iOS only) | 54.0.36 | 0.81.5 | 4.1.1 | 0.5.1 | Android remains hermes; New Arch on |
-| SDK 56 Hermes | not started | hermes | 56.x | 0.85.x | Expo-aligned | Expo-aligned | Separate hypothesis after JSC path |
+| Control (Hermes) | master tip | hermes | 54.0.36 | 0.81.5 | 4.1.1 | 0.5.1 | Fingerprint OTA + breadcrumbs + CI gates; no claim of fix |
+| JSC mitigation candidate | blocked | n/a | 54.0.36 | 0.81.5 | 4.1.1 | 0.5.1 | See A/B — not shippable on RN 0.81 |
+| SDK 56 Hermes | not started | hermes | 56.x | 0.85.x | Expo-aligned | Expo-aligned | Next single-hypothesis replacement |
 
-## A/B results (original device)
+## A/B results
+
+### Task 4 JSC (static / CI pod install — not original device)
+
+| Step | Result |
+|---|---|
+| Set `app.json` `ios.jsEngine` + `Podfile.properties` `expo.jsEngine` to `jsc` | done |
+| macOS `pod install` (GH Actions run 29671431998) | completed; **still installed `hermes-engine`** (113 pods) |
+| RN 0.81.5 `jsengine.rb` | Hermes is default; JSC moved to community support; `use_hermes` is true unless `USE_THIRD_PARTY_JSC=1` |
+| Plan decision | **Stop JSC route.** Do not ship hand-stripped lock. Revert engine to Hermes with real Podfile.lock. |
+| Original-device 50 cold launches / 30-min / 24h | not run (JSC candidate not produced) |
 
 | Candidate | 50 cold launches | 30-min mixed flow | 24h TF crash count | Outcome |
 |---|---|---|---|---|
 | Hermes control | pending | pending | pending | — |
-| iOS JSC | pending | pending | pending | — |
+| iOS JSC | blocked (engine not available) | n/a | n/a | FAIL path — RN 0.81 keeps Hermes |
+
+## In-repo mitigations (not a crash RESOLVED claim)
+
+- `runtimeVersion` fingerprint policy (blocks incompatible OTA).
+- `npm run verify:runtime` + required CI step.
+- Bounded launch breadcrumbs + `previous_launch_incomplete` diagnostics.
+- Blocking `expo-doctor` in CI.
 
 ## Status
 
-Status: OPEN — static runtime gates, fingerprint OTA policy, launch breadcrumbs, and iOS JSC mitigation config are in-repo; original-device TestFlight Release gate has **not** been completed. Do not treat as RESOLVED.
+Status: OPEN — Task 4 JSC mitigation is **blocked** on RN 0.81.5 (real `pod install` still locks hermes-engine; third-party JSC not adopted). Hermes control retained with honest Podfile.lock. SDK 56 / RN 0.85 Hermes replacement remains the next single hypothesis. Original-device TestFlight Release gate has **not** been completed. Do not treat as RESOLVED.

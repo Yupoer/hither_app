@@ -17,7 +17,6 @@
       "fallbackToCacheTimeout": 0
     },
     "ios": {
-      "jsEngine": "jsc",
       "supportsTablet": true,
       "usesAppleSignIn": true,
       "appleTeamId": "5LBPG5TUKP",
