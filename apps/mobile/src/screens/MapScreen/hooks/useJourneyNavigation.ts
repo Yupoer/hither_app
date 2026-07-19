@@ -2,6 +2,7 @@ import * as Crypto from 'expo-crypto';
 import { useState, useMemo, useEffect, useCallback, useRef, RefObject } from 'react';
 import { Alert, Linking } from 'react-native';
 import { distanceMeters } from '../../../utils/geo';
+import { promoteDestinationWithinDay } from '../../../utils/tripDay';
 import type { Coordinates, Destination, GroupState, JourneyStatus } from '../../../types';
 import type { NavigationSession } from '../../../types/navigation';
 import type { ScrollView } from 'react-native';
@@ -25,6 +26,10 @@ interface UseJourneyNavigationParams {
   startSession?: (destinationId: string, requestId: string) => Promise<NavigationSession>;
   cancelSession?: () => Promise<NavigationSession | null>;
   createRequestId?: () => string;
+  /** Persist itinerary reorder before starting a shared navigation session. */
+  reorderForNavigation?: (
+    updates: { id: string; position: number; day: number }[],
+  ) => Promise<boolean>;
 }
 
 export function useJourneyNavigation({
@@ -44,6 +49,7 @@ export function useJourneyNavigation({
   startSession,
   cancelSession,
   createRequestId = Crypto.randomUUID,
+  reorderForNavigation,
 }: UseJourneyNavigationParams) {
   const legacyMode = navigationSession === undefined;
   const legacySharedTargetId = legacyMode && state?.group.journeyStatus === 'going'
@@ -109,9 +115,17 @@ export function useJourneyNavigation({
       setPendingLeaderTargetId(dest.id);
       mapRef.current?.centerOn(dest.coordinates);
       try {
-        // Navigation is a shared progress transition, not an itinerary edit.
-        // Keep the persisted position/day untouched when starting a later stop.
-        setSelectedIndex(index);
+        // Promote chosen stop to first open slot of its day before session start.
+        if (reorderForNavigation) {
+          const updates = promoteDestinationWithinDay(destinations, dest.id);
+          const nextIndex = updates.findIndex((item) => item.id === dest.id);
+          if (!(await reorderForNavigation(updates))) {
+            throw new Error('destination_reorder_failed');
+          }
+          setSelectedIndex(Math.max(0, nextIndex));
+        } else {
+          setSelectedIndex(index);
+        }
         if (!requestRef.current || requestRef.current.destinationId !== dest.id) {
           requestRef.current = { destinationId: dest.id, requestId: createRequestId() };
         }
@@ -135,6 +149,8 @@ export function useJourneyNavigation({
       carouselRef,
       setSelectedIndex,
       createRequestId,
+      reorderForNavigation,
+      destinations,
     ],
   );
 
@@ -157,20 +173,22 @@ export function useJourneyNavigation({
     }
   }, [cancelSession, groupId, journeyBusy, isLeader, t]);
 
+  // Re-center leader and followers when shared target order changes (post-promote).
   useEffect(() => {
-    if (isLeader || !sharedTargetId) {
+    if (!sharedTargetId) {
       lastFollowerCenterKeyRef.current = null;
       return;
     }
     const index = destinations.findIndex((destination) => destination.id === sharedTargetId);
     const destination = destinations[index];
     if (!destination) return;
-    const centerKey = `${navigationSession?.id ?? 'legacy'}:${sharedTargetId}`;
+    const orderKey = destinations.map((d) => d.id).join(',');
+    const centerKey = `${navigationSession?.id ?? 'legacy'}:${sharedTargetId}:${orderKey}`;
     if (lastFollowerCenterKeyRef.current === centerKey) return;
     lastFollowerCenterKeyRef.current = centerKey;
     setSelectedIndex(index);
     mapRef.current?.centerOn(destination.coordinates);
-  }, [destinations, isLeader, mapRef, navigationSession?.id, setSelectedIndex, sharedTargetId]);
+  }, [destinations, mapRef, navigationSession?.id, setSelectedIndex, sharedTargetId]);
 
   return {
     journeyStatus,

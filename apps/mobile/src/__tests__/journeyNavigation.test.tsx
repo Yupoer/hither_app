@@ -88,13 +88,57 @@ describe('useJourneyNavigation', () => {
     expect(startSession).toHaveBeenCalledWith(destination.id, 'request-1');
   });
 
-  it('does not reorder the persisted itinerary when starting a later stop', async () => {
+  it('promotes the later stop then starts the session in that order', async () => {
     const later = { ...destination, id: 'destination-2', order: 1 };
     const startSession = jest.fn().mockResolvedValue({
       id: 'session-2',
       status: 'active',
       destinationId: later.id,
     } as NavigationSession);
+    const reorderForNavigation = jest.fn().mockResolvedValue(true);
+    const setSelectedIndex = jest.fn();
+    let navigation: ReturnType<typeof useJourneyNavigation> | undefined;
+    function Harness() {
+      navigation = useJourneyNavigation({
+        state: pausedState,
+        groupId: 'group-1',
+        isLeader: true,
+        destinations: [destination, later],
+        selectedDestination: destination,
+        fromCoords: undefined,
+        refresh: jest.fn(),
+        t: (key) => key,
+        mapRef: { current: null },
+        carouselRef: { current: null },
+        setSelectedIndex,
+        startSession,
+        createRequestId: () => 'request-2',
+        reorderForNavigation,
+      });
+      return null;
+    }
+    act(() => { create(React.createElement(Harness)); });
+    await act(async () => { await navigation?.startNavigation(later, 1); });
+
+    expect(reorderForNavigation).toHaveBeenCalledWith([
+      { id: 'destination-2', position: 0, day: 1 },
+      { id: 'destination-1', position: 1, day: 1 },
+    ]);
+    expect(reorderForNavigation.mock.invocationCallOrder[0]).toBeLessThan(
+      startSession.mock.invocationCallOrder[0],
+    );
+    expect(setSelectedIndex).toHaveBeenCalledWith(0);
+    expect(startSession).toHaveBeenCalledWith(later.id, 'request-2');
+  });
+
+  it('skips startSession when reorderForNavigation returns false', async () => {
+    const later = { ...destination, id: 'destination-2', order: 1 };
+    const startSession = jest.fn().mockResolvedValue({
+      id: 'session-2',
+      status: 'active',
+      destinationId: later.id,
+    } as NavigationSession);
+    const reorderForNavigation = jest.fn().mockResolvedValue(false);
     let navigation: ReturnType<typeof useJourneyNavigation> | undefined;
     function Harness() {
       navigation = useJourneyNavigation({
@@ -111,14 +155,16 @@ describe('useJourneyNavigation', () => {
         setSelectedIndex: jest.fn(),
         startSession,
         createRequestId: () => 'request-2',
+        reorderForNavigation,
       });
       return null;
     }
     act(() => { create(React.createElement(Harness)); });
     await act(async () => { await navigation?.startNavigation(later, 1); });
 
-    expect(reorderDestinations).not.toHaveBeenCalled();
-    expect(startSession).toHaveBeenCalledWith(later.id, 'request-2');
+    expect(reorderForNavigation).toHaveBeenCalled();
+    expect(startSession).not.toHaveBeenCalled();
+    expect(navigation?.pendingLeaderTargetId).toBeNull();
   });
 
   it('uses the persisted active destination instead of the local carousel selection', () => {

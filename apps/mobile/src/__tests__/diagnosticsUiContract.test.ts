@@ -54,4 +54,12 @@ describe('location privacy and diagnostics UI contract', () => {
     expect(diagnostics).toContain('diagnostics.exportJson()');
     expect(diagnostics).toContain('Sharing.share({ message: json })');
   });
+
+  it('exposes DEV-only debug route controls with start/stop and warning', () => {
+    const diagnostics = read('screens/MapScreen/components/DiagnosticsOverlay.tsx');
+    expect(diagnostics).toContain('__DEV__');
+    expect(diagnostics).toContain('startDebugRoute');
+    expect(diagnostics).toContain('stopDebugRoute');
+    expect(diagnostics).toContain('debugLocation.warning');
+  });
 });

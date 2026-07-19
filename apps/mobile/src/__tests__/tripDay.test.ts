@@ -3,6 +3,7 @@ import {
   filterActiveDestinations,
   nextOrderedDestination,
   positionForAppendOnDay,
+  promoteDestinationWithinDay,
   resolveAddDay,
   resolveVisibleStartDay,
 } from '../utils/tripDay';
@@ -128,5 +129,41 @@ describe('positionForAppendOnDay', () => {
     const plan = positionForAppendOnDay(existing, 2);
     expect(plan.position).toBe(1);
     expect(plan.shiftIds).toEqual(['d']);
+  });
+});
+
+describe('promoteDestinationWithinDay', () => {
+  it('promotes within day without crossing day boundaries', () => {
+    expect(
+      promoteDestinationWithinDay(
+        [dest('d1a', 1, 0), dest('d1b', 1, 1), dest('d2a', 2, 2), dest('d2b', 2, 3)],
+        'd2b',
+      ).map((item) => item.id),
+    ).toEqual(['d1a', 'd1b', 'd2b', 'd2a']);
+  });
+
+  it('is a no-op when target is already first in its day', () => {
+    expect(
+      promoteDestinationWithinDay([dest('a', 1, 4), dest('b', 1, 9)], 'a')
+        .map((item) => item.id),
+    ).toEqual(['a', 'b']);
+  });
+
+  it('returns sorted order unchanged for unknown id', () => {
+    expect(
+      promoteDestinationWithinDay(
+        [dest('b', 1, 1), dest('a', 1, 0)],
+        'missing',
+      ).map((item) => item.id),
+    ).toEqual(['a', 'b']);
+  });
+
+  it('never moves items across days', () => {
+    const result = promoteDestinationWithinDay(
+      [dest('d1a', 1, 0), dest('d1b', 1, 1), dest('d2a', 2, 2), dest('d2b', 2, 3)],
+      'd2b',
+    );
+    expect(result.filter((r) => r.day === 1).map((r) => r.id)).toEqual(['d1a', 'd1b']);
+    expect(result.filter((r) => r.day === 2).map((r) => r.id)).toEqual(['d2b', 'd2a']);
   });
 });

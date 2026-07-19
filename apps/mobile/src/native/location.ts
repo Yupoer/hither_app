@@ -19,6 +19,11 @@ import { requireOptionalNativeModule } from 'expo-modules-core';
 import * as Location from 'expo-location';
 import type { Coordinates } from '../types';
 import { locationPolicy } from '../utils/locationPolicy';
+import {
+  getDebugLocationSample,
+  isDebugRouteActive,
+  subscribeDebugLocation,
+} from './debugLocation';
 
 /**
  * Optional custom native module. `null` in Expo Go / when not built.
@@ -117,6 +122,10 @@ function expoLocationOptions(highAccuracy: boolean): Location.LocationOptions {
 export async function getCurrentLocation(
   highAccuracy = false,
 ): Promise<LocationSample | null> {
+  if (isDebugRouteActive()) {
+    const debugSample = getDebugLocationSample();
+    if (debugSample) return debugSample;
+  }
   // Prefer the custom native module (precise/background-capable) when built.
   if (HitherLocation) {
     try {
@@ -158,11 +167,17 @@ export async function watchLocation(
     return () => {};
   }
   try {
+    const unsubscribeDebug = subscribeDebugLocation(onSample);
     const sub = await Location.watchPositionAsync(
       expoLocationOptions(highAccuracy),
-      (position) => onSample(toSample(position)),
+      (position) => {
+        if (!isDebugRouteActive()) onSample(toSample(position));
+      },
     );
-    return () => sub.remove();
+    return () => {
+      unsubscribeDebug();
+      sub.remove();
+    };
   } catch {
     return () => {};
   }

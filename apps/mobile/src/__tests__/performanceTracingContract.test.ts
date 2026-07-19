@@ -6,6 +6,15 @@ const migration = readFileSync(
   'utf8',
 ).toLowerCase();
 
+const service = readFileSync(
+  join(__dirname, '../api/services/PerformanceService.ts'),
+  'utf8',
+);
+const performance = readFileSync(
+  join(__dirname, '../state/performance.ts'),
+  'utf8',
+);
+
 describe('performance tracing contract', () => {
   it('stores bounded raw events and protects them with user-owned RLS', () => {
     expect(migration).toContain('create table public.performance_events');
@@ -27,5 +36,27 @@ describe('performance tracing contract', () => {
   it('does not silently delete existing production records during schema rollout', () => {
     expect(migration).not.toMatch(/delete\s+from\s+public\./);
     expect(migration).not.toContain('cron.job_run_details');
+  });
+
+  it('acknowledges duplicate performance ids without a 409 retry loop', () => {
+    expect(service).toContain('.upsert(');
+    expect(service).toContain("onConflict: 'id'");
+    expect(service).toContain('ignoreDuplicates: true');
+  });
+
+  it('keeps full tracing short and samples successful API spans', () => {
+    expect(performance).toContain('TRACE_TTL_MS = 2 * 60 * 60 * 1_000');
+    expect(performance).toContain('SUCCESS_TRACE_MIN_INTERVAL_MS = 10_000');
+    expect(performance).toContain('SAMPLE_WINDOW_MS = 1_000');
+    expect(performance).toContain('SAMPLE_INTERVAL_MS = 5 * 60_000');
+    expect(performance).toContain('FLUSH_DELAY_MS = 60_000');
+  });
+
+  it('exposes a navigation-only energy monitor independent of full API tracing', () => {
+    expect(performance).toContain('export function startNavigationEnergyMonitor');
+    expect(performance).toContain('navigation.energy.sample');
+    expect(performance).toContain('navigation.energy.end');
+    expect(performance).toContain('navigationSessionId');
+    expect(performance).toContain('trackingMode');
   });
 });

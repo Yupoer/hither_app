@@ -1,5 +1,7 @@
 import React from 'react';
 import { useJourneyNavigation } from '../screens/MapScreen/hooks/useJourneyNavigation';
+import { canMarkDestinationArrival } from '../utils/arrivalMarking';
+import { promoteDestinationWithinDay } from '../utils/tripDay';
 import type { Destination, GroupState } from '../types';
 import type { NavigationSession } from '../types/navigation';
 
@@ -136,5 +138,36 @@ describe('Navigation Session UI integration', () => {
       renderer.update(React.createElement(Harness, { navigationSession: null }));
     });
     expect(navigation?.navTargetId).toBe(localDestination.id);
+  });
+
+  it('after promote, solo leader can mark arrival on the selected later stop', () => {
+    const first = {
+      id: 'stop-1',
+      title: 'First',
+      coordinates: { latitude: 25.04, longitude: 121.5 },
+      order: 0,
+      day: 1,
+    } as Destination;
+    const second = {
+      id: 'stop-2',
+      title: 'Second',
+      coordinates: { latitude: 25.05, longitude: 121.51 },
+      order: 1,
+      day: 1,
+    } as Destination;
+    const promoted = promoteDestinationWithinDay([first, second], second.id);
+    const reordered = promoted.map((item) => {
+      const base = item.id === first.id ? first : second;
+      return { ...base, order: item.position, day: item.day };
+    });
+    const selected = reordered.find((d) => d.id === second.id)!;
+    expect(
+      canMarkDestinationArrival({
+        destId: selected.id,
+        destOrder: selected.order,
+        scopedDestinations: reordered,
+        myArrivedDestinationIds: new Set(),
+      }),
+    ).toBe(true);
   });
 });

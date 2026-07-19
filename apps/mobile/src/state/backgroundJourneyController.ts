@@ -85,7 +85,6 @@ export function backgroundLocationOptions(
   highAccuracy: boolean,
   trackingMode?: TrackingMode,
 ): object {
-  const explicitMode = trackingMode != null;
   const mode: TrackingMode = trackingMode ?? (
     powerMode === 'allDay'
       ? 'passiveBackground'
@@ -101,21 +100,17 @@ export function backgroundLocationOptions(
     powerProfile,
   );
 
-  const accuracyCode = !explicitMode
-    ? policy.accuracy === 'high'
+  // Expo Accuracy: Lowest=1 Low=2 Balanced=3 High=4 Highest=5 BestForNavigation=6
+  // Walking/team navigation must not default to BestForNavigation (6).
+  const accuracyCode = mode === 'navigationMax' || mode === 'manualHighAccuracy'
+    ? 5
+    : mode === 'teamNavigation'
       ? 4
-      : policy.accuracy === 'low'
-        ? 2
-        : 3
-    : mode === 'navigationMax'
-      ? 6
-      : mode === 'teamNavigation' || mode === 'manualHighAccuracy'
-        ? 5
-        : policy.accuracy === 'high'
-          ? 4
-          : policy.accuracy === 'low'
-            ? 2
-            : 3;
+      : policy.accuracy === 'high'
+        ? 4
+        : policy.accuracy === 'low'
+          ? 2
+          : 3;
 
   const deferredInterval = mode === 'passiveBackground'
     ? 180_000
@@ -138,17 +133,15 @@ export function backgroundLocationOptions(
 
   return {
     accuracy: accuracyCode,
+    // Fitness=3 for journey navigation; Other=1 for passive presence.
+    activityType: powerMode === 'journey' ? 3 : 1,
     distanceInterval: policy.distanceInterval,
     timeInterval: policy.timeInterval,
     deferredUpdatesDistance: deferredDistance,
     deferredUpdatesInterval: deferredInterval,
-    // Passive sharing may pause; navigation must continue while locked.
-    pausesUpdatesAutomatically: explicitMode
-      ? mode === 'passiveBackground'
-      : true,
-    showsBackgroundLocationIndicator: explicitMode
-      ? mode !== 'passiveBackground'
-      : true,
+    // Allow Core Location auto-pause for all walking profiles.
+    pausesUpdatesAutomatically: true,
+    showsBackgroundLocationIndicator: mode !== 'passiveBackground',
     foregroundService: {
       notificationTitle:
         powerMode === 'allDay' ? 'Hither 群組定位中' : 'Hither 導航中',

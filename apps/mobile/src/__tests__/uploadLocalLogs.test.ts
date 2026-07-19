@@ -6,7 +6,7 @@ jest.mock('../state/diagnostics', () => ({
 }));
 
 jest.mock('../state/performance', () => ({
-  flushPerformance: jest.fn().mockResolvedValue(undefined),
+  flushPerformance: jest.fn().mockResolvedValue({ sent: 0, remaining: 0 }),
 }));
 
 import { uploadLocalLogs } from '../utils/uploadLocalLogs';
@@ -17,14 +17,13 @@ describe('uploadLocalLogs', () => {
       .fn()
       .mockResolvedValueOnce({ sent: 100, remaining: 50 })
       .mockResolvedValueOnce({ sent: 50, remaining: 0 });
-    const flushPerformance = jest.fn().mockResolvedValue(undefined);
+    const flushPerformance = jest.fn().mockResolvedValue({ sent: 0, remaining: 0 });
     const writeDiagnostic = jest.fn().mockResolvedValue(undefined);
 
     const result = await uploadLocalLogs({
       writeDiagnostic,
       flushDiagnostics,
       flushPerformance,
-      maxPerformanceRounds: 1,
     });
 
     expect(flushDiagnostics).toHaveBeenCalledTimes(2);
@@ -32,18 +31,34 @@ describe('uploadLocalLogs', () => {
     expect(result).toEqual({
       diagnosticSent: 150,
       diagnosticRemaining: 0,
-      performanceOk: true,
+      performanceSent: 0,
+      performanceRemaining: 0,
     });
     expect(writeDiagnostic).toHaveBeenCalledWith(
       expect.objectContaining({ event: 'manual_log_upload' }),
     );
-    expect(writeDiagnostic).toHaveBeenCalledWith(
-      expect.objectContaining({
-        event: 'manual_log_upload_done',
-        success: true,
-        sent: 150,
-      }),
+    expect(writeDiagnostic).not.toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'manual_log_upload_done' }),
     );
+  });
+
+  it('drains performance across batches until empty', async () => {
+    const flushPerformance = jest
+      .fn()
+      .mockResolvedValueOnce({ sent: 100, remaining: 250 })
+      .mockResolvedValueOnce({ sent: 100, remaining: 150 })
+      .mockResolvedValueOnce({ sent: 100, remaining: 50 })
+      .mockResolvedValueOnce({ sent: 50, remaining: 0 });
+
+    const result = await uploadLocalLogs({
+      writeDiagnostic: jest.fn().mockResolvedValue(undefined),
+      flushDiagnostics: jest.fn().mockResolvedValue({ sent: 0, remaining: 0 }),
+      flushPerformance,
+    });
+
+    expect(flushPerformance).toHaveBeenCalledTimes(4);
+    expect(result.performanceSent).toBe(350);
+    expect(result.performanceRemaining).toBe(0);
   });
 
   it('stops when a flush sends nothing while remaining stays positive', async () => {
@@ -51,22 +66,21 @@ describe('uploadLocalLogs', () => {
     const result = await uploadLocalLogs({
       writeDiagnostic: jest.fn().mockResolvedValue(undefined),
       flushDiagnostics,
-      flushPerformance: jest.fn().mockResolvedValue(undefined),
-      maxPerformanceRounds: 1,
+      flushPerformance: jest.fn().mockResolvedValue({ sent: 0, remaining: 0 }),
     });
     expect(flushDiagnostics).toHaveBeenCalledTimes(1);
     expect(result.diagnosticSent).toBe(0);
     expect(result.diagnosticRemaining).toBe(12);
   });
 
-  it('reports performance failure without throwing', async () => {
+  it('reports performance remaining -1 when flush throws', async () => {
     const result = await uploadLocalLogs({
       writeDiagnostic: jest.fn().mockResolvedValue(undefined),
       flushDiagnostics: jest.fn().mockResolvedValue({ sent: 3, remaining: 0 }),
       flushPerformance: jest.fn().mockRejectedValue(new Error('network')),
-      maxPerformanceRounds: 1,
     });
-    expect(result.performanceOk).toBe(false);
+    expect(result.performanceRemaining).toBe(-1);
+    expect(result.performanceSent).toBe(0);
     expect(result.diagnosticSent).toBe(3);
   });
 
@@ -75,7 +89,7 @@ describe('uploadLocalLogs', () => {
     await uploadLocalLogs({
       writeDiagnostic: jest.fn().mockResolvedValue(undefined),
       flushDiagnostics,
-      flushPerformance: jest.fn().mockResolvedValue(undefined),
+      flushPerformance: jest.fn().mockResolvedValue({ sent: 0, remaining: 0 }),
       maxDiagnosticRounds: 3,
       maxPerformanceRounds: 1,
     });
@@ -86,8 +100,7 @@ describe('uploadLocalLogs', () => {
     const result = await uploadLocalLogs({
       writeDiagnostic: jest.fn().mockResolvedValue(undefined),
       flushDiagnostics: jest.fn().mockRejectedValue(new Error('offline')),
-      flushPerformance: jest.fn().mockResolvedValue(undefined),
-      maxPerformanceRounds: 1,
+      flushPerformance: jest.fn().mockResolvedValue({ sent: 0, remaining: 0 }),
     });
     expect(result.diagnosticRemaining).toBe(-1);
   });

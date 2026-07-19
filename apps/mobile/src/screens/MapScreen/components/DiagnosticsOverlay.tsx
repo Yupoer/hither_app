@@ -14,6 +14,12 @@ import OverlaySheet from '../../../components/OverlaySheet';
 import { useTranslation } from '../../../i18n';
 import { diagnostics, type DiagnosticSummary } from '../../../state/diagnostics';
 import { glass } from '../../../glass';
+import type { Destination } from '../../../types';
+import {
+  isDebugRouteActive,
+  startDebugRoute,
+  stopDebugRoute,
+} from '../../../native/debugLocation';
 
 interface DiagnosticsOverlayProps {
   visible: boolean;
@@ -22,6 +28,8 @@ interface DiagnosticsOverlayProps {
   navigationSessionId: string | null;
   trackingMode: string;
   liveActivityStatus: string;
+  destinations?: Destination[];
+  activeDestinationId?: string | null;
 }
 
 const EMPTY_SUMMARY: DiagnosticSummary = {
@@ -30,6 +38,9 @@ const EMPTY_SUMMARY: DiagnosticSummary = {
   lastTimestamp: null,
   byEvent: {},
 };
+
+const DURATION_MINUTES = [1, 5, 15, 30] as const;
+const PLAYBACK_RATES = [1, 5, 20] as const;
 
 function eventCount(summary: DiagnosticSummary, predicate: (name: string) => boolean) {
   return Object.entries(summary.byEvent).reduce(
@@ -45,11 +56,17 @@ export const DiagnosticsOverlay = React.memo(function DiagnosticsOverlay({
   navigationSessionId,
   trackingMode,
   liveActivityStatus,
+  destinations = [],
+  activeDestinationId = null,
 }: DiagnosticsOverlayProps) {
   const { t } = useTranslation();
   const [summary, setSummary] = useState<DiagnosticSummary>(EMPTY_SUMMARY);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [routeActive, setRouteActive] = useState(false);
+  const [durationMin, setDurationMin] = useState<(typeof DURATION_MINUTES)[number]>(5);
+  const [playbackRate, setPlaybackRate] = useState<(typeof PLAYBACK_RATES)[number]>(5);
+  const [selectedDestId, setSelectedDestId] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -61,8 +78,23 @@ export const DiagnosticsOverlay = React.memo(function DiagnosticsOverlay({
   }, []);
 
   useEffect(() => {
-    if (visible) void refresh();
+    if (visible) {
+      void refresh();
+      setRouteActive(isDebugRouteActive());
+    }
   }, [refresh, visible]);
+
+  useEffect(() => {
+    if (!visible) return;
+    const defaultId =
+      activeDestinationId && destinations.some((d) => d.id === activeDestinationId)
+        ? activeDestinationId
+        : destinations[0]?.id ?? null;
+    setSelectedDestId((prev) => {
+      if (prev && destinations.some((d) => d.id === prev)) return prev;
+      return defaultId;
+    });
+  }, [activeDestinationId, destinations, visible]);
 
   const callbackCount = summary.byEvent.location_callback ?? 0;
   const uploadCount = eventCount(summary, (name) => name === 'location_upload_succeeded');
@@ -115,6 +147,23 @@ export const DiagnosticsOverlay = React.memo(function DiagnosticsOverlay({
     }
   }, [exporting, t]);
 
+  const selectedDestination = destinations.find((d) => d.id === selectedDestId);
+
+  const onStartDebug = useCallback(() => {
+    if (!__DEV__ || !selectedDestination) return;
+    startDebugRoute({
+      destination: selectedDestination.coordinates,
+      simulatedDurationMs: durationMin * 60_000,
+      playbackRate,
+    });
+    setRouteActive(true);
+  }, [durationMin, playbackRate, selectedDestination]);
+
+  const onStopDebug = useCallback(() => {
+    stopDebugRoute();
+    setRouteActive(false);
+  }, []);
+
   return (
     <OverlaySheet
       visible={visible}
@@ -145,6 +194,109 @@ export const DiagnosticsOverlay = React.memo(function DiagnosticsOverlay({
             {exporting ? t('diagnostics.exporting') : t('diagnostics.export')}
           </Text>
         </TouchableOpacity>
+
+        {__DEV__ ? (
+          <View style={styles.debugSection}>
+            <Text style={styles.debugTitle}>{t('debugLocation.title')}</Text>
+            <Text style={styles.warning}>{t('debugLocation.warning')}</Text>
+
+            <Text style={styles.chipLabel}>{t('debugLocation.destination')}</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
+              {destinations.map((dest) => {
+                const selected = dest.id === selectedDestId;
+                return (
+                  <TouchableOpacity
+                    key={dest.id}
+                    style={[
+                      styles.chip,
+                      selected && { backgroundColor: accent, borderColor: accent },
+                    ]}
+                    onPress={() => setSelectedDestId(dest.id)}
+                    accessibilityRole="button"
+                    accessibilityLabel={dest.title}
+                  >
+                    <Text
+                      style={[styles.chipText, selected && styles.chipTextSelected]}
+                      numberOfLines={1}
+                    >
+                      {dest.title}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            <Text style={styles.chipLabel}>{t('debugLocation.duration')}</Text>
+            <View style={styles.chipWrap}>
+              {DURATION_MINUTES.map((min) => {
+                const selected = durationMin === min;
+                return (
+                  <TouchableOpacity
+                    key={min}
+                    style={[
+                      styles.chip,
+                      selected && { backgroundColor: accent, borderColor: accent },
+                    ]}
+                    onPress={() => setDurationMin(min)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${min} min`}
+                  >
+                    <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
+                      {min}m
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <Text style={styles.chipLabel}>{t('debugLocation.playbackRate')}</Text>
+            <View style={styles.chipWrap}>
+              {PLAYBACK_RATES.map((rate) => {
+                const selected = playbackRate === rate;
+                return (
+                  <TouchableOpacity
+                    key={rate}
+                    style={[
+                      styles.chip,
+                      selected && { backgroundColor: accent, borderColor: accent },
+                    ]}
+                    onPress={() => setPlaybackRate(rate)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${rate}x`}
+                  >
+                    <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
+                      {rate}x
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {routeActive ? (
+              <Text style={styles.activeLabel}>{t('debugLocation.active')}</Text>
+            ) : null}
+
+            <View style={styles.debugActions}>
+              <TouchableOpacity
+                style={[styles.button, styles.halfButton, { backgroundColor: accent }]}
+                onPress={onStartDebug}
+                disabled={!selectedDestination}
+                accessibilityRole="button"
+                accessibilityLabel={t('debugLocation.start')}
+              >
+                <Text style={styles.buttonText}>{t('debugLocation.start')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.button, styles.halfButton, styles.stopButton]}
+                onPress={onStopDebug}
+                accessibilityRole="button"
+                accessibilityLabel={t('debugLocation.stop')}
+              >
+                <Text style={styles.buttonText}>{t('debugLocation.stop')}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : null}
       </ScrollView>
     </OverlaySheet>
   );
@@ -171,4 +323,26 @@ const styles = StyleSheet.create({
   value: { color: glass.textPrimary, fontSize: 14 },
   button: { borderRadius: 14, minHeight: 48, alignItems: 'center', justifyContent: 'center' },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  debugSection: { gap: 10, marginTop: 4 },
+  debugTitle: { color: glass.textPrimary, fontSize: 16, fontWeight: '700' },
+  warning: { color: glass.textSecondary, fontSize: 12, lineHeight: 17 },
+  chipLabel: { color: glass.textTertiary, fontSize: 12, fontWeight: '600' },
+  chipRow: { flexGrow: 0 },
+  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: {
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: glass.hairline,
+    backgroundColor: glass.card,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginRight: 8,
+    maxWidth: 180,
+  },
+  chipText: { color: glass.textPrimary, fontSize: 13, fontWeight: '600' },
+  chipTextSelected: { color: '#fff' },
+  activeLabel: { color: glass.textSecondary, fontSize: 13, fontWeight: '600' },
+  debugActions: { flexDirection: 'row', gap: 10 },
+  halfButton: { flex: 1 },
+  stopButton: { backgroundColor: 'rgba(120,120,128,0.55)' },
 });
