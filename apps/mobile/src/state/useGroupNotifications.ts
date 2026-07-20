@@ -44,7 +44,7 @@ export function useGroupNotifications(): void {
 
 
   useEffect(() => {
-    if (!__DEV__ || !groupId || !myUserId) return;
+    if (!groupId || !myUserId) return;
 
     // Fire a local notification iff this user's category pref is on. Prefs are
     // read fresh per event (events are low-frequency) so a toggle in Settings
@@ -72,6 +72,17 @@ export function useGroupNotifications(): void {
 
         const prefs = await getNotificationPreferences();
         if (!prefs[category]) return;
+        // In production, use Realtime as a fallback only when this device has
+        // no registered APNs/FCM token. This avoids duplicate server + local
+        // alerts while keeping Expo Go / token-registration failures visible.
+        if (!__DEV__) {
+          const { data: pushTokens } = await supabase
+            .from('push_tokens')
+            .select('token')
+            .eq('user_id', myUserId)
+            .limit(1);
+          if ((pushTokens ?? []).length > 0) return;
+        }
         await notifications.scheduleLocalNotification({
           title,
           body,
@@ -120,6 +131,27 @@ export function useGroupNotifications(): void {
             'addGathering',
             tRef.current('notif.addGatheringTitle'),
             tRef.current('notif.addGatheringBody', { title: row.title }),
+          );
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'group_alerts', filter: groupFilter },
+        (payload) => {
+          const row = payload.new as {
+            kind?: string;
+            member_name?: string;
+            distance_m?: number | null;
+          };
+          if (row.kind !== 'straggler') return;
+          const name = row.member_name?.trim() || tRef.current('group.travelerFallback');
+          const distance = typeof row.distance_m === 'number'
+            ? `${Math.round(row.distance_m)} m`
+            : '';
+          void fire(
+            'journey',
+            tRef.current('straggler.notifyTitle'),
+            tRef.current('straggler.banner', { name, distance }),
           );
         },
       )

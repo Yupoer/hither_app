@@ -32,8 +32,10 @@ describe('production mobile configuration', () => {
       .toHaveLength(2);
   });
 
-  it('keeps realtime local notifications as a development-only fallback', () => {
-    expect(notifications).toContain('if (!__DEV__ || !groupId || !myUserId) return;');
+  it('keeps a Realtime notification fallback when no remote token exists', () => {
+    expect(notifications).toContain(".from('push_tokens')");
+    expect(notifications).toContain('if (!__DEV__)');
+    expect(notifications).not.toContain('if (!__DEV__ || !groupId || !myUserId) return;');
   });
 
   it('has store and internal-distribution EAS profiles', () => {

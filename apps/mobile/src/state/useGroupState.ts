@@ -12,8 +12,9 @@ import {
 import { isOwnLocationChange, locationPolicy } from '../utils/locationPolicy';
 
 /**
- * Fallback polling interval. Realtime is primary; this is a safety net only.
- * Used only while the Realtime subscription is unavailable.
+ * Slow reconciliation interval. Realtime is still the fast path, but the
+ * poll also repairs silent/missed events after a member joins or a stop is
+ * added while the channel reports SUBSCRIBED.
  */
 export const GROUP_POLL_INTERVAL_MS = 30_000;
 
@@ -235,6 +236,10 @@ export function useGroupState(
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           realtimeReadyRef.current = true;
+          // A new member can subscribe after the leader has already written
+          // itinerary rows. Hydrate once after the channel is ready instead
+          // of relying on an event that happened before this subscription.
+          void loadRef.current();
           return;
         }
         if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR' || status === 'CLOSED') {
@@ -243,9 +248,7 @@ export function useGroupState(
       });
 
     const timer = setInterval(() => {
-      if (!realtimeReadyRef.current) {
-        void loadRef.current();
-      }
+      void loadRef.current();
     }, GROUP_POLL_INTERVAL_MS);
 
     return () => {

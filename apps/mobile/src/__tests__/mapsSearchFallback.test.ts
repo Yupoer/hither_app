@@ -56,6 +56,30 @@ describe('searchPlaces Android / empty-native fallback', () => {
     expect(mockProxySearch).not.toHaveBeenCalled();
   });
 
+  it('accepts a Google Maps coordinate paste without calling a provider', async () => {
+    await expect(searchPlaces('25.068330191151723, 121.59711154017673')).resolves.toEqual([
+      {
+        id: 'coordinates:25.068330191151723,121.59711154017673',
+        name: '25.068330191151723, 121.59711154017673',
+        coordinates: { latitude: 25.068330191151723, longitude: 121.59711154017673 },
+      },
+    ]);
+    expect(mockNativeSearch).not.toHaveBeenCalled();
+    expect(mockProxySearch).not.toHaveBeenCalled();
+  });
+
+  it('resolves a full Plus Code through the provider when a place name is available', async () => {
+    mockProxySearch.mockResolvedValue([station]);
+    const [result] = await searchPlaces('849VCWC8+Q48');
+    expect(result).toMatchObject({
+      id: 'plus-code:849VCWC8+Q48',
+      name: station.name,
+    });
+    expect(result.coordinates).not.toEqual(station.coordinates);
+    expect(mockNativeSearch).not.toHaveBeenCalled();
+    expect(mockProxySearch).toHaveBeenCalledWith('849VCWC8+Q48', undefined);
+  });
+
   it('returns empty on Android production when proxy is unauthorized (no public geocoder)', async () => {
     // __DEV__ is typically true in Jest — force production path via mock already on android
     // and proxy throwing unauthorized while public fallback is blocked when !__DEV__.

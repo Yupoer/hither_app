@@ -3,7 +3,6 @@ import { Alert, Pressable, StyleSheet, View } from 'react-native';
 // StyleSheet.hairlineWidth used in previewBtn
 import { Ionicons } from '@expo/vector-icons';
 import { sendCommand } from '../api/client';
-import { notifications } from '../native';
 import { mediumTap } from '../utils/haptics';
 import { useTranslation } from '../i18n';
 import {
@@ -131,12 +130,6 @@ export default function QuickCommandsCard({
     setSendingKey(`fixed:${type}`);
     const label = labelForFixed(type);
     try {
-      await notifications.requestPermission();
-      await notifications.scheduleLocalNotification({
-        title: t('notif.commandTitle', { label }),
-        body: label,
-        data: { type, groupId, selfNotify: true },
-      });
       await sendCommand(groupId, type, label);
       pushRecent(type);
       Alert.alert(t('command.sent'));
@@ -159,12 +152,6 @@ export default function QuickCommandsCard({
     const label = cmd.label;
     const message = cmd.message;
     try {
-      await notifications.requestPermission();
-      await notifications.scheduleLocalNotification({
-        title: t('notif.commandTitle', { label }),
-        body: message,
-        data: { type: 'custom', groupId, selfNotify: true, slot },
-      });
       await sendCommand(groupId, 'custom', message);
       Alert.alert(t('command.sent'));
     } catch {

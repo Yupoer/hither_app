@@ -16,9 +16,14 @@ import { useTheme } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
 import { radius, spacing, type Palette } from '../theme';
 import { glass } from '../glass';
+import { extractPlusCode } from '../utils/plusCode';
 import CrookIcon from './CrookIcon';
 
 const DEBOUNCE_MS = 450;
+
+function normalizeSearchInput(value: string): string {
+  return extractPlusCode(value) ?? value;
+}
 
 export interface DestinationSearchProps {
   visible: boolean;
@@ -130,7 +135,7 @@ export default React.memo(function DestinationSearch({
             <TextInput
               style={styles.input}
               value={query}
-              onChangeText={setQuery}
+              onChangeText={(value) => setQuery(normalizeSearchInput(value))}
               placeholder={t('search.placeholder')}
               placeholderTextColor={glass.textTertiary}
               keyboardAppearance="dark"

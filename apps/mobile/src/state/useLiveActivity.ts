@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { Platform } from 'react-native';
 import {
   deleteLiveActivitySession,
   deleteMyLiveActivitySessions,
@@ -7,7 +8,7 @@ import {
   upsertDeviceActivityToken,
   upsertLiveActivitySession,
 } from '../api/services/LiveActivityService';
-import { liveActivity, type GroupActivityState } from '../native';
+import { liveActivity, notifications, type GroupActivityState } from '../native';
 import type { TravelMode } from '../utils/geo';
 
 export interface LiveActivitySessionContext {
@@ -161,10 +162,16 @@ export function useLiveActivity(
         };
       }
 
-      destinationRef.current = desiredDestination;
-      pushTokenRef.current = undefined;
-
       void (async () => {
+        // Android 13+ requires POST_NOTIFICATIONS before the foreground
+        // service notification can appear on the lock screen.
+        if (Platform.OS === 'android') {
+          const granted = await notifications.requestPermission();
+          if (!granted || cancelled) return;
+        }
+        destinationRef.current = desiredDestination;
+        pushTokenRef.current = undefined;
+
         // Always clear every Hither activity first. Push-to-start (APNs) can
         // already have created a minimal lock-screen activity; starting another
         // without end-all left two Live Activities (team+progress vs full ETA).

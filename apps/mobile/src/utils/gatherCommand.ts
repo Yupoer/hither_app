@@ -98,7 +98,7 @@ export function resolveNavCommand(input: NavCommandInput): NavCommandResult {
     if (flockNavigatingThis) {
       return {
         kind: 'leader_stop',
-        label: '結束導航',
+        label: '結束',
         disabled: false,
         action: 'stop_nav',
       };
