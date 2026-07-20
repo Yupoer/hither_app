@@ -222,6 +222,7 @@ object HitherLiveUpdateService {
           .setSmallIcon(android.R.drawable.ic_menu_mylocation)
           .setContentTitle(title)
           .setContentText(body)
+          .setVisibility(Notification.VISIBILITY_PUBLIC)
           .setOngoing(true)
           .setOnlyAlertOnce(true)
           .setContentIntent(contentIntent)
@@ -247,6 +248,7 @@ object HitherLiveUpdateService {
       .setContentTitle(title)
       .setContentText(body)
       .setSubText(state.groupName)
+      .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
       .setOngoing(true)
       .setOnlyAlertOnce(true)
       .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -296,6 +298,7 @@ object HitherLiveUpdateService {
       NotificationManager.IMPORTANCE_HIGH,
     ).apply {
       description = "集合導航進度與剩餘距離"
+      setLockscreenVisibility(Notification.VISIBILITY_PUBLIC)
       setShowBadge(false)
     }
     manager.createNotificationChannel(channel)
