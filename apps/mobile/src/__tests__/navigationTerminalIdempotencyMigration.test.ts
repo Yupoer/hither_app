@@ -7,7 +7,7 @@ const migration = readFileSync(
     '../../../../supabase/migrations/20260719060453_navigation_session_terminal_idempotency.sql',
   ),
   'utf8',
-);
+).replace(/\r\n/g, '\n');
 
 const pgtap = readFileSync(
   join(

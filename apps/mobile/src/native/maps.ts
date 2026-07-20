@@ -15,6 +15,8 @@ import { Platform } from 'react-native';
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import type { Coordinates } from '../types';
 import { distanceMeters } from '../utils/geo';
+import { parseCoordinatePair } from '../utils/coordinateDestination';
+import { decodePlusCode, extractPlusCode } from '../utils/plusCode';
 import {
   MapsProxyError,
   proxyGetDirections,
@@ -210,6 +212,54 @@ export async function searchPlaces(
   const trimmed = query.trim();
   if (!trimmed) {
     return [];
+  }
+
+  const coordinatePair = parseCoordinatePair(trimmed);
+  if (coordinatePair) {
+    return [{
+      id: `coordinates:${coordinatePair.latitude},${coordinatePair.longitude}`,
+      name: trimmed,
+      coordinates: coordinatePair,
+    }];
+  }
+
+  const plusCode = extractPlusCode(trimmed);
+  const plusCodeCoordinates = plusCode
+    ? decodePlusCode(
+      plusCode,
+      region ? { latitude: region.latitude, longitude: region.longitude } : undefined,
+    )
+    : null;
+  if (plusCode && plusCodeCoordinates) {
+    // A Plus Code identifies a coordinate rectangle, not necessarily a named
+    // POI. Ask the authenticated Places proxy for the nearest display name;
+    // retain the locally decoded coordinate even when Google snaps the result
+    // to a nearby place. If lookup is unavailable, the add-time title editor
+    // remains the guaranteed fallback.
+    try {
+      const namedPlaces = await proxySearchPlaces(plusCode, region);
+      const nearest = namedPlaces?.length
+        ? [...namedPlaces].sort(
+          (a, b) =>
+            distanceMeters(a.coordinates, plusCodeCoordinates) -
+            distanceMeters(b.coordinates, plusCodeCoordinates),
+        )[0]
+        : null;
+      if (nearest) {
+        return [{
+          ...nearest,
+          id: `plus-code:${plusCode}`,
+          coordinates: plusCodeCoordinates,
+        }];
+      }
+    } catch {
+      // Keep the decoded coordinate usable when Places is offline or out of quota.
+    }
+    return [{
+      id: `plus-code:${plusCode}`,
+      name: plusCode,
+      coordinates: plusCodeCoordinates,
+    }];
   }
 
   // Native non-empty only — empty arrays must not short-circuit the proxy.

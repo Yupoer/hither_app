@@ -40,6 +40,7 @@ import Animated, {
   withSpring,
   FadeIn,
   FadeOut,
+  ZoomIn,
   LinearTransition,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -204,7 +205,7 @@ import type {
 } from '../types';
 import type { KmlPlacemark } from '../utils/kml';
 import { FREE_LIMITS } from '../entitlements';
-import { themes, THEME_ORDER, type ThemeName } from '../theme';
+import { radius, themes, THEME_ORDER, type ThemeName } from '../theme';
 import { glass, accentMix, memberColor } from '../glass';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Map'>;
@@ -362,6 +363,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const groupId = route.params?.groupId ?? membership?.group.id ?? null;
   // The demo flock has no membership row; the tester drives it as leader.
   const isLeader = membership?.role === 'leader' || isDemoGroup(groupId);
+
   const { state, loading, refresh } = useGroupState(groupId, {
     myUserId: user?.id ?? null,
     highAccuracy,
@@ -676,6 +678,9 @@ export default function MapScreen({ route, navigation }: Props) {
   const [searchVisible, setSearchVisible] = useState(false);
   // A place picked in search, awaiting the bottom "add / cancel" confirm card.
   const [pendingPlace, setPendingPlace] = useState<PlaceResult | null>(null);
+  // Editable only during this add confirmation. There is no later rename
+  // action, so the persisted itinerary title stays stable after creation.
+  const [pendingPlaceTitle, setPendingPlaceTitle] = useState('');
   // Two-phase flow: pendingPlace is set immediately when a place is picked
   // (so the search sheet can close and the bottom sheet collapses to peek).
   // confirmCardReady flips true instantly — then the bounce-up
@@ -709,6 +714,7 @@ export default function MapScreen({ route, navigation }: Props) {
   function dismissConfirmCard() {
     setConfirmCardReady(false);
     setPendingPlace(null);
+    setPendingPlaceTitle('');
   }
   const [paywallTrigger, setPaywallTrigger] = useState<TranslationKey | undefined>(undefined);
   const [paywallVisible, setPaywallVisible] = useState(false);
@@ -1099,20 +1105,18 @@ export default function MapScreen({ route, navigation }: Props) {
       // Persist personal arrival so the checkmark does not depend only on ACK.
       if (autoArrivalMarkedRef.current !== navTarget.id) {
         autoArrivalMarkedRef.current = navTarget.id;
+        // Do not block user-facing arrival state on Supabase latency. The
+        // RPC below only reconciles the shared record and can be retried.
+        afterPersonalArrivalRef.current(navTarget, {
+          stopNav: true,
+          promptComplete: true,
+        });
         void setDestinationArrival(navTarget.id, user.id, true)
           .then(() => {
             void loadGatheringWorkflow();
-            afterPersonalArrivalRef.current(navTarget, {
-              stopNav: true,
-              promptComplete: true,
-            });
           })
           .catch(() => {
-            // Offline / sequential RPC: keep local auto-arrived UI + feedback.
-            afterPersonalArrivalRef.current(navTarget, {
-              stopNav: true,
-              promptComplete: true,
-            });
+            // Keep the local arrival UI; retry the shared write on a later fix.
             autoArrivalMarkedRef.current = null;
           });
       }
@@ -1419,6 +1423,11 @@ export default function MapScreen({ route, navigation }: Props) {
     localNavigationArrived
       ? 1
       : gatedProgress?.progress;
+  // Start the lock-screen Live Update as soon as navigation is active. GPS
+  // baseline hydration can lag behind the session start; a route/straight-line
+  // distance is sufficient for the initial Android notification and is
+  // replaced by the locked baseline on the next render.
+  const liveActivityBaselineM = initialDistanceM ?? liveDistance ?? numericDistance;
   useLiveActivity(journeyActive && !localNavigationArrived && liveActivityEnabled, {
     groupName: membership?.group.name ?? '',
     navigationSessionId: navigationSessionState.session?.id,
@@ -1436,11 +1445,11 @@ export default function MapScreen({ route, navigation }: Props) {
     travelMode,
     memberEmojis: members.map((m) => m.avatar ?? ''),
     memberArrived: members.map((m) => m.status === 'arrived'),
-  }, groupId && navTarget && initialDistanceM != null ? {
+  }, groupId && navTarget && liveActivityBaselineM != null ? {
     groupId,
     navigationSessionId: navigationSessionState.session?.id,
     destinationId: navTarget.id,
-    initialDistanceM,
+    initialDistanceM: Math.max(1, liveActivityBaselineM),
     travelMode,
   } : undefined, liveActivityEnabled);
 
@@ -1619,6 +1628,7 @@ export default function MapScreen({ route, navigation }: Props) {
         return;
       }
       setPendingPlace(place);
+      setPendingPlaceTitle(place.name);
       // Wider than locate-me so the new pin has neighborhood context, not street-close.
       mapRef.current?.centerOn(place.coordinates, {
         zoom: PLACE_ZOOM,
@@ -3335,8 +3345,18 @@ export default function MapScreen({ route, navigation }: Props) {
               <View style={styles.confirmTopRow}>
                 <View style={styles.confirmTextCol}>
                   <Text style={styles.confirmKicker} numberOfLines={1}>
-                    {t('confirmGather.going', { name: pendingPlace.name })}
+                    {t('confirmGather.going', { name: '' })}
                   </Text>
+                  <TextInput
+                    value={pendingPlaceTitle}
+                    onChangeText={setPendingPlaceTitle}
+                    style={styles.confirmTitleInput}
+                    numberOfLines={1}
+                    maxLength={120}
+                    placeholder={pendingPlace.name}
+                    placeholderTextColor={glass.textTertiary}
+                    accessibilityLabel={t('confirmGather.going', { name: pendingPlace.name })}
+                  />
                   <View style={styles.confirmEtaRow}>
                     {pMin ? (
                       <Text style={[styles.confirmMin, { color: accent }]} numberOfLines={1}>
@@ -3379,7 +3399,10 @@ export default function MapScreen({ route, navigation }: Props) {
                     pressed && { opacity: 0.9 },
                   ]}
                   onPress={() => {
-                    const place = pendingPlace;
+                    const place = {
+                      ...pendingPlace,
+                      name: pendingPlaceTitle.trim() || pendingPlace.name,
+                    };
                     dismissConfirmCard();
                     void handlePickDestination(place);
                   }}
@@ -3492,11 +3515,11 @@ export default function MapScreen({ route, navigation }: Props) {
                 myArrivedDestinationIds: myCompletedDestinationIds,
               });
               const personallyArrived = myCompletedDestinationIds.has(dest.id) || (
-                navTarget?.id === dest.id && (
-                  autoArrivedDestId === dest.id ||
+                autoArrivedDestId === dest.id ||
+                (navTarget?.id === dest.id && (
                   navigationSessionState.memberState?.localStatus === 'arrived' ||
                   (straightToTargetM != null && hasArrived(straightToTargetM, localArrivalRadiusM))
-                )
+                ))
               );
               const navCmd = resolveNavCommand({
                 isLeader,
@@ -3522,6 +3545,9 @@ export default function MapScreen({ route, navigation }: Props) {
                           active && { borderColor: accentMix(accent, 50) },
                         ]}
                       >
+                    {personallyArrived ? (
+                      <View pointerEvents="none" style={styles.arrivalDimOverlay} />
+                    ) : null}
                     {arrivalCelebrateDestId === dest.id ? (
                       <View pointerEvents="none" style={styles.arrivalConfettiLayer}>
                         {['🎊', '✨', '🎉', '✨', '🎊'].map((emoji, i) => (
@@ -3601,6 +3627,16 @@ export default function MapScreen({ route, navigation }: Props) {
                               )}
                             </Animated.View>
                           )}
+                          {personallyArrived ? (
+                            <Animated.View
+                              entering={ZoomIn.duration(260).springify().damping(14)}
+                              exiting={FadeOut.duration(220)}
+                              style={styles.arrivalCheckBadge}
+                              pointerEvents="none"
+                            >
+                              <Ionicons name="checkmark" size={14} color={glass.ok} />
+                            </Animated.View>
+                          ) : null}
                         </View>
                         {/* Collapsed / expanded swap in-tree — one shot, no Zoom / layout morph. */}
                         {cardExpanded ? (
@@ -5370,6 +5406,26 @@ const makeStyles = (
       minWidth: 0,
       lineHeight: s(15, 13),
     },
+    arrivalDimOverlay: {
+      position: 'absolute',
+      top: 0,
+      right: 0,
+      bottom: 0,
+      left: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.24)',
+      borderRadius: radius.lg,
+    },
+    arrivalCheckBadge: {
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: accentMix(glass.ok, 18),
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.ok,
+      flexShrink: 0,
+    },
     cardDenseBody: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -5733,6 +5789,14 @@ const makeStyles = (
     confirmTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
     confirmTextCol: { flex: 1, gap: 2 },
     confirmKicker: { fontSize: 16, fontWeight: '600', color: '#fff', marginLeft: 2 },
+    confirmTitleInput: {
+      color: '#fff',
+      fontSize: 18,
+      fontWeight: '700',
+      paddingVertical: 0,
+      paddingHorizontal: 2,
+      minHeight: 26,
+    },
     confirmEtaRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
     confirmArrow: {
       width: 52,

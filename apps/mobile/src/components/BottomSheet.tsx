@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ScrollView as RNScrollView, StyleSheet, View } from 'react-native';
+import { Platform, ScrollView as RNScrollView, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector, ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import Animated, {
   cancelAnimation,
@@ -207,7 +207,8 @@ export default React.memo(function BottomSheet({
   // Apple-Maps stage morphing, all on the UI thread: peek floats far off every
   // edge (small and dainty), mid hugs the edges at the search bar's gap, full
   // fills the screen flush so all 4 corners coincide with the physical screen
-  // corners. Corner radius stays constant across detents (match device bezel).
+  // corners. Top corner radius stays constant; bottom corners become square at
+  // the full-height detent so the sheet fills the screen edge-to-edge.
   const sheetStyle = useAnimatedStyle(() => {
     const h = height.value;
     const d = detentsSV.value;
@@ -215,23 +216,34 @@ export default React.memo(function BottomSheet({
     // Segmented) does not appear to scale when moving between stage 1 and 2.
     // Full still goes edge-to-edge.
     const side = interpolate(h, d, [10, 10, 0], Extrapolation.CLAMP);
-    const radius = SCREEN_CORNER_RADIUS; // peek / mid / full — all 44
+    const topRadius = SCREEN_CORNER_RADIUS;
+    // Stage 2 and full are edge-filled surfaces: only the floating peek stage
+    // keeps bottom rounding, otherwise the map can show through at both corners.
+    const bottomRadius = interpolate(
+      h,
+      d,
+      [SCREEN_CORNER_RADIUS, 0, 0],
+      Extrapolation.CLAMP,
+    );
     return {
       height: h,
       bottom: sheetBottomOffset(h, d, bottomInsetSV.value),
       left: side,
       right: side,
-      borderTopLeftRadius: radius,
-      borderTopRightRadius: radius,
-      borderBottomLeftRadius: radius,
-      borderBottomRightRadius: radius,
+      borderTopLeftRadius: topRadius,
+      borderTopRightRadius: topRadius,
+      borderBottomLeftRadius: bottomRadius,
+      borderBottomRightRadius: bottomRadius,
     };
   });
 
   return (
     <GestureDetector gesture={pan}>
       <Animated.View style={[styles.sheet, sheetStyle]}>
-        <liquidGlass.GlassView tintColor={glass.sheet} style={StyleSheet.absoluteFill} />
+        <liquidGlass.GlassView
+          tintColor={Platform.OS === 'android' ? glass.sheetOpaque : glass.sheet}
+          style={StyleSheet.absoluteFill}
+        />
         <AnimatedScrollView
           ref={scrollRef}
           // Only enabled once truly resting at the last detent. The Pan
@@ -295,7 +307,7 @@ export function sheetBottomOffset(
   return interpolate(
     h,
     detents,
-    [bottomInset + 19, 10, 0],
+    [bottomInset + 19, 0, 0],
     Extrapolation.CLAMP,
   );
 }

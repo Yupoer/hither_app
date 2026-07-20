@@ -34,7 +34,7 @@ describe('map UI placement contracts', () => {
     expect(subStart).toBeGreaterThanOrEqual(0);
     expect(statusCallback).toContain("status === 'SUBSCRIBED'");
     expect(statusCallback).toContain("status === 'CHANNEL_ERROR'");
-    expect(statusCallback).not.toContain('loadRef.current()');
+    expect(statusCallback).toContain('loadRef.current()');
   });
   it('renders arrival radius hint with tertiary subhint style', () => {
     expect(mapScreen).toContain("styles.accuracySubhint}>{t('arrival.radiusHint')}");
@@ -224,10 +224,18 @@ describe('map UI placement contracts', () => {
   });
 
   it('avoids Zoom enter/exit on gathering-card body (no shrink-then-pop)', () => {
-    expect(mapScreen).not.toContain('ZoomIn');
-    expect(mapScreen).not.toContain('ZoomOut');
-    expect(mapScreen).not.toMatch(/entering=\{ZoomIn/);
-    expect(mapScreen).not.toMatch(/exiting=\{ZoomOut/);
+    const cardBodyStart = mapScreen.indexOf(
+      '{cardExpanded ? (',
+      mapScreen.indexOf('Collapsed / expanded swap in-tree'),
+    );
+    const cardBodyEnd = mapScreen.indexOf(') : (', cardBodyStart);
+    expect(cardBodyStart).toBeGreaterThanOrEqual(0);
+    expect(cardBodyEnd).toBeGreaterThan(cardBodyStart);
+    expect(mapScreen.slice(cardBodyStart, cardBodyEnd)).not.toContain('ZoomIn');
+    expect(mapScreen.slice(cardBodyStart, cardBodyEnd)).not.toContain('ZoomOut');
+    // Arrival feedback may use a checkmark-only enter animation in the kicker;
+    // the expanded/collapsed card body must remain a one-shot swap.
+    expect(mapScreen).toContain('entering={ZoomIn.duration(260)');
   });
 
   it('animates gathering-card page dots when swiping between stops', () => {
@@ -238,7 +246,11 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain('.damping(28)');
     expect(mapScreen).toContain('.stiffness(240)');
     expect(mapScreen).toContain('.mass(0.85)');
-    expect(mapScreen).not.toContain('.damping(14)');
+    const dotsStart = mapScreen.indexOf('layout={LinearTransition.springify()');
+    const dotsEnd = mapScreen.indexOf('style={[styles.dot', dotsStart);
+    expect(dotsStart).toBeGreaterThanOrEqual(0);
+    expect(dotsEnd).toBeGreaterThan(dotsStart);
+    expect(mapScreen.slice(dotsStart, dotsEnd)).not.toContain('.damping(14)');
     expect(mapScreen).toContain('entering={FadeIn.duration(160)}');
     expect(mapScreen).toContain('exiting={FadeOut.duration(160)}');
   });

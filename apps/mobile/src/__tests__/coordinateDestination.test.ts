@@ -1,6 +1,22 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { validateCoordinateDestination } from '../utils/coordinateDestination';
+import {
+  parseCoordinatePair,
+  validateCoordinateDestination,
+} from '../utils/coordinateDestination';
+
+describe('parseCoordinatePair', () => {
+  it('accepts Google Maps comma-separated coordinates', () => {
+    expect(parseCoordinatePair('25.068330191151723, 121.59711154017673')).toEqual({
+      latitude: 25.068330191151723,
+      longitude: 121.59711154017673,
+    });
+  });
+
+  it('rejects out-of-range pairs', () => {
+    expect(parseCoordinatePair('91, 121')).toBeNull();
+  });
+});
 
 describe('validateCoordinateDestination', () => {
   it.each([
@@ -35,6 +51,24 @@ describe('validateCoordinateDestination', () => {
     const result = validateCoordinateDestination('  台北 101  ', '25.0339', '121.5645');
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.input.title).toBe('台北 101');
+  });
+
+  it('accepts a pasted pair in the latitude field', () => {
+    expect(
+      validateCoordinateDestination(
+        '集合點',
+        '25.068330191151723, 121.59711154017673',
+        '',
+      ),
+    ).toMatchObject({
+      ok: true,
+      input: {
+        coordinates: {
+          latitude: 25.068330191151723,
+          longitude: 121.59711154017673,
+        },
+      },
+    });
   });
 });
 

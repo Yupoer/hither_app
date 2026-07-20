@@ -23,6 +23,9 @@ describe('Android Live Update contract', () => {
     expect(androidService).toContain('Build.VERSION.SDK_INT >= 36');
     expect(androidService).toContain('Notification.ProgressStyle');
     expect(androidService).toContain('setOngoing(true)');
+    expect(androidService).toContain('setVisibility(Notification.VISIBILITY_PUBLIC)');
+    expect(androidService).toContain('setVisibility(NotificationCompat.VISIBILITY_PUBLIC)');
+    expect(androidService).toContain('setLockscreenVisibility(Notification.VISIBILITY_PUBLIC)');
     expect(androidService).not.toContain('RemoteViews');
   });
 

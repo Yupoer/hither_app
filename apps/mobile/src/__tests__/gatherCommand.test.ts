@@ -114,7 +114,7 @@ describe('resolveNavCommand', () => {
         localRouteThis: false,
         pendingComplete: false,
       }),
-    ).toMatchObject({ kind: 'leader_stop', label: '結束導航', action: 'stop_nav' });
+    ).toMatchObject({ kind: 'leader_stop', label: '結束', action: 'stop_nav' });
   });
 
   it('shows 完成此行程 once the leader has arrived (with or without defer)', () => {

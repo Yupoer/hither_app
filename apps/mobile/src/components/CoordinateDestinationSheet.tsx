@@ -185,7 +185,14 @@ export default React.memo(function CoordinateDestinationSheet({
 const makeStyles = (colors: Palette) =>
   StyleSheet.create({
     flex: { flex: 1, justifyContent: 'flex-end' },
-    backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: glass.scrim },
+    backdrop: {
+      position: 'absolute',
+      top: 0,
+      right: 0,
+      bottom: 0,
+      left: 0,
+      backgroundColor: glass.scrim,
+    },
     sheet: {
       overflow: 'hidden',
       borderTopLeftRadius: 30,

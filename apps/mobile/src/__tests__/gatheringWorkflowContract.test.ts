@@ -84,13 +84,14 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(migrations).toContain('drop policy if exists "itinerary_items: insert if in that subgroup"');
   });
 
-  it('reloads group state when Realtime is unavailable instead of waiting five minutes', () => {
+  it('reconciles group state periodically even when Realtime misses an event', () => {
     expect(groupState).toContain('realtimeReadyRef');
     expect(groupState).toContain("status === 'SUBSCRIBED'");
     expect(groupState).toContain("status === 'TIMED_OUT'");
     expect(groupState).toContain("status === 'CHANNEL_ERROR'");
     expect(groupState).toContain("status === 'CLOSED'");
-    expect(groupState).toContain('if (!realtimeReadyRef.current)');
+    expect(groupState).toContain('const timer = setInterval');
+    expect(groupState).toContain('void loadRef.current()');
     expect(groupState).not.toContain('const profilesChannel');
   });
 

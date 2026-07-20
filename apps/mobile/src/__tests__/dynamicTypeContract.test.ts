@@ -108,7 +108,8 @@ describe('Dynamic Type contract', () => {
     expect(mapScreen).toContain('metricsRow');
     expect(mapScreen).toContain('metricValue');
     expect(mapScreen).toContain("map.distanceToGather");
-    expect(mapScreen).toContain("map.etaDrive");
+    expect(mapScreen).toContain("map.routeEstimate");
+    expect(mapScreen).toContain("map.localEstimate");
     expect(mapScreen).toContain("map.meetCountdown");
     expect(mapScreen).toContain("subgroup.itineraryBadge");
     expect(mapScreen).toContain('a11y-layout:commandRowCompact');
@@ -116,7 +117,7 @@ describe('Dynamic Type contract', () => {
     expect(mapScreen).toContain('meetBtnStack');
     // Apple Maps only after expand, in metrics row (not in the command row).
     expect(mapScreen).toContain('mapsChip');
-    expect(mapScreen).toMatch(/cardExpanded\s*\?\s*\([\s\S]*?openInAppleMaps/);
+    expect(mapScreen).toMatch(/cardExpanded\s*\?\s*\([\s\S]*?openExternalNavigation/);
     // Card padding is scale/density-aware (horizontal pad + top/bottom).
     expect(mapScreen).toMatch(/cardPad\s*=\s*compact\s*\?\s*s\(/);
     expect(mapScreen).toMatch(/card:\s*\{[\s\S]*?paddingHorizontal:\s*cardPad/);

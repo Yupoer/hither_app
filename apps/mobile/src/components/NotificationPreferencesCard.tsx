@@ -83,6 +83,7 @@ export default function NotificationPreferencesCard({
             value={prefs[key]}
             onValueChange={(v) => toggle(key, v)}
             trackColor={{ true: colors.accent, false: colors.border }}
+            thumbColor="#fff"
             accessibilityLabel={t(label)}
           />
         </View>

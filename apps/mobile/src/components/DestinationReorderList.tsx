@@ -9,10 +9,11 @@ import {
   Modal,
   TextInput,
   Alert,
-  Dimensions
+  Dimensions,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import type { Destination } from '../types';
 import { radius, spacing, DAY_COLORS, type Palette } from '../theme';
 import { readOnboardingState } from '../onboarding/sync';
@@ -81,6 +82,19 @@ export default function DestinationReorderList({
   const [syncing, setSyncing] = useState(false);
   const [editDays, setEditDays] = useState(tripDays ?? 1);
   const [editDate, setEditDate] = useState(departureDate ? new Date(departureDate) : new Date());
+
+  const openAndroidDatePicker = useCallback(() => {
+    if (Platform.OS !== 'android') return;
+    DateTimePickerAndroid.open({
+      value: editDate,
+      mode: 'date',
+      display: 'default',
+      minimumDate: startOfTodayLocal(),
+      onChange: (_event, date) => {
+        if (date) setEditDate(clampDateNotBeforeToday(date));
+      },
+    });
+  }, [editDate]);
 
   const handleSync = useCallback(async () => {
     if (!onSync || syncing) return;
@@ -347,15 +361,24 @@ export default function DestinationReorderList({
                <Text style={styles.modalTitle}>設定行程天數</Text>
                <View style={styles.modalRow}>
                   <Text style={styles.modalLabel}>出發日期</Text>
-                  <DateTimePicker
-                     value={editDate}
-                     mode="date"
-                     display="default"
-                     minimumDate={startOfTodayLocal()}
-                     onChange={(e, date) => {
-                         if (date) setEditDate(clampDateNotBeforeToday(date));
-                     }}
-                  />
+                  {Platform.OS === 'android' ? (
+                    <Pressable onPress={openAndroidDatePicker} style={styles.datePickerButton}>
+                      <Ionicons name="calendar-outline" size={18} color={colors.accent} />
+                      <Text style={styles.datePickerText}>
+                        {editDate.toLocaleDateString()}
+                      </Text>
+                    </Pressable>
+                  ) : (
+                    <DateTimePicker
+                       value={editDate}
+                       mode="date"
+                       display="default"
+                       minimumDate={startOfTodayLocal()}
+                       onChange={(_event, date) => {
+                           if (date) setEditDate(clampDateNotBeforeToday(date));
+                       }}
+                    />
+                  )}
                </View>
                <View style={styles.modalRow}>
                   <Text style={styles.modalLabel}>行程總天數</Text>
@@ -769,10 +792,23 @@ const makeStyles = (colors: Palette) =>
       alignItems: 'center',
       marginBottom: spacing.lg,
     },
-    modalLabel: {
-      fontSize: 16,
-      color: colors.textPrimary,
-    },
+        modalLabel: {
+          fontSize: 16,
+          color: colors.textPrimary,
+        },
+        datePickerButton: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: spacing.xs,
+          paddingHorizontal: spacing.sm,
+          paddingVertical: spacing.xs,
+          borderRadius: radius.md,
+          backgroundColor: colors.glass,
+        },
+        datePickerText: {
+          color: colors.textPrimary,
+          fontSize: 15,
+        },
     daysControls: {
       flexDirection: 'row',
       alignItems: 'center',

@@ -14,7 +14,9 @@
 
 export const glass = {
   /** Bottom sheet body — translucent so the map reads through (Apple Maps feel). */
-  sheet: 'rgba(30, 32, 38, 0.48)',
+  sheet: 'rgba(40, 44, 52, 0.9)',
+  /** Android bottom-sheet fallback: no map bleed-through behind stage 1/2. */
+  sheetOpaque: 'rgb(40, 44, 52)',
   /** Stacked overlay sheet (search / route / settings) — more opaque. */
   overlay: 'rgba(22, 26, 34, 0.9)',
   /** Sheet header veil — thin, so content visibly blurs through beneath it. */
