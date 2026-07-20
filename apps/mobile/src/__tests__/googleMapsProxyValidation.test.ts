@@ -10,7 +10,7 @@ const googleSrc = readFileSync(join(root, 'google.ts'), 'utf8');
 const typesSrc = readFileSync(join(root, 'types.ts'), 'utf8');
 const indexSrc = readFileSync(join(root, 'index.ts'), 'utf8');
 const migration = readFileSync(
-  join(__dirname, '../../../../supabase/migrations/20260720_google_maps_quota.sql'),
+  join(__dirname, '../../../../supabase/migrations/20260720000000_google_maps_quota.sql'),
   'utf8',
 );
 
