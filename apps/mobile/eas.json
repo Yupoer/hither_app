@@ -18,6 +18,14 @@
       },
       "channel": "preview"
     },
+    "androidQa": {
+      "node": "22.16.0",
+      "distribution": "internal",
+      "channel": "preview",
+      "android": {
+        "buildType": "apk"
+      }
+    },
     "diagnostic": {
       "node": "22.16.0",
       "distribution": "store",

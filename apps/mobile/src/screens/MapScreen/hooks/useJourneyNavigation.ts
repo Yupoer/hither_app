@@ -1,12 +1,14 @@
 import * as Crypto from 'expo-crypto';
 import { useState, useMemo, useEffect, useCallback, useRef, RefObject } from 'react';
-import { Alert, Linking } from 'react-native';
+import { Alert } from 'react-native';
 import { distanceMeters } from '../../../utils/geo';
 import { promoteDestinationWithinDay } from '../../../utils/tripDay';
 import type { Coordinates, Destination, GroupState, JourneyStatus } from '../../../types';
 import type { NavigationSession } from '../../../types/navigation';
 import type { ScrollView } from 'react-native';
 import type { GroupMapHandle } from '../../../components/GroupMap';
+import { openExternalNavigation as openExternalNav } from '../../../native/externalNavigation';
+import type { TravelMode } from '../../../native/maps';
 
 interface UseJourneyNavigationParams {
   state: GroupState | null;
@@ -30,6 +32,8 @@ interface UseJourneyNavigationParams {
   reorderForNavigation?: (
     updates: { id: string; position: number; day: number }[],
   ) => Promise<boolean>;
+  /** Travel mode for external maps deep-links (defaults to walk). */
+  travelMode?: TravelMode;
 }
 
 export function useJourneyNavigation({
@@ -50,6 +54,7 @@ export function useJourneyNavigation({
   cancelSession,
   createRequestId = Crypto.randomUUID,
   reorderForNavigation,
+  travelMode = 'walk',
 }: UseJourneyNavigationParams) {
   const legacyMode = navigationSession === undefined;
   const legacySharedTargetId = legacyMode && state?.group.journeyStatus === 'going'
@@ -87,13 +92,15 @@ export function useJourneyNavigation({
   const [journeyBusy, setJourneyBusy] = useState(false);
   const stopInFlightRef = useRef<Promise<void> | null>(null);
 
-  const openInAppleMaps = useCallback((dest: Destination) => {
-    const { latitude, longitude } = dest.coordinates;
-    const label = encodeURIComponent(dest.title);
-    const scheme = `maps://?daddr=${label}@${latitude},${longitude}&dirflg=w`;
-    const universal = `https://maps.apple.com/?daddr=${latitude},${longitude}&dirflg=w`;
-    Linking.openURL(scheme).catch(() => void Linking.openURL(universal));
-  }, []);
+  const openExternalNavigation = useCallback(
+    (dest: Destination) => {
+      void openExternalNav(dest, travelMode);
+    },
+    [travelMode],
+  );
+
+  /** @deprecated Use openExternalNavigation — kept as alias for gradual call-site migration. */
+  const openInAppleMaps = openExternalNavigation;
 
   const startLocalRoutePlan = useCallback(
     (dest: Destination, index: number) => {
@@ -213,6 +220,7 @@ export function useJourneyNavigation({
     activePoint,
     numericDistance,
     journeyBusy,
+    openExternalNavigation,
     openInAppleMaps,
     startNavigation,
     stopNavigation,

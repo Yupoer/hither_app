@@ -58,4 +58,25 @@ describe('parseKml', () => {
     const result = parseKml(xml);
     expect(result).toEqual([{ name: 'Route', latitude: 25.1, longitude: 121.1 }]);
   });
+
+  it('parses multiple placemarks in one document', () => {
+    const xml = `
+      <Document>
+        <Placemark><name>A</name><Point><coordinates>121.1,25.1,0</coordinates></Point></Placemark>
+        <Placemark><name>B</name><Point><coordinates>121.2,25.2,0</coordinates></Point></Placemark>
+      </Document>`;
+    expect(parseKml(xml)).toEqual([
+      { name: 'A', latitude: 25.1, longitude: 121.1 },
+      { name: 'B', latitude: 25.2, longitude: 121.2 },
+    ]);
+  });
+});
+
+describe('KmlImportSheet Android URI path', () => {
+  it('uses copyToCacheDirectory so content:// URIs are readable', () => {
+    const { readFileSync } = require('node:fs') as typeof import('node:fs');
+    const { join } = require('node:path') as typeof import('node:path');
+    const sheet = readFileSync(join(__dirname, '../components/KmlImportSheet.tsx'), 'utf8');
+    expect(sheet).toContain('copyToCacheDirectory: true');
+  });
 });

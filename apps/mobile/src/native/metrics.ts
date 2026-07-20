@@ -37,41 +37,41 @@ export interface PreviousLaunch {
 }
 
 interface HitherMetricsModule {
-  drainPayloads(): Promise<MetricPayloadFile[]>;
-  removePayloads(ids: string[]): Promise<void>;
-  samplePerformance(windowMs: number): Promise<PerformanceSample | null>;
-  setCollectionEnabled(enabled: boolean): Promise<boolean>;
-  purgePayloads(): Promise<void>;
-  previousLaunch(): Promise<PreviousLaunch | null>;
-  markLaunchPhase(phase: LaunchPhase): Promise<void>;
+  drainPayloads?: () => Promise<MetricPayloadFile[]>;
+  removePayloads?: (ids: string[]) => Promise<void>;
+  samplePerformance?: (windowMs: number) => Promise<PerformanceSample | null>;
+  setCollectionEnabled?: (enabled: boolean) => Promise<boolean>;
+  purgePayloads?: () => Promise<void>;
+  previousLaunch?: () => Promise<PreviousLaunch | null>;
+  markLaunchPhase?: (phase: LaunchPhase) => Promise<void>;
 }
 
 const HitherMetrics = requireOptionalNativeModule<HitherMetricsModule>('HitherMetrics');
 
 export async function drainPayloads(): Promise<MetricPayloadFile[]> {
-  return await HitherMetrics?.drainPayloads() ?? [];
+  return (await HitherMetrics?.drainPayloads?.()) ?? [];
 }
 
 export async function removePayloads(ids: string[]): Promise<void> {
-  if (ids.length > 0) await HitherMetrics?.removePayloads(ids);
+  if (ids.length > 0) await HitherMetrics?.removePayloads?.(ids);
 }
 
 export async function samplePerformance(windowMs: number): Promise<PerformanceSample | null> {
-  return await HitherMetrics?.samplePerformance(windowMs) ?? null;
+  return (await HitherMetrics?.samplePerformance?.(windowMs)) ?? null;
 }
 
 export async function setCollectionEnabled(enabled: boolean): Promise<boolean> {
-  return await HitherMetrics?.setCollectionEnabled(enabled) ?? false;
+  return (await HitherMetrics?.setCollectionEnabled?.(enabled)) ?? false;
 }
 
 export async function purgePayloads(): Promise<void> {
-  await HitherMetrics?.purgePayloads();
+  await HitherMetrics?.purgePayloads?.();
 }
 
 export async function previousLaunch(): Promise<PreviousLaunch | null> {
-  return await HitherMetrics?.previousLaunch() ?? null;
+  return (await HitherMetrics?.previousLaunch?.()) ?? null;
 }
 
 export async function markLaunchPhase(phase: LaunchPhase): Promise<void> {
-  await HitherMetrics?.markLaunchPhase(phase);
+  await HitherMetrics?.markLaunchPhase?.(phase);
 }

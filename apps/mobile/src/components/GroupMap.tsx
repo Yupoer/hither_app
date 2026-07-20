@@ -6,9 +6,9 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Animated as RNAnimated, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Animated as RNAnimated, Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import MapView, { AnimatedRegion, Marker, MarkerAnimated, Polyline } from 'react-native-maps';
+import MapView, { AnimatedRegion, Marker, MarkerAnimated, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import type { Coordinates, Destination, MemberLocation } from '../types';
 import { usePreferences, useTheme } from '../state/PreferencesContext';
 import { memberColor } from '../glass';
@@ -73,6 +73,8 @@ export interface GroupMapProps {
     accuracy: number | null;
     timestamp: number;
   }) => void;
+  /** Long-press map coordinate (shared with manual lat/lng destination sheet). */
+  onLongPressCoordinate?: (coordinates: Coordinates) => void;
 }
 
 /**
@@ -273,6 +275,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     topOverlap = 0,
     bottomOverlap = 0,
     onUserLocationSample,
+    onLongPressCoordinate,
   },
   ref,
 ) {
@@ -400,6 +403,8 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       key={mapInterfaceStyle}
       ref={mapRef}
       style={StyleSheet.absoluteFill}
+      // Android uses Google Maps; iOS keeps the default MapKit provider.
+      provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
       initialRegion={mapInitialRegion}
       userInterfaceStyle={mapInterfaceStyle}
       mapPadding={{ top: 42, left: 32, right: 32, bottom: 42 }}
@@ -410,6 +415,13 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       showsCompass
       pitchEnabled
       rotateEnabled
+      onLongPress={(event) => {
+        const coordinate = event.nativeEvent.coordinate;
+        if (!coordinate) return;
+        const { latitude, longitude } = coordinate;
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+        onLongPressCoordinate?.({ latitude, longitude });
+      }}
       onUserLocationChange={(event) => {
         const coordinate = event.nativeEvent.coordinate;
         if (!coordinate) return;

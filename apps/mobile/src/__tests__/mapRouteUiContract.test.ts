@@ -32,4 +32,23 @@ describe('MapKit route UI contract', () => {
       'if (lastFollowerCenterKeyRef.current === centerKey) return;',
     );
   });
+
+  it('labels road ETA as 路線預估 and local haversine as 估算', () => {
+    expect(mapScreen).toContain("t('map.routeEstimate')");
+    expect(mapScreen).toContain("t('map.localEstimate')");
+  });
+
+  it('clears stale route state on null directions (fail-closed)', () => {
+    const routesHook = readFileSync(
+      join(__dirname, '../screens/MapScreen/hooks/useMapKitRoutes.ts'),
+      'utf8',
+    );
+    expect(routesHook).toContain('selfRoute: next.selfRoute');
+    expect(routesHook).toContain('if (!active) return');
+  });
+
+  it('opens external navigation via the shared boundary', () => {
+    expect(journeyNavigation).toContain('openExternalNavigation');
+    expect(mapScreen).toContain('openExternalNavigation(dest)');
+  });
 });

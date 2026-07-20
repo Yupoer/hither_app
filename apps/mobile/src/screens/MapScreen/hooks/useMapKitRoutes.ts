@@ -223,14 +223,13 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
       cachedGetRoute,
     ).then((next) => {
       if (!active) return;
-      // Keep last good self route when a recompute returns null — dropping to
-      // straight-line mid-journey inflates Live Activity progress falsely.
-      // Do not stick across travel-mode changes (would show the wrong path).
-      setState((prev) => ({
-        selfRoute:
-          next.selfRoute ?? (modeChanged ? null : prev.selfRoute),
+      // Fail-closed: empty/failed directions clear the previous polyline so
+      // UI falls back to haversine distance + local 估算 ETA (never a stale path).
+      // Out-of-order responses are ignored via `active` when effect re-runs.
+      setState({
+        selfRoute: next.selfRoute,
         memberRoutes: next.memberRoutes,
-      }));
+      });
     });
     return () => {
       active = false;

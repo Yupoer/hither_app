@@ -2,28 +2,24 @@
  * Maps boundary — place search and directions.
  *
  * This is the ONLY module the JS layer uses for geocoding / place search.
- * Per the "Apple Maps 搜尋" decision (hybrid plan A): Phase A ships a pure-JS
- * fallback that runs in Expo Go on any platform. A native module
- * (`apps/mobile/modules/hither-maps`, Phase B) can later back the SAME
- * interface with Apple MapKit / Google Places for better quality on a Dev Build.
  *
- * JS fallback quality (no budget / no API key):
- *  - Photon (https://photon.komoot.io) is the primary geocoder — it does
- *    typeahead + fuzzy matching and biases by lat/lon, so it beats plain
- *    Nominatim for the "type a place name" case.
- *  - Nominatim (OpenStreetMap) is the fallback when Photon returns nothing.
- *  - Both re-rank by real (haversine) distance from the user's viewport.
+ * Resolution order:
+ *  1. Native module non-empty hits (MapKit on iOS Dev Build).
+ *  2. Authenticated Google Places/Routes proxy (required on Android production).
+ *  3. Photon / Nominatim free geocoders — development / web / iOS Expo Go only;
+ *     not used as Android production autocomplete.
  *
- * Usage policy: both are free shared instances — low volume only, send a
- * descriptive User-Agent, and debounce callers. Self-host if volume grows.
- *
- * Phase B seam: the custom native module `HitherMaps`
- * (`apps/mobile/modules/hither-maps`) can back these with Apple MapKit on a
- * Dev Build; absent in Expo Go, where the fallback below runs.
+ * Empty native results are never treated as a successful terminal search.
  */
+import { Platform } from 'react-native';
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import type { Coordinates } from '../types';
 import { distanceMeters } from '../utils/geo';
+import {
+  MapsProxyError,
+  proxyGetDirections,
+  proxySearchPlaces,
+} from './googleMapsProxy';
 
 /** Custom native module; `null` in Expo Go / when not built. */
 const HitherMaps = requireOptionalNativeModule<{
@@ -53,10 +49,15 @@ export interface MapRegion {
 
 export type TravelMode = 'walk' | 'drive' | 'transit';
 
+/** Where a route geometry / ETA came from — drives UI labels. */
+export type RouteSource = 'native' | 'google' | 'estimate';
+
 export interface DirectionsResult {
   distanceMeters: number;
   expectedTravelTimeSeconds: number;
   points: Coordinates[];
+  /** Omitted on older callers; UI treats missing as native when points exist. */
+  source?: RouteSource;
 }
 
 const PHOTON = 'https://photon.komoot.io/api';
@@ -113,7 +114,7 @@ function photonAddress(p: NonNullable<PhotonFeature['properties']>): string {
   return [line, p.city, p.state, p.country].filter(Boolean).join(', ');
 }
 
-/** Primary: Photon typeahead/fuzzy geocoder, biased to the viewport centre. */
+/** Primary free geocoder for dev/web/iOS Expo Go. */
 async function searchPhoton(
   query: string,
   region?: MapRegion,
@@ -156,7 +157,7 @@ interface NominatimHit {
   name?: string;
 }
 
-/** Fallback: Nominatim, localised and viewport-biased. */
+/** Fallback free geocoder. */
 async function searchNominatim(
   query: string,
   region?: MapRegion,
@@ -166,14 +167,11 @@ async function searchNominatim(
     format: 'jsonv2',
     addressdetails: '0',
     limit: '10',
-    // Prefer local/Chinese place names over the English transliteration.
     'accept-language': 'zh-TW,zh,en',
   });
   const viewbox = viewboxParam(region);
   if (viewbox) {
     params.set('viewbox', viewbox);
-    // Short queries are ambiguous — keep them inside the viewport; longer,
-    // more specific queries just bias so a named far-away place still shows.
     params.set('bounded', query.length <= 4 ? '1' : '0');
   }
 
@@ -195,9 +193,15 @@ async function searchNominatim(
   }));
 }
 
+/** Photon/Nominatim only off Android production. */
+function allowPublicGeocoderFallback(): boolean {
+  if (Platform.OS !== 'android') return true;
+  return typeof __DEV__ !== 'undefined' && __DEV__;
+}
+
 /**
  * Search for places by free text, biased toward `region` when given.
- * Returns [] on network error so the picker degrades gracefully.
+ * Returns [] on total failure so the picker degrades gracefully.
  */
 export async function searchPlaces(
   query: string,
@@ -208,12 +212,34 @@ export async function searchPlaces(
     return [];
   }
 
+  // Native non-empty only — empty arrays must not short-circuit the proxy.
   if (HitherMaps) {
     try {
-      return await HitherMaps.searchPlaces(trimmed, region);
+      const native = await HitherMaps.searchPlaces(trimmed, region);
+      if (Array.isArray(native) && native.length > 0) {
+        return native;
+      }
     } catch {
-      // fall through to the JS implementation
+      // fall through
     }
+  }
+
+  try {
+    const proxy = await proxySearchPlaces(trimmed, region);
+    if (proxy !== null) {
+      return proxy;
+    }
+  } catch (err) {
+    // Fail-closed for auth/quota: do not pretend free geocoders are production Places.
+    if (err instanceof MapsProxyError) {
+      if (err.code === 'quota_exceeded' || err.code === 'unauthorized') {
+        if (!allowPublicGeocoderFallback()) return [];
+      }
+    }
+  }
+
+  if (!allowPublicGeocoderFallback()) {
+    return [];
   }
 
   try {
@@ -232,12 +258,19 @@ export async function getDirections(
   to: Coordinates,
   travelMode: TravelMode,
 ): Promise<DirectionsResult | null> {
-  if (!HitherMaps) {
-    return null;
+  if (HitherMaps) {
+    try {
+      const route = await HitherMaps.getDirections(from, to, travelMode);
+      if (route && route.points.length > 0) {
+        return { ...route, source: route.source ?? 'native' };
+      }
+    } catch {
+      // fall through to proxy
+    }
   }
+
   try {
-    const route = await HitherMaps.getDirections(from, to, travelMode);
-    return route.points.length > 0 ? route : null;
+    return await proxyGetDirections(from, to, travelMode);
   } catch {
     return null;
   }

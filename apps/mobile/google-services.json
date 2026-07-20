@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "628527821343",
+    "project_id": "hither-12cb9",
+    "storage_bucket": "hither-12cb9.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:628527821343:android:5eb9939b9a48aad9049b2a",
+        "android_client_info": {
+          "package_name": "app.hither.mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAMio1OoqtLZpJ0uZvr6qPZeU3BhFJfC-8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

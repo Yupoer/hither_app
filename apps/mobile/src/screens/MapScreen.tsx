@@ -59,6 +59,8 @@ import BottomSheet, { sheetBottomOffset } from '../components/BottomSheet';
 import OverlaySheet from '../components/OverlaySheet';
 import PaywallSheet from '../components/PaywallSheet';
 import KmlImportSheet from '../components/KmlImportSheet';
+import CoordinateDestinationSheet from '../components/CoordinateDestinationSheet';
+import type { CoordinateDestinationInput } from '../utils/coordinateDestination';
 import FeedbackSheet from '../components/FeedbackSheet';
 import CrookIcon from '../components/CrookIcon';
 import { HitherText } from '../components/HitherText';
@@ -680,6 +682,10 @@ export default function MapScreen({ route, navigation }: Props) {
   // card appears and the search bar / recenter capsule hide.
   const [confirmCardReady, setConfirmCardReady] = useState(false);
   const [kmlVisible, setKmlVisible] = useState(false);
+  const [coordSheetVisible, setCoordSheetVisible] = useState(false);
+  const [coordSheetInitial, setCoordSheetInitial] = useState<
+    { latitude: number; longitude: number } | undefined
+  >(undefined);
   // Bounce-up entrance animation for the add-gather-point confirm card.
   const confirmCardAnim = useSharedValue(0);
   useEffect(() => {
@@ -911,7 +917,7 @@ export default function MapScreen({ route, navigation }: Props) {
     activePoint,
     numericDistance,
     journeyBusy,
-    openInAppleMaps,
+    openExternalNavigation,
     startNavigation,
     stopNavigation,
     startLocalRoutePlan,
@@ -935,6 +941,7 @@ export default function MapScreen({ route, navigation }: Props) {
     cancelSession: navigationSessionState.cancel,
     // handleReorder is defined later; keep a stable bridge via ref.
     reorderForNavigation: (updates) => reorderForNavigationRef.current(updates),
+    travelMode,
   });
 
   const navigationAckRef = useRef<string | null>(null);
@@ -1702,6 +1709,72 @@ export default function MapScreen({ route, navigation }: Props) {
     logEvent('kml_import', { count: items.length, day: addDay });
     await refresh();
   }, [groupId, canEditItinerary, notifyLeaderPlace, myScopeId, refresh, tripDayForAdd]);
+
+  const openCoordinateSheet = useCallback((coords?: { latitude: number; longitude: number }) => {
+    setCoordSheetInitial(coords);
+    setCoordSheetVisible(true);
+  }, []);
+
+  const handleLongPressCoordinate = useCallback(
+    (coordinates: { latitude: number; longitude: number }) => {
+      openCoordinateSheet(coordinates);
+    },
+    [openCoordinateSheet],
+  );
+
+  const handleCoordinateDestination = useCallback(
+    async (input: CoordinateDestinationInput) => {
+      if (!groupId) return;
+      const addDay = tripDayForAdd();
+      if (!canEditItinerary) {
+        await notifyLeaderPlace([{
+          title: input.title,
+          coordinates: input.coordinates,
+          day: addDay,
+        }], 'search');
+        return;
+      }
+      if (!isPro && allScopedDestinations.length >= FREE_LIMITS.destinationsPerItinerary) {
+        openPaywall('paywall.triggerDestinations');
+        return;
+      }
+      try {
+        await addDestination(
+          groupId,
+          {
+            title: input.title,
+            coordinates: input.coordinates,
+            day: addDay,
+          },
+          myScopeId,
+        );
+        logEvent('destination_add', { source: 'coordinates', day: addDay });
+        setSelectedIndex(destinations.length);
+        mapRef.current?.centerOn(input.coordinates, {
+          zoom: PLACE_ZOOM,
+          altitude: PLACE_ALTITUDE,
+        });
+        await refresh();
+      } catch (e) {
+        logError('destination_add_failed', e, { source: 'coordinates' });
+        Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
+        throw e;
+      }
+    },
+    [
+      groupId,
+      canEditItinerary,
+      notifyLeaderPlace,
+      isPro,
+      allScopedDestinations.length,
+      destinations.length,
+      myScopeId,
+      refresh,
+      openPaywall,
+      t,
+      tripDayForAdd,
+    ],
+  );
 
   const handleGatherPointRequest = useCallback(async (requestId: string, approve: boolean) => {
     if (resolvingGatherRequestId) return;
@@ -2977,6 +3050,18 @@ export default function MapScreen({ route, navigation }: Props) {
             <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
           </Pressable>
         ) : null}
+        <Pressable
+          style={styles.listRow}
+          onPress={() => {
+            lightTap();
+            openCoordinateSheet(undefined);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={t('coord.manualEntry')}
+        >
+          <Text style={styles.listRowTitle}>{t('coord.manualEntry')}</Text>
+          <Ionicons name="locate-outline" size={16} color={glass.textTertiary} />
+        </Pressable>
         <Pressable style={styles.listRow} onPress={() => { lightTap(); setKmlVisible(true); }} accessibilityRole="button">
           <Text style={styles.listRowTitle}>
             {canEditItinerary ? t('kml.entry') : '匯入並請求隊長同意'}
@@ -2995,7 +3080,7 @@ export default function MapScreen({ route, navigation }: Props) {
     </>
   ), [
     t, styles, nextStopTitle, nextStopDistLabel, destinations.length, canEditItinerary,
-    openHistoryOverlay, isLeader,
+    openHistoryOverlay, isLeader, openCoordinateSheet,
   ]);
 
   // ─── 工具：抵達距離、快捷指令、脫隊示警（設定改走頭像旁 ⋯ 選單）──────
@@ -3138,6 +3223,7 @@ export default function MapScreen({ route, navigation }: Props) {
         onUserLocationSample={
           Platform.OS === 'ios' ? consumeForegroundSample : undefined
         }
+        onLongPressCoordinate={handleLongPressCoordinate}
       />
 
       {/* Group pill — moved to bottom left, tracking sheet like recenter capsule. */}
@@ -3627,11 +3713,9 @@ export default function MapScreen({ route, navigation }: Props) {
                                   numberOfLines={2}
                                   maxFontSizeMultiplier={1.15}
                                 >
-                                  {travelMode === 'walk'
-                                    ? t('map.etaWalk')
-                                    : travelMode === 'transit'
-                                      ? t('map.etaTransit')
-                                      : t('map.etaDrive')}
+                                  {routeForDestination
+                                    ? t('map.routeEstimate')
+                                    : t('map.localEstimate')}
                                 </Text>
                               </View>
                               <View style={styles.metricDivider} />
@@ -3640,10 +3724,10 @@ export default function MapScreen({ route, navigation }: Props) {
                                 onPress={(event) => {
                                   event.stopPropagation();
                                   registerCardActivity(dest.id);
-                                  openInAppleMaps(dest);
+                                  openExternalNavigation(dest);
                                 }}
                                 accessibilityRole="button"
-                                accessibilityLabel={t('map.openInAppleMaps')}
+                                accessibilityLabel={t('map.openExternalNavigation')}
                               >
                                 <Ionicons name="map" size={22} color="#fff" />
                               </Pressable>
@@ -4502,6 +4586,10 @@ export default function MapScreen({ route, navigation }: Props) {
         // Don't persist on pick — stage the place for the bottom confirm card
         // (Add / Cancel). Resolves immediately so the search sheet closes.
         onPick={handleSearchPick}
+        onOpenCoordinateEntry={() => {
+          closeSearch();
+          openCoordinateSheet(undefined);
+        }}
       />
 
       <PaywallSheet
@@ -4520,6 +4608,16 @@ export default function MapScreen({ route, navigation }: Props) {
           setKmlVisible(false);
           openPaywall('paywall.triggerDestinations');
         }}
+      />
+
+      <CoordinateDestinationSheet
+        visible={coordSheetVisible}
+        initialCoordinates={coordSheetInitial}
+        onClose={() => {
+          setCoordSheetVisible(false);
+          setCoordSheetInitial(undefined);
+        }}
+        onSubmit={handleCoordinateDestination}
       />
 
       {/* Meet-time editor: date + time + red-threshold warning + Set/Clear */}

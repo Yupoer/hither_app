@@ -30,6 +30,8 @@ export interface DestinationSearchProps {
    * persisted; the sheet shows a spinner until it does, then closes.
    */
   onPick: (place: PlaceResult) => Promise<void>;
+  /** Opens the shared coordinate destination sheet (manual lat/lng). */
+  onOpenCoordinateEntry?: () => void;
 }
 
 /**
@@ -44,6 +46,7 @@ export default React.memo(function DestinationSearch({
   onClose,
   biasRegion,
   onPick,
+  onOpenCoordinateEntry,
 }: DestinationSearchProps) {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
@@ -144,13 +147,26 @@ export default React.memo(function DestinationSearch({
             </Pressable>
           </View>
 
+          {onOpenCoordinateEntry ? (
+            <Pressable
+              onPress={onOpenCoordinateEntry}
+              style={styles.coordEntry}
+              accessibilityRole="button"
+              accessibilityLabel={t('coord.manualEntry')}
+            >
+              <Text style={[styles.coordEntryText, { color: colors.accent }]}>
+                {t('coord.manualEntry')}
+              </Text>
+            </Pressable>
+          ) : null}
+
           {searching ? (
             <View style={styles.statusRow}>
               <ActivityIndicator color={colors.accent} />
               <Text style={styles.statusText}>{t('search.searching')}</Text>
             </View>
           ) : query.trim() && results.length === 0 ? (
-            <Text style={styles.statusText}>{t('search.noResults')}</Text>
+            <Text style={styles.statusText}>{t('search.quotaOrOffline')}</Text>
           ) : null}
 
           <FlatList
@@ -231,6 +247,11 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   cancelText: { color: colors.accent, fontSize: 15, fontWeight: '600' },
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   statusText: { color: glass.textSecondary, fontSize: 14 },
+  coordEntry: {
+    paddingVertical: spacing.sm,
+    alignSelf: 'flex-start',
+  },
+  coordEntryText: { fontSize: 15, fontWeight: '600' },
   list: { flex: 1 },
   resultRow: {
     flexDirection: 'row',
