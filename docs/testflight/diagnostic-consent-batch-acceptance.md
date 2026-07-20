@@ -26,3 +26,12 @@ npm run typecheck
 - Offline flush uses 1/5/15/30 min backoff; switch-off purges pending local Log rows.
 
 Native MetricKit enable/disable requires a development build with `hither-metrics` (Expo Go cannot load custom native modules).
+
+## Navigation terminal conflict canary
+
+- Enable diagnostics, record EAS update id/runtime version, then start and stop one team navigation.
+- Double-tap/rapidly invoke stop: one terminal RPC is sent; UI returns to paused.
+- Background and foreground the app; wait through two 5-minute fallback-poll windows.
+- No `active navigation session version mismatch` burst appears in Postgres logs.
+- Repeating the already-cancelled RPC returns the same cancelled row/version without push or timestamp mutation.
+- A deliberately stale version against an active canary row still returns SQLSTATE `40001` once.
