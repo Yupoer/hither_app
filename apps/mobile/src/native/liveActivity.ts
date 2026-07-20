@@ -1,12 +1,16 @@
 /**
- * Live Activity boundary (iOS ActivityKit / Dynamic Island).
+ * Live Activity boundary (iOS ActivityKit / Dynamic Island + Android Live Updates).
  *
- * There is NO Expo-Go-compatible implementation: ActivityKit requires a
- * custom native module and a Dev Build. In Expo Go these are safe no-ops,
- * so screens can call them freely
- * without crashing. On an EAS Dev Build the native module
- * `HitherLiveActivity` (`apps/mobile/modules/hither-live-activity`) is
- * present and backs every call through the same interface.
+ * There is NO Expo-Go-compatible implementation: ActivityKit and Android
+ * Live Updates require a custom native module and a Dev Build. In Expo Go
+ * these are safe no-ops, so screens can call them freely without crashing.
+ * On an EAS Dev Build the native module `HitherLiveActivity`
+ * (`apps/mobile/modules/hither-live-activity`) is present and backs every
+ * call through the same interface.
+ *
+ * iOS handles are ActivityKit activity ids; Android handles are stable
+ * navigation session ids. Optional chaining on the module alone is not
+ * enough — methods must also be optional-called.
  */
 import {
   requireOptionalNativeModule,
@@ -31,24 +35,26 @@ type HitherLiveActivityEvents = {
 };
 
 type HitherLiveActivityModule = {
-  addListener<EventName extends keyof HitherLiveActivityEvents>(
+  addListener?: <EventName extends keyof HitherLiveActivityEvents>(
     eventName: EventName,
     listener: HitherLiveActivityEvents[EventName],
-  ): EventSubscription;
-  startPushToStartTokenObservation(): Promise<void>;
-  observeExistingActivities(): Promise<void>;
-  startGroupActivity(state: GroupActivityState): Promise<ActivityStartResult | null>;
-  updateGroupActivity(
+  ) => EventSubscription;
+  startPushToStartTokenObservation?: () => Promise<void>;
+  observeExistingActivities?: () => Promise<void>;
+  startGroupActivity?: (state: GroupActivityState) => Promise<ActivityStartResult | null>;
+  updateGroupActivity?: (
     handle: ActivityHandle,
     state: GroupActivityState,
-  ): Promise<void>;
-  updateAllGroupActivities(state: GroupActivityState): Promise<void>;
-  endGroupActivity(handle: ActivityHandle): Promise<void>;
-  endAllGroupActivities(): Promise<void>;
+  ) => Promise<void>;
+  updateAllGroupActivities?: (state: GroupActivityState) => Promise<void>;
+  endGroupActivity?: (handle: ActivityHandle) => Promise<void>;
+  endAllGroupActivities?: () => Promise<void>;
 };
 
 const HitherLiveActivity =
   requireOptionalNativeModule<HitherLiveActivityModule>('HitherLiveActivity');
+
+const NOOP_SUBSCRIPTION: EventSubscription = { remove() {} };
 
 export interface GroupActivityState {
   groupName: string;
@@ -90,18 +96,13 @@ export interface ActivityStartResult {
 export async function startGroupActivity(
   state: GroupActivityState,
 ): Promise<ActivityStartResult | null> {
-  if (!HitherLiveActivity) {
-    return null;
-  }
-  return HitherLiveActivity.startGroupActivity(state);
+  return (await HitherLiveActivity?.startGroupActivity?.(state)) ?? null;
 }
 
 export function addPushTokenListener(
   listener: (event: PushTokenEvent) => void,
 ): EventSubscription {
-  return HitherLiveActivity?.addListener('onPushToken', listener) ?? {
-    remove() {},
-  };
+  return HitherLiveActivity?.addListener?.('onPushToken', listener) ?? NOOP_SUBSCRIPTION;
 }
 
 /** Update a running Live Activity. No-op when unsupported. */
@@ -109,38 +110,38 @@ export async function updateGroupActivity(
   handle: ActivityHandle,
   state: GroupActivityState,
 ): Promise<void> {
-  await HitherLiveActivity?.updateGroupActivity(handle, state);
+  await HitherLiveActivity?.updateGroupActivity?.(handle, state);
 }
 
 export function addPushToStartTokenListener(
   listener: (event: PushToStartTokenEvent) => void,
 ): EventSubscription {
-  return HitherLiveActivity?.addListener('onPushToStartToken', listener) ?? {
-    remove() {},
-  };
+  return (
+    HitherLiveActivity?.addListener?.('onPushToStartToken', listener) ?? NOOP_SUBSCRIPTION
+  );
 }
 
 export async function startPushToStartTokenObservation(): Promise<void> {
-  await HitherLiveActivity?.startPushToStartTokenObservation();
+  await HitherLiveActivity?.startPushToStartTokenObservation?.();
 }
 
 export async function observeExistingActivities(): Promise<void> {
-  await HitherLiveActivity?.observeExistingActivities();
+  await HitherLiveActivity?.observeExistingActivities?.();
 }
 
 /** Update every Hither activity from a headless background location callback. */
 export async function updateAllGroupActivities(
   state: GroupActivityState,
 ): Promise<void> {
-  await HitherLiveActivity?.updateAllGroupActivities(state);
+  await HitherLiveActivity?.updateAllGroupActivities?.(state);
 }
 
 /** End a running Live Activity. No-op when unsupported. */
 export async function endGroupActivity(handle: ActivityHandle): Promise<void> {
-  await HitherLiveActivity?.endGroupActivity(handle);
+  await HitherLiveActivity?.endGroupActivity?.(handle);
 }
 
 /** End every Hither Live Activity on this device. No-op when unsupported. */
 export async function endAllGroupActivities(): Promise<void> {
-  await HitherLiveActivity?.endAllGroupActivities();
+  await HitherLiveActivity?.endAllGroupActivities?.();
 }

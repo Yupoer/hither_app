@@ -1,18 +1,12 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const apns = readFileSync(
-  join(__dirname, '../../../../supabase/functions/send-push/apns.ts'),
-  'utf8',
-);
-const messages = readFileSync(
-  join(__dirname, '../../../../supabase/functions/send-push/messages.ts'),
-  'utf8',
-);
-const handler = readFileSync(
-  join(__dirname, '../../../../supabase/functions/send-push/index.ts'),
-  'utf8',
-);
+const sendPushDir = join(__dirname, '../../../../supabase/functions/send-push');
+const apns = readFileSync(join(sendPushDir, 'apns.ts'), 'utf8');
+const messages = readFileSync(join(sendPushDir, 'messages.ts'), 'utf8');
+const handler = readFileSync(join(sendPushDir, 'index.ts'), 'utf8');
+const fcmPath = join(sendPushDir, 'fcm.ts');
+const fcm = existsSync(fcmPath) ? readFileSync(fcmPath, 'utf8') : '';
 
 describe('navigation ActivityKit push orchestration', () => {
   it('builds an ActivityKit start request with the production liveactivity topic', () => {
@@ -53,5 +47,19 @@ describe('navigation ActivityKit push orchestration', () => {
     expect(handler).toContain('navigationSessionId: payload.session_id');
     expect(handler).toContain('status: "starting"');
     expect(handler).toContain('attributesType: "HitherGroupAttributes"');
+  });
+
+  it('fans out device alerts through APNs and FCM by platform', () => {
+    expect(existsSync(fcmPath)).toBe(true);
+    expect(fcm).toContain('buildFcmMessage');
+    expect(fcm).toContain('FIREBASE_SERVICE_ACCOUNT_JSON');
+    expect(fcm).toContain('isFcmDeadToken');
+    expect(handler).toContain('select("user_id, token, platform")');
+    expect(handler).toContain('platform === "android"');
+    expect(handler).toContain('sendFcm');
+    expect(handler).toContain('apnsSent');
+    expect(handler).toContain('fcmSent');
+    expect(handler).toContain('location_refresh');
+    expect(handler).toContain('sendFcmData');
   });
 });

@@ -37,7 +37,8 @@ describe('MetricKit native spool contract', () => {
     const android = readFileSync(androidPath, 'utf8');
     const bridge = readFileSync(join(root, 'src/native/metrics.ts'), 'utf8');
     const app = readFileSync(join(root, 'App.tsx'), 'utf8');
-    expect(android).toContain('emptyList');
+    // Android still returns empty MetricKit spool (no crash SDK).
+    expect(android).toMatch(/drainPayloads[\s\S]{0,200}emptyList/);
     expect(bridge).toContain('drainPayloads');
     expect(bridge).toContain('removePayloads');
     expect(bridge).toContain('setCollectionEnabled');
@@ -50,12 +51,45 @@ describe('MetricKit native spool contract', () => {
     expect(app).not.toContain("errorCode: 'metric_upload_failed'");
   });
 
+  it('Android HitherMetrics declares the full JS bridge surface with runtime sampling', () => {
+    const android = readFileSync(androidPath, 'utf8');
+    for (const name of [
+      'drainPayloads',
+      'removePayloads',
+      'samplePerformance',
+      'setCollectionEnabled',
+      'purgePayloads',
+      'previousLaunch',
+      'markLaunchPhase',
+    ]) {
+      expect(android).toContain(`AsyncFunction("${name}")`);
+    }
+    expect(android).toContain('sampleRuntime');
+    expect(android).toContain('Debug.MemoryInfo');
+  });
+
   it('reports false when HitherMetrics native module is absent', async () => {
     jest.resetModules();
     jest.doMock('expo-modules-core', () => ({
       requireOptionalNativeModule: () => null,
     }));
     const metrics = await import('../native/metrics');
+    await expect(metrics.setCollectionEnabled(true)).resolves.toBe(false);
+    await expect(metrics.purgePayloads()).resolves.toBeUndefined();
+    await expect(metrics.drainPayloads()).resolves.toEqual([]);
+    await expect(metrics.markLaunchPhase('js_root_mounted')).resolves.toBeUndefined();
+    await expect(metrics.previousLaunch()).resolves.toBeNull();
+  });
+
+  it('reports safe defaults when HitherMetrics methods are missing', async () => {
+    jest.resetModules();
+    jest.doMock('expo-modules-core', () => ({
+      // Module object exists (dev build) but methods not yet stubbed.
+      requireOptionalNativeModule: () => ({}),
+    }));
+    const metrics = await import('../native/metrics');
+    await expect(metrics.markLaunchPhase('js_root_mounted')).resolves.toBeUndefined();
+    await expect(metrics.previousLaunch()).resolves.toBeNull();
     await expect(metrics.setCollectionEnabled(true)).resolves.toBe(false);
     await expect(metrics.purgePayloads()).resolves.toBeUndefined();
     await expect(metrics.drainPayloads()).resolves.toEqual([]);
@@ -73,6 +107,9 @@ describe('MetricKit native spool contract', () => {
     expect(swift).not.toContain('synchronize()');
     expect(bridge).toContain('export async function previousLaunch');
     expect(bridge).toContain('export async function markLaunchPhase');
+    // Double optional: module present + method missing must not throw.
+    expect(bridge).toMatch(/markLaunchPhase\?\./);
+    expect(bridge).toMatch(/previousLaunch\?\./);
     expect(app).toContain("metrics.markLaunchPhase('js_root_mounted')");
     expect(app).toContain("event: 'previous_launch_incomplete'");
   });

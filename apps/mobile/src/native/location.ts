@@ -50,6 +50,39 @@ export interface LocationPermissionState {
   backgroundCanAskAgain: boolean;
 }
 
+/**
+ * UI-facing permission class for Android UX copy.
+ * Domain logic must not depend on platform-specific branches of this type.
+ */
+export type LocationPermissionUx =
+  | 'granted'
+  | 'foreground_denied'
+  | 'background_denied'
+  | 'approximate_only';
+
+/**
+ * Classify permission for user messaging. Approximate-only is inferred when
+ * foreground is granted but the latest sample accuracy is very coarse
+ * (≥ 500 m); callers pass the latest accuracy when available.
+ */
+export function classifyLocationPermissionUx(
+  state: LocationPermissionState,
+  latestAccuracyM?: number | null,
+): LocationPermissionUx {
+  if (state.foregroundStatus !== 'granted') return 'foreground_denied';
+  if (state.backgroundStatus != null && state.backgroundStatus !== 'granted') {
+    return 'background_denied';
+  }
+  if (
+    latestAccuracyM != null &&
+    Number.isFinite(latestAccuracyM) &&
+    latestAccuracyM >= 500
+  ) {
+    return 'approximate_only';
+  }
+  return 'granted';
+}
+
 function toSample(p: Location.LocationObject): LocationSample {
   return {
     coordinates: {

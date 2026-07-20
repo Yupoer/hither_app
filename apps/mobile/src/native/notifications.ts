@@ -2,25 +2,45 @@
  * Notifications boundary.
  *
  * The ONLY module that imports `expo-notifications`. Phase A: local
- * notifications + permission work in Expo Go. Remote push (APNs device
- * token) is NOT reliably available in Expo Go and is the native module's
- * job (`apps/mobile/modules/hither-notifications`, Phase B) — here
- * {@link getDevicePushToken} returns null and warns instead of throwing.
+ * notifications + permission work in Expo Go. Remote push (APNs/FCM device
+ * token) is NOT available in Android Expo Go — skip before calling remote
+ * token APIs and warn once to use a development build.
  *
  * Deciding WHEN to push / WHO to push is server-side (Supabase Edge Function
- * + APNs), out of this client boundary's scope.
+ * + APNs/FCM), out of this client boundary's scope.
  *
  * Phase B seam: the custom native module `HitherNotifications`
  * (`apps/mobile/modules/hither-notifications`) backs {@link getDevicePushToken}
  * on a Dev Build; absent in Expo Go, where it returns null.
  */
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import * as Notifications from 'expo-notifications';
+import { Platform } from 'react-native';
 
 /** Custom native module; `null` in Expo Go / when not built. */
 const HitherNotifications = requireOptionalNativeModule<{
-  getDevicePushToken(): Promise<string | null>;
+  getDevicePushToken?: () => Promise<string | null>;
 }>('HitherNotifications');
+
+let warnedAndroidExpoGoRemotePush = false;
+
+function isAndroidExpoGo(): boolean {
+  if (Platform.OS !== 'android') return false;
+  return (
+    Constants.executionEnvironment === ExecutionEnvironment.StoreClient ||
+    Constants.appOwnership === 'expo'
+  );
+}
+
+function warnAndroidExpoGoRemotePushOnce(): void {
+  if (warnedAndroidExpoGoRemotePush) return;
+  warnedAndroidExpoGoRemotePush = true;
+  console.warn(
+    '[native/notifications] Android Expo Go does not support remote push notifications. ' +
+      'Use an Android development build (expo run:android / EAS dev client).',
+  );
+}
 
 export interface LocalNotificationInput {
   title: string;
@@ -51,15 +71,31 @@ export async function requestPermission(): Promise<boolean> {
  * Native device push token (APNs/FCM). Returns null in Expo Go or when
  * unavailable, so callers must treat remote push as best-effort until a
  * Dev Build with the native module ships.
+ *
+ * Optional `HitherNotifications` is used only when it returns a non-empty
+ * string. null / empty / missing methods fall through to expo-notifications
+ * (FCM on Android, APNs on iOS). Android 13+ notification permission is
+ * requested once via requestPermission(); denial returns null without retry
+ * loops in this function.
  */
 export async function getDevicePushToken(): Promise<string | null> {
+  if (isAndroidExpoGo()) {
+    warnAndroidExpoGoRemotePushOnce();
+    return null;
+  }
+
   if (HitherNotifications) {
     try {
-      return await HitherNotifications.getDevicePushToken();
+      const fromNative = await HitherNotifications.getDevicePushToken?.();
+      if (typeof fromNative === 'string' && fromNative.trim().length > 0) {
+        return fromNative.trim();
+      }
+      // null / empty: fall through to Expo (FCM/APNs).
     } catch {
       // fall through to the Expo implementation
     }
   }
+
   try {
     const granted = await requestPermission();
     if (!granted) {

@@ -448,6 +448,16 @@ describe('notifications, commands & journey', () => {
       expect.objectContaining({ user_id: 'uid', token: 'hextoken', platform: 'ios' }),
       { onConflict: 'user_id,token' },
     );
+
+    await savePushToken('fcm-token', 'android');
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: 'uid',
+        token: 'fcm-token',
+        platform: 'android',
+      }),
+      { onConflict: 'user_id,token' },
+    );
   });
 
   it('sendCommand inserts a command with the sender id', async () => {

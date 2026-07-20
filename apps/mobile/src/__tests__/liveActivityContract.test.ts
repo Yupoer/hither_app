@@ -22,6 +22,13 @@ const widgetAttributes = readFileSync(
 const jsBridge = readFileSync(join(__dirname, '../native/liveActivity.ts'), 'utf8');
 const liveHook = readFileSync(join(__dirname, '../state/useLiveActivity.ts'), 'utf8');
 const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const androidModule = readFileSync(
+  join(
+    __dirname,
+    '../../modules/hither-live-activity/android/src/main/java/expo/modules/hitherliveactivity/HitherLiveActivityModule.kt',
+  ),
+  'utf8',
+);
 const widget = readFileSync(
   join(__dirname, '../../targets/live-activity/HitherLiveActivity.swift'),
   'utf8',
@@ -80,6 +87,25 @@ describe('ActivityKit remote push contract', () => {
     expect(jsBridge).toContain('endAllGroupActivities');
     expect(liveHook).toContain('clearLiveActivities');
     expect(liveHook).toContain('endAllGroupActivities');
+  });
+
+  it('Android Live Activity module exposes every JS-facing method (Live Updates)', () => {
+    for (const name of [
+      'isSupported',
+      'startGroupActivity',
+      'updateGroupActivity',
+      'updateAllGroupActivities',
+      'endGroupActivity',
+      'endAllGroupActivities',
+      'startPushToStartTokenObservation',
+      'observeExistingActivities',
+    ]) {
+      expect(androidModule).toContain(name);
+    }
+    // Real Live Update service (not a pure no-op stub).
+    expect(androidModule).toContain('HitherLiveUpdateService');
+    expect(jsBridge).toMatch(/startPushToStartTokenObservation\?\./);
+    expect(jsBridge).toMatch(/observeExistingActivities\?\./);
   });
 
   it('clears Live Activities on leave, sign-out, and MyTeams leave', () => {
