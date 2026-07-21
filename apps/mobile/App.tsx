@@ -40,6 +40,7 @@ import {
 } from './src/state/logBatchScheduler';
 import { setDiagnosticConsentEnabled } from './src/state/diagnosticConsent';
 import { uploadLocalLogs } from './src/utils/uploadLocalLogs';
+import { startOtaUpdateBootstrap } from './src/utils/otaUpdates';
 
 // Dynamic Type: scale with the system up to GLOBAL_FONT_SCALE_CAP, then freeze.
 // Per-role caps (HitherText) may be tighter. Never reintroduce a hard 1.0 cap.
@@ -238,6 +239,9 @@ export default function App() {
       })
       .catch(() => undefined);
   }, []);
+
+  // TestFlight/store: fetch + reload OTA without requiring a second cold start.
+  useEffect(() => startOtaUpdateBootstrap(), []);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

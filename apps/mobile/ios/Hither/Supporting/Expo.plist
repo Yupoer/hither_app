@@ -7,7 +7,7 @@
     <key>EXUpdatesEnabled</key>
     <true/>
     <key>EXUpdatesLaunchWaitMs</key>
-    <integer>0</integer>
+    <integer>3000</integer>
     <key>EXUpdatesURL</key>
     <string>https://u.expo.dev/0f62ed14-1f2e-4d7b-b5b6-4eda273f2e35</string>
     <key>EXUpdatesRuntimeVersion</key>

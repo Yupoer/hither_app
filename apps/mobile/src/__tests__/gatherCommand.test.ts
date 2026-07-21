@@ -197,7 +197,7 @@ describe('resolveNavCommand', () => {
       }),
     ).toMatchObject({
       kind: 'member_waiting_complete',
-      label: '正在等待隊長完成此行程',
+      label: '等待隊長完成',
       disabled: true,
       action: 'none',
     });

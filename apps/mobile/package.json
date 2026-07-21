@@ -49,7 +49,6 @@
     "expo-haptics": "~56.0.3",
     "expo-linear-gradient": "~56.0.4",
     "expo-location": "~56.0.21",
-    "expo-modules-core": "~56.0.21",
     "expo-notifications": "~56.0.21",
     "expo-secure-store": "~56.0.4",
     "expo-sqlite": "~56.0.5",
@@ -75,7 +74,6 @@
   "devDependencies": {
     "@emnapi/core": "1.11.2",
     "@emnapi/runtime": "1.11.2",
-    "@expo/config-plugins": "~56.0.13",
     "@testing-library/react-native": "~13.3.3",
     "@types/jest": "^29.5.12",
     "@types/react": "~19.2.14",
