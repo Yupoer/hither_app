@@ -32,6 +32,7 @@ export default React.memo(function MeetCountdown({
   variant = 'compact',
   formatMinutes,
   formatDue,
+  onDueChange,
   adjustsFontSizeToFit = false,
   minimumFontScale = 0.7,
 }: {
@@ -42,8 +43,10 @@ export default React.memo(function MeetCountdown({
   variant?: 'compact' | 'minutes';
   /** Used when variant is `minutes` — e.g. (m) => t('map.meetMinutes', { minutes: m }). */
   formatMinutes?: (minutes: number) => string;
-  /** When meet time is due/past — e.g. (time) => t('map.meetDue', { time }). */
+  /** When meet time is due/past — e.g. (time) => t('map.meetAtClock', { time }). */
   formatDue?: (time: string) => string;
+  /** Fires when countdown crosses into/out of "due" so caption can switch. */
+  onDueChange?: (due: boolean) => void;
   /** Shrink long minute labels inside fixed-width meet chrome. */
   adjustsFontSizeToFit?: boolean;
   minimumFontScale?: number;
@@ -73,6 +76,10 @@ export default React.memo(function MeetCountdown({
       : totalSec >= 3600
         ? formatCompactDurationFromMinutes(Math.floor(totalSec / 60))
         : `${Math.floor(totalSec / 60)}:${String(totalSec % 60).padStart(2, '0')}`;
+
+  useEffect(() => {
+    onDueChange?.(due);
+  }, [due, onDueChange]);
 
   return (
     <Text
