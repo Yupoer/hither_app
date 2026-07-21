@@ -98,9 +98,18 @@ describe('CoordinateDestinationSheet wiring contract', () => {
     // Manual lat/lng entry remains available from search.
     expect(mapScreen).toContain('CoordinateDestinationSheet');
     expect(mapScreen).toContain('handleCoordinateDestination');
-    // iOS + Android share long-press; members notify leader when cannot edit.
+    // iOS + Android share long-press. Always open confirm card first (name editable);
+    // members notify leader only on confirm Add via handlePickDestination.
     expect(mapScreen).toContain('onLongPressCoordinate={handleLongPressCoordinate}');
+    const longPressStart = mapScreen.indexOf('const handleLongPressCoordinate = useCallback');
+    const longPressEnd = mapScreen.indexOf('const handleCoordinateDestination', longPressStart);
+    expect(longPressStart).toBeGreaterThanOrEqual(0);
+    expect(longPressEnd).toBeGreaterThan(longPressStart);
+    const longPressBlock = mapScreen.slice(longPressStart, longPressEnd);
+    expect(longPressBlock).toContain('setPendingPlace(place)');
+    expect(longPressBlock).not.toContain('notifyLeaderPlace');
     expect(mapScreen).toContain('notifyLeaderPlace');
+    expect(mapScreen).toContain('handlePickDestination(place)');
     expect(mapScreen).toContain('mediumTap()');
     expect(groupMap).toContain('moveOnMarkerPress={false}');
     expect(groupMap).toContain('showsPointsOfInterest: false');
