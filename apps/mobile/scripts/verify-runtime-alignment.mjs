@@ -11,8 +11,10 @@ const app = json('app.json').expo;
 const pods = json('ios/Podfile.properties.json');
 const lock = readFileSync('ios/Podfile.lock', 'utf8');
 
-if (app.runtimeVersion?.policy !== 'fingerprint') {
-  fail('runtimeVersion must use fingerprint policy');
+// Bare workflow requires a string. Store binaries advertise "0.1.3";
+// fingerprint-hash OTAs never match those installs.
+if (app.runtimeVersion !== '0.1.3') {
+  fail('runtimeVersion must be the string "0.1.3" (matches store/TestFlight)');
 }
 if (!['hermes', 'jsc'].includes(pods['expo.jsEngine'])) {
   fail('ios expo.jsEngine must be hermes or jsc');
