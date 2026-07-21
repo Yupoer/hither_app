@@ -17,5 +17,9 @@ describe('foreground arrival feedback', () => {
       /const personallyArrived = myCompletedDestinationIds\.has\(dest\.id\) \|\| \(\s*autoArrivedDestId === dest\.id/,
     );
     expect(source).toContain('arrivalDimOverlay');
+    expect(source).toContain('arrivalCenterCheckLayer');
+    expect(source).toContain('1_600');
+    expect(source).toContain('COMPLETE_PROMPT_DELAY_MS');
+    expect(source).not.toContain('arrivalCheckBadge');
   });
 });

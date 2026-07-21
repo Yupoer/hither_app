@@ -35,6 +35,7 @@ export default function OverlaySheet({
   title,
   accent,
   doneLabel = 'Done',
+  opaque = false,
   children,
 }: {
   visible: boolean;
@@ -44,6 +45,8 @@ export default function OverlaySheet({
   title: string;
   accent: string;
   doneLabel?: string;
+  /** 100% opaque panel (no map bleed-through). Used by Settings. */
+  opaque?: boolean;
   children: React.ReactNode;
 }) {
   const { height } = useWindowDimensions();
@@ -175,7 +178,10 @@ export default function OverlaySheet({
           { height: height - insets.top - 16, transform: [{ translateY }] },
         ]}
       >
-        <liquidGlass.GlassView tintColor={glass.overlay} style={StyleSheet.absoluteFill} />
+        <liquidGlass.GlassView
+          tintColor={opaque ? glass.overlayOpaque : glass.overlay}
+          style={StyleSheet.absoluteFill}
+        />
         <View {...grabberPan.panHandlers}>
           <View style={styles.grabZone}>
             <View style={styles.grabber} />

@@ -44,6 +44,7 @@ describe('location privacy and diagnostics UI contract', () => {
 
     expect(settings).toContain('diagnosticsEnabled');
     expect(settings).toContain("process.env.EXPO_PUBLIC_DIAGNOSTICS_ENABLED === 'true'");
+    expect(settings).toContain('opaque');
     expect(diagnostics).toContain('buildNumber');
     expect(diagnostics).toContain('navigationSessionId');
     expect(diagnostics).toContain('trackingMode');

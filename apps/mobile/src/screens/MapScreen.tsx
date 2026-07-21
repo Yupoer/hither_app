@@ -26,7 +26,13 @@ import {
   View,
 } from 'react-native';
 
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+// New Architecture: setLayoutAnimationEnabledExperimental is a no-op and
+// logs a WARN on Android. Only enable on the legacy paper UIManager.
+if (
+  Platform.OS === 'android'
+  && UIManager.setLayoutAnimationEnabledExperimental
+  && !(global as { nativeFabricUIManager?: unknown }).nativeFabricUIManager
+) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 import DateTimePicker, {
@@ -41,6 +47,7 @@ import Animated, {
   FadeIn,
   FadeOut,
   ZoomIn,
+  ZoomOut,
   LinearTransition,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -509,31 +516,68 @@ export default function MapScreen({ route, navigation }: Props) {
   const userIdRef = useRef(user?.id);
   userIdRef.current = user?.id;
   const workflowInFlightRef = useRef<Promise<void> | null>(null);
+  /** Set while a load is in flight so a concurrent request re-runs after. */
+  const workflowPendingRef = useRef(false);
   const workflowLastLoadAtRef = useRef(0);
   const WORKFLOW_MIN_INTERVAL_MS = 2_500;
 
   const loadGatheringWorkflow = useCallback(async () => {
     if (!groupId || isDemoGroup(groupId)) return;
-    // Single-flight: coalesce concurrent reloads into one network round-trip.
+    // Single-flight with pending re-run: a second caller during an in-flight
+    // fetch must not return stale arrivals (e.g. mark then realtime overlap).
     if (workflowInFlightRef.current) {
+      workflowPendingRef.current = true;
       await workflowInFlightRef.current;
-      return;
+      if (!workflowPendingRef.current) return;
     }
-    const run = (async () => {
-      const [arrivals, requests] = await Promise.all([
-        fetchDestinationArrivals(groupId),
-        isLeaderRef.current
-          ? fetchPendingGatherPointRequests(groupId)
-          : Promise.resolve([]),
-      ]);
-      setDestinationArrivals(arrivals);
-      setGatherPointRequests(requests);
-      workflowLastLoadAtRef.current = Date.now();
-    })();
-    workflowInFlightRef.current = run.finally(() => {
-      workflowInFlightRef.current = null;
+    do {
+      workflowPendingRef.current = false;
+      const run = (async () => {
+        const [arrivals, requests] = await Promise.all([
+          fetchDestinationArrivals(groupId),
+          isLeaderRef.current
+            ? fetchPendingGatherPointRequests(groupId)
+            : Promise.resolve([]),
+        ]);
+        setDestinationArrivals(arrivals);
+        setGatherPointRequests(requests);
+        workflowLastLoadAtRef.current = Date.now();
+      })();
+      workflowInFlightRef.current = run.finally(() => {
+        workflowInFlightRef.current = null;
+      });
+      await workflowInFlightRef.current;
+    } while (workflowPendingRef.current);
+  }, [groupId]);
+
+  /** Optimistic arrival row so N/M progress updates before reload finishes. */
+  const patchLocalArrival = useCallback((
+    destinationId: string,
+    targetUserId: string,
+    arrived: boolean,
+    arrivedAt?: string | null,
+  ) => {
+    setDestinationArrivals((prev) => {
+      const without = prev.filter(
+        (row) => !(row.destinationId === destinationId && row.userId === targetUserId),
+      );
+      if (!arrived) return without;
+      if (prev.some((row) => row.destinationId === destinationId && row.userId === targetUserId)) {
+        return prev;
+      }
+      return [
+        ...without,
+        {
+          id: `local-${destinationId}-${targetUserId}`,
+          groupId: groupId ?? '',
+          destinationId,
+          userId: targetUserId,
+          arrivedAt: arrivedAt ?? new Date().toISOString(),
+          source: 'manual' as const,
+          markedBy: targetUserId,
+        },
+      ];
     });
-    await workflowInFlightRef.current;
   }, [groupId]);
 
   const scheduleWorkflowReload = useCallback(() => {
@@ -1113,6 +1157,7 @@ export default function MapScreen({ route, navigation }: Props) {
         });
         void setDestinationArrival(navTarget.id, user.id, true)
           .then(() => {
+            patchLocalArrival(navTarget.id, user.id, true);
             void loadGatheringWorkflow();
           })
           .catch(() => {
@@ -1130,6 +1175,7 @@ export default function MapScreen({ route, navigation }: Props) {
     navTarget,
     navigationSessionState.ack,
     navigationSessionState.session,
+    patchLocalArrival,
     user?.id,
   ]);
   const initialJourneyRef = useRef<{
@@ -1901,9 +1947,9 @@ export default function MapScreen({ route, navigation }: Props) {
     user?.id,
   ]);
 
-  // Shared arrive feedback: confetti + haptic; optional stop nav / complete prompt.
-  // Leader: skip the 「已抵達」Alert and open complete dialog only (arrive ≠ complete).
-  // Member: one arrive notice. Never show raw i18n keys like "map.arriveBody".
+  // Shared arrive feedback: center check animation (1.6s) + haptic; complete
+  // prompt after animation + 1s. Leader skips the plain 「已抵達」Alert.
+  // Permanent arrived state is the arrival button style only (no badge).
   afterPersonalArrivalRef.current = (destination, opts) => {
     const alreadyShown = arrivalFeedbackShownRef.current === destination.id;
     if (!alreadyShown) {
@@ -1912,12 +1958,15 @@ export default function MapScreen({ route, navigation }: Props) {
       alertBuzz();
       setTimeout(() => {
         setArrivalCelebrateDestId((cur) => (cur === destination.id ? null : cur));
-      }, 2_400);
+      }, 1_600);
     }
     if (opts?.stopNav) void stopNavigation();
 
+    const COMPLETE_PROMPT_DELAY_MS = 1_600 + 1_000;
     if (opts?.promptComplete && isLeader) {
-      promptCompleteAfterArrival(destination);
+      setTimeout(() => {
+        promptCompleteAfterArrival(destination);
+      }, alreadyShown ? 0 : COMPLETE_PROMPT_DELAY_MS);
       return;
     }
 
@@ -1930,10 +1979,15 @@ export default function MapScreen({ route, navigation }: Props) {
       const body = !raw || raw === 'map.arriveBody' || raw.includes('map.arriveBody')
         ? fallback
         : raw;
-      Alert.alert(t('map.arriveTitle'), body);
+      // After center animation so it does not stack with the check overlay.
+      setTimeout(() => {
+        Alert.alert(t('map.arriveTitle'), body);
+      }, 1_600);
     }
     if (opts?.promptComplete && !isLeader) {
-      promptCompleteAfterArrival(destination);
+      setTimeout(() => {
+        promptCompleteAfterArrival(destination);
+      }, alreadyShown ? 0 : COMPLETE_PROMPT_DELAY_MS);
     }
   };
 
@@ -1965,6 +2019,7 @@ export default function MapScreen({ route, navigation }: Props) {
           }
           await syncFromDatabase();
           await setDestinationArrival(destination.id, targetUserId, arrived);
+          patchLocalArrival(destination.id, targetUserId, arrived);
           await loadGatheringWorkflow();
         } catch (error) {
           Alert.alert(
@@ -1974,7 +2029,7 @@ export default function MapScreen({ route, navigation }: Props) {
         }
       })();
     });
-  }, [loadGatheringWorkflow, members, syncFromDatabase, t, user?.id]);
+  }, [loadGatheringWorkflow, members, patchLocalArrival, syncFromDatabase, t, user?.id]);
 
   const submitArrivalWithTimestamp = useCallback((
     destination: Destination,
@@ -1985,6 +2040,8 @@ export default function MapScreen({ route, navigation }: Props) {
       try {
         await syncFromDatabase();
         await setDestinationArrivalAt(destination.id, targetUserId, true, arrivedAt);
+        // Optimistic N/M progress before network reload finishes.
+        patchLocalArrival(destination.id, targetUserId, true, arrivedAt);
         await loadGatheringWorkflow();
         afterPersonalArrivalRef.current(destination, {
           stopNav: navTarget?.id === destination.id,
@@ -2000,6 +2057,7 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [
     loadGatheringWorkflow,
     navTarget?.id,
+    patchLocalArrival,
     syncFromDatabase,
     t,
   ]);
@@ -3545,23 +3603,33 @@ export default function MapScreen({ route, navigation }: Props) {
                           active && { borderColor: accentMix(accent, 50) },
                         ]}
                       >
-                    {personallyArrived ? (
+                    {(personallyArrived || arrivalCelebrateDestId === dest.id) ? (
                       <View pointerEvents="none" style={styles.arrivalDimOverlay} />
                     ) : null}
                     {arrivalCelebrateDestId === dest.id ? (
-                      <View pointerEvents="none" style={styles.arrivalConfettiLayer}>
-                        {['🎊', '✨', '🎉', '✨', '🎊'].map((emoji, i) => (
-                          <Text
-                            key={`confetti-${dest.id}-${i}`}
-                            style={[
-                              styles.arrivalConfettiPiece,
-                              { left: `${10 + i * 18}%`, top: 8 + (i % 3) * 14 },
-                            ]}
-                          >
-                            {emoji}
-                          </Text>
-                        ))}
-                      </View>
+                      <Animated.View
+                        pointerEvents="none"
+                        entering={FadeIn.duration(280)}
+                        exiting={FadeOut.duration(320)}
+                        style={styles.arrivalCenterCheckLayer}
+                      >
+                        <Animated.View
+                          entering={ZoomIn.duration(360).springify().damping(14)}
+                          exiting={ZoomOut.duration(280)}
+                          style={[
+                            styles.arrivalCenterCheckBox,
+                            cardExpanded
+                              ? styles.arrivalCenterCheckBoxExpanded
+                              : styles.arrivalCenterCheckBoxCollapsed,
+                          ]}
+                        >
+                          <Ionicons
+                            name="checkmark"
+                            size={cardExpanded ? 36 : 22}
+                            color={glass.ok}
+                          />
+                        </Animated.View>
+                      </Animated.View>
                     ) : null}
                     {/* Top arrival hairline — team progress toward this stop. */}
                     {cardExpanded ? (
@@ -3627,16 +3695,6 @@ export default function MapScreen({ route, navigation }: Props) {
                               )}
                             </Animated.View>
                           )}
-                          {personallyArrived ? (
-                            <Animated.View
-                              entering={ZoomIn.duration(260).springify().damping(14)}
-                              exiting={FadeOut.duration(220)}
-                              style={styles.arrivalCheckBadge}
-                              pointerEvents="none"
-                            >
-                              <Ionicons name="checkmark" size={14} color={glass.ok} />
-                            </Animated.View>
-                          ) : null}
                         </View>
                         {/* Collapsed / expanded swap in-tree — one shot, no Zoom / layout morph. */}
                         {cardExpanded ? (
@@ -3847,7 +3905,15 @@ export default function MapScreen({ route, navigation }: Props) {
                           }}
                           disabled={journeyBusy || navCmd.disabled}
                           accessibilityRole="button"
-                          accessibilityLabel={navCmd.label}
+                          accessibilityLabel={
+                            navCmd.kind === 'leader_mark_complete'
+                              ? '完成此行程'
+                              : navCmd.kind === 'member_plan'
+                                ? '路徑規劃'
+                                : navCmd.kind === 'member_close_plan'
+                                  ? '關閉路線圖'
+                                  : navCmd.label
+                          }
                           accessibilityState={{ disabled: journeyBusy || navCmd.disabled }}
                         >
                           <Ionicons
@@ -3891,6 +3957,8 @@ export default function MapScreen({ route, navigation }: Props) {
                               ]}
                               numberOfLines={navCmd.kind === 'member_waiting_complete' ? 2 : 1}
                               ellipsizeMode="tail"
+                              adjustsFontSizeToFit
+                              minimumFontScale={0.75}
                             >
                               {navCmd.label}
                             </Text>
@@ -5412,19 +5480,34 @@ const makeStyles = (
       right: 0,
       bottom: 0,
       left: 0,
-      backgroundColor: 'rgba(0, 0, 0, 0.24)',
+      backgroundColor: 'rgba(0, 0, 0, 0.28)',
       borderRadius: radius.lg,
+      zIndex: 3,
     },
-    arrivalCheckBadge: {
-      width: 22,
-      height: 22,
-      borderRadius: 11,
+    arrivalCenterCheckLayer: {
+      ...StyleSheet.absoluteFill,
+      zIndex: 5,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: accentMix(glass.ok, 18),
+      overflow: 'hidden',
+      borderRadius: radius.lg,
+    },
+    arrivalCenterCheckBox: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(12, 26, 18, 0.88)',
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.ok,
-      flexShrink: 0,
+    },
+    arrivalCenterCheckBoxExpanded: {
+      width: 56,
+      height: 56,
+      borderRadius: 12,
+    },
+    arrivalCenterCheckBoxCollapsed: {
+      width: 32,
+      height: 32,
+      borderRadius: 8,
     },
     cardDenseBody: {
       flexDirection: 'row',
@@ -5668,15 +5751,7 @@ const makeStyles = (
       flexShrink: 1,
       minWidth: 0,
     },
-    arrivalConfettiLayer: {
-      ...StyleSheet.absoluteFill,
-      zIndex: 4,
-      overflow: 'hidden',
-    },
-    arrivalConfettiPiece: {
-      position: 'absolute',
-      fontSize: 18,
-    },
+
     // Exact square secondary controls (travel mode). minHeight only so row can
     // stretch when meet grows taller under large Dynamic Type.
     cmdSquare: {
@@ -5697,10 +5772,11 @@ const makeStyles = (
     // Meet-time — flex-grows; minHeight floor only (no fixed height) so
     // countdown +「集合倒數」never clip under large/bold system type.
     meetBtn: {
-      flexGrow: 1.35,
+      // Slightly less grow so nav 「完成／路徑／關閉」keeps two characters visible.
+      flexGrow: 1.1,
       flexShrink: 1,
       flexBasis: 0,
-      minWidth: meetMinW,
+      minWidth: Math.max(48, meetMinW - 8),
       minHeight: cmdSize,
       borderRadius: s(15, 12),
       flexDirection: 'column',

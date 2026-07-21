@@ -60,8 +60,11 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(migrations).toContain('paused destination requires an existing arrival');
     expect(migrations).toContain('m.subgroup_id is not distinct from i.subgroup_id');
     // Sequential mark: earlier open stops for this user, not active_destination max.
+    // Past trip days are excluded so today's first visible card is markable.
     expect(migrations).toContain('i.position < v_destination.position');
     expect(migrations).toContain('i.closed_at is null');
+    expect(migrations).toContain('v_current_day');
+    expect(migrations).toContain('coalesce(i.day, 1) >= v_current_day');
     expect(migrations).toMatch(
       /on_member_location_arrival[\s\S]*insert into public\.destination_arrivals/,
     );
@@ -132,7 +135,8 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(client).toContain('completeGatheringStop');
     expect(mapScreen).toContain('projectHistoryForViewer');
     expect(mapScreen).toContain('completeGatheringStop');
-    expect(mapScreen).toContain('完成此行程');
+    expect(mapScreen).toContain('leader_mark_complete');
+    expect(migrations).toContain('coalesce(i.day, 1) >= v_current_day');
     expect(pushMessages).toContain('gathering_completed');
     expect(pushMessages).toContain('隊長已完成此卡片');
   });

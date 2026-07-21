@@ -16,7 +16,11 @@
       "ios": {
         "simulator": false
       },
-      "channel": "preview"
+      "channel": "preview",
+      "env": {
+        "EXPO_PUBLIC_DIAGNOSTICS_ENABLED": "true",
+        "EXPO_PUBLIC_DIAGNOSTIC_LEVEL": "verbose"
+      }
     },
     "androidQa": {
       "node": "22.16.0",
@@ -24,6 +28,10 @@
       "channel": "preview",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_DIAGNOSTICS_ENABLED": "true",
+        "EXPO_PUBLIC_DIAGNOSTIC_LEVEL": "verbose"
       }
     },
     "diagnostic": {

@@ -29,6 +29,7 @@ describe('measured performance regressions', () => {
     expect(mapScreen).toContain('tRef.current');
     expect(mapScreen).toContain('WORKFLOW_MIN_INTERVAL_MS');
     expect(mapScreen).toContain('workflowInFlightRef');
+    expect(mapScreen).toContain('workflowPendingRef');
     // Effect deps must not include bare `t` (historical SELECT storm).
     expect(mapScreen).toMatch(
       /}, \[groupId, loadGatheringWorkflow, scheduleWorkflowReload\]\);/,

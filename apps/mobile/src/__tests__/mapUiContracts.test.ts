@@ -233,9 +233,11 @@ describe('map UI placement contracts', () => {
     expect(cardBodyEnd).toBeGreaterThan(cardBodyStart);
     expect(mapScreen.slice(cardBodyStart, cardBodyEnd)).not.toContain('ZoomIn');
     expect(mapScreen.slice(cardBodyStart, cardBodyEnd)).not.toContain('ZoomOut');
-    // Arrival feedback may use a checkmark-only enter animation in the kicker;
+    // Arrival feedback uses a centered check overlay (not kicker badge);
     // the expanded/collapsed card body must remain a one-shot swap.
-    expect(mapScreen).toContain('entering={ZoomIn.duration(260)');
+    expect(mapScreen).toContain('arrivalCenterCheckLayer');
+    expect(mapScreen).toContain('entering={ZoomIn.duration(360)');
+    expect(mapScreen).not.toContain('arrivalCheckBadge');
   });
 
   it('animates gathering-card page dots when swiping between stops', () => {
