@@ -19,6 +19,8 @@ export const glass = {
   sheetOpaque: 'rgb(40, 44, 52)',
   /** Stacked overlay sheet (search / route / settings) — more opaque. */
   overlay: 'rgba(22, 26, 34, 0.9)',
+  /** Fully opaque overlay (settings) — no map bleed-through. */
+  overlayOpaque: 'rgb(22, 26, 34)',
   /** Sheet header veil — thin, so content visibly blurs through beneath it. */
   headerVeil: 'rgba(22, 26, 34, 0.35)',
   /** Floating pills (group pill, role chip, recenter, FABs). */

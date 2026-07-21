@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { Platform } from 'react-native';
 import { supabase } from '../api/supabase';
 import { getNotificationPreferences } from '../api/client';
 import { notifications } from '../native';
@@ -68,18 +69,26 @@ export function useGroupNotifications(): void {
           .eq('user_id', myUserId)
           .maybeSingle();
         const meRow = me as { solo?: boolean; subgroup_id?: string | null } | null;
-        if (!soloErr && (meRow?.solo || meRow?.subgroup_id != null)) return;
+        // Solo mutes all group noise. Quick commands fan out whole-group on the
+        // server (including subgroup members), so do not mute subgroup here for
+        // leader/follower command categories — only solo.
+        const isCommand =
+          category === 'leaderCommands' || category === 'followerRequests';
+        if (!soloErr && meRow?.solo) return;
+        if (!soloErr && !isCommand && meRow?.subgroup_id != null) return;
 
         const prefs = await getNotificationPreferences();
         if (!prefs[category]) return;
-        // In production, use Realtime as a fallback only when this device has
-        // no registered APNs/FCM token. This avoids duplicate server + local
-        // alerts while keeping Expo Go / token-registration failures visible.
+        // In production, Realtime is a fallback when this device has no token
+        // for the *current* platform (mis-tagged tokens used to suppress local
+        // while APNs/FCM still never delivered).
         if (!__DEV__) {
+          const platform = Platform.OS === 'android' ? 'android' : 'ios';
           const { data: pushTokens } = await supabase
             .from('push_tokens')
-            .select('token')
+            .select('token, platform')
             .eq('user_id', myUserId)
+            .eq('platform', platform)
             .limit(1);
           if ((pushTokens ?? []).length > 0) return;
         }
@@ -109,8 +118,14 @@ export function useGroupNotifications(): void {
             message: string | null;
           };
           if (row.sender_id === myUserId) return; // never notify the sender
-          const leader = isLeaderCommand(row.type);
-          const label = tRef.current(`command.${row.type}` as const);
+          // custom is role-scoped on the server; treat as leader command when
+          // not a fixed follower type so leader_commands prefs apply.
+          const leader = row.type === 'custom'
+            ? true
+            : isLeaderCommand(row.type);
+          const label = row.type === 'custom'
+            ? (row.message?.trim() || tRef.current('map.cmdTitle'))
+            : tRef.current(`command.${row.type}` as const);
           const title = leader
             ? tRef.current('notif.leaderTitle', { label })
             : tRef.current('notif.memberTitle', { label });

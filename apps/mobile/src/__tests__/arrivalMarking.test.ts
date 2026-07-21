@@ -75,4 +75,21 @@ describe('canMarkDestinationArrival', () => {
       }),
     ).toBe(true);
   });
+
+  it('allows first visible card when only past-day stops exist earlier (carousel-scoped list)', () => {
+    // MapScreen passes filterActiveDestinations only — past days omitted.
+    const visibleToday = [
+      { id: 'day2-a', order: 5, subgroupId: null as string | null, closedAt: null as string | null },
+      { id: 'day2-b', order: 6, subgroupId: null, closedAt: null },
+    ];
+    expect(
+      canMarkDestinationArrival({
+        destId: 'day2-a',
+        destOrder: 5,
+        destSubgroupId: null,
+        scopedDestinations: visibleToday,
+        myArrivedDestinationIds: new Set(),
+      }),
+    ).toBe(true);
+  });
 });

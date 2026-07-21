@@ -35,6 +35,7 @@ describe('production mobile configuration', () => {
   it('keeps a Realtime notification fallback when no remote token exists', () => {
     expect(notifications).toContain(".from('push_tokens')");
     expect(notifications).toContain('if (!__DEV__)');
+    expect(notifications).toContain(".eq('platform', platform)");
     expect(notifications).not.toContain('if (!__DEV__ || !groupId || !myUserId) return;');
   });
 
@@ -53,6 +54,9 @@ describe('production mobile configuration', () => {
     );
     expect(easConfig.build.diagnostic.env.EXPO_PUBLIC_DIAGNOSTICS_ENABLED).toBe('true');
     expect(easConfig.build.diagnostic.env.EXPO_PUBLIC_DIAGNOSTIC_LEVEL).toBe('verbose');
+    // Preview / androidQa: members and leaders both get diagnostics export.
+    expect(easConfig.build.preview.env.EXPO_PUBLIC_DIAGNOSTICS_ENABLED).toBe('true');
+    expect(easConfig.build.androidQa.env.EXPO_PUBLIC_DIAGNOSTICS_ENABLED).toBe('true');
     expect(easConfig.build.production.env.EXPO_PUBLIC_DIAGNOSTICS_ENABLED).toBe('false');
     expect(easConfig.build.production.env.EXPO_PUBLIC_DIAGNOSTIC_LEVEL).toBe('minimal');
     expect(easConfig.build.production.env.EXPO_PUBLIC_PERFORMANCE_TRACING).toBe('full');

@@ -24,7 +24,7 @@ describe('deriveCardNavFlags (shared vs local — MapScreen wiring inputs)', () 
         ...flags,
         pendingComplete: false,
       }),
-    ).toMatchObject({ kind: 'member_close_plan', label: '關閉路線圖' });
+    ).toMatchObject({ kind: 'member_close_plan', label: '關閉' });
   });
 
   it('shared session wins over member local plan on the same stop', () => {
@@ -60,7 +60,7 @@ describe('deriveCardNavFlags (shared vs local — MapScreen wiring inputs)', () 
         ...flags,
         pendingComplete: false,
       }).label,
-    ).toBe('路徑規劃');
+    ).toBe('路徑');
   });
 
   it('leader flock uses shared or pending busy target only', () => {
@@ -117,7 +117,7 @@ describe('resolveNavCommand', () => {
     ).toMatchObject({ kind: 'leader_stop', label: '結束', action: 'stop_nav' });
   });
 
-  it('shows 完成此行程 once the leader has arrived (with or without defer)', () => {
+  it('shows 完成 once the leader has arrived (with or without defer)', () => {
     expect(
       resolveNavCommand({
         isLeader: true,
@@ -128,7 +128,7 @@ describe('resolveNavCommand', () => {
       }),
     ).toMatchObject({
       kind: 'leader_mark_complete',
-      label: '完成此行程',
+      label: '完成',
       action: 'mark_complete',
       disabled: false,
     });
@@ -142,7 +142,7 @@ describe('resolveNavCommand', () => {
       }),
     ).toMatchObject({
       kind: 'leader_mark_complete',
-      label: '完成此行程',
+      label: '完成',
       action: 'mark_complete',
     });
   });
@@ -155,7 +155,7 @@ describe('resolveNavCommand', () => {
       localRouteThis: false,
       pendingComplete: false,
     });
-    expect(plan).toMatchObject({ kind: 'member_plan', label: '路徑規劃', disabled: false });
+    expect(plan).toMatchObject({ kind: 'member_plan', label: '路徑', disabled: false });
     expect(plan.label).not.toBe('導航');
 
     expect(
@@ -166,7 +166,7 @@ describe('resolveNavCommand', () => {
         localRouteThis: true,
         pendingComplete: false,
       }),
-    ).toMatchObject({ kind: 'member_close_plan', label: '關閉路線圖' });
+    ).toMatchObject({ kind: 'member_close_plan', label: '關閉' });
   });
 
   it('disables member control as 導航中 while leader navigates', () => {
@@ -213,6 +213,8 @@ describe('resolveCompletePrompt', () => {
       stopAlreadyComplete: false,
     });
     expect(r.kind).toBe('leader_all_arrived');
+    expect(r.title).toBe('已完成');
+    expect(r.message).toContain('已抵達此集合點，是否要完成？');
     expect(r.message).toContain('所有隊員都已抵達');
     expect(r.confirmLabel).toBe('已完成此集合點');
     expect(r.deferLabel).toBe('先不要完成');
@@ -226,6 +228,8 @@ describe('resolveCompletePrompt', () => {
       stopAlreadyComplete: false,
     });
     expect(r.kind).toBe('leader_missing_members');
+    expect(r.title).toBe('已完成');
+    expect(r.message).toContain('已抵達此集合點，是否要完成？');
     expect(r.message).toContain('小明');
     expect(r.message).toContain('小華');
     expect(r.deferLabel).toBe('先不要完成');

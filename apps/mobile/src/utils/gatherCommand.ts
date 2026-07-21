@@ -90,7 +90,8 @@ export function resolveNavCommand(input: NavCommandInput): NavCommandResult {
     if (personallyArrived) {
       return {
         kind: 'leader_mark_complete',
-        label: '完成此行程',
+        // Short label for the command-row chip; a11y can use a longer phrase.
+        label: '完成',
         disabled: false,
         action: 'mark_complete',
       };
@@ -131,14 +132,14 @@ export function resolveNavCommand(input: NavCommandInput): NavCommandResult {
   if (localRouteThis) {
     return {
       kind: 'member_close_plan',
-      label: '關閉路線圖',
+      label: '關閉',
       disabled: false,
       action: 'close_plan',
     };
   }
   return {
     kind: 'member_plan',
-    label: '路徑規劃',
+    label: '路徑',
     disabled: false,
     action: 'start_plan',
   };
@@ -178,8 +179,8 @@ export function resolveCompletePrompt(input: CompletePromptInput): CompletePromp
     if (input.allArrived || input.missingMemberNames.length === 0) {
       return {
         kind: 'leader_all_arrived',
-        title: '完成此集合點？',
-        message: '所有隊員都已抵達。是否將此卡片加入歷史行程？',
+        title: '已完成',
+        message: '已抵達此集合點，是否要完成？所有隊員都已抵達。',
         confirmLabel: '已完成此集合點',
         deferLabel: '先不要完成',
       };
@@ -187,8 +188,8 @@ export function resolveCompletePrompt(input: CompletePromptInput): CompletePromp
     const names = input.missingMemberNames.join('、');
     return {
       kind: 'leader_missing_members',
-      title: '完成此集合點？',
-      message: `現在還有 ${names} 還沒抵達，是否要完成這個集合點？`,
+      title: '已完成',
+      message: `已抵達此集合點，是否要完成？現在還有 ${names} 還沒抵達。`,
       confirmLabel: '完成集合點',
       deferLabel: '先不要完成',
     };
