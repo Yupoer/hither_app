@@ -75,11 +75,14 @@ describe('production mobile configuration', () => {
     expect(easConfig.update).toBeUndefined();
   });
 
-  it('fingerprints every native runtime so an incompatible OTA cannot load', () => {
+  it('pins OTA runtime to appVersion so store builds (runtime 0.1.3) receive updates', () => {
+    // TestFlight / Play production binaries still advertise runtimeVersion
+    // "0.1.3" (app version). fingerprint policy OTAs never match those installs.
     expect(appConfig.expo.updates?.url).toBe(
       'https://u.expo.dev/0f62ed14-1f2e-4d7b-b5b6-4eda273f2e35',
     );
-    expect(appConfig.expo.runtimeVersion).toEqual({ policy: 'fingerprint' });
+    expect(appConfig.expo.runtimeVersion).toEqual({ policy: 'appVersion' });
+    expect(appConfig.expo.version).toBe('0.1.3');
     expect(appConfig.expo.extra?.eas?.projectId).toBe(
       '0f62ed14-1f2e-4d7b-b5b6-4eda273f2e35',
     );
