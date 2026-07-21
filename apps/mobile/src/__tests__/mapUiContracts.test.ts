@@ -233,10 +233,15 @@ describe('map UI placement contracts', () => {
     expect(cardBodyEnd).toBeGreaterThan(cardBodyStart);
     expect(mapScreen.slice(cardBodyStart, cardBodyEnd)).not.toContain('ZoomIn');
     expect(mapScreen.slice(cardBodyStart, cardBodyEnd)).not.toContain('ZoomOut');
-    // Arrival feedback uses a centered check overlay (not kicker badge);
+    // Arrival feedback uses a centered solid check overlay (not kicker badge);
     // the expanded/collapsed card body must remain a one-shot swap.
     expect(mapScreen).toContain('arrivalCenterCheckLayer');
-    expect(mapScreen).toContain('entering={ZoomIn.duration(360)');
+    // Ease-only ZoomIn — no springify bounce on the celebrate check.
+    expect(mapScreen).toContain('entering={ZoomIn.duration(240)}');
+    expect(mapScreen).not.toMatch(
+      /arrivalCenterCheckLayer[\s\S]{0,400}ZoomIn\.duration\([^)]+\)\.springify/,
+    );
+    expect(mapScreen).toContain('backgroundColor: glass.ok');
     expect(mapScreen).not.toContain('arrivalCheckBadge');
   });
 

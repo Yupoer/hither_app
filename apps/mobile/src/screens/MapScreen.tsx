@@ -1790,17 +1790,10 @@ export default function MapScreen({ route, navigation }: Props) {
   const handleLongPressCoordinate = useCallback(
     (coordinates: { latitude: number; longitude: number }) => {
       mediumTap();
-      // Same confirm card as search-pick: editable name only (no lat/lng).
+      // Same confirm card for leaders and members: editable name, then Add.
+      // Members only notify the leader when they tap Add (handlePickDestination).
       // Do not zoom/center — keep the map where the user long-pressed.
       const defaultName = t('map.droppedPin');
-      if (!canEditItinerary) {
-        void notifyLeaderPlace([{
-          title: defaultName,
-          coordinates,
-          day: tripDayForAdd(),
-        }], 'search');
-        return;
-      }
       const place: PlaceResult = {
         id: `drop-${coordinates.latitude.toFixed(5)}-${coordinates.longitude.toFixed(5)}-${Date.now()}`,
         name: defaultName,
@@ -1809,7 +1802,7 @@ export default function MapScreen({ route, navigation }: Props) {
       setPendingPlace(place);
       setPendingPlaceTitle(defaultName);
     },
-    [canEditItinerary, notifyLeaderPlace, t, tripDayForAdd],
+    [t],
   );
 
   const handleCoordinateDestination = useCallback(
@@ -3663,13 +3656,14 @@ export default function MapScreen({ route, navigation }: Props) {
                     {arrivalCelebrateDestId === dest.id ? (
                       <Animated.View
                         pointerEvents="none"
-                        entering={FadeIn.duration(280)}
-                        exiting={FadeOut.duration(320)}
+                        entering={FadeIn.duration(220)}
+                        exiting={FadeOut.duration(220)}
                         style={styles.arrivalCenterCheckLayer}
                       >
                         <Animated.View
-                          entering={ZoomIn.duration(360).springify().damping(14)}
-                          exiting={ZoomOut.duration(280)}
+                          // No springify — ease-in only, no bounce/overshoot.
+                          entering={ZoomIn.duration(240)}
+                          exiting={ZoomOut.duration(200)}
                           style={[
                             styles.arrivalCenterCheckBox,
                             cardExpanded
@@ -3679,8 +3673,8 @@ export default function MapScreen({ route, navigation }: Props) {
                         >
                           <Ionicons
                             name="checkmark"
-                            size={cardExpanded ? 36 : 22}
-                            color={glass.ok}
+                            size={cardExpanded ? 32 : 20}
+                            color="#fff"
                           />
                         </Animated.View>
                       </Animated.View>
@@ -5593,19 +5587,19 @@ const makeStyles = (
     arrivalCenterCheckBox: {
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: 'rgba(12, 26, 18, 0.88)',
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: glass.ok,
+      // Solid green disc — filled check, not outline-on-dark.
+      backgroundColor: glass.ok,
+      borderWidth: 0,
     },
     arrivalCenterCheckBoxExpanded: {
       width: 56,
       height: 56,
-      borderRadius: 12,
+      borderRadius: 28,
     },
     arrivalCenterCheckBoxCollapsed: {
       width: 32,
       height: 32,
-      borderRadius: 8,
+      borderRadius: 16,
     },
     cardDenseBody: {
       flexDirection: 'row',
