@@ -9,6 +9,7 @@ import {
   ActionSheetIOS,
   ActivityIndicator,
   Alert,
+  AppState,
   LayoutAnimation,
   Linking,
   NativeScrollEvent,
@@ -376,6 +377,17 @@ export default function MapScreen({ route, navigation }: Props) {
     highAccuracy,
   });
   const navigationSessionState = useNavigationSession(groupId);
+  // Cold start / return from background: re-pull active flock session so
+  // members immediately enter nav mode without tapping「路徑」.
+  useEffect(() => {
+    const onAppState = (next: string) => {
+      if (next !== 'active' || !groupId) return;
+      void navigationSessionState.refresh().catch(() => undefined);
+      void refresh().catch(() => undefined);
+    };
+    const sub = AppState.addEventListener('change', onAppState);
+    return () => sub.remove();
+  }, [groupId, navigationSessionState.refresh, refresh]);
   const group = state?.group ?? membership?.group ?? null;
 
   const mapRef = useRef<GroupMapHandle | null>(null);
@@ -984,7 +996,11 @@ export default function MapScreen({ route, navigation }: Props) {
     mapRef,
     carouselRef,
     setSelectedIndex,
+    // Prefer live session. Only fall back to legacy journey_status while the
+    // first fetch is still in flight (undefined), so a cold-start member still
+    // enters flock nav as soon as the active session row is available.
     navigationSession: navigationSessionState.loading
+      && !navigationSessionState.session
       ? undefined
       : navigationSessionState.session,
     startSession: navigationSessionState.start,
@@ -1064,18 +1080,12 @@ export default function MapScreen({ route, navigation }: Props) {
     highAccuracy,
   });
 
-  // Foreground arrival: local GPS + tools radius. Works without session (local
-  // plan) and with null accuracy. ACK + DB mark when inside radius.
-  const effectiveArrivalRadiusM = Math.max(
+  // Foreground arrival: tools slider is the product geofence (30/50/100/300).
+  // Session rows default to 50 m and must not shrink a user-chosen 300 m.
+  const localArrivalRadiusM = Math.max(
     ARRIVAL_RADIUS_MIN_M,
-    Math.min(
-      ARRIVAL_RADIUS_MAX_M,
-      navigationSessionState.session?.destination.arrivalRadiusMeters ?? arrivalRadiusM,
-    ),
+    Math.min(ARRIVAL_RADIUS_MAX_M, arrivalRadiusM),
   );
-  // Prefer the tighter of session default and the tools slider so a user who
-  // set 30m still auto-arrives inside 30m even if the session row says 50.
-  const localArrivalRadiusM = Math.min(effectiveArrivalRadiusM, arrivalRadiusM);
   const foregroundArrivalRef = useRef<{ key: string; state: ArrivalState } | null>(null);
   const foregroundAckRef = useRef<string | null>(null);
   const autoArrivalMarkedRef = useRef<string | null>(null);
@@ -1089,8 +1099,13 @@ export default function MapScreen({ route, navigation }: Props) {
   >(() => undefined);
 
   useEffect(() => {
+    // Auto-arrive while navigating (shared flock session or local path plan).
+    // tools slider radius is authoritative (e.g. 300 m).
     if (!journeyActive || !navTarget || !deviceCoords) {
       foregroundArrivalRef.current = null;
+      return;
+    }
+    if (myCompletedDestinationIds.has(navTarget.id)) {
       return;
     }
     const session = navigationSessionState.session;
@@ -1102,7 +1117,7 @@ export default function MapScreen({ route, navigation }: Props) {
       foregroundAckRef.current = null;
     }
     const straightM = distanceMeters(deviceCoords, navTarget.coordinates);
-    // Product: tools radius is the geofence (e.g. 50 m) — not only distance 0.
+    // Product: tools radius is the geofence (e.g. 300 m) — not only distance 0.
     const insideRadius = hasArrived(straightM, localArrivalRadiusM);
     const previous = foregroundArrivalRef.current?.key === key
       ? foregroundArrivalRef.current.state
@@ -1172,6 +1187,7 @@ export default function MapScreen({ route, navigation }: Props) {
     journeyActive,
     loadGatheringWorkflow,
     localArrivalRadiusM,
+    myCompletedDestinationIds,
     navTarget,
     navigationSessionState.ack,
     navigationSessionState.session,
@@ -1773,6 +1789,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const handleLongPressCoordinate = useCallback(
     (coordinates: { latitude: number; longitude: number }) => {
+      mediumTap();
       openCoordinateSheet(coordinates);
     },
     [openCoordinateSheet],
@@ -3600,7 +3617,9 @@ export default function MapScreen({ route, navigation }: Props) {
                         tintColor={active ? glass.cardActive : glass.card}
                         style={[
                           styles.card,
-                          active && { borderColor: accentMix(accent, 50) },
+                          // Active state uses fill only — no theme-color rim
+                          // (Android hairline + accent reads as a harsh outline).
+                          active ? styles.cardActiveBorder : null,
                         ]}
                       >
                     {(personallyArrived || arrivalCelebrateDestId === dest.id) ? (
@@ -3967,10 +3986,7 @@ export default function MapScreen({ route, navigation }: Props) {
                       ) : null}
 
                       <Pressable
-                        style={[
-                          styles.cmdSquare,
-                          { backgroundColor: accentMix(accent, 16), borderColor: accentMix(accent, 38) },
-                        ]}
+                        style={styles.cmdSquare}
                         onPress={(event) => {
                           event.stopPropagation();
                           registerCardActivity(dest.id);
@@ -3995,10 +4011,7 @@ export default function MapScreen({ route, navigation }: Props) {
                           style={[
                             styles.cmdSquare,
                             styles.arrivalCmdSquare,
-                            {
-                              backgroundColor: accentMix(glass.ok, 28),
-                              borderColor: glass.ok,
-                            },
+                            styles.arrivalCmdArrived,
                           ]}
                           onPress={(event) => {
                             event.stopPropagation();
@@ -4020,7 +4033,6 @@ export default function MapScreen({ route, navigation }: Props) {
                           style={[
                             styles.cmdSquare,
                             styles.arrivalCmdSquare,
-                            { backgroundColor: accentMix(accent, 16), borderColor: accentMix(accent, 38) },
                           ]}
                           onPress={(event) => {
                             event.stopPropagation();
@@ -5438,8 +5450,11 @@ const makeStyles = (
       paddingTop: s(compact ? 14 : 16, 10),
       paddingBottom: s(compact ? 14 : 16, 10),
       borderWidth: StyleSheet.hairlineWidth,
-      // BUG-10: inactive cards have no white halo; active border set inline.
-      borderColor: 'transparent',
+      // Soft system-gray rim only — never theme/accent outline.
+      borderColor: glass.hairlineSoft,
+    },
+    cardActiveBorder: {
+      borderColor: glass.hairline,
     },
     // Top arrival hairline (design 1b) — full-bleed above the padded content.
     arrivalHairline: {
@@ -5766,8 +5781,13 @@ const makeStyles = (
       justifyContent: 'center',
       backgroundColor: 'rgba(255,255,255,0.09)',
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: glass.hairline,
+      // Neutral rim — avoid accent outlines on Android.
+      borderColor: glass.hairlineSoft,
       overflow: 'hidden',
+    },
+    arrivalCmdArrived: {
+      backgroundColor: accentMix(glass.ok, 22),
+      borderColor: glass.hairlineSoft,
     },
     // Meet-time — flex-grows; minHeight floor only (no fixed height) so
     // countdown +「集合倒數」never clip under large/bold system type.

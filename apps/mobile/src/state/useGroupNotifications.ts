@@ -79,10 +79,11 @@ export function useGroupNotifications(): void {
 
         const prefs = await getNotificationPreferences();
         if (!prefs[category]) return;
-        // In production, Realtime is a fallback when this device has no token
-        // for the *current* platform (mis-tagged tokens used to suppress local
-        // while APNs/FCM still never delivered).
-        if (!__DEV__) {
+        // Quick commands: always deliver via Realtime local notification while
+        // the app process is alive. Skipping local whenever any push token
+        // exists left iOS members silent when APNs failed but FCM/Android
+        // path worked for the leader. Remote APNs still covers killed apps.
+        if (!__DEV__ && !isCommand) {
           const platform = Platform.OS === 'android' ? 'android' : 'ios';
           const { data: pushTokens } = await supabase
             .from('push_tokens')

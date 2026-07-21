@@ -42,6 +42,81 @@ const pausedState = {
 } as unknown as GroupState;
 
 describe('useJourneyNavigation', () => {
+  it('member joins shared flock nav without tapping 路徑 when session is active', () => {
+    const activeSession = {
+      id: 'session-member',
+      status: 'active',
+      destinationId: destination.id,
+      destination: {
+        name: destination.title,
+        coordinates: destination.coordinates,
+        arrivalRadiusMeters: 50,
+      },
+    } as NavigationSession;
+    let navigation: ReturnType<typeof useJourneyNavigation> | undefined;
+    function Harness() {
+      navigation = useJourneyNavigation({
+        state: pausedState,
+        groupId: 'group-1',
+        isLeader: false,
+        destinations: [destination],
+        selectedDestination: destination,
+        fromCoords: undefined,
+        refresh: jest.fn(),
+        t: (key) => key,
+        mapRef: { current: null },
+        carouselRef: { current: null },
+        setSelectedIndex: jest.fn(),
+        navigationSession: activeSession,
+      });
+      return null;
+    }
+    act(() => {
+      create(React.createElement(Harness));
+    });
+    expect(navigation?.sharedTargetId).toBe(destination.id);
+    expect(navigation?.journeyActive).toBe(true);
+    expect(navigation?.navTarget?.id).toBe(destination.id);
+    expect(navigation?.localTargetId).toBeNull();
+  });
+
+  it('member synthesizes navTarget from session when stop is not in carousel list', () => {
+    const activeSession = {
+      id: 'session-past-day',
+      status: 'active',
+      destinationId: 'hidden-stop',
+      destination: {
+        name: '昨日站',
+        coordinates: { latitude: 25.0, longitude: 121.5 },
+        arrivalRadiusMeters: 300,
+      },
+    } as NavigationSession;
+    let navigation: ReturnType<typeof useJourneyNavigation> | undefined;
+    function Harness() {
+      navigation = useJourneyNavigation({
+        state: pausedState,
+        groupId: 'group-1',
+        isLeader: false,
+        destinations: [destination],
+        selectedDestination: destination,
+        fromCoords: undefined,
+        refresh: jest.fn(),
+        t: (key) => key,
+        mapRef: { current: null },
+        carouselRef: { current: null },
+        setSelectedIndex: jest.fn(),
+        navigationSession: activeSession,
+      });
+      return null;
+    }
+    act(() => {
+      create(React.createElement(Harness));
+    });
+    expect(navigation?.journeyActive).toBe(true);
+    expect(navigation?.navTarget?.id).toBe('hidden-stop');
+    expect(navigation?.navTarget?.title).toBe('昨日站');
+  });
+
   it('keeps navigation active when refresh still returns the old paused snapshot', async () => {
     const refresh = jest.fn().mockResolvedValue(true);
     const startSession = jest.fn().mockResolvedValue({

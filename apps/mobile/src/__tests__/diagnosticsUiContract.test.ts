@@ -43,7 +43,8 @@ describe('location privacy and diagnostics UI contract', () => {
     const diagnostics = read('screens/MapScreen/components/DiagnosticsOverlay.tsx');
 
     expect(settings).toContain('diagnosticsEnabled');
-    expect(settings).toContain("process.env.EXPO_PUBLIC_DIAGNOSTICS_ENABLED === 'true'");
+    // Always-on for production + members (not env-gated / not leader-only).
+    expect(settings).toMatch(/const diagnosticsEnabled\s*=\s*true/);
     expect(settings).toContain('opaque');
     expect(diagnostics).toContain('buildNumber');
     expect(diagnostics).toContain('navigationSessionId');

@@ -29,8 +29,9 @@ import { THEME_ORDER, type ThemeName, themes } from '../../../theme';
 import { glass } from '../../../glass';
 
 const OTA_UPDATES_USABLE = !__DEV__ && Updates.isEnabled;
-const diagnosticsEnabled =
-  __DEV__ || process.env.EXPO_PUBLIC_DIAGNOSTICS_ENABLED === 'true';
+// Always available (leader + member, production included) so support can
+// export redacted runtime records without a special diagnostic build.
+const diagnosticsEnabled = true;
 
 interface SettingsOverlayProps {
   visible: boolean;

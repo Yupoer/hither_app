@@ -415,6 +415,8 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       showsCompass
       pitchEnabled
       rotateEnabled
+      // iOS MapKit + Android Google Maps share this path. Callers open the
+      // coordinate sheet (and play haptic) — keep this handler lean.
       onLongPress={(event) => {
         const coordinate = event.nativeEvent.coordinate;
         if (!coordinate) return;
@@ -422,6 +424,8 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
         if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
         onLongPressCoordinate?.({ latitude, longitude });
       }}
+      // Help long-press win over pan on both platforms (esp. iOS MapKit).
+      moveOnMarkerPress={false}
       onUserLocationChange={(event) => {
         const coordinate = event.nativeEvent.coordinate;
         if (!coordinate) return;
