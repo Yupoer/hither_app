@@ -11,10 +11,10 @@ const app = json('app.json').expo;
 const pods = json('ios/Podfile.properties.json');
 const lock = readFileSync('ios/Podfile.lock', 'utf8');
 
-// Store binaries (TestFlight / Play) still advertise runtimeVersion = app
-// version (e.g. "0.1.3"). fingerprint OTAs never match those installs.
-if (app.runtimeVersion?.policy !== 'appVersion') {
-  fail('runtimeVersion must use appVersion policy (matches store runtime 0.1.x)');
+// Bare workflow requires a string. Store binaries advertise "0.1.3";
+// fingerprint-hash OTAs never match those installs.
+if (app.runtimeVersion !== '0.1.3') {
+  fail('runtimeVersion must be the string "0.1.3" (matches store/TestFlight)');
 }
 if (!['hermes', 'jsc'].includes(pods['expo.jsEngine'])) {
   fail('ios expo.jsEngine must be hermes or jsc');
