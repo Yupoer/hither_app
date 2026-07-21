@@ -152,7 +152,9 @@ export default function QuickCommandsCard({
     const label = cmd.label;
     const message = cmd.message;
     try {
-      await sendCommand(groupId, 'custom', message);
+      // Prefer short label for notification title (隊長/成員：{label});
+      // fall back to message body when label is empty.
+      await sendCommand(groupId, 'custom', label.trim() || message);
       Alert.alert(t('command.sent'));
     } catch {
       Alert.alert(t('command.sendFailed'));

@@ -239,6 +239,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
       accent={accent}
       doneLabel={t('map.done')}
       opaque
+      edgeToEdge
     >
       <ScrollView contentContainerStyle={styles.overlayBody}>
         {/* ── 個人設定 ─────────────────────────────────────────── */}

@@ -1790,9 +1790,29 @@ export default function MapScreen({ route, navigation }: Props) {
   const handleLongPressCoordinate = useCallback(
     (coordinates: { latitude: number; longitude: number }) => {
       mediumTap();
-      openCoordinateSheet(coordinates);
+      // Same confirm card as search-pick: editable name only (no lat/lng).
+      const defaultName = t('map.droppedPin');
+      if (!canEditItinerary) {
+        void notifyLeaderPlace([{
+          title: defaultName,
+          coordinates,
+          day: tripDayForAdd(),
+        }], 'search');
+        return;
+      }
+      const place: PlaceResult = {
+        id: `drop-${coordinates.latitude.toFixed(5)}-${coordinates.longitude.toFixed(5)}-${Date.now()}`,
+        name: defaultName,
+        coordinates,
+      };
+      setPendingPlace(place);
+      setPendingPlaceTitle(defaultName);
+      mapRef.current?.centerOn(coordinates, {
+        zoom: PLACE_ZOOM,
+        altitude: PLACE_ALTITUDE,
+      });
     },
-    [openCoordinateSheet],
+    [canEditItinerary, notifyLeaderPlace, t, tripDayForAdd],
   );
 
   const handleCoordinateDestination = useCallback(
@@ -2055,16 +2075,23 @@ export default function MapScreen({ route, navigation }: Props) {
   ) => {
     void (async () => {
       try {
-        await syncFromDatabase();
-        await setDestinationArrivalAt(destination.id, targetUserId, true, arrivedAt);
-        // Optimistic N/M progress before network reload finishes.
+        // Optimistic: same center-check animation as passive auto-arrival,
+        // before network latency so active/manual mark feels identical.
         patchLocalArrival(destination.id, targetUserId, true, arrivedAt);
-        await loadGatheringWorkflow();
         afterPersonalArrivalRef.current(destination, {
           stopNav: navTarget?.id === destination.id,
           promptComplete: true,
         });
+        await syncFromDatabase();
+        await setDestinationArrivalAt(destination.id, targetUserId, true, arrivedAt);
+        await loadGatheringWorkflow();
       } catch (error) {
+        // Roll back local mark if the shared write fails.
+        patchLocalArrival(destination.id, targetUserId, false);
+        if (arrivalFeedbackShownRef.current === destination.id) {
+          arrivalFeedbackShownRef.current = null;
+        }
+        setArrivalCelebrateDestId((cur) => (cur === destination.id ? null : cur));
         Alert.alert(
           t('arrival.failedTitle'),
           arrivalErrorMessage(error, t),
@@ -3428,10 +3455,14 @@ export default function MapScreen({ route, navigation }: Props) {
                     style={styles.confirmTitleInput}
                     numberOfLines={1}
                     maxLength={120}
-                    placeholder={pendingPlace.name}
+                    placeholder={pendingPlace.name || t('map.droppedPin')}
                     placeholderTextColor={glass.textTertiary}
                     accessibilityLabel={t('confirmGather.going', { name: pendingPlace.name })}
+                    accessibilityHint={t('map.droppedPinHint')}
                   />
+                  <Text style={styles.confirmNameHint} numberOfLines={1}>
+                    {t('map.droppedPinHint')}
+                  </Text>
                   <View style={styles.confirmEtaRow}>
                     {pMin ? (
                       <Text style={[styles.confirmMin, { color: accent }]} numberOfLines={1}>
@@ -3535,9 +3566,15 @@ export default function MapScreen({ route, navigation }: Props) {
               const meetLabel = dest.meetAt
                 ? (() => {
                     const mins = minutesUntil(dest.meetAt as string, new Date());
-                    return mins >= 0
-                      ? t('meetTime.countdown', { minutes: mins })
-                      : t('meetTime.overdue', { minutes: Math.abs(mins) });
+                    if (mins >= 0) {
+                      return t('meetTime.countdown', { minutes: mins });
+                    }
+                    const clock = new Date(dest.meetAt as string).toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      hour12: false,
+                    });
+                    return t('map.meetDue', { time: clock });
                   })()
                 : null;
               // Team arrival toward THIS stop — how many of the flock are
@@ -3924,15 +3961,7 @@ export default function MapScreen({ route, navigation }: Props) {
                           }}
                           disabled={journeyBusy || navCmd.disabled}
                           accessibilityRole="button"
-                          accessibilityLabel={
-                            navCmd.kind === 'leader_mark_complete'
-                              ? '完成此行程'
-                              : navCmd.kind === 'member_plan'
-                                ? '路徑規劃'
-                                : navCmd.kind === 'member_close_plan'
-                                  ? '關閉路線圖'
-                                  : navCmd.label
-                          }
+                          accessibilityLabel={navCmd.label}
                           accessibilityState={{ disabled: journeyBusy || navCmd.disabled }}
                         >
                           <Ionicons
@@ -4084,6 +4113,7 @@ export default function MapScreen({ route, navigation }: Props) {
                                 formatMinutes={(minutes) =>
                                   t('map.meetMinutes', { minutes })
                                 }
+                                formatDue={(time) => t('map.meetDue', { time })}
                                 adjustsFontSizeToFit
                                 minimumFontScale={0.7}
                                 baseStyle={[
@@ -5892,6 +5922,12 @@ const makeStyles = (
       paddingVertical: 0,
       paddingHorizontal: 2,
       minHeight: 26,
+    },
+    confirmNameHint: {
+      fontSize: 12,
+      color: glass.textTertiary,
+      marginLeft: 2,
+      marginBottom: 2,
     },
     confirmEtaRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
     confirmArrow: {

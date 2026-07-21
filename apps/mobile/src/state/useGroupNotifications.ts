@@ -119,22 +119,31 @@ export function useGroupNotifications(): void {
             message: string | null;
           };
           if (row.sender_id === myUserId) return; // never notify the sender
-          // custom is role-scoped on the server; treat as leader command when
-          // not a fixed follower type so leader_commands prefs apply.
-          const leader = row.type === 'custom'
-            ? true
-            : isLeaderCommand(row.type);
-          const label = row.type === 'custom'
-            ? (row.message?.trim() || tRef.current('map.cmdTitle'))
-            : tRef.current(`command.${row.type}` as const);
-          const title = leader
-            ? tRef.current('notif.leaderTitle', { label })
-            : tRef.current('notif.memberTitle', { label });
-          void fire(
-            leader ? 'leaderCommands' : 'followerRequests',
-            title,
-            row.message ?? label,
-          );
+          void (async () => {
+            // custom is role-scoped on the server (sender membership). Mirror
+            // that so titles say 隊長/成員, not a user id + raw command key.
+            let leader = isLeaderCommand(row.type);
+            if (row.type === 'custom') {
+              const { data: senderMem } = await supabase
+                .from('memberships')
+                .select('role')
+                .eq('group_id', groupId)
+                .eq('user_id', row.sender_id)
+                .maybeSingle();
+              leader = (senderMem as { role?: string } | null)?.role !== 'follower';
+            }
+            const label = row.type === 'custom'
+              ? (row.message?.trim() || tRef.current('map.cmdTitle'))
+              : tRef.current(`command.${row.type}` as const);
+            const title = leader
+              ? tRef.current('notif.leaderTitle', { label })
+              : tRef.current('notif.memberTitle', { label });
+            await fire(
+              leader ? 'leaderCommands' : 'followerRequests',
+              title,
+              row.message ?? label,
+            );
+          })();
         },
       )
       .on(

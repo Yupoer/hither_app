@@ -159,12 +159,17 @@ export function buildMessage(p: PushPayload): { title: string; body: string } {
       };
     }
     case "leader_commands": {
-      const label = (p.type && COMMAND_LABEL[p.type]) || "指令";
-      return { title: `${p.sender_name ?? "隊員"}：${label}`, body: p.message ?? label };
+      // Role prefix (隊長), not nickname/user id — matches in-app local copy.
+      const label = p.type === "custom"
+        ? (p.message?.trim() || COMMAND_LABEL.custom || "指令")
+        : ((p.type && COMMAND_LABEL[p.type]) || "指令");
+      return { title: `隊長：${label}`, body: p.message?.trim() || label };
     }
     case "follower_requests": {
-      const label = (p.type && COMMAND_LABEL[p.type]) || "請求";
-      return { title: `${p.sender_name ?? "隊員"}：${label}`, body: p.message ?? label };
+      const label = p.type === "custom"
+        ? (p.message?.trim() || COMMAND_LABEL.custom || "請求")
+        : ((p.type && COMMAND_LABEL[p.type]) || "請求");
+      return { title: `成員：${label}`, body: p.message?.trim() || label };
     }
     default:
       return { title: "Hither", body: p.message ?? "" };

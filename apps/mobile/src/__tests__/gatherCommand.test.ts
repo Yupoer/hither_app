@@ -24,7 +24,7 @@ describe('deriveCardNavFlags (shared vs local — MapScreen wiring inputs)', () 
         ...flags,
         pendingComplete: false,
       }),
-    ).toMatchObject({ kind: 'member_close_plan', label: '關閉' });
+    ).toMatchObject({ kind: 'member_close_plan', label: '結束' });
   });
 
   it('shared session wins over member local plan on the same stop', () => {
@@ -166,7 +166,7 @@ describe('resolveNavCommand', () => {
         localRouteThis: true,
         pendingComplete: false,
       }),
-    ).toMatchObject({ kind: 'member_close_plan', label: '關閉' });
+    ).toMatchObject({ kind: 'member_close_plan', label: '結束' });
   });
 
   it('disables member control as 導航中 while leader navigates', () => {
