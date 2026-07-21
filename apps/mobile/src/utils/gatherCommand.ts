@@ -132,7 +132,8 @@ export function resolveNavCommand(input: NavCommandInput): NavCommandResult {
   if (localRouteThis) {
     return {
       kind: 'member_close_plan',
-      label: '關閉',
+      // Match leader stop + iOS chip: short "結束" (not "關閉").
+      label: '結束',
       disabled: false,
       action: 'close_plan',
     };

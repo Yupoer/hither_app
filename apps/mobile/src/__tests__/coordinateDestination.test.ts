@@ -87,18 +87,23 @@ describe('CoordinateDestinationSheet wiring contract', () => {
     expect(sheet).toContain('validateCoordinateDestination');
   });
 
-  it('wires long-press and manual entry into the same addDestination path', () => {
+  it('wires long-press into the search-style confirm card (name only)', () => {
     expect(groupMap).toContain('onLongPressCoordinate');
     expect(mapScreen).toContain('handleLongPressCoordinate');
-    expect(mapScreen).toContain('handleCoordinateDestination');
-    expect(mapScreen).toContain('CoordinateDestinationSheet');
-    expect(mapScreen).toContain("source: 'coordinates'");
+    // Long-press stages pendingPlace (confirm card), not the lat/lng sheet.
+    expect(mapScreen).toContain("t('map.droppedPin')");
+    expect(mapScreen).toContain('setPendingPlace(place)');
+    expect(mapScreen).toContain('setPendingPlaceTitle(defaultName)');
     expect(mapScreen).toContain('addDestination(');
+    // Manual lat/lng entry remains available from search.
+    expect(mapScreen).toContain('CoordinateDestinationSheet');
+    expect(mapScreen).toContain('handleCoordinateDestination');
     // iOS + Android share long-press; members notify leader when cannot edit.
     expect(mapScreen).toContain('onLongPressCoordinate={handleLongPressCoordinate}');
     expect(mapScreen).toContain('notifyLeaderPlace');
     expect(mapScreen).toContain('mediumTap()');
     expect(groupMap).toContain('moveOnMarkerPress={false}');
+    expect(groupMap).toContain('showsPointsOfInterest: false');
   });
 
   it('keeps KML picker copyToCacheDirectory for Android content:// URIs', () => {

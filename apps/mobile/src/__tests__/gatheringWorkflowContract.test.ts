@@ -141,11 +141,12 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(pushMessages).toContain('隊長已完成此卡片');
   });
 
-  it('fans quick commands to the whole group and names the sender', () => {
+  it('fans quick commands to the whole group with role titles (not user id)', () => {
     expect(pushIndex).toContain('wholeGroupCommand');
-    expect(pushIndex).toContain('senderName');
-    expect(pushMessages).toContain('sender_name?: string');
-    expect(pushMessages).toContain('${p.sender_name ?? "隊員"}：${label}');
+    // Exclude the sender; titles use 隊長/成員 + command label.
+    expect(pushIndex).toContain('member.user_id !== payload.sender_id');
+    expect(pushMessages).toContain('title: `隊長：${label}`');
+    expect(pushMessages).toContain('title: `成員：${label}`');
     expect(pushMessages).toContain('gathering_request');
   });
 });

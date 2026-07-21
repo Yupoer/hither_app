@@ -2,12 +2,25 @@ import React, { useEffect, useState } from 'react';
 import { Text, type StyleProp, type TextStyle } from 'react-native';
 import { formatCompactDurationFromMinutes } from '../utils/geo';
 
+function formatMeetClock(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
 /**
  * Live meet-time countdown that ticks every second on its OWN timer, so the
  * big MapScreen tree doesn't re-render 1×/s.
  *
  * - compact (default): within an hour ticking `M:SS`; further out `Nhr` / `NdNhr`
  * - minutes: whole minutes left (e.g. expanded gather card "944 分鐘")
+ *
+ * When the meet time has arrived (totalSec <= 0), shows the due clock label
+ * instead of a zero countdown.
  *
  * Turns `redColor` once `redWithinMin` minutes (or fewer) remain.
  */
@@ -18,6 +31,7 @@ export default React.memo(function MeetCountdown({
   redColor,
   variant = 'compact',
   formatMinutes,
+  formatDue,
   adjustsFontSizeToFit = false,
   minimumFontScale = 0.7,
 }: {
@@ -28,6 +42,8 @@ export default React.memo(function MeetCountdown({
   variant?: 'compact' | 'minutes';
   /** Used when variant is `minutes` — e.g. (m) => t('map.meetMinutes', { minutes: m }). */
   formatMinutes?: (minutes: number) => string;
+  /** When meet time is due/past — e.g. (time) => t('map.meetDue', { time }). */
+  formatDue?: (time: string) => string;
   /** Shrink long minute labels inside fixed-width meet chrome. */
   adjustsFontSizeToFit?: boolean;
   minimumFontScale?: number;
@@ -38,11 +54,19 @@ export default React.memo(function MeetCountdown({
     return () => clearInterval(id);
   }, []);
 
-  const totalSec = Math.max(0, Math.round((new Date(meetAtIso).getTime() - now) / 1000));
-  const red = totalSec <= redWithinMin * 60;
+  const remainingSec = Math.round((new Date(meetAtIso).getTime() - now) / 1000);
+  const due = remainingSec <= 0;
+  const totalSec = Math.max(0, remainingSec);
+  const red = due || totalSec <= redWithinMin * 60;
   const wholeMin = Math.ceil(totalSec / 60);
-  const label =
-    variant === 'minutes'
+  const dueClock = formatMeetClock(meetAtIso);
+  const label = due
+    ? formatDue
+      ? formatDue(dueClock)
+      : dueClock
+        ? `${dueClock}`
+        : '0'
+    : variant === 'minutes'
       ? formatMinutes
         ? formatMinutes(wholeMin)
         : `${wholeMin} min`

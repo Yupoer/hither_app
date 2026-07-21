@@ -36,6 +36,7 @@ export default function OverlaySheet({
   accent,
   doneLabel = 'Done',
   opaque = false,
+  edgeToEdge = false,
   children,
 }: {
   visible: boolean;
@@ -47,6 +48,8 @@ export default function OverlaySheet({
   doneLabel?: string;
   /** 100% opaque panel (no map bleed-through). Used by Settings. */
   opaque?: boolean;
+  /** Flush left/right (no 8px inset). Used by Settings full-bleed sheet. */
+  edgeToEdge?: boolean;
   children: React.ReactNode;
 }) {
   const { height } = useWindowDimensions();
@@ -175,6 +178,7 @@ export default function OverlaySheet({
       <Animated.View
         style={[
           styles.panel,
+          edgeToEdge ? styles.panelEdgeToEdge : null,
           { height: height - insets.top - 16, transform: [{ translateY }] },
         ]}
       >
@@ -220,6 +224,12 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderTopWidth: StyleSheet.hairlineWidth,
     borderColor: glass.hairlineSoft,
+  },
+  panelEdgeToEdge: {
+    left: 0,
+    right: 0,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
   },
   // More breathing room so the title doesn't crowd the sheet's top edge.
   grabZone: { paddingTop: 14, paddingBottom: 6, alignItems: 'center' },
