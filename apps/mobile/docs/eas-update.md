@@ -44,10 +44,17 @@ eas update --channel production --message "…"
 裝置行為（預設）：
 
 - 冷啟動時檢查 update（`checkAutomatically: ON_LOAD`）
-- 下載後**下次重開**才套用（`fallbackToCacheTimeout: 0`，不阻塞首屏）
+- 原生最多等 `fallbackToCacheTimeout: 3000` ms 下載並在同一次啟動套用；逾時則先開舊包
+- JS 端 `startOtaUpdateBootstrap()` 再跑一輪 `check → fetch → reload`，前景回到 active 也會檢查（避免只關開仍停在舊包）
 - 設定頁偵測到可用 OTA 時會顯示「立即更新」；點選後 `fetchUpdateAsync` + `reloadAsync` **立刻套用並重載**（無更新時不顯示按鈕）
 
-手動驗證：強制關閉 app 再開 1–2 次；或開設定頁用「立即更新」。
+手動驗證：開 app 等幾秒（可自動 reload）；或設定頁「立即更新」。
+
+**TestFlight 收不到更新時先查：**
+
+1. Binary 的 `runtimeVersion` 必須是字串 `0.1.3`（指紋 hash 的舊包只收 fingerprint OTA）
+2. Build profile channel：`production` / `preview` / `diagnostic` 要與 `eas update --channel` 一致
+3. 設定頁 OTA 列：應顯示「已套用 · xxxxxxxx」而非一直「內建包」
 
 ## 什麼可以 OTA / 什麼不行
 
