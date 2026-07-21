@@ -41,6 +41,7 @@ import {
 import { setDiagnosticConsentEnabled } from './src/state/diagnosticConsent';
 import { uploadLocalLogs } from './src/utils/uploadLocalLogs';
 import { startOtaUpdateBootstrap } from './src/utils/otaUpdates';
+import OtaUpdateToast from './src/components/OtaUpdateToast';
 
 // Dynamic Type: scale with the system up to GLOBAL_FONT_SCALE_CAP, then freeze.
 // Per-role caps (HitherText) may be tighter. Never reintroduce a hard 1.0 cap.
@@ -249,6 +250,8 @@ export default function App() {
         <PreferencesProvider>
           <SessionProvider>
             <ThemedNavigation />
+            {/* Global: any screen — brief top toast after an OTA apply. */}
+            <OtaUpdateToast />
           </SessionProvider>
         </PreferencesProvider>
       </SafeAreaProvider>
