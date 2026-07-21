@@ -1791,6 +1791,7 @@ export default function MapScreen({ route, navigation }: Props) {
     (coordinates: { latitude: number; longitude: number }) => {
       mediumTap();
       // Same confirm card as search-pick: editable name only (no lat/lng).
+      // Do not zoom/center — keep the map where the user long-pressed.
       const defaultName = t('map.droppedPin');
       if (!canEditItinerary) {
         void notifyLeaderPlace([{
@@ -1807,10 +1808,6 @@ export default function MapScreen({ route, navigation }: Props) {
       };
       setPendingPlace(place);
       setPendingPlaceTitle(defaultName);
-      mapRef.current?.centerOn(coordinates, {
-        zoom: PLACE_ZOOM,
-        altitude: PLACE_ALTITUDE,
-      });
     },
     [canEditItinerary, notifyLeaderPlace, t, tripDayForAdd],
   );
@@ -3574,7 +3571,8 @@ export default function MapScreen({ route, navigation }: Props) {
                       minute: '2-digit',
                       hour12: false,
                     });
-                    return t('map.meetDue', { time: clock });
+                    // a11y: "{time} 集合"
+                    return t('map.meetAtClock', { time: clock });
                   })()
                 : null;
               // Team arrival toward THIS stop — how many of the flock are
@@ -4080,78 +4078,30 @@ export default function MapScreen({ route, navigation }: Props) {
                         </Pressable>
                       ) : null}
 
-                      <Pressable
-                        style={styles.meetBtn}
-                        onPress={(event) => {
-                          event.stopPropagation();
-                          registerCardActivity(dest.id);
-                          openMeetTimePicker(dest);
-                        }}
-                        disabled={!canEditItinerary}
-                        accessibilityRole="button"
-                        accessibilityLabel={
+                      <MeetTimeChip
+                        meetAtIso={dest.meetAt as string | null | undefined}
+                        meetRedMinutes={
+                          dest.meetRedMinutes ?? meetRedMin ?? DEFAULT_MEET_RED_MIN
+                        }
+                        accent={accent}
+                        chromeTight={chromeTight}
+                        chromeCompact={chromeCompact}
+                        styles={styles}
+                        canEdit={canEditItinerary}
+                        a11yLabel={
                           meetLabel
                             ? `${t('meetTime.set')} ${meetLabel}`
                             : t('meetTime.set')
                         }
-                      >
-                        <View style={styles.meetBtnStack}>
-                          <View style={styles.meetBtnTimeRow}>
-                            <Ionicons
-                              name="time-outline"
-                              size={chromeTight ? 14 : chromeCompact ? 15 : 16}
-                              color={meetLabel ? accent : glass.textSecondary}
-                            />
-                            {dest.meetAt ? (
-                              <MeetCountdown
-                                meetAtIso={dest.meetAt as string}
-                                redWithinMin={
-                                  dest.meetRedMinutes ?? meetRedMin ?? DEFAULT_MEET_RED_MIN
-                                }
-                                redColor={glass.danger}
-                                variant="minutes"
-                                formatMinutes={(minutes) =>
-                                  t('map.meetMinutes', { minutes })
-                                }
-                                formatDue={(time) => t('map.meetDue', { time })}
-                                adjustsFontSizeToFit
-                                minimumFontScale={0.7}
-                                baseStyle={[
-                                  chromeTight
-                                    ? styles.meetBtnLabelTight
-                                    : chromeCompact
-                                      ? styles.meetBtnLabelCompact
-                                      : styles.meetBtnLabel,
-                                  { color: accent },
-                                ]}
-                              />
-                            ) : (
-                              <Text
-                                style={
-                                  chromeTight
-                                    ? styles.meetBtnLabelTight
-                                    : chromeCompact
-                                      ? styles.meetBtnLabelCompact
-                                      : styles.meetBtnLabel
-                                }
-                                numberOfLines={1}
-                                adjustsFontSizeToFit
-                                minimumFontScale={0.7}
-                              >
-                                ——
-                              </Text>
-                            )}
-                          </View>
-                          <Text
-                            style={styles.meetBtnCaption}
-                            numberOfLines={1}
-                            adjustsFontSizeToFit
-                            minimumFontScale={0.8}
-                          >
-                            {t('map.meetCountdown')}
-                          </Text>
-                        </View>
-                      </Pressable>
+                        onPress={() => {
+                          registerCardActivity(dest.id);
+                          openMeetTimePicker(dest);
+                        }}
+                        formatMinutes={(minutes) => t('map.meetMinutes', { minutes })}
+                        formatDue={(time) => t('map.meetAtClock', { time })}
+                        captionLive={t('map.meetCountdown')}
+                        captionDue={t('map.meetTimeCaption')}
+                      />
                     </View>
                     )}
                       </liquidGlass.GlassView>
@@ -4893,6 +4843,109 @@ export default function MapScreen({ route, navigation }: Props) {
 }
 
 /** Gathering-point card press shell — haptic only, no scale animation. */
+/**
+ * Meet-time chip on the gather card. Owns due/live caption switching so the
+ * parent carousel does not re-render 1×/s — only this chip ticks.
+ * Due: top "{time} 集合", bottom "集合時間". Live: top "N 分鐘", bottom "集合倒數".
+ */
+const MeetTimeChip = React.memo(function MeetTimeChip({
+  meetAtIso,
+  meetRedMinutes,
+  accent,
+  chromeTight,
+  chromeCompact,
+  styles,
+  canEdit,
+  a11yLabel,
+  onPress,
+  formatMinutes,
+  formatDue,
+  captionLive,
+  captionDue,
+}: {
+  meetAtIso: string | null | undefined;
+  meetRedMinutes: number;
+  accent: string;
+  chromeTight: boolean;
+  chromeCompact: boolean;
+  styles: any;
+  canEdit: boolean;
+  a11yLabel: string;
+  onPress: () => void;
+  formatMinutes: (minutes: number) => string;
+  formatDue: (time: string) => string;
+  captionLive: string;
+  captionDue: string;
+}) {
+  const [due, setDue] = useState(() => {
+    if (!meetAtIso) return false;
+    const t = new Date(meetAtIso).getTime();
+    return Number.isFinite(t) && t <= Date.now();
+  });
+  const onDueChange = useCallback((next: boolean) => {
+    setDue(next);
+  }, []);
+  const labelStyle = chromeTight
+    ? styles.meetBtnLabelTight
+    : chromeCompact
+      ? styles.meetBtnLabelCompact
+      : styles.meetBtnLabel;
+
+  return (
+    <Pressable
+      style={styles.meetBtn}
+      onPress={(event) => {
+        event.stopPropagation();
+        onPress();
+      }}
+      disabled={!canEdit}
+      accessibilityRole="button"
+      accessibilityLabel={a11yLabel}
+    >
+      <View style={styles.meetBtnStack}>
+        <View style={styles.meetBtnTimeRow}>
+          <Ionicons
+            name="time-outline"
+            size={chromeTight ? 14 : chromeCompact ? 15 : 16}
+            color={meetAtIso ? accent : glass.textSecondary}
+          />
+          {meetAtIso ? (
+            <MeetCountdown
+              meetAtIso={meetAtIso}
+              redWithinMin={meetRedMinutes}
+              redColor={glass.danger}
+              variant="minutes"
+              formatMinutes={formatMinutes}
+              formatDue={formatDue}
+              onDueChange={onDueChange}
+              adjustsFontSizeToFit
+              minimumFontScale={0.7}
+              baseStyle={[labelStyle, { color: accent }]}
+            />
+          ) : (
+            <Text
+              style={labelStyle}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.7}
+            >
+              ——
+            </Text>
+          )}
+        </View>
+        <Text
+          style={styles.meetBtnCaption}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.8}
+        >
+          {meetAtIso && due ? captionDue : captionLive}
+        </Text>
+      </View>
+    </Pressable>
+  );
+});
+
 function GatheringCardPressable({
   onToggle,
   accessibilityLabel,
