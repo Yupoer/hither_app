@@ -50,7 +50,7 @@
       "autoIncrement": true,
       "channel": "production",
       "env": {
-        "EXPO_PUBLIC_DIAGNOSTICS_ENABLED": "false",
+        "EXPO_PUBLIC_DIAGNOSTICS_ENABLED": "true",
         "EXPO_PUBLIC_DIAGNOSTIC_LEVEL": "minimal",
         "EXPO_PUBLIC_PERFORMANCE_TRACING": "full"
       }

@@ -76,12 +76,32 @@ export function useJourneyNavigation({
     if (sharedTargetId) setPendingLeaderStop(false);
   }, [pendingLeaderTargetId, sharedTargetId]);
 
+  // Shared flock session always owns the target (leader + members). Members do
+  // not need to tap「路徑」— reopening the app after a leader start still joins.
   const navTargetId = sharedTargetId ??
     (isLeader ? pendingLeaderTargetId : localTargetId);
-  const navTarget = useMemo<Destination | undefined>(
-    () => navigationDestinations.find((destination) => destination.id === navTargetId),
-    [navigationDestinations, navTargetId],
-  );
+  const navTarget = useMemo<Destination | undefined>(() => {
+    if (!navTargetId) return undefined;
+    const fromList = navigationDestinations.find(
+      (destination) => destination.id === navTargetId,
+    );
+    if (fromList) return fromList;
+    // Session may target a stop not in the day-filtered carousel; synthesize
+    // so journeyActive / routes / arrival still engage.
+    if (
+      navigationSession?.status === 'active'
+      && navigationSession.destinationId === navTargetId
+    ) {
+      return {
+        id: navigationSession.destinationId,
+        title: navigationSession.destination.name,
+        order: 0,
+        day: 1,
+        coordinates: navigationSession.destination.coordinates,
+      };
+    }
+    return undefined;
+  }, [navTargetId, navigationDestinations, navigationSession]);
   const journeyGoing = !pendingLeaderStop && Boolean(navTargetId);
   const journeyStatus: JourneyStatus = journeyGoing ? 'going' : 'paused';
   const journeyActive = journeyGoing && Boolean(navTarget);

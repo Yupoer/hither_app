@@ -97,6 +97,8 @@ describe('CoordinateDestinationSheet wiring contract', () => {
     // iOS + Android share long-press; members notify leader when cannot edit.
     expect(mapScreen).toContain('onLongPressCoordinate={handleLongPressCoordinate}');
     expect(mapScreen).toContain('notifyLeaderPlace');
+    expect(mapScreen).toContain('mediumTap()');
+    expect(groupMap).toContain('moveOnMarkerPress={false}');
   });
 
   it('keeps KML picker copyToCacheDirectory for Android content:// URIs', () => {
