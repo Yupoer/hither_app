@@ -1,5 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View, Alert, TouchableOpacity } from 'react-native';
+import {
+  Alert,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,6 +27,18 @@ import {
 import Animated, { FadeIn, ZoomIn } from 'react-native-reanimated';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RoleSelect'>;
+
+/**
+ * RoleSelect sits on a dark gradient mid-tone ≈ #0e1622.
+ * Android composites translucent rounded fills + elevation/outline as a dark
+ * “black frame” — use solid pre-blended fills there instead of low-alpha rgba.
+ */
+const IS_ANDROID = Platform.OS === 'android';
+const CHROME_FILL = IS_ANDROID ? '#1c2432' : 'rgba(255,255,255,0.08)';
+const CHROME_BORDER = IS_ANDROID ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.18)';
+const JOIN_FILL = IS_ANDROID ? '#1c2432' : 'rgba(255,255,255,0.08)';
+const JOIN_BORDER = IS_ANDROID ? 'rgba(255,255,255,0.24)' : 'rgba(255,255,255,0.2)';
+const MY_TEAMS_FILL = IS_ANDROID ? '#242c3a' : 'rgba(255,255,255,0.12)';
 
 export default function RoleSelectScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
@@ -78,7 +98,8 @@ export default function RoleSelectScreen({ navigation }: Props) {
         <Pressable
           onPress={() => navigation.goBack()}
           accessibilityRole="button"
-          style={[styles.back, { top: insets.top + 12 }]}
+          android_ripple={IS_ANDROID ? { color: 'transparent' } : undefined}
+          style={[styles.back, { top: insets.top + 12, backgroundColor: CHROME_FILL, borderColor: CHROME_BORDER }]}
         >
           <Ionicons name="chevron-back" size={22} color="rgba(255,255,255,0.7)" />
         </Pressable>
@@ -101,7 +122,8 @@ export default function RoleSelectScreen({ navigation }: Props) {
         )}
         accessibilityRole="button"
         accessibilityLabel={t('settings.signOut')}
-        style={[styles.logout, { top: insets.top + 12 }]}
+        android_ripple={IS_ANDROID ? { color: 'transparent' } : undefined}
+        style={[styles.logout, { top: insets.top + 12, backgroundColor: CHROME_FILL, borderColor: CHROME_BORDER }]}
       >
         <Ionicons name="log-out-outline" size={20} color="rgba(255,255,255,0.8)" />
         <Text style={styles.logoutText}>{t('settings.signOut')}</Text>
@@ -126,11 +148,8 @@ export default function RoleSelectScreen({ navigation }: Props) {
           <View style={styles.actionRow}>
             <Pressable
               onPress={() => { lightTap(); logEvent('role_select', { role: 'leader' }); navigation.navigate('Auth', { role: 'leader' }); }}
-              style={({ pressed }) => [
-                styles.actionTile,
-                { backgroundColor: accent, borderColor: accent },
-                pressed && styles.pressed,
-              ]}
+              android_ripple={IS_ANDROID ? { color: 'transparent' } : undefined}
+              style={[styles.actionTile, { backgroundColor: accent, borderColor: accent }]}
             >
               <CrookIcon size={32} color="#fff" />
               <Text style={styles.actionTileText}>{t('role.lead')}</Text>
@@ -138,11 +157,8 @@ export default function RoleSelectScreen({ navigation }: Props) {
 
             <Pressable
               onPress={() => { lightTap(); logEvent('role_select', { role: 'follower' }); navigation.navigate('Auth', { role: 'follower' }); }}
-              style={({ pressed }) => [
-                styles.actionTile,
-                { backgroundColor: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.2)' },
-                pressed && styles.pressed,
-              ]}
+              android_ripple={IS_ANDROID ? { color: 'transparent' } : undefined}
+              style={[styles.actionTile, { backgroundColor: JOIN_FILL, borderColor: JOIN_BORDER }]}
             >
               <Ionicons name="keypad" size={32} color="#fff" />
               <Text style={styles.actionTileText}>{t('role.join')}</Text>
@@ -157,7 +173,7 @@ export default function RoleSelectScreen({ navigation }: Props) {
                   <TouchableOpacity
                     activeOpacity={0.7}
                     onPress={() => { lightTap(); navigation.navigate('MyTeams', { initialGroups: joinedGroups }); }}
-                    style={[styles.ctaMyTeams, { backgroundColor: 'rgba(255,255,255,0.12)' }]}
+                    style={[styles.ctaMyTeams, { backgroundColor: MY_TEAMS_FILL }]}
                   >
                     <Ionicons name="people-outline" size={20} color={accent} />
                     <Text style={styles.ctaMyTeamsText}>查看我的隊伍 ({joinedGroups.length})</Text>
@@ -191,9 +207,10 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.08)',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.18)',
+    overflow: 'hidden',
+    // elevation:0 — translucent rounded chrome must not cast Android shadow frames
+    elevation: 0,
     zIndex: 10,
   },
   logout: {
@@ -205,9 +222,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: 'rgba(255,255,255,0.08)',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.18)',
+    overflow: 'hidden',
+    elevation: 0,
     zIndex: 10,
   },
   logoutText: {
@@ -257,6 +274,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 12,
+    // Clip ripple + kill Android elevation outline on rounded tiles.
+    overflow: 'hidden',
+    elevation: 0,
   },
   actionTileText: {
     fontSize: 18,
@@ -274,6 +294,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     overflow: 'hidden',
+    elevation: 0,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255,255,255,0.15)',
   },
@@ -288,5 +309,4 @@ const styles = StyleSheet.create({
     color: 'rgba(235,235,245,0.4)',
   },
   bottomFlex: { flex: 1 },
-  pressed: { opacity: 0.8 },
 });

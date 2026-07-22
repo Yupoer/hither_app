@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { PixelRatio, Pressable, StyleSheet, View } from 'react-native';
+import { PixelRatio, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
@@ -111,7 +111,7 @@ function ThemePreviewCard({
       hitSlop={4}
       style={({ pressed }) => [
         styles.card,
-        selected && { ...styles.cardGlow, shadowColor: palette.accent },
+        selected && Platform.OS === 'ios' && { ...styles.cardGlow, shadowColor: palette.accent },
         // Press only — no permanent selected scale (keeps edges crisp).
         pressed && { transform: [{ scale: 0.98 }], opacity: 0.96 },
         !selected && !pressed && { opacity: 0.94 },
@@ -270,11 +270,12 @@ const styles = StyleSheet.create({
     width: '100%',
     aspectRatio: 0.92,
   },
+  // iOS soft glow only. Card already has an opaque base; still skip Android
+  // elevation so rounded clips never pick up a dark outline frame.
   cardGlow: {
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.4,
     shadowRadius: 14,
-    elevation: 8,
   },
   waterBlob: {
     position: 'absolute',

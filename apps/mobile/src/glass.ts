@@ -83,6 +83,30 @@ export function accentMix(accent: string, pct: number): string {
 }
 
 /**
+ * Opaque blend of `fg` over solid `bg` at `pct`% — same look as stacking
+ * `accentMix(fg, pct)` on `bg`, but returns solid `rgb(...)`.
+ *
+ * Use on Android whenever a rounded view may get elevation / outline: translucent
+ * fills + elevation composite as a dark rectangular “black frame”.
+ */
+export function accentOver(fg: string, bg: string, pct: number): string {
+  const parse = (hex: string) => {
+    const h = hex.replace('#', '');
+    const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+    return {
+      r: parseInt(full.slice(0, 2), 16),
+      g: parseInt(full.slice(2, 4), 16),
+      b: parseInt(full.slice(4, 6), 16),
+    };
+  };
+  const a = Math.min(1, Math.max(0, pct / 100));
+  const f = parse(fg);
+  const b = parse(bg);
+  const mix = (x: number, y: number) => Math.round(x * a + y * (1 - a));
+  return `rgb(${mix(f.r, b.r)}, ${mix(f.g, b.g)}, ${mix(f.b, b.b)})`;
+}
+
+/**
  * Shift a hex colour toward white (amt > 0) or black (amt < 0), amt in -1..1.
  * Used to derive a deep→light gradient from a single accent token so the
  * onboarding progress bar stays theme-driven instead of hard-coding green.

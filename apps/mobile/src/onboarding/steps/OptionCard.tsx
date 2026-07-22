@@ -1,16 +1,29 @@
 import React from 'react';
-import { Image, Pressable, StyleSheet, View, type ImageSourcePropType } from 'react-native';
+import {
+  Image,
+  Platform,
+  Pressable,
+  StyleSheet,
+  View,
+  type ImageSourcePropType,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../state/PreferencesContext';
-import { accentMix } from '../../glass';
+import { accentMix, accentOver } from '../../glass';
 import { HitherText } from '../../components/HitherText';
 import { selectionTick } from '../../utils/haptics';
 
+const IS_ANDROID = Platform.OS === 'android';
+
 /**
- * Shared selectable card used by role/purpose/quiz/browser steps: a clay icon
- * tile, the label (+ optional subtitle) and a trailing check circle that fills
- * with the accent when selected. Selecting no longer advances on its own — a
- * step's Continue button carries the flow (goal-gradient pattern).
+ * Shared selectable card used by role/purpose/quiz/browser steps.
+ *
+ * Visual states are binary only: selected vs unselected. No press opacity,
+ * no Material ripple, no colour fade — finger down does not change look until
+ * selection state flips.
+ *
+ * Android: solid fills + padding-ring border; never elevation/translucent
+ * fills with borderRadius (soft black frame). Soft glow is iOS only.
  */
 export default function OptionCard({
   title,
@@ -30,6 +43,26 @@ export default function OptionCard({
   onPress: () => void;
 }) {
   const { colors } = useTheme();
+
+  const cardBg = selected
+    ? IS_ANDROID
+      ? accentOver(colors.accent, colors.surface, 16)
+      : accentMix(colors.accent, 16)
+    : colors.surface;
+
+  const tileBg =
+    tileColor ??
+    (selected
+      ? IS_ANDROID
+        ? accentOver(colors.accent, colors.surface, 24)
+        : accentMix(colors.accent, 24)
+      : IS_ANDROID
+        ? accentOver(colors.textSecondary, colors.surface, 10)
+        : accentMix(colors.textSecondary, 10));
+
+  const ringColor = selected ? colors.accent : colors.border;
+  const ringWidth = selected ? 2 : StyleSheet.hairlineWidth * 2;
+
   return (
     <Pressable
       accessibilityRole="button"
@@ -38,80 +71,100 @@ export default function OptionCard({
         selectionTick();
         onPress();
       }}
-      style={({ pressed }) => [
-        styles.card,
+      // Off: theme default ripple flashes square corners on rounded cards.
+      android_ripple={IS_ANDROID ? { color: 'transparent' } : undefined}
+      style={[
+        styles.outer,
         {
-          backgroundColor: selected ? accentMix(colors.accent, 16) : colors.surface,
-          borderColor: selected ? colors.accent : colors.border,
+          padding: ringWidth,
+          backgroundColor: ringColor,
+          elevation: 0,
+          shadowOpacity: 0,
+          shadowRadius: 0,
+          shadowOffset: { width: 0, height: 0 },
+          shadowColor: 'transparent',
         },
-        selected && { ...styles.glow, shadowColor: colors.accent },
-        pressed && { opacity: 0.85 },
+        selected &&
+          !IS_ANDROID && {
+            ...styles.glow,
+            shadowColor: colors.accent,
+          },
       ]}
     >
-      {icon ? (
-        <View
-          style={[
-            styles.tile,
-            {
-              backgroundColor:
-                tileColor ??
-                (selected ? accentMix(colors.accent, 24) : accentMix(colors.textSecondary, 10)),
-            },
-          ]}
-        >
-          <Image source={icon} style={styles.icon} resizeMode="contain" accessibilityIgnoresInvertColors />
-        </View>
-      ) : null}
-      <View style={styles.textCol}>
-        <HitherText
-          typeRole="body"
-          style={[styles.title, { color: colors.textPrimary }]}
-          numberOfLines={2}
-        >
-          {title}
-        </HitherText>
-        {subtitle ? (
-          <HitherText
-            typeRole="footnote"
-            style={[styles.subtitle, { color: colors.textSecondary }]}
-            numberOfLines={2}
-          >
-            {subtitle}
-          </HitherText>
-        ) : null}
-      </View>
       <View
         style={[
-          styles.check,
-          selected
-            ? { backgroundColor: colors.accent, borderColor: colors.accent }
-            : { borderColor: colors.border },
+          styles.card,
+          {
+            backgroundColor: cardBg,
+            elevation: 0,
+            shadowOpacity: 0,
+          },
         ]}
+        collapsable={false}
       >
-        {selected ? <Ionicons name="checkmark" size={15} color={colors.accentText} /> : null}
+        {icon ? (
+          <View style={[styles.tile, { backgroundColor: tileBg }]}>
+            <Image
+              source={icon}
+              style={styles.icon}
+              resizeMode="contain"
+              accessibilityIgnoresInvertColors
+            />
+          </View>
+        ) : null}
+        <View style={styles.textCol}>
+          <HitherText
+            typeRole="body"
+            style={[styles.title, { color: colors.textPrimary }]}
+            numberOfLines={2}
+          >
+            {title}
+          </HitherText>
+          {subtitle ? (
+            <HitherText
+              typeRole="footnote"
+              style={[styles.subtitle, { color: colors.textSecondary }]}
+              numberOfLines={2}
+            >
+              {subtitle}
+            </HitherText>
+          ) : null}
+        </View>
+        <View
+          style={[
+            styles.check,
+            selected
+              ? { backgroundColor: colors.accent, borderColor: colors.accent }
+              : { borderColor: colors.border },
+          ]}
+        >
+          {selected ? <Ionicons name="checkmark" size={15} color={colors.accentText} /> : null}
+        </View>
       </View>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
+  outer: {
+    borderRadius: 20,
+    marginBottom: 12,
+    ...(IS_ANDROID ? { overflow: 'hidden' as const } : null),
+  },
   card: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     minHeight: 84,
-    borderWidth: StyleSheet.hairlineWidth * 2,
     borderRadius: 18,
     paddingVertical: 13,
     paddingHorizontal: 14,
-    marginBottom: 12,
+    overflow: 'hidden',
   },
-  // Soft accent glow around the selected card (iOS shadow + Android elevation).
   glow: {
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
     shadowRadius: 10,
-    elevation: 6,
   },
   tile: {
     width: 68,
@@ -119,6 +172,7 @@ const styles = StyleSheet.create({
     borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   icon: { width: 56, height: 56 },
   textCol: { flex: 1, minWidth: 0 },

@@ -334,6 +334,14 @@ describe('map UI placement contracts', () => {
     expect(roleSelect).toContain('查看我的隊伍');
   });
 
+  it('avoids Android elevation black-frame on translucent rounded role tiles', () => {
+    // Opaque Android fills + elevation:0 on rounded action chrome.
+    expect(roleSelect).toContain("Platform.OS === 'android'");
+    expect(roleSelect).toContain('JOIN_FILL');
+    expect(roleSelect).toMatch(/actionTile:\s*\{[\s\S]*?elevation:\s*0/);
+    expect(roleSelect).toMatch(/actionTile:\s*\{[\s\S]*?overflow:\s*'hidden'/);
+  });
+
   it('marquees overflow collapsed titles and uses role-correct nav labels', () => {
     expect(mapScreen).toContain('OverflowMarquee');
     expect(mapScreen).toContain('endPauseMs={1500}');
