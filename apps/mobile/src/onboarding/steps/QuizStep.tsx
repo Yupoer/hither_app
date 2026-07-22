@@ -1,8 +1,15 @@
 import React, { useState } from 'react';
-import { Image, Pressable, StyleSheet, View, type ImageSourcePropType } from 'react-native';
+import {
+  Image,
+  Platform,
+  Pressable,
+  StyleSheet,
+  View,
+  type ImageSourcePropType,
+} from 'react-native';
 import { HitherText } from '../../components/HitherText';
 import { useTheme } from '../../state/PreferencesContext';
-import { accentMix } from '../../glass';
+import { accentMix, accentOver } from '../../glass';
 import { useTranslation, type TranslationKey } from '../../i18n';
 import type { QuizAnswer, StepProps, StepId } from '../types';
 import { OnboardingIcons } from '../icons';
@@ -10,10 +17,15 @@ import StepShell from './StepShell';
 import PrimaryButton from './PrimaryButton';
 import { selectionTick } from '../../utils/haptics';
 
+const IS_ANDROID = Platform.OS === 'android';
+
 /**
  * One of the two side-by-side answers on a scenario step. Horizontal A/B pair
  * (each half-width) with a corner letter tag, a clay icon and the label; the
- * selected card gains the accent border + a soft glow.
+ * selected card gains the accent border + a soft glow (iOS only).
+ *
+ * Android: solid fill + padding-ring border, never elevation — avoids the dark
+ * rounded “black frame” compositing artifact.
  */
 function ScenarioCard({
   tag,
@@ -29,6 +41,14 @@ function ScenarioCard({
   onPress: () => void;
 }) {
   const { colors } = useTheme();
+  const cardBg = selected
+    ? IS_ANDROID
+      ? accentOver(colors.accent, colors.surface, 16)
+      : accentMix(colors.accent, 16)
+    : colors.surface;
+  const ringColor = selected ? colors.accent : colors.border;
+  const ringWidth = selected ? 2 : StyleSheet.hairlineWidth * 2;
+
   return (
     <Pressable
       accessibilityRole="button"
@@ -37,21 +57,42 @@ function ScenarioCard({
         selectionTick();
         onPress();
       }}
-      style={({ pressed }) => [
-        styles.card,
+      // Off: no press fade / ripple — only selected vs unselected.
+      android_ripple={IS_ANDROID ? { color: 'transparent' } : undefined}
+      style={[
+        styles.outer,
         {
-          backgroundColor: selected ? accentMix(colors.accent, 16) : colors.surface,
-          borderColor: selected ? colors.accent : colors.border,
+          padding: ringWidth,
+          backgroundColor: ringColor,
+          elevation: 0,
+          shadowOpacity: 0,
+          shadowRadius: 0,
+          shadowOffset: { width: 0, height: 0 },
+          shadowColor: 'transparent',
         },
-        selected && { ...styles.glow, shadowColor: colors.accent },
-        pressed && { opacity: 0.85 },
+        selected && !IS_ANDROID && { ...styles.glow, shadowColor: colors.accent },
       ]}
     >
-      <HitherText typeRole="caption" style={[styles.tag, { color: selected ? colors.accent : colors.textSecondary }]}>
-        {tag}
-      </HitherText>
-      <Image source={icon} style={styles.icon} resizeMode="contain" accessibilityIgnoresInvertColors />
-      <HitherText typeRole="body" style={[styles.label, { color: colors.textPrimary }]}>{label}</HitherText>
+      <View
+        style={[styles.card, { backgroundColor: cardBg, elevation: 0, shadowOpacity: 0 }]}
+        collapsable={false}
+      >
+        <HitherText
+          typeRole="caption"
+          style={[styles.tag, { color: selected ? colors.accent : colors.textSecondary }]}
+        >
+          {tag}
+        </HitherText>
+        <Image
+          source={icon}
+          style={styles.icon}
+          resizeMode="contain"
+          accessibilityIgnoresInvertColors
+        />
+        <HitherText typeRole="body" style={[styles.label, { color: colors.textPrimary }]}>
+          {label}
+        </HitherText>
+      </View>
     </Pressable>
   );
 }
@@ -101,21 +142,25 @@ function makeQuizStep(
 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: 12 },
-  card: {
+  outer: {
     flex: 1,
+    borderRadius: 22,
+    // Don't clip iOS shadow; Android needs it for ripple/ring.
+    ...(IS_ANDROID ? { overflow: 'hidden' as const } : null),
+  },
+  card: {
     minHeight: 188,
-    borderWidth: StyleSheet.hairlineWidth * 2,
     borderRadius: 20,
     paddingVertical: 22,
     paddingHorizontal: 14,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   glow: {
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
     shadowRadius: 10,
-    elevation: 6,
   },
   tag: { position: 'absolute', top: 10, left: 12, fontSize: 12, fontWeight: '800' },
   icon: { width: 92, height: 92 },
