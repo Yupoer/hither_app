@@ -1,10 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import * as Crypto from 'expo-crypto';
+import * as Updates from 'expo-updates';
 import { metrics } from '../native';
+import { exceptionKind, stackHash } from '../utils/errorFingerprint';
 import { getDiagnosticConsentEnabled } from './diagnosticConsent';
 import { getHitherDatabase } from './hitherDatabase';
-import { notifyLogRecorded } from './logBatchScheduler';
+import { notifyErrorRecorded, notifyLogRecorded } from './logBatchScheduler';
 
 const TRACE_START_KEY = 'hither.performance.trace.startedAt.v1';
 const TRACE_TTL_MS = 2 * 60 * 60 * 1_000;
@@ -59,6 +61,46 @@ let nativeSampleInFlight = false;
 let lastRetentionCleanupAt = 0;
 const lastSuccessTraceAt = new Map<string, number>();
 
+/** Prior sample for process CPU % derivation (cpuTimeMs is cumulative). */
+let lastCpuSample: { cpuTimeMs: number; wallMs: number } | null = null;
+let lastMemoryMb: number | null = null;
+
+/**
+ * Derive process CPU % from two cumulative cpuTimeMs readings over wall time.
+ * Not core-normalized; confidence is 'estimated'. Returns null without a prior sample.
+ */
+export function deriveCpuPercent(
+  prev: { cpuTimeMs: number; wallMs: number } | null,
+  next: { cpuTimeMs: number; wallMs: number },
+): number | null {
+  if (!prev) return null;
+  const wallDelta = next.wallMs - prev.wallMs;
+  const cpuDelta = next.cpuTimeMs - prev.cpuTimeMs;
+  if (!(wallDelta > 0) || !(cpuDelta >= 0) || !Number.isFinite(cpuDelta) || !Number.isFinite(wallDelta)) {
+    return null;
+  }
+  // Cap at 100% of one core-equivalent wall window (process may use more cores later).
+  const pct = (cpuDelta / wallDelta) * 100;
+  if (!Number.isFinite(pct)) return null;
+  return Math.max(0, Math.min(400, pct));
+}
+
+/**
+ * Host (App.tsx) pushes AppState here so this module stays free of react-native
+ * imports (Jest node suite cannot load RN).
+ */
+let performanceAppState = 'active';
+
+export function setPerformanceAppState(state: string): void {
+  if (typeof state === 'string' && state.length > 0) {
+    performanceAppState = state;
+  }
+}
+
+function isAppForeground(): boolean {
+  return performanceAppState === 'active';
+}
+
 const SAFE_FIELDS = new Set([
   'appState',
   'appVersion',
@@ -73,13 +115,20 @@ const SAFE_FIELDS = new Set([
   'displayMaxFps',
   'durationMs',
   'errorCode',
+  'exceptionKind',
   'frameTimeP95Ms',
   'isFatal',
   'jsFps',
+  'launchPhase',
+  'lastScreen',
   'lowPowerMode',
+  'mapLoadedMissing',
+  'mapMountCount',
+  'mapReadyToLoadedMs',
   'memoryDeltaMb',
   'memoryMb',
   'missedFrameRatio',
+  'nativeExitReason',
   'navigationSessionId',
   'operationSource',
   'osVersion',
@@ -87,12 +136,56 @@ const SAFE_FIELDS = new Set([
   'parentTraceId',
   'requestSizeBucket',
   'responseCount',
+  'runtimeVersion',
   'sampleWindowMs',
   'source',
+  'stackHash',
   'thermalState',
   'trackingMode',
   'uiFps',
+  'updateId',
 ]);
+
+/** Breadcrumbs for error context — updated from App launch phases / navigation. */
+let lastLaunchPhase = 'unknown';
+let lastScreenName = 'unknown';
+
+export function setLastLaunchPhase(phase: string): void {
+  if (typeof phase === 'string' && phase.length > 0) {
+    lastLaunchPhase = phase.slice(0, 80);
+  }
+}
+
+export function setLastScreenName(screen: string): void {
+  if (typeof screen === 'string' && screen.length > 0) {
+    lastScreenName = screen.slice(0, 80);
+  }
+}
+
+export function getLastScreenName(): string {
+  return lastScreenName;
+}
+
+/** Avoid importing otaUpdates (pulls react-native) so unit tests stay node-safe. */
+function currentUpdateId(): string {
+  try {
+    if (Updates.isEmbeddedLaunch || !Updates.updateId) return 'embedded';
+    return Updates.updateId;
+  } catch {
+    return 'embedded';
+  }
+}
+
+function releaseContext(): PerformancePayload {
+  return {
+    buildNumber: Constants.nativeBuildVersion ?? 'development',
+    appVersion: Constants.expoConfig?.version ?? 'development',
+    updateId: currentUpdateId(),
+    runtimeVersion: String(Updates.runtimeVersion ?? 'unknown'),
+    launchPhase: lastLaunchPhase,
+    lastScreen: lastScreenName,
+  };
+}
 
 function normalizeOperation(operation: string): string {
   return operation.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120) || 'unknown';
@@ -134,11 +227,14 @@ async function cleanupRetention(
     'DELETE FROM performance_events WHERE timestamp < ?',
     Date.now() - LOCAL_RETENTION_MS,
   );
+  // Prefer keeping errors: drop oldest sample/trace first when over cap.
   await database.runAsync(
     `DELETE FROM performance_events
      WHERE id IN (
        SELECT id FROM performance_events
-       ORDER BY timestamp DESC
+       ORDER BY
+         CASE event_type WHEN 'error' THEN 1 ELSE 0 END DESC,
+         timestamp DESC
        LIMIT -1 OFFSET ?
      )`,
     MAX_LOCAL_RECORDS,
@@ -201,7 +297,11 @@ function insertEvent(event: PerformanceUploadRecord): Promise<void> {
       null,
     );
     await maybeCleanupRetention(database);
-    notifyLogRecorded();
+    if (event.eventType === 'error') {
+      notifyErrorRecorded();
+    } else {
+      notifyLogRecorded();
+    }
   });
   writeSerial = next.then(() => undefined, () => undefined);
   return next;
@@ -219,7 +319,7 @@ async function getPending(limit = MAX_UPLOAD_BATCH): Promise<PerformanceUploadRe
   const rows = await database.getAllAsync<PerformanceRow>(
     `SELECT * FROM performance_events
      WHERE uploaded_at IS NULL
-     ORDER BY timestamp ASC
+     ORDER BY CASE event_type WHEN 'error' THEN 0 ELSE 1 END, timestamp ASC
      LIMIT ?`,
     limit,
   );
@@ -308,7 +408,8 @@ async function record(
   payload: Record<string, unknown>,
   id = Crypto.randomUUID(),
 ): Promise<void> {
-  if (!active) return;
+  // Full sample/trace only while the 2h full-tracing window is active.
+  if (eventType !== 'error' && !active) return;
   if (!(await getDiagnosticConsentEnabled())) return;
   await insertEvent({
     id,
@@ -318,8 +419,30 @@ async function record(
     operation: normalizeOperation(operation),
     payload: {
       ...sanitizePayload(payload),
-      buildNumber: Constants.nativeBuildVersion ?? 'development',
-      appVersion: Constants.expoConfig?.version ?? 'development',
+      ...releaseContext(),
+    },
+  });
+}
+
+/**
+ * Minimal error telemetry — independent of EXPO_PUBLIC_PERFORMANCE_TRACING=full
+ * and the 2-hour full-trace TTL. Still consent-gated; same SQLite outbox.
+ */
+export async function recordErrorEvent(
+  operation: string,
+  payload: Record<string, unknown> = {},
+  id = Crypto.randomUUID(),
+): Promise<void> {
+  if (!(await getDiagnosticConsentEnabled())) return;
+  await insertEvent({
+    id,
+    timestamp: Date.now(),
+    sessionId,
+    eventType: 'error',
+    operation: normalizeOperation(operation),
+    payload: {
+      ...sanitizePayload(payload),
+      ...releaseContext(),
     },
   });
 }
@@ -349,25 +472,67 @@ async function measureJsFps(windowMs: number): Promise<number | null> {
   });
 }
 
+function enrichNativeSample(
+  nativeSample: Record<string, unknown> | null,
+): Record<string, unknown> {
+  const wallMs = Date.now();
+  const out: Record<string, unknown> = { ...(nativeSample ?? {}) };
+  const cpuTimeMs =
+    typeof nativeSample?.cpuTimeMs === 'number' && Number.isFinite(nativeSample.cpuTimeMs)
+      ? nativeSample.cpuTimeMs
+      : null;
+  if (cpuTimeMs != null) {
+    const derived = deriveCpuPercent(lastCpuSample, { cpuTimeMs, wallMs });
+    lastCpuSample = { cpuTimeMs, wallMs };
+    if (derived != null && (out.cpuPercent == null || out.cpuPercent === null)) {
+      out.cpuPercent = derived;
+      out.confidence = 'estimated';
+    }
+  }
+  const memoryMb =
+    typeof nativeSample?.memoryMb === 'number' && Number.isFinite(nativeSample.memoryMb)
+      ? nativeSample.memoryMb
+      : null;
+  if (memoryMb != null) {
+    if (lastMemoryMb != null) {
+      out.memoryDeltaMb = memoryMb - lastMemoryMb;
+    }
+    lastMemoryMb = memoryMb;
+  }
+  return out;
+}
+
 async function collectSample(
   eventType: 'sample' | 'trace',
   operation: string,
   traceId?: string,
 ): Promise<void> {
   if (!active || nativeSampleInFlight) return;
+  // Background: skip JS FPS rAF + non-essential samples to cut CPU.
+  if (!isAppForeground() && eventType === 'sample') return;
   if (!(await getDiagnosticConsentEnabled())) return;
   nativeSampleInFlight = true;
   try {
+    const measureFps = isAppForeground();
     const [nativeSample, jsFps] = await Promise.all([
       metrics.samplePerformance(SAMPLE_WINDOW_MS).catch(() => null),
-      measureJsFps(SAMPLE_WINDOW_MS),
+      measureFps ? measureJsFps(SAMPLE_WINDOW_MS) : Promise.resolve(null),
     ]);
     if (!nativeSample && jsFps == null) return;
+    const enriched = enrichNativeSample(
+      nativeSample ? (nativeSample as unknown as Record<string, unknown>) : null,
+    );
     await record(eventType, operation, {
-      ...(nativeSample ?? {}),
+      ...enriched,
       jsFps,
       parentTraceId: traceId ?? null,
-      confidence: eventType === 'trace' ? 'shared' : 'background',
+      confidence:
+        typeof enriched.confidence === 'string'
+          ? enriched.confidence
+          : eventType === 'trace'
+            ? 'shared'
+            : 'background',
+      appState: performanceAppState,
     });
   } finally {
     nativeSampleInFlight = false;
@@ -382,11 +547,14 @@ async function collectEnergySample(
   },
 ): Promise<void> {
   if (nativeSampleInFlight) return;
+  // Energy end sample always allowed; mid-session samples only in foreground.
+  if (!isAppForeground() && !operation.endsWith('.end')) return;
   if (!(await getDiagnosticConsentEnabled())) return;
   nativeSampleInFlight = true;
   try {
     const nativeSample = await metrics.samplePerformance(SAMPLE_WINDOW_MS).catch(() => null);
     if (!nativeSample) return;
+    const enriched = enrichNativeSample(nativeSample as unknown as Record<string, unknown>);
     await insertEvent({
       id: Crypto.randomUUID(),
       timestamp: Date.now(),
@@ -395,14 +563,15 @@ async function collectEnergySample(
       operation: normalizeOperation(operation),
       payload: {
         ...sanitizePayload({
-          ...nativeSample,
+          ...enriched,
           navigationSessionId: context.navigationSessionId,
           trackingMode: context.trackingMode,
           sampleWindowMs: SAMPLE_WINDOW_MS,
-          confidence: 'background',
+          confidence:
+            typeof enriched.confidence === 'string' ? enriched.confidence : 'background',
+          appState: performanceAppState,
         }),
-        buildNumber: Constants.nativeBuildVersion ?? 'development',
-        appVersion: Constants.expoConfig?.version ?? 'development',
+        ...releaseContext(),
       },
     });
   } finally {
@@ -431,9 +600,20 @@ export async function recordPerformanceError(
   error: unknown,
   extra?: Record<string, unknown>,
 ): Promise<void> {
-  await record('error', `error.${operation}`, {
+  const isFatal = extra?.isFatal === true;
+  let base = operation.replace(/^error\./, '');
+  if (base === 'unhandled_exception') {
+    base = isFatal ? 'js_fatal' : 'js_unhandled';
+  }
+  const op = base.startsWith('error.')
+    ? normalizeOperation(base)
+    : `error.${normalizeOperation(base)}`;
+  await recordErrorEvent(op, {
     ...extra,
     errorCode: errorCode(error),
+    exceptionKind: exceptionKind(error),
+    stackHash: stackHash(error),
+    isFatal,
     outcome: 'failed',
     parentTraceId: activeInteraction?.id ?? null,
   });
@@ -471,9 +651,13 @@ export function startPerformanceMonitor(): () => void {
   void ensureEnabled().then(async (enabled) => {
     if (!enabled || stopped) return;
     if (!(await getDiagnosticConsentEnabled())) return;
-    await collectSample('sample', 'runtime.sample');
+    if (isAppForeground()) {
+      await collectSample('sample', 'runtime.sample');
+    }
     if (!stopped) {
       timer = setInterval(() => {
+        // Host updates setPerformanceAppState from AppState; skip when background.
+        if (!isAppForeground()) return;
         void collectSample('sample', 'runtime.sample');
       }, SAMPLE_INTERVAL_MS);
     }

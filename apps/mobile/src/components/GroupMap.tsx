@@ -22,7 +22,7 @@ import {
   initialRegionFor,
   latOffsetForVisibleBand,
 } from './mapCameraMath';
-import { logEvent } from '../utils/activityLog';
+import { logError, logEvent } from '../utils/activityLog';
 
 export {
   DEFAULT_LATITUDE_DELTA,
@@ -32,6 +32,10 @@ export {
   PLACE_ZOOM,
   latOffsetForVisibleBand,
 } from './mapCameraMath';
+
+/** Session-scoped Android map mount counter (theme remount increments). Not Google billing Map Loads. */
+let androidMapMountCount = 0;
+const MAP_LOADED_MISSING_MS = 10_000;
 
 /** Optional camera framing for centerOn (defaults = locate-me street level). */
 export type CenterOnOptions = {
@@ -285,6 +289,8 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
   const centeredModeRef = useRef<'fallback' | 'gathering' | null>(null);
   const readyLoggedRef = useRef(false);
   const loadedLoggedRef = useRef(false);
+  const readyAtRef = useRef<number | null>(null);
+  const loadedMissingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { height: windowHeight } = useWindowDimensions();
   const { colors, themeName } = useTheme();
   const { dayColors } = usePreferences();
@@ -307,19 +313,50 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
   const mapInitialRegion = initialRegionFor(gathering?.coordinates ?? fallbackCenter, latOffset);
 
   useEffect(() => {
-    if (Platform.OS === 'android') logEvent('android_map_mount');
+    if (Platform.OS !== 'android') return;
+    androidMapMountCount += 1;
+    // App lifecycle only — not Google Cloud Map Loads / billing.
+    logEvent('android_map_mount', { mapMountCount: androidMapMountCount });
+    return () => {
+      if (loadedMissingTimerRef.current) {
+        clearTimeout(loadedMissingTimerRef.current);
+        loadedMissingTimerRef.current = null;
+      }
+      logEvent('android_map_unmount', { mapMountCount: androidMapMountCount });
+    };
   }, []);
 
   const onMapReady = useCallback(() => {
     if (Platform.OS !== 'android' || readyLoggedRef.current) return;
     readyLoggedRef.current = true;
+    readyAtRef.current = Date.now();
     logEvent('android_map_ready');
+    if (loadedMissingTimerRef.current) clearTimeout(loadedMissingTimerRef.current);
+    loadedMissingTimerRef.current = setTimeout(() => {
+      if (loadedLoggedRef.current) return;
+      logError('map_loaded_missing', new Error('map_loaded_missing'), {
+        mapLoadedMissing: true,
+        mapMountCount: androidMapMountCount,
+        durationMs: MAP_LOADED_MISSING_MS,
+      });
+    }, MAP_LOADED_MISSING_MS);
   }, []);
 
   const onMapLoaded = useCallback(() => {
     if (Platform.OS !== 'android' || loadedLoggedRef.current) return;
     loadedLoggedRef.current = true;
-    logEvent('android_map_loaded');
+    if (loadedMissingTimerRef.current) {
+      clearTimeout(loadedMissingTimerRef.current);
+      loadedMissingTimerRef.current = null;
+    }
+    const readyAt = readyAtRef.current;
+    const mapReadyToLoadedMs =
+      readyAt != null ? Math.max(0, Date.now() - readyAt) : null;
+    logEvent('android_map_loaded', {
+      durationMs: mapReadyToLoadedMs,
+      mapReadyToLoadedMs,
+      mapMountCount: androidMapMountCount,
+    });
   }, []);
 
   useImperativeHandle(

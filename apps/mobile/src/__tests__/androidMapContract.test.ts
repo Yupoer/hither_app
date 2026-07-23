@@ -26,9 +26,13 @@ describe('Android map contract', () => {
   });
 
   it('records each Android map lifecycle milestone without logging every location callback', () => {
-    expect(source).toContain("logEvent('android_map_mount')");
+    expect(source).toContain("logEvent('android_map_mount'");
     expect(source).toContain("logEvent('android_map_ready')");
-    expect(source).toContain("logEvent('android_map_loaded')");
+    expect(source).toContain("logEvent('android_map_loaded'");
+    expect(source).toContain("logEvent('android_map_unmount'");
+    expect(source).toContain('mapReadyToLoadedMs');
+    expect(source).toContain("logError('map_loaded_missing'");
+    expect(source).toContain('MAP_LOADED_MISSING_MS');
     const locationHandlerStart = source.indexOf('onUserLocationChange:');
     expect(locationHandlerStart).toBeGreaterThanOrEqual(0);
     const locationHandler = source.slice(

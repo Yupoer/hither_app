@@ -97,6 +97,60 @@ function throwForStatus(res: Response, body: ProxyErrorBody): never {
   throw new MapsProxyError('upstream_unavailable', res.status || 503);
 }
 
+/** Short TTL cache + in-flight promise sharing (no credentials in keys). */
+const CACHE_TTL_MS = 45_000;
+const responseCache = new Map<string, { expiresAt: number; value: unknown }>();
+const inFlight = new Map<string, Promise<unknown>>();
+
+function regionKey(region?: MapRegion): string {
+  if (!region) return '';
+  const r = (n: number) => (Number.isFinite(n) ? n.toFixed(4) : '0');
+  return `${r(region.latitude)},${r(region.longitude)},${r(region.latitudeDelta)},${r(region.longitudeDelta)}`;
+}
+
+function coordKey(c: Coordinates): string {
+  return `${c.latitude.toFixed(5)},${c.longitude.toFixed(5)}`;
+}
+
+async function withDedupeCache<T>(key: string, work: () => Promise<T>): Promise<T> {
+  const now = Date.now();
+  const cached = responseCache.get(key);
+  if (cached && cached.expiresAt > now) {
+    return cached.value as T;
+  }
+  const pending = inFlight.get(key) as Promise<T> | undefined;
+  if (pending) return pending;
+
+  const promise = (async () => {
+    try {
+      const value = await work();
+      responseCache.set(key, { expiresAt: Date.now() + CACHE_TTL_MS, value });
+      // Bound cache growth: drop expired + oldest when large.
+      if (responseCache.size > 40) {
+        for (const [k, v] of responseCache) {
+          if (v.expiresAt <= Date.now()) responseCache.delete(k);
+        }
+        while (responseCache.size > 40) {
+          const first = responseCache.keys().next().value;
+          if (first == null) break;
+          responseCache.delete(first);
+        }
+      }
+      return value;
+    } finally {
+      inFlight.delete(key);
+    }
+  })();
+  inFlight.set(key, promise);
+  return promise;
+}
+
+/** Test helper — clears in-memory proxy cache between Jest cases. */
+export function __resetGoogleMapsProxyCacheForTests(): void {
+  responseCache.clear();
+  inFlight.clear();
+}
+
 /**
  * Places search via proxy. Returns `null` when the proxy is unavailable
  * without a hard auth/quota error (caller may fall through).
@@ -105,23 +159,26 @@ export async function proxySearchPlaces(
   query: string,
   region?: MapRegion,
 ): Promise<PlaceResult[] | null> {
-  const res = await postProxy({
-    action: 'search',
-    query,
-    region,
-    languageCode: 'zh-TW',
+  const key = `search:${query.trim().toLowerCase()}:${regionKey(region)}`;
+  return withDedupeCache(key, async () => {
+    const res = await postProxy({
+      action: 'search',
+      query,
+      region,
+      languageCode: 'zh-TW',
+    });
+    const body = (await res.json().catch(() => ({}))) as ProxySearchResponse & ProxyErrorBody;
+    if (!res.ok) throwForStatus(res, body);
+    if (body.action !== 'search' || !Array.isArray(body.places)) {
+      throw new MapsProxyError('upstream_unavailable', 503);
+    }
+    return body.places.map((p) => ({
+      id: p.id,
+      name: p.name,
+      address: p.address,
+      coordinates: p.coordinates,
+    }));
   });
-  const body = (await res.json().catch(() => ({}))) as ProxySearchResponse & ProxyErrorBody;
-  if (!res.ok) throwForStatus(res, body);
-  if (body.action !== 'search' || !Array.isArray(body.places)) {
-    throw new MapsProxyError('upstream_unavailable', 503);
-  }
-  return body.places.map((p) => ({
-    id: p.id,
-    name: p.name,
-    address: p.address,
-    coordinates: p.coordinates,
-  }));
 }
 
 /** Directions via proxy; polyline is decoded to map points. */
@@ -130,24 +187,27 @@ export async function proxyGetDirections(
   to: Coordinates,
   travelMode: TravelMode,
 ): Promise<DirectionsResult | null> {
-  const res = await postProxy({
-    action: 'route',
-    from,
-    to,
-    travelMode,
+  const key = `route:${coordKey(from)}:${coordKey(to)}:${travelMode}`;
+  return withDedupeCache(key, async () => {
+    const res = await postProxy({
+      action: 'route',
+      from,
+      to,
+      travelMode,
+    });
+    const body = (await res.json().catch(() => ({}))) as ProxyRouteResponse & ProxyErrorBody;
+    if (!res.ok) throwForStatus(res, body);
+    if (body.action !== 'route') {
+      throw new MapsProxyError('upstream_unavailable', 503);
+    }
+    if (!body.route) return null;
+    const points = decodePolyline(body.route.encodedPolyline);
+    if (points.length === 0) return null;
+    return {
+      distanceMeters: body.route.distanceMeters,
+      expectedTravelTimeSeconds: body.route.expectedTravelTimeSeconds,
+      points,
+      source: 'google',
+    };
   });
-  const body = (await res.json().catch(() => ({}))) as ProxyRouteResponse & ProxyErrorBody;
-  if (!res.ok) throwForStatus(res, body);
-  if (body.action !== 'route') {
-    throw new MapsProxyError('upstream_unavailable', 503);
-  }
-  if (!body.route) return null;
-  const points = decodePolyline(body.route.encodedPolyline);
-  if (points.length === 0) return null;
-  return {
-    distanceMeters: body.route.distanceMeters,
-    expectedTravelTimeSeconds: body.route.expectedTravelTimeSeconds,
-    points,
-    source: 'google',
-  };
 }

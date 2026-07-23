@@ -37,7 +37,8 @@ describe('MetricKit native spool contract', () => {
     const android = readFileSync(androidPath, 'utf8');
     const bridge = readFileSync(join(root, 'src/native/metrics.ts'), 'utf8');
     const app = readFileSync(join(root, 'App.tsx'), 'utf8');
-    // Android still returns empty MetricKit spool (no crash SDK).
+    // Android still returns empty MetricKit spool on 0.1.3 (no crash SDK).
+    // ApplicationExitInfo spool is a future binary (0.1.4+), not OTA.
     expect(android).toMatch(/drainPayloads[\s\S]{0,200}emptyList/);
     expect(bridge).toContain('drainPayloads');
     expect(bridge).toContain('removePayloads');

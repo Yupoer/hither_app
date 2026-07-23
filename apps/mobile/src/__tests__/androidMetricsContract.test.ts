@@ -19,7 +19,7 @@ describe('Android metrics contract', () => {
     expect(androidModule).toContain('memoryMb');
   });
 
-  it('keeps drainPayloads empty until a reliable crash/ANR spool exists', () => {
+  it('keeps drainPayloads empty until a reliable crash/ANR spool exists (binary 0.1.4+)', () => {
     const androidModule = readFileSync(androidPath, 'utf8');
     expect(androidModule).toContain('drainPayloads');
     expect(androidModule).toMatch(/drainPayloads[\s\S]{0,200}emptyList/);
