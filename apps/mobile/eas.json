@@ -31,7 +31,8 @@
       },
       "env": {
         "EXPO_PUBLIC_DIAGNOSTICS_ENABLED": "true",
-        "EXPO_PUBLIC_DIAGNOSTIC_LEVEL": "verbose"
+        "EXPO_PUBLIC_DIAGNOSTIC_LEVEL": "verbose",
+        "EXPO_PUBLIC_PERFORMANCE_TRACING": "full"
       }
     },
     "diagnostic": {
@@ -41,7 +42,8 @@
       "channel": "diagnostic",
       "env": {
         "EXPO_PUBLIC_DIAGNOSTICS_ENABLED": "true",
-        "EXPO_PUBLIC_DIAGNOSTIC_LEVEL": "verbose"
+        "EXPO_PUBLIC_DIAGNOSTIC_LEVEL": "verbose",
+        "EXPO_PUBLIC_PERFORMANCE_TRACING": "full"
       }
     },
     "production": {
@@ -53,6 +55,13 @@
         "EXPO_PUBLIC_DIAGNOSTICS_ENABLED": "true",
         "EXPO_PUBLIC_DIAGNOSTIC_LEVEL": "minimal",
         "EXPO_PUBLIC_PERFORMANCE_TRACING": "full"
+      }
+    },
+    "productionApk": {
+      "extends": "production",
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
       }
     }
   },
