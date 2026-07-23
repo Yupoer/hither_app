@@ -1,5 +1,6 @@
 import React, {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useMemo,
@@ -21,6 +22,7 @@ import {
   initialRegionFor,
   latOffsetForVisibleBand,
 } from './mapCameraMath';
+import { logEvent } from '../utils/activityLog';
 
 export {
   DEFAULT_LATITUDE_DELTA,
@@ -281,6 +283,8 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
 ) {
   const mapRef = useRef<MapView | null>(null);
   const centeredModeRef = useRef<'fallback' | 'gathering' | null>(null);
+  const readyLoggedRef = useRef(false);
+  const loadedLoggedRef = useRef(false);
   const { height: windowHeight } = useWindowDimensions();
   const { colors, themeName } = useTheme();
   const { dayColors } = usePreferences();
@@ -301,6 +305,22 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
   const memberCenter = members.find((member) => member.coordinates)?.coordinates;
   const fallbackCenter = initialCenter ?? memberCenter;
   const mapInitialRegion = initialRegionFor(gathering?.coordinates ?? fallbackCenter, latOffset);
+
+  useEffect(() => {
+    if (Platform.OS === 'android') logEvent('android_map_mount');
+  }, []);
+
+  const onMapReady = useCallback(() => {
+    if (Platform.OS !== 'android' || readyLoggedRef.current) return;
+    readyLoggedRef.current = true;
+    logEvent('android_map_ready');
+  }, []);
+
+  const onMapLoaded = useCallback(() => {
+    if (Platform.OS !== 'android' || loadedLoggedRef.current) return;
+    loadedLoggedRef.current = true;
+    logEvent('android_map_loaded');
+  }, []);
 
   useImperativeHandle(
     ref,
@@ -430,17 +450,34 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       {...(Platform.OS === 'ios'
         ? { showsPointsOfInterest: false, showsBuildings: false }
         : {})}
-      onUserLocationChange={(event) => {
-        const coordinate = event.nativeEvent.coordinate;
-        if (!coordinate) return;
-        const { latitude, longitude, accuracy, timestamp } = coordinate;
-        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
-        onUserLocationSample?.({
-          coordinates: { latitude, longitude },
-          accuracy: Number.isFinite(accuracy) ? accuracy : null,
-          timestamp: Number.isFinite(timestamp) ? timestamp : Date.now(),
-        });
-      }}
+      onMapReady={onMapReady}
+      onMapLoaded={onMapLoaded}
+      // MapKit is the iOS foreground location owner. Android keeps Expo watcher
+      // only — do not bridge discarded Google Maps location callbacks.
+      {...(Platform.OS === 'ios' && onUserLocationSample
+        ? {
+            onUserLocationChange: (event: {
+              nativeEvent: {
+                coordinate?: {
+                  latitude: number;
+                  longitude: number;
+                  accuracy?: number;
+                  timestamp?: number;
+                };
+              };
+            }) => {
+              const coordinate = event.nativeEvent.coordinate;
+              if (!coordinate) return;
+              const { latitude, longitude, accuracy, timestamp } = coordinate;
+              if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+              onUserLocationSample({
+                coordinates: { latitude, longitude },
+                accuracy: accuracy != null && Number.isFinite(accuracy) ? accuracy : null,
+                timestamp: timestamp != null && Number.isFinite(timestamp) ? timestamp : Date.now(),
+              });
+            },
+          }
+        : {})}
     >
       {routePoints && routePoints.length > 1 ? (
         <Polyline
