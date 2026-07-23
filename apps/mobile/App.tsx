@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Text, TextInput, View } from 'react-native';
+import { AppState, type AppStateStatus, Text, TextInput, View } from 'react-native';
 import {
   DarkTheme,
   DefaultTheme,
@@ -12,6 +12,7 @@ import { useFonts, Fredoka_500Medium, Fredoka_600SemiBold } from '@expo-google-f
 import RootNavigator from './src/navigation/RootNavigator';
 import OnboardingScreen from './src/onboarding/OnboardingScreen';
 import { readOnboardingState } from './src/onboarding/sync';
+import AppErrorBoundary from './src/components/AppErrorBoundary';
 import CrookIcon from './src/components/CrookIcon';
 import { installGlobalErrorLogger } from './src/utils/activityLog';
 import { SessionProvider, useSession } from './src/state/SessionContext';
@@ -30,7 +31,10 @@ import { uploadMetricPayload } from './src/api/services/DiagnosticService';
 import { uploadPerformanceBatch } from './src/api/services/PerformanceService';
 import {
   configurePerformanceTracing,
+  flushPerformance,
   purgePerformance,
+  setLastLaunchPhase,
+  setPerformanceAppState,
   startPerformanceMonitor,
 } from './src/state/performance';
 import {
@@ -84,6 +88,7 @@ function ThemedNavigation() {
 
   useEffect(() => {
     if (initializing) return;
+    setLastLaunchPhase('session_resolved');
     void metrics.markLaunchPhase('session_resolved');
   }, [initializing]);
 
@@ -126,7 +131,24 @@ function ThemedNavigation() {
     });
     setLogBatchSchedulerEnabled(true);
     void metrics.setCollectionEnabled(true).catch(() => undefined);
-    return startPerformanceMonitor();
+    // Login / consent restored: flush any queued errors immediately.
+    void flushPerformance().catch(() => undefined);
+    const stopMonitor = startPerformanceMonitor();
+
+    // Foreground resume: retry pending uploads; push app state for sample gating.
+    const onAppState = (next: AppStateStatus) => {
+      setPerformanceAppState(next);
+      if (next === 'active') {
+        void flushPerformance().catch(() => undefined);
+      }
+    };
+    setPerformanceAppState(AppState.currentState);
+    const appSub = AppState.addEventListener('change', onAppState);
+
+    return () => {
+      stopMonitor();
+      appSub.remove();
+    };
   }, [ready, diagnosticUploadEnabled, initializing, user]);
 
   // First-launch Onboarding gate: a local AsyncStorage flag
@@ -164,8 +186,10 @@ function ThemedNavigation() {
 
   useEffect(() => {
     if (!navigatorReady) return;
+    setLastLaunchPhase('navigation_ready');
     void metrics.markLaunchPhase('navigation_ready');
     const timer = setTimeout(() => {
+      setLastLaunchPhase('stable');
       void metrics.markLaunchPhase('stable');
     }, 30_000);
     return () => clearTimeout(timer);
@@ -227,6 +251,7 @@ installGlobalErrorLogger();
 
 export default function App() {
   useEffect(() => {
+    setLastLaunchPhase('js_root_mounted');
     void metrics.markLaunchPhase('js_root_mounted');
     void metrics
       .previousLaunch()
@@ -246,15 +271,17 @@ export default function App() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <PreferencesProvider>
-          <SessionProvider>
-            <ThemedNavigation />
-            {/* Global: any screen — brief top toast after an OTA apply. */}
-            <OtaUpdateToast />
-          </SessionProvider>
-        </PreferencesProvider>
-      </SafeAreaProvider>
+      <AppErrorBoundary>
+        <SafeAreaProvider>
+          <PreferencesProvider>
+            <SessionProvider>
+              <ThemedNavigation />
+              {/* Global: any screen — brief top toast after an OTA apply. */}
+              <OtaUpdateToast />
+            </SessionProvider>
+          </PreferencesProvider>
+        </SafeAreaProvider>
+      </AppErrorBoundary>
     </GestureHandlerRootView>
   );
 }

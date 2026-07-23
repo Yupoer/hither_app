@@ -55,11 +55,36 @@ describe('performance tracing contract', () => {
     expect(performance).toContain('purgePerformance');
   });
 
+  it('separates permanent error queue from two-hour full tracing', () => {
+    expect(performance).toContain('export async function recordErrorEvent');
+    expect(performance).toContain('notifyErrorRecorded');
+    expect(performance).toContain("CASE event_type WHEN 'error' THEN 0 ELSE 1 END");
+    expect(performance).toContain('exceptionKind');
+    expect(performance).toContain('stackHash');
+    expect(performance).toContain('updateId');
+    expect(performance).toContain('runtimeVersion');
+    expect(performance).toContain('launchPhase');
+    expect(performance).toContain('lastScreen');
+    // Must not gate errors solely on active full-trace flag in recordPerformanceError.
+    expect(performance).toMatch(
+      /recordPerformanceError[\s\S]*?await recordErrorEvent/,
+    );
+  });
+
   it('exposes a navigation-only energy monitor independent of full API tracing', () => {
     expect(performance).toContain('export function startNavigationEnergyMonitor');
     expect(performance).toContain('navigation.energy.sample');
     expect(performance).toContain('navigation.energy.end');
     expect(performance).toContain('navigationSessionId');
     expect(performance).toContain('trackingMode');
+  });
+
+  it('derives CPU percent from cpuTimeMs deltas and gates samples on app state', () => {
+    expect(performance).toContain('export function deriveCpuPercent');
+    expect(performance).toContain('export function setPerformanceAppState');
+    expect(performance).toContain('isAppForeground');
+    expect(performance).toContain('memoryDeltaMb');
+    // Must not import react-native (Jest node suite).
+    expect(performance).not.toMatch(/from 'react-native'/);
   });
 });

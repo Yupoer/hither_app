@@ -79,6 +79,20 @@ export function notifyLogRecorded(): void {
   }
 }
 
+/**
+ * Error events should flush ASAP (not wait 15m / 100 records).
+ * Debounce with a short delay so a crash-loop does not schedule thrash;
+ * inFlight still serializes the actual upload.
+ */
+export const ERROR_FLUSH_DEBOUNCE_MS = 1_500;
+
+export function notifyErrorRecorded(): void {
+  if (!enabled) return;
+  writes += 1;
+  clearTimer();
+  schedule(ERROR_FLUSH_DEBOUNCE_MS);
+}
+
 export function stopLogBatchScheduler(): void {
   enabled = false;
   writes = 0;

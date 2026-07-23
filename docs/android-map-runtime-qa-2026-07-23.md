@@ -16,6 +16,8 @@ Runtime artifacts (not committed): `.qa-runtime/android-map-2026-07-23/<device>/
 
 ## Fixed repro (each run)
 
+**OTA performance baseline (plan 2026-07-23):** cold launch 30s → map idle 3m → pan/zoom 60s → locate 10× → sheet open/close 20× → bg/fg 10×. Record model, API, RAM class, refresh rate, thermal, build, `runtimeVersion`, `updateId`, channel, `dumpsys meminfo` / `gfxinfo`, logcat crash buffer.
+
 1. Location: precise / while-in-use; battery saver off.
 2. `adb shell am force-stop app.hither.mobile`
 3. Clear logcat + `dumpsys gfxinfo … reset`

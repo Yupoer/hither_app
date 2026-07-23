@@ -72,7 +72,12 @@ jest.mock('../state/hitherDatabase', () => ({
         const limit = typeof params[0] === 'number' ? params[0] : 100;
         return rows
           .filter((row) => row.uploaded_at == null)
-          .sort((a, b) => a.timestamp - b.timestamp)
+          .sort((a, b) => {
+            const ae = a.event_type === 'error' ? 0 : 1;
+            const be = b.event_type === 'error' ? 0 : 1;
+            if (ae !== be) return ae - be;
+            return a.timestamp - b.timestamp;
+          })
           .slice(0, limit);
       }
       return [];
@@ -90,6 +95,13 @@ jest.mock('expo-crypto', () => ({
 jest.mock('expo-constants', () => ({
   nativeBuildVersion: '1',
   expoConfig: { version: '1.0.0' },
+}));
+
+jest.mock('expo-updates', () => ({
+  isEnabled: false,
+  isEmbeddedLaunch: true,
+  updateId: null,
+  runtimeVersion: '0.1.3',
 }));
 
 jest.mock('expo-asset', () => ({}));
@@ -114,14 +126,19 @@ jest.mock('../state/diagnosticConsent', () => ({
 }));
 jest.mock('../state/logBatchScheduler', () => ({
   notifyLogRecorded: jest.fn(),
+  notifyErrorRecorded: jest.fn(),
 }));
 
 import {
   configurePerformanceTracing,
+  deriveCpuPercent,
   flushPerformance,
+  recordPerformanceError,
+  setPerformanceAppState,
   startNavigationEnergyMonitor,
 } from '../state/performance';
 import { getHitherDatabase } from '../state/hitherDatabase';
+import { notifyErrorRecorded } from '../state/logBatchScheduler';
 
 async function seedPending(count: number): Promise<string[]> {
   const db = await getHitherDatabase();
@@ -150,6 +167,7 @@ describe('flushPerformance', () => {
   beforeEach(() => {
     rows.length = 0;
     consentEnabled.value = true;
+    setPerformanceAppState('active');
   });
 
   it('skips flush and energy samples when consent is off', async () => {
@@ -218,5 +236,74 @@ describe('flushPerformance', () => {
 
     stop();
     jest.useRealTimers();
+  });
+
+  it('queues JS errors without full-tracing TTL and prefers them on flush', async () => {
+    await seedPending(1);
+    await recordPerformanceError('unhandled_exception', new Error('boom'), {
+      isFatal: true,
+    });
+    // Allow writeSerial to finish.
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const errorRows = rows.filter((r) => r.event_type === 'error');
+    expect(errorRows.length).toBe(1);
+    expect(errorRows[0]!.operation).toBe('error.js_fatal');
+    const payload = JSON.parse(errorRows[0]!.payload) as Record<string, unknown>;
+    expect(payload.exceptionKind).toBe('Error');
+    expect(typeof payload.stackHash).toBe('string');
+    expect(payload).not.toHaveProperty('message');
+    expect(payload).not.toHaveProperty('stack');
+    expect(notifyErrorRecorded).toHaveBeenCalled();
+
+    const seen: string[] = [];
+    configurePerformanceTracing(async (records) => {
+      seen.push(...records.map((r) => r.eventType));
+      return records.map((r) => r.id);
+    });
+    await flushPerformance();
+    expect(seen[0]).toBe('error');
+  });
+
+  it('does not queue errors when consent is off', async () => {
+    consentEnabled.value = false;
+    rows.length = 0;
+    await recordPerformanceError('react_render', new Error('render'));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(rows.filter((r) => r.event_type === 'error')).toHaveLength(0);
+  });
+
+  it('derives cpu percent from cumulative cpuTimeMs wall deltas', () => {
+    expect(deriveCpuPercent(null, { cpuTimeMs: 100, wallMs: 1_000 })).toBeNull();
+    expect(
+      deriveCpuPercent(
+        { cpuTimeMs: 100, wallMs: 1_000 },
+        { cpuTimeMs: 150, wallMs: 2_000 },
+      ),
+    ).toBeCloseTo(5, 5);
+    expect(
+      deriveCpuPercent(
+        { cpuTimeMs: 200, wallMs: 3_000 },
+        { cpuTimeMs: 100, wallMs: 4_000 },
+      ),
+    ).toBeNull();
+  });
+
+  it('skips mid-session energy samples while backgrounded', async () => {
+    samplePerformance.mockClear();
+    setPerformanceAppState('background');
+    const stop = startNavigationEnergyMonitor({
+      navigationSessionId: '00000000-0000-4000-8000-000000000001',
+      trackingMode: 'teamNavigation',
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(samplePerformance).not.toHaveBeenCalled();
+    stop();
+    // end sample still allowed even if background — restore for other tests
+    setPerformanceAppState('active');
   });
 });
