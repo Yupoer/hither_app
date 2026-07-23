@@ -38,20 +38,30 @@ Runtime artifacts (not committed): `.qa-runtime/android-map-2026-07-23/<device>/
 
 | Gate | Target | Result |
 |---|---|---|
-| Cold-launch crash | 0/10 | pending APK |
-| Map black screen | 0/10 | pending |
-| Full-app gray | 0/10 | pending |
-| Blue-dot flash/loss | 0/10 | pending |
-| ⋯ menu cancel visible | 10/10 | pending |
-| Frozen frame >700 ms | 0 | pending gfxinfo |
-| S25F1 | estimate from worst Pixel run only | not measured |
+| Cold-launch crash | 0/10 | 1/1 smoke: no crash buffer; PID live; MainActivity focused |
+| Map black screen | 0/10 | not fully exercised (needs signed-in map group session) |
+| Full-app gray | 0/10 | not observed on cold launch smoke |
+| Blue-dot flash/loss | 0/10 | pending map session + 10× loop |
+| ⋯ menu cancel visible | 10/10 | unit contract pass; UI on emulator pending map |
+| Frozen frame >700 ms | 0 | cold-launch gfxinfo: 1× ~1100 ms bucket (x86_64 ARM translate emulator — not release gate for physical Pixel) |
+| S25F1 | estimate from worst Pixel run only | **未實測** |
+
+### Emulator cold-launch gfxinfo (single run, not 10× matrix)
+
+- Device: `sdk_gphone16k_x86_64` API 37
+- Total frames: 333; janky: 36 (10.81%)
+- p50 / p90 / p95: 24 / 40 / 65 ms
+- Note: arm64-only APK via ARM translation; do **not** treat as Pixel physical baseline.
 
 ## Commits / OTA / APK
 
-Fill after ship:
-
-- Feature branch:
-- Master SHA:
-- OTA production (ios / android):
-- OTA preview (ios / android):
-- Local APK path / size / arch:
+- Feature branch: `agent/android-map-menu-perf`
+- Master SHA: `c4ac4c6`
+- OTA production ios: group `0fe15594-36e8-4520-bc50-feda26edb046` — https://expo.dev/accounts/yupoer/projects/hither/updates/0fe15594-36e8-4520-bc50-feda26edb046
+- OTA production android: group `8f355dcc-3615-49ad-a191-fc067bfe4db7` — https://expo.dev/accounts/yupoer/projects/hither/updates/8f355dcc-3615-49ad-a191-fc067bfe4db7
+- OTA preview ios: group `7b45ad2a-6121-442b-b951-ad3a49b854e7` — https://expo.dev/accounts/yupoer/projects/hither/updates/7b45ad2a-6121-442b-b951-ad3a49b854e7
+- OTA preview android: group `7c735a90-34ea-4c4c-b017-6ab4ada75d23` — https://expo.dev/accounts/yupoer/projects/hither/updates/7c735a90-34ea-4c4c-b017-6ab4ada75d23
+- Runtime version: `0.1.3`
+- Local APK: `C:\h\m\android\app\build\outputs\apk\release\app-release.apk` (also copied to `apps/mobile/dist-apk/hither-release-2026-07-23-map-menu-perf.apk`)
+- Size: 36,189,910 bytes; arch: arm64-v8a; signing: debug keystore (sideload)
+- SHA-256: `D37C881E45273E90328EA834CDA1519373660A709BB4CBE452636E3E264FA784`
