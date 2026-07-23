@@ -48,11 +48,19 @@ describe('measured performance regressions', () => {
     expect(groupMap).toContain('showsUserLocation');
     expect(groupMap).toContain('onUserLocationChange');
     expect(groupMap).toContain('onUserLocationSample');
+    expect(groupMap).toContain("...(Platform.OS === 'ios' && onUserLocationSample");
     expect(locationHook).toContain('nativeMapLocationEnabled');
     expect(locationHook).toContain('consumeForegroundSample');
     expect(mapScreen).toContain("nativeMapLocationEnabled: Platform.OS === 'ios'");
     expect(mapScreen).toContain('consumeForegroundSample');
     expect(mapScreen).toContain('startNavigationEnergyMonitor');
+  });
+
+  it('does not rewrite GroupMap initialCenter on every deviceCoords sample', () => {
+    expect(mapScreen).toContain('const [mapInitialCenter, setMapInitialCenter]');
+    expect(mapScreen).toContain('initialCenter={mapInitialCenter ?? undefined}');
+    expect(mapScreen).not.toContain('initialCenter={fromCoords}');
+    expect(mapScreen).toContain('setMapInitialCenter((current) => current ?? fromCoords)');
   });
 
   it('coalesces location outbox uploads instead of flushing after every sample', () => {

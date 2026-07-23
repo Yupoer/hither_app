@@ -961,6 +961,16 @@ export default function MapScreen({ route, navigation }: Props) {
   );
   const fromCoords = deviceCoords ?? reference?.coordinates;
 
+  // Lock MapView initialRegion to the first available center so GPS churn
+  // does not rewrite GroupMap prop identity on every sample.
+  const [mapInitialCenter, setMapInitialCenter] = useState<Coordinates | null>(
+    fromCoords ?? null,
+  );
+  useEffect(() => {
+    if (!fromCoords) return;
+    setMapInitialCenter((current) => current ?? fromCoords);
+  }, [fromCoords]);
+
   // Bridge: handleReorder is declared later; navigation promote needs it first.
   const reorderForNavigationRef = useRef<
     (updates: { id: string; position: number; day: number }[]) => Promise<boolean>
@@ -2779,12 +2789,17 @@ export default function MapScreen({ route, navigation }: Props) {
         },
       );
     } else {
-      Alert.alert(t('map.groupMenu'), undefined, [
-        { text: t('map.backToHome'), onPress: () => run('home') },
-        { text: t('map.overlaySettings'), onPress: () => run('settings') },
-        { text: t('group.leave'), style: 'destructive', onPress: () => run('end') },
-        { text: t('common.cancel'), style: 'cancel' },
-      ]);
+      // Android Alert supports at most 3 buttons; "back to home" remains in Settings.
+      Alert.alert(
+        t('map.groupMenu'),
+        undefined,
+        [
+          { text: t('map.overlaySettings'), onPress: () => run('settings') },
+          { text: t('group.leave'), style: 'destructive', onPress: () => run('end') },
+          { text: t('common.cancel'), style: 'cancel' },
+        ],
+        { cancelable: true },
+      );
     }
   }, [t, confirmLeave, goHomeCreateOrJoin]);
 
@@ -3312,7 +3327,7 @@ export default function MapScreen({ route, navigation }: Props) {
         destinations={destinations}
         pendingPlace={pendingPlace}
         currentUserId={user?.id}
-        initialCenter={fromCoords}
+        initialCenter={mapInitialCenter ?? undefined}
         // Show the planned path for everyone while journey is live (leader
         // broadcast or local follower plan). When paused, keep a light path
         // to the selected card so ETA still makes sense.

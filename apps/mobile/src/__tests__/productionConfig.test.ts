@@ -63,6 +63,8 @@ describe('production mobile configuration', () => {
     expect(easConfig.build.production.env.EXPO_PUBLIC_DIAGNOSTICS_ENABLED).toBe('true');
     expect(easConfig.build.production.env.EXPO_PUBLIC_DIAGNOSTIC_LEVEL).toBe('minimal');
     expect(easConfig.build.production.env.EXPO_PUBLIC_PERFORMANCE_TRACING).toBe('full');
+    expect(easConfig.build.androidQa.env.EXPO_PUBLIC_PERFORMANCE_TRACING).toBe('full');
+    expect(easConfig.build.diagnostic.env.EXPO_PUBLIC_PERFORMANCE_TRACING).toBe('full');
     expect(diagnosticStore).toContain('process.env.EXPO_PUBLIC_DIAGNOSTIC_LEVEL');
   });
 
