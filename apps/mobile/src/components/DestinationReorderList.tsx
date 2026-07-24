@@ -8,7 +8,6 @@ import {
   View,
   Modal,
   TextInput,
-  Alert,
   Dimensions,
   Platform,
 } from 'react-native';
@@ -98,15 +97,15 @@ export default function DestinationReorderList({
 
   const handleSync = useCallback(async () => {
     if (!onSync || syncing) return;
+    // onSync is MapScreen.syncFromDatabaseAndUploadLogs (runUiAction swallows
+    // errors and surfaces recovery via the global banner). Local busy only.
     setSyncing(true);
     try {
       await onSync();
-    } catch {
-      Alert.alert(t('map.syncDbFailedTitle'), t('map.syncDbFailedMsg'));
     } finally {
       setSyncing(false);
     }
-  }, [onSync, syncing, t]);
+  }, [onSync, syncing]);
 
   // Wait for onboarding
   useEffect(() => {

@@ -23,6 +23,8 @@ import { useSession } from '../state/SessionContext';
 import { useTheme } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
 import { accentMix } from '../glass';
+import { runUiAction } from '../utils/uiAction';
+import SafePressable from '../components/SafePressable';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 type Mode = 'signin' | 'signup';
@@ -74,59 +76,93 @@ export default function LoginScreen({ navigation }: Props) {
     navigation.navigate('RoleSelect');
   }
 
-  async function handleSubmit() {
-    if (!canSubmit) return;
-    setBusy(true);
+  /** Body for SafePressable / runUiAction — token already provided by runner. */
+  async function submitEmail(token: { isCurrent: () => boolean }) {
+    if (!canSubmit && !busy) return;
     try {
       if (isSignUp) {
         await signUpWithEmail({ email, password, nickname });
       } else {
         await signInWithEmail({ email, password });
       }
+      if (!token.isCurrent()) return;
       goToApp();
     } catch (e) {
-      const fallback = isSignUp ? t('login.signUpFailed') : t('login.signInFailed');
-      Alert.alert(
-        isSignUp ? t('login.tabSignUp') : t('login.tabSignIn'),
-        e instanceof Error ? e.message : fallback,
-      );
-      setBusy(false);
+      if (token.isCurrent()) {
+        const fallback = isSignUp ? t('login.signUpFailed') : t('login.signInFailed');
+        Alert.alert(
+          isSignUp ? t('login.tabSignUp') : t('login.tabSignIn'),
+          e instanceof Error ? e.message : fallback,
+        );
+      }
+      throw e;
     }
   }
 
   async function handleGoogle() {
     if (busy) return;
-    setBusy(true);
-    try {
-      const user = await signInWithGoogle();
-      if (!user) {
-        setBusy(false); // user dismissed the Google browser
-        return;
-      }
-      goToApp();
-    } catch (e) {
-      Alert.alert(
-        'Google',
-        e instanceof Error ? e.message : t('login.signInFailed'),
-      );
-      setBusy(false);
-    }
+    await runUiAction(
+      'login.google',
+      async (token) => {
+        try {
+          const user = await signInWithGoogle();
+          if (!token.isCurrent()) return;
+          if (!user) {
+            // User dismissed the Google browser — not an error.
+            return;
+          }
+          goToApp();
+        } catch (e) {
+          if (token.isCurrent()) {
+            Alert.alert(
+              'Google',
+              e instanceof Error ? e.message : t('login.signInFailed'),
+            );
+          }
+          throw e;
+        }
+      },
+      {
+        screen: 'Login',
+        suppressBanner: true,
+        onBusyChange: setBusy,
+        onError: (kind) => {
+          if (kind === 'timeout') {
+            Alert.alert('Google', t('interaction.timeout'));
+          }
+        },
+      },
+    );
   }
 
   async function handleApple() {
     if (busy) return;
-    setBusy(true);
-    try {
-      const user = await signInWithApple();
-      if (!user) {
-        setBusy(false);
-        return;
-      }
-      goToApp();
-    } catch (e) {
-      Alert.alert('Apple', e instanceof Error ? e.message : t('login.signInFailed'));
-      setBusy(false);
-    }
+    await runUiAction(
+      'login.apple',
+      async (token) => {
+        try {
+          const user = await signInWithApple();
+          if (!token.isCurrent()) return;
+          if (!user) return;
+          goToApp();
+        } catch (e) {
+          if (token.isCurrent()) {
+            Alert.alert('Apple', e instanceof Error ? e.message : t('login.signInFailed'));
+          }
+          throw e;
+        }
+      },
+      {
+        screen: 'Login',
+        suppressBanner: true,
+        onBusyChange: setBusy,
+        onError: (kind) => {
+          if (kind === 'timeout') {
+            Alert.alert('Apple', t('interaction.timeout'));
+          }
+        },
+      },
+    );
   }
 
   return (
@@ -219,8 +255,20 @@ export default function LoginScreen({ navigation }: Props) {
             </>
           )}
 
-          <Pressable
-            onPress={handleSubmit}
+          <SafePressable
+            actionId={isSignUp ? 'login.sign_up' : 'login.sign_in'}
+            screen="Login"
+            onPressAction={submitEmail}
+            onBusyChange={setBusy}
+            suppressBanner
+            onActionError={(kind) => {
+              if (kind === 'timeout') {
+                Alert.alert(
+                  isSignUp ? t('login.tabSignUp') : t('login.tabSignIn'),
+                  t('interaction.timeout'),
+                );
+              }
+            }}
             disabled={!canSubmit}
             accessibilityRole="button"
             style={({ pressed }) => [
@@ -236,7 +284,7 @@ export default function LoginScreen({ navigation }: Props) {
                 {isSignUp ? t('login.ctaSignUp') : t('login.ctaSignIn')}
               </Text>
             )}
-          </Pressable>
+          </SafePressable>
 
           <View style={styles.divider}>
             <View style={styles.dividerLine} />

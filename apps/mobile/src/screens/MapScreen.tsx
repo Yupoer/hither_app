@@ -96,6 +96,7 @@ import PrefSlider from '../components/PrefSlider';
 import { canMarkDestinationArrival } from '../utils/arrivalMarking';
 import { hasArrived } from '../utils/journeyProgress';
 import { uploadLocalLogs } from '../utils/uploadLocalLogs';
+import { runUiAction } from '../utils/uiAction';
 import { useTranslation, type TranslationKey } from '../i18n';
 import { useDeviceLocation } from './MapScreen/hooks/useDeviceLocation';
 import { useCarouselSelection } from './MapScreen/hooks/useCarouselSelection';
@@ -477,45 +478,53 @@ export default function MapScreen({ route, navigation }: Props) {
    * Opt-in diagnostic Log batch is owned by logBatchScheduler, not this control.
    */
   const syncFromDatabaseAndUploadLogs = useCallback(async () => {
-    await syncFromDatabase();
-    let logResult: Awaited<ReturnType<typeof uploadLocalLogs>> | null = null;
-    try {
-      // No-op when consent is off; never multi-round drain.
-      logResult = await uploadLocalLogs({ source: 'destination_reorder_sync' });
-    } catch {
-      logResult = null;
-    }
-    if (!logResult) {
-      Alert.alert(t('map.syncDbOkTitle'), t('map.syncDbOkLogsFailed'));
-      return;
-    }
-    const logsFailed =
-      logResult.diagnosticRemaining < 0 || logResult.performanceRemaining < 0;
-    if (logsFailed) {
-      Alert.alert(t('map.syncDbOkTitle'), t('map.syncDbOkLogsFailed'));
-      return;
-    }
-    const totalSent = logResult.diagnosticSent + logResult.performanceSent;
-    const totalRemaining =
-      logResult.diagnosticRemaining + logResult.performanceRemaining;
-    if (totalSent === 0 && totalRemaining === 0) {
-      Alert.alert(t('map.syncDbOkTitle'), t('map.syncDbOkNoLogs'));
-      return;
-    }
-    // Complete only when both queues report remaining === 0.
-    if (totalRemaining > 0) {
-      Alert.alert(
-        t('map.syncDbOkTitle'),
-        t('map.syncDbOkPartial', {
-          sent: String(totalSent),
-          remaining: String(totalRemaining),
-        }),
-      );
-      return;
-    }
-    Alert.alert(
-      t('map.syncDbOkTitle'),
-      t('map.syncDbOkFull', { sent: String(totalSent) }),
+    await runUiAction(
+      'map.sync_db_and_logs',
+      async (token) => {
+        await syncFromDatabase();
+        if (!token.isCurrent()) return;
+        let logResult: Awaited<ReturnType<typeof uploadLocalLogs>> | null = null;
+        try {
+          // No-op when consent is off; never multi-round drain.
+          logResult = await uploadLocalLogs({ source: 'destination_reorder_sync' });
+        } catch {
+          logResult = null;
+        }
+        if (!token.isCurrent()) return;
+        if (!logResult) {
+          Alert.alert(t('map.syncDbOkTitle'), t('map.syncDbOkLogsFailed'));
+          return;
+        }
+        const logsFailed =
+          logResult.diagnosticRemaining < 0 || logResult.performanceRemaining < 0;
+        if (logsFailed) {
+          Alert.alert(t('map.syncDbOkTitle'), t('map.syncDbOkLogsFailed'));
+          return;
+        }
+        const totalSent = logResult.diagnosticSent + logResult.performanceSent;
+        const totalRemaining =
+          logResult.diagnosticRemaining + logResult.performanceRemaining;
+        if (totalSent === 0 && totalRemaining === 0) {
+          Alert.alert(t('map.syncDbOkTitle'), t('map.syncDbOkNoLogs'));
+          return;
+        }
+        // Complete only when both queues report remaining === 0.
+        if (totalRemaining > 0) {
+          Alert.alert(
+            t('map.syncDbOkTitle'),
+            t('map.syncDbOkPartial', {
+              sent: String(totalSent),
+              remaining: String(totalRemaining),
+            }),
+          );
+          return;
+        }
+        Alert.alert(
+          t('map.syncDbOkTitle'),
+          t('map.syncDbOkFull', { sent: String(totalSent) }),
+        );
+      },
+      { screen: 'Map' },
     );
   }, [syncFromDatabase, t]);
 
@@ -1528,20 +1537,25 @@ export default function MapScreen({ route, navigation }: Props) {
 
 
   const locateMe = useCallback(() => {
-    const go = (coords: NonNullable<typeof deviceCoords>) => {
-      // Settings toggle: flat top-down vs 45° oblique (Apple-Maps-style).
-      if (obliqueLocate) mapRef.current?.focusOblique(coords);
-      else mapRef.current?.centerOn(coords);
-    };
-    // Instant feedback from last known fix — don't wait on GPS / network.
-    if (deviceCoords) go(deviceCoords);
-    // Background: refine GPS + soft re-center; group refresh is non-blocking.
-    void (async () => {
-      const fresh = await refreshDeviceLocation().catch(() => null);
-      if (fresh) go(fresh);
-      else if (!deviceCoords) return;
-      void refresh();
-    })();
+    void runUiAction(
+      'map.locate_me',
+      async (token) => {
+        lightTap();
+        const go = (coords: NonNullable<typeof deviceCoords>) => {
+          // Settings toggle: flat top-down vs 45° oblique (Apple-Maps-style).
+          if (obliqueLocate) mapRef.current?.focusOblique(coords);
+          else mapRef.current?.centerOn(coords);
+        };
+        // Instant feedback from last known fix — don't wait on GPS / network.
+        if (deviceCoords) go(deviceCoords);
+        const fresh = await refreshDeviceLocation().catch(() => null);
+        if (!token.isCurrent()) return;
+        if (fresh) go(fresh);
+        else if (!deviceCoords) return;
+        void refresh();
+      },
+      { screen: 'Map' },
+    );
   }, [refresh, refreshDeviceLocation, deviceCoords, obliqueLocate]);
 
   const [refreshingLocations, setRefreshingLocations] = useState(false);
@@ -1642,7 +1656,14 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [groupId, handleLocationRefreshRequest, refreshingLocations, t]);
 
   const fitAllMembers = useCallback(() => {
-    mapRef.current?.fitToMembers();
+    void runUiAction(
+      'map.fit_all_members',
+      () => {
+        lightTap();
+        mapRef.current?.fitToMembers();
+      },
+      { screen: 'Map' },
+    );
   }, []);
 
   const biasCenter = deviceCoords ?? selectedDestination?.coordinates;
@@ -1659,17 +1680,37 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // Followers submit durable, actionable requests instead of plain-text commands.
   const notifyLeaderPlace = useCallback(
-    async (items: GatherPointRequestItem[], source: 'search' | 'kml') => {
-      if (!groupId) return;
+    async (items: GatherPointRequestItem[], source: 'search' | 'kml'): Promise<boolean> => {
+      if (!groupId) return false;
       const label = items.length === 1 ? items[0].title : `${items.length} 個地點`;
-      try {
-        await submitGatherPointRequest(groupId, myScopeId, items);
-        logEvent('destination_suggest', { source, label });
-        Alert.alert(t('gatherRequest.sentTitle'), t('gatherRequest.sentBody'));
-      } catch (e) {
-        logError('destination_suggest_failed', e, { source });
-        Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
-      }
+      const result = await runUiAction(
+        'map.destination_suggest',
+        async (token) => {
+          try {
+            await submitGatherPointRequest(groupId, myScopeId, items);
+            if (!token.isCurrent()) return false;
+            logEvent('destination_suggest', { source, label });
+            Alert.alert(t('gatherRequest.sentTitle'), t('gatherRequest.sentBody'));
+            return true;
+          } catch (e) {
+            logError('destination_suggest_failed', e, { source });
+            if (token.isCurrent()) {
+              Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
+            }
+            throw e;
+          }
+        },
+        {
+          screen: 'Map',
+          suppressBanner: true,
+          onError: (kind) => {
+            if (kind === 'timeout') {
+              Alert.alert(t('map.setFailedTitle'), t('interaction.timeout'));
+            }
+          },
+        },
+      );
+      return result === true;
     },
     [groupId, myScopeId, t],
   );
@@ -1710,44 +1751,63 @@ export default function MapScreen({ route, navigation }: Props) {
     [canEditItinerary, notifyLeaderPlace, tripDayForAdd],
   );
 
-  const handlePickDestination = useCallback(async (place: PlaceResult) => {
-    if (!groupId) return;
+  const handlePickDestination = useCallback(async (place: PlaceResult): Promise<boolean> => {
+    if (!groupId) return false;
     const addDay = tripDayForAdd();
     if (!canEditItinerary) {
-      await notifyLeaderPlace([{
+      return notifyLeaderPlace([{
         title: place.name,
         address: place.address,
         coordinates: place.coordinates,
         day: addDay,
       }], 'search');
-      return;
     }
     if (!isPro && allScopedDestinations.length >= FREE_LIMITS.destinationsPerItinerary) {
       openPaywall('paywall.triggerDestinations');
-      return;
+      return false;
     }
-    try {
-      await addDestination(
-        groupId,
-        {
-          title: place.name,
-          address: place.address,
-          coordinates: place.coordinates,
-          day: addDay,
+    const result = await runUiAction(
+      'map.destination_add',
+      async (token) => {
+        try {
+          await addDestination(
+            groupId,
+            {
+              title: place.name,
+              address: place.address,
+              coordinates: place.coordinates,
+              day: addDay,
+            },
+            myScopeId,
+          );
+          if (!token.isCurrent()) return false;
+          logEvent('destination_add', { source: 'search', day: addDay });
+          setSelectedIndex(destinations.length);
+          mapRef.current?.centerOn(place.coordinates, {
+            zoom: PLACE_ZOOM,
+            altitude: PLACE_ALTITUDE,
+          });
+          await refresh();
+          return true;
+        } catch (e) {
+          logError('destination_add_failed', e, { source: 'search' });
+          if (token.isCurrent()) {
+            Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
+          }
+          throw e;
+        }
+      },
+      {
+        screen: 'Map',
+        suppressBanner: true,
+        onError: (kind) => {
+          if (kind === 'timeout') {
+            Alert.alert(t('map.setFailedTitle'), t('interaction.timeout'));
+          }
         },
-        myScopeId,
-      );
-      logEvent('destination_add', { source: 'search', day: addDay });
-      setSelectedIndex(destinations.length);
-      mapRef.current?.centerOn(place.coordinates, {
-        zoom: PLACE_ZOOM,
-        altitude: PLACE_ALTITUDE,
-      });
-      await refresh();
-    } catch (e) {
-      logError('destination_add_failed', e, { source: 'search' });
-      Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
-    }
+      },
+    );
+    return result === true;
   }, [
     groupId,
     canEditItinerary,
@@ -1820,38 +1880,62 @@ export default function MapScreen({ route, navigation }: Props) {
       if (!groupId) return;
       const addDay = tripDayForAdd();
       if (!canEditItinerary) {
-        await notifyLeaderPlace([{
+        const ok = await notifyLeaderPlace([{
           title: input.title,
           coordinates: input.coordinates,
           day: addDay,
         }], 'search');
+        // Keep coordinate sheet open on failure so the user can retry.
+        if (!ok) throw new Error(t('map.setFailedMsg'));
         return;
       }
       if (!isPro && allScopedDestinations.length >= FREE_LIMITS.destinationsPerItinerary) {
         openPaywall('paywall.triggerDestinations');
         return;
       }
-      try {
-        await addDestination(
-          groupId,
-          {
-            title: input.title,
-            coordinates: input.coordinates,
-            day: addDay,
+      const result = await runUiAction(
+        'map.destination_add_coords',
+        async (token) => {
+          try {
+            await addDestination(
+              groupId,
+              {
+                title: input.title,
+                coordinates: input.coordinates,
+                day: addDay,
+              },
+              myScopeId,
+            );
+            if (!token.isCurrent()) return false;
+            logEvent('destination_add', { source: 'coordinates', day: addDay });
+            setSelectedIndex(destinations.length);
+            mapRef.current?.centerOn(input.coordinates, {
+              zoom: PLACE_ZOOM,
+              altitude: PLACE_ALTITUDE,
+            });
+            await refresh();
+            return true;
+          } catch (e) {
+            logError('destination_add_failed', e, { source: 'coordinates' });
+            if (token.isCurrent()) {
+              Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
+            }
+            throw e;
+          }
+        },
+        {
+          screen: 'Map',
+          suppressBanner: true,
+          onError: (kind) => {
+            if (kind === 'timeout') {
+              Alert.alert(t('map.setFailedTitle'), t('interaction.timeout'));
+            }
           },
-          myScopeId,
-        );
-        logEvent('destination_add', { source: 'coordinates', day: addDay });
-        setSelectedIndex(destinations.length);
-        mapRef.current?.centerOn(input.coordinates, {
-          zoom: PLACE_ZOOM,
-          altitude: PLACE_ALTITUDE,
-        });
-        await refresh();
-      } catch (e) {
-        logError('destination_add_failed', e, { source: 'coordinates' });
-        Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
-        throw e;
+        },
+      );
+      // Only close CoordinateDestinationSheet when the task returns true.
+      if (result !== true) {
+        throw new Error(t('map.setFailedMsg'));
       }
     },
     [
@@ -2174,15 +2258,33 @@ export default function MapScreen({ route, navigation }: Props) {
   }, []);
 
   const switchGroup = useCallback(() => {
-    lightTap();
-    navigation.navigate('MyTeams');
+    void runUiAction(
+      'map.switch_group',
+      () => {
+        lightTap();
+        setOverlay(null);
+        navigation.navigate('MyTeams');
+      },
+      { screen: 'Map' },
+    );
   }, [navigation]);
 
-  /** RoleSelect create/join home — keep membership so user is not forced to leave. */
+  /** RoleSelect create/join home — workflow boundary: reset stack, keep membership. */
   const goHomeCreateOrJoin = useCallback(() => {
-    lightTap();
-    logEvent('settings_go_home_create_or_join');
-    navigation.navigate('RoleSelect');
+    void runUiAction(
+      'map.go_home_create_or_join',
+      () => {
+        lightTap();
+        logEvent('settings_go_home_create_or_join');
+        // Close overlay/sheet local state in the same transaction as the reset so the
+        // departing Map instance does not leave modal state hanging, and so re-entry
+        // cannot stack another Map on top of the old one.
+        setOverlay(null);
+        logEvent('navigation_reset', { target: 'RoleSelect', reason: 'go_home_create_or_join' });
+        navigation.reset({ index: 0, routes: [{ name: 'RoleSelect' }] });
+      },
+      { screen: 'Map' },
+    );
   }, [navigation]);
 
   // --- Solo mode (global user status — not on member cards) -----------------
@@ -2361,79 +2463,112 @@ export default function MapScreen({ route, navigation }: Props) {
   // for the feedback form. Uses the SAME `overlay` state so the two are
   // mutually exclusive — opening feedback closes settings, so the translucent
   // panels can never stack and interleave their text.
-  const openFeedback = useCallback(async () => {
-    lightTap();
-    let uri: string | null = null;
-    try {
-      uri = await captureScreen({ format: 'jpg', quality: 0.6, result: 'tmpfile' });
-    } catch {
-      uri = null;
-    }
-    setFeedbackShot(uri);
-    setOverlay('feedback');
+  const openFeedback = useCallback(() => {
+    void runUiAction(
+      'map.open_feedback',
+      async (token) => {
+        lightTap();
+        let uri: string | null = null;
+        try {
+          uri = await captureScreen({ format: 'jpg', quality: 0.6, result: 'tmpfile' });
+        } catch {
+          uri = null;
+        }
+        if (!token.isCurrent()) return;
+        setFeedbackShot(uri);
+        setOverlay('feedback');
+      },
+      { screen: 'Map' },
+    );
   }, []);
 
   const handleReorder = useCallback(
     async (updates: { id: string; position: number; day: number }[]): Promise<boolean> => {
       if (!groupId) return false;
-      logEvent('destination_reorder', { count: updates.length });
 
-      const departureDate = group?.departureDate;
-      // Closed stops are intentionally absent from the editor, but their
-      // original position slots remain reserved so editing open stops cannot
-      // move anything across a historical closure or create duplicate slots.
-      const openPositionSlots = [...destinations]
-        .sort((a, b) => a.order - b.order)
-        .map((destination) => destination.order);
-      const persistedUpdates: {
-        id: string;
-        position: number;
-        day: number;
-        meetAt?: string;
-      }[] = updates.map((update, index) => {
-        const original = rawDestinations.find((dest) => dest.id === update.id);
-        const position = openPositionSlots[index] ?? update.position;
-        if (!departureDate || !original?.meetAt || (original.day || 1) === update.day) {
-          return { ...update, position };
-        }
-        const alignedMeetAt = alignMeetTimeToTripDay(
-          new Date(original.meetAt),
-          departureDate,
-          update.day,
-        );
-        return { ...update, position, meetAt: alignedMeetAt.toISOString() };
-      });
-      const newDests = rawDestinations.map(d => ({ ...d }));
-      persistedUpdates.forEach(u => {
-         const dest = newDests.find(d => d.id === u.id);
-         if (dest) {
-            dest.order = u.position;
-            dest.day = u.day;
-            if (u.meetAt !== undefined) dest.meetAt = u.meetAt;
-         }
-      });
-      newDests.sort((a, b) => {
-         if ((a.day || 1) !== (b.day || 1)) return (a.day || 1) - (b.day || 1);
-         return a.order - b.order;
-      });
-      setOptimisticDestinations(newDests);
-      
-      if (optimisticTimeoutRef.current) clearTimeout(optimisticTimeoutRef.current);
-      optimisticTimeoutRef.current = setTimeout(() => {
-        setOptimisticDestinations(null);
-      }, 3000);
+      const result = await runUiAction(
+        'map.destination_reorder',
+        async (token) => {
+          logEvent('destination_reorder', { count: updates.length });
 
-      try {
-        await reorderDestinations(groupId, persistedUpdates);
-        refresh();
-        return true;
-      } catch (e) {
-        logError('destination_reorder_failed', e);
-        Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
-        setOptimisticDestinations(null);
-        refresh();
-        return false;
-      }
+          const departureDate = group?.departureDate;
+          // Closed stops are intentionally absent from the editor, but their
+          // original position slots remain reserved so editing open stops cannot
+          // move anything across a historical closure or create duplicate slots.
+          const openPositionSlots = [...destinations]
+            .sort((a, b) => a.order - b.order)
+            .map((destination) => destination.order);
+          const persistedUpdates: {
+            id: string;
+            position: number;
+            day: number;
+            meetAt?: string;
+          }[] = updates.map((update, index) => {
+            const original = rawDestinations.find((dest) => dest.id === update.id);
+            const position = openPositionSlots[index] ?? update.position;
+            if (!departureDate || !original?.meetAt || (original.day || 1) === update.day) {
+              return { ...update, position };
+            }
+            const alignedMeetAt = alignMeetTimeToTripDay(
+              new Date(original.meetAt),
+              departureDate,
+              update.day,
+            );
+            return { ...update, position, meetAt: alignedMeetAt.toISOString() };
+          });
+          const newDests = rawDestinations.map((d) => ({ ...d }));
+          persistedUpdates.forEach((u) => {
+            const dest = newDests.find((d) => d.id === u.id);
+            if (dest) {
+              dest.order = u.position;
+              dest.day = u.day;
+              if (u.meetAt !== undefined) dest.meetAt = u.meetAt;
+            }
+          });
+          newDests.sort((a, b) => {
+            if ((a.day || 1) !== (b.day || 1)) return (a.day || 1) - (b.day || 1);
+            return a.order - b.order;
+          });
+          setOptimisticDestinations(newDests);
+
+          if (optimisticTimeoutRef.current) clearTimeout(optimisticTimeoutRef.current);
+          optimisticTimeoutRef.current = setTimeout(() => {
+            setOptimisticDestinations(null);
+          }, 3000);
+
+          try {
+            await reorderDestinations(groupId, persistedUpdates);
+            if (!token.isCurrent()) return false;
+            refresh();
+            return true;
+          } catch (e) {
+            logError('destination_reorder_failed', e);
+            if (token.isCurrent()) {
+              Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
+              setOptimisticDestinations(null);
+              refresh();
+            }
+            throw e;
+          }
+        },
+        {
+          screen: 'Map',
+          suppressBanner: true,
+          // Timeout skips the task catch (token already stale) — still roll back optimistic UI.
+          onError: (kind) => {
+            if (optimisticTimeoutRef.current) {
+              clearTimeout(optimisticTimeoutRef.current);
+              optimisticTimeoutRef.current = undefined;
+            }
+            setOptimisticDestinations(null);
+            void refresh();
+            if (kind === 'timeout') {
+              Alert.alert(t('map.setFailedTitle'), t('interaction.timeout'));
+            }
+          },
+        },
+      );
+      return result === true;
     },
     [
       groupId,
@@ -2456,16 +2591,34 @@ export default function MapScreen({ route, navigation }: Props) {
           confirmLabel: t('settings.deleteConfirm'),
           destructive: true,
         },
-        async () => {
-          logEvent('destination_delete', { id });
-          try {
-            await deleteDestination(groupId, id);
-            await refresh();
-          } catch (e) {
-            logError('destination_delete_failed', e, { id });
-            Alert.alert(t('settings.deleteFailed'));
-            await refresh();
-          }
+        () => {
+          void runUiAction(
+            'map.destination_delete',
+            async (token) => {
+              logEvent('destination_delete', { id });
+              try {
+                await deleteDestination(groupId, id);
+                if (!token.isCurrent()) return;
+                await refresh();
+              } catch (e) {
+                logError('destination_delete_failed', e, { id });
+                if (token.isCurrent()) {
+                  Alert.alert(t('settings.deleteFailed'));
+                  await refresh();
+                }
+                throw e;
+              }
+            },
+            {
+              screen: 'Map',
+              suppressBanner: true,
+              onError: (kind) => {
+                if (kind === 'timeout') {
+                  Alert.alert(t('settings.deleteFailed'), t('interaction.timeout'));
+                }
+              },
+            },
+          );
         },
       );
     },
@@ -2483,17 +2636,23 @@ export default function MapScreen({ route, navigation }: Props) {
         destructive: true,
       },
       () => {
-        logEvent('group_leave', { groupId, isLeader });
-        void (async () => {
-          if (groupId) {
-            await leaveGroups([groupId]).catch(() => undefined);
-            await clearLiveActivities({ groupIds: [groupId] });
-          } else {
-            await clearLiveActivities();
-          }
-          leaveGroup();
-          navigation.reset({ index: 0, routes: [{ name: 'RoleSelect' }] });
-        })();
+        void runUiAction(
+          'map.leave_group',
+          async (token) => {
+            logEvent('group_leave', { groupId, isLeader });
+            if (groupId) {
+              await leaveGroups([groupId]).catch(() => undefined);
+              if (!token.isCurrent()) return;
+              await clearLiveActivities({ groupIds: [groupId] });
+            } else {
+              await clearLiveActivities();
+            }
+            if (!token.isCurrent()) return;
+            leaveGroup();
+            navigation.reset({ index: 0, routes: [{ name: 'RoleSelect' }] });
+          },
+          { screen: 'Map' },
+        );
       },
     );
   }, [t, groupId, isLeader, leaveGroup, navigation]);
@@ -2507,9 +2666,16 @@ export default function MapScreen({ route, navigation }: Props) {
         destructive: true,
       },
       () => {
-        logEvent('sign_out');
-        void signOut();
-        navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+        void runUiAction(
+          'map.sign_out',
+          async (token) => {
+            logEvent('sign_out');
+            await signOut();
+            if (!token.isCurrent()) return;
+            navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+          },
+          { screen: 'Map' },
+        );
       },
     );
   }, [t, signOut, navigation]);
@@ -2762,45 +2928,60 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [statusApplying, draftMyStatus, myStatusKind, applyMyStatus, closeMyStatusPicker]);
 
   const openGroupMenu = useCallback(() => {
-    lightTap();
-    // ⋯ next to avatar: home / settings / leave — invite lives in Members only.
-    const run = (action: 'home' | 'settings' | 'end') => {
-      if (action === 'home') goHomeCreateOrJoin();
-      else if (action === 'settings') setOverlay('settings');
-      else confirmLeave();
-    };
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          title: t('map.groupMenu'),
-          options: [
-            t('map.backToHome'),
-            t('map.overlaySettings'),
-            t('group.leave'),
-            t('common.cancel'),
-          ],
-          cancelButtonIndex: 3,
-          destructiveButtonIndex: 2,
-        },
-        (idx) => {
-          if (idx === 0) run('home');
-          else if (idx === 1) run('settings');
-          else if (idx === 2) run('end');
-        },
-      );
-    } else {
-      // Android Alert supports at most 3 buttons; "back to home" remains in Settings.
-      Alert.alert(
-        t('map.groupMenu'),
-        undefined,
-        [
-          { text: t('map.overlaySettings'), onPress: () => run('settings') },
-          { text: t('group.leave'), style: 'destructive', onPress: () => run('end') },
-          { text: t('common.cancel'), style: 'cancel' },
-        ],
-        { cancelable: true },
-      );
-    }
+    void runUiAction(
+      'map.open_group_menu',
+      () => {
+        lightTap();
+        // ⋯ next to avatar: home / settings / leave — invite lives in Members only.
+        // Index mapping is sync; navigation / mutation still go through runUiAction
+        // inside goHomeCreateOrJoin / confirmLeave.
+        const run = (action: 'home' | 'settings' | 'end') => {
+          if (action === 'home') goHomeCreateOrJoin();
+          else if (action === 'settings') {
+            void runUiAction(
+              'map.open_settings',
+              () => {
+                setOverlay('settings');
+              },
+              { screen: 'Map' },
+            );
+          } else confirmLeave();
+        };
+        if (Platform.OS === 'ios') {
+          ActionSheetIOS.showActionSheetWithOptions(
+            {
+              title: t('map.groupMenu'),
+              options: [
+                t('map.backToHome'),
+                t('map.overlaySettings'),
+                t('group.leave'),
+                t('common.cancel'),
+              ],
+              cancelButtonIndex: 3,
+              destructiveButtonIndex: 2,
+            },
+            (idx) => {
+              if (idx === 0) run('home');
+              else if (idx === 1) run('settings');
+              else if (idx === 2) run('end');
+            },
+          );
+        } else {
+          // Android Alert supports at most 3 buttons; "back to home" remains in Settings.
+          Alert.alert(
+            t('map.groupMenu'),
+            undefined,
+            [
+              { text: t('map.overlaySettings'), onPress: () => run('settings') },
+              { text: t('group.leave'), style: 'destructive', onPress: () => run('end') },
+              { text: t('common.cancel'), style: 'cancel' },
+            ],
+            { cancelable: true },
+          );
+        }
+      },
+      { screen: 'Map' },
+    );
   }, [t, confirmLeave, goHomeCreateOrJoin]);
 
   useEffect(() => {
@@ -2994,7 +3175,10 @@ export default function MapScreen({ route, navigation }: Props) {
     styles, t, pendingPlace, user, accent, openProfile, openGroupMenu, flock,
   ]);
 
-  const closeOverlay = useCallback(() => setOverlay(null), []);
+  const closeOverlay = useCallback(() => {
+    // Pure UI dismiss — minimal safe handler (no IO / navigation).
+    setOverlay(null);
+  }, []);
   const openHistoryOverlay = useCallback(() => setOverlay('history'), []);
   const openAccountOverlay = useCallback(() => setOverlay('account'), []);
   const openCustomQuickCommand = useCallback((slot = 0) => {
@@ -3341,6 +3525,7 @@ export default function MapScreen({ route, navigation }: Props) {
           Platform.OS === 'ios' ? consumeForegroundSample : undefined
         }
         onLongPressCoordinate={handleLongPressCoordinate}
+        onRequestGoHome={goHomeCreateOrJoin}
       />
 
       {/* Group pill — moved to bottom left, tracking sheet like recenter capsule. */}
@@ -3408,10 +3593,7 @@ export default function MapScreen({ route, navigation }: Props) {
           />
           <Pressable
             style={styles.recenterHit}
-            onPress={() => {
-              lightTap();
-              fitAllMembers();
-            }}
+            onPress={fitAllMembers}
             accessibilityRole="button"
             accessibilityLabel={t('map.fitAllA11y')}
           >
@@ -3420,10 +3602,7 @@ export default function MapScreen({ route, navigation }: Props) {
           <View style={styles.recenterDivider} />
           <Pressable
             style={styles.recenterHit}
-            onPress={() => {
-              lightTap();
-              locateMe();
-            }}
+            onPress={locateMe}
             accessibilityRole="button"
             accessibilityLabel={t('map.locateA11y')}
           >
@@ -3514,8 +3693,15 @@ export default function MapScreen({ route, navigation }: Props) {
                       ...pendingPlace,
                       name: pendingPlaceTitle.trim() || pendingPlace.name,
                     };
-                    dismissConfirmCard();
-                    void handlePickDestination(place);
+                    // Keep confirm card until success so failures do not wipe UI state.
+                    void runUiAction(
+                      'map.confirm_add_destination',
+                      async (token) => {
+                        const ok = await handlePickDestination(place);
+                        if (ok && token.isCurrent()) dismissConfirmCard();
+                      },
+                      { screen: 'Map' },
+                    );
                   }}
                   accessibilityRole="button"
                 >

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -16,6 +16,7 @@ import { useTheme } from '../state/PreferencesContext';
 import { glass, accentMix } from '../glass';
 import { supabase } from '../api/supabase';
 import { logEvent, logError } from '../utils/activityLog';
+import { runUiAction } from '../utils/uiAction';
 
 type Status = 'form' | 'sending' | 'sent' | 'error';
 
@@ -53,6 +54,19 @@ export default function FeedbackSheet({
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<Category>('bug');
   const [status, setStatus] = useState<Status>('form');
+  const mountedRef = useRef(true);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (closeTimerRef.current) {
+        clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = null;
+      }
+    };
+  }, []);
 
   function reset() {
     setDescription('');
@@ -61,6 +75,10 @@ export default function FeedbackSheet({
   }
 
   function handleClose() {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
     reset();
     onClose();
   }
@@ -81,33 +99,58 @@ export default function FeedbackSheet({
   }
 
   async function submit() {
-    if (!description.trim()) return;
-    setStatus('sending');
-    logEvent('feedback_submit', { category });
-    try {
-      const { data } = await supabase.auth.getSession();
-      const userId = data.session?.user?.id;
-      if (!userId) throw new Error('no session');
-      const screenshotPath = await uploadScreenshot(userId);
-      const { error } = await supabase.from('feedback_reports').insert({
-        user_id: userId,
-        context_tag: category,
-        description: description.trim(),
-        screenshot_path: screenshotPath,
-        device: {
-          os: Platform.OS,
-          osVersion: Platform.Version,
-          appVersion: Constants.nativeApplicationVersion ?? Constants.expoConfig?.version ?? null,
+    if (!description.trim() || status === 'sending') return;
+    await runUiAction(
+      'feedback.submit',
+      async (token) => {
+        setStatus('sending');
+        logEvent('feedback_submit', { category });
+        try {
+          const { data } = await supabase.auth.getSession();
+          if (!token.isCurrent()) return;
+          const userId = data.session?.user?.id;
+          if (!userId) throw new Error('no session');
+          const screenshotPath = await uploadScreenshot(userId);
+          if (!token.isCurrent()) return;
+          const { error } = await supabase.from('feedback_reports').insert({
+            user_id: userId,
+            context_tag: category,
+            description: description.trim(),
+            screenshot_path: screenshotPath,
+            // Device metadata only — no tokens, coords, or raw stacks.
+            device: {
+              os: Platform.OS,
+              osVersion: Platform.Version,
+              appVersion:
+                Constants.nativeApplicationVersion ?? Constants.expoConfig?.version ?? null,
+            },
+          });
+          if (error) throw error;
+          if (!token.isCurrent()) return;
+          logEvent('feedback_submit_ok', { category });
+          setStatus('sent');
+          // Token is cleared in runUiAction finally after success — do not gate
+          // deferred close on isCurrent(). Use mount lifetime instead.
+          if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+          closeTimerRef.current = setTimeout(() => {
+            closeTimerRef.current = null;
+            if (mountedRef.current) handleClose();
+          }, 1000);
+        } catch (e) {
+          logError('feedback_submit_failed', e, { category });
+          if (token.isCurrent()) setStatus('error');
+          throw e;
+        }
+      },
+      {
+        screen: 'Feedback',
+        suppressBanner: true,
+        // Timeout (and errors) must leave the permanent spinner state.
+        onError: () => {
+          setStatus((prev) => (prev === 'sending' ? 'error' : prev));
         },
-      });
-      if (error) throw error;
-      logEvent('feedback_submit_ok', { category });
-      setStatus('sent');
-      setTimeout(handleClose, 1000);
-    } catch (e) {
-      logError('feedback_submit_failed', e, { category });
-      setStatus('error');
-    }
+      },
+    );
   }
 
   return (

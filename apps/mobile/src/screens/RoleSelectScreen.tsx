@@ -17,6 +17,7 @@ import { useTheme } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
 import { lightTap } from '../utils/haptics';
 import { logEvent } from '../utils/activityLog';
+import { runUiAction } from '../utils/uiAction';
 import CrookIcon from '../components/CrookIcon';
 import { useSession } from '../state/SessionContext';
 import {
@@ -114,8 +115,16 @@ export default function RoleSelectScreen({ navigation }: Props) {
               text: t('settings.signOut'),
               style: 'destructive',
               onPress: () => {
-                logEvent('sign_out');
-                void signOut().then(() => navigation.reset({ index: 0, routes: [{ name: 'Login' }] }));
+                void runUiAction(
+                  'role_select.sign_out',
+                  async (token) => {
+                    logEvent('sign_out');
+                    await signOut();
+                    if (!token.isCurrent()) return;
+                    navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+                  },
+                  { screen: 'RoleSelect' },
+                );
               },
             },
           ],

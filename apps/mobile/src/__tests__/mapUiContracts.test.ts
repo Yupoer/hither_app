@@ -116,12 +116,13 @@ describe('map UI placement contracts', () => {
     expect(settingsOverlay).toContain("t('settings.createOrJoinHint')");
     expect(settingsOverlay).toContain('onGoHome');
     expect(mapScreen).toContain('goHomeCreateOrJoin');
-    expect(mapScreen).toContain("navigation.navigate('RoleSelect')");
+    expect(mapScreen).toContain("navigation.reset({ index: 0, routes: [{ name: 'RoleSelect' }] })");
     // Must not clear membership just to open create/join.
     const goHomeFn = mapScreen.indexOf('goHomeCreateOrJoin = useCallback');
-    const goHomeBody = mapScreen.slice(goHomeFn, goHomeFn + 280);
+    const goHomeBody = mapScreen.slice(goHomeFn, goHomeFn + 520);
     expect(goHomeBody).not.toContain('leaveGroup');
     expect(goHomeBody).not.toContain('signOut');
+    expect(goHomeBody).not.toContain("navigation.navigate('RoleSelect')");
     expect(i18n).toContain("'settings.createOrJoin': '創建或加入群組'");
   });
 

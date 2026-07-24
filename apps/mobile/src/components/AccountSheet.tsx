@@ -19,6 +19,7 @@ import { useSession } from '../state/SessionContext';
 import { redeemPromoCode } from '../api/client';
 import { glass, accentMix } from '../glass';
 import { useTranslation } from '../i18n';
+import { runUiAction } from '../utils/uiAction';
 
 export default function AccountSheet({
   visible,
@@ -66,50 +67,109 @@ export default function AccountSheet({
   async function handleRedeem() {
     const code = promoCode.trim();
     if (!code) return;
-    setRedeeming(true);
-    try {
-      const result = await redeemPromoCode(code);
-      await refreshProfile();
-      Alert.alert('升級成功', `您已成功開通：${result.plan_name}`);
-      setPromoCode('');
-    } catch (e: any) {
-      Alert.alert('兌換失敗', e.message);
-    } finally {
-      setRedeeming(false);
-    }
+    await runUiAction(
+      'account.redeem',
+      async (token) => {
+        try {
+          const result = await redeemPromoCode(code);
+          if (!token.isCurrent()) return;
+          await refreshProfile();
+          if (!token.isCurrent()) return;
+          Alert.alert('升級成功', `您已成功開通：${result.plan_name}`);
+          setPromoCode('');
+        } catch (e: unknown) {
+          if (token.isCurrent()) {
+            const msg = e instanceof Error ? e.message : String(e);
+            Alert.alert('兌換失敗', msg);
+          }
+          throw e;
+        }
+      },
+      {
+        screen: 'Account',
+        suppressBanner: true,
+        onBusyChange: setRedeeming,
+        onError: (kind) => {
+          if (kind === 'timeout') {
+            Alert.alert('兌換失敗', t('interaction.timeout'));
+          }
+        },
+      },
+    );
   }
 
   async function handleUpgrade() {
     if (!/\S+@\S+\.\S+/.test(upgradeEmail.trim()) || upgradePassword.length < 6 || upgradeBusy) return;
-    setUpgradeBusy(true);
-    try {
-      await upgradeToEmailAccount(upgradeEmail.trim(), upgradePassword);
-      Alert.alert(t('account.section'), t('account.upgradeSent'));
-      setUpgradeEmail('');
-      setUpgradePassword('');
-    } catch (e) {
-      Alert.alert(t('account.section'), e instanceof Error ? e.message : t('account.upgradeSent'));
-    } finally {
-      setUpgradeBusy(false);
-    }
+    await runUiAction(
+      'account.upgrade_email',
+      async (token) => {
+        try {
+          await upgradeToEmailAccount(upgradeEmail.trim(), upgradePassword);
+          if (!token.isCurrent()) return;
+          Alert.alert(t('account.section'), t('account.upgradeSent'));
+          setUpgradeEmail('');
+          setUpgradePassword('');
+        } catch (e) {
+          if (token.isCurrent()) {
+            Alert.alert(
+              t('account.section'),
+              e instanceof Error ? e.message : t('account.upgradeSent'),
+            );
+          }
+          throw e;
+        }
+      },
+      {
+        screen: 'Account',
+        suppressBanner: true,
+        onBusyChange: setUpgradeBusy,
+        onError: (kind) => {
+          if (kind === 'timeout') {
+            Alert.alert(t('account.section'), t('interaction.timeout'));
+          }
+        },
+      },
+    );
   }
 
   async function handleLink(provider: 'google' | 'apple') {
     if (upgradeBusy) return;
-    setUpgradeBusy(true);
-    try {
-      const linked = provider === 'google' ? await linkWithGoogle() : await linkWithApple();
-      if (linked) {
-        Alert.alert(t('account.section'), provider === 'google' ? t('login.google') : t('login.apple'));
-      }
-    } catch (e) {
-      Alert.alert(
-        provider === 'google' ? t('login.google') : t('login.apple'),
-        e instanceof Error ? e.message : t('login.signInFailed'),
-      );
-    } finally {
-      setUpgradeBusy(false);
-    }
+    await runUiAction(
+      provider === 'google' ? 'account.link_google' : 'account.link_apple',
+      async (token) => {
+        try {
+          const linked = provider === 'google' ? await linkWithGoogle() : await linkWithApple();
+          if (!token.isCurrent()) return;
+          if (linked) {
+            Alert.alert(
+              t('account.section'),
+              provider === 'google' ? t('login.google') : t('login.apple'),
+            );
+          }
+        } catch (e) {
+          if (token.isCurrent()) {
+            Alert.alert(
+              provider === 'google' ? t('login.google') : t('login.apple'),
+              e instanceof Error ? e.message : t('login.signInFailed'),
+            );
+          }
+          throw e;
+        }
+      },
+      {
+        screen: 'Account',
+        suppressBanner: true,
+        onBusyChange: setUpgradeBusy,
+        onError: (kind) => {
+          if (kind === 'timeout') {
+            Alert.alert(
+              provider === 'google' ? t('login.google') : t('login.apple'),
+              t('interaction.timeout'),
+            );
+          }
+        },
+      },
+    );
   }
 
   return (
