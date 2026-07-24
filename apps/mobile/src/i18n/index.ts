@@ -29,6 +29,14 @@ const zh = {
   'common.delete': '刪除',
   'common.or': '或',
 
+  // Interaction recovery (shared action runner)
+  'interaction.timeout': '操作逾時，請再試一次',
+  'interaction.error': '操作失敗，請再試一次',
+  'interaction.retry': '重試',
+  'interaction.mapFailed': '地圖載入失敗',
+  'interaction.mapReload': '重新載入地圖',
+  'interaction.mapGoHome': '回到主畫面',
+
   // Auth
   'auth.nameLabel': '暱稱',
   'auth.namePlaceholder': '例如：迷路的貓',
@@ -669,6 +677,13 @@ const en: Record<keyof typeof zh, string> = {
   'common.confirm': 'Confirm',
   'common.delete': 'Delete',
   'common.or': 'or',
+
+  'interaction.timeout': 'This action timed out. Please try again.',
+  'interaction.error': 'This action failed. Please try again.',
+  'interaction.retry': 'Retry',
+  'interaction.mapFailed': 'Map failed to load',
+  'interaction.mapReload': 'Reload map',
+  'interaction.mapGoHome': 'Back to home',
 
   'auth.nameLabel': 'YOUR NAME',
   'auth.namePlaceholder': 'e.g. Lost Cat',

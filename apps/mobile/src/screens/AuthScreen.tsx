@@ -23,6 +23,8 @@ import { useTheme } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
 import { accentMix, glass } from '../glass';
 import { logEvent, logError } from '../utils/activityLog';
+import { runUiAction, type UiActionToken } from '../utils/uiAction';
+import SafePressable from '../components/SafePressable';
 import { mediumTap } from '../utils/haptics';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Auth'>;
@@ -62,17 +64,6 @@ export default function AuthScreen({ navigation, route }: Props) {
   // The group's name is asked separately from the nickname: unlike a
   // nickname (editable later), the group name is set once at creation, so
   // defaulting it to the nickname would permanently weld the two.
-  /** Create (leader) / join (follower) the group, then drop onto the map. */
-  async function enterGroup() {
-    mediumTap();
-    const group = isLeader
-      ? await createGroup(groupName.trim())
-      : await joinGroup(code.trim());
-    logEvent(isLeader ? 'group_create' : 'group_join');
-    setMembership({ group, role });
-    navigation.replace('Map', { groupId: group.id });
-  }
-
   function handleAuthError(e: unknown) {
     logError(isLeader ? 'group_create_failed' : 'group_join_failed', e);
     // Design: a rejected code highlights the code boxes.
@@ -82,23 +73,34 @@ export default function AuthScreen({ navigation, route }: Props) {
       isLeader ? t('group.createFailedTitle') : t('group.joinFailedTitle'),
       msg,
     );
-    setBusy(false);
   }
 
-  async function handleSubmit() {
-    if (!canSubmit) return;
-    setBusy(true);
+  /** Body for SafePressable — runner supplies token + busy/timeout contract. */
+  async function submitAuth(token: UiActionToken) {
+    if (!canSubmit && !busy) return;
     const nickname = name.trim();
     try {
       // Ensure we have an anonymous user, then keep the nickname current.
       if (!user) {
         await signIn({ name: nickname });
+        if (!token.isCurrent()) return;
       } else if (nickname !== user.name) {
         await updateNickname(nickname);
+        if (!token.isCurrent()) return;
       }
-      await enterGroup();
+      mediumTap();
+      const group = isLeader
+        ? await createGroup(groupName.trim())
+        : await joinGroup(code.trim());
+      // Late results must not update membership or navigation.
+      if (!token.isCurrent()) return;
+      logEvent(isLeader ? 'group_create' : 'group_join');
+      setMembership({ group, role });
+      navigation.replace('Map', { groupId: group.id });
     } catch (e) {
-      handleAuthError(e);
+      // Local Alert for auth UX; rethrow so runUiAction records ui_action_error.
+      if (token.isCurrent()) handleAuthError(e);
+      throw e;
     }
   }
 
@@ -172,7 +174,23 @@ export default function AuthScreen({ navigation, route }: Props) {
                     keyboardAppearance="dark"
                     autoCapitalize="none"
                     returnKeyType="go"
-                    onSubmitEditing={handleSubmit}
+                    onSubmitEditing={() => {
+                      if (!canSubmit) return;
+                      void runUiAction(
+                        isLeader ? 'auth.create_group' : 'auth.join_group',
+                        submitAuth,
+                        {
+                          screen: 'Auth',
+                          suppressBanner: true,
+                          onBusyChange: setBusy,
+                          onError: (kind) => {
+                            if (kind === 'timeout') {
+                              Alert.alert(t('group.createFailedTitle'), t('interaction.timeout'));
+                            }
+                          },
+                        },
+                      );
+                    }}
                     accessibilityLabel={t('group.nameLabel')}
                   />
                 </View>
@@ -217,7 +235,23 @@ export default function AuthScreen({ navigation, route }: Props) {
                     autoCapitalize="characters"
                     autoCorrect={false}
                     returnKeyType="go"
-                    onSubmitEditing={handleSubmit}
+                    onSubmitEditing={() => {
+                      if (!canSubmit) return;
+                      void runUiAction(
+                        isLeader ? 'auth.create_group' : 'auth.join_group',
+                        submitAuth,
+                        {
+                          screen: 'Auth',
+                          suppressBanner: true,
+                          onBusyChange: setBusy,
+                          onError: (kind) => {
+                            if (kind === 'timeout') {
+                              Alert.alert(t('group.joinFailedTitle'), t('interaction.timeout'));
+                            }
+                          },
+                        },
+                      );
+                    }}
                   />
                 </Pressable>
               </>
@@ -225,8 +259,20 @@ export default function AuthScreen({ navigation, route }: Props) {
 
             <View style={styles.spacer} />
 
-            <Pressable
-              onPress={handleSubmit}
+            <SafePressable
+              actionId={isLeader ? 'auth.create_group' : 'auth.join_group'}
+              screen="Auth"
+              onPressAction={submitAuth}
+              onBusyChange={setBusy}
+              suppressBanner
+              onActionError={(kind) => {
+                if (kind === 'timeout') {
+                  Alert.alert(
+                    isLeader ? t('group.createFailedTitle') : t('group.joinFailedTitle'),
+                    t('interaction.timeout'),
+                  );
+                }
+              }}
               disabled={!canSubmit}
               accessibilityRole="button"
               style={({ pressed }) => [
@@ -245,7 +291,7 @@ export default function AuthScreen({ navigation, route }: Props) {
                   <Ionicons name="arrow-forward" size={18} color="#fff" />
                 </>
               )}
-            </Pressable>
+            </SafePressable>
 
             <Text style={styles.footer}>
               {isLeader ? t('auth.leaderFoot') : t('auth.followerFoot')}

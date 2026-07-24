@@ -1,4 +1,5 @@
 import React, {
+  Component,
   forwardRef,
   useCallback,
   useEffect,
@@ -6,8 +7,18 @@ import React, {
   useMemo,
   useRef,
   useState,
+  type ErrorInfo,
+  type ReactNode,
 } from 'react';
-import { Animated as RNAnimated, Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import {
+  Animated as RNAnimated,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { AnimatedRegion, Marker, MarkerAnimated, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import type { Coordinates, Destination, MemberLocation } from '../types';
@@ -23,6 +34,7 @@ import {
   latOffsetForVisibleBand,
 } from './mapCameraMath';
 import { logError, logEvent } from '../utils/activityLog';
+import { useTranslation } from '../i18n';
 
 export {
   DEFAULT_LATITUDE_DELTA,
@@ -35,7 +47,8 @@ export {
 
 /** Session-scoped Android map mount counter (theme remount increments). Not Google billing Map Loads. */
 let androidMapMountCount = 0;
-const MAP_LOADED_MISSING_MS = 10_000;
+/** Diagnostic window after ready without loaded — log only, never auto-remount. */
+const MAP_LOADED_TIMEOUT_MS = 10_000;
 
 /** Optional camera framing for centerOn (defaults = locate-me street level). */
 export type CenterOnOptions = {
@@ -81,6 +94,52 @@ export interface GroupMapProps {
   }) => void;
   /** Long-press map coordinate (shared with manual lat/lng destination sheet). */
   onLongPressCoordinate?: (coordinates: Coordinates) => void;
+  /**
+   * Called from map surface fallback when the user chooses “back to home”.
+   * Parent should run the go-home reset action; this component never leaves groups.
+   */
+  onRequestGoHome?: () => void;
+}
+
+/**
+ * Local boundary so a Map React subtree failure does not blank the whole app.
+ * Parent owns fallback visibility (`showFallback`); this boundary only reports
+ * errors and never auto-clears on ordinary parent re-renders (children identity
+ * changes every render and must not dismiss recovery UI).
+ * `resetKey` clears the error only on intentional surface remount.
+ */
+class MapSubtreeBoundary extends Component<
+  {
+    children: ReactNode;
+    onError: () => void;
+    fallback: ReactNode;
+    /** Bumped only on user remount; clears hasError so a fresh Map can mount. */
+    resetKey: number;
+  },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError(): { hasError: boolean } {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, _info: ErrorInfo): void {
+    logError('map_surface_failure', error, { scope: 'map_subtree' });
+    logEvent('map_surface_failure', { scope: 'map_subtree' });
+    this.props.onError();
+  }
+
+  componentDidUpdate(prevProps: { resetKey: number }): void {
+    if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
+      this.setState({ hasError: false });
+    }
+  }
+
+  render(): ReactNode {
+    if (this.state.hasError) return this.props.fallback;
+    return this.props.children;
+  }
 }
 
 /**
@@ -282,15 +341,21 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     bottomOverlap = 0,
     onUserLocationSample,
     onLongPressCoordinate,
+    onRequestGoHome,
   },
   ref,
 ) {
+  const { t } = useTranslation();
   const mapRef = useRef<MapView | null>(null);
   const centeredModeRef = useRef<'fallback' | 'gathering' | null>(null);
+  // Finite surface remount: user may retry once; no timer auto-remount.
+  const [surfaceKey, setSurfaceKey] = useState(0);
+  const [remountUsed, setRemountUsed] = useState(false);
+  const [showFallback, setShowFallback] = useState(false);
   const readyLoggedRef = useRef(false);
   const loadedLoggedRef = useRef(false);
   const readyAtRef = useRef<number | null>(null);
-  const loadedMissingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadedTimeoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { height: windowHeight } = useWindowDimensions();
   const { colors, themeName } = useTheme();
   const { dayColors } = usePreferences();
@@ -318,9 +383,9 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     // App lifecycle only — not Google Cloud Map Loads / billing.
     logEvent('android_map_mount', { mapMountCount: androidMapMountCount });
     return () => {
-      if (loadedMissingTimerRef.current) {
-        clearTimeout(loadedMissingTimerRef.current);
-        loadedMissingTimerRef.current = null;
+      if (loadedTimeoutTimerRef.current) {
+        clearTimeout(loadedTimeoutTimerRef.current);
+        loadedTimeoutTimerRef.current = null;
       }
       logEvent('android_map_unmount', { mapMountCount: androidMapMountCount });
     };
@@ -331,23 +396,28 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     readyLoggedRef.current = true;
     readyAtRef.current = Date.now();
     logEvent('android_map_ready');
-    if (loadedMissingTimerRef.current) clearTimeout(loadedMissingTimerRef.current);
-    loadedMissingTimerRef.current = setTimeout(() => {
+    if (loadedTimeoutTimerRef.current) clearTimeout(loadedTimeoutTimerRef.current);
+    // Spec §5.3: ready without loaded → diagnostic event only; no auto remount.
+    loadedTimeoutTimerRef.current = setTimeout(() => {
       if (loadedLoggedRef.current) return;
-      logError('map_loaded_missing', new Error('map_loaded_missing'), {
-        mapLoadedMissing: true,
+      logError('map_loaded_timeout', new Error('map_loaded_timeout'), {
+        mapLoadedTimeout: true,
         mapMountCount: androidMapMountCount,
-        durationMs: MAP_LOADED_MISSING_MS,
+        durationMs: MAP_LOADED_TIMEOUT_MS,
       });
-    }, MAP_LOADED_MISSING_MS);
+      logEvent('map_loaded_timeout', {
+        mapMountCount: androidMapMountCount,
+        durationMs: MAP_LOADED_TIMEOUT_MS,
+      });
+    }, MAP_LOADED_TIMEOUT_MS);
   }, []);
 
   const onMapLoaded = useCallback(() => {
     if (Platform.OS !== 'android' || loadedLoggedRef.current) return;
     loadedLoggedRef.current = true;
-    if (loadedMissingTimerRef.current) {
-      clearTimeout(loadedMissingTimerRef.current);
-      loadedMissingTimerRef.current = null;
+    if (loadedTimeoutTimerRef.current) {
+      clearTimeout(loadedTimeoutTimerRef.current);
+      loadedTimeoutTimerRef.current = null;
     }
     const readyAt = readyAtRef.current;
     const mapReadyToLoadedMs =
@@ -452,12 +522,75 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     }
   }, [fallbackCenter, gathering, latOffset]);
 
+  const handleMapSubtreeError = useCallback(() => {
+    // Parent-owned: survives ordinary re-renders; not cleared by children identity.
+    setShowFallback(true);
+  }, []);
+
+  const handleReloadMap = useCallback(() => {
+    if (remountUsed) return;
+    setRemountUsed(true);
+    setShowFallback(false);
+    // Allow ready/loaded lifecycle events on the rebuilt surface.
+    readyLoggedRef.current = false;
+    loadedLoggedRef.current = false;
+    readyAtRef.current = null;
+    if (loadedTimeoutTimerRef.current) {
+      clearTimeout(loadedTimeoutTimerRef.current);
+      loadedTimeoutTimerRef.current = null;
+    }
+    setSurfaceKey((k) => k + 1);
+    logEvent('map_surface_retry', { remountUsed: true });
+  }, [remountUsed]);
+
+  const mapFallback = (
+    <View style={styles.mapFallback} accessibilityRole="alert">
+      <Text style={styles.mapFallbackTitle}>{t('interaction.mapFailed')}</Text>
+      {!remountUsed ? (
+        <Pressable
+          onPress={handleReloadMap}
+          style={({ pressed }) => [styles.mapFallbackBtn, pressed && styles.mapFallbackBtnPressed]}
+          accessibilityRole="button"
+          accessibilityLabel={t('interaction.mapReload')}
+        >
+          <Text style={styles.mapFallbackBtnText}>{t('interaction.mapReload')}</Text>
+        </Pressable>
+      ) : null}
+      {onRequestGoHome ? (
+        <Pressable
+          onPress={onRequestGoHome}
+          style={({ pressed }) => [
+            styles.mapFallbackBtn,
+            styles.mapFallbackBtnSecondary,
+            pressed && styles.mapFallbackBtnPressed,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel={t('interaction.mapGoHome')}
+        >
+          <Text style={styles.mapFallbackBtnTextSecondary}>{t('interaction.mapGoHome')}</Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+
+  // Parent-owned fallback: first and second failure both stay here so a parent
+  // re-render cannot re-mount a broken MapView underneath the recovery UI.
+  if (showFallback) {
+    return mapFallback;
+  }
+
   return (
+    <MapSubtreeBoundary
+      resetKey={surfaceKey}
+      onError={handleMapSubtreeError}
+      fallback={mapFallback}
+    >
     <MapView
       // Remount when the theme's light/dark changes so Apple Maps picks up the
       // new `userInterfaceStyle` from a fresh mount (the prop alone is not
       // re-applied to an already-rendered map under the new architecture).
-      key={mapInterfaceStyle}
+      // surfaceKey allows a single user-driven remount after map subtree failure.
+      key={`${mapInterfaceStyle}-${surfaceKey}`}
       ref={mapRef}
       style={StyleSheet.absoluteFill}
       // Android uses Google Maps; iOS keeps the default MapKit provider.
@@ -560,6 +693,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
         );
       })}
     </MapView>
+    </MapSubtreeBoundary>
   );
 });
 
@@ -606,6 +740,47 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   memberInitial: { color: '#fff', fontWeight: '600', fontSize: 16 },
   // Fixed glyph size — HitherText typeRole="emoji" disables Dynamic Type.
   memberEmoji: { fontSize: 20 },
+  mapFallback: {
+    ...StyleSheet.absoluteFill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+    backgroundColor: '#0E1320',
+    gap: 12,
+  },
+  mapFallbackTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#F5F7FB',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  mapFallbackBtn: {
+    minWidth: 180,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+  },
+  mapFallbackBtnSecondary: {
+    backgroundColor: 'transparent',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.28)',
+  },
+  mapFallbackBtnPressed: {
+    opacity: 0.85,
+  },
+  mapFallbackBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1A1206',
+  },
+  mapFallbackBtnTextSecondary: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#F5F7FB',
+  },
 });
 
 export default React.memo(GroupMap);

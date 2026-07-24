@@ -31,8 +31,12 @@ describe('Android map contract', () => {
     expect(source).toContain("logEvent('android_map_loaded'");
     expect(source).toContain("logEvent('android_map_unmount'");
     expect(source).toContain('mapReadyToLoadedMs');
-    expect(source).toContain("logError('map_loaded_missing'");
-    expect(source).toContain('MAP_LOADED_MISSING_MS');
+    expect(source).toContain("logError('map_loaded_timeout'");
+    expect(source).toContain("logEvent('map_loaded_timeout'");
+    expect(source).toContain('MAP_LOADED_TIMEOUT_MS');
+    // ready→loaded diagnostic only — no timer-driven surface remount
+    expect(source).not.toMatch(/setTimeout\([^)]*setSurfaceKey/);
+    expect(source).not.toMatch(/setInterval\([^)]*setSurfaceKey/);
     const locationHandlerStart = source.indexOf('onUserLocationChange:');
     expect(locationHandlerStart).toBeGreaterThanOrEqual(0);
     const locationHandler = source.slice(

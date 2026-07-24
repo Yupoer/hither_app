@@ -1,6 +1,6 @@
 import React, { Component, type ErrorInfo, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { logError } from '../utils/activityLog';
+import { logError, logEvent } from '../utils/activityLog';
 import { getLastScreenName } from '../state/performance';
 
 interface Props {
@@ -9,16 +9,18 @@ interface Props {
 
 interface State {
   hasError: boolean;
+  retryCount: number;
 }
 
 /**
  * Root React Error Boundary. Coexists with ErrorUtils global handler —
  * does not replace it. Records a sanitized react_render error and shows retry.
+ * Does not catch event-handler throws, native crash, or ANR.
  */
 export default class AppErrorBoundary extends Component<Props, State> {
-  state: State = { hasError: false };
+  state: State = { hasError: false, retryCount: 0 };
 
-  static getDerivedStateFromError(): State {
+  static getDerivedStateFromError(): Partial<State> {
     return { hasError: true };
   }
 
@@ -26,11 +28,24 @@ export default class AppErrorBoundary extends Component<Props, State> {
     logError('react_render', error, {
       lastScreen: getLastScreenName(),
       isFatal: false,
+      retryCount: this.state.retryCount,
+    });
+    logEvent('react_render_boundary', {
+      lastScreen: getLastScreenName(),
+      retryCount: this.state.retryCount,
     });
   }
 
   private handleRetry = (): void => {
-    this.setState({ hasError: false });
+    // Controlled remount of the React tree under this boundary — not infinite.
+    this.setState((prev) => ({
+      hasError: false,
+      retryCount: prev.retryCount + 1,
+    }));
+    logEvent('react_render_retry', {
+      lastScreen: getLastScreenName(),
+      retryCount: this.state.retryCount + 1,
+    });
   };
 
   render(): ReactNode {
@@ -52,7 +67,12 @@ export default class AppErrorBoundary extends Component<Props, State> {
         </View>
       );
     }
-    return this.props.children;
+    // retryCount in key forces a clean remount of children after Retry.
+    return (
+      <React.Fragment key={`app-boundary-${this.state.retryCount}`}>
+        {this.props.children}
+      </React.Fragment>
+    );
   }
 }
 

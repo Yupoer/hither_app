@@ -12,6 +12,7 @@ import { getMyJoinedGroups, JoinedGroupInfo, leaveGroups } from '../api/client';
 import { GlassView } from '../native/liquidGlass';
 import { clearLiveActivities } from '../state/useLiveActivity';
 import { HitherText } from '../components/HitherText';
+import { runUiAction } from '../utils/uiAction';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'MyTeams'>;
@@ -39,10 +40,16 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
   }, [user]);
 
   function handleEnterGroup(info: JoinedGroupInfo) {
-    setExpandedGroupId(null);
-    lightTap();
-    setMembership({ group: info.group, role: info.role });
-    navigation.replace('Map', { groupId: info.group.id });
+    void runUiAction(
+      'my_teams.enter_group',
+      () => {
+        setExpandedGroupId(null);
+        lightTap();
+        setMembership({ group: info.group, role: info.role });
+        navigation.replace('Map', { groupId: info.group.id });
+      },
+      { screen: 'MyTeams' },
+    );
   }
 
   function handleLeaveGroup(groupId: string) {
@@ -52,15 +59,18 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
       {
         text: '確定',
         style: 'destructive',
-        onPress: async () => {
-          try {
-            await leaveGroups([groupId]);
-            await clearLiveActivities({ groupIds: [groupId] });
-            setJoinedGroups((prev) => prev.filter((g) => g.group.id !== groupId));
-            setExpandedGroupId(null);
-          } catch (e) {
-            console.error('Failed to leave group', e);
-          }
+        onPress: () => {
+          void runUiAction(
+            'my_teams.leave_group',
+            async (token) => {
+              await leaveGroups([groupId]);
+              await clearLiveActivities({ groupIds: [groupId] });
+              if (!token.isCurrent()) return;
+              setJoinedGroups((prev) => prev.filter((g) => g.group.id !== groupId));
+              setExpandedGroupId(null);
+            },
+            { screen: 'MyTeams' },
+          );
         },
       },
     ]);
@@ -73,16 +83,19 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
       {
         text: '確定清空',
         style: 'destructive',
-        onPress: async () => {
-          try {
-            const groupIds = joinedGroups.map((g) => g.group.id);
-            await leaveGroups(groupIds);
-            await clearLiveActivities({ groupIds });
-            setJoinedGroups([]);
-            navigation.goBack();
-          } catch (e) {
-            console.error('Failed to clear groups', e);
-          }
+        onPress: () => {
+          void runUiAction(
+            'my_teams.clear_all',
+            async (token) => {
+              const groupIds = joinedGroups.map((g) => g.group.id);
+              await leaveGroups(groupIds);
+              await clearLiveActivities({ groupIds });
+              if (!token.isCurrent()) return;
+              setJoinedGroups([]);
+              navigation.goBack();
+            },
+            { screen: 'MyTeams' },
+          );
         },
       },
     ]);
