@@ -13,6 +13,22 @@
 
 import { logError, logEvent } from './activityLog';
 
+// Lazy require so unit tests that never touch performance stay node-safe
+// (performance pulls expo-sqlite / native modules).
+type PerformanceActionApi = {
+  setActiveActionContext: (input: {
+    actionId: string;
+    screen: string;
+    parentTraceId?: string;
+  }) => { generation: number; parentTraceId: string; actionId: string; screen: string };
+  clearActiveActionContext: (generation?: number) => void;
+};
+
+function performanceActionApi(): PerformanceActionApi {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return require('../state/performance') as PerformanceActionApi;
+}
+
 export const DEFAULT_UI_ACTION_TIMEOUT_MS = 15_000;
 
 export type UiActionErrorKind = 'error' | 'timeout';
@@ -59,22 +75,39 @@ export function subscribeUiActionFailures(listener: FailureListener): () => void
 }
 
 export function clearUiActionFailure(): void {
+  const previous = lastFailure;
   lastFailure = null;
   lastFailedRunnable = null;
   for (const listener of failureListeners) listener(null);
+  if (previous) {
+    logEvent('ui_action_cancel', {
+      actionId: previous.actionId,
+      screen: previous.screen,
+      kind: previous.kind,
+      outcome: 'cancelled',
+    });
+  }
 }
 
 /**
  * Re-run the last failed action (same actionId + task + options).
  * Clears the banner first so busy/timeout state can publish a fresh failure.
+ * Does not clear session, membership, active group, or screen data.
  */
 export async function retryLastUiAction(): Promise<unknown> {
   const runnable = lastFailedRunnable;
   if (!runnable) return undefined;
+  const previous = lastFailure;
   // Clear failure UI but keep runnable reference via local const.
   lastFailure = null;
   lastFailedRunnable = null;
   for (const listener of failureListeners) listener(null);
+  logEvent('ui_action_retry', {
+    actionId: runnable.actionId,
+    screen: runnable.options.screen,
+    previousKind: previous?.kind ?? null,
+    outcome: 'retry_requested',
+  });
   return runUiAction(runnable.actionId, runnable.task, runnable.options);
 }
 
@@ -159,6 +192,18 @@ export async function runUiAction<T>(
 
   inFlight.set(actionId, generation);
   options.onBusyChange?.(true);
+  // Bind action + screen to parent trace for API/error correlation.
+  // Keep generation so finally only clears if we still own the slot.
+  let actionContextGeneration: number | undefined;
+  try {
+    const ctx = performanceActionApi().setActiveActionContext({
+      actionId,
+      screen: options.screen,
+    });
+    actionContextGeneration = ctx.generation;
+  } catch {
+    // Tests without performance mocks still run the action contract.
+  }
   logEvent('ui_action_start', {
     actionId,
     screen: options.screen,
@@ -200,6 +245,7 @@ export async function runUiAction<T>(
         screen: options.screen,
         durationMs,
         timeoutMs,
+        outcome: 'timeout',
       });
       options.onError?.('timeout');
       publishFailure(
@@ -236,6 +282,7 @@ export async function runUiAction<T>(
       actionId,
       screen: options.screen,
       durationMs: Date.now() - startedAt,
+      outcome: 'succeeded',
     });
     return raced.value;
   } catch (error) {
@@ -248,11 +295,13 @@ export async function runUiAction<T>(
         actionId,
         screen: options.screen,
         durationMs: Date.now() - startedAt,
+        subsystem: 'ui_action',
       });
       logEvent('ui_action_error', {
         actionId,
         screen: options.screen,
         durationMs: Date.now() - startedAt,
+        outcome: 'failed',
       });
       options.onError?.('error');
       publishFailure(
@@ -270,5 +319,10 @@ export async function runUiAction<T>(
     return undefined;
   } finally {
     clearBusy();
+    try {
+      performanceActionApi().clearActiveActionContext(actionContextGeneration);
+    } catch {
+      // ignore
+    }
   }
 }

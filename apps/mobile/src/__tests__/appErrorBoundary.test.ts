@@ -27,7 +27,14 @@ describe('AppErrorBoundary and error telemetry contracts', () => {
     expect(boundary).toContain('componentDidCatch');
     expect(boundary).toContain("logError('react_render'");
     expect(boundary).toContain('getLastScreenName');
+    expect(boundary).toContain('getLastRoute');
+    expect(boundary).toContain('componentStack');
     expect(boundary).toContain('Retry');
+    expect(boundary).toContain('react_render_terminal');
+    expect(boundary).toContain('pendingRetryEpisode');
+    expect(app).toContain('setLastRoute');
+    expect(app).toContain('onStateChange');
+    expect(app).toContain('setPerformancePlatform');
   });
 
   it('global ErrorUtils handler still chains to the original handler', () => {

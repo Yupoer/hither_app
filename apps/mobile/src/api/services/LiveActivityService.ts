@@ -39,6 +39,28 @@ export async function upsertDeviceActivityToken(
     },
     { onConflict: 'user_id,device_id' },
   );
+  if (error) {
+    // Duplicate-key / unique conflicts are registration idempotency — soft-fail
+    // so they never obscure the primary map/session UI.
+    // Canonical outbox event is owned by instrumented Supabase `traceApi`
+    // (operation api.from.device_live_activity_tokens, code 23505 / registration).
+    // Soft-return only — no second call-site outbox write for the same failure.
+    const code = typeof error.code === 'string' ? error.code : '';
+    const message = String(error.message ?? '').toLowerCase();
+    const isConflict =
+      code === '23505'
+      || (
+        (message.includes('duplicate key') || message.includes('unique constraint'))
+        && (
+          message.includes('device_live_activity_tokens_token')
+          || message.includes('device_live_activity_tokens_pkey')
+          || message.includes('device_live_activity_tokens')
+        )
+      );
+    if (isConflict) {
+      return;
+    }
+  }
   orThrow(error);
 }
 
