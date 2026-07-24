@@ -124,9 +124,15 @@ class MapSubtreeBoundary extends Component<
     return { hasError: true };
   }
 
-  componentDidCatch(error: Error, _info: ErrorInfo): void {
-    logError('map_surface_failure', error, { scope: 'map_subtree' });
-    logEvent('map_surface_failure', { scope: 'map_subtree' });
+  componentDidCatch(error: Error, info: ErrorInfo): void {
+    logError('map_surface_failure', error, {
+      scope: 'map_subtree',
+      subsystem: 'map',
+      screen: 'Map',
+      componentStack: info.componentStack,
+      source: 'MapSubtreeBoundary',
+    });
+    logEvent('map_surface_failure', { scope: 'map_subtree', screen: 'Map' });
     this.props.onError();
   }
 

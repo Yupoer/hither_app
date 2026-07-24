@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { AppState, type AppStateStatus, Text, TextInput, View } from 'react-native';
+import { AppState, Platform, type AppStateStatus, Text, TextInput, View } from 'react-native';
 import {
   DarkTheme,
   DefaultTheme,
   NavigationContainer,
+  createNavigationContainerRef,
+  type NavigationState,
 } from '@react-navigation/native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -34,7 +36,9 @@ import {
   flushPerformance,
   purgePerformance,
   setLastLaunchPhase,
+  setLastRoute,
   setPerformanceAppState,
+  setPerformancePlatform,
   startPerformanceMonitor,
 } from './src/state/performance';
 import {
@@ -144,6 +148,7 @@ function ThemedNavigation() {
       }
     };
     setPerformanceAppState(AppState.currentState);
+    setPerformancePlatform(Platform.OS);
     const appSub = AppState.addEventListener('change', onAppState);
 
     return () => {
@@ -241,11 +246,42 @@ function ThemedNavigation() {
   };
 
   return (
-    <NavigationContainer theme={navTheme}>
+    <NavigationContainer
+      ref={navigationRef}
+      theme={navTheme}
+      onReady={() => {
+        const deepest = getDeepestRoute(navigationRef.getRootState());
+        if (deepest) setLastRoute(deepest.name, deepest.key);
+      }}
+      onStateChange={(state) => {
+        const deepest = getDeepestRoute(state);
+        if (deepest) setLastRoute(deepest.name, deepest.key);
+      }}
+    >
       <RootNavigator />
       <StatusBar style="light" />
     </NavigationContainer>
   );
+}
+
+const navigationRef = createNavigationContainerRef();
+
+/** Deepest focused route name/key for error correlation. */
+function getDeepestRoute(
+  state: NavigationState | undefined,
+): { name: string; key: string } | null {
+  if (!state || !state.routes?.length) return null;
+  let current: NavigationState | undefined = state;
+  let route = current.routes[current.index ?? 0];
+  while (route?.state && typeof route.state === 'object' && 'routes' in route.state) {
+    current = route.state as NavigationState;
+    route = current.routes[current.index ?? 0];
+  }
+  if (!route || typeof route.name !== 'string') return null;
+  return {
+    name: route.name,
+    key: typeof route.key === 'string' ? route.key : '',
+  };
 }
 
 installGlobalErrorLogger();

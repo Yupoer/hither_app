@@ -25,6 +25,34 @@ export class MapsProxyError extends Error {
   }
 }
 
+/** Record map/search/directions failures without changing throw/fallback behavior. */
+function recordMapsProxyFailure(
+  operation: 'maps.proxy.search' | 'maps.proxy.directions' | 'maps.proxy.request',
+  error: MapsProxyError,
+): void {
+  try {
+    // Lazy require keeps unit tests that mock this module free of performance deps.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { recordClassifiedError } = require('../state/performance') as {
+      recordClassifiedError: (
+        operation: string,
+        error: unknown,
+        extra?: Record<string, unknown>,
+      ) => Promise<void>;
+    };
+    void recordClassifiedError(operation, error, {
+      subsystem: 'maps',
+      errorCode: error.code,
+      httpStatus: error.status,
+      supabaseOperation: 'functions.google-maps',
+      screen: 'Map',
+      outcome: 'failed',
+    });
+  } catch {
+    // Telemetry must never break map fallback.
+  }
+}
+
 type ProxySearchResponse = {
   action: 'search';
   places: Array<{
@@ -69,7 +97,9 @@ async function getAuthContext(): Promise<{
 async function postProxy(body: unknown): Promise<Response> {
   const auth = await getAuthContext();
   if (!auth) {
-    throw new MapsProxyError('unauthorized', 401);
+    const err = new MapsProxyError('unauthorized', 401);
+    recordMapsProxyFailure('maps.proxy.request', err);
+    throw err;
   }
   try {
     return await fetch(`${auth.url}/functions/v1/google-maps`, {
@@ -82,19 +112,28 @@ async function postProxy(body: unknown): Promise<Response> {
       body: JSON.stringify(body),
     });
   } catch {
-    throw new MapsProxyError('network', 0);
+    const err = new MapsProxyError('network', 0);
+    recordMapsProxyFailure('maps.proxy.request', err);
+    throw err;
   }
 }
 
-function throwForStatus(res: Response, body: ProxyErrorBody): never {
-  if (res.status === 401) throw new MapsProxyError('unauthorized', 401);
-  if (res.status === 429 || body.error === 'quota_exceeded') {
-    throw new MapsProxyError('quota_exceeded', 429);
+function throwForStatus(
+  res: Response,
+  body: ProxyErrorBody,
+  operation: 'maps.proxy.search' | 'maps.proxy.directions' = 'maps.proxy.search',
+): never {
+  let err: MapsProxyError;
+  if (res.status === 401) err = new MapsProxyError('unauthorized', 401);
+  else if (res.status === 429 || body.error === 'quota_exceeded') {
+    err = new MapsProxyError('quota_exceeded', 429);
+  } else if (res.status === 400 || body.error === 'invalid_input') {
+    err = new MapsProxyError('invalid_input', 400);
+  } else {
+    err = new MapsProxyError('upstream_unavailable', res.status || 503);
   }
-  if (res.status === 400 || body.error === 'invalid_input') {
-    throw new MapsProxyError('invalid_input', 400);
-  }
-  throw new MapsProxyError('upstream_unavailable', res.status || 503);
+  recordMapsProxyFailure(operation, err);
+  throw err;
 }
 
 /** Short TTL cache + in-flight promise sharing (no credentials in keys). */
@@ -168,9 +207,11 @@ export async function proxySearchPlaces(
       languageCode: 'zh-TW',
     });
     const body = (await res.json().catch(() => ({}))) as ProxySearchResponse & ProxyErrorBody;
-    if (!res.ok) throwForStatus(res, body);
+    if (!res.ok) throwForStatus(res, body, 'maps.proxy.search');
     if (body.action !== 'search' || !Array.isArray(body.places)) {
-      throw new MapsProxyError('upstream_unavailable', 503);
+      const err = new MapsProxyError('upstream_unavailable', 503);
+      recordMapsProxyFailure('maps.proxy.search', err);
+      throw err;
     }
     return body.places.map((p) => ({
       id: p.id,
@@ -196,9 +237,11 @@ export async function proxyGetDirections(
       travelMode,
     });
     const body = (await res.json().catch(() => ({}))) as ProxyRouteResponse & ProxyErrorBody;
-    if (!res.ok) throwForStatus(res, body);
+    if (!res.ok) throwForStatus(res, body, 'maps.proxy.directions');
     if (body.action !== 'route') {
-      throw new MapsProxyError('upstream_unavailable', 503);
+      const err = new MapsProxyError('upstream_unavailable', 503);
+      recordMapsProxyFailure('maps.proxy.directions', err);
+      throw err;
     }
     if (!body.route) return null;
     const points = decodePolyline(body.route.encodedPolyline);

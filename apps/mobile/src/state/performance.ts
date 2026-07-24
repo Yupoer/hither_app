@@ -3,7 +3,12 @@ import Constants from 'expo-constants';
 import * as Crypto from 'expo-crypto';
 import * as Updates from 'expo-updates';
 import { metrics } from '../native';
-import { exceptionKind, stackHash } from '../utils/errorFingerprint';
+import {
+  buildErrorDiagnostics,
+  classifyUpstreamError,
+  MAX_FIELD_STRING,
+  redactSensitiveText,
+} from '../utils/errorFingerprint';
 import { getDiagnosticConsentEnabled } from './diagnosticConsent';
 import { getHitherDatabase } from './hitherDatabase';
 import { notifyErrorRecorded, notifyLogRecorded } from './logBatchScheduler';
@@ -17,6 +22,8 @@ const MAX_UPLOAD_BATCH = 100;
 const SAMPLE_WINDOW_MS = 1_000;
 const SAMPLE_INTERVAL_MS = 5 * 60_000;
 const RETENTION_CLEANUP_INTERVAL_MS = 15 * 60 * 1_000;
+/** Stay under performance_events 32 KB payload contract. */
+const MAX_PAYLOAD_JSON_BYTES = 30_000;
 
 export type PerformanceValue = string | number | boolean | null;
 export type PerformancePayload = Record<string, PerformanceValue>;
@@ -57,6 +64,16 @@ export interface PerformanceFlushResult {
 let flushInFlight: Promise<PerformanceFlushResult> | null = null;
 let writeSerial = Promise.resolve();
 let activeInteraction: { id: string; operation: string } | null = null;
+/** UI action context — correlated with API traces and error events. */
+type ActiveActionContext = {
+  actionId: string;
+  screen: string;
+  parentTraceId: string;
+  /** Monotonic owner token so clear only drops matching generation. */
+  generation: number;
+};
+let activeActionContext: ActiveActionContext | null = null;
+let actionContextGeneration = 0;
 let nativeSampleInFlight = false;
 let lastRetentionCleanupAt = 0;
 const lastSuccessTraceAt = new Map<string, number>();
@@ -86,10 +103,11 @@ export function deriveCpuPercent(
 }
 
 /**
- * Host (App.tsx) pushes AppState here so this module stays free of react-native
- * imports (Jest node suite cannot load RN).
+ * Host (App.tsx) pushes AppState / platform here so this module stays free of
+ * react-native imports (Jest node suite cannot load RN).
  */
 let performanceAppState = 'active';
+let performancePlatform = 'unknown';
 
 export function setPerformanceAppState(state: string): void {
   if (typeof state === 'string' && state.length > 0) {
@@ -97,16 +115,34 @@ export function setPerformanceAppState(state: string): void {
   }
 }
 
+/** ios | android | web — host-injected; never import react-native here. */
+export function setPerformancePlatform(platform: string): void {
+  if (platform === 'ios' || platform === 'android' || platform === 'web') {
+    performancePlatform = platform;
+  }
+}
+
+export function getPerformancePlatform(): string {
+  return performancePlatform;
+}
+
 function isAppForeground(): boolean {
   return performanceAppState === 'active';
 }
 
-const SAFE_FIELDS = new Set([
+/**
+ * Allow-listed performance payload keys. Fields not listed are dropped before
+ * the SQLite outbox write. Keep correlation + bounded diagnostics; never
+ * group/user/coordinate/token free-form blobs.
+ */
+export const PERFORMANCE_SAFE_FIELDS = new Set([
+  'actionId',
   'appState',
   'appVersion',
   'batteryLevel',
   'batteryState',
   'buildNumber',
+  'componentStack',
   'confidence',
   'count',
   'cpuPercent',
@@ -115,8 +151,13 @@ const SAFE_FIELDS = new Set([
   'displayMaxFps',
   'durationMs',
   'errorCode',
+  'errorDetails',
+  'errorFrames',
+  'errorHint',
+  'errorMessage',
   'exceptionKind',
   'frameTimeP95Ms',
+  'httpStatus',
   'isFatal',
   'jsFps',
   'launchPhase',
@@ -130,17 +171,32 @@ const SAFE_FIELDS = new Set([
   'missedFrameRatio',
   'nativeExitReason',
   'navigationSessionId',
+  'operation',
   'operationSource',
   'osVersion',
   'outcome',
   'parentTraceId',
+  'platform',
+  'reason',
+  'requestId',
   'requestSizeBucket',
   'responseCount',
+  'retryCount',
+  'routeKey',
+  'routeName',
   'runtimeVersion',
   'sampleWindowMs',
+  'screen',
+  'scope',
   'source',
+  'sourceLocation',
   'stackHash',
+  'status',
+  'subsystem',
+  'supabaseCode',
+  'supabaseOperation',
   'thermalState',
+  'timeoutMs',
   'trackingMode',
   'uiFps',
   'updateId',
@@ -149,6 +205,8 @@ const SAFE_FIELDS = new Set([
 /** Breadcrumbs for error context — updated from App launch phases / navigation. */
 let lastLaunchPhase = 'unknown';
 let lastScreenName = 'unknown';
+let lastRouteName = 'unknown';
+let lastRouteKey = '';
 
 export function setLastLaunchPhase(phase: string): void {
   if (typeof phase === 'string' && phase.length > 0) {
@@ -164,6 +222,75 @@ export function setLastScreenName(screen: string): void {
 
 export function getLastScreenName(): string {
   return lastScreenName;
+}
+
+/** Deepest active React Navigation route (name + key for correlation). */
+export function setLastRoute(routeName: string, routeKey?: string): void {
+  if (typeof routeName === 'string' && routeName.length > 0) {
+    lastRouteName = routeName.slice(0, 80);
+    lastScreenName = lastRouteName;
+  }
+  if (typeof routeKey === 'string' && routeKey.length > 0) {
+    // Route keys from React Navigation can embed UUIDs — keep a short stable tag.
+    lastRouteKey = routeKey.replace(
+      /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
+      'id',
+    ).slice(0, 80);
+  }
+}
+
+export function getLastRoute(): { routeName: string; routeKey: string } {
+  return { routeName: lastRouteName, routeKey: lastRouteKey };
+}
+
+/**
+ * Bind the current UI action so API traces and error events share parentTraceId.
+ * Does not change action single-flight / timeout / retry behavior.
+ * Returns a generation token — pass it to clearActiveActionContext so a concurrent
+ * action cannot have its context wiped by an earlier action's finally.
+ */
+export function setActiveActionContext(input: {
+  actionId: string;
+  screen: string;
+  parentTraceId?: string;
+}): { generation: number; parentTraceId: string; actionId: string; screen: string } {
+  // Length-bound only — do not run JWT/UUID redaction on correlation keys.
+  const actionId =
+    typeof input.actionId === 'string' && input.actionId.length > 0
+      ? input.actionId.slice(0, 80)
+      : 'unknown';
+  const screen =
+    typeof input.screen === 'string' && input.screen.length > 0
+      ? input.screen.slice(0, 80)
+      : lastScreenName;
+  const parentTraceId =
+    (typeof input.parentTraceId === 'string' && input.parentTraceId.length > 0
+      ? input.parentTraceId.slice(0, 80)
+      : activeInteraction?.id) ?? Crypto.randomUUID();
+  actionContextGeneration += 1;
+  const generation = actionContextGeneration;
+  activeActionContext = { actionId, screen, parentTraceId, generation };
+  return { generation, parentTraceId, actionId, screen };
+}
+
+/**
+ * Clear action context. When `generation` is provided, only clears if this
+ * generation still owns the slot (safe under concurrent different actionIds).
+ */
+export function clearActiveActionContext(generation?: number): void {
+  if (generation != null) {
+    if (activeActionContext?.generation !== generation) return;
+  }
+  activeActionContext = null;
+}
+
+export function getActiveActionContext(): {
+  actionId: string;
+  screen: string;
+  parentTraceId: string;
+  generation: number;
+} | null {
+  return activeActionContext;
 }
 
 /** Avoid importing otaUpdates (pulls react-native) so unit tests stay node-safe. */
@@ -184,33 +311,187 @@ function releaseContext(): PerformancePayload {
     runtimeVersion: String(Updates.runtimeVersion ?? 'unknown'),
     launchPhase: lastLaunchPhase,
     lastScreen: lastScreenName,
+    routeName: lastRouteName,
+    routeKey: lastRouteKey || null,
+    platform: performancePlatform,
   };
+}
+
+/** Correlation keys must keep their UUID/opaque values — only length-bound. */
+const CORRELATION_ID_FIELDS = new Set([
+  'requestId',
+  'parentTraceId',
+  'actionId',
+  'navigationSessionId',
+]);
+
+/** Approximate UTF-8 byte length without Buffer (works in RN / Jest node). */
+export function utf8ByteLength(value: string): number {
+  // encodeURIComponent escapes non-ASCII as %XX sequences — 3 chars per byte.
+  let bytes = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    const code = value.charCodeAt(i);
+    if (code <= 0x7f) bytes += 1;
+    else if (code <= 0x7ff) bytes += 2;
+    else if (code >= 0xd800 && code <= 0xdbff) {
+      // Surrogate pair → 4 UTF-8 bytes
+      bytes += 4;
+      i += 1;
+    } else bytes += 3;
+  }
+  return bytes;
+}
+
+function correlationContext(): PerformancePayload {
+  const out: PerformancePayload = {};
+  if (activeActionContext) {
+    out.actionId = activeActionContext.actionId;
+    out.screen = activeActionContext.screen;
+    out.parentTraceId = activeActionContext.parentTraceId;
+  } else if (activeInteraction) {
+    out.parentTraceId = activeInteraction.id;
+  }
+  if (lastScreenName !== 'unknown' && out.screen == null) {
+    out.screen = lastScreenName;
+  }
+  return out;
 }
 
 function normalizeOperation(operation: string): string {
   return operation.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120) || 'unknown';
 }
 
-function sanitizePayload(payload: Record<string, unknown> = {}): PerformancePayload {
+function sanitizeStringValue(key: string, value: string): string {
+  const max =
+    key === 'errorFrames' || key === 'componentStack'
+      ? 800
+      : key === 'errorMessage' || key === 'errorDetails'
+        ? 240
+        : key === 'errorHint' || key === 'sourceLocation'
+          ? 160
+          : key === 'requestId' || key === 'parentTraceId'
+            ? 80
+            : MAX_FIELD_STRING;
+  // Correlation IDs are intentionally UUID/opaque — length-bound only.
+  // Full redaction would collapse every requestId/parentTraceId to one placeholder.
+  if (CORRELATION_ID_FIELDS.has(key)) {
+    return value.slice(0, max);
+  }
+  return redactSensitiveText(value).slice(0, max);
+}
+
+function payloadWithinBudget(payload: PerformancePayload): boolean {
+  return utf8ByteLength(JSON.stringify(payload)) <= MAX_PAYLOAD_JSON_BYTES;
+}
+
+/**
+ * Drop non-allow-listed fields, redact sensitive string content, coerce to
+ * PerformanceValue. Exported for contract tests.
+ */
+export function sanitizePerformancePayload(
+  payload: Record<string, unknown> = {},
+): PerformancePayload {
   const result: PerformancePayload = {};
   for (const [key, value] of Object.entries(payload)) {
-    if (!SAFE_FIELDS.has(key)) continue;
-    if (
-      value === null ||
-      typeof value === 'string' ||
-      typeof value === 'number' ||
-      typeof value === 'boolean'
-    ) result[key] = value;
+    if (!PERFORMANCE_SAFE_FIELDS.has(key)) continue;
+    if (value === null) {
+      result[key] = null;
+      continue;
+    }
+    if (typeof value === 'number') {
+      if (Number.isFinite(value)) result[key] = value;
+      continue;
+    }
+    if (typeof value === 'boolean') {
+      result[key] = value;
+      continue;
+    }
+    if (typeof value === 'string') {
+      result[key] = sanitizeStringValue(key, value);
+    }
+    // Drop objects/arrays (coordinates, raw responses, etc.).
   }
-  return result;
+  // Bound total JSON size under the 32 KB DB contract (UTF-8 byte estimate).
+  if (payloadWithinBudget(result)) return result;
+  // Prefer dropping the largest diagnostic strings first.
+  for (const dropKey of [
+    'errorFrames',
+    'componentStack',
+    'errorDetails',
+    'errorHint',
+    'errorMessage',
+    'sourceLocation',
+  ]) {
+    if (dropKey in result) {
+      delete result[dropKey];
+      if (payloadWithinBudget(result)) return result;
+    }
+  }
+  // Last resort: hard-truncate remaining long strings (keep correlation keys).
+  for (const [key, value] of Object.entries(result)) {
+    if (typeof value === 'string' && !CORRELATION_ID_FIELDS.has(key) && value.length > 40) {
+      result[key] = value.slice(0, 40);
+    }
+  }
+  if (payloadWithinBudget(result)) return result;
+  // Extreme fallback: keep only correlation + release-critical keys.
+  const essentials: PerformancePayload = {};
+  for (const key of [
+    'requestId',
+    'parentTraceId',
+    'actionId',
+    'errorCode',
+    'outcome',
+    'subsystem',
+    'routeName',
+    'screen',
+    'httpStatus',
+    'supabaseCode',
+    'supabaseOperation',
+    'stackHash',
+    'exceptionKind',
+    'platform',
+  ]) {
+    if (key in result) essentials[key] = result[key]!;
+  }
+  return essentials;
+}
+
+/** @deprecated internal alias — prefer sanitizePerformancePayload. */
+function sanitizePayload(payload: Record<string, unknown> = {}): PerformancePayload {
+  return sanitizePerformancePayload(payload);
 }
 
 function errorCode(error: unknown): string {
+  const classified = classifyUpstreamError(error);
+  if (classified.errorCode !== 'unclassified_error') return classified.errorCode;
   if (typeof error === 'object' && error !== null && 'code' in error) {
     const code = (error as { code?: unknown }).code;
     if (typeof code === 'string' && code.length > 0) return code.slice(0, 80);
   }
   return 'unclassified_error';
+}
+
+/** True when a resolved Supabase-style result carries a non-null error. */
+export function isSupabaseErrorResult(
+  result: unknown,
+): result is { error: { message?: string; code?: string; details?: string; hint?: string } } {
+  if (typeof result !== 'object' || result === null) return false;
+  if (!('error' in result)) return false;
+  const err = (result as { error: unknown }).error;
+  return typeof err === 'object' && err !== null;
+}
+
+function extractHttpStatus(error: unknown): number | null {
+  if (typeof error === 'object' && error !== null && 'status' in error) {
+    const status = (error as { status?: unknown }).status;
+    if (typeof status === 'number' && Number.isFinite(status)) return status;
+  }
+  if (typeof error === 'object' && error !== null && 'statusCode' in error) {
+    const status = (error as { statusCode?: unknown }).statusCode;
+    if (typeof status === 'number' && Number.isFinite(status)) return status;
+  }
+  return classifyUpstreamError(error).httpStatus;
 }
 
 function shouldRecordSuccess(operation: string, now: number): boolean {
@@ -418,7 +699,10 @@ async function record(
     eventType,
     operation: normalizeOperation(operation),
     payload: {
-      ...sanitizePayload(payload),
+      ...sanitizePayload({
+        ...correlationContext(),
+        ...payload,
+      }),
       ...releaseContext(),
     },
   });
@@ -441,7 +725,10 @@ export async function recordErrorEvent(
     eventType: 'error',
     operation: normalizeOperation(operation),
     payload: {
-      ...sanitizePayload(payload),
+      ...sanitizePayload({
+        ...correlationContext(),
+        ...payload,
+      }),
       ...releaseContext(),
     },
   });
@@ -608,39 +895,157 @@ export async function recordPerformanceError(
   const op = base.startsWith('error.')
     ? normalizeOperation(base)
     : `error.${normalizeOperation(base)}`;
+  const diagnostics = buildErrorDiagnostics(error, extra?.componentStack);
+  const classified = classifyUpstreamError(error);
+  const httpStatus =
+    typeof extra?.httpStatus === 'number'
+      ? (extra.httpStatus as number)
+      : extractHttpStatus(error);
   await recordErrorEvent(op, {
     ...extra,
-    errorCode: errorCode(error),
-    exceptionKind: exceptionKind(error),
-    stackHash: stackHash(error),
+    ...diagnostics,
+    errorCode:
+      typeof extra?.errorCode === 'string'
+        ? extra.errorCode
+        : errorCode(error),
+    subsystem:
+      typeof extra?.subsystem === 'string'
+        ? extra.subsystem
+        : classified.subsystem,
+    httpStatus,
     isFatal,
     outcome: 'failed',
-    parentTraceId: activeInteraction?.id ?? null,
+    parentTraceId:
+      (typeof extra?.parentTraceId === 'string' ? extra.parentTraceId : null)
+      ?? activeActionContext?.parentTraceId
+      ?? activeInteraction?.id
+      ?? null,
+    actionId: extra?.actionId ?? activeActionContext?.actionId ?? null,
+    screen: extra?.screen ?? activeActionContext?.screen ?? lastScreenName,
+    routeName: lastRouteName,
+    routeKey: lastRouteKey || null,
   });
 }
 
+/**
+ * Record a classified upstream failure (Maps, Live Activity, auth) without
+ * changing the caller's throw/fallback behavior.
+ */
+export async function recordClassifiedError(
+  operation: string,
+  error: unknown,
+  extra?: Record<string, unknown>,
+): Promise<void> {
+  await recordPerformanceError(operation, error, extra);
+}
+
+type TraceApiErrorPayload = {
+  durationMs: number;
+  errorCode: string;
+  outcome: 'failed';
+  parentTraceId: string | null;
+  supabaseOperation: string;
+  supabaseCode: string | null;
+  httpStatus: number | null;
+  errorMessage: string | null;
+  errorDetails: string | null;
+  errorHint: string | null;
+  subsystem: string;
+  actionId: string | null;
+  screen: string | null;
+  routeName: string;
+  requestId: string;
+};
+
+function buildApiErrorPayload(
+  operation: string,
+  error: unknown,
+  startedAt: number,
+  captured: {
+    parentTraceId: string | null;
+    requestId: string;
+    actionId: string | null;
+    screen: string | null;
+    routeName: string;
+  },
+): TraceApiErrorPayload {
+  const diagnostics = buildErrorDiagnostics(error);
+  const classified = classifyUpstreamError(error);
+  return {
+    durationMs: Date.now() - startedAt,
+    errorCode: errorCode(error),
+    outcome: 'failed',
+    parentTraceId: captured.parentTraceId,
+    supabaseOperation: operation,
+    supabaseCode:
+      typeof (error as { code?: unknown })?.code === 'string'
+        ? String((error as { code: string }).code).slice(0, 80)
+        : null,
+    httpStatus: extractHttpStatus(error),
+    errorMessage: diagnostics.errorMessage,
+    errorDetails: diagnostics.errorDetails,
+    errorHint: diagnostics.errorHint,
+    subsystem: classified.subsystem,
+    // Captured at trace start — not live global (concurrent actions safe).
+    actionId: captured.actionId,
+    screen: captured.screen,
+    routeName: captured.routeName,
+    requestId: captured.requestId,
+  };
+}
+
+/**
+ * Trace a Supabase/API call. Records success spans only while full tracing is
+ * active; always records error events (rejected promise OR resolved `{ error }`)
+ * when consent is on — independent of the 2h full-trace window.
+ * Preserves the original result / rethrow behavior.
+ *
+ * Canonical error owner for instrumented Supabase `from`/`rpc` paths — call sites
+ * should soft-fail without a second recordClassifiedError/logError for the same failure.
+ */
 export async function traceApi<T>(operation: string, work: () => Promise<T>): Promise<T> {
-  if (!active) return work();
   const startedAt = Date.now();
-  const parentTraceId = activeInteraction?.id ?? null;
+  // Snapshot correlation at start so concurrent UI actions cannot rewrite it.
+  const captured = {
+    parentTraceId:
+      activeActionContext?.parentTraceId ?? activeInteraction?.id ?? null,
+    requestId: Crypto.randomUUID(),
+    actionId: activeActionContext?.actionId ?? null,
+    screen: activeActionContext?.screen ?? lastScreenName,
+    routeName: lastRouteName,
+  };
+
+  const recordFailure = (error: unknown) => {
+    void recordErrorEvent(
+      operation.startsWith('error.') ? operation : `error.${normalizeOperation(operation)}`,
+      buildApiErrorPayload(operation, error, startedAt, captured),
+    );
+  };
+
   try {
     const result = await work();
-    const now = Date.now();
-    if (shouldRecordSuccess(operation, now)) {
-      void record('trace', operation, {
-        durationMs: now - startedAt,
-        outcome: 'succeeded',
-        parentTraceId,
-      });
+    if (isSupabaseErrorResult(result)) {
+      recordFailure(result.error);
+      return result;
+    }
+    if (active) {
+      const now = Date.now();
+      if (shouldRecordSuccess(operation, now)) {
+        void record('trace', operation, {
+          durationMs: now - startedAt,
+          outcome: 'succeeded',
+          parentTraceId: captured.parentTraceId,
+          requestId: captured.requestId,
+          supabaseOperation: operation,
+          actionId: captured.actionId,
+          screen: captured.screen,
+          routeName: captured.routeName,
+        });
+      }
     }
     return result;
   } catch (error) {
-    void record('error', operation, {
-      durationMs: Date.now() - startedAt,
-      errorCode: errorCode(error),
-      outcome: 'failed',
-      parentTraceId,
-    });
+    recordFailure(error);
     throw error;
   }
 }

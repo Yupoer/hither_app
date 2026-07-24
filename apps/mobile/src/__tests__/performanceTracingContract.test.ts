@@ -65,6 +65,11 @@ describe('performance tracing contract', () => {
     expect(performance).toContain('runtimeVersion');
     expect(performance).toContain('launchPhase');
     expect(performance).toContain('lastScreen');
+    expect(performance).toContain('routeName');
+    expect(performance).toContain('actionId');
+    expect(performance).toContain('errorMessage');
+    expect(performance).toContain('componentStack');
+    expect(performance).toContain('sanitizePerformancePayload');
     // Must not gate errors solely on active full-trace flag in recordPerformanceError.
     expect(performance).toMatch(
       /recordPerformanceError[\s\S]*?await recordErrorEvent/,

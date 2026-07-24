@@ -1444,8 +1444,11 @@ export default function MapScreen({ route, navigation }: Props) {
     lastStragglerIdsRef.current = ids;
     for (const s of newOnes) {
       void reportStraggler(groupId, s.userId, s.distanceM).catch(() => {
-        // Soft-fail: network blip should not crash the map; next entry after
-        // release band will re-report.
+        // Soft-fail: leader-role mismatch / network blip must not escalate to
+        // root render fallback. No blind retry.
+        // Canonical error event is owned by instrumented Supabase `traceApi`
+        // (api.rpc.report_straggler + leader_role_required classification) —
+        // do not logError again or the outbox doubles every soft-fail.
       });
     }
   }, [stragglers, isLeader, groupId]);
