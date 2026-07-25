@@ -111,7 +111,18 @@ export async function addDestination(
     longitude: input.coordinates.longitude,
     position: insertPosition,
   });
-  orThrow(error);
+  if (error) {
+    // Free Plan itinerary cap (5 points) — server trigger is authoritative.
+    if (
+      (error as { code?: string }).code === 'P0004'
+      || /itinerary_point_limit/i.test(error.message)
+    ) {
+      const err = new Error('itinerary_point_limit') as Error & { code?: string };
+      err.code = 'itinerary_point_limit';
+      throw err;
+    }
+    orThrow(error);
+  }
 }
 
 export async function deleteDestination(

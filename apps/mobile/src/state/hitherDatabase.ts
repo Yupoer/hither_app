@@ -46,6 +46,55 @@ async function openHitherDatabase(): Promise<SQLite.SQLiteDatabase> {
     );
     CREATE INDEX IF NOT EXISTS performance_events_pending
       ON performance_events(uploaded_at, timestamp);
+
+    -- OTA-04: first-batch local-first core data
+    CREATE TABLE IF NOT EXISTS core_snapshots (
+      group_id TEXT PRIMARY KEY NOT NULL,
+      payload TEXT NOT NULL,
+      entity_version INTEGER NOT NULL DEFAULT 1,
+      synced_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      source TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS core_active_gathering (
+      group_id TEXT PRIMARY KEY NOT NULL,
+      journey_phase TEXT NOT NULL,
+      active_destination_id TEXT,
+      point_statuses TEXT NOT NULL,
+      phase_changed_at INTEGER NOT NULL,
+      entity_version INTEGER NOT NULL DEFAULT 1,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS core_navigation_responses (
+      session_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      group_id TEXT NOT NULL,
+      response TEXT,
+      entity_version INTEGER NOT NULL DEFAULT 1,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (session_id, user_id)
+    );
+    CREATE INDEX IF NOT EXISTS core_navigation_responses_group
+      ON core_navigation_responses(group_id, session_id);
+    CREATE TABLE IF NOT EXISTS core_operation_outbox (
+      id TEXT PRIMARY KEY NOT NULL,
+      group_id TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      entity_version INTEGER NOT NULL,
+      operation_type TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      status TEXT NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at INTEGER NOT NULL,
+      conflict_result TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS core_operation_outbox_due
+      ON core_operation_outbox(next_attempt_at, created_at);
+    CREATE INDEX IF NOT EXISTS core_operation_outbox_group
+      ON core_operation_outbox(group_id, status);
   `);
   return database;
 }

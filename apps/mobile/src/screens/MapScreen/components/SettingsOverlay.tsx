@@ -141,12 +141,14 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
     gatherCardDefaultExpanded,
     gatherCardTitleMarquee,
     gatherCardMarqueeSpeed,
+    passiveCompanionMode,
     diagnosticUploadEnabled,
     setLanguage,
     setThemeName,
     setTextScale,
     setObliqueLocate,
     setLiveActivityEnabled,
+    setPassiveCompanionMode,
     setGatherCardDefaultExpanded,
     setGatherCardTitleMarquee,
     setDiagnosticUploadEnabled,
@@ -371,6 +373,27 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             thumbColor="#fff"
             ios_backgroundColor="rgba(120,120,128,0.32)"
             accessibilityLabel={t('settings.liveActivity')}
+          />
+        </View>
+        <View style={styles.accuracyRow}>
+          <View style={styles.accuracyCopy}>
+            <Text style={styles.accuracyLabel}>
+              {t('settings.passiveCompanionMode')}
+            </Text>
+            <Text style={styles.accuracySubhint}>
+              {t('settings.passiveCompanionModeHint')}
+            </Text>
+          </View>
+          <Switch
+            style={styles.accuracySwitch}
+            value={passiveCompanionMode}
+            onValueChange={setPassiveCompanionMode}
+            trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
+            thumbColor="#fff"
+            ios_backgroundColor="rgba(120,120,128,0.32)"
+            accessibilityLabel={t('settings.passiveCompanionMode')}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: passiveCompanionMode }}
           />
         </View>
         <View style={styles.accuracyRow}>

@@ -202,6 +202,69 @@ export async function getMyNavigationMemberState(
   return data ? mapNavigationMemberState(data as NavigationMemberStateRow) : null;
 }
 
+/**
+ * Leader exception center: read every member's technical navigation state for
+ * the active session. RLS already allows group members to select these rows.
+ */
+export async function listNavigationMemberStates(
+  sessionId: string,
+): Promise<MemberNavigationState[]> {
+  const { data, error } = await supabase
+    .from('navigation_member_states')
+    .select('*')
+    .eq('navigation_session_id', sessionId);
+  orThrow(error);
+  return (data as NavigationMemberStateRow[] | null)?.map(mapNavigationMemberState) ?? [];
+}
+
+export interface SessionMemberStateHandlers {
+  /** Called when a row is deleted (or UPDATE clears) so the leader list drops stale tech state. */
+  onRemove?: (userId: string) => void;
+}
+
+/**
+ * Subscribe to all navigation_member_states for a session (leader exception
+ * center). Own-state ack path still uses {@link subscribeNavigationSession}.
+ * Handles INSERT/UPDATE via `payload.new` and DELETE via `payload.old`.
+ */
+export async function subscribeSessionMemberStates(
+  sessionId: string,
+  onMemberState: (state: MemberNavigationState) => void,
+  handlers: SessionMemberStateHandlers = {},
+): Promise<() => void> {
+  const channel = supabase
+    .channel(`navigation-member-states:${sessionId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'navigation_member_states',
+        filter: `navigation_session_id=eq.${sessionId}`,
+      },
+      (payload) => {
+        const eventType = payload.eventType;
+        if (eventType === 'DELETE') {
+          const oldRow = payload.old as { user_id?: string } | null;
+          if (oldRow?.user_id) handlers.onRemove?.(oldRow.user_id);
+          return;
+        }
+        if (payload.new && Object.keys(payload.new).length > 0) {
+          onMemberState(
+            mapNavigationMemberState(
+              payload.new as unknown as NavigationMemberStateRow,
+            ),
+          );
+        }
+      },
+    )
+    .subscribe();
+
+  return () => {
+    void supabase.removeChannel(channel);
+  };
+}
+
 export async function subscribeNavigationSession(
   groupId: string,
   onSession: (session: NavigationSession) => void,

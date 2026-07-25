@@ -26,6 +26,7 @@ import { logEvent, logError } from '../utils/activityLog';
 import { runUiAction, type UiActionToken } from '../utils/uiAction';
 import SafePressable from '../components/SafePressable';
 import { mediumTap } from '../utils/haptics';
+import { classifyAnonymousAccessError } from '../anonymousAccess';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Auth'>;
 
@@ -43,7 +44,7 @@ const DISPLAY_FONT = 'Fredoka_600SemiBold';
 export default function AuthScreen({ navigation, route }: Props) {
   const role = route.params?.role ?? 'leader';
   const isLeader = role === 'leader';
-  const { signIn, user, updateNickname, setMembership } = useSession();
+  const { signIn, user, updateNickname, setMembership, refreshProfile } = useSession();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const { t } = useTranslation();
@@ -68,7 +69,34 @@ export default function AuthScreen({ navigation, route }: Props) {
     logError(isLeader ? 'group_create_failed' : 'group_join_failed', e);
     // Design: a rejected code highlights the code boxes.
     if (!isLeader) setCodeError(true);
-    const msg = e instanceof Error ? e.message : t('auth.signInFailed');
+    const raw = e instanceof Error ? e.message : '';
+    const code =
+      e && typeof e === 'object' && 'code' in e
+        ? String((e as { code?: string }).code ?? '')
+        : '';
+    if (code === 'member_limit' || raw === 'member_limit') {
+      Alert.alert(
+        t('group.joinFailedTitle'),
+        t('paywall.memberCap', { n: 5 }),
+      );
+      return;
+    }
+    const kind = classifyAnonymousAccessError(raw);
+    if (kind === 'registration_required') {
+      Alert.alert(
+        t('anon.registrationRequiredTitle'),
+        t('paywall.memberCapAfterRegister'),
+      );
+      return;
+    }
+    if (kind === 'expired') {
+      Alert.alert(
+        isLeader ? t('group.createFailedTitle') : t('group.joinFailedTitle'),
+        t('anon.expired'),
+      );
+      return;
+    }
+    const msg = raw || t('auth.signInFailed');
     Alert.alert(
       isLeader ? t('group.createFailedTitle') : t('group.joinFailedTitle'),
       msg,
@@ -93,6 +121,10 @@ export default function AuthScreen({ navigation, route }: Props) {
         ? await createGroup(groupName.trim())
         : await joinGroup(code.trim());
       // Late results must not update membership or navigation.
+      if (!token.isCurrent()) return;
+      // Server stamps anonymous_expires_at on first membership — re-hydrate so
+      // AccountSheet can show the concrete expiry date (user story 2).
+      await refreshProfile().catch(() => undefined);
       if (!token.isCurrent()) return;
       logEvent(isLeader ? 'group_create' : 'group_join');
       setMembership({ group, role });

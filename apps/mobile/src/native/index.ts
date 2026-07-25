@@ -29,4 +29,5 @@ export type {
   ActivityStartResult,
 } from './liveActivity';
 export type { GlassViewProps } from './liquidGlass';
-export type { PurchaseResult } from './purchases';
+export type { PurchaseResult, VerifiedPurchase, PurchaseResultStatus } from './purchases';
+export { isVerifiedPurchase } from './purchases';

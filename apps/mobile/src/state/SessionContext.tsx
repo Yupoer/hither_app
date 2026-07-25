@@ -13,6 +13,8 @@ import { supabase } from '../api/supabase';
 import {
   updateNickname as updateNicknameApi,
   updateProfile as updateProfileApi,
+  getTripEntitlement,
+  restoreEntitlements,
 } from '../api/client';
 import {
   accountPreferencesFromSlots,
@@ -25,6 +27,11 @@ import {
   type MemberRole,
   type User,
 } from '../types';
+import {
+  effectiveIsPro,
+  isLifetimeProfilePremium,
+  type TripEntitlement,
+} from '../entitlements';
 import { avatarForUser } from '../constants/avatars';
 import { syncOnboardingIfNeeded } from '../onboarding/sync';
 import { flushQueuedEvents } from '../utils/activityLog';
@@ -62,16 +69,22 @@ interface SessionContextValue {
   initializing: boolean;
   /** True when the signed-in user is a Supabase anonymous (guest) account. */
   isAnonymous: boolean;
-  /** Hither Pro entitlement (`profiles.pro`). Client-trusted for now. */
+  /**
+   * Effective premium for the current context (cache of server entitlement).
+   * Must not grant access when the server reports expired/revoked/refunded/invalid.
+   */
   isPro: boolean;
+  /** Latest trip entitlement snapshot for the active group (cache only). */
+  tripEntitlement: TripEntitlement | null;
   /**
    * Anonymously sign in and record the chosen nickname. Resolves to the User
    * (with `id === auth.uid()`). `email` is accepted for API compatibility but
    * unused in the anonymous flow.
    *
-   * Anonymous accounts and their data are subject to cleanup 3 days after the
-   * user joins a group (server-side cleanup job not yet implemented; the join
-   * timestamp lives in `memberships.created_at`).
+   * Anonymous accounts and their data are subject to cleanup 14 days after the
+   * user joins a group. Expiry is stored on `profiles.anonymous_expires_at`
+   * (join timestamp on `memberships.created_at`); client messaging and server
+   * authorization / cleanup use the same timestamp.
    */
   signIn: (input: { name: string; email?: string }) => Promise<User>;
   /**
@@ -128,10 +141,18 @@ interface SessionContextValue {
   /** Record the group the user just created (as leader) or joined (as follower). */
   setMembership: (membership: Membership) => void;
   leaveGroup: () => void;
-  /** Immediately update the local Pro status after a successful upgrade. */
+  /**
+   * @deprecated Do not use as proof of payment. Prefer refreshEntitlement /
+   * refreshProfile after a server-validated purchase or redemption.
+   */
   setProStatusLocal: (pro: boolean) => void;
   /** Refresh the user profile from the database (e.g. after a promo code). */
   refreshProfile: () => Promise<void>;
+  /**
+   * Re-fetch authoritative entitlement from the server for the active (or
+   * given) group and update the local cache. Invalid/expired responses clear premium.
+   */
+  refreshEntitlement: (groupId?: string | null) => Promise<TripEntitlement | null>;
 }
 
 const SessionContext = createContext<SessionContextValue | undefined>(undefined);
@@ -142,6 +163,29 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [initializing, setInitializing] = useState(true);
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [isPro, setIsPro] = useState(false);
+  const [tripEntitlement, setTripEntitlement] = useState<TripEntitlement | null>(null);
+
+  /**
+   * Cache-only premium. Never grant from expiring profiles.pro denorm.
+   * With a trip: server trip.isPremium is authoritative.
+   * Without a trip: lifetime profile only (null expiry).
+   */
+  const applyPremiumCache = useCallback(
+    (
+      profilePro: boolean,
+      proExpiresAt: string | null | undefined,
+      trip: TripEntitlement | null,
+    ) => {
+      setIsPro(
+        effectiveIsPro({
+          trip,
+          profilePro,
+          proExpiresAt,
+        }),
+      );
+    },
+    [],
+  );
 
   // Restore any persisted anonymous session on launch and keep `user.id` in
   // sync with auth state. The nickname is read back from `profiles` so a
@@ -155,6 +199,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           setUser(null);
           setIsAnonymous(false);
           setIsPro(false);
+          setTripEntitlement(null);
         }
         return;
       }
@@ -174,6 +219,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
             pro_plan?: string | null;
             pro_purchased_at?: string | null;
             pro_expires_at?: string | null;
+            anonymous_expires_at?: string | null;
             preferences?: unknown;
           }
         | null;
@@ -187,13 +233,16 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           avatarColor: row?.avatar_color ?? undefined,
           createdAt: row?.created_at,
           provider: authUser.app_metadata?.provider ?? (authUser.is_anonymous ? 'anonymous' : 'email'),
+          pro: !!row?.pro,
           proPlan: row?.pro_plan ?? undefined,
           proPurchasedAt: row?.pro_purchased_at ?? undefined,
           proExpiresAt: row?.pro_expires_at ?? undefined,
+          anonymousExpiresAt: row?.anonymous_expires_at ?? undefined,
           preferences: accountPreferencesFromSlots(slots),
         });
         setIsAnonymous(!!authUser.is_anonymous);
-        setIsPro(!!row?.pro);
+        // No trip yet: lifetime only — never trust expiring profiles.pro denorm.
+        applyPremiumCache(!!row?.pro, row?.pro_expires_at, null);
       }
     }
 
@@ -264,7 +313,58 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     void stopBackgroundJourney();
     void clearLiveActivities();
     setMembershipState(null);
-  }, []);
+    setTripEntitlement(null);
+    // Drop trip-scoped premium; keep lifetime only from profiles.pro + null expiry.
+    setIsPro(isLifetimeProfilePremium(!!user?.pro, user?.proExpiresAt));
+  }, [user?.pro, user?.proExpiresAt]);
+
+  const refreshEntitlement = useCallback(
+    async (groupId?: string | null): Promise<TripEntitlement | null> => {
+      const gid = groupId ?? membership?.group.id ?? null;
+      try {
+        if (gid) {
+          const trip = await getTripEntitlement(gid);
+          setTripEntitlement(trip);
+          // Server trip snapshot is authoritative for this group.
+          if (trip.ok) {
+            setIsPro(!!trip.isPremium);
+          } else {
+            setIsPro(false);
+          }
+          return trip;
+        }
+        const restored = await restoreEntitlements(null);
+        setTripEntitlement(null);
+        // No trip: lifetime only (userPro is server lifetime flag).
+        setIsPro(!!restored.userPro);
+        return null;
+      } catch {
+        // Network failures keep the previous cache; do not invent premium.
+        return tripEntitlement;
+      }
+    },
+    [membership?.group.id, tripEntitlement],
+  );
+
+  const setMembership = useCallback(
+    (next: Membership) => {
+      setMembershipState(next);
+      // Clear prior trip premium until server responds for the new group.
+      setIsPro(false);
+      setTripEntitlement(null);
+      void getTripEntitlement(next.group.id)
+        .then((trip) => {
+          setTripEntitlement(trip);
+          if (trip.ok) {
+            setIsPro(!!trip.isPremium);
+          }
+        })
+        .catch(() => {
+          /* keep Free until server answers */
+        });
+    },
+    [],
+  );
 
   const customQuickCommands = useMemo(
     () => normalizeCustomQuickCommands(user?.preferences),
@@ -288,6 +388,75 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     [updateProfile, user?.preferences, customQuickCommands],
   );
 
+  const refreshProfile = useCallback(async () => {
+    const { data } = await supabase.auth.getSession();
+    if (data.session?.user) {
+      const authUser = data.session.user;
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', authUser.id)
+        .maybeSingle();
+      const row = profileData as {
+        nickname?: string;
+        avatar?: string | null;
+        avatar_color?: string | null;
+        pro?: boolean | null;
+        created_at?: string;
+        pro_plan?: string | null;
+        pro_purchased_at?: string | null;
+        pro_expires_at?: string | null;
+        anonymous_expires_at?: string | null;
+        preferences?: unknown;
+      } | null;
+      setUser((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          name: row?.nickname ?? prev.name,
+          avatar: row?.avatar ?? prev.avatar,
+          avatarColor: row?.avatar_color ?? prev.avatarColor,
+          createdAt: row?.created_at ?? prev.createdAt,
+          provider: authUser.app_metadata?.provider ?? prev.provider,
+          pro: row ? !!row.pro : prev.pro,
+          proPlan: row?.pro_plan ?? prev.proPlan,
+          proPurchasedAt: row?.pro_purchased_at ?? prev.proPurchasedAt,
+          // Null-aware: present row with null expiry clears trip-pass denorm.
+          proExpiresAt: row
+            ? (row.pro_expires_at ?? undefined)
+            : prev.proExpiresAt,
+          // Null-aware: when the profile row is present, server null clears
+          // local expiry (do not keep a stale ISO via ?? prev).
+          anonymousExpiresAt: row
+            ? (row.anonymous_expires_at ?? undefined)
+            : prev.anonymousExpiresAt,
+          preferences: accountPreferencesFromSlots(
+            normalizeCustomQuickCommands(row?.preferences),
+          ),
+        };
+      });
+      // Mirror server anonymous flag on every refresh (upgrade confirm, etc.).
+      setIsAnonymous(!!authUser.is_anonymous);
+      // Re-validate against server entitlement; do not trust profiles.pro alone.
+      const gid = membership?.group.id;
+      if (gid) {
+        try {
+          const trip = await getTripEntitlement(gid);
+          setTripEntitlement(trip);
+          if (trip.ok) {
+            setIsPro(!!trip.isPremium);
+          } else {
+            applyPremiumCache(!!row?.pro, row?.pro_expires_at, null);
+          }
+        } catch {
+          applyPremiumCache(!!row?.pro, row?.pro_expires_at, tripEntitlement);
+        }
+      } else {
+        applyPremiumCache(!!row?.pro, row?.pro_expires_at, null);
+      }
+    }
+  }, [membership?.group.id, applyPremiumCache, tripEntitlement]);
+
   const value = useMemo<SessionContextValue>(
     () => ({
       user,
@@ -295,6 +464,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       initializing,
       isAnonymous,
       isPro,
+      tripEntitlement,
       signIn,
       signInWithGoogle,
       signInWithApple,
@@ -309,39 +479,12 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       customQuickCommands,
       customQuickCommand,
       setCustomQuickCommand,
-      setMembership: (next) => setMembershipState(next),
+      setMembership,
       leaveGroup: leaveGroupWithJourneyCleanup,
+      // Deprecated: never treat as payment proof. Prefer refreshEntitlement.
       setProStatusLocal: (pro) => setIsPro(pro),
-      refreshProfile: async () => {
-        const { data } = await supabase.auth.getSession();
-        if (data.session?.user) {
-          const authUser = data.session.user;
-          const { data: profileData } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', authUser.id)
-            .maybeSingle();
-          const row = profileData as any;
-          setUser((prev) => {
-            if (!prev) return prev;
-            return {
-              ...prev,
-              name: row?.nickname ?? prev.name,
-              avatar: row?.avatar ?? prev.avatar,
-              avatarColor: row?.avatar_color ?? prev.avatarColor,
-              createdAt: row?.created_at ?? prev.createdAt,
-              provider: authUser.app_metadata?.provider ?? prev.provider,
-              proPlan: row?.pro_plan ?? prev.proPlan,
-              proPurchasedAt: row?.pro_purchased_at ?? prev.proPurchasedAt,
-              proExpiresAt: row?.pro_expires_at ?? prev.proExpiresAt,
-              preferences: accountPreferencesFromSlots(
-                normalizeCustomQuickCommands(row?.preferences),
-              ),
-            };
-          });
-          setIsPro(!!row?.pro);
-        }
-      },
+      refreshProfile,
+      refreshEntitlement,
     }),
     [
       user,
@@ -349,6 +492,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       initializing,
       isAnonymous,
       isPro,
+      tripEntitlement,
       signIn,
       signInWithGoogle,
       signInWithApple,
@@ -363,7 +507,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       customQuickCommands,
       customQuickCommand,
       setCustomQuickCommand,
+      setMembership,
       leaveGroupWithJourneyCleanup,
+      refreshProfile,
+      refreshEntitlement,
     ],
   );
 

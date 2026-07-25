@@ -552,7 +552,7 @@ sequenceDiagram
 - diagnostics、consent、batch scheduler、performance；
 - production config、runtime alignment、native module version。
 
-`docs/testflight/` 與 `docs/qa/` 另有 iOS acceptance／regression 文件。這些測試多數是 JS unit／contract tests，不能替代 Android emulator／真機對 native map、background service、notifications 與 OEM 行為的驗證。
+各任務的 `Spec/` 另有 acceptance／regression 文件。這些測試多數是 JS unit／contract tests，不能替代 Android emulator／真機對 native map、background service、notifications 與 OEM 行為的驗證。
 
 ## 14. 已知架構問題
 
@@ -620,10 +620,10 @@ docs/                     # product、design、QA、handoff、調查文件
 
 ## 17. 相關文件
 
-- [Android 版實作前調查報告](./android-preimplementation-research-2026-07-20.md)
+- [Android 版實作前調查報告](./Tasks/Completed/2026-07-20-Android-Platform/Report/android-preimplementation-research-2026-07-20.md)
 - [MVP](./MVP.md)
 - [Product](./PRODUCT.md)
-- [Development status](./dev-status.md)
-- [APNs Live Activity setup](./apns-live-activity-setup.md)
-- [Team navigation test matrix](./testflight/team-navigation-test-matrix.md)
-- [Navigation energy acceptance](./testflight/navigation-energy-acceptance.md)
+- [未完成功能差距](./Tasks/2026-07-25-Product-Gap/Spec/product-gap-spec-2026-07-25.md)
+- [APNs Live Activity setup](./Tasks/Completed/2026-07-13-Live-Activity-and-Push/Report/apns-live-activity-setup.md)
+- [Team navigation test matrix](./Tasks/Completed/2026-07-17-Team-Navigation-and-Diagnostics/Spec/team-navigation-test-matrix.md)
+- [Navigation energy acceptance](./Tasks/Completed/2026-07-19-Navigation-Performance/Spec/navigation-energy-acceptance.md)

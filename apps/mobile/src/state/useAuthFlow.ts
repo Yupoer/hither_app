@@ -254,13 +254,22 @@ export function useAuthFlow({
       authUser = current.data.user;
     }
 
+    // Preserve the same UID. Only the SECURITY DEFINER RPC may clear
+    // anonymous_expires_at, and only when is_anonymous is already false.
+    await supabase.rpc('clear_anonymous_expiry_if_registered', {
+      p_uid: user.id,
+    }).then(() => undefined, () => undefined);
+
+    const { data: refreshed } = await supabase.auth.getUser();
+    const stillAnon = !!refreshed.user?.is_anonymous;
     const nextUser = {
       ...user,
       email: authUser.email ?? user.email,
-      provider: 'google',
+      provider: stillAnon ? user.provider : 'google',
+      anonymousExpiresAt: stillAnon ? user.anonymousExpiresAt : undefined,
     };
     setUser(nextUser);
-    setIsAnonymous(false);
+    setIsAnonymous(stillAnon);
     return nextUser;
   }, [setIsAnonymous, setUser, user]);
 
@@ -290,13 +299,20 @@ export function useAuthFlow({
         throw new Error(error?.message ?? 'Apple linking failed');
       }
 
+      await supabase.rpc('clear_anonymous_expiry_if_registered', {
+        p_uid: user.id,
+      }).then(() => undefined, () => undefined);
+
+      const { data: refreshed } = await supabase.auth.getUser();
+      const stillAnon = !!refreshed.user?.is_anonymous;
       const nextUser = {
         ...user,
         email: data.user.email ?? credential.email ?? user.email,
-        provider: 'apple',
+        provider: stillAnon ? user.provider : 'apple',
+        anonymousExpiresAt: stillAnon ? user.anonymousExpiresAt : undefined,
       };
       setUser(nextUser);
-      setIsAnonymous(false);
+      setIsAnonymous(stillAnon);
       return nextUser;
     } catch (error) {
       if ((error as { code?: string }).code === 'ERR_REQUEST_CANCELED') return null;
@@ -386,13 +402,45 @@ export function useAuthFlow({
 
   const upgradeToEmailAccount = useCallback(
     async (email: string, password: string) => {
+      if (!user) throw new Error('No active account to upgrade');
+      const uid = user.id;
+      // updateUser attaches email/password to the *same* auth.uid() — profiles,
+      // memberships, and trip rows keyed by uid are preserved.
       const { error } = await supabase.auth.updateUser({
         email: email.trim(),
         password,
       });
       if (error) throw new Error(error.message);
+      // Never raw-update anonymous_expires_at from the client. The RPC only
+      // clears the column when auth.users.is_anonymous is already false
+      // (e.g. confirm-email already applied, or project has confirm off).
+      await supabase.rpc('clear_anonymous_expiry_if_registered', {
+        p_uid: uid,
+      }).then(() => undefined, () => undefined);
+
+      const { data: refreshed } = await supabase.auth.getUser();
+      const stillAnon = !!refreshed.user?.is_anonymous;
+      setUser((prev) =>
+        prev
+          ? {
+              ...prev,
+              email: email.trim() || prev.email,
+              // Keep server expiry until identity is actually non-anonymous.
+              anonymousExpiresAt: stillAnon
+                ? prev.anonymousExpiresAt
+                : undefined,
+              provider: stillAnon
+                ? prev.provider
+                : prev.provider === 'anonymous'
+                  ? 'email'
+                  : prev.provider,
+            }
+          : prev,
+      );
+      // Do not invent registered state while confirm-email is still pending.
+      setIsAnonymous(stillAnon);
     },
-    [],
+    [setIsAnonymous, setUser, user],
   );
 
   const updateNickname = useCallback(

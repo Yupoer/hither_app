@@ -2,6 +2,10 @@
  * Pure decision helpers for gathering-card command-row labels and
  * complete-stop prompts. MapScreen wires I/O; Jest drives these without
  * mounting the full map.
+ *
+ * OTA-01 team semantics: only Start + End are pressable on the flock
+ * control; 「前往中」 is display-only. Personal path-plan remains member-only
+ * and never rewrites team phase (see teamGatheringState).
  */
 
 export type NavCommandKind =
@@ -23,10 +27,17 @@ export interface NavCommandInput {
   /** Local member route plan is drawn for this stop. */
   localRouteThis: boolean;
   /**
-   * Leader deferred completing the stop after arrival — still shows
-   * 「完成此行程」 so they can finish later without undoing arrival.
+   * OTA-01: this card is the next pending point while global phase is staying.
+   * When false, leader Start is not pressable. Omit to keep legacy always-start.
    */
-  pendingComplete: boolean;
+  isNextTeamPending?: boolean;
+  /**
+   * OTA-01: team cannot Start (active session, en_route elsewhere, or not next).
+   * Prefer this over teamEnRouteElsewhere alone.
+   */
+  teamStartBlocked?: boolean;
+  /** @deprecated Prefer teamStartBlocked. */
+  teamEnRouteElsewhere?: boolean;
 }
 
 export interface NavCommandResult {
@@ -34,8 +45,13 @@ export interface NavCommandResult {
   /** Display label (zh) used by UI and contracts. */
   label: string;
   disabled: boolean;
-  /** Whether pressing starts/stops shared nav, local plan, or complete. */
-  action: 'start_nav' | 'stop_nav' | 'start_plan' | 'close_plan' | 'mark_complete' | 'none';
+  /**
+   * Whether pressing starts shared nav, ends (completes) the team point,
+   * runs a member-only path plan, or completes after personal arrival.
+   * OTA-01: leader End completes the gathering point (not a bare cancel).
+   * Member path-plan still uses close_plan; bare stop_nav is not emitted for leaders.
+   */
+  action: 'start_nav' | 'start_plan' | 'close_plan' | 'mark_complete' | 'end_point' | 'none';
 }
 
 /**
@@ -82,7 +98,9 @@ export function resolveNavCommand(input: NavCommandInput): NavCommandResult {
     personallyArrived,
     flockNavigatingThis,
     localRouteThis,
-    pendingComplete,
+    isNextTeamPending,
+    teamStartBlocked,
+    teamEnRouteElsewhere,
   } = input;
 
   if (isLeader) {
@@ -97,18 +115,24 @@ export function resolveNavCommand(input: NavCommandInput): NavCommandResult {
       };
     }
     if (flockNavigatingThis) {
+      // OTA-01 End: completes the active point and returns global phase to staying.
       return {
         kind: 'leader_stop',
         label: '結束',
         disabled: false,
-        action: 'stop_nav',
+        action: 'end_point',
       };
     }
+    // OTA-01: only the next pending point may Start while the team is staying.
+    const startBlocked =
+      teamStartBlocked === true
+      || teamEnRouteElsewhere === true
+      || isNextTeamPending === false;
     return {
       kind: 'leader_start',
-      label: '導航',
-      disabled: false,
-      action: 'start_nav',
+      label: '開始',
+      disabled: startBlocked,
+      action: startBlocked ? 'none' : 'start_nav',
     };
   }
 
@@ -124,7 +148,8 @@ export function resolveNavCommand(input: NavCommandInput): NavCommandResult {
   if (flockNavigatingThis) {
     return {
       kind: 'member_navigating',
-      label: '導航中',
+      // OTA-01: display-only team travelling state (not a second Start).
+      label: '前往中',
       disabled: true,
       action: 'none',
     };

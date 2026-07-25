@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 import { getGroupState } from '../api/client';
+import { isNetworkRequestError } from '../api/services/_helpers';
 import { supabase } from '../api/supabase';
 import type { GroupState } from '../types';
+import type {
+  CoreSnapshotFreshness,
+  CoreSnapshotSource,
+} from '../types/coreData';
 import {
   applyMemberLocationPatches,
   locationPatchFromRealtimePayload,
@@ -10,6 +15,21 @@ import {
   type MemberLocationPatch,
 } from '../utils/groupStatePatches';
 import { isOwnLocationChange, locationPolicy } from '../utils/locationPolicy';
+import {
+  coreSnapshotFreshness,
+} from '../utils/coreSnapshotFreshness';
+import {
+  groupStateFromCoreSnapshot,
+  readCoreSnapshot,
+} from './coreDataStore';
+import {
+  flushCoreOperationOutbox,
+  hydrateCoreEntityVersions,
+  listOpenCoreOperations,
+  projectOptimisticGathering,
+  subscribeCoreOutboxChanges,
+} from './coreDataSync';
+import type { ActiveGatheringState, CoreOperation } from '../types/coreData';
 
 /**
  * Slow reconciliation interval. Realtime is still the fast path, but the
@@ -38,6 +58,8 @@ interface UseGroupStateOptions {
   highAccuracy?: boolean;
 }
 
+export type GroupStateDataSource = 'remote' | 'local_cache' | 'none';
+
 interface UseGroupStateResult {
   state: GroupState | null;
   /** True only during the very first load (before any data arrives). */
@@ -45,6 +67,16 @@ interface UseGroupStateResult {
   error: string | null;
   /** Force an immediate refresh (e.g. pull-to-refresh, recenter). */
   refresh: () => Promise<boolean>;
+  /** Where the current state was loaded from (OTA-04 local-first). */
+  dataSource: GroupStateDataSource;
+  /** Snapshot freshness for offline / stale banners. */
+  snapshotFreshness: CoreSnapshotFreshness;
+  /** Empty snapshot after offline cold start (no prior sync). */
+  emptyLocalSnapshot: boolean;
+  /** Pending / conflicted outbox ops for this group (OTA-04 UI). */
+  openOperations: CoreOperation[];
+  /** Merge optimistic gathering into in-memory GroupState after local enqueue. */
+  applyOptimisticGathering: (gathering: ActiveGatheringState) => void;
 }
 
 /**
@@ -52,6 +84,10 @@ interface UseGroupStateResult {
  *
  * Primary path (foreground only): Realtime on member_locations / memberships /
  * itinerary_items. Peer locations are patched in-memory from the payload.
+ *
+ * Local-first (OTA-04): successful remote loads persist a SQLite snapshot;
+ * network failures restore group + itinerary from that snapshot so offline
+ * cold start still paints the last known journey.
  *
  * When AppState is not `active`, channels are torn down so the radio can sleep
  * during all-day background sharing (upload is owned by the background task).
@@ -66,6 +102,12 @@ export function useGroupState(
   const [state, setState] = useState<GroupState | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [dataSource, setDataSource] = useState<GroupStateDataSource>('none');
+  const [snapshotFreshness, setSnapshotFreshness] = useState<CoreSnapshotFreshness>({
+    unit: 'missing',
+  });
+  const [emptyLocalSnapshot, setEmptyLocalSnapshot] = useState(false);
+  const [openOperations, setOpenOperations] = useState<CoreOperation[]>([]);
   const [appState, setAppState] = useState<AppStateStatus>(AppState.currentState);
   const activeRef = useRef(true);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -79,6 +121,60 @@ export function useGroupState(
 
   const loadInFlightRef = useRef<Promise<boolean> | null>(null);
 
+  const refreshOpenOperations = useCallback(async (id: string) => {
+    try {
+      const ops = await listOpenCoreOperations(id);
+      if (activeRef.current) setOpenOperations(ops);
+    } catch {
+      if (activeRef.current) setOpenOperations([]);
+    }
+  }, []);
+
+  // Live outbox banners: refresh open ops after enqueue / flush.
+  useEffect(() => {
+    if (!groupId) return;
+    return subscribeCoreOutboxChanges(() => {
+      void refreshOpenOperations(groupId);
+    });
+  }, [groupId, refreshOpenOperations]);
+
+  const applyOptimisticGathering = useCallback((gathering: ActiveGatheringState) => {
+    setState((prev) => {
+      if (!prev) return prev;
+      return projectOptimisticGathering(prev, gathering);
+    });
+    setDataSource('local_cache');
+    if (groupId) void refreshOpenOperations(groupId);
+  }, [groupId, refreshOpenOperations]);
+
+  const applyLocalSnapshot = useCallback(async (id: string): Promise<boolean> => {
+    try {
+      const snapshot = await readCoreSnapshot(id);
+      if (!snapshot) {
+        if (activeRef.current) {
+          setEmptyLocalSnapshot(true);
+          setSnapshotFreshness({ unit: 'missing' });
+          setDataSource('none');
+        }
+        return false;
+      }
+      const next = groupStateFromCoreSnapshot(snapshot);
+      const freshness = coreSnapshotFreshness(snapshot, Date.now());
+      if (activeRef.current) {
+        setState(next);
+        setDataSource('local_cache');
+        setSnapshotFreshness(freshness);
+        setEmptyLocalSnapshot(false);
+        const source: CoreSnapshotSource = snapshot.source;
+        void source;
+      }
+      await refreshOpenOperations(id);
+      return true;
+    } catch {
+      return false;
+    }
+  }, [refreshOpenOperations]);
+
   const load = useCallback((): Promise<boolean> => {
     if (!groupId) return Promise.resolve(false);
     if (loadInFlightRef.current) return loadInFlightRef.current;
@@ -88,13 +184,40 @@ export function useGroupState(
         if (activeRef.current) {
           setState(next);
           setError(null);
+          setDataSource('remote');
+          setEmptyLocalSnapshot(false);
         }
+        try {
+          // Persist snapshot and hydrate server entity versions (OTA-04 #6).
+          await hydrateCoreEntityVersions(groupId, next);
+          const snap = await readCoreSnapshot(groupId);
+          if (activeRef.current && snap) {
+            setSnapshotFreshness(coreSnapshotFreshness(snap, Date.now()));
+          }
+        } catch {
+          // Local cache write is best-effort; remote state still paints.
+        }
+        // Opportunistic outbox drain after a successful network round-trip.
+        await flushCoreOperationOutbox().catch(() => undefined);
+        await refreshOpenOperations(groupId);
         return true;
       } catch (cause) {
+        const restored = await applyLocalSnapshot(groupId);
         if (activeRef.current) {
-          setError(cause instanceof Error ? cause.message : '無法取得群組狀態');
+          if (restored) {
+            // Offline / network failure with a prior snapshot: show cached data.
+            setError(
+              isNetworkRequestError(cause)
+                ? null
+                : cause instanceof Error
+                  ? cause.message
+                  : '無法取得群組狀態',
+            );
+          } else {
+            setError(cause instanceof Error ? cause.message : '無法取得群組狀態');
+          }
         }
-        return false;
+        return restored;
       } finally {
         if (activeRef.current) setLoading(false);
       }
@@ -103,7 +226,7 @@ export function useGroupState(
     });
     loadInFlightRef.current = run;
     return run;
-  }, [groupId]);
+  }, [applyLocalSnapshot, groupId, refreshOpenOperations]);
 
   const loadRef = useRef(load);
   loadRef.current = load;
@@ -114,11 +237,17 @@ export function useGroupState(
   }, []);
 
   // Initial / group change load — even if briefly backgrounded, keep last state.
+  // OTA-04: paint local snapshot immediately so offline cold start is usable,
+  // then reconcile with remote when possible.
   useEffect(() => {
     activeRef.current = true;
     realtimeReadyRef.current = false;
     setLoading(true);
     setState(null);
+    setDataSource('none');
+    setSnapshotFreshness({ unit: 'missing' });
+    setEmptyLocalSnapshot(false);
+    setError(null);
     pendingPatchesRef.current.clear();
 
     if (!groupId) {
@@ -126,12 +255,24 @@ export function useGroupState(
       return;
     }
 
-    void loadRef.current();
+    let cancelled = false;
+    void (async () => {
+      await applyLocalSnapshot(groupId);
+      if (cancelled || !activeRef.current) return;
+      // If we already painted from cache, drop the full-screen loader so the
+      // map can render while remote reconciliation continues.
+      if (activeRef.current) {
+        // loading stays true until remote attempt finishes unless we have cache;
+        // applyLocalSnapshot does not clear loading — load() does.
+      }
+      await loadRef.current();
+    })();
 
     return () => {
+      cancelled = true;
       activeRef.current = false;
     };
-  }, [groupId]);
+  }, [applyLocalSnapshot, groupId]);
 
   // Realtime + poll only while the app is foregrounded (battery budget).
   useEffect(() => {
@@ -143,6 +284,7 @@ export function useGroupState(
 
     // Soft refresh when returning from background so peer pins catch up.
     void loadRef.current();
+    void flushCoreOperationOutbox().catch(() => undefined);
 
     const scheduleReload = () => {
       if (debounceRef.current) {
@@ -260,5 +402,15 @@ export function useGroupState(
     };
   }, [groupId, appState]);
 
-  return { state, loading, error, refresh: load };
+  return {
+    state,
+    loading,
+    error,
+    refresh: load,
+    dataSource,
+    snapshotFreshness,
+    emptyLocalSnapshot,
+    openOperations,
+    applyOptimisticGathering,
+  };
 }

@@ -83,12 +83,40 @@ export {
 export type { ResolveGatherPointResult } from './services/GatheringWorkflowService';
 
 export {
+  mapCoordinationRequest,
+  mapCoordinationResponse,
+  mapItineraryOperation,
+  createCoordinationRequest,
+  respondToCoordinationRequest,
+  overrideCoordinationRequest,
+  resolveCoordinationRequestDeadline,
+  resolveDueCoordinationRequests,
+  cancelCoordinationRequest,
+  fetchCoordinationRequests,
+  fetchCoordinationResponses,
+  fetchItineraryOperations,
+} from './services/CoordinationRequestService';
+export type { CreateCoordinationRequestInput } from './services/CoordinationRequestService';
+
+export {
   updateNickname,
   updateProfile,
   saveOnboardingProfile,
   setProStatus,
   redeemPromoCode,
 } from './services/ProfileService';
+
+export {
+  getTripEntitlement,
+  applyVerifiedPurchase,
+  restoreEntitlements,
+} from './services/EntitlementService';
+
+export {
+  applyCoreOperation,
+  fetchCoreEntityVersions,
+} from './services/CoreDataService';
+export type { CoreEntityVersionRow } from './services/CoreDataService';
 
 export {
   inviteToSubgroup,
