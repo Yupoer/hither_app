@@ -10,12 +10,15 @@ import {
   startNavigationSession,
   subscribeNavigationSession,
 } from '../api/services/NavigationService';
+import { requireUserId } from '../api/services/_helpers';
 import type {
   MemberNavigationState,
   NavigationMemberStatus,
   NavigationSession,
 } from '../types/navigation';
+import type { NavigationAnnouncementResponseKind } from '../types/coreData';
 import { diagnostics } from './diagnostics';
+import { enqueuePersonalNavigationResponse } from './coreDataSync';
 import { runNavigationTerminalMutation } from './navigationTerminalMutation';
 
 export function useNavigationSession(groupId: string | null) {
@@ -177,6 +180,24 @@ export function useNavigationSession(groupId: string | null) {
     return next;
   }, [session]);
 
+  /**
+   * OTA-04 / OTA-02: personal navigation announcement response.
+   * User-scoped outbox op — never mutates team gathering phase.
+   */
+  const respondToAnnouncement = useCallback(async (
+    response: NavigationAnnouncementResponseKind | null,
+  ) => {
+    if (!session || !groupId) return null;
+    const userId = await requireUserId();
+    await enqueuePersonalNavigationResponse({
+      groupId,
+      sessionId: session.id,
+      userId,
+      response,
+    });
+    return response;
+  }, [groupId, session]);
+
   return {
     session,
     memberState,
@@ -187,5 +208,6 @@ export function useNavigationSession(groupId: string | null) {
     cancel,
     complete,
     ack,
+    respondToAnnouncement,
   };
 }

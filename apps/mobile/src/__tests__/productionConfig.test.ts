@@ -78,7 +78,7 @@ describe('production mobile configuration', () => {
   });
 
   it('pins OTA runtime to 0.1.3 so store builds receive updates', () => {
-    // Bare workflow requires a string runtimeVersion. TestFlight binaries
+    // Bare workflow requires a string runtimeVersion. TestFlight/store binaries
     // advertise "0.1.3"; fingerprint-hash OTAs never match those installs.
     expect(appConfig.expo.updates?.url).toBe(
       'https://u.expo.dev/0f62ed14-1f2e-4d7b-b5b6-4eda273f2e35',

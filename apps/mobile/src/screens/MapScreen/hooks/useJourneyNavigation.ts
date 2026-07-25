@@ -9,6 +9,8 @@ import type { ScrollView } from 'react-native';
 import type { GroupMapHandle } from '../../../components/GroupMap';
 import { openExternalNavigation as openExternalNav } from '../../../native/externalNavigation';
 import type { TravelMode } from '../../../native/maps';
+import type { ActiveGatheringState } from '../../../types/coreData';
+import { enqueueLeaderGatheringStart } from '../../../state/coreDataSync';
 
 interface UseJourneyNavigationParams {
   state: GroupState | null;
@@ -34,6 +36,8 @@ interface UseJourneyNavigationParams {
   ) => Promise<boolean>;
   /** Travel mode for external maps deep-links (defaults to walk). */
   travelMode?: TravelMode;
+  /** Project local-first gathering into React state after outbox enqueue. */
+  onOptimisticGathering?: (gathering: ActiveGatheringState) => void;
 }
 
 export function useJourneyNavigation({
@@ -55,6 +59,7 @@ export function useJourneyNavigation({
   createRequestId = Crypto.randomUUID,
   reorderForNavigation,
   travelMode = 'walk',
+  onOptimisticGathering,
 }: UseJourneyNavigationParams) {
   const legacyMode = navigationSession === undefined;
   const legacySharedTargetId = legacyMode && state?.group.journeyStatus === 'going'
@@ -138,11 +143,27 @@ export function useJourneyNavigation({
         return;
       }
       if (!groupId || journeyBusy || !startSession) return;
+      // OTA-01: never Start while a shared session is already active.
+      if (sharedTargetId) return;
+      // Next open stop only (order asc); UI also gates, this covers all call sites.
+      const nextOpen = destinations
+        .filter((d) => !d.closedAt)
+        .slice()
+        .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))[0];
+      if (nextOpen && nextOpen.id !== dest.id) return;
+
       setJourneyBusy(true);
       setPendingLeaderStop(false);
       setPendingLeaderTargetId(dest.id);
       mapRef.current?.centerOn(dest.coordinates);
       try {
+        // OTA-04: local-first gathering start before network (must succeed for durability).
+        const { local } = await enqueueLeaderGatheringStart(groupId, {
+          groupState: state,
+          activeDestinationId: dest.id,
+        });
+        onOptimisticGathering?.(local);
+
         // Promote chosen stop to first open slot of its day before session start.
         if (reorderForNavigation) {
           const updates = promoteDestinationWithinDay(destinations, dest.id);
@@ -157,8 +178,13 @@ export function useJourneyNavigation({
         if (!requestRef.current || requestRef.current.destinationId !== dest.id) {
           requestRef.current = { destinationId: dest.id, requestId: createRequestId() };
         }
-        await startSession(dest.id, requestRef.current.requestId);
-        requestRef.current = null;
+        try {
+          await startSession(dest.id, requestRef.current.requestId);
+          requestRef.current = null;
+        } catch {
+          // Local outbox already holds Start; offline is OK — keep optimistic UI.
+          requestRef.current = null;
+        }
       } catch {
         setPendingLeaderTargetId(null);
         Alert.alert(t('map.setFailedTitle'), t('map.journeyFailed'));
@@ -172,6 +198,7 @@ export function useJourneyNavigation({
       groupId,
       journeyBusy,
       startSession,
+      sharedTargetId,
       t,
       mapRef,
       carouselRef,
@@ -179,6 +206,8 @@ export function useJourneyNavigation({
       createRequestId,
       reorderForNavigation,
       destinations,
+      state,
+      onOptimisticGathering,
     ],
   );
 

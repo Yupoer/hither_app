@@ -69,7 +69,7 @@ export default function LoginScreen({ navigation }: Props) {
 
   // Guest keeps Login on the stack (navigate, not replace) so RoleSelect's
   // back button can return here to register — a guest isn't signed in yet.
-  // Gated behind a confirm modal (anon.*) that discloses the 3-day data
+  // Gated behind a confirm modal (anon.*) that discloses the 14-day data
   // retention limit before committing to the anonymous flow.
   function continueAsGuest() {
     setGuestConfirmVisible(false);

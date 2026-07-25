@@ -8,7 +8,7 @@ import {
 } from '../utils/gatherCommand';
 
 describe('deriveCardNavFlags (shared vs local — MapScreen wiring inputs)', () => {
-  it('member local plan is localRouteThis, not flock 導航中', () => {
+  it('member local plan is localRouteThis, not flock navigating', () => {
     // journeyActive would be true for localTargetId, but sharedTargetId is null.
     const flags = deriveCardNavFlags({
       destId: 'stop-a',
@@ -22,7 +22,6 @@ describe('deriveCardNavFlags (shared vs local — MapScreen wiring inputs)', () 
         isLeader: false,
         personallyArrived: false,
         ...flags,
-        pendingComplete: false,
       }),
     ).toMatchObject({ kind: 'member_close_plan', label: '結束' });
   });
@@ -40,9 +39,8 @@ describe('deriveCardNavFlags (shared vs local — MapScreen wiring inputs)', () 
         isLeader: false,
         personallyArrived: false,
         ...flags,
-        pendingComplete: false,
       }),
-    ).toMatchObject({ kind: 'member_navigating', label: '導航中', disabled: true });
+    ).toMatchObject({ kind: 'member_navigating', label: '前往中', disabled: true });
   });
 
   it('member path-plan when neither shared nor local is set', () => {
@@ -58,7 +56,6 @@ describe('deriveCardNavFlags (shared vs local — MapScreen wiring inputs)', () 
         isLeader: false,
         personallyArrived: false,
         ...flags,
-        pendingComplete: false,
       }).label,
     ).toBe('路徑');
   });
@@ -95,16 +92,15 @@ describe('deriveCardNavFlags (shared vs local — MapScreen wiring inputs)', () 
 });
 
 describe('resolveNavCommand', () => {
-  it('gives leaders start/stop nav only (never path-plan labels)', () => {
+  it('gives leaders start/end only (never path-plan labels)', () => {
     expect(
       resolveNavCommand({
         isLeader: true,
         personallyArrived: false,
         flockNavigatingThis: false,
         localRouteThis: false,
-        pendingComplete: false,
       }),
-    ).toMatchObject({ kind: 'leader_start', label: '導航', action: 'start_nav' });
+    ).toMatchObject({ kind: 'leader_start', label: '開始', action: 'start_nav' });
 
     expect(
       resolveNavCommand({
@@ -112,19 +108,49 @@ describe('resolveNavCommand', () => {
         personallyArrived: false,
         flockNavigatingThis: true,
         localRouteThis: false,
-        pendingComplete: false,
       }),
-    ).toMatchObject({ kind: 'leader_stop', label: '結束', action: 'stop_nav' });
+    ).toMatchObject({ kind: 'leader_stop', label: '結束', action: 'end_point' });
   });
 
-  it('shows 完成 once the leader has arrived (with or without defer)', () => {
+  it('disables leader Start when not next pending or team is en_route elsewhere', () => {
+    expect(
+      resolveNavCommand({
+        isLeader: true,
+        personallyArrived: false,
+        flockNavigatingThis: false,
+        localRouteThis: false,
+        isNextTeamPending: false,
+      }),
+    ).toMatchObject({ kind: 'leader_start', label: '開始', disabled: true, action: 'none' });
+
+    expect(
+      resolveNavCommand({
+        isLeader: true,
+        personallyArrived: false,
+        flockNavigatingThis: false,
+        localRouteThis: false,
+        teamEnRouteElsewhere: true,
+      }),
+    ).toMatchObject({ kind: 'leader_start', disabled: true, action: 'none' });
+
+    expect(
+      resolveNavCommand({
+        isLeader: true,
+        personallyArrived: false,
+        flockNavigatingThis: false,
+        localRouteThis: false,
+        teamStartBlocked: true,
+      }),
+    ).toMatchObject({ kind: 'leader_start', disabled: true, action: 'none' });
+  });
+
+  it('shows complete once the leader has arrived', () => {
     expect(
       resolveNavCommand({
         isLeader: true,
         personallyArrived: true,
         flockNavigatingThis: false,
         localRouteThis: false,
-        pendingComplete: true,
       }),
     ).toMatchObject({
       kind: 'leader_mark_complete',
@@ -138,7 +164,6 @@ describe('resolveNavCommand', () => {
         personallyArrived: true,
         flockNavigatingThis: true,
         localRouteThis: false,
-        pendingComplete: false,
       }),
     ).toMatchObject({
       kind: 'leader_mark_complete',
@@ -147,16 +172,15 @@ describe('resolveNavCommand', () => {
     });
   });
 
-  it('gives members path plan / close plan, never 導航', () => {
+  it('gives members path plan / close plan, never leader start label', () => {
     const plan = resolveNavCommand({
       isLeader: false,
       personallyArrived: false,
       flockNavigatingThis: false,
       localRouteThis: false,
-      pendingComplete: false,
     });
     expect(plan).toMatchObject({ kind: 'member_plan', label: '路徑', disabled: false });
-    expect(plan.label).not.toBe('導航');
+    expect(plan.label).not.toBe('開始');
 
     expect(
       resolveNavCommand({
@@ -164,23 +188,21 @@ describe('resolveNavCommand', () => {
         personallyArrived: false,
         flockNavigatingThis: false,
         localRouteThis: true,
-        pendingComplete: false,
       }),
     ).toMatchObject({ kind: 'member_close_plan', label: '結束' });
   });
 
-  it('disables member control as 導航中 while leader navigates', () => {
+  it('disables member control as travelling display while leader navigates', () => {
     expect(
       resolveNavCommand({
         isLeader: false,
         personallyArrived: false,
         flockNavigatingThis: true,
         localRouteThis: true,
-        pendingComplete: false,
       }),
     ).toMatchObject({
       kind: 'member_navigating',
-      label: '導航中',
+      label: '前往中',
       disabled: true,
       action: 'none',
     });
@@ -193,7 +215,6 @@ describe('resolveNavCommand', () => {
         personallyArrived: true,
         flockNavigatingThis: true,
         localRouteThis: false,
-        pendingComplete: false,
       }),
     ).toMatchObject({
       kind: 'member_waiting_complete',
@@ -280,7 +301,7 @@ describe('history projection + avatar merge', () => {
     ]);
   });
 
-  it('keeps the leader-completed notice copy stable', () => {
-    expect(LEADER_COMPLETED_NOTICE).toContain('隊長已完成此卡片');
+  it('exports leader completed notice copy', () => {
+    expect(LEADER_COMPLETED_NOTICE).toContain('隊長已完成');
   });
 });

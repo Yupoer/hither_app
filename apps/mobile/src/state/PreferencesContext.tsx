@@ -57,6 +57,8 @@ const GATHER_CARD_DEFAULT_EXPANDED_KEY = 'pref.gatherCardDefaultExpanded';
 const GATHER_CARD_TITLE_MARQUEE_KEY = 'pref.gatherCardTitleMarquee';
 const GATHER_CARD_MARQUEE_SPEED_KEY = 'pref.gatherCardMarqueeSpeed';
 const ARRIVAL_RADIUS_KEY = 'pref.arrivalRadiusM';
+/** Device-local OTA-07 passive companion presentation (not synced). */
+const PASSIVE_COMPANION_MODE_KEY = 'pref.passiveCompanionMode';
 
 /** Marquee scroll speed (px/s). Same constant speed for every gathering title. */
 export const MARQUEE_SPEED_MIN = 20;
@@ -122,6 +124,11 @@ interface PreferencesValue {
    */
   arrivalRadiusM: number;
   /**
+   * OTA-07: simplified passive companion presentation on MapScreen.
+   * Device-local only; default off. Not a second navigation tree.
+   */
+  passiveCompanionMode: boolean;
+  /**
    * Opt-in diagnostic / performance / MetricKit logging + batch upload.
    * Default off; enable only after explicit warning confirmation.
    */
@@ -141,6 +148,7 @@ interface PreferencesValue {
   setGatherCardTitleMarquee: (on: boolean) => void;
   setGatherCardMarqueeSpeed: (pxPerSec: number) => void;
   setArrivalRadiusM: (meters: number) => void;
+  setPassiveCompanionMode: (on: boolean) => void;
   setDiagnosticUploadEnabled: (enabled: boolean) => Promise<void>;
 }
 
@@ -180,6 +188,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [gatherCardMarqueeSpeed, setGatherCardMarqueeSpeedState] =
     useState(DEFAULT_MARQUEE_SPEED);
   const [arrivalRadiusM, setArrivalRadiusMState] = useState(DEFAULT_ARRIVAL_RADIUS_M);
+  const [passiveCompanionMode, setPassiveCompanionModeState] = useState(false);
   const [diagnosticUploadEnabled, setDiagnosticUploadEnabledState] = useState(false);
   const [ready, setReady] = useState(false);
 
@@ -203,6 +212,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
           storedGatherCardTitleMarquee,
           storedGatherCardMarqueeSpeed,
           storedArrivalRadius,
+          storedPassiveCompanionMode,
         ] = await AsyncStorage.multiGet([
           LANGUAGE_KEY,
           THEME_KEY,
@@ -218,6 +228,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
           GATHER_CARD_TITLE_MARQUEE_KEY,
           GATHER_CARD_MARQUEE_SPEED_KEY,
           ARRIVAL_RADIUS_KEY,
+          PASSIVE_COMPANION_MODE_KEY,
         ]);
         const diagnosticConsent = await getDiagnosticConsentEnabled();
         if (!active) return;
@@ -270,6 +281,11 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
           if (Number.isFinite(radius)) {
             setArrivalRadiusMState(clampArrivalRadiusM(radius));
           }
+        }
+        if (storedPassiveCompanionMode[1] === 'true') {
+          setPassiveCompanionModeState(true);
+        } else if (storedPassiveCompanionMode[1] === 'false') {
+          setPassiveCompanionModeState(false);
         }
       } finally {
         if (active) setReady(true);
@@ -357,6 +373,12 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     void AsyncStorage.setItem(ARRIVAL_RADIUS_KEY, String(next));
   }, []);
 
+  const setPassiveCompanionMode = useCallback((on: boolean) => {
+    const next = Boolean(on);
+    setPassiveCompanionModeState(next);
+    void AsyncStorage.setItem(PASSIVE_COMPANION_MODE_KEY, next ? 'true' : 'false');
+  }, []);
+
   const setDiagnosticUploadEnabled = useCallback(async (next: boolean) => {
     await setDiagnosticConsentEnabled(next);
     setDiagnosticUploadEnabledState(next);
@@ -377,6 +399,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       gatherCardTitleMarquee,
       gatherCardMarqueeSpeed,
       arrivalRadiusM,
+      passiveCompanionMode,
       diagnosticUploadEnabled,
       ready,
       setLanguage,
@@ -392,6 +415,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       setGatherCardTitleMarquee,
       setGatherCardMarqueeSpeed,
       setArrivalRadiusM,
+      setPassiveCompanionMode,
       setDiagnosticUploadEnabled,
     }),
     [
@@ -408,6 +432,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       gatherCardTitleMarquee,
       gatherCardMarqueeSpeed,
       arrivalRadiusM,
+      passiveCompanionMode,
       diagnosticUploadEnabled,
       ready,
       setLanguage,
@@ -423,6 +448,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       setGatherCardTitleMarquee,
       setGatherCardMarqueeSpeed,
       setArrivalRadiusM,
+      setPassiveCompanionMode,
       setDiagnosticUploadEnabled,
     ],
   );

@@ -51,6 +51,7 @@ import { uploadLocalLogs } from './src/utils/uploadLocalLogs';
 import { startOtaUpdateBootstrap } from './src/utils/otaUpdates';
 import OtaUpdateToast from './src/components/OtaUpdateToast';
 import InteractionRecoveryBanner from './src/components/InteractionRecoveryBanner';
+import { initializeCoreDataLayer } from './src/state/coreDataSync';
 
 // Dynamic Type: scale with the system up to GLOBAL_FONT_SCALE_CAP, then freeze.
 // Per-role caps (HitherText) may be tighter. Never reintroduce a hard 1.0 cap.
@@ -95,6 +96,12 @@ function ThemedNavigation() {
     if (initializing) return;
     setLastLaunchPhase('session_resolved');
     void metrics.markLaunchPhase('session_resolved');
+  }, [initializing]);
+
+  // OTA-04: open SQLite core snapshot + operation outbox on session ready.
+  useEffect(() => {
+    if (initializing) return;
+    void initializeCoreDataLayer().catch(() => undefined);
   }, [initializing]);
 
   useEffect(() => {

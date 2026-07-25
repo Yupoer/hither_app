@@ -80,6 +80,11 @@ import {
   resolveCompletePrompt,
   resolveNavCommand,
 } from '../utils/gatherCommand';
+import {
+  canTeamStart,
+  overlayPersonalOnTeamState,
+  projectTeamGatheringState,
+} from '../utils/teamGatheringState';
 import { useFontLayout } from '../a11y/useFontScaleBucket';
 import { useSession } from '../state/SessionContext';
 import {
@@ -95,9 +100,11 @@ import {
 import PrefSlider from '../components/PrefSlider';
 import { canMarkDestinationArrival } from '../utils/arrivalMarking';
 import { hasArrived } from '../utils/journeyProgress';
+import { buildPassiveCompanionModel } from '../utils/passiveCompanion';
 import { uploadLocalLogs } from '../utils/uploadLocalLogs';
 import { runUiAction } from '../utils/uiAction';
 import { useTranslation, type TranslationKey } from '../i18n';
+import { PassiveCompanionPanel } from './MapScreen/components/PassiveCompanionPanel';
 import { useDeviceLocation } from './MapScreen/hooks/useDeviceLocation';
 import { useCarouselSelection } from './MapScreen/hooks/useCarouselSelection';
 import { useJourneyNavigation } from './MapScreen/hooks/useJourneyNavigation';
@@ -113,6 +120,7 @@ import AccountSheet from '../components/AccountSheet';
 import { useGroupState } from '../state/useGroupState';
 import { useNavigationSession } from '../state/useNavigationSession';
 import { useStragglerAlerts } from '../state/useStragglerAlerts';
+import { useOrganizerExceptions } from '../state/useOrganizerExceptions';
 import { useSubgroupInvites } from '../state/useSubgroupInvites';
 import { clearLiveActivities, useLiveActivity } from '../state/useLiveActivity';
 import {
@@ -121,6 +129,7 @@ import {
 } from '../state/backgroundJourney';
 import { purgeLocationOutbox } from '../state/locationOutbox';
 import { diagnostics } from '../state/diagnostics';
+import { enqueueLeaderGatheringEnd } from '../state/coreDataSync';
 import {
   getLocationSharingEnabled,
   setLocationSharingEnabled,
@@ -213,7 +222,7 @@ import type {
   VisitedWaypoint,
 } from '../types';
 import type { KmlPlacemark } from '../utils/kml';
-import { FREE_LIMITS } from '../entitlements';
+import { FREE_LIMITS, anonymousLeaderRequiresRegistration } from '../entitlements';
 import { radius, themes, THEME_ORDER, type ThemeName } from '../theme';
 import { glass, accentMix, memberColor } from '../glass';
 
@@ -327,10 +336,12 @@ export default function MapScreen({ route, navigation }: Props) {
     gatherCardTitleMarquee,
     gatherCardMarqueeSpeed,
     arrivalRadiusM,
+    passiveCompanionMode,
     setMeetRedMin,
     setHighAccuracy,
     setSharingEnabled,
     setArrivalRadiusM,
+    setPassiveCompanionMode,
   } = usePreferences();
   const { isCardExpanded, toggleCard, registerCardActivity } =
     useGatherCardExpansion(gatherCardDefaultExpanded);
@@ -373,7 +384,17 @@ export default function MapScreen({ route, navigation }: Props) {
   // The demo flock has no membership row; the tester drives it as leader.
   const isLeader = membership?.role === 'leader' || isDemoGroup(groupId);
 
-  const { state, loading, refresh } = useGroupState(groupId, {
+  const {
+    state,
+    loading,
+    error: groupStateError,
+    refresh,
+    dataSource: groupDataSource,
+    snapshotFreshness,
+    emptyLocalSnapshot,
+    openOperations: coreOpenOperations,
+    applyOptimisticGathering,
+  } = useGroupState(groupId, {
     myUserId: user?.id ?? null,
     highAccuracy,
   });
@@ -426,10 +447,6 @@ export default function MapScreen({ route, navigation }: Props) {
   const [optimisticDestinations, setOptimisticDestinations] = useState<Destination[] | null>(null);
   const allScopedDestinations = optimisticDestinations ?? rawDestinations;
   const [destinationArrivals, setDestinationArrivals] = useState<DestinationArrival[]>([]);
-  /** Dest ids where leader chose「先不要完成」after arriving — still shows「完成此行程」. */
-  const [pendingCompleteDestIds, setPendingCompleteDestIds] = useState<Set<string>>(
-    () => new Set(),
-  );
   const [gatherPointRequests, setGatherPointRequests] = useState<GatherPointRequest[]>([]);
   const [resolvingGatherRequestId, setResolvingGatherRequestId] = useState<string | null>(null);
   const optimisticTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
@@ -676,6 +693,7 @@ export default function MapScreen({ route, navigation }: Props) {
     | 'myStatus'
     | 'arrivalManage'
     | 'arrival'
+    | 'exceptions'
     | 'diagnostics'
   >(null);
   const [arrivalDestination, setArrivalDestination] = useState<Destination | null>(null);
@@ -1027,7 +1045,51 @@ export default function MapScreen({ route, navigation }: Props) {
     // handleReorder is defined later; keep a stable bridge via ref.
     reorderForNavigation: (updates) => reorderForNavigationRef.current(updates),
     travelMode,
+    onOptimisticGathering: applyOptimisticGathering,
   });
+
+  // OTA-01: single authoritative team gathering projection for map / broadcast /
+  // notification / passive surfaces. Personal ETA/mode/progress never write here.
+  // Prefer live session; do not invent a synthetic active session from sharedTargetId
+  // alone when session status is already terminal (avoids false en_route after End).
+  const teamGatheringState = useMemo(
+    () =>
+      projectTeamGatheringState({
+        journeyStatus: state?.group.journeyStatus,
+        activeDestinationId: state?.group.activeDestinationId,
+        journeyStartedAt: state?.group.journeyStartedAt,
+        navigationSession: navigationSessionState.session
+          ? {
+              destinationId: navigationSessionState.session.destinationId,
+              status: navigationSessionState.session.status,
+              version: navigationSessionState.session.version,
+              startedAt: navigationSessionState.session.startedAt,
+            }
+          : navigationSessionState.loading && sharedTargetId
+            ? {
+                // Optimistic path only while first session fetch is in flight.
+                destinationId: sharedTargetId,
+                status: 'active',
+                version: 0,
+                startedAt: state?.group.journeyStartedAt,
+              }
+            : null,
+        destinations: destinations.map((d) => ({
+          id: d.id,
+          order: d.order,
+          closedAt: d.closedAt,
+        })),
+      }),
+    [
+      destinations,
+      navigationSessionState.loading,
+      navigationSessionState.session,
+      sharedTargetId,
+      state?.group.activeDestinationId,
+      state?.group.journeyStartedAt,
+      state?.group.journeyStatus,
+    ],
+  );
 
   const navigationAckRef = useRef<string | null>(null);
   const privacyHydratedUserRef = useRef<string | null>(null);
@@ -1453,6 +1515,44 @@ export default function MapScreen({ route, navigation }: Props) {
     }
   }, [stragglers, isLeader, groupId]);
 
+  // Organizer exception center — leader-only derived list (no second source of truth).
+  const exceptionArrivedUserIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const m of members) {
+      if (m.status === 'arrived') ids.add(m.userId);
+    }
+    const pointId =
+      navigationSessionState.session?.destinationId
+      ?? activePoint?.id
+      ?? null;
+    if (pointId) {
+      for (const entry of destinationArrivals) {
+        if (entry.destinationId === pointId) ids.add(entry.userId);
+      }
+    }
+    return ids;
+  }, [
+    members,
+    destinationArrivals,
+    navigationSessionState.session?.destinationId,
+    activePoint?.id,
+  ]);
+  const {
+    exceptions: organizerExceptions,
+    openCount: exceptionOpenCount,
+    pendingKeys: exceptionPendingKeys,
+    markHandled: markExceptionHandled,
+  } = useOrganizerExceptions({
+    enabled: !!isLeader,
+    groupId,
+    groupState: state,
+    gatheringPoint: activePoint ?? null,
+    navigationSessionId: navigationSessionState.session?.id ?? null,
+    stragglers,
+    arrivedUserIds: exceptionArrivedUserIds,
+    leaderUserId: user?.id,
+  });
+
   // Same metric as locked initial (route stays route; never silent straight fallback).
   const liveDistance =
     distanceSource != null
@@ -1507,6 +1607,78 @@ export default function MapScreen({ route, navigation }: Props) {
     localNavigationArrived
       ? 1
       : gatedProgress?.progress;
+
+  // OTA-01 ticket 02: team surface + personal overlay (personal never rewrites team).
+  const teamSurfaceView = useMemo(() => {
+    const personalEta =
+      selfRoute?.expectedTravelTimeSeconds
+      ?? (liveDistance != null ? etaSecondsFor(liveDistance, travelMode) : null);
+    return overlayPersonalOnTeamState(teamGatheringState, {
+      userId: user?.id ?? '',
+      travelMode,
+      etaSeconds: personalEta,
+      location: deviceCoords
+        ? { latitude: deviceCoords.latitude, longitude: deviceCoords.longitude }
+        : null,
+      arrived: localNavigationArrived,
+      progress: liveProgress ?? null,
+      distanceMeters: liveDistance ?? null,
+    });
+  }, [
+    teamGatheringState,
+    user?.id,
+    travelMode,
+    selfRoute?.expectedTravelTimeSeconds,
+    liveDistance,
+    deviceCoords,
+    localNavigationArrived,
+    liveProgress,
+  ]);
+
+  // OTA-07: wait for prefs hydrate so returning passive users do not flash full chrome.
+  const inPassiveMode = preferencesReady && passiveCompanionMode;
+  // Dense MapScreen chrome only after prefs ready and not in passive presentation.
+  const showDenseChrome = preferencesReady && !passiveCompanionMode;
+
+  // OTA-07: same team phase + user progress as full UI; presentation only.
+  // journeyGoing follows team projection, not personal ETA/progress.
+  const passiveModel = useMemo(
+    () =>
+      buildPassiveCompanionModel({
+        mode: inPassiveMode ? 'passive' : 'full',
+        loading: loading && !state,
+        errorMessage: groupStateError,
+        destinations: destinations.map((d) => ({ id: d.id, title: d.title })),
+        currentPointId:
+          teamSurfaceView.team.activePointId
+          ?? teamSurfaceView.team.nextPendingPointId
+          ?? (navTarget ?? activePoint ?? selectedDestination)?.id
+          ?? null,
+        currentPointTitle: (navTarget ?? activePoint ?? selectedDestination)?.title ?? null,
+        journeyGoing: teamSurfaceView.team.journeyPhase === 'en_route',
+        personalProgress: teamSurfaceView.personal?.progress ?? liveProgress ?? null,
+        personallyArrived: teamSurfaceView.personal?.arrived ?? localNavigationArrived,
+      }),
+    [
+      inPassiveMode,
+      loading,
+      state,
+      groupStateError,
+      destinations,
+      teamSurfaceView,
+      navTarget,
+      activePoint,
+      selectedDestination,
+      liveProgress,
+      localNavigationArrived,
+    ],
+  );
+
+  const exitPassiveCompanionMode = useCallback(() => {
+    // Display preference only — no consent/payment/vote/safety side effects.
+    setPassiveCompanionMode(false);
+  }, [setPassiveCompanionMode]);
+
   // Start the lock-screen Live Update as soon as navigation is active. GPS
   // baseline hydration can lag behind the session start; a route/straight-line
   // distance is sufficient for the initial Android notification and is
@@ -1989,26 +2161,43 @@ export default function MapScreen({ route, navigation }: Props) {
     }
   }, [groupId, loadGatheringWorkflow, refresh, resolvingGatherRequestId, t]);
 
+  const completeStopInFlightRef = useRef(false);
   const runCompleteGatheringStop = useCallback(async (destination: Destination) => {
-    if (!groupId) return;
+    if (!groupId || completeStopInFlightRef.current) return;
+    completeStopInFlightRef.current = true;
     try {
-      await completeGatheringStop(groupId, destination.id);
-      setPendingCompleteDestIds((prev) => {
-        if (!prev.has(destination.id)) return prev;
-        const next = new Set(prev);
-        next.delete(destination.id);
-        return next;
+      // OTA-04: local-first End (outbox) before network — must succeed for durability.
+      const { local } = await enqueueLeaderGatheringEnd(groupId, {
+        groupState: state,
       });
-      await stopNavigation();
-      await refresh();
-      await loadGatheringWorkflow();
+      applyOptimisticGathering(local);
+      // Server cancels any active session + sets closed_at + pauses group.
+      try {
+        await completeGatheringStop(groupId, destination.id);
+      } catch {
+        // Offline OK: outbox holds End; local optimistic already applied.
+      }
+      // Do not call cancelSession again (stale version → false failure alert).
+      await navigationSessionState.refresh().catch(() => undefined);
+      await refresh().catch(() => undefined);
+      await loadGatheringWorkflow().catch(() => undefined);
     } catch (error) {
       Alert.alert(
         t('map.setFailedTitle'),
         error instanceof Error ? error.message : t('map.setFailedMsg'),
       );
+    } finally {
+      completeStopInFlightRef.current = false;
     }
-  }, [groupId, loadGatheringWorkflow, refresh, stopNavigation, t]);
+  }, [
+    applyOptimisticGathering,
+    groupId,
+    loadGatheringWorkflow,
+    navigationSessionState,
+    refresh,
+    state,
+    t,
+  ]);
 
   const promptCompleteAfterArrival = useCallback((destination: Destination) => {
     const arrivedIds = new Set(
@@ -2045,19 +2234,12 @@ export default function MapScreen({ route, navigation }: Props) {
         },
       },
     ];
-    if (prompt.deferLabel) {
-      buttons.push({
-        text: prompt.deferLabel,
-        onPress: () => {
-          setPendingCompleteDestIds((prev) => {
-            const next = new Set(prev);
-            next.add(destination.id);
-            return next;
-          });
-        },
-      });
-    }
-    buttons.push({ text: t('common.cancel'), style: 'cancel' });
+    // Dismiss only — leader 「先不要完成」 leaves complete available via
+    // personallyArrived → mark_complete (no deferred-id set).
+    buttons.push({
+      text: prompt.deferLabel ?? t('common.cancel'),
+      style: 'cancel',
+    });
     Alert.alert(prompt.title, prompt.message, buttons);
   }, [
     allScopedDestinations,
@@ -2127,12 +2309,6 @@ export default function MapScreen({ route, navigation }: Props) {
       void (async () => {
         try {
           if (!arrived && targetUserId === user?.id) {
-            setPendingCompleteDestIds((prev) => {
-              if (!prev.has(destination.id)) return prev;
-              const next = new Set(prev);
-              next.delete(destination.id);
-              return next;
-            });
             setAutoArrivedDestId((cur) => (cur === destination.id ? null : cur));
             if (autoArrivalMarkedRef.current === destination.id) {
               autoArrivalMarkedRef.current = null;
@@ -2239,20 +2415,48 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // --- Group actions --------------------------------------------------------
   const [codeCopied, setCodeCopied] = useState(false);
+  /** Anonymous Leader at 5 members must register before inviting a 6th. */
+  const inviteBlockedForAnonymousLeader = anonymousLeaderRequiresRegistration(
+    isAnonymous && membership?.role === 'leader',
+    members.length,
+  );
+  const promptAnonymousLeaderRegistration = useCallback(() => {
+    Alert.alert(
+      t('anon.registrationRequiredTitle'),
+      t('anon.registrationRequiredBody'),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('anon.registrationRequiredCta'),
+          onPress: () => {
+            setOverlay('account');
+          },
+        },
+      ],
+    );
+  }, [t]);
   const copyCode = useCallback(async () => {
     if (!group) return;
+    if (inviteBlockedForAnonymousLeader) {
+      promptAnonymousLeaderRegistration();
+      return;
+    }
     lightTap();
     logEvent('code_copy');
     await Clipboard.setStringAsync(group.inviteCode);
     setCodeCopied(true);
     setTimeout(() => setCodeCopied(false), 1500);
-  }, [group]);
+  }, [group, inviteBlockedForAnonymousLeader, promptAnonymousLeaderRegistration]);
   const shareCode = useCallback(async () => {
     if (!group) return;
+    if (inviteBlockedForAnonymousLeader) {
+      promptAnonymousLeaderRegistration();
+      return;
+    }
     lightTap();
     logEvent('code_share');
     await Share.share({ message: t('map.shareMsg', { code: group.inviteCode }) });
-  }, [group, t]);
+  }, [group, t, inviteBlockedForAnonymousLeader, promptAnonymousLeaderRegistration]);
 
   // --- Profile (nickname + emoji avatar) — avatar button only --------------
   const openProfile = useCallback(() => {
@@ -3354,6 +3558,22 @@ export default function MapScreen({ route, navigation }: Props) {
             <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
           </Pressable>
         ) : null}
+        {isLeader ? (
+          <Pressable
+            style={styles.listRow}
+            onPress={() => { lightTap(); setOverlay('exceptions'); }}
+            accessibilityRole="button"
+            accessibilityLabel={t('exception.centerTitle')}
+          >
+            <Text style={styles.listRowTitle}>{t('exception.centerTitle')}</Text>
+            {exceptionOpenCount > 0 ? (
+              <Text style={[styles.listRowTrailing, { color: glass.warn }]}>
+                {t('exception.openCount', { count: exceptionOpenCount })}
+              </Text>
+            ) : null}
+            <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
+          </Pressable>
+        ) : null}
         <Pressable
           style={styles.listRow}
           onPress={() => {
@@ -3384,7 +3604,7 @@ export default function MapScreen({ route, navigation }: Props) {
     </>
   ), [
     t, styles, nextStopTitle, nextStopDistLabel, destinations.length, canEditItinerary,
-    openHistoryOverlay, isLeader, openCoordinateSheet,
+    openHistoryOverlay, isLeader, openCoordinateSheet, exceptionOpenCount,
   ]);
 
   // ─── 工具：抵達距離、快捷指令、脫隊示警（設定改走頭像旁 ⋯ 選單）──────
@@ -3497,6 +3717,25 @@ export default function MapScreen({ route, navigation }: Props) {
   ]);
 
   if (loading && !state) {
+    // Passive mode must still offer switch-back during first load.
+    if (inPassiveMode) {
+      return (
+        <View style={styles.flex}>
+          <View style={styles.loading}>
+            <ActivityIndicator color={accent} size="large" />
+            <Text style={styles.loadingText}>{t('map.loading')}</Text>
+          </View>
+          <PassiveCompanionPanel
+            model={passiveModel}
+            accent={accent}
+            groupId={groupId}
+            navigationDestination={null}
+            onSwitchBack={exitPassiveCompanionMode}
+            onOpenExternalNavigation={openExternalNavigation}
+          />
+        </View>
+      );
+    }
     return (
       <View style={styles.loading}>
         <ActivityIndicator color={accent} size="large" />
@@ -3504,6 +3743,67 @@ export default function MapScreen({ route, navigation }: Props) {
       </View>
     );
   }
+
+  // OTA-04: offline cold start with no prior snapshot — clear empty outcome.
+  // OTA-07: passive still mounts switch-back so users are never trapped.
+  if (!state && emptyLocalSnapshot) {
+    if (inPassiveMode) {
+      return (
+        <View style={styles.flex}>
+          <View style={styles.loading}>
+            <Text style={styles.loadingText}>{t('coreData.emptySnapshot')}</Text>
+            <Pressable
+              onPress={() => { void refresh(); }}
+              accessibilityRole="button"
+              accessibilityLabel={t('interaction.retry')}
+              style={{ marginTop: 16, paddingHorizontal: 16, paddingVertical: 10 }}
+            >
+              <Text style={[styles.loadingText, { color: accent }]}>
+                {t('interaction.retry')}
+              </Text>
+            </Pressable>
+          </View>
+          <PassiveCompanionPanel
+            model={passiveModel}
+            accent={accent}
+            groupId={groupId}
+            navigationDestination={null}
+            onSwitchBack={exitPassiveCompanionMode}
+            onOpenExternalNavigation={openExternalNavigation}
+          />
+        </View>
+      );
+    }
+    return (
+      <View style={styles.loading}>
+        <Text style={styles.loadingText}>{t('coreData.emptySnapshot')}</Text>
+        <Pressable
+          onPress={() => { void refresh(); }}
+          accessibilityRole="button"
+          accessibilityLabel={t('interaction.retry')}
+          style={{ marginTop: 16, paddingHorizontal: 16, paddingVertical: 10 }}
+        >
+          <Text style={[styles.loadingText, { color: accent }]}>
+            {t('interaction.retry')}
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  const hasCoreConflict = coreOpenOperations.some((op) => op.status === 'conflict');
+  const hasCorePending = coreOpenOperations.some(
+    (op) => op.status === 'pending' || op.status === 'failed' || op.status === 'inflight',
+  );
+  const coreDataBannerMessage = hasCoreConflict
+    ? t('coreData.syncConflict')
+    : hasCorePending
+      ? t('coreData.pendingSync')
+      : groupDataSource === 'local_cache' && snapshotFreshness.unit === 'stale'
+        ? t('coreData.staleSnapshot')
+        : groupDataSource === 'local_cache'
+          ? t('coreData.offlineCache')
+          : null;
 
   return (
     <View style={styles.flex}>
@@ -3531,8 +3831,114 @@ export default function MapScreen({ route, navigation }: Props) {
         onRequestGoHome={goHomeCreateOrJoin}
       />
 
+      {/* OTA-04: local-cache / stale / pending / conflict banners. */}
+      {coreDataBannerMessage && showDenseChrome ? (
+        <View
+          pointerEvents="box-none"
+          style={{
+            position: 'absolute',
+            top: insets.top + 8,
+            left: 16,
+            right: 16,
+            zIndex: 30,
+          }}
+          accessibilityRole="text"
+          accessibilityLabel={coreDataBannerMessage}
+        >
+          <View
+            style={{
+              backgroundColor: glass.pill,
+              borderRadius: 12,
+              paddingHorizontal: 12,
+              paddingVertical: 8,
+            }}
+          >
+            <Text style={{ color: glass.textSecondary, fontSize: 13 }}>
+              {coreDataBannerMessage}
+            </Text>
+          </View>
+        </View>
+      ) : null}
+
+      {/* OTA-04/02: personal nav announcement response (user-scoped; never team phase). */}
+      {showDenseChrome
+        && !isLeader
+        && navigationSessionState.session?.status === 'active'
+        && user?.id ? (
+        <View
+          pointerEvents="box-none"
+          style={{
+            position: 'absolute',
+            top: insets.top + (coreDataBannerMessage ? 52 : 8),
+            left: 16,
+            right: 16,
+            zIndex: 29,
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: glass.pill,
+              borderRadius: 12,
+              paddingHorizontal: 12,
+              paddingVertical: 10,
+              gap: 8,
+            }}
+          >
+            <Text style={{ color: glass.textSecondary, fontSize: 13 }}>
+              {t('navResponse.prompt')}
+            </Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              {(
+                [
+                  ['acknowledged', 'navResponse.acknowledged'],
+                  ['late', 'navResponse.late'],
+                  ['needs_help', 'navResponse.needsHelp'],
+                ] as const
+              ).map(([kind, labelKey]) => (
+                <Pressable
+                  key={kind}
+                  onPress={() => {
+                    mediumTap();
+                    void navigationSessionState
+                      .respondToAnnouncement(kind)
+                      .then(() => Alert.alert(t('navResponse.sent')))
+                      .catch(() =>
+                        Alert.alert(t('map.setFailedTitle'), t('map.journeyFailed')),
+                      );
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={t(labelKey)}
+                  style={{
+                    backgroundColor: accent,
+                    borderRadius: 10,
+                    paddingHorizontal: 10,
+                    paddingVertical: 6,
+                  }}
+                >
+                  <Text style={{ color: '#0c1a12', fontSize: 12, fontWeight: '600' }}>
+                    {t(labelKey)}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        </View>
+      ) : null}
+
+      {/* OTA-07: reduced presentation — covers dense chrome; same state tree. */}
+      {inPassiveMode ? (
+        <PassiveCompanionPanel
+          model={passiveModel}
+          accent={accent}
+          groupId={groupId}
+          navigationDestination={navTarget ?? activePoint ?? selectedDestination ?? null}
+          onSwitchBack={exitPassiveCompanionMode}
+          onOpenExternalNavigation={openExternalNavigation}
+        />
+      ) : null}
+
       {/* Group pill — moved to bottom left, tracking sheet like recenter capsule. */}
-      {!confirmCardReady && (
+      {showDenseChrome && !confirmCardReady && (
       <Animated.View
         style={[styles.teamCapsuleWrap, recenterStyle]}
         pointerEvents={atFull ? 'none' : 'box-none'}
@@ -3583,7 +3989,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
 
       {/* Recenter capsule — fit-all (top) + locate-me (bottom), always both. */}
-      {!confirmCardReady && (
+      {showDenseChrome && !confirmCardReady && (
       <Animated.View
         style={[styles.recenter, recenterStyle]}
         pointerEvents={atFull ? 'none' : 'auto'}
@@ -3718,7 +4124,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
       {/* Gathering-point carousel — above locate/group capsules; sheet wrapper
           zIndex is higher so the sheet covers cards on overlap. */}
-      {destinations.length > 0 && (
+      {showDenseChrome && destinations.length > 0 && (
         <Animated.View
           // a11y-layout:carouselCapsuleClearance
           style={[
@@ -3833,7 +4239,8 @@ export default function MapScreen({ route, navigation }: Props) {
                 personallyArrived,
                 flockNavigatingThis,
                 localRouteThis,
-                pendingComplete: pendingCompleteDestIds.has(dest.id),
+                isNextTeamPending: canTeamStart(teamGatheringState, dest.id),
+                teamStartBlocked: !canTeamStart(teamGatheringState, dest.id),
               });
               return (
                 <View
@@ -4145,12 +4552,20 @@ export default function MapScreen({ route, navigation }: Props) {
                             event.stopPropagation();
                             registerCardActivity(dest.id);
                             mediumTap();
-                            if (navCmd.action === 'stop_nav' || navCmd.action === 'close_plan') {
+                            if (navCmd.action === 'close_plan') {
+                              // Member-only local path plan close (not team End).
                               void stopNavigation();
                             } else if (navCmd.action === 'start_nav') {
+                              // Defense-in-depth: full OTA-01 Start predicates.
+                              if (isLeader && !canTeamStart(teamGatheringState, dest.id)) {
+                                return;
+                              }
                               startNavigation(dest, index);
                             } else if (navCmd.action === 'start_plan') {
                               startLocalRoutePlan(dest, index);
+                            } else if (navCmd.action === 'end_point') {
+                              // OTA-01 End: complete active point → staying; next stays pending.
+                              void runCompleteGatheringStop(dest);
                             } else if (navCmd.action === 'mark_complete') {
                               promptCompleteAfterArrival(dest);
                             }
@@ -4316,14 +4731,15 @@ export default function MapScreen({ route, navigation }: Props) {
       {/* The pull-up sheet — hidden while the add-gather-point confirm card
           owns the screen (search bar + recenter capsule disappear).
           Wrapper zIndex must beat carousel (58): child BottomSheet zIndex alone
-          cannot win against a sibling with higher zIndex. */}
+          cannot win against a sibling with higher zIndex.
+          OTA-07: also hidden in passive companion presentation. */}
       <Animated.View
         style={[
           StyleSheet.absoluteFill,
           styles.sheetLayer,
-          confirmCardReady && styles.sheetHidden,
+          (confirmCardReady || !showDenseChrome) && styles.sheetHidden,
         ]}
-        pointerEvents={confirmCardReady ? 'none' : 'box-none'}
+        pointerEvents={confirmCardReady || !showDenseChrome ? 'none' : 'box-none'}
       >
       <BottomSheet
         height={heightSV}
@@ -4481,28 +4897,47 @@ export default function MapScreen({ route, navigation }: Props) {
         doneLabel={t('map.done')}
       >
         <ScrollView contentContainerStyle={styles.overlayBody}>
-          <Text style={styles.overlayHint}>{t('map.inviteMembersHint')}</Text>
-          <Text style={[styles.codeText, { textAlign: 'center', marginVertical: 20 }]}>
-            {group?.inviteCode ?? '——'}
+          <Text style={styles.overlayHint}>
+            {inviteBlockedForAnonymousLeader
+              ? t('anon.registrationRequiredBody')
+              : t('map.inviteMembersHint')}
           </Text>
-          <Pressable
-            style={[styles.settingsButton, { marginBottom: 10 }]}
-            onPress={() => void shareCode()}
-            accessibilityRole="button"
-          >
-            <Ionicons name="share-outline" size={20} color="#fff" />
-            <Text style={styles.settingsText}>{t('map.shareInviteLink')}</Text>
-          </Pressable>
-          <Pressable
-            style={styles.settingsButton}
-            onPress={() => void copyCode()}
-            accessibilityRole="button"
-          >
-            <Ionicons name="copy-outline" size={20} color="#fff" />
-            <Text style={styles.settingsText}>
-              {codeCopied ? t('group.copied') : t('map.copyGroupCode')}
+          {!inviteBlockedForAnonymousLeader && (
+            <Text style={[styles.codeText, { textAlign: 'center', marginVertical: 20 }]}>
+              {group?.inviteCode ?? '——'}
             </Text>
-          </Pressable>
+          )}
+          {inviteBlockedForAnonymousLeader ? (
+            <Pressable
+              style={[styles.settingsButton, { marginBottom: 10 }]}
+              onPress={promptAnonymousLeaderRegistration}
+              accessibilityRole="button"
+            >
+              <Ionicons name="person-add-outline" size={20} color="#fff" />
+              <Text style={styles.settingsText}>{t('anon.registrationRequiredCta')}</Text>
+            </Pressable>
+          ) : (
+            <>
+              <Pressable
+                style={[styles.settingsButton, { marginBottom: 10 }]}
+                onPress={() => void shareCode()}
+                accessibilityRole="button"
+              >
+                <Ionicons name="share-outline" size={20} color="#fff" />
+                <Text style={styles.settingsText}>{t('map.shareInviteLink')}</Text>
+              </Pressable>
+              <Pressable
+                style={styles.settingsButton}
+                onPress={() => void copyCode()}
+                accessibilityRole="button"
+              >
+                <Ionicons name="copy-outline" size={20} color="#fff" />
+                <Text style={styles.settingsText}>
+                  {codeCopied ? t('group.copied') : t('map.copyGroupCode')}
+                </Text>
+              </Pressable>
+            </>
+          )}
         </ScrollView>
       </OverlaySheet>
 
@@ -4579,6 +5014,114 @@ export default function MapScreen({ route, navigation }: Props) {
               </Pressable>
             );
           })}
+        </ScrollView>
+      </OverlaySheet>
+
+      {/* Leader exception center — derived actionable list only. */}
+      <OverlaySheet
+        visible={overlay === 'exceptions'}
+        onClose={() => setOverlay(null)}
+        title={t('exception.centerTitle')}
+        accent={accent}
+        doneLabel={t('map.done')}
+      >
+        <ScrollView contentContainerStyle={styles.overlayBody}>
+          {organizerExceptions.length === 0 ? (
+            <Text style={styles.overlayHint}>{t('exception.centerEmpty')}</Text>
+          ) : (
+            organizerExceptions.map((item) => {
+              const typeKey = `exception.type.${item.type}` as TranslationKey;
+              const statusKey = `exception.status.${item.status}` as TranslationKey;
+              const typeLabel = t(typeKey);
+              const statusLabel = t(statusKey);
+              const lastSeenLabel = (() => {
+                const ms = Date.parse(item.lastSeenAt);
+                if (!Number.isFinite(ms)) return item.lastSeenAt;
+                return new Date(ms).toLocaleTimeString([], {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                });
+              })();
+              const busy = exceptionPendingKeys.has(item.rootCauseKey);
+              const muted = item.status === 'resolved';
+              return (
+                <View
+                  key={item.id}
+                  style={[styles.listGroup, muted && { opacity: 0.55 }]}
+                >
+                  <View style={styles.listRow}>
+                    <View style={styles.grow}>
+                      <Text style={styles.listRowTitle} numberOfLines={1}>
+                        {item.memberName} · {typeLabel}
+                      </Text>
+                      <Text style={styles.overlayHint} numberOfLines={3}>
+                        {item.gatheringPointTitle
+                          ? `${t('exception.gathering', { title: item.gatheringPointTitle })} · `
+                          : ''}
+                        {statusLabel}
+                        {` · ${t('exception.lastSeen', { time: lastSeenLabel })}`}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={[styles.splitActions, { paddingHorizontal: 12, paddingBottom: 10 }]}>
+                    {item.availableActions.includes('acknowledge') ? (
+                      <Pressable
+                        style={[
+                          styles.chip,
+                          { backgroundColor: accentMix(accent, 24), borderColor: accentMix(accent, 50) },
+                          busy && { opacity: 0.5 },
+                        ]}
+                        onPress={() => {
+                          if (busy) return;
+                          void markExceptionHandled(item.rootCauseKey, 'acknowledge');
+                        }}
+                        disabled={busy}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${item.memberName}, ${typeLabel}, ${t('exception.acknowledge')}`}
+                        accessibilityState={{ disabled: busy }}
+                      >
+                        <Text style={styles.chipText}>{t('exception.acknowledge')}</Text>
+                      </Pressable>
+                    ) : null}
+                    {item.availableActions.includes('resolve') ? (
+                      <Pressable
+                        style={[
+                          styles.chip,
+                          { backgroundColor: accentMix(accent, 24), borderColor: accentMix(accent, 50) },
+                          busy && { opacity: 0.5 },
+                        ]}
+                        onPress={() => {
+                          if (busy) return;
+                          void markExceptionHandled(item.rootCauseKey, 'resolve');
+                        }}
+                        disabled={busy}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${item.memberName}, ${typeLabel}, ${t('exception.resolve')}`}
+                        accessibilityState={{ disabled: busy }}
+                      >
+                        <Text style={styles.chipText}>{t('exception.resolve')}</Text>
+                      </Pressable>
+                    ) : null}
+                    {item.availableActions.includes('reopen') ? (
+                      <Pressable
+                        style={[styles.chipGhost, busy && { opacity: 0.5 }]}
+                        onPress={() => {
+                          if (busy) return;
+                          void markExceptionHandled(item.rootCauseKey, 'reopen');
+                        }}
+                        disabled={busy}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${item.memberName}, ${typeLabel}, ${t('exception.reopen')}`}
+                        accessibilityState={{ disabled: busy }}
+                      >
+                        <Text style={styles.chipText}>{t('exception.reopen')}</Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                </View>
+              );
+            })
+          )}
         </ScrollView>
       </OverlaySheet>
 

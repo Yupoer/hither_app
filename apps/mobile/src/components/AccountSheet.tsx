@@ -20,6 +20,7 @@ import { redeemPromoCode } from '../api/client';
 import { glass, accentMix } from '../glass';
 import { useTranslation } from '../i18n';
 import { runUiAction } from '../utils/uiAction';
+import { isAnonymousAccessExpired } from '../anonymousAccess';
 
 export default function AccountSheet({
   visible,
@@ -35,7 +36,9 @@ export default function AccountSheet({
     user,
     isPro,
     isAnonymous,
+    membership,
     refreshProfile,
+    refreshEntitlement,
     upgradeToEmailAccount,
     linkWithGoogle,
     linkWithApple,
@@ -53,6 +56,14 @@ export default function AccountSheet({
     void AppleAuthentication.isAvailableAsync().then(setAppleAvailable);
   }, []);
 
+  // Re-hydrate anonymous_expires_at when the sheet opens so the date is shown
+  // after the first join (server stamps on membership insert).
+  useEffect(() => {
+    if (visible && isAnonymous) {
+      void refreshProfile().catch(() => undefined);
+    }
+  }, [visible, isAnonymous, refreshProfile]);
+
   // Compute registered days
   const registeredDays = user?.createdAt
     ? Math.max(0, Math.floor((Date.now() - new Date(user.createdAt).getTime()) / 86400000))
@@ -64,6 +75,25 @@ export default function AccountSheet({
 
   if (user?.provider === 'apple') providerText = 'Apple';
 
+  function redeemErrorMessage(code: string): string {
+    switch (code) {
+      case 'already_used':
+        return t('paywall.redeem.alreadyUsed');
+      case 'expired':
+        return t('paywall.redeem.expired');
+      case 'invalid':
+        return t('paywall.redeem.invalid');
+      case 'not_applicable':
+        return t('paywall.redeem.notApplicable');
+      case 'duplicate':
+        return t('paywall.redeem.duplicate');
+      case 'not_authenticated':
+        return t('paywall.redeem.notAuthenticated');
+      default:
+        return t('paywall.redeem.failed');
+    }
+  }
+
   async function handleRedeem() {
     const code = promoCode.trim();
     if (!code) return;
@@ -71,16 +101,24 @@ export default function AccountSheet({
       'account.redeem',
       async (token) => {
         try {
-          const result = await redeemPromoCode(code);
+          // Same server entitlement model — no separate Early Access state.
+          const result = await redeemPromoCode(code, membership?.group.id ?? null);
           if (!token.isCurrent()) return;
           await refreshProfile();
           if (!token.isCurrent()) return;
-          Alert.alert('升級成功', `您已成功開通：${result.plan_name}`);
+          await refreshEntitlement(membership?.group.id);
+          if (!token.isCurrent()) return;
+          Alert.alert(t('paywall.redeem.successTitle'), t('paywall.redeem.successBody', { plan: result.plan_name }));
           setPromoCode('');
         } catch (e: unknown) {
           if (token.isCurrent()) {
-            const msg = e instanceof Error ? e.message : String(e);
-            Alert.alert('兌換失敗', msg);
+            const codeKey =
+              e && typeof e === 'object' && 'code' in e && typeof (e as { code?: string }).code === 'string'
+                ? (e as { code: string }).code
+                : e instanceof Error
+                  ? e.message
+                  : 'unknown';
+            Alert.alert(t('paywall.redeem.failedTitle'), redeemErrorMessage(codeKey));
           }
           throw e;
         }
@@ -91,7 +129,7 @@ export default function AccountSheet({
         onBusyChange: setRedeeming,
         onError: (kind) => {
           if (kind === 'timeout') {
-            Alert.alert('兌換失敗', t('interaction.timeout'));
+            Alert.alert(t('paywall.redeem.failedTitle'), t('interaction.timeout'));
           }
         },
       },
@@ -214,7 +252,15 @@ export default function AccountSheet({
             <>
               <Text style={styles.sectionLabel}>{t('account.upgradeButton')}</Text>
               <View style={styles.card}>
-                <Text style={styles.promoHint}>{t('anon.expiryWarning')}</Text>
+                <Text style={styles.promoHint}>
+                  {user?.anonymousExpiresAt
+                    ? isAnonymousAccessExpired(user.anonymousExpiresAt)
+                      ? t('anon.expired')
+                      : t('anon.expiryUntil', {
+                          date: new Date(user.anonymousExpiresAt).toLocaleDateString(),
+                        })
+                    : t('anon.expiryWarning')}
+                </Text>
                 <View style={styles.socialRow}>
                   <Pressable
                     style={({ pressed }) => [styles.socialButton, pressed && styles.pressed, upgradeBusy && styles.disabledButton]}
@@ -313,11 +359,11 @@ export default function AccountSheet({
             )}
           </View>
 
-          {/* Promo Code */}
+          {/* Promo Code — same server entitlement model (no Early Access state) */}
           <Text style={styles.sectionLabel}>升級序號兌換</Text>
           <View style={styles.card}>
             <Text style={styles.promoHint}>
-              如果您有升級序號，請在此輸入以兌換 Pro 權限。（註：匿名帳號無法升級）
+              輸入序號可解鎖與購買相同的 server 權益（Lifetime 或小團 Pass）。匿名帳號請先註冊。
             </Text>
             <View style={styles.inputRow}>
               <TextInput

@@ -1,5 +1,6 @@
 /**
- * ProfileService — user profile CRUD (nickname, avatar, onboarding, pro).
+ * ProfileService — user profile CRUD (nickname, avatar, onboarding).
+ * Premium entitlement mutations live in EntitlementService (server-authoritative).
  */
 import { supabase } from '../supabase';
 import { requireUserId, orThrow } from './_helpers';
@@ -69,16 +70,8 @@ export async function saveOnboardingProfile(answers: object): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
-export async function setProStatus(userId: string): Promise<void> {
-  const { error } = await supabase.from('profiles').update({ pro: true }).eq('id', userId);
-  orThrow(error);
-}
-
-export async function redeemPromoCode(code: string): Promise<{ plan_name: string }> {
-  const { data, error } = await supabase.rpc('redeem_promo_code', { p_code: code });
-  orThrow(error);
-  if (!data.success) {
-    throw new Error(data.error || '兌換失敗');
-  }
-  return { plan_name: data.plan_name };
-}
+// Re-export entitlement entry points so existing ProfileService consumers keep working.
+export {
+  redeemPromoCode,
+  setProStatus,
+} from './EntitlementService';

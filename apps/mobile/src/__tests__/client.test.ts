@@ -208,12 +208,12 @@ describe('group state', () => {
 });
 
 describe('createGroup', () => {
-  it('inserts a group as leader and returns the mapped group', async () => {
+  it('creates via atomic create_group RPC and returns the mapped group', async () => {
     mockedAuth.getSession.mockResolvedValue({
       data: { session: { user: { id: 'uid' } } },
       error: null,
     });
-    const single = jest.fn().mockResolvedValue({
+    mockedRpc.mockResolvedValue({
       data: {
         id: 'g1',
         name: '週末出遊',
@@ -223,18 +223,44 @@ describe('createGroup', () => {
       },
       error: null,
     });
-    const membershipInsert = jest.fn().mockResolvedValue({ error: null });
-    mockedFrom.mockImplementation((table: string) =>
-      table === 'groups'
-        ? { insert: () => ({ select: () => ({ single }) }) }
-        : { insert: membershipInsert },
-    );
 
     const group = await createGroup('週末出遊');
     expect(group.name).toBe('週末出遊');
-    expect(group.inviteCode).toMatch(/^[A-Z0-9]{6}$/);
-    expect(membershipInsert).toHaveBeenCalledWith(
-      expect.objectContaining({ role: 'leader', user_id: 'uid' }),
+    expect(group.inviteCode).toBe('ABC234');
+    expect(mockedRpc).toHaveBeenCalledWith('create_group', { p_name: '週末出遊' });
+  });
+
+  it('maps expired anonymous access from create_group RPC (no orphan group)', async () => {
+    mockedAuth.getSession.mockResolvedValue({
+      data: { session: { user: { id: 'uid' } } },
+      error: null,
+    });
+    mockedRpc.mockResolvedValue({
+      data: null,
+      error: { code: 'P0401', message: 'anonymous access expired' },
+    });
+
+    await expect(createGroup('過期')).rejects.toThrow('anonymous access expired');
+    expect(mockedRpc).toHaveBeenCalledWith('create_group', { p_name: '過期' });
+    // Atomic RPC — client must not attempt a groups delete under RLS.
+    expect(mockedFrom).not.toHaveBeenCalledWith('groups');
+  });
+
+  it('maps 6th-member registration gate from create_group RPC', async () => {
+    mockedAuth.getSession.mockResolvedValue({
+      data: { session: { user: { id: 'uid' } } },
+      error: null,
+    });
+    mockedRpc.mockResolvedValue({
+      data: null,
+      error: {
+        code: 'P0406',
+        message: 'leader registration required before adding member 6',
+      },
+    });
+
+    await expect(createGroup('滿')).rejects.toThrow(
+      'leader registration required before adding member 6',
     );
   });
 });
@@ -272,6 +298,37 @@ describe('joinGroup', () => {
     const group = await joinGroup('abc234');
     expect(group.inviteCode).toBe('ABC234');
     expect(mockedRpc).toHaveBeenCalledWith('join_group', { p_code: 'ABC234' });
+  });
+
+  it('maps anonymous 6th-member registration gate errors', async () => {
+    mockedAuth.getSession.mockResolvedValue({
+      data: { session: { user: { id: 'uid' } } },
+      error: null,
+    });
+    mockedRpc.mockResolvedValue({
+      data: null,
+      error: {
+        code: 'P0406',
+        message: 'leader registration required before adding member 6',
+      },
+    });
+
+    await expect(joinGroup('ABC234')).rejects.toThrow(
+      'leader registration required before adding member 6',
+    );
+  });
+
+  it('maps expired anonymous access errors', async () => {
+    mockedAuth.getSession.mockResolvedValue({
+      data: { session: { user: { id: 'uid' } } },
+      error: null,
+    });
+    mockedRpc.mockResolvedValue({
+      data: null,
+      error: { code: 'P0401', message: 'anonymous access expired' },
+    });
+
+    await expect(joinGroup('ABC234')).rejects.toThrow('anonymous access expired');
   });
 });
 

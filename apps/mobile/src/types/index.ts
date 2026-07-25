@@ -92,18 +92,28 @@ export interface User {
   createdAt?: string;
   /** The authentication provider used (e.g. 'google', 'email', 'anonymous') */
   provider?: string;
+  /**
+   * Raw `profiles.pro` denorm from the server (display/cache only).
+   * Not payment proof alone — use with `proExpiresAt` via `isLifetimeProfilePremium`.
+   */
+  pro?: boolean;
   /** Name of the current pro plan, if applicable */
   proPlan?: string;
   /** Timestamp when pro was purchased/upgraded */
   proPurchasedAt?: string;
   /** Timestamp when pro expires, if applicable */
   proExpiresAt?: string;
+  /**
+   * When anonymous access ends (ISO UTC from `profiles.anonymous_expires_at`).
+   * Set on first group membership to join_time + 14 days; cleared on upgrade.
+   */
+  anonymousExpiresAt?: string;
 }
 
 /**
- * Whether the group is actively heading to the gathering point.
- * The leader toggles this (start/pause); when 'going' each member's app shows
- * a Live Activity. Persisted in `groups.journey_status`.
+ * Legacy group journey column (`groups.journey_status`).
+ * OTA-01 projects this to `journeyPhase`: going → en_route, paused → staying.
+ * Prefer `projectTeamGatheringState` / navigation session for team surfaces.
  */
 export type JourneyStatus = 'going' | 'paused';
 
@@ -253,6 +263,110 @@ export interface DestinationArrival {
   arrivedAt: string;
   source: 'automatic' | 'manual';
   markedBy: string;
+}
+
+/**
+ * OTA-09 coordination request — deliberate group decision on gathering point,
+ * meet time, route, or itinerary. Independent of navigation technical state.
+ */
+export type CoordinationSubjectKind =
+  | 'gathering_point'
+  | 'meet_time'
+  | 'route'
+  | 'itinerary';
+
+export type CoordinationPolicy =
+  | 'organizer_override'
+  | 'unanimity'
+  | 'majority'
+  | 'timeout_default';
+
+export type CoordinationRequestStatus =
+  | 'open'
+  | 'resolved'
+  | 'expired'
+  | 'cancelled';
+
+export type CoordinationResolutionSource =
+  | 'organizer_override'
+  | 'unanimity'
+  | 'majority'
+  | 'timeout_default'
+  | 'cancelled';
+
+/** Concrete option payload applied when the request resolves. */
+export type CoordinationOptionKind =
+  | 'keep_current'
+  | 'reject'
+  | 'no_change'
+  | 'gathering_point'
+  | 'meet_time'
+  | 'route'
+  | 'itinerary';
+
+export interface CoordinationOptionPayload {
+  destinationId?: string;
+  title?: string;
+  address?: string;
+  latitude?: number;
+  longitude?: number;
+  day?: number;
+  meetAt?: string | null;
+}
+
+export interface CoordinationOption {
+  id: string;
+  label: string;
+  kind: CoordinationOptionKind;
+  payload?: CoordinationOptionPayload;
+}
+
+export interface CoordinationRequest {
+  id: string;
+  groupId: string;
+  subgroupId?: string;
+  createdBy: string;
+  subject: string;
+  subjectKind: CoordinationSubjectKind;
+  options: CoordinationOption[];
+  deadline: string;
+  policy: CoordinationPolicy;
+  defaultOutcome: string;
+  status: CoordinationRequestStatus;
+  /** Chosen option id after close; null while open. */
+  resolvedOutcome?: string | null;
+  resolutionSource?: CoordinationResolutionSource | null;
+  resolvedAt?: string | null;
+  resolvedBy?: string | null;
+  appliedOperationId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * A participant's choice. Absence of a row means unanswered — never treated
+ * as consent or rejection. Separate from navigation `localStatus`.
+ */
+export interface CoordinationResponse {
+  id: string;
+  requestId: string;
+  userId: string;
+  optionId: string;
+  respondedAt: string;
+  updatedAt: string;
+}
+
+/** Append-only versioned itinerary mutation (coordination apply audit log). */
+export interface ItineraryOperation {
+  id: string;
+  groupId: string;
+  subgroupId?: string;
+  version: number;
+  operationType: 'coordination_apply' | 'coordination_no_change' | 'manual';
+  payload: Record<string, unknown>;
+  sourceRequestId?: string | null;
+  createdBy?: string | null;
+  createdAt: string;
 }
 
 /** A gathering point / itinerary stop. */

@@ -1,7 +1,9 @@
 # Hither — 產品定位與策略（PM README）
 
-> 這份文件講**產品要往哪走、為什麼、缺什麼**。技術現況與資料庫表格結構看 `docs/dev-status.md`，原始 PRD 看 `docs/MVP.md`。
+> 這份文件講**產品要往哪走、為什麼、缺什麼**。技術現況請看 [`current-app-functional-architecture.md`](./current-app-functional-architecture.md)，原始 PRD 看 [`MVP.md`](./MVP.md)，文件狀態與入口看 [`README.md`](./README.md)。
 > 撰寫日期：2026-07-09。這是一份策略與功能規格文件，會隨拍板更新。
+
+> 最新的商業決策、trade-off 與尚未定案項目請先看 [`docs/product-decision-log.md`](./product-decision-log.md)。本文件較早段落仍可能包含尚未同步的舊規則。
 
 ---
 
@@ -35,7 +37,7 @@ Hither 的品牌核心隱喻是**牧羊人的拐杖 (Shepherd's Crook)**：
 
 > ✅ **已實作（2026-07-09，UX 邏輯層 + 佔位 UI）**：`src/onboarding/` 模組——純資料流程狀態機（`flow.ts`）、題目與吉祥物 8 組合對照表（`content.ts`，題目為暫編版）、step registry（換 UI 只換 registry 內的 component）、共享 3 頁 + Leader/Member/Browser 三條分支、theme 頁即時切換含新增 forest 主題、expo-haptics 正向互動回饋、AsyncStorage 完成旗標（絕不二次顯示）、登入後答案一次性同步至 `profiles.onboarding`（失敗自動下次啟動重試）。jest+tsc 全綠。**未實機驗證**；migration `20260709010000_profiles_onboarding.sql` 待套用；正式 UI 依 §2 規範之後整包抽換。
 
-Onboarding 設計的完整 UI 佈局、手勢、動態與震動回饋規範詳見 [onboarding_design_specs.md](file:///C:/Users/alexs/Desktop/BZ/hither/hither_app/docs/../brain/6fd5d31c-11d3-43e7-9e28-54f672ae2d7f/onboarding_design_specs.md)。
+Onboarding 設計 brief 請見 [`onboarding-redesign-brief.md`](./Tasks/Completed/2026-07-14-Onboarding/Spec/onboarding-redesign-brief.md)；實際 UI 以 `apps/mobile/src/onboarding/` 為準。
 
 ### 2.1 共享流程頁面
 1. **第一頁：核心價值動畫**
@@ -74,9 +76,9 @@ Onboarding 設計的完整 UI 佈局、手勢、動態與震動回饋規範詳�
 - 底部提供低調的「以匿名身份繼續」文字連結。
 - 用戶點擊匿名時，才彈出確認 Modal（漸進式披露限制）：
   - **限制條款**：1. 無法保留歷史紀錄；2. 無法跨裝置同步；3. 無法被他人加入常用同伴。
-  - **3 天生命週期警告**：明確提示「**匿名帳號與其資料最多保留 3 天**。如果您的出遊行程大於 3 天，建議建立註冊帳號以避免中途遺失群組與定位資料。」
+  - **14 天生命週期警告**：明確提示「**匿名帳號與其資料自加入群組起最多保留 14 天**。如果您的出遊行程大於 14 天，建議建立註冊帳號以避免中途遺失群組與定位資料。」
 
-> ✅ **已實作（2026-07-09）**：訪客連結先彈披露 Modal（3 限制 + 3 天警告，**3 天定義拍板為「自加入群組起算」**，時間戳取 `memberships.created_at`）；Settings 新增帳號區塊——匿名用戶可輸入 email+密碼升級（`auth.updateUser`，同 uid，資料零遺失，需點確認信）；「重設旅行偏好」按鈕（清雲端+本地問卷資料，重啟後重跑問卷）。jest+tsc 全綠，**未實機驗證**。後端 3 天自動清理排程尚未做（列於 §十二未來待辦）。
+> ✅ **已實作（2026-07-09；OTA-05 2026-07-25 統一為 14 天）**：訪客連結先彈披露 Modal（3 限制 + 14 天警告，**14 天定義拍板為「自加入群組起算」**，權威欄位 `profiles.anonymous_expires_at`，起始時間戳取 `memberships.created_at`）；Settings 新增帳號區塊——匿名用戶可輸入 email+密碼或 Google/Apple 升級（同 uid，資料零遺失）；「重設旅行偏好」按鈕（清雲端+本地問卷資料，重啟後重跑問卷）。後端 `cleanup_expired_anonymous_accounts` + 可選 pg_cron 見 OTA-05 migration。
 
 ---
 
@@ -93,7 +95,7 @@ Onboarding 設計的完整 UI 佈局、手勢、動態與震動回饋規範詳�
 3. **重設與丟棄**：
    - 設定 (Settings) 頁面提供「**重設旅行偏好**」按鈕，點擊後清除雲端 Profile 的性格測驗與目的天數資料，並允許用戶重新運行此偏好問卷。
 4. **匿名 Session 清理**：
-   - 後端保留針對 3 天以上未活躍的匿名帳號及其歷史關聯資料進行自動清理的機制。
+   - 後端針對自加入群組起已超過 **14 天** 的匿名帳號及其歷史關聯資料進行自動清理（`cleanup_expired_anonymous_accounts`；升級後的註冊身分不會被刪）。
 
 ---
 
@@ -235,7 +237,7 @@ Onboarding 設計的完整 UI 佈局、手勢、動態與震動回饋規範詳�
 1. **P0 — 核心功能變更**：
    - 實作 5 頁分支互動 Onboarding 流程與性格測驗結果畫面（動物吉祥物設計）。
    - 實作本地標記，跳過二次 Onboarding。
-   - 實作匿名帳號 3 天自動失效的提示與註冊引導。
+   - 實作匿名帳號 14 天自動失效的提示與註冊引導。✅ OTA-05
 2. **P1 — 地圖視覺與回饋**：
    - 實作新增地點時地圖 3D 傾斜與 360 度旋轉動畫。
    - 實作獨立地圖色彩模式。
@@ -270,7 +272,7 @@ Onboarding 設計的完整 UI 佈局、手勢、動態與震動回饋規範詳�
 - [ ] 歷史旅程紀錄功能本體（免費 3 筆限制掛在它之上）。
 
 ### 後端排程與推播
-- [ ] **匿名帳號 3 天自動清理**（自加入群組起算，時間戳 = `memberships.created_at`；pg_cron 或 Edge Function 排程）。
+- [x] **匿名帳號 14 天自動清理**（自加入群組起算；`profiles.anonymous_expires_at` + `memberships.created_at` 後備；OTA-05 migration `cleanup_expired_anonymous_accounts` + 可選 pg_cron。部署時需 `db push`）。
 - [ ] **推播 fanout 過濾小隊成員**：小隊靜音目前只擋 in-app 通知，send-push Edge Function 尚未同步過濾。
 
 ### 資料層收尾

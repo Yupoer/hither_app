@@ -33,6 +33,11 @@ import type {
 } from '../../types';
 import { generateInviteCode, requireUserId, orThrow } from './_helpers';
 import { mapDestination } from './DestinationService';
+import {
+  ANON_EXPIRED_ERROR,
+  ANON_LEADER_REGISTRATION_REQUIRED,
+  classifyAnonymousAccessError,
+} from '../../anonymousAccess';
 
 // ── Row shapes (DB snake_case) ─────────────────────────────────────────────
 
@@ -157,39 +162,28 @@ export function mapSubgroupInvite(row: SubgroupInviteRow): SubgroupInvite {
 
 // ── API functions ──────────────────────────────────────────────────────────
 
+/**
+ * Create a group as leader via atomic SECURITY DEFINER RPC.
+ * Avoids orphan groups (group row without leader membership) that cannot be
+ * deleted under RLS "groups: delete if leader" after a failed membership insert.
+ */
 export async function createGroup(name: string): Promise<Group> {
-  const uid = await requireUserId();
-
-  let lastError: unknown = null;
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const inviteCode = generateInviteCode();
-    const { data, error } = await supabase
-      .from('groups')
-      .insert({ name, invite_code: inviteCode, created_by: uid })
-      .select(
-        'id, name, invite_code, created_by, created_at, journey_status, active_destination_id, journey_started_at, straggler_alerts, straggler_threshold_m',
-      )
-      .single();
-
-    if (error) {
-      if ((error as { code?: string }).code === '23505') {
-        lastError = error;
-        continue;
-      }
-      throw new Error(error.message);
+  await requireUserId();
+  const { data, error } = await supabase.rpc('create_group', {
+    p_name: name.trim(),
+  });
+  if (error) {
+    const code = (error as { code?: string }).code;
+    const kind = classifyAnonymousAccessError(error.message);
+    if (kind === 'expired' || code === 'P0401') {
+      throw new Error(ANON_EXPIRED_ERROR);
     }
-
-    const group = mapGroup(data as GroupRow);
-    const { error: memberError } = await supabase
-      .from('memberships')
-      .insert({ group_id: group.id, user_id: uid, role: 'leader', status: 'active' });
-    orThrow(memberError);
-    return group;
+    if (kind === 'registration_required' || code === 'P0406') {
+      throw new Error(ANON_LEADER_REGISTRATION_REQUIRED);
+    }
+    throw new Error(error.message);
   }
-
-  throw new Error(
-    lastError instanceof Error ? lastError.message : '建立群組失敗，請再試一次',
-  );
+  return mapGroup(data as GroupRow);
 }
 
 export async function joinGroup(inviteCode: string): Promise<Group> {
@@ -198,8 +192,22 @@ export async function joinGroup(inviteCode: string): Promise<Group> {
     p_code: inviteCode.toUpperCase(),
   });
   if (error) {
-    if ((error as { code?: string }).code === 'P0002') {
+    const code = (error as { code?: string }).code;
+    if (code === 'P0002') {
       throw new Error('找不到這個群組');
+    }
+    // Free Plan member cap (5 including Leader) — server-authoritative.
+    if (code === 'P0003' || /member_limit/i.test(error.message)) {
+      const err = new Error('member_limit') as Error & { code?: string };
+      err.code = 'member_limit';
+      throw err;
+    }
+    const kind = classifyAnonymousAccessError(error.message);
+    if (kind === 'expired' || code === 'P0401') {
+      throw new Error(ANON_EXPIRED_ERROR);
+    }
+    if (kind === 'registration_required' || code === 'P0406') {
+      throw new Error(ANON_LEADER_REGISTRATION_REQUIRED);
     }
     throw new Error(error.message);
   }

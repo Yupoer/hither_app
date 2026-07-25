@@ -349,11 +349,25 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain('enabled={gatherCardTitleMarquee}');
     expect(mapScreen).toContain('resolveNavCommand');
     expect(mapScreen).toContain('deriveCardNavFlags');
+    expect(mapScreen).toContain('projectTeamGatheringState');
+    expect(mapScreen).toContain('teamGatheringState');
+    expect(mapScreen).toContain('overlayPersonalOnTeamState');
+    expect(mapScreen).toContain('teamSurfaceView');
+    expect(mapScreen).toContain('canTeamStart');
+    expect(mapScreen).toContain("navCmd.action === 'end_point'");
+    expect(mapScreen).toContain('runCompleteGatheringStop');
+    // End reconciles session via refresh — not a second cancelSession after complete.
+    expect(mapScreen).toContain('navigationSessionState.refresh()');
+    const completeFn = mapScreen.slice(
+      mapScreen.indexOf('runCompleteGatheringStop = useCallback'),
+      mapScreen.indexOf('runCompleteGatheringStop = useCallback') + 900,
+    );
+    expect(completeFn).toContain('completeGatheringStop');
+    expect(completeFn).not.toContain('stopNavigation()');
     expect(mapScreen).toContain('sharedTargetId');
     expect(mapScreen).toContain('localTargetId');
     expect(mapScreen).toContain('startLocalRoutePlan');
-    expect(mapScreen).toContain('pendingCompleteDestIds');
-    expect(mapScreen).toContain('runCompleteGatheringStop');
+    expect(mapScreen).not.toContain('pendingCompleteDestIds');
     expect(mapScreen).toContain('resolveCompletePrompt');
     // Must not gate flock nav on journeyActive (true for local plans).
     expect(mapScreen).not.toMatch(
