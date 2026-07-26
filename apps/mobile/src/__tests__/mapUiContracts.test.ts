@@ -443,6 +443,9 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain('styles.cardSubRow');
     expect(mapScreen).toContain('styles.cardDayLine');
     expect(mapScreen).toContain('styles.arrivalPeopleChip');
+    expect(mapScreen).toContain('arrivedHere}/{totalMembers');
+    expect(mapScreen).not.toContain('arrivalHairline');
+    expect(mapScreen).not.toContain('arrivalHairlineFill');
     expect(mapScreen).toContain('styles.metricsRow');
     expect(mapScreen).toContain('styles.mapsChip');
   });

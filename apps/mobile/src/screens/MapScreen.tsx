@@ -79,6 +79,7 @@ import {
 } from '../utils/gatherCommand';
 import {
   canTeamStart,
+  teamStartBlockReason,
   overlayPersonalOnTeamState,
   projectTeamGatheringState,
 } from '../utils/teamGatheringState';
@@ -4112,18 +4113,14 @@ export default function MapScreen({ route, navigation }: Props) {
                     return t('map.meetAtClock', { time: clock });
                   })()
                 : null;
-              // Team arrival toward THIS stop — how many of the flock are
-              // already within the arrival radius. Drives the top hairline and
-              // the "隊伍抵達進度" caption (design 1b).
+              // Team arrival toward THIS stop — the people chip below is the
+              // single source of visible arrival progress for the card.
               const arrivedHere = new Set(
                 destinationArrivals
                   .filter((arrival) => arrival.destinationId === dest.id)
                   .map((arrival) => arrival.userId),
               ).size;
               const totalMembers = members.length;
-              const arrivalPct = totalMembers
-                ? Math.round((arrivedHere / totalMembers) * 100)
-                : 0;
               const modeIconName =
                 travelMode === 'walk'
                   ? 'walk-outline'
@@ -4168,14 +4165,34 @@ export default function MapScreen({ route, navigation }: Props) {
                   (straightToTargetM != null && hasArrived(straightToTargetM, localArrivalRadiusM))
                 ))
               );
+              const teamStartReason = isLeader
+                ? teamStartBlockReason(teamGatheringState, dest.id)
+                : null;
+              const canStartTeam = teamStartReason === null;
               const navCmd = resolveNavCommand({
                 isLeader,
                 personallyArrived,
                 flockNavigatingThis,
                 localRouteThis,
-                isNextTeamPending: canTeamStart(teamGatheringState, dest.id),
-                teamStartBlocked: !canTeamStart(teamGatheringState, dest.id),
+                isNextTeamPending: canStartTeam,
+                teamStartBlocked: !canStartTeam,
               });
+              const startBlockLabel = teamStartReason === 'active_session' || teamStartReason === 'not_staying' || teamStartReason === 'active_point'
+                ? t('map.startBlocked')
+                : teamStartReason === 'not_next_pending'
+                  ? '請先開始下一個未完成的集合點'
+                  : teamStartReason === 'not_pending'
+                    ? '此集合點已完成'
+                    : journeyBusy
+                      ? t('map.startBusy')
+                      : !groupId
+                        ? '尚未載入群組'
+                        : !navigationSessionState.start
+                          ? '導航服務尚未就緒'
+                          : '';
+              const startAccessibilityHint = navCmd.kind === 'leader_start' && navCmd.disabled
+                ? t('map.startBlockedA11y', { reason: startBlockLabel || t('map.startBlocked') })
+                : undefined;
               return (
                 <View
                   key={`carousel-dest-${dest.id}-${index}`}
@@ -4223,17 +4240,6 @@ export default function MapScreen({ route, navigation }: Props) {
                           />
                         </Animated.View>
                       </Animated.View>
-                    ) : null}
-                    {/* Top arrival hairline — team progress toward this stop. */}
-                    {cardExpanded ? (
-                      <View style={styles.arrivalHairline}>
-                        <View
-                          style={[
-                            styles.arrivalHairlineFill,
-                            { width: `${arrivalPct}%`, backgroundColor: accent },
-                          ]}
-                        />
-                      </View>
                     ) : null}
                     {/* Layout (expanded):
                         kicker · dots
@@ -4468,7 +4474,7 @@ export default function MapScreen({ route, navigation }: Props) {
                                 : null,
                             navCmd.kind === 'leader_stop' || navCmd.kind === 'member_close_plan'
                               ? styles.navBtnEnd
-                              : navCmd.kind === 'member_navigating' || navCmd.kind === 'member_waiting_complete'
+                              : navCmd.disabled
                                 ? styles.navBtnDisabled
                                 : navCmd.kind === 'leader_mark_complete'
                                   ? { backgroundColor: glass.ok }
@@ -4510,6 +4516,7 @@ export default function MapScreen({ route, navigation }: Props) {
                           disabled={journeyBusy || navCmd.disabled}
                           accessibilityRole="button"
                           accessibilityLabel={navCmd.label}
+                          accessibilityHint={startAccessibilityHint}
                           accessibilityState={{ disabled: journeyBusy || navCmd.disabled }}
                         >
                           <Ionicons
@@ -6074,17 +6081,6 @@ const makeStyles = (
     cardActiveBorder: {
       borderColor: glass.hairline,
     },
-    // Top arrival hairline (design 1b) — full-bleed above the padded content.
-    arrivalHairline: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      height: 3,
-      backgroundColor: glass.hairlineSoft,
-      zIndex: 2,
-    },
-    arrivalHairlineFill: { height: '100%' },
     // kicker → title → day+people → metrics → command row.
     cardHead: {
       flexDirection: 'row',
