@@ -12,15 +12,12 @@ import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import * as Updates from 'expo-updates';
 import OverlaySheet from '../../../components/OverlaySheet';
-import PrefSlider from '../../../components/PrefSlider';
 import { Segmented } from './Segmented';
 import NotificationPreferencesCard from '../../../components/NotificationPreferencesCard';
 import { useSession } from '../../../state/SessionContext';
 import {
   usePreferences,
   useTheme,
-  MARQUEE_SPEED_MAX,
-  MARQUEE_SPEED_MIN,
   type Language,
   type TextScalePref,
 } from '../../../state/PreferencesContext';
@@ -36,7 +33,6 @@ const diagnosticsEnabled = true;
 interface SettingsOverlayProps {
   visible: boolean;
   onClose: () => void;
-  isLeader: boolean;
   onArchiveAllForTest: () => void;
   onOpenFeedback: () => void;
   onConfirmResetPrefs: () => void;
@@ -47,12 +43,7 @@ interface SettingsOverlayProps {
   onOpenPaywall: () => void;
   onOpenAccount: () => void;
   onOpenCustomQuickCommand: () => void;
-  onSharingEnabledChange: (enabled: boolean) => void;
   onOpenDiagnostics: () => void;
-  /** Group-scoped straggler lives under tools; settings only deep-links there. */
-  onOpenStraggler?: () => void;
-  /** Switch active group (MyTeams) — not on the map sheet header. */
-  onSwitchGroup?: () => void;
   /**
    * Return to RoleSelect (create / join) without leaving the current group.
    * Membership stays so MyTeams and the back stack can re-enter the map.
@@ -106,7 +97,6 @@ function NavRow({
 export const SettingsOverlay = React.memo(function SettingsOverlay({
   visible,
   onClose,
-  isLeader,
   onArchiveAllForTest,
   onOpenFeedback,
   onConfirmResetPrefs,
@@ -115,10 +105,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
   onOpenPaywall,
   onOpenAccount,
   onOpenCustomQuickCommand,
-  onSharingEnabledChange,
   onOpenDiagnostics,
-  onOpenStraggler,
-  onSwitchGroup,
   onGoHome,
   styles,
 }: SettingsOverlayProps) {
@@ -135,24 +122,11 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
     language,
     themeName,
     textScale,
-    sharingEnabled,
-    obliqueLocate,
-    liveActivityEnabled,
-    gatherCardDefaultExpanded,
-    gatherCardTitleMarquee,
-    gatherCardMarqueeSpeed,
-    passiveCompanionMode,
     diagnosticUploadEnabled,
     setLanguage,
     setThemeName,
     setTextScale,
-    setObliqueLocate,
-    setLiveActivityEnabled,
-    setPassiveCompanionMode,
-    setGatherCardDefaultExpanded,
-    setGatherCardTitleMarquee,
     setDiagnosticUploadEnabled,
-    setGatherCardMarqueeSpeed,
   } = usePreferences();
   const { colors } = useTheme();
   const accent = colors.accent;
@@ -259,22 +233,19 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             onPress={onOpenPaywall}
             styles={styles}
           />
-          {onSwitchGroup ? (
-            <NavRow
-              title={t('map.switchGroup')}
-              description={t('settings.switchGroupHint')}
-              onPress={onSwitchGroup}
-              styles={styles}
-            />
-          ) : null}
           {onGoHome ? (
             <NavRow
-              title={t('settings.createOrJoin')}
+              title={t('map.backToHome')}
               description={t('settings.createOrJoinHint')}
               onPress={onGoHome}
               styles={styles}
             />
           ) : null}
+          <NavRow
+            title={t('group.leave')}
+            onPress={onConfirmLeave}
+            styles={styles}
+          />
           <NavRow
             title={t('settings.signOut')}
             onPress={onConfirmSignOut}
@@ -327,150 +298,6 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
 
         <SectionLabel label={t('settings.notifSection')} styles={styles} />
         <NotificationPreferencesCard colors={{ ...themes.night, accent }} />
-
-        {/* ── 地圖與旅程 ───────────────────────────────────────── */}
-        <SectionLabel label={t('settings.sectionMapJourney')} styles={styles} />
-        <View style={styles.accuracyRow}>
-          <View style={styles.accuracyCopy}>
-            <Text style={styles.accuracyLabel}>{t('settings.locationSharing')}</Text>
-            <Text style={styles.accuracySubhint}>{t('settings.locationSharingHint')}</Text>
-          </View>
-          <Switch
-            style={styles.accuracySwitch}
-            value={sharingEnabled}
-            onValueChange={onSharingEnabledChange}
-            trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
-            thumbColor="#fff"
-            ios_backgroundColor="rgba(120,120,128,0.32)"
-            accessibilityLabel={t('settings.locationSharing')}
-          />
-        </View>
-        <View style={styles.accuracyRow}>
-          <View style={styles.accuracyCopy}>
-            <Text style={styles.accuracyLabel}>{t('settings.obliqueLocate')}</Text>
-            <Text style={styles.accuracySubhint}>{t('settings.obliqueLocateHint')}</Text>
-          </View>
-          <Switch
-            style={styles.accuracySwitch}
-            value={obliqueLocate}
-            onValueChange={setObliqueLocate}
-            trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
-            thumbColor="#fff"
-            ios_backgroundColor="rgba(120,120,128,0.32)"
-            accessibilityLabel={t('settings.obliqueLocate')}
-          />
-        </View>
-        <View style={styles.accuracyRow}>
-          <View style={styles.accuracyCopy}>
-            <Text style={styles.accuracyLabel}>{t('settings.liveActivity')}</Text>
-            <Text style={styles.accuracySubhint}>{t('settings.liveActivityHint')}</Text>
-          </View>
-          <Switch
-            style={styles.accuracySwitch}
-            value={liveActivityEnabled}
-            onValueChange={setLiveActivityEnabled}
-            trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
-            thumbColor="#fff"
-            ios_backgroundColor="rgba(120,120,128,0.32)"
-            accessibilityLabel={t('settings.liveActivity')}
-          />
-        </View>
-        <View style={styles.accuracyRow}>
-          <View style={styles.accuracyCopy}>
-            <Text style={styles.accuracyLabel}>
-              {t('settings.passiveCompanionMode')}
-            </Text>
-            <Text style={styles.accuracySubhint}>
-              {t('settings.passiveCompanionModeHint')}
-            </Text>
-          </View>
-          <Switch
-            style={styles.accuracySwitch}
-            value={passiveCompanionMode}
-            onValueChange={setPassiveCompanionMode}
-            trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
-            thumbColor="#fff"
-            ios_backgroundColor="rgba(120,120,128,0.32)"
-            accessibilityLabel={t('settings.passiveCompanionMode')}
-            accessibilityRole="switch"
-            accessibilityState={{ checked: passiveCompanionMode }}
-          />
-        </View>
-        <View style={styles.accuracyRow}>
-          <View style={styles.accuracyCopy}>
-            <Text style={styles.accuracyLabel}>
-              {t('settings.gatherCardDefaultExpanded')}
-            </Text>
-            <Text style={styles.accuracySubhint}>
-              {t('settings.gatherCardDefaultExpandedHint')}
-            </Text>
-          </View>
-          <Switch
-            style={styles.accuracySwitch}
-            value={gatherCardDefaultExpanded}
-            onValueChange={setGatherCardDefaultExpanded}
-            trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
-            thumbColor="#fff"
-            ios_backgroundColor="rgba(120,120,128,0.32)"
-            accessibilityLabel={t('settings.gatherCardDefaultExpanded')}
-          />
-        </View>
-        <View style={styles.accuracyRow} pointerEvents="box-none">
-          <View style={styles.accuracyCopy} pointerEvents="none">
-            <Text style={styles.accuracyLabel}>
-              {t('settings.gatherCardTitleMarquee')}
-            </Text>
-            <Text style={styles.accuracySubhint}>
-              {t('settings.gatherCardTitleMarqueeHint')}
-            </Text>
-          </View>
-          <Switch
-            style={styles.accuracySwitch}
-            value={Boolean(gatherCardTitleMarquee)}
-            onValueChange={(v) => setGatherCardTitleMarquee(Boolean(v))}
-            trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
-            thumbColor="#fff"
-            ios_backgroundColor="rgba(120,120,128,0.32)"
-            accessibilityLabel={t('settings.gatherCardTitleMarquee')}
-            accessibilityRole="switch"
-            accessibilityState={{ checked: Boolean(gatherCardTitleMarquee) }}
-          />
-        </View>
-        {Boolean(gatherCardTitleMarquee) ? (
-          <View style={styles.marqueeSpeedBlock} pointerEvents="box-none">
-            <View style={styles.marqueeSpeedLabels} pointerEvents="none">
-              <Text style={styles.accuracyLabel}>
-                {t('settings.gatherCardMarqueeSpeed')}
-              </Text>
-              <View style={styles.marqueeSpeedEnds}>
-                <Text style={styles.accuracySubhint}>
-                  {t('settings.gatherCardMarqueeSpeedSlow')}
-                </Text>
-                <Text style={styles.accuracySubhint}>
-                  {t('settings.gatherCardMarqueeSpeedFast')}
-                </Text>
-              </View>
-            </View>
-            <PrefSlider
-              value={gatherCardMarqueeSpeed}
-              min={MARQUEE_SPEED_MIN}
-              max={MARQUEE_SPEED_MAX}
-              onChange={setGatherCardMarqueeSpeed}
-              accent={accent}
-              accessibilityLabel={t('settings.gatherCardMarqueeSpeed')}
-            />
-          </View>
-        ) : null}
-        {isLeader && onOpenStraggler ? (
-          <View style={styles.settingsTopGroup}>
-            <NavRow
-              title={t('straggler.section')}
-              description={t('settings.stragglerInGroupHint')}
-              onPress={onOpenStraggler}
-              styles={styles}
-            />
-          </View>
-        ) : null}
 
         <SectionLabel label={t('map.cmdTitle')} styles={styles} />
         <View style={styles.settingsTopGroup}>
@@ -573,16 +400,6 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             </Text>
           </TouchableOpacity>
         ) : null}
-
-        {/* ── 群組管理 / 進階：一般列表列，紅色只在確認對話框 ─── */}
-        <SectionLabel label={t('settings.sectionGroupAdmin')} styles={styles} />
-        <View style={styles.settingsTopGroup}>
-          <NavRow
-            title={isLeader ? t('map.endGroupCurrent') : t('group.leave')}
-            onPress={onConfirmLeave}
-            styles={styles}
-          />
-        </View>
 
         <SectionLabel label={t('settings.sectionAdvanced')} styles={styles} />
         <View style={styles.settingsTopGroup}>
