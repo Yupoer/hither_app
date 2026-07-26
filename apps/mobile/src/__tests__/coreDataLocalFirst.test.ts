@@ -800,7 +800,7 @@ describe('OTA-04 contract surfaces', () => {
     expect(hardened).not.toContain('jsonb_object_keys(v_point_statuses)');
 
     const switchMigration = fs.readFileSync(
-      path.join(root, 'supabase/migrations/20260726000200_leader_gathering_switch.sql'),
+      path.join(root, 'supabase/migrations/20260726000400_leader_gathering_switch.sql'),
       'utf8',
     );
     expect(switchMigration).toContain('create or replace function public.apply_leader_gathering_switch');
