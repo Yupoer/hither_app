@@ -112,7 +112,7 @@ describe('resolveNavCommand', () => {
     ).toMatchObject({ kind: 'leader_stop', label: '結束', action: 'end_point' });
   });
 
-  it('disables leader Start when not next pending or team is en_route elsewhere', () => {
+  it('keeps leader Start pressable while the latest-intent queue owns gates', () => {
     expect(
       resolveNavCommand({
         isLeader: true,
@@ -121,43 +121,20 @@ describe('resolveNavCommand', () => {
         localRouteThis: false,
         isNextTeamPending: false,
       }),
-    ).toMatchObject({ kind: 'leader_start', label: '開始', disabled: true, action: 'none' });
+    ).toMatchObject({ kind: 'leader_start', label: '開始', disabled: false, action: 'start_nav' });
 
-    expect(
-      resolveNavCommand({
-        isLeader: true,
-        personallyArrived: false,
-        flockNavigatingThis: false,
-        localRouteThis: false,
-        teamEnRouteElsewhere: true,
-      }),
-    ).toMatchObject({ kind: 'leader_start', disabled: true, action: 'none' });
-
-    expect(
-      resolveNavCommand({
-        isLeader: true,
-        personallyArrived: false,
-        flockNavigatingThis: false,
-        localRouteThis: false,
-        teamStartBlocked: true,
-      }),
-    ).toMatchObject({ kind: 'leader_start', disabled: true, action: 'none' });
-  });
-
-  it('shows complete once the leader has arrived', () => {
     expect(
       resolveNavCommand({
         isLeader: true,
         personallyArrived: true,
         flockNavigatingThis: false,
         localRouteThis: false,
+        teamStartBlocked: true,
       }),
-    ).toMatchObject({
-      kind: 'leader_mark_complete',
-      label: '完成',
-      action: 'mark_complete',
-      disabled: false,
-    });
+    ).toMatchObject({ kind: 'leader_start', label: '開始', disabled: false, action: 'start_nav' });
+  });
+
+  it('shows End only for the active team destination', () => {
     expect(
       resolveNavCommand({
         isLeader: true,
@@ -166,11 +143,13 @@ describe('resolveNavCommand', () => {
         localRouteThis: false,
       }),
     ).toMatchObject({
-      kind: 'leader_mark_complete',
-      label: '完成',
-      action: 'mark_complete',
+      kind: 'leader_stop',
+      label: '結束',
+      action: 'end_point',
+      disabled: false,
     });
   });
+
 
   it('gives members path plan / close plan, never leader start label', () => {
     const plan = resolveNavCommand({

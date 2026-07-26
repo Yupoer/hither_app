@@ -104,18 +104,11 @@ export function resolveNavCommand(input: NavCommandInput): NavCommandResult {
   } = input;
 
   if (isLeader) {
-    // Arrive ≠ complete: once the leader has arrived, offer complete (not hide).
-    if (personallyArrived) {
-      return {
-        kind: 'leader_mark_complete',
-        // Short label for the command-row chip; a11y can use a longer phrase.
-        label: '完成',
-        disabled: false,
-        action: 'mark_complete',
-      };
-    }
+    // The leader control is deliberately a two-state UI contract. Personal
+    // arrival is an overlay and must never turn the team control into a third
+    // action such as「完成」or a disabled no-op. The command runner owns
+    // server ordering and latest-intent reconciliation.
     if (flockNavigatingThis) {
-      // OTA-01 End: completes the active point and returns global phase to staying.
       return {
         kind: 'leader_stop',
         label: '結束',
@@ -123,16 +116,11 @@ export function resolveNavCommand(input: NavCommandInput): NavCommandResult {
         action: 'end_point',
       };
     }
-    // OTA-01: only the next pending point may Start while the team is staying.
-    const startBlocked =
-      teamStartBlocked === true
-      || teamEnRouteElsewhere === true
-      || isNextTeamPending === false;
     return {
       kind: 'leader_start',
       label: '開始',
-      disabled: startBlocked,
-      action: startBlocked ? 'none' : 'start_nav',
+      disabled: false,
+      action: 'start_nav',
     };
   }
 

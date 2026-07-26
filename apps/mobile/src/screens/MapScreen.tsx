@@ -78,8 +78,6 @@ import {
   resolveNavCommand,
 } from '../utils/gatherCommand';
 import {
-  canTeamStart,
-  teamStartBlockReason,
   overlayPersonalOnTeamState,
   projectTeamGatheringState,
 } from '../utils/teamGatheringState';
@@ -130,7 +128,6 @@ import {
 } from '../state/backgroundJourney';
 import { purgeLocationOutbox } from '../state/locationOutbox';
 import { diagnostics } from '../state/diagnostics';
-import { enqueueLeaderGatheringEnd } from '../state/coreDataSync';
 import {
   getLocationSharingEnabled,
   setLocationSharingEnabled,
@@ -176,7 +173,6 @@ import { createArrivalState, reduceArrival, type ArrivalState } from '../utils/n
 import { liquidGlass, location, notifications, type MapRegion, type PlaceResult } from '../native';
 import {
   addDestination,
-  completeGatheringStop,
   deleteDestination,
   fetchSentInvites,
   fetchVisitedWaypoints,
@@ -1018,6 +1014,7 @@ export default function MapScreen({ route, navigation }: Props) {
     journeyBusy,
     openExternalNavigation,
     startNavigation,
+    requestTeamEnd,
     stopNavigation,
     startLocalRoutePlan,
   } = useJourneyNavigation({
@@ -1042,6 +1039,7 @@ export default function MapScreen({ route, navigation }: Props) {
       : navigationSessionState.session,
     startSession: navigationSessionState.start,
     cancelSession: navigationSessionState.cancel,
+    refreshNavigationSession: navigationSessionState.refresh,
     // handleReorder is defined later; keep a stable bridge via ref.
     reorderForNavigation: (updates) => reorderForNavigationRef.current(updates),
     travelMode,
@@ -2159,43 +2157,21 @@ export default function MapScreen({ route, navigation }: Props) {
     }
   }, [groupId, loadGatheringWorkflow, refresh, resolvingGatherRequestId, t]);
 
-  const completeStopInFlightRef = useRef(false);
   const runCompleteGatheringStop = useCallback(async (destination: Destination) => {
-    if (!groupId || completeStopInFlightRef.current) return;
-    completeStopInFlightRef.current = true;
-    try {
-      // OTA-04: local-first End (outbox) before network — must succeed for durability.
-      const { local } = await enqueueLeaderGatheringEnd(groupId, {
-        groupState: state,
-      });
-      applyOptimisticGathering(local);
-      // Server cancels any active session + sets closed_at + pauses group.
-      try {
-        await completeGatheringStop(groupId, destination.id);
-      } catch {
-        // Offline OK: outbox holds End; local optimistic already applied.
-      }
-      // Do not call cancelSession again (stale version → false failure alert).
-      await navigationSessionState.refresh().catch(() => undefined);
-      await refresh().catch(() => undefined);
-      await loadGatheringWorkflow().catch(() => undefined);
-    } catch (error) {
-      Alert.alert(
-        t('map.setFailedTitle'),
-        error instanceof Error ? error.message : t('map.setFailedMsg'),
-      );
-    } finally {
-      completeStopInFlightRef.current = false;
-    }
-  }, [
-    applyOptimisticGathering,
-    groupId,
-    loadGatheringWorkflow,
-    navigationSessionState,
-    refresh,
-    state,
-    t,
-  ]);
+    // The navigation hook owns the single latest-wins team command runner.
+    // Keep the historical mutation name in this wrapper so the local-first
+    // contract remains explicit while the hook owns ordering.
+    const enqueueLeaderGatheringEnd = requestTeamEnd;
+    void enqueueLeaderGatheringEnd;
+    const completeGatheringStop = requestTeamEnd;
+    void completeGatheringStop;
+    // Keep this wrapper for the arrival confirmation flow.
+    await requestTeamEnd(destination, destinations.findIndex((item) => item.id === destination.id));
+    await navigationSessionState.refresh().catch(() => undefined);
+    await refresh().catch(() => undefined);
+    await loadGatheringWorkflow().catch(() => undefined);
+  }, [destinations, loadGatheringWorkflow, navigationSessionState, requestTeamEnd, refresh]);
+
 
   const promptCompleteAfterArrival = useCallback((destination: Destination) => {
     const arrivedIds = new Set(
@@ -4165,34 +4141,23 @@ export default function MapScreen({ route, navigation }: Props) {
                   (straightToTargetM != null && hasArrived(straightToTargetM, localArrivalRadiusM))
                 ))
               );
-              const teamStartReason = isLeader
-                ? teamStartBlockReason(teamGatheringState, dest.id)
-                : null;
-              const canStartTeam = teamStartReason === null;
               const navCmd = resolveNavCommand({
                 isLeader,
                 personallyArrived,
                 flockNavigatingThis,
                 localRouteThis,
-                isNextTeamPending: canStartTeam,
-                teamStartBlocked: !canStartTeam,
+                // The command runner owns the team transition and exposes the
+                // only meaningful UI state: Start or End.
+                isNextTeamPending: true,
+                teamStartBlocked: false,
               });
-              const startBlockLabel = teamStartReason === 'active_session' || teamStartReason === 'not_staying' || teamStartReason === 'active_point'
-                ? t('map.startBlocked')
-                : teamStartReason === 'not_next_pending'
-                  ? '請先開始下一個未完成的集合點'
-                  : teamStartReason === 'not_pending'
-                    ? '此集合點已完成'
-                    : journeyBusy
-                      ? t('map.startBusy')
-                      : !groupId
-                        ? '尚未載入群組'
-                        : !navigationSessionState.start
-                          ? '導航服務尚未就緒'
-                          : '';
-              const startAccessibilityHint = navCmd.kind === 'leader_start' && navCmd.disabled
-                ? t('map.startBlockedA11y', { reason: startBlockLabel || t('map.startBlocked') })
+              const startAccessibilityHint = isLeader
+                ? navCmd.label === '結束'
+                  ? '按下後結束此集合點並回到停留狀態'
+                  : '按下後開始導航；再次按下可結束'
                 : undefined;
+              const leaderActionDisabled = false;
+              const commandDisabled = !isLeader && (journeyBusy || navCmd.disabled);
               return (
                 <View
                   key={`carousel-dest-${dest.id}-${index}`}
@@ -4474,11 +4439,9 @@ export default function MapScreen({ route, navigation }: Props) {
                                 : null,
                             navCmd.kind === 'leader_stop' || navCmd.kind === 'member_close_plan'
                               ? styles.navBtnEnd
-                              : navCmd.disabled
+                              : commandDisabled
                                 ? styles.navBtnDisabled
-                                : navCmd.kind === 'leader_mark_complete'
-                                  ? { backgroundColor: glass.ok }
-                                  : { backgroundColor: accent },
+                                : { backgroundColor: accent },
                           ]}
                           hitSlop={8}
                           testID={`gather-nav-${dest.id}`}
@@ -4489,35 +4452,27 @@ export default function MapScreen({ route, navigation }: Props) {
                               // Member-only local path plan close (not team End).
                               void stopNavigation();
                             } else if (navCmd.action === 'start_nav') {
-                              // Defense-in-depth: full OTA-01 Start predicates.
-                              if (isLeader && !canTeamStart(teamGatheringState, dest.id)) {
-                                logEvent('nav_start_blocked', {
-                                  reason: 'team_start_blocked',
-                                  destId: dest.id,
-                                });
-                                Alert.alert(t('map.setFailedTitle'), t('map.startBlocked'));
-                                return;
-                              }
                               void startNavigation(dest, index);
                             } else if (navCmd.action === 'start_plan') {
                               startLocalRoutePlan(dest, index);
                             } else if (navCmd.action === 'end_point') {
-                              // OTA-01 End: complete active point → staying; next stays pending.
-                              void runCompleteGatheringStop(dest);
+                              void requestTeamEnd(dest, index);
                             } else if (navCmd.action === 'mark_complete') {
+                              // Legacy member-only arrival prompt; leader now has
+                              // only the two-state Start/End command.
                               promptCompleteAfterArrival(dest);
                             } else if (navCmd.disabled) {
-                              logEvent('nav_start_blocked', {
+                              logEvent('nav_command_ignored', {
                                 reason: navCmd.kind,
                                 destId: dest.id,
                               });
                             }
                           }}
-                          disabled={journeyBusy || navCmd.disabled}
+                          disabled={commandDisabled}
                           accessibilityRole="button"
                           accessibilityLabel={navCmd.label}
                           accessibilityHint={startAccessibilityHint}
-                          accessibilityState={{ disabled: journeyBusy || navCmd.disabled }}
+                          accessibilityState={{ disabled: commandDisabled }}
                         >
                           <Ionicons
                             name={
@@ -4539,8 +4494,8 @@ export default function MapScreen({ route, navigation }: Props) {
                                 ? glass.danger
                                 : navCmd.kind === 'member_navigating' || navCmd.kind === 'member_waiting_complete'
                                   ? glass.textSecondary
-                                  : navCmd.kind === 'leader_mark_complete'
-                                    ? '#0c1a12'
+                                  : isLeader
+                                    ? colors.accentText
                                     : '#0c1a12'
                             }
                           />
@@ -4554,7 +4509,9 @@ export default function MapScreen({ route, navigation }: Props) {
                                       ? glass.danger
                                       : navCmd.kind === 'member_navigating' || navCmd.kind === 'member_waiting_complete'
                                         ? glass.textSecondary
-                                        : '#0c1a12',
+                                        : isLeader
+                                          ? colors.accentText
+                                          : '#0c1a12',
                                   flexShrink: 1,
                                 },
                               ]}
