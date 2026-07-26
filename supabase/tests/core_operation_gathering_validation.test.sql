@@ -173,7 +173,7 @@ select is(
   'end rejects unknown nextDestinationId'
 );
 
--- 6) End with legal next completes and advances soft cursor.
+-- 6) End pauses travel: soft cursor stays on paused point; itinerary stays open.
 select is(
   public.apply_core_operation(
     'cccccccc-cccc-4ccc-8ccc-cccccccccc06',
@@ -182,12 +182,10 @@ select is(
     'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     1,
     'end_gathering',
-    jsonb_build_object(
-      'nextDestinationId', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2'
-    )
+    '{}'::jsonb
   )->>'status',
   'accepted',
-  'end accepts legal nextDestinationId'
+  'end accepts pause without nextDestinationId'
 );
 
 select is(
@@ -198,20 +196,32 @@ select is(
       and entity_type = 'active_gathering'
       and entity_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
   ),
-  'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2',
-  'end sets soft cursor to legal next open point'
+  'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1',
+  'end keeps soft cursor on the paused point'
 );
 
 select is(
   (
-    select closed_at is not null from public.itinerary_items
+    select closed_at is null from public.itinerary_items
     where id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1'
   ),
   true,
-  'end closes completed itinerary item'
+  'end does not close itinerary (complete_gathering_stop does)'
 );
 
--- 7) Closed point cannot be started again.
+select is(
+  (
+    select state->'pointStatuses'->>'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1'
+    from public.core_entity_versions
+    where group_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+      and entity_type = 'active_gathering'
+      and entity_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+  ),
+  'pending',
+  'end reverts active point to pending'
+);
+
+-- 7) After pause, the same open point can be started again.
 select is(
   public.apply_core_operation(
     'cccccccc-cccc-4ccc-8ccc-cccccccccc07',
@@ -223,9 +233,9 @@ select is(
     jsonb_build_object(
       'activeDestinationId', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1'
     )
-  )->'conflict'->>'message',
-  'destination is already closed',
-  'start rejects closed gathering point'
+  )->>'status',
+  'accepted',
+  'start accepts paused open gathering point again'
 );
 
 select * from finish();

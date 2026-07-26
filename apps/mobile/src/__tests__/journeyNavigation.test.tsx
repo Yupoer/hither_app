@@ -2,6 +2,7 @@ import React from 'react';
 import { deleteDestination, reorderDestinations } from '../api/client';
 import {
   abortLeaderGatheringStart,
+  enqueueLeaderGatheringEnd,
   enqueueLeaderGatheringStart,
   enqueueLeaderGatheringSwitch,
   flushCoreOperationOutbox,
@@ -36,6 +37,7 @@ jest.mock('../state/coreDataSync', () => ({
   abortLeaderGatheringStart: jest.fn().mockResolvedValue(undefined),
   enqueueLeaderGatheringStart: jest.fn(),
   enqueueLeaderGatheringSwitch: jest.fn(),
+  enqueueLeaderGatheringEnd: jest.fn(),
   flushCoreOperationOutbox: jest.fn().mockResolvedValue(undefined),
 }));
 
@@ -70,9 +72,19 @@ const pausedState = {
 } as unknown as GroupState;
 
 describe('useJourneyNavigation', () => {
+  const pausedGathering = {
+    groupId: 'group-1',
+    journeyPhase: 'staying',
+    activeDestinationId: 'destination-1',
+    pointStatuses: { 'destination-1': 'pending' },
+    phaseChangedAt: 2_000,
+    entityVersion: 2,
+  } as unknown as ActiveGatheringState;
+
   beforeEach(() => {
     jest.mocked(enqueueLeaderGatheringStart).mockReset();
     jest.mocked(enqueueLeaderGatheringSwitch).mockReset();
+    jest.mocked(enqueueLeaderGatheringEnd).mockReset();
     jest.mocked(abortLeaderGatheringStart).mockReset();
     jest.mocked(flushCoreOperationOutbox).mockReset();
     jest.mocked(enqueueLeaderGatheringStart).mockResolvedValue({
@@ -84,6 +96,9 @@ describe('useJourneyNavigation', () => {
       local: optimisticGathering,
       base: baseGathering,
       operationId: 'op-switch-1',
+    });
+    jest.mocked(enqueueLeaderGatheringEnd).mockResolvedValue({
+      local: pausedGathering,
     });
     jest.mocked(abortLeaderGatheringStart).mockResolvedValue(undefined);
     jest.mocked(flushCoreOperationOutbox).mockResolvedValue(undefined as never);
@@ -534,8 +549,8 @@ describe('useJourneyNavigation', () => {
     expect(navigation?.navTarget).toBeUndefined();
   });
 
-  it('restores the persisted target when stopping navigation fails', async () => {
-    const cancelSession = jest.fn().mockRejectedValueOnce(new Error('network'));
+  it('End navigation pauses flock travel and cancels session without completing the stop', async () => {
+    const cancelSession = jest.fn().mockResolvedValue(null);
     const goingState = {
       ...pausedState,
       group: {
@@ -544,6 +559,17 @@ describe('useJourneyNavigation', () => {
         activeDestinationId: destination.id,
       },
     } as GroupState;
+    const activeSession = {
+      id: 'session-1',
+      status: 'active',
+      destinationId: destination.id,
+      destination: {
+        name: destination.title,
+        coordinates: destination.coordinates,
+        arrivalRadiusMeters: 50,
+      },
+      version: 1,
+    } as NavigationSession;
     let navigation: ReturnType<typeof useJourneyNavigation> | undefined;
 
     function Harness() {
@@ -559,6 +585,7 @@ describe('useJourneyNavigation', () => {
         mapRef: { current: null },
         carouselRef: { current: null },
         setSelectedIndex: jest.fn(),
+        navigationSession: activeSession,
         cancelSession,
       });
       return null;
@@ -571,9 +598,13 @@ describe('useJourneyNavigation', () => {
       await navigation?.stopNavigation();
     });
 
-    expect(navigation?.journeyStatus).toBe('going');
-    expect(navigation?.navTarget?.id).toBe(destination.id);
-    expect(navigation?.journeyActive).toBe(true);
+    expect(enqueueLeaderGatheringEnd).toHaveBeenCalledWith(
+      'group-1',
+      expect.objectContaining({ groupState: goingState }),
+    );
+    expect(cancelSession).toHaveBeenCalled();
+    expect(navigation?.journeyStatus).toBe('paused');
+    expect(navigation?.navTarget).toBeUndefined();
   });
 
   it('keeps gathering outbox pending without flush when startSession is offline', async () => {

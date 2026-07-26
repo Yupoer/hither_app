@@ -110,9 +110,9 @@ describe('OTA-04 active gathering semantics (OTA-01)', () => {
 
     const ended = endGathering(started, 2_000);
     expect(ended.journeyPhase).toBe('staying');
-    expect(ended.pointStatuses.d1).toBe('completed');
-    // Soft next cursor for offline advance (still pending until Start).
-    expect(ended.activeDestinationId).toBe('d2');
+    // End navigation pauses only — point stays open (pending), not completed.
+    expect(ended.pointStatuses.d1).toBe('pending');
+    expect(ended.activeDestinationId).toBe('d1');
     expect(ended.pointStatuses.d2).toBe('pending');
     expect(canStartGathering(ended)).toBe(true);
   });
@@ -428,7 +428,7 @@ describe('OTA-04 operation outbox (ticket 02)', () => {
     await expect(outboxDb.get('op-fail')).resolves.toBeNull();
   });
 
-  it('end_gathering preserves next pending destination through applicator', async () => {
+  it('end_gathering pauses active point without completing it', async () => {
     const nowRef = { now: 1_000 };
     const { outbox, serverGathering, coreDb } = setup(nowRef);
     const base = deriveActiveGatheringFromGroupState(makeState(), 0, 1_000);
@@ -442,16 +442,16 @@ describe('OTA-04 operation outbox (ticket 02)', () => {
       action: 'end',
       baseState: enRoute,
     });
-    expect(local.activeDestinationId).toBe('d2');
-    expect(local.pointStatuses.d1).toBe('completed');
+    expect(local.activeDestinationId).toBe('d1');
+    expect(local.pointStatuses.d1).toBe('pending');
 
     const result = await outbox.flush();
     expect(result.sent).toBe(1);
-    expect(serverGathering.get('group-1')?.activeDestinationId).toBe('d2');
-    expect(serverGathering.get('group-1')?.pointStatuses.d1).toBe('completed');
-    // Accepted writeback must not clobber next cursor with empty/null.
+    expect(serverGathering.get('group-1')?.activeDestinationId).toBe('d1');
+    expect(serverGathering.get('group-1')?.pointStatuses.d1).toBe('pending');
+    // Accepted writeback must not clobber soft cursor with empty/null.
     await expect(coreDb.getActiveGathering('group-1')).resolves.toMatchObject({
-      activeDestinationId: 'd2',
+      activeDestinationId: 'd1',
       journeyPhase: 'staying',
     });
   });
@@ -815,7 +815,8 @@ describe('OTA-04 contract surfaces', () => {
     expect(pgtap).toContain('start rejects unknown itinerary id');
     expect(pgtap).toContain('start rejects non-next open gathering point');
     expect(pgtap).toContain('end rejects unknown nextDestinationId');
-    expect(pgtap).toContain('start rejects closed gathering point');
+    expect(pgtap).toContain('end does not close itinerary (complete_gathering_stop does)');
+    expect(pgtap).toContain('start accepts paused open gathering point again');
   });
 
   it('useGroupState hydrates versions and surfaces open operations', () => {
@@ -864,7 +865,11 @@ describe('OTA-04 contract surfaces', () => {
     expect(coreSync).toContain('abortLeaderGatheringStart');
     expect(coreSync).toContain('markGatheringConflictAndRestore');
     expect(coreSync).toContain('flushImmediately');
-    expect(map).toContain('enqueueLeaderGatheringEnd');
+    expect(journey).toContain('enqueueLeaderGatheringEnd');
+    expect(journey).toContain('cancelSession');
+    // End navigation must not invoke the complete-stop RPC (MapScreen owns that).
+    expect(journey).not.toMatch(/await completeGatheringStop\(/);
+    expect(map).toContain('completeGatheringStop(groupId, destination.id)');
     expect(map).toContain('applyOptimisticGathering');
     expect(map).toContain('respondToAnnouncement');
     expect(map).not.toContain('hasCoreConflict');

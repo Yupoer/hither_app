@@ -173,6 +173,7 @@ import { createArrivalState, reduceArrival, type ArrivalState } from '../utils/n
 import { liquidGlass, location, notifications, type MapRegion, type PlaceResult } from '../native';
 import {
   addDestination,
+  completeGatheringStop,
   deleteDestination,
   fetchSentInvites,
   fetchVisitedWaypoints,
@@ -2158,19 +2159,23 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [groupId, loadGatheringWorkflow, refresh, resolvingGatherRequestId, t]);
 
   const runCompleteGatheringStop = useCallback(async (destination: Destination) => {
-    // The navigation hook owns the single latest-wins team command runner.
-    // Keep the historical mutation name in this wrapper so the local-first
-    // contract remains explicit while the hook owns ordering.
-    const enqueueLeaderGatheringEnd = requestTeamEnd;
-    void enqueueLeaderGatheringEnd;
-    const completeGatheringStop = requestTeamEnd;
-    void completeGatheringStop;
-    // Keep this wrapper for the arrival confirmation flow.
-    await requestTeamEnd(destination, destinations.findIndex((item) => item.id === destination.id));
-    await navigationSessionState.refresh().catch(() => undefined);
-    await refresh().catch(() => undefined);
-    await loadGatheringWorkflow().catch(() => undefined);
-  }, [destinations, loadGatheringWorkflow, navigationSessionState, requestTeamEnd, refresh]);
+    // Complete is separate from End navigation: only this path closes the stop
+    // (closed_at → leaves carousel → history). End only pauses flock travel.
+    // Server complete_gathering_stop also cancels any active nav for this stop.
+    if (!groupId) return;
+    try {
+      await completeGatheringStop(groupId, destination.id);
+      await navigationSessionState.refresh().catch(() => undefined);
+      await refresh().catch(() => undefined);
+      await loadGatheringWorkflow().catch(() => undefined);
+    } catch (error) {
+      logError('complete_gathering_failed', error, { groupId, destId: destination.id });
+      Alert.alert(
+        t('map.setFailedTitle'),
+        error instanceof Error ? error.message : t('map.setFailedMsg'),
+      );
+    }
+  }, [groupId, loadGatheringWorkflow, navigationSessionState, refresh, t]);
 
 
   const promptCompleteAfterArrival = useCallback((destination: Destination) => {

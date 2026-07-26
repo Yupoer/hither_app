@@ -182,7 +182,8 @@ export async function abortLeaderGatheringStart(input: {
 }
 
 /**
- * Leader End — local-first complete of the active point.
+ * Leader End navigation — local-first pause of flock travel.
+ * Active point reverts to pending (not completed / no closed_at).
  * Throws on enqueue failure.
  */
 export async function enqueueLeaderGatheringEnd(

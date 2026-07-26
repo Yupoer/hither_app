@@ -46,10 +46,11 @@ export interface NavCommandResult {
   label: string;
   disabled: boolean;
   /**
-   * Whether pressing starts shared nav, ends (completes) the team point,
+   * Whether pressing starts shared nav, ends (pauses) flock travel,
    * runs a member-only path plan, or completes after personal arrival.
-   * OTA-01: leader End completes the gathering point (not a bare cancel).
-   * Member path-plan still uses close_plan; bare stop_nav is not emitted for leaders.
+   * Leader End = pause navigation only (point stays on itinerary).
+   * Completing a stop is a separate prompt/RPC (complete_gathering_stop).
+   * Member path-plan still uses close_plan.
    */
   action: 'start_nav' | 'start_plan' | 'close_plan' | 'mark_complete' | 'end_point' | 'none';
 }

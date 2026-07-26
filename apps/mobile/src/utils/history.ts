@@ -71,20 +71,20 @@ export function pastStopsForHistory(
   } = options;
 
   const current = currentTripDayNumber(departureDate, tripDays, now);
-  // No date gate → nothing synthetic (history stays arrival-only).
-  if (current == null) return [];
-
   const days =
     typeof tripDays === 'number' && tripDays > 0 ? Math.floor(tripDays) : null;
 
   return destinations
     .filter((dest) => {
       if (arrivedDestinationIds.has(dest.id)) return false;
+      // Completed / closed stops leave the active carousel; always surface
+      // them in history even when the trip has no departure-date gate.
+      if (dest.closedAt) return true;
+      // No date gate → only closed stops are synthetic (arrivals come from DB).
+      if (current == null) return false;
       const day = dest.day || 1;
       // Fully past trip: every remaining open stop is historical.
       if (days != null && current > days) return true;
-      // Closed stops always leave the active list; surface if not arrived.
-      if (dest.closedAt) return true;
       // Before/during trip: only days strictly before today.
       if (current <= 0) return false;
       return day < current;
@@ -92,8 +92,9 @@ export function pastStopsForHistory(
     .map((dest) => {
       const status: HistoryStatus = dest.closedAt ? 'missed' : 'incomplete';
       const arrivedAt =
-        dest.closedAt ??
-        endOfTripDayIso(departureDate, dest.day || 1);
+        dest.closedAt
+        ?? endOfTripDayIso(departureDate, dest.day || 1)
+        ?? new Date().toISOString();
       return {
         id: `synthetic:${dest.id}`,
         userId,

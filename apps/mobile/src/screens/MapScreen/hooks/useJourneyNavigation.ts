@@ -1,6 +1,5 @@
 import * as Crypto from 'expo-crypto';
 import { useState, useMemo, useEffect, useCallback, useRef, RefObject } from 'react';
-import { completeGatheringStop } from '../../../api/client';
 import { isNetworkRequestError } from '../../../api/services/_helpers';
 import { distanceMeters } from '../../../utils/geo';
 import { resolveGatheringOutboxAfterSessionStart } from '../../../utils/gatheringSessionOutbox';
@@ -76,7 +75,7 @@ export function useJourneyNavigation({
   setSelectedIndex,
   navigationSession,
   startSession,
-  cancelSession: _cancelSession,
+  cancelSession,
   refreshNavigationSession,
   createRequestId = Crypto.randomUUID,
   reorderForNavigation,
@@ -214,7 +213,7 @@ export function useJourneyNavigation({
       }
     }
     // If Start failed before creating a server session and the newest intent is
-    // End, there is nothing to complete. Keep the UI at staying and drop the
+    // End, there is nothing to pause. Keep the UI at staying and drop the
     // superseded local Start instead of invoking a terminal RPC that must fail.
     const baseState = gatheringStateRef.current
       ?? (state ? deriveActiveGatheringFromGroupState(state, 0) : null);
@@ -231,15 +230,16 @@ export function useJourneyNavigation({
     setPendingLeaderStop(true);
     setOptimisticTeamTargetId(null);
     try {
+      // End navigation = pause only. Point stays open (pending); no closed_at.
+      // Completing a stop is a separate action (completeGatheringStop).
       const result = await enqueueLeaderGatheringEnd(groupId, {
         baseState: baseState ?? undefined,
         groupState: state,
       });
       gatheringStateRef.current = result.local;
       onOptimisticGathering?.(result.local);
-      // This RPC is deliberately after the local End. It may fail offline; the
-      // durable End outbox and the optimistic UI remain authoritative locally.
-      await completeGatheringStop(groupId, dest.id).catch(() => undefined);
+      // Cancel flock nav session (mirrors groups.journey → paused; never closes itinerary).
+      await cancelSession?.().catch(() => undefined);
       _refresh();
       serverOrStartedSessionRef.current = false;
     } catch {
@@ -249,7 +249,7 @@ export function useJourneyNavigation({
       setPendingLeaderTargetId(null);
       setJourneyBusy(false);
     }
-  }, [groupId, state, onOptimisticGathering, _refresh]);
+  }, [groupId, state, onOptimisticGathering, _refresh, cancelSession]);
 
   const runTeamStart = useCallback(async (intent: TeamCommandIntent): Promise<void> => {
     if (!groupId || !startSession) return;

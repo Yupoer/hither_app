@@ -248,7 +248,7 @@ describe('Start / End transitions', () => {
     expect(getPointStatus(switched.state, 'p1')).toBe('pending');
   });
 
-  it('End: point completed, global staying, next remains pending', () => {
+  it('End: pauses travel, point stays pending (not completed), Start available', () => {
     const started = applyTeamGatheringTransition(initialState(), {
       transition: 'start',
       pointId: 'p1',
@@ -268,15 +268,13 @@ describe('Start / End transitions', () => {
 
     expect(ended.state.journeyPhase).toBe('staying');
     expect(ended.state.activePointId).toBeNull();
-    expect(getPointStatus(ended.state, 'p1')).toBe('completed');
+    // End navigation does not complete — card stays on itinerary.
+    expect(getPointStatus(ended.state, 'p1')).toBe('pending');
     expect(getPointStatus(ended.state, 'p2')).toBe('pending');
-    expect(ended.state.nextPendingPointId).toBe('p2');
-    // History retained: p1 stays completed after next is selected as pending.
-    expect(ended.state.points.find((p) => p.id === 'p1')?.closedAt).toBe(
-      '2026-07-25T11:00:00.000Z',
-    );
+    expect(ended.state.nextPendingPointId).toBe('p1');
+    expect(ended.state.points.find((p) => p.id === 'p1')?.closedAt ?? null).toBeNull();
 
-    const nextActions = resolveTeamPointActions(ended.state, 'p2', { isLeader: true });
+    const nextActions = resolveTeamPointActions(ended.state, 'p1', { isLeader: true });
     expect(nextActions.primary.kind).toBe('start');
   });
 
@@ -329,7 +327,7 @@ describe('Start / End transitions', () => {
     expect(r.reason).toBe('invalid_transition');
   });
 
-  it('concurrent duplicate End converges without rewriting history', () => {
+  it('concurrent duplicate End converges without completing the point', () => {
     let state = initialState();
     const s1 = applyTeamGatheringTransition(state, {
       transition: 'start',
@@ -356,8 +354,9 @@ describe('Start / End transitions', () => {
     });
     expect(e2.ok).toBe(false);
     if (e2.ok) return;
-    expect(e2.reason).toBe('duplicate_transition');
-    expect(getPointStatus(e2.state, 'p1')).toBe('completed');
+    // After pause, global is already staying — second End is rejected.
+    expect(e2.reason).toBe('global_not_en_route');
+    expect(getPointStatus(e2.state, 'p1')).toBe('pending');
     expect(e2.state.journeyPhase).toBe('staying');
   });
 });
