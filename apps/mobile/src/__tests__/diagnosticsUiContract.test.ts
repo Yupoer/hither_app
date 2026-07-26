@@ -17,19 +17,21 @@ describe('location privacy and diagnostics UI contract', () => {
     expect(preferences).toContain('AsyncStorage.removeItem(LEGACY_LOCATION_SHARING_KEY)');
   });
 
-  it('shows a location-sharing switch with an explicit local-navigation warning', () => {
-    expect(settings).toContain('sharingEnabled');
-    expect(settings).toContain('onSharingEnabledChange');
-    expect(settings).toContain("t('settings.locationSharing')");
-    expect(settings).toContain("t('settings.locationSharingHint')");
+  it('shows a location-sharing switch with an explicit local-navigation warning in Tools', () => {
+    expect(map).toContain('sharingEnabled');
+    expect(map).toContain('handleSharingEnabledChange');
+    expect(map).toContain("t('settings.locationSharing')");
+    expect(map).toContain("t('settings.locationSharingHint')");
+    expect(settings).not.toContain("t('settings.locationSharing')");
   });
 
   it('stops background sharing, purges queued locations, and ACKs the active session', () => {
     const start = map.indexOf('const handleSharingEnabledChange');
-    const end = map.indexOf('\n  };', start);
+    const end = map.indexOf('\n  }, [setSharingEnabled', start);
     const handler = map.slice(start, end);
 
     expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
     expect(handler).toContain('setSharingEnabled(enabled)');
     expect(handler).toContain('stopBackgroundJourney()');
     expect(handler).toContain('purgeLocationOutbox()');

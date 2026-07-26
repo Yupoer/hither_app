@@ -31,12 +31,12 @@ describe('OTA-07 full/passive presentation contract', () => {
     expect(mapScreen).not.toContain('createPassiveStore');
   });
 
-  it('enters passive mode from settings and restores after relaunch via preference', () => {
-    expect(settings).toContain("t('settings.passiveCompanionMode')");
-    expect(settings).toContain('setPassiveCompanionMode');
-    expect(settings).toContain('passiveCompanionMode');
+  it('enters passive mode from Tools and restores after relaunch via preference', () => {
+    expect(mapScreen).toContain("t('settings.passiveCompanionMode')");
+    expect(mapScreen).toContain('setPassiveCompanionMode');
     expect(mapScreen).toContain('passiveCompanionMode');
     expect(mapScreen).toContain('PassiveCompanionPanel');
+    expect(settings).not.toContain("t('settings.passiveCompanionMode')");
     expect(i18n).toContain("'settings.passiveCompanionMode'");
     expect(i18n).toContain("'passive.switchBack'");
   });

@@ -25,10 +25,8 @@ const groupMap = readFileSync(join(__dirname, '../components/GroupMap.tsx'), 'ut
 const HIGH_RISK_ACTION_IDS = [
   // Nav / session (batch 3a)
   'map.go_home_create_or_join',
-  'map.switch_group',
   'map.leave_group',
   'map.sign_out',
-  'map.open_group_menu',
   'map.open_settings',
   'auth.create_group',
   'auth.join_group',
@@ -78,10 +76,11 @@ describe('button inventory / high-risk action contract', () => {
   it('wires Map navigation/session actions through runUiAction', () => {
     expect(mapScreen).toContain('runUiAction(');
     expect(mapScreen).toContain("'map.go_home_create_or_join'");
-    expect(mapScreen).toContain("'map.switch_group'");
+    expect(mapScreen).not.toContain("'map.switch_group'");
     expect(mapScreen).toContain("'map.leave_group'");
     expect(mapScreen).toContain("'map.sign_out'");
-    expect(mapScreen).toContain("'map.open_group_menu'");
+    expect(mapScreen).toContain("'map.open_settings'");
+    expect(mapScreen).not.toContain("'map.open_group_menu'");
   });
 
   it('wires Map/Sheet high-risk async handlers through runUiAction', () => {

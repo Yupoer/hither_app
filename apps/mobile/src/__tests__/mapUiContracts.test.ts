@@ -111,10 +111,12 @@ describe('map UI placement contracts', () => {
     expect(i18n).toContain("'settings.applyOta': 'Update now'");
   });
 
-  it('exposes create-or-join home from settings without forcing leave/sign-out', () => {
-    expect(settingsOverlay).toContain("t('settings.createOrJoin')");
+  it('exposes return-to-home from settings without forcing leave/sign-out', () => {
+    expect(settingsOverlay).toContain("t('map.backToHome')");
     expect(settingsOverlay).toContain("t('settings.createOrJoinHint')");
     expect(settingsOverlay).toContain('onGoHome');
+    expect(settingsOverlay).not.toContain("t('settings.createOrJoin')");
+    expect(settingsOverlay).not.toContain("t('map.switchGroup')");
     expect(mapScreen).toContain('goHomeCreateOrJoin');
     expect(mapScreen).toContain("navigation.reset({ index: 0, routes: [{ name: 'RoleSelect' }] })");
     // Must not clear membership just to open create/join.
@@ -123,14 +125,63 @@ describe('map UI placement contracts', () => {
     expect(goHomeBody).not.toContain('leaveGroup');
     expect(goHomeBody).not.toContain('signOut');
     expect(goHomeBody).not.toContain("navigation.navigate('RoleSelect')");
-    expect(i18n).toContain("'settings.createOrJoin': '創建或加入群組'");
+    expect(i18n).toContain("'map.backToHome': '回到主畫面'");
   });
 
-  it('exposes the oblique-locate toggle in Settings', () => {
-    expect(settingsOverlay).toContain("t('settings.sectionMapJourney')");
-    expect(settingsOverlay).toContain("t('settings.obliqueLocate')");
-    expect(settingsOverlay).toContain('setObliqueLocate');
-    expect(settingsOverlay).toContain('value={obliqueLocate}');
+  it('places Leave group in the personal section with consistent label for all roles', () => {
+    const personal = settingsOverlay.indexOf("t('settings.sectionPersonal')");
+    const leave = settingsOverlay.indexOf("t('group.leave')", personal);
+    const language = settingsOverlay.indexOf("t('settings.sectionLanguageAppearance')", personal);
+    expect(personal).toBeGreaterThanOrEqual(0);
+    expect(leave).toBeGreaterThan(personal);
+    expect(leave).toBeLessThan(language);
+    expect(settingsOverlay).not.toContain("t('settings.sectionGroupAdmin')");
+    expect(settingsOverlay).not.toContain("t('map.endGroupCurrent')");
+    expect(settingsOverlay).toContain('onConfirmLeave');
+  });
+
+  it('moves map/journey preference toggles into Tools and out of Settings', () => {
+    const toolsStart = mapScreen.indexOf('// ─── 工具');
+    const toolsEnd = mapScreen.indexOf('const sheetChildren');
+    const toolsBlock = mapScreen.slice(toolsStart, toolsEnd > 0 ? toolsEnd : toolsStart + 5000);
+
+    const passive = toolsBlock.indexOf("t('settings.passiveCompanionMode')");
+    const sharing = toolsBlock.indexOf("t('settings.locationSharing')");
+    const oblique = toolsBlock.indexOf("t('settings.obliqueLocate')");
+    const live = toolsBlock.indexOf("t('settings.liveActivity')");
+    const expand = toolsBlock.indexOf("t('settings.gatherCardDefaultExpanded')");
+    const marquee = toolsBlock.indexOf("t('settings.gatherCardTitleMarquee')");
+    const marqueeSpeed = toolsBlock.indexOf("t('settings.gatherCardMarqueeSpeed')");
+    const arrival = toolsBlock.indexOf("t('arrival.radiusSection')");
+    const commands = toolsBlock.indexOf("t('map.cmdTitle')");
+
+    expect(passive).toBeGreaterThanOrEqual(0);
+    expect(sharing).toBeGreaterThan(passive);
+    expect(oblique).toBeGreaterThan(sharing);
+    expect(live).toBeGreaterThan(oblique);
+    expect(expand).toBeGreaterThan(live);
+    expect(marquee).toBeGreaterThan(expand);
+    expect(marqueeSpeed).toBeGreaterThan(marquee);
+    expect(arrival).toBeGreaterThan(marqueeSpeed);
+    expect(commands).toBeGreaterThan(arrival);
+
+    expect(toolsBlock).toContain('setPassiveCompanionMode');
+    expect(toolsBlock).toContain('handleSharingEnabledChange');
+    expect(toolsBlock).toContain('setObliqueLocate');
+    expect(toolsBlock).toContain('setLiveActivityEnabled');
+    expect(toolsBlock).toContain('setGatherCardDefaultExpanded');
+    expect(toolsBlock).toContain('setGatherCardTitleMarquee');
+    expect(toolsBlock).toContain('setGatherCardMarqueeSpeed');
+    expect(toolsBlock).toContain('Boolean(gatherCardTitleMarquee)');
+    expect(toolsBlock).toContain('PrefSlider');
+
+    expect(settingsOverlay).not.toContain("t('settings.sectionMapJourney')");
+    expect(settingsOverlay).not.toContain("t('settings.obliqueLocate')");
+    expect(settingsOverlay).not.toContain("t('settings.passiveCompanionMode')");
+    expect(settingsOverlay).not.toContain("t('settings.locationSharing')");
+    expect(settingsOverlay).not.toContain("t('settings.liveActivity')");
+    expect(settingsOverlay).not.toContain("t('settings.gatherCardDefaultExpanded')");
+    expect(settingsOverlay).not.toContain("t('settings.gatherCardTitleMarquee')");
   });
 
   it('aligns per-destination meet clocks when itinerary dates change', () => {
@@ -140,12 +191,12 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain('reorderDestinations(groupId, meetUpdates)');
   });
 
-  it('persists the gathering-card default and exposes it in journey settings', () => {
+  it('persists the gathering-card default and exposes it in Tools', () => {
     expect(preferences).toContain("pref.gatherCardDefaultExpanded");
     expect(preferences).toContain('gatherCardDefaultExpanded');
     expect(preferences).toContain('setGatherCardDefaultExpanded');
-    expect(settingsOverlay).toContain("t('settings.gatherCardDefaultExpanded')");
-    expect(settingsOverlay).toContain('value={gatherCardDefaultExpanded}');
+    expect(mapScreen).toContain("t('settings.gatherCardDefaultExpanded')");
+    expect(mapScreen).toContain('value={gatherCardDefaultExpanded}');
     expect(i18n).toContain("'settings.gatherCardDefaultExpanded': '預設展開集合點卡片'");
   });
 
@@ -157,12 +208,12 @@ describe('map UI placement contracts', () => {
     expect(preferences).toContain('gatherCardMarqueeSpeed');
     expect(preferences).toContain('setGatherCardMarqueeSpeed');
     expect(preferences).toContain('clampMarqueeSpeed');
-    expect(settingsOverlay).toContain("t('settings.gatherCardTitleMarquee')");
-    expect(settingsOverlay).toContain('Boolean(gatherCardTitleMarquee)');
-    expect(settingsOverlay).toContain('setGatherCardTitleMarquee(Boolean(v))');
-    expect(settingsOverlay).toContain('PrefSlider');
-    expect(settingsOverlay).toContain("t('settings.gatherCardMarqueeSpeed')");
-    expect(settingsOverlay).toContain('setGatherCardMarqueeSpeed');
+    expect(mapScreen).toContain("t('settings.gatherCardTitleMarquee')");
+    expect(mapScreen).toContain('Boolean(gatherCardTitleMarquee)');
+    expect(mapScreen).toContain('setGatherCardTitleMarquee(Boolean(v))');
+    expect(mapScreen).toContain('PrefSlider');
+    expect(mapScreen).toContain("t('settings.gatherCardMarqueeSpeed')");
+    expect(mapScreen).toContain('setGatherCardMarqueeSpeed');
     expect(i18n).toContain("'settings.gatherCardTitleMarquee': '集合點名稱跑馬燈'");
     expect(i18n).toContain("'settings.gatherCardMarqueeSpeed': '跑馬燈速度'");
     expect(mapScreen).toContain('enabled={gatherCardTitleMarquee}');
@@ -273,19 +324,23 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toMatch(/now - lastPressAtRef\.current < 300/);
   });
 
-  it('keeps straggler toggle UI-first with dirty/last-write-wins (not forced by DB props)', () => {
-    expect(mapScreen).toContain('dirtyRef');
-    expect(mapScreen).toContain('lastSubmittedRef');
-    expect(mapScreen).toContain('seqRef');
-    expect(mapScreen).toContain('onLocalChange');
-    expect(mapScreen).toContain('stragglerOverride');
-    expect(mapScreen).toContain('alertsEnabled: effectiveStragglerAlerts');
-    expect(mapScreen).toContain('thresholdM: effectiveStragglerThresholdM');
-    // Must not full-refresh after setStragglerConfig success (causes snap-back).
-    const persistIdx = mapScreen.indexOf('const persistStragglerConfig');
-    const persistBlock = mapScreen.slice(persistIdx, persistIdx + 400);
-    expect(persistBlock).toContain('setStragglerConfig');
-    expect(persistBlock).not.toContain('refresh()');
+  it('removes straggler configuration UI while keeping detection wiring', () => {
+    expect(mapScreen).not.toContain('StragglerConfigSection');
+    expect(mapScreen).not.toContain('stragglerOverride');
+    expect(mapScreen).not.toContain('persistStragglerConfig');
+    expect(mapScreen).not.toContain('setStragglerConfig');
+    expect(mapScreen).not.toContain('onOpenStraggler');
+    expect(settingsOverlay).not.toContain('onOpenStraggler');
+    expect(settingsOverlay).not.toContain("t('straggler.section')");
+    const toolsStart = mapScreen.indexOf('// ─── 工具');
+    const toolsEnd = mapScreen.indexOf('const sheetChildren');
+    const toolsBlock = mapScreen.slice(toolsStart, toolsEnd > 0 ? toolsEnd : toolsStart + 5000);
+    expect(toolsBlock).not.toContain("t('straggler.section')");
+    // Detection + APNs fan-out stay on group fields.
+    expect(mapScreen).toContain('useStragglerAlerts');
+    expect(mapScreen).toContain('alertsEnabled: group?.stragglerAlerts ?? true');
+    expect(mapScreen).toContain('thresholdM: group?.stragglerThresholdM ?? 500');
+    expect(mapScreen).toContain('reportStraggler');
   });
 
   it('keeps peek/mid sheet width stable so tab Segmented does not scale between stages', () => {
@@ -297,6 +352,29 @@ describe('map UI placement contracts', () => {
   it('snaps Segmented pill when track width appears (tools pane reveal)', () => {
     expect(segmented).toContain('widthAppeared');
     expect(segmented).toContain('prevSegWRef');
+  });
+
+  it('applies Liquid Glass only to the main sheet Members/Route/Tools selector', () => {
+    const optionsStart = mapScreen.indexOf('const sheetPaneOptions = useMemo');
+    const sheetChildrenEnd = mapScreen.indexOf('if (loading && !state)', optionsStart);
+    const sheetBlock = mapScreen.slice(
+      optionsStart,
+      sheetChildrenEnd > 0 ? sheetChildrenEnd : optionsStart + 2000,
+    );
+    expect(sheetBlock).toContain('liquidGlass.GlassView');
+    expect(sheetBlock).toContain('unstyledTrack');
+    expect(sheetBlock).toContain("key: 'members'");
+    expect(sheetBlock).toContain("key: 'route'");
+    expect(sheetBlock).toContain("key: 'tools'");
+    expect(sheetBlock).toContain('selectSheetPane');
+    expect(segmented).toContain('unstyledTrack');
+    expect(segmented).toContain('trackUnstyled');
+    expect(segmented).toContain('accessibilityLabel={o.label}');
+    expect(segmented).toContain('accessibilityState={{ selected: active, disabled: locked }}');
+    // Shared Settings segmented controls stay non-glass (no unstyledTrack there).
+    expect(settingsOverlay).toContain('<Segmented');
+    expect(settingsOverlay).not.toContain('unstyledTrack');
+    expect(settingsOverlay).not.toContain('liquidGlass');
   });
 
   it('keeps arrival beside navigation controls and offers timestamp choices', () => {
@@ -402,19 +480,21 @@ describe('map UI placement contracts', () => {
     expect(settingsOverlay).toContain('onOpenFeedback');
   });
 
-  it('puts home/settings/leave on the avatar ⋯ menu and keeps settings out of tools', () => {
+  it('opens Settings directly from the sheet ⋯ button without a platform menu', () => {
     const toolsStart = mapScreen.indexOf('// ─── 工具');
     const toolsEnd = mapScreen.indexOf('const sheetChildren');
     const toolsBlock = mapScreen.slice(toolsStart, toolsEnd);
     expect(toolsBlock).not.toContain("t('map.overlaySettings')");
 
-    const menuStart = mapScreen.indexOf('const openGroupMenu');
-    const menuEnd = mapScreen.indexOf('useEffect(() => {\n    void refreshSentInvites', menuStart);
-    const menuBlock = mapScreen.slice(menuStart, menuEnd > 0 ? menuEnd : menuStart + 1200);
-    expect(menuBlock).toContain("t('map.backToHome')");
-    expect(menuBlock).toContain("t('map.overlaySettings')");
-    expect(menuBlock).toContain("t('group.leave')");
-    expect(menuBlock).not.toContain("t('map.inviteMembers')");
+    const openStart = mapScreen.indexOf('const openSettingsFromSheet');
+    const openEnd = mapScreen.indexOf('useEffect(() => {\n    void refreshSentInvites', openStart);
+    const openBlock = mapScreen.slice(openStart, openEnd > 0 ? openEnd : openStart + 600);
+    expect(openBlock).toContain("'map.open_settings'");
+    expect(openBlock).toContain("setOverlay('settings')");
+    expect(openBlock).not.toContain('ActionSheetIOS');
+    expect(openBlock).not.toContain('Alert.alert');
+    expect(mapScreen).not.toContain('const openGroupMenu');
+    expect(mapScreen).not.toContain('ActionSheetIOS');
     expect(i18n).toContain("'map.backToHome': '回到主畫面'");
   });
 

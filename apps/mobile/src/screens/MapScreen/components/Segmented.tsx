@@ -18,6 +18,11 @@ interface SegmentedProps {
   /** Options shown greyed-out/locked; tapping them calls `onDisabledPress` instead of `onChange`. */
   disabledKeys?: string[];
   onDisabledPress?: (key: string) => void;
+  /**
+   * Opt-in transparent track so a parent Liquid Glass surface can show through.
+   * Default keeps the shared fill used by Settings and other segmented controls.
+   */
+  unstyledTrack?: boolean;
 }
 
 export const Segmented = React.memo(function Segmented({
@@ -27,6 +32,7 @@ export const Segmented = React.memo(function Segmented({
   accent,
   disabledKeys,
   onDisabledPress,
+  unstyledTrack = false,
 }: SegmentedProps) {
   const { scale, boldText } = useFontLayout();
   const dense = options.length >= 5 || boldText || scale >= 1.15;
@@ -84,7 +90,11 @@ export const Segmented = React.memo(function Segmented({
 
   return (
     <View
-      style={[styles.track, { padding: SEG_PAD, gap: SEG_GAP }]}
+      style={[
+        styles.track,
+        unstyledTrack && styles.trackUnstyled,
+        { padding: SEG_PAD, gap: SEG_GAP },
+      ]}
       onLayout={(e) => setTrackW(e.nativeEvent.layout.width)}
     >
       {segW > 0 ? (
@@ -123,6 +133,7 @@ export const Segmented = React.memo(function Segmented({
               }
             }}
             accessibilityRole="button"
+            accessibilityLabel={o.label}
             accessibilityState={{ selected: active, disabled: locked }}
           >
             <Text
@@ -152,6 +163,9 @@ const makeSegStyles = (scale: number, dense: boolean, boldText: boolean) => {
       backgroundColor: glass.fill,
       borderRadius: s(13, 10),
       marginBottom: s(4, 2),
+    },
+    trackUnstyled: {
+      backgroundColor: 'transparent',
     },
     seg: {
       borderRadius: s(10, 8),

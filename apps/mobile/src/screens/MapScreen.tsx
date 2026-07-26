@@ -6,7 +6,6 @@ import React, {
   useState,
 } from 'react';
 import {
-  ActionSheetIOS,
   ActivityIndicator,
   Alert,
   AppState,
@@ -95,6 +94,8 @@ import {
   ARRIVAL_RADIUS_OPTIONS,
   ARRIVAL_RADIUS_MIN_M,
   ARRIVAL_RADIUS_MAX_M,
+  MARQUEE_SPEED_MAX,
+  MARQUEE_SPEED_MIN,
   type Language,
 } from '../state/PreferencesContext';
 import PrefSlider from '../components/PrefSlider';
@@ -191,7 +192,6 @@ import {
   setDestinationMeetTime,
   setJourneyStatus,
   setSolo,
-  setStragglerConfig,
   reportStraggler,
   leaveGroups,
   requestGroupLocationRefresh,
@@ -259,9 +259,6 @@ function arrivalErrorMessage(
   }
   return raw || t('arrival.failedMsg');
 }
-
-/** Preset straggler-alert distance chips shown in settings. */
-const STRAGGLER_THRESHOLD_OPTIONS = [300, 500, 1000, 2000];
 
 /** Short ETA like the design's "4 min" / "now" / "2 hr". */
 function shortEta(seconds: number): string {
@@ -342,6 +339,11 @@ export default function MapScreen({ route, navigation }: Props) {
     setSharingEnabled,
     setArrivalRadiusM,
     setPassiveCompanionMode,
+    setObliqueLocate,
+    setLiveActivityEnabled,
+    setGatherCardDefaultExpanded,
+    setGatherCardTitleMarquee,
+    setGatherCardMarqueeSpeed,
   } = usePreferences();
   const { isCardExpanded, toggleCard, registerCardActivity } =
     useGatherCardExpansion(gatherCardDefaultExpanded);
@@ -1112,7 +1114,7 @@ export default function MapScreen({ route, navigation }: Props) {
       });
   }, [preferencesReady, setSharingEnabled, sharingEnabled, user?.id]);
 
-  const handleSharingEnabledChange = async (enabled: boolean) => {
+  const handleSharingEnabledChange = useCallback(async (enabled: boolean) => {
     setSharingEnabled(enabled);
     if (!enabled) {
       await stopBackgroundJourney().catch(() => undefined);
@@ -1125,7 +1127,7 @@ export default function MapScreen({ route, navigation }: Props) {
     }
     try {
       await setLocationSharingEnabled(enabled);
-    } catch (error) {
+    } catch {
       await diagnostics.write({
         event: 'diagnostic_error',
         errorCode: 'privacy_sync_failed',
@@ -1135,7 +1137,7 @@ export default function MapScreen({ route, navigation }: Props) {
       if (enabled) setSharingEnabled(false);
       Alert.alert(t('settings.locationSharingSyncFailed'));
     }
-  };
+  }, [setSharingEnabled, navigationSessionState, t]);
 
   useEffect(() => {
     if (isLeader || !navigationSessionState.session) {
@@ -1469,29 +1471,12 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // --- Straggler alerts (leader-only, 1:N vs leader GPS) ----------------------
   // Followers never run distance logic; they only receive APNs from the leader.
-  // UI toggle is source of truth while dirty; DB only persists the setting.
-  const [stragglerOverride, setStragglerOverride] = useState<{
-    alerts: boolean;
-    thresholdM: number;
-  } | null>(null);
-  useEffect(() => {
-    if (!group || !stragglerOverride) return;
-    if (
-      group.stragglerAlerts === stragglerOverride.alerts &&
-      group.stragglerThresholdM === stragglerOverride.thresholdM
-    ) {
-      setStragglerOverride(null);
-    }
-  }, [group?.stragglerAlerts, group?.stragglerThresholdM, stragglerOverride]);
-  const effectiveStragglerAlerts =
-    stragglerOverride?.alerts ?? group?.stragglerAlerts ?? true;
-  const effectiveStragglerThresholdM =
-    stragglerOverride?.thresholdM ?? group?.stragglerThresholdM ?? 500;
+  // Configuration UI was removed; detection still reads group fields from DB.
   const { stragglers } = useStragglerAlerts(state, fromCoords ?? undefined, {
     enabled: !!isLeader,
     leaderUserId: user?.id,
-    alertsEnabled: effectiveStragglerAlerts,
-    thresholdM: effectiveStragglerThresholdM,
+    alertsEnabled: group?.stragglerAlerts ?? true,
+    thresholdM: group?.stragglerThresholdM ?? 500,
   });
   // On newly flagged members (hysteresis in the hook), leader fans out APNs
   // via RPC — no local notification (would double-fire for the leader).
@@ -2464,18 +2449,6 @@ export default function MapScreen({ route, navigation }: Props) {
     setOverlay('profile');
   }, []);
 
-  const switchGroup = useCallback(() => {
-    void runUiAction(
-      'map.switch_group',
-      () => {
-        lightTap();
-        setOverlay(null);
-        navigation.navigate('MyTeams');
-      },
-      { screen: 'Map' },
-    );
-  }, [navigation]);
-
   /** RoleSelect create/join home — workflow boundary: reset stack, keep membership. */
   const goHomeCreateOrJoin = useCallback(() => {
     void runUiAction(
@@ -2912,9 +2885,7 @@ export default function MapScreen({ route, navigation }: Props) {
     );
   }, [t, resetPrefs]);
 
-  // Optimistic flip for the straggler-alert switch — the server round trip +
-  // realtime refetch otherwise reads as a 1-2s lag. Cleared once server truth
-  // (group.stragglerAlerts) matches, in the effect below.
+  // Optimistic trip-details flip — clear once server truth matches.
   useEffect(() => {
     if (group && group.tripDays === optimisticTripDays && group.departureDate === optimisticDepartureDate) {
       setOptimisticTripDays(null);
@@ -2956,25 +2927,6 @@ export default function MapScreen({ route, navigation }: Props) {
        }
     }
   }, [groupId, rawDestinations, refresh]);
-  // Persist group setting only — not the live distance loop. UI stays optimistic;
-  // never call refresh() here (realtime would also thrash the toggle).
-  const persistStragglerConfig = useCallback(async (enabled: boolean, thresholdM: number) => {
-    if (!groupId) return;
-    try {
-      await setStragglerConfig(groupId, enabled, thresholdM);
-    } catch (e) {
-      Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
-      throw e;
-    }
-  }, [groupId, t]);
-
-  const handleStragglerLocalChange = useCallback(
-    (config: { alerts: boolean; thresholdM: number } | null) => {
-      setStragglerOverride(config);
-    },
-    [],
-  );
-
   // --- Derived view models --------------------------------------------------
   // Optimistic flip for the Solo switch — server round trip + realtime
   // refetch otherwise take long enough to read as the switch not responding,
@@ -3134,62 +3086,17 @@ export default function MapScreen({ route, navigation }: Props) {
     }
   }, [statusApplying, draftMyStatus, myStatusKind, applyMyStatus, closeMyStatusPicker]);
 
-  const openGroupMenu = useCallback(() => {
+  // ⋯ next to avatar: open Settings directly (home / leave live in Settings personal).
+  const openSettingsFromSheet = useCallback(() => {
     void runUiAction(
-      'map.open_group_menu',
+      'map.open_settings',
       () => {
         lightTap();
-        // ⋯ next to avatar: home / settings / leave — invite lives in Members only.
-        // Index mapping is sync; navigation / mutation still go through runUiAction
-        // inside goHomeCreateOrJoin / confirmLeave.
-        const run = (action: 'home' | 'settings' | 'end') => {
-          if (action === 'home') goHomeCreateOrJoin();
-          else if (action === 'settings') {
-            void runUiAction(
-              'map.open_settings',
-              () => {
-                setOverlay('settings');
-              },
-              { screen: 'Map' },
-            );
-          } else confirmLeave();
-        };
-        if (Platform.OS === 'ios') {
-          ActionSheetIOS.showActionSheetWithOptions(
-            {
-              title: t('map.groupMenu'),
-              options: [
-                t('map.backToHome'),
-                t('map.overlaySettings'),
-                t('group.leave'),
-                t('common.cancel'),
-              ],
-              cancelButtonIndex: 3,
-              destructiveButtonIndex: 2,
-            },
-            (idx) => {
-              if (idx === 0) run('home');
-              else if (idx === 1) run('settings');
-              else if (idx === 2) run('end');
-            },
-          );
-        } else {
-          // Android Alert supports at most 3 buttons; "back to home" remains in Settings.
-          Alert.alert(
-            t('map.groupMenu'),
-            undefined,
-            [
-              { text: t('map.overlaySettings'), onPress: () => run('settings') },
-              { text: t('group.leave'), style: 'destructive', onPress: () => run('end') },
-              { text: t('common.cancel'), style: 'cancel' },
-            ],
-            { cancelable: true },
-          );
-        }
+        setOverlay('settings');
       },
       { screen: 'Map' },
     );
-  }, [t, confirmLeave, goHomeCreateOrJoin]);
+  }, []);
 
   useEffect(() => {
     void refreshSentInvites(mySubgroupId);
@@ -3293,7 +3200,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const sheetHeader = useMemo(() => {
     /* Fixed button roles (never swap meanings across screens):
        - Group name → switch group
-       - ⋯ → group menu (home / settings / leave)
+       - ⋯ → open Settings directly
        - Avatar → personal account only
        - Search → place search only
     */
@@ -3313,9 +3220,9 @@ export default function MapScreen({ route, navigation }: Props) {
         )}
         <Pressable
           style={styles.headerIconBtn}
-          onPress={openGroupMenu}
+          onPress={openSettingsFromSheet}
           accessibilityRole="button"
-          accessibilityLabel={t('map.groupMenu')}
+          accessibilityLabel={t('map.overlaySettings')}
         >
           <Ionicons name="ellipsis-horizontal" size={20} color="#fff" />
         </Pressable>
@@ -3379,7 +3286,7 @@ export default function MapScreen({ route, navigation }: Props) {
       </View>
     );
   }, [
-    styles, t, pendingPlace, user, accent, openProfile, openGroupMenu, flock,
+    styles, t, pendingPlace, user, accent, openProfile, openSettingsFromSheet, flock,
   ]);
 
   const closeOverlay = useCallback(() => {
@@ -3607,12 +3514,144 @@ export default function MapScreen({ route, navigation }: Props) {
     openHistoryOverlay, isLeader, openCoordinateSheet, exceptionOpenCount,
   ]);
 
-  // ─── 工具：抵達距離、快捷指令、脫隊示警（設定改走頭像旁 ⋯ 選單）──────
+  // ─── 工具：地圖/旅程偏好 → 抵達距離 → 快捷指令 ──────────────────────
   const toolsPaneBody = useMemo(() => (
     <>
-      <Text style={[styles.sheetHeading, styles.sheetHeadingFirst]}>
-        {t('arrival.radiusSection')}
-      </Text>
+      <View style={styles.accuracyRow}>
+        <View style={styles.accuracyCopy}>
+          <Text style={styles.accuracyLabel}>
+            {t('settings.passiveCompanionMode')}
+          </Text>
+          <Text style={styles.accuracySubhint}>
+            {t('settings.passiveCompanionModeHint')}
+          </Text>
+        </View>
+        <Switch
+          style={styles.accuracySwitch}
+          value={passiveCompanionMode}
+          onValueChange={setPassiveCompanionMode}
+          trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
+          thumbColor="#fff"
+          ios_backgroundColor="rgba(120,120,128,0.32)"
+          accessibilityLabel={t('settings.passiveCompanionMode')}
+          accessibilityRole="switch"
+          accessibilityState={{ checked: passiveCompanionMode }}
+        />
+      </View>
+      <View style={styles.accuracyRow}>
+        <View style={styles.accuracyCopy}>
+          <Text style={styles.accuracyLabel}>{t('settings.locationSharing')}</Text>
+          <Text style={styles.accuracySubhint}>{t('settings.locationSharingHint')}</Text>
+        </View>
+        <Switch
+          style={styles.accuracySwitch}
+          value={sharingEnabled}
+          onValueChange={(enabled) => {
+            void handleSharingEnabledChange(enabled);
+          }}
+          trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
+          thumbColor="#fff"
+          ios_backgroundColor="rgba(120,120,128,0.32)"
+          accessibilityLabel={t('settings.locationSharing')}
+        />
+      </View>
+      <View style={styles.accuracyRow}>
+        <View style={styles.accuracyCopy}>
+          <Text style={styles.accuracyLabel}>{t('settings.obliqueLocate')}</Text>
+          <Text style={styles.accuracySubhint}>{t('settings.obliqueLocateHint')}</Text>
+        </View>
+        <Switch
+          style={styles.accuracySwitch}
+          value={obliqueLocate}
+          onValueChange={setObliqueLocate}
+          trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
+          thumbColor="#fff"
+          ios_backgroundColor="rgba(120,120,128,0.32)"
+          accessibilityLabel={t('settings.obliqueLocate')}
+        />
+      </View>
+      <View style={styles.accuracyRow}>
+        <View style={styles.accuracyCopy}>
+          <Text style={styles.accuracyLabel}>{t('settings.liveActivity')}</Text>
+          <Text style={styles.accuracySubhint}>{t('settings.liveActivityHint')}</Text>
+        </View>
+        <Switch
+          style={styles.accuracySwitch}
+          value={liveActivityEnabled}
+          onValueChange={setLiveActivityEnabled}
+          trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
+          thumbColor="#fff"
+          ios_backgroundColor="rgba(120,120,128,0.32)"
+          accessibilityLabel={t('settings.liveActivity')}
+        />
+      </View>
+      <View style={styles.accuracyRow}>
+        <View style={styles.accuracyCopy}>
+          <Text style={styles.accuracyLabel}>
+            {t('settings.gatherCardDefaultExpanded')}
+          </Text>
+          <Text style={styles.accuracySubhint}>
+            {t('settings.gatherCardDefaultExpandedHint')}
+          </Text>
+        </View>
+        <Switch
+          style={styles.accuracySwitch}
+          value={gatherCardDefaultExpanded}
+          onValueChange={setGatherCardDefaultExpanded}
+          trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
+          thumbColor="#fff"
+          ios_backgroundColor="rgba(120,120,128,0.32)"
+          accessibilityLabel={t('settings.gatherCardDefaultExpanded')}
+        />
+      </View>
+      <View style={styles.accuracyRow} pointerEvents="box-none">
+        <View style={styles.accuracyCopy} pointerEvents="none">
+          <Text style={styles.accuracyLabel}>
+            {t('settings.gatherCardTitleMarquee')}
+          </Text>
+          <Text style={styles.accuracySubhint}>
+            {t('settings.gatherCardTitleMarqueeHint')}
+          </Text>
+        </View>
+        <Switch
+          style={styles.accuracySwitch}
+          value={Boolean(gatherCardTitleMarquee)}
+          onValueChange={(v) => setGatherCardTitleMarquee(Boolean(v))}
+          trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
+          thumbColor="#fff"
+          ios_backgroundColor="rgba(120,120,128,0.32)"
+          accessibilityLabel={t('settings.gatherCardTitleMarquee')}
+          accessibilityRole="switch"
+          accessibilityState={{ checked: Boolean(gatherCardTitleMarquee) }}
+        />
+      </View>
+      {Boolean(gatherCardTitleMarquee) ? (
+        <View style={styles.marqueeSpeedBlock} pointerEvents="box-none">
+          <View style={styles.marqueeSpeedLabels} pointerEvents="none">
+            <Text style={styles.accuracyLabel}>
+              {t('settings.gatherCardMarqueeSpeed')}
+            </Text>
+            <View style={styles.marqueeSpeedEnds}>
+              <Text style={styles.accuracySubhint}>
+                {t('settings.gatherCardMarqueeSpeedSlow')}
+              </Text>
+              <Text style={styles.accuracySubhint}>
+                {t('settings.gatherCardMarqueeSpeedFast')}
+              </Text>
+            </View>
+          </View>
+          <PrefSlider
+            value={gatherCardMarqueeSpeed}
+            min={MARQUEE_SPEED_MIN}
+            max={MARQUEE_SPEED_MAX}
+            onChange={setGatherCardMarqueeSpeed}
+            accent={accent}
+            accessibilityLabel={t('settings.gatherCardMarqueeSpeed')}
+          />
+        </View>
+      ) : null}
+
+      <Text style={styles.sheetHeading}>{t('arrival.radiusSection')}</Text>
       <View style={styles.accuracyRow}>
         <View style={styles.accuracyCopy}>
           <Text style={styles.accuracyLabel}>
@@ -3645,28 +3684,14 @@ export default function MapScreen({ route, navigation }: Props) {
           }}
         />
       ) : null}
-
-      {isLeader && group && groupId ? (
-        <>
-          <Text style={styles.sheetHeading}>{t('straggler.section')}</Text>
-          <StragglerConfigSection
-            groupAlerts={group.stragglerAlerts}
-            groupThreshold={group.stragglerThresholdM}
-            accent={accent}
-            isPro={isPro}
-            openPaywall={openPaywall}
-            onPersist={persistStragglerConfig}
-            onLocalChange={handleStragglerLocalChange}
-            styles={styles}
-            t={t}
-          />
-        </>
-      ) : null}
     </>
   ), [
-    styles, t, groupId, isLeader, dark, openCustomQuickCommand, group, accent, isPro,
-    openPaywall, persistStragglerConfig, handleStragglerLocalChange,
-    arrivalRadiusM, setArrivalRadiusM,
+    styles, t, groupId, isLeader, dark, openCustomQuickCommand, accent,
+    arrivalRadiusM, setArrivalRadiusM, passiveCompanionMode, setPassiveCompanionMode,
+    sharingEnabled, handleSharingEnabledChange, obliqueLocate, setObliqueLocate,
+    liveActivityEnabled, setLiveActivityEnabled, gatherCardDefaultExpanded,
+    setGatherCardDefaultExpanded, gatherCardTitleMarquee, setGatherCardTitleMarquee,
+    gatherCardMarqueeSpeed, setGatherCardMarqueeSpeed,
   ]);
 
   const sheetPaneOptions = useMemo(
@@ -3680,14 +3705,20 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const sheetChildren = useMemo(() => (
     <>
-      {/* Same sliding-pill animation as 脫隊示警 Segmented */}
+      {/* Main Members/Route/Tools selector — Liquid Glass at this call site only */}
       <View style={styles.sheetPaneToggleWrap}>
-        <Segmented
-          accent={accent}
-          options={sheetPaneOptions}
-          value={sheetPane}
-          onChange={selectSheetPane as (key: string) => void}
-        />
+        <liquidGlass.GlassView
+          tintColor={glass.fill}
+          style={styles.sheetPaneToggleGlass}
+        >
+          <Segmented
+            accent={accent}
+            options={sheetPaneOptions}
+            value={sheetPane}
+            onChange={selectSheetPane as (key: string) => void}
+            unstyledTrack
+          />
+        </liquidGlass.GlassView>
       </View>
 
       <View
@@ -4835,7 +4866,6 @@ export default function MapScreen({ route, navigation }: Props) {
       <SettingsOverlay
         visible={overlay === 'settings'}
         onClose={closeOverlay}
-        isLeader={isLeader}
         onArchiveAllForTest={archiveAllForTest}
         onOpenFeedback={openFeedback}
         onConfirmResetPrefs={confirmResetPrefs}
@@ -4844,20 +4874,7 @@ export default function MapScreen({ route, navigation }: Props) {
         onOpenPaywall={openPaywallCb}
         onOpenAccount={openAccountOverlay}
         onOpenCustomQuickCommand={openCustomQuickCommand}
-        onSharingEnabledChange={(enabled) => {
-          void handleSharingEnabledChange(enabled);
-        }}
         onOpenDiagnostics={() => setOverlay('diagnostics')}
-        onOpenStraggler={() => {
-          setOverlay(null);
-          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-          setSheetPane('tools');
-          if (detent === 0) setDetent(1);
-        }}
-        onSwitchGroup={() => {
-          setOverlay(null);
-          switchGroup();
-        }}
         onGoHome={() => {
           setOverlay(null);
           goHomeCreateOrJoin();
@@ -5901,142 +5918,6 @@ const FlockRow = React.memo(function FlockRow({
   );
 });
 
-interface StragglerConfigSectionProps {
-  groupAlerts: boolean;
-  groupThreshold: number;
-  accent: string;
-  isPro: boolean;
-  openPaywall: (trigger?: TranslationKey) => void;
-  /** Background write of group setting (not live distance). UI does not await this to render. */
-  onPersist: (enabled: boolean, thresholdM: number) => Promise<void>;
-  /** Immediate local config for distance calc; null clears override after rollback. */
-  onLocalChange?: (config: { alerts: boolean; thresholdM: number } | null) => void;
-  styles: any;
-  t: any;
-}
-
-/**
- * Leader-only straggler setting UI.
- * UI is source of truth while the user is interacting; DB/realtime must not yank
- * the Switch/Segmented back mid-tap. `groups.straggler_*` only persists the
- * preference so reopen / other devices / distance gate stay consistent.
- */
-const StragglerConfigSection = React.memo(function StragglerConfigSection({
-  groupAlerts,
-  groupThreshold,
-  accent,
-  isPro,
-  openPaywall,
-  onPersist,
-  onLocalChange,
-  styles,
-  t,
-}: StragglerConfigSectionProps) {
-  const [localAlerts, setLocalAlerts] = useState(groupAlerts);
-  const [localThreshold, setLocalThreshold] = useState(groupThreshold);
-  const dirtyRef = useRef(false);
-  const seqRef = useRef(0);
-  const lastSubmittedRef = useRef({ alerts: groupAlerts, threshold: groupThreshold });
-  const localAlertsRef = useRef(localAlerts);
-  const localThresholdRef = useRef(localThreshold);
-  const groupAlertsRef = useRef(groupAlerts);
-  const groupThresholdRef = useRef(groupThreshold);
-  localAlertsRef.current = localAlerts;
-  localThresholdRef.current = localThreshold;
-  groupAlertsRef.current = groupAlerts;
-  groupThresholdRef.current = groupThreshold;
-
-  // Accept server → UI only when idle, or when server has caught up to our last submit.
-  useEffect(() => {
-    if (dirtyRef.current) {
-      if (
-        groupAlerts === lastSubmittedRef.current.alerts &&
-        groupThreshold === lastSubmittedRef.current.threshold
-      ) {
-        dirtyRef.current = false;
-        setLocalAlerts(groupAlerts);
-        setLocalThreshold(groupThreshold);
-      }
-      return;
-    }
-    setLocalAlerts(groupAlerts);
-    setLocalThreshold(groupThreshold);
-  }, [groupAlerts, groupThreshold]);
-
-  const commit = useCallback(
-    (alerts: boolean, thresholdM: number) => {
-      dirtyRef.current = true;
-      lastSubmittedRef.current = { alerts, threshold: thresholdM };
-      onLocalChange?.({ alerts, thresholdM });
-      const seq = ++seqRef.current;
-      onPersist(alerts, thresholdM).catch(() => {
-        // Last-write-wins: only the latest in-flight request may roll back UI.
-        if (seq !== seqRef.current) return;
-        dirtyRef.current = false;
-        setLocalAlerts(groupAlertsRef.current);
-        setLocalThreshold(groupThresholdRef.current);
-        onLocalChange?.(null);
-      });
-    },
-    [onPersist, onLocalChange],
-  );
-
-  const handleToggle = useCallback(
-    (v: boolean) => {
-      setLocalAlerts(v);
-      localAlertsRef.current = v;
-      commit(v, localThresholdRef.current);
-    },
-    [commit],
-  );
-
-  const handleThresholdChange = useCallback(
-    (v: string) => {
-      const nextVal = Number(v);
-      setLocalThreshold(nextVal);
-      localThresholdRef.current = nextVal;
-      commit(localAlertsRef.current, nextVal);
-    },
-    [commit],
-  );
-
-  return (
-    <>
-      <View style={styles.settingSwitchRow}>
-        <View style={styles.settingSwitchText}>
-          <Text style={styles.settingSwitchLabel}>{t('straggler.section')}</Text>
-        </View>
-        <Switch
-          value={localAlerts}
-          onValueChange={handleToggle}
-          trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
-          thumbColor="#fff"
-        />
-      </View>
-      <Segmented
-        accent={accent}
-        options={STRAGGLER_THRESHOLD_OPTIONS.map((m) => ({
-          key: String(m),
-          label: formatDistance(m),
-        }))}
-        value={String(localThreshold)}
-        onChange={handleThresholdChange}
-        disabledKeys={
-          isPro
-            ? []
-            : STRAGGLER_THRESHOLD_OPTIONS.filter(
-                (m) => m !== FREE_LIMITS.stragglerThresholdM,
-              ).map(String)
-        }
-        onDisabledPress={() => openPaywall('paywall.triggerStraggler')}
-      />
-      <Text style={styles.overlayHint}>{t('straggler.freeNote')}</Text>
-    </>
-  );
-});
-
-
-
 const segStyles = StyleSheet.create({
   track: {
     flexDirection: 'row',
@@ -7019,6 +6900,10 @@ const makeStyles = (
     sheetPaneToggleWrap: {
       marginTop: 14,
       marginBottom: 8,
+    },
+    sheetPaneToggleGlass: {
+      borderRadius: 13,
+      overflow: 'hidden',
     },
     accuracyRowLast: {
       marginTop: 12,
