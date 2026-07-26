@@ -416,14 +416,15 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain('requestTeamEnd');
     expect(mapScreen).toContain("navCmd.action === 'end_point'");
     expect(mapScreen).toContain('runCompleteGatheringStop');
-    // End reconciles session via refresh — not a second cancelSession after complete.
+    // Complete uses the stop RPC; End navigation cancels session separately.
     expect(mapScreen).toContain('navigationSessionState.refresh()');
     const completeFn = mapScreen.slice(
       mapScreen.indexOf('runCompleteGatheringStop = useCallback'),
-      mapScreen.indexOf('runCompleteGatheringStop = useCallback') + 900,
+      mapScreen.indexOf('runCompleteGatheringStop = useCallback') + 1200,
     );
-    expect(completeFn).toContain('completeGatheringStop');
+    expect(completeFn).toContain('completeGatheringStop(groupId, destination.id)');
     expect(completeFn).not.toContain('stopNavigation()');
+    expect(completeFn).not.toContain('requestTeamEnd');
     expect(mapScreen).toContain('sharedTargetId');
     expect(mapScreen).toContain('localTargetId');
     expect(mapScreen).toContain('startLocalRoutePlan');

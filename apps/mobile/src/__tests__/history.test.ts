@@ -87,6 +87,22 @@ describe('pastStopsForHistory / mergeHistoryWithPastStops', () => {
     expect(synthetic[0].status).toBe('missed');
   });
 
+  it('projects closed stops into history even without trip-day gate', () => {
+    const synthetic = pastStopsForHistory(
+      [dest('closed', 1, '2026-07-17T08:00:00.000Z')],
+      {
+        departureDate: null,
+        tripDays: null,
+        now,
+        arrivedDestinationIds: new Set(),
+        userId: 'u1',
+      },
+    );
+    expect(synthetic).toHaveLength(1);
+    expect(synthetic[0].destinationId).toBe('closed');
+    expect(synthetic[0].status).toBe('missed');
+  });
+
   it('skips destinations the viewer already arrived at', () => {
     const synthetic = pastStopsForHistory(
       [dest('day1', 1)],

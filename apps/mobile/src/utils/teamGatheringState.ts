@@ -16,7 +16,8 @@
  * Layering vs `activeGatheringState` (OTA-04 local-first entity):
  * - This module is the live UI projection (session + group + itinerary).
  * - `activeGatheringState` is the offline outbox entity shape.
- * - End semantics are aligned: clear active id, next stays pending, phase staying.
+ * - End navigation = pause: active point reverts to pending (not completed), phase staying.
+ * - Complete stop is separate (closed_at via complete_gathering_stop / history).
  */
 
 /** Global flock travel phase — no clickable "started" phase. */
@@ -502,15 +503,6 @@ function applyEnd(
   point: TeamGatheringPointSnapshot,
   nowIso?: string,
 ): TransitionResult {
-  // Duplicate End on already-completed point with no active travel → converge.
-  if (
-    point.status === 'completed'
-    && state.journeyPhase === 'staying'
-    && !state.hasActiveSession
-  ) {
-    return { ok: false, reason: 'duplicate_transition', state };
-  }
-
   if (state.journeyPhase !== 'en_route') {
     return { ok: false, reason: 'global_not_en_route', state };
   }
@@ -518,30 +510,28 @@ function applyEnd(
     return { ok: false, reason: 'point_not_en_route', state };
   }
 
-  const closedAt = nowIso ?? new Date().toISOString();
+  // Pause only: keep the stop open (pending). Complete is a separate action.
   const points = state.points.map((p) =>
     p.id === point.id
-      ? { ...p, status: 'completed' as const, closedAt }
+      ? { ...p, status: 'pending' as const, closedAt: null }
       : p,
   );
-  // Ensure completed row exists when synthetic.
   if (!points.some((p) => p.id === point.id)) {
     points.push({
       id: point.id,
       order: point.order,
-      status: 'completed',
-      closedAt,
+      status: 'pending',
+      closedAt: null,
     });
   }
-  const nextPending = points.find((p) => p.status === 'pending')?.id ?? null;
   const next: TeamGatheringState = {
     journeyPhase: 'staying',
-    // Server complete_gathering_stop nulls active_destination_id.
+    // Soft cursor on the paused point so Start can resume it.
     activePointId: null,
-    nextPendingPointId: nextPending,
+    nextPendingPointId: point.id,
     points,
     version: stayingVersionFromServerFields(points),
-    phaseChangedAt: nowIso ?? closedAt,
+    phaseChangedAt: nowIso ?? new Date().toISOString(),
     hasActiveSession: false,
   };
   return { ok: true, state: next, transition: 'end' };

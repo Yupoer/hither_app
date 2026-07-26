@@ -4,9 +4,9 @@
  * Layering (OTA-01):
  * - `teamGatheringState` is the live map/session projection source of truth.
  * - This module is the offline outbox entity shape used by coreDataStore.
- * - End semantics match server `complete_gathering_stop` and teamGatheringState:
- *   completed point, global `staying`, **activeDestinationId cleared (null)**,
- *   next point remains pending until Start (not auto en_route).
+ * - End navigation = pause travel (`endGathering`): point stays pending, no closed_at.
+ * - Complete stop = `completeGathering` + server `complete_gathering_stop` (closed_at / history).
+ * - Switch pauses the prior en_route point without completing it.
  *
  * Personal progress/nav response must never call these transitions.
  */
@@ -23,7 +23,8 @@ const VALID_POINT_TRANSITIONS: Record<
   readonly GatheringPointStatus[]
 > = {
   pending: ['en_route'],
-  en_route: ['completed'],
+  // Pause (End navigation) reverts en_route → pending; complete is separate.
+  en_route: ['completed', 'pending'],
   completed: [],
 };
 
@@ -176,10 +177,10 @@ export function mergeGatheringPointStatuses(
 }
 
 /**
- * End current en_route point → completed; global staying.
- * Next pending becomes the soft active cursor (still pending until Start) so
- * offline clients and versioned ops preserve itinerary advance.
- * Pass `nextDestinationId: null` to force no next cursor.
+ * End navigation (pause): en_route → pending, global staying.
+ * Does **not** complete the stop — card stays on itinerary, no closed_at.
+ * Soft cursor stays on the same point so Start can resume it.
+ * Pass `nextDestinationId` only to override the soft cursor (rare).
  */
 export function endGathering(
   state: ActiveGatheringState,
@@ -189,19 +190,15 @@ export function endGathering(
   if (!canEndGathering(state) || !state.activeDestinationId) {
     throw new Error('invalid_transition:end_gathering');
   }
-  const completedId = state.activeDestinationId;
+  const pausedId = state.activeDestinationId;
 
   const pointStatuses: Record<string, GatheringPointStatus> = {
     ...state.pointStatuses,
-    [completedId]: 'completed',
+    [pausedId]: 'pending',
   };
-  const autoNext = nextPendingDestinationId(
-    { ...state, pointStatuses },
-    completedId,
-  );
-  // Explicit null clears the cursor; undefined → auto next pending.
+  // Explicit null clears the cursor; undefined → stay on the paused point.
   const nextId =
-    nextDestinationId === undefined ? autoNext : nextDestinationId;
+    nextDestinationId === undefined ? pausedId : nextDestinationId;
   if (nextId && !pointStatuses[nextId]) {
     pointStatuses[nextId] = 'pending';
   }
@@ -209,8 +206,55 @@ export function endGathering(
   return {
     ...state,
     journeyPhase: 'staying',
-    // Soft cursor for next Start (point remains pending, not en_route).
+    // Soft cursor for next Start (same open point, still pending).
     activeDestinationId: nextId,
+    phaseChangedAt: nowMs,
+    entityVersion: state.entityVersion + 1,
+    pointStatuses,
+  };
+}
+
+/**
+ * Complete a gathering stop for the team: mark completed + advance soft cursor.
+ * Pair with server `complete_gathering_stop` (sets closed_at / history).
+ * Safe while staying or en_route; if en_route on another point, only this id completes.
+ */
+export function completeGathering(
+  state: ActiveGatheringState,
+  destinationId: string,
+  nowMs: number,
+): ActiveGatheringState {
+  if (!destinationId) {
+    throw new Error('invalid_transition:complete_gathering');
+  }
+  if (pointStatusOf(state, destinationId) === 'completed') {
+    return state;
+  }
+
+  const pointStatuses: Record<string, GatheringPointStatus> = {
+    ...state.pointStatuses,
+    [destinationId]: 'completed',
+  };
+  const wasActiveEnRoute =
+    state.journeyPhase === 'en_route'
+    && state.activeDestinationId === destinationId;
+  const nextId = nextPendingDestinationId(
+    { ...state, pointStatuses },
+    destinationId,
+  );
+  if (nextId && !pointStatuses[nextId]) {
+    pointStatuses[nextId] = 'pending';
+  }
+
+  return {
+    ...state,
+    journeyPhase: wasActiveEnRoute || state.journeyPhase === 'staying'
+      ? 'staying'
+      : state.journeyPhase,
+    activeDestinationId:
+      wasActiveEnRoute || state.activeDestinationId === destinationId
+        ? nextId
+        : state.activeDestinationId,
     phaseChangedAt: nowMs,
     entityVersion: state.entityVersion + 1,
     pointStatuses,
