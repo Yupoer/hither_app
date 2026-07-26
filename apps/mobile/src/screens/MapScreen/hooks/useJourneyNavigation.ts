@@ -17,6 +17,7 @@ import {
   abortLeaderGatheringStart,
   enqueueLeaderGatheringEnd,
   enqueueLeaderGatheringStart,
+  enqueueLeaderGatheringSwitch,
   flushCoreOperationOutbox,
 } from '../../../state/coreDataSync';
 import { logEvent } from '../../../utils/activityLog';
@@ -43,7 +44,11 @@ interface UseJourneyNavigationParams {
   setSelectedIndex: (index: number) => void;
   /** Undefined means legacy data is still hydrating; null means no active session. */
   navigationSession?: NavigationSession | null;
-  startSession?: (destinationId: string, requestId: string) => Promise<NavigationSession>;
+  startSession?: (
+    destinationId: string,
+    requestId: string,
+    replaceExisting?: boolean,
+  ) => Promise<NavigationSession>;
   /** Kept for callers that still pass the old terminal handler. */
   cancelSession?: () => Promise<NavigationSession | null>;
   /** Re-read the server session when a start response was ambiguous. */
@@ -250,20 +255,9 @@ export function useJourneyNavigation({
     if (!groupId || !startSession) return;
     const { destination: dest, index } = intent;
 
-    // If another point is already active, serialize its End before the new
-    // Start. A later tap can still replace this intent while End is in flight.
-    if (sharedTargetId && sharedTargetId !== dest.id) {
-      const current = navigationDestinations.find((item) => item.id === sharedTargetId);
-      if (current) {
-        await runTeamEnd({
-          sequence: intent.sequence,
-          action: 'end',
-          destination: current,
-          index: navigationDestinations.indexOf(current),
-        });
-      }
-      if (desiredTeamIntentRef.current) return;
-    }
+    // A Start on another open point is a switch, not End. Keep the old point
+    // pending (never completed/closed) and replace the active session atomically.
+    const switching = Boolean(sharedTargetId && sharedTargetId !== dest.id);
 
     setJourneyBusy(true);
     setPendingLeaderStop(false);
@@ -280,12 +274,28 @@ export function useJourneyNavigation({
     try {
       const baseState = gatheringStateRef.current
         ?? (state ? deriveActiveGatheringFromGroupState(state, 0) : undefined);
-      enqueued = await enqueueLeaderGatheringStart(groupId, {
-        baseState,
-        groupState: state,
-        activeDestinationId: dest.id,
-        flushImmediately: false,
-      });
+      enqueued = switching
+        ? await enqueueLeaderGatheringSwitch(groupId, {
+            baseState,
+            groupState: state,
+            activeDestinationId: dest.id,
+            flushImmediately: false,
+          })
+        : await enqueueLeaderGatheringStart(groupId, {
+            baseState,
+            groupState: state,
+            activeDestinationId: dest.id,
+            flushImmediately: false,
+          });
+      // Switch and Start share the same local-first optimistic contract; the
+      // session RPC below is the server-side handoff and must succeed first.
+      if (switching) {
+        logEvent('nav_switch_requested', {
+          fromDestId: sharedTargetId,
+          destId: dest.id,
+          sequence: intent.sequence,
+        });
+      }
       gatheringStateRef.current = enqueued.local;
       pendingStartRef.current = { operationId: enqueued.operationId, base: enqueued.base };
       onOptimisticGathering?.(enqueued.local);
@@ -303,7 +313,11 @@ export function useJourneyNavigation({
         requestRef.current = { destinationId: dest.id, requestId: createRequestId() };
       }
       try {
-        await startSession(dest.id, requestRef.current.requestId);
+        if (switching) {
+          await startSession(dest.id, requestRef.current.requestId, true);
+        } else {
+          await startSession(dest.id, requestRef.current.requestId);
+        }
         requestRef.current = null;
         serverOrStartedSessionRef.current = true;
         pendingStartRef.current = null;

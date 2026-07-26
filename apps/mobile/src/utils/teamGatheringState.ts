@@ -25,7 +25,7 @@ export type JourneyPhase = 'staying' | 'en_route';
 /** Single gathering-point lifecycle. */
 export type PointStatus = 'pending' | 'en_route' | 'completed';
 
-export type TeamGatheringTransition = 'start' | 'end';
+export type TeamGatheringTransition = 'start' | 'switch' | 'end';
 
 export type TeamGatheringRejectReason =
   | 'not_leader'
@@ -268,11 +268,11 @@ export function teamStartBlockReason(
   state: TeamGatheringState,
   pointId: string,
 ): TeamStartBlockReason | null {
-  if (state.hasActiveSession) return 'active_session';
-  if (state.journeyPhase !== 'staying') return 'not_staying';
-  if (state.activePointId) return 'active_point';
-  if (state.nextPendingPointId !== pointId) return 'not_next_pending';
-  if (getPointStatus(state, pointId) !== 'pending') return 'not_pending';
+  const status = getPointStatus(state, pointId);
+  if (status == null) return 'not_pending';
+  if (status === 'completed') return 'not_pending';
+  // A Start on another open point is a leader switch intent. It is allowed
+  // while an active session exists; the runner/server atomically replaces it.
   return null;
 }
 
@@ -390,7 +390,7 @@ export function applyTeamGatheringTransition(
   }
 
   const point = state.points.find((p) => p.id === input.pointId);
-  if (!point && input.transition === 'start') {
+  if (!point && (input.transition === 'start' || input.transition === 'switch')) {
     return { ok: false, reason: 'unknown_point', state };
   }
   // End may target active session id even when point row is synthetic/missing.
@@ -401,7 +401,13 @@ export function applyTeamGatheringTransition(
   }
 
   if (input.transition === 'start') {
+    if (state.journeyPhase === 'en_route' && state.activePointId !== input.pointId) {
+      return applySwitch(state, point!, input.nowIso);
+    }
     return applyStart(state, point!, input.nowIso);
+  }
+  if (input.transition === 'switch') {
+    return applySwitch(state, point!, input.nowIso);
   }
   return applyEnd(
     state,
@@ -455,6 +461,40 @@ function applyStart(
     hasActiveSession: true,
   };
   return { ok: true, state: next, transition: 'start' };
+}
+
+function applySwitch(
+  state: TeamGatheringState,
+  point: TeamGatheringPointSnapshot,
+  nowIso?: string,
+): TransitionResult {
+  if (point.status === 'completed') {
+    return { ok: false, reason: 'point_not_pending', state };
+  }
+  if (state.journeyPhase === 'en_route' && state.activePointId === point.id) {
+    return { ok: false, reason: 'duplicate_transition', state };
+  }
+  const points = state.points.map((p) => {
+    if (p.id === state.activePointId && p.status === 'en_route') {
+      return { ...p, status: 'pending' as const };
+    }
+    if (p.id === point.id) return { ...p, status: 'en_route' as const };
+    return p;
+  });
+  return {
+    ok: true,
+    transition: 'switch',
+    state: {
+      ...state,
+      journeyPhase: 'en_route',
+      activePointId: point.id,
+      nextPendingPointId: points.find((p) => p.status === 'pending')?.id ?? null,
+      points,
+      version: state.version + 1,
+      phaseChangedAt: nowIso ?? state.phaseChangedAt ?? null,
+      hasActiveSession: true,
+    },
+  };
 }
 
 function applyEnd(

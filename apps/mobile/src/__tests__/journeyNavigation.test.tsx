@@ -3,6 +3,7 @@ import { deleteDestination, reorderDestinations } from '../api/client';
 import {
   abortLeaderGatheringStart,
   enqueueLeaderGatheringStart,
+  enqueueLeaderGatheringSwitch,
   flushCoreOperationOutbox,
 } from '../state/coreDataSync';
 import { useJourneyNavigation } from '../screens/MapScreen/hooks/useJourneyNavigation';
@@ -34,6 +35,7 @@ jest.mock('../api/client', () => ({
 jest.mock('../state/coreDataSync', () => ({
   abortLeaderGatheringStart: jest.fn().mockResolvedValue(undefined),
   enqueueLeaderGatheringStart: jest.fn(),
+  enqueueLeaderGatheringSwitch: jest.fn(),
   flushCoreOperationOutbox: jest.fn().mockResolvedValue(undefined),
 }));
 
@@ -70,12 +72,18 @@ const pausedState = {
 describe('useJourneyNavigation', () => {
   beforeEach(() => {
     jest.mocked(enqueueLeaderGatheringStart).mockReset();
+    jest.mocked(enqueueLeaderGatheringSwitch).mockReset();
     jest.mocked(abortLeaderGatheringStart).mockReset();
     jest.mocked(flushCoreOperationOutbox).mockReset();
     jest.mocked(enqueueLeaderGatheringStart).mockResolvedValue({
       local: optimisticGathering,
       base: baseGathering,
       operationId: 'op-start-1',
+    });
+    jest.mocked(enqueueLeaderGatheringSwitch).mockResolvedValue({
+      local: optimisticGathering,
+      base: baseGathering,
+      operationId: 'op-switch-1',
     });
     jest.mocked(abortLeaderGatheringStart).mockResolvedValue(undefined);
     jest.mocked(flushCoreOperationOutbox).mockResolvedValue(undefined as never);
@@ -200,6 +208,52 @@ describe('useJourneyNavigation', () => {
     expect(navigation?.navTarget?.id).toBe(destination.id);
     expect(navigation?.journeyActive).toBe(true);
     expect(startSession).toHaveBeenCalledWith(destination.id, 'request-1');
+  });
+
+  it('switches an active point without ending or completing the old point', async () => {
+    const later = { ...destination, id: 'destination-2', order: 1 };
+    const goingState = {
+      ...pausedState,
+      group: {
+        ...pausedState.group,
+        journeyStatus: 'going',
+        activeDestinationId: destination.id,
+      },
+      destinations: [destination, later],
+    } as GroupState;
+    const startSession = jest.fn().mockResolvedValue({
+      id: 'session-switch',
+      status: 'active',
+      destinationId: later.id,
+    } as NavigationSession);
+    let navigation: ReturnType<typeof useJourneyNavigation> | undefined;
+    function Harness() {
+      navigation = useJourneyNavigation({
+        state: goingState,
+        groupId: 'group-1',
+        isLeader: true,
+        destinations: [destination, later],
+        selectedDestination: later,
+        fromCoords: undefined,
+        refresh: jest.fn(),
+        t: (key) => key,
+        mapRef: { current: null },
+        carouselRef: { current: null },
+        setSelectedIndex: jest.fn(),
+        startSession,
+        createRequestId: () => 'request-switch',
+      });
+      return null;
+    }
+    act(() => { create(React.createElement(Harness)); });
+    await act(async () => { await navigation?.startNavigation(later, 1); });
+
+    expect(enqueueLeaderGatheringSwitch).toHaveBeenCalledWith(
+      'group-1',
+      expect.objectContaining({ activeDestinationId: later.id, flushImmediately: false }),
+    );
+    expect(startSession).toHaveBeenCalledWith(later.id, 'request-switch', true);
+    expect(enqueueLeaderGatheringStart).not.toHaveBeenCalled();
   });
 
   it('promotes the later stop then starts the session in that order', async () => {

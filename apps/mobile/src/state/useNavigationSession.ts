@@ -133,9 +133,15 @@ export function useNavigationSession(groupId: string | null) {
   const start = useCallback(async (
     destinationId: string,
     requestId: string,
+    replaceExisting = false,
   ) => {
     if (!groupId) throw new Error('缺少群組');
-    const next = await startNavigationSession(groupId, destinationId, requestId);
+    const next = await startNavigationSession(
+      groupId,
+      destinationId,
+      requestId,
+      replaceExisting,
+    );
     acceptSession(next);
     return next;
   }, [acceptSession, groupId]);

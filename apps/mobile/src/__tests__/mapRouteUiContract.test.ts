@@ -15,6 +15,19 @@ describe('MapKit route UI contract', () => {
     expect(groupMap).toContain('pitch: 45');
   });
 
+  it('nudges iOS map chrome without moving Android controls', () => {
+    expect(groupMap).toContain('compassOffset');
+    expect(groupMap).toContain('appleLogoInsets');
+    expect(groupMap).toContain('bottomOverlap + 8');
+    expect(groupMap).toContain("Platform.OS === 'ios'");
+  });
+
+  it('keeps gathering switch separate from completing a point', () => {
+    expect(journeyNavigation).toContain('enqueueLeaderGatheringSwitch');
+    expect(journeyNavigation).toContain('const switching =');
+    expect(journeyNavigation).not.toContain('runTeamEnd({\n          sequence: intent.sequence');
+  });
+
   it('uses member-to-gathering MapKit routes in the flock rows', () => {
     expect(mapScreen).toContain('useMapKitRoutes({');
     expect(mapScreen).toContain('memberRoutes[m.userId]');

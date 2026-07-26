@@ -32,6 +32,7 @@ export type CoreEntityType =
 export type CoreOperationType =
   | 'replace_snapshot'
   | 'start_gathering'
+  | 'switch_gathering'
   | 'end_gathering'
   | 'set_navigation_response';
 

@@ -24,6 +24,7 @@ import {
   endGathering,
   isUsableActiveGatheringState,
   startGathering,
+  switchGathering,
 } from '../utils/activeGatheringState';
 import type { CoreDataDatabase, CoreSqlExecutor } from './coreDataStore';
 import { getHitherDatabase } from './hitherDatabase';
@@ -405,10 +406,10 @@ function backoffMs(attempts: number): number {
 export interface EnqueueGatheringInput {
   operationId?: string;
   groupId: string;
-  action: 'start' | 'end';
+  action: 'start' | 'switch' | 'end';
   nextDestinationId?: string | null;
   baseState: ActiveGatheringState;
-  /** Optional destination id for start when base has none selected. */
+  /** Destination id for start/switch when base has none selected. */
   activeDestinationId?: string | null;
 }
 
@@ -480,10 +481,18 @@ export function createCoreOperationOutbox(
         && operation.entityType === 'active_gathering'
       ) {
         if (isUsableActiveGatheringState(result.entity)) {
-          // Server-accepted entity is authoritative remote state.
-          await coreDb.putActiveGathering(result.entity, {
-            patchSnapshot: 'remote',
-          });
+          // A newer leader intent may already be local. Never let an older
+          // accepted response clobber that pending local state.
+          const newerPending = await outboxDb.countPendingForEntity(
+            operation.groupId,
+            operation.entityType,
+            operation.entityId,
+          );
+          if (newerPending === 0) {
+            await coreDb.putActiveGathering(result.entity, {
+              patchSnapshot: 'remote',
+            });
+          }
         }
       }
       if (
@@ -501,24 +510,26 @@ export function createCoreOperationOutbox(
     }
 
     const conflict = result.conflict;
+    // Conflicts are recoverable transport metadata, not a user-facing state.
+    // Keep the leader's optimistic entity intact; a later foreground flush or
+    // explicit rebase can retry the desired intent against the new version.
     await outboxDb.update({
       ...operation,
-      status: 'conflict',
+      // A leader switch can safely rebase on the server version because its
+      // payload is an intent (target id), not a stale full-state replacement.
+      entityVersion:
+        operation.operationType === 'switch_gathering'
+        && conflict.serverEntityVersion != null
+          ? conflict.serverEntityVersion
+          : operation.entityVersion,
+      status: 'failed',
       conflictResult: conflict,
+      attempts: operation.attempts + 1,
+      nextAttemptAt: current + backoffMs(operation.attempts + 1),
       updatedAt: current,
     });
-    // Only write back server gathering when shape is valid (never empty {}).
     if (
       conflict.serverState
-      && operation.entityType === 'active_gathering'
-      && isUsableActiveGatheringState(conflict.serverState)
-    ) {
-      await coreDb.putActiveGathering(conflict.serverState, {
-        patchSnapshot: 'remote',
-      });
-    } else if (
-      conflict.serverState
-      && typeof conflict.serverState === 'object'
       && operation.entityType === 'navigation_response'
     ) {
       const entity = conflict.serverState as NavigationAnnouncementResponse;
@@ -528,6 +539,7 @@ export function createCoreOperationOutbox(
     }
     notifyCoreOutboxChanged();
     return 'conflict';
+
   };
 
   return {
@@ -547,6 +559,7 @@ export function createCoreOperationOutbox(
         const current = now();
         const base =
           input.activeDestinationId
+          && input.action === 'start'
           && !input.baseState.activeDestinationId
             ? {
                 ...input.baseState,
@@ -556,7 +569,13 @@ export function createCoreOperationOutbox(
         const local =
           input.action === 'start'
             ? startGathering(base, current)
-            : endGathering(base, current, input.nextDestinationId);
+            : input.action === 'switch'
+              ? switchGathering(
+                  base,
+                  input.activeDestinationId ?? '',
+                  current,
+                )
+              : endGathering(base, current, input.nextDestinationId);
 
         // Post-end next cursor must ship in payload (not only pre-end input).
         const nextDestinationIdForPayload =
@@ -573,14 +592,18 @@ export function createCoreOperationOutbox(
           entityId: input.groupId,
           entityVersion: base.entityVersion,
           operationType:
-            input.action === 'start' ? 'start_gathering' : 'end_gathering',
+            input.action === 'start'
+              ? 'start_gathering'
+              : input.action === 'switch'
+                ? 'switch_gathering'
+                : 'end_gathering',
           payload: {
             action: input.action,
             nextDestinationId: nextDestinationIdForPayload,
             activeDestinationId:
-              input.action === 'start'
-                ? local.activeDestinationId
-                : base.activeDestinationId,
+              input.action === 'end'
+                ? base.activeDestinationId
+                : local.activeDestinationId,
             result: local,
           },
           createdAt: current,
@@ -866,6 +889,20 @@ export function createLocalCoreOperationApplicator(
               .activeDestinationId as string;
           }
           next = startGathering(base, Date.now());
+        } else if (operation.operationType === 'switch_gathering') {
+          const base = current ?? {
+            groupId: operation.groupId,
+            journeyPhase: 'staying' as const,
+            activeDestinationId: null,
+            pointStatuses: {},
+            phaseChangedAt: 0,
+            entityVersion: 0,
+          };
+          next = switchGathering(
+            base,
+            operation.payload.activeDestinationId as string,
+            Date.now(),
+          );
         } else if (operation.operationType === 'end_gathering') {
           if (!current) {
             throw new Error('invalid_transition:end_gathering');

@@ -57,16 +57,29 @@ function mapConflict(
 export async function applyCoreOperation(
   operation: CoreOperation,
 ): Promise<ApplyCoreOperationResult> {
-  const { data, error } = await supabase.rpc('apply_core_operation', {
-    p_operation_id: operation.id,
-    p_group_id: operation.groupId,
-    p_entity_type: operation.entityType,
-    p_entity_id: operation.entityId,
-    p_entity_version: operation.entityVersion,
-    p_operation_type: operation.operationType,
-    p_payload: operation.payload,
-    p_created_at: new Date(operation.createdAt).toISOString(),
-  });
+  const rpcName = operation.operationType === 'switch_gathering'
+    ? 'apply_leader_gathering_switch'
+    : 'apply_core_operation';
+  const rpcArgs = operation.operationType === 'switch_gathering'
+    ? {
+        p_operation_id: operation.id,
+        p_group_id: operation.groupId,
+        p_entity_id: operation.entityId,
+        p_entity_version: operation.entityVersion,
+        p_destination_id: operation.payload.activeDestinationId,
+        p_created_at: new Date(operation.createdAt).toISOString(),
+      }
+    : {
+        p_operation_id: operation.id,
+        p_group_id: operation.groupId,
+        p_entity_type: operation.entityType,
+        p_entity_id: operation.entityId,
+        p_entity_version: operation.entityVersion,
+        p_operation_type: operation.operationType,
+        p_payload: operation.payload,
+        p_created_at: new Date(operation.createdAt).toISOString(),
+      };
+  const { data, error } = await supabase.rpc(rpcName, rpcArgs);
   orThrow(error);
 
   const row = (Array.isArray(data) ? data[0] : data) as ApplyRpcRow | null;

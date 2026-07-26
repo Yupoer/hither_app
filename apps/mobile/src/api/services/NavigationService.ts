@@ -97,8 +97,12 @@ export async function startNavigationSession(
   groupId: string,
   destinationId: string,
   requestId: string,
+  replaceExisting = false,
 ): Promise<NavigationSession> {
-  const { data, error } = await supabase.rpc('start_navigation_session', {
+  const rpc = replaceExisting
+    ? 'start_navigation_session_switch'
+    : 'start_navigation_session';
+  const { data, error } = await supabase.rpc(rpc, {
     p_group_id: groupId,
     p_destination_id: destinationId,
     p_request_id: requestId,

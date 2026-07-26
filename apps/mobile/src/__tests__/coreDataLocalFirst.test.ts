@@ -23,6 +23,7 @@ import {
   deriveActiveGatheringFromGroupState,
   endGathering,
   startGathering,
+  switchGathering,
 } from '../utils/activeGatheringState';
 import {
   classifySnapshotRead,
@@ -121,6 +122,23 @@ describe('OTA-04 active gathering semantics (OTA-01)', () => {
     expect(() => endGathering(base, 1)).toThrow(/invalid_transition/);
     const started = startGathering(base, 1);
     expect(() => startGathering(started, 2)).toThrow(/invalid_transition/);
+  });
+
+  it('switches the active point without completing the previous point', () => {
+    const base = deriveActiveGatheringFromGroupState(makeState(), 0);
+    const started = startGathering(base, 1_000);
+    const switched = switchGathering(started, 'd2', 2_000);
+
+    expect(switched.journeyPhase).toBe('en_route');
+    expect(switched.activeDestinationId).toBe('d2');
+    expect(switched.pointStatuses.d1).toBe('pending');
+    expect(switched.pointStatuses.d2).toBe('en_route');
+    expect(switched.pointStatuses.d3).toBe('pending');
+    expect(switched.entityVersion).toBe(started.entityVersion + 1);
+
+    const same = switchGathering(switched, 'd2', 3_000);
+    expect(same).toBe(switched);
+    expect(() => switchGathering(switched, 'missing', 4_000)).toThrow(/unknown_gathering/);
   });
 
   it('converges two clients by entity version', () => {
@@ -583,10 +601,13 @@ describe('OTA-04 operation outbox (ticket 02)', () => {
     const result = await outbox.flush();
     expect(result.conflicts).toBe(1);
     const op = await outbox.getOperation('op-stale');
-    expect(op?.status).toBe('conflict');
+    expect(op?.status).toBe('failed');
     expect(op?.conflictResult?.code).toBe('stale_version');
+    // Leader local state remains authoritative; remote stale state cannot
+    // clobber the optimistic gathering or erase its point map.
     await expect(coreDb.getActiveGathering('group-1')).resolves.toMatchObject({
-      entityVersion: serverAhead.entityVersion,
+      journeyPhase: 'en_route',
+      pointStatuses: expect.objectContaining({ d1: 'en_route' }),
     });
   });
 
@@ -778,6 +799,15 @@ describe('OTA-04 contract surfaces', () => {
     expect(hardened).toContain('for update');
     expect(hardened).not.toContain('jsonb_object_keys(v_point_statuses)');
 
+    const switchMigration = fs.readFileSync(
+      path.join(root, 'supabase/migrations/20260726000200_leader_gathering_switch.sql'),
+      'utf8',
+    );
+    expect(switchMigration).toContain('create or replace function public.apply_leader_gathering_switch');
+    expect(switchMigration).toContain('create or replace function public.start_navigation_session_switch');
+    expect(switchMigration).toContain("v_statuses := v_statuses || jsonb_build_object(v_old, 'pending')");
+    expect(switchMigration).toContain('never writes itinerary_items.closed_at');
+
     const pgtap = fs.readFileSync(
       path.join(root, 'supabase/tests/core_operation_gathering_validation.test.sql'),
       'utf8',
@@ -837,8 +867,18 @@ describe('OTA-04 contract surfaces', () => {
     expect(map).toContain('enqueueLeaderGatheringEnd');
     expect(map).toContain('applyOptimisticGathering');
     expect(map).toContain('respondToAnnouncement');
-    expect(map).toContain('coreData.syncConflict');
+    expect(map).not.toContain('hasCoreConflict');
     expect(map).toContain('coreData.pendingSync');
+    expect(journey).toContain('enqueueLeaderGatheringSwitch');
+    expect(journey).toContain('startSession(dest.id, requestRef.current.requestId, true)');
+    const navigationService = fs.readFileSync(
+      path.join(__dirname, '../api/services/NavigationService.ts'),
+      'utf8',
+    );
+    expect(navigationService).toContain('start_navigation_session_switch');
+    expect(coreSync).toContain("action: 'switch'");
+    expect(coreSync).toContain('Leader switch');
+    expect(map).not.toContain("t('coreData.syncConflict')");
     expect(navSession).toContain('enqueuePersonalNavigationResponse');
     expect(navSession).toContain('respondToAnnouncement');
     expect(groupState).toContain('subscribeCoreOutboxChanges');

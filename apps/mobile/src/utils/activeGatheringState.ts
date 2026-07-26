@@ -95,17 +95,84 @@ export function startGathering(
   if (!destId) {
     throw new Error('invalid_transition:start_gathering');
   }
+  return startGatheringAt(state, destId, nowMs);
+}
+
+/**
+ * Leader switch: pause the currently travelling point and start another open
+ * point without completing either point. This is intentionally separate from
+ * `endGathering`, because switching must never write a closed_at/history row.
+ */
+export function switchGathering(
+  state: ActiveGatheringState,
+  destinationId: string,
+  nowMs: number,
+): ActiveGatheringState {
+  if (!destinationId || !(destinationId in state.pointStatuses)) {
+    throw new Error('invalid_transition:unknown_gathering');
+  }
+  const targetStatus = pointStatusOf(state, destinationId);
+  if (targetStatus === 'completed') {
+    throw new Error('invalid_transition:switch_completed_gathering');
+  }
+  if (state.journeyPhase === 'en_route' && state.activeDestinationId === destinationId) {
+    return state;
+  }
+  return startGatheringAt(
+    {
+      ...state,
+      journeyPhase: 'staying',
+      activeDestinationId: null,
+      pointStatuses: state.activeDestinationId
+        && pointStatusOf(state, state.activeDestinationId) === 'en_route'
+        ? { ...state.pointStatuses, [state.activeDestinationId]: 'pending' }
+        : { ...state.pointStatuses },
+    },
+    destinationId,
+    nowMs,
+  );
+}
+
+function startGatheringAt(
+  state: ActiveGatheringState,
+  destinationId: string,
+  nowMs: number,
+): ActiveGatheringState {
+  if (pointStatusOf(state, destinationId) === 'completed') {
+    throw new Error('invalid_transition:start_completed_gathering');
+  }
   return {
     ...state,
     journeyPhase: 'en_route',
-    activeDestinationId: destId,
+    activeDestinationId: destinationId,
     phaseChangedAt: nowMs,
     entityVersion: state.entityVersion + 1,
     pointStatuses: {
       ...state.pointStatuses,
-      [destId]: 'en_route',
+      [destinationId]: 'en_route',
     },
   };
+}
+
+/** Whether an open destination can be selected by a leader switch intent. */
+export function canSwitchGathering(
+  state: ActiveGatheringState,
+  destinationId: string,
+): boolean {
+  return pointStatusOf(state, destinationId) !== 'completed';
+}
+
+/** Keep the full local point map when a valid remote state is merged. */
+export function mergeGatheringPointStatuses(
+  local: ActiveGatheringState,
+  remote: ActiveGatheringState,
+): ActiveGatheringState {
+  if (local.groupId !== remote.groupId) return local;
+  const pointStatuses = { ...remote.pointStatuses };
+  for (const [id, status] of Object.entries(local.pointStatuses)) {
+    if (!(id in pointStatuses)) pointStatuses[id] = status;
+  }
+  return { ...remote, pointStatuses };
 }
 
 /**

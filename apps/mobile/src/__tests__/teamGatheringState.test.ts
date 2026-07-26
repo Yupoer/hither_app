@@ -94,8 +94,8 @@ describe('projectTeamGatheringState', () => {
     expect(closedRace.journeyPhase).toBe('en_route');
     expect(closedRace.activePointId).toBe('p1');
     expect(closedRace.hasActiveSession).toBe(true);
-    expect(canTeamStart(closedRace, 'p2')).toBe(false);
-    expect(teamStartBlockReason(closedRace, 'p2')).toBe('active_session');
+    expect(canTeamStart(closedRace, 'p2')).toBe(true);
+    expect(teamStartBlockReason(closedRace, 'p2')).toBeNull();
 
     // Filtered list drops closed stop entirely (MapScreen filterActiveDestinations)
     const missingDest = projectTeamGatheringState({
@@ -109,7 +109,8 @@ describe('projectTeamGatheringState', () => {
     });
     expect(missingDest.journeyPhase).toBe('en_route');
     expect(missingDest.activePointId).toBe('p1');
-    expect(canTeamStart(missingDest, 'p2')).toBe(false);
+    expect(canTeamStart(missingDest, 'p2')).toBe(true);
+    expect(teamStartBlockReason(missingDest, 'p2')).toBeNull();
     expect(resolveTeamPointActions(missingDest, 'p1', { isLeader: true }).primary.kind).toBe(
       'end',
     );
@@ -129,7 +130,7 @@ describe('projectTeamGatheringState', () => {
     expect(getPointStatus(afterEnd, 'p1')).toBe('completed');
     expect(afterEnd.nextPendingPointId).toBe('p2');
     expect(canTeamStart(afterEnd, 'p2')).toBe(true);
-    expect(canTeamStart(afterEnd, 'p3')).toBe(false);
+    expect(canTeamStart(afterEnd, 'p3')).toBe(true);
   });
 });
 
@@ -198,7 +199,7 @@ describe('Start / End transitions', () => {
     });
   });
 
-  it('en_route cannot trigger another Start / duplicate transition converges', () => {
+  it('switches another open point without completing the active point', () => {
     const started = applyTeamGatheringTransition(initialState(), {
       transition: 'start',
       pointId: 'p1',
@@ -217,14 +218,34 @@ describe('Start / End transitions', () => {
     expect(dup.reason).toBe('duplicate_transition');
     expect(dup.state).toEqual(started.state);
 
-    const other = applyTeamGatheringTransition(started.state, {
+    const switched = applyTeamGatheringTransition(started.state, {
       transition: 'start',
       pointId: 'p2',
       expectedVersion: started.state.version,
+      nowIso: '2026-07-25T10:30:00.000Z',
     });
-    expect(other.ok).toBe(false);
-    if (other.ok) return;
-    expect(other.reason).toBe('global_not_staying');
+    expect(switched.ok).toBe(true);
+    if (!switched.ok) return;
+    expect(switched.transition).toBe('switch');
+    expect(getPointStatus(switched.state, 'p1')).toBe('pending');
+    expect(getPointStatus(switched.state, 'p2')).toBe('en_route');
+  });
+
+  it('explicit switch transition is equivalent to Start on another open point', () => {
+    const started = applyTeamGatheringTransition(initialState(), {
+      transition: 'start',
+      pointId: 'p1',
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    const switched = applyTeamGatheringTransition(started.state, {
+      transition: 'switch',
+      pointId: 'p3',
+    });
+    expect(switched.ok).toBe(true);
+    if (!switched.ok) return;
+    expect(switched.state.activePointId).toBe('p3');
+    expect(getPointStatus(switched.state, 'p1')).toBe('pending');
   });
 
   it('End: point completed, global staying, next remains pending', () => {

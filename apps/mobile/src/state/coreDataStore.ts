@@ -688,6 +688,13 @@ export function createCoreDataStore(
             && existing.activeGathering.entityVersion
               >= snapshot.activeGathering.entityVersion
           ) {
+            // Leader local-first: a remote poll must not replace a complete
+            // local itinerary with an empty/stale payload while a gathering
+            // switch/start/end is still waiting for acknowledgement.
+            snapshot.group = existing.group;
+            snapshot.destinations = existing.destinations;
+            snapshot.members = existing.members ?? snapshot.members;
+            snapshot.subgroups = existing.subgroups ?? snapshot.subgroups;
             snapshot.activeGathering = existing.activeGathering;
             snapshot.entityVersion = Math.max(
               snapshot.entityVersion,

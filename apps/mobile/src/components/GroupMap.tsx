@@ -604,6 +604,19 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       initialRegion={mapInitialRegion}
       userInterfaceStyle={mapInterfaceStyle}
       mapPadding={{ top: 42, left: 32, right: 32, bottom: 42 }}
+      // Apple Maps chrome: nudge compass right/down and keep the legal Apple
+      // logo just above the Peak sheet. Android ignores these iOS-only props.
+      {...(Platform.OS === 'ios'
+        ? {
+            compassOffset: { x: 18, y: 18 },
+            appleLogoInsets: {
+              top: 0,
+              right: 0,
+              left: 28,
+              bottom: Math.max(24, bottomOverlap + 8),
+            },
+          }
+        : {})}
       // Continuous local blue-dot from device GPS (offline). Self is not drawn
       // as a flock emoji pin — that would lag on cloud upload cadence.
       showsUserLocation

@@ -16,6 +16,10 @@ import {
 } from '../utils/groupStatePatches';
 import { isOwnLocationChange, locationPolicy } from '../utils/locationPolicy';
 import {
+  isLeaderGatheringOperation,
+  mergeRemoteGroupStatePreservingOwnLocation,
+} from '../utils/syncAuthority';
+import {
   coreSnapshotFreshness,
 } from '../utils/coreSnapshotFreshness';
 import {
@@ -108,6 +112,8 @@ export function useGroupState(
   });
   const [emptyLocalSnapshot, setEmptyLocalSnapshot] = useState(false);
   const [openOperations, setOpenOperations] = useState<CoreOperation[]>([]);
+  const openOperationsRef = useRef<CoreOperation[]>([]);
+  openOperationsRef.current = openOperations;
   const [appState, setAppState] = useState<AppStateStatus>(AppState.currentState);
   const activeRef = useRef(true);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -182,7 +188,18 @@ export function useGroupState(
       try {
         const next = await getGroupState(groupId);
         if (activeRef.current) {
-          setState(next);
+          setState((previous) =>
+            mergeRemoteGroupStatePreservingOwnLocation(
+              previous,
+              next,
+              myUserIdRef.current,
+              {
+                preserveLocalGathering: openOperationsRef.current.some(
+                  (operation) => isLeaderGatheringOperation(operation),
+                ),
+              },
+            ),
+          );
           setError(null);
           setDataSource('remote');
           setEmptyLocalSnapshot(false);

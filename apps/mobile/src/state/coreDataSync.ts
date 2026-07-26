@@ -126,6 +126,45 @@ export async function enqueueLeaderGatheringStart(
 }
 
 /**
+ * Leader switch — local-first pause of the previous point plus Start of the
+ * requested open point. Unlike End, this never closes a destination.
+ */
+export async function enqueueLeaderGatheringSwitch(
+  groupId: string,
+  options: {
+    baseState?: ActiveGatheringState;
+    groupState?: GroupState | null;
+    activeDestinationId: string;
+    operationId?: string;
+    flushImmediately?: boolean;
+  },
+): Promise<{
+  local: ActiveGatheringState;
+  base: ActiveGatheringState;
+  operationId: string;
+}> {
+  const base =
+    options.baseState
+    ?? (await getCoreActiveGathering(groupId))
+    ?? (options.groupState
+      ? deriveActiveGatheringFromGroupState(options.groupState, 0)
+      : null);
+  if (!base) throw new Error('no local gathering base for switch');
+  const { local, operation, base: appliedBase } =
+    await outbox.enqueueGatheringTransition({
+      operationId: options.operationId,
+      groupId,
+      action: 'switch',
+      baseState: base,
+      activeDestinationId: options.activeDestinationId,
+    });
+  if (options.flushImmediately !== false) {
+    void outbox.flush().catch(() => undefined);
+  }
+  return { local, base: appliedBase, operationId: operation.id };
+}
+
+/**
  * Business rejection after optimistic Start: mark outbox conflict and restore
  * pre-transition gathering. Does not apply to transient network failures.
  */

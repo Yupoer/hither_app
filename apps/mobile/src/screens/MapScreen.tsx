@@ -3696,19 +3696,20 @@ export default function MapScreen({ route, navigation }: Props) {
     );
   }
 
-  const hasCoreConflict = coreOpenOperations.some((op) => op.status === 'conflict');
+  // Conflict metadata is intentionally silent in product UI. Leader local
+  // state remains visible while the outbox retries in the background.
   const hasCorePending = coreOpenOperations.some(
     (op) => op.status === 'pending' || op.status === 'failed' || op.status === 'inflight',
   );
-  const coreDataBannerMessage = hasCoreConflict
-    ? t('coreData.syncConflict')
-    : hasCorePending
-      ? t('coreData.pendingSync')
-      : groupDataSource === 'local_cache' && snapshotFreshness.unit === 'stale'
-        ? t('coreData.staleSnapshot')
-        : groupDataSource === 'local_cache'
-          ? t('coreData.offlineCache')
-          : null;
+  const coreDataBannerMessage = hasCorePending
+    ? t('coreData.pendingSync')
+    : groupDataSource === 'local_cache' && snapshotFreshness.unit === 'stale'
+      ? t('coreData.staleSnapshot')
+      : groupDataSource === 'local_cache'
+        ? t('coreData.offlineCache')
+        : null; /* conflict stays diagnostic-only */
+
+  // No conflict Alert/banner is rendered. The outbox retries silently.
 
   return (
     <View style={styles.flex}>
