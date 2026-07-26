@@ -19,11 +19,25 @@ const hardeningPath = join(
   migrationsDir,
   '20260725010000_anonymous_access_hardening.sql',
 );
+const expiryIsMemberPath = join(
+  migrationsDir,
+  '20260726000000_anonymous_expiry_is_member.sql',
+);
+const expiryDefinerRpcsPath = join(
+  migrationsDir,
+  '20260726000200_anonymous_expiry_definer_rpcs.sql',
+);
 const migration = existsSync(migrationPath)
   ? readFileSync(migrationPath, 'utf8')
   : '';
 const hardening = existsSync(hardeningPath)
   ? readFileSync(hardeningPath, 'utf8')
+  : '';
+const expiryIsMember = existsSync(expiryIsMemberPath)
+  ? readFileSync(expiryIsMemberPath, 'utf8')
+  : '';
+const expiryDefinerRpcs = existsSync(expiryDefinerRpcsPath)
+  ? readFileSync(expiryDefinerRpcsPath, 'utf8')
   : '';
 
 /** Last create-or-replace of join_group across all migrations (apply order). */
@@ -145,6 +159,137 @@ describe('anonymous access migration contract', () => {
   it('cleanup hardening falls back to memberships.created_at when profile expiry is null', () => {
     expect(hardening).toContain('first_joined + interval \'14 days\'');
     expect(hardening).toContain('cleanup_expired_anonymous_accounts');
+  });
+
+  it('ships expiry-aware is_member after hardening (ongoing access gate)', () => {
+    expect(existsSync(expiryIsMemberPath)).toBe(true);
+    expect(expiryIsMember.length).toBeGreaterThan(0);
+    // Applies after hardening by filename timestamp.
+    expect('20260726000000_anonymous_expiry_is_member.sql' > '20260725010000_anonymous_access_hardening.sql').toBe(
+      true,
+    );
+    expect(expiryIsMember).toContain(
+      'create or replace function public.anonymous_access_is_active',
+    );
+    expect(expiryIsMember).toContain(
+      'create or replace function extensions.is_member(gid uuid)',
+    );
+    expect(expiryIsMember).toContain('anonymous_access_is_active');
+    expect(expiryIsMember).toContain("interval '14 days'");
+    // Registered path short-circuits; anonymous requires unexpired stamp/fallback.
+    expect(expiryIsMember).toContain('is_auth_user_anonymous');
+    expect(expiryIsMember).toMatch(/v_expires_at > now\(\)/);
+  });
+
+  it('gates groups SELECT creator path and member_locations UPDATE with active access', () => {
+    expect(expiryIsMember).toContain('groups: select if member or creator');
+    expect(expiryIsMember).toContain(
+      'created_by = (select auth.uid())',
+    );
+    expect(expiryIsMember).toContain('anonymous_access_is_active((select auth.uid()))');
+    expect(expiryIsMember).toContain('member_locations: update own');
+    expect(expiryIsMember).toMatch(
+      /member_locations: update own[\s\S]*extensions\.is_member\(group_id\)/,
+    );
+  });
+
+  it('routes critical DEFINER membership auth through expiry-aware is_member', () => {
+    expect(expiryIsMember).toContain('extensions.is_member(p_group)');
+    expect(expiryIsMember).toContain('extensions.is_member(p_group_id)');
+    expect(expiryIsMember).toContain('create or replace function public.set_solo');
+    expect(expiryIsMember).toContain('create or replace function public.self_split');
+    expect(expiryIsMember).toContain('create or replace function public.self_merge');
+    expect(expiryIsMember).toContain('create or replace function public.get_trip_entitlement');
+    // apply_core_operation patched to is_member (dynamic or inline).
+    expect(expiryIsMember).toMatch(
+      /apply_core_operation[\s\S]*extensions\.is_member\(p_group_id\)/,
+    );
+  });
+
+  it('routes coordination and location_refresh DEFINER guards through is_member', () => {
+    expect(existsSync(expiryDefinerRpcsPath)).toBe(true);
+    expect(expiryDefinerRpcs.length).toBeGreaterThan(0);
+    // Applies after is_member + gathering validation migrations.
+    expect(
+      '20260726000200_anonymous_expiry_definer_rpcs.sql' >
+        '20260726000000_anonymous_expiry_is_member.sql',
+    ).toBe(true);
+    expect(
+      '20260726000200_anonymous_expiry_definer_rpcs.sql' >
+        '20260726000100_apply_core_operation_gathering_validation.sql',
+    ).toBe(true);
+
+    expect(expiryDefinerRpcs).toContain(
+      'create or replace function public.create_coordination_request',
+    );
+    expect(expiryDefinerRpcs).toContain(
+      'create or replace function public.override_coordination_request',
+    );
+    expect(expiryDefinerRpcs).toContain(
+      'create or replace function public.cancel_coordination_request',
+    );
+    expect(expiryDefinerRpcs).toContain(
+      'create or replace function public.respond_to_coordination_request',
+    );
+    expect(expiryDefinerRpcs).toContain(
+      'create or replace function public.resolve_coordination_request_deadline',
+    );
+    expect(expiryDefinerRpcs).toContain(
+      'create or replace function public.request_group_location_refresh',
+    );
+
+    // Authorization guards use expiry-aware is_member, not raw memberships alone.
+    expect(expiryDefinerRpcs).toMatch(
+      /create or replace function public\.create_coordination_request[\s\S]*extensions\.is_member\(p_group_id\)/,
+    );
+    expect(expiryDefinerRpcs).toMatch(
+      /create or replace function public\.override_coordination_request[\s\S]*extensions\.is_member\(v_request\.group_id\)/,
+    );
+    expect(expiryDefinerRpcs).toMatch(
+      /create or replace function public\.cancel_coordination_request[\s\S]*extensions\.is_member\(v_request\.group_id\)/,
+    );
+    expect(expiryDefinerRpcs).toMatch(
+      /create or replace function public\.respond_to_coordination_request[\s\S]*extensions\.is_member\(v_request\.group_id\)/,
+    );
+    expect(expiryDefinerRpcs).toMatch(
+      /create or replace function public\.resolve_coordination_request_deadline[\s\S]*extensions\.is_member\(v_request\.group_id\)/,
+    );
+    expect(expiryDefinerRpcs).toMatch(
+      /create or replace function public\.request_group_location_refresh[\s\S]*extensions\.is_member\(p_group_id\)/,
+    );
+    expect(expiryDefinerRpcs).toContain(
+      'anonymous_access_is_active(p_user_id)',
+    );
+  });
+
+  it('documents SQL tests proving expired anonymous cannot read shared group data', () => {
+    const sqlTestPath = join(
+      hitherAppRoot,
+      'supabase/tests/anonymous_expiry_is_member.test.sql',
+    );
+    expect(existsSync(sqlTestPath)).toBe(true);
+    const sqlTest = readFileSync(sqlTestPath, 'utf8');
+    expect(sqlTest).toContain('extensions.is_member');
+    expect(sqlTest).toContain('expired anonymous cannot select group via RLS');
+    expect(sqlTest).toContain('expired anonymous cannot select itinerary via RLS');
+    expect(sqlTest).toContain('anonymous_expires_at');
+    expect(sqlTest).toContain('is_anonymous');
+    // Coordination + location refresh DEFINER paths.
+    expect(sqlTest).toContain(
+      'expired anonymous cannot request_group_location_refresh',
+    );
+    expect(sqlTest).toContain(
+      'expired anonymous cannot respond_to_coordination_request',
+    );
+    expect(sqlTest).toContain(
+      'expired anonymous leader cannot create_coordination_request',
+    );
+    expect(sqlTest).toContain(
+      'expired anonymous leader cannot cancel_coordination_request',
+    );
+    expect(sqlTest).toContain(
+      'expired anonymous leader cannot override_coordination_request',
+    );
   });
 });
 

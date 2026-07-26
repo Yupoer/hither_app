@@ -94,6 +94,18 @@ describe('measured performance regressions', () => {
     expect(groupMap).not.toMatch(/predictedCoords|velocityPredict|deadReckon/);
   });
 
+  it('keeps workflow channels unique and energy monitoring stable across session updates', () => {
+    expect(mapScreen).toContain(
+      'gathering-workflow:${groupId}:${++workflowChannelSeqRef.current}',
+    );
+    expect(mapScreen).not.toContain('gathering-workflow:${groupId}`');
+    expect(mapScreen).toContain('const navigationSessionId = navigationSessionState.session?.id ?? null;');
+    expect(mapScreen).toContain('const hasNavigationSession = navigationSessionId !== null;');
+    expect(mapScreen).not.toContain('navigationSessionIdForEnergy');
+    expect(mapScreen).not.toContain('hasNavigationSessionForEnergy');
+    expect(mapScreen).not.toMatch(/navigationSessionState\.session,\s*\n\s*\]\);/);
+  });
+
   it('persists joined-group avatars and merges cache on lite fetch', () => {
     expect(groupService).toContain('joined-group-avatars:');
     expect(groupService).toContain('mergeAvatarProfiles');

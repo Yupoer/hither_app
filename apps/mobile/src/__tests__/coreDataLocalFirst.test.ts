@@ -438,6 +438,41 @@ describe('OTA-04 operation outbox (ticket 02)', () => {
     });
   });
 
+  it('marks gathering outbox conflict and restores base without flush retry', async () => {
+    const nowRef = { now: 1_000 };
+    const { outbox, coreDb, outboxDb } = setup(nowRef);
+    const base = deriveActiveGatheringFromGroupState(makeState(), 0, 1_000);
+    await coreDb.putActiveGathering(base);
+
+    const { local, operation, base: appliedBase } =
+      await outbox.enqueueGatheringTransition({
+        operationId: 'op-abort-start',
+        groupId: 'group-1',
+        action: 'start',
+        baseState: base,
+      });
+    expect(local.journeyPhase).toBe('en_route');
+    expect(appliedBase.journeyPhase).toBe('staying');
+
+    await outbox.markGatheringConflictAndRestore({
+      operationId: operation.id,
+      restore: appliedBase,
+      message: 'active navigation session exists',
+    });
+
+    const op = await outboxDb.get(operation.id);
+    expect(op?.status).toBe('conflict');
+    expect(op?.conflictResult?.code).toBe('invalid_transition');
+    expect(op?.conflictResult?.message).toContain('navigation session');
+    await expect(coreDb.getActiveGathering('group-1')).resolves.toMatchObject({
+      journeyPhase: 'staying',
+      entityVersion: 0,
+    });
+    // Conflicted ops are not due — flush must not resubmit.
+    const due = await outboxDb.getDue(nowRef.now + 60_000, 20);
+    expect(due.find((row) => row.id === operation.id)).toBeUndefined();
+  });
+
   it('does not write empty {} server_state into local gathering on conflict', async () => {
     const nowRef = { now: 1_000 };
     const coreDb = new MemoryCoreDataDatabase();
@@ -725,6 +760,32 @@ describe('OTA-04 contract surfaces', () => {
     expect(migration).toContain('_conflict');
     expect(migration).toContain('grant select on public.core_entity_versions');
     expect(migration).toContain("entity_version integer not null default 0");
+
+    // Follow-up migration hardens itinerary ownership / next-open validation.
+    const hardened = fs.readFileSync(
+      path.join(
+        root,
+        'supabase/migrations/20260726000100_apply_core_operation_gathering_validation.sql',
+      ),
+      'utf8',
+    );
+    expect(hardened).toContain('create or replace function public.apply_core_operation');
+    expect(hardened).toContain('start only allowed on next pending gathering point');
+    expect(hardened).toContain('activeDestinationId does not belong to group');
+    expect(hardened).toContain('destination is already closed');
+    expect(hardened).toContain('nextDestinationId is not a legal next gathering point');
+    expect(hardened).toContain('from public.itinerary_items');
+    expect(hardened).toContain('for update');
+    expect(hardened).not.toContain('jsonb_object_keys(v_point_statuses)');
+
+    const pgtap = fs.readFileSync(
+      path.join(root, 'supabase/tests/core_operation_gathering_validation.test.sql'),
+      'utf8',
+    );
+    expect(pgtap).toContain('start rejects unknown itinerary id');
+    expect(pgtap).toContain('start rejects non-next open gathering point');
+    expect(pgtap).toContain('end rejects unknown nextDestinationId');
+    expect(pgtap).toContain('start rejects closed gathering point');
   });
 
   it('useGroupState hydrates versions and surfaces open operations', () => {
@@ -756,10 +817,23 @@ describe('OTA-04 contract surfaces', () => {
       path.join(__dirname, '../state/useGroupState.ts'),
       'utf8',
     );
+    const coreSync = fs.readFileSync(
+      path.join(__dirname, '../state/coreDataSync.ts'),
+      'utf8',
+    );
     const app = fs.readFileSync(path.join(__dirname, '../../App.tsx'), 'utf8');
 
     expect(journey).toContain('enqueueLeaderGatheringStart');
     expect(journey).toContain('onOptimisticGathering');
+    // OTA-01/04 P1: only retain outbox on transient network errors; never flush offline.
+    expect(journey).toContain('resolveGatheringOutboxAfterSessionStart');
+    expect(journey).toContain('abortLeaderGatheringStart');
+    expect(journey).toContain('flushImmediately: false');
+    expect(journey).toContain('flushCoreOperationOutbox');
+    expect(journey.match(/void flushCoreOperationOutbox\(\)/g)?.length).toBe(1);
+    expect(coreSync).toContain('abortLeaderGatheringStart');
+    expect(coreSync).toContain('markGatheringConflictAndRestore');
+    expect(coreSync).toContain('flushImmediately');
     expect(map).toContain('enqueueLeaderGatheringEnd');
     expect(map).toContain('applyOptimisticGathering');
     expect(map).toContain('respondToAnnouncement');

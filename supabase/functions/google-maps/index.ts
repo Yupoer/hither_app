@@ -9,15 +9,29 @@ import {
   type GoogleMapsResponse,
 } from "./types.ts";
 
-function readSupabaseAdminKey(): string {
+/**
+ * Resolve service-role / secret key for quota RPC.
+ * Returns null for missing or malformed config so the handler can respond
+ * with a classified 503 `missing_config` instead of an uncaught 500.
+ */
+function readSupabaseAdminKey(): string | null {
   const secretKeys = Deno.env.get("SUPABASE_SECRET_KEYS");
   if (secretKeys) {
-    const defaultKey = (JSON.parse(secretKeys) as Record<string, string>).default;
-    if (defaultKey) return defaultKey;
+    try {
+      const parsed = JSON.parse(secretKeys) as Record<string, unknown>;
+      const defaultKey = parsed?.default;
+      if (typeof defaultKey === "string" && defaultKey.length > 0) {
+        return defaultKey;
+      }
+    } catch {
+      // Malformed SUPABASE_SECRET_KEYS → fall through to legacy / null.
+    }
   }
   const legacyKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!legacyKey) throw new Error("Supabase admin key is not configured");
-  return legacyKey;
+  if (typeof legacyKey === "string" && legacyKey.length > 0) {
+    return legacyKey;
+  }
+  return null;
 }
 
 function json(body: GoogleMapsResponse | { error: string }, status = 200): Response {
@@ -46,7 +60,7 @@ Deno.serve(async (req) => {
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   if (!supabaseUrl) {
-    return json({ error: "upstream_unavailable" }, 503);
+    return json({ error: "missing_config" }, 503);
   }
 
   let userId: string;
@@ -75,7 +89,13 @@ Deno.serve(async (req) => {
     return json({ error: "invalid_input" }, 400);
   }
 
-  const admin = createClient(supabaseUrl, readSupabaseAdminKey());
+  const adminKey = readSupabaseAdminKey();
+  if (!adminKey) {
+    // Same class as missing GOOGLE_MAPS_SERVER_API_KEY / SUPABASE_URL.
+    return json({ error: "missing_config" }, 503);
+  }
+
+  const admin = createClient(supabaseUrl, adminKey);
   const limit = request.action === "search" ? SEARCH_DAILY_LIMIT : ROUTE_DAILY_LIMIT;
   const { data: allowed, error: quotaError } = await admin.rpc("consume_google_maps_quota", {
     p_action: request.action,
@@ -84,8 +104,9 @@ Deno.serve(async (req) => {
   });
 
   if (quotaError) {
+    // Distinct from Google upstream failure — quota RPC itself failed.
     console.error("quota_rpc_failed", quotaError.message);
-    return json({ error: "upstream_unavailable" }, 503);
+    return json({ error: "quota_rpc_failed" }, 503);
   }
   if (allowed !== true) {
     return json({ error: "quota_exceeded" }, 429);
@@ -94,7 +115,7 @@ Deno.serve(async (req) => {
   const apiKey = Deno.env.get("GOOGLE_MAPS_SERVER_API_KEY") ?? "";
   if (!apiKey) {
     // Fail closed without leaking configuration details.
-    return json({ error: "upstream_unavailable" }, 503);
+    return json({ error: "missing_config" }, 503);
   }
 
   try {

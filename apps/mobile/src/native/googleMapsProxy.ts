@@ -6,9 +6,20 @@ import type { Coordinates } from '../types';
 import { decodePolyline } from '../utils/polyline';
 import type { DirectionsResult, MapRegion, PlaceResult, TravelMode } from './maps';
 
+/**
+ * Classified maps failure families.
+ * - quota_exceeded: daily hard limit hit (429)
+ * - quota_rpc_failed: consume_google_maps_quota RPC error (503)
+ * - missing_config: Edge Function missing URL/API key (503)
+ * - upstream_unavailable: Google non-2xx / malformed body (503)
+ * - network: client fetch failure
+ * - unauthorized / invalid_input: auth or validation
+ */
 export type MapsProxyErrorCode =
   | 'unauthorized'
   | 'quota_exceeded'
+  | 'quota_rpc_failed'
+  | 'missing_config'
   | 'invalid_input'
   | 'upstream_unavailable'
   | 'network';
@@ -23,6 +34,20 @@ export class MapsProxyError extends Error {
     this.code = code;
     this.status = status;
   }
+}
+
+/**
+ * Codes that should avoid tight multi-key retry loops:
+ * - quota_exceeded: daily limit hit (quota was booked)
+ * - quota_rpc_failed: consume RPC unhealthy (quota may not have been booked)
+ */
+export function isMapsQuotaFailure(code: MapsProxyErrorCode): boolean {
+  return code === 'quota_exceeded' || code === 'quota_rpc_failed';
+}
+
+/** Global cool-down applies across all keys (quota / missing config). */
+function usesGlobalCooldown(code: MapsProxyErrorCode): boolean {
+  return isMapsQuotaFailure(code) || code === 'missing_config';
 }
 
 /** Record map/search/directions failures without changing throw/fallback behavior. */
@@ -42,6 +67,7 @@ function recordMapsProxyFailure(
     };
     void recordClassifiedError(operation, error, {
       subsystem: 'maps',
+      // Classification lives on allow-listed errorCode (not a dropped extra field).
       errorCode: error.code,
       httpStatus: error.status,
       supabaseOperation: 'functions.google-maps',
@@ -73,7 +99,13 @@ type ProxyRouteResponse = {
 };
 
 type ProxyErrorBody = {
-  error?: 'quota_exceeded' | 'invalid_input' | 'upstream_unavailable' | string;
+  error?:
+    | 'quota_exceeded'
+    | 'invalid_input'
+    | 'upstream_unavailable'
+    | 'quota_rpc_failed'
+    | 'missing_config'
+    | string;
 };
 
 async function getAuthContext(): Promise<{
@@ -129,16 +161,41 @@ function throwForStatus(
     err = new MapsProxyError('quota_exceeded', 429);
   } else if (res.status === 400 || body.error === 'invalid_input') {
     err = new MapsProxyError('invalid_input', 400);
+  } else if (body.error === 'quota_rpc_failed') {
+    err = new MapsProxyError('quota_rpc_failed', 503);
+  } else if (body.error === 'missing_config') {
+    err = new MapsProxyError('missing_config', 503);
+  } else if (body.error === 'upstream_unavailable') {
+    err = new MapsProxyError('upstream_unavailable', res.status || 503);
   } else {
+    // Unknown 5xx — treat as Google/upstream class without inventing config/quota.
     err = new MapsProxyError('upstream_unavailable', res.status || 503);
   }
   recordMapsProxyFailure(operation, err);
   throw err;
 }
 
-/** Short TTL cache + in-flight promise sharing (no credentials in keys). */
+/** Short TTL success cache + in-flight promise sharing (no credentials in keys). */
 const CACHE_TTL_MS = 45_000;
+/** Negative cache for classified failures — never infinite retry. */
+const FAILURE_COOLDOWN_MS: Record<MapsProxyErrorCode, number> = {
+  unauthorized: 30_000,
+  quota_exceeded: 60_000,
+  quota_rpc_failed: 30_000,
+  missing_config: 60_000,
+  invalid_input: 15_000,
+  upstream_unavailable: 8_000,
+  network: 5_000,
+};
+
 const responseCache = new Map<string, { expiresAt: number; value: unknown }>();
+const failureCooldown = new Map<
+  string,
+  { expiresAt: number; error: MapsProxyError }
+>();
+/** Process-global cool-down for quota / missing_config (all keys). */
+let globalFailureCooldown: { expiresAt: number; error: MapsProxyError } | null =
+  null;
 const inFlight = new Map<string, Promise<unknown>>();
 
 function regionKey(region?: MapRegion): string {
@@ -151,11 +208,44 @@ function coordKey(c: Coordinates): string {
   return `${c.latitude.toFixed(5)},${c.longitude.toFixed(5)}`;
 }
 
+function rememberFailure(key: string, error: MapsProxyError): void {
+  const ttl = FAILURE_COOLDOWN_MS[error.code] ?? 5_000;
+  const entry = { expiresAt: Date.now() + ttl, error };
+  failureCooldown.set(key, entry);
+  if (usesGlobalCooldown(error.code)) {
+    globalFailureCooldown = entry;
+  }
+  // Bound map growth.
+  if (failureCooldown.size > 40) {
+    const now = Date.now();
+    for (const [k, v] of failureCooldown) {
+      if (v.expiresAt <= now) failureCooldown.delete(k);
+    }
+    while (failureCooldown.size > 40) {
+      const first = failureCooldown.keys().next().value;
+      if (first == null) break;
+      failureCooldown.delete(first);
+    }
+  }
+}
+
 async function withDedupeCache<T>(key: string, work: () => Promise<T>): Promise<T> {
   const now = Date.now();
   const cached = responseCache.get(key);
   if (cached && cached.expiresAt > now) {
     return cached.value as T;
+  }
+  // Global short-circuit: after quota/missing_config, block all keys.
+  if (globalFailureCooldown && globalFailureCooldown.expiresAt > now) {
+    throw globalFailureCooldown.error;
+  }
+  if (globalFailureCooldown && globalFailureCooldown.expiresAt <= now) {
+    globalFailureCooldown = null;
+  }
+  const failed = failureCooldown.get(key);
+  if (failed && failed.expiresAt > now) {
+    // Bounded recovery: surface the same classified error until cooldown ends.
+    throw failed.error;
   }
   const pending = inFlight.get(key) as Promise<T> | undefined;
   if (pending) return pending;
@@ -164,6 +254,7 @@ async function withDedupeCache<T>(key: string, work: () => Promise<T>): Promise<
     try {
       const value = await work();
       responseCache.set(key, { expiresAt: Date.now() + CACHE_TTL_MS, value });
+      failureCooldown.delete(key);
       // Bound cache growth: drop expired + oldest when large.
       if (responseCache.size > 40) {
         for (const [k, v] of responseCache) {
@@ -176,6 +267,11 @@ async function withDedupeCache<T>(key: string, work: () => Promise<T>): Promise<
         }
       }
       return value;
+    } catch (error) {
+      if (error instanceof MapsProxyError) {
+        rememberFailure(key, error);
+      }
+      throw error;
     } finally {
       inFlight.delete(key);
     }
@@ -187,6 +283,8 @@ async function withDedupeCache<T>(key: string, work: () => Promise<T>): Promise<
 /** Test helper — clears in-memory proxy cache between Jest cases. */
 export function __resetGoogleMapsProxyCacheForTests(): void {
   responseCache.clear();
+  failureCooldown.clear();
+  globalFailureCooldown = null;
   inFlight.clear();
 }
 

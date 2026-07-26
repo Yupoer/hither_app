@@ -7,9 +7,26 @@ import {
   getOrCreateLiveActivityDeviceId,
   upsertDeviceActivityToken,
   upsertLiveActivitySession,
+  type LiveActivityTokenRegisterResult,
 } from '../api/services/LiveActivityService';
 import { liveActivity, notifications, type GroupActivityState } from '../native';
 import type { TravelMode } from '../utils/geo';
+import { diagnostics } from './diagnostics';
+
+/** Allow-listed register outcome only — never the push token itself. */
+function recordTokenRegisterResult(result: LiveActivityTokenRegisterResult): void {
+  // Successful quiet path: skip noisy diagnostics on every cold start.
+  if (result === 'upserted' || result === 'benign_idempotent') return;
+  void diagnostics
+    .write({
+      event: 'live_activity_token_register',
+      source: 'live_activity',
+      errorCode: result,
+      success: result === 'reclaimed_own_token',
+      reason: result,
+    })
+    .catch(() => undefined);
+}
 
 export interface LiveActivitySessionContext {
   groupId: string;
@@ -123,7 +140,12 @@ export function useLiveActivity(
         await getOrCreateLiveActivityDeviceId();
       if (cancelled) return;
       deviceIdRef.current = deviceId;
-      await upsertDeviceActivityToken(deviceId, token, enabledRef.current);
+      const result = await upsertDeviceActivityToken(
+        deviceId,
+        token,
+        enabledRef.current,
+      );
+      recordTokenRegisterResult(result);
     };
     const subscription = liveActivity.addPushToStartTokenListener(({ token }) => {
       void persistToken(token).catch(() => undefined);
@@ -145,7 +167,9 @@ export function useLiveActivity(
       deviceId,
       pushToStartTokenRef.current,
       liveActivitiesEnabled,
-    ).catch(() => undefined);
+    )
+      .then(recordTokenRegisterResult)
+      .catch(() => undefined);
   }, [liveActivitiesEnabled]);
 
   useEffect(() => {

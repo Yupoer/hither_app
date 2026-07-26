@@ -39,10 +39,18 @@ export type GoogleMapsRequest =
     travelMode: TravelMode;
   };
 
+/** Classified error codes returned to the client (never include secrets). */
+export type GoogleMapsErrorCode =
+  | "quota_exceeded"
+  | "invalid_input"
+  | "upstream_unavailable"
+  | "quota_rpc_failed"
+  | "missing_config";
+
 export type GoogleMapsResponse =
   | { action: "search"; places: PlaceResult[] }
   | { action: "route"; route: DirectionsRoute | null }
-  | { error: "quota_exceeded" | "invalid_input" | "upstream_unavailable" };
+  | { error: GoogleMapsErrorCode };
 
 /** Places field mask — only fields Hither displays. */
 export const PLACES_FIELD_MASK =

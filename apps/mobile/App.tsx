@@ -30,6 +30,10 @@ import { GLOBAL_FONT_SCALE_CAP } from './src/theme/typeScale';
 import { metrics } from './src/native';
 import { diagnostics } from './src/state/diagnostics';
 import { uploadMetricPayload } from './src/api/services/DiagnosticService';
+import {
+  classifyCrashClass,
+  classifyMetricPayload,
+} from './src/utils/crashClass';
 import { uploadPerformanceBatch } from './src/api/services/PerformanceService';
 import {
   configurePerformanceTracing,
@@ -128,6 +132,17 @@ function ThemedNavigation() {
         try {
           await uploadMetricPayload(payload);
           acknowledged.push(payload.id);
+          // Allow-listed crash class only — never raw MetricKit JSON in diagnostics.
+          const crashClass = classifyMetricPayload(payload.kind, payload.json);
+          void diagnostics
+            .write({
+              event: 'metric_payload_classified',
+              source: payload.kind,
+              errorCode: crashClass,
+              reason: crashClass,
+              success: true,
+            })
+            .catch(() => undefined);
         } catch {
           break;
         }
@@ -301,10 +316,17 @@ export default function App() {
       .previousLaunch()
       .then((previous) => {
         if (!previous) return;
+        const crashClass = classifyCrashClass({
+          event: 'previous_launch_incomplete',
+          errorCode: 'previous_launch_incomplete',
+        });
         return diagnostics.write({
           event: 'previous_launch_incomplete',
           source: previous.phase,
           mode: previous.build,
+          errorCode: crashClass,
+          reason: crashClass,
+          success: false,
         });
       })
       .catch(() => undefined);

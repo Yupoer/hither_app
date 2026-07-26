@@ -23,45 +23,143 @@ export function getOrCreateLiveActivityDeviceId(): Promise<string> {
   return deviceIdPromise;
 }
 
+/** Outcome of a token register for diagnostics classification (never includes the token). */
+export type LiveActivityTokenRegisterResult =
+  | 'upserted'
+  | 'benign_idempotent'
+  | 'reclaimed_own_token'
+  | 'foreign_token_conflict'
+  /** Token unique 23505 but no visible owner row (RLS-hidden foreign or race). */
+  | 'token_unique_unresolved'
+  | 'unknown_error';
+
+function isUniqueViolation(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  const code = typeof error.code === 'string' ? error.code : '';
+  const message = String(error.message ?? '').toLowerCase();
+  return (
+    code === '23505'
+    || (
+      (message.includes('duplicate key') || message.includes('unique constraint'))
+      && (
+        message.includes('device_live_activity_tokens_token')
+        || message.includes('device_live_activity_tokens_pkey')
+        || message.includes('device_live_activity_tokens')
+      )
+    )
+  );
+}
+
+function isTokenUniqueViolation(error: { code?: string; message?: string } | null): boolean {
+  if (!error || !isUniqueViolation(error)) return false;
+  const message = String(error.message ?? '').toLowerCase();
+  // Prefer the global push_to_start_token unique index name when present.
+  return (
+    message.includes('device_live_activity_tokens_token')
+    || message.includes('push_to_start_token')
+  );
+}
+
+/**
+ * Register / rotate the push-to-start token for this user+device.
+ * Conflict target is (user_id, device_id). Global unique on push_to_start_token
+ * can still fire when the same token is already on another row — we reclaim
+ * tokens owned by the current user (device rotation) and soft-fail foreign
+ * ownership without overwriting another user.
+ */
 export async function upsertDeviceActivityToken(
   deviceId: string,
   pushToStartToken: string | null,
   enabled: boolean,
-): Promise<void> {
+): Promise<LiveActivityTokenRegisterResult> {
   const uid = await requireUserId();
+  const row = {
+    user_id: uid,
+    device_id: deviceId,
+    push_to_start_token: pushToStartToken,
+    live_activities_enabled: pushToStartToken === null ? false : enabled,
+    updated_at: new Date().toISOString(),
+  };
+
   const { error } = await supabase.from('device_live_activity_tokens').upsert(
-    {
-      user_id: uid,
-      device_id: deviceId,
-      push_to_start_token: pushToStartToken,
-      live_activities_enabled: pushToStartToken === null ? false : enabled,
-      updated_at: new Date().toISOString(),
-    },
+    row,
     { onConflict: 'user_id,device_id' },
   );
-  if (error) {
-    // Duplicate-key / unique conflicts are registration idempotency — soft-fail
-    // so they never obscure the primary map/session UI.
-    // Canonical outbox event is owned by instrumented Supabase `traceApi`
-    // (operation api.from.device_live_activity_tokens, code 23505 / registration).
-    // Soft-return only — no second call-site outbox write for the same failure.
-    const code = typeof error.code === 'string' ? error.code : '';
-    const message = String(error.message ?? '').toLowerCase();
-    const isConflict =
-      code === '23505'
-      || (
-        (message.includes('duplicate key') || message.includes('unique constraint'))
-        && (
-          message.includes('device_live_activity_tokens_token')
-          || message.includes('device_live_activity_tokens_pkey')
-          || message.includes('device_live_activity_tokens')
-        )
-      );
-    if (isConflict) {
-      return;
-    }
+
+  if (!error) {
+    return 'upserted';
   }
+
+  // Primary-key / user+device races are benign registration idempotency.
+  if (isUniqueViolation(error) && !isTokenUniqueViolation(error)) {
+    return 'benign_idempotent';
+  }
+
+  if (isTokenUniqueViolation(error) && pushToStartToken) {
+    // Same token already exists somewhere. Reclaim only rows owned by this user
+    // (device reinstall / multi-device same APNs token), never other users.
+    const { data: owners, error: selectError } = await supabase
+      .from('device_live_activity_tokens')
+      .select('user_id,device_id')
+      .eq('push_to_start_token', pushToStartToken)
+      .limit(4);
+
+    if (selectError) {
+      // Soft-fail — registration must not break map/session UI.
+      return 'unknown_error';
+    }
+
+    const ownRows = (owners ?? []).filter((r) => r.user_id === uid);
+    const foreign = (owners ?? []).some((r) => r.user_id !== uid);
+
+    if (foreign && ownRows.length === 0) {
+      // Another account holds this token — do not steal it.
+      return 'foreign_token_conflict';
+    }
+
+    if (ownRows.length > 0) {
+      // Clear token on other own devices, then write this device row.
+      for (const owned of ownRows) {
+        if (owned.device_id === deviceId) continue;
+        const { error: clearError } = await supabase
+          .from('device_live_activity_tokens')
+          .update({
+            push_to_start_token: null,
+            live_activities_enabled: false,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('user_id', uid)
+          .eq('device_id', owned.device_id);
+        if (clearError) {
+          // Soft-fail — do not claim reclaim succeeded when clear failed.
+          return 'unknown_error';
+        }
+      }
+
+      const { error: retryError } = await supabase
+        .from('device_live_activity_tokens')
+        .upsert(row, { onConflict: 'user_id,device_id' });
+
+      if (!retryError) {
+        return 'reclaimed_own_token';
+      }
+      if (isUniqueViolation(retryError)) {
+        return foreign ? 'foreign_token_conflict' : 'token_unique_unresolved';
+      }
+      orThrow(retryError);
+    }
+
+    // Token unique fired but select found nothing — usually RLS hiding another
+    // user's row. Distinct from PK race so operators do not treat as benign.
+    return 'token_unique_unresolved';
+  }
+
+  if (isUniqueViolation(error)) {
+    return 'benign_idempotent';
+  }
+
   orThrow(error);
+  return 'unknown_error';
 }
 
 export interface LiveActivitySessionInput {

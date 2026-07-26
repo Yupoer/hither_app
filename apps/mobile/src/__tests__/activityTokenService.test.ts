@@ -1,5 +1,36 @@
-const upsert = jest.fn(async () => ({ error: null }));
-const from = jest.fn(() => ({ upsert }));
+type UpsertResult = { error: { code?: string; message?: string } | null };
+type SelectResult = {
+  data: Array<{ user_id: string; device_id: string }> | null;
+  error: { code?: string; message?: string } | null;
+};
+
+const upsert = jest.fn(async (): Promise<UpsertResult> => ({ error: null }));
+const update = jest.fn((_payload?: unknown) => undefined);
+const selectEq = jest.fn();
+const selectLimit = jest.fn(async (): Promise<SelectResult> => ({ data: [], error: null }));
+const select = jest.fn(() => ({
+  eq: (...args: unknown[]) => {
+    selectEq(...args);
+    return { limit: selectLimit };
+  },
+}));
+const updateEqDevice = jest.fn(
+  async (): Promise<{ error: { message?: string } | null }> => ({ error: null }),
+);
+const updateEqUser = jest.fn(() => ({ eq: updateEqDevice }));
+const from = jest.fn((table: string) => {
+  if (table === 'device_live_activity_tokens') {
+    return {
+      upsert,
+      select,
+      update: (payload: unknown) => {
+        update(payload);
+        return { eq: updateEqUser };
+      },
+    };
+  }
+  return { upsert, select };
+});
 
 jest.mock('../api/supabase', () => ({
   supabase: {
@@ -29,6 +60,8 @@ import {
 describe('device ActivityKit token service', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    upsert.mockResolvedValue({ error: null });
+    selectLimit.mockResolvedValue({ data: [], error: null });
   });
 
   it('creates and persists one stable device id', async () => {
@@ -44,7 +77,9 @@ describe('device ActivityKit token service', () => {
   });
 
   it('upserts token rotation by user and device', async () => {
-    await upsertDeviceActivityToken('device-1234', 'a'.repeat(64), true);
+    await expect(
+      upsertDeviceActivityToken('device-1234', 'a'.repeat(64), true),
+    ).resolves.toBe('upserted');
 
     expect(from).toHaveBeenCalledWith('device_live_activity_tokens');
     expect(upsert).toHaveBeenCalledWith(
@@ -69,5 +104,103 @@ describe('device ActivityKit token service', () => {
       }),
       { onConflict: 'user_id,device_id' },
     );
+  });
+
+  it('treats user_id+device_id unique races as benign idempotent', async () => {
+    upsert.mockResolvedValueOnce({
+      error: {
+        code: '23505',
+        message: 'duplicate key value violates unique constraint "device_live_activity_tokens_pkey"',
+      },
+    });
+    await expect(
+      upsertDeviceActivityToken('device-1234', 'b'.repeat(64), true),
+    ).resolves.toBe('benign_idempotent');
+  });
+
+  it('reclaims the same token from another own device after token unique conflict', async () => {
+    const token = 'c'.repeat(64);
+    upsert
+      .mockResolvedValueOnce({
+        error: {
+          code: '23505',
+          message:
+            'duplicate key value violates unique constraint "device_live_activity_tokens_token"',
+        },
+      })
+      .mockResolvedValueOnce({ error: null });
+    selectLimit.mockResolvedValueOnce({
+      data: [{ user_id: 'user-1', device_id: 'old-device-9999' }],
+      error: null,
+    });
+
+    await expect(
+      upsertDeviceActivityToken('device-1234', token, true),
+    ).resolves.toBe('reclaimed_own_token');
+
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        push_to_start_token: null,
+        live_activities_enabled: false,
+      }),
+    );
+    expect(upsert).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not steal a token owned by another user', async () => {
+    const token = 'd'.repeat(64);
+    upsert.mockResolvedValueOnce({
+      error: {
+        code: '23505',
+        message:
+          'duplicate key value violates unique constraint "device_live_activity_tokens_token"',
+      },
+    });
+    selectLimit.mockResolvedValueOnce({
+      data: [{ user_id: 'other-user', device_id: 'other-device' }],
+      error: null,
+    });
+
+    await expect(
+      upsertDeviceActivityToken('device-1234', token, true),
+    ).resolves.toBe('foreign_token_conflict');
+    expect(upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns token_unique_unresolved when 23505 and select finds no owners (RLS)', async () => {
+    const token = 'e'.repeat(64);
+    upsert.mockResolvedValueOnce({
+      error: {
+        code: '23505',
+        message:
+          'duplicate key value violates unique constraint "device_live_activity_tokens_token"',
+      },
+    });
+    selectLimit.mockResolvedValueOnce({ data: [], error: null });
+
+    await expect(
+      upsertDeviceActivityToken('device-1234', token, true),
+    ).resolves.toBe('token_unique_unresolved');
+  });
+
+  it('returns unknown_error when reclaim clear-update fails', async () => {
+    const token = 'f'.repeat(64);
+    upsert.mockResolvedValueOnce({
+      error: {
+        code: '23505',
+        message:
+          'duplicate key value violates unique constraint "device_live_activity_tokens_token"',
+      },
+    });
+    selectLimit.mockResolvedValueOnce({
+      data: [{ user_id: 'user-1', device_id: 'old-device-9999' }],
+      error: null,
+    });
+    updateEqDevice.mockResolvedValueOnce({ error: { message: 'update failed' } });
+
+    await expect(
+      upsertDeviceActivityToken('device-1234', token, true),
+    ).resolves.toBe('unknown_error');
+    expect(upsert).toHaveBeenCalledTimes(1);
   });
 });
