@@ -2,6 +2,7 @@ import {
   applyTeamGatheringTransition,
   canTeamStart,
   getPointStatus,
+  teamStartBlockReason,
   journeyPhaseFromLegacy,
   legacyJourneyStatusFromPhase,
   projectTeamGatheringState,
@@ -94,6 +95,7 @@ describe('projectTeamGatheringState', () => {
     expect(closedRace.activePointId).toBe('p1');
     expect(closedRace.hasActiveSession).toBe(true);
     expect(canTeamStart(closedRace, 'p2')).toBe(false);
+    expect(teamStartBlockReason(closedRace, 'p2')).toBe('active_session');
 
     // Filtered list drops closed stop entirely (MapScreen filterActiveDestinations)
     const missingDest = projectTeamGatheringState({

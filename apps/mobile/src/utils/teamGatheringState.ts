@@ -256,15 +256,31 @@ export function getPointStatus(
 }
 
 /** Start only for next pending while staying and no active session. */
+export type TeamStartBlockReason =
+  | 'active_session'
+  | 'not_staying'
+  | 'active_point'
+  | 'not_next_pending'
+  | 'not_pending';
+
+/** Explain why the leader Start control is not currently available. */
+export function teamStartBlockReason(
+  state: TeamGatheringState,
+  pointId: string,
+): TeamStartBlockReason | null {
+  if (state.hasActiveSession) return 'active_session';
+  if (state.journeyPhase !== 'staying') return 'not_staying';
+  if (state.activePointId) return 'active_point';
+  if (state.nextPendingPointId !== pointId) return 'not_next_pending';
+  if (getPointStatus(state, pointId) !== 'pending') return 'not_pending';
+  return null;
+}
+
 export function canTeamStart(
   state: TeamGatheringState,
   pointId: string,
 ): boolean {
-  if (state.hasActiveSession) return false;
-  if (state.journeyPhase !== 'staying') return false;
-  if (state.activePointId) return false;
-  if (state.nextPendingPointId !== pointId) return false;
-  return getPointStatus(state, pointId) === 'pending';
+  return teamStartBlockReason(state, pointId) === null;
 }
 
 /** End only for the active travelling point (session may outlive closed_at). */

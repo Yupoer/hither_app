@@ -131,6 +131,10 @@ describe('OTA-07 full/passive presentation contract', () => {
     expect(panel).toContain('testID="passive-external-nav"');
     expect(panel).toContain('testID={`passive-cmd-${type}`}');
     expect(panel).toContain('sendCommand(groupId, type');
+    expect(panel).toContain('commandIcon(type)');
+    expect(panel).toContain('minHeight: s(58, 52)');
+    expect(panel).toContain("backgroundColor: glass.fillStrong");
+    expect(panel).toContain('HitherText');
     expect(panel).toContain('onOpenExternalNavigation');
     expect(panel).toContain("t('passive.noAutoConsent')");
     // No paywall / vote / safety approval actions from the panel.
