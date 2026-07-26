@@ -217,6 +217,7 @@ export default function AccountSheet({
       title={t('settings.account')}
       accent={accent}
       doneLabel={t('map.done')}
+      edgeToEdge
     >
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}

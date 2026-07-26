@@ -19,11 +19,13 @@ import type {
   TeamGatheringPhase,
 } from '../../../utils/passiveCompanion';
 import type { Destination } from '../../../types';
+import type { CommandType } from '../../../types';
 
 export interface PassiveCompanionPanelProps {
   model: PassiveCompanionModel;
   accent: string;
   groupId: string | null;
+  isLeader?: boolean;
   /** Destination used for external maps (current point when coordinates known). */
   navigationDestination?: Destination | null;
   onSwitchBack: () => void;
@@ -36,7 +38,7 @@ function phaseLabelKey(phase: TeamGatheringPhase): 'passive.phaseStaying' | 'pas
 
 function progressLabelKey(
   bucket: CoarseProgressBucket,
-): 
+):
   | 'passive.progressUnknown'
   | 'passive.progressNotStarted'
   | 'passive.progressEarly'
@@ -60,24 +62,32 @@ function progressLabelKey(
   }
 }
 
+const LEADER_QUICK: Array<Exclude<CommandType, 'custom'>> = ['gather', 'depart', 'need_help'];
+const MEMBER_QUICK: Array<Exclude<CommandType, 'custom'>> = [
+  'need_help',
+  'need_break',
+  'found_something',
+];
+
 /**
  * Minimal passive-companion presentation: team gathering state + personal
- * progress, external nav, help, and an always-available switch-back.
+ * progress, external nav, help / quick commands, and an always-available
+ * switch-back button.
  *
- * Does not open paywall, vote, or safety flows. Help is an explicit tap that
- * sends the existing `need_help` command only.
+ * Does not open paywall, vote, or safety flows. Commands are explicit taps only.
  */
 export const PassiveCompanionPanel = React.memo(function PassiveCompanionPanel({
   model,
   accent,
   groupId,
+  isLeader = false,
   navigationDestination,
   onSwitchBack,
   onOpenExternalNavigation,
 }: PassiveCompanionPanelProps) {
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
-  const [helpBusy, setHelpBusy] = useState(false);
+  const [busyType, setBusyType] = useState<string | null>(null);
 
   const handleSwitchBack = useCallback(() => {
     mediumTap();
@@ -93,23 +103,23 @@ export const PassiveCompanionPanel = React.memo(function PassiveCompanionPanel({
     onOpenExternalNavigation(navigationDestination);
   }, [navigationDestination, onOpenExternalNavigation, t]);
 
-  const handleNeedHelp = useCallback(async () => {
-    if (!groupId || helpBusy) return;
+  const handleCommand = useCallback(async (type: Exclude<CommandType, 'custom'>) => {
+    if (!groupId || busyType) return;
     mediumTap();
-    setHelpBusy(true);
+    setBusyType(type);
     try {
-      // Explicit user action only — never auto-sent by mode enter/remain.
-      await sendCommand(groupId, 'need_help', t('command.need_help'));
+      await sendCommand(groupId, type, t(`command.${type}` as const));
       Alert.alert(t('command.sent'));
     } catch {
       Alert.alert(t('command.sendFailed'));
     } finally {
-      setHelpBusy(false);
+      setBusyType(null);
     }
-  }, [groupId, helpBusy, t]);
+  }, [groupId, busyType, t]);
 
   const phaseKey = phaseLabelKey(model.teamPhase);
   const progressKey = progressLabelKey(model.coarseProgress);
+  const quickTypes = isLeader ? LEADER_QUICK : MEMBER_QUICK;
 
   return (
     <View
@@ -123,15 +133,15 @@ export const PassiveCompanionPanel = React.memo(function PassiveCompanionPanel({
         </Text>
         <Pressable
           onPress={handleSwitchBack}
-          style={[styles.switchBack, { borderColor: accent }]}
+          style={[styles.switchBack, { borderColor: accent, backgroundColor: accent }]}
           accessibilityRole="button"
           accessibilityLabel={t('passive.switchBack')}
           testID="passive-switch-back"
           // Always interactive — including loading / empty / error.
           disabled={false}
         >
-          <Ionicons name="expand-outline" size={16} color={accent} />
-          <Text style={[styles.switchBackLabel, { color: accent }]}>
+          <Ionicons name="expand-outline" size={16} color="#111" />
+          <Text style={styles.switchBackLabel}>
             {t('passive.switchBack')}
           </Text>
         </Pressable>
@@ -229,17 +239,25 @@ export const PassiveCompanionPanel = React.memo(function PassiveCompanionPanel({
           <Ionicons name="map" size={20} color="#111" />
           <Text style={styles.actionPrimaryLabel}>{t('passive.externalNav')}</Text>
         </Pressable>
-        <Pressable
-          style={[styles.actionBtn, styles.actionSecondary]}
-          onPress={() => void handleNeedHelp()}
-          disabled={!groupId || helpBusy}
-          accessibilityRole="button"
-          accessibilityLabel={t('command.need_help')}
-          testID="passive-need-help"
-        >
-          <Ionicons name="help-buoy" size={20} color="#fff" />
-          <Text style={styles.actionSecondaryLabel}>{t('command.need_help')}</Text>
-        </Pressable>
+      </View>
+
+      <Text style={[styles.fieldLabel, styles.quickLabel]}>{t('passive.quickCommands')}</Text>
+      <View style={styles.quickRow}>
+        {quickTypes.map((type) => (
+          <Pressable
+            key={type}
+            style={[styles.quickChip, busyType === type && { opacity: 0.5 }]}
+            onPress={() => void handleCommand(type)}
+            disabled={!groupId || busyType != null}
+            accessibilityRole="button"
+            accessibilityLabel={t(`command.${type}` as const)}
+            testID={`passive-cmd-${type}`}
+          >
+            <Text style={styles.quickChipLabel} numberOfLines={1}>
+              {t(`command.${type}` as const)}
+            </Text>
+          </Pressable>
+        ))}
       </View>
 
       <Text style={styles.footnote}>{t('passive.noAutoConsent')}</Text>
@@ -274,15 +292,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
-    backgroundColor: glass.fill,
   },
   switchBackLabel: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '700',
+    color: '#111',
   },
   card: {
     backgroundColor: glass.card,
@@ -396,14 +414,26 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
   },
-  actionSecondary: {
+  quickLabel: {
+    marginTop: 18,
+    marginBottom: 8,
+  },
+  quickRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  quickChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
     backgroundColor: glass.fillStrong,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: glass.hairline,
   },
-  actionSecondaryLabel: {
+  quickChipLabel: {
     color: glass.textPrimary,
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '600',
   },
   footnote: {

@@ -17,14 +17,15 @@ const client = read('api/client.ts');
 
 describe('OTA-09 coordination UI wiring contracts', () => {
   it('exposes a MapScreen entry point on the route pane', () => {
-    expect(mapScreen).toContain("setOverlay('coordination')");
-    expect(mapScreen).toContain("| 'coordination'");
+    expect(mapScreen).toContain("setOverlay('ops')");
+    expect(mapScreen).toContain("| 'ops'");
     expect(mapScreen).toContain('CoordinationRequestsPanel');
     expect(mapScreen).toContain('useCoordinationRequests');
-    expect(mapScreen).toContain('testID="map-open-coordination"');
+    expect(mapScreen).toContain('testID="map-open-ops"');
+    expect(mapScreen).toContain("t('map.opsCenter')");
     expect(mapScreen).toContain("t('coordination.title')");
     expect(i18n).toContain("'coordination.title'");
-    expect(i18n).toContain("'coordination.openCount'");
+    expect(i18n).toContain("'map.opsCenter'");
   });
 
   it('panel supports list, response count, deadline, respond, override, create', () => {

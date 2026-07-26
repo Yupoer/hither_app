@@ -59,6 +59,10 @@ describe('Android in-app feature parity contracts', () => {
       join(root, 'components/DestinationSearch.tsx'),
       'utf8',
     );
-    expect(destSearch).toMatch(/Kml|kml|coordinate|Coordinate|緯度|經度/i);
+    // Search is text-only; alternate paths are long-press map + KML import.
+    expect(destSearch).toContain('search.longPressHint');
+    expect(mapScreen).toMatch(/Kml|kml/i);
+    expect(mapScreen).toContain('CoordinateDestinationSheet');
+    expect(mapScreen).toContain('onLongPressCoordinate');
   });
 });

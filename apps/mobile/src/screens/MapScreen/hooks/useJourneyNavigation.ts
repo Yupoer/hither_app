@@ -17,6 +17,7 @@ import {
   enqueueLeaderGatheringStart,
   flushCoreOperationOutbox,
 } from '../../../state/coreDataSync';
+import { logEvent } from '../../../utils/activityLog';
 
 interface UseJourneyNavigationParams {
   state: GroupState | null;
@@ -148,16 +149,40 @@ export function useJourneyNavigation({
         startLocalRoutePlan(dest, index);
         return;
       }
-      if (!groupId || journeyBusy || !startSession) return;
+      if (!groupId || journeyBusy || !startSession) {
+        logEvent('nav_start_blocked', {
+          reason: !groupId ? 'no_group' : journeyBusy ? 'busy' : 'no_start_session',
+          destId: dest.id,
+        });
+        if (journeyBusy) {
+          Alert.alert(t('map.setFailedTitle'), t('map.startBusy'));
+        } else if (!startSession) {
+          Alert.alert(t('map.setFailedTitle'), t('map.journeyFailed'));
+        }
+        return;
+      }
       // OTA-01: never Start while a shared session is already active.
-      if (sharedTargetId) return;
+      if (sharedTargetId) {
+        logEvent('nav_start_blocked', { reason: 'session_active', destId: dest.id });
+        Alert.alert(t('map.setFailedTitle'), t('map.startBlocked'));
+        return;
+      }
       // Next open stop only (order asc); UI also gates, this covers all call sites.
       const nextOpen = destinations
         .filter((d) => !d.closedAt)
         .slice()
         .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))[0];
-      if (nextOpen && nextOpen.id !== dest.id) return;
+      if (nextOpen && nextOpen.id !== dest.id) {
+        logEvent('nav_start_blocked', {
+          reason: 'not_next_open',
+          destId: dest.id,
+          nextOpenId: nextOpen.id,
+        });
+        Alert.alert(t('map.setFailedTitle'), t('map.startBlocked'));
+        return;
+      }
 
+      logEvent('nav_start_requested', { destId: dest.id });
       setJourneyBusy(true);
       setPendingLeaderStop(false);
       setPendingLeaderTargetId(dest.id);

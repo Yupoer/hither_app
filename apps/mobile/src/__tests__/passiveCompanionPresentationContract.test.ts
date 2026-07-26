@@ -32,13 +32,15 @@ describe('OTA-07 full/passive presentation contract', () => {
   });
 
   it('enters passive mode from Tools and restores after relaunch via preference', () => {
-    expect(mapScreen).toContain("t('settings.passiveCompanionMode')");
+    expect(mapScreen).toContain("t('passive.enter')");
+    expect(mapScreen).toContain('testID="tools-enter-passive"');
     expect(mapScreen).toContain('setPassiveCompanionMode');
     expect(mapScreen).toContain('passiveCompanionMode');
     expect(mapScreen).toContain('PassiveCompanionPanel');
     expect(settings).not.toContain("t('settings.passiveCompanionMode')");
     expect(i18n).toContain("'settings.passiveCompanionMode'");
     expect(i18n).toContain("'passive.switchBack'");
+    expect(i18n).toContain("'passive.enter'");
   });
 
   it('shows current point, team phase, next point, and coarse personal progress', () => {
@@ -127,8 +129,8 @@ describe('OTA-07 full/passive presentation contract', () => {
 
   it('keeps external navigation and help without implied consent or payment', () => {
     expect(panel).toContain('testID="passive-external-nav"');
-    expect(panel).toContain('testID="passive-need-help"');
-    expect(panel).toContain("sendCommand(groupId, 'need_help'");
+    expect(panel).toContain('testID={`passive-cmd-${type}`}');
+    expect(panel).toContain('sendCommand(groupId, type');
     expect(panel).toContain('onOpenExternalNavigation');
     expect(panel).toContain("t('passive.noAutoConsent')");
     // No paywall / vote / safety approval actions from the panel.

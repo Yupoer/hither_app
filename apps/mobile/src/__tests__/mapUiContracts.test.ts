@@ -140,48 +140,39 @@ describe('map UI placement contracts', () => {
     expect(settingsOverlay).toContain('onConfirmLeave');
   });
 
-  it('moves map/journey preference toggles into Tools and out of Settings', () => {
+  it('keeps Tools lean and parks map/journey chrome prefs in Settings', () => {
     const toolsStart = mapScreen.indexOf('// ─── 工具');
     const toolsEnd = mapScreen.indexOf('const sheetChildren');
     const toolsBlock = mapScreen.slice(toolsStart, toolsEnd > 0 ? toolsEnd : toolsStart + 5000);
 
-    const passive = toolsBlock.indexOf("t('settings.passiveCompanionMode')");
+    const passive = toolsBlock.indexOf("t('passive.enter')");
     const sharing = toolsBlock.indexOf("t('settings.locationSharing')");
-    const oblique = toolsBlock.indexOf("t('settings.obliqueLocate')");
-    const live = toolsBlock.indexOf("t('settings.liveActivity')");
-    const expand = toolsBlock.indexOf("t('settings.gatherCardDefaultExpanded')");
-    const marquee = toolsBlock.indexOf("t('settings.gatherCardTitleMarquee')");
-    const marqueeSpeed = toolsBlock.indexOf("t('settings.gatherCardMarqueeSpeed')");
     const arrival = toolsBlock.indexOf("t('arrival.radiusSection')");
     const commands = toolsBlock.indexOf("t('map.cmdTitle')");
 
     expect(passive).toBeGreaterThanOrEqual(0);
     expect(sharing).toBeGreaterThan(passive);
-    expect(oblique).toBeGreaterThan(sharing);
-    expect(live).toBeGreaterThan(oblique);
-    expect(expand).toBeGreaterThan(live);
-    expect(marquee).toBeGreaterThan(expand);
-    expect(marqueeSpeed).toBeGreaterThan(marquee);
-    expect(arrival).toBeGreaterThan(marqueeSpeed);
+    expect(arrival).toBeGreaterThan(sharing);
     expect(commands).toBeGreaterThan(arrival);
 
     expect(toolsBlock).toContain('setPassiveCompanionMode');
+    expect(toolsBlock).toContain('testID="tools-enter-passive"');
     expect(toolsBlock).toContain('handleSharingEnabledChange');
-    expect(toolsBlock).toContain('setObliqueLocate');
-    expect(toolsBlock).toContain('setLiveActivityEnabled');
-    expect(toolsBlock).toContain('setGatherCardDefaultExpanded');
-    expect(toolsBlock).toContain('setGatherCardTitleMarquee');
-    expect(toolsBlock).toContain('setGatherCardMarqueeSpeed');
-    expect(toolsBlock).toContain('Boolean(gatherCardTitleMarquee)');
     expect(toolsBlock).toContain('PrefSlider');
+    expect(toolsBlock).toContain('NativeSwitch');
+    // Preference clutter moved out of Tools.
+    expect(toolsBlock).not.toContain("t('settings.obliqueLocate')");
+    expect(toolsBlock).not.toContain("t('settings.liveActivity')");
+    expect(toolsBlock).not.toContain("t('settings.gatherCardDefaultExpanded')");
+    expect(toolsBlock).not.toContain("t('settings.gatherCardTitleMarquee')");
 
-    expect(settingsOverlay).not.toContain("t('settings.sectionMapJourney')");
-    expect(settingsOverlay).not.toContain("t('settings.obliqueLocate')");
+    expect(settingsOverlay).toContain("t('settings.sectionMapJourney')");
+    expect(settingsOverlay).toContain("t('settings.obliqueLocate')");
+    expect(settingsOverlay).toContain("t('settings.liveActivity')");
+    expect(settingsOverlay).toContain("t('settings.gatherCardDefaultExpanded')");
+    expect(settingsOverlay).toContain("t('settings.gatherCardTitleMarquee')");
     expect(settingsOverlay).not.toContain("t('settings.passiveCompanionMode')");
     expect(settingsOverlay).not.toContain("t('settings.locationSharing')");
-    expect(settingsOverlay).not.toContain("t('settings.liveActivity')");
-    expect(settingsOverlay).not.toContain("t('settings.gatherCardDefaultExpanded')");
-    expect(settingsOverlay).not.toContain("t('settings.gatherCardTitleMarquee')");
   });
 
   it('aligns per-destination meet clocks when itinerary dates change', () => {
@@ -191,12 +182,12 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain('reorderDestinations(groupId, meetUpdates)');
   });
 
-  it('persists the gathering-card default and exposes it in Tools', () => {
+  it('persists the gathering-card default and exposes it in Settings', () => {
     expect(preferences).toContain("pref.gatherCardDefaultExpanded");
     expect(preferences).toContain('gatherCardDefaultExpanded');
     expect(preferences).toContain('setGatherCardDefaultExpanded');
-    expect(mapScreen).toContain("t('settings.gatherCardDefaultExpanded')");
-    expect(mapScreen).toContain('value={gatherCardDefaultExpanded}');
+    expect(settingsOverlay).toContain("t('settings.gatherCardDefaultExpanded')");
+    expect(settingsOverlay).toContain('value={gatherCardDefaultExpanded}');
     expect(i18n).toContain("'settings.gatherCardDefaultExpanded': '預設展開集合點卡片'");
   });
 
@@ -208,12 +199,12 @@ describe('map UI placement contracts', () => {
     expect(preferences).toContain('gatherCardMarqueeSpeed');
     expect(preferences).toContain('setGatherCardMarqueeSpeed');
     expect(preferences).toContain('clampMarqueeSpeed');
-    expect(mapScreen).toContain("t('settings.gatherCardTitleMarquee')");
-    expect(mapScreen).toContain('Boolean(gatherCardTitleMarquee)');
-    expect(mapScreen).toContain('setGatherCardTitleMarquee(Boolean(v))');
-    expect(mapScreen).toContain('PrefSlider');
-    expect(mapScreen).toContain("t('settings.gatherCardMarqueeSpeed')");
-    expect(mapScreen).toContain('setGatherCardMarqueeSpeed');
+    expect(settingsOverlay).toContain("t('settings.gatherCardTitleMarquee')");
+    expect(settingsOverlay).toContain('Boolean(gatherCardTitleMarquee)');
+    expect(settingsOverlay).toContain('setGatherCardTitleMarquee(Boolean(v))');
+    expect(settingsOverlay).toContain('PrefSlider');
+    expect(settingsOverlay).toContain("t('settings.gatherCardMarqueeSpeed')");
+    expect(settingsOverlay).toContain('setGatherCardMarqueeSpeed');
     expect(i18n).toContain("'settings.gatherCardTitleMarquee': '集合點名稱跑馬燈'");
     expect(i18n).toContain("'settings.gatherCardMarqueeSpeed': '跑馬燈速度'");
     expect(mapScreen).toContain('enabled={gatherCardTitleMarquee}');
@@ -297,21 +288,12 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).not.toContain('arrivalCheckBadge');
   });
 
-  it('animates gathering-card page dots when swiping between stops', () => {
+  it('keeps gathering-card page dots lightweight during stage morphs', () => {
     expect(mapScreen).toContain('styles.dots');
     expect(mapScreen).toContain('styles.dotActive');
-    // Half prior tempo, still low-bounce (not damping 14 overshoot).
-    expect(mapScreen).toContain('LinearTransition.springify()');
-    expect(mapScreen).toContain('.damping(28)');
-    expect(mapScreen).toContain('.stiffness(240)');
-    expect(mapScreen).toContain('.mass(0.85)');
-    const dotsStart = mapScreen.indexOf('layout={LinearTransition.springify()');
-    const dotsEnd = mapScreen.indexOf('style={[styles.dot', dotsStart);
-    expect(dotsStart).toBeGreaterThanOrEqual(0);
-    expect(dotsEnd).toBeGreaterThan(dotsStart);
-    expect(mapScreen.slice(dotsStart, dotsEnd)).not.toContain('.damping(14)');
-    expect(mapScreen).toContain('entering={FadeIn.duration(160)}');
-    expect(mapScreen).toContain('exiting={FadeOut.duration(160)}');
+    // Static dots — layout transitions were too expensive during sheet stage changes.
+    expect(mapScreen).not.toContain('layout={LinearTransition.springify()');
+    expect(mapScreen).toContain('style={[styles.dot, i2 === selectedIndex && styles.dotActive]}');
   });
 
   it('uses gathering-card press without scale bounce on expand or collapse', () => {

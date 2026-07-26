@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
-  Switch,
   Text,
   View,
   TouchableOpacity,
@@ -12,6 +11,8 @@ import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import * as Updates from 'expo-updates';
 import OverlaySheet from '../../../components/OverlaySheet';
+import NativeSwitch from '../../../components/NativeSwitch';
+import PrefSlider from '../../../components/PrefSlider';
 import { Segmented } from './Segmented';
 import NotificationPreferencesCard from '../../../components/NotificationPreferencesCard';
 import { useSession } from '../../../state/SessionContext';
@@ -24,6 +25,9 @@ import {
 import { useTranslation } from '../../../i18n';
 import { THEME_ORDER, type ThemeName, themes } from '../../../theme';
 import { glass } from '../../../glass';
+
+const MARQUEE_SPEED_MIN = 20;
+const MARQUEE_SPEED_MAX = 80;
 
 const OTA_UPDATES_USABLE = !__DEV__ && Updates.isEnabled;
 // Always available (leader + member, production included) so support can
@@ -123,10 +127,20 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
     themeName,
     textScale,
     diagnosticUploadEnabled,
+    obliqueLocate,
+    liveActivityEnabled,
+    gatherCardDefaultExpanded,
+    gatherCardTitleMarquee,
+    gatherCardMarqueeSpeed,
     setLanguage,
     setThemeName,
     setTextScale,
     setDiagnosticUploadEnabled,
+    setObliqueLocate,
+    setLiveActivityEnabled,
+    setGatherCardDefaultExpanded,
+    setGatherCardTitleMarquee,
+    setGatherCardMarqueeSpeed,
   } = usePreferences();
   const { colors } = useTheme();
   const accent = colors.accent;
@@ -299,6 +313,81 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
         <SectionLabel label={t('settings.notifSection')} styles={styles} />
         <NotificationPreferencesCard colors={{ ...themes.night, accent }} />
 
+        <SectionLabel label={t('settings.sectionMapJourney')} styles={styles} />
+        <View style={styles.accuracyRow}>
+          <View style={styles.accuracyCopy}>
+            <Text style={styles.accuracyLabel}>{t('settings.obliqueLocate')}</Text>
+            <Text style={styles.accuracySubhint}>{t('settings.obliqueLocateHint')}</Text>
+          </View>
+          <NativeSwitch
+            style={styles.accuracySwitch}
+            accent={accent}
+            value={obliqueLocate}
+            onValueChange={setObliqueLocate}
+            accessibilityLabel={t('settings.obliqueLocate')}
+          />
+        </View>
+        <View style={styles.accuracyRow}>
+          <View style={styles.accuracyCopy}>
+            <Text style={styles.accuracyLabel}>{t('settings.liveActivity')}</Text>
+            <Text style={styles.accuracySubhint}>{t('settings.liveActivityHint')}</Text>
+          </View>
+          <NativeSwitch
+            style={styles.accuracySwitch}
+            accent={accent}
+            value={liveActivityEnabled}
+            onValueChange={setLiveActivityEnabled}
+            accessibilityLabel={t('settings.liveActivity')}
+          />
+        </View>
+        <View style={styles.accuracyRow}>
+          <View style={styles.accuracyCopy}>
+            <Text style={styles.accuracyLabel}>{t('settings.gatherCardDefaultExpanded')}</Text>
+            <Text style={styles.accuracySubhint}>{t('settings.gatherCardDefaultExpandedHint')}</Text>
+          </View>
+          <NativeSwitch
+            style={styles.accuracySwitch}
+            accent={accent}
+            value={gatherCardDefaultExpanded}
+            onValueChange={setGatherCardDefaultExpanded}
+            accessibilityLabel={t('settings.gatherCardDefaultExpanded')}
+          />
+        </View>
+        <View style={styles.accuracyRow} pointerEvents="box-none">
+          <View style={styles.accuracyCopy} pointerEvents="none">
+            <Text style={styles.accuracyLabel}>{t('settings.gatherCardTitleMarquee')}</Text>
+            <Text style={styles.accuracySubhint}>{t('settings.gatherCardTitleMarqueeHint')}</Text>
+          </View>
+          <NativeSwitch
+            style={styles.accuracySwitch}
+            accent={accent}
+            value={Boolean(gatherCardTitleMarquee)}
+            onValueChange={(v) => setGatherCardTitleMarquee(Boolean(v))}
+            accessibilityLabel={t('settings.gatherCardTitleMarquee')}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: Boolean(gatherCardTitleMarquee) }}
+          />
+        </View>
+        {Boolean(gatherCardTitleMarquee) ? (
+          <View style={styles.marqueeSpeedBlock} pointerEvents="box-none">
+            <View style={styles.marqueeSpeedLabels} pointerEvents="none">
+              <Text style={styles.accuracyLabel}>{t('settings.gatherCardMarqueeSpeed')}</Text>
+              <View style={styles.marqueeSpeedEnds}>
+                <Text style={styles.accuracySubhint}>{t('settings.gatherCardMarqueeSpeedSlow')}</Text>
+                <Text style={styles.accuracySubhint}>{t('settings.gatherCardMarqueeSpeedFast')}</Text>
+              </View>
+            </View>
+            <PrefSlider
+              value={gatherCardMarqueeSpeed}
+              min={MARQUEE_SPEED_MIN}
+              max={MARQUEE_SPEED_MAX}
+              onChange={setGatherCardMarqueeSpeed}
+              accent={accent}
+              accessibilityLabel={t('settings.gatherCardMarqueeSpeed')}
+            />
+          </View>
+        ) : null}
+
         <SectionLabel label={t('map.cmdTitle')} styles={styles} />
         <View style={styles.settingsTopGroup}>
           <NavRow
@@ -317,13 +406,11 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             <Text style={styles.accuracyLabel}>{t('settings.diagnosticUpload')}</Text>
             <Text style={styles.accuracySubhint}>{t('settings.diagnosticUploadHint')}</Text>
           </View>
-          <Switch
+          <NativeSwitch
             style={styles.accuracySwitch}
+            accent={accent}
             value={diagnosticUploadEnabled}
             onValueChange={onDiagnosticSwitchChange}
-            trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
-            thumbColor="#fff"
-            ios_backgroundColor="rgba(120,120,128,0.32)"
             accessibilityRole="switch"
             accessibilityState={{ checked: diagnosticUploadEnabled }}
             accessibilityLabel={t('settings.diagnosticUpload')}

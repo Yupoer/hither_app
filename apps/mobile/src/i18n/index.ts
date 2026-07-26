@@ -317,6 +317,10 @@ const zh = {
   'map.syncDbOkLogsFailed': '集合點已同步，但日誌上傳未完成，請稍後再試。',
   'map.edit': '編輯',
   'map.cmdTitle': '快捷指令',
+  'map.opsCenter': '例外與協調',
+  'map.opsOpenCount': '{count} 筆待處理',
+  'map.startBlocked': '目前無法開始此集合點（可能不是下一站，或隊伍已在前往中）。',
+  'map.startBusy': '正在處理上一個開始請求，請稍候。',
   'map.cmdAll': '全部',
   'map.cmdRecent': '最近使用',
   'map.cmdMove': '移動方向',
@@ -443,7 +447,7 @@ const zh = {
   'coord.emptyTitle': '請輸入集合點名稱',
   'coord.invalidCoords': '請輸入有效座標',
   'coord.manualEntry': '輸入經緯度',
-  'search.quotaOrOffline': '搜尋暫時無法使用，可改用座標或 KML',
+  'search.quotaOrOffline': '搜尋暫時無法使用，可長按地圖標記',
   'map.meetCountdown': '集合倒數',
   'map.meetTimeCaption': '集合時間',
   'map.meetMinutes': '{minutes} 分鐘',
@@ -550,6 +554,7 @@ const zh = {
   'passive.title': '被動同行',
   'passive.switchBack': '切回完整介面',
   'passive.enter': '進入被動模式',
+  'passive.quickCommands': '快捷指令',
   'passive.currentPoint': '目前集合點',
   'passive.nextPoint': '下一站',
   'passive.personalProgress': '我的進度',
@@ -580,8 +585,10 @@ const zh = {
 
   // Destination search
   'search.placeholder': '輸入地址或地點名稱',
+  'search.sheetTitle': '搜尋地點',
   'search.searching': '搜尋中…',
   'search.noResults': '找不到相符的地點',
+  'search.longPressHint': '長按地圖也可以標記並新增地點',
 
   // Group map (web fallback)
   'web.note':
@@ -1095,6 +1102,10 @@ const en: Record<keyof typeof zh, string> = {
   'map.syncDbOkLogsFailed': 'Gathering points synced, but log upload did not finish. Try again later.',
   'map.edit': 'Edit',
   'map.cmdTitle': 'Quick commands',
+  'map.opsCenter': 'Exceptions & coordination',
+  'map.opsOpenCount': '{count} open',
+  'map.startBlocked': 'Can’t start this stop right now (not the next stop, or the team is already en route).',
+  'map.startBusy': 'Still handling the previous start request — try again in a moment.',
   'map.cmdAll': 'All',
   'map.cmdRecent': 'Recent',
   'map.cmdMove': 'Movement',
@@ -1225,7 +1236,7 @@ const en: Record<keyof typeof zh, string> = {
   'coord.emptyTitle': 'Please enter a name',
   'coord.invalidCoords': 'Please enter valid coordinates',
   'coord.manualEntry': 'Enter lat/lng',
-  'search.quotaOrOffline': 'Search unavailable — try coordinates or KML',
+  'search.quotaOrOffline': 'Search unavailable — long-press the map instead',
   'map.meetCountdown': 'Gather countdown',
   'map.meetTimeCaption': 'Meet time',
   'map.meetMinutes': '{minutes} min',
@@ -1329,6 +1340,7 @@ const en: Record<keyof typeof zh, string> = {
   'passive.title': 'Passive companion',
   'passive.switchBack': 'Full interface',
   'passive.enter': 'Enter passive mode',
+  'passive.quickCommands': 'Quick commands',
   'passive.currentPoint': 'Current point',
   'passive.nextPoint': 'Next stop',
   'passive.personalProgress': 'My progress',
@@ -1359,8 +1371,10 @@ const en: Record<keyof typeof zh, string> = {
   'settings.gatherCardMarqueeSpeedFast': 'Fast',
 
   'search.placeholder': 'Enter an address or place name',
+  'search.sheetTitle': 'Search places',
   'search.searching': 'Searching…',
   'search.noResults': 'No matching places',
+  'search.longPressHint': 'You can also long-press the map to drop a place',
 
   'web.note':
     '🗺️ The interactive map only shows in the native app (Expo Go on iPhone).\nLive data below is for the web preview.',

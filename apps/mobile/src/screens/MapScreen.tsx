@@ -18,7 +18,6 @@ import {
   ScrollView,
   Share,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   UIManager,
@@ -48,7 +47,6 @@ import Animated, {
   FadeOut,
   ZoomIn,
   ZoomOut,
-  LinearTransition,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -94,11 +92,10 @@ import {
   ARRIVAL_RADIUS_OPTIONS,
   ARRIVAL_RADIUS_MIN_M,
   ARRIVAL_RADIUS_MAX_M,
-  MARQUEE_SPEED_MAX,
-  MARQUEE_SPEED_MIN,
   type Language,
 } from '../state/PreferencesContext';
 import PrefSlider from '../components/PrefSlider';
+import NativeSwitch from '../components/NativeSwitch';
 import { canMarkDestinationArrival } from '../utils/arrivalMarking';
 import { hasArrived } from '../utils/journeyProgress';
 import { buildPassiveCompanionModel } from '../utils/passiveCompanion';
@@ -341,11 +338,6 @@ export default function MapScreen({ route, navigation }: Props) {
     setSharingEnabled,
     setArrivalRadiusM,
     setPassiveCompanionMode,
-    setObliqueLocate,
-    setLiveActivityEnabled,
-    setGatherCardDefaultExpanded,
-    setGatherCardTitleMarquee,
-    setGatherCardMarqueeSpeed,
   } = usePreferences();
   const { isCardExpanded, toggleCard, registerCardActivity } =
     useGatherCardExpansion(gatherCardDefaultExpanded);
@@ -700,8 +692,7 @@ export default function MapScreen({ route, navigation }: Props) {
     | 'myStatus'
     | 'arrivalManage'
     | 'arrival'
-    | 'exceptions'
-    | 'coordination'
+    | 'ops'
     | 'diagnostics'
   >(null);
   const [arrivalDestination, setArrivalDestination] = useState<Destination | null>(null);
@@ -1161,12 +1152,15 @@ export default function MapScreen({ route, navigation }: Props) {
     });
   }, [isLeader, navigationSessionState, sharingEnabled]);
 
+  // Prefer local prefs (available before inPassiveMode is derived below) so
+  // passive mode can skip MapKit work without a temporal dead zone.
+  const mapRoutesEnabled = !(preferencesReady && passiveCompanionMode);
   const { selfRoute, memberRoutes } = useMapKitRoutes({
     selfCoordinates: fromCoords,
     members,
-    gathering: activePoint,
+    gathering: mapRoutesEnabled ? activePoint : null,
     travelMode,
-    highAccuracy,
+    highAccuracy: mapRoutesEnabled ? highAccuracy : false,
   });
 
   // Foreground arrival: tools slider is the product geofence (30/50/100/300).
@@ -1682,7 +1676,12 @@ export default function MapScreen({ route, navigation }: Props) {
   // distance is sufficient for the initial Android notification and is
   // replaced by the locked baseline on the next render.
   const liveActivityBaselineM = initialDistanceM ?? liveDistance ?? numericDistance;
-  useLiveActivity(journeyActive && !localNavigationArrived && liveActivityEnabled, {
+  useLiveActivity(
+    journeyActive
+      && !localNavigationArrived
+      && liveActivityEnabled
+      && !(preferencesReady && passiveCompanionMode),
+    {
     groupName: membership?.group.name ?? '',
     navigationSessionId: navigationSessionState.session?.id,
     status: navigationSessionState.session ? 'active' : undefined,
@@ -3426,13 +3425,11 @@ export default function MapScreen({ route, navigation }: Props) {
           </Text>
           <Text style={styles.accuracyBattery}>{t('settings.preciseLocationHint')}</Text>
         </View>
-        <Switch
+        <NativeSwitch
           style={styles.accuracySwitch}
+          accent={accent}
           value={highAccuracy}
           onValueChange={setHighAccuracy}
-          trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
-          thumbColor="#fff"
-          ios_backgroundColor="rgba(120,120,128,0.32)"
           accessibilityLabel={t('settings.preciseLocation')}
         />
       </View>
@@ -3445,6 +3442,7 @@ export default function MapScreen({ route, navigation }: Props) {
   ]);
 
   // ─── 路線：集合點、排序、Google Maps 匯入、歷史 ───────────────────────
+  const opsOpenCount = exceptionOpenCount + coordination.openCount;
   const routePaneBody = useMemo(() => (
     <>
       <Text style={[styles.sheetHeading, styles.sheetHeadingFirst]}>{t('map.gatheringPoints')}</Text>
@@ -3478,48 +3476,20 @@ export default function MapScreen({ route, navigation }: Props) {
             <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
           </Pressable>
         ) : null}
-        {isLeader ? (
-          <Pressable
-            style={styles.listRow}
-            onPress={() => { lightTap(); setOverlay('exceptions'); }}
-            accessibilityRole="button"
-            accessibilityLabel={t('exception.centerTitle')}
-          >
-            <Text style={styles.listRowTitle}>{t('exception.centerTitle')}</Text>
-            {exceptionOpenCount > 0 ? (
-              <Text style={[styles.listRowTrailing, { color: glass.warn }]}>
-                {t('exception.openCount', { count: exceptionOpenCount })}
-              </Text>
-            ) : null}
-            <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
-          </Pressable>
-        ) : null}
         <Pressable
           style={styles.listRow}
-          onPress={() => { lightTap(); setOverlay('coordination'); }}
+          onPress={() => { lightTap(); setOverlay('ops'); }}
           accessibilityRole="button"
-          accessibilityLabel={t('coordination.title')}
-          testID="map-open-coordination"
+          accessibilityLabel={t('map.opsCenter')}
+          testID="map-open-ops"
         >
-          <Text style={styles.listRowTitle}>{t('coordination.title')}</Text>
-          {coordination.openCount > 0 ? (
+          <Text style={styles.listRowTitle}>{t('map.opsCenter')}</Text>
+          {opsOpenCount > 0 ? (
             <Text style={[styles.listRowTrailing, { color: glass.warn }]}>
-              {t('coordination.openCount', { count: coordination.openCount })}
+              {t('map.opsOpenCount', { count: opsOpenCount })}
             </Text>
           ) : null}
           <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
-        </Pressable>
-        <Pressable
-          style={styles.listRow}
-          onPress={() => {
-            lightTap();
-            openCoordinateSheet(undefined);
-          }}
-          accessibilityRole="button"
-          accessibilityLabel={t('coord.manualEntry')}
-        >
-          <Text style={styles.listRowTitle}>{t('coord.manualEntry')}</Text>
-          <Ionicons name="locate-outline" size={16} color={glass.textTertiary} />
         </Pressable>
         <Pressable style={styles.listRow} onPress={() => { lightTap(); setKmlVisible(true); }} accessibilityRole="button">
           <Text style={styles.listRowTitle}>
@@ -3539,146 +3509,45 @@ export default function MapScreen({ route, navigation }: Props) {
     </>
   ), [
     t, styles, nextStopTitle, nextStopDistLabel, destinations.length, canEditItinerary,
-    openHistoryOverlay, isLeader, openCoordinateSheet, exceptionOpenCount,
-    coordination.openCount,
+    openHistoryOverlay, isLeader, opsOpenCount,
   ]);
 
-  // ─── 工具：地圖/旅程偏好 → 抵達距離 → 快捷指令 ──────────────────────
+  // ─── 工具：同行者模式入口 → 定位分享 → 抵達距離 → 快捷指令 ─────────
   const toolsPaneBody = useMemo(() => (
     <>
-      <View style={styles.accuracyRow}>
-        <View style={styles.accuracyCopy}>
-          <Text style={styles.accuracyLabel}>
-            {t('settings.passiveCompanionMode')}
-          </Text>
-          <Text style={styles.accuracySubhint}>
-            {t('settings.passiveCompanionModeHint')}
-          </Text>
+      <Pressable
+        style={[styles.passiveEnterBtn, { backgroundColor: accent }]}
+        onPress={() => {
+          mediumTap();
+          setPassiveCompanionMode(true);
+        }}
+        accessibilityRole="button"
+        accessibilityLabel={t('passive.enter')}
+        testID="tools-enter-passive"
+      >
+        <Ionicons name="leaf-outline" size={18} color="#111" />
+        <View style={styles.passiveEnterCopy}>
+          <Text style={styles.passiveEnterTitle}>{t('passive.enter')}</Text>
+          <Text style={styles.passiveEnterHint}>{t('settings.passiveCompanionModeHint')}</Text>
         </View>
-        <Switch
-          style={styles.accuracySwitch}
-          value={passiveCompanionMode}
-          onValueChange={setPassiveCompanionMode}
-          trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
-          thumbColor="#fff"
-          ios_backgroundColor="rgba(120,120,128,0.32)"
-          accessibilityLabel={t('settings.passiveCompanionMode')}
-          accessibilityRole="switch"
-          accessibilityState={{ checked: passiveCompanionMode }}
-        />
-      </View>
+        <Ionicons name="chevron-forward" size={16} color="#111" />
+      </Pressable>
+
       <View style={styles.accuracyRow}>
         <View style={styles.accuracyCopy}>
           <Text style={styles.accuracyLabel}>{t('settings.locationSharing')}</Text>
           <Text style={styles.accuracySubhint}>{t('settings.locationSharingHint')}</Text>
         </View>
-        <Switch
+        <NativeSwitch
           style={styles.accuracySwitch}
+          accent={accent}
           value={sharingEnabled}
           onValueChange={(enabled) => {
             void handleSharingEnabledChange(enabled);
           }}
-          trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
-          thumbColor="#fff"
-          ios_backgroundColor="rgba(120,120,128,0.32)"
           accessibilityLabel={t('settings.locationSharing')}
         />
       </View>
-      <View style={styles.accuracyRow}>
-        <View style={styles.accuracyCopy}>
-          <Text style={styles.accuracyLabel}>{t('settings.obliqueLocate')}</Text>
-          <Text style={styles.accuracySubhint}>{t('settings.obliqueLocateHint')}</Text>
-        </View>
-        <Switch
-          style={styles.accuracySwitch}
-          value={obliqueLocate}
-          onValueChange={setObliqueLocate}
-          trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
-          thumbColor="#fff"
-          ios_backgroundColor="rgba(120,120,128,0.32)"
-          accessibilityLabel={t('settings.obliqueLocate')}
-        />
-      </View>
-      <View style={styles.accuracyRow}>
-        <View style={styles.accuracyCopy}>
-          <Text style={styles.accuracyLabel}>{t('settings.liveActivity')}</Text>
-          <Text style={styles.accuracySubhint}>{t('settings.liveActivityHint')}</Text>
-        </View>
-        <Switch
-          style={styles.accuracySwitch}
-          value={liveActivityEnabled}
-          onValueChange={setLiveActivityEnabled}
-          trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
-          thumbColor="#fff"
-          ios_backgroundColor="rgba(120,120,128,0.32)"
-          accessibilityLabel={t('settings.liveActivity')}
-        />
-      </View>
-      <View style={styles.accuracyRow}>
-        <View style={styles.accuracyCopy}>
-          <Text style={styles.accuracyLabel}>
-            {t('settings.gatherCardDefaultExpanded')}
-          </Text>
-          <Text style={styles.accuracySubhint}>
-            {t('settings.gatherCardDefaultExpandedHint')}
-          </Text>
-        </View>
-        <Switch
-          style={styles.accuracySwitch}
-          value={gatherCardDefaultExpanded}
-          onValueChange={setGatherCardDefaultExpanded}
-          trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
-          thumbColor="#fff"
-          ios_backgroundColor="rgba(120,120,128,0.32)"
-          accessibilityLabel={t('settings.gatherCardDefaultExpanded')}
-        />
-      </View>
-      <View style={styles.accuracyRow} pointerEvents="box-none">
-        <View style={styles.accuracyCopy} pointerEvents="none">
-          <Text style={styles.accuracyLabel}>
-            {t('settings.gatherCardTitleMarquee')}
-          </Text>
-          <Text style={styles.accuracySubhint}>
-            {t('settings.gatherCardTitleMarqueeHint')}
-          </Text>
-        </View>
-        <Switch
-          style={styles.accuracySwitch}
-          value={Boolean(gatherCardTitleMarquee)}
-          onValueChange={(v) => setGatherCardTitleMarquee(Boolean(v))}
-          trackColor={{ true: accent, false: 'rgba(120,120,128,0.32)' }}
-          thumbColor="#fff"
-          ios_backgroundColor="rgba(120,120,128,0.32)"
-          accessibilityLabel={t('settings.gatherCardTitleMarquee')}
-          accessibilityRole="switch"
-          accessibilityState={{ checked: Boolean(gatherCardTitleMarquee) }}
-        />
-      </View>
-      {Boolean(gatherCardTitleMarquee) ? (
-        <View style={styles.marqueeSpeedBlock} pointerEvents="box-none">
-          <View style={styles.marqueeSpeedLabels} pointerEvents="none">
-            <Text style={styles.accuracyLabel}>
-              {t('settings.gatherCardMarqueeSpeed')}
-            </Text>
-            <View style={styles.marqueeSpeedEnds}>
-              <Text style={styles.accuracySubhint}>
-                {t('settings.gatherCardMarqueeSpeedSlow')}
-              </Text>
-              <Text style={styles.accuracySubhint}>
-                {t('settings.gatherCardMarqueeSpeedFast')}
-              </Text>
-            </View>
-          </View>
-          <PrefSlider
-            value={gatherCardMarqueeSpeed}
-            min={MARQUEE_SPEED_MIN}
-            max={MARQUEE_SPEED_MAX}
-            onChange={setGatherCardMarqueeSpeed}
-            accent={accent}
-            accessibilityLabel={t('settings.gatherCardMarqueeSpeed')}
-          />
-        </View>
-      ) : null}
 
       <Text style={styles.sheetHeading}>{t('arrival.radiusSection')}</Text>
       <View style={styles.accuracyRow}>
@@ -3716,11 +3585,8 @@ export default function MapScreen({ route, navigation }: Props) {
     </>
   ), [
     styles, t, groupId, isLeader, dark, openCustomQuickCommand, accent,
-    arrivalRadiusM, setArrivalRadiusM, passiveCompanionMode, setPassiveCompanionMode,
-    sharingEnabled, handleSharingEnabledChange, obliqueLocate, setObliqueLocate,
-    liveActivityEnabled, setLiveActivityEnabled, gatherCardDefaultExpanded,
-    setGatherCardDefaultExpanded, gatherCardTitleMarquee, setGatherCardTitleMarquee,
-    gatherCardMarqueeSpeed, setGatherCardMarqueeSpeed,
+    arrivalRadiusM, setArrivalRadiusM, setPassiveCompanionMode,
+    sharingEnabled, handleSharingEnabledChange,
   ]);
 
   const sheetPaneOptions = useMemo(
@@ -3789,6 +3655,7 @@ export default function MapScreen({ route, navigation }: Props) {
             model={passiveModel}
             accent={accent}
             groupId={groupId}
+            isLeader={!!isLeader}
             navigationDestination={null}
             onSwitchBack={exitPassiveCompanionMode}
             onOpenExternalNavigation={openExternalNavigation}
@@ -3827,6 +3694,7 @@ export default function MapScreen({ route, navigation }: Props) {
             model={passiveModel}
             accent={accent}
             groupId={groupId}
+            isLeader={!!isLeader}
             navigationDestination={null}
             onSwitchBack={exitPassiveCompanionMode}
             onOpenExternalNavigation={openExternalNavigation}
@@ -3867,29 +3735,34 @@ export default function MapScreen({ route, navigation }: Props) {
 
   return (
     <View style={styles.flex}>
-      <GroupMap
-        ref={mapRef}
-        members={members}
-        gathering={activePoint}
-        destinations={destinations}
-        pendingPlace={pendingPlace}
-        currentUserId={user?.id}
-        initialCenter={mapInitialCenter ?? undefined}
-        // Show the planned path for everyone while journey is live (leader
-        // broadcast or local follower plan). When paused, keep a light path
-        // to the selected card so ETA still makes sense.
-        routePoints={selfRoute?.points}
-        routeColor={accent}
-        // Settled detent only (not heightSV) so we don't re-render the map
-        // mid-drag; top tracks measured carousel card height.
-        topOverlap={topPad}
-        bottomOverlap={bottomPad}
-        onUserLocationSample={
-          Platform.OS === 'ios' ? consumeForegroundSample : undefined
-        }
-        onLongPressCoordinate={handleLongPressCoordinate}
-        onRequestGoHome={goHomeCreateOrJoin}
-      />
+      {/* Passive mode unmounts the map to free GPU/native tiles; switch-back remounts. */}
+      {!inPassiveMode ? (
+        <GroupMap
+          ref={mapRef}
+          members={members}
+          gathering={activePoint}
+          destinations={destinations}
+          pendingPlace={pendingPlace}
+          currentUserId={user?.id}
+          initialCenter={mapInitialCenter ?? undefined}
+          // Show the planned path for everyone while journey is live (leader
+          // broadcast or local follower plan). When paused, keep a light path
+          // to the selected card so ETA still makes sense.
+          routePoints={selfRoute?.points}
+          routeColor={accent}
+          // Settled detent only (not heightSV) so we don't re-render the map
+          // mid-drag; top tracks measured carousel card height.
+          topOverlap={topPad}
+          bottomOverlap={bottomPad}
+          onUserLocationSample={
+            Platform.OS === 'ios' ? consumeForegroundSample : undefined
+          }
+          onLongPressCoordinate={handleLongPressCoordinate}
+          onRequestGoHome={goHomeCreateOrJoin}
+        />
+      ) : (
+        <View style={[styles.flex, { backgroundColor: '#0c0e12' }]} />
+      )}
 
       {/* OTA-04: local-cache / stale / pending / conflict banners. */}
       {coreDataBannerMessage && showDenseChrome ? (
@@ -3991,6 +3864,7 @@ export default function MapScreen({ route, navigation }: Props) {
           model={passiveModel}
           accent={accent}
           groupId={groupId}
+          isLeader={!!isLeader}
           navigationDestination={navTarget ?? activePoint ?? selectedDestination ?? null}
           onSwitchBack={exitPassiveCompanionMode}
           onOpenExternalNavigation={openExternalNavigation}
@@ -4307,20 +4181,20 @@ export default function MapScreen({ route, navigation }: Props) {
                   key={`carousel-dest-${dest.id}-${index}`}
                   style={{ width: windowWidth, paddingHorizontal: narrowScreen ? 10 : 14 }}
                 >
-                  <GatheringCardPressable
-                    onToggle={() => toggleCard(dest.id)}
-                    accessibilityLabel={dest.title}
-                    accessibilityHint={cardExpanded ? '收合集合點卡片' : '展開集合點卡片'}
+                  <liquidGlass.GlassView
+                    tintColor={active ? glass.cardActive : glass.card}
+                    style={[
+                      styles.card,
+                      // Active state uses fill only — no theme-color rim
+                      // (Android hairline + accent reads as a harsh outline).
+                      active ? styles.cardActiveBorder : null,
+                    ]}
                   >
-                      <liquidGlass.GlassView
-                        tintColor={active ? glass.cardActive : glass.card}
-                        style={[
-                          styles.card,
-                          // Active state uses fill only — no theme-color rim
-                          // (Android hairline + accent reads as a harsh outline).
-                          active ? styles.cardActiveBorder : null,
-                        ]}
-                      >
+                    <GatheringCardPressable
+                      onToggle={() => toggleCard(dest.id)}
+                      accessibilityLabel={dest.title}
+                      accessibilityHint={cardExpanded ? '收合集合點卡片' : '展開集合點卡片'}
+                    >
                     {(personallyArrived || arrivalCelebrateDestId === dest.id) ? (
                       <View pointerEvents="none" style={styles.arrivalDimOverlay} />
                     ) : null}
@@ -4394,25 +4268,16 @@ export default function MapScreen({ route, navigation }: Props) {
                             })()}
                           </Text>
                           {destinations.length > 1 && (
-                            <Animated.View
-                              style={styles.dots}
-                              layout={LinearTransition.duration(160)}
-                            >
+                            <View style={styles.dots}>
                               {dotWindow(destinations.length, selectedIndex, DOTS_MAX_VISIBLE).map(
                                 (i2) => (
-                                  <Animated.View
+                                  <View
                                     key={`dot-${destinations[i2]?.id || i2}-${i2}`}
-                                    entering={FadeIn.duration(160)}
-                                    exiting={FadeOut.duration(160)}
-                                    layout={LinearTransition.springify()
-                                      .damping(28)
-                                      .stiffness(240)
-                                      .mass(0.85)}
                                     style={[styles.dot, i2 === selectedIndex && styles.dotActive]}
                                   />
                                 ),
                               )}
-                            </Animated.View>
+                            </View>
                           )}
                         </View>
                         {/* Collapsed / expanded swap in-tree — one shot, no Zoom / layout morph. */}
@@ -4586,11 +4451,12 @@ export default function MapScreen({ route, navigation }: Props) {
                       </View>
                     </View>
 
+                    </GatheringCardPressable>
                     {/* a11y-layout:commandRow — always one row.
-                        Maps lives in the metrics row when expanded.
+                        Outside expand Pressable so Start never toggles the card.
                         Density tracks narrow + Dynamic Type. */}
                     {cardExpanded && (
-                    <View style={styles.commandRow}>
+                    <View style={styles.commandRow} pointerEvents="box-none">
                       {navCmd.kind !== 'hidden' ? (
                         <Pressable
                           style={[
@@ -4608,8 +4474,9 @@ export default function MapScreen({ route, navigation }: Props) {
                                   ? { backgroundColor: glass.ok }
                                   : { backgroundColor: accent },
                           ]}
-                          onPress={(event) => {
-                            event.stopPropagation();
+                          hitSlop={8}
+                          testID={`gather-nav-${dest.id}`}
+                          onPress={() => {
                             registerCardActivity(dest.id);
                             mediumTap();
                             if (navCmd.action === 'close_plan') {
@@ -4618,9 +4485,14 @@ export default function MapScreen({ route, navigation }: Props) {
                             } else if (navCmd.action === 'start_nav') {
                               // Defense-in-depth: full OTA-01 Start predicates.
                               if (isLeader && !canTeamStart(teamGatheringState, dest.id)) {
+                                logEvent('nav_start_blocked', {
+                                  reason: 'team_start_blocked',
+                                  destId: dest.id,
+                                });
+                                Alert.alert(t('map.setFailedTitle'), t('map.startBlocked'));
                                 return;
                               }
-                              startNavigation(dest, index);
+                              void startNavigation(dest, index);
                             } else if (navCmd.action === 'start_plan') {
                               startLocalRoutePlan(dest, index);
                             } else if (navCmd.action === 'end_point') {
@@ -4628,6 +4500,11 @@ export default function MapScreen({ route, navigation }: Props) {
                               void runCompleteGatheringStop(dest);
                             } else if (navCmd.action === 'mark_complete') {
                               promptCompleteAfterArrival(dest);
+                            } else if (navCmd.disabled) {
+                              logEvent('nav_start_blocked', {
+                                reason: navCmd.kind,
+                                destId: dest.id,
+                              });
                             }
                           }}
                           disabled={journeyBusy || navCmd.disabled}
@@ -4687,8 +4564,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
                       <Pressable
                         style={styles.cmdSquare}
-                        onPress={(event) => {
-                          event.stopPropagation();
+                        onPress={() => {
                           registerCardActivity(dest.id);
                           lightTap();
                           const order = ['walk', 'transit', 'drive'] as const;
@@ -4713,8 +4589,7 @@ export default function MapScreen({ route, navigation }: Props) {
                             styles.arrivalCmdSquare,
                             styles.arrivalCmdArrived,
                           ]}
-                          onPress={(event) => {
-                            event.stopPropagation();
+                          onPress={() => {
                             registerCardActivity(dest.id);
                             lightTap();
                             handleArrival(dest, user.id, false);
@@ -4734,8 +4609,7 @@ export default function MapScreen({ route, navigation }: Props) {
                             styles.cmdSquare,
                             styles.arrivalCmdSquare,
                           ]}
-                          onPress={(event) => {
-                            event.stopPropagation();
+                          onPress={() => {
                             registerCardActivity(dest.id);
                             lightTap();
                             handleSelfArrival(dest, user.id);
@@ -4777,8 +4651,7 @@ export default function MapScreen({ route, navigation }: Props) {
                       />
                     </View>
                     )}
-                      </liquidGlass.GlassView>
-                  </GatheringCardPressable>
+                  </liquidGlass.GlassView>
                 </View>
               );
             })}
@@ -4941,6 +4814,7 @@ export default function MapScreen({ route, navigation }: Props) {
         title={t('map.inviteMembers')}
         accent={accent}
         doneLabel={t('map.done')}
+        edgeToEdge
       >
         <ScrollView contentContainerStyle={styles.overlayBody}>
           <Text style={styles.overlayHint}>
@@ -5063,31 +4937,19 @@ export default function MapScreen({ route, navigation }: Props) {
         </ScrollView>
       </OverlaySheet>
 
-      {/* OTA-09 coordination requests — list / respond / override / create. */}
+      {/* Exceptions + coordination — single full-bleed ops center. */}
       <OverlaySheet
-        visible={overlay === 'coordination'}
+        visible={overlay === 'ops'}
         onClose={() => setOverlay(null)}
-        title={t('coordination.title')}
+        title={t('map.opsCenter')}
         accent={accent}
         doneLabel={t('map.done')}
-      >
-        <CoordinationRequestsPanel
-          accent={accent}
-          isLeader={!!isLeader}
-          styles={styles}
-          coordination={coordination}
-        />
-      </OverlaySheet>
-
-      {/* Leader exception center — derived actionable list only. */}
-      <OverlaySheet
-        visible={overlay === 'exceptions'}
-        onClose={() => setOverlay(null)}
-        title={t('exception.centerTitle')}
-        accent={accent}
-        doneLabel={t('map.done')}
+        edgeToEdge
       >
         <ScrollView contentContainerStyle={styles.overlayBody}>
+          <Text style={[styles.sheetHeading, styles.sheetHeadingFirst]}>
+            {t('exception.centerTitle')}
+          </Text>
           {organizerExceptions.length === 0 ? (
             <Text style={styles.overlayHint}>{t('exception.centerEmpty')}</Text>
           ) : (
@@ -5184,6 +5046,14 @@ export default function MapScreen({ route, navigation }: Props) {
               );
             })
           )}
+
+          <Text style={styles.sheetHeading}>{t('coordination.title')}</Text>
+          <CoordinationRequestsPanel
+            accent={accent}
+            isLeader={!!isLeader}
+            styles={styles}
+            coordination={coordination}
+          />
         </ScrollView>
       </OverlaySheet>
 
@@ -5194,6 +5064,7 @@ export default function MapScreen({ route, navigation }: Props) {
         title={t('map.cmdTitle')}
         accent={accent}
         doneLabel={t('map.done')}
+        edgeToEdge
       >
         <ScrollView contentContainerStyle={styles.overlayBody}>
           {groupId ? (
@@ -5441,6 +5312,7 @@ export default function MapScreen({ route, navigation }: Props) {
         title={t('subgroup.inviteTitle')}
         accent={accent}
         doneLabel={t('map.done')}
+        edgeToEdge
       >
         <ScrollView contentContainerStyle={styles.overlayBody}>
           {invitable.length === 0 ? (
@@ -5485,10 +5357,6 @@ export default function MapScreen({ route, navigation }: Props) {
         // Don't persist on pick — stage the place for the bottom confirm card
         // (Add / Cancel). Resolves immediately so the search sheet closes.
         onPick={handleSearchPick}
-        onOpenCoordinateEntry={() => {
-          closeSearch();
-          openCoordinateSheet(undefined);
-        }}
       />
 
       <PaywallSheet
@@ -6954,15 +6822,34 @@ const makeStyles = (
       marginTop: 12,
       borderBottomWidth: 0,
     },
-    /** Inactive toggle panes stay mounted but take no layout space. */
+    /** Inactive toggle panes: skip layout work during sheet stage morphs. */
     sheetPaneHidden: {
-      position: 'absolute',
-      opacity: 0,
-      left: 0,
-      right: 0,
-      height: 0,
-      overflow: 'hidden',
-      zIndex: -1,
+      display: 'none',
+    },
+    passiveEnterBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      borderRadius: 16,
+      paddingHorizontal: 14,
+      paddingVertical: 14,
+      marginTop: 8,
+      marginBottom: 10,
+    },
+    passiveEnterCopy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 2,
+    },
+    passiveEnterTitle: {
+      color: '#111',
+      fontSize: 16,
+      fontWeight: '700',
+    },
+    passiveEnterHint: {
+      color: 'rgba(17,17,17,0.72)',
+      fontSize: 12,
+      lineHeight: 16,
     },
     sheetHeadingFirst: {
       marginTop: 4,

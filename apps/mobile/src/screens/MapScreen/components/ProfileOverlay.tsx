@@ -69,6 +69,7 @@ export function ProfileOverlay({
       title={t('profile.title')}
       accent={accent}
       doneLabel={t('map.done')}
+      edgeToEdge
     >
       <ScrollView contentContainerStyle={styles.profileBody}>
         <View style={styles.profilePreviewRow}>

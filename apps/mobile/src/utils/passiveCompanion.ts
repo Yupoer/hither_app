@@ -27,6 +27,7 @@ export const PASSIVE_ALLOWED_ACTIONS = [
   'switch_back_full',
   'external_navigation',
   'need_help',
+  'quick_command',
 ] as const;
 
 export type PassiveAllowedAction = (typeof PASSIVE_ALLOWED_ACTIONS)[number];

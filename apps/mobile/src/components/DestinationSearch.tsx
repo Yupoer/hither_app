@@ -2,22 +2,20 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
-  Modal,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
-  useWindowDimensions,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { liquidGlass, maps, type PlaceResult, type MapRegion } from '../native';
+import { maps, type PlaceResult, type MapRegion } from '../native';
 import { useTheme } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
 import { radius, spacing, type Palette } from '../theme';
 import { glass } from '../glass';
 import { extractPlusCode } from '../utils/plusCode';
 import CrookIcon from './CrookIcon';
+import OverlaySheet from './OverlaySheet';
 
 const DEBOUNCE_MS = 450;
 
@@ -35,8 +33,6 @@ export interface DestinationSearchProps {
    * persisted; the sheet shows a spinner until it does, then closes.
    */
   onPick: (place: PlaceResult) => Promise<void>;
-  /** Opens the shared coordinate destination sheet (manual lat/lng). */
-  onOpenCoordinateEntry?: () => void;
 }
 
 /**
@@ -45,16 +41,16 @@ export interface DestinationSearchProps {
  * Typing debounces into `maps.searchPlaces` (native MapKit on a Dev Build, or
  * the Nominatim fallback in Expo Go). Picking a result calls `onPick`, which
  * persists it as the next destination.
+ *
+ * Dismiss via Done, scrim, or pull-down (OverlaySheet). Long-press map remains
+ * the alternate add-place path — shown as a hint here.
  */
 export default React.memo(function DestinationSearch({
   visible,
   onClose,
   biasRegion,
   onPick,
-  onOpenCoordinateEntry,
 }: DestinationSearchProps) {
-  const insets = useSafeAreaInsets();
-  const { height: windowHeight } = useWindowDimensions();
   const { colors } = useTheme();
   const { t } = useTranslation();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -109,132 +105,86 @@ export default React.memo(function DestinationSearch({
   }
 
   return (
-    <Modal
+    <OverlaySheet
       visible={visible}
-      animationType="slide"
-      transparent
-      onRequestClose={onClose}
+      onClose={onClose}
+      title={t('search.sheetTitle')}
+      accent={colors.accent}
+      doneLabel={t('common.cancel')}
+      edgeToEdge
     >
-      <View style={styles.flex}>
-        <Pressable style={styles.backdrop} onPress={onClose} />
-        {/* Near-full-height panel (Apple Maps: tapping search sends the sheet
-            to the top) with the search field first, right under the grabber. */}
-        <liquidGlass.GlassView
-          tintColor={glass.overlay}
-          style={[
-            styles.sheet,
-            {
-              height: windowHeight - insets.top - 6,
-              paddingBottom: insets.bottom + spacing.lg,
-            },
-          ]}
-        >
-          <View style={styles.handle} />
-
-          <View style={styles.searchRow}>
-            <TextInput
-              style={styles.input}
-              value={query}
-              onChangeText={(value) => setQuery(normalizeSearchInput(value))}
-              placeholder={t('search.placeholder')}
-              placeholderTextColor={glass.textTertiary}
-              keyboardAppearance="dark"
-              autoFocus
-              returnKeyType="search"
-              accessibilityLabel={t('search.placeholder')}
-            />
-            <Pressable
-              onPress={onClose}
-              style={styles.cancel}
-              accessibilityRole="button"
-            >
-              <Text style={styles.cancelText}>{t('common.cancel')}</Text>
-            </Pressable>
-          </View>
-
-          {onOpenCoordinateEntry ? (
-            <Pressable
-              onPress={onOpenCoordinateEntry}
-              style={styles.coordEntry}
-              accessibilityRole="button"
-              accessibilityLabel={t('coord.manualEntry')}
-            >
-              <Text style={[styles.coordEntryText, { color: colors.accent }]}>
-                {t('coord.manualEntry')}
-              </Text>
-            </Pressable>
-          ) : null}
-
-          {searching ? (
-            <View style={styles.statusRow}>
-              <ActivityIndicator color={colors.accent} />
-              <Text style={styles.statusText}>{t('search.searching')}</Text>
-            </View>
-          ) : query.trim() && results.length === 0 ? (
-            <Text style={styles.statusText}>{t('search.quotaOrOffline')}</Text>
-          ) : null}
-
-          <FlatList
-            data={results}
-            keyExtractor={(item) => item.id}
-            keyboardShouldPersistTaps="handled"
-            style={styles.list}
-            renderItem={({ item }) => (
-              <Pressable
-                style={({ pressed }) => [
-                  styles.resultRow,
-                  pressed && styles.resultPressed,
-                ]}
-                onPress={() => handlePick(item)}
-                disabled={submittingId !== null}
-                accessibilityRole="button"
-              >
-                <View style={styles.resultIcon}>
-                  <CrookIcon size={22} color={colors.accent} />
-                </View>
-                <View style={styles.resultText}>
-                  <Text style={styles.resultName} numberOfLines={1}>
-                    {item.name}
-                  </Text>
-                  {item.address ? (
-                    <Text style={styles.resultAddress} numberOfLines={2}>
-                      {item.address}
-                    </Text>
-                  ) : null}
-                </View>
-                {submittingId === item.id ? (
-                  <ActivityIndicator color={colors.accent} />
-                ) : null}
-              </Pressable>
-            )}
+      <View style={styles.body}>
+        <View style={styles.searchRow}>
+          <TextInput
+            style={styles.input}
+            value={query}
+            onChangeText={(value) => setQuery(normalizeSearchInput(value))}
+            placeholder={t('search.placeholder')}
+            placeholderTextColor={glass.textTertiary}
+            keyboardAppearance="dark"
+            autoFocus
+            returnKeyType="search"
+            accessibilityLabel={t('search.placeholder')}
           />
-        </liquidGlass.GlassView>
+        </View>
+
+        <Text style={styles.hint}>{t('search.longPressHint')}</Text>
+
+        {searching ? (
+          <View style={styles.statusRow}>
+            <ActivityIndicator color={colors.accent} />
+            <Text style={styles.statusText}>{t('search.searching')}</Text>
+          </View>
+        ) : query.trim() && results.length === 0 ? (
+          <Text style={styles.statusText}>{t('search.quotaOrOffline')}</Text>
+        ) : null}
+
+        <FlatList
+          data={results}
+          keyExtractor={(item) => item.id}
+          keyboardShouldPersistTaps="handled"
+          style={styles.list}
+          renderItem={({ item }) => (
+            <Pressable
+              style={({ pressed }) => [
+                styles.resultRow,
+                pressed && styles.resultPressed,
+              ]}
+              onPress={() => handlePick(item)}
+              disabled={submittingId !== null}
+              accessibilityRole="button"
+            >
+              <View style={styles.resultIcon}>
+                <CrookIcon size={22} color={colors.accent} />
+              </View>
+              <View style={styles.resultText}>
+                <Text style={styles.resultName} numberOfLines={1}>
+                  {item.name}
+                </Text>
+                {item.address ? (
+                  <Text style={styles.resultAddress} numberOfLines={2}>
+                    {item.address}
+                  </Text>
+                ) : null}
+              </View>
+              {submittingId === item.id ? (
+                <ActivityIndicator color={colors.accent} />
+              ) : null}
+            </Pressable>
+          )}
+        />
       </View>
-    </Modal>
+    </OverlaySheet>
   );
 });
 
 // Dark "Liquid Glass" surface to match the map's sheet/overlays (opened from
 // there), independent of the light/dark map theme. Accent still follows theme.
 const makeStyles = (colors: Palette) => StyleSheet.create({
-  flex: { flex: 1, justifyContent: 'flex-end' },
-  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: glass.scrim },
-  sheet: {
-    overflow: 'hidden',
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderColor: glass.hairlineSoft,
+  body: {
+    flex: 1,
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
     gap: spacing.md,
-  },
-  handle: {
-    alignSelf: 'center',
-    width: 40,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: glass.grabber,
   },
   searchRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   input: {
@@ -248,15 +198,13 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     fontSize: 17,
     color: '#fff',
   },
-  cancel: { paddingHorizontal: spacing.sm, paddingVertical: spacing.sm },
-  cancelText: { color: colors.accent, fontSize: 15, fontWeight: '600' },
+  hint: {
+    color: glass.textTertiary,
+    fontSize: 13,
+    lineHeight: 18,
+  },
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   statusText: { color: glass.textSecondary, fontSize: 14 },
-  coordEntry: {
-    paddingVertical: spacing.sm,
-    alignSelf: 'flex-start',
-  },
-  coordEntryText: { fontSize: 15, fontWeight: '600' },
   list: { flex: 1 },
   resultRow: {
     flexDirection: 'row',
