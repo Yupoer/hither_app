@@ -112,11 +112,13 @@ import { useJourneyNavigation } from './MapScreen/hooks/useJourneyNavigation';
 import { useMapKitRoutes } from './MapScreen/hooks/useMapKitRoutes';
 import { startNavigationEnergyMonitor } from '../state/performance';
 import { useGatherCardExpansion } from './MapScreen/hooks/useGatherCardExpansion';
+import { useCoordinationRequests } from './MapScreen/hooks/useCoordinationRequests';
 import { SettingsOverlay } from './MapScreen/components/SettingsOverlay';
 import { DiagnosticsOverlay } from './MapScreen/components/DiagnosticsOverlay';
 import { ProfileOverlay } from './MapScreen/components/ProfileOverlay';
 import { SubgroupSection } from './MapScreen/components/SubgroupSection';
 import { Segmented } from './MapScreen/components/Segmented';
+import { CoordinationRequestsPanel } from './MapScreen/components/CoordinationRequestsPanel';
 import AccountSheet from '../components/AccountSheet';
 import { useGroupState } from '../state/useGroupState';
 import { useNavigationSession } from '../state/useNavigationSession';
@@ -401,6 +403,8 @@ export default function MapScreen({ route, navigation }: Props) {
     highAccuracy,
   });
   const navigationSessionState = useNavigationSession(groupId);
+  const navigationSessionId = navigationSessionState.session?.id ?? null;
+  const hasNavigationSession = navigationSessionId !== null;
   // Cold start / return from background: re-pull active flock session so
   // members immediately enter nav mode without tapping「路徑」.
   useEffect(() => {
@@ -559,6 +563,7 @@ export default function MapScreen({ route, navigation }: Props) {
   /** Set while a load is in flight so a concurrent request re-runs after. */
   const workflowPendingRef = useRef(false);
   const workflowLastLoadAtRef = useRef(0);
+  const workflowChannelSeqRef = useRef(0);
   const WORKFLOW_MIN_INTERVAL_MS = 2_500;
 
   const loadGatheringWorkflow = useCallback(async () => {
@@ -636,7 +641,7 @@ export default function MapScreen({ route, navigation }: Props) {
     workflowLastLoadAtRef.current = 0;
     void loadGatheringWorkflow().catch(() => undefined);
     const channel = supabase
-      .channel(`gathering-workflow:${groupId}`)
+      .channel(`gathering-workflow:${groupId}:${++workflowChannelSeqRef.current}`)
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'destination_arrivals', filter: `group_id=eq.${groupId}`,
       }, scheduleWorkflowReload)
@@ -696,6 +701,7 @@ export default function MapScreen({ route, navigation }: Props) {
     | 'arrivalManage'
     | 'arrival'
     | 'exceptions'
+    | 'coordination'
     | 'diagnostics'
   >(null);
   const [arrivalDestination, setArrivalDestination] = useState<Destination | null>(null);
@@ -1398,7 +1404,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
     void startBackgroundJourney({
       groupId,
-      navigationSessionId: navigationSessionState.session?.id ?? null,
+      navigationSessionId,
       destinationId: navTarget?.id ?? 'group-presence',
       destination: dest,
       arrivalRadiusMeters: localArrivalRadiusM,
@@ -1409,9 +1415,7 @@ export default function MapScreen({ route, navigation }: Props) {
       highAccuracy,
       powerMode,
       sharingEnabled,
-      teamNavigationActive: Boolean(
-        navigationSessionState.session || (journeyActive && navTarget),
-      ),
+      teamNavigationActive: hasNavigationSession || Boolean(journeyActive && navTarget),
       appState: appState === 'background' ? 'background' : 'inactive',
     }).then((result) => {
       if (result === 'hidden') {
@@ -1429,7 +1433,8 @@ export default function MapScreen({ route, navigation }: Props) {
     highAccuracy,
     journeyActive,
     navTarget,
-    navigationSessionState.session,
+    navigationSessionId,
+    hasNavigationSession,
     sharingEnabled,
     showLocationPermissionAlert,
     travelMode,
@@ -1440,7 +1445,7 @@ export default function MapScreen({ route, navigation }: Props) {
   // Low-overhead energy samples while navigating in the foreground (no full API tracing).
   useEffect(() => {
     if (!journeyActive || appState !== 'active') return;
-    const trackingMode = navigationSessionState.session
+    const trackingMode = hasNavigationSession
       ? highAccuracy
         ? 'navigationMax'
         : 'teamNavigation'
@@ -1448,7 +1453,7 @@ export default function MapScreen({ route, navigation }: Props) {
         ? 'manualHighAccuracy'
         : 'foreground';
     return startNavigationEnergyMonitor({
-      navigationSessionId: navigationSessionState.session?.id ?? null,
+      navigationSessionId,
       trackingMode,
     });
   }, [
@@ -1456,7 +1461,8 @@ export default function MapScreen({ route, navigation }: Props) {
     groupId,
     highAccuracy,
     journeyActive,
-    navigationSessionState.session,
+    hasNavigationSession,
+    navigationSessionId,
   ]);
 
   const lastFittedRouteRef = useRef<string | null>(null);
@@ -1536,6 +1542,13 @@ export default function MapScreen({ route, navigation }: Props) {
     stragglers,
     arrivedUserIds: exceptionArrivedUserIds,
     leaderUserId: user?.id,
+  });
+
+  // OTA-09: coordination request lifecycle — independent of navigation start.
+  const coordination = useCoordinationRequests({
+    groupId,
+    userId: user?.id,
+    enabled: !!groupId && !isDemoGroup(groupId),
   });
 
   // Same metric as locked initial (route stays route; never silent straight fallback).
@@ -3483,6 +3496,21 @@ export default function MapScreen({ route, navigation }: Props) {
         ) : null}
         <Pressable
           style={styles.listRow}
+          onPress={() => { lightTap(); setOverlay('coordination'); }}
+          accessibilityRole="button"
+          accessibilityLabel={t('coordination.title')}
+          testID="map-open-coordination"
+        >
+          <Text style={styles.listRowTitle}>{t('coordination.title')}</Text>
+          {coordination.openCount > 0 ? (
+            <Text style={[styles.listRowTrailing, { color: glass.warn }]}>
+              {t('coordination.openCount', { count: coordination.openCount })}
+            </Text>
+          ) : null}
+          <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
+        </Pressable>
+        <Pressable
+          style={styles.listRow}
           onPress={() => {
             lightTap();
             openCoordinateSheet(undefined);
@@ -3512,6 +3540,7 @@ export default function MapScreen({ route, navigation }: Props) {
   ), [
     t, styles, nextStopTitle, nextStopDistLabel, destinations.length, canEditItinerary,
     openHistoryOverlay, isLeader, openCoordinateSheet, exceptionOpenCount,
+    coordination.openCount,
   ]);
 
   // ─── 工具：地圖/旅程偏好 → 抵達距離 → 快捷指令 ──────────────────────
@@ -5032,6 +5061,22 @@ export default function MapScreen({ route, navigation }: Props) {
             );
           })}
         </ScrollView>
+      </OverlaySheet>
+
+      {/* OTA-09 coordination requests — list / respond / override / create. */}
+      <OverlaySheet
+        visible={overlay === 'coordination'}
+        onClose={() => setOverlay(null)}
+        title={t('coordination.title')}
+        accent={accent}
+        doneLabel={t('map.done')}
+      >
+        <CoordinationRequestsPanel
+          accent={accent}
+          isLeader={!!isLeader}
+          styles={styles}
+          coordination={coordination}
+        />
       </OverlaySheet>
 
       {/* Leader exception center — derived actionable list only. */}

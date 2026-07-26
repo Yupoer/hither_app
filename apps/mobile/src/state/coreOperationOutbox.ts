@@ -536,7 +536,12 @@ export function createCoreOperationOutbox(
 
     enqueueGatheringTransition(
       input: EnqueueGatheringInput,
-    ): Promise<{ operation: CoreOperation; local: ActiveGatheringState }> {
+    ): Promise<{
+      operation: CoreOperation;
+      local: ActiveGatheringState;
+      /** Pre-transition base used for business-error rollback. */
+      base: ActiveGatheringState;
+    }> {
       return runSerial(async () => {
         await initialize();
         const current = now();
@@ -594,7 +599,52 @@ export function createCoreOperationOutbox(
         }, operation);
 
         notifyCoreOutboxChanged();
-        return { operation, local };
+        return { operation, local, base };
+      });
+    },
+
+    /**
+     * Mark a still-open gathering op as conflict and restore pre-transition
+     * local state. Used when legacy navigation rejects a non-transient error
+     * after optimistic enqueue (must not keep retrying a doomed Start).
+     */
+    markGatheringConflictAndRestore(input: {
+      operationId: string;
+      restore: ActiveGatheringState;
+      message: string;
+      code?: CoreConflictResult['code'];
+    }): Promise<void> {
+      return runSerial(async () => {
+        await initialize();
+        const current = now();
+        const existing = await outboxDb.get(input.operationId);
+        if (
+          existing
+          && (existing.status === 'pending'
+            || existing.status === 'failed'
+            || existing.status === 'inflight')
+        ) {
+          const conflict: CoreConflictResult = {
+            code: input.code ?? 'invalid_transition',
+            message: input.message,
+            serverEntityVersion: input.restore.entityVersion,
+            serverState: input.restore,
+            operationId: existing.id,
+            entityType: existing.entityType,
+            entityId: existing.entityId,
+            occurredAt: current,
+          };
+          await outboxDb.update({
+            ...existing,
+            status: 'conflict',
+            conflictResult: conflict,
+            updatedAt: current,
+          });
+        }
+        await coreDb.putActiveGathering(input.restore, {
+          patchSnapshot: 'remote',
+        });
+        notifyCoreOutboxChanged();
       });
     },
 

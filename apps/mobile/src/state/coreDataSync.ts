@@ -81,8 +81,11 @@ export function projectOptimisticGathering(
 }
 
 /**
- * Leader Start — local-first: write optimistic gathering + outbox, then flush.
+ * Leader Start — local-first: write optimistic gathering + outbox.
  * Throws on enqueue failure so call sites do not pretend durability succeeded.
+ *
+ * Pass `flushImmediately: false` when a subsequent legacy navigation session
+ * call must succeed (or be classified as offline) before the outbox may flush.
  */
 export async function enqueueLeaderGatheringStart(
   groupId: string,
@@ -91,8 +94,14 @@ export async function enqueueLeaderGatheringStart(
     groupState?: GroupState | null;
     activeDestinationId?: string | null;
     operationId?: string;
+    /** Default true. Journey start sets false until session outcome is known. */
+    flushImmediately?: boolean;
   } = {},
-): Promise<{ local: ActiveGatheringState }> {
+): Promise<{
+  local: ActiveGatheringState;
+  base: ActiveGatheringState;
+  operationId: string;
+}> {
   const base =
     options.baseState
     ?? (await getCoreActiveGathering(groupId))
@@ -102,15 +111,35 @@ export async function enqueueLeaderGatheringStart(
   if (!base) {
     throw new Error('no local gathering base for start');
   }
-  const { local } = await outbox.enqueueGatheringTransition({
-    operationId: options.operationId,
-    groupId,
-    action: 'start',
-    baseState: base,
-    activeDestinationId: options.activeDestinationId ?? base.activeDestinationId,
+  const { local, operation, base: appliedBase } =
+    await outbox.enqueueGatheringTransition({
+      operationId: options.operationId,
+      groupId,
+      action: 'start',
+      baseState: base,
+      activeDestinationId: options.activeDestinationId ?? base.activeDestinationId,
+    });
+  if (options.flushImmediately !== false) {
+    void outbox.flush().catch(() => undefined);
+  }
+  return { local, base: appliedBase, operationId: operation.id };
+}
+
+/**
+ * Business rejection after optimistic Start: mark outbox conflict and restore
+ * pre-transition gathering. Does not apply to transient network failures.
+ */
+export async function abortLeaderGatheringStart(input: {
+  operationId: string;
+  restore: ActiveGatheringState;
+  message?: string;
+}): Promise<void> {
+  await outbox.markGatheringConflictAndRestore({
+    operationId: input.operationId,
+    restore: input.restore,
+    message: input.message ?? 'legacy navigation session rejected',
+    code: 'invalid_transition',
   });
-  void outbox.flush().catch(() => undefined);
-  return { local };
 }
 
 /**

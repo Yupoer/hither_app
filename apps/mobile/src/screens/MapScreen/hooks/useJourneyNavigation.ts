@@ -1,7 +1,9 @@
 import * as Crypto from 'expo-crypto';
 import { useState, useMemo, useEffect, useCallback, useRef, RefObject } from 'react';
 import { Alert } from 'react-native';
+import { isNetworkRequestError } from '../../../api/services/_helpers';
 import { distanceMeters } from '../../../utils/geo';
+import { resolveGatheringOutboxAfterSessionStart } from '../../../utils/gatheringSessionOutbox';
 import { promoteDestinationWithinDay } from '../../../utils/tripDay';
 import type { Coordinates, Destination, GroupState, JourneyStatus } from '../../../types';
 import type { NavigationSession } from '../../../types/navigation';
@@ -10,7 +12,11 @@ import type { GroupMapHandle } from '../../../components/GroupMap';
 import { openExternalNavigation as openExternalNav } from '../../../native/externalNavigation';
 import type { TravelMode } from '../../../native/maps';
 import type { ActiveGatheringState } from '../../../types/coreData';
-import { enqueueLeaderGatheringStart } from '../../../state/coreDataSync';
+import {
+  abortLeaderGatheringStart,
+  enqueueLeaderGatheringStart,
+  flushCoreOperationOutbox,
+} from '../../../state/coreDataSync';
 
 interface UseJourneyNavigationParams {
   state: GroupState | null;
@@ -156,13 +162,20 @@ export function useJourneyNavigation({
       setPendingLeaderStop(false);
       setPendingLeaderTargetId(dest.id);
       mapRef.current?.centerOn(dest.coordinates);
+      let enqueued: {
+        local: ActiveGatheringState;
+        base: ActiveGatheringState;
+        operationId: string;
+      } | null = null;
       try {
-        // OTA-04: local-first gathering start before network (must succeed for durability).
-        const { local } = await enqueueLeaderGatheringStart(groupId, {
+        // OTA-04: local-first write without immediate flush so a business
+        // rejection from legacy startSession cannot leave a doomed outbox.
+        enqueued = await enqueueLeaderGatheringStart(groupId, {
           groupState: state,
           activeDestinationId: dest.id,
+          flushImmediately: false,
         });
-        onOptimisticGathering?.(local);
+        onOptimisticGathering?.(enqueued.local);
 
         // Promote chosen stop to first open slot of its day before session start.
         if (reorderForNavigation) {
@@ -181,11 +194,44 @@ export function useJourneyNavigation({
         try {
           await startSession(dest.id, requestRef.current.requestId);
           requestRef.current = null;
-        } catch {
-          // Local outbox already holds Start; offline is OK — keep optimistic UI.
-          requestRef.current = null;
+          // Session exists — safe to push gathering Start (classifier: flush).
+          void flushCoreOperationOutbox().catch(() => undefined);
+        } catch (sessionError) {
+          const outboxAction = resolveGatheringOutboxAfterSessionStart({
+            ok: false,
+            isNetworkError: isNetworkRequestError(sessionError),
+          });
+          if (outboxAction === 'abort') {
+            // Business rejection / non-retryable: revoke optimistic gathering.
+            requestRef.current = null;
+            await abortLeaderGatheringStart({
+              operationId: enqueued.operationId,
+              restore: enqueued.base,
+              message:
+                sessionError instanceof Error
+                  ? sessionError.message
+                  : 'legacy navigation session rejected',
+            });
+            onOptimisticGathering?.(enqueued.base);
+            enqueued = null;
+            throw sessionError;
+          }
+          // keep_pending: transient offline — keep outbox + request id.
+          // Do NOT flush; navigation_sessions does not exist yet.
         }
-      } catch {
+      } catch (error) {
+        if (enqueued) {
+          // Reorder / other failures after enqueue also must not keep Start.
+          if (!isNetworkRequestError(error)) {
+            await abortLeaderGatheringStart({
+              operationId: enqueued.operationId,
+              restore: enqueued.base,
+              message:
+                error instanceof Error ? error.message : 'gathering start aborted',
+            }).catch(() => undefined);
+            onOptimisticGathering?.(enqueued.base);
+          }
+        }
         setPendingLeaderTargetId(null);
         Alert.alert(t('map.setFailedTitle'), t('map.journeyFailed'));
       } finally {

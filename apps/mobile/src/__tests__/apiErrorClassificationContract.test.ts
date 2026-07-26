@@ -203,7 +203,23 @@ describe('403 / 503 / 409 distinguishability', () => {
         status: 503,
         message: 'upstream_unavailable',
       }),
-    ).toMatchObject({ subsystem: 'maps', httpStatus: 503 });
+    ).toMatchObject({ subsystem: 'maps', httpStatus: 503, errorCode: 'upstream_unavailable' });
+    expect(
+      classifyUpstreamError({
+        name: 'MapsProxyError',
+        code: 'quota_rpc_failed',
+        status: 503,
+        message: 'quota_rpc_failed',
+      }),
+    ).toMatchObject({ subsystem: 'maps', httpStatus: 503, errorCode: 'quota_rpc_failed' });
+    expect(
+      classifyUpstreamError({
+        name: 'MapsProxyError',
+        code: 'missing_config',
+        status: 503,
+        message: 'missing_config',
+      }),
+    ).toMatchObject({ subsystem: 'maps', httpStatus: 503, errorCode: 'missing_config' });
     expect(
       classifyUpstreamError({
         name: 'MapsProxyError',
@@ -247,12 +263,11 @@ describe('source contracts — soft-fail / fallback preserved', () => {
 
   it('Live Activity soft-handles duplicate-key without throwing to UI', () => {
     expect(liveActivity).toContain('23505');
-    expect(liveActivity).toContain('return;');
-    // Narrow matcher — not bare table name alone.
-    expect(liveActivity).toContain("code === '23505'");
-    expect(liveActivity).not.toMatch(
-      /message\.includes\('device_live_activity_tokens'\)\s*;/,
-    );
+    expect(liveActivity).toContain('benign_idempotent');
+    expect(liveActivity).toContain('foreign_token_conflict');
+    expect(liveActivity).toContain('reclaimed_own_token');
+    expect(liveActivity).toContain('token_unique_unresolved');
+    expect(liveActivity).toContain("onConflict: 'user_id,device_id'");
     // No second outbox write at call site (traceApi owns the event).
     expect(liveActivity).not.toContain('recordClassifiedError');
   });

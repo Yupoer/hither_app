@@ -1,7 +1,13 @@
 import React from 'react';
 import { deleteDestination, reorderDestinations } from '../api/client';
+import {
+  abortLeaderGatheringStart,
+  enqueueLeaderGatheringStart,
+  flushCoreOperationOutbox,
+} from '../state/coreDataSync';
 import { useJourneyNavigation } from '../screens/MapScreen/hooks/useJourneyNavigation';
 import type { Destination, GroupState } from '../types';
+import type { ActiveGatheringState } from '../types/coreData';
 import type { NavigationSession } from '../types/navigation';
 
 // react-test-renderer is installed but this project does not ship its typings.
@@ -25,6 +31,26 @@ jest.mock('../api/client', () => ({
   deleteDestination: jest.fn(),
 }));
 
+jest.mock('../state/coreDataSync', () => ({
+  abortLeaderGatheringStart: jest.fn().mockResolvedValue(undefined),
+  enqueueLeaderGatheringStart: jest.fn(),
+  flushCoreOperationOutbox: jest.fn().mockResolvedValue(undefined),
+}));
+
+const baseGathering = {
+  groupId: 'group-1',
+  phase: 'staying',
+  activeDestinationId: null,
+  version: 0,
+} as unknown as ActiveGatheringState;
+
+const optimisticGathering = {
+  groupId: 'group-1',
+  phase: 'en_route',
+  activeDestinationId: 'destination-1',
+  version: 1,
+} as unknown as ActiveGatheringState;
+
 const destination = {
   id: 'destination-1',
   title: '集合點',
@@ -42,6 +68,19 @@ const pausedState = {
 } as unknown as GroupState;
 
 describe('useJourneyNavigation', () => {
+  beforeEach(() => {
+    jest.mocked(enqueueLeaderGatheringStart).mockReset();
+    jest.mocked(abortLeaderGatheringStart).mockReset();
+    jest.mocked(flushCoreOperationOutbox).mockReset();
+    jest.mocked(enqueueLeaderGatheringStart).mockResolvedValue({
+      local: optimisticGathering,
+      base: baseGathering,
+      operationId: 'op-start-1',
+    });
+    jest.mocked(abortLeaderGatheringStart).mockResolvedValue(undefined);
+    jest.mocked(flushCoreOperationOutbox).mockResolvedValue(undefined as never);
+  });
+
   it('member joins shared flock nav without tapping 路徑 when session is active', () => {
     const activeSession = {
       id: 'session-member',
@@ -480,6 +519,57 @@ describe('useJourneyNavigation', () => {
 
     expect(navigation?.journeyStatus).toBe('going');
     expect(navigation?.navTarget?.id).toBe(destination.id);
+    expect(navigation?.journeyActive).toBe(true);
+  });
+
+  it('keeps gathering outbox pending without flush when startSession is offline', async () => {
+    const startSession = jest
+      .fn()
+      .mockRejectedValue(new Error('TypeError: Network request failed'));
+    const onOptimisticGathering = jest.fn();
+    let navigation: ReturnType<typeof useJourneyNavigation> | undefined;
+
+    function Harness() {
+      navigation = useJourneyNavigation({
+        state: pausedState,
+        groupId: 'group-1',
+        isLeader: true,
+        destinations: [destination],
+        selectedDestination: destination,
+        fromCoords: undefined,
+        refresh: jest.fn(),
+        t: (key) => key,
+        mapRef: { current: null },
+        carouselRef: { current: null },
+        setSelectedIndex: jest.fn(),
+        startSession,
+        createRequestId: () => 'request-offline-1',
+        onOptimisticGathering,
+      });
+      return null;
+    }
+
+    act(() => {
+      create(React.createElement(Harness));
+    });
+    await act(async () => {
+      await navigation?.startNavigation(destination, 0);
+    });
+
+    expect(enqueueLeaderGatheringStart).toHaveBeenCalledWith(
+      'group-1',
+      expect.objectContaining({
+        activeDestinationId: destination.id,
+        flushImmediately: false,
+      }),
+    );
+    expect(startSession).toHaveBeenCalledWith(destination.id, 'request-offline-1');
+    // Critical: do not submit start_gathering before navigation_sessions exists.
+    expect(flushCoreOperationOutbox).not.toHaveBeenCalled();
+    expect(abortLeaderGatheringStart).not.toHaveBeenCalled();
+    expect(onOptimisticGathering).toHaveBeenCalledWith(optimisticGathering);
+    // Optimistic target stays for reconnect; outbox remains pending.
+    expect(navigation?.pendingLeaderTargetId).toBe(destination.id);
     expect(navigation?.journeyActive).toBe(true);
   });
 });
