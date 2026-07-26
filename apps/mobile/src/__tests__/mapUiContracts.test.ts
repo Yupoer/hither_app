@@ -413,7 +413,7 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain('teamGatheringState');
     expect(mapScreen).toContain('overlayPersonalOnTeamState');
     expect(mapScreen).toContain('teamSurfaceView');
-    expect(mapScreen).toContain('canTeamStart');
+    expect(mapScreen).toContain('requestTeamEnd');
     expect(mapScreen).toContain("navCmd.action === 'end_point'");
     expect(mapScreen).toContain('runCompleteGatheringStop');
     // End reconciles session via refresh — not a second cancelSession after complete.
