@@ -608,7 +608,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       // logo just above the Peak sheet. Android ignores these iOS-only props.
       {...(Platform.OS === 'ios'
         ? {
-            compassOffset: { x: 18, y: 18 },
+            compassOffset: { x: 56, y: 56 },
             appleLogoInsets: {
               top: 0,
               right: 0,

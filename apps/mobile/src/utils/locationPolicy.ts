@@ -167,7 +167,7 @@ export function locationPolicy(
         uiMinDistanceM: 5,
         uiMinIntervalMs: 1_500,
         uploadMinDistanceM: 12,
-        uploadMinIntervalMs: 8_000,
+        uploadMinIntervalMs: 10_000,
         uploadHeartbeatMs: 20_000,
         uploadHeartbeatStationaryMs: 60_000,
         stationaryAfterMs: 45_000,

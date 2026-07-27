@@ -1,4 +1,4 @@
-import type { Destination, VisitedWaypoint } from '../types';
+import type { Destination, DestinationArrival, VisitedWaypoint } from '../types';
 import {
   currentTripDayNumber,
   endOfTripDayIso,
@@ -105,6 +105,29 @@ export function pastStopsForHistory(
         status,
         synthetic: true,
       } satisfies HistoryWaypoint;
+    });
+}
+
+export function historyFromDestinationArrivals(
+  arrivals: DestinationArrival[],
+  destinations: Destination[],
+  options: { viewerId?: string | null; isGroupLeader: boolean },
+): HistoryWaypoint[] {
+  const destinationById = new Map(destinations.map((destination) => [destination.id, destination]));
+  return arrivals
+    .filter((arrival) => options.isGroupLeader || arrival.userId === options.viewerId)
+    .flatMap((arrival) => {
+      const destination = destinationById.get(arrival.destinationId);
+      if (!destination?.closedAt) return [];
+      return [{
+        id: "arrival:" + arrival.id,
+        userId: arrival.userId,
+        destinationId: arrival.destinationId,
+        name: destination.title,
+        coordinates: destination.coordinates,
+        arrivedAt: arrival.arrivedAt,
+        status: "arrived",
+      } satisfies HistoryWaypoint];
     });
 }
 

@@ -40,7 +40,8 @@ import type { ActiveGatheringState, CoreOperation } from '../types/coreData';
  * poll also repairs silent/missed events after a member joins or a stop is
  * added while the channel reports SUBSCRIBED.
  */
-export const GROUP_POLL_INTERVAL_MS = 30_000;
+// ponytail: 60s is the fallback ceiling; Realtime handles normal propagation.
+export const GROUP_POLL_INTERVAL_MS = 60_000;
 
 /** Coalesce bursts of non-location realtime events into a single refetch. */
 const REALTIME_DEBOUNCE_MS = 300;
