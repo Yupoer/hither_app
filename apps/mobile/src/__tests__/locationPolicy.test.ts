@@ -54,7 +54,8 @@ describe('locationPolicy', () => {
     expect(p.distanceInterval).toBe(8);
     expect(p.timeInterval).toBe(5_000);
     expect(p.uploadMinDistanceM).toBe(12);
-    expect(p.uploadHeartbeatMs).toBe(20_000);
+    expect(p.uploadMinIntervalMs).toBe(30_000);
+    expect(p.uploadHeartbeatMs).toBe(30_000);
     expect(p.uploadHeartbeatStationaryMs).toBe(60_000);
     expect(p.routeCoordDecimals).toBe(5);
     expect(p.realtimeLocationDebounceMs).toBe(1_500);
