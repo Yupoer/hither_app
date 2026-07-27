@@ -873,7 +873,7 @@ describe('OTA-04 contract surfaces', () => {
     expect(map).toContain('applyOptimisticGathering');
     expect(map).toContain('respondToAnnouncement');
     expect(map).not.toContain('hasCoreConflict');
-    expect(map).toContain('coreData.pendingSync');
+    expect(map).not.toContain('coreData.pendingSync');
     expect(journey).toContain('enqueueLeaderGatheringSwitch');
     expect(journey).toContain('startSession(dest.id, requestRef.current.requestId, true)');
     const navigationService = fs.readFileSync(

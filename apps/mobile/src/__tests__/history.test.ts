@@ -1,5 +1,6 @@
 import {
   groupHistoryByDay,
+  historyFromDestinationArrivals,
   mergeHistoryWithPastStops,
   pastStopsForHistory,
 } from '../utils/history';
@@ -114,6 +115,21 @@ describe('pastStopsForHistory / mergeHistoryWithPastStops', () => {
       },
     );
     expect(synthetic).toEqual([]);
+  });
+
+  it('projects a completed destination arrival into history', () => {
+    const rows = historyFromDestinationArrivals([
+      {
+        id: 'arrival-1',
+        destinationId: 'closed',
+        userId: 'u1',
+        arrivedAt: '2026-07-17T07:00:00.000Z',
+      },
+    ], [dest('closed', 1, '2026-07-17T08:00:00.000Z')], {
+      viewerId: 'u1',
+      isGroupLeader: false,
+    });
+    expect(rows).toMatchObject([{ destinationId: 'closed', status: 'arrived' }]);
   });
 
   it('merges real arrivals with synthetic past stops', () => {

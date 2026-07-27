@@ -161,6 +161,7 @@ import {
 import { locationFreshness } from '../utils/locationFreshness';
 import {
   groupHistoryByDay,
+  historyFromDestinationArrivals,
   mergeHistoryWithPastStops,
   type HistoryDayGroup,
 } from '../utils/history';
@@ -383,10 +384,6 @@ export default function MapScreen({ route, navigation }: Props) {
     loading,
     error: groupStateError,
     refresh,
-    dataSource: groupDataSource,
-    snapshotFreshness,
-    emptyLocalSnapshot,
-    openOperations: coreOpenOperations,
     applyOptimisticGathering,
   } = useGroupState(groupId, {
     myUserId: user?.id ?? null,
@@ -707,8 +704,12 @@ export default function MapScreen({ route, navigation }: Props) {
   const [historyGroups, setHistoryGroups] = useState<HistoryDayGroup[]>([]);
   const loadHistory = useCallback(async () => {
     const items = await fetchVisitedWaypoints(groupId ?? undefined);
-    // Same events, role-projected: members own rows; leaders see team rows.
-    const projected = projectHistoryForViewer(items, {
+    const arrivalHistory = historyFromDestinationArrivals(destinationArrivals, allScopedDestinations, {
+      viewerId: user?.id,
+      isGroupLeader: !!isLeader,
+    });
+    const existingKeys = new Set(items.map((item) => item.destinationId + ":" + (item.userId ?? "")));
+    const projected = projectHistoryForViewer([...items, ...arrivalHistory.filter((item) => !existingKeys.has(item.destinationId + ":" + (item.userId ?? "")))], {
       viewerId: user?.id,
       isGroupLeader: !!isLeader,
     });
@@ -3701,21 +3702,6 @@ export default function MapScreen({ route, navigation }: Props) {
     );
   }
 
-  // Conflict metadata is intentionally silent in product UI. Leader local
-  // state remains visible while the outbox retries in the background.
-  const hasCorePending = coreOpenOperations.some(
-    (op) => op.status === 'pending' || op.status === 'failed' || op.status === 'inflight',
-  );
-  const coreDataBannerMessage = hasCorePending
-    ? t('coreData.pendingSync')
-    : groupDataSource === 'local_cache' && snapshotFreshness.unit === 'stale'
-      ? t('coreData.staleSnapshot')
-      : groupDataSource === 'local_cache'
-        ? t('coreData.offlineCache')
-        : null; /* conflict stays diagnostic-only */
-
-  // No conflict Alert/banner is rendered. The outbox retries silently.
-
   return (
     <View style={styles.flex}>
       {/* Passive mode unmounts the map to free GPU/native tiles; switch-back remounts. */}
@@ -3746,36 +3732,6 @@ export default function MapScreen({ route, navigation }: Props) {
       ) : (
         <View style={[styles.flex, { backgroundColor: '#0c0e12' }]} />
       )}
-
-      {/* OTA-04: local-cache / stale / pending / conflict banners. */}
-      {coreDataBannerMessage && showDenseChrome ? (
-        <View
-          pointerEvents="box-none"
-          style={{
-            position: 'absolute',
-            top: insets.top + 8,
-            left: 16,
-            right: 16,
-            zIndex: 30,
-          }}
-          accessibilityRole="text"
-          accessibilityLabel={coreDataBannerMessage}
-        >
-          <View
-            style={{
-              backgroundColor: glass.pill,
-              borderRadius: 12,
-              paddingHorizontal: 12,
-              paddingVertical: 8,
-            }}
-          >
-            <Text style={{ color: glass.textSecondary, fontSize: 13 }}>
-              {coreDataBannerMessage}
-            </Text>
-          </View>
-        </View>
-      ) : null}
-
       {/* OTA-04/02: personal nav announcement response (user-scoped; never team phase). */}
       {showDenseChrome
         && !isLeader
@@ -3785,7 +3741,7 @@ export default function MapScreen({ route, navigation }: Props) {
           pointerEvents="box-none"
           style={{
             position: 'absolute',
-            top: insets.top + (coreDataBannerMessage ? 52 : 8),
+            top: insets.top + 8,
             left: 16,
             right: 16,
             zIndex: 29,
