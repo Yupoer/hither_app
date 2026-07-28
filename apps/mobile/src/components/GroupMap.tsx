@@ -38,6 +38,7 @@ import {
 } from './mapCameraMath';
 import { logError, logEvent } from '../utils/activityLog';
 import { useTranslation } from '../i18n';
+import { defaultMapTransitProps } from '../native/maps';
 import {
   pulsePeakScale,
   reduceMotionEmphasisScale,
@@ -752,17 +753,10 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       }}
       // Help long-press win over pan on both platforms (esp. iOS MapKit).
       moveOnMarkerPress={false}
-      // Transit-oriented defaults:
-      // - Android Google Maps: native transit layer (`showsTransit`, patch-package).
-      // - iOS MapKit: no Google-equivalent transit network toggle. Show the
-      //   standard POI set (includes publicTransport) rather than an exclusive
-      //   transit-only filter that would hide food/shops needed for orientation.
-      {...(Platform.OS === 'android'
-        ? ({ showsTransit: true } as { showsTransit?: boolean })
-        : {
-            showsPointsOfInterests: true,
-            showsBuildings: false,
-          })}
+      // Transit defaults from native boundary (platform selection not in UI).
+      // Android: showsTransit via maps patch. iOS MapKit: standard POIs
+      // (no Google-equivalent transit network toggle).
+      {...(defaultMapTransitProps() as Record<string, unknown>)}
       onMapReady={onMapReady}
       onMapLoaded={onMapLoaded}
       // MapKit is the iOS foreground location owner. Android keeps Expo watcher

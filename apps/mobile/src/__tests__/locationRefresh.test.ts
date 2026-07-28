@@ -19,7 +19,9 @@ describe('remote location refresh wiring', () => {
   });
 
   it('force-refreshes self first, then peer fan-out, and stays silent on success', () => {
-    expect(mapScreen).toContain('const selfFix = await refreshDeviceLocation()');
+    expect(mapScreen).toContain(
+      'const selfFix = await refreshDeviceLocation({ requireUpload: true })',
+    );
     expect(mapScreen).toContain('requestGroupLocationRefresh(groupId)');
     // Success alert removed — cooldown / failure feedback remains.
     expect(mapScreen).not.toContain("Alert.alert(t('map.refreshLocationsAccepted'))");
@@ -28,8 +30,10 @@ describe('remote location refresh wiring', () => {
     // Client cooldown early-return + button disable while cooling.
     expect(mapScreen).toContain('refreshCooldownUntil - Date.now()');
     expect(mapScreen).toContain('disabled={refreshing || cooling}');
-    // Self path before fan-out in source order.
-    const selfIdx = mapScreen.indexOf('const selfFix = await refreshDeviceLocation()');
+    // Self path before fan-out in source order; upload required before fan-out.
+    const selfIdx = mapScreen.indexOf(
+      'const selfFix = await refreshDeviceLocation({ requireUpload: true })',
+    );
     const fanIdx = mapScreen.indexOf('requestGroupLocationRefresh(groupId)');
     expect(selfIdx).toBeGreaterThanOrEqual(0);
     expect(fanIdx).toBeGreaterThan(selfIdx);

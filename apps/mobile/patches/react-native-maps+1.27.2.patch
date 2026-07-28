@@ -1,0 +1,283 @@
+diff --git a/node_modules/react-native-maps/android/build.gradle b/node_modules/react-native-maps/android/build.gradle
+index 0070417..737b5b4 100644
+--- a/node_modules/react-native-maps/android/build.gradle
++++ b/node_modules/react-native-maps/android/build.gradle
+@@ -98,7 +98,7 @@ repositories {
+ dependencies {
+     implementation 'com.facebook.react:react-native:+'
+     implementation "com.google.android.gms:play-services-base:${safeExtGet('googlePlayServicesBaseVersion', '18.5.0')}"
+-    implementation "com.google.android.gms:play-services-maps:${safeExtGet('googlePlayServicesMapsVersion', '19.1.0')}"
++    implementation "com.google.android.gms:play-services-maps:${safeExtGet('googlePlayServicesMapsVersion', '20.0.0')}"
+     implementation "com.google.android.gms:play-services-location:${safeExtGet('googlePlayServicesLocationVersion', '21.3.0')}"
+     implementation 'com.google.maps.android:android-maps-utils:3.10.0'
+     implementation "androidx.work:work-runtime:2.9.1"
+diff --git a/node_modules/react-native-maps/android/src/main/java/com/facebook/react/viewmanagers/RNMapsMapViewManagerDelegate.java b/node_modules/react-native-maps/android/src/main/java/com/facebook/react/viewmanagers/RNMapsMapViewManagerDelegate.java
+index 37d54fc..795aa72 100644
+--- a/node_modules/react-native-maps/android/src/main/java/com/facebook/react/viewmanagers/RNMapsMapViewManagerDelegate.java
++++ b/node_modules/react-native-maps/android/src/main/java/com/facebook/react/viewmanagers/RNMapsMapViewManagerDelegate.java
+@@ -175,6 +175,9 @@ public class RNMapsMapViewManagerDelegate<T extends View, U extends BaseViewMana
+       case "showsTraffic":
+         mViewManager.setShowsTraffic(view, value == null ? false : (boolean) value);
+         break;
++      case "showsTransit":
++        mViewManager.setShowsTransit(view, value == null ? false : (boolean) value);
++        break;
+       case "zoomTapEnabled":
+         mViewManager.setZoomTapEnabled(view, value == null ? true : (boolean) value);
+         break;
+diff --git a/node_modules/react-native-maps/android/src/main/java/com/facebook/react/viewmanagers/RNMapsMapViewManagerInterface.java b/node_modules/react-native-maps/android/src/main/java/com/facebook/react/viewmanagers/RNMapsMapViewManagerInterface.java
+index 47771dc..af491a2 100644
+--- a/node_modules/react-native-maps/android/src/main/java/com/facebook/react/viewmanagers/RNMapsMapViewManagerInterface.java
++++ b/node_modules/react-native-maps/android/src/main/java/com/facebook/react/viewmanagers/RNMapsMapViewManagerInterface.java
+@@ -66,6 +66,7 @@ public interface RNMapsMapViewManagerInterface<T extends View> extends ViewManag
+   void setZoomControlEnabled(T view, boolean value);
+   void setZoomEnabled(T view, boolean value);
+   void setShowsTraffic(T view, boolean value);
++  void setShowsTransit(T view, boolean value);
+   void setZoomTapEnabled(T view, boolean value);
+   void setCameraZoomRange(T view, @Nullable ReadableMap value);
+   void animateToRegion(T view, String regionJSON, int duration);
+diff --git a/node_modules/react-native-maps/android/src/main/java/com/rnmaps/fabric/MapViewManager.java b/node_modules/react-native-maps/android/src/main/java/com/rnmaps/fabric/MapViewManager.java
+index 555ab38..1199d55 100644
+--- a/node_modules/react-native-maps/android/src/main/java/com/rnmaps/fabric/MapViewManager.java
++++ b/node_modules/react-native-maps/android/src/main/java/com/rnmaps/fabric/MapViewManager.java
+@@ -524,6 +524,12 @@ public class MapViewManager extends ViewGroupManager<MapView> implements RNMapsM
+         view.setShowsTraffic(value);
+     }
+ 
++    /** Google Maps transit network layer (Hither patch; New Architecture path). */
++    @Override
++    public void setShowsTransit(MapView view, boolean value) {
++        view.setShowsTransit(value);
++    }
++
+     @Override
+     public void setZoomTapEnabled(MapView view, boolean value) {
+         // not supported
+diff --git a/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapManager.java b/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapManager.java
+index fb78287..ac1cdcd 100644
+--- a/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapManager.java
++++ b/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapManager.java
+@@ -238,6 +238,12 @@ public class MapManager extends ViewGroupManager<MapView> {
+         view.map.setTrafficEnabled(showTraffic);
+     }
+ 
++    /** Google Maps transit network layer (SDK 20+). No-op when map not ready. */
++    @ReactProp(name = "showsTransit", defaultBoolean = false)
++    public void setShowsTransit(MapView view, boolean showTransit) {
++        view.setShowsTransit(showTransit);
++    }
++
+     @ReactProp(name = "showsBuildings", defaultBoolean = false)
+     public void setShowBuildings(MapView view, boolean showBuildings) {
+         view.setShowBuildings(showBuildings);
+diff --git a/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapView.java b/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapView.java
+index ebf8780..5cc473a 100644
+--- a/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapView.java
++++ b/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapView.java
+@@ -120,6 +120,7 @@ public class MapView extends com.google.android.gms.maps.MapView implements Goog
+     private boolean showMyLocationButton = true;
+ 
+     private boolean showsTraffic = false;
++    private boolean showsTransit = false;
+ 
+     private boolean handlePanDrag = false;
+     private boolean moveOnMarkerPress = true;
+@@ -441,6 +442,17 @@ public class MapView extends com.google.android.gms.maps.MapView implements Goog
+         }
+     }
+ 
++    public void setShowsTransit(boolean value) {
++        showsTransit = value;
++        if (map != null) {
++            try {
++                map.setTransitEnabled(value);
++            } catch (Throwable ignored) {
++                // Older Play Services Maps without transit layer — keep base map.
++            }
++        }
++    }
++
+ 
+     @FunctionalInterface
+     public interface EventCreator<T extends Event> {
+@@ -695,7 +707,11 @@ public class MapView extends com.google.android.gms.maps.MapView implements Goog
+ 
+ 
+         map.setTrafficEnabled(showsTraffic);
+-
++        try {
++            map.setTransitEnabled(showsTransit);
++        } catch (Throwable ignored) {
++            // Older Play Services Maps without transit layer — keep base map.
++        }
+ 
+         isMapReady = true;
+         if (kmlSrc != null) {
+diff --git a/node_modules/react-native-maps/android/src/main/jni/react/renderer/components/RNMapsSpecs/Props.cpp b/node_modules/react-native-maps/android/src/main/jni/react/renderer/components/RNMapsSpecs/Props.cpp
+index e157ffd..98be677 100644
+--- a/node_modules/react-native-maps/android/src/main/jni/react/renderer/components/RNMapsSpecs/Props.cpp
++++ b/node_modules/react-native-maps/android/src/main/jni/react/renderer/components/RNMapsSpecs/Props.cpp
+@@ -131,6 +131,7 @@ RNMapsGoogleMapViewProps::RNMapsGoogleMapViewProps(
+     showsMyLocationButton(convertRawProp(context, rawProps, "showsMyLocationButton", sourceProps.showsMyLocationButton, {false})),
+     showsScale(convertRawProp(context, rawProps, "showsScale", sourceProps.showsScale, {false})),
+     showsTraffic(convertRawProp(context, rawProps, "showsTraffic", sourceProps.showsTraffic, {false})),
++    showsTransit(convertRawProp(context, rawProps, "showsTransit", sourceProps.showsTransit, {false})),
+     showsUserLocation(convertRawProp(context, rawProps, "showsUserLocation", sourceProps.showsUserLocation, {false})),
+     userInterfaceStyle(convertRawProp(context, rawProps, "userInterfaceStyle", sourceProps.userInterfaceStyle, {RNMapsGoogleMapViewUserInterfaceStyle::System})),
+     customMapStyleString(convertRawProp(context, rawProps, "customMapStyleString", sourceProps.customMapStyleString, {})),
+@@ -250,6 +251,10 @@ folly::dynamic RNMapsGoogleMapViewProps::getDiffProps(
+     result["showsTraffic"] = showsTraffic;
+   }
+ 
++  if (showsTransit != oldProps->showsTransit) {
++    result["showsTransit"] = showsTransit;
++  }
++    
+   if (showsUserLocation != oldProps->showsUserLocation) {
+     result["showsUserLocation"] = showsUserLocation;
+   }
+@@ -406,6 +411,7 @@ RNMapsMapViewProps::RNMapsMapViewProps(
+     zoomControlEnabled(convertRawProp(context, rawProps, "zoomControlEnabled", sourceProps.zoomControlEnabled, {true})),
+     zoomEnabled(convertRawProp(context, rawProps, "zoomEnabled", sourceProps.zoomEnabled, {true})),
+     showsTraffic(convertRawProp(context, rawProps, "showsTraffic", sourceProps.showsTraffic, {false})),
++    showsTransit(convertRawProp(context, rawProps, "showsTransit", sourceProps.showsTransit, {false})),
+     zoomTapEnabled(convertRawProp(context, rawProps, "zoomTapEnabled", sourceProps.zoomTapEnabled, {true})),
+     cameraZoomRange(convertRawProp(context, rawProps, "cameraZoomRange", sourceProps.cameraZoomRange, {})) {}
+     
+@@ -625,6 +631,10 @@ folly::dynamic RNMapsMapViewProps::getDiffProps(
+     result["showsTraffic"] = showsTraffic;
+   }
+ 
++  if (showsTransit != oldProps->showsTransit) {
++    result["showsTransit"] = showsTransit;
++  }
++    
+   if (zoomTapEnabled != oldProps->zoomTapEnabled) {
+     result["zoomTapEnabled"] = zoomTapEnabled;
+   }
+diff --git a/node_modules/react-native-maps/android/src/main/jni/react/renderer/components/RNMapsSpecs/Props.h b/node_modules/react-native-maps/android/src/main/jni/react/renderer/components/RNMapsSpecs/Props.h
+index f7b7757..f44d7db 100644
+--- a/node_modules/react-native-maps/android/src/main/jni/react/renderer/components/RNMapsSpecs/Props.h
++++ b/node_modules/react-native-maps/android/src/main/jni/react/renderer/components/RNMapsSpecs/Props.h
+@@ -572,6 +572,7 @@ class RNMapsGoogleMapViewProps final : public ViewProps {
+   bool showsMyLocationButton{false};
+   bool showsScale{false};
+   bool showsTraffic{false};
++  bool showsTransit{false};
+   bool showsUserLocation{false};
+   RNMapsGoogleMapViewUserInterfaceStyle userInterfaceStyle{RNMapsGoogleMapViewUserInterfaceStyle::System};
+   std::string customMapStyleString{};
+@@ -1374,6 +1375,7 @@ class RNMapsMapViewProps final : public ViewProps {
+   bool zoomControlEnabled{true};
+   bool zoomEnabled{true};
+   bool showsTraffic{false};
++  bool showsTransit{false};
+   bool zoomTapEnabled{true};
+   RNMapsMapViewCameraZoomRangeStruct cameraZoomRange{};
+ 
+diff --git a/node_modules/react-native-maps/ios/AirGoogleMaps/AIRGoogleMap.h b/node_modules/react-native-maps/ios/AirGoogleMaps/AIRGoogleMap.h
+index 8f21a3a..2b70eb3 100644
+--- a/node_modules/react-native-maps/ios/AirGoogleMaps/AIRGoogleMap.h
++++ b/node_modules/react-native-maps/ios/AirGoogleMaps/AIRGoogleMap.h
+@@ -54,6 +54,8 @@
+ 
+ @property (nonatomic, assign) BOOL showsBuildings;
+ @property (nonatomic, assign) BOOL showsTraffic;
++/** Google Maps transit network layer. */
++@property (nonatomic, assign) BOOL showsTransit;
+ @property (nonatomic, assign) BOOL showsCompass;
+ @property (nonatomic, assign) BOOL scrollEnabled;
+ @property (nonatomic, assign) BOOL zoomEnabled;
+diff --git a/node_modules/react-native-maps/ios/AirGoogleMaps/AIRGoogleMap.mm b/node_modules/react-native-maps/ios/AirGoogleMaps/AIRGoogleMap.mm
+index b375241..d510d58 100644
+--- a/node_modules/react-native-maps/ios/AirGoogleMaps/AIRGoogleMap.mm
++++ b/node_modules/react-native-maps/ios/AirGoogleMaps/AIRGoogleMap.mm
+@@ -656,6 +656,14 @@ id regionAsJSON(MKCoordinateRegion region) {
+   return self.trafficEnabled;
+ }
+ 
++- (void)setShowsTransit:(BOOL)showsTransit {
++  self.transitEnabled = showsTransit;
++}
++
++- (BOOL)showsTransit {
++  return self.transitEnabled;
++}
++
+ - (void)setShowsBuildings:(BOOL)showsBuildings {
+   self.buildingsEnabled = showsBuildings;
+ }
+diff --git a/node_modules/react-native-maps/ios/AirGoogleMaps/AIRGoogleMapManager.mm b/node_modules/react-native-maps/ios/AirGoogleMaps/AIRGoogleMapManager.mm
+index 2dd2f5a..aa8cf78 100644
+--- a/node_modules/react-native-maps/ios/AirGoogleMaps/AIRGoogleMapManager.mm
++++ b/node_modules/react-native-maps/ios/AirGoogleMaps/AIRGoogleMapManager.mm
+@@ -93,6 +93,7 @@ RCT_EXPORT_VIEW_PROPERTY(showsBuildings, BOOL)
+ RCT_EXPORT_VIEW_PROPERTY(showsCompass, BOOL)
+ //RCT_EXPORT_VIEW_PROPERTY(showsScale, BOOL)  // Not supported by GoogleMaps
+ RCT_EXPORT_VIEW_PROPERTY(showsTraffic, BOOL)
++RCT_EXPORT_VIEW_PROPERTY(showsTransit, BOOL)
+ RCT_EXPORT_VIEW_PROPERTY(zoomEnabled, BOOL)
+ RCT_EXPORT_VIEW_PROPERTY(rotateEnabled, BOOL)
+ RCT_EXPORT_VIEW_PROPERTY(scrollEnabled, BOOL)
+diff --git a/node_modules/react-native-maps/src/MapView.tsx b/node_modules/react-native-maps/src/MapView.tsx
+index 6fd5565..649146a 100644
+--- a/node_modules/react-native-maps/src/MapView.tsx
++++ b/node_modules/react-native-maps/src/MapView.tsx
+@@ -638,6 +638,16 @@ export type MapViewProps = ViewProps & {
+    */
+   showsTraffic?: boolean;
+ 
++  /**
++   * Google Maps transit network layer (stations + lines). No-op when the
++   * installed Maps SDK lacks the API or the city has no transit coverage.
++   *
++   * @default false
++   * @platform iOS: Google Maps only
++   * @platform Android: Google Maps
++   */
++  showsTransit?: boolean;
++
+   /**
+    * If `true` the users location will be displayed on the map.
+    *
+diff --git a/node_modules/react-native-maps/src/specs/NativeComponentGoogleMapView.ts b/node_modules/react-native-maps/src/specs/NativeComponentGoogleMapView.ts
+index d67c272..baaf1c3 100644
+--- a/node_modules/react-native-maps/src/specs/NativeComponentGoogleMapView.ts
++++ b/node_modules/react-native-maps/src/specs/NativeComponentGoogleMapView.ts
+@@ -745,6 +745,14 @@ export interface MapFabricNativeProps extends ViewProps {
+    */
+   showsTraffic?: boolean;
+ 
++  /**
++   * Google Maps transit network layer (stations + lines).
++   * @default false
++   * @platform iOS: Google Maps only
++   * @platform Android: Supported
++   */
++  showsTransit?: boolean;
++
+   /**
+    * If `true` the users location will be displayed on the map.
+    *
+diff --git a/node_modules/react-native-maps/src/specs/NativeComponentMapView.ts b/node_modules/react-native-maps/src/specs/NativeComponentMapView.ts
+index b4fd5c1..7d2f8d7 100644
+--- a/node_modules/react-native-maps/src/specs/NativeComponentMapView.ts
++++ b/node_modules/react-native-maps/src/specs/NativeComponentMapView.ts
+@@ -1047,6 +1047,16 @@ export interface MapFabricNativeProps extends ViewProps {
+    */
+   showsTraffic?: boolean;
+ 
++  /**
++   * Google Maps transit network layer (stations + lines).
++   * No-op on Apple MapKit provider.
++   *
++   * @default false
++   * @platform iOS: Google Maps only
++   * @platform Android: Supported
++   */
++  showsTransit?: boolean;
++
+   /**
+    * If `false` the user won't be able to double tap to zoom the map.
+    * **Note:** But it will greatly decrease delay of tap gesture recognition.

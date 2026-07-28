@@ -151,8 +151,14 @@ export function useDeviceLocation({
   /**
    * Force one-shot GPS + immediate upload (manual refresh / foreground resume).
    * Bypasses distance/time gates — "force sync".
+   *
+   * @param options.requireUpload When true (Force Refresh), upload failures
+   *   propagate so callers can stop peer fan-out and show failure feedback.
+   *   Background/foreground auto paths keep soft-fail upload.
    */
-  const refreshDeviceLocation = useCallback(async (): Promise<Coordinates | null> => {
+  const refreshDeviceLocation = useCallback(async (options?: {
+    requireUpload?: boolean;
+  }): Promise<Coordinates | null> => {
     const fix = await location.getCurrentLocation(highAccuracyRef.current);
     if (!fix) return null;
     const now = Date.now();
@@ -164,7 +170,11 @@ export function useDeviceLocation({
       locationPolicy(highAccuracyRef.current),
     );
     if (groupIdRef.current) {
-      await enqueueUpload(fix, now, { immediate: true }).catch(() => undefined);
+      if (options?.requireUpload) {
+        await enqueueUpload(fix, now, { immediate: true });
+      } else {
+        await enqueueUpload(fix, now, { immediate: true }).catch(() => undefined);
+      }
     }
     return fix.coordinates;
   }, [applySampleToUi, enqueueUpload]);

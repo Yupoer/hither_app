@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 const root = join(__dirname, '../..');
 const groupMap = readFileSync(join(__dirname, '../components/GroupMap.tsx'), 'utf8');
+const mapsBoundary = readFileSync(join(__dirname, '../native/maps.ts'), 'utf8');
 const mapsModuleIos = readFileSync(
   join(__dirname, '../../modules/hither-maps/ios/HitherMapsModule.swift'),
   'utf8',
@@ -10,13 +11,17 @@ const mapsModuleIos = readFileSync(
 const packageJson = readFileSync(join(root, 'package.json'), 'utf8');
 
 describe('transit-oriented map defaults', () => {
-  it('enables Google transit layer prop on Android by default', () => {
-    expect(groupMap).toContain("Platform.OS === 'android'");
-    expect(groupMap).toContain('showsTransit: true');
-    expect(groupMap).toContain('showsTransit');
+  it('puts platform transit selection in the native maps boundary', () => {
+    expect(mapsBoundary).toContain('export function defaultMapTransitProps');
+    expect(mapsBoundary).toContain("Platform.OS === 'android'");
+    expect(mapsBoundary).toContain('showsTransit: true');
+    expect(mapsBoundary).toContain('showsPointsOfInterests: true');
+    // UI consumes the boundary helper — no new Platform.OS transit branch in GroupMap.
+    expect(groupMap).toContain('defaultMapTransitProps');
+    expect(groupMap).not.toMatch(/Platform\.OS === ['"]android['"]\s*\n\s*\? \(\{ showsTransit/);
   });
 
-  it('keeps showsTransit durable via patch-package postinstall', () => {
+  it('keeps showsTransit durable via patch-package and Maps SDK 20+', () => {
     expect(packageJson).toContain('patch-package');
     expect(packageJson).toContain('"postinstall": "patch-package"');
     const patchPath = join(root, 'patches/react-native-maps+1.27.2.patch');
@@ -24,6 +29,8 @@ describe('transit-oriented map defaults', () => {
     const patch = readFileSync(patchPath, 'utf8');
     expect(patch).toContain('showsTransit');
     expect(patch).toMatch(/setTransitEnabled|transitEnabled/);
+    // setTransitEnabled requires play-services-maps ≥ 20.0.0
+    expect(patch).toMatch(/googlePlayServicesMapsVersion|20\.0\.0/);
     // New Architecture / Fabric path (app has newArchEnabled=true).
     expect(patch).toContain('com/rnmaps/fabric/MapViewManager.java');
     expect(patch).toContain('setShowsTransit');
@@ -34,12 +41,9 @@ describe('transit-oriented map defaults', () => {
   });
 
   it('uses Apple standard POIs including public transport (not exclusive filter)', () => {
-    // Emphasize transit by keeping POIs on (previous code forced them off).
-    // Do not exclusive-filter to transit-only categories.
-    expect(groupMap).toContain('showsPointsOfInterests: true');
-    expect(groupMap).not.toContain('APPLE_TRANSIT_POI_FILTER');
-    expect(groupMap).not.toContain('pointsOfInterestFilter:');
-    // Spec: do not claim a Google-equivalent transit network toggle on MapKit.
+    expect(mapsBoundary).toContain('showsPointsOfInterests: true');
+    expect(mapsBoundary).not.toContain('APPLE_TRANSIT_POI_FILTER');
+    expect(mapsBoundary).not.toContain('pointsOfInterestFilter:');
     expect(groupMap).toContain('no Google-equivalent transit network toggle');
   });
 

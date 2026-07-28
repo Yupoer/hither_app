@@ -21,6 +21,7 @@
     "test": "jest",
     "typecheck": "tsc --noEmit",
     "lint": "expo lint",
+    "postinstall": "patch-package",
     "verify:lock": "npm ci --include=dev --ignore-scripts",
     "verify:runtime": "node scripts/verify-runtime-alignment.mjs",
     "update:preview": "eas update --channel preview",
@@ -83,6 +84,7 @@
     "eslint-config-expo": "~56.0.4",
     "jest": "^29.7.0",
     "jest-expo": "~56.0.5",
+    "patch-package": "^8.0.1",
     "react-test-renderer": "19.2.3",
     "ts-jest": "^29.2.5",
     "typescript": "~6.0.3"

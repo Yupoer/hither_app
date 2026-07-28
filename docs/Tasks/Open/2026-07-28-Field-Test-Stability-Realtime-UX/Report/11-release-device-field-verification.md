@@ -2,6 +2,8 @@
 
 **Environment note:** Physical iOS/Android devices were **not** available in this implement session. This document is the executable checklist + residual risk record. Complete on a release-like build before shipping.
 
+**Code-review 01 residual (P1 device gate):** Do **not** mark the task pack release-complete until this checklist is signed with build identity, thermal/CPU/memory/frame/audio measurements, and Device QA. Native gates still open: Android Maps SDK 20+ transit compile+runtime, Live Activity widget binary, OTA/team-entry crash class, Podcast/audio regression.
+
 ## Build identity (fill on device)
 
 | Field | Value |

@@ -9,12 +9,6 @@ export const TARGET_PULSE_INTERVAL_MS = 5_000;
 /** Brief pulse duration (ms). tracksViewChanges only for this window. */
 export const TARGET_PULSE_DURATION_MS = 420;
 
-export interface TargetPulsePhase {
-  /** 0 = idle static; 1 = pulse peak. */
-  scale: number;
-  active: boolean;
-}
-
 /**
  * Whether the marker for `destId` should run the pulse cycle.
  * Completed / non-target markers stay static.

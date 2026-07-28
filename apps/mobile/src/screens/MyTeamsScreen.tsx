@@ -6,9 +6,11 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useTheme } from '../state/PreferencesContext';
+import { accentMix } from '../glass';
 import { lightTap, alertBuzz } from '../utils/haptics';
 import { useSession } from '../state/SessionContext';
 import { getMyJoinedGroups, JoinedGroupInfo, leaveGroups } from '../api/client';
+import { GlassView } from '../native/liquidGlass';
 import { clearLiveActivities } from '../state/useLiveActivity';
 import { HitherText } from '../components/HitherText';
 import { runUiAction } from '../utils/uiAction';
@@ -28,9 +30,8 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
 
   /**
    * Enter guard across OTA reload / repeated taps / multi-group races.
-   * Cleared when this screen regains focus (user returned from Map or cancelled),
-   * not immediately after the sync replace — so double-fire during transition
-   * cannot mount Map twice.
+   * Cleared on focus return and on non-navigation exits (timeout / stale token).
+   * UI baseline unchanged — only entry lifecycle hardening (ticket 02).
    */
   const enterInFlightRef = useRef<string | null>(null);
 
@@ -48,8 +49,6 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
 
   useFocusEffect(
     useCallback(() => {
-      // Returning to MyTeams (or first focus) releases the enter guard so the
-      // user can enter again after a failed transition or leave.
       enterInFlightRef.current = null;
       return () => undefined;
     }, []),
@@ -67,18 +66,15 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
       async (token) => {
         setExpandedGroupId(null);
         lightTap();
-        // Reconcile orphan Live Activities after OTA / prior session before
-        // map-heavy work (ticket 02 re-entrancy). Soft-fail: entry still proceeds.
+        // Reconcile orphan Live Activities after OTA / prior session before map.
         await clearLiveActivities().catch(() => undefined);
         if (!token.isCurrent()) {
-          // Timeout / newer generation: release guard so user can retry.
           enterInFlightRef.current = null;
           return;
         }
         setMembership({ group: info.group, role: info.role });
         navigation.replace('Map', { groupId: info.group.id });
         navigationScheduled = true;
-        // Keep enterInFlightRef set until MyTeams regains focus (or unmounts).
       },
       { screen: 'MyTeams' },
     )
@@ -244,7 +240,7 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
                             {p.isPlaceholder ? (
                               <Ionicons name="person" size={20} color="rgba(255,255,255,0.2)" />
                             ) : (
-                              <HitherText typeRole="emoji" style={styles.detailAvatarEmoji}>
+                              <HitherText typeRole="emoji" style={styles.detailEmojiBig}>
                                 {p.avatar || '😎'}
                               </HitherText>
                             )}
@@ -252,25 +248,27 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
                         ))}
                       </ScrollView>
                     </View>
-                    <View style={styles.actionRow}>
+
+                    {info.group.inviteCode ? (
+                      <View style={styles.inviteCodeRow}>
+                        <Text style={styles.inviteCodeLabel}>加入代碼</Text>
+                        <Text style={styles.inviteCodeValue}>{info.group.inviteCode}</Text>
+                      </View>
+                    ) : null}
+
+                    <View style={styles.expandedButtonsRow}>
                       <Pressable
                         onPress={() => handleEnterGroup(info)}
-                        style={({ pressed }) => [
-                          styles.enterBtn,
-                          { backgroundColor: accent },
-                          pressed && { opacity: 0.85 },
-                        ]}
+                        style={({ pressed }) => [styles.inlineEnterBtn, { backgroundColor: accent }, pressed && styles.pressed]}
                       >
-                        <Text style={styles.enterBtnText}>進入隊伍</Text>
+                        <Text style={styles.inlineEnterText}>進入地圖</Text>
                       </Pressable>
+
                       <Pressable
                         onPress={() => handleLeaveGroup(info.group.id)}
-                        style={({ pressed }) => [
-                          styles.leaveBtn,
-                          pressed && { opacity: 0.7 },
-                        ]}
+                        style={({ pressed }) => [styles.inlineLeaveBtn, pressed && styles.pressed]}
                       >
-                        <Text style={styles.leaveBtnText}>離開</Text>
+                        <Text style={styles.inlineLeaveText}>離開</Text>
                       </Pressable>
                     </View>
                   </Animated.View>
@@ -285,73 +283,170 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
 }
 
 const styles = StyleSheet.create({
-  fill: { flex: 1, backgroundColor: '#0E1320' },
+  fill: { flex: 1, backgroundColor: '#080b12' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingBottom: 12,
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
   },
-  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  title: { flex: 1, fontSize: 20, fontWeight: '700', color: '#fff', textAlign: 'center' },
-  clearBtn: { paddingHorizontal: 8, paddingVertical: 6 },
-  clearText: { color: 'rgba(255,255,255,0.55)', fontSize: 15, fontWeight: '600' },
-  list: { paddingHorizontal: 16, paddingTop: 8 },
-  teamCard: {
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    overflow: 'hidden',
-  },
-  pressed: { opacity: 0.85 },
-  teamCardHeader: { flexDirection: 'row', alignItems: 'center' },
-  teamCardLeft: { flex: 1, minWidth: 0 },
-  teamCardName: { fontSize: 17, fontWeight: '700', color: '#fff' },
-  teamCardSubtitle: { fontSize: 13, color: 'rgba(255,255,255,0.5)', marginTop: 4 },
-  teamCardRight: { flexDirection: 'row', alignItems: 'center' },
-  avatarStack: { flexDirection: 'row', alignItems: 'center' },
-  avatarBubble: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    marginLeft: -8,
-    borderWidth: 1.5,
-    borderColor: '#0E1320',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarEmoji: { fontSize: 14 },
-  avatarExtra: { backgroundColor: 'rgba(255,255,255,0.12)' },
-  avatarExtraText: { fontSize: 10, color: 'rgba(255,255,255,0.7)', fontWeight: '700' },
-  expandedSection: { marginTop: 14, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(255,255,255,0.1)', paddingTop: 14 },
-  detailAvatars: { marginBottom: 12 },
-  detailAvatarsScroll: { gap: 8, paddingRight: 8 },
-  detailAvatarBig: {
+  backBtn: {
     width: 44,
     height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'center',
   },
-  detailAvatarEmoji: { fontSize: 22 },
-  actionRow: { flexDirection: 'row', gap: 10 },
-  enterBtn: {
-    flex: 1,
+  title: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  clearBtn: {
+    width: 44,
     height: 44,
-    borderRadius: 12,
-    alignItems: 'center',
+    alignItems: 'flex-end',
     justifyContent: 'center',
   },
-  enterBtnText: { fontSize: 15, fontWeight: '800', color: '#111' },
-  leaveBtn: {
-    height: 44,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,107,107,0.12)',
+  clearText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#ff453a',
+  },
+  list: {
+    padding: 20,
+    gap: 16,
+  },
+  teamCard: {
+    flexDirection: 'column',
+    padding: 16,
+    borderRadius: 20,
+    overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,107,107,0.35)',
+    borderColor: 'rgba(255,255,255,0.15)',
   },
-  leaveBtnText: { fontSize: 15, fontWeight: '700', color: '#E5575C' },
+  teamCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  teamCardLeft: {
+    flex: 1,
+    marginRight: 12,
+  },
+  teamCardName: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#fff',
+    marginBottom: 4,
+  },
+  teamCardSubtitle: {
+    fontSize: 14,
+    color: 'rgba(235,235,245,0.6)',
+  },
+  teamCardRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  avatarStack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  avatarBubble: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: '#1e293b',
+    marginLeft: -10,
+  },
+  avatarEmoji: { fontSize: 16 },
+  avatarExtra: {
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  avatarExtraText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  expandedSection: {
+    marginTop: 20,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.1)',
+    paddingTop: 16,
+  },
+  detailAvatars: {
+    height: 48,
+    marginBottom: 20,
+    width: '100%',
+  },
+  detailAvatarsScroll: {
+    gap: 10,
+    alignItems: 'center',
+  },
+  detailAvatarBig: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  detailEmojiBig: { fontSize: 24 },
+  inviteCodeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+    paddingHorizontal: 4,
+  },
+  inviteCodeLabel: {
+    fontSize: 13,
+    color: 'rgba(235,235,245,0.55)',
+    fontWeight: '600',
+  },
+  inviteCodeValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#fff',
+    letterSpacing: 2,
+    fontVariant: ['tabular-nums'],
+  },
+  expandedButtonsRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  inlineEnterBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  inlineEnterText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  inlineLeaveBtn: {
+    width: 80,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  inlineLeaveText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#ff453a',
+  },
+  pressed: { opacity: 0.8 },
 });

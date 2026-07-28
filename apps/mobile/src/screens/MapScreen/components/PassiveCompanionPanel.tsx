@@ -262,6 +262,15 @@ export const PassiveCompanionPanel = React.memo(function PassiveCompanionPanel({
               {t('passive.personalProgress')}
             </Text>
             <HitherText typeRole="body" style={styles.secondary}>{t(progressKey)}</HitherText>
+            {model.personalFreshness === 'stale' || model.personalFreshness === 'unknown' ? (
+              <HitherText
+                typeRole="callout"
+                style={[styles.secondary, { marginTop: 4 }]}
+                testID="passive-progress-freshness"
+              >
+                {t('locationUpdate.stale')}
+              </HitherText>
+            ) : null}
             {model.personalProgress != null ? (
               <View style={styles.progressTrack}>
                 <View

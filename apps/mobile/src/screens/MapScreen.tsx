@@ -1625,16 +1625,26 @@ export default function MapScreen({ route, navigation }: Props) {
       : gatedProgress?.progress;
 
   /**
-   * Clock tick so personal-progress freshness ages while GPS is silent.
-   * 5s matches flock-row style age surfaces without per-frame MapScreen churn.
+   * Freshness clock: single timeout to the stale threshold while navigation is
+   * active — not a permanent 5s polling loop on MapScreen (spec: no extra poll).
    */
   const [progressClockMs, setProgressClockMs] = useState(() => Date.now());
+  const PERSONAL_PROGRESS_STALE_MS = 30_000;
   useEffect(() => {
-    setProgressClockMs(Date.now());
-    if (deviceCoordsAcceptedAtMs == null) return;
-    const timer = setInterval(() => setProgressClockMs(Date.now()), 5_000);
-    return () => clearInterval(timer);
-  }, [deviceCoordsAcceptedAtMs]);
+    if (!journeyActive || !navTarget || deviceCoordsAcceptedAtMs == null) {
+      return;
+    }
+    const now = Date.now();
+    setProgressClockMs(now);
+    const age = Math.max(0, now - deviceCoordsAcceptedAtMs);
+    if (age >= PERSONAL_PROGRESS_STALE_MS) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      setProgressClockMs(Date.now());
+    }, PERSONAL_PROGRESS_STALE_MS - age + 50);
+    return () => clearTimeout(timer);
+  }, [journeyActive, navTarget?.id, deviceCoordsAcceptedAtMs]);
 
   /**
    * Shared local personal progress — single derivation for gathering card,
@@ -1662,11 +1672,12 @@ export default function MapScreen({ route, navigation }: Props) {
           navTarget && teamCompletedDestinationIds.has(navTarget.id),
         ),
         arrivalRadiusM: localArrivalRadiusM,
-        // Age from progressClockMs (ticks every 5s) so stale surfaces after GPS silence.
+        // Age from single stale-threshold clock while journey is active.
         sampleAgeMs:
           deviceCoordsAcceptedAtMs != null
             ? Math.max(0, progressClockMs - deviceCoordsAcceptedAtMs)
             : null,
+        staleAfterMs: PERSONAL_PROGRESS_STALE_MS,
       }),
     [
       deviceCoords,
@@ -1750,6 +1761,7 @@ export default function MapScreen({ route, navigation }: Props) {
           teamSurfaceView.personal?.arrived
           ?? personalProgress.arrived
           ?? localNavigationArrived,
+        personalFreshness: personalProgress.freshness,
       }),
     [
       inPassiveMode,
@@ -1763,6 +1775,7 @@ export default function MapScreen({ route, navigation }: Props) {
       selectedDestination,
       personalProgressRatio,
       personalProgress.arrived,
+      personalProgress.freshness,
       liveProgress,
       localNavigationArrived,
     ],
@@ -1920,8 +1933,8 @@ export default function MapScreen({ route, navigation }: Props) {
       }
 
       // 1) Self first: one-shot GPS + immediate upload + local marker/timestamp.
-      //    Do not wait for group reload before updating the blue-dot sample.
-      const selfFix = await refreshDeviceLocation();
+      //    requireUpload: upload failure must stop fan-out and alert (spec 101–103).
+      const selfFix = await refreshDeviceLocation({ requireUpload: true });
       if (!selfFix) {
         // Permission / no-fix — surface actionable feedback; skip peer fan-out.
         const permission = await location.getPermissionState().catch(() => null);
@@ -3851,8 +3864,11 @@ export default function MapScreen({ route, navigation }: Props) {
           pendingPlace={pendingPlace}
           currentUserId={user?.id}
           initialCenter={mapInitialCenter ?? undefined}
-          // Active destination for 5s pulse; team-completed stops stay static.
-          activeDestinationId={navTarget?.id ?? activePoint?.id ?? null}
+          // Pulse only while journey is active with a nav target (not paused
+          // selection). Spec: stop when navigation ends.
+          activeDestinationId={
+            journeyActive && navTarget?.id ? navTarget.id : null
+          }
           completedDestinationIds={teamCompletedDestinationIds}
           // Show the planned path for everyone while journey is live (leader
           // broadcast or local follower plan). When paused, keep a light path
@@ -4219,7 +4235,19 @@ export default function MapScreen({ route, navigation }: Props) {
                     ? etaSecondsFor(d, travelMode)
                     : null;
               const etaLabel = etaSeconds != null ? shortEta(etaSeconds) : '—';
-              const distLabel = d != null ? formatDistance(d) : '';
+              // Surface GPS freshness on the active nav card (spec: retain
+              // last values, show stale/unknown — not silent forever-live).
+              const progressFreshness =
+                navTarget?.id === dest.id ? personalProgress.freshness : 'live';
+              const freshnessSuffix =
+                progressFreshness === 'stale' || progressFreshness === 'unknown'
+                  ? ` · ${t('locationUpdate.stale')}`
+                  : '';
+              const distLabel = d != null
+                ? `${formatDistance(d)}${freshnessSuffix}`
+                : progressFreshness === 'unknown'
+                  ? t('locationUpdate.stale')
+                  : '';
               const distParts = splitDistanceParts(d);
               const etaParts = splitEtaParts(etaSeconds);
               const cardExpanded = isCardExpanded(dest.id);

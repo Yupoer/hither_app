@@ -172,10 +172,18 @@ describe('personal progress surface contracts', () => {
     expect(map).toContain('teamCompletedDestinationIds.has(navTarget.id)');
     expect(map).toContain('sampleAgeMs');
     expect(map).toContain('deviceCoordsAcceptedAtMs');
-    // Freshness ages while GPS is silent (clock tick, not frozen useMemo age).
+    // Freshness ages with a single stale-threshold timeout while journey is
+    // active — not a permanent 5s MapScreen polling loop.
     expect(map).toContain('progressClockMs');
-    expect(map).toContain('setInterval(() => setProgressClockMs(Date.now()), 5_000)');
+    expect(map).toContain('PERSONAL_PROGRESS_STALE_MS');
+    expect(map).toContain('setTimeout');
+    expect(map).not.toContain('setInterval(() => setProgressClockMs(Date.now()), 5_000)');
+    // Stale/unknown surfaced on card + passive (retain last numbers).
+    expect(map).toContain("t('locationUpdate.stale')");
+    expect(map).toContain('personalFreshness: personalProgress.freshness');
     // Markers use team completion, not personal arrivals.
     expect(map).toContain('completedDestinationIds={teamCompletedDestinationIds}');
+    // Target pulse only while journey is active with a nav target.
+    expect(map).toContain('journeyActive && navTarget?.id ? navTarget.id : null');
   });
 });
