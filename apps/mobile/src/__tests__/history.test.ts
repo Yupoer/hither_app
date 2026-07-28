@@ -121,9 +121,12 @@ describe('pastStopsForHistory / mergeHistoryWithPastStops', () => {
     const rows = historyFromDestinationArrivals([
       {
         id: 'arrival-1',
+        groupId: 'g1',
         destinationId: 'closed',
         userId: 'u1',
         arrivedAt: '2026-07-17T07:00:00.000Z',
+        source: 'manual',
+        markedBy: 'u1',
       },
     ], [dest('closed', 1, '2026-07-17T08:00:00.000Z')], {
       viewerId: 'u1',
