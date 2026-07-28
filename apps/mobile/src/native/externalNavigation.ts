@@ -1,6 +1,9 @@
-import { Linking, Platform } from 'react-native';
+import { Alert, Linking } from 'react-native';
 import type { Destination } from '../types';
 import type { TravelMode } from './maps';
+
+/** Explicit maps app choice (not Platform default). */
+export type ExternalMapsProvider = 'google' | 'apple';
 
 /** Map travel mode to Google Maps `travelmode` query values. */
 function googleTravelMode(mode: TravelMode): string {
@@ -29,17 +32,16 @@ function appleDirFlag(mode: TravelMode): string {
 }
 
 /**
- * Single navigation-URL boundary for external turn-by-turn.
- * Android → Google Maps universal URL (no API key).
- * iOS → Apple Maps.
+ * Build an external navigation URL for the chosen maps provider.
+ * Provider is explicit — callers must not assume Platform.OS mapping.
  */
 export function buildNavigationUrl(
-  platform: 'ios' | 'android',
+  provider: ExternalMapsProvider,
   destination: Destination,
   travelMode: TravelMode,
 ): string {
   const { latitude, longitude } = destination.coordinates;
-  if (platform === 'android') {
+  if (provider === 'google') {
     const params = new URLSearchParams({
       api: '1',
       destination: `${latitude},${longitude}`,
@@ -60,14 +62,64 @@ export function buildNavigationUrl(
 }
 
 /**
- * Open the platform maps app (or browser fallback). Missing Google Maps app
- * on Android falling through to the browser is not an error.
+ * Open the chosen maps app (or browser fallback). Missing Google Maps app
+ * falling through to the browser is not an error.
  */
 export async function openExternalNavigation(
   destination: Destination,
   travelMode: TravelMode,
+  provider: ExternalMapsProvider,
 ): Promise<void> {
-  const platform = Platform.OS === 'android' ? 'android' : 'ios';
-  const url = buildNavigationUrl(platform, destination, travelMode);
+  const url = buildNavigationUrl(provider, destination, travelMode);
   await Linking.openURL(url);
+}
+
+export interface ExternalMapsChooserLabels {
+  title: string;
+  googleLabel: string;
+  appleLabel: string;
+  cancelLabel: string;
+  /** Shown when the selected maps app / URL cannot open. */
+  openFailedTitle?: string;
+  openFailedMessage?: string;
+}
+
+/**
+ * Present Google Maps / Apple Maps / cancel, then open the selected provider.
+ * Cancel leaves the app unchanged. Open failures surface a simple alert (spec).
+ * Pure-ish seam for Jest (injectable alert/open).
+ */
+export function presentExternalMapsChooser(
+  destination: Destination,
+  travelMode: TravelMode,
+  labels: ExternalMapsChooserLabels,
+  deps?: {
+    alert?: typeof Alert.alert;
+    open?: typeof openExternalNavigation;
+  },
+): void {
+  const alertFn = deps?.alert ?? Alert.alert;
+  const openFn = deps?.open ?? openExternalNavigation;
+  const failTitle = labels.openFailedTitle ?? labels.title;
+  const failMessage = labels.openFailedMessage;
+
+  const openProvider = (provider: ExternalMapsProvider) => {
+    void openFn(destination, travelMode, provider).catch(() => {
+      if (failMessage) {
+        alertFn(failTitle, failMessage);
+      }
+    });
+  };
+
+  alertFn(labels.title, undefined, [
+    {
+      text: labels.googleLabel,
+      onPress: () => openProvider('google'),
+    },
+    {
+      text: labels.appleLabel,
+      onPress: () => openProvider('apple'),
+    },
+    { text: labels.cancelLabel, style: 'cancel' },
+  ]);
 }

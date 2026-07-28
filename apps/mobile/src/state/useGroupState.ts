@@ -235,7 +235,9 @@ export function useGroupState(
             setError(cause instanceof Error ? cause.message : '無法取得群組狀態');
           }
         }
-        return restored;
+        // Always false when remote pull failed — callers (force-refresh, sync)
+        // must surface failure even if a local cache is still painted.
+        return false;
       } finally {
         if (activeRef.current) setLoading(false);
       }

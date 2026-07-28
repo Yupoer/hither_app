@@ -29,4 +29,12 @@ describe('notifications boundary remote push guard', () => {
       );
     }
   });
+
+  it('owns this-device auto-complete platform path (Android local, iOS APNs-or-local)', () => {
+    expect(notificationsSrc).toContain('notifyThisDeviceAutoComplete');
+    expect(notificationsSrc).toContain("Platform.OS === 'android'");
+    expect(notificationsSrc).toContain('getDevicePushToken');
+    expect(notificationsSrc).toContain('remote_expected');
+    expect(notificationsSrc).toContain('scheduleLocalNotification');
+  });
 });

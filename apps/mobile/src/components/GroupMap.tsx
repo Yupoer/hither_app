@@ -870,11 +870,15 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     shadowOffset: { width: 0, height: 0 },
     elevation: 6,
   },
-  // Completed stops: no active glow/elevation — no longer looks actionable.
+  // Completed stops: strip active + base chrome — no glow/elevation/shadow.
+  // Base gatherMarker still has shadow*; override every shadow field so iOS
+  // does not keep residual shadow from the base style (field-test residual).
   gatherMarkerCompleted: {
     opacity: 0.72,
+    shadowColor: 'transparent',
     shadowOpacity: 0,
     shadowRadius: 0,
+    shadowOffset: { width: 0, height: 0 },
     elevation: 0,
   },
   pinWrap: { alignItems: 'center', gap: 4 },

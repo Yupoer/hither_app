@@ -47,7 +47,6 @@ interface SettingsOverlayProps {
   onConfirmSignOut: () => void;
   onOpenPaywall: () => void;
   onOpenAccount: () => void;
-  onOpenCustomQuickCommand: () => void;
   onOpenDiagnostics: () => void;
   /**
    * Return to RoleSelect (create / join) without leaving the current group.
@@ -109,20 +108,12 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
   onConfirmSignOut,
   onOpenPaywall,
   onOpenAccount,
-  onOpenCustomQuickCommand,
   onOpenDiagnostics,
   onGoHome,
   styles,
 }: SettingsOverlayProps) {
   const { t } = useTranslation();
-  const { isPro, customQuickCommands } = useSession();
-  const configuredCustomCount = customQuickCommands.filter(Boolean).length;
-  const customSummary = configuredCustomCount
-    ? t('settings.customQuickCommandConfiguredCount', {
-        count: String(configuredCustomCount),
-        total: String(customQuickCommands.length),
-      })
-    : t('settings.customQuickCommandEmpty');
+  const { isPro } = useSession();
   const {
     language,
     themeName,
@@ -406,16 +397,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
           </View>
         ) : null}
 
-        <SectionLabel label={t('map.cmdTitle')} styles={styles} />
-        <View style={styles.settingsTopGroup}>
-          <NavRow
-            title={t('settings.customQuickCommand')}
-            description={customSummary}
-            onPress={onOpenCustomQuickCommand}
-            styles={styles}
-            accessibilityLabel={t('settings.customQuickCommand')}
-          />
-        </View>
+        {/* Custom quick commands: only via full command sheet long-press — not Settings. */}
 
         {/* ── 支援 ─────────────────────────────────────────────── */}
         <SectionLabel label={t('settings.sectionSupport')} styles={styles} />

@@ -277,9 +277,13 @@ Deno.serve(async (req) => {
 
     // Alerts are scoped to the sender's main team/subgroup. Solo members never
     // receive general notifications (except pure meet-time, which includes all).
+    // Explicit target_user_id (e.g. complete_gathering_stop per-member + leader
+    // this-device) wins and may include the sender — do not re-filter them out.
     const alertCandidates = payload.category === "live_activity" ||
         payload.category === "location_refresh"
       ? []
+      : typeof payload.target_user_id === "string" && payload.target_user_id.length > 0
+      ? [payload.target_user_id]
       : members
         .filter((member) =>
           payload.category === "gathering_request"

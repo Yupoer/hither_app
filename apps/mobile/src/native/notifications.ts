@@ -112,16 +112,66 @@ export async function getDevicePushToken(): Promise<string | null> {
 }
 
 /**
- * Fire a local notification immediately (null trigger). Returns the
- * scheduled notification id.
+ * Fire a local notification immediately (null trigger). Requests permission
+ * first (same as scheduleLocalNotificationAt) so denied OS settings soft-fail
+ * instead of throwing. Returns the scheduled id, or null if permission denied
+ * / schedule failed. Callers must not block critical work on notify success.
  */
 export async function scheduleLocalNotification(
   input: LocalNotificationInput,
-): Promise<string> {
-  return Notifications.scheduleNotificationAsync({
-    content: { title: input.title, body: input.body, data: input.data ?? {} },
-    trigger: null,
-  });
+): Promise<string | null> {
+  try {
+    if (!(await requestPermission())) {
+      return null;
+    }
+    return await Notifications.scheduleNotificationAsync({
+      content: { title: input.title, body: input.body, data: input.data ?? {} },
+      trigger: null,
+    });
+  } catch {
+    console.warn('[native/notifications] scheduleLocalNotification failed');
+    return null;
+  }
+}
+
+/**
+ * This-device alert when the leader auto-completes a gathering stop.
+ *
+ * Spec:
+ * - Android → always local notification
+ * - iOS → APNs / existing push path when a device token is registered
+ *   (`complete_gathering_stop` notifies the acting leader via `target_user_id`);
+ *   local notification only as fallback when no token (Expo Go / permission)
+ *
+ * Platform branching lives in this native boundary — UI screens must not call
+ * `Platform.OS` for this decision.
+ *
+ * @returns which path was used (for contracts / diagnostics)
+ */
+export async function notifyThisDeviceAutoComplete(
+  input: LocalNotificationInput,
+): Promise<'local' | 'remote_expected' | 'none'> {
+  try {
+    if (Platform.OS === 'android') {
+      const id = await scheduleLocalNotification(input);
+      return id ? 'local' : 'none';
+    }
+
+    // iOS: prefer remote APNs when the device already registered a push token.
+    const token = await getDevicePushToken();
+    if (token) {
+      // Remote path is owned by complete_gathering_stop → notify_push → APNs.
+      // Do not also schedule local (avoids double banners).
+      return 'remote_expected';
+    }
+
+    // No token (Expo Go / denied): local fallback so the leader still gets feedback.
+    const id = await scheduleLocalNotification(input);
+    return id ? 'local' : 'none';
+  } catch {
+    console.warn('[native/notifications] notifyThisDeviceAutoComplete failed');
+    return 'none';
+  }
 }
 
 /**
