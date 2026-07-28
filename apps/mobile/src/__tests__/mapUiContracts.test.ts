@@ -102,8 +102,9 @@ describe('map UI placement contracts', () => {
 
   it('exposes a settings OTA apply CTA only when an update is available', () => {
     expect(settingsOverlay).toContain('checkForUpdateAsync');
-    expect(settingsOverlay).toContain('fetchUpdateAsync');
-    expect(settingsOverlay).toContain('reloadAsync');
+    // Manual apply shares single-flight lifecycle with auto bootstrap.
+    expect(settingsOverlay).toContain('applyOtaUpdate');
+    expect(settingsOverlay).toContain('handleApplyOta');
     expect(settingsOverlay).toContain('showOtaApply');
     expect(settingsOverlay).toContain("t('settings.applyOta')");
     expect(settingsOverlay).toContain("t('settings.applyingOta')");

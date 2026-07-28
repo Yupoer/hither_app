@@ -25,6 +25,7 @@ import {
 import { useTranslation } from '../../../i18n';
 import { THEME_ORDER, type ThemeName, themes } from '../../../theme';
 import { glass } from '../../../glass';
+import { applyOtaUpdate } from '../../../utils/otaUpdates';
 
 const MARQUEE_SPEED_MIN = 20;
 const MARQUEE_SPEED_MAX = 80;
@@ -195,14 +196,31 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
     OTA_UPDATES_USABLE &&
     (otaAvailable || isUpdateAvailable || isUpdatePending);
 
-  const applyOtaUpdate = useCallback(async () => {
+  const handleApplyOta = useCallback(async () => {
     if (!OTA_UPDATES_USABLE || applyingOta) return;
     setApplyingOta(true);
     try {
-      if (!isUpdatePending) {
-        await Updates.fetchUpdateAsync();
+      // Shared single-flight with auto bootstrap — double-tap / concurrent
+      // apply cannot stack reloads. skipCheck when Expo already has pending.
+      const outcome = await applyOtaUpdate({
+        manual: true,
+        skipCheck: isUpdatePending,
+      });
+      if (outcome.reloading) {
+        // Process will restart; keep applying state (no false failure toast).
+        return;
       }
-      await Updates.reloadAsync();
+      setApplyingOta(false);
+      if (outcome.status === 'no_update') {
+        setOtaAvailable(false);
+        return;
+      }
+      if (
+        outcome.status === 'fetch_failed'
+        || outcome.status === 'reload_failed'
+      ) {
+        Alert.alert(t('settings.otaApplyFailed'));
+      }
     } catch {
       setApplyingOta(false);
       Alert.alert(t('settings.otaApplyFailed'));
@@ -427,7 +445,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
                 marginBottom: 8,
               },
             ]}
-            onPress={applyOtaUpdate}
+            onPress={handleApplyOta}
             disabled={applyingOta}
             accessibilityRole="button"
             accessibilityLabel={t('settings.applyOta')}

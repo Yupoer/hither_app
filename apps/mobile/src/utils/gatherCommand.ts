@@ -105,16 +105,23 @@ export function resolveNavCommand(input: NavCommandInput): NavCommandResult {
   } = input;
 
   if (isLeader) {
-    // The leader control is deliberately a two-state UI contract. Personal
-    // arrival is an overlay and must never turn the team control into a third
-    // action such as「完成」or a disabled no-op. The command runner owns
-    // server ordering and latest-intent reconciliation.
+    // Active flock travel always offers End first (pause team navigation).
     if (flockNavigatingThis) {
       return {
         kind: 'leader_stop',
         label: '結束',
         disabled: false,
         action: 'end_point',
+      };
+    }
+    // After personal arrival + 「先不要完成」, keep Complete available.
+    // Must not fall back to Start for the same arrived stop.
+    if (personallyArrived) {
+      return {
+        kind: 'leader_mark_complete',
+        label: '完成',
+        disabled: false,
+        action: 'mark_complete',
       };
     }
     return {

@@ -59,6 +59,11 @@ export interface PassiveCompanionModel {
   /** Personal progress 0–1 when known; never written into team state. */
   personalProgress: number | null;
   coarseProgress: CoarseProgressBucket;
+  /**
+   * GPS sample freshness for personal progress (live/stale/unknown).
+   * Optional — older callers omit; UI surfaces stale/unknown when set.
+   */
+  personalFreshness?: 'live' | 'stale' | 'unknown';
   errorMessage?: string | null;
   /** Always true: switch-back must remain available in every content status. */
   switchBackAvailable: true;
@@ -102,6 +107,7 @@ export interface BuildPassiveCompanionInput {
   journeyGoing: boolean;
   personalProgress?: number | null;
   personallyArrived?: boolean;
+  personalFreshness?: 'live' | 'stale' | 'unknown';
 }
 
 /**
@@ -173,6 +179,7 @@ export function buildPassiveCompanionModel(
       personalProgress,
       Boolean(input.personallyArrived),
     ),
+    personalFreshness: input.personalFreshness,
     // Surface as a banner when status is ready-with-cache; exclusive error UI
     // when contentStatus === 'error'.
     errorMessage: input.errorMessage ?? null,

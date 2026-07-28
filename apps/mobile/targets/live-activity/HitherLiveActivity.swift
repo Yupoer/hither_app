@@ -90,12 +90,9 @@ struct HitherLiveActivityWidget: Widget {
       let accent = context.state.accentColor
       return DynamicIsland {
         DynamicIslandExpandedRegion(.leading) {
-          ZStack {
-            RoundedRectangle(cornerRadius: 12)
-              .fill(accent.opacity(0.22))
-              .frame(width: 42, height: 42)
-            Crook(size: 25, color: accent)
-          }
+          // Leading identity = active travel mode (not crook brand mark).
+          TravelModeBadge(symbol: context.state.modeSymbol, accent: accent, size: 42)
+            .accessibilityLabel(context.state.modeAccessibilityLabel)
         }
         DynamicIslandExpandedRegion(.trailing) {
           VStack(alignment: .trailing, spacing: 0) {
@@ -111,11 +108,13 @@ struct HitherLiveActivityWidget: Widget {
         }
         DynamicIslandExpandedRegion(.center) {
           VStack(alignment: .leading, spacing: 2) {
+            // No duplicate transport icon before「前往集合點」— mode is leading only.
             Text("前往集合點")
               .font(.system(size: 11, weight: .bold))
               .tracking(0.6)
               .foregroundStyle(accent)
-            Text(context.state.gatheringTitle ?? context.attributes.groupName)
+            // Gathering point title when present; team name is fallback only.
+            Text(context.state.displayTitle(fallbackGroupName: context.attributes.groupName))
               .font(.system(size: 16, weight: .semibold))
               .foregroundStyle(Brand.textPrimary)
               .lineLimit(1)
@@ -140,18 +139,20 @@ struct HitherLiveActivityWidget: Widget {
           .padding(.top, 2)
         }
       } compactLeading: {
-        HStack(spacing: 6) {
-          Crook(size: 16, color: accent)
-          Image(systemName: context.state.modeSymbol)
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(accent)
-        }
+        // Compact: travel mode only (no crook + mode pair).
+        Image(systemName: context.state.modeSymbol)
+          .font(.system(size: 14, weight: .semibold))
+          .foregroundStyle(accent)
+          .accessibilityLabel(context.state.modeAccessibilityLabel)
       } compactTrailing: {
         Text(context.state.shortEta ?? context.state.formattedDistance ?? "")
           .font(.system(size: 13, weight: .semibold))
           .foregroundStyle(accent)
       } minimal: {
-        Crook(size: 15, color: accent)
+        Image(systemName: context.state.modeSymbol)
+          .font(.system(size: 12, weight: .semibold))
+          .foregroundStyle(accent)
+          .accessibilityLabel(context.state.modeAccessibilityLabel)
       }
       .keylineTint(accent)
     }
@@ -167,22 +168,16 @@ private struct LockScreenView: View {
     let accent = context.state.accentColor
     return VStack(alignment: .leading, spacing: 12) {
       HStack(alignment: .top, spacing: 12) {
-        ZStack {
-          RoundedRectangle(cornerRadius: 12)
-            .fill(accent.opacity(0.22))
-            .frame(width: 44, height: 44)
-          Crook(size: 25, color: accent)
-        }
+        // Leading identity = travel mode artwork (accessible label kept).
+        TravelModeBadge(symbol: context.state.modeSymbol, accent: accent, size: 44)
+          .accessibilityLabel(context.state.modeAccessibilityLabel)
         VStack(alignment: .leading, spacing: 3) {
-          HStack(spacing: 5) {
-            Image(systemName: context.state.modeSymbol)
-              .font(.system(size: 10, weight: .bold))
-            Text("前往集合點")
-          }
-          .font(.system(size: 10.5, weight: .bold))
-          .tracking(0.45)
-          .foregroundStyle(accent)
-          Text(context.state.gatheringTitle ?? context.attributes.groupName)
+          // No second transport glyph before「前往集合點」.
+          Text("前往集合點")
+            .font(.system(size: 10.5, weight: .bold))
+            .tracking(0.45)
+            .foregroundStyle(accent)
+          Text(context.state.displayTitle(fallbackGroupName: context.attributes.groupName))
             .font(.system(size: 17, weight: .semibold))
             .foregroundStyle(Brand.textPrimary)
             .lineLimit(1)
@@ -221,6 +216,23 @@ private struct LockScreenView: View {
     .padding(16)
   }
 
+}
+
+/// Leading identity tile: active travel-mode SF Symbol on accent plate.
+private struct TravelModeBadge: View {
+  let symbol: String
+  let accent: Color
+  var size: CGFloat = 44
+  var body: some View {
+    ZStack {
+      RoundedRectangle(cornerRadius: 12)
+        .fill(accent.opacity(0.22))
+        .frame(width: size, height: size)
+      Image(systemName: symbol)
+        .font(.system(size: size * 0.42, weight: .semibold))
+        .foregroundStyle(accent)
+    }
+  }
 }
 
 // MARK: - Pieces
@@ -283,12 +295,30 @@ private extension HitherGroupAttributes.ContentState {
   /// The app's theme accent (from `accentHex`), or the brand fallback.
   var accentColor: Color { Color(hexString: accentHex) ?? Brand.accent }
 
+  /// Gathering point title when present; team/group name only as fallback.
+  func displayTitle(fallbackGroupName: String) -> String {
+    if let t = gatheringTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty {
+      return t
+    }
+    let g = fallbackGroupName.trimmingCharacters(in: .whitespacesAndNewlines)
+    return g.isEmpty ? "集合點" : g
+  }
+
   /// SF Symbol for the active travel mode (transit glyph).
   var modeSymbol: String {
     switch travelMode {
     case "drive": return "car.fill"
     case "transit": return "bus.fill"
     default: return "figure.walk"
+    }
+  }
+
+  /// Accessible text for the leading travel-mode identity.
+  var modeAccessibilityLabel: String {
+    switch travelMode {
+    case "drive": return "開車"
+    case "transit": return "大眾運輸"
+    default: return "步行"
     }
   }
 

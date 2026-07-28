@@ -45,6 +45,8 @@ export function useDeviceLocation({
 }: UseDeviceLocationParams) {
   const [deviceCoords, setDeviceCoords] = useState<Coordinates | null>(null);
   const [deviceAccuracyM, setDeviceAccuracyM] = useState<number | null>(null);
+  /** Wall-clock of last UI-accepted sample — drives progress freshness/stale. */
+  const [deviceCoordsAcceptedAtMs, setDeviceCoordsAcceptedAtMs] = useState<number | null>(null);
   const [appState, setAppState] = useState<AppStateStatus>(AppState.currentState);
   const uiGateRef = useRef<LocationGateState>({ lastCoords: null, lastAtMs: 0 });
   const uploadGateRef = useRef<LocationGateState>({ lastCoords: null, lastAtMs: 0 });
@@ -76,6 +78,7 @@ export function useDeviceLocation({
     setDeviceAccuracyM(
       sample.accuracy != null && Number.isFinite(sample.accuracy) ? sample.accuracy : null,
     );
+    setDeviceCoordsAcceptedAtMs(now);
     uiGateRef.current = { lastCoords: coords, lastAtMs: now };
   }, []);
 
@@ -148,8 +151,14 @@ export function useDeviceLocation({
   /**
    * Force one-shot GPS + immediate upload (manual refresh / foreground resume).
    * Bypasses distance/time gates — "force sync".
+   *
+   * @param options.requireUpload When true (Force Refresh), upload failures
+   *   propagate so callers can stop peer fan-out and show failure feedback.
+   *   Background/foreground auto paths keep soft-fail upload.
    */
-  const refreshDeviceLocation = useCallback(async (): Promise<Coordinates | null> => {
+  const refreshDeviceLocation = useCallback(async (options?: {
+    requireUpload?: boolean;
+  }): Promise<Coordinates | null> => {
     const fix = await location.getCurrentLocation(highAccuracyRef.current);
     if (!fix) return null;
     const now = Date.now();
@@ -161,7 +170,11 @@ export function useDeviceLocation({
       locationPolicy(highAccuracyRef.current),
     );
     if (groupIdRef.current) {
-      await enqueueUpload(fix, now, { immediate: true }).catch(() => undefined);
+      if (options?.requireUpload) {
+        await enqueueUpload(fix, now, { immediate: true });
+      } else {
+        await enqueueUpload(fix, now, { immediate: true }).catch(() => undefined);
+      }
     }
     return fix.coordinates;
   }, [applySampleToUi, enqueueUpload]);
@@ -325,6 +338,8 @@ export function useDeviceLocation({
     deviceCoords,
     /** Horizontal accuracy of the last accepted device fix, metres. */
     deviceAccuracyM,
+    /** When the last UI-accepted sample was applied (ms since epoch). */
+    deviceCoordsAcceptedAtMs,
     /** Exposed so MapScreen can own a single GPS path (FG watch vs BG task). */
     appState,
     refreshDeviceLocation,

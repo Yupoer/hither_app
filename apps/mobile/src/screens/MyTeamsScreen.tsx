@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useFocusEffect } from '@react-navigation/native';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useTheme } from '../state/PreferencesContext';
 import { accentMix } from '../glass';
@@ -27,6 +28,13 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
   const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(!route.params?.initialGroups?.length);
 
+  /**
+   * Enter guard across OTA reload / repeated taps / multi-group races.
+   * Cleared on focus return and on non-navigation exits (timeout / stale token).
+   * UI baseline unchanged — only entry lifecycle hardening (ticket 02).
+   */
+  const enterInFlightRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (user) {
       getMyJoinedGroups().then(data => {
@@ -39,17 +47,49 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
     }
   }, [user]);
 
+  useFocusEffect(
+    useCallback(() => {
+      enterInFlightRef.current = null;
+      return () => undefined;
+    }, []),
+  );
+
   function handleEnterGroup(info: JoinedGroupInfo) {
+    // Any in-flight enter blocks — not only the same group id.
+    if (enterInFlightRef.current) return;
+    enterInFlightRef.current = info.group.id;
+    // Cleared on every non-navigation exit (timeout, stale token, error).
+    // Kept set only after replace so double-tap during transition cannot re-enter.
+    let navigationScheduled = false;
     void runUiAction(
       'my_teams.enter_group',
-      () => {
+      async (token) => {
         setExpandedGroupId(null);
         lightTap();
+        // Reconcile orphan Live Activities after OTA / prior session before map.
+        await clearLiveActivities().catch(() => undefined);
+        if (!token.isCurrent()) {
+          enterInFlightRef.current = null;
+          return;
+        }
         setMembership({ group: info.group, role: info.role });
         navigation.replace('Map', { groupId: info.group.id });
+        navigationScheduled = true;
       },
       { screen: 'MyTeams' },
-    );
+    )
+      .then(() => {
+        // runUiAction resolves (does not reject) on timeout — clear unless we
+        // already handed off to Map.
+        if (!navigationScheduled && enterInFlightRef.current === info.group.id) {
+          enterInFlightRef.current = null;
+        }
+      })
+      .catch(() => {
+        if (enterInFlightRef.current === info.group.id) {
+          enterInFlightRef.current = null;
+        }
+      });
   }
 
   function handleLeaveGroup(groupId: string) {

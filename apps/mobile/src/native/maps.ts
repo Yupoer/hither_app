@@ -202,6 +202,30 @@ function allowPublicGeocoderFallback(): boolean {
 }
 
 /**
+ * Provider-specific map defaults for transit orientation.
+ *
+ * Platform selection lives here (native boundary), not in UI components.
+ * - Android Google Maps: `showsTransit` (requires Maps SDK ≥ 20 + patch).
+ * - iOS MapKit: no network-layer toggle; keep standard POIs (incl. transit).
+ */
+export type MapTransitDefaultProps = {
+  showsTransit?: boolean;
+  showsPointsOfInterests?: boolean;
+  showsBuildings?: boolean;
+};
+
+export function defaultMapTransitProps(): MapTransitDefaultProps {
+  if (Platform.OS === 'android') {
+    // Cast surface for patched react-native-maps prop (not in stock types).
+    return { showsTransit: true };
+  }
+  return {
+    showsPointsOfInterests: true,
+    showsBuildings: false,
+  };
+}
+
+/**
  * Search for places by free text, biased toward `region` when given.
  * Returns [] on total failure so the picker degrades gracefully.
  */

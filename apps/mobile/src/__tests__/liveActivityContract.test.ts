@@ -139,6 +139,18 @@ describe('ActivityKit remote push contract', () => {
     expect(widgetAttributes).toContain('1d12hr');
   });
 
+  it('uses travel-mode leading identity and gathering-title precedence', () => {
+    expect(widget).toContain('TravelModeBadge');
+    expect(widget).toContain('displayTitle(fallbackGroupName:');
+    expect(widget).toContain('modeAccessibilityLabel');
+    // No crook brand mark as leading identity; no crook+mode pair in compact.
+    expect(widget).not.toMatch(/compactLeading:[\s\S]*Crook\(/);
+    // Single activity reconciliation still ends all before start.
+    expect(liveHook).toContain('endAllGroupActivities');
+    expect(liveHook).toContain('PERSIST_MIN_MS = 30_000');
+    expect(liveHook).toContain('Math.round(state.distanceMeters / 10) * 10');
+  });
+
   it('dims each member from its own arrived boolean', () => {
     expect(widget).toContain('let arrived: [Bool]');
     expect(widget).toContain('isArrived = arrived.indices.contains(i) && arrived[i]');

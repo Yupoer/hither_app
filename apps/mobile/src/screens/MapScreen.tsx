@@ -144,6 +144,7 @@ import {
   shouldAnchorInitial,
   type DistanceSource,
 } from '../utils/journeyProgress';
+import { derivePersonalProgress } from '../utils/personalProgress';
 import {
   distanceMeters,
   etaSecondsFor,
@@ -385,6 +386,7 @@ export default function MapScreen({ route, navigation }: Props) {
     error: groupStateError,
     refresh,
     applyOptimisticGathering,
+    emptyLocalSnapshot,
   } = useGroupState(groupId, {
     myUserId: user?.id ?? null,
     highAccuracy,
@@ -446,6 +448,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const workflowReloadRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [optimisticTripDays, setOptimisticTripDays] = useState<number | null>(null);
   const [optimisticDepartureDate, setOptimisticDepartureDate] = useState<string | null>(null);
+  /** Personal arrival rows (check-in) — not team stop completion. */
   const myCompletedDestinationIds = useMemo(
     () => new Set(
       destinationArrivals
@@ -453,6 +456,15 @@ export default function MapScreen({ route, navigation }: Props) {
         .map((arrival) => arrival.destinationId),
     ),
     [destinationArrivals, user?.id],
+  );
+  /** Team-completed stops (closedAt) — distinct from personal arrival. */
+  const teamCompletedDestinationIds = useMemo(
+    () => new Set(
+      allScopedDestinations
+        .filter((d) => d.closedAt != null)
+        .map((d) => d.id),
+    ),
+    [allScopedDestinations],
   );
   // Open stops on today + future trip days (local device date). Past days
   // leave the carousel / reorder list and surface in 歷史行程 instead.
@@ -953,6 +965,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const {
     deviceCoords,
     deviceAccuracyM,
+    deviceCoordsAcceptedAtMs,
     appState,
     refreshDeviceLocation,
     consumeForegroundSample,
@@ -1310,6 +1323,12 @@ export default function MapScreen({ route, navigation }: Props) {
     [t],
   );
 
+  // State mirrors of journey refs so personal-progress memo recomputes cleanly.
+  const [journeyStartCoords, setJourneyStartCoords] = useState<
+    NonNullable<typeof deviceCoords> | null
+  >(null);
+  const [lastRouteDistanceM, setLastRouteDistanceM] = useState<number | undefined>();
+
   // Journey progress baseline (foreground only) — separate from GPS ownership.
   useEffect(() => {
     if (!journeyActive || !groupId || !navTarget) {
@@ -1319,6 +1338,8 @@ export default function MapScreen({ route, navigation }: Props) {
       setInitialDistanceM(undefined);
       setDistanceSource(undefined);
       setProgressDepartedStart(false);
+      setJourneyStartCoords(null);
+      setLastRouteDistanceM(undefined);
       return;
     }
 
@@ -1329,6 +1350,7 @@ export default function MapScreen({ route, navigation }: Props) {
     const routeDistanceM = selfRoute?.distanceMeters;
     if (routeDistanceM != null && Number.isFinite(routeDistanceM)) {
       lastRouteDistanceRef.current = routeDistanceM;
+      setLastRouteDistanceM(routeDistanceM);
     }
     const deviceStraightM = distanceMeters(deviceCoords, navTarget.coordinates);
     const distanceM = initialJourneyDistance(routeDistanceM, deviceStraightM);
@@ -1354,6 +1376,7 @@ export default function MapScreen({ route, navigation }: Props) {
       setInitialDistanceM(distanceM);
       setDistanceSource(source);
       setProgressDepartedStart(false);
+      setJourneyStartCoords(deviceCoords);
     }
   }, [
     deviceAccuracyM,
@@ -1601,31 +1624,111 @@ export default function MapScreen({ route, navigation }: Props) {
       ? 1
       : gatedProgress?.progress;
 
+  /**
+   * Freshness clock: single timeout to the stale threshold while navigation is
+   * active — not a permanent 5s polling loop on MapScreen (spec: no extra poll).
+   */
+  const [progressClockMs, setProgressClockMs] = useState(() => Date.now());
+  const PERSONAL_PROGRESS_STALE_MS = 30_000;
+  useEffect(() => {
+    if (!journeyActive || !navTarget || deviceCoordsAcceptedAtMs == null) {
+      return;
+    }
+    const now = Date.now();
+    setProgressClockMs(now);
+    const age = Math.max(0, now - deviceCoordsAcceptedAtMs);
+    if (age >= PERSONAL_PROGRESS_STALE_MS) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      setProgressClockMs(Date.now());
+    }, PERSONAL_PROGRESS_STALE_MS - age + 50);
+    return () => clearTimeout(timer);
+  }, [journeyActive, navTarget?.id, deviceCoordsAcceptedAtMs]);
+
+  /**
+   * Shared local personal progress — single derivation for gathering card,
+   * My Progress (passive), and Live Activity. Backend upload cadence is
+   * independent and must not block these surfaces.
+   */
+  const personalProgress = useMemo(
+    () =>
+      derivePersonalProgress({
+        deviceCoords,
+        targetCoords: navTarget?.coordinates,
+        initialDistanceM: initialDistanceM,
+        startCoords: journeyStartCoords,
+        // Same-render sticky: gatedProgress.departed may flip before state commits.
+        hasDepartedStart: progressDepartedStart || Boolean(gatedProgress?.departed),
+        travelMode,
+        routeEtaSeconds: selfRoute?.expectedTravelTimeSeconds,
+        routeDistanceM: selfRoute?.distanceMeters,
+        distanceSource: distanceSource ?? null,
+        lastRouteDistanceM: lastRouteDistanceM,
+        // Personal check-in / auto-arrive — not team stop completion.
+        arrived: localNavigationArrived,
+        // Team terminal: stop closed by leader (closedAt), not personal arrival.
+        completed: Boolean(
+          navTarget && teamCompletedDestinationIds.has(navTarget.id),
+        ),
+        arrivalRadiusM: localArrivalRadiusM,
+        // Age from single stale-threshold clock while journey is active.
+        sampleAgeMs:
+          deviceCoordsAcceptedAtMs != null
+            ? Math.max(0, progressClockMs - deviceCoordsAcceptedAtMs)
+            : null,
+        staleAfterMs: PERSONAL_PROGRESS_STALE_MS,
+      }),
+    [
+      deviceCoords,
+      deviceCoordsAcceptedAtMs,
+      progressClockMs,
+      navTarget,
+      initialDistanceM,
+      journeyStartCoords,
+      progressDepartedStart,
+      gatedProgress?.departed,
+      travelMode,
+      selfRoute?.expectedTravelTimeSeconds,
+      selfRoute?.distanceMeters,
+      distanceSource,
+      lastRouteDistanceM,
+      localNavigationArrived,
+      teamCompletedDestinationIds,
+      localArrivalRadiusM,
+    ],
+  );
+
+  // Prefer shared model; fall back to legacy live* for non-nav card chips.
+  const personalDistanceM = personalProgress.distanceMeters ?? liveDistance;
+  const personalEtaSeconds = personalProgress.etaSeconds
+    ?? selfRoute?.expectedTravelTimeSeconds
+    ?? (liveDistance != null ? etaSecondsFor(liveDistance, travelMode) : undefined);
+  const personalProgressRatio = personalProgress.progress ?? liveProgress;
+
   // OTA-01 ticket 02: team surface + personal overlay (personal never rewrites team).
   const teamSurfaceView = useMemo(() => {
-    const personalEta =
-      selfRoute?.expectedTravelTimeSeconds
-      ?? (liveDistance != null ? etaSecondsFor(liveDistance, travelMode) : null);
     return overlayPersonalOnTeamState(teamGatheringState, {
       userId: user?.id ?? '',
       travelMode,
-      etaSeconds: personalEta,
+      etaSeconds: personalEtaSeconds ?? null,
       location: deviceCoords
         ? { latitude: deviceCoords.latitude, longitude: deviceCoords.longitude }
         : null,
-      arrived: localNavigationArrived,
-      progress: liveProgress ?? null,
-      distanceMeters: liveDistance ?? null,
+      arrived: personalProgress.arrived || localNavigationArrived,
+      progress: personalProgressRatio ?? null,
+      distanceMeters: personalDistanceM ?? null,
     });
   }, [
     teamGatheringState,
     user?.id,
     travelMode,
-    selfRoute?.expectedTravelTimeSeconds,
-    liveDistance,
+    personalEtaSeconds,
     deviceCoords,
+    personalProgress.arrived,
     localNavigationArrived,
-    liveProgress,
+    personalProgressRatio,
+    personalDistanceM,
   ]);
 
   // OTA-07: wait for prefs hydrate so returning passive users do not flash full chrome.
@@ -1649,8 +1752,16 @@ export default function MapScreen({ route, navigation }: Props) {
           ?? null,
         currentPointTitle: (navTarget ?? activePoint ?? selectedDestination)?.title ?? null,
         journeyGoing: teamSurfaceView.team.journeyPhase === 'en_route',
-        personalProgress: teamSurfaceView.personal?.progress ?? liveProgress ?? null,
-        personallyArrived: teamSurfaceView.personal?.arrived ?? localNavigationArrived,
+        personalProgress:
+          teamSurfaceView.personal?.progress
+          ?? personalProgressRatio
+          ?? liveProgress
+          ?? null,
+        personallyArrived:
+          teamSurfaceView.personal?.arrived
+          ?? personalProgress.arrived
+          ?? localNavigationArrived,
+        personalFreshness: personalProgress.freshness,
       }),
     [
       inPassiveMode,
@@ -1662,6 +1773,9 @@ export default function MapScreen({ route, navigation }: Props) {
       navTarget,
       activePoint,
       selectedDestination,
+      personalProgressRatio,
+      personalProgress.arrived,
+      personalProgress.freshness,
       liveProgress,
       localNavigationArrived,
     ],
@@ -1679,6 +1793,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const liveActivityBaselineM = initialDistanceM ?? liveDistance ?? numericDistance;
   useLiveActivity(
     journeyActive
+      && !personalProgress.arrived
       && !localNavigationArrived
       && liveActivityEnabled
       && !(preferencesReady && passiveCompanionMode),
@@ -1686,13 +1801,12 @@ export default function MapScreen({ route, navigation }: Props) {
     groupName: membership?.group.name ?? '',
     navigationSessionId: navigationSessionState.session?.id,
     status: navigationSessionState.session ? 'active' : undefined,
-    gatheringTitle: navTarget?.title,
-    distanceMeters: liveDistance,
-    etaSeconds:
-      selfRoute?.expectedTravelTimeSeconds ??
-      (liveDistance != null ? etaSecondsFor(liveDistance, travelMode) : undefined),
+    // Gathering point title when a target exists; team name is fallback only.
+    gatheringTitle: navTarget?.title ?? membership?.group.name,
+    distanceMeters: personalDistanceM ?? liveDistance,
+    etaSeconds: personalEtaSeconds,
     gatheringCoordinates: navTarget?.coordinates,
-    progress: liveProgress,
+    progress: personalProgressRatio ?? liveProgress,
     gatheredCount: liveGathered,
     memberCount: members.length,
     accentHex: accent,
@@ -1800,22 +1914,46 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const refreshAllLocations = useCallback(async () => {
     if (!groupId || refreshingLocations) return;
+    // Client-side cooldown: do not re-hit fan-out while cooling.
+    const remainingMs = refreshCooldownUntil - Date.now();
+    if (remainingMs > 0) {
+      Alert.alert(
+        t('map.refreshLocationsCooldown', {
+          seconds: Math.max(1, Math.ceil(remainingMs / 1000)),
+        }),
+      );
+      return;
+    }
     setRefreshingLocations(true);
     try {
       if (isDemoGroup(groupId)) {
-        await handleLocationRefreshRequest(groupId);
+        // Demo: self one-shot only (no peer fan-out).
+        await refreshDeviceLocation();
         return;
       }
 
-      // Always refresh the initiator immediately. The server cooldown only
-      // governs the fan-out request to peers.
-      await handleLocationRefreshRequest(groupId);
+      // 1) Self first: one-shot GPS + immediate upload + local marker/timestamp.
+      //    requireUpload: upload failure must stop fan-out and alert (spec 101–103).
+      const selfFix = await refreshDeviceLocation({ requireUpload: true });
+      if (!selfFix) {
+        // Permission / no-fix — surface actionable feedback; skip peer fan-out.
+        const permission = await location.getPermissionState().catch(() => null);
+        if (!permission || permission.foregroundStatus !== 'granted') {
+          showLocationPermissionAlert();
+        } else {
+          Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
+        }
+        return;
+      }
+
+      // 2) Then ask the server to fan out refresh requests to peers.
+      //    Success is silent; cooldown / failure still alert.
       const result = await requestGroupLocationRefresh(groupId);
       const retryAfter = Math.max(0, result.retryAfterSeconds);
       setRefreshCooldownUntil(Date.now() + retryAfter * 1000);
       if (result.accepted) {
-        await refresh();
-        Alert.alert(t('map.refreshLocationsAccepted'));
+        // Quiet success — no Alert. Peer markers arrive via realtime / next load.
+        void refresh().catch(() => undefined);
       } else {
         Alert.alert(
           t('map.refreshLocationsCooldown', { seconds: retryAfter }),
@@ -1826,7 +1964,15 @@ export default function MapScreen({ route, navigation }: Props) {
     } finally {
       setRefreshingLocations(false);
     }
-  }, [groupId, handleLocationRefreshRequest, refreshingLocations, t]);
+  }, [
+    groupId,
+    refresh,
+    refreshCooldownUntil,
+    refreshDeviceLocation,
+    refreshingLocations,
+    showLocationPermissionAlert,
+    t,
+  ]);
 
   const fitAllMembers = useCallback(() => {
     void runUiAction(
@@ -3511,7 +3657,9 @@ export default function MapScreen({ route, navigation }: Props) {
         <Ionicons name="leaf-outline" size={18} color="#111" />
         <View style={styles.passiveEnterCopy}>
           <Text style={styles.passiveEnterTitle}>{t('passive.enter')}</Text>
-          <Text style={styles.passiveEnterHint}>{t('settings.passiveCompanionModeHint')}</Text>
+          <Text style={styles.passiveEnterHint} numberOfLines={1}>
+            {t('passive.enterHint')}
+          </Text>
         </View>
         <Ionicons name="chevron-forward" size={16} color="#111" />
       </Pressable>
@@ -3642,6 +3790,7 @@ export default function MapScreen({ route, navigation }: Props) {
             navigationDestination={null}
             onSwitchBack={exitPassiveCompanionMode}
             onOpenExternalNavigation={openExternalNavigation}
+            onConfigureCustom={openCustomQuickCommand}
           />
         </View>
       );
@@ -3681,6 +3830,7 @@ export default function MapScreen({ route, navigation }: Props) {
             navigationDestination={null}
             onSwitchBack={exitPassiveCompanionMode}
             onOpenExternalNavigation={openExternalNavigation}
+            onConfigureCustom={openCustomQuickCommand}
           />
         </View>
       );
@@ -3714,6 +3864,12 @@ export default function MapScreen({ route, navigation }: Props) {
           pendingPlace={pendingPlace}
           currentUserId={user?.id}
           initialCenter={mapInitialCenter ?? undefined}
+          // Pulse only while journey is active with a nav target (not paused
+          // selection). Spec: stop when navigation ends.
+          activeDestinationId={
+            journeyActive && navTarget?.id ? navTarget.id : null
+          }
+          completedDestinationIds={teamCompletedDestinationIds}
           // Show the planned path for everyone while journey is live (leader
           // broadcast or local follower plan). When paused, keep a light path
           // to the selected card so ETA still makes sense.
@@ -3807,6 +3963,7 @@ export default function MapScreen({ route, navigation }: Props) {
           navigationDestination={navTarget ?? activePoint ?? selectedDestination ?? null}
           onSwitchBack={exitPassiveCompanionMode}
           onOpenExternalNavigation={openExternalNavigation}
+          onConfigureCustom={openCustomQuickCommand}
         />
       ) : null}
 
@@ -4022,8 +4179,12 @@ export default function MapScreen({ route, navigation }: Props) {
             {destinations.map((dest, index) => {
               const active = index === selectedIndex;
               const routeForDestination = activePoint?.id === dest.id ? selfRoute : null;
-              const d = routeForDestination?.distanceMeters
-                ?? (fromCoords ? distanceMeters(fromCoords, dest.coordinates) : null);
+              // Active nav target: shared personal progress (local GPS, no backend wait).
+              // Other cards: one-shot straight/route distance from last known fix.
+              const d = (navTarget?.id === dest.id && personalDistanceM != null)
+                ? personalDistanceM
+                : routeForDestination?.distanceMeters
+                  ?? (fromCoords ? distanceMeters(fromCoords, dest.coordinates) : null);
               // Shared flock vs member local plan — must not use journeyActive
               // (true for localTargetId too) or 路徑規劃 becomes 導航中.
               const { flockNavigatingThis, localRouteThis } = deriveCardNavFlags({
@@ -4066,13 +4227,27 @@ export default function MapScreen({ route, navigation }: Props) {
                     ? 'car-outline'
                     : 'bus-outline';
               // Route ETA/distance — always visible; expand only scales layout.
-              const etaSeconds = routeForDestination
-                ? routeForDestination.expectedTravelTimeSeconds
-                : d != null
-                  ? etaSecondsFor(d, travelMode)
-                  : null;
+              const etaSeconds = (navTarget?.id === dest.id && personalEtaSeconds != null)
+                ? personalEtaSeconds
+                : routeForDestination
+                  ? routeForDestination.expectedTravelTimeSeconds
+                  : d != null
+                    ? etaSecondsFor(d, travelMode)
+                    : null;
               const etaLabel = etaSeconds != null ? shortEta(etaSeconds) : '—';
-              const distLabel = d != null ? formatDistance(d) : '';
+              // Surface GPS freshness on the active nav card (spec: retain
+              // last values, show stale/unknown — not silent forever-live).
+              const progressFreshness =
+                navTarget?.id === dest.id ? personalProgress.freshness : 'live';
+              const freshnessSuffix =
+                progressFreshness === 'stale' || progressFreshness === 'unknown'
+                  ? ` · ${t('locationUpdate.stale')}`
+                  : '';
+              const distLabel = d != null
+                ? `${formatDistance(d)}${freshnessSuffix}`
+                : progressFreshness === 'unknown'
+                  ? t('locationUpdate.stale')
+                  : '';
               const distParts = splitDistanceParts(d);
               const etaParts = splitEtaParts(etaSeconds);
               const cardExpanded = isCardExpanded(dest.id);
@@ -4108,15 +4283,15 @@ export default function MapScreen({ route, navigation }: Props) {
                 personallyArrived,
                 flockNavigatingThis,
                 localRouteThis,
-                // The command runner owns the team transition and exposes the
-                // only meaningful UI state: Start or End.
                 isNextTeamPending: true,
                 teamStartBlocked: false,
               });
               const startAccessibilityHint = isLeader
                 ? navCmd.label === '結束'
                   ? '按下後結束此集合點並回到停留狀態'
-                  : '按下後開始導航；再次按下可結束'
+                  : navCmd.label === '完成'
+                    ? '按下後完成此集合點'
+                    : '按下後開始導航；再次按下可結束'
                 : undefined;
               const leaderActionDisabled = false;
               const commandDisabled = !isLeader && (journeyBusy || navCmd.disabled);
@@ -4420,8 +4595,8 @@ export default function MapScreen({ route, navigation }: Props) {
                             } else if (navCmd.action === 'end_point') {
                               void requestTeamEnd(dest, index);
                             } else if (navCmd.action === 'mark_complete') {
-                              // Legacy member-only arrival prompt; leader now has
-                              // only the two-state Start/End command.
+                              // Leader deferred completion (「先不要完成」) or
+                              // re-open complete prompt while personally arrived.
                               promptCompleteAfterArrival(dest);
                             } else if (navCmd.disabled) {
                               logEvent('nav_command_ignored', {
@@ -5611,12 +5786,13 @@ const RefreshLocationsButton = React.memo(function RefreshLocationsButton({
         pressed && !refreshing && styles.rowActionPressed,
       ]}
       onPress={() => void onPress()}
-      disabled={refreshing}
+      disabled={refreshing || cooling}
       accessibilityRole="button"
       accessibilityLabel={t('map.refreshLocationsA11y')}
       accessibilityHint={
         cooling ? t('map.refreshLocationsCooldown', { seconds: remaining }) : undefined
       }
+      accessibilityState={{ disabled: refreshing || cooling }}
     >
       {refreshing ? (
         <ActivityIndicator size="small" color={accent} />

@@ -21,8 +21,11 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Updates from 'expo-updates';
 import {
+  __setOtaUsableForTests,
+  applyOtaUpdate,
   applyOtaUpdateIfAvailable,
   consumeOtaAppliedNotice,
+  isOtaApplyInFlight,
   OTA_LAST_UPDATE_ID_KEY,
   shouldShowOtaAppliedToast,
   startOtaUpdateBootstrap,
@@ -37,11 +40,18 @@ const setItem = AsyncStorage.setItem as jest.Mock;
 describe('otaUpdates', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    __setOtaUsableForTests(null);
+  });
+
+  afterEach(() => {
+    __setOtaUsableForTests(null);
   });
 
   it('exposes apply + bootstrap entrypoints for App.tsx', () => {
     expect(typeof applyOtaUpdateIfAvailable).toBe('function');
+    expect(typeof applyOtaUpdate).toBe('function');
     expect(typeof startOtaUpdateBootstrap).toBe('function');
+    expect(typeof isOtaApplyInFlight).toBe('function');
   });
 
   it('wires expo-updates APIs used by production bootstrap', () => {
@@ -55,10 +65,16 @@ describe('otaUpdates', () => {
     expect(src).toContain('reloadAsync');
     expect(src).toContain("AppState.addEventListener('change'");
     expect(src).toContain('consumeOtaAppliedNotice');
+    expect(src).toContain('pendingManualFollowUp');
+    expect(src).toContain('inFlight');
   });
 
   it('no-ops under Jest/dev without calling Updates', async () => {
     await expect(applyOtaUpdateIfAvailable()).resolves.toBe(false);
+    await expect(applyOtaUpdate({ manual: true })).resolves.toMatchObject({
+      status: 'disabled',
+      reloading: false,
+    });
     expect(checkForUpdateAsync).not.toHaveBeenCalled();
     expect(fetchUpdateAsync).not.toHaveBeenCalled();
     expect(reloadAsync).not.toHaveBeenCalled();
@@ -68,6 +84,49 @@ describe('otaUpdates', () => {
     const stop = startOtaUpdateBootstrap();
     expect(typeof stop).toBe('function');
     stop();
+  });
+
+  it('single-flight: concurrent callers share one reloadAsync', async () => {
+    __setOtaUsableForTests(true);
+    let resolveCheck: (v: { isAvailable: boolean }) => void = () => undefined;
+    checkForUpdateAsync.mockImplementation(
+      () =>
+        new Promise<{ isAvailable: boolean }>((resolve) => {
+          resolveCheck = resolve;
+        }),
+    );
+    fetchUpdateAsync.mockResolvedValue({ isNew: true });
+    reloadAsync.mockResolvedValue(undefined);
+
+    const a = applyOtaUpdate({ manual: false });
+    const b = applyOtaUpdate({ manual: true, skipCheck: true });
+    expect(isOtaApplyInFlight()).toBe(true);
+    resolveCheck({ isAvailable: true });
+    const [ra, rb] = await Promise.all([a, b]);
+    expect(ra.reloading).toBe(true);
+    expect(rb.reloading).toBe(true);
+    // One check + one fetch + one reload (no stacked reloads).
+    expect(checkForUpdateAsync).toHaveBeenCalledTimes(1);
+    expect(fetchUpdateAsync).toHaveBeenCalledTimes(1);
+    expect(reloadAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('manual follow-up after soft auto no_update reloads once for all waiters', async () => {
+    __setOtaUsableForTests(true);
+    checkForUpdateAsync
+      .mockResolvedValueOnce({ isAvailable: false })
+      .mockResolvedValueOnce({ isAvailable: true });
+    fetchUpdateAsync.mockResolvedValue({ isNew: true });
+    reloadAsync.mockResolvedValue(undefined);
+
+    const auto = applyOtaUpdate({ manual: false });
+    // Join while auto in flight — marks pendingManualFollowUp inside shared chain.
+    const manual = applyOtaUpdate({ manual: true });
+    const [autoOut, manualOut] = await Promise.all([auto, manual]);
+    // Shared promise drains manual follow-up; every waiter sees reloading.
+    expect(autoOut).toEqual(manualOut);
+    expect(autoOut.reloading).toBe(true);
+    expect(reloadAsync).toHaveBeenCalledTimes(1);
   });
 });
 
