@@ -4439,12 +4439,11 @@ export default function MapScreen({ route, navigation }: Props) {
                       active ? styles.cardActiveBorder : null,
                     ]}
                   >
-                    <GatheringCardPressable
-                      onToggle={() => toggleCard(dest.id)}
-                      accessibilityLabel={dest.title}
-                      accessibilityHint={cardExpanded ? '收合集合點卡片' : '展開集合點卡片'}
-                    >
-                    {(personallyArrived || arrivalCelebrateDestId === dest.id) ? (
+                    {/* Celebrate flash only (1.6s): full-card dim + center check.
+                        Must NOT key off personallyArrived or dim stays forever.
+                        Siblings of padded content so absolute fill covers padding
+                        + expanded command row (expanded and collapsed). */}
+                    {arrivalCelebrateDestId === dest.id ? (
                       <View pointerEvents="none" style={styles.arrivalDimOverlay} />
                     ) : null}
                     {arrivalCelebrateDestId === dest.id ? (
@@ -4473,6 +4472,12 @@ export default function MapScreen({ route, navigation }: Props) {
                         </Animated.View>
                       </Animated.View>
                     ) : null}
+                    <View style={styles.cardInner}>
+                    <GatheringCardPressable
+                      onToggle={() => toggleCard(dest.id)}
+                      accessibilityLabel={dest.title}
+                      accessibilityHint={cardExpanded ? '收合集合點卡片' : '展開集合點卡片'}
+                    >
                     {/* Layout (expanded):
                         kicker · dots
                         title full-width
@@ -4882,6 +4887,7 @@ export default function MapScreen({ route, navigation }: Props) {
                       />
                     </View>
                     )}
+                    </View>
                   </liquidGlass.GlassView>
                 </View>
               );
@@ -6292,18 +6298,20 @@ const makeStyles = (
     sheetLayer: {
       zIndex: 70,
     },
-    // Gathering-point card — padding / radius / gaps track live font scale.
-    // overflow hidden clips glass radius; command row must flex so buttons
-    // never paint past the edge (untappable when clipped).
+    // Gathering-point card shell — radius + overflow only.
+    // Padding lives on cardInner so celebrate dim can absolute-fill the full
+    // glass surface (no bright padding rim / command-row gap).
     card: {
       borderRadius: narrow ? s(22, 16) : s(26, 20),
       overflow: 'hidden',
-      paddingHorizontal: cardPad,
-      paddingTop: s(compact ? 14 : 16, 10),
-      paddingBottom: s(compact ? 14 : 16, 10),
       borderWidth: StyleSheet.hairlineWidth,
       // Soft system-gray rim only — never theme/accent outline.
       borderColor: glass.hairlineSoft,
+    },
+    cardInner: {
+      paddingHorizontal: cardPad,
+      paddingTop: s(compact ? 14 : 16, 10),
+      paddingBottom: s(compact ? 14 : 16, 10),
     },
     cardActiveBorder: {
       borderColor: glass.hairline,
@@ -6330,23 +6338,17 @@ const makeStyles = (
       minWidth: 0,
       lineHeight: s(15, 13),
     },
+    // Full-card celebrate dim (GlassView child, not inside padded Pressable).
     arrivalDimOverlay: {
-      position: 'absolute',
-      top: 0,
-      right: 0,
-      bottom: 0,
-      left: 0,
+      ...StyleSheet.absoluteFill,
       backgroundColor: 'rgba(0, 0, 0, 0.28)',
-      borderRadius: radius.lg,
-      zIndex: 3,
+      zIndex: 4,
     },
     arrivalCenterCheckLayer: {
       ...StyleSheet.absoluteFill,
       zIndex: 5,
       alignItems: 'center',
       justifyContent: 'center',
-      overflow: 'hidden',
-      borderRadius: radius.lg,
     },
     arrivalCenterCheckBox: {
       alignItems: 'center',
