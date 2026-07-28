@@ -63,9 +63,10 @@ const migration = readFileSync(
 ).replace(/\r\n/g, '\n');
 
 describe('FREE_LIMITS / Small Trip Pass constants', () => {
-  it('Free Plan includes Leader in the 5-person total', () => {
+  it('Free Plan keeps the member cap but allows unlimited gathering points temporarily', () => {
     expect(FREE_LIMITS.groupMembers).toBe(5);
-    expect(FREE_LIMITS.destinationsPerItinerary).toBe(5);
+    expect(FREE_LIMITS.destinationsPerItinerary).toBe(Number.POSITIVE_INFINITY);
+    expect(FREE_LIMITS.kmlImportPoints).toBe(Number.POSITIVE_INFINITY);
   });
 
   it('Small Trip Pass is 2–5 people, 7 days, trip-scoped product', () => {
@@ -92,8 +93,8 @@ describe('member-count boundaries (Leader included)', () => {
 
 describe('itinerary-point boundaries', () => {
   it.each([
-    [5, true, true],
-    [6, false, true],
+    [5, true, false],
+    [6, true, false],
     [4, true, false],
   ])(
     'points=%i → withinFree=%s wouldExceedOnAdd=%s',
@@ -670,7 +671,7 @@ describe('paid entitlement migration contract', () => {
   });
 });
 
-describe('Paywall contract (no direct Pro write)', () => {
+describe('Paywall contract (temporary direct upgrade)', () => {
   const paywall = readFileSync(
     join(__dirname, '../components/PaywallSheet.tsx'),
     'utf8',
@@ -680,6 +681,8 @@ describe('Paywall contract (no direct Pro write)', () => {
     expect(paywall).toContain('applyVerifiedPurchase');
     expect(paywall).toContain('restoreEntitlements');
     expect(paywall).toContain('isVerifiedPurchase');
+    expect(paywall).toContain('TEMPORARY_DIRECT_UPGRADE');
+    expect(paywall).toContain('setProStatusLocal(true)');
     expect(paywall).not.toContain('setProStatus(');
     expect(paywall).toContain('SMALL_TRIP_PASS');
     expect(paywall).toContain('FREE_LIMITS');

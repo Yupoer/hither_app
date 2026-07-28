@@ -13,6 +13,10 @@ import { isVerifiedPurchase } from '../native/purchases';
 import { FREE_LIMITS, SMALL_TRIP_PASS } from '../entitlements';
 import { glass, accentMix } from '../glass';
 
+// TEMPORARY QA override: the CTA unlocks Premium locally until IAP is ready.
+// Remove this branch when the verified purchase flow is enabled.
+const TEMPORARY_DIRECT_UPGRADE = true;
+
 /** Free vs Small Trip Pass comparison rows. */
 const COMPARE_ROWS: { free: TranslationKey; pro: TranslationKey }[] = [
   { free: 'paywall.rowMembersFree', pro: 'paywall.rowMembersPro' },
@@ -48,6 +52,7 @@ export default React.memo(function PaywallSheet({
     tripEntitlement,
     refreshEntitlement,
     refreshProfile,
+    setProStatusLocal,
   } = useSession();
   const accent = colors.accent;
   const [busy, setBusy] = useState<'purchase' | 'restore' | null>(null);
@@ -74,6 +79,12 @@ export default React.memo(function PaywallSheet({
 
   const handlePurchase = useCallback(async () => {
     if (!user) return;
+    if (TEMPORARY_DIRECT_UPGRADE) {
+      setProStatusLocal(true);
+      Alert.alert(t('paywall.title'), t('paywall.purchaseSuccess'));
+      onClose();
+      return;
+    }
     if (!groupId) {
       Alert.alert(t('paywall.title'), t('paywall.needTrip'));
       return;
@@ -135,7 +146,17 @@ export default React.memo(function PaywallSheet({
     } finally {
       setBusy(null);
     }
-  }, [user, groupId, eligible, isPro, t, refreshEntitlement, refreshProfile, onClose]);
+  }, [
+    user,
+    groupId,
+    eligible,
+    isPro,
+    t,
+    refreshEntitlement,
+    refreshProfile,
+    setProStatusLocal,
+    onClose,
+  ]);
 
   const handleRestore = useCallback(async () => {
     setBusy('restore');
@@ -195,7 +216,7 @@ export default React.memo(function PaywallSheet({
         <Text style={styles.planHint}>
           {t('paywall.freePlanHint', {
             members: FREE_LIMITS.groupMembers,
-            points: FREE_LIMITS.destinationsPerItinerary,
+            points: '∞',
           })}
         </Text>
 
