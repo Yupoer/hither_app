@@ -112,8 +112,8 @@ describe('CoordinateDestinationSheet wiring contract', () => {
     expect(mapScreen).toContain('handlePickDestination(place)');
     expect(mapScreen).toContain('mediumTap()');
     expect(groupMap).toContain('moveOnMarkerPress={false}');
-    // Transit-oriented: Apple shows standard POIs (includes publicTransport).
-    expect(groupMap).toContain('showsPointsOfInterests: true');
+    // Transit-oriented defaults live on native/maps boundary (not UI Platform branch).
+    expect(groupMap).toContain('defaultMapTransitProps');
   });
 
   it('keeps KML picker copyToCacheDirectory for Android content:// URIs', () => {
