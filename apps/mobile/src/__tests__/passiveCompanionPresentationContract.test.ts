@@ -129,11 +129,13 @@ describe('OTA-07 full/passive presentation contract', () => {
 
   it('keeps external navigation and help without implied consent or payment', () => {
     expect(panel).toContain('testID="passive-external-nav"');
-    expect(panel).toContain('testID={`passive-cmd-${type}`}');
-    expect(panel).toContain('sendCommand(groupId, type');
-    expect(panel).toContain('commandIcon(type)');
-    expect(panel).toContain('minHeight: s(58, 52)');
-    expect(panel).toContain("backgroundColor: glass.fillStrong");
+    // Full command catalogue parity with「全部快捷指令」(not a reduced 3-chip list).
+    expect(panel).toContain('testID="passive-quick-commands"');
+    expect(panel).toContain('QuickCommandsCard');
+    expect(panel).toContain('variant="full"');
+    expect(panel).toContain('onConfigureCustom');
+    expect(panel).not.toContain('LEADER_QUICK');
+    expect(panel).not.toContain('MEMBER_QUICK');
     expect(panel).toContain('HitherText');
     expect(panel).toContain('onOpenExternalNavigation');
     expect(panel).toContain("t('passive.noAutoConsent')");
@@ -143,6 +145,13 @@ describe('OTA-07 full/passive presentation contract', () => {
     expect(panel).not.toContain('openVote');
     expect(panel).not.toContain('safety_approval');
     expect(panel).not.toContain('confirmConsent');
+  });
+
+  it('uses shortened passive mode title and one-line enter hint', () => {
+    expect(i18n).toContain("'passive.title': '被動模式'");
+    expect(i18n).toContain("'passive.enterHint'");
+    expect(mapScreen).toContain("t('passive.enterHint')");
+    expect(mapScreen).toContain('numberOfLines={1}');
   });
 
   it('derives the same team phase semantics as the full interface', () => {
@@ -179,8 +188,9 @@ describe('OTA-07 full/passive presentation contract', () => {
 
   it('keeps personal progress user-scoped and never mutates team state', () => {
     expect(util).toContain('never written into team state');
-    // Personal progress is user-scoped; prefer teamSurfaceView personal then liveProgress.
-    expect(mapScreen).toContain('personalProgress: teamSurfaceView.personal?.progress ?? liveProgress');
+    // Personal progress is user-scoped; prefer teamSurfaceView personal then shared local model.
+    expect(mapScreen).toContain('teamSurfaceView.personal?.progress');
+    expect(mapScreen).toContain('personalProgressRatio');
     // Coarse buckets only — no team write APIs in the util.
     expect(util).not.toContain('startSession');
     expect(util).not.toContain('completeGatheringStop');

@@ -1,15 +1,15 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { sendCommand } from '../../../api/client';
 import { glass } from '../../../glass';
 import { useTranslation } from '../../../i18n';
 import { mediumTap } from '../../../utils/haptics';
@@ -19,32 +19,10 @@ import type {
   TeamGatheringPhase,
 } from '../../../utils/passiveCompanion';
 import type { Destination } from '../../../types';
-import type { CommandType } from '../../../types';
 import { HitherText } from '../../../components/HitherText';
+import QuickCommandsCard from '../../../components/QuickCommandsCard';
 import { useFontLayout } from '../../../a11y/useFontScaleBucket';
-import { spacing, radius } from '../../../theme';
-
-const COMMAND_ICON: Record<Exclude<CommandType, 'custom'>, keyof typeof Ionicons.glyphMap> = {
-  gather: 'people',
-  find_gathering: 'location',
-  depart: 'walk',
-  rest: 'cafe',
-  be_careful: 'warning',
-  go_left: 'arrow-back',
-  go_right: 'arrow-forward',
-  stop: 'hand-left',
-  hurry_up: 'flash',
-  need_restroom: 'body',
-  need_break: 'pause',
-  need_help: 'help-buoy',
-  found_something: 'search',
-};
-
-const COMMAND_DISABLED_COLOR = 'rgba(235, 235, 245, 0.35)';
-
-function commandIcon(type: Exclude<CommandType, 'custom'>): keyof typeof Ionicons.glyphMap {
-  return COMMAND_ICON[type];
-}
+import { spacing, radius, themes, type Palette } from '../../../theme';
 
 function makePassiveStyles(scale: number) {
   const s = (value: number, min = 0) => Math.max(min, Math.round(value * scale));
@@ -93,9 +71,7 @@ function makePassiveStyles(scale: number) {
     actionPrimary: {},
     actionPrimaryLabel: { color: '#111', fontSize: 17, fontWeight: '800' },
     quickLabel: { marginTop: spacing.xl, marginBottom: spacing.sm, color: glass.textSecondary },
-    quickRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-    quickChip: { width: '48%', minHeight: s(58, 52), flexGrow: 1, flexBasis: '46%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.md, backgroundColor: glass.fillStrong, borderWidth: StyleSheet.hairlineWidth, borderColor: glass.hairline },
-    quickChipLabel: { color: glass.textPrimary, fontSize: 15, fontWeight: '700', textAlign: 'center', flexShrink: 1 },
+    quickWrap: { marginTop: spacing.sm },
     footnote: { marginTop: spacing.lg, color: glass.textTertiary, fontSize: 13, lineHeight: 18, textAlign: 'center' },
   });
 }
@@ -109,6 +85,8 @@ export interface PassiveCompanionPanelProps {
   navigationDestination?: Destination | null;
   onSwitchBack: () => void;
   onOpenExternalNavigation: (dest: Destination) => void;
+  /** Same custom-command editor as full-mode「全部快捷指令」. */
+  onConfigureCustom?: (slot: number) => void;
 }
 
 function phaseLabelKey(phase: TeamGatheringPhase): 'passive.phaseStaying' | 'passive.phaseEnRoute' {
@@ -141,17 +119,10 @@ function progressLabelKey(
   }
 }
 
-const LEADER_QUICK: Array<Exclude<CommandType, 'custom'>> = ['gather', 'depart', 'need_help'];
-const MEMBER_QUICK: Array<Exclude<CommandType, 'custom'>> = [
-  'need_help',
-  'need_break',
-  'found_something',
-];
-
 /**
  * Minimal passive-companion presentation: team gathering state + personal
- * progress, external nav, help / quick commands, and an always-available
- * switch-back button.
+ * progress, external nav, full quick-command catalogue (same as「全部快捷指令」),
+ * and an always-available switch-back button.
  *
  * Does not open paywall, vote, or safety flows. Commands are explicit taps only.
  */
@@ -163,12 +134,14 @@ export const PassiveCompanionPanel = React.memo(function PassiveCompanionPanel({
   navigationDestination,
   onSwitchBack,
   onOpenExternalNavigation,
+  onConfigureCustom,
 }: PassiveCompanionPanelProps) {
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
   const fontLayout = useFontLayout();
   const styles = useMemo(() => makePassiveStyles(fontLayout.scale), [fontLayout.scale]);
-  const [busyType, setBusyType] = useState<string | null>(null);
+  // Reuse the night palette so QuickCommandsCard matches full-mode sheet.
+  const commandColors: Palette = themes.night;
 
   const handleSwitchBack = useCallback(() => {
     mediumTap();
@@ -184,23 +157,15 @@ export const PassiveCompanionPanel = React.memo(function PassiveCompanionPanel({
     onOpenExternalNavigation(navigationDestination);
   }, [navigationDestination, onOpenExternalNavigation, t]);
 
-  const handleCommand = useCallback(async (type: Exclude<CommandType, 'custom'>) => {
-    if (!groupId || busyType) return;
-    mediumTap();
-    setBusyType(type);
-    try {
-      await sendCommand(groupId, type, t(`command.${type}` as const));
-      Alert.alert(t('command.sent'));
-    } catch {
-      Alert.alert(t('command.sendFailed'));
-    } finally {
-      setBusyType(null);
-    }
-  }, [groupId, busyType, t]);
+  const handleConfigureCustom = useCallback(
+    (slot: number) => {
+      onConfigureCustom?.(slot);
+    },
+    [onConfigureCustom],
+  );
 
   const phaseKey = phaseLabelKey(model.teamPhase);
   const progressKey = progressLabelKey(model.coarseProgress);
-  const quickTypes = isLeader ? LEADER_QUICK : MEMBER_QUICK;
 
   return (
     <View
@@ -228,6 +193,11 @@ export const PassiveCompanionPanel = React.memo(function PassiveCompanionPanel({
         </Pressable>
       </View>
 
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: spacing.lg }}
+        showsVerticalScrollIndicator={false}
+      >
       <View style={styles.card}>
         {model.contentStatus === 'loading' ? (
           <View style={styles.centerBlock}>
@@ -322,32 +292,24 @@ export const PassiveCompanionPanel = React.memo(function PassiveCompanionPanel({
         </Pressable>
       </View>
 
-      <HitherText typeRole="callout" style={[styles.fieldLabel, styles.quickLabel]}>{t('passive.quickCommands')}</HitherText>
-      <View style={styles.quickRow}>
-        {quickTypes.map((type) => (
-          <Pressable
-            key={type}
-            style={[styles.quickChip, busyType === type && { opacity: 0.5 }]}
-            onPress={() => void handleCommand(type)}
-            disabled={!groupId || busyType != null}
-            accessibilityRole="button"
-            accessibilityLabel={t(`command.${type}` as const)}
-            testID={`passive-cmd-${type}`}
-          >
-            <Ionicons
-              name={commandIcon(type)}
-              size={24}
-              color={busyType === type || !groupId ? COMMAND_DISABLED_COLOR : accent}
-              accessibilityElementsHidden
-            />
-            <HitherText typeRole="callout" style={styles.quickChipLabel} numberOfLines={2}>
-              {t(`command.${type}` as const)}
-            </HitherText>
-          </Pressable>
-        ))}
+      <HitherText typeRole="callout" style={[styles.fieldLabel, styles.quickLabel]}>
+        {t('passive.quickCommands')}
+      </HitherText>
+      {/* Same catalogue + role gating + custom slots as full-mode「全部快捷指令」. */}
+      <View style={styles.quickWrap} testID="passive-quick-commands">
+        {groupId ? (
+          <QuickCommandsCard
+            groupId={groupId}
+            isLeader={isLeader}
+            colors={commandColors}
+            onConfigureCustom={handleConfigureCustom}
+            variant="full"
+          />
+        ) : null}
       </View>
 
       <HitherText typeRole="caption" style={styles.footnote}>{t('passive.noAutoConsent')}</HitherText>
+      </ScrollView>
     </View>
   );
 });

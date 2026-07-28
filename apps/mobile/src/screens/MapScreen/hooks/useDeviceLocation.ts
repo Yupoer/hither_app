@@ -45,6 +45,8 @@ export function useDeviceLocation({
 }: UseDeviceLocationParams) {
   const [deviceCoords, setDeviceCoords] = useState<Coordinates | null>(null);
   const [deviceAccuracyM, setDeviceAccuracyM] = useState<number | null>(null);
+  /** Wall-clock of last UI-accepted sample — drives progress freshness/stale. */
+  const [deviceCoordsAcceptedAtMs, setDeviceCoordsAcceptedAtMs] = useState<number | null>(null);
   const [appState, setAppState] = useState<AppStateStatus>(AppState.currentState);
   const uiGateRef = useRef<LocationGateState>({ lastCoords: null, lastAtMs: 0 });
   const uploadGateRef = useRef<LocationGateState>({ lastCoords: null, lastAtMs: 0 });
@@ -76,6 +78,7 @@ export function useDeviceLocation({
     setDeviceAccuracyM(
       sample.accuracy != null && Number.isFinite(sample.accuracy) ? sample.accuracy : null,
     );
+    setDeviceCoordsAcceptedAtMs(now);
     uiGateRef.current = { lastCoords: coords, lastAtMs: now };
   }, []);
 
@@ -325,6 +328,8 @@ export function useDeviceLocation({
     deviceCoords,
     /** Horizontal accuracy of the last accepted device fix, metres. */
     deviceAccuracyM,
+    /** When the last UI-accepted sample was applied (ms since epoch). */
+    deviceCoordsAcceptedAtMs,
     /** Exposed so MapScreen can own a single GPS path (FG watch vs BG task). */
     appState,
     refreshDeviceLocation,

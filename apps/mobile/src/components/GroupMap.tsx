@@ -11,7 +11,10 @@ import React, {
   type ReactNode,
 } from 'react';
 import {
+  AccessibilityInfo,
   Animated as RNAnimated,
+  AppState,
+  type AppStateStatus,
   Platform,
   Pressable,
   StyleSheet,
@@ -35,6 +38,13 @@ import {
 } from './mapCameraMath';
 import { logError, logEvent } from '../utils/activityLog';
 import { useTranslation } from '../i18n';
+import {
+  pulsePeakScale,
+  reduceMotionEmphasisScale,
+  shouldPulseDestination,
+  TARGET_PULSE_DURATION_MS,
+  TARGET_PULSE_INTERVAL_MS,
+} from '../utils/targetMarkerPulse';
 
 export {
   DEFAULT_LATITUDE_DELTA,
@@ -78,6 +88,10 @@ export interface GroupMapProps {
   initialCenter?: Coordinates;
   routePoints?: Coordinates[];
   routeColor?: string;
+  /** Active navigation / team target — receives 5s pulse only. */
+  activeDestinationId?: string | null;
+  /** Completed stop ids — no active glow / pulse. */
+  completedDestinationIds?: ReadonlySet<string> | ReadonlyArray<string> | null;
   /** Top chrome overlapping the map (safe area + gathering-point carousel). */
   topOverlap?: number;
   /** Sheet height overlapping the map — with topOverlap, shifts the camera
@@ -182,8 +196,87 @@ function useTracksViewChanges(deps: any[]) {
   return tracksViewChanges;
 }
 
-const DestinationMarker = React.memo(function DestinationMarker({ dest, bgColor, styles }: any) {
-  const tracksViewChanges = useTracksViewChanges([bgColor, dest.title]);
+const DestinationMarker = React.memo(function DestinationMarker({
+  dest,
+  bgColor,
+  styles,
+  isActiveTarget,
+  isCompleted,
+  reduceMotion,
+  appActive,
+}: {
+  dest: Destination;
+  bgColor: string;
+  styles: ReturnType<typeof makeStyles>;
+  isActiveTarget: boolean;
+  isCompleted: boolean;
+  reduceMotion: boolean;
+  appActive: boolean;
+}) {
+  // Pulse briefly every 5s — never leave tracksViewChanges true continuously.
+  const [pulseOn, setPulseOn] = useState(false);
+  const scaleAnim = useRef(new RNAnimated.Value(1)).current;
+  const canPulse = shouldPulseDestination({
+    destId: dest.id,
+    activeDestinationId: isActiveTarget ? dest.id : null,
+    completedDestinationIds: isCompleted ? [dest.id] : null,
+    appActive,
+    reduceMotion,
+  });
+
+  useEffect(() => {
+    if (!canPulse) {
+      setPulseOn(false);
+      scaleAnim.setValue(isActiveTarget && reduceMotion ? reduceMotionEmphasisScale() : 1);
+      return;
+    }
+    let cancelled = false;
+    const runPulse = () => {
+      if (cancelled) return;
+      setPulseOn(true);
+      scaleAnim.setValue(1);
+      RNAnimated.sequence([
+        RNAnimated.timing(scaleAnim, {
+          toValue: pulsePeakScale(),
+          duration: TARGET_PULSE_DURATION_MS / 2,
+          useNativeDriver: true,
+        }),
+        RNAnimated.timing(scaleAnim, {
+          toValue: 1,
+          duration: TARGET_PULSE_DURATION_MS / 2,
+          useNativeDriver: true,
+        }),
+      ]).start(({ finished }) => {
+        if (finished) setPulseOn(false);
+      });
+    };
+    runPulse();
+    const interval = setInterval(runPulse, TARGET_PULSE_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      setPulseOn(false);
+      scaleAnim.stopAnimation();
+      scaleAnim.setValue(1);
+    };
+  }, [canPulse, isActiveTarget, reduceMotion, scaleAnim]);
+
+  // Capture bitmap only on appearance / pulse window / style change — never continuous.
+  const tracksViewChanges = useTracksViewChanges([
+    bgColor,
+    dest.title,
+    isActiveTarget,
+    isCompleted,
+    pulseOn,
+  ]);
+
+  const staticEmphasis = isActiveTarget && reduceMotion;
+  const markerStyle = [
+    styles.gatherMarker,
+    { backgroundColor: bgColor },
+    isCompleted ? styles.gatherMarkerCompleted : null,
+    isActiveTarget && !isCompleted ? styles.gatherMarkerActive : null,
+  ];
 
   return (
     <Marker
@@ -191,17 +284,25 @@ const DestinationMarker = React.memo(function DestinationMarker({ dest, bgColor,
       title={dest.title}
       description={`Day ${dest.day || 1}`}
       anchor={{ x: 0.5, y: 0.5 }}
-      style={{ zIndex: 1 }}
+      style={{ zIndex: isActiveTarget ? 3 : 1 }}
       tracksViewChanges={tracksViewChanges}
     >
-      <View
+      <RNAnimated.View
         style={[
-          styles.gatherMarker,
-          { backgroundColor: bgColor },
+          markerStyle,
+          {
+            transform: [
+              {
+                scale: staticEmphasis
+                  ? reduceMotionEmphasisScale()
+                  : scaleAnim,
+              },
+            ],
+          },
         ]}
       >
         <Ionicons name="flag" size={14} color="#fff" />
-      </View>
+      </RNAnimated.View>
     </Marker>
   );
 });
@@ -343,6 +444,8 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     initialCenter,
     routePoints,
     routeColor,
+    activeDestinationId = null,
+    completedDestinationIds = null,
     topOverlap = 0,
     bottomOverlap = 0,
     onUserLocationSample,
@@ -358,6 +461,8 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
   const [surfaceKey, setSurfaceKey] = useState(0);
   const [remountUsed, setRemountUsed] = useState(false);
   const [showFallback, setShowFallback] = useState(false);
+  const [reduceMotion, setReduceMotion] = useState(false);
+  const [appActive, setAppActive] = useState(AppState.currentState === 'active');
   const readyLoggedRef = useRef(false);
   const loadedLoggedRef = useRef(false);
   const readyAtRef = useRef<number | null>(null);
@@ -365,6 +470,18 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
   const { height: windowHeight } = useWindowDimensions();
   const { colors, themeName } = useTheme();
   const { dayColors } = usePreferences();
+
+  useEffect(() => {
+    void AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
+    const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion);
+    return () => sub.remove();
+  }, []);
+
+  useEffect(() => {
+    const onApp = (next: AppStateStatus) => setAppActive(next === 'active');
+    const sub = AppState.addEventListener('change', onApp);
+    return () => sub.remove();
+  }, []);
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   // Shift camera so the pin sits in the midpoint of the strip between the
@@ -634,11 +751,18 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
         onLongPressCoordinate?.({ latitude, longitude });
       }}
       // Help long-press win over pan on both platforms (esp. iOS MapKit).
-      // iOS: disable POI taps so long-press is not stolen by MapKit callouts.
       moveOnMarkerPress={false}
-      {...(Platform.OS === 'ios'
-        ? { showsPointsOfInterest: false, showsBuildings: false }
-        : {})}
+      // Transit-oriented defaults:
+      // - Android Google Maps: native transit layer (`showsTransit`, patch-package).
+      // - iOS MapKit: no Google-equivalent transit network toggle. Show the
+      //   standard POI set (includes publicTransport) rather than an exclusive
+      //   transit-only filter that would hide food/shops needed for orientation.
+      {...(Platform.OS === 'android'
+        ? ({ showsTransit: true } as { showsTransit?: boolean })
+        : {
+            showsPointsOfInterests: true,
+            showsBuildings: false,
+          })}
       onMapReady={onMapReady}
       onMapLoaded={onMapLoaded}
       // MapKit is the iOS foreground location owner. Android keeps Expo watcher
@@ -680,12 +804,24 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
 
       {destinations?.map((dest) => {
         const bgColor = getColorForDay(dest.day, dayColors);
+        const isCompleted = completedDestinationIds instanceof Set
+          ? completedDestinationIds.has(dest.id)
+          : Boolean(
+              completedDestinationIds
+              && (completedDestinationIds as readonly string[]).includes(dest.id),
+            );
+        const isActiveTarget =
+          !isCompleted && activeDestinationId != null && dest.id === activeDestinationId;
         return (
-          <DestinationMarker 
+          <DestinationMarker
             key={dest.id}
             dest={dest}
             bgColor={bgColor}
             styles={styles}
+            isActiveTarget={isActiveTarget}
+            isCompleted={isCompleted}
+            reduceMotion={reduceMotion}
+            appActive={appActive}
           />
         );
       })}
@@ -731,6 +867,21 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     shadowRadius: 3,
     shadowOffset: { width: 0, height: 1 },
     elevation: 4,
+  },
+  // Active target only — soft glow between pulses (not continuous bitmap tracking).
+  gatherMarkerActive: {
+    shadowColor: colors.accent,
+    shadowOpacity: 0.55,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 6,
+  },
+  // Completed stops: no active glow/elevation — no longer looks actionable.
+  gatherMarkerCompleted: {
+    opacity: 0.72,
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    elevation: 0,
   },
   pinWrap: { alignItems: 'center', gap: 4 },
   pinLabel: {
