@@ -1,10 +1,12 @@
 import {
   deriveCardNavFlags,
+  deriveScopedArrivalCounts,
   LEADER_COMPLETED_NOTICE,
   mergeAvatarProfiles,
   projectHistoryForViewer,
   resolveCompletePrompt,
   resolveNavCommand,
+  shouldAutoCompleteStop,
 } from '../utils/gatherCommand';
 
 describe('deriveCardNavFlags (shared vs local — MapScreen wiring inputs)', () => {
@@ -213,34 +215,83 @@ describe('resolveNavCommand', () => {
 });
 
 describe('resolveCompletePrompt', () => {
-  it('prompts leader when everyone arrived', () => {
+  it('auto-completes for leader when everyone arrived (no confirm UI)', () => {
     const r = resolveCompletePrompt({
       isLeader: true,
       missingMemberNames: [],
       allArrived: true,
       stopAlreadyComplete: false,
+      arrivedCount: 3,
+      totalCount: 3,
     });
-    expect(r.kind).toBe('leader_all_arrived');
-    expect(r.title).toBe('已完成');
-    expect(r.message).toContain('已抵達此集合點，是否要完成？');
-    expect(r.message).toContain('所有隊員都已抵達');
-    expect(r.confirmLabel).toBe('已完成此集合點');
-    expect(r.deferLabel).toBe('先不要完成');
+    expect(r.kind).toBe('auto_complete');
+    expect(r.arrivedCount).toBe(3);
+    expect(r.totalCount).toBe(3);
+    expect(r.message).toBe('');
+    // Old all-arrived confirm copy must not reappear.
+    expect(r.message).not.toContain('是否要完成？');
+    expect(r.confirmLabel).toBe('');
+    expect(r.deferLabel).toBeNull();
+    expect(r.cancelLabel).toBeNull();
   });
 
-  it('names missing members for the leader', () => {
+  it('does not auto-complete when stop is already closed', () => {
+    const r = resolveCompletePrompt({
+      isLeader: true,
+      missingMemberNames: [],
+      allArrived: true,
+      stopAlreadyComplete: true,
+      arrivedCount: 2,
+      totalCount: 2,
+    });
+    expect(r.kind).toBe('none');
+  });
+
+  it('never auto-completes empty roster (MapScreen totalCount=0 shape)', () => {
+    // MapScreen: allArrived = missing.length === 0 && totalCount > 0 → false when empty.
+    const r = resolveCompletePrompt({
+      isLeader: true,
+      missingMemberNames: [],
+      allArrived: false,
+      stopAlreadyComplete: false,
+      arrivedCount: 0,
+      totalCount: 0,
+    });
+    expect(r.kind).toBe('none');
+    // Even if a caller incorrectly sets allArrived true with total 0.
+    expect(
+      resolveCompletePrompt({
+        isLeader: true,
+        missingMemberNames: [],
+        allArrived: true,
+        stopAlreadyComplete: false,
+        arrivedCount: 0,
+        totalCount: 0,
+      }).kind,
+    ).toBe('none');
+  });
+
+  it('confirms with arrived x/x counts when members are missing', () => {
     const r = resolveCompletePrompt({
       isLeader: true,
       missingMemberNames: ['小明', '小華'],
       allArrived: false,
       stopAlreadyComplete: false,
+      arrivedCount: 1,
+      totalCount: 3,
     });
     expect(r.kind).toBe('leader_missing_members');
-    expect(r.title).toBe('已完成');
-    expect(r.message).toContain('已抵達此集合點，是否要完成？');
-    expect(r.message).toContain('小明');
-    expect(r.message).toContain('小華');
-    expect(r.deferLabel).toBe('先不要完成');
+    expect(r.arrivedCount).toBe(1);
+    expect(r.totalCount).toBe(3);
+    // zh product defaults (MapScreen i18ns via keys + counts).
+    expect(r.message).toBe('已抵達成員（1/3），是否要完成此集合點？');
+    expect(r.title).toBe('完成集合點');
+    expect(r.confirmLabel).toBe('完成');
+    expect(r.cancelLabel).toBe('取消');
+    expect(r.deferLabel).toBe('取消');
+    // Superseded legacy copy.
+    expect(r.message).not.toContain('先不要完成');
+    expect(r.message).not.toContain('小明');
   });
 
   it('asks members only when the leader already completed the stop', () => {
@@ -261,6 +312,91 @@ describe('resolveCompletePrompt', () => {
     });
     expect(r.kind).toBe('member_leader_already_done');
     expect(r.confirmLabel).toBe('確認');
+  });
+});
+
+describe('deriveScopedArrivalCounts', () => {
+  const members = [
+    { userId: 'a', name: 'Alice', subgroupId: null as string | null },
+    { userId: 'b', name: 'Bob', subgroupId: null as string | null },
+    { userId: 'c', name: 'Cara', subgroupId: 'sg1' },
+  ];
+
+  it('scopes main-group stops to main-group members only', () => {
+    const r = deriveScopedArrivalCounts({
+      members,
+      destinationSubgroupId: null,
+      arrivedUserIds: ['a'],
+    });
+    expect(r.totalCount).toBe(2);
+    expect(r.arrivedCount).toBe(1);
+    expect(r.missingMemberNames).toEqual(['Bob']);
+    expect(r.allArrived).toBe(false);
+  });
+
+  it('scopes subgroup stops and ignores main-group peers', () => {
+    const r = deriveScopedArrivalCounts({
+      members,
+      destinationSubgroupId: 'sg1',
+      arrivedUserIds: ['c'],
+    });
+    expect(r.totalCount).toBe(1);
+    expect(r.arrivedCount).toBe(1);
+    expect(r.allArrived).toBe(true);
+    expect(r.missingMemberNames).toEqual([]);
+  });
+
+  it('includeUserId covers post-write self before workflow reloads', () => {
+    const r = deriveScopedArrivalCounts({
+      members,
+      destinationSubgroupId: null,
+      arrivedUserIds: ['b'],
+      includeUserId: 'a',
+    });
+    expect(r.arrivedCount).toBe(2);
+    expect(r.allArrived).toBe(true);
+  });
+
+  it('empty scoped roster is not all-arrived', () => {
+    const r = deriveScopedArrivalCounts({
+      members: [],
+      destinationSubgroupId: null,
+      arrivedUserIds: [],
+    });
+    expect(r.totalCount).toBe(0);
+    expect(r.allArrived).toBe(false);
+  });
+});
+
+describe('shouldAutoCompleteStop', () => {
+  it.each([
+    {
+      name: 'leader all arrived',
+      input: { isLeader: true, allArrived: true, stopAlreadyComplete: false, totalCount: 2 },
+      expected: true,
+    },
+    {
+      name: 'missing members',
+      input: { isLeader: true, allArrived: false, stopAlreadyComplete: false, totalCount: 2 },
+      expected: false,
+    },
+    {
+      name: 'already closed',
+      input: { isLeader: true, allArrived: true, stopAlreadyComplete: true, totalCount: 2 },
+      expected: false,
+    },
+    {
+      name: 'empty roster',
+      input: { isLeader: true, allArrived: true, stopAlreadyComplete: false, totalCount: 0 },
+      expected: false,
+    },
+    {
+      name: 'member never auto',
+      input: { isLeader: false, allArrived: true, stopAlreadyComplete: false, totalCount: 2 },
+      expected: false,
+    },
+  ])('$name → $expected', ({ input, expected }) => {
+    expect(shouldAutoCompleteStop(input)).toBe(expected);
   });
 });
 

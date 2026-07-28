@@ -37,6 +37,14 @@ describe('remote location refresh wiring', () => {
     const fanIdx = mapScreen.indexOf('requestGroupLocationRefresh(groupId)');
     expect(selfIdx).toBeGreaterThanOrEqual(0);
     expect(fanIdx).toBeGreaterThan(selfIdx);
+    // Pull roster after accepted fan-out; false remote pull surfaces failure Alert.
+    const pullIdx = mapScreen.indexOf('const pulled = await refresh()', fanIdx);
+    expect(pullIdx).toBeGreaterThan(fanIdx);
+    expect(mapScreen).toContain('if (!pulled)');
+    expect(mapScreen).toContain("Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'))");
+    // Self row freshness prefers local sample after push (not stuck on missing).
+    expect(mapScreen).toContain('resolveSelfAwareLastUpdated');
+    expect(mapScreen).toContain('deviceCoordsAcceptedAtMs');
   });
 
   it('registers a headless notification task before the app starts', () => {

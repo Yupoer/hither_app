@@ -12,4 +12,11 @@ describe('group itinerary reconciliation', () => {
     expect(source).toMatch(/setInterval\([\s\S]*loadRef\.current\(\)/);
     expect(source).not.toMatch(/if \(!realtimeReadyRef\.current\) \{\s*void loadRef\.current\(\);\s*\}/);
   });
+
+  it('reports remote pull failure even when a local cache is restored', () => {
+    // Force-refresh / sync callers need a hard false when getGroupState fails.
+    expect(source).toContain('// Always false when remote pull failed');
+    expect(source).toMatch(/return false;\s*\}\s*finally/);
+    expect(source).not.toMatch(/return restored;\s*\}\s*finally/);
+  });
 });

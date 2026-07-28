@@ -8,7 +8,7 @@ import type { Coordinates, Destination, GroupState, JourneyStatus } from '../../
 import type { NavigationSession } from '../../../types/navigation';
 import type { ScrollView } from 'react-native';
 import type { GroupMapHandle } from '../../../components/GroupMap';
-import { openExternalNavigation as openExternalNav } from '../../../native/externalNavigation';
+import { presentExternalMapsChooser } from '../../../native/externalNavigation';
 import type { TravelMode } from '../../../native/maps';
 import type { ActiveGatheringState } from '../../../types/coreData';
 import { deriveActiveGatheringFromGroupState } from '../../../utils/activeGatheringState';
@@ -69,7 +69,7 @@ export function useJourneyNavigation({
   selectedDestination,
   fromCoords,
   refresh: _refresh,
-  t: _t,
+  t,
   mapRef,
   carouselRef: _carouselRef,
   setSelectedIndex,
@@ -183,11 +183,19 @@ export function useJourneyNavigation({
     ? distanceMeters(fromCoords, navTarget.coordinates)
     : undefined;
 
+  /** External map control: chooser (Google / Apple / cancel) then open provider. */
   const openExternalNavigation = useCallback(
     (dest: Destination) => {
-      void openExternalNav(dest, travelMode);
+      presentExternalMapsChooser(dest, travelMode, {
+        title: t('map.openExternalNavigation'),
+        googleLabel: t('map.googleMaps'),
+        appleLabel: t('map.appleMaps'),
+        cancelLabel: t('common.cancel'),
+        openFailedTitle: t('map.setFailedTitle'),
+        openFailedMessage: t('map.externalMapsOpenFailed'),
+      });
     },
-    [travelMode],
+    [t, travelMode],
   );
 
   /** @deprecated Use openExternalNavigation — kept as alias for gradual call-site migration. */

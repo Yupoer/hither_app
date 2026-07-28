@@ -114,7 +114,7 @@ export function resolveNavCommand(input: NavCommandInput): NavCommandResult {
         action: 'end_point',
       };
     }
-    // After personal arrival + 「先不要完成」, keep Complete available.
+    // After personal arrival + 「取消」on complete confirm, keep Complete available.
     // Must not fall back to Start for the same arrived stop.
     if (personallyArrived) {
       return {
@@ -167,6 +167,59 @@ export function resolveNavCommand(input: NavCommandInput): NavCommandResult {
   };
 }
 
+/**
+ * Members whose subgroup scope matches the destination.
+ * Main-group stops (`subgroupId` null/undefined) only count main-group members.
+ */
+export function membersInDestinationScope<T extends { subgroupId?: string | null }>(
+  members: readonly T[],
+  destinationSubgroupId: string | null | undefined,
+): T[] {
+  return members.filter((m) => m.subgroupId === destinationSubgroupId);
+}
+
+/**
+ * Derive arrived/missing counts for complete-stop decisions from scoped members.
+ * Pure seam for tests (subgroup vs main, empty roster, include-self after local write).
+ */
+export function deriveScopedArrivalCounts(input: {
+  members: readonly { userId: string; name?: string | null; subgroupId?: string | null }[];
+  destinationSubgroupId: string | null | undefined;
+  arrivedUserIds: ReadonlySet<string> | readonly string[];
+  /** Force-include a user id (e.g. self after successful local arrival write). */
+  includeUserId?: string | null;
+  travelerFallback?: string;
+}): {
+  scopedMembers: { userId: string; name?: string | null; subgroupId?: string | null }[];
+  arrivedCount: number;
+  totalCount: number;
+  missingMemberNames: string[];
+  allArrived: boolean;
+} {
+  const arrived = input.arrivedUserIds instanceof Set
+    ? new Set(input.arrivedUserIds)
+    : new Set(input.arrivedUserIds);
+  if (input.includeUserId) arrived.add(input.includeUserId);
+
+  const scopedMembers = membersInDestinationScope(
+    input.members,
+    input.destinationSubgroupId,
+  );
+  const fallback = input.travelerFallback ?? 'Traveler';
+  const missingMemberNames = scopedMembers
+    .filter((m) => !arrived.has(m.userId))
+    .map((m) => m.name?.trim() || fallback);
+  const totalCount = scopedMembers.length;
+  const arrivedCount = scopedMembers.filter((m) => arrived.has(m.userId)).length;
+  return {
+    scopedMembers,
+    arrivedCount,
+    totalCount,
+    missingMemberNames,
+    allArrived: totalCount > 0 && missingMemberNames.length === 0,
+  };
+}
+
 export interface CompletePromptInput {
   isLeader: boolean;
   /** Member names who have not arrived at this stop (display order). */
@@ -175,65 +228,157 @@ export interface CompletePromptInput {
   allArrived: boolean;
   /** Destination already closed / completed by leader. */
   stopAlreadyComplete: boolean;
+  /** Members who have arrived (include self when just marked). */
+  arrivedCount?: number;
+  /** Scoped member total for x/x copy. */
+  totalCount?: number;
 }
 
+/**
+ * - auto_complete: leader, everyone arrived → run complete-stop, no confirm UI
+ * - leader_missing_members: manual confirm with arrived (x/x) copy
+ * - member_leader_already_done: member notice when leader already closed
+ * - none: no prompt
+ */
 export type CompletePromptKind =
-  | 'leader_all_arrived'
+  | 'auto_complete'
   | 'leader_missing_members'
   | 'member_leader_already_done'
   | 'none';
 
 export interface CompletePromptResult {
   kind: CompletePromptKind;
+  /** Arrived count for missing-members i18n / contracts (null when N/A). */
+  arrivedCount: number | null;
+  /** Total member count for missing-members i18n / contracts (null when N/A). */
+  totalCount: number | null;
+  /**
+   * zh product-copy defaults for pure-string contracts. MapScreen should prefer
+   * i18n keys (`gathering.completeMissing*`) built from arrivedCount/totalCount.
+   */
   title: string;
   message: string;
   confirmLabel: string;
-  /** Secondary "not yet" — only for leader. */
+  /**
+   * Dismiss / cancel (left). Destructive complete is confirmLabel.
+   * null when no secondary action.
+   */
+  cancelLabel: string | null;
+  /**
+   * @deprecated Alias of cancelLabel — kept so older call sites that read
+   * deferLabel still compile until fully migrated.
+   */
   deferLabel: string | null;
+}
+
+const EMPTY_PROMPT: Omit<CompletePromptResult, 'kind'> = {
+  arrivedCount: null,
+  totalCount: null,
+  title: '',
+  message: '',
+  confirmLabel: '',
+  cancelLabel: null,
+  deferLabel: null,
+};
+
+/**
+ * Whether leader should auto-complete without a confirm dialog.
+ * Pure seam for table-driven tests (all arrived + total > 0 + not already closed).
+ */
+export function shouldAutoCompleteStop(input: {
+  isLeader: boolean;
+  allArrived: boolean;
+  stopAlreadyComplete: boolean;
+  totalCount: number;
+}): boolean {
+  return (
+    input.isLeader
+    && !input.stopAlreadyComplete
+    && input.totalCount > 0
+    && input.allArrived
+  );
 }
 
 /**
  * After the viewer marks arrived (and nav stopped), decide which complete-stop
- * prompt to show. Pure strings so tests can lock copy without i18n.
+ * prompt to show — or auto-complete with no UI.
+ *
+ * Spec 2026-07-28: auto only when arrivedCount === totalCount and totalCount > 0.
+ * Empty roster (totalCount === 0) → none (never fabricate total=1).
+ * Display strings: zh defaults for contracts; UI must i18n via counts.
  */
 export function resolveCompletePrompt(input: CompletePromptInput): CompletePromptResult {
   if (input.isLeader) {
-    if (input.allArrived || input.missingMemberNames.length === 0) {
+    // Already closed — never re-prompt or double-fire complete.
+    if (input.stopAlreadyComplete) {
+      return { kind: 'none', ...EMPTY_PROMPT };
+    }
+
+    const missing = input.missingMemberNames;
+    const totalCount =
+      typeof input.totalCount === 'number' && input.totalCount >= 0
+        ? input.totalCount
+        : typeof input.arrivedCount === 'number'
+          ? input.arrivedCount + missing.length
+          : missing.length;
+    const arrivedCount =
+      typeof input.arrivedCount === 'number'
+        ? input.arrivedCount
+        : Math.max(0, totalCount - missing.length);
+
+    // Spec: totalCount > 0 required. Empty roster / unloaded members → none.
+    if (totalCount <= 0) {
+      return { kind: 'none', ...EMPTY_PROMPT };
+    }
+
+    // Prefer explicit allArrived; only infer from empty missing when roster non-empty.
+    const allArrived =
+      input.allArrived || (missing.length === 0 && totalCount > 0);
+
+    if (
+      shouldAutoCompleteStop({
+        isLeader: true,
+        allArrived,
+        stopAlreadyComplete: false,
+        totalCount,
+      })
+    ) {
       return {
-        kind: 'leader_all_arrived',
-        title: '已完成',
-        message: '已抵達此集合點，是否要完成？所有隊員都已抵達。',
-        confirmLabel: '已完成此集合點',
-        deferLabel: '先不要完成',
+        kind: 'auto_complete',
+        ...EMPTY_PROMPT,
+        arrivedCount,
+        totalCount,
       };
     }
-    const names = input.missingMemberNames.join('、');
+
+    // Someone still missing — manual confirm with x/x (zh defaults; UI i18ns).
+    const arrived = Math.min(arrivedCount, totalCount);
     return {
       kind: 'leader_missing_members',
-      title: '已完成',
-      message: `已抵達此集合點，是否要完成？現在還有 ${names} 還沒抵達。`,
-      confirmLabel: '完成集合點',
-      deferLabel: '先不要完成',
+      arrivedCount: arrived,
+      totalCount,
+      title: '完成集合點',
+      message: `已抵達成員（${arrived}/${totalCount}），是否要完成此集合點？`,
+      confirmLabel: '完成',
+      cancelLabel: '取消',
+      deferLabel: '取消',
     };
   }
 
   if (input.stopAlreadyComplete) {
     return {
       kind: 'member_leader_already_done',
+      arrivedCount: null,
+      totalCount: null,
       title: '完成此集合點？',
       message: '隊長已完成此集合點。確認後卡片會移至歷史行程。',
       confirmLabel: '確認',
+      cancelLabel: null,
       deferLabel: null,
     };
   }
 
-  return {
-    kind: 'none',
-    title: '',
-    message: '',
-    confirmLabel: '',
-    deferLabel: null,
-  };
+  return { kind: 'none', ...EMPTY_PROMPT };
 }
 
 /** Non-arrived member notice when leader force-completes the stop. */

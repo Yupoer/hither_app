@@ -73,6 +73,7 @@ import { HitherText } from '../components/HitherText';
 import OverflowMarquee from '../components/OverflowMarquee';
 import {
   deriveCardNavFlags,
+  deriveScopedArrivalCounts,
   projectHistoryForViewer,
   resolveCompletePrompt,
   resolveNavCommand,
@@ -159,7 +160,10 @@ import {
   minutesUntil,
   startOfTodayLocal,
 } from '../utils/meetTime';
-import { locationFreshness } from '../utils/locationFreshness';
+import {
+  locationFreshness,
+  resolveSelfAwareLastUpdated,
+} from '../utils/locationFreshness';
 import {
   groupHistoryByDay,
   historyFromDestinationArrivals,
@@ -1187,6 +1191,13 @@ export default function MapScreen({ route, navigation }: Props) {
   const foregroundAckRef = useRef<string | null>(null);
   const autoArrivalMarkedRef = useRef<string | null>(null);
   const arrivalFeedbackShownRef = useRef<string | null>(null);
+  /** In-flight complete-stop dest ids — ignore re-entry until settled (SUG-2). */
+  const completingDestIdsRef = useRef<Set<string>>(new Set());
+  /**
+   * Dest ids we already auto-completed (or started) from remote all-arrived —
+   * prevents effect re-fire storms. Cleared on failure so retry is possible.
+   */
+  const remoteAutoCompleteDestIdsRef = useRef<Set<string>>(new Set());
   const [autoArrivedDestId, setAutoArrivedDestId] = useState<string | null>(null);
   const [arrivalCelebrateDestId, setArrivalCelebrateDestId] = useState<string | null>(null);
 
@@ -1261,20 +1272,30 @@ export default function MapScreen({ route, navigation }: Props) {
       // Persist personal arrival so the checkmark does not depend only on ACK.
       if (autoArrivalMarkedRef.current !== navTarget.id) {
         autoArrivalMarkedRef.current = navTarget.id;
-        // Do not block user-facing arrival state on Supabase latency. The
-        // RPC below only reconciles the shared record and can be retried.
+        // Celebrate + stop nav immediately; complete-stop only after write
+        // succeeds (Codex P1: do not schedule auto-complete before arrival RPC).
         afterPersonalArrivalRef.current(navTarget, {
           stopNav: true,
-          promptComplete: true,
+          promptComplete: false,
         });
         void setDestinationArrival(navTarget.id, user.id, true)
           .then(() => {
             patchLocalArrival(navTarget.id, user.id, true);
-            void loadGatheringWorkflow();
+            return loadGatheringWorkflow();
+          })
+          .then(() => {
+            afterPersonalArrivalRef.current(navTarget, { promptComplete: true });
           })
           .catch(() => {
-            // Keep the local arrival UI; retry the shared write on a later fix.
+            // Arrival was not committed: clear optimistic personally-arrived so
+            // manual Complete cannot auto-complete by force-including self.
             autoArrivalMarkedRef.current = null;
+            setAutoArrivedDestId((cur) => (cur === navTarget.id ? null : cur));
+            patchLocalArrival(navTarget.id, user.id, false);
+            if (arrivalFeedbackShownRef.current === navTarget.id) {
+              arrivalFeedbackShownRef.current = null;
+            }
+            setArrivalCelebrateDestId((cur) => (cur === navTarget.id ? null : cur));
           });
       }
     }
@@ -1952,8 +1973,12 @@ export default function MapScreen({ route, navigation }: Props) {
       const retryAfter = Math.max(0, result.retryAfterSeconds);
       setRefreshCooldownUntil(Date.now() + retryAfter * 1000);
       if (result.accepted) {
-        // Quiet success — no Alert. Peer markers arrive via realtime / next load.
-        void refresh().catch(() => undefined);
+        // Quiet success only when remote pull returns true. useGroupState.refresh
+        // returns false on remote failure even if a local cache is still shown.
+        const pulled = await refresh();
+        if (!pulled) {
+          Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
+        }
       } else {
         Alert.alert(
           t('map.refreshLocationsCooldown', { seconds: retryAfter }),
@@ -2305,71 +2330,140 @@ export default function MapScreen({ route, navigation }: Props) {
     }
   }, [groupId, loadGatheringWorkflow, refresh, resolvingGatherRequestId, t]);
 
-  const runCompleteGatheringStop = useCallback(async (destination: Destination) => {
+  /** @returns true when complete RPC + refresh succeeded (for auto-complete notify). */
+  const runCompleteGatheringStop = useCallback(async (destination: Destination): Promise<boolean> => {
     // Complete is separate from End navigation: only this path closes the stop
     // (closed_at → leaves carousel → history). End only pauses flock travel.
     // Server complete_gathering_stop also cancels any active nav for this stop.
-    if (!groupId) return;
+    if (!groupId) return false;
+    // Client-side in-flight guard: rapid re-taps before closedAt rebinds.
+    if (completingDestIdsRef.current.has(destination.id)) return false;
+    completingDestIdsRef.current.add(destination.id);
     try {
       await completeGatheringStop(groupId, destination.id);
       await navigationSessionState.refresh().catch(() => undefined);
       await refresh().catch(() => undefined);
       await loadGatheringWorkflow().catch(() => undefined);
+      return true;
     } catch (error) {
       logError('complete_gathering_failed', error, { groupId, destId: destination.id });
       Alert.alert(
         t('map.setFailedTitle'),
         error instanceof Error ? error.message : t('map.setFailedMsg'),
       );
+      return false;
+    } finally {
+      completingDestIdsRef.current.delete(destination.id);
     }
   }, [groupId, loadGatheringWorkflow, navigationSessionState, refresh, t]);
 
 
-  const promptCompleteAfterArrival = useCallback((destination: Destination) => {
+  /** Shared auto-complete: guard + complete RPC + this-device notify (native boundary). */
+  const executeAutoCompleteStop = useCallback(async (destination: Destination) => {
+    if (remoteAutoCompleteDestIdsRef.current.has(destination.id)) return;
+    if (completingDestIdsRef.current.has(destination.id)) return;
+    remoteAutoCompleteDestIdsRef.current.add(destination.id);
+    const ok = await runCompleteGatheringStop(destination);
+    if (!ok) {
+      remoteAutoCompleteDestIdsRef.current.delete(destination.id);
+      return;
+    }
+    // Platform path lives in native/notifications (not MapScreen Platform.OS).
+    void notifications.notifyThisDeviceAutoComplete({
+      title: t('gathering.autoCompleteTitle'),
+      body: t('gathering.autoCompleteBody', { title: destination.title }),
+      data: { kind: 'gathering_auto_complete', destinationId: destination.id },
+    }).catch(() => undefined);
+  }, [runCompleteGatheringStop, t]);
+
+  const promptCompleteAfterArrival = useCallback((destination: Destination, opts?: {
+    /**
+     * Only true after a successful local arrival write.
+     * Manual Complete / remote path must not invent a self arrival (P1).
+     */
+    includeSelf?: boolean;
+  }) => {
     const arrivedIds = new Set(
       destinationArrivals
         .filter((a) => a.destinationId === destination.id)
         .map((a) => a.userId),
     );
-    // Self just marked arrived — include them even if workflow not yet reloaded.
-    if (user?.id) arrivedIds.add(user.id);
-    const missingMemberNames = members
-      .filter((m) => !arrivedIds.has(m.userId))
-      .map((m) => m.name || t('group.travelerFallback'));
+    const counts = deriveScopedArrivalCounts({
+      members,
+      destinationSubgroupId: destination.subgroupId,
+      arrivedUserIds: arrivedIds,
+      // Opt-in only — default false so failed write cannot force auto-complete.
+      includeUserId: opts?.includeSelf ? user?.id : null,
+      travelerFallback: t('group.travelerFallback'),
+    });
     const stopAlreadyComplete = !!destination.closedAt
       || allScopedDestinations.find((d) => d.id === destination.id)?.closedAt != null;
     const prompt = resolveCompletePrompt({
       isLeader,
-      missingMemberNames,
-      allArrived: missingMemberNames.length === 0,
+      missingMemberNames: counts.missingMemberNames,
+      allArrived: counts.allArrived,
       stopAlreadyComplete: !!stopAlreadyComplete,
+      arrivedCount: counts.arrivedCount,
+      totalCount: counts.totalCount,
     });
     if (prompt.kind === 'none') return;
 
-    const buttons: Array<{ text: string; onPress?: () => void; style?: 'cancel' | 'destructive' }> = [
-      {
-        text: prompt.confirmLabel,
-        onPress: () => {
-          // Leader RPC only — members already have arrival/history; just refresh.
-          if (prompt.kind === 'member_leader_already_done') {
-            void refresh();
-            void loadGatheringWorkflow();
-            return;
-          }
-          void runCompleteGatheringStop(destination);
-        },
-      },
-    ];
-    // Dismiss only — leader 「先不要完成」 leaves complete available via
-    // personallyArrived → mark_complete (no deferred-id set).
+    // All arrived → auto-complete + this-device notification. No confirm dialog.
+    if (prompt.kind === 'auto_complete') {
+      void executeAutoCompleteStop(destination);
+      return;
+    }
+
+    // Manual complete (someone missing) or member notice — i18n only (helper kind/counts).
+    const isMissing = prompt.kind === 'leader_missing_members';
+    const isMemberDone = prompt.kind === 'member_leader_already_done';
+    const title = isMissing
+      ? t('gathering.completeMissingTitle')
+      : isMemberDone
+        ? t('gathering.memberLeaderDoneTitle')
+        : prompt.title;
+    const message = isMissing
+      ? t('gathering.completeMissingMessage', {
+          arrived: String(prompt.arrivedCount ?? 0),
+          total: String(prompt.totalCount ?? 0),
+        })
+      : isMemberDone
+        ? t('gathering.memberLeaderDoneMessage')
+        : prompt.message;
+    const confirmLabel = isMissing
+      ? t('gathering.completeConfirm')
+      : isMemberDone
+        ? t('common.confirm')
+        : prompt.confirmLabel;
+    const cancelLabel = isMissing
+      ? t('common.cancel')
+      : prompt.cancelLabel;
+
+    const buttons: Array<{ text: string; onPress?: () => void; style?: 'cancel' | 'destructive' }> = [];
+    if (cancelLabel) {
+      buttons.push({
+        text: cancelLabel,
+        style: 'cancel',
+      });
+    }
     buttons.push({
-      text: prompt.deferLabel ?? t('common.cancel'),
-      style: 'cancel',
+      text: confirmLabel,
+      style: isMissing ? 'destructive' : undefined,
+      onPress: () => {
+        // Leader RPC only — members already have arrival/history; just refresh.
+        if (isMemberDone) {
+          void refresh();
+          void loadGatheringWorkflow();
+          return;
+        }
+        void runCompleteGatheringStop(destination);
+      },
     });
-    Alert.alert(prompt.title, prompt.message, buttons);
+    Alert.alert(title, message, buttons);
   }, [
     allScopedDestinations,
     destinationArrivals,
+    executeAutoCompleteStop,
     isLeader,
     loadGatheringWorkflow,
     members,
@@ -2379,9 +2473,10 @@ export default function MapScreen({ route, navigation }: Props) {
     user?.id,
   ]);
 
-  // Shared arrive feedback: center check animation (1.6s) + haptic; complete
-  // prompt after animation + 1s. Leader skips the plain 「已抵達」Alert.
-  // Permanent arrived state is the arrival button style only (no badge).
+  // Shared arrive feedback: center check animation (1.6s) + haptic.
+  // Complete-stop is scheduled only when opts.promptComplete is true — callers
+  // must wait for the arrival write to succeed before setting that flag.
+  // Leader skips the plain 「已抵達」Alert.
   afterPersonalArrivalRef.current = (destination, opts) => {
     const alreadyShown = arrivalFeedbackShownRef.current === destination.id;
     if (!alreadyShown) {
@@ -2395,14 +2490,16 @@ export default function MapScreen({ route, navigation }: Props) {
     if (opts?.stopNav) void stopNavigation();
 
     const COMPLETE_PROMPT_DELAY_MS = 1_600 + 1_000;
-    if (opts?.promptComplete && isLeader) {
+    if (opts?.promptComplete) {
+      // includeSelf only on this post-write path (arrival RPC already succeeded).
       setTimeout(() => {
-        promptCompleteAfterArrival(destination);
+        promptCompleteAfterArrival(destination, { includeSelf: true });
       }, alreadyShown ? 0 : COMPLETE_PROMPT_DELAY_MS);
       return;
     }
 
-    if (!alreadyShown) {
+    // Celebrate-only path (write still in flight): plain arrive alert for members only.
+    if (!alreadyShown && !isLeader) {
       const fallback =
         language === 'en'
           ? `You have arrived at "${destination.title}"`
@@ -2411,17 +2508,49 @@ export default function MapScreen({ route, navigation }: Props) {
       const body = !raw || raw === 'map.arriveBody' || raw.includes('map.arriveBody')
         ? fallback
         : raw;
-      // After center animation so it does not stack with the check overlay.
       setTimeout(() => {
         Alert.alert(t('map.arriveTitle'), body);
       }, 1_600);
     }
-    if (opts?.promptComplete && !isLeader) {
-      setTimeout(() => {
-        promptCompleteAfterArrival(destination);
-      }, alreadyShown ? 0 : COMPLETE_PROMPT_DELAY_MS);
-    }
   };
+
+  // Remote final arrival (Realtime / workflow reload): leader auto-completes when
+  // every *scoped* member has an arrival row — no personal-arrive path required.
+  useEffect(() => {
+    if (!isLeader || !groupId) return;
+    for (const destination of allScopedDestinations) {
+      if (destination.closedAt) {
+        remoteAutoCompleteDestIdsRef.current.delete(destination.id);
+        continue;
+      }
+      if (remoteAutoCompleteDestIdsRef.current.has(destination.id)) continue;
+      if (completingDestIdsRef.current.has(destination.id)) continue;
+
+      const arrivedIds = new Set(
+        destinationArrivals
+          .filter((a) => a.destinationId === destination.id)
+          .map((a) => a.userId),
+      );
+      const counts = deriveScopedArrivalCounts({
+        members,
+        destinationSubgroupId: destination.subgroupId,
+        arrivedUserIds: arrivedIds,
+        // Remote path: only committed arrivals, never invent self.
+        includeUserId: null,
+        travelerFallback: t('group.travelerFallback'),
+      });
+      if (!counts.allArrived) continue;
+      void executeAutoCompleteStop(destination);
+    }
+  }, [
+    allScopedDestinations,
+    destinationArrivals,
+    executeAutoCompleteStop,
+    groupId,
+    isLeader,
+    members,
+    t,
+  ]);
 
   const handleArrival = useCallback((destination: Destination, targetUserId: string, arrived: boolean) => {
     const memberName = members.find((m) => m.userId === targetUserId)?.name;
@@ -2464,18 +2593,19 @@ export default function MapScreen({ route, navigation }: Props) {
   ) => {
     void (async () => {
       try {
-        // Optimistic: same center-check animation as passive auto-arrival,
-        // before network latency so active/manual mark feels identical.
+        // Optimistic celebrate only — complete-stop waits for arrival write success.
         patchLocalArrival(destination.id, targetUserId, true, arrivedAt);
         afterPersonalArrivalRef.current(destination, {
           stopNav: navTarget?.id === destination.id,
-          promptComplete: true,
+          promptComplete: false,
         });
         await syncFromDatabase();
         await setDestinationArrivalAt(destination.id, targetUserId, true, arrivedAt);
         await loadGatheringWorkflow();
+        // Arrival committed → complete rules (auto if all scoped arrived).
+        afterPersonalArrivalRef.current(destination, { promptComplete: true });
       } catch (error) {
-        // Roll back local mark if the shared write fails.
+        // Roll back local mark if the shared write fails — never complete-stop.
         patchLocalArrival(destination.id, targetUserId, false);
         if (arrivalFeedbackShownRef.current === destination.id) {
           arrivalFeedbackShownRef.current = null;
@@ -2495,31 +2625,10 @@ export default function MapScreen({ route, navigation }: Props) {
     t,
   ]);
 
+  /** Self Arrive: always write device-now — no multi-option time picker. */
   const handleSelfArrival = useCallback((destination: Destination, targetUserId: string) => {
-    const leaderArrival = destinationArrivals.find((arrival) => (
-      arrival.destinationId === destination.id
-      && members.some((member) => member.userId === arrival.userId && member.role === 'leader')
-    ));
-    const buttons: Array<{ text: string; onPress?: () => void; style?: 'cancel' }> = [];
-    if (leaderArrival) {
-      buttons.push({
-        text: t('arrival.timeLeader'),
-        onPress: () => submitArrivalWithTimestamp(destination, targetUserId, leaderArrival.arrivedAt),
-      });
-    }
-    buttons.push(
-      {
-        text: t('arrival.timeNow'),
-        onPress: () => submitArrivalWithTimestamp(destination, targetUserId, new Date().toISOString()),
-      },
-      {
-        text: t('arrival.timeAutomatic'),
-        onPress: () => submitArrivalWithTimestamp(destination, targetUserId, null),
-      },
-      { text: t('common.cancel'), style: 'cancel' },
-    );
-    Alert.alert(t('arrival.timeTitle'), destination.title, buttons);
-  }, [destinationArrivals, members, submitArrivalWithTimestamp, t]);
+    submitArrivalWithTimestamp(destination, targetUserId, new Date().toISOString());
+  }, [submitArrivalWithTimestamp]);
 
   const handleDeleteHistory = useCallback((item: VisitedWaypoint) => {
     confirmAction({
@@ -3109,7 +3218,13 @@ export default function MapScreen({ route, navigation }: Props) {
           color: (isSelf && user?.avatarColor) || m.avatarColor || memberColor(m.userId),
           isLeader: isMemberLeader,
           arrived,
-          lastUpdated: m.lastUpdated,
+          // Self row: prefer latest accepted local sample so refresh/push does
+          // not leave「尚無位置更新」when blue-dot already has a valid fix.
+          lastUpdated: resolveSelfAwareLastUpdated({
+            isSelf,
+            remoteLastUpdated: m.lastUpdated,
+            selfSampleAtMs: isSelf ? deviceCoordsAcceptedAtMs : null,
+          }),
           // Color grade: secondary by default; green only arrived; warn only solo/straggler-like.
           statusColor: solo
             ? glass.warn
@@ -3122,7 +3237,19 @@ export default function MapScreen({ route, navigation }: Props) {
           dist: displayedDistance != null ? formatDistance(displayedDistance) : isSelf ? t('flock.you') : '',
         };
       }),
-    [members, activePoint, t, user?.id, user?.name, user?.avatar, user?.avatarColor, soloOverride, memberRoutes, travelMode],
+    [
+      members,
+      activePoint,
+      t,
+      user?.id,
+      user?.name,
+      user?.avatar,
+      user?.avatarColor,
+      soloOverride,
+      memberRoutes,
+      travelMode,
+      deviceCoordsAcceptedAtMs,
+    ],
   );
 
   // Drop the override once the server value catches up, so a later toggle
@@ -3285,11 +3412,12 @@ export default function MapScreen({ route, navigation }: Props) {
         last={last}
         styles={styles}
         t={t}
+        accent={accent}
         onSelfMerge={doSelfMerge}
         onSelfSplit={doSelfSplit}
       />
     );
-  }, [user?.id, t, doSelfMerge, doSelfSplit, styles]);
+  }, [user?.id, t, doSelfMerge, doSelfSplit, styles, accent]);
 
   // Floating chrome rides just above the sheet's live top edge; its baseline
   // follows the sheet's animated gap to the screen bottom. At full the map
@@ -4212,14 +4340,16 @@ export default function MapScreen({ route, navigation }: Props) {
                     return t('map.meetAtClock', { time: clock });
                   })()
                 : null;
-              // Team arrival toward THIS stop — the people chip below is the
-              // single source of visible arrival progress for the card.
-              const arrivedHere = new Set(
-                destinationArrivals
+              // Team arrival toward THIS stop — scoped to destination subgroup.
+              const cardArrival = deriveScopedArrivalCounts({
+                members,
+                destinationSubgroupId: dest.subgroupId,
+                arrivedUserIds: destinationArrivals
                   .filter((arrival) => arrival.destinationId === dest.id)
                   .map((arrival) => arrival.userId),
-              ).size;
-              const totalMembers = members.length;
+              });
+              const arrivedHere = cardArrival.arrivedCount;
+              const totalMembers = cardArrival.totalCount;
               const modeIconName =
                 travelMode === 'walk'
                   ? 'walk-outline'
@@ -4595,8 +4725,8 @@ export default function MapScreen({ route, navigation }: Props) {
                             } else if (navCmd.action === 'end_point') {
                               void requestTeamEnd(dest, index);
                             } else if (navCmd.action === 'mark_complete') {
-                              // Leader deferred completion (「先不要完成」) or
-                              // re-open complete prompt while personally arrived.
+                              // Leader manual complete while personally arrived
+                              // (someone still missing → confirm; all arrived → auto).
                               promptCompleteAfterArrival(dest);
                             } else if (navCmd.disabled) {
                               logEvent('nav_command_ignored', {
@@ -4876,7 +5006,6 @@ export default function MapScreen({ route, navigation }: Props) {
         onConfirmSignOut={confirmSignOut}
         onOpenPaywall={openPaywallCb}
         onOpenAccount={openAccountOverlay}
-        onOpenCustomQuickCommand={openCustomQuickCommand}
         onOpenDiagnostics={() => setOverlay('diagnostics')}
         onGoHome={() => {
           setOverlay(null);
@@ -5821,6 +5950,7 @@ const FlockRow = React.memo(function FlockRow({
   last,
   styles,
   t,
+  accent,
   onSelfMerge,
   onSelfSplit,
 }: {
@@ -5838,6 +5968,8 @@ const FlockRow = React.memo(function FlockRow({
   last: boolean;
   styles: any;
   t: (key: TranslationKey, params?: Record<string, string | number>) => string;
+  /** Theme accent for primary self actions (e.g. 建立小隊). */
+  accent: string;
   onSelfMerge: () => void | Promise<unknown>;
   onSelfSplit: () => void | Promise<unknown>;
 }) {
@@ -5922,7 +6054,7 @@ const FlockRow = React.memo(function FlockRow({
               accessibilityRole="button"
               style={({ pressed }) => pressed && styles.rowActionPressed}
             >
-              <Text style={styles.rowActionSecondary}>
+              <Text style={[styles.rowActionSecondary, { color: accent }]}>
                 {t('subgroup.createTeam')}
               </Text>
             </Pressable>
@@ -6932,15 +7064,17 @@ const makeStyles = (
       minWidth: 0,
       gap: 2,
     },
+    // Match list-row title weight/size (follow App text settings; no special bold).
     passiveEnterTitle: {
       color: '#111',
-      fontSize: 16,
-      fontWeight: '700',
+      fontSize: 15,
+      fontWeight: '600',
     },
     passiveEnterHint: {
       color: 'rgba(17,17,17,0.72)',
-      fontSize: 12,
-      lineHeight: 16,
+      fontSize: 13,
+      lineHeight: 18,
+      fontWeight: '400',
     },
     sheetHeadingFirst: {
       marginTop: 4,

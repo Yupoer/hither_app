@@ -149,9 +149,21 @@ describe('OTA-07 full/passive presentation contract', () => {
 
   it('uses shortened passive mode title and one-line enter hint', () => {
     expect(i18n).toContain("'passive.title': '被動模式'");
+    expect(i18n).toContain("'passive.enter': '被動模式'");
+    expect(i18n).toContain("'passive.enter': 'Passive mode'");
+    expect(i18n).not.toContain("'passive.enter': '進入被動模式'");
+    expect(i18n).not.toContain("'passive.enter': 'Enter passive mode'");
     expect(i18n).toContain("'passive.enterHint'");
     expect(mapScreen).toContain("t('passive.enterHint')");
     expect(mapScreen).toContain('numberOfLines={1}');
+  });
+
+  it('uses shared type tokens instead of exclusive large/bold passive titles', () => {
+    expect(panel).toContain('TYPE_BASE');
+    expect(panel).toContain('TYPE_BASE.title');
+    // No residual 28px / 800-weight hero title for passive point names.
+    expect(panel).not.toMatch(/pointTitle:[\s\S]{0,80}fontSize:\s*28/);
+    expect(panel).not.toMatch(/pointTitle:[\s\S]{0,80}fontWeight:\s*'800'/);
   });
 
   it('derives the same team phase semantics as the full interface', () => {

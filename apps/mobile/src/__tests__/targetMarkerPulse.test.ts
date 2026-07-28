@@ -76,4 +76,37 @@ describe('target marker pulse', () => {
     expect(groupMap).toContain('useTracksViewChanges');
     expect(groupMap).toContain('setTracksViewChanges(false)');
   });
+
+  it('completed markers drop active shadow/glow/elevation chrome', () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = require('fs') as typeof import('fs');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const path = require('path') as typeof import('path');
+    const groupMap = fs.readFileSync(
+      path.join(__dirname, '../components/GroupMap.tsx'),
+      'utf8',
+    );
+    // Active only when not completed.
+    expect(groupMap).toContain(
+      '!isCompleted && activeDestinationId != null && dest.id === activeDestinationId',
+    );
+    expect(groupMap).toContain(
+      'isActiveTarget && !isCompleted ? styles.gatherMarkerActive : null',
+    );
+    // Completed style strips residual base shadow (field-test residual).
+    const completedBlock = groupMap.slice(
+      groupMap.indexOf('gatherMarkerCompleted:'),
+      groupMap.indexOf('gatherMarkerCompleted:') + 280,
+    );
+    expect(completedBlock).toContain("shadowColor: 'transparent'");
+    expect(completedBlock).toContain('shadowOpacity: 0');
+    expect(completedBlock).toContain('elevation: 0');
+    // MapScreen passes team completion ids (closedAt), not personal arrivals.
+    const mapScreen = fs.readFileSync(
+      path.join(__dirname, '../screens/MapScreen.tsx'),
+      'utf8',
+    );
+    expect(mapScreen).toContain('completedDestinationIds={teamCompletedDestinationIds}');
+    expect(mapScreen).toContain('teamCompletedDestinationIds');
+  });
 });

@@ -13,6 +13,12 @@ describe('foreground arrival feedback', () => {
     expect(effect.indexOf('afterPersonalArrivalRef.current(navTarget')).toBeLessThan(
       effect.indexOf('setDestinationArrival(navTarget.id'),
     );
+    // Celebrate first without complete; complete only after arrival write succeeds.
+    expect(effect).toContain('promptComplete: false');
+    expect(effect).toContain('promptComplete: true');
+    const writeIdx = effect.indexOf('setDestinationArrival(navTarget.id');
+    const completeIdx = effect.indexOf('promptComplete: true');
+    expect(completeIdx).toBeGreaterThan(writeIdx);
     expect(source).toMatch(
       /const personallyArrived = myCompletedDestinationIds\.has\(dest\.id\) \|\| \(\s*autoArrivedDestId === dest\.id/,
     );

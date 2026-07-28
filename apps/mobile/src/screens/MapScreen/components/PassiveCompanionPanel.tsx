@@ -23,6 +23,7 @@ import { HitherText } from '../../../components/HitherText';
 import QuickCommandsCard from '../../../components/QuickCommandsCard';
 import { useFontLayout } from '../../../a11y/useFontScaleBucket';
 import { spacing, radius, themes, type Palette } from '../../../theme';
+import { TYPE_BASE } from '../../../theme/typeScale';
 
 function makePassiveStyles(scale: number) {
   const s = (value: number, min = 0) => Math.max(min, Math.round(value * scale));
@@ -38,12 +39,18 @@ function makePassiveStyles(scale: number) {
       flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
       marginBottom: spacing.lg, gap: spacing.md,
     },
-    kicker: { color: glass.textSecondary, fontSize: 14, fontWeight: '700', letterSpacing: 0.5, flexShrink: 1 },
+    // Shared TYPE_BASE + HitherText typeRole — no exclusive 28/800 hero title.
+    kicker: {
+      color: glass.textSecondary,
+      fontSize: TYPE_BASE.footnote,
+      fontWeight: '600',
+      flexShrink: 1,
+    },
     switchBack: {
       minHeight: s(54, 48), paddingHorizontal: spacing.lg, borderRadius: radius.pill,
       borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
     },
-    switchBackLabel: { fontSize: 15, fontWeight: '800', color: '#111' },
+    switchBackLabel: { color: '#111', fontSize: TYPE_BASE.callout, fontWeight: '600' },
     card: {
       backgroundColor: glass.card, borderRadius: radius.lg, borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairlineSoft, padding: spacing.lg, minHeight: 220,
@@ -55,24 +62,59 @@ function makePassiveStyles(scale: number) {
       backgroundColor: 'rgba(255, 107, 107, 0.12)', borderWidth: StyleSheet.hairlineWidth,
       borderColor: 'rgba(255, 107, 107, 0.35)',
     },
-    errorBannerText: { flex: 1, color: glass.danger, fontSize: 14, fontWeight: '600', lineHeight: 20 },
-    fieldLabel: { color: glass.textTertiary, fontSize: 13, fontWeight: '700', letterSpacing: 0.35, textTransform: 'uppercase' },
+    errorBannerText: {
+      flex: 1,
+      color: glass.danger,
+      fontSize: TYPE_BASE.callout,
+      fontWeight: '500',
+      lineHeight: 20,
+    },
+    fieldLabel: {
+      color: glass.textTertiary,
+      fontSize: TYPE_BASE.caption,
+      fontWeight: '600',
+      letterSpacing: 0.35,
+      textTransform: 'uppercase',
+    },
     fieldGap: { marginTop: spacing.lg },
-    pointTitle: { color: glass.textPrimary, fontSize: 28, fontWeight: '800', marginTop: spacing.sm, marginBottom: spacing.md },
-    primary: { color: glass.textPrimary, fontSize: 17, fontWeight: '700', textAlign: 'center' },
-    secondary: { color: glass.textSecondary, fontSize: 17, marginTop: spacing.xs },
+    pointTitle: {
+      color: glass.textPrimary,
+      fontSize: TYPE_BASE.title,
+      fontWeight: '600',
+      marginTop: spacing.sm,
+      marginBottom: spacing.md,
+    },
+    primary: {
+      color: glass.textPrimary,
+      fontSize: TYPE_BASE.body,
+      fontWeight: '600',
+      textAlign: 'center',
+    },
+    secondary: {
+      color: glass.textSecondary,
+      fontSize: TYPE_BASE.body,
+      fontWeight: '400',
+      marginTop: spacing.xs,
+    },
     phasePill: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.pill },
     phaseDot: { width: 10, height: 10, borderRadius: 5 },
-    phaseText: { fontSize: 15, fontWeight: '800' },
+    phaseText: { fontSize: TYPE_BASE.callout, fontWeight: '600' },
     progressTrack: { marginTop: spacing.sm, height: 8, borderRadius: 4, backgroundColor: glass.fillStrong, overflow: 'hidden' },
     progressFill: { height: '100%', borderRadius: 4 },
     actions: { marginTop: spacing.lg },
     actionBtn: { minHeight: s(58, 54), flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg, borderRadius: radius.md },
     actionPrimary: {},
-    actionPrimaryLabel: { color: '#111', fontSize: 17, fontWeight: '800' },
+    actionPrimaryLabel: { color: '#111', fontSize: TYPE_BASE.callout, fontWeight: '600' },
     quickLabel: { marginTop: spacing.xl, marginBottom: spacing.sm, color: glass.textSecondary },
     quickWrap: { marginTop: spacing.sm },
-    footnote: { marginTop: spacing.lg, color: glass.textTertiary, fontSize: 13, lineHeight: 18, textAlign: 'center' },
+    footnote: {
+      marginTop: spacing.lg,
+      color: glass.textTertiary,
+      fontSize: TYPE_BASE.footnote,
+      fontWeight: '400',
+      lineHeight: 18,
+      textAlign: 'center',
+    },
   });
 }
 
@@ -240,7 +282,7 @@ export const PassiveCompanionPanel = React.memo(function PassiveCompanionPanel({
             ) : null}
 
             <Text style={styles.fieldLabel}>{t('passive.currentPoint')}</Text>
-            <HitherText typeRole="display" style={styles.pointTitle} numberOfLines={3}>
+            <HitherText typeRole="title" style={styles.pointTitle} numberOfLines={3}>
               {model.currentPoint?.title ?? t('passive.noCurrentPoint')}
             </HitherText>
 

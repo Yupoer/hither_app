@@ -360,7 +360,7 @@ describe('map UI placement contracts', () => {
     expect(settingsOverlay).not.toContain('liquidGlass');
   });
 
-  it('keeps arrival beside navigation controls and offers timestamp choices', () => {
+  it('keeps arrival beside navigation controls and auto-applies current time', () => {
     const commandRow = mapScreen.indexOf('styles.commandRow');
     const arrivalButton = mapScreen.indexOf('arrivalCmdSquare', commandRow);
     const meetButton = mapScreen.indexOf('styles.meetBtn', commandRow);
@@ -368,9 +368,12 @@ describe('map UI placement contracts', () => {
     expect(arrivalButton).toBeGreaterThan(commandRow);
     expect(arrivalButton).toBeLessThan(meetButton);
     expect(mapScreen).toContain('setDestinationArrivalAt');
-    expect(mapScreen).toContain("arrival.timeLeader");
-    expect(mapScreen).toContain("arrival.timeNow");
-    expect(mapScreen).toContain("arrival.timeAutomatic");
+    // Arrive is one-tap now — no multi-option time-choice Alert.
+    expect(mapScreen).toContain('handleSelfArrival');
+    expect(mapScreen).toContain('submitArrivalWithTimestamp(destination, targetUserId, new Date().toISOString())');
+    expect(mapScreen).not.toContain("arrival.timeLeader");
+    expect(mapScreen).not.toContain("arrival.timeNow");
+    expect(mapScreen).not.toContain("arrival.timeAutomatic");
     expect(mapScreen).not.toContain('handleArrival(dest, user.id, true)');
   });
 
@@ -510,7 +513,7 @@ describe('map UI placement contracts', () => {
     expect(mapScreen.slice(pressIn, pressOut)).not.toContain('LayoutAnimation.configureNext');
   });
 
-  it('opens the custom quick command editor as a sheet', () => {
+  it('opens the custom quick command editor as a sheet from the full command catalogue only', () => {
     const quickCommands = readFileSync(
       join(__dirname, '../components/CustomQuickCommandSheet.tsx'),
       'utf8',
@@ -523,9 +526,73 @@ describe('map UI placement contracts', () => {
     expect(quickCommands).toContain('<OverlaySheet');
     expect(quickCommands).toContain('visible={visible}');
     expect(mapScreen).toContain('onConfigureCustom={openCustomQuickCommand}');
-    expect(mapScreen).toContain('onOpenCustomQuickCommand={openCustomQuickCommand}');
-    expect(settingsOverlay).toContain('onOpenCustomQuickCommand');
-    expect(settingsOverlay).toContain('customQuickCommandConfiguredCount');
+    // Settings no longer hosts a duplicate custom-quick-command editor.
+    expect(settingsOverlay).not.toContain("t('settings.customQuickCommand')");
+    expect(settingsOverlay).not.toContain('customQuickCommandConfiguredCount');
+    expect(settingsOverlay).not.toContain('onOpenCustomQuickCommand');
+    expect(mapScreen).not.toContain('onOpenCustomQuickCommand={openCustomQuickCommand}');
+  });
+
+  it('auto-completes when all arrived and confirms missing with x/x destructive complete', () => {
+    expect(mapScreen).toContain("prompt.kind === 'auto_complete'");
+    // This-device notify via native boundary (no Platform.OS in MapScreen).
+    expect(mapScreen).toContain('notifyThisDeviceAutoComplete');
+    expect(mapScreen).not.toMatch(/notifyThisDeviceAutoComplete[\s\S]{0,200}Platform\.OS/);
+    expect(mapScreen).toContain("t('gathering.autoCompleteTitle')");
+    expect(mapScreen).toContain('arrivedCount');
+    expect(mapScreen).toContain('totalCount');
+    // Scoped counts (subgroup destination must not count whole group).
+    expect(mapScreen).toContain('deriveScopedArrivalCounts');
+    expect(mapScreen).toContain('destination.subgroupId');
+    // Card people chip uses scoped totals (not members.length).
+    expect(mapScreen).toContain('cardArrival.arrivedCount');
+    expect(mapScreen).toContain('cardArrival.totalCount');
+    // Remote final arrival (not only personal-arrive path).
+    expect(mapScreen).toContain('remoteAutoCompleteDestIdsRef');
+    expect(mapScreen).toContain('executeAutoCompleteStop');
+    // Complete only after arrival write succeeds; failed write clears optimistic self.
+    expect(mapScreen).toContain('promptComplete: false');
+    expect(mapScreen).toContain('setAutoArrivedDestId((cur) => (cur === navTarget.id ? null : cur))');
+    // Manual Complete must not invent self arrival (includeSelf opt-in only).
+    expect(mapScreen).toContain('includeUserId: opts?.includeSelf ? user?.id : null');
+    // i18n for missing-members confirm (not zh-hardcoded Alert strings).
+    expect(mapScreen).toContain("t('gathering.completeMissingTitle')");
+    expect(mapScreen).toContain("t('gathering.completeMissingMessage'");
+    expect(mapScreen).toContain("t('gathering.completeConfirm')");
+    expect(i18n).toContain("'gathering.completeMissingMessage'");
+    // In-flight guard against double complete RPC.
+    expect(mapScreen).toContain('completingDestIdsRef');
+    // Cancel first, destructive complete second (left-cancel / right-destructive intent).
+    const promptBlock = mapScreen.slice(
+      mapScreen.indexOf('const promptCompleteAfterArrival'),
+      mapScreen.indexOf('const promptCompleteAfterArrival') + 4500,
+    );
+    expect(promptBlock).toContain("style: 'cancel'");
+    expect(promptBlock).toContain("style: isMissing ? 'destructive'");
+  });
+
+  it('chooses Google or Apple Maps before opening external navigation', () => {
+    expect(mapScreen).toContain('openExternalNavigation');
+    const journeyNav = readFileSync(
+      join(__dirname, '../screens/MapScreen/hooks/useJourneyNavigation.ts'),
+      'utf8',
+    );
+    expect(journeyNav).toContain('presentExternalMapsChooser');
+    expect(journeyNav).toContain("t('map.googleMaps')");
+    expect(journeyNav).toContain("t('map.appleMaps')");
+    expect(journeyNav).toContain("t('map.externalMapsOpenFailed')");
+    expect(i18n).toContain("'map.googleMaps'");
+    expect(i18n).toContain("'map.appleMaps'");
+    expect(i18n).toContain("'map.externalMapsOpenFailed'");
+  });
+
+  it('uses theme accent for create-team and passive enter without Enter… copy', () => {
+    expect(mapScreen).toContain("t('subgroup.createTeam')");
+    expect(mapScreen).toMatch(/createTeam[\s\S]{0,80}color: accent|color: accent[\s\S]{0,80}createTeam/);
+    expect(i18n).toContain("'passive.enter': '被動模式'");
+    expect(i18n).toContain("'passive.enter': 'Passive mode'");
+    expect(i18n).not.toContain("'passive.enter': '進入被動模式'");
+    expect(i18n).not.toContain("'passive.enter': 'Enter passive mode'");
   });
 
   it('returns the report sheet to settings after cancel or submit', () => {
