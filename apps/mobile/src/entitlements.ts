@@ -11,8 +11,10 @@ export const FREE_LIMITS = {
   /** Total people including Leader. Server rejects the 6th join. */
   groupMembers: 5,
   anonymousMembers: 2,
-  destinationsPerItinerary: 5,
-  kmlImportPoints: 5,
+  // TEMPORARY QA override: Free Plan gathering points are unlimited.
+  // Revert both values to 5 when paid-plan enforcement is restored.
+  destinationsPerItinerary: Number.POSITIVE_INFINITY,
+  kmlImportPoints: Number.POSITIVE_INFINITY,
   stragglerThresholdM: 500,
   historyEntries: 3,
 } as const;
