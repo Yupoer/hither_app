@@ -31,6 +31,7 @@ const DISMISS_VELOCITY = 0.6;
 export default function OverlaySheet({
   visible,
   onClose,
+  onOpenComplete,
   onDone,
   title,
   accent,
@@ -41,6 +42,7 @@ export default function OverlaySheet({
 }: {
   visible: boolean;
   onClose: () => void;
+  onOpenComplete?: () => void;
   /** If set, Done calls this instead of `onClose` (commit vs cancel). */
   onDone?: () => void;
   title: string;
@@ -66,6 +68,8 @@ export default function OverlaySheet({
   heightRef.current = height;
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const onOpenCompleteRef = useRef(onOpenComplete);
+  onOpenCompleteRef.current = onOpenComplete;
   const handleDone = onDone ?? onClose;
   // Keep heavy children mounted through the close animation; drop them only
   // after t has fully settled at 0 while still hidden.
@@ -84,8 +88,12 @@ export default function OverlaySheet({
       duration: 320,
       useNativeDriver: true,
     }).start(({ finished }) => {
-      if (finished && !visibleRef.current) {
-        setContentMounted(false);
+      if (finished) {
+        if (visibleRef.current) {
+          onOpenCompleteRef.current?.();
+        } else {
+          setContentMounted(false);
+        }
       }
     });
   }, [visible, t, dragY]);

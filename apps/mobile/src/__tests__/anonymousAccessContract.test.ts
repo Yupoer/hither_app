@@ -10,6 +10,7 @@ import { join } from 'node:path';
 const hitherAppRoot = join(__dirname, '../../../../');
 const mobileSrc = join(__dirname, '..');
 const migrationsDir = join(hitherAppRoot, 'supabase/migrations');
+const supabaseConfig = readFileSync(join(hitherAppRoot, 'supabase/config.toml'), 'utf8');
 
 const migrationPath = join(
   migrationsDir,
@@ -362,6 +363,10 @@ describe('registration upgrade preservation contract', () => {
     expect(authFlow).toContain('linkIdentity');
     const rpcClears = authFlow.split("rpc('clear_anonymous_expiry_if_registered'");
     expect(rpcClears.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('enables manual identity linking for anonymous account upgrades', () => {
+    expect(supabaseConfig).toContain('enable_manual_linking = true');
   });
 
   it('session docs that upgrade keeps profiles/memberships on the same uid', () => {

@@ -178,8 +178,9 @@ describe('personal progress surface contracts', () => {
     expect(map).toContain('PERSONAL_PROGRESS_STALE_MS');
     expect(map).toContain('setTimeout');
     expect(map).not.toContain('setInterval(() => setProgressClockMs(Date.now()), 5_000)');
-    // Stale/unknown surfaced on card + passive (retain last numbers).
-    expect(map).toContain("t('locationUpdate.stale')");
+    // Stale/unknown remains internal; the card retains useful numbers without
+    // appending a generic warning.
+    expect(map).not.toContain("t('locationUpdate.stale')");
     expect(map).toContain('personalFreshness: personalProgress.freshness');
     // Markers use team completion, not personal arrivals.
     expect(map).toContain('completedDestinationIds={teamCompletedDestinationIds}');

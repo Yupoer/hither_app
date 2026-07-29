@@ -708,6 +708,7 @@ export default function MapScreen({ route, navigation }: Props) {
     | 'ops'
     | 'diagnostics'
   >(null);
+  const [editButtonActive, setEditButtonActive] = useState(false);
   const [arrivalDestination, setArrivalDestination] = useState<Destination | null>(null);
   /** Draft selection in the my-status sheet; committed only via Done. */
   const [draftMyStatus, setDraftMyStatus] = useState<'follow' | 'solo' | 'away' | null>(null);
@@ -3524,14 +3525,16 @@ export default function MapScreen({ route, navigation }: Props) {
     const actions = (
       <>
         {!pendingPlace ? (
-          <Pressable
+          <AmicroButton
+            icon="search"
+            activeIcon="close"
+            color="#fff"
+            size={46}
             style={styles.headerIconBtn}
-            onPress={() => setSearchVisible(true)}
-            accessibilityRole="button"
             accessibilityLabel={t('map.searchA11y')}
-          >
-            <Ionicons name="search" size={20} color="#fff" />
-          </Pressable>
+            onPress={lightTap}
+            onAnimationComplete={() => setSearchVisible(true)}
+          />
         ) : (
           <View style={styles.headerIconSlot} />
         )}
@@ -3540,6 +3543,7 @@ export default function MapScreen({ route, navigation }: Props) {
           mode="rotate"
           color="#fff"
           size={46}
+          style={styles.headerIconBtn}
           accessibilityLabel={t('map.overlaySettings')}
           onPress={lightTap}
           onAnimationComplete={openSettingsFromSheet}
@@ -3771,10 +3775,17 @@ export default function MapScreen({ route, navigation }: Props) {
           <AmicroButton
             icon="pencil-outline"
             activeIcon="checkmark"
+            active={editButtonActive}
+            activeOnPress
+            resetAfterComplete={false}
             color={glass.textSecondary}
+            activeColor={glass.ok}
             accessibilityLabel={t('map.edit')}
             testID="map-edit-itinerary"
-            onPress={lightTap}
+            onPress={() => {
+              lightTap();
+              setEditButtonActive(true);
+            }}
             onAnimationComplete={() => setOverlay('route')}
           />
         </View>
@@ -3822,7 +3833,7 @@ export default function MapScreen({ route, navigation }: Props) {
     </>
   ), [
     t, styles, nextStopTitle, nextStopDistLabel, destinations.length, canEditItinerary,
-    openHistoryOverlay, isLeader, opsOpenCount,
+    openHistoryOverlay, isLeader, opsOpenCount, editButtonActive,
   ]);
 
   // ─── 工具：同行者模式入口 → 定位分享 → 抵達距離 → 快捷指令 ─────────
@@ -3862,6 +3873,7 @@ export default function MapScreen({ route, navigation }: Props) {
           disabled={sharingApplying}
           color={accent}
           activeColor={accent}
+          style={styles.locationSharingButton}
           accessibilityLabel={t('settings.locationSharing')}
           onPress={mediumTap}
           onAnimationComplete={() => { void handleSharingEnabledChangeAnimated(); }}
@@ -4423,19 +4435,9 @@ export default function MapScreen({ route, navigation }: Props) {
                     ? etaSecondsFor(d, travelMode)
                     : null;
               const etaLabel = etaSeconds != null ? shortEta(etaSeconds) : '—';
-              // Surface GPS freshness on the active nav card (spec: retain
-              // last values, show stale/unknown — not silent forever-live).
-              const progressFreshness =
-                navTarget?.id === dest.id ? personalProgress.freshness : 'live';
-              const freshnessSuffix =
-                progressFreshness === 'stale' || progressFreshness === 'unknown'
-                  ? ` · ${t('locationUpdate.stale')}`
-                  : '';
-              const distLabel = d != null
-                ? `${formatDistance(d)}${freshnessSuffix}`
-                : progressFreshness === 'unknown'
-                  ? t('locationUpdate.stale')
-                  : '';
+              // Retain the last useful distance/ETA without a generic stale
+              // warning; freshness still drives internal navigation safety.
+              const distLabel = d != null ? formatDistance(d) : '';
               const distParts = splitDistanceParts(d);
               const etaParts = splitEtaParts(etaSeconds);
               const cardExpanded = isCardExpanded(dest.id);
@@ -4491,24 +4493,6 @@ export default function MapScreen({ route, navigation }: Props) {
                 || navCmd.disabled
                 || Boolean(requestingStartDestId)
               );
-              const isStartCommand = navCmd.action === 'start_nav';
-              const navColor =
-                navCmd.kind === 'leader_stop'
-                  ? glass.danger
-                  : navCmd.kind === 'member_navigating' || navCmd.kind === 'member_waiting_complete'
-                    ? glass.textSecondary
-                    : isLeader
-                      ? colors.accentText
-                      : '#0c1a12';
-              const recordNavPress = () => {
-                registerCardActivity(dest.id);
-                mediumTap();
-              };
-              const runNavAction = () => {
-                if (navCmd.action === 'start_nav') {
-                  void startNavigation(dest, index);
-                }
-              };
               return (
                 <View
                   key={`carousel-dest-${dest.id}-${index}`}
@@ -4785,21 +4769,6 @@ export default function MapScreen({ route, navigation }: Props) {
                     {cardExpanded && (
                     <View style={styles.commandRow} pointerEvents="box-none">
                       {navCmd.kind !== 'hidden' ? (
-                        isStartCommand ? (
-                          <AmicroButton
-                            icon="play"
-                            activeIcon="pause"
-                            color={navColor}
-                            activeColor={navColor}
-                            style={[styles.navBtn, navIconOnly ? styles.navBtnIconOnly : null]}
-                            disabled={commandDisabled}
-                            accessibilityLabel={navCmd.label}
-                            accessibilityHint={startAccessibilityHint}
-                            testID={`gather-nav-${dest.id}`}
-                            onPress={recordNavPress}
-                            onAnimationComplete={runNavAction}
-                          />
-                        ) : (
                         <Pressable
                           style={[
                             styles.navBtn,
@@ -4902,7 +4871,6 @@ export default function MapScreen({ route, navigation }: Props) {
                             </Text>
                           ) : null}
                         </Pressable>
-                        )
                       ) : null}
 
                       <Pressable
@@ -5038,7 +5006,11 @@ export default function MapScreen({ route, navigation }: Props) {
       {/* Route overlay: reorder gathering points. */}
       <OverlaySheet
         visible={overlay === 'route'}
-        onClose={() => setOverlay(null)}
+        onClose={() => {
+          setEditButtonActive(false);
+          setOverlay(null);
+        }}
+        onOpenComplete={() => setEditButtonActive(false)}
         title={t('map.gatheringPoints')}
         accent={accent}
         doneLabel={t('map.done')}
@@ -5167,9 +5139,28 @@ export default function MapScreen({ route, navigation }: Props) {
               : t('map.inviteMembersHint')}
           </Text>
           {!inviteBlockedForAnonymousLeader && (
-            <Text style={[styles.codeText, { textAlign: 'center', marginVertical: 20 }]}>
-              {group?.inviteCode ?? '——'}
-            </Text>
+            <View
+              style={styles.inviteCodeBoxes}
+              accessible
+              accessibilityRole="text"
+              accessibilityLabel={group?.inviteCode ?? ''}
+            >
+              {Array.from({ length: 6 }, (_, index) => (
+                <React.Fragment key={index}>
+                  {index === 3 ? <Text style={styles.inviteCodeDash}>-</Text> : null}
+                  <View style={styles.inviteCodeCell}>
+                    <Text
+                      style={styles.inviteCodeChar}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.7}
+                      numberOfLines={1}
+                    >
+                      {group?.inviteCode?.[index] ?? ''}
+                    </Text>
+                  </View>
+                </React.Fragment>
+              ))}
+            </View>
           )}
           {inviteBlockedForAnonymousLeader ? (
             <Pressable
@@ -5186,6 +5177,9 @@ export default function MapScreen({ route, navigation }: Props) {
                 icon="link-outline"
                 activeIcon="send-outline"
                 color="#fff"
+                label={t('map.share')}
+                durationMs={420}
+                style={styles.inviteActionButton}
                 accessibilityLabel={t('map.shareInviteLink')}
                 onPress={lightTap}
                 onAnimationComplete={() => { void shareCode(); }}
@@ -5197,6 +5191,9 @@ export default function MapScreen({ route, navigation }: Props) {
                 activeOnPress
                 resetAfterComplete={false}
                 color="#fff"
+                activeColor={glass.ok}
+                label={t('map.copy')}
+                style={styles.inviteActionButton}
                 accessibilityLabel={codeCopied ? t('group.copied') : t('map.copyGroupCode')}
                 onPress={lightTap}
                 onAnimationComplete={() => { void copyCode(); }}
@@ -7367,6 +7364,15 @@ const makeStyles = (
     },
     accuracyCopy: { flex: 1, minWidth: 0 },
     accuracySwitch: { flexShrink: 0, transform: [{ translateY: 2 }] },
+    locationSharingButton: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      flexShrink: 0,
+      backgroundColor: glass.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
+    },
     accuracyTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7, flexWrap: 'wrap' },
     accuracyLabel: { color: '#fff', fontSize: 15, fontWeight: '600', lineHeight: 22, flexShrink: 1 },
     // Hint is secondary gray — not orange (orange reserved for primary / on).
@@ -7541,14 +7547,6 @@ const makeStyles = (
     settingSwitchText: { flex: 1, minWidth: 0 },
     settingSwitchLabel: { fontSize: 15, fontWeight: '600', color: '#fff', flexShrink: 1, lineHeight: 22 },
     settingSwitchHint: { fontSize: 12, color: glass.textTertiary, marginTop: 2, flexShrink: 1 },
-    codeText: {
-      fontFamily: DISPLAY_FONT,
-      fontSize: narrow ? 20 : 24,
-      fontWeight: '700',
-      color: '#fff',
-      letterSpacing: narrow ? 1 : 2,
-      flexShrink: 1,
-    },
     chip: {
       minHeight: s(38, 34),
       paddingHorizontal: s(16, 12),
@@ -7684,9 +7682,46 @@ const makeStyles = (
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      gap: 24,
+      gap: 12,
       minHeight: 64,
       marginTop: 4,
+    },
+    inviteActionButton: {
+      flex: 1,
+      height: 48,
+      borderRadius: 14,
+      backgroundColor: glass.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
+    },
+    inviteCodeBoxes: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: narrow ? 4 : 8,
+      marginVertical: 20,
+    },
+    inviteCodeCell: {
+      flex: 1,
+      minWidth: 0,
+      height: narrow ? 56 : 64,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: glass.fill,
+      borderWidth: 1,
+      borderColor: glass.hairline,
+    },
+    inviteCodeChar: {
+      fontFamily: DISPLAY_FONT,
+      fontSize: 32,
+      fontWeight: '700',
+      color: '#fff',
+    },
+    inviteCodeDash: {
+      fontSize: 22,
+      fontWeight: '600',
+      color: glass.textTertiary,
+      flexShrink: 0,
     },
 
     // Overlays

@@ -20,14 +20,32 @@ describe('Amicro native animation contracts', () => {
   it('keeps the requested icon mappings on native controls', () => {
     for (const icon of [
       'link-outline', 'send-outline', 'settings-outline', 'copy-outline', 'checkmark',
-      'play', 'pause', 'pencil-outline', 'expand-outline', 'contract-outline',
+      'search', 'close', 'pencil-outline', 'expand-outline', 'contract-outline',
       'refresh', 'eye-off-outline', 'eye-outline',
     ]) {
       expect(map + passive).toMatch(new RegExp(`(?:icon|activeIcon)="${icon}"`));
     }
-    expect(map).toContain("const isStartCommand = navCmd.action === 'start_nav'");
-    expect(map).toContain('onAnimationComplete={runNavAction}');
+    expect(map).not.toContain('activeIcon="pause"');
+    expect(map).toContain('style={styles.headerIconBtn}');
+    expect(map).toContain('onAnimationComplete={() => setSearchVisible(true)}');
     expect(passive).toContain('onAnimationComplete={handleSwitchBack}');
+  });
+
+  it('holds edit success until the route sheet is fully open', () => {
+    expect(map).toContain('active={editButtonActive}');
+    expect(map).toContain('resetAfterComplete={false}');
+    expect(map).toContain('onOpenComplete={() => setEditButtonActive(false)}');
+    expect(map).toMatch(/setEditButtonActive\(false\);\s+setOverlay\(null\);/);
+  });
+
+  it('keeps invite actions labeled, framed, and makes sharing longer', () => {
+    expect(map).toContain("label={t('map.share')}");
+    expect(map).toContain("label={t('map.copy')}");
+    expect(map).toContain('durationMs={420}');
+    expect(map).toContain('style={styles.inviteActionButton}');
+    expect(map).toContain('fontSize: 32');
+    expect(map).toContain('adjustsFontSizeToFit');
+    expect(map).toContain('minimumFontScale={0.7}');
   });
 
   it('renders centered Bouncing Dots without moving the logo', () => {

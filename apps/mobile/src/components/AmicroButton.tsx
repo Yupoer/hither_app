@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, type ComponentProps } from 'reac
 import {
   Pressable,
   StyleSheet,
+  Text,
   View,
   type StyleProp,
   type ViewStyle,
@@ -37,6 +38,8 @@ export interface AmicroButtonProps {
   mode?: AmicroButtonMode;
   color: string;
   activeColor?: string;
+  label?: string;
+  durationMs?: number;
   size?: number;
   disabled?: boolean;
   accessibilityLabel: string;
@@ -58,6 +61,8 @@ export function AmicroButton({
   mode = 'morph',
   color,
   activeColor = color,
+  label,
+  durationMs = PRESS_ANIMATION_MS,
   size = 44,
   disabled = false,
   accessibilityLabel,
@@ -93,10 +98,10 @@ export function AmicroButton({
       return;
     }
     const target = (activeOnPress ?? true) ? 1 : 0;
-    progress.value = withTiming(target, { duration: PRESS_ANIMATION_MS }, (finished) => {
+    progress.value = withTiming(target, { duration: durationMs }, (finished) => {
       if (finished) runOnJS(finish)();
     });
-  }, [activeOnPress, disabled, finish, onPress, progress, reducedMotion, resetAfterComplete]);
+  }, [activeOnPress, disabled, durationMs, finish, onPress, progress, reducedMotion]);
 
   const currentStyle = useAnimatedStyle(() => {
     if (mode === 'rotate') {
@@ -120,7 +125,11 @@ export function AmicroButton({
 
   return (
     <Pressable
-      style={[styles.pressable, { width: size, height: size }, style]}
+      style={[
+        styles.pressable,
+        label ? styles.labeledPressable : { width: size, height: size },
+        style,
+      ]}
       onPress={handlePress}
       disabled={disabled}
       accessibilityRole="button"
@@ -139,6 +148,7 @@ export function AmicroButton({
           </Animated.View>
         ) : null}
       </View>
+      {label ? <Text style={[styles.label, { color }]}>{label}</Text> : null}
     </Pressable>
   );
 }
@@ -192,6 +202,16 @@ const styles = StyleSheet.create({
   pressable: {
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  labeledPressable: {
+    minWidth: 44,
+    minHeight: 44,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  label: {
+    fontSize: 15,
+    fontWeight: '600',
   },
   iconSlot: {
     width: 24,

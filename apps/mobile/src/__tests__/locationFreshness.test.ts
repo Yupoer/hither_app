@@ -25,8 +25,11 @@ describe('locationFreshness', () => {
     });
   });
 
-  it('stops counting after 24 hours', () => {
-    expect(locationFreshness('2026-07-12T12:00:00.000Z', NOW)).toEqual({ unit: 'stale' });
+  it('keeps reporting concrete hours after 24 hours', () => {
+    expect(locationFreshness('2026-07-12T12:00:00.000Z', NOW)).toEqual({
+      unit: 'hours',
+      value: 24,
+    });
     expect(locationFreshness('not-a-date', NOW)).toEqual({ unit: 'missing' });
   });
 });
