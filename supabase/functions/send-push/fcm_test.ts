@@ -7,6 +7,11 @@ import {
   buildFcmMessage,
   isFcmDeadToken,
 } from "./fcm.ts";
+import {
+  buildMessage,
+  prefColumn,
+} from "./messages.ts";
+import { requestStartRecipientIds } from "./recipients.ts";
 
 Deno.test("builds an Android alert with string data values", () => {
   const alert = {
@@ -43,6 +48,38 @@ Deno.test("builds data-only location_refresh with high priority", () => {
       },
     },
   );
+});
+
+Deno.test("builds the follower request_start message", () => {
+  assertEquals(
+    buildMessage({
+      category: "follower_requests",
+      group_id: "g1",
+      sender_id: "u1",
+      type: "request_start",
+      message: "請開始前往「台北車站」",
+    }),
+    {
+      title: "成員：要求開始",
+      body: "請開始前往「台北車站」",
+    },
+  );
+  assertEquals(
+    requestStartRecipientIds(
+      {
+        category: "follower_requests",
+        group_id: "g1",
+        sender_id: "u1",
+        type: "request_start",
+      },
+      [
+        { user_id: "leader", role: "leader" },
+        { user_id: "follower", role: "follower" },
+      ],
+    ),
+    ["leader"],
+  );
+  assertEquals(prefColumn("follower_requests"), "follower_requests");
 });
 
 Deno.test("marks UNREGISTERED and invalid token as dead", () => {

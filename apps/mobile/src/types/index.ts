@@ -427,6 +427,7 @@ export const FOLLOWER_COMMANDS = [
   'need_break',
   'need_help',
   'found_something',
+  'request_start',
 ] as const;
 
 /** Fixed follower shortcuts (custom slots are separate). */

@@ -9,6 +9,10 @@ const migrations = readdirSync(join(root, 'supabase/migrations'))
 const client = readFileSync(join(__dirname, '../api/client.ts'), 'utf8');
 const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
 const groupState = readFileSync(join(__dirname, '../state/useGroupState.ts'), 'utf8');
+const groupNotifications = readFileSync(
+  join(__dirname, '../state/useGroupNotifications.ts'),
+  'utf8',
+);
 const i18n = readFileSync(join(__dirname, '../i18n/index.ts'), 'utf8');
 const reorderList = readFileSync(
   join(__dirname, '../components/DestinationReorderList.tsx'),
@@ -20,6 +24,10 @@ const pushIndex = readFileSync(
 );
 const pushMessages = readFileSync(
   join(root, 'supabase/functions/send-push/messages.ts'),
+  'utf8',
+);
+const pushRecipients = readFileSync(
+  join(root, 'supabase/functions/send-push/recipients.ts'),
   'utf8',
 );
 
@@ -148,5 +156,17 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(pushMessages).toContain('title: `隊長：${label}`');
     expect(pushMessages).toContain('title: `成員：${label}`');
     expect(pushMessages).toContain('gathering_request');
+  });
+
+  it('routes request_start through follower preferences to leaders only', () => {
+    expect(migrations).toContain("'custom','request_start'");
+    expect(migrations).toContain("'found_something','request_start'");
+    expect(pushIndex).toContain('requestStartRecipientIds(payload, members)');
+    expect(pushRecipients).toContain('.filter((member) => member.role === "leader")');
+    expect(pushMessages).toContain('request_start: "要求開始"');
+    expect(mapScreen).toContain("'request_start'");
+    expect(groupNotifications).toContain(
+      "row.type === 'request_start' && !isLeaderRef.current",
+    );
   });
 });

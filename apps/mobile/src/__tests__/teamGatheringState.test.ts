@@ -142,7 +142,6 @@ describe('composition with resolveNavCommand', () => {
       isLeader: true,
       personallyArrived: false,
       flockNavigatingThis: false,
-      localRouteThis: false,
       isNextTeamPending: canTeamStart(staying, 'p1'),
       teamStartBlocked: !canTeamStart(staying, 'p1'),
     });
@@ -160,7 +159,6 @@ describe('composition with resolveNavCommand', () => {
       isLeader: true,
       personallyArrived: false,
       flockNavigatingThis: true,
-      localRouteThis: false,
       teamStartBlocked: true,
     });
     expect(teamEnd.primary).toMatchObject({ kind: 'end', label: '結束' });

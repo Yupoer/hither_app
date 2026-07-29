@@ -200,6 +200,7 @@ import {
   leaveGroups,
   requestGroupLocationRefresh,
   resolveGatherPointRequestResilient,
+  sendCommand,
   isNetworkRequestError,
   setDestinationArrival,
   setDestinationArrivalAt,
@@ -1027,7 +1028,6 @@ export default function MapScreen({ route, navigation }: Props) {
     navTarget,
     navTargetId,
     sharedTargetId,
-    localTargetId,
     pendingLeaderTargetId,
     activePoint,
     numericDistance,
@@ -1036,7 +1036,6 @@ export default function MapScreen({ route, navigation }: Props) {
     startNavigation,
     requestTeamEnd,
     stopNavigation,
-    startLocalRoutePlan,
   } = useJourneyNavigation({
     state,
     groupId,
@@ -1203,6 +1202,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const foregroundAckRef = useRef<string | null>(null);
   const autoArrivalMarkedRef = useRef<string | null>(null);
   const arrivalFeedbackShownRef = useRef<string | null>(null);
+  const arrivalNotificationDestIdsRef = useRef<Set<string>>(new Set());
   /** In-flight complete-stop dest ids — ignore re-entry until settled (SUG-2). */
   const completingDestIdsRef = useRef<Set<string>>(new Set());
   /**
@@ -1212,6 +1212,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const remoteAutoCompleteDestIdsRef = useRef<Set<string>>(new Set());
   const [autoArrivedDestId, setAutoArrivedDestId] = useState<string | null>(null);
   const [arrivalCelebrateDestId, setArrivalCelebrateDestId] = useState<string | null>(null);
+  const [requestingStartDestId, setRequestingStartDestId] = useState<string | null>(null);
 
   // Wired after promptCompleteAfterArrival is defined (see below).
   const afterPersonalArrivalRef = useRef<
@@ -1293,7 +1294,7 @@ export default function MapScreen({ route, navigation }: Props) {
         void setDestinationArrival(navTarget.id, user.id, true)
           .then(() => {
             patchLocalArrival(navTarget.id, user.id, true);
-            return loadGatheringWorkflow();
+            return loadGatheringWorkflow().catch(() => undefined);
           })
           .then(() => {
             afterPersonalArrivalRef.current(navTarget, { promptComplete: true });
@@ -1307,6 +1308,7 @@ export default function MapScreen({ route, navigation }: Props) {
             if (arrivalFeedbackShownRef.current === navTarget.id) {
               arrivalFeedbackShownRef.current = null;
             }
+            arrivalNotificationDestIdsRef.current.delete(navTarget.id);
             setArrivalCelebrateDestId((cur) => (cur === navTarget.id ? null : cur));
           });
       }
@@ -2500,6 +2502,17 @@ export default function MapScreen({ route, navigation }: Props) {
       }, 1_600);
     }
     if (opts?.stopNav) void stopNavigation();
+    if (
+      opts?.promptComplete
+      && !arrivalNotificationDestIdsRef.current.has(destination.id)
+    ) {
+      arrivalNotificationDestIdsRef.current.add(destination.id);
+      void notifications.scheduleLocalNotification({
+        title: t('map.arriveTitle'),
+        body: t('map.arriveBody', { title: destination.title }),
+        data: { kind: 'destinationArrival', destinationId: destination.id },
+      });
+    }
 
     const COMPLETE_PROMPT_DELAY_MS = 1_600 + 1_000;
     if (opts?.promptComplete) {
@@ -2564,6 +2577,26 @@ export default function MapScreen({ route, navigation }: Props) {
     t,
   ]);
 
+  const requestLeaderStart = useCallback((destination: Destination) => {
+    if (!groupId || requestingStartDestId) return;
+    setRequestingStartDestId(destination.id);
+    void sendCommand(
+      groupId,
+      'request_start',
+      t('gathering.requestStartMessage', { title: destination.title }),
+    )
+      .then(() => {
+        Alert.alert(
+          t('gathering.requestStartSentTitle'),
+          t('gathering.requestStartSentBody'),
+        );
+      })
+      .catch(() => {
+        Alert.alert(t('map.setFailedTitle'), t('command.sendFailed'));
+      })
+      .finally(() => setRequestingStartDestId(null));
+  }, [groupId, requestingStartDestId, t]);
+
   const handleArrival = useCallback((destination: Destination, targetUserId: string, arrived: boolean) => {
     const memberName = members.find((m) => m.userId === targetUserId)?.name;
     confirmAction({
@@ -2575,6 +2608,9 @@ export default function MapScreen({ route, navigation }: Props) {
     }, () => {
       void (async () => {
         try {
+          await syncFromDatabase();
+          await setDestinationArrival(destination.id, targetUserId, arrived);
+          patchLocalArrival(destination.id, targetUserId, arrived);
           if (!arrived && targetUserId === user?.id) {
             setAutoArrivedDestId((cur) => (cur === destination.id ? null : cur));
             if (autoArrivalMarkedRef.current === destination.id) {
@@ -2583,11 +2619,9 @@ export default function MapScreen({ route, navigation }: Props) {
             if (arrivalFeedbackShownRef.current === destination.id) {
               arrivalFeedbackShownRef.current = null;
             }
+            arrivalNotificationDestIdsRef.current.delete(destination.id);
           }
-          await syncFromDatabase();
-          await setDestinationArrival(destination.id, targetUserId, arrived);
-          patchLocalArrival(destination.id, targetUserId, arrived);
-          await loadGatheringWorkflow();
+          await loadGatheringWorkflow().catch(() => undefined);
         } catch (error) {
           Alert.alert(
             t('arrival.failedTitle'),
@@ -2604,20 +2638,21 @@ export default function MapScreen({ route, navigation }: Props) {
     arrivedAt: string | null,
   ) => {
     void (async () => {
+      // Optimistic celebrate only — complete-stop waits for arrival write success.
+      if (targetUserId === user?.id) setAutoArrivedDestId(destination.id);
+      patchLocalArrival(destination.id, targetUserId, true, arrivedAt);
+      afterPersonalArrivalRef.current(destination, {
+        stopNav: navTarget?.id === destination.id,
+        promptComplete: false,
+      });
       try {
-        // Optimistic celebrate only — complete-stop waits for arrival write success.
-        patchLocalArrival(destination.id, targetUserId, true, arrivedAt);
-        afterPersonalArrivalRef.current(destination, {
-          stopNav: navTarget?.id === destination.id,
-          promptComplete: false,
-        });
-        await syncFromDatabase();
         await setDestinationArrivalAt(destination.id, targetUserId, true, arrivedAt);
-        await loadGatheringWorkflow();
-        // Arrival committed → complete rules (auto if all scoped arrived).
-        afterPersonalArrivalRef.current(destination, { promptComplete: true });
       } catch (error) {
         // Roll back local mark if the shared write fails — never complete-stop.
+        if (targetUserId === user?.id) {
+          setAutoArrivedDestId((cur) => (cur === destination.id ? null : cur));
+          arrivalNotificationDestIdsRef.current.delete(destination.id);
+        }
         patchLocalArrival(destination.id, targetUserId, false);
         if (arrivalFeedbackShownRef.current === destination.id) {
           arrivalFeedbackShownRef.current = null;
@@ -2627,14 +2662,18 @@ export default function MapScreen({ route, navigation }: Props) {
           t('arrival.failedTitle'),
           arrivalErrorMessage(error, t),
         );
+        return;
       }
+      await loadGatheringWorkflow().catch(() => undefined);
+      // Arrival committed → complete rules (auto if all scoped arrived).
+      afterPersonalArrivalRef.current(destination, { promptComplete: true });
     })();
   }, [
     loadGatheringWorkflow,
     navTarget?.id,
     patchLocalArrival,
-    syncFromDatabase,
     t,
+    user?.id,
   ]);
 
   /** Self Arrive: always write device-now — no multi-option time picker. */
@@ -4334,13 +4373,11 @@ export default function MapScreen({ route, navigation }: Props) {
                 ? personalDistanceM
                 : routeForDestination?.distanceMeters
                   ?? (fromCoords ? distanceMeters(fromCoords, dest.coordinates) : null);
-              // Shared flock vs member local plan — must not use journeyActive
-              // (true for localTargetId too) or 路徑規劃 becomes 導航中.
-              const { flockNavigatingThis, localRouteThis } = deriveCardNavFlags({
+              // Shared navigation is distinct from any member-only route preview.
+              const { flockNavigatingThis } = deriveCardNavFlags({
                 destId: dest.id,
                 isLeader,
                 sharedTargetId,
-                localTargetId,
                 pendingLeaderTargetId,
                 journeyBusy,
               });
@@ -4422,6 +4459,11 @@ export default function MapScreen({ route, navigation }: Props) {
                 scopedDestinations: destinations,
                 myArrivedDestinationIds: myCompletedDestinationIds,
               });
+              const showArrivalControl =
+                Boolean(user?.id)
+                && canMarkArrival
+                && sharedTargetId === dest.id
+                && !dest.closedAt;
               const personallyArrived = myCompletedDestinationIds.has(dest.id) || (
                 autoArrivedDestId === dest.id ||
                 (navTarget?.id === dest.id && (
@@ -4433,7 +4475,6 @@ export default function MapScreen({ route, navigation }: Props) {
                 isLeader,
                 personallyArrived,
                 flockNavigatingThis,
-                localRouteThis,
                 isNextTeamPending: true,
                 teamStartBlocked: false,
               });
@@ -4445,10 +4486,14 @@ export default function MapScreen({ route, navigation }: Props) {
                     : '按下後開始導航；再次按下可結束'
                 : undefined;
               const leaderActionDisabled = false;
-              const commandDisabled = !isLeader && (journeyBusy || navCmd.disabled);
-              const isStartCommand = navCmd.action === 'start_nav' || navCmd.action === 'start_plan';
+              const commandDisabled = !isLeader && (
+                journeyBusy
+                || navCmd.disabled
+                || Boolean(requestingStartDestId)
+              );
+              const isStartCommand = navCmd.action === 'start_nav';
               const navColor =
-                navCmd.kind === 'leader_stop' || navCmd.kind === 'member_close_plan'
+                navCmd.kind === 'leader_stop'
                   ? glass.danger
                   : navCmd.kind === 'member_navigating' || navCmd.kind === 'member_waiting_complete'
                     ? glass.textSecondary
@@ -4462,8 +4507,6 @@ export default function MapScreen({ route, navigation }: Props) {
               const runNavAction = () => {
                 if (navCmd.action === 'start_nav') {
                   void startNavigation(dest, index);
-                } else if (navCmd.action === 'start_plan') {
-                  startLocalRoutePlan(dest, index);
                 }
               };
               return (
@@ -4761,11 +4804,12 @@ export default function MapScreen({ route, navigation }: Props) {
                           style={[
                             styles.navBtn,
                             navCmd.kind === 'member_waiting_complete'
+                              || navCmd.kind === 'member_request_start'
                               ? styles.navBtnWide
                               : navIconOnly
                                 ? styles.navBtnIconOnly
                                 : null,
-                            navCmd.kind === 'leader_stop' || navCmd.kind === 'member_close_plan'
+                            navCmd.kind === 'leader_stop'
                               ? styles.navBtnEnd
                               : commandDisabled
                                 ? styles.navBtnDisabled
@@ -4776,13 +4820,10 @@ export default function MapScreen({ route, navigation }: Props) {
                           onPress={() => {
                             registerCardActivity(dest.id);
                             mediumTap();
-                            if (navCmd.action === 'close_plan') {
-                              // Member-only local path plan close (not team End).
-                              void stopNavigation();
-                            } else if (navCmd.action === 'start_nav') {
+                            if (navCmd.action === 'start_nav') {
                               void startNavigation(dest, index);
-                            } else if (navCmd.action === 'start_plan') {
-                              startLocalRoutePlan(dest, index);
+                            } else if (navCmd.action === 'request_start') {
+                              requestLeaderStart(dest);
                             } else if (navCmd.action === 'end_point') {
                               void requestTeamEnd(dest, index);
                             } else if (navCmd.action === 'mark_complete') {
@@ -4804,7 +4845,7 @@ export default function MapScreen({ route, navigation }: Props) {
                         >
                           <Ionicons
                             name={
-                              navCmd.kind === 'leader_stop' || navCmd.kind === 'member_close_plan'
+                              navCmd.kind === 'leader_stop'
                                 ? 'stop'
                                 : navCmd.kind === 'leader_mark_complete'
                                   ? 'checkmark-done'
@@ -4812,13 +4853,15 @@ export default function MapScreen({ route, navigation }: Props) {
                                     ? 'hourglass-outline'
                                     : navCmd.kind === 'member_navigating'
                                       ? 'navigate'
+                                      : navCmd.kind === 'member_request_start'
+                                        ? 'paper-plane-outline'
                                       : isLeader
                                         ? 'play'
                                         : 'navigate'
                             }
                             size={chromeCompact ? 16 : 15}
                             color={
-                              navCmd.kind === 'leader_stop' || navCmd.kind === 'member_close_plan'
+                              navCmd.kind === 'leader_stop'
                                 ? glass.danger
                                 : navCmd.kind === 'member_navigating' || navCmd.kind === 'member_waiting_complete'
                                   ? glass.textSecondary
@@ -4827,13 +4870,15 @@ export default function MapScreen({ route, navigation }: Props) {
                                     : '#0c1a12'
                             }
                           />
-                          {navCmd.kind === 'member_waiting_complete' || !navIconOnly ? (
+                          {navCmd.kind === 'member_waiting_complete'
+                            || navCmd.kind === 'member_request_start'
+                            || !navIconOnly ? (
                             <Text
                               style={[
                                 styles.navBtnText,
                                 {
                                   color:
-                                    navCmd.kind === 'leader_stop' || navCmd.kind === 'member_close_plan'
+                                    navCmd.kind === 'leader_stop'
                                       ? glass.danger
                                       : navCmd.kind === 'member_navigating' || navCmd.kind === 'member_waiting_complete'
                                         ? glass.textSecondary
@@ -4843,7 +4888,12 @@ export default function MapScreen({ route, navigation }: Props) {
                                   flexShrink: 1,
                                 },
                               ]}
-                              numberOfLines={navCmd.kind === 'member_waiting_complete' ? 2 : 1}
+                              numberOfLines={
+                                navCmd.kind === 'member_waiting_complete'
+                                  || navCmd.kind === 'member_request_start'
+                                  ? 2
+                                  : 1
+                              }
                               ellipsizeMode="tail"
                               adjustsFontSizeToFit
                               minimumFontScale={0.75}
@@ -4875,7 +4925,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
                       {/* Personal check-in (arrive ≠ complete). Always visible
                           for open stops when sequential rules allow marking. */}
-                      {user?.id && canMarkArrival ? personallyArrived ? (
+                      {showArrivalControl ? personallyArrived ? (
                         <Pressable
                           style={[
                             styles.cmdSquare,
@@ -4885,7 +4935,7 @@ export default function MapScreen({ route, navigation }: Props) {
                           onPress={() => {
                             registerCardActivity(dest.id);
                             lightTap();
-                            handleArrival(dest, user.id, false);
+                            if (user?.id) handleArrival(dest, user.id, false);
                           }}
                           accessibilityRole="button"
                           accessibilityLabel={t('arrival.undo')}
@@ -4905,7 +4955,7 @@ export default function MapScreen({ route, navigation }: Props) {
                           onPress={() => {
                             registerCardActivity(dest.id);
                             lightTap();
-                            handleSelfArrival(dest, user.id);
+                            if (user?.id) handleSelfArrival(dest, user.id);
                           }}
                           accessibilityRole="button"
                           accessibilityLabel={t('arrival.mark')}
@@ -4926,6 +4976,7 @@ export default function MapScreen({ route, navigation }: Props) {
                         accent={accent}
                         chromeTight={chromeTight}
                         chromeCompact={chromeCompact}
+                        expanded={!showArrivalControl}
                         styles={styles}
                         canEdit={canEditItinerary}
                         a11yLabel={
@@ -5819,6 +5870,7 @@ const MeetTimeChip = React.memo(function MeetTimeChip({
   accent,
   chromeTight,
   chromeCompact,
+  expanded,
   styles,
   canEdit,
   a11yLabel,
@@ -5833,6 +5885,7 @@ const MeetTimeChip = React.memo(function MeetTimeChip({
   accent: string;
   chromeTight: boolean;
   chromeCompact: boolean;
+  expanded: boolean;
   styles: any;
   canEdit: boolean;
   a11yLabel: string;
@@ -5858,7 +5911,7 @@ const MeetTimeChip = React.memo(function MeetTimeChip({
 
   return (
     <Pressable
-      style={styles.meetBtn}
+      style={[styles.meetBtn, expanded ? styles.meetBtnExpanded : null]}
       onPress={(event) => {
         event.stopPropagation();
         onPress();
@@ -6710,6 +6763,9 @@ const makeStyles = (
       paddingHorizontal: compact ? s(8, 6) : s(10, 8),
       paddingVertical: s(6, 4),
       overflow: 'visible',
+    },
+    meetBtnExpanded: {
+      flexGrow: 2.1,
     },
     meetBtnStack: {
       flexShrink: 1,

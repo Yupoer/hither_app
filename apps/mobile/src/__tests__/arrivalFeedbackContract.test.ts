@@ -26,6 +26,8 @@ describe('foreground arrival feedback', () => {
     expect(source).toContain('arrivalCenterCheckLayer');
     expect(source).toContain('1_600');
     expect(source).toContain('COMPLETE_PROMPT_DELAY_MS');
+    expect(source).toContain("kind: 'destinationArrival'");
+    expect(source).toContain('arrivalNotificationDestIdsRef.current');
     expect(source).not.toContain('arrivalCheckBadge');
   });
 
@@ -69,5 +71,25 @@ describe('foreground arrival feedback', () => {
     );
     expect(shellOnly).not.toContain('paddingHorizontal');
     expect(shellOnly).not.toContain('paddingTop');
+  });
+
+  it('rolls back only failed arrival writes, not failed post-write refreshes', () => {
+    const submit = source.slice(
+      source.indexOf('const submitArrivalWithTimestamp'),
+      source.indexOf('/** Self Arrive', source.indexOf('const submitArrivalWithTimestamp')),
+    );
+    expect(submit).toContain('await setDestinationArrivalAt');
+    expect(submit).toContain('await loadGatheringWorkflow().catch(() => undefined)');
+    expect(submit.indexOf('await setDestinationArrivalAt')).toBeLessThan(
+      submit.indexOf('await loadGatheringWorkflow().catch(() => undefined)'),
+    );
+
+    const undo = source.slice(
+      source.indexOf('const handleArrival = useCallback'),
+      source.indexOf('const submitArrivalWithTimestamp'),
+    );
+    expect(undo.indexOf('await setDestinationArrival(')).toBeLessThan(
+      undo.indexOf('arrivalNotificationDestIdsRef.current.delete'),
+    );
   });
 });
