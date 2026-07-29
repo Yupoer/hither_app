@@ -69,6 +69,7 @@ import CoordinateDestinationSheet from '../components/CoordinateDestinationSheet
 import type { CoordinateDestinationInput } from '../utils/coordinateDestination';
 import FeedbackSheet from '../components/FeedbackSheet';
 import CrookIcon from '../components/CrookIcon';
+import { AmicroButton } from '../components/AmicroButton';
 import { HitherText } from '../components/HitherText';
 import OverflowMarquee from '../components/OverflowMarquee';
 import {
@@ -1129,7 +1130,9 @@ export default function MapScreen({ route, navigation }: Props) {
       });
   }, [preferencesReady, setSharingEnabled, sharingEnabled, user?.id]);
 
+  const [sharingApplying, setSharingApplying] = useState(false);
   const handleSharingEnabledChange = useCallback(async (enabled: boolean) => {
+    const previous = sharingEnabled;
     setSharingEnabled(enabled);
     if (!enabled) {
       await stopBackgroundJourney().catch(() => undefined);
@@ -1148,11 +1151,20 @@ export default function MapScreen({ route, navigation }: Props) {
         errorCode: 'privacy_sync_failed',
         success: false,
       }).catch(() => undefined);
-      // Enabling must fail closed if the server-side ingestion gate could not sync.
-      if (enabled) setSharingEnabled(false);
+      // Keep the local preference aligned with the server when the sync fails.
+      setSharingEnabled(previous);
       Alert.alert(t('settings.locationSharingSyncFailed'));
     }
-  }, [setSharingEnabled, navigationSessionState, t]);
+  }, [setSharingEnabled, navigationSessionState, sharingEnabled, t]);
+  const handleSharingEnabledChangeAnimated = useCallback(async () => {
+    if (sharingApplying) return;
+    setSharingApplying(true);
+    try {
+      await handleSharingEnabledChange(!sharingEnabled);
+    } finally {
+      setSharingApplying(false);
+    }
+  }, [handleSharingEnabledChange, sharingApplying, sharingEnabled]);
 
   useEffect(() => {
     if (isLeader || !navigationSessionState.session) {
@@ -2676,7 +2688,6 @@ export default function MapScreen({ route, navigation }: Props) {
       promptAnonymousLeaderRegistration();
       return;
     }
-    lightTap();
     logEvent('code_copy');
     await Clipboard.setStringAsync(group.inviteCode);
     setCodeCopied(true);
@@ -2688,7 +2699,6 @@ export default function MapScreen({ route, navigation }: Props) {
       promptAnonymousLeaderRegistration();
       return;
     }
-    lightTap();
     logEvent('code_share');
     await Share.share({ message: t('map.shareMsg', { code: group.inviteCode }) });
   }, [group, t, inviteBlockedForAnonymousLeader, promptAnonymousLeaderRegistration]);
@@ -3359,7 +3369,6 @@ export default function MapScreen({ route, navigation }: Props) {
     void runUiAction(
       'map.open_settings',
       () => {
-        lightTap();
         setOverlay('settings');
       },
       { screen: 'Map' },
@@ -3485,16 +3494,17 @@ export default function MapScreen({ route, navigation }: Props) {
             <Ionicons name="search" size={20} color="#fff" />
           </Pressable>
         ) : (
-          <View style={styles.headerIconBtn} />
+          <View style={styles.headerIconSlot} />
         )}
-        <Pressable
-          style={styles.headerIconBtn}
-          onPress={openSettingsFromSheet}
-          accessibilityRole="button"
+        <AmicroButton
+          icon="settings-outline"
+          mode="rotate"
+          color="#fff"
+          size={46}
           accessibilityLabel={t('map.overlaySettings')}
-        >
-          <Ionicons name="ellipsis-horizontal" size={20} color="#fff" />
-        </Pressable>
+          onPress={lightTap}
+          onAnimationComplete={openSettingsFromSheet}
+        />
         <Pressable
           style={[styles.headerAvatar, { backgroundColor: user?.avatarColor ?? accent }]}
           onPress={openProfile}
@@ -3715,13 +3725,20 @@ export default function MapScreen({ route, navigation }: Props) {
       ) : null}
       {/* 導航入口 = 普通 List Row，無圖示色塊 */}
       <View style={styles.listGroup}>
-        <Pressable style={styles.listRow} onPress={() => { lightTap(); setOverlay('route'); }} accessibilityRole="button">
+        <View style={styles.listRow}>
           <Text style={styles.listRowTitle}>
             {t('map.stopsReorder', { count: destinations.length })}
           </Text>
-          <Text style={styles.listRowTrailing}>{t('map.edit')}</Text>
-          <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
-        </Pressable>
+          <AmicroButton
+            icon="pencil-outline"
+            activeIcon="checkmark"
+            color={glass.textSecondary}
+            accessibilityLabel={t('map.edit')}
+            testID="map-edit-itinerary"
+            onPress={lightTap}
+            onAnimationComplete={() => setOverlay('route')}
+          />
+        </View>
         {isLeader && destinations.length > 0 ? (
           <Pressable
             style={styles.listRow}
@@ -3797,14 +3814,18 @@ export default function MapScreen({ route, navigation }: Props) {
           <Text style={styles.accuracyLabel}>{t('settings.locationSharing')}</Text>
           <Text style={styles.accuracySubhint}>{t('settings.locationSharingHint')}</Text>
         </View>
-        <NativeSwitch
-          style={styles.accuracySwitch}
-          accent={accent}
-          value={sharingEnabled}
-          onValueChange={(enabled) => {
-            void handleSharingEnabledChange(enabled);
-          }}
+        <AmicroButton
+          icon="eye-off-outline"
+          activeIcon="eye-outline"
+          active={sharingEnabled}
+          activeOnPress={!sharingEnabled}
+          resetAfterComplete={false}
+          disabled={sharingApplying}
+          color={accent}
+          activeColor={accent}
           accessibilityLabel={t('settings.locationSharing')}
+          onPress={mediumTap}
+          onAnimationComplete={() => { void handleSharingEnabledChangeAnimated(); }}
         />
       </View>
 
@@ -3845,7 +3866,7 @@ export default function MapScreen({ route, navigation }: Props) {
   ), [
     styles, t, groupId, isLeader, dark, openCustomQuickCommand, accent,
     arrivalRadiusM, setArrivalRadiusM, setPassiveCompanionMode,
-    sharingEnabled, handleSharingEnabledChange,
+    sharingEnabled, handleSharingEnabledChangeAnimated, sharingApplying,
   ]);
 
   const sheetPaneOptions = useMemo(
@@ -4425,6 +4446,26 @@ export default function MapScreen({ route, navigation }: Props) {
                 : undefined;
               const leaderActionDisabled = false;
               const commandDisabled = !isLeader && (journeyBusy || navCmd.disabled);
+              const isStartCommand = navCmd.action === 'start_nav' || navCmd.action === 'start_plan';
+              const navColor =
+                navCmd.kind === 'leader_stop' || navCmd.kind === 'member_close_plan'
+                  ? glass.danger
+                  : navCmd.kind === 'member_navigating' || navCmd.kind === 'member_waiting_complete'
+                    ? glass.textSecondary
+                    : isLeader
+                      ? colors.accentText
+                      : '#0c1a12';
+              const recordNavPress = () => {
+                registerCardActivity(dest.id);
+                mediumTap();
+              };
+              const runNavAction = () => {
+                if (navCmd.action === 'start_nav') {
+                  void startNavigation(dest, index);
+                } else if (navCmd.action === 'start_plan') {
+                  startLocalRoutePlan(dest, index);
+                }
+              };
               return (
                 <View
                   key={`carousel-dest-${dest.id}-${index}`}
@@ -4701,6 +4742,21 @@ export default function MapScreen({ route, navigation }: Props) {
                     {cardExpanded && (
                     <View style={styles.commandRow} pointerEvents="box-none">
                       {navCmd.kind !== 'hidden' ? (
+                        isStartCommand ? (
+                          <AmicroButton
+                            icon="play"
+                            activeIcon="pause"
+                            color={navColor}
+                            activeColor={navColor}
+                            style={[styles.navBtn, navIconOnly ? styles.navBtnIconOnly : null]}
+                            disabled={commandDisabled}
+                            accessibilityLabel={navCmd.label}
+                            accessibilityHint={startAccessibilityHint}
+                            testID={`gather-nav-${dest.id}`}
+                            onPress={recordNavPress}
+                            onAnimationComplete={runNavAction}
+                          />
+                        ) : (
                         <Pressable
                           style={[
                             styles.navBtn,
@@ -4796,6 +4852,7 @@ export default function MapScreen({ route, navigation }: Props) {
                             </Text>
                           ) : null}
                         </Pressable>
+                        )
                       ) : null}
 
                       <Pressable
@@ -5073,26 +5130,27 @@ export default function MapScreen({ route, navigation }: Props) {
               <Text style={styles.settingsText}>{t('anon.registrationRequiredCta')}</Text>
             </Pressable>
           ) : (
-            <>
-              <Pressable
-                style={[styles.settingsButton, { marginBottom: 10 }]}
-                onPress={() => void shareCode()}
-                accessibilityRole="button"
-              >
-                <Ionicons name="share-outline" size={20} color="#fff" />
-                <Text style={styles.settingsText}>{t('map.shareInviteLink')}</Text>
-              </Pressable>
-              <Pressable
-                style={styles.settingsButton}
-                onPress={() => void copyCode()}
-                accessibilityRole="button"
-              >
-                <Ionicons name="copy-outline" size={20} color="#fff" />
-                <Text style={styles.settingsText}>
-                  {codeCopied ? t('group.copied') : t('map.copyGroupCode')}
-                </Text>
-              </Pressable>
-            </>
+            <View style={styles.inviteActions}>
+              <AmicroButton
+                icon="link-outline"
+                activeIcon="send-outline"
+                color="#fff"
+                accessibilityLabel={t('map.shareInviteLink')}
+                onPress={lightTap}
+                onAnimationComplete={() => { void shareCode(); }}
+              />
+              <AmicroButton
+                icon="copy-outline"
+                activeIcon="checkmark"
+                active={codeCopied}
+                activeOnPress
+                resetAfterComplete={false}
+                color="#fff"
+                accessibilityLabel={codeCopied ? t('group.copied') : t('map.copyGroupCode')}
+                onPress={lightTap}
+                onAnimationComplete={() => { void copyCode(); }}
+              />
+            </View>
           )}
         </ScrollView>
       </OverlaySheet>
@@ -5914,27 +5972,27 @@ const RefreshLocationsButton = React.memo(function RefreshLocationsButton({
   const remaining = Math.max(0, Math.ceil((cooldownUntil - now) / 1000));
   const cooling = remaining > 0;
 
+  if (refreshing) {
+    return (
+      <View style={styles.refreshLocationsButton} accessibilityLabel={t('map.refreshLocationsA11y')}>
+        <ActivityIndicator size="small" color={accent} />
+      </View>
+    );
+  }
   return (
-    <Pressable
-      style={({ pressed }) => [
-        styles.refreshLocationsButton,
-        pressed && !refreshing && styles.rowActionPressed,
-      ]}
-      onPress={() => void onPress()}
+    <AmicroButton
+      icon="refresh"
+      mode="rotate"
+      color={accent}
+      style={styles.refreshLocationsButton}
+      onPress={lightTap}
+      onAnimationComplete={onPress}
       disabled={refreshing || cooling}
-      accessibilityRole="button"
       accessibilityLabel={t('map.refreshLocationsA11y')}
       accessibilityHint={
         cooling ? t('map.refreshLocationsCooldown', { seconds: remaining }) : undefined
       }
-      accessibilityState={{ disabled: refreshing || cooling }}
-    >
-      {refreshing ? (
-        <ActivityIndicator size="small" color={accent} />
-      ) : (
-        <Ionicons name="refresh" size={19} color={accent} />
-      )}
-    </Pressable>
+    />
   );
 });
 
@@ -6975,6 +7033,11 @@ const makeStyles = (
       flexShrink: 0,
       marginTop: 0,
     },
+    headerIconSlot: {
+      width: 46,
+      height: 46,
+      flexShrink: 0,
+    },
     headerAvatar: {
       width: 46,
       height: 46,
@@ -7561,6 +7624,14 @@ const makeStyles = (
       borderBottomColor: 'rgba(255,255,255,0.08)',
     },
     settingsText: { flex: 1, fontSize: 16, fontWeight: '500', color: '#fff' },
+    inviteActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 24,
+      minHeight: 64,
+      marginTop: 4,
+    },
 
     // Overlays
     overlayBody: { paddingHorizontal: 16, paddingBottom: 40 },

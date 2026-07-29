@@ -21,6 +21,7 @@ import type {
 import type { Destination } from '../../../types';
 import { HitherText } from '../../../components/HitherText';
 import QuickCommandsCard from '../../../components/QuickCommandsCard';
+import { AmicroButton } from '../../../components/AmicroButton';
 import { useFontLayout } from '../../../a11y/useFontScaleBucket';
 import { spacing, radius, themes, type Palette } from '../../../theme';
 import { TYPE_BASE } from '../../../theme/typeScale';
@@ -46,11 +47,6 @@ function makePassiveStyles(scale: number) {
       fontWeight: '600',
       flexShrink: 1,
     },
-    switchBack: {
-      minHeight: s(54, 48), paddingHorizontal: spacing.lg, borderRadius: radius.pill,
-      borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
-    },
-    switchBackLabel: { color: '#111', fontSize: TYPE_BASE.callout, fontWeight: '600' },
     card: {
       backgroundColor: glass.card, borderRadius: radius.lg, borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairlineSoft, padding: spacing.lg, minHeight: 220,
@@ -186,7 +182,6 @@ export const PassiveCompanionPanel = React.memo(function PassiveCompanionPanel({
   const commandColors: Palette = themes.night;
 
   const handleSwitchBack = useCallback(() => {
-    mediumTap();
     onSwitchBack();
   }, [onSwitchBack]);
 
@@ -219,20 +214,18 @@ export const PassiveCompanionPanel = React.memo(function PassiveCompanionPanel({
         <HitherText typeRole="title" style={styles.kicker} accessibilityRole="header">
           {t('passive.title')}
         </HitherText>
-        <Pressable
-          onPress={handleSwitchBack}
-          style={[styles.switchBack, { borderColor: accent, backgroundColor: accent }]}
-          accessibilityRole="button"
+        <AmicroButton
+          icon="expand-outline"
+          activeIcon="contract-outline"
+          color={accent}
+          size={54}
+          onPress={mediumTap}
+          onAnimationComplete={handleSwitchBack}
           accessibilityLabel={t('passive.switchBack')}
           testID="passive-switch-back"
           // Always interactive — including loading / empty / error.
           disabled={false}
-        >
-          <Ionicons name="expand-outline" size={16} color="#111" />
-          <HitherText typeRole="callout" style={styles.switchBackLabel}>
-            {t('passive.switchBack')}
-          </HitherText>
-        </Pressable>
+        />
       </View>
 
       <ScrollView

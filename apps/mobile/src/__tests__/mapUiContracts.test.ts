@@ -160,7 +160,7 @@ describe('map UI placement contracts', () => {
     expect(toolsBlock).toContain('testID="tools-enter-passive"');
     expect(toolsBlock).toContain('handleSharingEnabledChange');
     expect(toolsBlock).toContain('PrefSlider');
-    expect(toolsBlock).toContain('NativeSwitch');
+    expect(toolsBlock).toContain('AmicroButton');
     // Preference clutter moved out of Tools.
     expect(toolsBlock).not.toContain("t('settings.obliqueLocate')");
     expect(toolsBlock).not.toContain("t('settings.liveActivity')");

@@ -16,6 +16,7 @@ import OnboardingScreen from './src/onboarding/OnboardingScreen';
 import { readOnboardingState } from './src/onboarding/sync';
 import AppErrorBoundary from './src/components/AppErrorBoundary';
 import CrookIcon from './src/components/CrookIcon';
+import { BouncingDots } from './src/components/AmicroButton';
 import { installGlobalErrorLogger } from './src/utils/activityLog';
 import { SessionProvider, useSession } from './src/state/SessionContext';
 import { usePushRegistration } from './src/state/usePushRegistration';
@@ -238,6 +239,18 @@ function ThemedNavigation() {
         }}
       >
         <CrookIcon size={96} color={colors.accent} glow />
+        <View
+          testID="splash-bouncing-dots"
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: '33%',
+            alignItems: 'center',
+          }}
+        >
+          <BouncingDots color={colors.accent} />
+        </View>
       </View>
     );
   }
