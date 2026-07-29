@@ -375,6 +375,9 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).not.toContain("arrival.timeNow");
     expect(mapScreen).not.toContain("arrival.timeAutomatic");
     expect(mapScreen).not.toContain('handleArrival(dest, user.id, true)');
+    expect(mapScreen).not.toContain('await syncFromDatabase();\n        await setDestinationArrivalAt');
+    expect(mapScreen).toContain('sharedTargetId === dest.id');
+    expect(mapScreen).toContain('expanded={!showArrivalControl}');
   });
 
   it('pins a far fixed gap before viewing my teams and does not vertical-center', () => {
@@ -430,8 +433,9 @@ describe('map UI placement contracts', () => {
     expect(completeFn).not.toContain('stopNavigation()');
     expect(completeFn).not.toContain('requestTeamEnd');
     expect(mapScreen).toContain('sharedTargetId');
-    expect(mapScreen).toContain('localTargetId');
-    expect(mapScreen).toContain('startLocalRoutePlan');
+    expect(mapScreen).toContain("navCmd.action === 'request_start'");
+    expect(mapScreen).toContain('requestLeaderStart(dest)');
+    expect(mapScreen).not.toContain('startLocalRoutePlan');
     expect(mapScreen).not.toContain('pendingCompleteDestIds');
     expect(mapScreen).toContain('resolveCompletePrompt');
     // Must not gate flock nav on journeyActive (true for local plans).

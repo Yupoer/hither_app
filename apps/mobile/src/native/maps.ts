@@ -62,6 +62,58 @@ export interface DirectionsResult {
   source?: RouteSource;
 }
 
+export const ROUTE_SIMPLIFY_TOLERANCE_M = 10;
+
+function pointToSegmentMeters(
+  point: Coordinates,
+  start: Coordinates,
+  end: Coordinates,
+): number {
+  const meanLatitude = ((start.latitude + end.latitude) / 2) * Math.PI / 180;
+  const xScale = 111_320 * Math.cos(meanLatitude);
+  const yScale = 110_540;
+  const endX = (end.longitude - start.longitude) * xScale;
+  const endY = (end.latitude - start.latitude) * yScale;
+  const pointX = (point.longitude - start.longitude) * xScale;
+  const pointY = (point.latitude - start.latitude) * yScale;
+  const lengthSquared = endX * endX + endY * endY;
+  if (lengthSquared === 0) return Math.hypot(pointX, pointY);
+  const ratio = Math.max(
+    0,
+    Math.min(1, (pointX * endX + pointY * endY) / lengthSquared),
+  );
+  return Math.hypot(pointX - ratio * endX, pointY - ratio * endY);
+}
+
+/** Remove provider geometry noise while preserving endpoints and real turns. */
+export function simplifyRoutePoints(
+  points: Coordinates[],
+  toleranceMeters = ROUTE_SIMPLIFY_TOLERANCE_M,
+): Coordinates[] {
+  if (points.length <= 2 || toleranceMeters <= 0) return points.slice();
+
+  let furthestIndex = -1;
+  let furthestDistance = 0;
+  const start = points[0];
+  const end = points[points.length - 1];
+  for (let index = 1; index < points.length - 1; index += 1) {
+    const distance = pointToSegmentMeters(points[index], start, end);
+    if (distance > furthestDistance) {
+      furthestDistance = distance;
+      furthestIndex = index;
+    }
+  }
+  if (furthestIndex < 0 || furthestDistance <= toleranceMeters) {
+    return [start, end];
+  }
+  const before = simplifyRoutePoints(
+    points.slice(0, furthestIndex + 1),
+    toleranceMeters,
+  );
+  const after = simplifyRoutePoints(points.slice(furthestIndex), toleranceMeters);
+  return [...before.slice(0, -1), ...after];
+}
+
 const PHOTON = 'https://photon.komoot.io/api';
 const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
 const USER_AGENT = 'HitherApp/0.1 (gathering-point search)';
@@ -332,11 +384,17 @@ export async function getDirections(
   to: Coordinates,
   travelMode: TravelMode,
 ): Promise<DirectionsResult | null> {
-  if (HitherMaps) {
+  // Public MapKit transit supports ETA, not route geometry. Use the existing
+  // authenticated Routes proxy for the in-app transit polyline on iOS.
+  if (HitherMaps && !(Platform.OS === 'ios' && travelMode === 'transit')) {
     try {
       const route = await HitherMaps.getDirections(from, to, travelMode);
       if (route && route.points.length > 0) {
-        return { ...route, source: route.source ?? 'native' };
+        return {
+          ...route,
+          points: simplifyRoutePoints(route.points),
+          source: route.source ?? 'native',
+        };
       }
     } catch {
       // fall through to proxy
@@ -344,7 +402,10 @@ export async function getDirections(
   }
 
   try {
-    return await proxyGetDirections(from, to, travelMode);
+    const route = await proxyGetDirections(from, to, travelMode);
+    return route
+      ? { ...route, points: simplifyRoutePoints(route.points) }
+      : null;
   } catch {
     return null;
   }

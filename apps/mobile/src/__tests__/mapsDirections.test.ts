@@ -26,7 +26,7 @@ jest.mock('react-native', () => ({
   Platform: { OS: 'ios' },
 }));
 
-import { getDirections } from '../native/maps';
+import { getDirections, simplifyRoutePoints } from '../native/maps';
 
 const from = { latitude: 25.033, longitude: 121.5654 };
 const to = { latitude: 25.0478, longitude: 121.517 };
@@ -67,6 +67,20 @@ describe('getDirections', () => {
     expect(mockProxyGetDirections).toHaveBeenCalledWith(from, to, 'walk');
   });
 
+  it('uses Google transit geometry directly on iOS', async () => {
+    const proxyRoute = {
+      distanceMeters: 2000,
+      expectedTravelTimeSeconds: 600,
+      points: [from, to],
+      source: 'google' as const,
+    };
+    mockProxyGetDirections.mockResolvedValue(proxyRoute);
+
+    await expect(getDirections(from, to, 'transit')).resolves.toEqual(proxyRoute);
+    expect(mockGetDirections).not.toHaveBeenCalled();
+    expect(mockProxyGetDirections).toHaveBeenCalledWith(from, to, 'transit');
+  });
+
   it('returns null when both native and proxy fail', async () => {
     mockGetDirections.mockRejectedValue(new Error('No route'));
     mockProxyGetDirections.mockRejectedValue(new Error('quota'));
@@ -83,5 +97,31 @@ describe('getDirections', () => {
     mockProxyGetDirections.mockResolvedValue(null);
     await expect(getDirections(from, to, 'drive')).resolves.toBeNull();
     expect(mockProxyGetDirections).toHaveBeenCalled();
+  });
+});
+
+describe('simplifyRoutePoints', () => {
+  it('removes a short square bump while preserving route endpoints', () => {
+    const points = [
+      from,
+      { latitude: from.latitude, longitude: from.longitude + 0.0002 },
+      { latitude: from.latitude + 0.000045, longitude: from.longitude + 0.0002 },
+      { latitude: from.latitude + 0.000045, longitude: from.longitude + 0.0004 },
+      { latitude: from.latitude, longitude: from.longitude + 0.0006 },
+    ];
+    expect(simplifyRoutePoints(points)).toEqual([points[0], points[4]]);
+  });
+
+  it('keeps a meaningful turn above the tolerance', () => {
+    const turn = {
+      latitude: from.latitude + 0.0002,
+      longitude: from.longitude + 0.0003,
+    };
+    const points = [
+      from,
+      turn,
+      { latitude: from.latitude, longitude: from.longitude + 0.0006 },
+    ];
+    expect(simplifyRoutePoints(points)).toEqual(points);
   });
 });

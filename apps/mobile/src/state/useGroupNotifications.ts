@@ -119,6 +119,7 @@ export function useGroupNotifications(): void {
             message: string | null;
           };
           if (row.sender_id === myUserId) return; // never notify the sender
+          if (row.type === 'request_start' && !isLeaderRef.current) return;
           void (async () => {
             // custom is role-scoped on the server (sender membership). Mirror
             // that so titles say 隊長/成員, not a user id + raw command key.

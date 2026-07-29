@@ -24,7 +24,12 @@ import {
   sendFcmData,
   type FcmResult,
 } from "./fcm.ts";
-import { buildMessage, prefColumn, type PushPayload } from "./messages.ts";
+import {
+  buildMessage,
+  prefColumn,
+  type PushPayload,
+} from "./messages.ts";
+import { requestStartRecipientIds } from "./recipients.ts";
 
 interface MembershipRow {
   user_id: string;
@@ -274,6 +279,7 @@ Deno.serve(async (req) => {
       payload.category === "straggler";
     const wholeGroupCommand =
       payload.category === "leader_commands" || payload.category === "follower_requests";
+    const requestStartCandidates = requestStartRecipientIds(payload, members);
 
     // Alerts are scoped to the sender's main team/subgroup. Solo members never
     // receive general notifications (except pure meet-time, which includes all).
@@ -284,6 +290,8 @@ Deno.serve(async (req) => {
       ? []
       : typeof payload.target_user_id === "string" && payload.target_user_id.length > 0
       ? [payload.target_user_id]
+      : requestStartCandidates
+      ? requestStartCandidates
       : members
         .filter((member) =>
           payload.category === "gathering_request"

@@ -36,6 +36,7 @@ const COMMAND_ICON: Record<CommandType, keyof typeof Ionicons.glyphMap> = {
   need_break: 'pause',
   need_help: 'help-buoy',
   found_something: 'search',
+  request_start: 'paper-plane-outline',
   custom: 'create-outline',
 };
 

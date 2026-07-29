@@ -9,3 +9,9 @@
 ## Native / Build / Submit / APK
 
 目前沒有本 task 的 native、config 或 dependency 變更。
+
+## Supabase / Device gates
+
+| Task | Branch | Required before release |
+|---|---|---|
+| `docs/Tasks/Open/2026-07-29-Gathering-Route-Arrival-Integration` | `agent/hither/260729-arrmap` | 套用 `20260729113543_request_start_command.sql`、部署 `send-push`、執行 Deno tests；iOS 驗證 MapKit/transit/Apple Maps/抵達通知，Android 驗證路線與抵達通知。 |

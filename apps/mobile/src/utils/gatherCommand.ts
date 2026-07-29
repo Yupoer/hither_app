@@ -12,8 +12,7 @@ export type NavCommandKind =
   | 'leader_start'
   | 'leader_stop'
   | 'leader_mark_complete'
-  | 'member_plan'
-  | 'member_close_plan'
+  | 'member_request_start'
   | 'member_navigating'
   | 'member_waiting_complete'
   | 'hidden';
@@ -24,8 +23,6 @@ export interface NavCommandInput {
   personallyArrived: boolean;
   /** Shared flock navigation targets this stop (leader session active). */
   flockNavigatingThis: boolean;
-  /** Local member route plan is drawn for this stop. */
-  localRouteThis: boolean;
   /**
    * OTA-01: this card is the next pending point while global phase is staying.
    * When false, leader Start is not pressable. Omit to keep legacy always-start.
@@ -46,48 +43,37 @@ export interface NavCommandResult {
   label: string;
   disabled: boolean;
   /**
-   * Whether pressing starts shared nav, ends (pauses) flock travel,
-   * runs a member-only path plan, or completes after personal arrival.
+   * Whether pressing starts shared nav, requests a leader start,
+   * ends (pauses) flock travel, or completes after personal arrival.
    * Leader End = pause navigation only (point stays on itinerary).
    * Completing a stop is a separate prompt/RPC (complete_gathering_stop).
-   * Member path-plan still uses close_plan.
    */
-  action: 'start_nav' | 'start_plan' | 'close_plan' | 'mark_complete' | 'end_point' | 'none';
+  action: 'start_nav' | 'request_start' | 'mark_complete' | 'end_point' | 'none';
 }
 
 /**
- * Derive per-card flock vs local-route flags from shared session + local plan.
- * MapScreen must use this so local 路徑規劃 is not misclassified as 導航中
- * (journeyActive is true for local plans too).
+ * Derive whether this card is the active shared-navigation destination.
  */
 export function deriveCardNavFlags(input: {
   destId: string;
   isLeader: boolean;
   /** Active shared navigation destination (session / legacy journey). */
   sharedTargetId: string | null | undefined;
-  /** Member-only local path-plan destination. */
-  localTargetId: string | null | undefined;
   /** Leader optimistic target while startSession is in flight. */
   pendingLeaderTargetId?: string | null;
   journeyBusy?: boolean;
-}): { flockNavigatingThis: boolean; localRouteThis: boolean } {
+}): { flockNavigatingThis: boolean } {
   const {
     destId,
     isLeader,
     sharedTargetId = null,
-    localTargetId = null,
     pendingLeaderTargetId = null,
     journeyBusy = false,
   } = input;
   const flockNavigatingThis =
     sharedTargetId === destId
     || (isLeader && journeyBusy && pendingLeaderTargetId === destId);
-  // Local plan only when this stop is the member's plan AND not the shared target.
-  const localRouteThis =
-    !isLeader
-    && localTargetId === destId
-    && sharedTargetId !== destId;
-  return { flockNavigatingThis, localRouteThis };
+  return { flockNavigatingThis };
 }
 
 /**
@@ -98,7 +84,6 @@ export function resolveNavCommand(input: NavCommandInput): NavCommandResult {
     isLeader,
     personallyArrived,
     flockNavigatingThis,
-    localRouteThis,
     isNextTeamPending,
     teamStartBlocked,
     teamEnRouteElsewhere,
@@ -132,15 +117,6 @@ export function resolveNavCommand(input: NavCommandInput): NavCommandResult {
     };
   }
 
-  // Member: arrived → wait for leader to complete the stop (personal check-in only).
-  if (personallyArrived) {
-    return {
-      kind: 'member_waiting_complete',
-      label: '等待隊長完成',
-      disabled: true,
-      action: 'none',
-    };
-  }
   if (flockNavigatingThis) {
     return {
       kind: 'member_navigating',
@@ -150,20 +126,20 @@ export function resolveNavCommand(input: NavCommandInput): NavCommandResult {
       action: 'none',
     };
   }
-  if (localRouteThis) {
+  // Member: arrived after shared navigation ended → wait for leader completion.
+  if (personallyArrived) {
     return {
-      kind: 'member_close_plan',
-      // Match leader stop + iOS chip: short "結束" (not "關閉").
-      label: '結束',
-      disabled: false,
-      action: 'close_plan',
+      kind: 'member_waiting_complete',
+      label: '等待隊長完成',
+      disabled: true,
+      action: 'none',
     };
   }
   return {
-    kind: 'member_plan',
-    label: '路徑',
+    kind: 'member_request_start',
+    label: '向隊長發送要求開始',
     disabled: false,
-    action: 'start_plan',
+    action: 'request_start',
   };
 }
 

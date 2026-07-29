@@ -41,6 +41,7 @@ describe('buildNavigationUrl', () => {
     expect(url).toContain('daddr=25.0339');
     expect(url).toContain('dirflg=w');
     expect(url).toMatch(/q=/);
+    expect(buildNavigationUrl('apple', taipei101, 'transit')).toContain('dirflg=r');
   });
 
   it('encodes special characters via URLSearchParams (no raw title concatenation)', () => {

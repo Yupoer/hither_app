@@ -25,7 +25,7 @@ describe('Amicro native animation contracts', () => {
     ]) {
       expect(map + passive).toMatch(new RegExp(`(?:icon|activeIcon)="${icon}"`));
     }
-    expect(map).toContain("navCmd.action === 'start_nav' || navCmd.action === 'start_plan'");
+    expect(map).toContain("const isStartCommand = navCmd.action === 'start_nav'");
     expect(map).toContain('onAnimationComplete={runNavAction}');
     expect(passive).toContain('onAnimationComplete={handleSwitchBack}');
   });

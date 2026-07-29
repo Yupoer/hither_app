@@ -9,33 +9,34 @@ import {
   shouldAutoCompleteStop,
 } from '../utils/gatherCommand';
 
-describe('deriveCardNavFlags (shared vs local — MapScreen wiring inputs)', () => {
-  it('member local plan is localRouteThis, not flock navigating', () => {
-    // journeyActive would be true for localTargetId, but sharedTargetId is null.
+describe('deriveCardNavFlags (shared MapScreen wiring inputs)', () => {
+  it('does not treat a member card as shared navigation before start', () => {
     const flags = deriveCardNavFlags({
       destId: 'stop-a',
       isLeader: false,
       sharedTargetId: null,
-      localTargetId: 'stop-a',
     });
-    expect(flags).toEqual({ flockNavigatingThis: false, localRouteThis: true });
+    expect(flags).toEqual({ flockNavigatingThis: false });
     expect(
       resolveNavCommand({
         isLeader: false,
         personallyArrived: false,
         ...flags,
       }),
-    ).toMatchObject({ kind: 'member_close_plan', label: '結束' });
+    ).toMatchObject({
+      kind: 'member_request_start',
+      label: '向隊長發送要求開始',
+      action: 'request_start',
+    });
   });
 
-  it('shared session wins over member local plan on the same stop', () => {
+  it('marks the active shared destination as navigating', () => {
     const flags = deriveCardNavFlags({
       destId: 'stop-a',
       isLeader: false,
       sharedTargetId: 'stop-a',
-      localTargetId: 'stop-a',
     });
-    expect(flags).toEqual({ flockNavigatingThis: true, localRouteThis: false });
+    expect(flags).toEqual({ flockNavigatingThis: true });
     expect(
       resolveNavCommand({
         isLeader: false,
@@ -45,21 +46,24 @@ describe('deriveCardNavFlags (shared vs local — MapScreen wiring inputs)', () 
     ).toMatchObject({ kind: 'member_navigating', label: '前往中', disabled: true });
   });
 
-  it('member path-plan when neither shared nor local is set', () => {
+  it('member requests the leader to start before shared navigation begins', () => {
     const flags = deriveCardNavFlags({
       destId: 'stop-a',
       isLeader: false,
       sharedTargetId: null,
-      localTargetId: null,
     });
-    expect(flags).toEqual({ flockNavigatingThis: false, localRouteThis: false });
+    expect(flags).toEqual({ flockNavigatingThis: false });
     expect(
       resolveNavCommand({
         isLeader: false,
         personallyArrived: false,
         ...flags,
-      }).label,
-    ).toBe('路徑');
+      }),
+    ).toMatchObject({
+      kind: 'member_request_start',
+      label: '向隊長發送要求開始',
+      action: 'request_start',
+    });
   });
 
   it('leader flock uses shared or pending busy target only', () => {
@@ -68,7 +72,6 @@ describe('deriveCardNavFlags (shared vs local — MapScreen wiring inputs)', () 
         destId: 'stop-a',
         isLeader: true,
         sharedTargetId: 'stop-a',
-        localTargetId: null,
       }).flockNavigatingThis,
     ).toBe(true);
     expect(
@@ -76,18 +79,15 @@ describe('deriveCardNavFlags (shared vs local — MapScreen wiring inputs)', () 
         destId: 'stop-a',
         isLeader: true,
         sharedTargetId: null,
-        localTargetId: null,
         pendingLeaderTargetId: 'stop-a',
         journeyBusy: true,
       }).flockNavigatingThis,
     ).toBe(true);
-    // Local target alone must not mark flock nav for anyone.
     expect(
       deriveCardNavFlags({
         destId: 'stop-a',
         isLeader: true,
         sharedTargetId: null,
-        localTargetId: 'stop-a',
       }).flockNavigatingThis,
     ).toBe(false);
   });
@@ -100,7 +100,6 @@ describe('resolveNavCommand', () => {
         isLeader: true,
         personallyArrived: false,
         flockNavigatingThis: false,
-        localRouteThis: false,
       }),
     ).toMatchObject({ kind: 'leader_start', label: '開始', action: 'start_nav' });
 
@@ -109,7 +108,6 @@ describe('resolveNavCommand', () => {
         isLeader: true,
         personallyArrived: false,
         flockNavigatingThis: true,
-        localRouteThis: false,
       }),
     ).toMatchObject({ kind: 'leader_stop', label: '結束', action: 'end_point' });
   });
@@ -120,7 +118,6 @@ describe('resolveNavCommand', () => {
         isLeader: true,
         personallyArrived: false,
         flockNavigatingThis: false,
-        localRouteThis: false,
         isNextTeamPending: false,
       }),
     ).toMatchObject({ kind: 'leader_start', label: '開始', disabled: false, action: 'start_nav' });
@@ -133,7 +130,6 @@ describe('resolveNavCommand', () => {
         isLeader: true,
         personallyArrived: true,
         flockNavigatingThis: false,
-        localRouteThis: false,
         teamStartBlocked: true,
       }),
     ).toMatchObject({
@@ -150,7 +146,6 @@ describe('resolveNavCommand', () => {
         isLeader: true,
         personallyArrived: true,
         flockNavigatingThis: true,
-        localRouteThis: false,
       }),
     ).toMatchObject({
       kind: 'leader_stop',
@@ -161,24 +156,20 @@ describe('resolveNavCommand', () => {
   });
 
 
-  it('gives members path plan / close plan, never leader start label', () => {
+  it('gives members a start request before shared navigation', () => {
     const plan = resolveNavCommand({
       isLeader: false,
       personallyArrived: false,
       flockNavigatingThis: false,
-      localRouteThis: false,
     });
-    expect(plan).toMatchObject({ kind: 'member_plan', label: '路徑', disabled: false });
+    expect(plan).toMatchObject({
+      kind: 'member_request_start',
+      label: '向隊長發送要求開始',
+      disabled: false,
+      action: 'request_start',
+    });
     expect(plan.label).not.toBe('開始');
 
-    expect(
-      resolveNavCommand({
-        isLeader: false,
-        personallyArrived: false,
-        flockNavigatingThis: false,
-        localRouteThis: true,
-      }),
-    ).toMatchObject({ kind: 'member_close_plan', label: '結束' });
   });
 
   it('disables member control as travelling display while leader navigates', () => {
@@ -187,7 +178,6 @@ describe('resolveNavCommand', () => {
         isLeader: false,
         personallyArrived: false,
         flockNavigatingThis: true,
-        localRouteThis: true,
       }),
     ).toMatchObject({
       kind: 'member_navigating',
@@ -197,13 +187,27 @@ describe('resolveNavCommand', () => {
     });
   });
 
-  it('shows waiting copy once a member has arrived', () => {
+  it('keeps the member control at 前往中 after personal arrival during the trip', () => {
     expect(
       resolveNavCommand({
         isLeader: false,
         personallyArrived: true,
         flockNavigatingThis: true,
-        localRouteThis: false,
+      }),
+    ).toMatchObject({
+      kind: 'member_navigating',
+      label: '前往中',
+      disabled: true,
+      action: 'none',
+    });
+  });
+
+  it('shows waiting copy after shared navigation has ended', () => {
+    expect(
+      resolveNavCommand({
+        isLeader: false,
+        personallyArrived: true,
+        flockNavigatingThis: false,
       }),
     ).toMatchObject({
       kind: 'member_waiting_complete',
