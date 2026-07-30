@@ -58,6 +58,11 @@ interface UseJourneyNavigationParams {
   ) => Promise<boolean>;
   travelMode?: TravelMode;
   onOptimisticGathering?: (gathering: ActiveGatheringState) => void;
+  /**
+   * Operator local confirm after start/switch session succeeds (ticket 02).
+   * Client-triggered — does not rely on DB update payload for sender.
+   */
+  onOperatorStartConfirm?: (destination: Destination) => void;
 }
 
 export function useJourneyNavigation({
@@ -81,6 +86,7 @@ export function useJourneyNavigation({
   reorderForNavigation,
   travelMode = 'walk',
   onOptimisticGathering,
+  onOperatorStartConfirm,
 }: UseJourneyNavigationParams) {
   const legacyMode = navigationSession === undefined;
   const legacySharedTargetId = legacyMode && state?.group.journeyStatus === 'going'
@@ -330,6 +336,12 @@ export function useJourneyNavigation({
         serverOrStartedSessionRef.current = true;
         pendingStartRef.current = null;
         void flushCoreOperationOutbox().catch(() => undefined);
+        // Operator local confirm once per successful start (not via Realtime sender path).
+        try {
+          onOperatorStartConfirm?.(dest);
+        } catch {
+          // best-effort
+        }
       } catch (sessionError) {
         const outboxAction = resolveGatheringOutboxAfterSessionStart({
           ok: false,
@@ -391,6 +403,7 @@ export function useJourneyNavigation({
     createRequestId,
     runTeamEnd,
     restorePendingStart,
+    onOperatorStartConfirm,
   ]);
 
   const enqueueTeamCommand = useCallback((action: 'start' | 'end', dest: Destination, index: number) => {

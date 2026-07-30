@@ -82,6 +82,11 @@ export interface GroupActivityState {
   memberEmojis?: string[];
   /** Per-member arrival flags aligned with `memberEmojis`. */
   memberArrived?: boolean[];
+  /**
+   * Active gathering-point emoji (Ticket 07). Decoded by native ContentState
+   * and rendered next to the gathering title (fallback when missing).
+   */
+  destinationEmoji?: string;
 }
 
 /** Opaque id for an in-flight activity (native only). */

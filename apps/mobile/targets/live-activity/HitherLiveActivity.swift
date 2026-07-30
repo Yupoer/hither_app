@@ -296,12 +296,16 @@ private extension HitherGroupAttributes.ContentState {
   var accentColor: Color { Color(hexString: accentHex) ?? Brand.accent }
 
   /// Gathering point title when present; team/group name only as fallback.
+  /// Prefixes destination emoji when set (Ticket 07), same fallback as JS resolve.
   func displayTitle(fallbackGroupName: String) -> String {
+    let emoji = destinationEmoji?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let hasEmoji = emoji.map { !$0.isEmpty } ?? false
     if let t = gatheringTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty {
-      return t
+      return hasEmoji ? "\(emoji!) \(t)" : t
     }
     let g = fallbackGroupName.trimmingCharacters(in: .whitespacesAndNewlines)
-    return g.isEmpty ? "集合點" : g
+    let base = g.isEmpty ? "集合點" : g
+    return hasEmoji ? "\(emoji!) \(base)" : base
   }
 
   /// SF Symbol for the active travel mode (transit glyph).

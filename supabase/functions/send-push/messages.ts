@@ -40,6 +40,11 @@ export interface PushPayload {
   member_name?: string;
   /** Optional distance in metres for straggler copy. */
   distance_m?: number | null;
+  /**
+   * Stable row id for dual-path event identity (command / itinerary / alert).
+   * Mirrored into APNs/FCM data as entityId / eventId builder input.
+   */
+  entity_id?: string | null;
 }
 
 const COMMAND_LABEL: Record<string, string> = {

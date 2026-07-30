@@ -61,6 +61,7 @@ export {
   completeGatheringStop,
   reorderDestinations,
   setDestinationMeetTime,
+  updateDestinationEmojiColor,
 } from './services/DestinationService';
 
 export type { ItineraryRow } from './services/DestinationService';
@@ -111,6 +112,14 @@ export {
   applyVerifiedPurchase,
   restoreEntitlements,
 } from './services/EntitlementService';
+
+export {
+  getStoreSnapshot,
+  createRewardSession,
+  updateRewardSessionStatus,
+  redeemStoreProduct,
+  mapStoreSnapshot,
+} from './services/StoreService';
 
 export {
   applyCoreOperation,

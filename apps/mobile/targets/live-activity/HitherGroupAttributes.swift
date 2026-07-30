@@ -32,6 +32,8 @@ public struct HitherGroupAttributes: ActivityAttributes {
     public var memberEmojis: [String]?
     /// Arrival state aligned by index with `memberEmojis`.
     public var memberArrived: [Bool]?
+    /// Active gathering-point emoji (Ticket 07); optional chrome next to title.
+    public var destinationEmoji: String?
 
     public init(
       navigationSessionId: String? = nil,
@@ -45,7 +47,8 @@ public struct HitherGroupAttributes: ActivityAttributes {
       accentHex: String? = nil,
       travelMode: String? = nil,
       memberEmojis: [String]? = nil,
-      memberArrived: [Bool]? = nil
+      memberArrived: [Bool]? = nil,
+      destinationEmoji: String? = nil
     ) {
       self.navigationSessionId = navigationSessionId
       self.status = status
@@ -59,6 +62,7 @@ public struct HitherGroupAttributes: ActivityAttributes {
       self.travelMode = travelMode
       self.memberEmojis = memberEmojis
       self.memberArrived = memberArrived
+      self.destinationEmoji = destinationEmoji
     }
 
     public init(from state: [String: Any]) {
@@ -74,6 +78,7 @@ public struct HitherGroupAttributes: ActivityAttributes {
       self.travelMode = state["travelMode"] as? String
       self.memberEmojis = state["memberEmojis"] as? [String]
       self.memberArrived = state["memberArrived"] as? [Bool]
+      self.destinationEmoji = state["destinationEmoji"] as? String
     }
 
     public var formattedDistance: String? {

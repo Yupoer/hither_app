@@ -67,6 +67,19 @@ describe('ActivityKit remote push contract', () => {
   it('keeps app and widget ContentState shapes synchronized', () => {
     expect(contentStateShape(appAttributes)).toBe(contentStateShape(widgetAttributes));
     expect(contentStateShape(appAttributes)).toContain('memberArrived: [Bool]?');
+    expect(contentStateShape(appAttributes)).toContain('destinationEmoji: String?');
+  });
+
+  it('decodes and renders destinationEmoji on native Live Activity', () => {
+    expect(appAttributes).toContain('destinationEmoji');
+    expect(widgetAttributes).toContain('destinationEmoji');
+    expect(jsBridge).toContain('destinationEmoji?: string');
+    const widgetUi = readFileSync(
+      join(__dirname, '../../targets/live-activity/HitherLiveActivity.swift'),
+      'utf8',
+    );
+    expect(widgetUi).toContain('destinationEmoji');
+    expect(widgetUi).toContain('displayTitle');
   });
 
   it('exposes activity id, push token and per-member arrival to TypeScript', () => {

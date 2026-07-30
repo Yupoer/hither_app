@@ -11,7 +11,9 @@ import {
 } from '../api/services/LiveActivityService';
 import { liveActivity, notifications, type GroupActivityState } from '../native';
 import type { TravelMode } from '../utils/geo';
+import { getSharedLiveActivityTokenGate } from '../utils/liveActivityTokenGate';
 import { diagnostics } from './diagnostics';
+import { useSession } from './SessionContext';
 
 /** Allow-listed register outcome only — never the push token itself. */
 function recordTokenRegisterResult(result: LiveActivityTokenRegisterResult): void {
@@ -58,6 +60,7 @@ export function useLiveActivity(
   session?: LiveActivitySessionContext,
   liveActivitiesEnabled = true,
 ): void {
+  const { user } = useSession();
   const handleRef = useRef<string | null>(null);
   const destinationRef = useRef<string | null>(null);
   const pushTokenRef = useRef<string | undefined>(undefined);
@@ -67,9 +70,11 @@ export function useLiveActivity(
   const pushToStartTokenRef = useRef<string | null>(null);
   const deviceIdRef = useRef<string | null>(null);
   const enabledRef = useRef(liveActivitiesEnabled);
+  const userIdRef = useRef<string | null>(user?.id ?? null);
   stateRef.current = state;
   sessionRef.current = session;
   enabledRef.current = liveActivitiesEnabled;
+  userIdRef.current = user?.id ?? null;
 
   /** Min interval between Supabase live_activity_sessions upserts (local LA still updates more often). */
   const PERSIST_MIN_MS = 30_000;
@@ -140,12 +145,35 @@ export function useLiveActivity(
         await getOrCreateLiveActivityDeviceId();
       if (cancelled) return;
       deviceIdRef.current = deviceId;
-      const result = await upsertDeviceActivityToken(
+      const uid = userIdRef.current;
+      if (!uid) return;
+      const gate = getSharedLiveActivityTokenGate();
+      await gate.ready();
+      if (cancelled) return;
+      const identity = {
+        userId: uid,
         deviceId,
         token,
-        enabledRef.current,
-      );
-      recordTokenRegisterResult(result);
+        enabled: enabledRef.current,
+      };
+      const decision = gate.shouldRegister(identity);
+      if (decision.action === 'skip') {
+        // Permanent conflict / idempotent cache / backoff — no network, no spam.
+        return;
+      }
+      try {
+        const result = await upsertDeviceActivityToken(
+          deviceId,
+          token,
+          enabledRef.current,
+        );
+        gate.recordResult(identity, result);
+        recordTokenRegisterResult(result);
+      } catch {
+        // Non-unique failures throw (orThrow) — feed gate so retries are bounded.
+        gate.recordResult(identity, 'unknown_error');
+        recordTokenRegisterResult('unknown_error');
+      }
     };
     const subscription = liveActivity.addPushToStartTokenListener(({ token }) => {
       void persistToken(token).catch(() => undefined);
@@ -162,15 +190,34 @@ export function useLiveActivity(
 
   useEffect(() => {
     const deviceId = deviceIdRef.current;
-    if (!deviceId) return;
-    void upsertDeviceActivityToken(
-      deviceId,
-      pushToStartTokenRef.current,
-      liveActivitiesEnabled,
-    )
-      .then(recordTokenRegisterResult)
-      .catch(() => undefined);
-  }, [liveActivitiesEnabled]);
+    const uid = userIdRef.current;
+    if (!deviceId || !uid) return;
+    const gate = getSharedLiveActivityTokenGate();
+    void gate.ready().then(() => {
+      const identity = {
+        userId: uid,
+        deviceId,
+        token: pushToStartTokenRef.current,
+        enabled: liveActivitiesEnabled,
+      };
+      const decision = gate.shouldRegister(identity);
+      if (decision.action === 'skip') return;
+      void upsertDeviceActivityToken(
+        deviceId,
+        pushToStartTokenRef.current,
+        liveActivitiesEnabled,
+      )
+        .then((result) => {
+          gate.recordResult(identity, result);
+          recordTokenRegisterResult(result);
+        })
+        .catch(() => {
+          // Thrown soft-fail paths must still enter backoff / stop auto-spam.
+          gate.recordResult(identity, 'unknown_error');
+          recordTokenRegisterResult('unknown_error');
+        });
+    });
+  }, [liveActivitiesEnabled, user?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -266,6 +313,7 @@ export function useLiveActivity(
   const arrivalSignature = state.memberArrived?.map((arrived) => (arrived ? '1' : '0')).join('');
   // BUG-05: emoji changes must also push a Live Activity update.
   const emojiSignature = state.memberEmojis?.join(',') ?? '';
+  const destinationEmojiSig = state.destinationEmoji ?? '';
 
   useEffect(() => {
     if (active && handleRef.current) {
@@ -286,5 +334,6 @@ export function useLiveActivity(
     state.travelMode,
     arrivalSignature,
     emojiSignature,
+    destinationEmojiSig,
   ]);
 }

@@ -21,6 +21,8 @@ export interface ItineraryRow {
   subgroup_id?: string | null;
   closed_at?: string | null;
   closed_by_session_id?: string | null;
+  emoji?: string | null;
+  marker_color?: string | null;
 }
 
 // ── Mapper ─────────────────────────────────────────────────────────────────
@@ -42,6 +44,8 @@ export function mapDestination(row: ItineraryRow): Destination {
     subgroupId: row.subgroup_id ?? undefined,
     closedAt: row.closed_at ?? undefined,
     closedBySessionId: row.closed_by_session_id ?? undefined,
+    emoji: row.emoji ?? null,
+    markerColor: row.marker_color ?? null,
   };
 }
 
@@ -181,6 +185,61 @@ export async function reorderDestinations(
     }),
   );
   orThrow(results.find((r) => r.error)?.error ?? null);
+}
+
+/**
+ * Update per-stop emoji + palette color. Null clears to schema null (client fallback).
+ * Trust boundary: only validated emoji grapheme + palette hex are written.
+ */
+export async function updateDestinationEmojiColor(
+  groupId: string,
+  destinationId: string,
+  input: { emoji?: string | null; markerColor?: string | null },
+): Promise<void> {
+  if (isDemoGroup(groupId)) {
+    return;
+  }
+  // Lazy import keeps DestinationService free of circular utils in unit maps.
+  const {
+    validateDestinationColor,
+    validateDestinationEmoji,
+  } = await import('../../utils/destinationEmojiColor');
+
+  const patch: { emoji?: string | null; marker_color?: string | null } = {};
+  if ('emoji' in input) {
+    if (input.emoji == null || input.emoji === '') {
+      patch.emoji = null;
+    } else {
+      const v = validateDestinationEmoji(input.emoji);
+      if (!v.ok) {
+        const err = new Error('invalid_destination_emoji') as Error & { code?: string };
+        err.code = 'invalid_destination_emoji';
+        throw err;
+      }
+      patch.emoji = v.emoji;
+    }
+  }
+  if ('markerColor' in input) {
+    if (input.markerColor == null || input.markerColor === '') {
+      patch.marker_color = null;
+    } else {
+      const v = validateDestinationColor(input.markerColor);
+      if (!v.ok) {
+        const err = new Error('invalid_destination_color') as Error & { code?: string };
+        err.code = 'invalid_destination_color';
+        throw err;
+      }
+      patch.marker_color = v.color;
+    }
+  }
+  if (Object.keys(patch).length === 0) return;
+
+  const { error } = await supabase
+    .from('itinerary_items')
+    .update(patch)
+    .eq('id', destinationId)
+    .eq('group_id', groupId);
+  orThrow(error);
 }
 
 /**

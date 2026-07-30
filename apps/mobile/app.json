@@ -63,7 +63,15 @@
       "@react-native-community/datetimepicker",
       "expo-secure-store",
       "expo-apple-authentication",
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-8135109277557342~5387726456",
+          "iosAppId": "ca-app-pub-8135109277557342~4266216474",
+          "userTrackingUsageDescription": "This identifier will be used to deliver personalized ads to you."
+        }
+      ]
     ],
     "extra": {
       "eas": {

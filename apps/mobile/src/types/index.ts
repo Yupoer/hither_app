@@ -391,6 +391,16 @@ export interface Destination {
   /** Shared team-level navigation closure; null/undefined means open. */
   closedAt?: string;
   closedBySessionId?: string;
+  /**
+   * Optional single Unicode emoji grapheme for this stop (nullable schema).
+   * Null/undefined → stable client fallback; not a day-header color.
+   */
+  emoji?: string | null;
+  /**
+   * Optional product-palette hex (`#RRGGBB`) for this stop (nullable schema).
+   * Null/undefined → stable client fallback.
+   */
+  markerColor?: string | null;
 }
 
 /** Aggregated live view of a group, consumed by the Map screen. */

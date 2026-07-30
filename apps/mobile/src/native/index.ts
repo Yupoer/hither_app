@@ -19,6 +19,7 @@ export * as liquidGlass from './liquidGlass';
 export * as metrics from './metrics';
 export * as purchases from './purchases';
 export * as externalNavigation from './externalNavigation';
+export * as kmlIo from './kmlIo';
 
 export type { LocationSample } from './location';
 export type { PlaceResult, MapRegion, RouteSource, DirectionsResult, TravelMode } from './maps';

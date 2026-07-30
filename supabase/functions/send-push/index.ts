@@ -29,7 +29,8 @@ import {
   prefColumn,
   type PushPayload,
 } from "./messages.ts";
-import { requestStartRecipientIds } from "./recipients.ts";
+import { specialAlertRecipientIds } from "./recipients.ts";
+import { eventIdFromPayload } from "./eventId.ts";
 
 interface MembershipRow {
   user_id: string;
@@ -100,6 +101,9 @@ function splitByPlatform(rows: DeviceTokenRow[]): {
   return { ios, android };
 }
 
+// Dual-path event identity: production helpers live in eventId.ts
+// (keep lockstep with mobile buildAlignedNotificationEventId).
+
 function alertData(payload: PushPayload): Record<string, string | undefined | null> {
   return {
     category: payload.category,
@@ -107,6 +111,12 @@ function alertData(payload: PushPayload): Record<string, string | undefined | nu
     memberId: payload.member_id,
     senderId: payload.sender_id,
     requestId: payload.request_id,
+    type: payload.type,
+    status: payload.status,
+    destinationId: payload.destination_id,
+    entityId: payload.entity_id,
+    // Dual-path dedup with Realtime local presentation (Ticket 02 / SUG-3).
+    eventId: eventIdFromPayload(payload),
   };
 }
 
@@ -279,7 +289,8 @@ Deno.serve(async (req) => {
       payload.category === "straggler";
     const wholeGroupCommand =
       payload.category === "leader_commands" || payload.category === "follower_requests";
-    const requestStartCandidates = requestStartRecipientIds(payload, members);
+    // Unified special recipients (arrival → leaders; request_start → leaders).
+    const specialCandidates = specialAlertRecipientIds(payload, members);
 
     // Alerts are scoped to the sender's main team/subgroup. Solo members never
     // receive general notifications (except pure meet-time, which includes all).
@@ -290,8 +301,8 @@ Deno.serve(async (req) => {
       ? []
       : typeof payload.target_user_id === "string" && payload.target_user_id.length > 0
       ? [payload.target_user_id]
-      : requestStartCandidates
-      ? requestStartCandidates
+      : specialCandidates
+      ? specialCandidates
       : members
         .filter((member) =>
           payload.category === "gathering_request"

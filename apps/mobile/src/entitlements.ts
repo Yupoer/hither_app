@@ -11,10 +11,9 @@ export const FREE_LIMITS = {
   /** Total people including Leader. Server rejects the 6th join. */
   groupMembers: 5,
   anonymousMembers: 2,
-  // TEMPORARY QA override: Free Plan gathering points are unlimited.
-  // Revert both values to 5 when paid-plan enforcement is restored.
-  destinationsPerItinerary: Number.POSITIVE_INFINITY,
-  kmlImportPoints: Number.POSITIVE_INFINITY,
+  /** Max simultaneous unfinished (closed_at IS NULL) points per itinerary scope. */
+  destinationsPerItinerary: 5,
+  kmlImportPoints: 5,
   stragglerThresholdM: 500,
   historyEntries: 3,
 } as const;
@@ -183,6 +182,45 @@ export function wouldExceedDestinationLimit(
   limit: number = FREE_LIMITS.destinationsPerItinerary,
 ): boolean {
   return currentPoints >= limit;
+}
+
+/**
+ * Count unfinished gathering points (Spec Free cap: closed_at IS NULL only).
+ */
+export function countOpenDestinations(
+  destinations: ReadonlyArray<{ closedAt?: string | null }>,
+): number {
+  return destinations.reduce((n, d) => (d.closedAt == null ? n + 1 : n), 0);
+}
+
+/**
+ * Client pre-check before add: block Paywall only when Free is full AND no credits.
+ * Server remains authoritative; Premium never blocked here.
+ */
+export function shouldBlockNewDestination(input: {
+  isPro: boolean;
+  openCount: number;
+  extraCredits?: number;
+  limit?: number;
+}): boolean {
+  if (input.isPro) return false;
+  const limit = input.limit ?? FREE_LIMITS.destinationsPerItinerary;
+  if (input.openCount < limit) return false;
+  if ((input.extraCredits ?? 0) > 0) return false;
+  return true;
+}
+
+/** Remaining Free open slots + one-shot credits (non-Premium). */
+export function remainingDestinationSlots(input: {
+  isPro: boolean;
+  openCount: number;
+  extraCredits?: number;
+  limit?: number;
+}): number {
+  if (input.isPro) return Number.POSITIVE_INFINITY;
+  const limit = input.limit ?? FREE_LIMITS.destinationsPerItinerary;
+  const freeLeft = Math.max(0, limit - input.openCount);
+  return freeLeft + Math.max(0, input.extraCredits ?? 0);
 }
 
 /** Normalize RPC error payloads into stable codes for UI. */

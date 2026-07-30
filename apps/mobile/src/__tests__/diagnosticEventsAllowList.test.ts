@@ -50,6 +50,15 @@ const CLIENT_EMITTED_EVENTS = [
   'refresh_request_completed',
   'refresh_request_timeout',
   'diagnostic_error',
+  'store_ad_load',
+  'store_ad_show',
+  'store_ad_dismiss',
+  'store_ad_reward_client',
+  'store_ssv_verified',
+  'store_ssv_rejected',
+  'store_ledger_credit',
+  'store_redemption_success',
+  'store_redemption_failure',
 ] as const;
 
 describe('diagnostic_events event allow-list', () => {

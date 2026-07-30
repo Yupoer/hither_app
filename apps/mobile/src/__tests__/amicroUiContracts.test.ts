@@ -27,7 +27,14 @@ describe('Amicro native animation contracts', () => {
     }
     expect(map).not.toContain('activeIcon="pause"');
     expect(map).toContain('style={styles.headerIconBtn}');
-    expect(map).toContain('onAnimationComplete={() => setSearchVisible(true)}');
+    // Search holds complete frame until OverlaySheet onOpenComplete (not rAF×2).
+    expect(map).toContain('setSearchVisible(true)');
+    expect(map).toContain('searchOpenCompleteResolveRef');
+    expect(map).toContain('onOpenComplete={handleSearchOpenComplete}');
+    expect(map).toMatch(/onAnimationComplete=\{async\s*\(\)\s*=>\s*\{[\s\S]*setSearchVisible\(true\)/);
+    expect(map).not.toMatch(
+      /setSearchVisible\(true\);[\s\S]*requestAnimationFrame\(\(\)\s*=>\s*requestAnimationFrame/,
+    );
     expect(passive).toContain('onAnimationComplete={handleSwitchBack}');
   });
 
@@ -38,6 +45,12 @@ describe('Amicro native animation contracts', () => {
     expect(map).toMatch(/setEditButtonActive\(false\);\s+setOverlay\(null\);/);
   });
 
+  it('places reorder as a standalone framed action outside listGroup', () => {
+    expect(map).toContain('styles.reorderActionCard');
+    expect(map).toContain('testID="map-reorder-action-card"');
+    expect(map).toContain('testID="map-edit-itinerary"');
+  });
+
   it('keeps invite actions labeled, framed, and makes sharing longer', () => {
     expect(map).toContain("label={t('map.share')}");
     expect(map).toContain("label={t('map.copy')}");
@@ -46,6 +59,13 @@ describe('Amicro native animation contracts', () => {
     expect(map).toContain('fontSize: 32');
     expect(map).toContain('adjustsFontSizeToFit');
     expect(map).toContain('minimumFontScale={0.7}');
+    // Share awaits system share settle before Amicro reset.
+    expect(map).toMatch(/onAnimationComplete=\{async\s*\(\)\s*=>\s*\{[\s\S]*await shareCode\(\)/);
+  });
+
+  it('supports external Promise settle in Amicro finish path', () => {
+    expect(button).toContain('Promise.resolve(result)');
+    expect(button).toContain('releaseBusyAndMaybeReset');
   });
 
   it('renders centered Bouncing Dots without moving the logo', () => {

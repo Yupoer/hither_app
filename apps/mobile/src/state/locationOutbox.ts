@@ -7,6 +7,7 @@ import {
 } from '../api/services/LocationService';
 import type { Coordinates } from '../types';
 import type { TrackingMode } from '../utils/locationPolicy';
+import { createSingleFlightFlush } from '../utils/locationOutboxFlush';
 import { getHitherDatabase } from './hitherDatabase';
 
 export const LOCATION_OUTBOX_KEY = '@hither/location-outbox';
@@ -319,6 +320,67 @@ export function createLocationOutbox(
     return initialization;
   };
 
+  const runFlush = (maxEntries: number): Promise<LocationFlushResult> =>
+    runSerial(async () => {
+      await initialize();
+      const current = now();
+      await database.removeExpired(current);
+      const due = await database.getDue(current, Math.max(0, maxEntries));
+      if (due.length === 0) {
+        return {
+          sent: 0,
+          discarded: 0,
+          remaining: await database.count(),
+          retryScheduled: 0,
+        };
+      }
+
+      let threw = false;
+      let result: LocationBatchResult;
+      try {
+        result = await upload(due.map(eventOf));
+      } catch {
+        threw = true;
+        result = { acceptedIds: [], rejected: [] };
+      }
+
+      const dueIds = new Set(due.map((entry) => entry.id));
+      const accepted = new Set(
+        result.acceptedIds.filter((id) => dueIds.has(id)),
+      );
+      // Permanent rejects from server are discarded (not retried unboundedly).
+      const discarded = new Set(
+        threw
+          ? []
+          : result.rejected
+              .map((item) => item.id)
+              .filter((id) => dueIds.has(id)),
+      );
+      const resolvedIds = [...accepted, ...discarded];
+      const failed = due
+        .filter((entry) => !accepted.has(entry.id) && !discarded.has(entry.id))
+        .map((entry) => {
+          const attempts = entry.attempts + 1;
+          // Bounded exponential backoff (cap MAX_BACKOFF_MS).
+          return {
+            id: entry.id,
+            attempts,
+            nextAttemptAt: current + Math.min(MAX_BACKOFF_MS, 2 ** attempts * 1_000),
+          };
+        });
+      await database.resolveBatch(resolvedIds, failed);
+      return {
+        sent: accepted.size,
+        discarded: discarded.size,
+        remaining: await database.count(),
+        retryScheduled: failed.length,
+      };
+    });
+
+  /** Captured for the in-flight single-flight work item (product uses MAX_BATCH). */
+  let flushMaxEntries = MAX_BATCH;
+  const singleFlight = createSingleFlightFlush(() => runFlush(flushMaxEntries));
+
   return {
     initialize,
 
@@ -337,59 +399,9 @@ export function createLocationOutbox(
     },
 
     flush(maxEntries = MAX_BATCH): Promise<LocationFlushResult> {
-      return runSerial(async () => {
-        await initialize();
-        const current = now();
-        await database.removeExpired(current);
-        const due = await database.getDue(current, Math.max(0, maxEntries));
-        if (due.length === 0) {
-          return {
-            sent: 0,
-            discarded: 0,
-            remaining: await database.count(),
-            retryScheduled: 0,
-          };
-        }
-
-        let threw = false;
-        let result: LocationBatchResult;
-        try {
-          result = await upload(due.map(eventOf));
-        } catch {
-          threw = true;
-          result = { acceptedIds: [], rejected: [] };
-        }
-
-        const dueIds = new Set(due.map((entry) => entry.id));
-        const accepted = new Set(
-          result.acceptedIds.filter((id) => dueIds.has(id)),
-        );
-        const discarded = new Set(
-          threw
-            ? []
-            : result.rejected
-                .map((item) => item.id)
-                .filter((id) => dueIds.has(id)),
-        );
-        const resolvedIds = [...accepted, ...discarded];
-        const failed = due
-          .filter((entry) => !accepted.has(entry.id) && !discarded.has(entry.id))
-          .map((entry) => {
-            const attempts = entry.attempts + 1;
-            return {
-              id: entry.id,
-              attempts,
-              nextAttemptAt: current + Math.min(MAX_BACKOFF_MS, 2 ** attempts * 1_000),
-            };
-          });
-        await database.resolveBatch(resolvedIds, failed);
-        return {
-          sent: accepted.size,
-          discarded: discarded.size,
-          remaining: await database.count(),
-          retryScheduled: failed.length,
-        };
-      });
+      // FG / BG / heartbeat / manual share one in-flight flush (Ticket 10).
+      flushMaxEntries = maxEntries;
+      return singleFlight.flush();
     },
 
     purge(): Promise<void> {

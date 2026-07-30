@@ -47,7 +47,13 @@ export interface AmicroButtonProps {
   testID?: string;
   style?: StyleProp<ViewStyle>;
   onPress?: () => void;
-  onAnimationComplete?: () => void;
+  /**
+   * Called when the press animation reaches the complete frame.
+   * May return a Promise — when `resetAfterComplete` is true, the button
+   * stays on the complete frame (and busy) until that Promise settles
+   * (success or failure), then resets. Used by share / external ops.
+   */
+  onAnimationComplete?: () => void | Promise<void>;
 }
 
 const PRESS_ANIMATION_MS = 220;
@@ -76,13 +82,31 @@ export function AmicroButton({
   const progress = useSharedValue(active ? 1 : 0);
   const busyRef = useRef(false);
 
-  const finish = useCallback(() => {
+  const releaseBusyAndMaybeReset = useCallback(() => {
     busyRef.current = false;
-    onAnimationComplete?.();
     if (resetAfterComplete) {
-      progress.value = withTiming(active ? 1 : 0, { duration: 100 });
+      progress.value = withTiming(active ? 1 : 0, { duration: reducedMotion ? 0 : 100 });
     }
-  }, [active, onAnimationComplete, progress, resetAfterComplete]);
+  }, [active, progress, reducedMotion, resetAfterComplete]);
+
+  const finish = useCallback(() => {
+    // Keep busy until external Promise settles so double-tap cannot re-open.
+    let result: void | Promise<void>;
+    try {
+      result = onAnimationComplete?.();
+    } catch {
+      releaseBusyAndMaybeReset();
+      return;
+    }
+    if (result != null && typeof (result as Promise<void>).then === 'function') {
+      Promise.resolve(result).then(
+        () => releaseBusyAndMaybeReset(),
+        () => releaseBusyAndMaybeReset(),
+      );
+      return;
+    }
+    releaseBusyAndMaybeReset();
+  }, [onAnimationComplete, releaseBusyAndMaybeReset]);
 
   useEffect(() => {
     if (busyRef.current) return;
@@ -94,14 +118,17 @@ export function AmicroButton({
     busyRef.current = true;
     onPress?.();
     if (reducedMotion) {
+      // Same sequencing as animated path (complete → external settle → reset),
+      // with zero animation duration.
       finish();
       return;
     }
     const target = (activeOnPress ?? true) ? 1 : 0;
     progress.value = withTiming(target, { duration: durationMs }, (finished) => {
       if (finished) runOnJS(finish)();
+      else runOnJS(releaseBusyAndMaybeReset)();
     });
-  }, [activeOnPress, disabled, durationMs, finish, onPress, progress, reducedMotion]);
+  }, [activeOnPress, disabled, durationMs, finish, onPress, progress, reducedMotion, releaseBusyAndMaybeReset]);
 
   const currentStyle = useAnimatedStyle(() => {
     if (mode === 'rotate') {

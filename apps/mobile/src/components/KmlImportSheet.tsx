@@ -2,18 +2,25 @@ import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import OverlaySheet from './OverlaySheet';
-import { useTranslation } from '../i18n';
+import { useTranslation, type TranslationKey } from '../i18n';
 import { useTheme } from '../state/PreferencesContext';
 import { glass, accentMix } from '../glass';
-import { parseKml, type KmlPlacemark } from '../utils/kml';
-import { FREE_LIMITS } from '../entitlements';
+import { kmlIo } from '../native';
+import type { KmlPlacemark } from '../utils/kml';
+import {
+  kmlErrorI18nKey,
+  loadKmlKmzFromAsset,
+  type KmlLoadErrorCode,
+} from '../utils/kmlLoad';
+import { FREE_LIMITS, remainingDestinationSlots } from '../entitlements';
+import { diagnostics } from '../state/diagnostics';
 
 type Step =
   | { kind: 'intro' }
   | { kind: 'preview'; items: KmlPlacemark[] }
   | { kind: 'importing'; done: number; total: number }
   | { kind: 'done' }
-  | { kind: 'error' };
+  | { kind: 'error'; code: KmlLoadErrorCode };
 
 /**
  * Google My Maps KML import: teaching screen → file picker → preview (locked
@@ -24,13 +31,17 @@ export default React.memo(function KmlImportSheet({
   visible,
   onClose,
   currentCount,
+  extraCredits = 0,
   isPro,
   onImport,
   onUpgrade,
 }: {
   visible: boolean;
   onClose: () => void;
+  /** Open (unfinished) gathering points in scope — not total including closed. */
   currentCount: number;
+  /** Team one-shot extra point credits remaining. */
+  extraCredits?: number;
   isPro: boolean;
   onImport: (items: KmlPlacemark[], onProgress: (done: number) => void) => Promise<void>;
   onUpgrade: () => void;
@@ -54,37 +65,33 @@ export default React.memo(function KmlImportSheet({
       type: ['application/vnd.google-earth.kml+xml', 'application/vnd.google-earth.kmz', '*/*'],
       copyToCacheDirectory: true,
     });
-    if (result.canceled) return;
-    const asset = result.assets?.[0];
-    const uri = asset?.uri;
-    if (!uri) return;
-    try {
-      const isKmz = uri.toLowerCase().endsWith('.kmz') || asset?.name.toLowerCase().endsWith('.kmz') || asset?.mimeType === 'application/vnd.google-earth.kmz';
-      let xml = '';
-
-      if (isKmz) {
-        const JSZip = (await import('jszip')).default;
-        const arrayBuffer = await fetch(uri).then((r) => r.arrayBuffer());
-        const zip = await JSZip.loadAsync(arrayBuffer);
-        const kmlFile = Object.values(zip.files).find((f) => f.name.toLowerCase().endsWith('.kml') && !f.dir);
-        if (!kmlFile) {
-          throw new Error('No KML file found in KMZ');
-        }
-        xml = await kmlFile.async('string');
-      } else {
-        xml = await fetch(uri).then((r) => r.text());
-      }
-
-      const items = parseKml(xml);
-      if (items.length === 0) {
-        setStep({ kind: 'error' });
-        return;
-      }
-      setStep({ kind: 'preview', items });
-    } catch (err) {
-      console.error('KML/KMZ parse error:', err);
-      setStep({ kind: 'error' });
+    if (result.canceled) {
+      // Cancel is not an error — stay on intro.
+      return;
     }
+    const asset = result.assets?.[0];
+    if (!asset?.uri) return;
+
+    const loaded = await loadKmlKmzFromAsset(asset, kmlIo.createDefaultKmlLoadIo());
+    if (loaded.kind === 'cancelled') return;
+
+    if (loaded.kind === 'error') {
+      void diagnostics
+        .write({
+          // Allow-listed event; stage/code in reason — never path or body.
+          event: 'diagnostic_error',
+          source: 'kml_import',
+          success: false,
+          errorCode: loaded.code,
+          reason: `${loaded.stage}:${loaded.code}`,
+          count: loaded.meta.sizeBytes ?? undefined,
+        })
+        .catch(() => undefined);
+      setStep({ kind: 'error', code: loaded.code });
+      return;
+    }
+
+    setStep({ kind: 'preview', items: loaded.items });
   }, []);
 
   const runImport = useCallback(async (items: KmlPlacemark[]) => {
@@ -94,17 +101,31 @@ export default React.memo(function KmlImportSheet({
       setStep({ kind: 'done' });
       setTimeout(handleClose, 1000);
     } catch {
-      setStep({ kind: 'error' });
+      setStep({ kind: 'error', code: 'unknown' });
     }
   }, [onImport, handleClose]);
 
-  const allowedFor = (items: KmlPlacemark[]) =>
-    isPro
-      ? items.length
-      : Math.max(
-          0,
-          Math.min(FREE_LIMITS.kmlImportPoints, FREE_LIMITS.destinationsPerItinerary - currentCount),
-        );
+  const allowedFor = (items: KmlPlacemark[]) => {
+    if (isPro) return items.length;
+    const remaining = remainingDestinationSlots({
+      isPro: false,
+      openCount: currentCount,
+      extraCredits,
+    });
+    // Cap a single import batch by both remaining Free+credit slots and KML free batch size.
+    const batchCap = Math.max(
+      0,
+      Math.min(FREE_LIMITS.kmlImportPoints + Math.max(0, extraCredits), remaining),
+    );
+    return Math.min(items.length, batchCap);
+  };
+
+  const errorCopy = (code: KmlLoadErrorCode): string => {
+    const key = kmlErrorI18nKey(code) as TranslationKey;
+    const translated = t(key);
+    if (!translated || translated === key) return t('kml.parseError');
+    return translated;
+  };
 
   return (
     <OverlaySheet
@@ -132,7 +153,7 @@ export default React.memo(function KmlImportSheet({
 
         {step.kind === 'error' && (
           <>
-            <Text style={styles.errorText}>{t('kml.parseError')}</Text>
+            <Text style={styles.errorText}>{errorCopy(step.code)}</Text>
             <Pressable
               style={[styles.cta, { backgroundColor: accentMix(accent, 90), borderColor: accentMix(accent, 50) }]}
               onPress={reset}

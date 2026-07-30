@@ -27,7 +27,7 @@ import MapView, { AnimatedRegion, Marker, MarkerAnimated, Polyline, PROVIDER_GOO
 import type { Coordinates, Destination, MemberLocation } from '../types';
 import { usePreferences, useTheme } from '../state/PreferencesContext';
 import { memberColor } from '../glass';
-import { DAY_COLORS, type Palette } from '../theme';
+import type { Palette } from '../theme';
 import { HitherText } from './HitherText';
 import {
   DEFAULT_LATITUDE_DELTA,
@@ -46,6 +46,10 @@ import {
   TARGET_PULSE_DURATION_MS,
   TARGET_PULSE_INTERVAL_MS,
 } from '../utils/targetMarkerPulse';
+import {
+  destinationMarkerColor,
+  destinationMarkerEmoji,
+} from '../utils/destinationMarkerChrome';
 
 export {
   DEFAULT_LATITUDE_DELTA,
@@ -170,10 +174,7 @@ class MapSubtreeBoundary extends Component<
  * native-only. The `.web.tsx` sibling provides a web-safe fallback so Metro
  * never tries to bundle the native component for web.
  */
-function getColorForDay(day: number | undefined, dayColors: Record<number, string>) {
-  if (!day) return dayColors[1] || DAY_COLORS[0];
-  return dayColors[day] || DAY_COLORS[(day - 1) % DAY_COLORS.length];
-}
+
 
 /**
  * Hook to manage `tracksViewChanges` for custom map markers.
@@ -262,10 +263,15 @@ const DestinationMarker = React.memo(function DestinationMarker({
     };
   }, [canPulse, isActiveTarget, reduceMotion, scaleAnim]);
 
+  const markerEmoji = destinationMarkerEmoji(dest);
+
   // Capture bitmap only on appearance / pulse window / style change — never continuous.
   const tracksViewChanges = useTracksViewChanges([
     bgColor,
     dest.title,
+    dest.emoji,
+    dest.markerColor,
+    markerEmoji,
     isActiveTarget,
     isCompleted,
     pulseOn,
@@ -302,7 +308,9 @@ const DestinationMarker = React.memo(function DestinationMarker({
           },
         ]}
       >
-        <Ionicons name="flag" size={14} color="#fff" />
+        <Text style={styles.gatherMarkerEmoji} allowFontScaling={false}>
+          {markerEmoji}
+        </Text>
       </RNAnimated.View>
     </Marker>
   );
@@ -797,7 +805,8 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       ) : null}
 
       {destinations?.map((dest) => {
-        const bgColor = getColorForDay(dest.day, dayColors);
+        // Prefer per-stop palette color; fall back to day color when unset.
+        const bgColor = destinationMarkerColor(dest, dayColors);
         const isCompleted = completedDestinationIds instanceof Set
           ? completedDestinationIds.has(dest.id)
           : Boolean(
@@ -861,6 +870,11 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     shadowRadius: 3,
     shadowOffset: { width: 0, height: 1 },
     elevation: 4,
+  },
+  gatherMarkerEmoji: {
+    fontSize: 13,
+    lineHeight: 16,
+    textAlign: 'center',
   },
   // Active target only — soft glow between pulses (not continuous bitmap tracking).
   gatherMarkerActive: {

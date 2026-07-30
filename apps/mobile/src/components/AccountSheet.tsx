@@ -18,7 +18,7 @@ import OverlaySheet from './OverlaySheet';
 import { useSession } from '../state/SessionContext';
 import { redeemPromoCode } from '../api/client';
 import { glass, accentMix } from '../glass';
-import { useTranslation } from '../i18n';
+import { useTranslation, type TranslationKey } from '../i18n';
 import { runUiAction } from '../utils/uiAction';
 import { isAnonymousAccessExpired } from '../anonymousAccess';
 
@@ -37,6 +37,7 @@ export default function AccountSheet({
     isPro,
     isAnonymous,
     membership,
+    tripEntitlement,
     refreshProfile,
     refreshEntitlement,
     upgradeToEmailAccount,
@@ -44,6 +45,25 @@ export default function AccountSheet({
     linkWithApple,
   } = useSession();
   const { t } = useTranslation();
+
+  const premiumExpiresAt = tripEntitlement?.expiresAt ?? null;
+  const premiumSourceRaw = tripEntitlement?.source ?? null;
+  const premiumSourceLabel = (() => {
+    if (!premiumSourceRaw) return null;
+    const key = `account.premiumSource.${premiumSourceRaw}` as TranslationKey;
+    const mapped = t(key);
+    return mapped && mapped !== key ? mapped : premiumSourceRaw;
+  })();
+  const premiumRemainingLabel = (() => {
+    if (!isPro) return null;
+    if (!premiumExpiresAt) return t('account.premiumLifetime');
+    const ms = Date.parse(premiumExpiresAt) - Date.now();
+    if (!Number.isFinite(ms) || ms <= 0) return t('account.premiumExpired');
+    const hours = Math.ceil(ms / 3_600_000);
+    if (hours < 48) return t('account.premiumRemainingHours', { hours });
+    const days = Math.ceil(hours / 24);
+    return t('account.premiumRemainingDays', { days });
+  })();
   
   const [promoCode, setPromoCode] = useState('');
   const [redeeming, setRedeeming] = useState(false);
@@ -228,6 +248,52 @@ export default function AccountSheet({
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
         >
+          <Text style={styles.sectionLabel}>{t('account.premiumSection')}</Text>
+          <View style={styles.card} testID="account-premium-status">
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>{t('account.premiumTeam')}</Text>
+              <Text style={styles.rowValue} numberOfLines={1}>
+                {membership?.group.name ?? t('account.premiumNoTeam')}
+              </Text>
+            </View>
+            <View style={styles.divider} />
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>{t('account.premiumStatus')}</Text>
+              <Text style={styles.rowValue}>
+                {isPro ? t('account.premiumActive') : t('account.premiumFree')}
+              </Text>
+            </View>
+            {isPro && premiumSourceLabel ? (
+              <>
+                <View style={styles.divider} />
+                <View style={styles.row}>
+                  <Text style={styles.rowLabel}>{t('account.premiumSource')}</Text>
+                  <Text style={styles.rowValue}>{premiumSourceLabel}</Text>
+                </View>
+              </>
+            ) : null}
+            {isPro && premiumExpiresAt ? (
+              <>
+                <View style={styles.divider} />
+                <View style={styles.row}>
+                  <Text style={styles.rowLabel}>{t('account.premiumExpires')}</Text>
+                  <Text style={styles.rowValue}>
+                    {new Date(premiumExpiresAt).toLocaleString()}
+                  </Text>
+                </View>
+              </>
+            ) : null}
+            {premiumRemainingLabel ? (
+              <>
+                <View style={styles.divider} />
+                <View style={styles.row}>
+                  <Text style={styles.rowLabel}>{t('account.premiumRemaining')}</Text>
+                  <Text style={styles.rowValue}>{premiumRemainingLabel}</Text>
+                </View>
+              </>
+            ) : null}
+          </View>
+
           {/* Registration Info */}
           <Text style={styles.sectionLabel}>註冊資訊</Text>
           <View style={styles.card}>

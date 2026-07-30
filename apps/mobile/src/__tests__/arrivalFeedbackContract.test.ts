@@ -4,6 +4,19 @@ import { join } from 'node:path';
 const source = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
 
 describe('foreground arrival feedback', () => {
+  it('uses accuracy-aware reduceArrival as sole auto-arrive authority (no bare OR)', () => {
+    expect(source).toContain('const arrivedNow = next.status === \'arrived\'');
+    expect(source).not.toMatch(/arrivedNow\s*=\s*insideRadius\s*\|\|/);
+    expect(source).toContain('reduceArrival(');
+    // Low-accuracy samples must go through the reducer, not hasArrived alone.
+    const autoBlock = source.slice(
+      source.indexOf('// Auto-arrive while navigating'),
+      source.indexOf('// Auto-arrive while navigating') + 1200,
+    );
+    expect(autoBlock).toContain('accuracyM: deviceAccuracyM');
+    expect(autoBlock).not.toContain('insideRadius ||');
+  });
+
   it('starts visual arrival feedback before waiting for the database ACK', () => {
     const effect = source.slice(
       source.indexOf('if (arrivedNow && user?.id)'),

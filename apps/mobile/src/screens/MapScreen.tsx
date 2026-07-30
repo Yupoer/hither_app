@@ -55,6 +55,12 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import GroupMap, { type GroupMapHandle } from '../components/GroupMap';
 import { PLACE_ALTITUDE, PLACE_ZOOM } from '../components/mapCameraMath';
+import {
+  cameraAfterSuccessfulAdd,
+  cameraOnLongPress,
+  cameraOnSearchPick,
+} from '../utils/mapCameraFlow';
+import { resolveNotificationRecipients } from '../utils/notificationDeliveryPolicy';
 import DestinationSearch from '../components/DestinationSearch';
 import MeetCountdown from '../components/MeetCountdown';
 import DestinationReorderList from '../components/DestinationReorderList';
@@ -116,7 +122,14 @@ import { DiagnosticsOverlay } from './MapScreen/components/DiagnosticsOverlay';
 import { ProfileOverlay } from './MapScreen/components/ProfileOverlay';
 import { SubgroupSection } from './MapScreen/components/SubgroupSection';
 import { Segmented } from './MapScreen/components/Segmented';
+import { StorePane } from './MapScreen/components/StorePane';
 import { CoordinationRequestsPanel } from './MapScreen/components/CoordinationRequestsPanel';
+import {
+  isHorizontalPaneGesture,
+  paneAfterSwipe,
+} from '../store/sheetPane';
+import type { SheetPaneKey } from '../store/types';
+import { getStoreSnapshot } from '../api/services/StoreService';
 import AccountSheet from '../components/AccountSheet';
 import { useGroupState } from '../state/useGroupState';
 import { useNavigationSession } from '../state/useNavigationSession';
@@ -207,6 +220,7 @@ import {
   submitGatherPointRequest,
   updateMyLocation,
   updateGroupTripDetails,
+  updateDestinationEmojiColor,
 } from '../api/client';
 import { supabase } from '../api/supabase';
 import { captureScreen } from 'react-native-view-shot';
@@ -227,7 +241,12 @@ import type {
   VisitedWaypoint,
 } from '../types';
 import type { KmlPlacemark } from '../utils/kml';
-import { FREE_LIMITS, anonymousLeaderRequiresRegistration } from '../entitlements';
+import {
+  FREE_LIMITS,
+  anonymousLeaderRequiresRegistration,
+  countOpenDestinations,
+  shouldBlockNewDestination,
+} from '../entitlements';
 import { radius, themes, THEME_ORDER, type ThemeName } from '../theme';
 import { glass, accentMix, memberColor } from '../glass';
 
@@ -689,8 +708,14 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [insets.top, windowHeight, sheetHeaderH]);
   const heightSV = useSharedValue(detents[0]);
   const [detent, setDetent] = useState(0);
-  /** Mid/Full sheet body: 成員 · 路線 · 工具. */
-  const [sheetPane, setSheetPane] = useState<'members' | 'route' | 'tools'>('members');
+  /** Mid/Full sheet body: 成員 · 路線 · 工具 · 商店. */
+  const [sheetPane, setSheetPane] = useState<SheetPaneKey>('members');
+  /** Store deep-link product highlight (e.g. locked Live Activity → store). */
+  const [storeHighlightProduct, setStoreHighlightProduct] = useState<string | null>(null);
+  /** Server-effective Live Activity entitlement (personal OR team Premium). */
+  const [liveActivityEffective, setLiveActivityEffective] = useState(false);
+  /** Team extra gathering-point credits remaining (route UI when > 0). */
+  const [extraPointCredits, setExtraPointCredits] = useState(0);
   const [overlay, setOverlay] = useState<
     null
     | 'route'
@@ -776,8 +801,12 @@ export default function MapScreen({ route, navigation }: Props) {
     }
   }, []);
   const [searchVisible, setSearchVisible] = useState(false);
+  /** Resolves Amicro search Promise when OverlaySheet open animation completes. */
+  const searchOpenCompleteResolveRef = useRef<(() => void) | null>(null);
   // A place picked in search, awaiting the bottom "add / cancel" confirm card.
   const [pendingPlace, setPendingPlace] = useState<PlaceResult | null>(null);
+  /** Distinguishes long-press vs search for post-add camera (ticket 06). */
+  const pendingPlaceSourceRef = useRef<'search' | 'longpress' | null>(null);
   // Editable only during this add confirmation. There is no later rename
   // action, so the persisted itinerary title stays stable after creation.
   const [pendingPlaceTitle, setPendingPlaceTitle] = useState('');
@@ -815,6 +844,7 @@ export default function MapScreen({ route, navigation }: Props) {
     setConfirmCardReady(false);
     setPendingPlace(null);
     setPendingPlaceTitle('');
+    pendingPlaceSourceRef.current = null;
   }
   const [paywallTrigger, setPaywallTrigger] = useState<TranslationKey | undefined>(undefined);
   const [paywallVisible, setPaywallVisible] = useState(false);
@@ -1050,6 +1080,32 @@ export default function MapScreen({ route, navigation }: Props) {
     mapRef,
     carouselRef,
     setSelectedIndex,
+    onOperatorStartConfirm: (dest) => {
+      // Policy: operator_local_confirm for start_journey (sender once).
+      const policy = resolveNotificationRecipients({
+        event: 'start_journey',
+        senderId: user?.id ?? 'self',
+        members: [{
+          userId: user?.id ?? 'self',
+          role: isLeader ? 'leader' : 'follower',
+          subgroupId: myScopeId ?? null,
+          solo: false,
+        }],
+        eventId: groupId
+          ? `start_journey:${groupId}:${dest.id}`
+          : undefined,
+      });
+      if (policy.deliveryKind !== 'operator_local_confirm') return;
+      void notifications.scheduleLocalNotification({
+        title: t('notif.operatorStartTitle'),
+        body: t('notif.operatorStartBody'),
+        data: {
+          kind: 'operatorStartConfirm',
+          destinationId: dest.id,
+          eventId: policy.eventIdentity,
+        },
+      });
+    },
     // Prefer live session. Only fall back to legacy journey_status while the
     // first fetch is still in flight (undefined), so a cold-start member still
     // enters flock nav as soon as the active session row is available.
@@ -1239,11 +1295,11 @@ export default function MapScreen({ route, navigation }: Props) {
       foregroundAckRef.current = null;
     }
     const straightM = distanceMeters(deviceCoords, navTarget.coordinates);
-    // Product: tools radius is the geofence (e.g. 300 m) — not only distance 0.
-    const insideRadius = hasArrived(straightM, localArrivalRadiusM);
     const previous = foregroundArrivalRef.current?.key === key
       ? foregroundArrivalRef.current.state
       : createArrivalState(straightM);
+    // Accuracy-aware reducer is authoritative — do not OR a bare distance
+    // check (low-accuracy samples inside radius must not auto-arrive alone).
     const next = reduceArrival(
       previous,
       {
@@ -1252,19 +1308,10 @@ export default function MapScreen({ route, navigation }: Props) {
       },
       { radiusM: localArrivalRadiusM },
     );
-    // Prefer the product threshold; still keep reducer for ACK telemetry.
-    const arrivedNow = insideRadius || next.status === 'arrived';
+    const arrivedNow = next.status === 'arrived';
     foregroundArrivalRef.current = {
       key,
-      state: arrivedNow
-        ? {
-            ...next,
-            status: 'arrived',
-            progress: 1,
-            consecutiveFixes: Math.max(1, next.consecutiveFixes),
-            lastDistanceM: straightM,
-          }
-        : next,
+      state: next,
     };
     const ackStatus: 'arrived' | 'arriving' | null = arrivedNow
       ? 'arrived'
@@ -1827,11 +1874,13 @@ export default function MapScreen({ route, navigation }: Props) {
   // distance is sufficient for the initial Android notification and is
   // replaced by the locked baseline on the next render.
   const liveActivityBaselineM = initialDistanceM ?? liveDistance ?? numericDistance;
+  // Preference (liveActivityEnabled) ≠ entitlement (liveActivityEffective).
+  const liveActivityAllowed = liveActivityEnabled && liveActivityEffective;
   useLiveActivity(
     journeyActive
       && !personalProgress.arrived
       && !localNavigationArrived
-      && liveActivityEnabled
+      && liveActivityAllowed
       && !(preferencesReady && passiveCompanionMode),
     {
     groupName: membership?.group.name ?? '',
@@ -1849,13 +1898,19 @@ export default function MapScreen({ route, navigation }: Props) {
     travelMode,
     memberEmojis: members.map((m) => m.avatar ?? ''),
     memberArrived: members.map((m) => m.status === 'arrived'),
+    // Ticket 07: destination chrome when set (native may no-op without a glyph slot).
+    destinationEmoji: navTarget?.emoji ?? undefined,
+    // Prefer stop palette color for LA accent when the leader set one.
+    ...(navTarget?.markerColor
+      ? { accentHex: navTarget.markerColor }
+      : {}),
   }, groupId && navTarget && liveActivityBaselineM != null ? {
     groupId,
     navigationSessionId: navigationSessionState.session?.id,
     destinationId: navTarget.id,
     initialDistanceM: Math.max(1, liveActivityBaselineM),
     travelMode,
-  } : undefined, liveActivityEnabled);
+  } : undefined, liveActivityAllowed);
 
 
 
@@ -2035,7 +2090,17 @@ export default function MapScreen({ route, navigation }: Props) {
       } : undefined;
   }, [biasCenter?.latitude, biasCenter?.longitude]);
 
-  const closeSearch = useCallback(() => setSearchVisible(false), []);
+  const closeSearch = useCallback(() => {
+    setSearchVisible(false);
+    // If the sheet closes before open-complete, still release the Amicro busy state.
+    searchOpenCompleteResolveRef.current?.();
+    searchOpenCompleteResolveRef.current = null;
+  }, []);
+
+  const handleSearchOpenComplete = useCallback(() => {
+    searchOpenCompleteResolveRef.current?.();
+    searchOpenCompleteResolveRef.current = null;
+  }, []);
 
   // Followers submit durable, actionable requests instead of plain-text commands.
   const notifyLeaderPlace = useCallback(
@@ -2099,13 +2164,11 @@ export default function MapScreen({ route, navigation }: Props) {
         }], 'search');
         return;
       }
+      pendingPlaceSourceRef.current = 'search';
       setPendingPlace(place);
       setPendingPlaceTitle(place.name);
-      // Wider than locate-me so the new pin has neighborhood context, not street-close.
-      mapRef.current?.centerOn(place.coordinates, {
-        zoom: PLACE_ZOOM,
-        altitude: PLACE_ALTITUDE,
-      });
+      // Search-pick camera: neighborhood zoom (must not regress with long-press fix).
+      cameraOnSearchPick(mapRef.current, place.coordinates);
     },
     [canEditItinerary, notifyLeaderPlace, tripDayForAdd],
   );
@@ -2113,6 +2176,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const handlePickDestination = useCallback(async (place: PlaceResult): Promise<boolean> => {
     if (!groupId) return false;
     const addDay = tripDayForAdd();
+    const placeSource = pendingPlaceSourceRef.current ?? 'search';
     if (!canEditItinerary) {
       return notifyLeaderPlace([{
         title: place.name,
@@ -2121,9 +2185,16 @@ export default function MapScreen({ route, navigation }: Props) {
         day: addDay,
       }], 'search');
     }
-    if (!isPro && allScopedDestinations.length >= FREE_LIMITS.destinationsPerItinerary) {
-      openPaywall('paywall.triggerDestinations');
-      return false;
+    {
+      const openCount = countOpenDestinations(allScopedDestinations);
+      if (shouldBlockNewDestination({
+        isPro,
+        openCount,
+        extraCredits: extraPointCredits,
+      })) {
+        openPaywall('paywall.triggerDestinations');
+        return false;
+      }
     }
     const result = await runUiAction(
       'map.destination_add',
@@ -2140,16 +2211,26 @@ export default function MapScreen({ route, navigation }: Props) {
             myScopeId,
           );
           if (!token.isCurrent()) return false;
-          logEvent('destination_add', { source: 'search', day: addDay });
+          logEvent('destination_add', { source: placeSource, day: addDay });
           setSelectedIndex(destinations.length);
-          mapRef.current?.centerOn(place.coordinates, {
-            zoom: PLACE_ZOOM,
-            altitude: PLACE_ALTITUDE,
-          });
+          // Long-press success: fit self + dest (or single-point fallback).
+          // Search success: keep neighborhood center on the new pin (no regression).
+          if (placeSource === 'longpress') {
+            cameraAfterSuccessfulAdd(
+              mapRef.current,
+              place.coordinates,
+              deviceCoords ?? null,
+            );
+          } else {
+            mapRef.current?.centerOn(place.coordinates, {
+              zoom: PLACE_ZOOM,
+              altitude: PLACE_ALTITUDE,
+            });
+          }
           await refresh();
           return true;
         } catch (e) {
-          logError('destination_add_failed', e, { source: 'search' });
+          logError('destination_add_failed', e, { source: placeSource });
           if (token.isCurrent()) {
             Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
           }
@@ -2173,12 +2254,14 @@ export default function MapScreen({ route, navigation }: Props) {
     notifyLeaderPlace,
     isPro,
     destinations.length,
-    allScopedDestinations.length,
+    allScopedDestinations,
+    extraPointCredits,
     myScopeId,
     refresh,
     openPaywall,
     t,
     tripDayForAdd,
+    deviceCoords,
   ]);
 
   const handleKmlImport = useCallback(async (items: KmlPlacemark[], onProgress: (done: number) => void) => {
@@ -2221,13 +2304,15 @@ export default function MapScreen({ route, navigation }: Props) {
       mediumTap();
       // Same confirm card for leaders and members: editable name, then Add.
       // Members only notify the leader when they tap Add (handlePickDestination).
-      // Do not zoom/center — keep the map where the user long-pressed.
+      // One neighborhood zoom (same scale as search pick) so the pin is confirmable.
+      cameraOnLongPress(mapRef.current, coordinates);
       const defaultName = t('map.droppedPin');
       const place: PlaceResult = {
         id: `drop-${coordinates.latitude.toFixed(5)}-${coordinates.longitude.toFixed(5)}-${Date.now()}`,
         name: defaultName,
         coordinates,
       };
+      pendingPlaceSourceRef.current = 'longpress';
       setPendingPlace(place);
       setPendingPlaceTitle(defaultName);
     },
@@ -2248,9 +2333,16 @@ export default function MapScreen({ route, navigation }: Props) {
         if (!ok) throw new Error(t('map.setFailedMsg'));
         return;
       }
-      if (!isPro && allScopedDestinations.length >= FREE_LIMITS.destinationsPerItinerary) {
-        openPaywall('paywall.triggerDestinations');
-        return;
+      {
+        const openCount = countOpenDestinations(allScopedDestinations);
+        if (shouldBlockNewDestination({
+          isPro,
+          openCount,
+          extraCredits: extraPointCredits,
+        })) {
+          openPaywall('paywall.triggerDestinations');
+          return;
+        }
       }
       const result = await runUiAction(
         'map.destination_add_coords',
@@ -2302,7 +2394,8 @@ export default function MapScreen({ route, navigation }: Props) {
       canEditItinerary,
       notifyLeaderPlace,
       isPro,
-      allScopedDestinations.length,
+      allScopedDestinations,
+      extraPointCredits,
       destinations.length,
       myScopeId,
       refresh,
@@ -3105,6 +3198,31 @@ export default function MapScreen({ route, navigation }: Props) {
     [canEditItinerary, groupId, destinations, refresh, t],
   );
 
+  const handleUpdateEmojiColor = useCallback(
+    async (
+      id: string,
+      next: { emoji: string | null; markerColor: string | null },
+    ) => {
+      if (!groupId || !canEditItinerary) return;
+      try {
+        await updateDestinationEmojiColor(groupId, id, next);
+        // Optimistic local patch so reorder list updates immediately.
+        setOptimisticDestinations((prev) => {
+          const base = prev ?? rawDestinations;
+          return base.map((d) =>
+            d.id === id
+              ? { ...d, emoji: next.emoji, markerColor: next.markerColor }
+              : d,
+          );
+        });
+        await refresh();
+      } catch (e) {
+        logError('destination_emoji_color_failed', e, { id });
+      }
+    },
+    [groupId, canEditItinerary, rawDestinations, refresh],
+  );
+
   const confirmLeave = useCallback(() => {
     // Red style only on the confirm button in the dialog — not on settings rows.
     confirmAction(
@@ -3533,7 +3651,15 @@ export default function MapScreen({ route, navigation }: Props) {
             style={styles.headerIconBtn}
             accessibilityLabel={t('map.searchA11y')}
             onPress={lightTap}
-            onAnimationComplete={() => setSearchVisible(true)}
+            onAnimationComplete={async () => {
+              // Ticket 05: animation complete → sheet open complete → reset.
+              // Resolve from DestinationSearch / OverlaySheet onOpenComplete
+              // (320 ms open), not a two-frame approximation.
+              setSearchVisible(true);
+              await new Promise<void>((resolve) => {
+                searchOpenCompleteResolveRef.current = resolve;
+              });
+            }}
           />
         ) : (
           <View style={styles.headerIconSlot} />
@@ -3623,11 +3749,61 @@ export default function MapScreen({ route, navigation }: Props) {
   }, []);
   const openPaywallCb = useCallback(() => openPaywall(), [openPaywall]);
 
-  const selectSheetPane = useCallback((key: 'members' | 'route' | 'tools') => {
+  const selectSheetPane = useCallback((key: SheetPaneKey) => {
     if (key === sheetPane) return;
     // Pill slide is handled by Segmented (same as 脫隊示警); no LayoutAnimation.
     setSheetPane(key);
   }, [sheetPane]);
+
+  const refreshStoreEntitlements = useCallback(async () => {
+    if (!groupId || isAnonymous) {
+      setLiveActivityEffective(false);
+      setExtraPointCredits(0);
+      return;
+    }
+    try {
+      const snap = await getStoreSnapshot(groupId);
+      setLiveActivityEffective(!!snap.liveActivityEffective);
+      setExtraPointCredits(Math.max(0, snap.extraPointCredits ?? 0));
+    } catch {
+      /* keep last known */
+    }
+  }, [groupId, isAnonymous]);
+
+  useEffect(() => {
+    void refreshStoreEntitlements();
+  }, [refreshStoreEntitlements, isPro]);
+
+  const openStoreForLiveActivity = useCallback(() => {
+    lightTap();
+    setStoreHighlightProduct('personal_live_activity_lifetime');
+    setSheetPane('store');
+  }, []);
+
+  /** Content horizontal swipe between panes — direction threshold; no wrap. */
+  const paneSwipeRef = useRef<{ x: number; y: number; active: boolean }>({
+    x: 0,
+    y: 0,
+    active: false,
+  });
+  const onPaneTouchStart = useCallback((e: { nativeEvent: { pageX: number; pageY: number } }) => {
+    // Route reorder overlay / edit must not switch panes mid-drag.
+    if (editButtonActive || overlay === 'route') return;
+    paneSwipeRef.current = {
+      x: e.nativeEvent.pageX,
+      y: e.nativeEvent.pageY,
+      active: true,
+    };
+  }, [editButtonActive, overlay]);
+  const onPaneTouchEnd = useCallback((e: { nativeEvent: { pageX: number; pageY: number } }) => {
+    if (!paneSwipeRef.current.active) return;
+    const dx = e.nativeEvent.pageX - paneSwipeRef.current.x;
+    const dy = e.nativeEvent.pageY - paneSwipeRef.current.y;
+    paneSwipeRef.current.active = false;
+    if (!isHorizontalPaneGesture(dx, dy)) return;
+    const next = paneAfterSwipe(sheetPane, dx);
+    if (next !== sheetPane) selectSheetPane(next);
+  }, [sheetPane, selectSheetPane]);
 
   // ─── 成員：位置、狀態、個別操作、小隊（無「成員」標題） ────────────────
   const membersPaneBody = useMemo(() => (
@@ -3756,6 +3932,16 @@ export default function MapScreen({ route, navigation }: Props) {
   const routePaneBody = useMemo(() => (
     <>
       <Text style={[styles.sheetHeading, styles.sheetHeadingFirst]}>{t('map.gatheringPoints')}</Text>
+      {extraPointCredits > 0 ? (
+        <Text
+          style={styles.extraCreditsHint}
+          testID="route-extra-point-credits"
+          accessibilityRole="text"
+          accessibilityLabel={t('store.extraCreditsRemaining', { count: extraPointCredits })}
+        >
+          {t('store.extraCreditsRemaining', { count: extraPointCredits })}
+        </Text>
+      ) : null}
       {/* 下一站 — 唯一完整卡片；底部只顯示距離 */}
       {nextStopTitle ? (
         <View style={styles.tripSummaryCard}>
@@ -3766,29 +3952,31 @@ export default function MapScreen({ route, navigation }: Props) {
           ) : null}
         </View>
       ) : null}
+      {/* Standalone reorder action — outside general listGroup (ticket 04). */}
+      <View style={styles.reorderActionCard} testID="map-reorder-action-card">
+        <Text style={styles.reorderActionTitle} numberOfLines={2}>
+          {t('map.stopsReorder', { count: destinations.length })}
+        </Text>
+        <AmicroButton
+          icon="pencil-outline"
+          activeIcon="checkmark"
+          active={editButtonActive}
+          activeOnPress
+          resetAfterComplete={false}
+          color={glass.textSecondary}
+          activeColor={glass.ok}
+          size={48}
+          accessibilityLabel={t('map.stopsReorder', { count: destinations.length })}
+          testID="map-edit-itinerary"
+          onPress={() => {
+            lightTap();
+            setEditButtonActive(true);
+          }}
+          onAnimationComplete={() => setOverlay('route')}
+        />
+      </View>
       {/* 導航入口 = 普通 List Row，無圖示色塊 */}
       <View style={styles.listGroup}>
-        <View style={styles.listRow}>
-          <Text style={styles.listRowTitle}>
-            {t('map.stopsReorder', { count: destinations.length })}
-          </Text>
-          <AmicroButton
-            icon="pencil-outline"
-            activeIcon="checkmark"
-            active={editButtonActive}
-            activeOnPress
-            resetAfterComplete={false}
-            color={glass.textSecondary}
-            activeColor={glass.ok}
-            accessibilityLabel={t('map.edit')}
-            testID="map-edit-itinerary"
-            onPress={() => {
-              lightTap();
-              setEditButtonActive(true);
-            }}
-            onAnimationComplete={() => setOverlay('route')}
-          />
-        </View>
         {isLeader && destinations.length > 0 ? (
           <Pressable
             style={styles.listRow}
@@ -3833,12 +4021,31 @@ export default function MapScreen({ route, navigation }: Props) {
     </>
   ), [
     t, styles, nextStopTitle, nextStopDistLabel, destinations.length, canEditItinerary,
-    openHistoryOverlay, isLeader, opsOpenCount, editButtonActive,
+    openHistoryOverlay, isLeader, opsOpenCount, editButtonActive, extraPointCredits,
   ]);
 
   // ─── 工具：同行者模式入口 → 定位分享 → 抵達距離 → 快捷指令 ─────────
   const toolsPaneBody = useMemo(() => (
     <>
+      {!liveActivityEffective ? (
+        <Pressable
+          style={styles.liveActivityLockedRow}
+          onPress={openStoreForLiveActivity}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: false }}
+          accessibilityLabel={t('store.liveActivityLocked')}
+          testID="tools-live-activity-locked"
+        >
+          <Ionicons name="lock-closed-outline" size={16} color={glass.textSecondary} />
+          <View style={styles.passiveEnterCopy}>
+            <Text style={styles.listRowTitle}>{t('settings.liveActivity')}</Text>
+            <Text style={styles.accuracySubhint} numberOfLines={2}>
+              {t('store.liveActivityLockedHint')}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
+        </Pressable>
+      ) : null}
       <Pressable
         style={[styles.passiveEnterBtn, { backgroundColor: accent }]}
         onPress={() => {
@@ -3918,6 +4125,29 @@ export default function MapScreen({ route, navigation }: Props) {
     styles, t, groupId, isLeader, dark, openCustomQuickCommand, accent,
     arrivalRadiusM, setArrivalRadiusM, setPassiveCompanionMode,
     sharingEnabled, handleSharingEnabledChangeAnimated, sharingApplying,
+    liveActivityEffective, openStoreForLiveActivity,
+  ]);
+
+  const storePaneBody = useMemo(() => (
+    <StorePane
+      groupId={groupId}
+      groupName={membership?.group.name ?? null}
+      isAnonymous={!!isAnonymous}
+      accent={accent}
+      t={t}
+      highlightProductCode={storeHighlightProduct}
+      onHighlightConsumed={() => setStoreHighlightProduct(null)}
+      onRequireRegistration={() => {
+        lightTap();
+        setOverlay('account');
+      }}
+      onEntitlementChanged={() => {
+        void refreshStoreEntitlements();
+      }}
+    />
+  ), [
+    groupId, membership?.group.name, isAnonymous, accent, t,
+    storeHighlightProduct, refreshStoreEntitlements,
   ]);
 
   const sheetPaneOptions = useMemo(
@@ -3925,13 +4155,14 @@ export default function MapScreen({ route, navigation }: Props) {
       { key: 'members', label: t('map.tabMembers') },
       { key: 'route', label: t('map.tabRoute') },
       { key: 'tools', label: t('map.tabTools') },
+      { key: 'store', label: t('map.tabStore') },
     ],
     [t],
   );
 
   const sheetChildren = useMemo(() => (
     <>
-      {/* Main Members/Route/Tools selector — Liquid Glass at this call site only */}
+      {/* Main Members/Route/Tools/Store selector — Liquid Glass at this call site only */}
       <View style={styles.sheetPaneToggleWrap}>
         <liquidGlass.GlassView
           tintColor={glass.fill}
@@ -3943,34 +4174,50 @@ export default function MapScreen({ route, navigation }: Props) {
             value={sheetPane}
             onChange={selectSheetPane as (key: string) => void}
             unstyledTrack
+            viewportCount={3}
           />
         </liquidGlass.GlassView>
       </View>
 
       <View
-        style={sheetPane === 'members' ? undefined : styles.sheetPaneHidden}
-        pointerEvents={sheetPane === 'members' ? 'auto' : 'none'}
-        collapsable={false}
+        onTouchStart={onPaneTouchStart}
+        onTouchEnd={onPaneTouchEnd}
+        testID="sheet-pane-swipe-area"
       >
-        {membersPaneBody}
-      </View>
-      <View
-        style={sheetPane === 'route' ? undefined : styles.sheetPaneHidden}
-        pointerEvents={sheetPane === 'route' ? 'auto' : 'none'}
-        collapsable={false}
-      >
-        {routePaneBody}
-      </View>
-      <View
-        style={sheetPane === 'tools' ? undefined : styles.sheetPaneHidden}
-        pointerEvents={sheetPane === 'tools' ? 'auto' : 'none'}
-        collapsable={false}
-      >
-        {toolsPaneBody}
+        <View
+          style={sheetPane === 'members' ? undefined : styles.sheetPaneHidden}
+          pointerEvents={sheetPane === 'members' ? 'auto' : 'none'}
+          collapsable={false}
+        >
+          {membersPaneBody}
+        </View>
+        <View
+          style={sheetPane === 'route' ? undefined : styles.sheetPaneHidden}
+          pointerEvents={sheetPane === 'route' ? 'auto' : 'none'}
+          collapsable={false}
+        >
+          {routePaneBody}
+        </View>
+        <View
+          style={sheetPane === 'tools' ? undefined : styles.sheetPaneHidden}
+          pointerEvents={sheetPane === 'tools' ? 'auto' : 'none'}
+          collapsable={false}
+        >
+          {toolsPaneBody}
+        </View>
+        <View
+          style={sheetPane === 'store' ? undefined : styles.sheetPaneHidden}
+          pointerEvents={sheetPane === 'store' ? 'auto' : 'none'}
+          collapsable={false}
+        >
+          {storePaneBody}
+        </View>
       </View>
     </>
   ), [
-    styles, accent, sheetPane, sheetPaneOptions, selectSheetPane, membersPaneBody, routePaneBody, toolsPaneBody,
+    styles, accent, sheetPane, sheetPaneOptions, selectSheetPane,
+    membersPaneBody, routePaneBody, toolsPaneBody, storePaneBody,
+    onPaneTouchStart, onPaneTouchEnd,
   ]);
 
   if (loading && !state) {
@@ -5074,6 +5321,7 @@ export default function MapScreen({ route, navigation }: Props) {
             onUpdateTripDetails={handleUpdateTripDetails}
             onReorder={handleReorder}
             onDelete={canEditItinerary ? handleDelete : undefined}
+            onUpdateEmojiColor={canEditItinerary ? handleUpdateEmojiColor : undefined}
             onSync={syncFromDatabaseAndUploadLogs}
             colors={dark}
             emptyLabel={t('settings.noDestinations')}
@@ -5117,7 +5365,7 @@ export default function MapScreen({ route, navigation }: Props) {
                   : 'passiveBackground'
         }
         liveActivityStatus={
-          journeyActive && liveActivityEnabled ? 'active/requested' : 'inactive'
+          journeyActive && liveActivityAllowed ? 'active/requested' : 'inactive'
         }
         destinations={destinations}
         activeDestinationId={navTargetId ?? selectedDestination?.id ?? null}
@@ -5182,7 +5430,14 @@ export default function MapScreen({ route, navigation }: Props) {
                 style={styles.inviteActionButton}
                 accessibilityLabel={t('map.shareInviteLink')}
                 onPress={lightTap}
-                onAnimationComplete={() => { void shareCode(); }}
+                onAnimationComplete={async () => {
+                  // Hold complete frame until system share settles (ok or cancel).
+                  try {
+                    await shareCode();
+                  } catch {
+                    // Existing error path; always release busy via Amicro finally.
+                  }
+                }}
               />
               <AmicroButton
                 icon="copy-outline"
@@ -5695,6 +5950,7 @@ export default function MapScreen({ route, navigation }: Props) {
       <DestinationSearch
         visible={searchVisible}
         onClose={closeSearch}
+        onOpenComplete={handleSearchOpenComplete}
         biasRegion={biasRegion}
         // Don't persist on pick — stage the place for the bottom confirm card
         // (Add / Cancel). Resolves immediately so the search sheet closes.
@@ -5710,7 +5966,8 @@ export default function MapScreen({ route, navigation }: Props) {
       <KmlImportSheet
         visible={kmlVisible}
         onClose={() => setKmlVisible(false)}
-        currentCount={allScopedDestinations.length}
+        currentCount={countOpenDestinations(allScopedDestinations)}
+        extraCredits={extraPointCredits}
         isPro={isPro}
         onImport={handleKmlImport}
         onUpgrade={() => {
@@ -7164,6 +7421,22 @@ const makeStyles = (
       borderBottomWidth: 0,
     },
     /** Inactive toggle panes: skip layout work during sheet stage morphs. */
+    extraCreditsHint: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: glass.textSecondary,
+      marginBottom: 8,
+    },
+    liveActivityLockedRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      backgroundColor: glass.fill,
+      borderRadius: 14,
+      paddingVertical: 12,
+      paddingHorizontal: 12,
+      marginBottom: 10,
+    },
     sheetPaneHidden: {
       display: 'none',
     },
@@ -7230,6 +7503,27 @@ const makeStyles = (
       marginBottom: 8,
       borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: 'rgba(255,255,255,0.08)',
+    },
+    /** Standalone framed reorder action (outside listGroup). */
+    reorderActionCard: {
+      marginBottom: 10,
+      minHeight: 52,
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      borderRadius: 14,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairlineStrong,
+      backgroundColor: glass.fill,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+    },
+    reorderActionTitle: {
+      flex: 1,
+      fontSize: 16,
+      fontWeight: '600',
+      color: '#fff',
+      minWidth: 0,
     },
     listRow: {
       minHeight: 48,

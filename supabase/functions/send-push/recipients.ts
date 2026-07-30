@@ -11,5 +11,36 @@ export function requestStartRecipientIds<
   }
   return members
     .filter((member) => member.role === "leader")
+    .filter((member) => member.user_id !== payload.sender_id)
     .map((member) => member.user_id);
+}
+
+/**
+ * Leader-only recipient set for arrival / leave-style events.
+ * Mirrors client `notificationDeliveryPolicy` leader_only kind.
+ */
+export function leaderOnlyRecipientIds<
+  T extends { user_id: string; role: string; solo?: boolean },
+>(
+  payload: Pick<PushPayload, "sender_id">,
+  members: T[],
+  options?: { excludeSolo?: boolean },
+): string[] {
+  return members
+    .filter((member) => member.role === "leader")
+    .filter((member) => member.user_id !== payload.sender_id)
+    .filter((member) => (options?.excludeSolo ? !member.solo : true))
+    .map((member) => member.user_id);
+}
+
+/** When non-null, replaces the default alert candidate pipeline. */
+export function specialAlertRecipientIds<
+  T extends { user_id: string; role: string; solo?: boolean },
+>(payload: PushPayload, members: T[]): string[] | null {
+  if (payload.category === "arrival") {
+    return leaderOnlyRecipientIds(payload, members, { excludeSolo: true });
+  }
+  const requestStart = requestStartRecipientIds(payload, members);
+  if (requestStart) return requestStart;
+  return null;
 }

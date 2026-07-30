@@ -1,0 +1,106 @@
+[
+  {
+    "name": "quick_command with entity_id",
+    "mobile": {
+      "category": "leader_commands",
+      "groupId": "g1",
+      "type": "hurry",
+      "senderId": "s1",
+      "entityId": "cmd-1"
+    },
+    "deno": {
+      "category": "leader_commands",
+      "group_id": "g1",
+      "type": "hurry",
+      "sender_id": "s1",
+      "entity_id": "cmd-1"
+    },
+    "expected": "quick_command:g1:cmd-1:s1:"
+  },
+  {
+    "name": "request_start",
+    "mobile": {
+      "category": "follower_requests",
+      "groupId": "g1",
+      "type": "request_start",
+      "senderId": "m1",
+      "entityId": "cmd-2"
+    },
+    "deno": {
+      "category": "follower_requests",
+      "group_id": "g1",
+      "type": "request_start",
+      "sender_id": "m1",
+      "entity_id": "cmd-2"
+    },
+    "expected": "route_request:g1:cmd-2:m1:"
+  },
+  {
+    "name": "arrival / member_arrival via destination_id",
+    "mobile": {
+      "category": "arrival",
+      "groupId": "g1",
+      "senderId": "member-1",
+      "entityId": "dest-9",
+      "destinationId": "dest-9"
+    },
+    "deno": {
+      "category": "arrival",
+      "group_id": "g1",
+      "sender_id": "member-1",
+      "destination_id": "dest-9"
+    },
+    "expected": "member_arrival:g1:dest-9:member-1:"
+  },
+  {
+    "name": "straggler with entity_id",
+    "mobile": {
+      "category": "straggler",
+      "groupId": "g1",
+      "senderId": "leader-1",
+      "entityId": "alert-1"
+    },
+    "deno": {
+      "category": "straggler",
+      "group_id": "g1",
+      "sender_id": "leader-1",
+      "entity_id": "alert-1",
+      "member_id": "fallen"
+    },
+    "expected": "straggler:g1:alert-1:leader-1:"
+  },
+  {
+    "name": "journey omits sender",
+    "mobile": {
+      "category": "journey",
+      "groupId": "g1",
+      "senderId": "leader-ignored",
+      "status": "going"
+    },
+    "deno": {
+      "category": "journey",
+      "group_id": "g1",
+      "sender_id": "leader-ignored",
+      "status": "going"
+    },
+    "expected": "journey:g1:going::going"
+  },
+  {
+    "name": "add_gathering",
+    "mobile": {
+      "category": "add_gathering",
+      "groupId": "g1",
+      "senderId": "u1",
+      "entityId": "dest-new",
+      "title": "Cafe"
+    },
+    "deno": {
+      "category": "add_gathering",
+      "group_id": "g1",
+      "sender_id": "u1",
+      "entity_id": "dest-new",
+      "title": "Cafe"
+    },
+    "expected": "add_gathering:g1:dest-new:u1:"
+  }
+]

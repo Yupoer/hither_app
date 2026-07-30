@@ -107,17 +107,27 @@ describe('CoordinateDestinationSheet wiring contract', () => {
     expect(longPressEnd).toBeGreaterThan(longPressStart);
     const longPressBlock = mapScreen.slice(longPressStart, longPressEnd);
     expect(longPressBlock).toContain('setPendingPlace(place)');
+    expect(longPressBlock).toContain('cameraOnLongPress');
     expect(longPressBlock).not.toContain('notifyLeaderPlace');
     expect(mapScreen).toContain('notifyLeaderPlace');
     expect(mapScreen).toContain('handlePickDestination(place)');
     expect(mapScreen).toContain('mediumTap()');
+    expect(mapScreen).toContain('cameraAfterSuccessfulAdd');
     expect(groupMap).toContain('moveOnMarkerPress={false}');
     // Transit-oriented defaults live on native/maps boundary (not UI Platform branch).
     expect(groupMap).toContain('defaultMapTransitProps');
   });
 
-  it('keeps KML picker copyToCacheDirectory for Android content:// URIs', () => {
+  it('keeps KML picker copyToCacheDirectory and native-boundary load pipeline', () => {
     expect(kml).toContain('copyToCacheDirectory: true');
-    expect(kml).toContain('parseKml');
+    expect(kml).toContain('loadKmlKmzFromAsset');
+    // File I/O lives in native/kmlIo — not Platform/FileSystem in the sheet.
+    expect(kml).toContain('kmlIo.createDefaultKmlLoadIo');
+    expect(kml).not.toContain('expo-file-system');
+    expect(kml).not.toContain('Platform');
+    const kmlIo = readFileSync(join(__dirname, '../native/kmlIo.ts'), 'utf8');
+    expect(kmlIo).toContain('materializeToCache');
+    expect(kmlIo).toContain('expo-file-system');
   });
 });
+

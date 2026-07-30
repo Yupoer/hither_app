@@ -20,6 +20,14 @@ import { usePreferences } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
 import { resolveVisibleStartDay } from '../utils/tripDay';
 import { clampDateNotBeforeToday, startOfTodayLocal } from '../utils/meetTime';
+import {
+  DESTINATION_COLOR_FALLBACK,
+  DESTINATION_EMOJI_FALLBACK,
+  DESTINATION_EMOJI_PRESETS,
+  destinationEmojiDisplay,
+  resolveDestinationColor,
+  validateDestinationEmoji,
+} from '../utils/destinationEmojiColor';
 
 const ROW_HEIGHT = 56;
 const REVEAL_WIDTH = 76;
@@ -33,6 +41,11 @@ interface Props {
   onUpdateTripDetails: (days: number, date: string) => void;
   onReorder: (updates: { id: string; position: number; day: number }[]) => void;
   onDelete?: (id: string) => void;
+  /** Per-stop emoji + palette color (ticket 07). Editors only. */
+  onUpdateEmojiColor?: (
+    id: string,
+    next: { emoji: string | null; markerColor: string | null },
+  ) => void | Promise<void>;
   onSync?: () => Promise<void>;
   colors: Palette;
   emptyLabel: string;
@@ -53,6 +66,7 @@ export default function DestinationReorderList({
   onUpdateTripDetails,
   onReorder,
   onDelete,
+  onUpdateEmojiColor,
   onSync,
   colors,
   emptyLabel,
@@ -70,6 +84,9 @@ export default function DestinationReorderList({
   const draggingRef = useRef(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [colorPickerDay, setColorPickerDay] = useState<number | null>(null);
+  const [emojiPickerDestId, setEmojiPickerDestId] = useState<string | null>(null);
+  const [customEmoji, setCustomEmoji] = useState('');
+  const [customEmojiError, setCustomEmojiError] = useState(false);
   // Stable so memo(HeaderRow) is not busted by a new lambda each parent render.
   const onHeaderColorPress = useCallback((day: number) => {
     setColorPickerDay(day);
@@ -348,6 +365,15 @@ export default function DestinationReorderList({
                 onMove={onMove}
                 onRelease={onRelease}
                 onDelete={onDelete}
+                onEmojiPress={
+                  canReorder && onUpdateEmojiColor
+                    ? (id) => {
+                        setCustomEmoji('');
+                        setCustomEmojiError(false);
+                        setEmojiPickerDestId(id);
+                      }
+                    : undefined
+                }
               />
             );
           })}
@@ -435,6 +461,84 @@ export default function DestinationReorderList({
                </View>
             </Pressable>
          </Pressable>
+      </Modal>
+
+      <Modal visible={emojiPickerDestId !== null} transparent animationType="fade">
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setEmojiPickerDestId(null)}
+        >
+          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.modalTitle}>{t('destEmoji.title')}</Text>
+            <View style={styles.emojiPresetGrid}>
+              {DESTINATION_EMOJI_PRESETS.map((preset) => (
+                <Pressable
+                  key={`${preset.emoji}-${preset.color}`}
+                  onPress={() => {
+                    if (!emojiPickerDestId || !onUpdateEmojiColor) return;
+                    void onUpdateEmojiColor(emojiPickerDestId, {
+                      emoji: preset.emoji,
+                      markerColor: preset.color,
+                    });
+                    setEmojiPickerDestId(null);
+                  }}
+                  style={[styles.emojiPresetCell, { borderColor: preset.color }]}
+                  accessibilityRole="button"
+                  accessibilityLabel={preset.labelZh}
+                >
+                  <Text style={styles.emojiPresetGlyph}>{preset.emoji}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={styles.modalLabel}>{t('destEmoji.custom')}</Text>
+            <TextInput
+              value={customEmoji}
+              onChangeText={(text) => {
+                setCustomEmoji(text);
+                setCustomEmojiError(false);
+              }}
+              placeholder="📍"
+              placeholderTextColor={colors.textSecondary}
+              style={styles.emojiCustomInput}
+              maxLength={32}
+              accessibilityLabel={t('destEmoji.custom')}
+            />
+            {customEmojiError ? (
+              <Text style={styles.emojiError}>{t('destEmoji.invalid')}</Text>
+            ) : null}
+            <View style={styles.modalActions}>
+              <Pressable
+                onPress={() => setEmojiPickerDestId(null)}
+                style={styles.modalActionBtn}
+              >
+                <Text style={styles.modalActionText}>{t('common.cancel')}</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  if (!emojiPickerDestId || !onUpdateEmojiColor) return;
+                  const v = validateDestinationEmoji(customEmoji);
+                  if (!v.ok) {
+                    setCustomEmojiError(true);
+                    return;
+                  }
+                  const color =
+                    DESTINATION_EMOJI_PRESETS.find((p) => p.emoji === v.emoji)?.color
+                    ?? DESTINATION_COLOR_FALLBACK;
+                  void onUpdateEmojiColor(emojiPickerDestId, {
+                    emoji: v.emoji,
+                    markerColor: color,
+                  });
+                  setEmojiPickerDestId(null);
+                }}
+                style={[styles.modalActionBtn, { backgroundColor: colors.accent }]}
+              >
+                <Text style={[styles.modalActionText, { color: '#fff' }]}>
+                  {t('common.confirm')}
+                </Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
       </Modal>
     </View>
   );
@@ -539,6 +643,7 @@ const Row = memo(function Row({
   onMove,
   onRelease,
   onDelete,
+  onEmojiPress,
 }: {
   item: Destination;
   active: boolean;
@@ -549,6 +654,7 @@ const Row = memo(function Row({
   onMove: (id: string, dy: number) => void;
   onRelease: () => void;
   onDelete?: (id: string) => void;
+  onEmojiPress?: (id: string) => void;
 }) {
   const translateX = useRef(new Animated.Value(0)).current;
   const axisRef = useRef<null | 'h' | 'v'>(null);
@@ -653,7 +759,20 @@ const Row = memo(function Row({
         ]}
         {...(canReorder || canSwipe ? responder.panHandlers : {})}
       >
-        <Ionicons name="location-outline" size={20} color={styles.handle.color} style={{ marginRight: 8 }} />
+        <Pressable
+          onPress={() => onEmojiPress?.(item.id)}
+          disabled={!onEmojiPress}
+          accessibilityRole={onEmojiPress ? 'button' : undefined}
+          accessibilityLabel={onEmojiPress ? 'dest emoji' : undefined}
+          style={[
+            styles.emojiBadge,
+            { backgroundColor: resolveDestinationColor(item.markerColor) },
+          ]}
+        >
+          <Text style={styles.emojiBadgeGlyph}>
+            {destinationEmojiDisplay(item.emoji, DESTINATION_EMOJI_FALLBACK)}
+          </Text>
+        </Pressable>
         <View style={styles.rowBody}>
           <Text style={styles.rowTitle} numberOfLines={1}>
             {item.title}
@@ -741,6 +860,51 @@ const makeStyles = (colors: Palette) =>
     rowBody: { flex: 1 },
     rowTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: '600' },
     rowAddress: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
+    emojiBadge: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 8,
+    },
+    emojiBadgeGlyph: {
+      fontSize: 16,
+    },
+    emojiPresetGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+      marginBottom: spacing.md,
+    },
+    emojiPresetCell: {
+      width: 40,
+      height: 40,
+      borderRadius: 10,
+      borderWidth: 2,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.glass,
+    },
+    emojiPresetGlyph: {
+      fontSize: 20,
+    },
+    emojiCustomInput: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      color: colors.textPrimary,
+      fontSize: 22,
+      marginBottom: spacing.sm,
+      textAlign: 'center',
+    },
+    emojiError: {
+      color: colors.danger,
+      fontSize: 13,
+      marginBottom: spacing.sm,
+    },
     handle: { color: colors.textSecondary, fontSize: 22, paddingHorizontal: spacing.xs },
     deleteBg: {
       ...StyleSheet.absoluteFill,

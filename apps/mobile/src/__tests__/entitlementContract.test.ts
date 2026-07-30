@@ -63,10 +63,10 @@ const migration = readFileSync(
 ).replace(/\r\n/g, '\n');
 
 describe('FREE_LIMITS / Small Trip Pass constants', () => {
-  it('Free Plan keeps the member cap but allows unlimited gathering points temporarily', () => {
+  it('Free Plan caps members and open gathering points at 5', () => {
     expect(FREE_LIMITS.groupMembers).toBe(5);
-    expect(FREE_LIMITS.destinationsPerItinerary).toBe(Number.POSITIVE_INFINITY);
-    expect(FREE_LIMITS.kmlImportPoints).toBe(Number.POSITIVE_INFINITY);
+    expect(FREE_LIMITS.destinationsPerItinerary).toBe(5);
+    expect(FREE_LIMITS.kmlImportPoints).toBe(5);
   });
 
   it('Small Trip Pass is 2–5 people, 7 days, trip-scoped product', () => {
@@ -93,8 +93,9 @@ describe('member-count boundaries (Leader included)', () => {
 
 describe('itinerary-point boundaries', () => {
   it.each([
-    [5, true, false],
-    [6, true, false],
+    // At 5 open points: still within Free cap, but the next add exceeds.
+    [5, true, true],
+    [6, false, true],
     [4, true, false],
   ])(
     'points=%i → withinFree=%s wouldExceedOnAdd=%s',

@@ -26,6 +26,8 @@ function normalizeSearchInput(value: string): string {
 export interface DestinationSearchProps {
   visible: boolean;
   onClose: () => void;
+  /** Fires after the sheet open animation finishes (OverlaySheet). */
+  onOpenComplete?: () => void;
   /** Bias search results toward what the user is looking at, when known. */
   biasRegion?: MapRegion;
   /**
@@ -48,6 +50,7 @@ export interface DestinationSearchProps {
 export default React.memo(function DestinationSearch({
   visible,
   onClose,
+  onOpenComplete,
   biasRegion,
   onPick,
 }: DestinationSearchProps) {
@@ -108,6 +111,7 @@ export default React.memo(function DestinationSearch({
     <OverlaySheet
       visible={visible}
       onClose={onClose}
+      onOpenComplete={onOpenComplete}
       title={t('search.sheetTitle')}
       accent={colors.accent}
       doneLabel={t('common.cancel')}
