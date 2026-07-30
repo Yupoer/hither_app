@@ -64,7 +64,8 @@ const MAX_EMOJI_CODE_UNITS = 32;
 
 /**
  * Segment into grapheme clusters when Intl.Segmenter is available (Hermes/modern JS).
- * Fallback: treat each code point as a cluster (ZWJ families may fail — tests document).
+ * Fallback: join VS16 / keycap / skin-tone / ZWJ sequences so preset emoji like
+ * 🍽️ 🛍️ ✈️ still count as one cluster when Segmenter is missing.
  */
 export function segmentGraphemes(input: string): string[] {
   const Segmenter = (Intl as unknown as {
@@ -81,7 +82,33 @@ export function segmentGraphemes(input: string): string[] {
       // fall through
     }
   }
-  return [...input];
+  // Code-point fallback with common emoji combining marks attached.
+  const cps = [...input];
+  const out: string[] = [];
+  for (let i = 0; i < cps.length; i += 1) {
+    let g = cps[i];
+    while (i + 1 < cps.length) {
+      const next = cps[i + 1];
+      // VS16 presentation, skin tone, keycap, ZWJ (+ following glyph)
+      if (
+        next === '\uFE0F'
+        || next === '\u20E3'
+        || (next >= '\u{1F3FB}' && next <= '\u{1F3FF}')
+        || next === '\u200D'
+      ) {
+        g += next;
+        i += 1;
+        if (next === '\u200D' && i + 1 < cps.length) {
+          g += cps[i + 1];
+          i += 1;
+        }
+        continue;
+      }
+      break;
+    }
+    out.push(g);
+  }
+  return out;
 }
 
 /**
@@ -131,6 +158,12 @@ export function validateDestinationEmoji(raw: string | null | undefined): EmojiV
   if (!trimmed) return { ok: false, reason: 'empty' };
   if (trimmed.length > MAX_EMOJI_CODE_UNITS) return { ok: false, reason: 'oversize' };
   if (/https?:\/\/|www\./i.test(trimmed)) return { ok: false, reason: 'url' };
+
+  // Product presets always win — picker only offers these strings. Avoids
+  // false "multi" rejects when Segmenter is missing and FE0F splits code points.
+  if (DESTINATION_EMOJI_PRESET_SET.has(trimmed)) {
+    return { ok: true, emoji: trimmed };
+  }
 
   const clusters = segmentGraphemes(trimmed).filter((g) => g.length > 0);
   if (clusters.length === 0) return { ok: false, reason: 'empty' };

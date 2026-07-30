@@ -339,15 +339,17 @@ describe('map UI placement contracts', () => {
     expect(segmented).toContain('prevSegWRef');
   });
 
-  it('applies Liquid Glass only to the main sheet Members/Route/Tools/Store icon tabs', () => {
+  it('renders Members/Route/Tools/Store as compact icon tabs without Liquid Glass rim', () => {
     const optionsStart = mapScreen.indexOf('const sheetPaneOptions = useMemo');
     const sheetChildrenEnd = mapScreen.indexOf('if (loading && !state)', optionsStart);
     const sheetBlock = mapScreen.slice(
       optionsStart,
       sheetChildrenEnd > 0 ? sheetChildrenEnd : optionsStart + 3000,
     );
-    expect(sheetBlock).toContain('liquidGlass.GlassView');
+    // Tab shell is solid fill (no GlassView) so liquid-glass white rims never appear.
     expect(sheetBlock).toContain('SheetPaneTabs');
+    expect(sheetBlock).toContain('sheetPaneToggleGlass');
+    expect(sheetBlock).not.toContain('liquidGlass.GlassView');
     expect(sheetBlock).toContain("key: 'members'");
     expect(sheetBlock).toContain("key: 'route'");
     expect(sheetBlock).toContain("key: 'tools'");

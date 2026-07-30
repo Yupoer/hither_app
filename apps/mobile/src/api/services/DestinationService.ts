@@ -2,8 +2,12 @@
  * DestinationService — itinerary CRUD (add, delete, reorder, meet-time).
  */
 import { supabase } from '../supabase';
-import { demoAddDestination, isDemoGroup } from '../demo';
+import { demoAddDestination, demoUpdateDestinationEmoji, isDemoGroup } from '../demo';
 import type { Coordinates, Destination } from '../../types';
+import {
+  validateDestinationColor,
+  validateDestinationEmoji,
+} from '../../utils/destinationEmojiColor';
 import { orThrow } from './_helpers';
 
 // ── Row shape ──────────────────────────────────────────────────────────────
@@ -190,6 +194,7 @@ export async function reorderDestinations(
 /**
  * Update per-stop emoji + palette color. Null clears to schema null (client fallback).
  * Trust boundary: only validated emoji grapheme + palette hex are written.
+ * Flag color UI is day-scoped; callers typically send emoji only.
  */
 export async function updateDestinationEmojiColor(
   groupId: string,
@@ -197,13 +202,11 @@ export async function updateDestinationEmojiColor(
   input: { emoji?: string | null; markerColor?: string | null },
 ): Promise<void> {
   if (isDemoGroup(groupId)) {
+    if ('emoji' in input) {
+      demoUpdateDestinationEmoji(destinationId, input.emoji ?? null);
+    }
     return;
   }
-  // Lazy import keeps DestinationService free of circular utils in unit maps.
-  const {
-    validateDestinationColor,
-    validateDestinationEmoji,
-  } = await import('../../utils/destinationEmojiColor');
 
   const patch: { emoji?: string | null; marker_color?: string | null } = {};
   if ('emoji' in input) {
@@ -212,7 +215,9 @@ export async function updateDestinationEmojiColor(
     } else {
       const v = validateDestinationEmoji(input.emoji);
       if (!v.ok) {
-        const err = new Error('invalid_destination_emoji') as Error & { code?: string };
+        const err = new Error(`invalid_destination_emoji:${v.reason}`) as Error & {
+          code?: string;
+        };
         err.code = 'invalid_destination_emoji';
         throw err;
       }
@@ -234,12 +239,20 @@ export async function updateDestinationEmojiColor(
   }
   if (Object.keys(patch).length === 0) return;
 
-  const { error } = await supabase
+  // .select() so a silent RLS miss (0 rows) surfaces instead of fake success.
+  const { data, error } = await supabase
     .from('itinerary_items')
     .update(patch)
     .eq('id', destinationId)
-    .eq('group_id', groupId);
+    .eq('group_id', groupId)
+    .select('id')
+    .maybeSingle();
   orThrow(error);
+  if (!data?.id) {
+    const err = new Error('destination_emoji_update_empty') as Error & { code?: string };
+    err.code = 'destination_emoji_update_empty';
+    throw err;
+  }
 }
 
 /**

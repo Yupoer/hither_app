@@ -1,6 +1,6 @@
 /**
  * Members / Route / Tools / Store icon tab bar (sheet chrome).
- * Tap-only equal-width tabs with accent underline — replaces CoverFlow cards.
+ * Compact equal-width tabs; active accent underline sits on the bottom edge.
  */
 import React, { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -81,9 +81,10 @@ export const SheetPaneTabs = React.memo(function SheetPaneTabs({
                 {opt.label}
               </Text>
               <View
+                pointerEvents="none"
                 style={[
                   styles.underline,
-                  active && { backgroundColor: accent, opacity: 1 },
+                  active && { backgroundColor: accent },
                 ]}
               />
             </Pressable>
@@ -96,7 +97,7 @@ export const SheetPaneTabs = React.memo(function SheetPaneTabs({
 
 const makeStyles = (scale: number, boldText: boolean) => {
   const s = (n: number, min = 0) => Math.max(min, Math.round(n * scale));
-  const iconSize = s(22, 18);
+  const iconSize = s(18, 16);
   return {
     iconSize,
     ...StyleSheet.create({
@@ -104,35 +105,38 @@ const makeStyles = (scale: number, boldText: boolean) => {
         width: '100%',
         flexDirection: 'row',
         alignItems: 'stretch',
-        minHeight: s(56, 48),
-        marginBottom: s(4, 2),
+        // Compact bar so content below rides higher.
+        minHeight: s(44, 40),
       },
       tab: {
         flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
-        paddingTop: s(10, 8),
-        paddingBottom: s(8, 6),
-        gap: s(4, 2),
+        paddingTop: s(6, 5),
+        // Room for the bottom-edge underline only — no floating gap.
+        paddingBottom: s(6, 5),
+        gap: s(2, 1),
       },
       label: {
-        fontSize: s(boldText ? 12 : 13, 11),
+        fontSize: s(boldText ? 11 : 12, 10),
         fontWeight: boldText ? '600' : '700',
         textAlign: 'center',
+        lineHeight: s(boldText ? 13 : 14, 12),
       },
       underline: {
-        marginTop: s(4, 2),
-        height: 3,
-        width: '52%',
-        borderRadius: 2,
+        position: 'absolute',
+        left: '24%',
+        right: '24%',
+        bottom: 0,
+        height: 2,
+        borderRadius: 1,
         backgroundColor: 'transparent',
-        opacity: 0,
       },
       divider: {
         width: StyleSheet.hairlineWidth,
         alignSelf: 'center',
-        height: '55%',
-        backgroundColor: glass.hairline,
+        height: '50%',
+        backgroundColor: glass.hairlineSoft,
       },
     }),
   };
