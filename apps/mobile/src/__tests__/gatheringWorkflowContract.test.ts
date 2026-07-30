@@ -161,7 +161,9 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
   it('routes request_start through follower preferences to leaders only', () => {
     expect(migrations).toContain("'custom','request_start'");
     expect(migrations).toContain("'found_something','request_start'");
-    expect(pushIndex).toContain('requestStartRecipientIds(payload, members)');
+    // send-push uses specialAlertRecipientIds (arrival + request_start leader fan-out).
+    expect(pushIndex).toContain('specialAlertRecipientIds(payload, members)');
+    expect(pushRecipients).toContain('requestStartRecipientIds');
     expect(pushRecipients).toContain('.filter((member) => member.role === "leader")');
     expect(pushMessages).toContain('request_start: "要求開始"');
     expect(mapScreen).toContain("'request_start'");

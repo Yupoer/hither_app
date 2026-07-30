@@ -9,20 +9,6 @@ const root = join(__dirname, '..');
 const read = (rel: string) =>
   readFileSync(join(root, rel), 'utf8').replace(/\r\n/g, '\n');
 
-/** Mirrors PaneCoverFlow pure geometry (keep in sync with COVERFLOW_* constants). */
-function coverFlowCardLeftEdge(args: {
-  trackW: number;
-  cardIndex: number;
-  centerIndex: number;
-  cardDivisor: number;
-  stepRatio: number;
-}): number {
-  const cardW = args.trackW / args.cardDivisor;
-  const step = cardW * args.stepRatio;
-  const offset = args.cardIndex - args.centerIndex;
-  return args.trackW / 2 + offset * step - cardW / 2;
-}
-
 const mapScreen = read('screens/MapScreen.tsx');
 const reorderList = read('components/DestinationReorderList.tsx');
 const bottomSheet = read('components/BottomSheet.tsx');
@@ -99,17 +85,21 @@ describe('rewarded ad finite timeouts (ticket 03 / review-02)', () => {
   });
 });
 
-describe('emoji picker 25 + independent color (ticket 07)', () => {
-  it('uses fixed presets with independent drafts and no custom emoji UI', () => {
+describe('emoji picker icon-only (ticket 07)', () => {
+  it('uses fixed presets, emoji draft only, no per-stop color grid', () => {
     expect(reorderList).toContain('DESTINATION_EMOJI_PRESETS');
-    expect(reorderList).toContain('DESTINATION_PALETTE_LIST');
     expect(reorderList).toContain('emojiDraft');
-    expect(reorderList).toContain('colorDraft');
     expect(reorderList).toContain('dest-emoji-preview');
     expect(reorderList).toContain('dest-emoji-confirm');
     expect(reorderList).not.toContain('destEmoji.custom');
     expect(reorderList).not.toContain('customEmoji');
+    expect(reorderList).not.toContain('colorDraft');
+    expect(reorderList).not.toContain('dest-color-grid');
+    expect(reorderList).not.toContain('DESTINATION_PALETTE_LIST');
     expect(reorderList).toContain('destEmoji.saveFailed');
+    // Badge / preview use day color, not per-stop markerColor.
+    expect(reorderList).toContain('getColorForDay');
+    expect(reorderList).toContain('dayColor');
   });
 
   it('uses uniform accent border on every emoji cell (selection via background)', () => {
@@ -124,64 +114,30 @@ describe('emoji picker 25 + independent color (ticket 07)', () => {
   });
 });
 
-describe('CoverFlow exclusive gestures (ticket 08)', () => {
-  it('BottomSheet fails horizontal so CoverFlow can own X axis', () => {
-    expect(bottomSheet).toContain('SHEET_FAIL_OFFSET_X');
+describe('Sheet icon tabs (replaces CoverFlow ticket 08)', () => {
+  it('MapScreen uses SheetPaneTabs with four pane keys', () => {
+    expect(mapScreen).toContain('SheetPaneTabs');
+    expect(mapScreen).toContain("key: 'members'");
+    expect(mapScreen).toContain("key: 'route'");
+    expect(mapScreen).toContain("key: 'tools'");
+    expect(mapScreen).toContain("key: 'store'");
+    expect(mapScreen).not.toContain('PaneCoverFlow');
+  });
+
+  it('SheetPaneTabs exposes equal-width icon tabs with testIDs', () => {
+    const tabs = read('screens/MapScreen/components/SheetPaneTabs.tsx');
+    expect(tabs).toContain('testID="sheet-pane-tabs"');
+    expect(tabs).toContain('sheet-pane-tab-');
+    expect(tabs).toContain('people');
+    expect(tabs).toContain('location');
+    expect(tabs).toContain('build');
+    expect(tabs).toContain('bag-handle');
+    expect(tabs).toContain('selectionTick');
+    expect(tabs).toContain('SheetPaneKey');
+  });
+
+  it('BottomSheet keeps vertical ownership for sheet drag', () => {
     expect(bottomSheet).toContain('SHEET_ACTIVE_OFFSET_Y');
-    expect(bottomSheet).toContain('failOffsetX');
     expect(bottomSheet).toContain('activeOffsetY');
-  });
-
-  it('CoverFlow clears drag on cancel finalize and i18n a11y actions', () => {
-    const cover = read('screens/MapScreen/components/PaneCoverFlow.tsx');
-    expect(cover).toContain('didEndSV');
-    expect(cover).toContain('onFinalize');
-    expect(cover).toContain('dragX.value = 0');
-    expect(cover).toContain('coverFlowHapticSteps');
-    expect(cover).toContain("t('map.coverFlowNext')");
-    expect(cover).toContain("t('map.coverFlowPrev')");
-    expect(cover).toContain('SheetPaneKey');
-    expect(cover).toContain('COVERFLOW_CARD_DIVISOR');
-    expect(cover).toContain('COVERFLOW_STEP_RATIO');
-  });
-
-  it('keeps every pane card partially inside track for each center index', () => {
-    const cover = read('screens/MapScreen/components/PaneCoverFlow.tsx');
-    const divMatch = cover.match(/COVERFLOW_CARD_DIVISOR\s*=\s*([\d.]+)/);
-    const stepMatch = cover.match(/COVERFLOW_STEP_RATIO\s*=\s*([\d.]+)/);
-    expect(divMatch).toBeTruthy();
-    expect(stepMatch).toBeTruthy();
-    const cardDivisor = Number(divMatch![1]);
-    const stepRatio = Number(stepMatch![1]);
-    expect(cardDivisor).toBeGreaterThan(2.5);
-    expect(stepRatio).toBeLessThan(0.7);
-
-    const trackW = 360;
-    const cardW = trackW / cardDivisor;
-    for (let center = 0; center < 4; center += 1) {
-      for (let card = 0; card < 4; card += 1) {
-        const left = coverFlowCardLeftEdge({
-          trackW,
-          cardIndex: card,
-          centerIndex: center,
-          cardDivisor,
-          stepRatio,
-        });
-        const right = left + cardW;
-        // At least some of the card must intersect [0, trackW]
-        expect(right).toBeGreaterThan(0);
-        expect(left).toBeLessThan(trackW);
-      }
-    }
-    // Store (index 3) visible when members (0) is selected — the review regression.
-    const storeLeft = coverFlowCardLeftEdge({
-      trackW,
-      cardIndex: 3,
-      centerIndex: 0,
-      cardDivisor,
-      stepRatio,
-    });
-    expect(storeLeft).toBeLessThan(trackW);
-    expect(storeLeft + cardW).toBeGreaterThan(0);
   });
 });

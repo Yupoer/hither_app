@@ -1,14 +1,14 @@
 /**
  * Map marker chrome for itinerary destinations (Ticket 07).
  * Pure helpers — safe for unit tests without loading GroupMap / react-native-maps.
+ *
+ * Flag background is day-scoped only (day header "更換顏色"). Per-stop
+ * `markerColor` is legacy and ignored for display.
  */
 
 import type { Destination } from '../types';
 import { DAY_COLORS } from '../theme';
-import {
-  destinationEmojiDisplay,
-  resolveDestinationColor,
-} from './destinationEmojiColor';
+import { destinationEmojiDisplay } from './destinationEmojiColor';
 
 export function getColorForDay(
   day: number | undefined,
@@ -19,17 +19,13 @@ export function getColorForDay(
 }
 
 /**
- * Marker background: per-stop palette when set; else day-header color so
- * legacy trips keep day differentiation when emoji/color are null.
- * Invalid non-empty hex falls through resolveDestinationColor → stable fallback.
+ * Marker background: always the trip-day color so changing a day color
+ * updates every flag that day. Per-stop markerColor is not used for UI.
  */
 export function destinationMarkerColor(
   dest: Pick<Destination, 'markerColor' | 'day'>,
   dayColors: Record<number, string>,
 ): string {
-  if (dest.markerColor != null && String(dest.markerColor).trim()) {
-    return resolveDestinationColor(dest.markerColor);
-  }
   return getColorForDay(dest.day, dayColors);
 }
 

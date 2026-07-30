@@ -124,8 +124,8 @@ import { DiagnosticsOverlay } from './MapScreen/components/DiagnosticsOverlay';
 import { ProfileOverlay } from './MapScreen/components/ProfileOverlay';
 import { SubgroupSection } from './MapScreen/components/SubgroupSection';
 import { Segmented } from './MapScreen/components/Segmented';
-import { PaneCoverFlow } from './MapScreen/components/PaneCoverFlow';
-import type { PaneCoverFlowOption } from './MapScreen/components/PaneCoverFlow';
+import { SheetPaneTabs } from './MapScreen/components/SheetPaneTabs';
+import type { SheetPaneTabOption } from './MapScreen/components/SheetPaneTabs';
 import { StorePane } from './MapScreen/components/StorePane';
 import { CoordinationRequestsPanel } from './MapScreen/components/CoordinationRequestsPanel';
 import type { SheetPaneKey } from '../store/types';
@@ -1920,12 +1920,9 @@ export default function MapScreen({ route, navigation }: Props) {
     travelMode,
     memberEmojis: members.map((m) => m.avatar ?? ''),
     memberArrived: members.map((m) => m.status === 'arrived'),
-    // Ticket 07: destination chrome when set (native may no-op without a glyph slot).
+    // Ticket 07: destination emoji when set (native may no-op without a glyph slot).
+    // Flag color is day-scoped in map/list chrome; LA keeps theme accent.
     destinationEmoji: navTarget?.emoji ?? undefined,
-    // Prefer stop palette color for LA accent when the leader set one.
-    ...(navTarget?.markerColor
-      ? { accentHex: navTarget.markerColor }
-      : {}),
   }, groupId && navTarget && liveActivityBaselineM != null ? {
     groupId,
     navigationSessionId: navigationSessionState.session?.id,
@@ -3225,13 +3222,14 @@ export default function MapScreen({ route, navigation }: Props) {
   const handleUpdateEmojiColor = useCallback(
     async (
       id: string,
-      next: { emoji: string | null; markerColor: string | null },
+      next: { emoji: string | null },
     ) => {
       if (!groupId || !canEditItinerary) {
         throw new Error('emoji_color_not_allowed');
       }
       try {
-        await updateDestinationEmojiColor(groupId, id, next);
+        // Emoji only — flag color is day-scoped via day header picker.
+        await updateDestinationEmojiColor(groupId, id, { emoji: next.emoji });
       } catch (e) {
         logError('destination_emoji_color_failed', e, { id });
         // Keep persisted rows visible; do not clear on pre-write failure.
@@ -3242,14 +3240,14 @@ export default function MapScreen({ route, navigation }: Props) {
         const base = prev ?? rawDestinations;
         return base.map((d) =>
           d.id === id
-            ? { ...d, emoji: next.emoji, markerColor: next.markerColor }
+            ? { ...d, emoji: next.emoji }
             : d,
         );
       });
       try {
         await refresh();
       } catch (e) {
-        // Soft-refresh only: server already has the new emoji/color.
+        // Soft-refresh only: server already has the new emoji.
         logError('destination_emoji_color_refresh_failed', e, { id });
       }
     },
@@ -4179,7 +4177,7 @@ export default function MapScreen({ route, navigation }: Props) {
     storeHighlightProduct, refreshStoreEntitlements,
   ]);
 
-  const sheetPaneOptions = useMemo<PaneCoverFlowOption[]>(
+  const sheetPaneOptions = useMemo<SheetPaneTabOption[]>(
     () => [
       { key: 'members', label: t('map.tabMembers') },
       { key: 'route', label: t('map.tabRoute') },
@@ -4191,13 +4189,13 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const sheetChildren = useMemo(() => (
     <>
-      {/* Main Members/Route/Tools/Store CoverFlow — Liquid Glass at this call site only */}
+      {/* Main Members/Route/Tools/Store icon tabs — Liquid Glass at this call site only */}
       <View style={styles.sheetPaneToggleWrap}>
         <liquidGlass.GlassView
           tintColor={glass.fill}
           style={styles.sheetPaneToggleGlass}
         >
-          <PaneCoverFlow
+          <SheetPaneTabs
             accent={accent}
             options={sheetPaneOptions}
             value={sheetPane}
@@ -7502,9 +7500,8 @@ const makeStyles = (
       marginBottom: 8,
     },
     sheetPaneToggleGlass: {
-      borderRadius: 13,
-      // CoverFlow cards need overflow visible so store is never fully clipped.
-      overflow: 'visible',
+      borderRadius: 16,
+      overflow: 'hidden',
     },
     accuracyRowLast: {
       marginTop: 12,
