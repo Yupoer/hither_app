@@ -54,6 +54,7 @@ type MobileAdsModule = {
     ERROR: string;
   };
   TestIds?: { REWARDED?: string };
+  AdsConsent?: AdsConsentModule['AdsConsent'];
 };
 
 type RewardedAdInstance = {
@@ -86,13 +87,7 @@ function loadModule(): MobileAdsModule | null {
 }
 
 function loadConsent(): AdsConsentModule['AdsConsent'] | null {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const mod = require('react-native-google-mobile-ads') as AdsConsentModule;
-    return mod.AdsConsent ?? null;
-  } catch {
-    return null;
-  }
+  return loadModule()?.AdsConsent ?? null;
 }
 
 /** True for production / release-like native builds. */
@@ -143,13 +138,29 @@ export async function ensureRewardedAdsReady(): Promise<RewardedAdsAvailability>
       const consent = loadConsent();
       let canRequestAds = false;
       if (consent?.requestInfoUpdate) {
-        const info = await consent.requestInfoUpdate();
-        canRequestAds = info.canRequestAds === true;
-        if (info.isConsentFormAvailable && consent.loadAndShowConsentFormIfRequired) {
-          const afterForm = await consent.loadAndShowConsentFormIfRequired();
-          if (typeof afterForm?.canRequestAds === 'boolean') {
-            canRequestAds = afterForm.canRequestAds === true;
+        // UMP's update request is network-backed. A transient failure must not
+        // turn a valid native build into the misleading "new app required"
+        // state; use the SDK's cached consent state below in that case.
+        try {
+          const info = await consent.requestInfoUpdate();
+          canRequestAds = info.canRequestAds === true;
+          if (info.isConsentFormAvailable && consent.loadAndShowConsentFormIfRequired) {
+            const afterForm = await consent.loadAndShowConsentFormIfRequired();
+            if (typeof afterForm?.canRequestAds === 'boolean') {
+              canRequestAds = afterForm.canRequestAds === true;
+            }
           }
+        } catch {
+          // Fall through to getConsentInfo(), which reads UMP's last known
+          // decision and is safe to use when the update request failed.
+        }
+      }
+      if (!canRequestAds && consent?.getConsentInfo) {
+        try {
+          const cached = await consent.getConsentInfo();
+          canRequestAds = cached.canRequestAds === true;
+        } catch {
+          // Consent is still unknown; fail closed below.
         }
       }
       if (!canRequestAds) {

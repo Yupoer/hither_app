@@ -465,8 +465,12 @@ export const StorePane = React.memo(function StorePane({
       if (!ready.available) {
         if (ready.reason === 'consent_required') {
           setAdState('consent_required');
-        } else {
+        } else if (ready.reason === 'missing_module' || ready.reason === 'unsupported') {
+          // Only a missing native module/platform is fixed by installing a new
+          // binary. SDK/network initialization failures remain retryable errors.
           setAdState('unsupported');
+        } else {
+          setAdState('error');
         }
         void diagnostics.write({
           event: 'store_ad_load',

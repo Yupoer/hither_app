@@ -93,6 +93,14 @@ describe('four-pane store navigation contracts', () => {
     expect(rewardedAds).not.toContain('redeemStoreProduct');
   });
 
+  it('does not label retryable ad initialization failures as unsupported', () => {
+    expect(storePane).toContain("if (ready.reason === 'consent_required')");
+    expect(storePane).toContain(
+      "ready.reason === 'missing_module' || ready.reason === 'unsupported'",
+    );
+    expect(storePane).toContain("setAdState('error')");
+  });
+
   it('store pane caches snapshot offline and re-enables CTA after verify poll', () => {
     expect(storePane).toContain('readCachedSnapshot');
     expect(storePane).toContain('writeCachedSnapshot');

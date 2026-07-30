@@ -10,6 +10,7 @@ import {
   __resetRewardedAdsForTests,
   __setMobileAdsModuleForTests,
   createRewardedAdController,
+  ensureRewardedAdsReady,
   REWARDED_AD_LOAD_TIMEOUT_MS,
   REWARDED_AD_SHOW_TIMEOUT_MS,
 } from '../native/rewardedAds';
@@ -70,6 +71,34 @@ afterEach(() => {
 });
 
 describe('createRewardedAdController', () => {
+  it('uses cached consent when the UMP refresh request fails', async () => {
+    const initialize = jest.fn(async () => ({}));
+    __setMobileAdsModuleForTests({
+      mobileAds: () => ({ initialize }),
+      RewardedAd: {
+        createForAdRequest: () => makeFakeAd() as never,
+      },
+      RewardedAdEventType: {
+        LOADED: 'LOADED',
+        EARNED_REWARD: 'EARNED_REWARD',
+      },
+      AdEventType: {
+        CLOSED: 'CLOSED',
+        ERROR: 'ERROR',
+      },
+      AdsConsent: {
+        requestInfoUpdate: jest.fn(async () => {
+          throw new Error('temporary UMP network failure');
+        }),
+        loadAndShowConsentFormIfRequired: jest.fn(async () => ({ canRequestAds: false })),
+        getConsentInfo: jest.fn(async () => ({ canRequestAds: true })),
+      },
+    });
+
+    await expect(ensureRewardedAdsReady()).resolves.toEqual({ available: true });
+    expect(initialize).toHaveBeenCalledTimes(1);
+  });
+
   it('returns null when native module is missing', () => {
     __setMobileAdsModuleForTests(null);
     expect(createRewardedAdController('ios')).toBeNull();

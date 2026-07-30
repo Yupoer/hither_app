@@ -246,15 +246,30 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    supabase.auth.getSession().then(({ data }) => {
-      hydrate(data.session?.user).finally(() => {
-        if (active) setInitializing(false);
-        // Drop orphaned lock-screen Live Activities left after a previous
-        // process death (in-memory handle is gone). Map restarts them if
-        // the user re-enters an active journey.
-        void clearLiveActivities();
-      });
-    });
+    const finishInitialization = () => {
+      if (active) setInitializing(false);
+      // Drop orphaned lock-screen Live Activities left after a previous
+      // process death (in-memory handle is gone). Map restarts them if
+      // the user re-enters an active journey.
+      void clearLiveActivities();
+    };
+
+    supabase.auth
+      .getSession()
+      .then(({ data }) => hydrate(data.session?.user))
+      .catch((error) => {
+        // A missing/temporarily unavailable Keychain must not hold the whole
+        // app on its splash screen. Treat restore failure as signed-out; the
+        // next explicit sign-in can still establish a fresh session.
+        console.warn('[auth] session restore failed; continuing signed out', error);
+        if (active) {
+          setUser(null);
+          setIsAnonymous(false);
+          setIsPro(false);
+          setTripEntitlement(null);
+        }
+      })
+      .finally(finishInitialization);
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session) {
