@@ -32,11 +32,12 @@ describe('production mobile configuration', () => {
       .toHaveLength(2);
   });
 
-  it('keeps a Realtime notification fallback when no remote token exists', () => {
-    expect(notifications).toContain(".from('push_tokens')");
-    expect(notifications).toContain('if (!__DEV__ && !isCommand)');
-    expect(notifications).toContain(".eq('platform', platform)");
-    // Quick commands always use local Realtime while app is alive.
+  it('keeps Realtime local notification delivery while the app is alive', () => {
+    // Dual-path: Realtime schedules local banners; shouldDeliverOnce dedupes with push.
+    // Token presence no longer gates Realtime (see useGroupNotifications header).
+    expect(notifications).toContain('scheduleLocalNotification');
+    expect(notifications).toContain('shouldDeliverOnce');
+    expect(notifications).toContain('getProcessNotificationSeen');
     expect(notifications).toContain('!isCommand');
     expect(notifications).not.toContain('if (!__DEV__ || !groupId || !myUserId) return;');
   });

@@ -339,7 +339,7 @@ describe('map UI placement contracts', () => {
     expect(segmented).toContain('prevSegWRef');
   });
 
-  it('applies Liquid Glass only to the main sheet Members/Route/Tools/Store CoverFlow', () => {
+  it('applies Liquid Glass only to the main sheet Members/Route/Tools/Store icon tabs', () => {
     const optionsStart = mapScreen.indexOf('const sheetPaneOptions = useMemo');
     const sheetChildrenEnd = mapScreen.indexOf('if (loading && !state)', optionsStart);
     const sheetBlock = mapScreen.slice(
@@ -347,17 +347,19 @@ describe('map UI placement contracts', () => {
       sheetChildrenEnd > 0 ? sheetChildrenEnd : optionsStart + 3000,
     );
     expect(sheetBlock).toContain('liquidGlass.GlassView');
-    expect(sheetBlock).toContain('PaneCoverFlow');
+    expect(sheetBlock).toContain('SheetPaneTabs');
     expect(sheetBlock).toContain("key: 'members'");
     expect(sheetBlock).toContain("key: 'route'");
     expect(sheetBlock).toContain("key: 'tools'");
     expect(sheetBlock).toContain("key: 'store'");
     expect(sheetBlock).toContain('selectSheetPane');
     expect(sheetBlock).not.toContain('viewportCount={3}');
-    // Shared Settings segmented controls stay non-glass CoverFlow-free.
+    expect(sheetBlock).not.toContain('PaneCoverFlow');
+    // Shared Settings segmented controls stay non-glass icon-tab-free.
     expect(settingsOverlay).toContain('<Segmented');
     expect(settingsOverlay).not.toContain('unstyledTrack');
     expect(settingsOverlay).not.toContain('liquidGlass');
+    expect(settingsOverlay).not.toContain('SheetPaneTabs');
     expect(settingsOverlay).not.toContain('PaneCoverFlow');
   });
 

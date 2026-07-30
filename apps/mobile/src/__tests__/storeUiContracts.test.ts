@@ -15,29 +15,28 @@ const rewardedAds = read('native/rewardedAds.ts');
 const i18n = read('i18n/index.ts');
 
 describe('four-pane store navigation contracts', () => {
-  it('declares members route tools store options with CoverFlow (all 4 visible)', () => {
+  it('declares members route tools store options with icon tabs (all 4 visible)', () => {
     expect(mapScreen).toContain("key: 'store'");
     expect(mapScreen).toContain("t('map.tabStore')");
-    expect(mapScreen).toContain('PaneCoverFlow');
+    expect(mapScreen).toContain('SheetPaneTabs');
+    expect(mapScreen).not.toContain('PaneCoverFlow');
     expect(mapScreen).toContain('sheetPane === \'store\'');
     expect(mapScreen).toContain('StorePane');
     expect(mapScreen).toContain('sheet-pane-content-area');
     expect(mapScreen).toContain('editButtonActive');
-    // Raw content-area touch swipe removed — CoverFlow owns horizontal gesture.
+    // Raw content-area touch swipe removed — tabs are tap-only.
     expect(mapScreen).not.toContain('sheet-pane-swipe-area');
     expect(mapScreen).not.toContain('viewportCount={3}');
   });
 
-  it('CoverFlow is swipe-only with a11y adjustable and exclusive offsets', () => {
-    const cover = read('screens/MapScreen/components/PaneCoverFlow.tsx');
-    expect(cover).toContain('pane-coverflow');
-    expect(cover).toContain('accessibilityRole="adjustable"');
-    expect(cover).toContain('activeOffsetX');
-    expect(cover).toContain('failOffsetY');
-    expect(cover).toContain('selectionTick');
-    expect(cover).toContain('useReducedMotion');
-    expect(cover).not.toContain('arrow');
-    expect(cover).not.toContain('pagination');
+  it('SheetPaneTabs is tap icon bar with tab a11y', () => {
+    const tabs = read('screens/MapScreen/components/SheetPaneTabs.tsx');
+    expect(tabs).toContain('testID="sheet-pane-tabs"');
+    expect(tabs).toContain('accessibilityRole="tab"');
+    expect(tabs).toContain('selectionTick');
+    expect(tabs).toContain('bag-handle');
+    expect(tabs).not.toContain('arrow');
+    expect(tabs).not.toContain('pagination');
     // Settings still use Segmented (non-glass).
     expect(segmented).toContain('viewportCount');
     expect(segmented).toContain('accessibilityState={{ selected: active, disabled: locked }}');

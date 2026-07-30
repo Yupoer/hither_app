@@ -4,10 +4,7 @@ import {
   destinationMarkerColor,
   destinationMarkerEmoji,
 } from '../utils/destinationMarkerChrome';
-import {
-  DESTINATION_COLOR_FALLBACK,
-  DESTINATION_EMOJI_FALLBACK,
-} from '../utils/destinationEmojiColor';
+import { DESTINATION_EMOJI_FALLBACK } from '../utils/destinationEmojiColor';
 
 describe('destinationMarkerColor / emoji (map projection)', () => {
   const dayColors: Record<number, string> = {
@@ -15,22 +12,22 @@ describe('destinationMarkerColor / emoji (map projection)', () => {
     2: '#6FA8FF',
   };
 
-  it('prefers per-stop palette color when set', () => {
+  it('uses day color even when per-stop markerColor is set', () => {
     expect(
       destinationMarkerColor({ markerColor: '#F0883E', day: 1 }, dayColors),
-    ).toBe('#F0883E');
+    ).toBe('#E5575C');
   });
 
-  it('falls back to day color when markerColor is null', () => {
+  it('uses day color when markerColor is null', () => {
     expect(destinationMarkerColor({ markerColor: null, day: 2 }, dayColors)).toBe(
       '#6FA8FF',
     );
   });
 
-  it('rejects non-palette color via stable fallback', () => {
+  it('falls back to palette day slot when dayColors missing that day', () => {
     expect(
-      destinationMarkerColor({ markerColor: '#FFFFFF', day: 1 }, dayColors),
-    ).toBe(DESTINATION_COLOR_FALLBACK);
+      destinationMarkerColor({ markerColor: '#FFFFFF', day: 3 }, {}),
+    ).toMatch(/^#[0-9A-Fa-f]{6}$/);
   });
 
   it('renders destination emoji with stable fallback', () => {
@@ -45,11 +42,10 @@ describe('GroupMap destination marker wiring contract', () => {
     'utf8',
   );
 
-  it('consumes dest.emoji / dest.markerColor for marker chrome', () => {
+  it('consumes dest.emoji / destinationMarkerColor for marker chrome', () => {
     expect(source).toContain('destinationMarkerColor');
     expect(source).toContain('destinationMarkerEmoji');
     expect(source).toContain('dest.emoji');
-    expect(source).toContain('dest.markerColor');
     expect(source).toContain('gatherMarkerEmoji');
   });
 });

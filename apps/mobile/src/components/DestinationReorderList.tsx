@@ -20,14 +20,12 @@ import { useTranslation } from '../i18n';
 import { resolveVisibleStartDay } from '../utils/tripDay';
 import { clampDateNotBeforeToday, startOfTodayLocal } from '../utils/meetTime';
 import {
-  DESTINATION_COLOR_FALLBACK,
   DESTINATION_EMOJI_FALLBACK,
   DESTINATION_EMOJI_PRESETS,
-  DESTINATION_PALETTE_LIST,
   destinationEmojiDisplay,
-  resolveDestinationColor,
   resolveDestinationEmoji,
 } from '../utils/destinationEmojiColor';
+import { getColorForDay } from '../utils/destinationMarkerChrome';
 
 const ROW_HEIGHT = 56;
 const REVEAL_WIDTH = 76;
@@ -41,10 +39,10 @@ interface Props {
   onUpdateTripDetails: (days: number, date: string) => void;
   onReorder: (updates: { id: string; position: number; day: number }[]) => void;
   onDelete?: (id: string) => void;
-  /** Per-stop emoji + palette color (ticket 07). Editors only. */
+  /** Per-stop emoji only (day color is via day-header picker). Editors only. */
   onUpdateEmojiColor?: (
     id: string,
-    next: { emoji: string | null; markerColor: string | null },
+    next: { emoji: string | null },
   ) => void | Promise<void>;
   onSync?: () => Promise<void>;
   colors: Palette;
@@ -86,7 +84,7 @@ export default function DestinationReorderList({
   const [colorPickerDay, setColorPickerDay] = useState<number | null>(null);
   const [emojiPickerDestId, setEmojiPickerDestId] = useState<string | null>(null);
   const [emojiDraft, setEmojiDraft] = useState(DESTINATION_EMOJI_FALLBACK);
-  const [colorDraft, setColorDraft] = useState(DESTINATION_COLOR_FALLBACK);
+  const [emojiPreviewDayColor, setEmojiPreviewDayColor] = useState(DAY_COLORS[0]);
   const [emojiSaveError, setEmojiSaveError] = useState(false);
   const [emojiSaving, setEmojiSaving] = useState(false);
   // Stable so memo(HeaderRow) is not busted by a new lambda each parent render.
@@ -355,6 +353,7 @@ export default function DestinationReorderList({
                  />
                );
             }
+            const dayColor = getColorForDay(item.item.day, dayColors);
             return (
               <Row
                 key={item.id}
@@ -363,6 +362,7 @@ export default function DestinationReorderList({
                 canReorder={canReorder}
                 pan={pan}
                 styles={styles}
+                dayColor={dayColor}
                 onGrant={onGrant}
                 onMove={onMove}
                 onRelease={onRelease}
@@ -372,7 +372,7 @@ export default function DestinationReorderList({
                     ? (id) => {
                         const dest = destinations.find((d) => d.id === id);
                         setEmojiDraft(resolveDestinationEmoji(dest?.emoji));
-                        setColorDraft(resolveDestinationColor(dest?.markerColor));
+                        setEmojiPreviewDayColor(getColorForDay(dest?.day, dayColors));
                         setEmojiSaveError(false);
                         setEmojiSaving(false);
                         setEmojiPickerDestId(id);
@@ -482,7 +482,7 @@ export default function DestinationReorderList({
             <View style={styles.emojiPreviewRow} testID="dest-emoji-preview">
               <Text style={styles.modalLabel}>{t('destEmoji.preview')}</Text>
               <View
-                style={[styles.emojiPreviewBadge, { backgroundColor: colorDraft }]}
+                style={[styles.emojiPreviewBadge, { backgroundColor: emojiPreviewDayColor }]}
               >
                 <Text style={styles.emojiPreviewGlyph}>{emojiDraft}</Text>
               </View>
@@ -518,32 +518,6 @@ export default function DestinationReorderList({
                 );
               })}
             </View>
-            <Text style={styles.modalLabel}>{t('destEmoji.color')}</Text>
-            <View style={styles.colorPickerContainer} testID="dest-color-grid">
-              {DESTINATION_PALETTE_LIST.map((c) => {
-                const selected = c === colorDraft.toUpperCase();
-                return (
-                  <Pressable
-                    key={c}
-                    onPress={() => {
-                      setColorDraft(c);
-                      setEmojiSaveError(false);
-                    }}
-                    style={[
-                      styles.colorPickerDot,
-                      { backgroundColor: c },
-                      selected && {
-                        borderWidth: 3,
-                        borderColor: colors.accent,
-                      },
-                    ]}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected }}
-                    accessibilityLabel={c}
-                  />
-                );
-              })}
-            </View>
             {emojiSaveError ? (
               <Text style={styles.emojiError} testID="dest-emoji-save-error">
                 {t('destEmoji.saveFailed')}
@@ -571,7 +545,6 @@ export default function DestinationReorderList({
                     try {
                       await onUpdateEmojiColor(emojiPickerDestId, {
                         emoji: emojiDraft,
-                        markerColor: colorDraft,
                       });
                       setEmojiPickerDestId(null);
                       setEmojiSaveError(false);
@@ -681,6 +654,7 @@ const HeaderRow = memo(function HeaderRow({
               onPress={() => onColorPress(item.day)}
               disabled={!canEditColors}
               accessibilityRole={canEditColors ? 'button' : undefined}
+              accessibilityLabel={canEditColors ? 'change day color' : undefined}
               style={[styles.colorDot, { backgroundColor: bgColor }]}
             />
             <Text style={styles.headerTitle}>{item.title}</Text>
@@ -699,6 +673,7 @@ const Row = memo(function Row({
   canReorder,
   pan,
   styles,
+  dayColor,
   onGrant,
   onMove,
   onRelease,
@@ -710,6 +685,7 @@ const Row = memo(function Row({
   canReorder: boolean;
   pan: Animated.Value;
   styles: ReturnType<typeof makeStyles>;
+  dayColor: string;
   onGrant: (id: string) => void;
   onMove: (id: string, dy: number) => void;
   onRelease: () => void;
@@ -826,7 +802,7 @@ const Row = memo(function Row({
           accessibilityLabel={onEmojiPress ? 'dest emoji' : undefined}
           style={[
             styles.emojiBadge,
-            { backgroundColor: resolveDestinationColor(item.markerColor) },
+            { backgroundColor: dayColor },
           ]}
         >
           <Text style={styles.emojiBadgeGlyph}>
