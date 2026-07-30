@@ -2,6 +2,7 @@ import {
   DESTINATION_EMOJI_PRESETS,
   DESTINATION_EMOJI_FALLBACK,
   DESTINATION_COLOR_FALLBACK,
+  DESTINATION_PALETTE_LIST,
   resolveDestinationColor,
   resolveDestinationEmoji,
   validateDestinationColor,
@@ -9,8 +10,15 @@ import {
 } from '../utils/destinationEmojiColor';
 
 describe('destination emoji/color presets', () => {
-  it('exposes 26 presets from Spec', () => {
-    expect(DESTINATION_EMOJI_PRESETS).toHaveLength(26);
+  it('exposes 25 presets (🧭 removed; no custom entry)', () => {
+    expect(DESTINATION_EMOJI_PRESETS).toHaveLength(25);
+    expect(DESTINATION_EMOJI_PRESETS.some((p) => p.emoji === '🧭')).toBe(false);
+  });
+
+  it('keeps legacy #5E6C84 on independent palette after 🧭 removal', () => {
+    expect(DESTINATION_PALETTE_LIST.map((c) => c.toUpperCase())).toContain('#5E6C84');
+    expect(validateDestinationColor('#5E6C84')).toEqual({ ok: true, color: '#5E6C84' });
+    expect(resolveDestinationColor('#5e6c84')).toBe('#5E6C84');
   });
 });
 
@@ -79,5 +87,12 @@ describe('stable fallback', () => {
   it('null emoji/color resolve to stable defaults without requiring backfill', () => {
     expect(resolveDestinationEmoji(null)).toBe(DESTINATION_EMOJI_FALLBACK);
     expect(resolveDestinationColor(undefined)).toBe(DESTINATION_COLOR_FALLBACK);
+  });
+
+  it('maps non-preset emoji (valid Unicode) to safe display fallback', () => {
+    // 🧭 removed from list; 😀 is valid emoji but not a destination preset
+    expect(resolveDestinationEmoji('🧭')).toBe(DESTINATION_EMOJI_FALLBACK);
+    expect(resolveDestinationEmoji('😀')).toBe(DESTINATION_EMOJI_FALLBACK);
+    expect(resolveDestinationEmoji('📍')).toBe('📍');
   });
 });

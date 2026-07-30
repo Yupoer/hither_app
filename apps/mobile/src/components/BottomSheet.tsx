@@ -17,6 +17,7 @@ import Animated, {
 import { liquidGlass } from '../native';
 import { glass } from '../glass';
 import { settleTarget } from './sheetMath';
+import { SHEET_ACTIVE_OFFSET_Y, SHEET_FAIL_OFFSET_X } from '../store/sheetPane';
 
 // ponytail: no RN/Expo API exposes the device's actual screen corner radius;
 // this approximates modern iPhones' bezel curve so the full-detent sheet
@@ -150,7 +151,9 @@ export default React.memo(function BottomSheet({
   const pan = useMemo(
     () =>
       Gesture.Pan()
-        .activeOffsetY([-8, 8])
+        .activeOffsetY([-SHEET_ACTIVE_OFFSET_Y, SHEET_ACTIVE_OFFSET_Y])
+        // Fail when horizontal wins so CoverFlow (activeOffsetX) owns left/right swipes.
+        .failOffsetX([-SHEET_FAIL_OFFSET_X, SHEET_FAIL_OFFSET_X])
         // AnimatedRef isn't a plain React ref; GH only reads the handler tag off it.
         .simultaneousWithExternalGesture(scrollRef as unknown as React.RefObject<React.ComponentType>)
         .onBegin(() => {

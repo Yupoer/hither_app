@@ -172,10 +172,22 @@ export type RewardedAdController = {
   dispose: () => void;
 };
 
+/** Max wait for LOADED/ERROR after load() — prevents permanent CTA hang. */
+export const REWARDED_AD_LOAD_TIMEOUT_MS = 45_000;
+/** Max wait for EARNED/CLOSED/ERROR after show() starts. */
+export const REWARDED_AD_SHOW_TIMEOUT_MS = 120_000;
+/** CLOSED-before-EARNED grace before treating as dismiss. */
+export const REWARDED_AD_CLOSED_EARNED_GRACE_MS = 2_000;
+
 /**
  * Create a one-shot rewarded ad controller bound to a session ref (SSV custom data).
  * EARNED_REWARD → 'verifying' only (never mutates wallet).
  * show() resolves from ad events (CLOSED / EARNED_REWARD), not from the show() Promise.
+ *
+ * Load-phase LOADED/ERROR listeners are detached as soon as load settles so a late
+ * SDK ERROR cannot demote UI after EARNED_REWARD. dispose() always settles any
+ * in-flight load/show Promise so callers never hang.
+ * Finite load/show timeouts always settle so CTA can retry (Ticket 03).
  */
 export function createRewardedAdController(
   platform: 'ios' | 'android',
@@ -190,17 +202,41 @@ export function createRewardedAdController(
   let unsubs: Array<() => void> = [];
   let loaded = false;
   let earned = false;
+  let disposed = false;
+  let generation = 0;
   let loadFailure: RewardedAdUiState = 'error';
+  let closedGraceTimer: ReturnType<typeof setTimeout> | null = null;
+  let phaseTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Settles the active load()/show() Promise exactly once (including dispose). */
+  let pendingSettle: ((state: RewardedAdUiState) => void) | null = null;
+  /** 'load' | 'show' gates which ERROR path may emit / finish. */
+  let phase: 'idle' | 'load' | 'show' = 'idle';
+
   const loadedType = mod.RewardedAdEventType.LOADED;
   const earnedType = mod.RewardedAdEventType.EARNED_REWARD;
   const closedType = mod.AdEventType.CLOSED;
   const errorType = mod.AdEventType.ERROR;
 
-  const emit = (state: RewardedAdUiState) => {
+  const emit = (state: RewardedAdUiState, gen: number) => {
+    if (disposed || gen !== generation) return;
     handlers?.onState?.(state);
   };
 
-  const dispose = () => {
+  const clearGraceTimer = () => {
+    if (closedGraceTimer) {
+      clearTimeout(closedGraceTimer);
+      closedGraceTimer = null;
+    }
+  };
+
+  const clearPhaseTimeout = () => {
+    if (phaseTimeoutTimer) {
+      clearTimeout(phaseTimeoutTimer);
+      phaseTimeoutTimer = null;
+    }
+  };
+
+  const clearUnsubs = () => {
     for (const u of unsubs) {
       try {
         u();
@@ -209,6 +245,24 @@ export function createRewardedAdController(
       }
     }
     unsubs = [];
+  };
+
+  /** Resolve in-flight load/show once; always clears timers first. */
+  const settlePending = (state: RewardedAdUiState) => {
+    clearGraceTimer();
+    clearPhaseTimeout();
+    const settle = pendingSettle;
+    pendingSettle = null;
+    if (settle) settle(state);
+  };
+
+  const dispose = () => {
+    disposed = true;
+    generation += 1;
+    phase = 'idle';
+    // Unblock any awaiting load()/show() so unmount / retry never hangs.
+    settlePending('error');
+    clearUnsubs();
     ad = null;
     loaded = false;
     earned = false;
@@ -228,66 +282,123 @@ export function createRewardedAdController(
   return {
     async load(sessionRef: string) {
       dispose();
-      emit('loading');
+      disposed = false;
+      const gen = generation;
+      phase = 'load';
+      loadFailure = 'error';
+      earned = false;
+      loaded = false;
+      emit('loading', gen);
       const unitId = rewardedAdUnitForPlatform(platform);
       try {
-        // SSV custom data MUST be on createForAdRequest options (package API).
         ad = mod.RewardedAd.createForAdRequest(unitId, {
           serverSideVerificationOptions: {
             customData: sessionRef,
           },
         });
 
-        // Load phase: only LOADED / ERROR. Earn/close listeners are registered in show()
-        // once to avoid double onState + double verify poll.
-        await new Promise<void>((resolve, reject) => {
+        // Load phase: only LOADED / ERROR. Detach both as soon as load settles
+        // so they cannot fire into show() and demote verifying UI.
+        const loadState = await new Promise<RewardedAdUiState>((resolve) => {
+          let done = false;
+          const finishLoad = (state: RewardedAdUiState) => {
+            if (done) return;
+            done = true;
+            pendingSettle = null;
+            clearPhaseTimeout();
+            // Drop load listeners immediately (even before resolve continues).
+            clearUnsubs();
+            resolve(state);
+          };
+          pendingSettle = finishLoad;
+
+          if (disposed || gen !== generation || !ad) {
+            finishLoad('error');
+            return;
+          }
+          phaseTimeoutTimer = setTimeout(() => {
+            if (done || disposed || gen !== generation || phase !== 'load') return;
+            loadFailure = 'error';
+            emit('error', gen);
+            finishLoad('error');
+          }, REWARDED_AD_LOAD_TIMEOUT_MS);
           unsubs.push(
-            ad!.addAdEventListener(loadedType, () => {
+            ad.addAdEventListener(loadedType, () => {
+              if (done || disposed || gen !== generation || phase !== 'load') return;
               loaded = true;
-              emit('ready');
-              resolve();
+              emit('ready', gen);
+              finishLoad('ready');
             }),
           );
           unsubs.push(
-            ad!.addAdEventListener(errorType, (err: unknown) => {
+            ad.addAdEventListener(errorType, (err: unknown) => {
+              if (done || disposed || gen !== generation || phase !== 'load') return;
               loadFailure = classifyLoadError(err);
-              emit(loadFailure);
-              reject(err instanceof Error ? err : new Error(String(err ?? loadFailure)));
+              emit(loadFailure, gen);
+              finishLoad(loadFailure);
             }),
           );
-          ad!.load();
+          ad.load();
         });
-        return loaded ? 'ready' : loadFailure;
+
+        if (disposed || gen !== generation) return 'error';
+        if (loadState === 'ready') {
+          phase = 'idle';
+          return 'ready';
+        }
+        ad = null;
+        loaded = false;
+        phase = 'idle';
+        return loadState;
       } catch {
-        return loadFailure;
+        const fail = loadFailure;
+        settlePending(fail);
+        clearUnsubs();
+        ad = null;
+        loaded = false;
+        phase = 'idle';
+        return fail;
       }
     },
     async show() {
-      if (!ad || !loaded) {
-        emit('error');
+      if (!ad || !loaded || disposed) {
+        emit('error', generation);
         return 'error';
       }
-      emit('showing');
+      const gen = generation;
+      phase = 'show';
+      emit('showing', gen);
       // Package show() resolves when the ad is *presented*, not when it closes.
       // Wait for EARNED_REWARD and/or CLOSED. If CLOSED races ahead of EARNED,
       // keep a short grace so late reward events still count as verifying.
-      const CLOSED_EARNED_GRACE_MS = 2000;
       return new Promise<RewardedAdUiState>((resolve) => {
         let settled = false;
-        let closedGraceTimer: ReturnType<typeof setTimeout> | null = null;
         const finish = (state: RewardedAdUiState) => {
           if (settled) return;
           settled = true;
-          if (closedGraceTimer) {
-            clearTimeout(closedGraceTimer);
-            closedGraceTimer = null;
+          pendingSettle = null;
+          clearGraceTimer();
+          clearPhaseTimeout();
+          // Detach show listeners so late ERROR cannot emit after settle.
+          clearUnsubs();
+          phase = 'idle';
+          if (disposed || gen !== generation) {
+            resolve(state);
+            return;
           }
-          if (state !== 'showing') emit(state);
+          if (state !== 'showing') emit(state, gen);
           resolve(state);
         };
+        pendingSettle = finish;
+
+        phaseTimeoutTimer = setTimeout(() => {
+          if (settled || disposed || gen !== generation || phase !== 'show') return;
+          finish('error');
+        }, REWARDED_AD_SHOW_TIMEOUT_MS);
 
         unsubs.push(
           ad!.addAdEventListener(earnedType, () => {
+            if (settled || disposed || gen !== generation || phase !== 'show') return;
             earned = true;
             // Client reward → verifying UI; SSV still required for credit.
             finish('verifying');
@@ -295,6 +406,7 @@ export function createRewardedAdController(
         );
         unsubs.push(
           ad!.addAdEventListener(closedType, () => {
+            if (settled || disposed || gen !== generation || phase !== 'show') return;
             if (earned) {
               finish('verifying');
               return;
@@ -303,11 +415,12 @@ export function createRewardedAdController(
             if (closedGraceTimer) return;
             closedGraceTimer = setTimeout(() => {
               finish(earned ? 'verifying' : 'dismissed');
-            }, CLOSED_EARNED_GRACE_MS);
+            }, REWARDED_AD_CLOSED_EARNED_GRACE_MS);
           }),
         );
         unsubs.push(
           ad!.addAdEventListener(errorType, (err: unknown) => {
+            if (settled || disposed || gen !== generation || phase !== 'show') return;
             finish(classifyLoadError(err) === 'network_error' ? 'network_error' : 'error');
           }),
         );
@@ -324,5 +437,11 @@ export function createRewardedAdController(
 /** Test helper: clear module cache. */
 export function __resetRewardedAdsForTests(): void {
   cachedModule = undefined;
+  initPromise = null;
+}
+
+/** Test helper: inject a fake GMA module (or null). */
+export function __setMobileAdsModuleForTests(mod: MobileAdsModule | null | undefined): void {
+  cachedModule = mod;
   initPromise = null;
 }

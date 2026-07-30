@@ -39,6 +39,8 @@ export interface AmicroButtonProps {
   color: string;
   activeColor?: string;
   label?: string;
+  /** Defaults to `color` when omitted. */
+  labelColor?: string;
   durationMs?: number;
   size?: number;
   disabled?: boolean;
@@ -68,6 +70,7 @@ export function AmicroButton({
   color,
   activeColor = color,
   label,
+  labelColor,
   durationMs = PRESS_ANIMATION_MS,
   size = 44,
   disabled = false,
@@ -175,7 +178,11 @@ export function AmicroButton({
           </Animated.View>
         ) : null}
       </View>
-      {label ? <Text style={[styles.label, { color }]}>{label}</Text> : null}
+      {label ? (
+        <Text style={[styles.label, { color: labelColor ?? color }]} numberOfLines={2}>
+          {label}
+        </Text>
+      ) : null}
     </Pressable>
   );
 }
@@ -235,10 +242,14 @@ const styles = StyleSheet.create({
     minHeight: 44,
     flexDirection: 'row',
     gap: 8,
+    alignItems: 'center',
   },
   label: {
     fontSize: 15,
     fontWeight: '600',
+    flexShrink: 1,
+    flexGrow: 1,
+    minWidth: 0,
   },
   iconSlot: {
     width: 24,

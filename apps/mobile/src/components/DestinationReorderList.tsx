@@ -7,7 +7,6 @@ import {
   Text,
   View,
   Modal,
-  TextInput,
   Dimensions,
   Platform,
 } from 'react-native';
@@ -24,9 +23,10 @@ import {
   DESTINATION_COLOR_FALLBACK,
   DESTINATION_EMOJI_FALLBACK,
   DESTINATION_EMOJI_PRESETS,
+  DESTINATION_PALETTE_LIST,
   destinationEmojiDisplay,
   resolveDestinationColor,
-  validateDestinationEmoji,
+  resolveDestinationEmoji,
 } from '../utils/destinationEmojiColor';
 
 const ROW_HEIGHT = 56;
@@ -85,8 +85,10 @@ export default function DestinationReorderList({
   const [activeId, setActiveId] = useState<string | null>(null);
   const [colorPickerDay, setColorPickerDay] = useState<number | null>(null);
   const [emojiPickerDestId, setEmojiPickerDestId] = useState<string | null>(null);
-  const [customEmoji, setCustomEmoji] = useState('');
-  const [customEmojiError, setCustomEmojiError] = useState(false);
+  const [emojiDraft, setEmojiDraft] = useState(DESTINATION_EMOJI_FALLBACK);
+  const [colorDraft, setColorDraft] = useState(DESTINATION_COLOR_FALLBACK);
+  const [emojiSaveError, setEmojiSaveError] = useState(false);
+  const [emojiSaving, setEmojiSaving] = useState(false);
   // Stable so memo(HeaderRow) is not busted by a new lambda each parent render.
   const onHeaderColorPress = useCallback((day: number) => {
     setColorPickerDay(day);
@@ -368,8 +370,11 @@ export default function DestinationReorderList({
                 onEmojiPress={
                   canReorder && onUpdateEmojiColor
                     ? (id) => {
-                        setCustomEmoji('');
-                        setCustomEmojiError(false);
+                        const dest = destinations.find((d) => d.id === id);
+                        setEmojiDraft(resolveDestinationEmoji(dest?.emoji));
+                        setColorDraft(resolveDestinationColor(dest?.markerColor));
+                        setEmojiSaveError(false);
+                        setEmojiSaving(false);
                         setEmojiPickerDestId(id);
                       }
                     : undefined
@@ -466,71 +471,126 @@ export default function DestinationReorderList({
       <Modal visible={emojiPickerDestId !== null} transparent animationType="fade">
         <Pressable
           style={styles.modalOverlay}
-          onPress={() => setEmojiPickerDestId(null)}
+          onPress={() => {
+            if (emojiSaving) return;
+            setEmojiPickerDestId(null);
+            setEmojiSaveError(false);
+          }}
         >
           <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
             <Text style={styles.modalTitle}>{t('destEmoji.title')}</Text>
-            <View style={styles.emojiPresetGrid}>
-              {DESTINATION_EMOJI_PRESETS.map((preset) => (
-                <Pressable
-                  key={`${preset.emoji}-${preset.color}`}
-                  onPress={() => {
-                    if (!emojiPickerDestId || !onUpdateEmojiColor) return;
-                    void onUpdateEmojiColor(emojiPickerDestId, {
-                      emoji: preset.emoji,
-                      markerColor: preset.color,
-                    });
-                    setEmojiPickerDestId(null);
-                  }}
-                  style={[styles.emojiPresetCell, { borderColor: preset.color }]}
-                  accessibilityRole="button"
-                  accessibilityLabel={preset.labelZh}
-                >
-                  <Text style={styles.emojiPresetGlyph}>{preset.emoji}</Text>
-                </Pressable>
-              ))}
+            <View style={styles.emojiPreviewRow} testID="dest-emoji-preview">
+              <Text style={styles.modalLabel}>{t('destEmoji.preview')}</Text>
+              <View
+                style={[styles.emojiPreviewBadge, { backgroundColor: colorDraft }]}
+              >
+                <Text style={styles.emojiPreviewGlyph}>{emojiDraft}</Text>
+              </View>
             </View>
-            <Text style={styles.modalLabel}>{t('destEmoji.custom')}</Text>
-            <TextInput
-              value={customEmoji}
-              onChangeText={(text) => {
-                setCustomEmoji(text);
-                setCustomEmojiError(false);
-              }}
-              placeholder="📍"
-              placeholderTextColor={colors.textSecondary}
-              style={styles.emojiCustomInput}
-              maxLength={32}
-              accessibilityLabel={t('destEmoji.custom')}
-            />
-            {customEmojiError ? (
-              <Text style={styles.emojiError}>{t('destEmoji.invalid')}</Text>
+            <View style={styles.emojiPresetGrid} testID="dest-emoji-grid">
+              {DESTINATION_EMOJI_PRESETS.map((preset) => {
+                const selected = preset.emoji === emojiDraft;
+                return (
+                  <Pressable
+                    key={preset.emoji}
+                    onPress={() => {
+                      setEmojiDraft(preset.emoji);
+                      setEmojiSaveError(false);
+                    }}
+                    style={[
+                      styles.emojiPresetCell,
+                      {
+                        // Ticket 07: every cell uses the same accent border.
+                        // Selection is background, not a different border color/width.
+                        borderColor: colors.accent,
+                        borderWidth: 2,
+                        backgroundColor: selected
+                          ? `${colors.accent}33`
+                          : 'transparent',
+                      },
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    accessibilityLabel={preset.labelZh}
+                  >
+                    <Text style={styles.emojiPresetGlyph}>{preset.emoji}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Text style={styles.modalLabel}>{t('destEmoji.color')}</Text>
+            <View style={styles.colorPickerContainer} testID="dest-color-grid">
+              {DESTINATION_PALETTE_LIST.map((c) => {
+                const selected = c === colorDraft.toUpperCase();
+                return (
+                  <Pressable
+                    key={c}
+                    onPress={() => {
+                      setColorDraft(c);
+                      setEmojiSaveError(false);
+                    }}
+                    style={[
+                      styles.colorPickerDot,
+                      { backgroundColor: c },
+                      selected && {
+                        borderWidth: 3,
+                        borderColor: colors.accent,
+                      },
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    accessibilityLabel={c}
+                  />
+                );
+              })}
+            </View>
+            {emojiSaveError ? (
+              <Text style={styles.emojiError} testID="dest-emoji-save-error">
+                {t('destEmoji.saveFailed')}
+              </Text>
             ) : null}
             <View style={styles.modalActions}>
               <Pressable
-                onPress={() => setEmojiPickerDestId(null)}
+                onPress={() => {
+                  if (emojiSaving) return;
+                  setEmojiPickerDestId(null);
+                  setEmojiSaveError(false);
+                }}
                 style={styles.modalActionBtn}
+                accessibilityRole="button"
+                accessibilityLabel={t('common.cancel')}
               >
                 <Text style={styles.modalActionText}>{t('common.cancel')}</Text>
               </Pressable>
               <Pressable
                 onPress={() => {
-                  if (!emojiPickerDestId || !onUpdateEmojiColor) return;
-                  const v = validateDestinationEmoji(customEmoji);
-                  if (!v.ok) {
-                    setCustomEmojiError(true);
-                    return;
-                  }
-                  const color =
-                    DESTINATION_EMOJI_PRESETS.find((p) => p.emoji === v.emoji)?.color
-                    ?? DESTINATION_COLOR_FALLBACK;
-                  void onUpdateEmojiColor(emojiPickerDestId, {
-                    emoji: v.emoji,
-                    markerColor: color,
-                  });
-                  setEmojiPickerDestId(null);
+                  if (!emojiPickerDestId || !onUpdateEmojiColor || emojiSaving) return;
+                  setEmojiSaving(true);
+                  setEmojiSaveError(false);
+                  void (async () => {
+                    try {
+                      await onUpdateEmojiColor(emojiPickerDestId, {
+                        emoji: emojiDraft,
+                        markerColor: colorDraft,
+                      });
+                      setEmojiPickerDestId(null);
+                      setEmojiSaveError(false);
+                    } catch {
+                      setEmojiSaveError(true);
+                    } finally {
+                      setEmojiSaving(false);
+                    }
+                  })();
                 }}
-                style={[styles.modalActionBtn, { backgroundColor: colors.accent }]}
+                style={[
+                  styles.modalActionBtn,
+                  { backgroundColor: colors.accent },
+                  emojiSaving && { opacity: 0.6 },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={t('common.confirm')}
+                accessibilityState={{ disabled: emojiSaving, busy: emojiSaving }}
+                testID="dest-emoji-confirm"
               >
                 <Text style={[styles.modalActionText, { color: '#fff' }]}>
                   {t('common.confirm')}
@@ -874,7 +934,9 @@ const makeStyles = (colors: Palette) =>
     emojiPresetGrid: {
       flexDirection: 'row',
       flexWrap: 'wrap',
+      justifyContent: 'center',
       gap: 8,
+      paddingHorizontal: spacing.sm,
       marginBottom: spacing.md,
     },
     emojiPresetCell: {
@@ -882,6 +944,7 @@ const makeStyles = (colors: Palette) =>
       height: 40,
       borderRadius: 10,
       borderWidth: 2,
+      borderColor: colors.border,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: colors.glass,
@@ -889,16 +952,22 @@ const makeStyles = (colors: Palette) =>
     emojiPresetGlyph: {
       fontSize: 20,
     },
-    emojiCustomInput: {
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: radius.md,
-      paddingHorizontal: spacing.md,
-      paddingVertical: spacing.sm,
-      color: colors.textPrimary,
-      fontSize: 22,
-      marginBottom: spacing.sm,
-      textAlign: 'center',
+    emojiPreviewRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: spacing.md,
+      paddingHorizontal: spacing.sm,
+    },
+    emojiPreviewBadge: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    emojiPreviewGlyph: {
+      fontSize: 24,
     },
     emojiError: {
       color: colors.danger,

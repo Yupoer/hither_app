@@ -9,8 +9,10 @@ import {
   ActivityIndicator,
   Alert,
   AppState,
+  KeyboardAvoidingView,
   LayoutAnimation,
   Linking,
+  Modal,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Platform,
@@ -122,12 +124,10 @@ import { DiagnosticsOverlay } from './MapScreen/components/DiagnosticsOverlay';
 import { ProfileOverlay } from './MapScreen/components/ProfileOverlay';
 import { SubgroupSection } from './MapScreen/components/SubgroupSection';
 import { Segmented } from './MapScreen/components/Segmented';
+import { PaneCoverFlow } from './MapScreen/components/PaneCoverFlow';
+import type { PaneCoverFlowOption } from './MapScreen/components/PaneCoverFlow';
 import { StorePane } from './MapScreen/components/StorePane';
 import { CoordinationRequestsPanel } from './MapScreen/components/CoordinationRequestsPanel';
-import {
-  isHorizontalPaneGesture,
-  paneAfterSwipe,
-} from '../store/sheetPane';
 import type { SheetPaneKey } from '../store/types';
 import { getStoreSnapshot } from '../api/services/StoreService';
 import AccountSheet from '../components/AccountSheet';
@@ -805,6 +805,9 @@ export default function MapScreen({ route, navigation }: Props) {
   const searchOpenCompleteResolveRef = useRef<(() => void) | null>(null);
   // A place picked in search, awaiting the bottom "add / cancel" confirm card.
   const [pendingPlace, setPendingPlace] = useState<PlaceResult | null>(null);
+  /** Center rename modal draft (independent of pendingPlaceTitle until confirm). */
+  const [renameModalVisible, setRenameModalVisible] = useState(false);
+  const [renameDraft, setRenameDraft] = useState('');
   /** Distinguishes long-press vs search for post-add camera (ticket 06). */
   const pendingPlaceSourceRef = useRef<'search' | 'longpress' | null>(null);
   // Editable only during this add confirmation. There is no later rename
@@ -844,8 +847,27 @@ export default function MapScreen({ route, navigation }: Props) {
     setConfirmCardReady(false);
     setPendingPlace(null);
     setPendingPlaceTitle('');
+    setRenameModalVisible(false);
+    setRenameDraft('');
     pendingPlaceSourceRef.current = null;
   }
+
+  const openRenameModal = useCallback(() => {
+    setRenameDraft(pendingPlaceTitle);
+    setRenameModalVisible(true);
+  }, [pendingPlaceTitle]);
+
+  const confirmRenameModal = useCallback(() => {
+    const next = renameDraft.trim();
+    if (!next) return;
+    setPendingPlaceTitle(next);
+    setRenameModalVisible(false);
+  }, [renameDraft]);
+
+  const cancelRenameModal = useCallback(() => {
+    setRenameModalVisible(false);
+    setRenameDraft('');
+  }, []);
   const [paywallTrigger, setPaywallTrigger] = useState<TranslationKey | undefined>(undefined);
   const [paywallVisible, setPaywallVisible] = useState(false);
   const openPaywall = useCallback((trigger?: TranslationKey) => {
@@ -2227,8 +2249,10 @@ export default function MapScreen({ route, navigation }: Props) {
               altitude: PLACE_ALTITUDE,
             });
           }
-          await refresh();
-          return true;
+          // Only treat as complete success when refresh confirms projection.
+          // refresh() false keeps the confirm card / temp flag (Ticket 05).
+          const projected = await refresh();
+          return projected === true;
         } catch (e) {
           logError('destination_add_failed', e, { source: placeSource });
           if (token.isCurrent()) {
@@ -3203,21 +3227,30 @@ export default function MapScreen({ route, navigation }: Props) {
       id: string,
       next: { emoji: string | null; markerColor: string | null },
     ) => {
-      if (!groupId || !canEditItinerary) return;
+      if (!groupId || !canEditItinerary) {
+        throw new Error('emoji_color_not_allowed');
+      }
       try {
         await updateDestinationEmojiColor(groupId, id, next);
-        // Optimistic local patch so reorder list updates immediately.
-        setOptimisticDestinations((prev) => {
-          const base = prev ?? rawDestinations;
-          return base.map((d) =>
-            d.id === id
-              ? { ...d, emoji: next.emoji, markerColor: next.markerColor }
-              : d,
-          );
-        });
-        await refresh();
       } catch (e) {
         logError('destination_emoji_color_failed', e, { id });
+        // Keep persisted rows visible; do not clear on pre-write failure.
+        throw e;
+      }
+      // Write succeeded — patch local UI even if a subsequent refresh fails.
+      setOptimisticDestinations((prev) => {
+        const base = prev ?? rawDestinations;
+        return base.map((d) =>
+          d.id === id
+            ? { ...d, emoji: next.emoji, markerColor: next.markerColor }
+            : d,
+        );
+      });
+      try {
+        await refresh();
+      } catch (e) {
+        // Soft-refresh only: server already has the new emoji/color.
+        logError('destination_emoji_color_refresh_failed', e, { id });
       }
     },
     [groupId, canEditItinerary, rawDestinations, refresh],
@@ -3801,31 +3834,6 @@ export default function MapScreen({ route, navigation }: Props) {
     setDetent(Math.max(0, detents.length - 1));
   }, [detents.length]);
 
-  /** Content horizontal swipe between panes — direction threshold; no wrap. */
-  const paneSwipeRef = useRef<{ x: number; y: number; active: boolean }>({
-    x: 0,
-    y: 0,
-    active: false,
-  });
-  const onPaneTouchStart = useCallback((e: { nativeEvent: { pageX: number; pageY: number } }) => {
-    // Route reorder overlay / edit must not switch panes mid-drag.
-    if (editButtonActive || overlay === 'route') return;
-    paneSwipeRef.current = {
-      x: e.nativeEvent.pageX,
-      y: e.nativeEvent.pageY,
-      active: true,
-    };
-  }, [editButtonActive, overlay]);
-  const onPaneTouchEnd = useCallback((e: { nativeEvent: { pageX: number; pageY: number } }) => {
-    if (!paneSwipeRef.current.active) return;
-    const dx = e.nativeEvent.pageX - paneSwipeRef.current.x;
-    const dy = e.nativeEvent.pageY - paneSwipeRef.current.y;
-    paneSwipeRef.current.active = false;
-    if (!isHorizontalPaneGesture(dx, dy)) return;
-    const next = paneAfterSwipe(sheetPane, dx);
-    if (next !== sheetPane) selectSheetPane(next);
-  }, [sheetPane, selectSheetPane]);
-
   // ─── 成員：位置、狀態、個別操作、小隊（無「成員」標題） ────────────────
   const membersPaneBody = useMemo(() => (
     <>
@@ -3973,22 +3981,22 @@ export default function MapScreen({ route, navigation }: Props) {
           ) : null}
         </View>
       ) : null}
-      {/* Standalone reorder action — outside general listGroup (ticket 04). */}
+      {/* Standalone reorder action — whole row is one press target (ticket 06). */}
       <View style={styles.reorderActionCard} testID="map-reorder-action-card">
-        <Text style={styles.reorderActionTitle} numberOfLines={2}>
-          {t('map.stopsReorder', { count: destinations.length })}
-        </Text>
         <AmicroButton
           icon="pencil-outline"
           activeIcon="checkmark"
           active={editButtonActive}
           activeOnPress
           resetAfterComplete={false}
-          color={glass.textSecondary}
-          activeColor={glass.ok}
+          color={accent}
+          activeColor={accent}
           size={48}
+          label={t('map.stopsReorder', { count: destinations.length })}
+          labelColor="#fff"
           accessibilityLabel={t('map.stopsReorder', { count: destinations.length })}
           testID="map-edit-itinerary"
+          style={styles.reorderActionPressable}
           onPress={() => {
             lightTap();
             setEditButtonActive(true);
@@ -4042,7 +4050,7 @@ export default function MapScreen({ route, navigation }: Props) {
     </>
   ), [
     t, styles, nextStopTitle, nextStopDistLabel, destinations.length, canEditItinerary,
-    openHistoryOverlay, isLeader, opsOpenCount, editButtonActive, extraPointCredits,
+    openHistoryOverlay, isLeader, opsOpenCount, editButtonActive, extraPointCredits, accent,
   ]);
 
   // ─── 工具：同行者模式入口 → 定位分享 → 抵達距離 → 快捷指令 ─────────
@@ -4171,7 +4179,7 @@ export default function MapScreen({ route, navigation }: Props) {
     storeHighlightProduct, refreshStoreEntitlements,
   ]);
 
-  const sheetPaneOptions = useMemo(
+  const sheetPaneOptions = useMemo<PaneCoverFlowOption[]>(
     () => [
       { key: 'members', label: t('map.tabMembers') },
       { key: 'route', label: t('map.tabRoute') },
@@ -4183,28 +4191,22 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const sheetChildren = useMemo(() => (
     <>
-      {/* Main Members/Route/Tools/Store selector — Liquid Glass at this call site only */}
+      {/* Main Members/Route/Tools/Store CoverFlow — Liquid Glass at this call site only */}
       <View style={styles.sheetPaneToggleWrap}>
         <liquidGlass.GlassView
           tintColor={glass.fill}
           style={styles.sheetPaneToggleGlass}
         >
-          <Segmented
+          <PaneCoverFlow
             accent={accent}
             options={sheetPaneOptions}
             value={sheetPane}
-            onChange={selectSheetPane as (key: string) => void}
-            unstyledTrack
-            viewportCount={3}
+            onChange={selectSheetPane}
           />
         </liquidGlass.GlassView>
       </View>
 
-      <View
-        onTouchStart={onPaneTouchStart}
-        onTouchEnd={onPaneTouchEnd}
-        testID="sheet-pane-swipe-area"
-      >
+      <View testID="sheet-pane-content-area">
         <View
           style={sheetPane === 'members' ? undefined : styles.sheetPaneHidden}
           pointerEvents={sheetPane === 'members' ? 'auto' : 'none'}
@@ -4238,7 +4240,6 @@ export default function MapScreen({ route, navigation }: Props) {
   ), [
     styles, accent, sheetPane, sheetPaneOptions, selectSheetPane,
     membersPaneBody, routePaneBody, toolsPaneBody, storePaneBody,
-    onPaneTouchStart, onPaneTouchEnd,
   ]);
 
   if (loading && !state) {
@@ -4540,17 +4541,20 @@ export default function MapScreen({ route, navigation }: Props) {
                   <Text style={styles.confirmKicker} numberOfLines={1}>
                     {t('confirmGather.going', { name: '' })}
                   </Text>
-                  <TextInput
-                    value={pendingPlaceTitle}
-                    onChangeText={setPendingPlaceTitle}
-                    style={styles.confirmTitleInput}
-                    numberOfLines={1}
-                    maxLength={120}
-                    placeholder={pendingPlace.name || t('map.droppedPin')}
-                    placeholderTextColor={glass.textTertiary}
-                    accessibilityLabel={t('confirmGather.going', { name: pendingPlace.name })}
+                  {/* Name is a press target → center rename modal (keep bottom card). */}
+                  <Pressable
+                    onPress={openRenameModal}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('confirmGather.going', {
+                      name: pendingPlaceTitle || pendingPlace.name,
+                    })}
                     accessibilityHint={t('map.droppedPinHint')}
-                  />
+                    testID="confirm-place-name"
+                  >
+                    <Text style={styles.confirmTitleInput} numberOfLines={1}>
+                      {pendingPlaceTitle || pendingPlace.name || t('map.droppedPin')}
+                    </Text>
+                  </Pressable>
                   <Text style={styles.confirmNameHint} numberOfLines={1}>
                     {t('map.droppedPinHint')}
                   </Text>
@@ -4619,6 +4623,70 @@ export default function MapScreen({ route, navigation }: Props) {
           </Animated.View>
         );
       })()}
+
+      {/* Center rename modal — only updates draft name; add still uses bottom card. */}
+      <Modal
+        visible={renameModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={cancelRenameModal}
+      >
+        <KeyboardAvoidingView
+          style={styles.renameModalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <Pressable style={styles.renameModalOverlay} onPress={cancelRenameModal}>
+            <Pressable
+              style={styles.renameModalCard}
+              onPress={(e) => e.stopPropagation()}
+              testID="confirm-rename-modal"
+            >
+              <Text style={styles.renameModalTitle}>{t('map.renameTitle')}</Text>
+              <TextInput
+                value={renameDraft}
+                onChangeText={setRenameDraft}
+                style={styles.renameModalInput}
+                autoFocus
+                maxLength={120}
+                placeholder={t('map.droppedPin')}
+                placeholderTextColor={glass.textTertiary}
+                returnKeyType="done"
+                onSubmitEditing={confirmRenameModal}
+                accessibilityLabel={t('map.renameTitle')}
+                testID="confirm-rename-input"
+              />
+              <View style={styles.renameModalActions}>
+                <Pressable
+                  style={styles.renameModalBtn}
+                  onPress={cancelRenameModal}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('common.cancel')}
+                >
+                  <Text style={styles.renameModalBtnText}>{t('common.cancel')}</Text>
+                </Pressable>
+                <Pressable
+                  style={[
+                    styles.renameModalBtn,
+                    styles.renameModalBtnPrimary,
+                    { backgroundColor: accent },
+                    !renameDraft.trim() && { opacity: 0.45 },
+                  ]}
+                  onPress={confirmRenameModal}
+                  disabled={!renameDraft.trim()}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('common.confirm')}
+                  accessibilityState={{ disabled: !renameDraft.trim() }}
+                  testID="confirm-rename-ok"
+                >
+                  <Text style={[styles.renameModalBtnText, { color: '#111' }]}>
+                    {t('common.confirm')}
+                  </Text>
+                </Pressable>
+              </View>
+            </Pressable>
+          </Pressable>
+        </KeyboardAvoidingView>
+      </Modal>
 
       {/* Gathering-point carousel — above locate/group capsules; sheet wrapper
           zIndex is higher so the sheet covers cards on overlap. */}
@@ -7435,7 +7503,8 @@ const makeStyles = (
     },
     sheetPaneToggleGlass: {
       borderRadius: 13,
-      overflow: 'hidden',
+      // CoverFlow cards need overflow visible so store is never fully clipped.
+      overflow: 'visible',
     },
     accuracyRowLast: {
       marginTop: 12,
@@ -7529,22 +7598,75 @@ const makeStyles = (
     reorderActionCard: {
       marginBottom: 10,
       minHeight: 52,
-      paddingVertical: 10,
-      paddingHorizontal: 12,
+      paddingVertical: 4,
+      paddingHorizontal: 4,
       borderRadius: 14,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairlineStrong,
       backgroundColor: glass.fill,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 10,
+      overflow: 'hidden',
     },
-    reorderActionTitle: {
+    /** Full-row single press target (label + pencil share one AmicroButton). */
+    reorderActionPressable: {
+      width: '100%',
+      minHeight: 48,
+      paddingVertical: 8,
+      paddingHorizontal: 10,
+      flexDirection: 'row-reverse',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    renameModalOverlay: {
       flex: 1,
-      fontSize: 16,
+      backgroundColor: 'rgba(0,0,0,0.55)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: 24,
+    },
+    renameModalCard: {
+      width: '100%',
+      maxWidth: 360,
+      borderRadius: 18,
+      backgroundColor: glass.cardActive,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairlineStrong,
+      padding: 18,
+      gap: 12,
+    },
+    renameModalTitle: {
+      fontSize: 17,
+      fontWeight: '700',
+      color: '#fff',
+    },
+    renameModalInput: {
+      fontSize: 18,
       fontWeight: '600',
       color: '#fff',
-      minWidth: 0,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairlineStrong,
+      borderRadius: 12,
+      paddingHorizontal: 12,
+      paddingVertical: 12,
+      backgroundColor: glass.fill,
+    },
+    renameModalActions: {
+      flexDirection: 'row',
+      gap: 10,
+      marginTop: 4,
+    },
+    renameModalBtn: {
+      flex: 1,
+      minHeight: 44,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: glass.fill,
+    },
+    renameModalBtnPrimary: {},
+    renameModalBtnText: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: glass.textSecondary,
     },
     listRow: {
       minHeight: 48,
