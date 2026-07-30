@@ -15,24 +15,32 @@ const rewardedAds = read('native/rewardedAds.ts');
 const i18n = read('i18n/index.ts');
 
 describe('four-pane store navigation contracts', () => {
-  it('declares members route tools store options with viewport of 3', () => {
+  it('declares members route tools store options with CoverFlow (all 4 visible)', () => {
     expect(mapScreen).toContain("key: 'store'");
     expect(mapScreen).toContain("t('map.tabStore')");
-    expect(mapScreen).toContain('viewportCount={3}');
+    expect(mapScreen).toContain('PaneCoverFlow');
     expect(mapScreen).toContain('sheetPane === \'store\'');
     expect(mapScreen).toContain('StorePane');
-    expect(mapScreen).toContain('sheet-pane-swipe-area');
-    expect(mapScreen).toContain('paneAfterSwipe');
-    expect(mapScreen).toContain('isHorizontalPaneGesture');
+    expect(mapScreen).toContain('sheet-pane-content-area');
     expect(mapScreen).toContain('editButtonActive');
+    // Raw content-area touch swipe removed — CoverFlow owns horizontal gesture.
+    expect(mapScreen).not.toContain('sheet-pane-swipe-area');
+    expect(mapScreen).not.toContain('viewportCount={3}');
   });
 
-  it('Segmented supports scrollable 3-slot viewport and a11y', () => {
+  it('CoverFlow is swipe-only with a11y adjustable and exclusive offsets', () => {
+    const cover = read('screens/MapScreen/components/PaneCoverFlow.tsx');
+    expect(cover).toContain('pane-coverflow');
+    expect(cover).toContain('accessibilityRole="adjustable"');
+    expect(cover).toContain('activeOffsetX');
+    expect(cover).toContain('failOffsetY');
+    expect(cover).toContain('selectionTick');
+    expect(cover).toContain('useReducedMotion');
+    expect(cover).not.toContain('arrow');
+    expect(cover).not.toContain('pagination');
+    // Settings still use Segmented (non-glass).
     expect(segmented).toContain('viewportCount');
-    expect(segmented).toContain('tabScrollOffsetForSelection');
-    expect(segmented).toContain('segmented-viewport');
     expect(segmented).toContain('accessibilityState={{ selected: active, disabled: locked }}');
-    expect(segmented).toContain('widthAppeared');
   });
 
   it('Store pane shell has balance ad CTA and product sections', () => {
@@ -104,6 +112,20 @@ describe('four-pane store navigation contracts', () => {
     expect(rewardedAds).toContain('let canRequestAds = false');
     expect(rewardedAds).toContain('CLOSED_EARNED_GRACE_MS');
     expect(rewardedAds).toContain('// Load phase: only LOADED / ERROR');
+  });
+
+  it('rewardedAds drops stale callbacks, settles dispose, and detaches load listeners', () => {
+    expect(rewardedAds).toContain('gen !== generation');
+    expect(rewardedAds).toContain('disposed');
+    expect(rewardedAds).toContain('pendingSettle');
+    expect(rewardedAds).toContain('settlePending');
+    expect(rewardedAds).toContain("phase !== 'load'");
+    expect(rewardedAds).toContain('clearUnsubs');
+    expect(storePane).toContain('controller.dispose()');
+    expect(storePane).toContain('controllerRef.current = null');
+    // Client never writes wallet from reward path.
+    expect(storePane).toContain('startVerifyPoll');
+    expect(storePane).not.toContain('setSnapshot({ ...snapshot, balance:');
   });
 
   it('i18n includes store and tabStore keys in zh and en', () => {

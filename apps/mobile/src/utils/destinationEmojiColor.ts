@@ -3,7 +3,7 @@
  * Accepts one Unicode emoji grapheme sequence; palette hex only.
  */
 
-/** Spec table of 26 destination presets. */
+/** Fixed 25 destination emoji presets (🧭 removed; no custom emoji UI). */
 export const DESTINATION_EMOJI_PRESETS: ReadonlyArray<{
   emoji: string;
   color: string;
@@ -35,15 +35,29 @@ export const DESTINATION_EMOJI_PRESETS: ReadonlyArray<{
   { emoji: '🚌', color: '#2F9D86', labelZh: '公車', labelEn: 'Bus' },
   { emoji: '✈️', color: '#6574CD', labelZh: '機場', labelEn: 'Airport' },
   { emoji: '🎫', color: '#D69035', labelZh: '活動／票券', labelEn: 'Ticket' },
-  { emoji: '🧭', color: '#5E6C84', labelZh: '中繼點', labelEn: 'Waypoint' },
 ];
 
 /** Stable fallback when emoji/color are null (old rows). */
 export const DESTINATION_EMOJI_FALLBACK = '📍';
 export const DESTINATION_COLOR_FALLBACK = '#E8543F';
 
+/**
+ * Independent flag palette (not derived solely from emoji presets).
+ * Keeps #5E6C84 after 🧭 emoji removal so existing marker colors still validate.
+ */
+export const DESTINATION_PALETTE_LIST: readonly string[] = Array.from(
+  new Set([
+    ...DESTINATION_EMOJI_PRESETS.map((p) => p.color.toUpperCase()),
+    '#5E6C84',
+  ]),
+);
+
 export const DESTINATION_PALETTE_HEX: ReadonlySet<string> = new Set(
-  DESTINATION_EMOJI_PRESETS.map((p) => p.color.toUpperCase()),
+  DESTINATION_PALETTE_LIST,
+);
+
+const DESTINATION_EMOJI_PRESET_SET: ReadonlySet<string> = new Set(
+  DESTINATION_EMOJI_PRESETS.map((p) => p.emoji),
 );
 
 const MAX_EMOJI_CODE_UNITS = 32;
@@ -150,9 +164,15 @@ export function validateDestinationColor(raw: string | null | undefined): ColorV
   return { ok: true, color: hex };
 }
 
+/**
+ * Display / edit projection: only the fixed 25 presets. Custom or legacy
+ * non-list emoji fall back for UI while Unicode validation still gates writes.
+ */
 export function resolveDestinationEmoji(emoji: string | null | undefined): string {
   const v = validateDestinationEmoji(emoji ?? null);
-  return v.ok ? v.emoji : DESTINATION_EMOJI_FALLBACK;
+  if (!v.ok) return DESTINATION_EMOJI_FALLBACK;
+  if (!DESTINATION_EMOJI_PRESET_SET.has(v.emoji)) return DESTINATION_EMOJI_FALLBACK;
+  return v.emoji;
 }
 
 export function resolveDestinationColor(color: string | null | undefined): string {

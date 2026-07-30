@@ -527,6 +527,8 @@ export const StorePane = React.memo(function StorePane({
       if (loadState !== 'ready') {
         // Preserve distinct no_fill vs error for CTA copy / retry.
         setAdState(loadState);
+        controller.dispose();
+        controllerRef.current = null;
         await failSession(sessionRef);
         return;
       }
@@ -540,7 +542,10 @@ export const StorePane = React.memo(function StorePane({
       }).catch(() => undefined);
 
       // show() waits for EARNED_REWARD / CLOSED — not present-start.
+      // Client reward → verifying only; never mutate wallet balance here.
       const showState = await controller.show();
+      controller.dispose();
+      controllerRef.current = null;
       if (showState === 'verifying') {
         void diagnostics.write({
           event: 'store_ad_reward_client',

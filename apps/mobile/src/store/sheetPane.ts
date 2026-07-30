@@ -1,46 +1,8 @@
-import type { SheetPaneKey } from './types';
-import { SHEET_PANE_ORDER } from './types';
-
-/** Fixed four-pane order index. */
-export function paneIndex(key: SheetPaneKey): number {
-  return SHEET_PANE_ORDER.indexOf(key);
-}
-
-export function paneAt(index: number): SheetPaneKey | null {
-  if (index < 0 || index >= SHEET_PANE_ORDER.length) return null;
-  return SHEET_PANE_ORDER[index]!;
-}
-
 /**
- * Next pane from horizontal content swipe.
- * dx > 0 (finger right) → previous pane; dx < 0 → next pane.
- * No wrap at ends.
+ * Sheet pane pure helpers still used by production UI.
+ * - tabScrollOffsetForSelection → Segmented (settings / dense controls)
+ * - coverFlowSnapIndex → PaneCoverFlow (main members/route/tools/store)
  */
-export function paneAfterSwipe(
-  current: SheetPaneKey,
-  dx: number,
-  threshold = 48,
-): SheetPaneKey {
-  if (Math.abs(dx) < threshold) return current;
-  const idx = paneIndex(current);
-  if (dx < 0) {
-    return paneAt(Math.min(SHEET_PANE_ORDER.length - 1, idx + 1)) ?? current;
-  }
-  return paneAt(Math.max(0, idx - 1)) ?? current;
-}
-
-/**
- * Whether a horizontal gesture should switch panes.
- * Requires dominant horizontal movement so vertical sheet drag / scroll wins.
- */
-export function isHorizontalPaneGesture(
-  dx: number,
-  dy: number,
-  threshold = 48,
-  dominance = 1.2,
-): boolean {
-  return Math.abs(dx) >= threshold && Math.abs(dx) > Math.abs(dy) * dominance;
-}
 
 /**
  * Scroll offset so that selected tab is fully visible in a 3-slot viewport.
@@ -59,3 +21,52 @@ export function tabScrollOffsetForSelection(input: {
   const ideal = (selectedIndex - Math.floor((viewportCount - 1) / 2)) * tabWidth;
   return Math.max(0, Math.min(maxOffset, ideal));
 }
+
+/**
+ * CoverFlow snap: finger right (positive translationX) → previous index;
+ * finger left → next. No wrap. Sub-threshold / cancel returns current.
+ */
+export function coverFlowSnapIndex(input: {
+  currentIndex: number;
+  translationX: number;
+  velocityX?: number;
+  itemCount: number;
+  /** Min |tx| to step one page without fling. */
+  threshold?: number;
+  /** Min |vx| (px/s) to fling one step when |tx| is small. */
+  flingVelocity?: number;
+}): number {
+  const {
+    currentIndex,
+    translationX,
+    velocityX = 0,
+    itemCount,
+    threshold = 48,
+    flingVelocity = 600,
+  } = input;
+  if (itemCount <= 0) return 0;
+  const clampIdx = (i: number) => Math.max(0, Math.min(itemCount - 1, i));
+  let delta = 0;
+  if (Math.abs(translationX) >= threshold) {
+    delta = translationX < 0 ? 1 : -1;
+  } else if (Math.abs(velocityX) >= flingVelocity) {
+    delta = velocityX < 0 ? 1 : -1;
+  }
+  // Multi-step for long drags (~card step ≈ threshold*1.5 for CoverFlow spacing).
+  if (Math.abs(translationX) >= threshold * 2) {
+    const steps = Math.round(Math.abs(translationX) / (threshold * 1.5));
+    delta = (translationX < 0 ? 1 : -1) * Math.max(1, steps);
+  }
+  return clampIdx(currentIndex + delta);
+}
+
+/** Steps crossed when snapping from `from` to `to` (for one haptic per index). */
+export function coverFlowHapticSteps(from: number, to: number): number {
+  return Math.abs(to - from);
+}
+
+/** CoverFlow / BottomSheet exclusive offset constants (mirrored in components). */
+export const COVERFLOW_ACTIVE_OFFSET_X = 12 as const;
+export const COVERFLOW_FAIL_OFFSET_Y = 14 as const;
+export const SHEET_FAIL_OFFSET_X = 16 as const;
+export const SHEET_ACTIVE_OFFSET_Y = 8 as const;
