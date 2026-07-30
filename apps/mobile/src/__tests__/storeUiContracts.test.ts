@@ -49,23 +49,23 @@ describe('four-pane store navigation contracts', () => {
     expect(storePane).not.toContain('balance +1');
   });
 
-  it('fails reward session on no-fill immediately; dismiss uses grace before fail', () => {
+  it('fails reward session on no-fill; verifying not client-failed; offline banner', () => {
     expect(storePane).toContain('updateRewardSessionStatus');
     expect(storePane).toContain("updateRewardSessionStatus(sessionRef, 'failed')");
     expect(storePane).toContain("updateRewardSessionStatus(sessionRef, 'verifying')");
-    expect(storePane).toContain('DISMISS_FAIL_GRACE_MS');
-    expect(storePane).toContain('clearDismissFailTimer');
-    // Load/no-fill still fails immediately.
-    expect(storePane).toContain('Immediate fail for no-fill');
+    // Load/no-fill fails immediately via failSession; dismiss fails only if not verifying.
+    expect(storePane).toContain("loadState !== 'ready'");
+    expect(storePane).toContain('!verifyingRef.current');
     expect(storePane).toContain('store-offline-banner');
     expect(storePane).toContain('store.offlineBody');
     expect(storePane).toContain('refreshConnectivity');
     expect(storePane).toContain('getConnectivitySnapshot');
   });
 
-  it('rewardedAds show waits briefly for late EARNED_REWARD after close', () => {
-    expect(rewardedAds).toContain('CLOSED before EARNED_REWARD');
-    expect(rewardedAds).toContain('setTimeout(r, 900)');
+  it('rewardedAds show resolves from CLOSED/EARNED events not present-start', () => {
+    expect(rewardedAds).toContain('resolves when the ad is *presented*');
+    expect(rewardedAds).toContain('Wait for EARNED_REWARD and/or CLOSED');
+    expect(rewardedAds).toContain('serverSideVerificationOptions');
   });
 
   it('pre-checks open destinations with credits before paywall', () => {
@@ -77,9 +77,33 @@ describe('four-pane store navigation contracts', () => {
   it('rewarded ads degrade without native module and use test units in dev', () => {
     expect(rewardedAds).toContain('missing_module');
     expect(rewardedAds).toContain('ADMOB_TEST_REWARDED_UNITS');
-    expect(rewardedAds).toContain('setServerSideVerificationOptions');
-    expect(rewardedAds).toContain("emit('verifying')");
+    // SSV custom data on createForAdRequest options (not instance setter).
+    expect(rewardedAds).toContain('serverSideVerificationOptions');
+    expect(rewardedAds).toContain('customData: sessionRef');
+    expect(rewardedAds).toContain('createForAdRequest(unitId,');
+    expect(rewardedAds).toContain('canRequestAds');
+    expect(rewardedAds).toContain("finish('verifying')");
     expect(rewardedAds).not.toContain('redeemStoreProduct');
+  });
+
+  it('store pane caches snapshot offline and re-enables CTA after verify poll', () => {
+    expect(storePane).toContain('readCachedSnapshot');
+    expect(storePane).toContain('writeCachedSnapshot');
+    expect(storePane).toContain('snapshot.v2');
+    expect(storePane).toContain('readPendingRedeem');
+    expect(storePane).toContain('writePendingRedeem');
+    expect(storePane).toContain('clientRequestKey');
+    expect(storePane).toContain('VERIFY_POLL_TICKS');
+    expect(storePane).toContain('startLateSsvPoll');
+    expect(storePane).toContain("setAdState('idle')");
+    expect(storePane).toContain('store-product-pinned');
+    expect(storePane).toContain('setAccessibilityFocus');
+  });
+
+  it('rewardedAds consent fails closed and closed-before-earned grace', () => {
+    expect(rewardedAds).toContain('let canRequestAds = false');
+    expect(rewardedAds).toContain('CLOSED_EARNED_GRACE_MS');
+    expect(rewardedAds).toContain('// Load phase: only LOADED / ERROR');
   });
 
   it('i18n includes store and tabStore keys in zh and en', () => {

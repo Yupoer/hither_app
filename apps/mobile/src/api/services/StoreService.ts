@@ -165,11 +165,13 @@ export async function updateRewardSessionStatus(
 export async function redeemStoreProduct(
   productCode: string,
   groupId?: string | null,
+  clientRequestKey?: string | null,
 ): Promise<RedeemStoreProductResult> {
   await requireUserId();
   const { data, error } = await supabase.rpc('redeem_store_product', {
     p_product_code: productCode,
     p_group_id: groupId ?? null,
+    p_client_request_key: clientRequestKey ?? null,
   });
   if (error) {
     return { ok: false, error: error.message };
