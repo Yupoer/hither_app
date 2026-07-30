@@ -170,6 +170,16 @@ export function demoDeleteDestination(destinationId: string): void {
     .map((d, i) => ({ ...d, order: i }));
 }
 
+/** Patch emoji on a demo stop (leader icon picker). */
+export function demoUpdateDestinationEmoji(
+  destinationId: string,
+  emoji: string | null,
+): void {
+  state.destinations = state.destinations.map((d) =>
+    d.id === destinationId ? { ...d, emoji } : d,
+  );
+}
+
 export function demoReorderDestinations(orderedIds: string[]): void {
   const byId = new Map(state.destinations.map((d) => [d.id, d]));
   state.destinations = orderedIds

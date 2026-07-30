@@ -4189,19 +4189,16 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const sheetChildren = useMemo(() => (
     <>
-      {/* Main Members/Route/Tools/Store icon tabs — Liquid Glass at this call site only */}
+      {/* Icon tabs: solid fill only — no Liquid Glass edge halo / white rim. */}
       <View style={styles.sheetPaneToggleWrap}>
-        <liquidGlass.GlassView
-          tintColor={glass.fill}
-          style={styles.sheetPaneToggleGlass}
-        >
+        <View style={styles.sheetPaneToggleGlass}>
           <SheetPaneTabs
             accent={accent}
             options={sheetPaneOptions}
             value={sheetPane}
             onChange={selectSheetPane}
           />
-        </liquidGlass.GlassView>
+        </View>
       </View>
 
       <View testID="sheet-pane-content-area">
@@ -7496,12 +7493,16 @@ const makeStyles = (
       color: glass.textTertiary,
     },
     sheetPaneToggleWrap: {
-      marginTop: 14,
-      marginBottom: 8,
+      marginTop: 10,
+      marginBottom: 4,
     },
     sheetPaneToggleGlass: {
-      borderRadius: 16,
+      borderRadius: 14,
       overflow: 'hidden',
+      // Flat dark fill — avoid Liquid Glass white specular rim on the tab shell.
+      backgroundColor: glass.fill,
+      borderWidth: 0,
+      borderColor: 'transparent',
     },
     accuracyRowLast: {
       marginTop: 12,

@@ -36,6 +36,13 @@ describe('validateDestinationEmoji', () => {
     expect(v.ok).toBe(ok);
   });
 
+  it('accepts every product preset emoji (picker save path)', () => {
+    for (const preset of DESTINATION_EMOJI_PRESETS) {
+      const v = validateDestinationEmoji(preset.emoji);
+      expect(v).toEqual({ ok: true, emoji: preset.emoji });
+    }
+  });
+
   it.each([
     ['', 'empty'],
     // Multi-letter Latin → multi graphemes (Segmenter) or text (fallback).

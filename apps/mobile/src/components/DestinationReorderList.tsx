@@ -539,16 +539,20 @@ export default function DestinationReorderList({
               <Pressable
                 onPress={() => {
                   if (!emojiPickerDestId || !onUpdateEmojiColor || emojiSaving) return;
+                  const destId = emojiPickerDestId;
+                  const emoji = emojiDraft;
                   setEmojiSaving(true);
                   setEmojiSaveError(false);
                   void (async () => {
                     try {
-                      await onUpdateEmojiColor(emojiPickerDestId, {
-                        emoji: emojiDraft,
-                      });
+                      await onUpdateEmojiColor(destId, { emoji });
                       setEmojiPickerDestId(null);
                       setEmojiSaveError(false);
-                    } catch {
+                    } catch (e) {
+                      if (__DEV__) {
+                        // Surface reason in metro for intermittent save failures.
+                        console.warn('[destEmoji] save failed', e);
+                      }
                       setEmojiSaveError(true);
                     } finally {
                       setEmojiSaving(false);
