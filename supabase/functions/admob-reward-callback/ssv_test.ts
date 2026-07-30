@@ -229,17 +229,18 @@ Deno.test("key cache returns stale keys when fetch fails after warm", async () =
   assertEquals(fetches, 2);
 });
 
-Deno.test("handler rejects missing signature query", async () => {
+Deno.test("handler empty probe returns 200 (AdMob Verify URL)", async () => {
   const req = new Request("https://example.test/functions/v1/admob-reward-callback");
   const res = await handleAdmobRewardRequest(req, {
     fetchKeys: async () => ({ keys: [] }),
   });
-  assertEquals(res.status, 400);
+  assertEquals(res.status, 200);
   const body = await res.json();
-  assertEquals(body.ok, false);
+  assertEquals(body.ok, true);
+  assertEquals(body.probe, true);
 });
 
-Deno.test("handler rejects invalid ad unit after signature fail path", async () => {
+Deno.test("handler ack-rejects bad SSV with HTTP 200 (no credit)", async () => {
   const qs =
     "ad_unit=ca-app-pub-0000000000000000/0000000000" +
     "&custom_data=sessionref12345678&reward_amount=1&reward_item=hither_token" +
@@ -250,5 +251,8 @@ Deno.test("handler rejects invalid ad unit after signature fail path", async () 
   const res = await handleAdmobRewardRequest(req, {
     fetchKeys: async () => ({ keys: [{ keyId: 2, base64: "AA" }] }),
   });
-  assertEquals(res.status, 400);
+  // AdMob console requires 200; body.ok false means no credit.
+  assertEquals(res.status, 200);
+  const body = await res.json();
+  assertEquals(body.ok, false);
 });

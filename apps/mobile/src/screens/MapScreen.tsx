@@ -3755,30 +3755,51 @@ export default function MapScreen({ route, navigation }: Props) {
     setSheetPane(key);
   }, [sheetPane]);
 
+  // Entitlement snapshot is bound to the groupId it was fetched for. A slow
+  // response for team A must never apply after the user switched to team B.
+  const storeEntitlementGenRef = useRef(0);
+  const storeEntitlementGroupRef = useRef<string | null>(null);
+  storeEntitlementGroupRef.current = groupId ?? null;
+
   const refreshStoreEntitlements = useCallback(async () => {
-    if (!groupId || isAnonymous) {
-      setLiveActivityEffective(false);
-      setExtraPointCredits(0);
+    const requestGroupId = groupId ?? null;
+    const gen = ++storeEntitlementGenRef.current;
+    if (!requestGroupId || isAnonymous) {
+      if (gen === storeEntitlementGenRef.current
+        && storeEntitlementGroupRef.current === requestGroupId) {
+        setLiveActivityEffective(false);
+        setExtraPointCredits(0);
+      }
       return;
     }
+    // Fail-closed before await so useLiveActivity never sees old team's true.
+    setLiveActivityEffective(false);
+    setExtraPointCredits(0);
     try {
-      const snap = await getStoreSnapshot(groupId);
+      const snap = await getStoreSnapshot(requestGroupId);
+      if (gen !== storeEntitlementGenRef.current) return;
+      if (storeEntitlementGroupRef.current !== requestGroupId) return;
       setLiveActivityEffective(!!snap.liveActivityEffective);
       setExtraPointCredits(Math.max(0, snap.extraPointCredits ?? 0));
     } catch {
-      /* keep last known */
+      if (gen !== storeEntitlementGenRef.current) return;
+      if (storeEntitlementGroupRef.current !== requestGroupId) return;
+      setLiveActivityEffective(false);
+      setExtraPointCredits(0);
     }
   }, [groupId, isAnonymous]);
 
   useEffect(() => {
     void refreshStoreEntitlements();
-  }, [refreshStoreEntitlements, isPro]);
+  }, [groupId, refreshStoreEntitlements, isPro]);
 
   const openStoreForLiveActivity = useCallback(() => {
     lightTap();
     setStoreHighlightProduct('personal_live_activity_lifetime');
     setSheetPane('store');
-  }, []);
+    // Expand to full sheet so pinned product can enter viewport.
+    setDetent(Math.max(0, detents.length - 1));
+  }, [detents.length]);
 
   /** Content horizontal swipe between panes — direction threshold; no wrap. */
   const paneSwipeRef = useRef<{ x: number; y: number; active: boolean }>({

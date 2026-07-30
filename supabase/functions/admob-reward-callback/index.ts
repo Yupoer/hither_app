@@ -68,6 +68,25 @@ export type CreditRpc = (args: {
   platform_hint: string | null;
 }) => Promise<{ ok: boolean; already_credited?: boolean; error?: string; balance?: number }>;
 
+/**
+ * AdMob URL verification and live SSV both require HTTP 200 once the endpoint
+ * is reachable. Non-200 causes console "伺服器傳回 400" and Google retries.
+ * Security stays in the body + credit path: only verified SSV credits a wallet.
+ * Temporary outages still use 503 so Google can retry.
+ */
+function rejected200(
+  started: number,
+  reason: string,
+  extra?: Record<string, string | number | boolean>,
+): Response {
+  logOutcome("rejected", {
+    reason,
+    latency: latencyBucketMs(Date.now() - started),
+    ...extra,
+  });
+  return json(200, { ok: false, error: reason });
+}
+
 export async function handleAdmobRewardRequest(
   req: Request,
   deps?: {
@@ -76,6 +95,25 @@ export async function handleAdmobRewardRequest(
   },
 ): Promise<Response> {
   const started = Date.now();
+
+  // AdMob / probes may use HEAD or OPTIONS when verifying the callback URL.
+  if (req.method === "HEAD") {
+    return new Response(null, {
+      status: 200,
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
+  if (req.method === "OPTIONS") {
+    return new Response(null, {
+      status: 200,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, HEAD, OPTIONS",
+        "Access-Control-Allow-Headers": "*",
+        "Cache-Control": "no-store",
+      },
+    });
+  }
 
   if (req.method !== "GET" && req.method !== "POST") {
     return json(405, { ok: false, error: "method_not_allowed" });
@@ -99,9 +137,12 @@ export async function handleAdmobRewardRequest(
     }
   }
 
+  // AdMob console "Verify URL" probes the bare callback with no SSV query
+  // params and requires HTTP 200. Real reward callbacks always include
+  // signature + transaction_id; empty-query never credits.
   if (!queryString) {
-    logOutcome("rejected", { reason: "empty_query", latency: latencyBucketMs(Date.now() - started) });
-    return json(400, { ok: false, error: "empty_query" });
+    logOutcome("probe", { reason: "empty_query", latency: latencyBucketMs(Date.now() - started) });
+    return json(200, { ok: true, probe: true });
   }
 
   const verified = await verifySsvCallback(queryString, {
@@ -109,46 +150,33 @@ export async function handleAdmobRewardRequest(
   });
 
   if (!verified.ok) {
-    logOutcome("rejected", {
-      reason: verified.error,
-      latency: latencyBucketMs(Date.now() - started),
-    });
-    // Intentional HTTP 400 for invalid signature / malformed SSV:
-    // - Does NOT credit (safe).
-    // - Google retries non-200 up to ~5× (ops noise only).
-    // - Prefer 400 over silent 200+ok:false so misconfigured AdMob / bad
-    //   ECDSA keys surface in operator logs until SSV is healthy.
-    // Valid txn replays return 200 below after successful verify + credit path.
-    const status = verified.error === "keys_unavailable" ? 503 : 400;
-    return json(status, { ok: false, error: verified.error });
+    // keys_unavailable is transient — ask Google to retry.
+    if (verified.error === "keys_unavailable") {
+      logOutcome("rejected", {
+        reason: verified.error,
+        latency: latencyBucketMs(Date.now() - started),
+      });
+      return json(503, { ok: false, error: verified.error });
+    }
+    // Invalid / incomplete SSV (incl. AdMob console test params): HTTP 200,
+    // no credit. Returning 400 fails AdMob's "Verify URL" step.
+    return rejected200(started, verified.error);
   }
 
   const { parsed } = verified;
   const adUnit = parsed.adUnit ?? "";
   if (!ALLOWED_AD_UNITS.has(adUnit)) {
-    logOutcome("rejected", {
-      reason: "invalid_ad_unit",
-      latency: latencyBucketMs(Date.now() - started),
-    });
-    return json(400, { ok: false, error: "invalid_ad_unit" });
+    return rejected200(started, "invalid_ad_unit");
   }
 
   const sessionRef = parsed.customData ? decodeURIComponent(parsed.customData) : "";
   if (!sessionRef || sessionRef.length < 16) {
-    logOutcome("rejected", {
-      reason: "invalid_session",
-      latency: latencyBucketMs(Date.now() - started),
-    });
-    return json(400, { ok: false, error: "invalid_session" });
+    return rejected200(started, "invalid_session");
   }
 
   const txn = parsed.transactionId ?? "";
   if (!txn) {
-    logOutcome("rejected", {
-      reason: "missing_transaction",
-      latency: latencyBucketMs(Date.now() - started),
-    });
-    return json(400, { ok: false, error: "missing_transaction" });
+    return rejected200(started, "missing_transaction");
   }
 
   const platform = platformFromAdUnit(adUnit);
@@ -186,25 +214,21 @@ export async function handleAdmobRewardRequest(
           reason: "rpc_error",
           latency: latencyBucketMs(Date.now() - started),
         });
-        return json(500, { ok: false, error: "credit_failed" });
+        // Transient credit failure — allow Google retry.
+        return json(503, { ok: false, error: "credit_failed" });
       }
       result = (data ?? { ok: false, error: "empty" }) as typeof result;
     }
 
     if (!result.ok) {
-      logOutcome("rejected", {
-        reason: result.error ?? "credit_denied",
-        latency: latencyBucketMs(Date.now() - started),
-      });
-      // Session/reward validation failures: 400. Idempotent already handled as ok.
-      return json(400, { ok: false, error: result.error ?? "credit_denied" });
+      // Business reject (bad session, wrong reward, etc.): ack with 200, no credit.
+      return rejected200(started, result.error ?? "credit_denied");
     }
 
     logOutcome(result.already_credited ? "replay" : "credited", {
       platform: platform ?? "unknown",
       latency: latencyBucketMs(Date.now() - started),
     });
-    // Google expects HTTP 200 for successful processing (incl. idempotent replay).
     return json(200, {
       ok: true,
       already_credited: !!result.already_credited,

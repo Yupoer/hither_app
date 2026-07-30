@@ -161,11 +161,13 @@ describe('map UI placement contracts', () => {
     expect(toolsBlock).toContain('handleSharingEnabledChange');
     expect(toolsBlock).toContain('PrefSlider');
     expect(toolsBlock).toContain('AmicroButton');
-    // Preference clutter moved out of Tools.
+    // Preference clutter moved out of Tools (Live Activity toggle stays in Settings).
+    // Tools may show a locked entitlement deep-link using settings.liveActivity label.
     expect(toolsBlock).not.toContain("t('settings.obliqueLocate')");
-    expect(toolsBlock).not.toContain("t('settings.liveActivity')");
     expect(toolsBlock).not.toContain("t('settings.gatherCardDefaultExpanded')");
     expect(toolsBlock).not.toContain("t('settings.gatherCardTitleMarquee')");
+    expect(toolsBlock).toContain('tools-live-activity-locked');
+    expect(toolsBlock).not.toContain('setLiveActivityEnabled');
 
     expect(settingsOverlay).toContain("t('settings.sectionMapJourney')");
     expect(settingsOverlay).toContain("t('settings.obliqueLocate')");
@@ -337,21 +339,24 @@ describe('map UI placement contracts', () => {
     expect(segmented).toContain('prevSegWRef');
   });
 
-  it('applies Liquid Glass only to the main sheet Members/Route/Tools selector', () => {
+  it('applies Liquid Glass only to the main sheet Members/Route/Tools/Store selector', () => {
     const optionsStart = mapScreen.indexOf('const sheetPaneOptions = useMemo');
     const sheetChildrenEnd = mapScreen.indexOf('if (loading && !state)', optionsStart);
     const sheetBlock = mapScreen.slice(
       optionsStart,
-      sheetChildrenEnd > 0 ? sheetChildrenEnd : optionsStart + 2000,
+      sheetChildrenEnd > 0 ? sheetChildrenEnd : optionsStart + 3000,
     );
     expect(sheetBlock).toContain('liquidGlass.GlassView');
     expect(sheetBlock).toContain('unstyledTrack');
     expect(sheetBlock).toContain("key: 'members'");
     expect(sheetBlock).toContain("key: 'route'");
     expect(sheetBlock).toContain("key: 'tools'");
+    expect(sheetBlock).toContain("key: 'store'");
+    expect(sheetBlock).toContain('viewportCount={3}');
     expect(sheetBlock).toContain('selectSheetPane');
     expect(segmented).toContain('unstyledTrack');
     expect(segmented).toContain('trackUnstyled');
+    expect(segmented).toContain('viewportCount');
     expect(segmented).toContain('accessibilityLabel={o.label}');
     expect(segmented).toContain('accessibilityState={{ selected: active, disabled: locked }}');
     // Shared Settings segmented controls stay non-glass (no unstyledTrack there).

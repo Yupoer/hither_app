@@ -34,6 +34,10 @@ const storeMigration = readFileSync(
   join(migrationsDir, '20260730120000_rewarded_ads_token_store.sql'),
   'utf8',
 ).replace(/\r\n/g, '\n');
+const storeReview01Migration = readFileSync(
+  join(migrationsDir, '20260730140000_rewarded_ads_review01_fixes.sql'),
+  'utf8',
+).replace(/\r\n/g, '\n');
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -159,6 +163,32 @@ describe('store migration security', () => {
     expect(storeMigration).toContain('Fixed product-code allow-list');
   });
 
+  it('review-01: redeem idempotency key, no verifying→failed, helpers not client-callable', () => {
+    expect(storeReview01Migration).toContain('p_client_request_key');
+    expect(storeReview01Migration).toContain('session_verifying');
+    expect(storeReview01Migration).toContain(
+      'revoke all on function public.user_has_live_activity_lifetime(uuid)',
+    );
+    expect(storeReview01Migration).toContain(
+      'from public, anon, authenticated',
+    );
+    const serviceSrc = readFileSync(
+      join(__dirname, '../api/services/StoreService.ts'),
+      'utf8',
+    );
+    expect(serviceSrc).toContain('p_client_request_key');
+  });
+
+  it('review-02: idempotent replay binds product_code and group_id', () => {
+    const review02 = readFileSync(
+      join(migrationsDir, '20260730150000_rewarded_ads_review02_fixes.sql'),
+      'utf8',
+    ).replace(/\r\n/g, '\n');
+    expect(review02).toContain('idempotency_conflict');
+    expect(review02).toContain('v_prior.product_code is distinct from p_product_code');
+    expect(review02).toContain('v_prior.group_id is distinct from p_group_id');
+  });
+
   it('keeps personal live activity effective without membership', () => {
     expect(storeMigration).toContain(
       'Personal lifetime always counts; team Premium only when member',
@@ -267,7 +297,12 @@ describe('StoreService RPCs', () => {
       },
       error: null,
     });
-    const res = await redeemStoreProduct('team_premium_1d', 'g1');
+    const res = await redeemStoreProduct('team_premium_1d', 'g1', 'req-1');
+    expect(mockedRpc).toHaveBeenCalledWith('redeem_store_product', {
+      p_product_code: 'team_premium_1d',
+      p_group_id: 'g1',
+      p_client_request_key: 'req-1',
+    });
     expect(res.ok).toBe(false);
     expect(res.shortfall).toBe(3);
   });
@@ -284,7 +319,7 @@ describe('StoreService RPCs', () => {
       },
       error: null,
     });
-    const res = await redeemStoreProduct('team_premium_3d', 'g1');
+    const res = await redeemStoreProduct('team_premium_3d', 'g1', 'req-2');
     expect(res.ok).toBe(true);
     expect(res.stacked).toBe(true);
     expect(res.source).toBe('token_redemption');
