@@ -173,7 +173,14 @@ export interface StorePaneProps {
   onEntitlementChanged?: () => void;
 }
 
-function adCtaLabel(state: RewardedAdUiState, t: TFn): string {
+function adCtaLabel(
+  state: RewardedAdUiState,
+  t: TFn,
+  opts?: { fillChecking?: boolean },
+): string {
+  if (opts?.fillChecking && (state === 'no_fill' || state === 'error' || state === 'network_error')) {
+    return t('store.adChecking');
+  }
   switch (state) {
     case 'loading':
       return t('store.adLoading');
@@ -206,6 +213,19 @@ function adCtaLabel(state: RewardedAdUiState, t: TFn): string {
   }
 }
 
+/** Transient inventory gaps — CTA stays enabled; auto-probe can recover. */
+const AUTO_FILL_PROBE_STATES = new Set<RewardedAdUiState>([
+  'no_fill',
+  'error',
+  'network_error',
+  'dismissed',
+]);
+
+/** First auto probe after empty inventory (ms). */
+const AD_FILL_PROBE_FIRST_MS = 12_000;
+/** Repeat auto probe while still empty (ms). */
+const AD_FILL_PROBE_INTERVAL_MS = 35_000;
+
 export const StorePane = React.memo(function StorePane({
   groupId,
   groupName,
@@ -223,6 +243,10 @@ export const StorePane = React.memo(function StorePane({
   const [loading, setLoading] = useState(true);
   const [offline, setOffline] = useState(() => isDefinitelyOffline(getNavigatorOnline()));
   const [adState, setAdState] = useState<RewardedAdUiState>('idle');
+  /** UI-safe busy flag (ref alone does not re-render; caused stuck grey CTA). */
+  const [adBusy, setAdBusy] = useState(false);
+  /** Background inventory probe after no_fill / soft errors. */
+  const [fillChecking, setFillChecking] = useState(false);
   /** Last ad debug line for field diagnosis (also uploaded). */
   const [adDebugLine, setAdDebugLine] = useState<string | null>(null);
   const [redeeming, setRedeeming] = useState<string | null>(null);
@@ -235,9 +259,17 @@ export const StorePane = React.memo(function StorePane({
   const balanceAtVerifyRef = useRef<number | null>(null);
   const activeSessionRef = useRef<string | null>(null);
   const verifyingRef = useRef(false);
+  const fillProbeInFlightRef = useRef(false);
+  const adStateRef = useRef<RewardedAdUiState>('idle');
+  adStateRef.current = adState;
   const highlightCardRef = useRef<View | null>(null);
   const groupIdRef = useRef(groupId);
   groupIdRef.current = groupId;
+
+  const setAdBusyBoth = useCallback((next: boolean) => {
+    adBusyRef.current = next;
+    setAdBusy(next);
+  }, []);
 
   const refreshConnectivity = useCallback(async () => {
     const snap = await getConnectivitySnapshot();
@@ -450,7 +482,7 @@ export const StorePane = React.memo(function StorePane({
   }, [onBalanceCredited, refresh, startLateSsvPoll]);
 
   const onWatchAd = useCallback(async () => {
-    if (adBusyRef.current) return;
+    if (adBusyRef.current || fillProbeInFlightRef.current) return;
     if (isAnonymous) {
       setAdState('registration_required');
       onRequireRegistration?.();
@@ -466,7 +498,7 @@ export const StorePane = React.memo(function StorePane({
       Alert.alert(t('store.offlineTitle'), t('store.offlineBody'));
       return;
     }
-    adBusyRef.current = true;
+    setAdBusyBoth(true);
     let sessionRef: string | null = null;
     verifyingRef.current = false;
     adSeqRef.current = 0;
@@ -480,18 +512,22 @@ export const StorePane = React.memo(function StorePane({
     const pushStep = async (
       step: StoreAdDebugStep & { event?: string; flushNow?: boolean },
     ) => {
+      // dispose is noise after terminal outcomes — still log backend, skip UI line.
+      const skipUiLine = step.step === 'dispose';
       adSeqRef.current += 1;
       const sequence = adSeqRef.current;
-      const line = [
-        step.step,
-        step.status ?? step.reason,
-        step.errMsg ? truncateDiagText(step.errMsg, 40) : null,
-        `b${buildNumber}`,
-        `s${sequence}`,
-      ]
-        .filter(Boolean)
-        .join(' · ');
-      setAdDebugLine(line);
+      if (!skipUiLine) {
+        const line = [
+          step.step,
+          step.status ?? step.reason,
+          step.errMsg ? truncateDiagText(step.errMsg, 40) : null,
+          `b${buildNumber}`,
+          `s${sequence}`,
+        ]
+          .filter(Boolean)
+          .join(' · ');
+        setAdDebugLine(line);
+      }
       await logStoreAdStep({
         event: step.event ?? 'store_ad_load',
         step: step.step,
@@ -537,6 +573,7 @@ export const StorePane = React.memo(function StorePane({
         } else {
           setAdState('error');
         }
+        setAdBusyBoth(false);
         await pushStep({
           step: 'ready_failed',
           phase: 'terminal',
@@ -570,6 +607,7 @@ export const StorePane = React.memo(function StorePane({
         } else {
           setAdState('error');
         }
+        setAdBusyBoth(false);
         await pushStep({
           step: 'session_create_failed',
           phase: 'terminal',
@@ -608,6 +646,7 @@ export const StorePane = React.memo(function StorePane({
       controllerRef.current = controller;
       if (!controller) {
         setAdState('unsupported');
+        setAdBusyBoth(false);
         await pushStep({
           step: 'controller_null',
           phase: 'terminal',
@@ -633,8 +672,10 @@ export const StorePane = React.memo(function StorePane({
       });
 
       if (loadState !== 'ready') {
-        // Preserve distinct no_fill vs error for CTA copy / retry.
+        // Preserve distinct no_fill vs error for CTA copy.
+        // Clear busy BEFORE await so a re-render never freezes a grey disabled CTA.
         setAdState(loadState);
+        setAdBusyBoth(false);
         controller.dispose();
         controllerRef.current = null;
         await failSession(sessionRef);
@@ -657,6 +698,7 @@ export const StorePane = React.memo(function StorePane({
       controller.dispose();
       controllerRef.current = null;
       if (showState === 'verifying') {
+        setAdBusyBoth(false);
         await pushStep({
           step: 'reward_client',
           phase: 'verify',
@@ -669,6 +711,8 @@ export const StorePane = React.memo(function StorePane({
         await markVerifyingSession(sessionRef);
         startVerifyPoll(snapshot?.balance ?? 0);
       } else if (showState === 'dismissed') {
+        setAdState('dismissed');
+        setAdBusyBoth(false);
         await pushStep({
           step: 'dismissed',
           phase: 'terminal',
@@ -678,13 +722,13 @@ export const StorePane = React.memo(function StorePane({
           sessionTail: tailId(sessionRef, 8),
           flushNow: true,
         });
-        setAdState('dismissed');
         // Only fail if still active (not verifying). Server rejects verifying→failed.
         if (!verifyingRef.current) {
           await failSession(sessionRef);
         }
       } else if (showState === 'no_fill') {
         setAdState('no_fill');
+        setAdBusyBoth(false);
         await pushStep({
           step: 'show_no_fill',
           phase: 'terminal',
@@ -695,6 +739,7 @@ export const StorePane = React.memo(function StorePane({
         await failSession(sessionRef);
       } else if (showState === 'network_error') {
         setAdState('network_error');
+        setAdBusyBoth(false);
         await pushStep({
           step: 'show_network_error',
           phase: 'terminal',
@@ -705,6 +750,7 @@ export const StorePane = React.memo(function StorePane({
         await failSession(sessionRef);
       } else if (showState === 'error') {
         setAdState('error');
+        setAdBusyBoth(false);
         await pushStep({
           step: 'show_error',
           phase: 'terminal',
@@ -715,7 +761,7 @@ export const StorePane = React.memo(function StorePane({
         await failSession(sessionRef);
       }
     } finally {
-      adBusyRef.current = false;
+      setAdBusyBoth(false);
     }
   }, [
     isAnonymous,
@@ -726,8 +772,88 @@ export const StorePane = React.memo(function StorePane({
     failSession,
     markVerifyingSession,
     refreshConnectivity,
+    setAdBusyBoth,
     t,
   ]);
+
+  /**
+   * After no_fill / soft errors, silently re-probe AdMob inventory.
+   * When a load succeeds we drop back to idle so the CTA auto-becomes "watch"
+   * without the user tapping a grey retry button.
+   */
+  const silentFillProbe = useCallback(async () => {
+    if (fillProbeInFlightRef.current || adBusyRef.current) return;
+    if (isAnonymous || offline) return;
+    if (!AUTO_FILL_PROBE_STATES.has(adStateRef.current)) return;
+    fillProbeInFlightRef.current = true;
+    setFillChecking(true);
+    let sessionRef: string | null = null;
+    try {
+      const platform = Platform.OS === 'ios' ? 'ios' : 'android';
+      const ready = await ensureRewardedAdsReady();
+      if (!ready.available) return;
+      const session = await createRewardSession(platform);
+      if (!session.ok || !session.sessionRef) return;
+      sessionRef = session.sessionRef;
+      const controller = createRewardedAdController(platform);
+      if (!controller) {
+        await failSession(sessionRef);
+        return;
+      }
+      const loadState = await controller.load(session.sessionRef);
+      controller.dispose();
+      if (loadState === 'ready') {
+        // Preloaded fill — free session and surface watch CTA again.
+        await failSession(sessionRef);
+        sessionRef = null;
+        if (AUTO_FILL_PROBE_STATES.has(adStateRef.current)) {
+          setAdState('idle');
+          setAdDebugLine((prev) =>
+            prev ? `${prev} · auto_fill_ready` : 'auto_fill_ready',
+          );
+          void logStoreAdStep({
+            step: 'auto_fill_ready',
+            phase: 'ready',
+            status: 'idle',
+            success: true,
+            platform,
+            flushNow: true,
+          }).catch(() => undefined);
+        }
+        return;
+      }
+      await failSession(sessionRef);
+      sessionRef = null;
+      // Keep existing no_fill/error state; next timer tick will try again.
+      if (loadState === 'no_fill' || loadState === 'network_error' || loadState === 'error') {
+        setAdState(loadState);
+      }
+    } catch {
+      if (sessionRef) await failSession(sessionRef).catch(() => undefined);
+    } finally {
+      fillProbeInFlightRef.current = false;
+      setFillChecking(false);
+    }
+  }, [failSession, isAnonymous, offline]);
+
+  useEffect(() => {
+    if (!AUTO_FILL_PROBE_STATES.has(adState)) {
+      setFillChecking(false);
+      return;
+    }
+    if (isAnonymous || offline) return;
+    let cancelled = false;
+    const run = () => {
+      if (!cancelled) void silentFillProbe();
+    };
+    const first = setTimeout(run, AD_FILL_PROBE_FIRST_MS);
+    const interval = setInterval(run, AD_FILL_PROBE_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(first);
+      clearInterval(interval);
+    };
+  }, [adState, isAnonymous, offline, silentFillProbe]);
 
   const confirmRedeem = useCallback((product: StoreCatalogProduct) => {
     if (isAnonymous) {
@@ -866,13 +992,18 @@ export const StorePane = React.memo(function StorePane({
   const credits = snapshot?.extraPointCredits ?? 0;
   const fromCacheOnly = offline && !!snapshot;
 
+  // Soft inventory / network outcomes stay tappable (or auto-recover). Never
+  // gate on a ref — that froze the CTA grey after no_fill (busy cleared post-await).
   const adDisabled =
     isAnonymous
     || offline
+    || adBusy
+    || fillChecking
     || adState === 'loading'
     || adState === 'showing'
     || adState === 'verifying'
-    || adBusyRef.current;
+    || adState === 'unsupported'
+    || adState === 'session_active';
 
   return (
     <View
@@ -934,7 +1065,11 @@ export const StorePane = React.memo(function StorePane({
               disabled: adDisabled,
               busy: adState === 'loading' || adState === 'showing' || adState === 'verifying',
             }}
-            accessibilityLabel={offline ? t('store.offlineTitle') : adCtaLabel(adState, t)}
+            accessibilityLabel={
+              offline
+                ? t('store.offlineTitle')
+                : adCtaLabel(adState, t, { fillChecking })
+            }
             testID="store-ad-cta"
           >
             <Ionicons
@@ -943,7 +1078,9 @@ export const StorePane = React.memo(function StorePane({
               color={adDisabled ? glass.textSecondary : '#111'}
             />
             <Text style={[styles.ctaText, adDisabled && styles.ctaTextMuted]}>
-              {offline ? t('store.offlineCta') : adCtaLabel(adState, t)}
+              {offline
+                ? t('store.offlineCta')
+                : adCtaLabel(adState, t, { fillChecking })}
             </Text>
           </Pressable>
           <Text style={styles.shellHint}>{t('store.adRewardHint')}</Text>

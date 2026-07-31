@@ -95,10 +95,9 @@ export const SheetPaneTabs = React.memo(function SheetPaneTabs({
   );
 });
 
-const makeStyles = (scale: number, _boldText: boolean) => {
+const makeStyles = (scale: number, boldText: boolean) => {
   const s = (n: number, min = 0) => Math.max(min, Math.round(n * scale));
-  // Leaner “tall” chrome: one step smaller than body at standard Dynamic Type
-  // (reads as 小→標準), regular weight, long bottom rail. Not chubby/bold.
+  // Lean tall chrome: caption+1px, bold label, long bottom rail.
   const iconSize = s(20, 18);
   return {
     iconSize,
@@ -119,11 +118,11 @@ const makeStyles = (scale: number, _boldText: boolean) => {
         gap: s(2, 1),
       },
       label: {
-        // ~caption size at default scale (smaller than standard body).
-        fontSize: s(11, 10),
-        fontWeight: '400',
+        // One step under body (+1px vs prior 11).
+        fontSize: s(boldText ? 12 : 12, 11),
+        fontWeight: '700',
         textAlign: 'center',
-        lineHeight: s(13, 12),
+        lineHeight: s(14, 13),
       },
       underline: {
         position: 'absolute',
