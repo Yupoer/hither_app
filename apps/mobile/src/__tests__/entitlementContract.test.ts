@@ -346,7 +346,7 @@ describe('EntitlementService RPCs', () => {
     });
     const result = await applyVerifiedPurchase({
       groupId: 'g1',
-      transactionId: 'txn-1',
+      transactionId: 'txn-duplicate-1',
     });
     expect(result.ok).toBe(false);
     expect(result.error).toBe('duplicate');
@@ -672,7 +672,7 @@ describe('paid entitlement migration contract', () => {
   });
 });
 
-describe('Paywall contract (temporary direct upgrade)', () => {
+describe('Paywall contract (store IAP + server grant only)', () => {
   const paywall = readFileSync(
     join(__dirname, '../components/PaywallSheet.tsx'),
     'utf8',
@@ -682,9 +682,12 @@ describe('Paywall contract (temporary direct upgrade)', () => {
     expect(paywall).toContain('applyVerifiedPurchase');
     expect(paywall).toContain('restoreEntitlements');
     expect(paywall).toContain('isVerifiedPurchase');
-    expect(paywall).toContain('TEMPORARY_DIRECT_UPGRADE');
-    expect(paywall).toContain('setProStatusLocal(true)');
+    // Never unlock Premium from client alone (no QA local upgrade).
+    expect(paywall).not.toContain('TEMPORARY_DIRECT_UPGRADE');
+    expect(paywall).not.toContain('setProStatusLocal(true)');
     expect(paywall).not.toContain('setProStatus(');
+    expect(paywall).toContain('purchases.purchasePro');
+    expect(paywall).toContain('refreshEntitlement');
     expect(paywall).toContain('SMALL_TRIP_PASS');
     expect(paywall).toContain('FREE_LIMITS');
   });

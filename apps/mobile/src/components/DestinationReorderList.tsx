@@ -20,10 +20,13 @@ import { useTranslation } from '../i18n';
 import { resolveVisibleStartDay } from '../utils/tripDay';
 import { clampDateNotBeforeToday, startOfTodayLocal } from '../utils/meetTime';
 import {
+  DESTINATION_EMOJI_CATEGORIES,
   DESTINATION_EMOJI_FALLBACK,
   DESTINATION_EMOJI_PRESETS,
   destinationEmojiDisplay,
+  presetsForCategory,
   resolveDestinationEmoji,
+  type DestinationEmojiCategory,
 } from '../utils/destinationEmojiColor';
 import { getColorForDay } from '../utils/destinationMarkerChrome';
 
@@ -84,9 +87,16 @@ export default function DestinationReorderList({
   const [colorPickerDay, setColorPickerDay] = useState<number | null>(null);
   const [emojiPickerDestId, setEmojiPickerDestId] = useState<string | null>(null);
   const [emojiDraft, setEmojiDraft] = useState(DESTINATION_EMOJI_FALLBACK);
+  const [emojiCategory, setEmojiCategory] = useState<DestinationEmojiCategory>('common');
   const [emojiPreviewDayColor, setEmojiPreviewDayColor] = useState(DAY_COLORS[0]);
   const [emojiSaveError, setEmojiSaveError] = useState(false);
   const [emojiSaving, setEmojiSaving] = useState(false);
+  const emojiGridPresets = useMemo(
+    () => presetsForCategory(emojiCategory),
+    [emojiCategory],
+  );
+  const { language } = usePreferences();
+  const isZh = language === 'zh';
   // Stable so memo(HeaderRow) is not busted by a new lambda each parent render.
   const onHeaderColorPress = useCallback((day: number) => {
     setColorPickerDay(day);
@@ -372,6 +382,7 @@ export default function DestinationReorderList({
                     ? (id) => {
                         const dest = destinations.find((d) => d.id === id);
                         setEmojiDraft(resolveDestinationEmoji(dest?.emoji));
+                        setEmojiCategory('common');
                         setEmojiPreviewDayColor(getColorForDay(dest?.day, dayColors));
                         setEmojiSaveError(false);
                         setEmojiSaving(false);
@@ -470,25 +481,63 @@ export default function DestinationReorderList({
 
       <Modal visible={emojiPickerDestId !== null} transparent animationType="fade">
         <Pressable
-          style={styles.modalOverlay}
+          style={styles.emojiSheetOverlay}
           onPress={() => {
             if (emojiSaving) return;
             setEmojiPickerDestId(null);
             setEmojiSaveError(false);
           }}
         >
-          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.modalTitle}>{t('destEmoji.title')}</Text>
-            <View style={styles.emojiPreviewRow} testID="dest-emoji-preview">
-              <Text style={styles.modalLabel}>{t('destEmoji.preview')}</Text>
-              <View
-                style={[styles.emojiPreviewBadge, { backgroundColor: emojiPreviewDayColor }]}
-              >
-                <Text style={styles.emojiPreviewGlyph}>{emojiDraft}</Text>
+          <Pressable style={styles.emojiSheetCard} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.emojiSheetTitle}>{t('destEmoji.title')}</Text>
+            <Text style={styles.emojiSheetHint}>{t('destEmoji.preview')}</Text>
+
+            {/* Large map-pin style preview (matches design mockup). */}
+            <View style={styles.emojiPinPreviewWrap} testID="dest-emoji-preview">
+              <View style={styles.emojiPinPreview}>
+                <View style={styles.emojiPinHead}>
+                  <Text style={styles.emojiPinGlyph}>{emojiDraft}</Text>
+                </View>
+                <View style={styles.emojiPinStem} />
+                <View style={styles.emojiPinDot} />
               </View>
             </View>
+
+            {/* Category tabs: 常用 / 餐飲 / 景點 / 交通 / 自然 / 活動 */}
+            <View style={styles.emojiCategoryRow}>
+              {DESTINATION_EMOJI_CATEGORIES.map((cat) => {
+                const selected = cat.id === emojiCategory;
+                return (
+                  <Pressable
+                    key={cat.id}
+                    onPress={() => setEmojiCategory(cat.id)}
+                    style={[
+                      styles.emojiCategoryTab,
+                      selected && {
+                        backgroundColor: `${colors.accent}28`,
+                        borderColor: colors.accent,
+                      },
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    accessibilityLabel={isZh ? cat.labelZh : cat.labelEn}
+                  >
+                    <Text
+                      style={[
+                        styles.emojiCategoryTabText,
+                        selected && { color: colors.accent, fontWeight: '700' },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {isZh ? cat.labelZh : cat.labelEn}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
             <View style={styles.emojiPresetGrid} testID="dest-emoji-grid">
-              {DESTINATION_EMOJI_PRESETS.map((preset) => {
+              {emojiGridPresets.map((preset) => {
                 const selected = preset.emoji === emojiDraft;
                 return (
                   <Pressable
@@ -502,16 +551,16 @@ export default function DestinationReorderList({
                       {
                         // Ticket 07: every cell uses the same accent border.
                         // Selection is background, not a different border color/width.
-                        borderColor: colors.accent,
+                        borderColor: selected ? colors.accent : 'rgba(255,255,255,0.12)',
                         borderWidth: 2,
                         backgroundColor: selected
                           ? `${colors.accent}33`
-                          : 'transparent',
+                          : 'rgba(255,255,255,0.06)',
                       },
                     ]}
                     accessibilityRole="button"
                     accessibilityState={{ selected }}
-                    accessibilityLabel={preset.labelZh}
+                    accessibilityLabel={isZh ? preset.labelZh : preset.labelEn}
                   >
                     <Text style={styles.emojiPresetGlyph}>{preset.emoji}</Text>
                   </Pressable>
@@ -523,18 +572,18 @@ export default function DestinationReorderList({
                 {t('destEmoji.saveFailed')}
               </Text>
             ) : null}
-            <View style={styles.modalActions}>
+            <View style={styles.emojiSheetActions}>
               <Pressable
                 onPress={() => {
                   if (emojiSaving) return;
                   setEmojiPickerDestId(null);
                   setEmojiSaveError(false);
                 }}
-                style={styles.modalActionBtn}
+                style={styles.emojiSheetCancel}
                 accessibilityRole="button"
                 accessibilityLabel={t('common.cancel')}
               >
-                <Text style={styles.modalActionText}>{t('common.cancel')}</Text>
+                <Text style={styles.emojiSheetCancelText}>{t('common.cancel')}</Text>
               </Pressable>
               <Pressable
                 onPress={() => {
@@ -560,7 +609,7 @@ export default function DestinationReorderList({
                   })();
                 }}
                 style={[
-                  styles.modalActionBtn,
+                  styles.emojiSheetConfirm,
                   { backgroundColor: colors.accent },
                   emojiSaving && { opacity: 0.6 },
                 ]}
@@ -569,7 +618,7 @@ export default function DestinationReorderList({
                 accessibilityState={{ disabled: emojiSaving, busy: emojiSaving }}
                 testID="dest-emoji-confirm"
               >
-                <Text style={[styles.modalActionText, { color: '#fff' }]}>
+                <Text style={styles.emojiSheetConfirmText}>
                   {t('common.confirm')}
                 </Text>
               </Pressable>
@@ -911,48 +960,154 @@ const makeStyles = (colors: Palette) =>
     emojiBadgeGlyph: {
       fontSize: 16,
     },
+    emojiSheetOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.55)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: 20,
+    },
+    emojiSheetCard: {
+      width: '100%',
+      maxWidth: 360,
+      borderRadius: 28,
+      paddingTop: 22,
+      paddingBottom: 18,
+      paddingHorizontal: 16,
+      backgroundColor: '#1A1A22',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'rgba(255,255,255,0.1)',
+    },
+    emojiSheetTitle: {
+      color: '#fff',
+      fontSize: 18,
+      fontWeight: '700',
+      textAlign: 'center',
+      marginBottom: 4,
+    },
+    emojiSheetHint: {
+      color: 'rgba(255,255,255,0.45)',
+      fontSize: 13,
+      textAlign: 'center',
+      marginBottom: 16,
+    },
+    emojiPinPreviewWrap: {
+      alignItems: 'center',
+      marginBottom: 18,
+      minHeight: 88,
+      justifyContent: 'center',
+    },
+    emojiPinPreview: {
+      alignItems: 'center',
+    },
+    emojiPinHead: {
+      width: 64,
+      height: 64,
+      borderRadius: 32,
+      backgroundColor: 'rgba(255,255,255,0.08)',
+      borderWidth: 2,
+      borderColor: 'rgba(255,255,255,0.18)',
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: '#000',
+      shadowOpacity: 0.35,
+      shadowRadius: 10,
+      shadowOffset: { width: 0, height: 4 },
+    },
+    emojiPinGlyph: {
+      fontSize: 30,
+    },
+    emojiPinStem: {
+      width: 3,
+      height: 14,
+      backgroundColor: 'rgba(255,255,255,0.35)',
+      marginTop: -1,
+      borderRadius: 2,
+    },
+    emojiPinDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      backgroundColor: 'rgba(255,255,255,0.45)',
+      marginTop: 2,
+    },
+    emojiCategoryRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      justifyContent: 'center',
+      gap: 6,
+      marginBottom: 14,
+    },
+    emojiCategoryTab: {
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 14,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'rgba(255,255,255,0.12)',
+      backgroundColor: 'rgba(255,255,255,0.04)',
+    },
+    emojiCategoryTabText: {
+      color: 'rgba(255,255,255,0.55)',
+      fontSize: 12,
+      fontWeight: '600',
+    },
     emojiPresetGrid: {
       flexDirection: 'row',
       flexWrap: 'wrap',
       justifyContent: 'center',
-      gap: 8,
-      paddingHorizontal: spacing.sm,
+      gap: 10,
+      paddingHorizontal: 4,
       marginBottom: spacing.md,
+      minHeight: 120,
     },
     emojiPresetCell: {
-      width: 40,
-      height: 40,
-      borderRadius: 10,
+      width: 52,
+      height: 52,
+      borderRadius: 14,
       borderWidth: 2,
-      borderColor: colors.border,
+      borderColor: 'rgba(255,255,255,0.12)',
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: colors.glass,
+      backgroundColor: 'rgba(255,255,255,0.06)',
     },
     emojiPresetGlyph: {
-      fontSize: 20,
+      fontSize: 26,
     },
-    emojiPreviewRow: {
+    emojiSheetActions: {
       flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: spacing.md,
-      paddingHorizontal: spacing.sm,
+      gap: 10,
+      marginTop: 4,
     },
-    emojiPreviewBadge: {
-      width: 48,
-      height: 48,
-      borderRadius: 24,
+    emojiSheetCancel: {
+      flex: 1,
+      height: 46,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(255,255,255,0.08)',
+    },
+    emojiSheetCancelText: {
+      color: 'rgba(255,255,255,0.75)',
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    emojiSheetConfirm: {
+      flex: 1,
+      height: 46,
+      borderRadius: 14,
       alignItems: 'center',
       justifyContent: 'center',
     },
-    emojiPreviewGlyph: {
-      fontSize: 24,
+    emojiSheetConfirmText: {
+      color: '#fff',
+      fontSize: 16,
+      fontWeight: '700',
     },
     emojiError: {
       color: colors.danger,
       fontSize: 13,
       marginBottom: spacing.sm,
+      textAlign: 'center',
     },
     handle: { color: colors.textSecondary, fontSize: 22, paddingHorizontal: spacing.xs },
     deleteBg: {
