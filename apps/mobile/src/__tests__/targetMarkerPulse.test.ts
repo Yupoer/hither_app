@@ -8,7 +8,7 @@ import {
 
 describe('target marker pulse', () => {
   it('uses a five-second cadence and short pulse duration', () => {
-    expect(TARGET_PULSE_INTERVAL_MS).toBe(5_000);
+    expect(TARGET_PULSE_INTERVAL_MS).toBe(10_000);
     expect(TARGET_PULSE_DURATION_MS).toBeLessThan(1_000);
     expect(pulsePeakScale()).toBeGreaterThan(1);
     expect(reduceMotionEmphasisScale()).toBeGreaterThan(1);

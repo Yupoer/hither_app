@@ -99,6 +99,54 @@ describe('createRewardedAdController', () => {
     expect(initialize).toHaveBeenCalledTimes(1);
   });
 
+  it('emits debug steps for missing native module', async () => {
+    __setMobileAdsModuleForTests(null);
+    const steps: string[] = [];
+    const result = await ensureRewardedAdsReady((d) => {
+      steps.push(d.step);
+    });
+    expect(result).toEqual({ available: false, reason: 'missing_module' });
+    expect(steps).toContain('require_module');
+    expect(steps).toContain('missing_module');
+  });
+
+  it('emits load debug steps on happy path', async () => {
+    const ad = makeFakeAd();
+    installFakeModule(() => ad);
+    // consent open
+    __setMobileAdsModuleForTests({
+      mobileAds: () => ({ initialize: async () => ({}) }),
+      RewardedAd: {
+        createForAdRequest: () => ad as never,
+      },
+      RewardedAdEventType: {
+        LOADED: 'LOADED',
+        EARNED_REWARD: 'EARNED_REWARD',
+      },
+      AdEventType: {
+        CLOSED: 'CLOSED',
+        ERROR: 'ERROR',
+      },
+      AdsConsent: {
+        requestInfoUpdate: jest.fn(async () => ({ canRequestAds: true })),
+        loadAndShowConsentFormIfRequired: jest.fn(async () => ({ canRequestAds: true })),
+      },
+    });
+    const steps: string[] = [];
+    await ensureRewardedAdsReady((d) => steps.push(d.step));
+    const ctrl = createRewardedAdController('ios', {
+      onDebug: (d) => steps.push(d.step),
+    });
+    expect(ctrl).not.toBeNull();
+    await expect(ctrl!.load('sess-abc')).resolves.toBe('ready');
+    expect(steps).toEqual(expect.arrayContaining([
+      'ready_true',
+      'controller_create',
+      'ad_load_start',
+      'ad_loaded',
+    ]));
+  });
+
   it('returns null when native module is missing', () => {
     __setMobileAdsModuleForTests(null);
     expect(createRewardedAdController('ios')).toBeNull();

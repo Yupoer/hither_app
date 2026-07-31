@@ -5,7 +5,8 @@
  * Continuous marker bitmap tracking must stay off after each pulse.
  */
 
-export const TARGET_PULSE_INTERVAL_MS = 5_000;
+/** Active target marker pulse cadence (~½ prior 5s load on tracksViewChanges). */
+export const TARGET_PULSE_INTERVAL_MS = 10_000;
 /** Brief pulse duration (ms). tracksViewChanges only for this window. */
 export const TARGET_PULSE_DURATION_MS = 420;
 

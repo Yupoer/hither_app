@@ -8,7 +8,7 @@ import {
 } from '../api/services/DiagnosticService';
 import { getDiagnosticConsentEnabled } from './diagnosticConsent';
 import { getHitherDatabase } from './hitherDatabase';
-import { notifyLogRecorded } from './logBatchScheduler';
+import { notifyErrorRecorded, notifyLogRecorded } from './logBatchScheduler';
 
 const RETENTION_MS = 72 * 60 * 60 * 1_000;
 const MAX_RECORDS = 10_000;
@@ -41,6 +41,25 @@ export interface DiagnosticInput {
   updateId?: string;
   runtimeVersion?: string;
   appVersion?: string;
+  /** Ordered ad-watch step id (store debug trail). */
+  step?: string;
+  /** Ad flow phase: preflight | ready | load | show | verify | terminal. */
+  phase?: string;
+  platform?: string;
+  /** production | test ad unit mode. */
+  unitMode?: string;
+  modulePresent?: boolean;
+  bridgeReady?: boolean;
+  canRequestAds?: boolean;
+  consentFormShown?: boolean;
+  errCode?: string;
+  /** Truncated / redacted SDK message (≤120). */
+  errMsg?: string;
+  /** Last 6 of ad unit id only. */
+  unitSuffix?: string;
+  /** Last 8 of reward session ref only. */
+  sessionTail?: string;
+  buildNumber?: string;
 }
 
 export interface DiagnosticRecord {
@@ -223,7 +242,27 @@ const ALLOWED_FIELDS = [
   'updateId',
   'runtimeVersion',
   'appVersion',
+  'step',
+  'phase',
+  'platform',
+  'unitMode',
+  'modulePresent',
+  'bridgeReady',
+  'canRequestAds',
+  'consentFormShown',
+  'errCode',
+  'errMsg',
+  'unitSuffix',
+  'sessionTail',
+  'buildNumber',
 ] as const;
+
+/** Temporary: store ad trail always records so field failures are diagnosable without consent toggle. */
+export function isStoreAdDiagnosticEvent(event: string): boolean {
+  return event.startsWith('store_ad_');
+}
+
+export { tailId, truncateDiagText } from '../utils/diagText';
 
 function sanitize(input: DiagnosticInput): DiagnosticPayload {
   const payload: DiagnosticPayload = {};
@@ -278,7 +317,9 @@ export function createDiagnostics(
   return {
     write(input: DiagnosticInput): Promise<void> {
       return runSerial(async () => {
-        if (!(await getDiagnosticConsentEnabled())) return;
+        const storeAd = isStoreAdDiagnosticEvent(input.event);
+        // store_ad_* always records (field debug); everything else needs consent.
+        if (!storeAd && !(await getDiagnosticConsentEnabled())) return;
         await initialize();
         if (
           mode === 'minimal' &&
@@ -298,7 +339,11 @@ export function createDiagnostics(
           uploadedAt: null,
         });
         await database.cleanup(timestamp - RETENTION_MS, MAX_RECORDS);
-        notifyLogRecorded();
+        if (storeAd && (input.success === false || input.phase === 'terminal')) {
+          notifyErrorRecorded();
+        } else {
+          notifyLogRecorded();
+        }
       });
     },
 
@@ -306,14 +351,23 @@ export function createDiagnostics(
 
     flush(): Promise<{ sent: number; remaining: number }> {
       return runSerial(async () => {
-        if (!(await getDiagnosticConsentEnabled())) {
-          return { sent: 0, remaining: 0 };
-        }
         await initialize();
-        const pending = await database.getPending(MAX_UPLOAD_BATCH);
+        const consent = await getDiagnosticConsentEnabled();
+        let pending = await database.getPending(MAX_UPLOAD_BATCH);
+        // Without consent, still upload store_ad_* so watch-ad failures reach backend.
+        if (!consent) {
+          pending = pending.filter((record) => isStoreAdDiagnosticEvent(record.event));
+        }
         if (pending.length === 0) {
           await cleanup();
-          return { sent: 0, remaining: 0 };
+          return {
+            sent: 0,
+            remaining: consent
+              ? await database.pendingCount()
+              : (await database.getPending(MAX_RECORDS)).filter((r) =>
+                  isStoreAdDiagnosticEvent(r.event),
+                ).length,
+          };
         }
         let result: DiagnosticBatchResult;
         try {
@@ -384,3 +438,35 @@ export const diagnostics = createDiagnostics(
     ? 'verbose'
     : 'minimal',
 );
+
+export type StoreAdStepInput = Omit<DiagnosticInput, 'event'> & {
+  step: string;
+  phase: string;
+  /** Defaults to store_ad_load (DB allow-list safe). */
+  event?: string;
+  /** Force immediate backend flush after write. */
+  flushNow?: boolean;
+};
+
+/**
+ * Fine-grained store rewarded-ad trail. Always persisted (consent bypass) and
+ * flushed quickly on failures / terminal phases so field failures are locatable.
+ */
+export async function logStoreAdStep(input: StoreAdStepInput): Promise<void> {
+  const event = input.event ?? 'store_ad_load';
+  const terminal =
+    input.phase === 'terminal'
+    || input.success === false
+    || input.flushNow === true;
+  await diagnostics.write({
+    ...input,
+    event,
+    source: input.source ?? 'store',
+    buildNumber: input.buildNumber ?? metadata.buildNumber,
+    phase: terminal && input.phase !== 'terminal' ? input.phase : input.phase,
+  });
+  if (terminal) {
+    notifyErrorRecorded();
+    await diagnostics.flush().catch(() => undefined);
+  }
+}

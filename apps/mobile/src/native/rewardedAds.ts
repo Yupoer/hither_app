@@ -16,6 +16,7 @@ import {
   ADMOB_TEST_REWARDED_UNITS,
   type RewardedAdUiState,
 } from '../store/types';
+import { tailId, truncateDiagText } from '../utils/diagText';
 
 export type RewardedAdsAvailability =
   | { available: true }
@@ -28,6 +29,26 @@ export type RewardedAdsAvailability =
         | 'unsupported'
         | 'consent_required';
     };
+
+export type StoreAdDebugStep = {
+  step: string;
+  phase: string;
+  status?: string;
+  success?: boolean;
+  reason?: string;
+  modulePresent?: boolean;
+  bridgeReady?: boolean;
+  canRequestAds?: boolean;
+  consentFormShown?: boolean;
+  unitMode?: string;
+  unitSuffix?: string;
+  sessionTail?: string;
+  errCode?: string;
+  errMsg?: string;
+  platform?: string;
+};
+
+export type StoreAdDebugHandler = (step: StoreAdDebugStep) => void;
 
 type AdRequestOptions = {
   requestNonPersonalizedAdsOnly?: boolean;
@@ -90,6 +111,16 @@ function loadConsent(): AdsConsentModule['AdsConsent'] | null {
   return loadModule()?.AdsConsent ?? null;
 }
 
+function errParts(err: unknown): { errCode?: string; errMsg?: string } {
+  const e = err as { message?: string; code?: string | number } | null;
+  const code = e?.code != null ? String(e.code) : undefined;
+  const msg = e?.message != null ? truncateDiagText(e.message, 120) : truncateDiagText(err, 120);
+  return {
+    errCode: code ? truncateDiagText(code, 40) : undefined,
+    errMsg: msg || undefined,
+  };
+}
+
 /** True for production / release-like native builds. */
 export function productionAdUnitsEnabled(): boolean {
   if (typeof __DEV__ !== 'undefined' && __DEV__) return false;
@@ -122,59 +153,241 @@ export function admobAppIdForPlatform(
  * UMP consent then Mobile Ads init. Never request ads when canRequestAds is false.
  * Consent denial is recoverable (next call re-runs UMP).
  */
-export async function ensureRewardedAdsReady(): Promise<RewardedAdsAvailability> {
-  if (initPromise) return initPromise;
-  initPromise = (async () => {
+export async function ensureRewardedAdsReady(
+  onDebug?: StoreAdDebugHandler,
+): Promise<RewardedAdsAvailability> {
+  const dbg = (step: StoreAdDebugStep) => {
+    try {
+      onDebug?.(step);
+    } catch {
+      /* never block ad path on logging */
+    }
+  };
+  const platform = Platform.OS === 'ios' || Platform.OS === 'android' ? Platform.OS : 'other';
+
+  // Do not cache a previous failure forever when a debug handler is attached —
+  // field diagnosis needs a fresh probe each tap. Success still reuses initPromise.
+  if (initPromise && !onDebug) return initPromise;
+
+  const run = (async (): Promise<RewardedAdsAvailability> => {
+    dbg({
+      step: 'platform_check',
+      phase: 'preflight',
+      platform,
+      status: platform,
+    });
     if (Platform.OS !== 'ios' && Platform.OS !== 'android') {
+      dbg({
+        step: 'platform_check',
+        phase: 'terminal',
+        platform,
+        success: false,
+        status: 'unsupported',
+        reason: 'unsupported',
+      });
       return { available: false, reason: 'unsupported' as const };
     }
-    const mod = loadModule();
+
+    let mod: MobileAdsModule | null = null;
+    let requireErr: string | undefined;
+    try {
+      mod = loadModule();
+    } catch (e) {
+      requireErr = truncateDiagText(e, 120);
+      mod = null;
+    }
+    const modulePresent = mod != null;
+    const bridgeReady = Boolean(mod?.mobileAds && mod?.RewardedAd);
+    dbg({
+      step: 'require_module',
+      phase: 'preflight',
+      platform,
+      modulePresent,
+      bridgeReady,
+      success: modulePresent,
+      errMsg: requireErr,
+      status: modulePresent ? 'present' : 'absent',
+    });
+    dbg({
+      step: 'probe_exports',
+      phase: 'preflight',
+      platform,
+      modulePresent,
+      bridgeReady,
+      status: [
+        mod?.mobileAds ? 'mobileAds' : null,
+        mod?.RewardedAd ? 'RewardedAd' : null,
+        mod?.AdsConsent ? 'AdsConsent' : null,
+        mod?.RewardedAdEventType?.LOADED ? 'LOADED' : null,
+        mod?.AdEventType?.ERROR ? 'ERROR' : null,
+      ]
+        .filter(Boolean)
+        .join(','),
+    });
     if (!mod?.mobileAds || !mod.RewardedAd) {
+      dbg({
+        step: 'missing_module',
+        phase: 'terminal',
+        platform,
+        modulePresent,
+        bridgeReady,
+        success: false,
+        status: 'missing_module',
+        reason: 'missing_module',
+        errMsg: requireErr,
+      });
       return { available: false, reason: 'missing_module' as const };
     }
     try {
-      // Fail-closed: only request ads after an explicit canRequestAds === true.
-      // Missing AdsConsent / requestInfoUpdate → consent_required (no ads).
       const consent = loadConsent();
       let canRequestAds = false;
+      let consentFormShown = false;
       if (consent?.requestInfoUpdate) {
-        // UMP's update request is network-backed. A transient failure must not
-        // turn a valid native build into the misleading "new app required"
-        // state; use the SDK's cached consent state below in that case.
+        dbg({
+          step: 'consent_requestInfoUpdate_start',
+          phase: 'preflight',
+          platform,
+          modulePresent: true,
+          bridgeReady: true,
+        });
         try {
           const info = await consent.requestInfoUpdate();
           canRequestAds = info.canRequestAds === true;
+          dbg({
+            step: 'consent_requestInfoUpdate_end',
+            phase: 'preflight',
+            platform,
+            canRequestAds,
+            status: info.isConsentFormAvailable ? 'form_available' : 'no_form',
+            success: true,
+          });
           if (info.isConsentFormAvailable && consent.loadAndShowConsentFormIfRequired) {
+            consentFormShown = true;
+            dbg({
+              step: 'consent_form_start',
+              phase: 'preflight',
+              platform,
+              consentFormShown: true,
+            });
             const afterForm = await consent.loadAndShowConsentFormIfRequired();
             if (typeof afterForm?.canRequestAds === 'boolean') {
               canRequestAds = afterForm.canRequestAds === true;
             }
+            dbg({
+              step: 'consent_form_end',
+              phase: 'preflight',
+              platform,
+              canRequestAds,
+              consentFormShown: true,
+              success: true,
+            });
           }
-        } catch {
-          // Fall through to getConsentInfo(), which reads UMP's last known
-          // decision and is safe to use when the update request failed.
+        } catch (e) {
+          const parts = errParts(e);
+          dbg({
+            step: 'consent_requestInfoUpdate_error',
+            phase: 'preflight',
+            platform,
+            success: false,
+            status: 'ump_update_failed',
+            ...parts,
+          });
         }
+      } else {
+        dbg({
+          step: 'consent_api_missing',
+          phase: 'preflight',
+          platform,
+          status: consent ? 'no_requestInfoUpdate' : 'no_AdsConsent',
+        });
       }
       if (!canRequestAds && consent?.getConsentInfo) {
+        dbg({
+          step: 'consent_getConsentInfo_start',
+          phase: 'preflight',
+          platform,
+        });
         try {
           const cached = await consent.getConsentInfo();
           canRequestAds = cached.canRequestAds === true;
-        } catch {
-          // Consent is still unknown; fail closed below.
+          dbg({
+            step: 'consent_getConsentInfo_end',
+            phase: 'preflight',
+            platform,
+            canRequestAds,
+            success: true,
+          });
+        } catch (e) {
+          const parts = errParts(e);
+          dbg({
+            step: 'consent_getConsentInfo_error',
+            phase: 'preflight',
+            platform,
+            success: false,
+            ...parts,
+          });
         }
       }
       if (!canRequestAds) {
         initPromise = null;
+        dbg({
+          step: 'consent_blocked',
+          phase: 'terminal',
+          platform,
+          canRequestAds: false,
+          consentFormShown,
+          success: false,
+          status: 'consent_required',
+          reason: 'consent_required',
+        });
         return { available: false, reason: 'consent_required' as const };
       }
+      dbg({
+        step: 'mobile_ads_initialize_start',
+        phase: 'ready',
+        platform,
+        canRequestAds: true,
+      });
       await mod.mobileAds().initialize();
+      dbg({
+        step: 'mobile_ads_initialize_end',
+        phase: 'ready',
+        platform,
+        canRequestAds: true,
+        success: true,
+        status: 'ready',
+      });
+      dbg({
+        step: 'ready_true',
+        phase: 'ready',
+        platform,
+        modulePresent: true,
+        bridgeReady: true,
+        canRequestAds: true,
+        success: true,
+        status: 'available',
+      });
       return { available: true as const };
-    } catch {
+    } catch (e) {
       initPromise = null;
+      const parts = errParts(e);
+      dbg({
+        step: 'init_failed',
+        phase: 'terminal',
+        platform,
+        success: false,
+        status: 'init_failed',
+        reason: 'init_failed',
+        ...parts,
+      });
       return { available: false, reason: 'init_failed' as const };
     }
   })();
-  return initPromise;
+
+  if (!onDebug) {
+    initPromise = run;
+  }
+  return run;
 }
 
 export type RewardedAdController = {
@@ -204,10 +417,30 @@ export function createRewardedAdController(
   platform: 'ios' | 'android',
   handlers?: {
     onState?: (state: RewardedAdUiState) => void;
+    onDebug?: StoreAdDebugHandler;
   },
 ): RewardedAdController | null {
   const mod = loadModule();
-  if (!mod?.RewardedAd) return null;
+  const dbg = (step: StoreAdDebugStep) => {
+    try {
+      handlers?.onDebug?.(step);
+    } catch {
+      /* ignore */
+    }
+  };
+  if (!mod?.RewardedAd) {
+    dbg({
+      step: 'controller_null',
+      phase: 'terminal',
+      platform,
+      modulePresent: mod != null,
+      bridgeReady: false,
+      success: false,
+      status: 'missing_module',
+      reason: 'missing_module',
+    });
+    return null;
+  }
 
   let ad: RewardedAdInstance | null = null;
   let unsubs: Array<() => void> = [];
@@ -227,6 +460,21 @@ export function createRewardedAdController(
   const earnedType = mod.RewardedAdEventType.EARNED_REWARD;
   const closedType = mod.AdEventType.CLOSED;
   const errorType = mod.AdEventType.ERROR;
+
+  const unitMode = productionAdUnitsEnabled() ? 'production' : 'test';
+  const unitId = rewardedAdUnitForPlatform(platform);
+  const unitSuffix = tailId(unitId, 6);
+
+  dbg({
+    step: 'controller_create',
+    phase: 'load',
+    platform,
+    unitMode,
+    unitSuffix,
+    modulePresent: true,
+    bridgeReady: true,
+    success: true,
+  });
 
   const emit = (state: RewardedAdUiState, gen: number) => {
     if (disposed || gen !== generation) return;
@@ -271,6 +519,14 @@ export function createRewardedAdController(
     disposed = true;
     generation += 1;
     phase = 'idle';
+    dbg({
+      step: 'dispose',
+      phase: 'terminal',
+      platform,
+      unitMode,
+      unitSuffix,
+      status: 'dispose',
+    });
     // Unblock any awaiting load()/show() so unmount / retry never hangs.
     settlePending('error');
     clearUnsubs();
@@ -300,16 +556,32 @@ export function createRewardedAdController(
       earned = false;
       loaded = false;
       emit('loading', gen);
-      const unitId = rewardedAdUnitForPlatform(platform);
+      const sessionTail = tailId(sessionRef, 8);
+      dbg({
+        step: 'ad_load_start',
+        phase: 'load',
+        platform,
+        unitMode,
+        unitSuffix,
+        sessionTail,
+        status: 'loading',
+      });
       try {
         ad = mod.RewardedAd.createForAdRequest(unitId, {
           serverSideVerificationOptions: {
             customData: sessionRef,
           },
         });
+        dbg({
+          step: 'ad_create_request',
+          phase: 'load',
+          platform,
+          unitMode,
+          unitSuffix,
+          sessionTail,
+          success: true,
+        });
 
-        // Load phase: only LOADED / ERROR. Detach both as soon as load settles
-        // so they cannot fire into show() and demote verifying UI.
         const loadState = await new Promise<RewardedAdUiState>((resolve) => {
           let done = false;
           const finishLoad = (state: RewardedAdUiState) => {
@@ -317,7 +589,6 @@ export function createRewardedAdController(
             done = true;
             pendingSettle = null;
             clearPhaseTimeout();
-            // Drop load listeners immediately (even before resolve continues).
             clearUnsubs();
             resolve(state);
           };
@@ -330,6 +601,17 @@ export function createRewardedAdController(
           phaseTimeoutTimer = setTimeout(() => {
             if (done || disposed || gen !== generation || phase !== 'load') return;
             loadFailure = 'error';
+            dbg({
+              step: 'ad_load_timeout',
+              phase: 'terminal',
+              platform,
+              unitMode,
+              unitSuffix,
+              sessionTail,
+              success: false,
+              status: 'timeout',
+              reason: 'load_timeout',
+            });
             emit('error', gen);
             finishLoad('error');
           }, REWARDED_AD_LOAD_TIMEOUT_MS);
@@ -337,6 +619,16 @@ export function createRewardedAdController(
             ad.addAdEventListener(loadedType, () => {
               if (done || disposed || gen !== generation || phase !== 'load') return;
               loaded = true;
+              dbg({
+                step: 'ad_loaded',
+                phase: 'load',
+                platform,
+                unitMode,
+                unitSuffix,
+                sessionTail,
+                success: true,
+                status: 'ready',
+              });
               emit('ready', gen);
               finishLoad('ready');
             }),
@@ -345,10 +637,31 @@ export function createRewardedAdController(
             ad.addAdEventListener(errorType, (err: unknown) => {
               if (done || disposed || gen !== generation || phase !== 'load') return;
               loadFailure = classifyLoadError(err);
+              const parts = errParts(err);
+              dbg({
+                step: 'ad_load_error',
+                phase: 'terminal',
+                platform,
+                unitMode,
+                unitSuffix,
+                sessionTail,
+                success: false,
+                status: loadFailure,
+                reason: loadFailure,
+                ...parts,
+              });
               emit(loadFailure, gen);
               finishLoad(loadFailure);
             }),
           );
+          dbg({
+            step: 'ad_load_call',
+            phase: 'load',
+            platform,
+            unitMode,
+            unitSuffix,
+            sessionTail,
+          });
           ad.load();
         });
 
@@ -361,8 +674,20 @@ export function createRewardedAdController(
         loaded = false;
         phase = 'idle';
         return loadState;
-      } catch {
+      } catch (e) {
         const fail = loadFailure;
+        const parts = errParts(e);
+        dbg({
+          step: 'ad_load_throw',
+          phase: 'terminal',
+          platform,
+          unitMode,
+          unitSuffix,
+          success: false,
+          status: fail,
+          reason: fail,
+          ...parts,
+        });
         settlePending(fail);
         clearUnsubs();
         ad = null;
@@ -373,15 +698,30 @@ export function createRewardedAdController(
     },
     async show() {
       if (!ad || !loaded || disposed) {
+        dbg({
+          step: 'ad_show_not_ready',
+          phase: 'terminal',
+          platform,
+          unitMode,
+          unitSuffix,
+          success: false,
+          status: 'error',
+          reason: !ad ? 'no_ad' : !loaded ? 'not_loaded' : 'disposed',
+        });
         emit('error', generation);
         return 'error';
       }
       const gen = generation;
       phase = 'show';
       emit('showing', gen);
-      // Package show() resolves when the ad is *presented*, not when it closes.
-      // Wait for EARNED_REWARD and/or CLOSED. If CLOSED races ahead of EARNED,
-      // keep a short grace so late reward events still count as verifying.
+      dbg({
+        step: 'ad_show_start',
+        phase: 'show',
+        platform,
+        unitMode,
+        unitSuffix,
+        status: 'showing',
+      });
       return new Promise<RewardedAdUiState>((resolve) => {
         let settled = false;
         const finish = (state: RewardedAdUiState) => {
@@ -390,7 +730,6 @@ export function createRewardedAdController(
           pendingSettle = null;
           clearGraceTimer();
           clearPhaseTimeout();
-          // Detach show listeners so late ERROR cannot emit after settle.
           clearUnsubs();
           phase = 'idle';
           if (disposed || gen !== generation) {
@@ -404,6 +743,16 @@ export function createRewardedAdController(
 
         phaseTimeoutTimer = setTimeout(() => {
           if (settled || disposed || gen !== generation || phase !== 'show') return;
+          dbg({
+            step: 'ad_show_timeout',
+            phase: 'terminal',
+            platform,
+            unitMode,
+            unitSuffix,
+            success: false,
+            status: 'timeout',
+            reason: 'show_timeout',
+          });
           finish('error');
         }, REWARDED_AD_SHOW_TIMEOUT_MS);
 
@@ -411,20 +760,44 @@ export function createRewardedAdController(
           ad!.addAdEventListener(earnedType, () => {
             if (settled || disposed || gen !== generation || phase !== 'show') return;
             earned = true;
-            // Client reward → verifying UI; SSV still required for credit.
+            dbg({
+              step: 'ad_earned',
+              phase: 'verify',
+              platform,
+              unitMode,
+              unitSuffix,
+              success: true,
+              status: 'verifying',
+            });
             finish('verifying');
           }),
         );
         unsubs.push(
           ad!.addAdEventListener(closedType, () => {
             if (settled || disposed || gen !== generation || phase !== 'show') return;
+            dbg({
+              step: 'ad_closed',
+              phase: 'show',
+              platform,
+              unitMode,
+              unitSuffix,
+              status: earned ? 'closed_after_earn' : 'closed_before_earn',
+            });
             if (earned) {
               finish('verifying');
               return;
             }
-            // CLOSED-before-EARNED race: wait briefly before dismiss.
             if (closedGraceTimer) return;
             closedGraceTimer = setTimeout(() => {
+              dbg({
+                step: earned ? 'ad_closed_verifying' : 'ad_dismissed',
+                phase: earned ? 'verify' : 'terminal',
+                platform,
+                unitMode,
+                unitSuffix,
+                success: earned,
+                status: earned ? 'verifying' : 'dismissed',
+              });
               finish(earned ? 'verifying' : 'dismissed');
             }, REWARDED_AD_CLOSED_EARNED_GRACE_MS);
           }),
@@ -432,11 +805,35 @@ export function createRewardedAdController(
         unsubs.push(
           ad!.addAdEventListener(errorType, (err: unknown) => {
             if (settled || disposed || gen !== generation || phase !== 'show') return;
-            finish(classifyLoadError(err) === 'network_error' ? 'network_error' : 'error');
+            const classified = classifyLoadError(err) === 'network_error' ? 'network_error' : 'error';
+            const parts = errParts(err);
+            dbg({
+              step: 'ad_show_error',
+              phase: 'terminal',
+              platform,
+              unitMode,
+              unitSuffix,
+              success: false,
+              status: classified,
+              reason: classified,
+              ...parts,
+            });
+            finish(classified);
           }),
         );
 
-        void ad!.show().catch(() => {
+        void ad!.show().catch((e: unknown) => {
+          const parts = errParts(e);
+          dbg({
+            step: 'ad_show_promise_reject',
+            phase: 'terminal',
+            platform,
+            unitMode,
+            unitSuffix,
+            success: false,
+            status: 'error',
+            ...parts,
+          });
           finish('error');
         });
       });

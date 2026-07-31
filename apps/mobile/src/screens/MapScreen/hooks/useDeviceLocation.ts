@@ -36,7 +36,8 @@ interface UseDeviceLocationParams {
 /** Coalesce passive outbox flushes; force-sync bypasses this delay. */
 const OUTBOX_FLUSH_DELAY_MS = 20_000;
 /** Independent timer tick — picks the active motion heartbeat each fire. */
-const HEARTBEAT_TICK_MS = 15_000;
+/** Timer base for motion-aware upload heartbeats (~½ prior 15s tick). */
+const HEARTBEAT_TICK_MS = 30_000;
 
 export function useDeviceLocation({
   groupId,

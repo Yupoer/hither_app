@@ -37,15 +37,15 @@ describe('locationPolicy', () => {
   it('defaults to the motion-aware foreground balanced profile', () => {
     const p = locationPolicy(false);
     expect(p.accuracy).toBe('balanced');
-    expect(p.distanceInterval).toBe(30);
-    expect(p.timeInterval).toBe(15_000);
-    expect(p.uploadMinDistanceM).toBe(30);
-    expect(p.uploadHeartbeatMs).toBe(45_000);
-    expect(p.uploadHeartbeatStationaryMs).toBe(90_000);
-    expect(p.stationaryAfterMs).toBe(60_000);
+    expect(p.distanceInterval).toBe(50);
+    expect(p.timeInterval).toBe(30_000);
+    expect(p.uploadMinDistanceM).toBe(50);
+    expect(p.uploadHeartbeatMs).toBe(90_000);
+    expect(p.uploadHeartbeatStationaryMs).toBe(180_000);
+    expect(p.stationaryAfterMs).toBe(45_000);
     expect(p.uploadHeartbeatStationaryMs).toBeGreaterThan(p.uploadHeartbeatMs);
     expect(p.routeCoordDecimals).toBe(4);
-    expect(p.realtimeLocationDebounceMs).toBe(2_500);
+    expect(p.realtimeLocationDebounceMs).toBe(4_000);
   });
 
   it('uses the faster high-accuracy profile only when enabled in foreground', () => {
@@ -64,10 +64,10 @@ describe('locationPolicy', () => {
   it('allDay ignores highAccuracy and uses Low GPS for the 8h budget', () => {
     const p = locationPolicy(true, 'allDay');
     expect(p.accuracy).toBe('low');
-    expect(p.distanceInterval).toBe(120);
-    expect(p.uploadHeartbeatMs).toBe(180_000);
-    expect(p.uploadHeartbeatStationaryMs).toBe(300_000);
-    expect(p.uploadMinDistanceM).toBe(120);
+    expect(p.distanceInterval).toBe(150);
+    expect(p.uploadHeartbeatMs).toBe(240_000);
+    expect(p.uploadHeartbeatStationaryMs).toBe(360_000);
+    expect(p.uploadMinDistanceM).toBe(150);
     expect(POWER_BUDGET_NOTE.allDay8hTargetPct).toBe(20);
   });
 
@@ -131,7 +131,7 @@ describe('motion cadence', () => {
     expect(state.cadence).toBe('stationary');
     state = reduceMotionState(
       state,
-      moved(50),
+      moved(policy.uploadMinDistanceM + 5),
       1_000 + policy.stationaryAfterMs + 2_000,
       policy,
     );
@@ -224,7 +224,7 @@ describe('shouldAcceptUiSample', () => {
   });
 
   it('accepts a meaningful move past uiMinDistanceM', () => {
-    expect(shouldAcceptUiSample(moved(20), 2_000, atOrigin(1_000), policy)).toBe(true);
+    expect(shouldAcceptUiSample(moved(policy.uiMinDistanceM + 5), 2_000, atOrigin(1_000), policy)).toBe(true);
   });
 
   it('drops jitter within uiMinIntervalMs', () => {
@@ -310,7 +310,7 @@ describe('shouldRecomputeRoute', () => {
   it('recomputes after enough move past partial interval', () => {
     expect(
       shouldRecomputeRoute(
-        moved(50),
+        moved(policy.routeMinDistanceM + 10),
         1_000 + policy.routeMinIntervalMs * 0.5,
         atOrigin(1_000),
         policy,

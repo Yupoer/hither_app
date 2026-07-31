@@ -23,6 +23,7 @@ jest.mock('../state/diagnosticConsent', () => ({
 }));
 jest.mock('../state/logBatchScheduler', () => ({
   notifyLogRecorded: jest.fn(),
+  notifyErrorRecorded: jest.fn(),
 }));
 
 import {
@@ -111,6 +112,37 @@ describe('bounded diagnostics', () => {
     expect(database.records.size).toBe(0);
     await expect(diagnostics.flush()).resolves.toEqual({ sent: 0, remaining: 0 });
     expect(upload).not.toHaveBeenCalled();
+  });
+
+  it('still records and flushes store_ad_* when consent is off', async () => {
+    consentEnabled.value = false;
+    const database = new MemoryDiagnosticDatabase();
+    const upload = jest.fn(async (records: DiagnosticRecord[]) => ({
+      acceptedIds: records.map((r) => r.id),
+      rejected: [],
+    }));
+    let id = 0;
+    const diagnostics = createDiagnostics(
+      database,
+      upload,
+      () => 1_000,
+      metadata,
+      () => `ad-${id++}`,
+    );
+    await diagnostics.write({
+      event: 'store_ad_load',
+      step: 'missing_module',
+      phase: 'terminal',
+      status: 'missing_module',
+      success: false,
+      modulePresent: false,
+    });
+    expect(database.records.size).toBe(1);
+    const record = [...database.records.values()][0];
+    expect(record.payload.step).toBe('missing_module');
+    expect(record.payload.modulePresent).toBe(false);
+    await expect(diagnostics.flush()).resolves.toEqual({ sent: 1, remaining: 0 });
+    expect(upload).toHaveBeenCalledTimes(1);
   });
 
   it('redacts secrets, exact coordinates, email and raw error messages', async () => {

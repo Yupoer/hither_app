@@ -31,6 +31,7 @@ import { isNetworkRequestError, requireUserId } from '../../../api/services/_hel
 import {
   createRewardedAdController,
   ensureRewardedAdsReady,
+  type StoreAdDebugStep,
 } from '../../../native/rewardedAds';
 import type {
   RewardedAdUiState,
@@ -44,7 +45,13 @@ import {
   probeReachability,
   subscribeConnectivity,
 } from '../../../store/connectivity';
-import { diagnostics } from '../../../state/diagnostics';
+import {
+  diagnostics,
+  logStoreAdStep,
+  tailId,
+  truncateDiagText,
+} from '../../../state/diagnostics';
+import Constants from 'expo-constants';
 
 /** Soft poll while SSV is pending; then idle CTA + slower background late-SSV poll. */
 const VERIFY_POLL_TICKS = 20;
@@ -216,9 +223,12 @@ export const StorePane = React.memo(function StorePane({
   const [loading, setLoading] = useState(true);
   const [offline, setOffline] = useState(() => isDefinitelyOffline(getNavigatorOnline()));
   const [adState, setAdState] = useState<RewardedAdUiState>('idle');
+  /** Last ad debug line for field diagnosis (also uploaded). */
+  const [adDebugLine, setAdDebugLine] = useState<string | null>(null);
   const [redeeming, setRedeeming] = useState<string | null>(null);
   const [highlight, setHighlight] = useState<string | null>(null);
   const adBusyRef = useRef(false);
+  const adSeqRef = useRef(0);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const latePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const controllerRef = useRef<ReturnType<typeof createRewardedAdController>>(null);
@@ -459,9 +469,64 @@ export const StorePane = React.memo(function StorePane({
     adBusyRef.current = true;
     let sessionRef: string | null = null;
     verifyingRef.current = false;
+    adSeqRef.current = 0;
+    const buildNumber = String(Constants.nativeBuildVersion ?? 'dev');
+    const platform = Platform.OS === 'ios' ? 'ios' : 'android';
+    const attemptTail = tailId(
+      `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
+      8,
+    );
+
+    const pushStep = async (
+      step: StoreAdDebugStep & { event?: string; flushNow?: boolean },
+    ) => {
+      adSeqRef.current += 1;
+      const sequence = adSeqRef.current;
+      const line = [
+        step.step,
+        step.status ?? step.reason,
+        step.errMsg ? truncateDiagText(step.errMsg, 40) : null,
+        `b${buildNumber}`,
+        `s${sequence}`,
+      ]
+        .filter(Boolean)
+        .join(' · ');
+      setAdDebugLine(line);
+      await logStoreAdStep({
+        event: step.event ?? 'store_ad_load',
+        step: step.step,
+        phase: step.phase,
+        status: step.status ?? step.reason,
+        success: step.success,
+        reason: step.reason,
+        platform: step.platform ?? platform,
+        unitMode: step.unitMode,
+        unitSuffix: step.unitSuffix,
+        sessionTail: step.sessionTail ?? attemptTail,
+        modulePresent: step.modulePresent,
+        bridgeReady: step.bridgeReady,
+        canRequestAds: step.canRequestAds,
+        consentFormShown: step.consentFormShown,
+        errCode: step.errCode,
+        errMsg: step.errMsg,
+        sequence,
+        buildNumber,
+        flushNow: step.flushNow,
+      }).catch(() => undefined);
+    };
+
     try {
-      const platform = Platform.OS === 'ios' ? 'ios' : 'android';
-      const ready = await ensureRewardedAdsReady();
+      await pushStep({
+        step: 'tap_watch_ad',
+        phase: 'preflight',
+        status: 'tap',
+        success: true,
+        platform,
+      });
+
+      const ready = await ensureRewardedAdsReady((d) => {
+        void pushStep(d);
+      });
       if (!ready.available) {
         if (ready.reason === 'consent_required') {
           setAdState('consent_required');
@@ -472,18 +537,26 @@ export const StorePane = React.memo(function StorePane({
         } else {
           setAdState('error');
         }
-        void diagnostics.write({
-          event: 'store_ad_load',
-          source: 'store',
+        await pushStep({
+          step: 'ready_failed',
+          phase: 'terminal',
           status: ready.reason,
+          reason: ready.reason,
           success: false,
-        }).catch(() => undefined);
+          flushNow: true,
+        });
         return;
       }
 
       setAdState('loading');
+      await pushStep({
+        step: 'session_create_start',
+        phase: 'load',
+        status: 'create_session',
+      });
       const session = await createRewardSession(platform);
       if (!session.ok || !session.sessionRef) {
+        const err = String(session.error ?? 'unknown');
         if (session.error === 'registration_required') {
           setAdState('registration_required');
           onRequireRegistration?.();
@@ -491,16 +564,32 @@ export const StorePane = React.memo(function StorePane({
           // Unfinished verifying session still open — resume late-SSV poll, not a hard stop.
           setAdState('session_active');
           startVerifyPoll(snapshot?.balance ?? 0);
-        } else if (isNetworkRequestError(session.error) || /network|fetch|offline/i.test(String(session.error))) {
+        } else if (isNetworkRequestError(session.error) || /network|fetch|offline/i.test(err)) {
           setOffline(true);
           setAdState('network_error');
         } else {
           setAdState('error');
         }
+        await pushStep({
+          step: 'session_create_failed',
+          phase: 'terminal',
+          status: err,
+          reason: err,
+          success: false,
+          errMsg: truncateDiagText(err, 120),
+          flushNow: true,
+        });
         return;
       }
       sessionRef = session.sessionRef;
       activeSessionRef.current = sessionRef;
+      await pushStep({
+        step: 'session_create_ok',
+        phase: 'load',
+        status: 'session_ok',
+        success: true,
+        sessionTail: tailId(sessionRef, 8),
+      });
 
       // onState only for UI transitions; verify poll starts once from show() path
       // to avoid double markVerifying/startVerifyPoll when earn fires once.
@@ -511,22 +600,37 @@ export const StorePane = React.memo(function StorePane({
             return s;
           });
         },
+        onDebug: (d) => {
+          void pushStep(d);
+        },
       });
       controllerRef.current?.dispose();
       controllerRef.current = controller;
       if (!controller) {
         setAdState('unsupported');
+        await pushStep({
+          step: 'controller_null',
+          phase: 'terminal',
+          status: 'missing_module',
+          reason: 'missing_module',
+          success: false,
+          flushNow: true,
+        });
         await failSession(sessionRef);
         return;
       }
 
       const loadState = await controller.load(session.sessionRef);
-      void diagnostics.write({
-        event: 'store_ad_load',
-        source: 'store',
+      await pushStep({
+        step: 'load_result',
+        phase: loadState === 'ready' ? 'load' : 'terminal',
         status: loadState,
+        reason: loadState,
         success: loadState === 'ready',
-      }).catch(() => undefined);
+        sessionTail: tailId(session.sessionRef, 8),
+        event: 'store_ad_load',
+        flushNow: loadState !== 'ready',
+      });
 
       if (loadState !== 'ready') {
         // Preserve distinct no_fill vs error for CTA copy / retry.
@@ -538,12 +642,14 @@ export const StorePane = React.memo(function StorePane({
       }
 
       setAdState('showing');
-      void diagnostics.write({
-        event: 'store_ad_show',
-        source: 'store',
+      await pushStep({
+        step: 'show_begin',
+        phase: 'show',
         status: 'showing',
         success: true,
-      }).catch(() => undefined);
+        event: 'store_ad_show',
+        sessionTail: tailId(session.sessionRef, 8),
+      });
 
       // show() waits for EARNED_REWARD / CLOSED — not present-start.
       // Client reward → verifying only; never mutate wallet balance here.
@@ -551,21 +657,27 @@ export const StorePane = React.memo(function StorePane({
       controller.dispose();
       controllerRef.current = null;
       if (showState === 'verifying') {
-        void diagnostics.write({
-          event: 'store_ad_reward_client',
-          source: 'store',
+        await pushStep({
+          step: 'reward_client',
+          phase: 'verify',
           status: 'verifying',
           success: true,
-        }).catch(() => undefined);
+          event: 'store_ad_reward_client',
+          sessionTail: tailId(sessionRef, 8),
+          flushNow: true,
+        });
         await markVerifyingSession(sessionRef);
         startVerifyPoll(snapshot?.balance ?? 0);
       } else if (showState === 'dismissed') {
-        void diagnostics.write({
-          event: 'store_ad_dismiss',
-          source: 'store',
+        await pushStep({
+          step: 'dismissed',
+          phase: 'terminal',
           status: 'dismissed',
           success: false,
-        }).catch(() => undefined);
+          event: 'store_ad_dismiss',
+          sessionTail: tailId(sessionRef, 8),
+          flushNow: true,
+        });
         setAdState('dismissed');
         // Only fail if still active (not verifying). Server rejects verifying→failed.
         if (!verifyingRef.current) {
@@ -573,12 +685,33 @@ export const StorePane = React.memo(function StorePane({
         }
       } else if (showState === 'no_fill') {
         setAdState('no_fill');
+        await pushStep({
+          step: 'show_no_fill',
+          phase: 'terminal',
+          status: 'no_fill',
+          success: false,
+          flushNow: true,
+        });
         await failSession(sessionRef);
       } else if (showState === 'network_error') {
         setAdState('network_error');
+        await pushStep({
+          step: 'show_network_error',
+          phase: 'terminal',
+          status: 'network_error',
+          success: false,
+          flushNow: true,
+        });
         await failSession(sessionRef);
       } else if (showState === 'error') {
         setAdState('error');
+        await pushStep({
+          step: 'show_error',
+          phase: 'terminal',
+          status: 'error',
+          success: false,
+          flushNow: true,
+        });
         await failSession(sessionRef);
       }
     } finally {
@@ -814,6 +947,16 @@ export const StorePane = React.memo(function StorePane({
             </Text>
           </Pressable>
           <Text style={styles.shellHint}>{t('store.adRewardHint')}</Text>
+          {adDebugLine ? (
+            <Text
+              style={styles.adDebugLine}
+              testID="store-ad-debug-line"
+              selectable
+              accessibilityLabel={`ad debug ${adDebugLine}`}
+            >
+              {`debug: ${adDebugLine}`}
+            </Text>
+          ) : null}
         </>
       )}
 
@@ -993,6 +1136,12 @@ const makeStyles = (scale: number, boldText: boolean) => {
       fontSize: s(12, 11),
       color: glass.textTertiary,
       marginBottom: s(8, 6),
+    },
+    adDebugLine: {
+      fontSize: s(10, 9),
+      color: glass.textTertiary,
+      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+      marginBottom: s(10, 8),
     },
     cta: {
       flexDirection: 'row',

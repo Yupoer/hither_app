@@ -46,7 +46,7 @@ describe('performance tracing contract', () => {
 
   it('keeps full tracing short and samples successful API spans without eager flush timers', () => {
     expect(performance).toContain('TRACE_TTL_MS = 2 * 60 * 60 * 1_000');
-    expect(performance).toContain('SUCCESS_TRACE_MIN_INTERVAL_MS = 10_000');
+    expect(performance).toContain('SUCCESS_TRACE_MIN_INTERVAL_MS = 20_000');
     expect(performance).toContain('SAMPLE_WINDOW_MS = 1_000');
     expect(performance).toContain('SAMPLE_INTERVAL_MS = 5 * 60_000');
     expect(performance).not.toContain('FLUSH_DELAY_MS');

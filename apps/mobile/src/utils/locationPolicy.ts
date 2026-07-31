@@ -105,20 +105,20 @@ export function locationPolicy(
   if (powerMode === 'allDay') {
     return {
       accuracy: 'low',
-      distanceInterval: 120,
-      timeInterval: 120_000,
-      uiMinDistanceM: 40,
-      uiMinIntervalMs: 30_000,
-      uploadMinDistanceM: 120,
-      uploadMinIntervalMs: 120_000,
-      // Moving: ~1–2 uploads / 3 min; stationary rest: 5 min liveness.
-      uploadHeartbeatMs: 180_000,
-      uploadHeartbeatStationaryMs: 300_000,
-      stationaryAfterMs: 120_000,
-      routeMinDistanceM: 80,
-      routeMinIntervalMs: 60_000,
+      distanceInterval: 150,
+      timeInterval: 150_000,
+      uiMinDistanceM: 50,
+      uiMinIntervalMs: 40_000,
+      uploadMinDistanceM: 150,
+      uploadMinIntervalMs: 150_000,
+      // Moving: ~every 4 min; stationary rest: 6 min liveness.
+      uploadHeartbeatMs: 240_000,
+      uploadHeartbeatStationaryMs: 360_000,
+      stationaryAfterMs: 90_000,
+      routeMinDistanceM: 100,
+      routeMinIntervalMs: 75_000,
       routeCoordDecimals: 3,
-      realtimeLocationDebounceMs: 5_000,
+      realtimeLocationDebounceMs: 6_000,
     };
   }
 
@@ -142,23 +142,25 @@ export function locationPolicy(
         }
       : {
           accuracy: 'balanced',
-          distanceInterval: 40,
-          timeInterval: 25_000,
-          uiMinDistanceM: 20,
-          uiMinIntervalMs: 5_000,
-          uploadMinDistanceM: 45,
-          uploadMinIntervalMs: 30_000,
-          uploadHeartbeatMs: 45_000,
-          uploadHeartbeatStationaryMs: 90_000,
-          stationaryAfterMs: 60_000,
-          routeMinDistanceM: 40,
-          routeMinIntervalMs: 30_000,
+          distanceInterval: 60,
+          timeInterval: 45_000,
+          uiMinDistanceM: 30,
+          uiMinIntervalMs: 10_000,
+          uploadMinDistanceM: 70,
+          uploadMinIntervalMs: 60_000,
+          uploadHeartbeatMs: 90_000,
+          uploadHeartbeatStationaryMs: 180_000,
+          stationaryAfterMs: 45_000,
+          routeMinDistanceM: 60,
+          routeMinIntervalMs: 50_000,
           routeCoordDecimals: 4,
-          realtimeLocationDebounceMs: 3_000,
+          realtimeLocationDebounceMs: 5_000,
         };
   }
 
   // Foreground (app open). Tighter while walking; calm when resting.
+  // Balanced (default) intervals ~×2 vs prior to cut radio/GPS duty; highAccuracy
+  // stays denser for intentional precision.
   return highAccuracy
     ? {
         accuracy: 'high',
@@ -178,20 +180,20 @@ export function locationPolicy(
       }
     : {
         accuracy: 'balanced',
-        distanceInterval: 30,
-        timeInterval: 15_000,
-        uiMinDistanceM: 12,
-        uiMinIntervalMs: 4_000,
-        uploadMinDistanceM: 30,
-        uploadMinIntervalMs: 20_000,
-        // Walking: ~every 45s if GPS quiet; resting: ~90s liveness.
-        uploadHeartbeatMs: 45_000,
-        uploadHeartbeatStationaryMs: 90_000,
-        stationaryAfterMs: 60_000,
-        routeMinDistanceM: 35,
-        routeMinIntervalMs: 20_000,
+        distanceInterval: 50,
+        timeInterval: 30_000,
+        uiMinDistanceM: 20,
+        uiMinIntervalMs: 8_000,
+        uploadMinDistanceM: 50,
+        uploadMinIntervalMs: 40_000,
+        // Walking: ~every 90s if GPS quiet; resting: ~3 min liveness.
+        uploadHeartbeatMs: 90_000,
+        uploadHeartbeatStationaryMs: 180_000,
+        stationaryAfterMs: 45_000,
+        routeMinDistanceM: 50,
+        routeMinIntervalMs: 40_000,
         routeCoordDecimals: 4,
-        realtimeLocationDebounceMs: 2_500,
+        realtimeLocationDebounceMs: 4_000,
       };
 }
 

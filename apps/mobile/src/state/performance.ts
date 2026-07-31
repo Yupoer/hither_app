@@ -15,7 +15,8 @@ import { notifyErrorRecorded, notifyLogRecorded } from './logBatchScheduler';
 
 const TRACE_START_KEY = 'hither.performance.trace.startedAt.v1';
 const TRACE_TTL_MS = 2 * 60 * 60 * 1_000;
-const SUCCESS_TRACE_MIN_INTERVAL_MS = 10_000;
+/** Halve success API trace rate vs prior 10s (errors stay immediate). */
+const SUCCESS_TRACE_MIN_INTERVAL_MS = 20_000;
 const LOCAL_RETENTION_MS = 72 * 60 * 60 * 1_000;
 const MAX_LOCAL_RECORDS = 10_000;
 const MAX_UPLOAD_BATCH = 100;

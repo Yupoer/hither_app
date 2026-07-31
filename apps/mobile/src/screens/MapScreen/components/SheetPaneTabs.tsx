@@ -97,7 +97,9 @@ export const SheetPaneTabs = React.memo(function SheetPaneTabs({
 
 const makeStyles = (scale: number, boldText: boolean) => {
   const s = (n: number, min = 0) => Math.max(min, Math.round(n * scale));
-  const iconSize = s(18, 16);
+  // +⅓ height vs original 44/18/12 chrome so icons + labels read larger;
+  // underline stays absolutely pinned to bottom: 0.
+  const iconSize = s(24, 21);
   return {
     iconSize,
     ...StyleSheet.create({
@@ -105,23 +107,22 @@ const makeStyles = (scale: number, boldText: boolean) => {
         width: '100%',
         flexDirection: 'row',
         alignItems: 'stretch',
-        // Compact bar so content below rides higher.
-        minHeight: s(44, 40),
+        minHeight: s(59, 53),
       },
       tab: {
         flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
-        paddingTop: s(6, 5),
+        paddingTop: s(8, 6),
         // Room for the bottom-edge underline only — no floating gap.
         paddingBottom: s(6, 5),
-        gap: s(2, 1),
+        gap: s(3, 2),
       },
       label: {
-        fontSize: s(boldText ? 11 : 12, 10),
+        fontSize: s(boldText ? 15 : 16, 13),
         fontWeight: boldText ? '600' : '700',
         textAlign: 'center',
-        lineHeight: s(boldText ? 13 : 14, 12),
+        lineHeight: s(boldText ? 17 : 19, 15),
       },
       underline: {
         position: 'absolute',
