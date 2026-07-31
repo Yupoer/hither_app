@@ -465,7 +465,18 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
 ) {
   const { t } = useTranslation();
   const mapRef = useRef<MapView | null>(null);
-  const centeredModeRef = useRef<'fallback' | 'gathering' | null>(null);
+  /**
+   * Camera ownership:
+   * - null: never framed
+   * - fallback: GPS/default once
+   * - gathering: auto-framed first gathering point
+   * - user: imperative centerOn / fitRoute / focusOblique already ran
+   *
+   * First destination add used to stack: long-press centerOn + success fit +
+   * auto gathering animateToRegion. Mark user-driven cameras so the first
+   * gathering effect does not re-animate on top.
+   */
+  const centeredModeRef = useRef<'fallback' | 'gathering' | 'user' | null>(null);
   // Finite surface remount: user may retry once; no timer auto-remount.
   const [surfaceKey, setSurfaceKey] = useState(0);
   const [remountUsed, setRemountUsed] = useState(false);
@@ -570,6 +581,8 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
         }
       },
       centerOn: (coordinates, options) => {
+        // User-driven framing — suppress subsequent auto first-gathering animate.
+        centeredModeRef.current = 'user';
         // Flat top-down: animateCamera with pitch 0 so we leave any prior
         // 45° oblique view cleanly (animateToRegion alone can leave pitch).
         // Place picks pass wider zoom/altitude; locate keeps street-level defaults.
@@ -588,6 +601,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
         );
       },
       focusOblique: (coordinates) => {
+        centeredModeRef.current = 'user';
         // Same visible-band lat shift as centerOn so the pin sits in the
         // strip between carousel and sheet while pitched to 45°.
         // Set zoom (Android) + altitude (iOS); pitch needs pitchEnabled on MapView.
@@ -607,6 +621,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       },
       fitRoute: (coordinates) => {
         if (coordinates.length > 1) {
+          centeredModeRef.current = 'user';
           mapRef.current?.fitToCoordinates(coordinates, {
             edgePadding: {
               top: Math.max(120, topOverlap + EDGE_BUFFER),
@@ -621,6 +636,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       fitToMembers: () => {
         const coords = members.filter((m) => m.coordinates).map((m) => m.coordinates!);
         if (mapRef.current && coords.length > 0) {
+          centeredModeRef.current = 'user';
           mapRef.current.fitToCoordinates(coords, {
             edgePadding: {
               top: Math.max(80, topOverlap + EDGE_BUFFER),
@@ -639,9 +655,15 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
   // A fresh group has neither a gathering point nor a member location yet.
   // Mount it with a valid fallback camera, then center once when GPS or the
   // first gathering point becomes available. Never follow every GPS tick.
+  // Skip auto animate when the user already framed via long-press / add / fit.
   useEffect(() => {
     if (!mapRef.current) return;
     if (gathering) {
+      if (centeredModeRef.current === 'user') {
+        // Promote to gathering ownership without a second stacked animation.
+        centeredModeRef.current = 'gathering';
+        return;
+      }
       if (centeredModeRef.current !== 'gathering') {
         mapRef.current.animateToRegion(initialRegionFor(gathering.coordinates, latOffset), 600);
         centeredModeRef.current = 'gathering';

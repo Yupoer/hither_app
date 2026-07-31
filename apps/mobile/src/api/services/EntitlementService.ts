@@ -82,16 +82,29 @@ export async function applyVerifiedPurchase(input: {
   groupId: string;
   transactionId: string;
   productId?: string;
+  /** iOS JWS / Android purchase token for server verification. */
+  purchaseToken?: string;
 }): Promise<EntitlementMutationResult> {
   await requireUserId();
+  // Hard gate: never call grant RPC with empty / placeholder transaction ids.
+  const txn = String(input.transactionId ?? '').trim();
+  if (!txn || txn.length < 6 || /^(local|test|temp|dev)$/i.test(txn)) {
+    return {
+      ok: false,
+      error: 'invalid',
+      message: 'missing or invalid transaction id — Premium not unlocked',
+    };
+  }
   const body = {
     group_id: input.groupId,
-    transaction_id: input.transactionId,
-    product_id: input.productId ?? 'small_trip_pass',
-    // camelCase aliases for future Edge Function flexibility
+    transaction_id: txn,
+    product_id: input.productId ?? 'hither.small_trip_pass',
+    purchase_token: input.purchaseToken ?? null,
+    // camelCase aliases for Edge Function flexibility
     groupId: input.groupId,
-    transactionId: input.transactionId,
-    productId: input.productId ?? 'small_trip_pass',
+    transactionId: txn,
+    productId: input.productId ?? 'hither.small_trip_pass',
+    purchaseToken: input.purchaseToken ?? null,
   };
 
   // Preferred production path: receipt-verifying Edge Function (service_role grant).
@@ -117,8 +130,8 @@ export async function applyVerifiedPurchase(input: {
   // Test/gateway fallback: RPC is service_role-only in production.
   const { data, error } = await supabase.rpc('apply_verified_purchase', {
     p_group_id: input.groupId,
-    p_transaction_id: input.transactionId,
-    p_product_id: input.productId ?? 'small_trip_pass',
+    p_transaction_id: txn,
+    p_product_id: input.productId ?? 'hither.small_trip_pass',
   });
   if (error) {
     const code = (error as { code?: string }).code;

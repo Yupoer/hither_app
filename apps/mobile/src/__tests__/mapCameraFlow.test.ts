@@ -70,3 +70,16 @@ describe('mapCameraFlow', () => {
     expect(isValidMapCoordinate({ latitude: NaN, longitude: 0 })).toBe(false);
   });
 });
+
+describe('first-destination camera stacking (GroupMap)', () => {
+  it('marks imperative camera as user-owned so first gathering does not re-animate', () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const groupMap = require('fs').readFileSync(
+      require('path').join(__dirname, '../components/GroupMap.tsx'),
+      'utf8',
+    );
+    expect(groupMap).toContain("centeredModeRef.current = 'user'");
+    expect(groupMap).toContain("if (centeredModeRef.current === 'user')");
+    expect(groupMap).toContain('without a second stacked animation');
+  });
+});

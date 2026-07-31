@@ -26,9 +26,10 @@ export const SMALL_TRIP_PASS = {
   maxMembers: 5,
   /** Duration after activation. */
   durationDays: 7,
-  /** Display price (store price is authoritative when BUILD-02 ships). */
+  /** Display price (store price is authoritative when IAP is live). */
   priceLabel: 'NT$30',
-  productId: 'small_trip_pass',
+  /** App Store / Play SKU — must match store console + server allow-list. */
+  productId: 'hither.small_trip_pass',
 } as const;
 
 export type EntitlementStatus =

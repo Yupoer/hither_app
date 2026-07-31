@@ -3,39 +3,70 @@
  * Accepts one Unicode emoji grapheme sequence; palette hex only.
  */
 
+/** Category keys for the gathering-point icon picker (mockup tabs). */
+export type DestinationEmojiCategory =
+  | 'common'
+  | 'food'
+  | 'sights'
+  | 'transit'
+  | 'nature'
+  | 'activity';
+
+export const DESTINATION_EMOJI_CATEGORIES: ReadonlyArray<{
+  id: DestinationEmojiCategory;
+  labelZh: string;
+  labelEn: string;
+}> = [
+  { id: 'common', labelZh: '常用', labelEn: 'Common' },
+  { id: 'food', labelZh: '餐飲', labelEn: 'Food' },
+  { id: 'sights', labelZh: '景點', labelEn: 'Sights' },
+  { id: 'transit', labelZh: '交通', labelEn: 'Transit' },
+  { id: 'nature', labelZh: '自然', labelEn: 'Nature' },
+  { id: 'activity', labelZh: '活動', labelEn: 'Activity' },
+];
+
 /** Fixed 25 destination emoji presets (🧭 removed; no custom emoji UI). */
 export const DESTINATION_EMOJI_PRESETS: ReadonlyArray<{
   emoji: string;
   color: string;
   labelZh: string;
   labelEn: string;
+  category: DestinationEmojiCategory;
 }> = [
-  { emoji: '🍽️', color: '#F0883E', labelZh: '餐廳', labelEn: 'Restaurant' },
-  { emoji: '☕', color: '#A56A43', labelZh: '咖啡', labelEn: 'Cafe' },
-  { emoji: '🍜', color: '#E85D4A', labelZh: '麵食', labelEn: 'Noodles' },
-  { emoji: '🍣', color: '#E45C7A', labelZh: '日式料理', labelEn: 'Japanese' },
-  { emoji: '🍰', color: '#F08BB4', labelZh: '甜點', labelEn: 'Dessert' },
-  { emoji: '🛍️', color: '#B565C4', labelZh: '購物', labelEn: 'Shopping' },
-  { emoji: '🏨', color: '#596DDE', labelZh: '飯店', labelEn: 'Hotel' },
-  { emoji: '🏠', color: '#5B8DEF', labelZh: '住宿／住家', labelEn: 'Home' },
-  { emoji: '📍', color: '#E8543F', labelZh: '一般地點', labelEn: 'Place' },
-  { emoji: '⭐', color: '#F4C13E', labelZh: '重點', labelEn: 'Highlight' },
-  { emoji: '🏛️', color: '#C58A55', labelZh: '博物館／文化', labelEn: 'Museum' },
-  { emoji: '⛩️', color: '#D65A5A', labelZh: '寺廟／神社', labelEn: 'Shrine' },
-  { emoji: '🏰', color: '#8A6FD1', labelZh: '地標', labelEn: 'Landmark' },
-  { emoji: '🎡', color: '#E86AA8', labelZh: '景點', labelEn: 'Attraction' },
-  { emoji: '🎢', color: '#D94C68', labelZh: '樂園', labelEn: 'Park ride' },
-  { emoji: '🌊', color: '#3D9DD9', labelZh: '水岸', labelEn: 'Waterfront' },
-  { emoji: '🏖️', color: '#46B8C8', labelZh: '海灘', labelEn: 'Beach' },
-  { emoji: '⛰️', color: '#6F8C62', labelZh: '山區', labelEn: 'Mountain' },
-  { emoji: '🌳', color: '#4FAE72', labelZh: '公園', labelEn: 'Park' },
-  { emoji: '🌸', color: '#E78AB4', labelZh: '花季', labelEn: 'Blossom' },
-  { emoji: '📷', color: '#687CE5', labelZh: '拍照點', labelEn: 'Photo' },
-  { emoji: '🚉', color: '#4A90D9', labelZh: '車站', labelEn: 'Station' },
-  { emoji: '🚌', color: '#2F9D86', labelZh: '公車', labelEn: 'Bus' },
-  { emoji: '✈️', color: '#6574CD', labelZh: '機場', labelEn: 'Airport' },
-  { emoji: '🎫', color: '#D69035', labelZh: '活動／票券', labelEn: 'Ticket' },
+  { emoji: '📍', color: '#E8543F', labelZh: '一般地點', labelEn: 'Place', category: 'common' },
+  { emoji: '⭐', color: '#F4C13E', labelZh: '重點', labelEn: 'Highlight', category: 'common' },
+  { emoji: '🏠', color: '#5B8DEF', labelZh: '住宿／住家', labelEn: 'Home', category: 'common' },
+  { emoji: '🏨', color: '#596DDE', labelZh: '飯店', labelEn: 'Hotel', category: 'common' },
+  { emoji: '🛍️', color: '#B565C4', labelZh: '購物', labelEn: 'Shopping', category: 'common' },
+  { emoji: '🍽️', color: '#F0883E', labelZh: '餐廳', labelEn: 'Restaurant', category: 'food' },
+  { emoji: '☕', color: '#A56A43', labelZh: '咖啡', labelEn: 'Cafe', category: 'food' },
+  { emoji: '🍜', color: '#E85D4A', labelZh: '麵食', labelEn: 'Noodles', category: 'food' },
+  { emoji: '🍣', color: '#E45C7A', labelZh: '日式料理', labelEn: 'Japanese', category: 'food' },
+  { emoji: '🍰', color: '#F08BB4', labelZh: '甜點', labelEn: 'Dessert', category: 'food' },
+  { emoji: '🏛️', color: '#C58A55', labelZh: '博物館／文化', labelEn: 'Museum', category: 'sights' },
+  { emoji: '⛩️', color: '#D65A5A', labelZh: '寺廟／神社', labelEn: 'Shrine', category: 'sights' },
+  { emoji: '🏰', color: '#8A6FD1', labelZh: '地標', labelEn: 'Landmark', category: 'sights' },
+  { emoji: '🎡', color: '#E86AA8', labelZh: '景點', labelEn: 'Attraction', category: 'sights' },
+  { emoji: '🎢', color: '#D94C68', labelZh: '樂園', labelEn: 'Park ride', category: 'sights' },
+  { emoji: '🚉', color: '#4A90D9', labelZh: '車站', labelEn: 'Station', category: 'transit' },
+  { emoji: '🚌', color: '#2F9D86', labelZh: '公車', labelEn: 'Bus', category: 'transit' },
+  { emoji: '✈️', color: '#6574CD', labelZh: '機場', labelEn: 'Airport', category: 'transit' },
+  { emoji: '🌊', color: '#3D9DD9', labelZh: '水岸', labelEn: 'Waterfront', category: 'nature' },
+  { emoji: '🏖️', color: '#46B8C8', labelZh: '海灘', labelEn: 'Beach', category: 'nature' },
+  { emoji: '⛰️', color: '#6F8C62', labelZh: '山區', labelEn: 'Mountain', category: 'nature' },
+  { emoji: '🌳', color: '#4FAE72', labelZh: '公園', labelEn: 'Park', category: 'nature' },
+  { emoji: '🌸', color: '#E78AB4', labelZh: '花季', labelEn: 'Blossom', category: 'nature' },
+  { emoji: '📷', color: '#687CE5', labelZh: '拍照點', labelEn: 'Photo', category: 'activity' },
+  { emoji: '🎫', color: '#D69035', labelZh: '活動／票券', labelEn: 'Ticket', category: 'activity' },
 ];
+
+/** Presets visible under a category tab (常用 = all). */
+export function presetsForCategory(
+  category: DestinationEmojiCategory,
+): typeof DESTINATION_EMOJI_PRESETS {
+  if (category === 'common') return DESTINATION_EMOJI_PRESETS;
+  return DESTINATION_EMOJI_PRESETS.filter((p) => p.category === category);
+}
 
 /** Stable fallback when emoji/color are null (old rows). */
 export const DESTINATION_EMOJI_FALLBACK = '📍';

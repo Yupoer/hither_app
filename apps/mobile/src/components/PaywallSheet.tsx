@@ -13,10 +13,6 @@ import { isVerifiedPurchase } from '../native/purchases';
 import { FREE_LIMITS, SMALL_TRIP_PASS } from '../entitlements';
 import { glass, accentMix } from '../glass';
 
-// TEMPORARY QA override: the CTA unlocks Premium locally until IAP is ready.
-// Remove this branch when the verified purchase flow is enabled.
-const TEMPORARY_DIRECT_UPGRADE = true;
-
 /** Free vs Small Trip Pass comparison rows. */
 const COMPARE_ROWS: { free: TranslationKey; pro: TranslationKey }[] = [
   { free: 'paywall.rowMembersFree', pro: 'paywall.rowMembersPro' },
@@ -52,7 +48,6 @@ export default React.memo(function PaywallSheet({
     tripEntitlement,
     refreshEntitlement,
     refreshProfile,
-    setProStatusLocal,
   } = useSession();
   const accent = colors.accent;
   const [busy, setBusy] = useState<'purchase' | 'restore' | null>(null);
@@ -79,12 +74,9 @@ export default React.memo(function PaywallSheet({
 
   const handlePurchase = useCallback(async () => {
     if (!user) return;
-    if (TEMPORARY_DIRECT_UPGRADE) {
-      setProStatusLocal(true);
-      Alert.alert(t('paywall.title'), t('paywall.purchaseSuccess'));
-      onClose();
-      return;
-    }
+    // CRITICAL: never unlock Premium from client alone.
+    // Path: StoreKit/Play sheet → verified native outcome → Edge Function →
+    // service_role apply_verified_purchase → refreshEntitlement.
     if (!groupId) {
       Alert.alert(t('paywall.title'), t('paywall.needTrip'));
       return;
@@ -95,7 +87,6 @@ export default React.memo(function PaywallSheet({
     }
     setBusy('purchase');
     try {
-      // BUILD-02 supplies verified outcomes. Stub returns unavailable.
       const result = await purchases.purchasePro();
       if (!isVerifiedPurchase(result)) {
         if (result.status === 'cancelled') return;
@@ -106,12 +97,19 @@ export default React.memo(function PaywallSheet({
         Alert.alert(t('paywall.title'), t('paywall.purchaseFailed'));
         return;
       }
-      // BUILD-02: native verified outcome → Edge Function receipt verify + service_role grant.
+      // Double-check: only proceed with a real store transaction id.
+      if (!result.transactionId || result.transactionId.length < 6) {
+        Alert.alert(t('paywall.title'), t('paywall.purchaseFailed'));
+        await refreshEntitlement(groupId);
+        return;
+      }
+      // Native verified outcome → Edge Function + service_role grant.
       // User-JWT RPC cannot unlock Premium (service_role only).
       const applied = await applyVerifiedPurchase({
         groupId,
         transactionId: result.transactionId,
         productId: result.productId || SMALL_TRIP_PASS.productId,
+        purchaseToken: result.purchaseToken ?? undefined,
       });
       if (!applied.ok) {
         const errCode = String(applied.error ?? 'unknown');
@@ -130,12 +128,19 @@ export default React.memo(function PaywallSheet({
           ? t(`paywall.error.${errCode}` as TranslationKey)
           : t('paywall.purchaseFailed');
         Alert.alert(t('paywall.title'), msg);
-        // Server rejected — ensure UI stays Free.
+        // Server rejected — ensure UI stays Free (never local-upgrade).
         await refreshEntitlement(groupId);
         return;
       }
+      // Server said ok — re-fetch entitlement so isPro / trip snapshot match DB.
+      // Do not call setProStatusLocal: server refresh is the only unlock path.
       await refreshProfile();
-      await refreshEntitlement(groupId);
+      const tripAfter = await refreshEntitlement(groupId);
+      if (tripAfter && tripAfter.ok === true && tripAfter.isPremium !== true) {
+        // Defensive: grant RPC returned ok but authoritative snapshot still free.
+        Alert.alert(t('paywall.title'), t('paywall.purchaseFailed'));
+        return;
+      }
       Alert.alert(t('paywall.title'), t('paywall.purchaseSuccess'));
       onClose();
     } catch (e) {
@@ -143,6 +148,8 @@ export default React.memo(function PaywallSheet({
         t('paywall.title'),
         e instanceof Error ? e.message : t('paywall.purchaseFailed'),
       );
+      // Fail closed: re-sync from server so UI cannot stay falsely Premium.
+      if (groupId) await refreshEntitlement(groupId).catch(() => undefined);
     } finally {
       setBusy(null);
     }
@@ -154,7 +161,6 @@ export default React.memo(function PaywallSheet({
     t,
     refreshEntitlement,
     refreshProfile,
-    setProStatusLocal,
     onClose,
   ]);
 
