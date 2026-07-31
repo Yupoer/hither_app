@@ -19,7 +19,7 @@ module.exports = (config) => ({
   // widget renders any `Activity<HitherGroupAttributes>` regardless of its own
   // target name, so a distinct name here is safe.
   name: 'HitherActivityWidget',
-  deploymentTarget: '16.2',
+  deploymentTarget: '16.4',
   // Live Activities require this Info.plist flag on the widget target.
   infoPlist: {
     NSSupportsLiveActivities: true,

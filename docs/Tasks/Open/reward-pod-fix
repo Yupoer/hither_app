@@ -1,0 +1,197 @@
+# Plan: iOS「此版本無法播放廣告」— AdMob Rewarded 修復
+
+## 一句話結論
+
+**AdMob 後台設定與程式常數已對齊；你看到的錯誤不是「廣告單元 ID 錯了」，而是目前安裝的 iOS binary 沒有成功掛上 Google Mobile Ads 原生模組（或 init 失敗）。必須 `pod install` + 新原生安裝檔，OTA 不夠。**
+
+---
+
+## 你提供的 AdMob 設定（已核對）
+
+| 項目 | 你提供的值 | 程式內對應 | 狀態 |
+|------|-----------|-----------|------|
+| iOS App 名稱 | Hither | — | OK |
+| iOS App ID | `ca-app-pub-8135109277557342~4266216474` | `app.json` plugin、`Info.plist` `GADApplicationIdentifier`、`ADMOB_APP_IDS.ios` | **一致** |
+| 廣告單元名稱 | REWARD_token | — | OK |
+| 格式 | 獎勵廣告 | Rewarded | OK |
+| 廣告單元 ID | `ca-app-pub-8135109277557342/7899053731` | `ADMOB_REWARDED_UNITS.ios` | **一致** |
+| 獎勵 | 1 × `hither_token` | server `reward_item` 預設 `hither_token` | **一致** |
+| 廣告類型 | 影片 \| 連播 \| 互動式 | 預設即可 | OK |
+| SSV URL | `https://htqrucnjafhhvxdqslbv.supabase.co/functions/v1/admob-reward-callback` | `STORE_SSV_CALLBACK_URL` | **一致**（先前 Verify URL 已通過） |
+| 展示頻率上限 | 已停用 | 產品決策：無每日上限 | OK |
+| eCPM 地板 | Google 最佳化 | OK | OK |
+
+→ **不需要改 AdMob 單元 ID / App ID / SSV URL 來消掉這句錯誤文案。**
+
+---
+
+## 參考文章 vs 本專案
+
+文章（[iThome 鐵人賽：Flutter + AdMob 入門](https://ithelp.ithome.com.tw/articles/10338514)）重點：
+
+1. 申請 AdMob → 建 App / 廣告單元
+2. 原生寫入 App ID（iOS `GADApplicationIdentifier` / Android `APPLICATION_ID`）
+3. 開發用 **Google 測試 ID**，上架才用正式 ID
+4. 初始化 SDK 再 load / show
+
+本專案是 **Expo + `react-native-google-mobile-ads` v16.4.0**（不是 Flutter），但步驟等價，且 **JS／設定面已做完**：
+
+- plugin + Info.plist App ID
+- Rewarded load/show + SSV `customData`
+- `__DEV__` 用 Google test rewarded unit，release 用正式 unit
+
+文章沒涵蓋的本專案缺口：**iOS CocoaPods 尚未把 GMA 鏈進 binary**。
+
+---
+
+## 錯誤文案真正代表什麼
+
+UI 字串：
+
+```text
+此版本無法播放廣告（需新版 App）
+```
+
+來源：`store.adUnsupported`（`src/i18n/index.ts`）
+
+觸發路徑（`StorePane.onWatchAd`）：
+
+1. `ensureRewardedAdsReady()` 回傳 `available: false`，且 reason **不是** `consent_required`
+   - `missing_module` — `require('react-native-google-mobile-ads')` 失敗或沒有 native bridge
+   - `init_failed` — UMP / Mobile Ads initialize 拋錯
+   - `unsupported` — 非 iOS/Android
+2. 或 `createRewardedAdController()` 回傳 `null`（同樣缺 native module）
+
+**不是** no-fill、網路錯誤、consent（那些有各自文案：`目前沒有廣告` / `網路錯誤` / `需要同意後才能載入廣告`）。
+
+診斷事件會寫：`store_ad_load` + `status: missing_module | init_failed | ...`（設定 → 診斷匯出可查）。
+
+---
+
+## 根因（高信心）
+
+### 主因：iOS 原生未連結 Google Mobile Ads
+
+倉庫現況（已觀察）：
+
+| 檢查 | 結果 |
+|------|------|
+| npm `react-native-google-mobile-ads@16.4.0` | 有 |
+| `app.json` plugin iosAppId | 有、正確 |
+| `ios/Hither/Info.plist` `GADApplicationIdentifier` | 有、正確 |
+| `ios/Podfile.lock` 含 `RNGoogleMobileAds` / `Google-Mobile-Ads-SDK` | **0 筆** |
+| 既有 task 文件 | 已寫明 Windows 無法 `pod install`；需 macOS/EAS 新 binary |
+
+在 **沒有 GMA pod 的舊 binary** 上跑商店「觀看廣告」→ 原生模組 missing → **正好**顯示「此版本無法播放廣告（需新版 App）」。
+
+既有 ticket：`2026-07-30-Rewarded-Ads-Map-Store-UX-Stability` Ticket 02 / Report 02 / Report 05。
+
+### 次要（修好 binary 後才會碰到）
+
+| 風險 | 症狀 | 處理 |
+|------|------|------|
+| 仍裝舊安裝檔 / 只 OTA | 繼續 unsupported | 必須新 native build + 重裝 |
+| UMP `canRequestAds === false` | `需要同意後才能載入廣告` | 同意表單 / Privacy & messaging |
+| Release 用正式 unit 無庫存 | `目前沒有廣告` | AdMob 測試裝置 + test unit / 等 fill |
+| SSV 延遲 | 卡在「驗證中」 | 後端已部署；輪詢 + late poll 已有 |
+| 匿名帳號 | 請先註冊 | 預期行為 |
+
+---
+
+## 建議修復步驟（依序）
+
+### Phase A — 確認診斷（約 5 分鐘，裝置上）
+
+1. 重現：商店 → 觀看廣告 → 仍出現「此版本無法播放廣告」
+2. 設定 → 匯出診斷 JSON → 找 `store_ad_load` 的 `status`
+   - `missing_module` → 確認是缺原生（本 plan 主線）
+   - `init_failed` → binary 有模組但 init 炸（仍需看 Xcode 日誌）
+   - `consent_required` → 走 UMP，不是這句文案
+
+### Phase B — iOS 原生連結 GMA（macOS 或 EAS，必做）
+
+**在 macOS（或 EAS Build）上，從已含 Ticket 02 JS 設定的 `master`：**
+
+```bash
+cd hither_app/apps/mobile
+npm ci   # 若尚未
+cd ios
+pod install   # 必要時 --repo-update
+```
+
+驗收（必須通過再 build）：
+
+```bash
+grep -q 'RNGoogleMobileAds' Podfile.lock
+grep -q 'Google-Mobile-Ads-SDK' Podfile.lock
+```
+
+- Commit 更新後的 `Podfile.lock`
+- 產出 **新** iOS 安裝檔（TestFlight / dev client / local Xcode）
+- **重裝**裝置（OTA 不能補 native module）
+
+詳細指令已有：`docs/Tasks/Open/2026-07-30-Rewarded-Ads-Map-Store-UX-Stability/Report/05-macos-native-build-handoff.md`
+
+### Phase C — 裝置驗證（Ticket 04 路徑）
+
+1. **Dev / `__DEV__`：** 使用 Google sample rewarded unit（程式已自動切）→ 應能 load/show
+2. **Release-like：** 正式 unit `…/7899053731`
+   - 建議在 AdMob 登記測試裝置，避免無效流量政策問題
+3. 已註冊帳號 → 觀看完整 → UI「Google 驗證中」→ wallet +1（不重登）
+4. 同一 transaction 重放 → 餘額不雙重入帳
+5. Android 同樣確認：`APPLICATION_ID` 已在 Manifest；需 **新** Android binary 若該安裝檔也是 GMA 加入前打的
+
+### Phase D — 可選程式改善（非消主因，但減少誤判）
+
+僅在你希望「更好 debug」時做；**不能取代 Phase B**：
+
+1. UI 區分 reason：`missing_module` vs `init_failed`（文案仍可導向「需新版 App」）
+2. 開發 build 在 CTA 旁顯示目前 ad unit 是 test 或 production
+3. iOS 補上 `SKAdNetworkItems`（提升 fill，**不會**單獨消掉 unsupported）— 可交給 plugin 預設或後續 ticket
+
+### 明確不做
+
+- 不改 AdMob 單元 ID / SSV URL（已正確）
+- 不靠 OTA 宣稱 iOS 廣告已修好
+- 不在 Windows 本機跑 `pod install`（環境無 CocoaPods/Xcode）
+
+---
+
+## 成功標準
+
+- [ ] `Podfile.lock` 含 `RNGoogleMobileAds` + `Google-Mobile-Ads-SDK` 並已 commit
+- [ ] 新 iOS binary 安裝後，點觀看廣告 **不再** 出現「此版本無法播放廣告」
+- [ ] Dev：test ad 可播到結束
+- [ ] Release-like：verifying → SSV → token +1
+- [ ] 診斷 `store_ad_load` 不再是 `missing_module`
+
+---
+
+## 預估工時
+
+| 步驟 | 時間 |
+|------|------|
+| 診斷匯出確認 reason | ~5 min |
+| macOS `pod install` + commit lock | ~15–30 min |
+| EAS/Xcode 新 iOS build + 安裝 | ~30–90 min（看 queue） |
+| 裝置 E2E 看廣告入帳 | ~15 min |
+| 可選 UX/SKAdNetwork | 另開 ticket |
+
+**關鍵阻塞：** 必須有 macOS 或 EAS 產新 binary；目前 Windows 環境只能改 JS/設定，無法完成 iOS 原生連結。
+
+---
+
+## 若你現在只有 Windows
+
+1. 確認 JS/設定已在要 ship 的 branch（App ID / plugin 已就緒）
+2. push / merge 後在 **Mac 或 EAS** 跑 Phase B–C
+3. 本 agent 可先準備：檢查 Android Gradle 是否已解析 GMA、改善診斷文案、對齊 handoff 文件——但 **不能** 單靠 repo 編輯消掉 iOS 上的 unsupported
+
+---
+
+## 實作時優先順序
+
+1. **P0** Phase B：pod + 新 binary（真正修復）
+2. **P0** Phase C：裝置 E2E
+3. **P2** Phase D：reason 分文案 / SKAdNetwork
+4. Android 同步驗證（同一「舊 binary 缺 native」模式）

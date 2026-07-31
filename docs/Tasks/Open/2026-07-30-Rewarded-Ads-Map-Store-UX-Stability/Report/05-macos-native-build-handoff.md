@@ -200,6 +200,37 @@ cd apps/mobile/android
 
 ---
 
+## Mac session 結果
+
+### 2026-07-30
+- 機器：Dillion.local（macOS, Xcode 26.2, CocoaPods 1.16.2）
+- git：`master` @ `dcdf744`（pull origin master 後）
+- npm install：OK（含 `react-native-google-mobile-ads@16.4.0`；為解 `expo-updates` 解析加裝 `expo-dev-client@~56.0.24`）
+- pod install：OK
+  - `RNGoogleMobileAds` OK
+  - `Google-Mobile-Ads-SDK` OK（13.5.0）
+  - `GoogleUserMessagingPlatform` OK（3.1.0）
+- Podfile.lock commit：**當時尚未 commit**
+- binary 產物：
+  - path：`apps/mobile/build-output/Hither-production.ipa`（28MB）
+  - version：`0.1.3` / build：`41`
+  - submit：https://expo.dev/accounts/yupoer/projects/hither/submissions/e9c9d31d-3171-4f6b-aea0-a5b8a5a99dd8
+- Ticket 04 裝置：未測
+- 額外 native gate（EAS local production 必要）：
+  - `AppDelegate`：SDK 56 bare template（`internal import Expo`、`@main class`、移除 `bindReactNativeFactory`）
+  - `IPHONEOS_DEPLOYMENT_TARGET` / live-activity → `16.4`
+  - `NSMotionUsageDescription` → `app.json` + `Info.plist`
+
+### 2026-07-31（reward-pod-fix / Grok session）
+- 任務：`docs/Tasks/Open/reward-pod-fix` — Phase B commit + 新 native binary
+- skill：`hither-commit-push-ota` 已裝到 `~/.grok/skills/`；本機無 pwsh，以同等 Git 流程 commit/push/merge
+- re-verify：`pod install` OK；`Podfile.lock` 含 `RNGoogleMobileAds` + `Google-Mobile-Ads-SDK` + UMP 3.1.0
+- commit：`fix/ios-gma-pod-lock-reward-ads` → master（Podfile.lock + Xcode 26 / SDK 56 production gates + plan docs）
+- binary / submit：見本段更新（local `eas build --local` + `eas submit`）
+- Ticket 04 裝置：仍待實機
+
+---
+
 ## 給 agent 的最短 prompt（貼到 macOS session）
 
 ```
