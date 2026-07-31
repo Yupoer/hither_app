@@ -58,8 +58,15 @@ type AdRequestOptions = {
   };
 };
 
+type MobileAdsFactory = () => { initialize: () => Promise<unknown> };
+
 type MobileAdsModule = {
-  mobileAds: () => { initialize: () => Promise<unknown> };
+  /** v15 style — lowercase. */
+  mobileAds?: MobileAdsFactory;
+  /** v16+ named export (actual package API). */
+  MobileAds?: MobileAdsFactory;
+  /** v16 default export is the same factory. */
+  default?: MobileAdsFactory;
   RewardedAd: {
     createForAdRequest: (
       unitId: string,
@@ -77,6 +84,15 @@ type MobileAdsModule = {
   TestIds?: { REWARDED?: string };
   AdsConsent?: AdsConsentModule['AdsConsent'];
 };
+
+/** Resolve MobileAds factory across v15 (`mobileAds`) and v16 (`MobileAds` / default). */
+export function resolveMobileAdsFactory(mod: MobileAdsModule | null): MobileAdsFactory | null {
+  if (!mod) return null;
+  if (typeof mod.MobileAds === 'function') return mod.MobileAds;
+  if (typeof mod.mobileAds === 'function') return mod.mobileAds;
+  if (typeof mod.default === 'function') return mod.default;
+  return null;
+}
 
 type RewardedAdInstance = {
   addAdEventListener: (event: string, handler: (...args: unknown[]) => void) => () => void;
@@ -197,7 +213,8 @@ export async function ensureRewardedAdsReady(
       mod = null;
     }
     const modulePresent = mod != null;
-    const bridgeReady = Boolean(mod?.mobileAds && mod?.RewardedAd);
+    const adsFactory = resolveMobileAdsFactory(mod);
+    const bridgeReady = Boolean(adsFactory && mod?.RewardedAd);
     dbg({
       step: 'require_module',
       phase: 'preflight',
@@ -215,7 +232,9 @@ export async function ensureRewardedAdsReady(
       modulePresent,
       bridgeReady,
       status: [
+        mod?.MobileAds ? 'MobileAds' : null,
         mod?.mobileAds ? 'mobileAds' : null,
+        mod?.default ? 'default' : null,
         mod?.RewardedAd ? 'RewardedAd' : null,
         mod?.AdsConsent ? 'AdsConsent' : null,
         mod?.RewardedAdEventType?.LOADED ? 'LOADED' : null,
@@ -224,7 +243,7 @@ export async function ensureRewardedAdsReady(
         .filter(Boolean)
         .join(','),
     });
-    if (!mod?.mobileAds || !mod.RewardedAd) {
+    if (!adsFactory || !mod?.RewardedAd) {
       dbg({
         step: 'missing_module',
         phase: 'terminal',
@@ -234,7 +253,9 @@ export async function ensureRewardedAdsReady(
         success: false,
         status: 'missing_module',
         reason: 'missing_module',
-        errMsg: requireErr,
+        errMsg: requireErr ?? (modulePresent && !adsFactory
+          ? 'MobileAds_factory_missing'
+          : undefined),
       });
       return { available: false, reason: 'missing_module' as const };
     }
@@ -348,7 +369,7 @@ export async function ensureRewardedAdsReady(
         platform,
         canRequestAds: true,
       });
-      await mod.mobileAds().initialize();
+      await adsFactory().initialize();
       dbg({
         step: 'mobile_ads_initialize_end',
         phase: 'ready',

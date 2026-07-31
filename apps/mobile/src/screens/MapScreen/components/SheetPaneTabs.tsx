@@ -95,11 +95,11 @@ export const SheetPaneTabs = React.memo(function SheetPaneTabs({
   );
 });
 
-const makeStyles = (scale: number, boldText: boolean) => {
+const makeStyles = (scale: number, _boldText: boolean) => {
   const s = (n: number, min = 0) => Math.max(min, Math.round(n * scale));
-  // +⅓ height vs original 44/18/12 chrome so icons + labels read larger;
-  // underline stays absolutely pinned to bottom: 0.
-  const iconSize = s(24, 21);
+  // Leaner “tall” chrome: one step smaller than body at standard Dynamic Type
+  // (reads as 小→標準), regular weight, long bottom rail. Not chubby/bold.
+  const iconSize = s(20, 18);
   return {
     iconSize,
     ...StyleSheet.create({
@@ -107,27 +107,29 @@ const makeStyles = (scale: number, boldText: boolean) => {
         width: '100%',
         flexDirection: 'row',
         alignItems: 'stretch',
-        minHeight: s(59, 53),
+        minHeight: s(50, 46),
       },
       tab: {
         flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
-        paddingTop: s(8, 6),
-        // Room for the bottom-edge underline only — no floating gap.
-        paddingBottom: s(6, 5),
-        gap: s(3, 2),
+        paddingTop: s(6, 5),
+        // Underline hugs bottom edge — no floating gap.
+        paddingBottom: s(5, 4),
+        gap: s(2, 1),
       },
       label: {
-        fontSize: s(boldText ? 15 : 16, 13),
-        fontWeight: boldText ? '600' : '700',
+        // ~caption size at default scale (smaller than standard body).
+        fontSize: s(11, 10),
+        fontWeight: '400',
         textAlign: 'center',
-        lineHeight: s(boldText ? 17 : 19, 15),
+        lineHeight: s(13, 12),
       },
       underline: {
         position: 'absolute',
-        left: '24%',
-        right: '24%',
+        // Longer rail — almost full tab width.
+        left: '8%',
+        right: '8%',
         bottom: 0,
         height: 2,
         borderRadius: 1,
@@ -136,7 +138,7 @@ const makeStyles = (scale: number, boldText: boolean) => {
       divider: {
         width: StyleSheet.hairlineWidth,
         alignSelf: 'center',
-        height: '50%',
+        height: '45%',
         backgroundColor: glass.hairlineSoft,
       },
     }),

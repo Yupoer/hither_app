@@ -46,8 +46,11 @@ function makeFakeAd() {
 }
 
 function installFakeModule(adFactory: () => ReturnType<typeof makeFakeAd>) {
+  // Mirror package v16 export shape: MobileAds (capital) + default, not mobileAds.
+  const factory = () => ({ initialize: async () => ({}) });
   __setMobileAdsModuleForTests({
-    mobileAds: () => ({ initialize: async () => ({}) }),
+    MobileAds: factory,
+    default: factory,
     RewardedAd: {
       createForAdRequest: () => adFactory() as never,
     },
@@ -73,8 +76,10 @@ afterEach(() => {
 describe('createRewardedAdController', () => {
   it('uses cached consent when the UMP refresh request fails', async () => {
     const initialize = jest.fn(async () => ({}));
+    const factory = () => ({ initialize });
     __setMobileAdsModuleForTests({
-      mobileAds: () => ({ initialize }),
+      MobileAds: factory,
+      default: factory,
       RewardedAd: {
         createForAdRequest: () => makeFakeAd() as never,
       },
@@ -99,6 +104,35 @@ describe('createRewardedAdController', () => {
     expect(initialize).toHaveBeenCalledTimes(1);
   });
 
+  it('accepts v16 MobileAds export (not lowercase mobileAds)', async () => {
+    const initialize = jest.fn(async () => ({}));
+    __setMobileAdsModuleForTests({
+      MobileAds: () => ({ initialize }),
+      RewardedAd: {
+        createForAdRequest: () => makeFakeAd() as never,
+      },
+      RewardedAdEventType: {
+        LOADED: 'LOADED',
+        EARNED_REWARD: 'EARNED_REWARD',
+      },
+      AdEventType: {
+        CLOSED: 'CLOSED',
+        ERROR: 'ERROR',
+      },
+      AdsConsent: {
+        requestInfoUpdate: jest.fn(async () => ({ canRequestAds: true })),
+        loadAndShowConsentFormIfRequired: jest.fn(async () => ({ canRequestAds: true })),
+      },
+    });
+    const steps: string[] = [];
+    await expect(
+      ensureRewardedAdsReady((d) => steps.push(d.step)),
+    ).resolves.toEqual({ available: true });
+    expect(initialize).toHaveBeenCalled();
+    expect(steps).toContain('ready_true');
+    expect(steps).not.toContain('missing_module');
+  });
+
   it('emits debug steps for missing native module', async () => {
     __setMobileAdsModuleForTests(null);
     const steps: string[] = [];
@@ -114,8 +148,10 @@ describe('createRewardedAdController', () => {
     const ad = makeFakeAd();
     installFakeModule(() => ad);
     // consent open
+    const factory = () => ({ initialize: async () => ({}) });
     __setMobileAdsModuleForTests({
-      mobileAds: () => ({ initialize: async () => ({}) }),
+      MobileAds: factory,
+      default: factory,
       RewardedAd: {
         createForAdRequest: () => ad as never,
       },
