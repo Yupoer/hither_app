@@ -225,9 +225,19 @@ cd apps/mobile/android
 - 任務：`docs/Tasks/Open/reward-pod-fix` — Phase B commit + 新 native binary
 - skill：`hither-commit-push-ota` 已裝到 `~/.grok/skills/`；本機無 pwsh，以同等 Git 流程 commit/push/merge
 - re-verify：`pod install` OK；`Podfile.lock` 含 `RNGoogleMobileAds` + `Google-Mobile-Ads-SDK` + UMP 3.1.0
-- commit：`fix/ios-gma-pod-lock-reward-ads` → master（Podfile.lock + Xcode 26 / SDK 56 production gates + plan docs）
-- binary / submit：見本段更新（local `eas build --local` + `eas submit`）
-- Ticket 04 裝置：仍待實機
+- commit：`6c98e1b` on master — `fix(ios): lock Google Mobile Ads pods for rewarded ads`
+  - branch `fix/ios-gma-pod-lock-reward-ads` fast-forward merge → `origin/master`
+  - **未跑 OTA**（native Pods / ios/** 不在 OTA-safe 範圍）
+- binary 產物：
+  - path：`apps/mobile/build-output/Hither-production.ipa`（28MB）
+  - version：`0.1.3` / build：`42`（EAS remote autoIncrement 41→42）
+  - profile：`production` local (`eas build --local --non-interactive`)
+  - IPA 驗：`GADApplicationIdentifier` + location + `NSMotionUsageDescription`；含 `GoogleMobileAdsResources.bundle` + `UserMessagingPlatformResources.bundle` + `RNGoogleMobileAds` symbols
+- submit：OK
+  - https://expo.dev/accounts/yupoer/projects/hither/submissions/38fc191d-be7e-4b5d-ab78-9eefc3647586
+  - TestFlight：https://appstoreconnect.apple.com/apps/6790314569/testflight/ios
+  - Apple processing（CLI success = upload only；~5–10 min 後可測）
+- Ticket 04 裝置：仍待實機（重裝 build 42 後再驗證 store 廣告）
 
 ---
 

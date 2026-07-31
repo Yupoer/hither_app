@@ -50,7 +50,7 @@ iOS CocoaPods 解析 **只能在 macOS** 完成。這不是漏步驟；軟體面
 
 - [x] `Podfile.lock` 同時有 `RNGoogleMobileAds` 與 `Google-Mobile-Ads-SDK`（2026-07-30 Mac；re-verified 2026-07-31；GMA SDK 13.5.0 + UMP 3.1.0）  
 - [x] `Podfile.lock` 已 commit（`fix/ios-gma-pod-lock-reward-ads` → master；含 production 必要 native gate）  
-- [x] 新 binary：`0.1.3` build `41` 已 upload（2026-07-30）；2026-07-31 session 再打 local production 並 submit  
+- [x] 新 binary：`0.1.3` build `42` local production IPA 已 upload ASC（2026-07-31；含 GMA pods；Ticket 04 實機未測）  
 - [ ] Store 看廣告可到 verifying，SSV 後 wallet +1（Ticket 04）  
 
 ## 驗證（Windows 已做）
