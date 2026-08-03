@@ -102,15 +102,13 @@ describe('emoji picker icon-only (ticket 07)', () => {
     expect(reorderList).toContain('dayColor');
   });
 
-  it('uses uniform accent border on every emoji cell (selection via background)', () => {
+  it('uses accent for the selected emoji border and a neutral border otherwise', () => {
     expect(reorderList).toContain('// Ticket 07: every cell uses the same accent border.');
-    expect(reorderList).toMatch(/borderColor:\s*colors\.accent/);
-    // Selected state must not switch border color away from accent via colors.border
+    expect(reorderList).toMatch(/borderColor:\s*selected\s*\?\s*colors\.accent/);
     const gridStart = reorderList.indexOf('testID="dest-emoji-grid"');
     const gridBlock = reorderList.slice(gridStart, gridStart + 900);
-    expect(gridBlock).toContain('borderColor: colors.accent');
     expect(gridBlock).toContain('borderWidth: 2');
-    expect(gridBlock).not.toContain('borderColor: colors.border');
+    expect(gridBlock).toContain("'rgba(255,255,255,0.12)'");
   });
 });
 
