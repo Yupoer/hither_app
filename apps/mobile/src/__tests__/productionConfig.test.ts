@@ -78,14 +78,13 @@ describe('production mobile configuration', () => {
     expect(easConfig.update).toBeUndefined();
   });
 
-  it('pins OTA runtime to 0.1.3 so store builds receive updates', () => {
-    // Bare workflow requires a string runtimeVersion. TestFlight/store binaries
-    // advertise "0.1.3"; fingerprint-hash OTAs never match those installs.
+  it('pins OTA runtime to the app marketing version so store builds receive updates', () => {
+    // Bare workflow requires a string runtimeVersion; it must match the app version.
     expect(appConfig.expo.updates?.url).toBe(
       'https://u.expo.dev/0f62ed14-1f2e-4d7b-b5b6-4eda273f2e35',
     );
-    expect(appConfig.expo.runtimeVersion).toBe('0.1.3');
-    expect(appConfig.expo.version).toBe('0.1.3');
+    expect(appConfig.expo.runtimeVersion).toBe(appConfig.expo.version);
+    expect(typeof appConfig.expo.runtimeVersion).toBe('string');
     expect(appConfig.expo.extra?.eas?.projectId).toBe(
       '0f62ed14-1f2e-4d7b-b5b6-4eda273f2e35',
     );

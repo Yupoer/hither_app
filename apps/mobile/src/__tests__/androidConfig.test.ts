@@ -36,7 +36,7 @@ function getConfigInChild(env: Record<string, string>): {
       permissions: exp.android && exp.android.permissions,
       dump: JSON.stringify(exp),
     };
-    process.stdout.write(JSON.stringify(out));
+    process.stdout.write('__HITHER_CONFIG__' + JSON.stringify(out));
   `;
 
   const result = spawnSync(process.execPath, ['-e', script], {
@@ -51,7 +51,12 @@ function getConfigInChild(env: Record<string, string>): {
     );
   }
 
-  return JSON.parse(result.stdout) as {
+  const marker = '__HITHER_CONFIG__';
+  const outputStart = result.stdout.lastIndexOf(marker);
+  if (outputStart === -1) {
+    throw new Error(`getConfig child returned no config: ${result.stdout}`);
+  }
+  return JSON.parse(result.stdout.slice(outputStart + marker.length)) as {
     package?: string;
     googleServicesFile?: string;
     mapsApiKey?: string;

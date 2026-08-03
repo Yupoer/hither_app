@@ -67,7 +67,7 @@ eas update --channel production --message "…"
 
 **TestFlight 收不到更新時先查：**
 
-1. Binary 的 `runtimeVersion` 必須是字串 `0.1.3`（指紋 hash 的舊包只收 fingerprint OTA）
+1. Binary 的 `runtimeVersion` 必須是字串，且與 `app.json` 的 `version` 相同（目前 `0.1.5`）；指紋 hash 的舊包只收 fingerprint OTA
 2. Build profile channel：`production` / `preview` / `diagnostic` 要與 `eas update --channel` 一致
 3. 設定頁 OTA 列：應顯示「已套用 · xxxxxxxx」而非一直「內建包」
 
@@ -83,8 +83,8 @@ eas update --channel production --message "…"
 ## `runtimeVersion` 注意
 
 - 專案是 **bare workflow**（有 `ios/`）→ **不能** 用 `{ "policy": "appVersion" }`，必須手動字串。
-- 慣例：讓 `runtimeVersion` === `expo.version`（目前都是 `0.1.3`）。
-- 升 `version`（例如 `0.1.3` → `0.1.4`）時，**同時**改：
+- 慣例：讓 `runtimeVersion` === `expo.version`（目前都是 `0.1.5`）。
+- 升 `version`（例如 `0.1.5` → `0.1.6`）時，**同時**改：
   1. `app.json` → `version` + `runtimeVersion`
   2. `ios/Hither/Supporting/Expo.plist` → `EXUpdatesRuntimeVersion`
   3. 出新 native build；之後 OTA 綁新 runtime

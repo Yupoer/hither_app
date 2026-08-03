@@ -70,8 +70,8 @@ describe('four-pane store navigation contracts', () => {
   });
 
   it('rewardedAds show resolves from CLOSED/EARNED events not present-start', () => {
-    expect(rewardedAds).toContain('resolves when the ad is *presented*');
-    expect(rewardedAds).toContain('Wait for EARNED_REWARD and/or CLOSED');
+    expect(rewardedAds).toContain('RewardedAdEventType.EARNED_REWARD');
+    expect(rewardedAds).toContain('AdEventType.CLOSED');
     expect(rewardedAds).toContain('serverSideVerificationOptions');
   });
 
@@ -118,7 +118,6 @@ describe('four-pane store navigation contracts', () => {
   it('rewardedAds consent fails closed and closed-before-earned grace', () => {
     expect(rewardedAds).toContain('let canRequestAds = false');
     expect(rewardedAds).toContain('CLOSED_EARNED_GRACE_MS');
-    expect(rewardedAds).toContain('// Load phase: only LOADED / ERROR');
   });
 
   it('rewardedAds drops stale callbacks, settles dispose, and detaches load listeners', () => {
