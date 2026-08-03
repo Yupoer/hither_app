@@ -1,13 +1,13 @@
 # Hither Mobile (`@hither/mobile`)
 
 React Native + TypeScript app for the Hither MVP, built with **Expo** and
-**React Navigation**. This is the Phase 3 *skeleton*: navigation, types, and a
-stubbed API client are in place; no real business logic, maps, or Live Activity
-yet.
+**React Navigation**. Native capabilities such as background location, mobile
+ads, notifications, and Live Activity require the iOS development build; Expo
+Go is reserved for JavaScript fallback smoke tests.
 
 ## Stack
 
-- Expo SDK 52 / React Native 0.76 / React 18.3
+- Expo SDK 56 / React Native 0.85 / React 19.2
 - React Navigation (native stack)
 - TypeScript (strict)
 - Jest + ts-jest for unit tests
@@ -36,16 +36,38 @@ Types mirror the Vapor API models in
 npm install      # install dependencies
 npm test         # run Jest unit tests (pure TS, no native toolchain needed)
 npm run typecheck # tsc --noEmit
-npm start        # expo start (then press a for Android, or scan QR for iOS/Expo Go)
-npm run android  # run on Android emulator/device
-npm run ios       # run via Expo on iOS
+npm start             # Expo Go for JS fallback smoke tests
+npm run dev:client    # Development build / iOS device with Fast Refresh
+npm run android       # run on Android emulator/device
+npm run ios           # run via Expo on iOS
 npm run update:preview     # OTA → preview channel (after a channel-matched EAS build)
 npm run update:production  # OTA → production channel
 ```
 
+### iOS development build
+
+Use a development build for native capabilities such as mobile ads, background
+location, notifications, and Live Activity. Expo Go does not contain this
+project's native modules.
+
+```bash
+npx eas build --profile development --platform ios
+npx expo start --dev-client
+```
+
+Install the EAS internal-distribution build on the iPhone or iPad, then open
+Hither from the QR code shown by `expo start`. JavaScript and TypeScript changes
+use Fast Refresh. Rebuild the development client after changing native modules,
+config plugins, permissions, Expo/RN versions, or native code.
+
+Expo Go remains useful for checking JavaScript fallbacks:
+
+```bash
+npx expo start --go --clear
+```
+
 ## OTA (EAS Update)
 
-Enabled via `expo-updates` + `app.json` `updates` / `runtimeVersion` (appVersion policy).
 See [docs/eas-update.md](./docs/eas-update.md). **First enablement needs a new EAS build**; then pure JS can ship with `eas update`.
 
 `npm test` deliberately covers only the pure-TypeScript logic so it passes on

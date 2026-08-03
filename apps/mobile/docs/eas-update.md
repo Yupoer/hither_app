@@ -10,9 +10,24 @@ Hither 已接上 **EAS Update**。下一次 **EAS Build → Submit / TestFlight*
 | Update URL | `https://u.expo.dev/0f62ed14-1f2e-4d7b-b5b6-4eda273f2e35` |
 | `runtimeVersion` | **手動字串**（bare workflow 不支援 policy）— 目前 `"0.1.3"`，應與 `expo.version` 同步 |
 | Channels | `development` / `preview` / `production`（寫在 `eas.json` **build** profiles 的 `channel`；勿加頂層 `update` key） |
-| 套件 | `expo-updates`（SDK 54 相容版） |
+| 套件 | `expo-updates`（Expo SDK 56 相容版）與 `expo-dev-client`（development build） |
 
 原生開關：`ios/Hither/Supporting/Expo.plist` 的 `EXUpdatesEnabled=true`，並帶 `EXUpdatesURL` + `EXUpdatesRuntimeVersion`（解析後的 app version 字串）。
+
+## iOS development build
+
+Expo Go 只適合驗證 JavaScript fallback；Hither 的 mobile ads、背景定位、通知
+與 Live Activity 等原生能力要使用 development build。第一次安裝或任何原生
+依賴、config plugin、權限、Expo/RN 版本變更後，重新建置並安裝 iOS binary：
+
+```bash
+npx eas build --profile development --platform ios
+npx expo start --dev-client
+```
+
+將 EAS 內部分發 build 安裝到 iPhone／iPad 後，從 `expo start --dev-client` 顯示
+的 QR code 開啟 Hither。純 JS/TS 與樣式變更可 Fast Refresh；原生 binary 變更
+則需重新 EAS build。Apple Developer 簽署與裝置註冊仍是 iOS 內部分發的必要條件。
 
 ## 第一次啟用（必須）
 
