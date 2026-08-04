@@ -26,7 +26,8 @@ jest.mock('react-native', () => ({
   Platform: { OS: 'ios' },
 }));
 
-import { getDirections, simplifyRoutePoints } from '../native/maps';
+import { getDirections } from '../native/maps';
+import { simplifyRoutePointsForDisplay } from '../utils/routeLod';
 
 const from = { latitude: 25.033, longitude: 121.5654 };
 const to = { latitude: 25.0478, longitude: 121.517 };
@@ -100,7 +101,7 @@ describe('getDirections', () => {
   });
 });
 
-describe('simplifyRoutePoints', () => {
+describe('display route simplification fixture', () => {
   it('removes a short square bump while preserving route endpoints', () => {
     const points = [
       from,
@@ -109,7 +110,7 @@ describe('simplifyRoutePoints', () => {
       { latitude: from.latitude + 0.000045, longitude: from.longitude + 0.0004 },
       { latitude: from.latitude, longitude: from.longitude + 0.0006 },
     ];
-    expect(simplifyRoutePoints(points)).toEqual([points[0], points[4]]);
+    expect(simplifyRoutePointsForDisplay(points, 10)).toEqual([points[0], points[4]]);
   });
 
   it('keeps a meaningful turn above the tolerance', () => {
@@ -122,6 +123,6 @@ describe('simplifyRoutePoints', () => {
       turn,
       { latitude: from.latitude, longitude: from.longitude + 0.0006 },
     ];
-    expect(simplifyRoutePoints(points)).toEqual(points);
+    expect(simplifyRoutePointsForDisplay(points, 10)).toEqual(points);
   });
 });

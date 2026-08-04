@@ -8,6 +8,7 @@ const locationHook = readFileSync(
   'utf8',
 );
 const groupMap = readFileSync(join(__dirname, '../components/GroupMap.tsx'), 'utf8');
+const mapsBoundary = readFileSync(join(__dirname, '../native/maps.ts'), 'utf8');
 const groupService = readFileSync(
   join(__dirname, '../api/services/GroupService.ts'),
   'utf8',
@@ -17,6 +18,8 @@ const mapScreen = readFileSync(
   join(__dirname, '../screens/MapScreen.tsx'),
   'utf8',
 );
+const app = readFileSync(join(__dirname, '../../App.tsx'), 'utf8');
+const performance = readFileSync(join(__dirname, '../state/performance.ts'), 'utf8');
 
 describe('measured performance regressions', () => {
   it('keeps the translator stable so effects do not resubscribe on every render', () => {
@@ -46,14 +49,17 @@ describe('measured performance regressions', () => {
 
   it('uses MapKit as the iOS foreground location owner and keeps the native blue dot', () => {
     expect(groupMap).toContain('showsUserLocation');
-    expect(groupMap).toContain('onUserLocationChange');
     expect(groupMap).toContain('onUserLocationSample');
-    expect(groupMap).toContain("...(Platform.OS === 'ios' && onUserLocationSample");
+    expect(groupMap).toContain('platformizedMapViewProps');
+    expect(groupMap).not.toContain('Platform.OS');
+    expect(mapsBoundary).toContain('onUserLocationChange');
     expect(locationHook).toContain('nativeMapLocationEnabled');
     expect(locationHook).toContain('consumeForegroundSample');
     expect(mapScreen).toContain("nativeMapLocationEnabled: Platform.OS === 'ios'");
     expect(mapScreen).toContain('consumeForegroundSample');
-    expect(mapScreen).toContain('startNavigationEnergyMonitor');
+    expect(mapScreen).not.toContain('startNavigationEnergyMonitor(');
+    expect(app).toContain('startPerformanceMonitor()');
+    expect(performance).toContain('energyObservability.start(');
   });
 
   it('does not rewrite GroupMap initialCenter on every deviceCoords sample', () => {

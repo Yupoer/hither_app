@@ -8,6 +8,7 @@ const loginScreen = readFileSync(join(root, 'screens/LoginScreen.tsx'), 'utf8');
 const liquidGlass = readFileSync(join(root, 'native/liquidGlass.tsx'), 'utf8');
 const haptics = readFileSync(join(root, 'utils/haptics.ts'), 'utf8');
 const groupMap = readFileSync(join(root, 'components/GroupMap.tsx'), 'utf8');
+const mapsBoundary = readFileSync(join(root, 'native/maps.ts'), 'utf8');
 const translations = readFileSync(join(root, 'i18n/index.ts'), 'utf8');
 
 describe('Android in-app feature parity contracts', () => {
@@ -32,7 +33,10 @@ describe('Android in-app feature parity contracts', () => {
   });
 
   it('uses Google provider only on Android for the shared map', () => {
-    expect(groupMap).toContain("Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined");
+    expect(groupMap).toContain('platformizedMapViewProps');
+    expect(groupMap).not.toContain('Platform.OS');
+    expect(groupMap).not.toContain('PROVIDER_GOOGLE');
+    expect(mapsBoundary).toContain("if (isAndroid) props.provider = 'google'");
   });
 
   it('handles glass material only at the capability boundary', () => {

@@ -1,19 +1,23 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import OverlaySheet from './OverlaySheet';
 import { useTranslation, type TranslationKey } from '../i18n';
 import { useTheme } from '../state/PreferencesContext';
 import { useSession } from '../state/SessionContext';
 import {
-  applyVerifiedPurchase,
-  restoreEntitlements,
-} from '../api/client';
-import { purchases } from '../native';
-import { isVerifiedPurchase } from '../native/purchases';
-import { FREE_LIMITS, SMALL_TRIP_PASS } from '../entitlements';
+  loadPremiumStoreProducts,
+  purchasePremiumSubscription,
+  restorePremiumSubscription,
+} from '../services/premiumPurchaseFlow';
+import { PREMIUM_CATALOG, premiumProductForPlan, type PremiumPlan } from '../premiumCatalog';
+import { FREE_LIMITS } from '../entitlements';
 import { glass, accentMix } from '../glass';
+import {
+  hasEligibleIntroductoryOffer,
+  type PremiumStoreProduct,
+} from '../native/purchases';
 
-/** Free vs Small Trip Pass comparison rows. */
+/** Free vs account-owned auto-renewable Premium comparison rows. */
 const COMPARE_ROWS: { free: TranslationKey; pro: TranslationKey }[] = [
   { free: 'paywall.rowMembersFree', pro: 'paywall.rowMembersPro' },
   { free: 'paywall.rowDestinationsFree', pro: 'paywall.rowDestinationsPro' },
@@ -23,13 +27,15 @@ const COMPARE_ROWS: { free: TranslationKey; pro: TranslationKey }[] = [
   { free: 'paywall.rowThemesFree', pro: 'paywall.rowThemesPro' },
 ];
 
-/**
- * Small Trip Premium Pass upsell sheet.
- *
- * Purchase path: BUILD-02 native IAP → verified outcome → server
- * apply_verified_purchase. This sheet never writes profiles.pro directly.
- * Incomplete payment / failed verification leaves Free Plan in place.
- */
+function productForPlan(
+  products: readonly PremiumStoreProduct[],
+  plan: PremiumPlan,
+): PremiumStoreProduct | null {
+  const config = premiumProductForPlan(plan);
+  return config ? products.find((product) => product.id === config.productId) ?? null : null;
+}
+
+/** Monthly/annual StoreKit paywall. Local unlocks and prices are forbidden. */
 export default React.memo(function PaywallSheet({
   visible,
   onClose,
@@ -45,119 +51,92 @@ export default React.memo(function PaywallSheet({
     user,
     membership,
     isPro,
-    tripEntitlement,
+    premiumProjection,
     refreshEntitlement,
     refreshProfile,
   } = useSession();
   const accent = colors.accent;
   const [busy, setBusy] = useState<'purchase' | 'restore' | null>(null);
+  const [selectedPlan, setSelectedPlan] = useState<PremiumPlan>('monthly');
+  const [products, setProducts] = useState<PremiumStoreProduct[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
 
-  const groupId = membership?.group.id;
-  const memberCount = tripEntitlement?.memberCount;
-  const tripApplicable =
-    tripEntitlement?.tripApplicable ??
-    (memberCount == null || memberCount <= SMALL_TRIP_PASS.maxMembers);
-  const eligible =
-    tripEntitlement?.smallTripEligible ?? (!isPro && tripApplicable);
+  useEffect(() => {
+    if (!visible) return;
+    let active = true;
+    setCatalogLoading(true);
+    void loadPremiumStoreProducts()
+      .then((next) => {
+        if (active) setProducts(next);
+      })
+      .finally(() => {
+        if (active) setCatalogLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [visible]);
+
+  const selectedProduct = useMemo(
+    () => productForPlan(products, selectedPlan),
+    [products, selectedPlan],
+  );
+  const catalogReady = PREMIUM_CATALOG.ready
+    && productForPlan(products, 'monthly') !== null
+    && productForPlan(products, 'annual') !== null;
+  const hasPremium =
+    isPro
+    || premiumProjection.personalPremiumActive
+    || premiumProjection.teamPremiumActive;
+  const groupId = membership?.group.id ?? null;
 
   const statusLine = useMemo(() => {
-    if (isPro && tripEntitlement?.expiresAt) {
+    if (hasPremium && premiumProjection.expiresAt) {
       return t('paywall.expiresAt', {
-        date: new Date(tripEntitlement.expiresAt).toLocaleDateString(),
+        date: new Date(premiumProjection.expiresAt).toLocaleDateString(),
       });
     }
-    if (isPro) return t('paywall.active');
-    if (!groupId) return t('paywall.needTrip');
-    if (!tripApplicable) return t('paywall.notApplicableLarge');
-    return t('paywall.tripApplicable');
-  }, [isPro, tripEntitlement?.expiresAt, groupId, tripApplicable, t]);
+    if (hasPremium) return t('paywall.active');
+    if (!user) return t('paywall.signInRequired');
+    if (!PREMIUM_CATALOG.ready) return t('paywall.catalogUnavailable');
+    return t('paywall.choosePlan');
+  }, [hasPremium, premiumProjection.expiresAt, user, t]);
 
   const handlePurchase = useCallback(async () => {
-    if (!user) return;
-    // CRITICAL: never unlock Premium from client alone.
-    // Path: StoreKit/Play sheet → verified native outcome → Edge Function →
-    // service_role apply_verified_purchase → refreshEntitlement.
-    if (!groupId) {
-      Alert.alert(t('paywall.title'), t('paywall.needTrip'));
+    if (!user) {
+      Alert.alert(t('paywall.title'), t('paywall.signInRequired'));
       return;
     }
-    if (!eligible && !isPro) {
-      Alert.alert(t('paywall.title'), t('paywall.notApplicableLarge'));
+    if (!catalogReady) {
+      Alert.alert(t('paywall.title'), t('paywall.unavailable'));
       return;
     }
     setBusy('purchase');
     try {
-      const result = await purchases.purchasePro();
-      if (!isVerifiedPurchase(result)) {
-        if (result.status === 'cancelled') return;
-        if (result.status === 'unavailable') {
-          Alert.alert(t('paywall.title'), t('paywall.unavailable'));
+      const result = await purchasePremiumSubscription(selectedPlan);
+      if (!result.ok) {
+        if (result.error === 'cancelled') return;
+        if (result.error === 'pending') {
+          Alert.alert(t('paywall.title'), t('paywall.pending'));
           return;
         }
         Alert.alert(t('paywall.title'), t('paywall.purchaseFailed'));
         return;
       }
-      // Double-check: only proceed with a real store transaction id.
-      if (!result.transactionId || result.transactionId.length < 6) {
-        Alert.alert(t('paywall.title'), t('paywall.purchaseFailed'));
-        await refreshEntitlement(groupId);
-        return;
-      }
-      // Native verified outcome → Edge Function + service_role grant.
-      // User-JWT RPC cannot unlock Premium (service_role only).
-      const applied = await applyVerifiedPurchase({
-        groupId,
-        transactionId: result.transactionId,
-        productId: result.productId || SMALL_TRIP_PASS.productId,
-        purchaseToken: result.purchaseToken ?? undefined,
-      });
-      if (!applied.ok) {
-        const errCode = String(applied.error ?? 'unknown');
-        const known = [
-          'duplicate',
-          'invalid',
-          'expired',
-          'revoked',
-          'refunded',
-          'not_applicable',
-          'already_used',
-          'verification_service_required',
-          'unknown',
-        ];
-        const msg = known.includes(errCode)
-          ? t(`paywall.error.${errCode}` as TranslationKey)
-          : t('paywall.purchaseFailed');
-        Alert.alert(t('paywall.title'), msg);
-        // Server rejected — ensure UI stays Free (never local-upgrade).
-        await refreshEntitlement(groupId);
-        return;
-      }
-      // Server said ok — re-fetch entitlement so isPro / trip snapshot match DB.
-      // Do not call setProStatusLocal: server refresh is the only unlock path.
       await refreshProfile();
-      const tripAfter = await refreshEntitlement(groupId);
-      if (tripAfter && tripAfter.ok === true && tripAfter.isPremium !== true) {
-        // Defensive: grant RPC returned ok but authoritative snapshot still free.
-        Alert.alert(t('paywall.title'), t('paywall.purchaseFailed'));
-        return;
-      }
+      await refreshEntitlement(groupId);
       Alert.alert(t('paywall.title'), t('paywall.purchaseSuccess'));
       onClose();
-    } catch (e) {
-      Alert.alert(
-        t('paywall.title'),
-        e instanceof Error ? e.message : t('paywall.purchaseFailed'),
-      );
-      // Fail closed: re-sync from server so UI cannot stay falsely Premium.
-      if (groupId) await refreshEntitlement(groupId).catch(() => undefined);
+    } catch {
+      Alert.alert(t('paywall.title'), t('paywall.purchaseFailed'));
     } finally {
       setBusy(null);
     }
   }, [
     user,
+    catalogReady,
+    selectedPlan,
     groupId,
-    eligible,
-    isPro,
     t,
     refreshEntitlement,
     refreshProfile,
@@ -165,47 +144,31 @@ export default React.memo(function PaywallSheet({
   ]);
 
   const handleRestore = useCallback(async () => {
+    if (!user) {
+      Alert.alert(t('paywall.title'), t('paywall.signInRequired'));
+      return;
+    }
     setBusy('restore');
     try {
-      // Native restore (BUILD-02) may return a verified purchase to re-apply.
-      const nativeResult = await purchases.restorePurchases();
-      if (isVerifiedPurchase(nativeResult) && groupId) {
-        await applyVerifiedPurchase({
-          groupId,
-          transactionId: nativeResult.transactionId,
-          productId: nativeResult.productId || SMALL_TRIP_PASS.productId,
-        }).catch(() => undefined);
-      }
-
-      // Always restore UI from server entitlement — never local storage / stale isPro.
-      const restored = await restoreEntitlements(groupId ?? null);
+      const restored = await restorePremiumSubscription(groupId);
       await refreshProfile();
-      const tripAfter = await refreshEntitlement(groupId);
-      const hasPremium =
-        !!restored.isPremium
-        || !!restored.userPro
-        || !!restored.trip?.isPremium
-        || !!tripAfter?.isPremium;
-
-      if (hasPremium) {
+      await refreshEntitlement(groupId);
+      if (restored.projection.personalPremiumActive || restored.projection.teamPremiumActive) {
         Alert.alert(t('paywall.title'), t('paywall.restoreSuccess'));
         onClose();
         return;
       }
-      if (nativeResult.status === 'unavailable') {
+      if (restored.error === 'projection_unavailable' || restored.error === 'verification_service_unavailable') {
         Alert.alert(t('paywall.title'), t('paywall.unavailable'));
         return;
       }
       Alert.alert(t('paywall.title'), t('paywall.restoreNone'));
-    } catch (e) {
-      Alert.alert(
-        t('paywall.title'),
-        e instanceof Error ? e.message : t('paywall.restoreNone'),
-      );
+    } catch {
+      Alert.alert(t('paywall.title'), t('paywall.restoreNone'));
     } finally {
       setBusy(null);
     }
-  }, [groupId, t, refreshEntitlement, refreshProfile, onClose]);
+  }, [user, groupId, t, refreshEntitlement, refreshProfile, onClose]);
 
   return (
     <OverlaySheet
@@ -220,23 +183,11 @@ export default React.memo(function PaywallSheet({
 
         <Text style={styles.planLabel}>{t('paywall.freePlanTitle')}</Text>
         <Text style={styles.planHint}>
-          {t('paywall.freePlanHint', {
-            members: FREE_LIMITS.groupMembers,
-            points: '∞',
-          })}
+          {t('paywall.freePlanHint', { members: FREE_LIMITS.groupMembers, points: '∞' })}
         </Text>
 
-        <Text style={[styles.planLabel, { marginTop: 4 }]}>
-          {t('paywall.smallTripTitle')}
-        </Text>
-        <Text style={styles.planHint}>
-          {t('paywall.smallTripHint', {
-            min: SMALL_TRIP_PASS.minMembers,
-            max: SMALL_TRIP_PASS.maxMembers,
-            days: SMALL_TRIP_PASS.durationDays,
-            price: SMALL_TRIP_PASS.priceLabel,
-          })}
-        </Text>
+        <Text style={[styles.planLabel, { marginTop: 4 }]}>{t('paywall.premiumTitle')}</Text>
+        <Text style={styles.planHint}>{t('paywall.premiumHint')}</Text>
         <Text style={[styles.statusLine, { color: accent }]}>{statusLine}</Text>
 
         <View style={styles.table}>
@@ -248,28 +199,67 @@ export default React.memo(function PaywallSheet({
           ))}
         </View>
 
-        <Text style={styles.price}>{t('paywall.price')}</Text>
+        <View style={styles.planChoices} accessibilityRole="radiogroup">
+          {(['monthly', 'annual'] as const).map((plan) => {
+            const product = productForPlan(products, plan);
+            const selected = selectedPlan === plan;
+            return (
+              <Pressable
+                key={plan}
+                style={[
+                  styles.planChoice,
+                  { borderColor: selected ? accent : glass.hairlineStrong },
+                  selected && { backgroundColor: accentMix(accent, 15) },
+                ]}
+                onPress={() => setSelectedPlan(plan)}
+                accessibilityRole="radio"
+                accessibilityState={{ selected }}
+              >
+                <Text style={styles.planChoiceTitle}>
+                  {plan === 'monthly' ? t('paywall.monthly') : t('paywall.annual')}
+                </Text>
+                <Text style={[styles.planChoicePrice, { color: accent }]}>
+                  {product?.displayPrice ?? '—'}
+                </Text>
+                {product && hasEligibleIntroductoryOffer(product) ? (
+                  <Text style={styles.introOffer}>
+                        {t('paywall.introOffer', { price: product.introductoryPriceIOS ?? '' })}
+                  </Text>
+                ) : null}
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <Text style={styles.price}>
+          {catalogLoading ? t('paywall.loadingPrice') : selectedProduct?.displayPrice ?? t('paywall.catalogUnavailable')}
+        </Text>
 
         <Pressable
           style={[
             styles.cta,
             { backgroundColor: accentMix(accent, 90), borderColor: accentMix(accent, 50) },
-            (busy !== null || isPro) && styles.ctaDisabled,
+            (busy !== null || hasPremium || !catalogReady) && styles.ctaDisabled,
           ]}
           onPress={handlePurchase}
-          disabled={busy !== null || isPro}
+          disabled={busy !== null || hasPremium || !catalogReady}
           accessibilityRole="button"
         >
           {busy === 'purchase' ? (
             <ActivityIndicator color="#fff" />
           ) : (
             <Text style={styles.ctaText}>
-              {isPro ? t('paywall.active') : t('paywall.cta')}
+              {hasPremium ? t('paywall.active') : t('paywall.cta')}
             </Text>
           )}
         </Pressable>
 
-        <Pressable style={styles.restore} onPress={handleRestore} disabled={busy !== null} accessibilityRole="button">
+        <Pressable
+          style={styles.restore}
+          onPress={handleRestore}
+          disabled={busy !== null}
+          accessibilityRole="button"
+        >
           {busy === 'restore' ? (
             <ActivityIndicator color={accent} />
           ) : (
@@ -306,6 +296,18 @@ const styles = StyleSheet.create({
   rowLast: { borderBottomWidth: 0 },
   rowFree: { fontSize: 14, color: glass.textSecondary, flexShrink: 1 },
   rowPro: { fontSize: 14, fontWeight: '700', flexShrink: 1, textAlign: 'right' },
+  planChoices: { flexDirection: 'row', gap: 8 },
+  planChoice: {
+    flex: 1,
+    minHeight: 76,
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 10,
+    justifyContent: 'space-between',
+  },
+  planChoiceTitle: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  planChoicePrice: { fontSize: 16, fontWeight: '700' },
+  introOffer: { color: glass.textTertiary, fontSize: 11 },
   price: { fontSize: 13, color: glass.textTertiary, textAlign: 'center' },
   cta: {
     height: 50,

@@ -17,7 +17,8 @@ describe('transit-oriented map defaults', () => {
     expect(mapsBoundary).toContain('showsTransit: true');
     expect(mapsBoundary).toContain('showsPointsOfInterests: true');
     // UI consumes the boundary helper — no new Platform.OS transit branch in GroupMap.
-    expect(groupMap).toContain('defaultMapTransitProps');
+    expect(groupMap).toContain('platformizedMapViewProps');
+    expect(mapsBoundary).toContain('platformizedMapViewProps');
     expect(groupMap).not.toMatch(/Platform\.OS === ['"]android['"]\s*\n\s*\? \(\{ showsTransit/);
   });
 
@@ -44,7 +45,8 @@ describe('transit-oriented map defaults', () => {
     expect(mapsBoundary).toContain('showsPointsOfInterests: true');
     expect(mapsBoundary).not.toContain('APPLE_TRANSIT_POI_FILTER');
     expect(mapsBoundary).not.toContain('pointsOfInterestFilter:');
-    expect(groupMap).toContain('no Google-equivalent transit network toggle');
+    expect(groupMap).toContain('platformizedMapViewProps');
+    expect(groupMap).not.toContain('defaultMapTransitProps');
   });
 
   it('keeps MapKit transit as a directions transport type', () => {

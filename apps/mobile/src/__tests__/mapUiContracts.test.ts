@@ -27,7 +27,8 @@ const useGroupState = readFileSync(join(__dirname, '../state/useGroupState.ts'),
 describe('map UI placement contracts', () => {
   it('coalesces full group-state reloads at a single-flight root', () => {
     expect(useGroupState).toContain('loadInFlightRef');
-    expect(useGroupState).toContain('if (loadInFlightRef.current) return loadInFlightRef.current');
+    expect(useGroupState).toContain('if (loadInFlightRef.current) {');
+    expect(useGroupState).toContain('pendingReloadRef.current = true');
     const subStart = useGroupState.indexOf('.subscribe((status)');
     const subEnd = useGroupState.indexOf('const timer = setInterval', subStart);
     const statusCallback = useGroupState.slice(subStart, subEnd);

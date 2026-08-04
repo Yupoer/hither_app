@@ -22,6 +22,8 @@ import {
   proxyGetDirections,
   proxySearchPlaces,
 } from './googleMapsProxy';
+import { energyObservability } from '../state/energyObservability';
+import type { MapChromeLayout } from '../utils/mapChromeLayout';
 
 /** Custom native module; `null` in Expo Go / when not built. */
 const HitherMaps = requireOptionalNativeModule<{
@@ -60,58 +62,6 @@ export interface DirectionsResult {
   points: Coordinates[];
   /** Omitted on older callers; UI treats missing as native when points exist. */
   source?: RouteSource;
-}
-
-export const ROUTE_SIMPLIFY_TOLERANCE_M = 10;
-
-function pointToSegmentMeters(
-  point: Coordinates,
-  start: Coordinates,
-  end: Coordinates,
-): number {
-  const meanLatitude = ((start.latitude + end.latitude) / 2) * Math.PI / 180;
-  const xScale = 111_320 * Math.cos(meanLatitude);
-  const yScale = 110_540;
-  const endX = (end.longitude - start.longitude) * xScale;
-  const endY = (end.latitude - start.latitude) * yScale;
-  const pointX = (point.longitude - start.longitude) * xScale;
-  const pointY = (point.latitude - start.latitude) * yScale;
-  const lengthSquared = endX * endX + endY * endY;
-  if (lengthSquared === 0) return Math.hypot(pointX, pointY);
-  const ratio = Math.max(
-    0,
-    Math.min(1, (pointX * endX + pointY * endY) / lengthSquared),
-  );
-  return Math.hypot(pointX - ratio * endX, pointY - ratio * endY);
-}
-
-/** Remove provider geometry noise while preserving endpoints and real turns. */
-export function simplifyRoutePoints(
-  points: Coordinates[],
-  toleranceMeters = ROUTE_SIMPLIFY_TOLERANCE_M,
-): Coordinates[] {
-  if (points.length <= 2 || toleranceMeters <= 0) return points.slice();
-
-  let furthestIndex = -1;
-  let furthestDistance = 0;
-  const start = points[0];
-  const end = points[points.length - 1];
-  for (let index = 1; index < points.length - 1; index += 1) {
-    const distance = pointToSegmentMeters(points[index], start, end);
-    if (distance > furthestDistance) {
-      furthestDistance = distance;
-      furthestIndex = index;
-    }
-  }
-  if (furthestIndex < 0 || furthestDistance <= toleranceMeters) {
-    return [start, end];
-  }
-  const before = simplifyRoutePoints(
-    points.slice(0, furthestIndex + 1),
-    toleranceMeters,
-  );
-  const after = simplifyRoutePoints(points.slice(furthestIndex), toleranceMeters);
-  return [...before.slice(0, -1), ...after];
 }
 
 const PHOTON = 'https://photon.komoot.io/api';
@@ -271,10 +221,100 @@ export function defaultMapTransitProps(): MapTransitDefaultProps {
     // Cast surface for patched react-native-maps prop (not in stock types).
     return { showsTransit: true };
   }
-  return {
+  if (Platform.OS === 'ios') return {
     showsPointsOfInterests: true,
     showsBuildings: false,
   };
+  return {};
+}
+
+export type MapUserLocationChangeEvent = {
+  nativeEvent: {
+    coordinate?: {
+      latitude: number;
+      longitude: number;
+      accuracy?: number;
+      timestamp?: number;
+    };
+  };
+};
+
+export type PlatformizedMapViewProps = MapTransitDefaultProps & {
+  provider?: 'google';
+  compassOffset?: MapChromeLayout['compassOffset'];
+  appleLogoInsets?: MapChromeLayout['appleLogoInsets'];
+  onMapReady?: () => void;
+  onMapLoaded?: () => void;
+  onUserLocationChange?: (event: MapUserLocationChangeEvent) => void;
+};
+
+export type PlatformizedMapViewOptions = {
+  chrome?: MapChromeLayout;
+  onMapReady?: () => void;
+  onAndroidMapReady?: () => void;
+  onAndroidMapLoaded?: () => void;
+  onAndroidMapMount?: () => void;
+  onAndroidMapUnmount?: () => void;
+  onUserLocationSample?: (sample: {
+    coordinates: Coordinates;
+    accuracy: number | null;
+    timestamp: number;
+  }) => void;
+};
+
+/**
+ * Complete platform seam for the MapView surface. GroupMap owns map intent;
+ * this boundary owns provider selection, MapKit chrome, lifecycle scoping and
+ * the iOS-only user-location callback. Unsupported runtimes get safe defaults.
+ */
+export function platformizedMapViewProps(
+  options: PlatformizedMapViewOptions = {},
+): PlatformizedMapViewProps {
+  const isAndroid = Platform.OS === 'android';
+  const isIOS = Platform.OS === 'ios';
+  const props: PlatformizedMapViewProps = {
+    ...defaultMapTransitProps(),
+  };
+
+  if (isAndroid) props.provider = 'google';
+  if (isIOS && options.chrome) {
+    props.compassOffset = options.chrome.compassOffset;
+    props.appleLogoInsets = options.chrome.appleLogoInsets;
+  }
+  if (options.onMapReady || (isAndroid && options.onAndroidMapReady)) {
+    props.onMapReady = () => {
+      options.onMapReady?.();
+      if (isAndroid) options.onAndroidMapReady?.();
+    };
+  }
+  if (isAndroid && options.onAndroidMapLoaded) {
+    props.onMapLoaded = options.onAndroidMapLoaded;
+  }
+  if (isIOS && options.onUserLocationSample) {
+    props.onUserLocationChange = (event) => {
+      energyObservability.increment('location_callback');
+      const coordinate = event.nativeEvent.coordinate;
+      if (!coordinate) return;
+      const { latitude, longitude, accuracy, timestamp } = coordinate;
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+      options.onUserLocationSample?.({
+        coordinates: { latitude, longitude },
+        accuracy: accuracy != null && Number.isFinite(accuracy) ? accuracy : null,
+        timestamp: timestamp != null && Number.isFinite(timestamp) ? timestamp : Date.now(),
+      });
+    };
+  }
+  return props;
+}
+
+/** Android-only surface lifecycle seam used for diagnostics, not billing. */
+export function platformizedMapLifecycle(options: {
+  onAndroidMapMount?: () => void;
+  onAndroidMapUnmount?: () => void;
+}): () => void {
+  if (Platform.OS !== 'android') return () => undefined;
+  options.onAndroidMapMount?.();
+  return () => options.onAndroidMapUnmount?.();
 }
 
 /**
@@ -384,29 +424,35 @@ export async function getDirections(
   to: Coordinates,
   travelMode: TravelMode,
 ): Promise<DirectionsResult | null> {
+  energyObservability.increment('route_recalc');
+  const spanToken = energyObservability.beginSpan('route_calculation');
   // Public MapKit transit supports ETA, not route geometry. Use the existing
   // authenticated Routes proxy for the in-app transit polyline on iOS.
-  if (HitherMaps && !(Platform.OS === 'ios' && travelMode === 'transit')) {
-    try {
-      const route = await HitherMaps.getDirections(from, to, travelMode);
-      if (route && route.points.length > 0) {
-        return {
-          ...route,
-          points: simplifyRoutePoints(route.points),
-          source: route.source ?? 'native',
-        };
-      }
-    } catch {
-      // fall through to proxy
-    }
-  }
-
   try {
-    const route = await proxyGetDirections(from, to, travelMode);
-    return route
-      ? { ...route, points: simplifyRoutePoints(route.points) }
-      : null;
-  } catch {
-    return null;
+    if (HitherMaps && !(Platform.OS === 'ios' && travelMode === 'transit')) {
+      try {
+        const route = await HitherMaps.getDirections(from, to, travelMode);
+        if (route && route.points.length > 0) {
+          return {
+            ...route,
+            // Provider geometry stays complete. Display-only LOD is applied
+            // by the map surface after it knows the settled viewport.
+            points: route.points.slice(),
+            source: route.source ?? 'native',
+          };
+        }
+      } catch {
+        // fall through to proxy
+      }
+    }
+
+    try {
+      const route = await proxyGetDirections(from, to, travelMode);
+      return route ? { ...route, points: route.points.slice() } : null;
+    } catch {
+      return null;
+    }
+  } finally {
+    energyObservability.endSpan('route_calculation', spanToken ?? undefined);
   }
 }
