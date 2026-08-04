@@ -42,10 +42,10 @@ interface Props {
   onUpdateTripDetails: (days: number, date: string) => void;
   onReorder: (updates: { id: string; position: number; day: number }[]) => void;
   onDelete?: (id: string) => void;
-  /** Per-stop emoji only (day color is via day-header picker). Editors only. */
+  /** Per-stop emoji (+ optional markerColor). Day color is via day-header picker. */
   onUpdateEmojiColor?: (
     id: string,
-    next: { emoji: string | null },
+    next: { emoji: string | null; markerColor?: string | null },
   ) => void | Promise<void>;
   onSync?: () => Promise<void>;
   colors: Palette;

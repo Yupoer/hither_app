@@ -65,7 +65,7 @@
       "expo-secure-store",
       "expo-apple-authentication",
       "expo-sqlite",
-      "expo-iap",
+      "./plugins/withExpoIap",
       [
         "react-native-google-mobile-ads",
         {

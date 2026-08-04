@@ -30,6 +30,8 @@ export type LaunchPhase =
   | 'navigation_ready'
   | 'stable';
 
+export type EnergySignpostPhase = 'begin' | 'end' | 'event';
+
 export interface PreviousLaunch {
   phase: string;
   build: string;
@@ -44,6 +46,11 @@ interface HitherMetricsModule {
   purgePayloads?: () => Promise<void>;
   previousLaunch?: () => Promise<PreviousLaunch | null>;
   markLaunchPhase?: (phase: LaunchPhase) => Promise<void>;
+  signpost?: (
+    name: string,
+    phase: EnergySignpostPhase,
+    token?: string,
+  ) => Promise<void>;
 }
 
 const HitherMetrics = requireOptionalNativeModule<HitherMetricsModule>('HitherMetrics');
@@ -74,4 +81,17 @@ export async function previousLaunch(): Promise<PreviousLaunch | null> {
 
 export async function markLaunchPhase(phase: LaunchPhase): Promise<void> {
   await HitherMetrics?.markLaunchPhase?.(phase);
+}
+
+/**
+ * Emit an allow-listed native signpost when the custom module is available.
+ * The JS energyObservability seam owns the allowlist; this bridge remains
+ * optional so Expo Go and Jest continue to operate without native support.
+ */
+export async function signpost(
+  name: string,
+  phase: EnergySignpostPhase,
+  token?: string,
+): Promise<void> {
+  await HitherMetrics?.signpost?.(name, phase, token);
 }

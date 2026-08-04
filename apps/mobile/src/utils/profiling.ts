@@ -1,25 +1,12 @@
 import { useEffect, useRef } from 'react';
+import { energyObservability } from '../state/energyObservability';
 
-// 1. JS FPS Logger
+// 1. Legacy hook retained for call-site compatibility. Native performance
+// samples provide FPS; a permanent requestAnimationFrame loop would distort
+// the very energy baseline this module is meant to observe.
 export function useJSFPSLogger() {
   useEffect(() => {
-    let frameCount = 0;
-    let lastTime = Date.now();
-    let animationFrameId: number;
-
-    const tick = () => {
-      frameCount++;
-      const now = Date.now();
-      if (now - lastTime >= 1000) {
-        console.log(`[Metrics] JS FPS: ${frameCount}`);
-        frameCount = 0;
-        lastTime = now;
-      }
-      animationFrameId = requestAnimationFrame(tick);
-    };
-    animationFrameId = requestAnimationFrame(tick);
-
-    return () => cancelAnimationFrame(animationFrameId);
+    energyObservability.increment('render');
   }, []);
 }
 
@@ -32,7 +19,13 @@ export const onRenderProfile = (
   startTime: number,
   commitTime: number
 ) => {
-  console.log(`[Metrics] Profiler [${id}] - phase: ${phase}, duration: ${actualDuration.toFixed(2)}ms (base: ${baseDuration.toFixed(2)}ms)`);
+  void id;
+  void phase;
+  void actualDuration;
+  void baseDuration;
+  void startTime;
+  void commitTime;
+  energyObservability.increment('render');
 };
 
 // 3. Unnecessary Re-render Tracker
@@ -40,10 +33,10 @@ export function useRenderTrace(componentName: string, props: any) {
   const prevProps = useRef(props);
 
   useEffect(() => {
+    energyObservability.increment('render');
     const changedProps = Object.keys(props).filter(k => props[k] !== prevProps.current[k]);
-    if (changedProps.length > 0) {
-      console.log(`[Metrics] RenderTrace [${componentName}] re-rendered due to changed props:`, changedProps.join(', '));
-    }
+    void componentName;
+    void changedProps;
     prevProps.current = props;
   });
 }

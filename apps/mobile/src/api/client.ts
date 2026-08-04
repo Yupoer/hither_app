@@ -29,6 +29,7 @@ export {
   createGroup,
   joinGroup,
   getGroupState,
+  getGroupRecoverySnapshot,
   setJourneyStatus,
   setJourneyTarget,
   setStragglerConfig,
@@ -63,6 +64,12 @@ export {
   setDestinationMeetTime,
   updateDestinationEmojiColor,
 } from './services/DestinationService';
+
+export {
+  getPremiumProjection,
+  getPremiumAppAccountToken,
+  applyVerifiedSubscription,
+} from './services/EntitlementService';
 
 export type { ItineraryRow } from './services/DestinationService';
 

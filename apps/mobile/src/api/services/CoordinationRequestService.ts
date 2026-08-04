@@ -279,13 +279,8 @@ export async function fetchCoordinationRequests(
   groupId: string,
   options?: { status?: CoordinationRequestStatus | CoordinationRequestStatus[] },
 ): Promise<CoordinationRequest[]> {
-  // Best-effort due resolution so multi-device clients converge without a cron.
-  try {
-    await resolveDueCoordinationRequests(groupId);
-  } catch {
-    // Fetch still returns current rows if resolve is blocked.
-  }
-
+  // Read-only fetch. Deadline closure belongs to the server scheduler; a
+  // client read must never write a resolver row as a side effect.
   let query = supabase
     .from('coordination_requests')
     .select(

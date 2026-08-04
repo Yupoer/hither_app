@@ -672,50 +672,50 @@ describe('paid entitlement migration contract', () => {
   });
 });
 
-describe('Paywall contract (store IAP + server grant only)', () => {
+describe('Paywall contract (StoreKit subscription flow)', () => {
   const paywall = readFileSync(
     join(__dirname, '../components/PaywallSheet.tsx'),
     'utf8',
   );
 
-  it('consumes verified purchase outcomes and server restore only', () => {
-    expect(paywall).toContain('applyVerifiedPurchase');
-    expect(paywall).toContain('restoreEntitlements');
-    expect(paywall).toContain('isVerifiedPurchase');
-    // Never unlock Premium from client alone (no QA local upgrade).
+  it('uses monthly/annual StoreKit products and never performs a local unlock', () => {
+    expect(paywall).toContain('purchasePremiumSubscription');
+    expect(paywall).toContain('restorePremiumSubscription');
+    expect(paywall).toContain('PREMIUM_CATALOG');
+    expect(paywall).toContain('displayPrice');
     expect(paywall).not.toContain('TEMPORARY_DIRECT_UPGRADE');
     expect(paywall).not.toContain('setProStatusLocal(true)');
     expect(paywall).not.toContain('setProStatus(');
-    expect(paywall).toContain('purchases.purchasePro');
-    expect(paywall).toContain('refreshEntitlement');
-    expect(paywall).toContain('SMALL_TRIP_PASS');
     expect(paywall).toContain('FREE_LIMITS');
   });
 
-  it('restore success uses server result, not stale isPro', () => {
-    expect(paywall).toContain('restored.isPremium');
-    expect(paywall).toContain('restored.userPro');
-    expect(paywall).toContain('tripAfter?.isPremium');
-    expect(paywall).not.toMatch(/restored\.isPremium\s*\|\|\s*isPro/);
+  it('restore success uses the server Premium projection', () => {
+    expect(paywall).toContain('restored.projection.personalPremiumActive');
+    expect(paywall).toContain('restored.projection.teamPremiumActive');
+    expect(paywall).not.toMatch(/restored\.projection\.[^\n]+\|\|\s*isPro/);
   });
 });
 
-describe('Session hydrate contract (no profile-Pro trust for trip passes)', () => {
+describe('Session Premium authority contract', () => {
   const session = readFileSync(
     join(__dirname, '../state/SessionContext.tsx'),
     'utf8',
   );
 
-  it('uses effectiveIsPro / trip.isPremium rather than bare profiles.pro', () => {
-    expect(session).toContain('effectiveIsPro');
-    expect(session).toContain('trip.isPremium');
-    expect(session).not.toMatch(/setIsPro\(\!\!row\?\.pro\)/);
+  it('derives isPro only from the server personal/team projection', () => {
+    expect(session).toContain('premiumProjection.personalPremiumActive');
+    expect(session).toContain('premiumProjection.teamPremiumActive');
+    expect(session).not.toContain('effectiveIsPro');
+    expect(session).not.toMatch(/setIsPro\([^\n]*trip\.isPremium/);
+    expect(session).not.toMatch(/setIsPro\([^\n]*row\?\.pro/);
+    expect(session).toContain('setProStatusLocal: () => undefined');
   });
 
-  it('leaveGroup uses isLifetimeProfilePremium(user.pro, proExpiresAt)', () => {
-    expect(session).toContain('isLifetimeProfilePremium');
-    expect(session).toContain('user?.pro');
-    expect(session).not.toMatch(/proPlan \|\| user\?\.proPurchasedAt/);
+  it('does not use legacy profile/trip state when projection refresh fails', () => {
+    expect(session).toContain('legacy trip state never unlocks');
+    expect(session).toContain('Do not fall back to profile/trip compatibility state');
+    expect(session).not.toContain('isLifetimeProfilePremium(!!user?.pro');
+    expect(session).not.toContain('setIsPro(!!restored.userPro)');
   });
 });
 

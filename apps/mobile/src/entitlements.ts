@@ -32,6 +32,68 @@ export const SMALL_TRIP_PASS = {
   productId: 'hither.small_trip_pass',
 } as const;
 
+/**
+ * Account-owned Premium projection. The personal grant never belongs to a
+ * trip or a leader; `teamPremiumActive` is a separate server projection for
+ * the currently selected group.
+ */
+export type PremiumProjectionStatus = 'active' | 'expired' | 'refunded' | 'revoked' | 'none';
+
+export type PremiumProjection = {
+  personalPremiumActive: boolean;
+  teamPremiumActive: boolean;
+  status: PremiumProjectionStatus;
+  productId: string | null;
+  expiresAt: string | null;
+  sourceVersion: string | null;
+};
+
+export const EMPTY_PREMIUM_PROJECTION: PremiumProjection = {
+  personalPremiumActive: false,
+  teamPremiumActive: false,
+  status: 'none',
+  productId: null,
+  expiresAt: null,
+  sourceVersion: null,
+};
+
+function projectionStatus(value: unknown): PremiumProjectionStatus {
+  return value === 'active'
+    || value === 'expired'
+    || value === 'refunded'
+    || value === 'revoked'
+    ? value
+    : 'none';
+}
+
+/** Map the RPC's stable snake_case transport into the app's fixed interface. */
+export function mapPremiumProjectionRow(
+  raw: Record<string, unknown> | null | undefined,
+): PremiumProjection {
+  if (!raw) return { ...EMPTY_PREMIUM_PROJECTION };
+  const status = projectionStatus(raw.status);
+  return {
+    personalPremiumActive: raw.personalPremiumActive === true || raw.personal_premium_active === true,
+    teamPremiumActive: raw.teamPremiumActive === true || raw.team_premium_active === true,
+    status,
+    productId: typeof raw.productId === 'string'
+      ? raw.productId
+      : typeof raw.product_id === 'string'
+        ? raw.product_id
+        : null,
+    expiresAt: typeof raw.expiresAt === 'string'
+      ? raw.expiresAt
+      : typeof raw.expires_at === 'string'
+        ? raw.expires_at
+        : null,
+    sourceVersion: typeof raw.sourceVersion === 'string'
+      ? raw.sourceVersion
+      : typeof raw.source_version === 'string'
+        ? raw.source_version
+        : null,
+  };
+}
+
 export type EntitlementStatus =
   | 'none'
   | 'active'

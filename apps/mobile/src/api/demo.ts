@@ -174,9 +174,12 @@ export function demoDeleteDestination(destinationId: string): void {
 export function demoUpdateDestinationEmoji(
   destinationId: string,
   emoji: string | null,
+  markerColor?: string | null,
 ): void {
   state.destinations = state.destinations.map((d) =>
-    d.id === destinationId ? { ...d, emoji } : d,
+    d.id === destinationId
+      ? { ...d, emoji, ...(markerColor !== undefined ? { markerColor } : {}) }
+      : d,
   );
 }
 

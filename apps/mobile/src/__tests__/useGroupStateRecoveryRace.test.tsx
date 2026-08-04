@@ -3,6 +3,7 @@ import type { GroupState } from '../types';
 
 const mockRecovery = jest.fn();
 const mockReadSnapshot = jest.fn();
+const mockGroupStateFromSnapshot = jest.fn();
 const mockListOperations = jest.fn();
 const mockHydrateVersions = jest.fn();
 const mockFlushOutbox = jest.fn();
@@ -30,7 +31,7 @@ jest.mock('../api/supabase', () => ({
 }));
 
 jest.mock('../state/coreDataStore', () => ({
-  groupStateFromCoreSnapshot: jest.fn(),
+  groupStateFromCoreSnapshot: (snapshot: unknown) => mockGroupStateFromSnapshot(snapshot),
   readCoreSnapshot: (groupId: string) => mockReadSnapshot(groupId),
 }));
 
@@ -78,6 +79,7 @@ describe('useGroupState recovery snapshot race', () => {
     jest.useFakeTimers();
     jest.clearAllMocks();
     mockReadSnapshot.mockResolvedValue(null);
+    mockGroupStateFromSnapshot.mockImplementation((value: { state?: GroupState }) => value.state);
     mockListOperations.mockResolvedValue([]);
     mockHydrateVersions.mockResolvedValue(undefined);
     mockFlushOutbox.mockResolvedValue(undefined);
@@ -178,6 +180,51 @@ describe('useGroupState recovery snapshot race', () => {
       await Promise.resolve();
     });
     expect(api.state?.group.name).toBe('new group');
+
+    await act(async () => root.unmount());
+  });
+
+  it('does not apply a delayed local snapshot from the previous group', async () => {
+    let resolveGroupOne!: (value: unknown) => void;
+    let resolveGroupTwo!: (value: unknown) => void;
+    mockReadSnapshot
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveGroupOne = resolve; }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveGroupTwo = resolve; }))
+      .mockResolvedValue(null);
+    // Keep remote recovery pending so this test isolates the local SQLite race.
+    mockRecovery.mockImplementation(() => new Promise(() => {}));
+
+    let api!: ReturnType<typeof useGroupState>;
+    function Harness({ groupId }: { groupId: string }) {
+      api = useGroupState(groupId);
+      return null;
+    }
+
+    let root!: { unmount: () => void; update: (element: React.ReactElement) => void };
+    await act(async () => {
+      root = create(React.createElement(Harness, { groupId: 'group-1' }));
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      root.update(React.createElement(Harness, { groupId: 'group-2' }));
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      resolveGroupOne({ state: state('stale local group one'), source: 'local_cache' });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(api.state).toBeNull();
+
+    await act(async () => {
+      resolveGroupTwo({ state: state('local group two'), source: 'local_cache' });
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(api.state?.group.name).toBe('local group two');
 
     await act(async () => root.unmount());
   });

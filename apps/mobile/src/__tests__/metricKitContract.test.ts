@@ -114,4 +114,24 @@ describe('MetricKit native spool contract', () => {
     expect(app).toContain("metrics.markLaunchPhase('js_root_mounted')");
     expect(app).toContain("event: 'previous_launch_incomplete'");
   });
+
+  it('exposes privacy-safe iOS signposts through the optional native bridge', () => {
+    const swift = readFileSync(swiftPath, 'utf8');
+    const bridge = readFileSync(join(root, 'src/native/metrics.ts'), 'utf8');
+    expect(swift).toContain('import os.signpost');
+    expect(swift).toContain('AsyncFunction("signpost")');
+    for (const name of [
+      'launch',
+      'map_ready',
+      'location_acquisition',
+      'snapshot',
+      'route_calculation',
+      'marker_tracking',
+      'background_transition',
+    ]) {
+      expect(swift).toContain(name);
+    }
+    expect(bridge).toContain('export async function signpost');
+    expect(bridge).toContain('HitherMetrics?.signpost?.');
+  });
 });

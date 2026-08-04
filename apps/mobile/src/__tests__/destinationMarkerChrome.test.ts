@@ -12,10 +12,10 @@ describe('destinationMarkerColor / emoji (map projection)', () => {
     2: '#6FA8FF',
   };
 
-  it('uses day color even when per-stop markerColor is set', () => {
+  it('uses a valid per-stop markerColor when set', () => {
     expect(
       destinationMarkerColor({ markerColor: '#F0883E', day: 1 }, dayColors),
-    ).toBe('#E5575C');
+    ).toBe('#F0883E');
   });
 
   it('uses day color when markerColor is null', () => {

@@ -47,6 +47,10 @@ import {
   startPerformanceMonitor,
 } from './src/state/performance';
 import {
+  configureEnergySignpost,
+  energyObservability,
+} from './src/state/energyObservability';
+import {
   configureLogBatchScheduler,
   setLogBatchSchedulerEnabled,
   stopLogBatchScheduler,
@@ -56,6 +60,7 @@ import { uploadLocalLogs } from './src/utils/uploadLocalLogs';
 import { startOtaUpdateBootstrap } from './src/utils/otaUpdates';
 import OtaUpdateToast from './src/components/OtaUpdateToast';
 import InteractionRecoveryBanner from './src/components/InteractionRecoveryBanner';
+import PremiumPurchaseRecovery from './src/components/PremiumPurchaseRecovery';
 import { initializeCoreDataLayer } from './src/state/coreDataSync';
 
 // Dynamic Type: scale with the system up to GLOBAL_FONT_SCALE_CAP, then freeze.
@@ -158,24 +163,35 @@ function ThemedNavigation() {
       };
     });
     setLogBatchSchedulerEnabled(true);
-    void metrics.setCollectionEnabled(true).catch(() => undefined);
+    setPerformanceAppState(AppState.currentState);
+    setPerformancePlatform(Platform.OS);
     // Login / consent restored: flush any queued errors immediately.
     void flushPerformance().catch(() => undefined);
-    const stopMonitor = startPerformanceMonitor();
+    let cancelled = false;
+    let stopMonitor: (() => void) | null = null;
+    void metrics
+      .setCollectionEnabled(true)
+      .then(() => {
+        if (cancelled) return;
+        stopMonitor = startPerformanceMonitor();
+      })
+      .catch(() => undefined);
 
     // Foreground resume: retry pending uploads; push app state for sample gating.
     const onAppState = (next: AppStateStatus) => {
+      if (next === 'background') {
+        energyObservability.event('background_transition');
+      }
       setPerformanceAppState(next);
       if (next === 'active') {
         void flushPerformance().catch(() => undefined);
       }
     };
-    setPerformanceAppState(AppState.currentState);
-    setPerformancePlatform(Platform.OS);
     const appSub = AppState.addEventListener('change', onAppState);
 
     return () => {
-      stopMonitor();
+      cancelled = true;
+      stopMonitor?.();
       appSub.remove();
     };
   }, [ready, diagnosticUploadEnabled, initializing, user]);
@@ -215,6 +231,7 @@ function ThemedNavigation() {
 
   useEffect(() => {
     if (!navigatorReady) return;
+    energyObservability.endSpan('launch');
     setLastLaunchPhase('navigation_ready');
     void metrics.markLaunchPhase('navigation_ready');
     const timer = setTimeout(() => {
@@ -323,6 +340,9 @@ installGlobalErrorLogger();
 
 export default function App() {
   useEffect(() => {
+    configureEnergySignpost((name, phase, token) => metrics.signpost(name, phase, token));
+    energyObservability.markLaunch();
+    const launchSpan = energyObservability.beginSpan('launch');
     setLastLaunchPhase('js_root_mounted');
     void metrics.markLaunchPhase('js_root_mounted');
     void metrics
@@ -343,6 +363,9 @@ export default function App() {
         });
       })
       .catch(() => undefined);
+    return () => {
+      energyObservability.endSpan('launch', launchSpan ?? undefined);
+    };
   }, []);
 
   // TestFlight/store: fetch + reload OTA without requiring a second cold start.
@@ -355,6 +378,7 @@ export default function App() {
           <PreferencesProvider>
             <SessionProvider>
               <ThemedNavigation />
+              <PremiumPurchaseRecovery />
               {/* Global: any screen — brief top toast after an OTA apply. */}
               <OtaUpdateToast />
               {/* Global: action error/timeout recovery (runUiAction). */}

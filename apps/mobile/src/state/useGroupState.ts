@@ -118,6 +118,10 @@ export function useGroupState(
   openOperationsRef.current = openOperations;
   const [appState, setAppState] = useState<AppStateStatus>(AppState.currentState);
   const activeRef = useRef(true);
+  const groupIdRef = useRef(groupId);
+  useEffect(() => {
+    groupIdRef.current = groupId;
+  }, [groupId]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const locationDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const realtimeReadyRef = useRef(false);
@@ -145,12 +149,20 @@ export function useGroupState(
     return candidate < current;
   }, []);
 
-  const refreshOpenOperations = useCallback(async (id: string) => {
+  const refreshOpenOperations = useCallback(async (
+    id: string,
+    expectedGeneration = groupGenerationRef.current,
+  ) => {
+    const isCurrent = () => (
+      activeRef.current
+      && groupGenerationRef.current === expectedGeneration
+      && groupIdRef.current === id
+    );
     try {
       const ops = await listOpenCoreOperations(id);
-      if (activeRef.current) setOpenOperations(ops);
+      if (isCurrent()) setOpenOperations(ops);
     } catch {
-      if (activeRef.current) setOpenOperations([]);
+      if (isCurrent()) setOpenOperations([]);
     }
   }, []);
 
@@ -171,28 +183,33 @@ export function useGroupState(
     if (groupId) void refreshOpenOperations(groupId);
   }, [groupId, refreshOpenOperations]);
 
-  const applyLocalSnapshot = useCallback(async (id: string): Promise<boolean> => {
+  const applyLocalSnapshot = useCallback(async (
+    id: string,
+    expectedGeneration = groupGenerationRef.current,
+  ): Promise<boolean> => {
+    const isCurrent = () => (
+      activeRef.current
+      && groupGenerationRef.current === expectedGeneration
+      && groupIdRef.current === id
+    );
     try {
       const snapshot = await readCoreSnapshot(id);
+      if (!isCurrent()) return false;
       if (!snapshot) {
-        if (activeRef.current) {
-          setEmptyLocalSnapshot(true);
-          setSnapshotFreshness({ unit: 'missing' });
-          setDataSource('none');
-        }
+        setEmptyLocalSnapshot(true);
+        setSnapshotFreshness({ unit: 'missing' });
+        setDataSource('none');
         return false;
       }
       const next = groupStateFromCoreSnapshot(snapshot);
       const freshness = coreSnapshotFreshness(snapshot, Date.now());
-      if (activeRef.current) {
-        setState(next);
-        setDataSource('local_cache');
-        setSnapshotFreshness(freshness);
-        setEmptyLocalSnapshot(false);
-        const source: CoreSnapshotSource = snapshot.source;
-        void source;
-      }
-      await refreshOpenOperations(id);
+      setState(next);
+      setDataSource('local_cache');
+      setSnapshotFreshness(freshness);
+      setEmptyLocalSnapshot(false);
+      const source: CoreSnapshotSource = snapshot.source;
+      void source;
+      await refreshOpenOperations(id, expectedGeneration);
       return true;
     } catch {
       return false;
@@ -261,7 +278,7 @@ export function useGroupState(
         return true;
       } catch (cause) {
         if (!activeRef.current || groupGenerationRef.current !== generation) return false;
-        const restored = await applyLocalSnapshot(groupId);
+        const restored = await applyLocalSnapshot(groupId, generation);
         if (activeRef.current && groupGenerationRef.current === generation) {
           if (restored) {
             // Offline / network failure with a prior snapshot: show cached data.
@@ -342,7 +359,7 @@ export function useGroupState(
 
     let cancelled = false;
     void (async () => {
-      await applyLocalSnapshot(groupId);
+      await applyLocalSnapshot(groupId, generation);
       if (cancelled || !activeRef.current) return;
       // If we already painted from cache, drop the full-screen loader so the
       // map can render while remote reconciliation continues.

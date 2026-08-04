@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 import { location } from '../../../native';
+import { energyObservability } from '../../../state/energyObservability';
 import {
   isDebugRouteActive,
   subscribeDebugLocation,
@@ -124,12 +125,15 @@ export function useDeviceLocation({
    */
   const consumeForegroundSample = useCallback(
     (sample: LocationSample): void => {
+      energyObservability.increment('location_callback');
       const now = Date.now();
       const policy = locationPolicy(highAccuracyRef.current);
       const coords = sample.coordinates;
       motionRef.current = reduceMotionState(motionRef.current, coords, now, policy);
 
       if (shouldAcceptUiSample(coords, now, uiGateRef.current, policy)) {
+        energyObservability.increment('location_accepted');
+        energyObservability.event('location_acquisition');
         applySampleToUi(sample, now);
       }
 
@@ -160,8 +164,11 @@ export function useDeviceLocation({
   const refreshDeviceLocation = useCallback(async (options?: {
     requireUpload?: boolean;
   }): Promise<Coordinates | null> => {
+    energyObservability.increment('location_callback');
     const fix = await location.getCurrentLocation(highAccuracyRef.current);
     if (!fix) return null;
+    energyObservability.increment('location_accepted');
+    energyObservability.event('location_acquisition');
     const now = Date.now();
     applySampleToUi(fix, now);
     motionRef.current = reduceMotionState(
@@ -265,6 +272,7 @@ export function useDeviceLocation({
           }
         }
         if (!sample) return;
+        energyObservability.increment('location_callback');
         const sampleNow = Date.now();
         motionRef.current = reduceMotionState(
           motionRef.current,
@@ -280,8 +288,10 @@ export function useDeviceLocation({
             policy,
             motionRef.current.cadence,
           )
-        ) {
+          ) {
           if (shouldAcceptUiSample(sample.coordinates, sampleNow, uiGateRef.current, policy)) {
+            energyObservability.increment('location_accepted');
+            energyObservability.event('location_acquisition');
             applySampleToUi(sample, sampleNow);
           }
           await enqueueUpload(sample, sampleNow, { immediate: true }).catch(() => undefined);

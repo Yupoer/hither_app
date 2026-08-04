@@ -4,6 +4,7 @@ import MetricKit
 import QuartzCore
 import UIKit
 import Darwin
+import os.signpost
 
 private final class MetricKitSubscriber: NSObject, MXMetricManagerSubscriber {
   private let queue = DispatchQueue(label: "app.hither.metrics-spool")
@@ -333,12 +334,80 @@ private final class LaunchBreadcrumbStore {
   }
 }
 
+private enum EnergySignpostName: String {
+  case launch
+  case mapReady = "map_ready"
+  case locationAcquisition = "location_acquisition"
+  case snapshot
+  case routeCalculation = "route_calculation"
+  case markerTracking = "marker_tracking"
+  case backgroundTransition = "background_transition"
+}
+
+private struct ActiveEnergySignpost {
+  let id: OSSignpostID
+  let name: EnergySignpostName
+}
+
 public final class HitherMetricsModule: Module {
   private let subscriber = MetricKitSubscriber()
   private let sampler = PerformanceSampler()
   private let launch = LaunchBreadcrumbStore()
   private let collectionLock = NSLock()
+  private let signpostLock = NSLock()
+  private let energyLog = OSLog(
+    subsystem: "app.hither.mobile",
+    category: "energy"
+  )
+  private var activeSignposts: [String: ActiveEnergySignpost] = [:]
   private var collectionEnabled = false
+
+  private func staticSignpostName(_ name: EnergySignpostName) -> StaticString {
+    switch name {
+    case .launch: return "launch"
+    case .mapReady: return "map_ready"
+    case .locationAcquisition: return "location_acquisition"
+    case .snapshot: return "snapshot"
+    case .routeCalculation: return "route_calculation"
+    case .markerTracking: return "marker_tracking"
+    case .backgroundTransition: return "background_transition"
+    }
+  }
+
+  private func emitEnergySignpost(name: String, phase: String, token: String?) {
+    guard let signpost = EnergySignpostName(rawValue: name) else { return }
+    switch phase {
+    case "event":
+      os_signpost(.event, log: energyLog, name: staticSignpostName(signpost))
+    case "begin":
+      let id = OSSignpostID(log: energyLog)
+      if let token, !token.isEmpty {
+        signpostLock.lock()
+        activeSignposts[token] = ActiveEnergySignpost(id: id, name: signpost)
+        signpostLock.unlock()
+      }
+      os_signpost(
+        .begin,
+        log: energyLog,
+        name: staticSignpostName(signpost),
+        signpostID: id
+      )
+    case "end":
+      guard let token, !token.isEmpty else { return }
+      signpostLock.lock()
+      let active = activeSignposts.removeValue(forKey: token)
+      signpostLock.unlock()
+      guard let active else { return }
+      os_signpost(
+        .end,
+        log: energyLog,
+        name: staticSignpostName(active.name),
+        signpostID: active.id
+      )
+    default:
+      return
+    }
+  }
 
   public func definition() -> ModuleDefinition {
     Name("HitherMetrics")
@@ -403,6 +472,10 @@ public final class HitherMetricsModule: Module {
     AsyncFunction("markLaunchPhase") { (phase: String) in
       guard let value = LaunchPhase(rawValue: phase) else { return }
       self.launch.mark(value)
+    }
+
+    AsyncFunction("signpost") { (name: String, phase: String, token: String?) in
+      self.emitEnergySignpost(name: name, phase: phase, token: token)
     }
   }
 }

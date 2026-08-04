@@ -96,10 +96,12 @@ TASK_END_SHIP_COMMIT=0
 
 ## 4. 重建 `.claude/agents/`（多模型調度）
 
-見 CLAUDE.md「多模型調度」章節。兩個 agent 定義檔：
+見 CLAUDE.md「多模型調度」章節。固定使用以下兩個角色：
 
-- `deep-reasoner.md`（model: opus）— 架構決策、根因分析、tradeoff、非平凡 code review。
-- `fast-worker.md`（model: sonnet）— 規格定案後的機械執行。
+- `sol-architecture-reviewer.md`（model: `5.6Sol-Effort-Medium`）— 架構規劃、plan、技術取捨與 Code Review。
+- `luna-implementation-worker.md`（model: `5.6 Luna-Effort-Max`）— 依 plan 實作、測試與大量重複工作。
+
+執行順序固定為 Sol 產出 plan → Luna 實作與驗證 → Sol Code Review → Luna 修正 → Sol 最終驗收。
 
 ## 5. Supabase CLI 重新 link（要跑 migration 時才需要）
 

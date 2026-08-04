@@ -39,7 +39,6 @@ import {
 import { logError, logEvent } from '../utils/activityLog';
 import { useTranslation } from '../i18n';
 import {
-  handlePlatformizedUserLocationChange,
   platformizedMapLifecycle,
   platformizedMapViewProps,
 } from '../native/maps';
@@ -612,30 +611,29 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     });
   }, []);
 
-  // Let the boundary build its platform-owned props first. The Android
-  // diagnostics capture refs, so attach those event handlers after the
-  // boundary call instead of passing ref-bearing callbacks into it during
-  // render.
+  const mapBoundaryCallbacks = useMemo(() => ({
+    onMapReady: () => onMapReady(),
+    onAndroidMapReady: () => onAndroidMapReady(),
+    onAndroidMapLoaded: () => onAndroidMapLoaded(),
+    onUserLocationSample: onUserLocationSample
+      ? (sample: Parameters<NonNullable<typeof onUserLocationSample>>[0]) =>
+        onUserLocationSample(sample)
+      : undefined,
+  }), [onMapReady, onAndroidMapReady, onAndroidMapLoaded, onUserLocationSample]);
+
+  // The native boundary owns provider selection and platform callback wiring;
+  // GroupMap only supplies intent/diagnostic callbacks and spreads its result.
   const mapPlatformProps = useMemo(
-    () => platformizedMapViewProps({ chrome: mapChrome }),
-    [mapChrome],
+    // The callbacks are stored by the boundary and invoked only by MapView
+    // events; they are not executed while this render-time builder runs.
+    // eslint-disable-next-line react-hooks/refs
+    () => platformizedMapViewProps({
+      chrome: mapChrome,
+      ...mapBoundaryCallbacks,
+    }),
+    [mapChrome, mapBoundaryCallbacks],
   );
-  const platformOnMapReady = mapPlatformProps.onMapReady;
-  const isGoogleMap = mapPlatformProps.provider === 'google';
-  const mapViewProps = {
-    ...mapPlatformProps,
-    onMapReady: () => {
-      platformOnMapReady?.();
-      onMapReady();
-      if (isGoogleMap) onAndroidMapReady();
-    },
-    ...(isGoogleMap ? { onMapLoaded: onAndroidMapLoaded } : {}),
-    ...(onUserLocationSample ? {
-      onUserLocationChange: (event: Parameters<NonNullable<typeof mapPlatformProps.onUserLocationChange>>[0]) => {
-        handlePlatformizedUserLocationChange(event, onUserLocationSample);
-      },
-    } : {}),
-  };
+  const mapViewProps = mapPlatformProps;
 
   useImperativeHandle(
     ref,

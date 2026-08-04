@@ -116,7 +116,7 @@ import { useDeviceLocation } from './MapScreen/hooks/useDeviceLocation';
 import { useCarouselSelection } from './MapScreen/hooks/useCarouselSelection';
 import { useJourneyNavigation } from './MapScreen/hooks/useJourneyNavigation';
 import { useMapKitRoutes } from './MapScreen/hooks/useMapKitRoutes';
-import { startNavigationEnergyMonitor } from '../state/performance';
+import { energyObservability } from '../state/energyObservability';
 import { useGatherCardExpansion } from './MapScreen/hooks/useGatherCardExpansion';
 import { useCoordinationRequests } from './MapScreen/hooks/useCoordinationRequests';
 import { SettingsOverlay } from './MapScreen/components/SettingsOverlay';
@@ -190,6 +190,14 @@ import {
   resolveAddDay,
 } from '../utils/tripDay';
 import { createArrivalState, reduceArrival, type ArrivalState } from '../utils/navigationArrival';
+import {
+  applyDestinationMutationOverlay,
+  destinationMarkerValues,
+  enqueueDestinationMutation,
+  reconcileDestinationMutations,
+  removeDestinationMutation,
+  type PendingDestinationMutation,
+} from '../utils/destinationMutationOverlay';
 import { liquidGlass, location, notifications, type MapRegion, type PlaceResult } from '../native';
 import {
   addDestination,
@@ -465,7 +473,21 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [state?.destinations, isLeader, myScopeId]);
   
   const [optimisticDestinations, setOptimisticDestinations] = useState<Destination[] | null>(null);
-  const allScopedDestinations = optimisticDestinations ?? rawDestinations;
+  const [pendingDestinationMutations, setPendingDestinationMutations] = useState<
+    PendingDestinationMutation[]
+  >([]);
+  const destinationMutationSequenceRef = useRef(0);
+  const baseScopedDestinations = optimisticDestinations ?? rawDestinations;
+  const allScopedDestinations = useMemo(
+    () => applyDestinationMutationOverlay(baseScopedDestinations, pendingDestinationMutations),
+    [baseScopedDestinations, pendingDestinationMutations],
+  );
+  useEffect(() => {
+    setPendingDestinationMutations((pending) => {
+      const next = reconcileDestinationMutations(pending, rawDestinations);
+      return next.length === pending.length ? pending : next;
+    });
+  }, [rawDestinations]);
   const [destinationArrivals, setDestinationArrivals] = useState<DestinationArrival[]>([]);
   const [gatherPointRequests, setGatherPointRequests] = useState<GatherPointRequest[]>([]);
   const [resolvingGatherRequestId, setResolvingGatherRequestId] = useState<string | null>(null);
@@ -1565,9 +1587,10 @@ export default function MapScreen({ route, navigation }: Props) {
 
   useEffect(() => () => void stopBackgroundJourney(), []);
 
-  // Low-overhead energy samples while navigating in the foreground (no full API tracing).
+  // The single Ticket 1 sampler owns the timer. Navigation only updates its
+  // allow-listed context; the deprecated startNavigationEnergyMonitor seam is
+  // intentionally not called from production.
   useEffect(() => {
-    if (!journeyActive || appState !== 'active') return;
     const trackingMode = hasNavigationSession
       ? highAccuracy
         ? 'navigationMax'
@@ -1575,17 +1598,14 @@ export default function MapScreen({ route, navigation }: Props) {
       : highAccuracy
         ? 'manualHighAccuracy'
         : 'foreground';
-    return startNavigationEnergyMonitor({
-      navigationSessionId,
-      trackingMode,
-    });
+    energyObservability.setTrackingMode(
+      journeyActive && appState === 'active' ? trackingMode : 'passiveBackground',
+    );
   }, [
     appState,
-    groupId,
     highAccuracy,
     journeyActive,
     hasNavigationSession,
-    navigationSessionId,
   ]);
 
   const lastFittedRouteRef = useRef<string | null>(null);
@@ -3222,28 +3242,43 @@ export default function MapScreen({ route, navigation }: Props) {
   const handleUpdateEmojiColor = useCallback(
     async (
       id: string,
-      next: { emoji: string | null },
+      next: { emoji: string | null; markerColor?: string | null },
     ) => {
       if (!groupId || !canEditItinerary) {
-        throw new Error('emoji_color_not_allowed');
+        logError('destination_emoji_color_not_allowed', new Error('emoji_color_not_allowed'), { id });
+        return;
       }
+      const current = allScopedDestinations.find((destination) => destination.id === id);
+      if (!current) {
+        logError('destination_emoji_color_missing', new Error('destination_not_found'), { id });
+        return;
+      }
+      const previous = destinationMarkerValues(current);
+      const mutation: PendingDestinationMutation = {
+        mutationId: `destination-marker-${Date.now()}-${destinationMutationSequenceRef.current++}`,
+        destinationId: id,
+        previous,
+        optimistic: {
+          emoji: next.emoji ?? null,
+          markerColor: next.markerColor ?? previous.markerColor,
+        },
+      };
+      setPendingDestinationMutations((pending) => enqueueDestinationMutation(pending, mutation));
       try {
         // Emoji only — flag color is day-scoped via day header picker.
-        await updateDestinationEmojiColor(groupId, id, { emoji: next.emoji });
+        await updateDestinationEmojiColor(groupId, id, mutation.optimistic);
       } catch (e) {
         logError('destination_emoji_color_failed', e, { id });
+        setPendingDestinationMutations((pending) =>
+          removeDestinationMutation(pending, mutation.mutationId),
+        );
+        Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
         // Keep persisted rows visible; do not clear on pre-write failure.
-        throw e;
+        return;
       }
       // Write succeeded — patch local UI even if a subsequent refresh fails.
-      setOptimisticDestinations((prev) => {
-        const base = prev ?? rawDestinations;
-        return base.map((d) =>
-          d.id === id
-            ? { ...d, emoji: next.emoji }
-            : d,
-        );
-      });
+      // Keep the mutation overlay until the refreshed/realtime row matches it;
+      // otherwise a stale response could briefly flash the old marker.
       try {
         await refresh();
       } catch (e) {
@@ -3251,7 +3286,7 @@ export default function MapScreen({ route, navigation }: Props) {
         logError('destination_emoji_color_refresh_failed', e, { id });
       }
     },
-    [groupId, canEditItinerary, rawDestinations, refresh],
+    [allScopedDestinations, canEditItinerary, groupId, refresh, t],
   );
 
   const confirmLeave = useCallback(() => {
@@ -5510,6 +5545,7 @@ export default function MapScreen({ route, navigation }: Props) {
                 activeIcon="send-outline"
                 color="#fff"
                 label={t('map.share')}
+                centeredLabel
                 durationMs={420}
                 style={styles.inviteActionButton}
                 accessibilityLabel={t('map.shareInviteLink')}
@@ -5532,6 +5568,7 @@ export default function MapScreen({ route, navigation }: Props) {
                 color="#fff"
                 activeColor={glass.ok}
                 label={t('map.copy')}
+                centeredLabel
                 style={styles.inviteActionButton}
                 accessibilityLabel={codeCopied ? t('group.copied') : t('map.copyGroupCode')}
                 onPress={lightTap}

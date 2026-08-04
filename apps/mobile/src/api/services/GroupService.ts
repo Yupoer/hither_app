@@ -32,7 +32,7 @@ import type {
   SubgroupMode,
 } from '../../types';
 import { generateInviteCode, requireUserId, orThrow } from './_helpers';
-import { mapDestination } from './DestinationService';
+import { mapDestination, type ItineraryRow } from './DestinationService';
 import {
   ANON_EXPIRED_ERROR,
   ANON_LEADER_REGISTRATION_REQUIRED,
@@ -298,6 +298,78 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
     destinations,
     subgroups,
     nextDestination: destinations[0],
+  };
+}
+
+export interface GroupRecoverySnapshot {
+  state: GroupState;
+  generatedAt: string | null;
+  revision: string;
+  entityVersions: Record<string, number>;
+}
+
+/** Map the single Ticket 2 RPC response; no endpoint fan-out or fallback. */
+export async function getGroupRecoverySnapshot(
+  groupId: string,
+): Promise<GroupRecoverySnapshot> {
+  if (isDemoGroup(groupId)) {
+    return {
+      state: await getGroupState(groupId),
+      generatedAt: new Date().toISOString(),
+      revision: 'demo',
+      entityVersions: {},
+    };
+  }
+  await requireUserId();
+  const { data, error } = await supabase.rpc('get_group_recovery_snapshot', {
+    p_group_id: groupId,
+  });
+  orThrow(error);
+  if (!data || typeof data !== 'object') {
+    throw new Error('group_recovery_snapshot_invalid');
+  }
+  const payload = data as Record<string, unknown>;
+  const groupRow = payload.group as GroupRow | null | undefined;
+  if (!groupRow) throw new Error('group_recovery_snapshot_missing_group');
+
+  const memberRows = (Array.isArray(payload.memberships) ? payload.memberships : []) as MembershipRow[];
+  const profileRows = (Array.isArray(payload.profiles) ? payload.profiles : []) as ProfileRow[];
+  const locationRows = (Array.isArray(payload.locations) ? payload.locations : []) as LocationRow[];
+  const profileById = new Map(profileRows.map((profile) => [profile.id, profile]));
+  const locationByUser = new Map(locationRows.map((location) => [location.user_id, location]));
+  const members = memberRows.map((membership) =>
+    mapMember(membership, profileById.get(membership.user_id), locationByUser.get(membership.user_id)),
+  );
+  const destinations = (Array.isArray(payload.itinerary) ? payload.itinerary : [])
+    .map((row) => mapDestination(row as ItineraryRow));
+  const subgroups = (Array.isArray(payload.subgroups) ? payload.subgroups : [])
+    .map((row) => mapSubgroup(row as SubgroupRow));
+  const versions: Record<string, number> = {};
+  if (Array.isArray(payload.entity_versions)) {
+    for (const row of payload.entity_versions) {
+      if (!row || typeof row !== 'object') continue;
+      const version = row as Record<string, unknown>;
+      if (typeof version.entity_type !== 'string' || typeof version.entity_id !== 'string') continue;
+      if (typeof version.entity_version === 'number') {
+        versions[`${version.entity_type}:${version.entity_id}`] = version.entity_version;
+      }
+    }
+  }
+  const generatedAt = typeof payload.generated_at === 'string' ? payload.generated_at : null;
+  const revision = typeof payload.realtime_revision === 'string'
+    ? payload.realtime_revision
+    : generatedAt ?? '0';
+  return {
+    state: {
+      group: mapGroup(groupRow),
+      members,
+      destinations,
+      subgroups,
+      nextDestination: destinations[0],
+    },
+    generatedAt,
+    revision,
+    entityVersions: versions,
   };
 }
 

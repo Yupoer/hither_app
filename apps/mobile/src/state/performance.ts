@@ -10,6 +10,10 @@ import {
   redactSensitiveText,
 } from '../utils/errorFingerprint';
 import { getDiagnosticConsentEnabled } from './diagnosticConsent';
+import {
+  energyObservability,
+  type EnergyObservationSample,
+} from './energyObservability';
 import { getHitherDatabase } from './hitherDatabase';
 import { notifyErrorRecorded, notifyLogRecorded } from './logBatchScheduler';
 
@@ -113,6 +117,7 @@ let performancePlatform = 'unknown';
 export function setPerformanceAppState(state: string): void {
   if (typeof state === 'string' && state.length > 0) {
     performanceAppState = state;
+    energyObservability.setAppState(state);
   }
 }
 
@@ -143,6 +148,7 @@ export const PERFORMANCE_SAFE_FIELDS = new Set([
   'batteryLevel',
   'batteryState',
   'buildNumber',
+  'counterWindowMs',
   'componentStack',
   'confidence',
   'count',
@@ -180,6 +186,7 @@ export const PERFORMANCE_SAFE_FIELDS = new Set([
   'platform',
   'reason',
   'requestId',
+  'requestCount',
   'requestSizeBucket',
   'responseCount',
   'retryCount',
@@ -187,6 +194,7 @@ export const PERFORMANCE_SAFE_FIELDS = new Set([
   'routeName',
   'runtimeVersion',
   'sampleWindowMs',
+  'sampleKind',
   'screen',
   'scope',
   'source',
@@ -199,6 +207,20 @@ export const PERFORMANCE_SAFE_FIELDS = new Set([
   'thermalState',
   'timeoutMs',
   'trackingMode',
+  'startupSampleOffsetMs',
+  'locationCallbackCount',
+  'locationAcceptedCount',
+  'routeRecalcCount',
+  'realtimeCallbackCount',
+  'snapshotCount',
+  'renderCount',
+  'locationCallbackTotal',
+  'locationAcceptedTotal',
+  'routeRecalcTotal',
+  'realtimeCallbackTotal',
+  'snapshotTotal',
+  'renderTotal',
+  'requestTotal',
   'uiFps',
   'updateId',
 ]);
@@ -760,6 +782,32 @@ async function measureJsFps(windowMs: number): Promise<number | null> {
   });
 }
 
+function energySamplePayload(sample?: EnergyObservationSample): Record<string, unknown> {
+  if (!sample) return {};
+  const { delta, cumulative } = sample.counters;
+  return {
+    sampleKind: sample.kind,
+    startupSampleOffsetMs: sample.startupOffsetMs,
+    counterWindowMs: sample.counters.windowMs,
+    appState: sample.appState,
+    trackingMode: sample.trackingMode,
+    locationCallbackCount: delta.location_callback,
+    locationAcceptedCount: delta.location_accepted,
+    routeRecalcCount: delta.route_recalc,
+    realtimeCallbackCount: delta.realtime_callback,
+    snapshotCount: delta.snapshot,
+    renderCount: delta.render,
+    requestCount: delta.network_request,
+    locationCallbackTotal: cumulative.location_callback,
+    locationAcceptedTotal: cumulative.location_accepted,
+    routeRecalcTotal: cumulative.route_recalc,
+    realtimeCallbackTotal: cumulative.realtime_callback,
+    snapshotTotal: cumulative.snapshot,
+    renderTotal: cumulative.render,
+    requestTotal: cumulative.network_request,
+  };
+}
+
 function enrichNativeSample(
   nativeSample: Record<string, unknown> | null,
 ): Record<string, unknown> {
@@ -794,6 +842,7 @@ async function collectSample(
   eventType: 'sample' | 'trace',
   operation: string,
   traceId?: string,
+  energySample?: EnergyObservationSample,
 ): Promise<void> {
   if (!active || nativeSampleInFlight) return;
   // Background: skip JS FPS rAF + non-essential samples to cut CPU.
@@ -813,6 +862,7 @@ async function collectSample(
     await record(eventType, operation, {
       ...enriched,
       jsFps,
+      ...energySamplePayload(energySample),
       parentTraceId: traceId ?? null,
       confidence:
         typeof enriched.confidence === 'string'
@@ -827,6 +877,12 @@ async function collectSample(
   }
 }
 
+/**
+ * Compatibility-only navigation sampler for older callers/tests. MapScreen no
+ * longer calls this function: production sampling is owned by
+ * energyObservability.start() above. Keeping the deprecated seam avoids
+ * breaking third-party diagnostics while making ownership explicit.
+ */
 async function collectEnergySample(
   operation: string,
   context: {
@@ -835,7 +891,6 @@ async function collectEnergySample(
   },
 ): Promise<void> {
   if (nativeSampleInFlight) return;
-  // Energy end sample always allowed; mid-session samples only in foreground.
   if (!isAppForeground() && !operation.endsWith('.end')) return;
   if (!(await getDiagnosticConsentEnabled())) return;
   nativeSampleInFlight = true;
@@ -1006,6 +1061,7 @@ function buildApiErrorPayload(
  */
 export async function traceApi<T>(operation: string, work: () => Promise<T>): Promise<T> {
   const startedAt = Date.now();
+  energyObservability.increment('network_request');
   // Snapshot correlation at start so concurrent UI actions cannot rewrite it.
   const captured = {
     parentTraceId:
@@ -1053,24 +1109,24 @@ export async function traceApi<T>(operation: string, work: () => Promise<T>): Pr
 
 export function startPerformanceMonitor(): () => void {
   let stopped = false;
-  let timer: ReturnType<typeof setInterval> | null = null;
+  let controller: { stop: () => void } | null = null;
   void ensureEnabled().then(async (enabled) => {
     if (!enabled || stopped) return;
-    if (!(await getDiagnosticConsentEnabled())) return;
-    if (isAppForeground()) {
-      await collectSample('sample', 'runtime.sample');
-    }
-    if (!stopped) {
-      timer = setInterval(() => {
-        // Host updates setPerformanceAppState from AppState; skip when background.
-        if (!isAppForeground()) return;
-        void collectSample('sample', 'runtime.sample');
-      }, SAMPLE_INTERVAL_MS);
-    }
+    const consentEnabled = await getDiagnosticConsentEnabled();
+    if (!consentEnabled || stopped) return;
+    controller = energyObservability.start((sample) =>
+      collectSample(
+        'sample',
+        sample.kind === 'startup' ? 'runtime.startup.sample' : 'runtime.sample',
+        undefined,
+        sample,
+      ),
+    );
   });
   return () => {
     stopped = true;
-    if (timer) clearInterval(timer);
+    controller?.stop();
+    controller = null;
   };
 }
 
@@ -1082,9 +1138,12 @@ export function startNavigationEnergyMonitor(context: {
   navigationSessionId: string | null;
   trackingMode: string;
 }): () => void {
+  // @deprecated: production MapScreen uses the single energyObservability
+  // controller. This compatibility-only seam remains for old diagnostics.
   let stopped = false;
   const sample = () => {
     if (stopped || nativeSampleInFlight) return;
+    energyObservability.setTrackingMode(context.trackingMode);
     void collectEnergySample('navigation.energy.sample', context);
   };
   sample();

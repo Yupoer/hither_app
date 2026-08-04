@@ -203,7 +203,7 @@ export async function updateDestinationEmojiColor(
 ): Promise<void> {
   if (isDemoGroup(groupId)) {
     if ('emoji' in input) {
-      demoUpdateDestinationEmoji(destinationId, input.emoji ?? null);
+      demoUpdateDestinationEmoji(destinationId, input.emoji ?? null, input.markerColor);
     }
     return;
   }

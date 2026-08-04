@@ -20,7 +20,7 @@ import type {
 } from '../../../types';
 
 const RELOAD_MIN_INTERVAL_MS = 1_500;
-const POLL_INTERVAL_MS = 45_000;
+export const OPEN_REQUEST_RECOVERY_INTERVAL_MS = 60_000;
 
 export interface CoordinationRequestView extends CoordinationRequest {
   responses: CoordinationResponse[];
@@ -151,6 +151,11 @@ export function useCoordinationRequests(
     await load('refresh');
   }, [load]);
 
+  const openCount = useMemo(
+    () => requests.filter((request) => request.status === 'open').length,
+    [requests],
+  );
+
   useEffect(() => {
     if (!active || !groupId) {
       setRequests([]);
@@ -184,17 +189,22 @@ export function useCoordinationRequests(
       )
       .subscribe();
 
-    const poll = setInterval(() => {
-      void load('silent');
-    }, POLL_INTERVAL_MS);
-
     return () => {
       if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
       reloadTimerRef.current = null;
-      clearInterval(poll);
       supabase.removeChannel(channel);
     };
   }, [active, groupId, load, scheduleReload]);
+
+  // Missed Realtime events are recovered read-only, and only while an open
+  // deadline exists. With zero open requests there is no periodic read/write.
+  useEffect(() => {
+    if (!active || openCount === 0) return;
+    const recovery = setInterval(() => {
+      void load('silent');
+    }, OPEN_REQUEST_RECOVERY_INTERVAL_MS);
+    return () => clearInterval(recovery);
+  }, [active, load, openCount]);
 
   const createRequest = useCallback(
     async (
@@ -266,11 +276,6 @@ export function useCoordinationRequests(
       }
     },
     [load],
-  );
-
-  const openCount = useMemo(
-    () => requests.filter((r) => r.status === 'open').length,
-    [requests],
   );
 
   return {

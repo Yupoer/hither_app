@@ -24,7 +24,8 @@ const paywall = readFileSync(join(__dirname, '../components/PaywallSheet.tsx'), 
 
 describe('Ticket 6 catalog and StoreKit native boundary', () => {
   it('uses expo-iap subscriptions and a fail-closed build-time catalog', () => {
-    expect(packageJson.dependencies?.['expo-iap']).toBe('5.0.0');
+    // Master pins a caret range; exact 5.0.0 was only for the WIP branch.
+    expect(packageJson.dependencies?.['expo-iap']).toMatch(/^(\^)?5\.0\.0$/);
     expect(catalog).toContain('EXPO_PUBLIC_PREMIUM_MONTHLY_PRODUCT_ID');
     expect(catalog).toContain('EXPO_PUBLIC_PREMIUM_ANNUAL_PRODUCT_ID');
     expect(catalog).toContain('EXPO_PUBLIC_PREMIUM_SUBSCRIPTION_GROUP_ID');

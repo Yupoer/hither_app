@@ -41,6 +41,8 @@ export interface AmicroButtonProps {
   label?: string;
   /** Defaults to `color` when omitted. */
   labelColor?: string;
+  /** Keep the label centered in the full button bounds with a fixed left icon. */
+  centeredLabel?: boolean;
   durationMs?: number;
   size?: number;
   disabled?: boolean;
@@ -71,6 +73,7 @@ export function AmicroButton({
   activeColor = color,
   label,
   labelColor,
+  centeredLabel = false,
   durationMs = PRESS_ANIMATION_MS,
   size = 44,
   disabled = false,
@@ -157,7 +160,11 @@ export function AmicroButton({
     <Pressable
       style={[
         styles.pressable,
-        label ? styles.labeledPressable : { width: size, height: size },
+        label
+          ? centeredLabel
+            ? styles.centeredLabeledPressable
+            : styles.labeledPressable
+          : { width: size, height: size },
         style,
       ]}
       onPress={handlePress}
@@ -168,7 +175,7 @@ export function AmicroButton({
       accessibilityState={{ disabled }}
       testID={testID}
     >
-      <View style={styles.iconSlot}>
+      <View style={[styles.iconSlot, centeredLabel && styles.centeredIconSlot]}>
         <Animated.View style={[styles.icon, currentStyle]}>
           <Ionicons name={icon} size={size >= 44 ? 20 : 18} color={color} />
         </Animated.View>
@@ -179,7 +186,14 @@ export function AmicroButton({
         ) : null}
       </View>
       {label ? (
-        <Text style={[styles.label, { color: labelColor ?? color }]} numberOfLines={2}>
+        <Text
+          style={[
+            styles.label,
+            centeredLabel && styles.centeredLabel,
+            { color: labelColor ?? color },
+          ]}
+          numberOfLines={2}
+        >
           {label}
         </Text>
       ) : null}
@@ -244,6 +258,12 @@ const styles = StyleSheet.create({
     gap: 8,
     alignItems: 'center',
   },
+  centeredLabeledPressable: {
+    minWidth: 44,
+    minHeight: 44,
+    position: 'relative',
+    justifyContent: 'center',
+  },
   label: {
     fontSize: 15,
     fontWeight: '600',
@@ -251,11 +271,27 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     minWidth: 0,
   },
+  centeredLabel: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    textAlign: 'center',
+    flexGrow: 0,
+    flexShrink: 1,
+    minWidth: 0,
+  },
   iconSlot: {
     width: 24,
     height: 24,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  centeredIconSlot: {
+    position: 'absolute',
+    left: 16,
+    top: 0,
+    width: 24,
+    height: '100%',
   },
   icon: {
     position: 'absolute',

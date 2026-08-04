@@ -20,12 +20,14 @@ import { supabase } from '../supabase';
 import { orThrow, requireUserId } from './_helpers';
 import {
   mapTripEntitlementRow,
+  mapPremiumProjectionRow,
   normalizeEntitlementError,
   type EntitlementMutationResult,
+  type PremiumProjection,
   type TripEntitlement,
 } from '../../entitlements';
 
-/** Edge Function name BUILD-02 must deploy for store purchase grants. */
+/** Edge Function name for the StoreKit server verification boundary. */
 export const VERIFY_AND_APPLY_PURCHASE_FN = 'verify-and-apply-purchase';
 
 function asRecord(data: unknown): Record<string, unknown> | null {
@@ -53,7 +55,7 @@ function mapApplyPayload(row: Record<string, unknown> | null): EntitlementMutati
       ok: true,
       success: true,
       status: String(row.status ?? 'active'),
-      planCode: String(row.plan_code ?? 'small_trip_pass'),
+      planCode: String(row.plan_code ?? row.productId ?? row.product_id ?? 'premium_subscription'),
       startedAt: (row.started_at as string | null | undefined) ?? null,
       expiresAt: (row.expires_at as string | null | undefined) ?? null,
       entitlementId: (row.entitlement_id as string | null | undefined) ?? null,
@@ -70,6 +72,80 @@ export async function getTripEntitlement(groupId: string): Promise<TripEntitleme
   });
   orThrow(error);
   return mapTripEntitlementRow(asRecord(data));
+}
+
+/** Account-owned Premium plus the current group's server projection. */
+export async function getPremiumProjection(
+  groupId?: string | null,
+): Promise<PremiumProjection> {
+  await requireUserId();
+  const { data, error } = await supabase.rpc('get_premium_projection', {
+    p_group_id: groupId ?? null,
+  });
+  orThrow(error);
+  return mapPremiumProjectionRow(asRecord(data));
+}
+
+/** Server-generated stable UUID passed to StoreKit's appAccountToken. */
+export async function getPremiumAppAccountToken(): Promise<string> {
+  await requireUserId();
+  const { data, error } = await supabase.rpc('get_or_create_premium_app_account_token');
+  orThrow(error);
+  const token = typeof data === 'string'
+    ? data
+    : asRecord(data)?.app_account_token;
+  if (typeof token !== 'string' || token.trim().length === 0) {
+    throw new Error('account_token_not_ready');
+  }
+  return token;
+}
+
+/**
+ * Verify an auto-renewable StoreKit subscription and persist it server-side.
+ * There is intentionally no RPC fallback: an authenticated client must never
+ * be able to turn a transaction id into a Premium grant.
+ */
+export async function applyVerifiedSubscription(input: {
+  signedTransaction: string;
+  transactionId?: string;
+  productId?: string;
+  source?: 'purchase' | 'restore' | 'recovery';
+}): Promise<EntitlementMutationResult> {
+  await requireUserId();
+  const functionsApi = (supabase as { functions?: { invoke?: Function } }).functions;
+  if (typeof functionsApi?.invoke !== 'function') {
+    return {
+      ok: false,
+      error: 'verification_service_unavailable',
+      message: 'StoreKit verification service is not linked',
+    };
+  }
+
+  try {
+    const { data } = await functionsApi.invoke(VERIFY_AND_APPLY_PURCHASE_FN, {
+      body: {
+        signed_transaction: input.signedTransaction,
+        transaction_id: input.transactionId,
+        product_id: input.productId,
+        source: input.source ?? 'purchase',
+      },
+    });
+    const row = asRecord(data);
+    if (!row) {
+      return {
+        ok: false,
+        error: 'verification_service_unavailable',
+        message: 'StoreKit verification returned no durable result',
+      };
+    }
+    return mapApplyPayload(row);
+  } catch {
+    return {
+      ok: false,
+      error: 'verification_service_unavailable',
+      message: 'StoreKit verification could not be reached',
+    };
+  }
 }
 
 /**

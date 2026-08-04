@@ -14,6 +14,7 @@ import {
   updateNickname as updateNicknameApi,
   updateProfile as updateProfileApi,
   getTripEntitlement,
+  getPremiumProjection,
   restoreEntitlements,
 } from '../api/client';
 import {
@@ -28,8 +29,8 @@ import {
   type User,
 } from '../types';
 import {
-  effectiveIsPro,
-  isLifetimeProfilePremium,
+  EMPTY_PREMIUM_PROJECTION,
+  type PremiumProjection,
   type TripEntitlement,
 } from '../entitlements';
 import { avatarForUser } from '../constants/avatars';
@@ -76,6 +77,8 @@ interface SessionContextValue {
   isPro: boolean;
   /** Latest trip entitlement snapshot for the active group (cache only). */
   tripEntitlement: TripEntitlement | null;
+  /** Account-owned Premium and server-computed current-team projection. */
+  premiumProjection: PremiumProjection;
   /**
    * Anonymously sign in and record the chosen nickname. Resolves to the User
    * (with `id === auth.uid()`). `email` is accepted for API compatibility but
@@ -162,28 +165,17 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [membership, setMembershipState] = useState<Membership | null>(null);
   const [initializing, setInitializing] = useState(true);
   const [isAnonymous, setIsAnonymous] = useState(false);
-  const [isPro, setIsPro] = useState(false);
   const [tripEntitlement, setTripEntitlement] = useState<TripEntitlement | null>(null);
-
-  /**
-   * Cache-only premium. Never grant from expiring profiles.pro denorm.
-   * With a trip: server trip.isPremium is authoritative.
-   * Without a trip: lifetime profile only (null expiry).
-   */
-  const applyPremiumCache = useCallback(
-    (
-      profilePro: boolean,
-      proExpiresAt: string | null | undefined,
-      trip: TripEntitlement | null,
-    ) => {
-      setIsPro(
-        effectiveIsPro({
-          trip,
-          profilePro,
-          proExpiresAt,
-        }),
-      );
-    },
+  const [premiumProjection, setPremiumProjection] = useState<PremiumProjection>(
+    EMPTY_PREMIUM_PROJECTION,
+  );
+  // Premium UI access is derived only from the server projection. Legacy
+  // profile Pro and trip-pass snapshots remain display/compatibility data and
+  // cannot become an authorization signal through a local setter.
+  const isPro = premiumProjection.personalPremiumActive
+    || premiumProjection.teamPremiumActive;
+  const setIsPro = useCallback<React.Dispatch<React.SetStateAction<boolean>>>(
+    () => undefined,
     [],
   );
 
@@ -198,8 +190,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         if (active) {
           setUser(null);
           setIsAnonymous(false);
-          setIsPro(false);
           setTripEntitlement(null);
+          setPremiumProjection(EMPTY_PREMIUM_PROJECTION);
         }
         return;
       }
@@ -225,6 +217,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         | null;
       const slots = normalizeCustomQuickCommands(row?.preferences);
       if (active) {
+        // Never carry an entitlement projection across accounts while the new
+        // account is being reconciled with the server.
+        setPremiumProjection(EMPTY_PREMIUM_PROJECTION);
+        setTripEntitlement(null);
         setUser({
           id: authUser.id,
           name: row?.nickname ?? '',
@@ -241,8 +237,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           preferences: accountPreferencesFromSlots(slots),
         });
         setIsAnonymous(!!authUser.is_anonymous);
-        // No trip yet: lifetime only — never trust expiring profiles.pro denorm.
-        applyPremiumCache(!!row?.pro, row?.pro_expires_at, null);
       }
     }
 
@@ -276,6 +270,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         if (active) {
           setUser(null);
           setIsAnonymous(false);
+          setTripEntitlement(null);
+          setPremiumProjection(EMPTY_PREMIUM_PROJECTION);
         }
       }
     });
@@ -322,6 +318,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     await stopBackgroundJourney().catch(() => undefined);
     await clearLiveActivities();
     await signOut();
+    setTripEntitlement(null);
+    setPremiumProjection(EMPTY_PREMIUM_PROJECTION);
   }, [signOut]);
 
   const leaveGroupWithJourneyCleanup = useCallback(() => {
@@ -329,9 +327,19 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     void clearLiveActivities();
     setMembershipState(null);
     setTripEntitlement(null);
-    // Drop trip-scoped premium; keep lifetime only from profiles.pro + null expiry.
-    setIsPro(isLifetimeProfilePremium(!!user?.pro, user?.proExpiresAt));
-  }, [user?.pro, user?.proExpiresAt]);
+    // Drop team projection but retain account-owned Premium. Refreshing with a
+    // null group keeps the personal grant visible after leaving a team.
+    void getPremiumProjection(null)
+      .then((projection) => {
+        setPremiumProjection(projection);
+      })
+      .catch(() => {
+        setPremiumProjection((previous) => ({
+          ...previous,
+          teamPremiumActive: false,
+        }));
+      });
+  }, []);
 
   const refreshEntitlement = useCallback(
     async (groupId?: string | null): Promise<TripEntitlement | null> => {
@@ -340,18 +348,29 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         if (gid) {
           const trip = await getTripEntitlement(gid);
           setTripEntitlement(trip);
-          // Server trip snapshot is authoritative for this group.
-          if (trip.ok) {
-            setIsPro(!!trip.isPremium);
-          } else {
-            setIsPro(false);
+          try {
+            const projection = await getPremiumProjection(gid);
+            setPremiumProjection(projection);
+          } catch {
+            // Keep the last server projection; legacy trip state never unlocks
+            // the new Premium surface when projection refresh fails.
           }
           return trip;
         }
-        const restored = await restoreEntitlements(null);
+        // Leaving a group must immediately remove the prior team projection;
+        // a failed null-group refresh must not leave team access behind.
+        setPremiumProjection((previous) => ({
+          ...previous,
+          teamPremiumActive: false,
+        }));
+        await restoreEntitlements(null);
         setTripEntitlement(null);
-        // No trip: lifetime only (userPro is server lifetime flag).
-        setIsPro(!!restored.userPro);
+        try {
+          const projection = await getPremiumProjection(null);
+          setPremiumProjection(projection);
+        } catch {
+          // Fail closed when there is no authoritative projection.
+        }
         return null;
       } catch {
         // Network failures keep the previous cache; do not invent premium.
@@ -365,17 +384,24 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     (next: Membership) => {
       setMembershipState(next);
       // Clear prior trip premium until server responds for the new group.
-      setIsPro(false);
       setTripEntitlement(null);
+      setPremiumProjection((previous) => ({
+        ...previous,
+        teamPremiumActive: false,
+      }));
       void getTripEntitlement(next.group.id)
         .then((trip) => {
           setTripEntitlement(trip);
-          if (trip.ok) {
-            setIsPro(!!trip.isPremium);
-          }
+          return getPremiumProjection(next.group.id)
+            .then((projection) => {
+              setPremiumProjection(projection);
+            })
+            .catch(() => {
+              // Do not use the legacy trip snapshot as a Premium fallback.
+            });
         })
         .catch(() => {
-          /* keep Free until server answers */
+          // A failed team lookup must not synthesize Premium from legacy data.
         });
     },
     [],
@@ -458,19 +484,24 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         try {
           const trip = await getTripEntitlement(gid);
           setTripEntitlement(trip);
-          if (trip.ok) {
-            setIsPro(!!trip.isPremium);
-          } else {
-            applyPremiumCache(!!row?.pro, row?.pro_expires_at, null);
+          try {
+            const projection = await getPremiumProjection(gid);
+            setPremiumProjection(projection);
+          } catch {
+            // Do not fall back to profile/trip compatibility state for Premium.
           }
         } catch {
-          applyPremiumCache(!!row?.pro, row?.pro_expires_at, tripEntitlement);
+          // Keep the last projection cache; no legacy state is an authority.
         }
       } else {
-        applyPremiumCache(!!row?.pro, row?.pro_expires_at, null);
+        void getPremiumProjection(null)
+          .then((projection) => {
+            setPremiumProjection(projection);
+          })
+          .catch(() => undefined);
       }
     }
-  }, [membership?.group.id, applyPremiumCache, tripEntitlement]);
+  }, [membership?.group.id]);
 
   const value = useMemo<SessionContextValue>(
     () => ({
@@ -480,6 +511,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       isAnonymous,
       isPro,
       tripEntitlement,
+      premiumProjection,
       signIn,
       signInWithGoogle,
       signInWithApple,
@@ -496,8 +528,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       setCustomQuickCommand,
       setMembership,
       leaveGroup: leaveGroupWithJourneyCleanup,
-      // Deprecated: never treat as payment proof. Prefer refreshEntitlement.
-      setProStatusLocal: (pro) => setIsPro(pro),
+      // Deprecated compatibility API: local writes cannot grant Premium.
+      setProStatusLocal: () => undefined,
       refreshProfile,
       refreshEntitlement,
     }),
@@ -508,6 +540,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       isAnonymous,
       isPro,
       tripEntitlement,
+      premiumProjection,
       signIn,
       signInWithGoogle,
       signInWithApple,

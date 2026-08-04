@@ -8,7 +8,10 @@
 
 import type { Destination } from '../types';
 import { DAY_COLORS } from '../theme';
-import { destinationEmojiDisplay } from './destinationEmojiColor';
+import {
+  destinationEmojiDisplay,
+  validateDestinationColor,
+} from './destinationEmojiColor';
 
 export function getColorForDay(
   day: number | undefined,
@@ -19,13 +22,15 @@ export function getColorForDay(
 }
 
 /**
- * Marker background: always the trip-day color so changing a day color
- * updates every flag that day. Per-stop markerColor is not used for UI.
+ * Marker background: use the persisted per-stop color when valid, falling
+ * back to the trip-day color for historical rows without one.
  */
 export function destinationMarkerColor(
   dest: Pick<Destination, 'markerColor' | 'day'>,
   dayColors: Record<number, string>,
 ): string {
+  const color = validateDestinationColor(dest.markerColor);
+  if (color.ok) return color.color;
   return getColorForDay(dest.day, dayColors);
 }
 

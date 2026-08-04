@@ -1,218 +1,184 @@
 /**
- * verify-and-apply-purchase
+ * StoreKit 2 purchase verifier for Tickets 7-8.
  *
- * Client posts a store transaction after native IAP succeeds.
- * This function:
- *  1. Requires a valid user JWT (authenticated leader / member of the trip)
- *  2. Validates payload shape (group_id + transaction_id + product_id)
- *  3. Calls apply_verified_purchase with the **service role**
- *     (RPC is service_role-only — user JWT cannot invent grants)
- *
- * Apple/Google cryptographic receipt verification can be layered in via
- * env secrets (APPLE_IAP_ISSUER_ID / etc.). Until then we still refuse empty
- * transaction ids and rely on store-issued ids + unique transaction_id index
- * for replay protection. Incomplete client payments never reach this function
- * because native purchases.ts only returns VerifiedPurchase after a store event.
+ * The function accepts only the opaque signed transaction from expo-iap. It
+ * authenticates the Hither user from the JWT, verifies Apple's JWS and the
+ * server catalog, writes the transaction ledger + personal grant atomically,
+ * and returns `durable: true`. The client may finish the native transaction
+ * only after that response.
  */
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import {
+  storeKitConfigFromEnv,
+  validateStoreKitTransaction,
+  verifyStoreKitJws,
+} from '../_shared/storekit.ts';
 
 declare const Deno: {
   env: { get(key: string): string | undefined };
   serve: (handler: (req: Request) => Response | Promise<Response>) => void;
 };
 
-const ALLOWED_PRODUCTS = new Set([
-  "small_trip_pass",
-  "hither.small_trip_pass",
-  "hither.small_trip_pass.7d",
-]);
+type JsonRecord = Record<string, unknown>;
 
-function json(status: number, body: Record<string, unknown>): Response {
+function json(status: number, body: JsonRecord): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
-      "Content-Type": "application/json",
-      "Cache-Control": "no-store",
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Headers":
-        "authorization, x-client-info, apikey, content-type",
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store',
     },
   });
 }
 
-function readServiceRoleKey(): string {
-  const secretKeys = Deno.env.get("SUPABASE_SECRET_KEYS");
+function adminKey(): string {
+  const secretKeys = Deno.env.get('SUPABASE_SECRET_KEYS');
   if (secretKeys) {
     try {
       const defaultKey = (JSON.parse(secretKeys) as Record<string, string>).default;
       if (defaultKey) return defaultKey;
     } catch {
-      /* fall through */
+      // Use the legacy secret below when the key map is not configured.
     }
   }
-  const legacy = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!legacy) throw new Error("service_role key missing");
-  return legacy;
+  const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (!key) throw new Error('supabase_admin_key_missing');
+  return key;
 }
 
-function asRecord(v: unknown): Record<string, unknown> | null {
-  if (v && typeof v === "object") return v as Record<string, unknown>;
+function requiredString(body: JsonRecord, ...names: string[]): string | null {
+  for (const name of names) {
+    if (typeof body[name] === 'string' && body[name].trim()) return body[name].trim();
+  }
   return null;
 }
 
-Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return json(200, { ok: true });
-  }
-  if (req.method !== "POST") {
-    return json(405, { ok: false, error: "method_not_allowed" });
-  }
+function outcomeLog(outcome: string): void {
+  // Never log the JWS, account token, transaction token, or user id.
+  console.log(JSON.stringify({ event: 'storekit_purchase_verification', outcome }));
+}
 
-  const authHeader = req.headers.get("Authorization") ?? "";
-  if (!authHeader.toLowerCase().startsWith("bearer ")) {
-    return json(401, { ok: false, error: "not_authenticated" });
-  }
+async function handler(req: Request): Promise<Response> {
+  if (req.method === 'OPTIONS') return new Response(null, { status: 204 });
+  if (req.method !== 'POST') return json(405, { ok: false, error: 'method_not_allowed' });
 
-  let body: Record<string, unknown>;
-  try {
-    body = (await req.json()) as Record<string, unknown>;
-  } catch {
-    return json(400, { ok: false, error: "invalid", message: "invalid json" });
+  const authorization = req.headers.get('Authorization');
+  if (!authorization?.startsWith('Bearer ')) {
+    outcomeLog('missing_auth');
+    return json(401, { ok: false, error: 'not_authenticated' });
   }
 
-  const groupId = String(body.group_id ?? body.groupId ?? "").trim();
-  const transactionId = String(body.transaction_id ?? body.transactionId ?? "").trim();
-  const productId = String(
-    body.product_id ?? body.productId ?? "small_trip_pass",
-  ).trim() || "small_trip_pass";
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
+  if (!supabaseUrl || !anonKey) return json(503, { ok: false, error: 'server_configuration_missing' });
 
-  if (!groupId || !transactionId) {
-    return json(400, {
-      ok: false,
-      error: "invalid",
-      message: "group_id and transaction_id required",
-    });
-  }
-
-  const productKey = productId.toLowerCase();
-  if (
-    !ALLOWED_PRODUCTS.has(productKey)
-    && !productKey.includes("small_trip")
-  ) {
-    return json(400, {
-      ok: false,
-      error: "invalid",
-      message: "unknown product_id",
-    });
-  }
-
-  // Reject clearly fabricated client placeholders — never invent grants.
-  if (
-    transactionId === "local" ||
-    transactionId === "test" ||
-    transactionId === "temp" ||
-    transactionId.length < 6
-  ) {
-    return json(400, {
-      ok: false,
-      error: "invalid",
-      message: "transaction_id rejected",
-    });
-  }
-
-  const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? Deno.env.get("SUPABASE_PROJECT_URL");
-  if (!supabaseUrl) {
-    return json(500, { ok: false, error: "unknown", message: "SUPABASE_URL missing" });
-  }
-
-  // User-scoped client: prove JWT is valid and identity is real.
-  const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY") ?? "", {
-    global: { headers: { Authorization: authHeader } },
-    auth: { persistSession: false, autoRefreshToken: false },
+  const userClient = createClient(supabaseUrl, anonKey, {
+    global: { headers: { Authorization: authorization } },
   });
-
-  const { data: userData, error: userErr } = await userClient.auth.getUser();
-  if (userErr || !userData?.user) {
-    return json(401, { ok: false, error: "not_authenticated" });
+  const { data: userData, error: userError } = await userClient.auth.getUser();
+  if (userError || !userData.user) {
+    outcomeLog('invalid_auth');
+    return json(401, { ok: false, error: 'not_authenticated' });
   }
 
-  const uid = userData.user.id;
-  const isAnonymous =
-    (userData.user as { is_anonymous?: boolean }).is_anonymous === true
-    || userData.user.app_metadata?.provider === "anonymous";
-  if (isAnonymous) {
-    return json(403, {
-      ok: false,
-      error: "not_applicable",
-      message: "Anonymous accounts cannot purchase. Please register first.",
-    });
-  }
-
-  // Service-role client for the grant RPC only.
-  let serviceKey: string;
+  let body: JsonRecord;
   try {
-    serviceKey = readServiceRoleKey();
+    const raw = await req.text();
+    if (raw.length > 96 * 1024) return json(413, { ok: false, error: 'payload_too_large' });
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return json(400, { ok: false, error: 'invalid_body' });
+    }
+    body = parsed as JsonRecord;
   } catch {
-    return json(500, {
-      ok: false,
-      error: "verification_service_required",
-      message: "service role not configured",
-    });
+    return json(400, { ok: false, error: 'invalid_body' });
   }
 
-  const admin = createClient(supabaseUrl, serviceKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
+  const signedTransaction = requiredString(body, 'signed_transaction', 'signedTransaction', 'purchase_token');
+  if (!signedTransaction) return json(400, { ok: false, error: 'signed_transaction_required' });
 
-  // Soft membership check (leader preferred). apply_verified_purchase also enforces trip rules.
-  const { data: membership } = await admin
-    .from("memberships")
-    .select("role")
-    .eq("group_id", groupId)
-    .eq("user_id", uid)
+  const baseConfig = storeKitConfigFromEnv((name) => Deno.env.get(name));
+  if (!baseConfig) {
+    outcomeLog('configuration_missing');
+    return json(503, { ok: false, error: 'server_configuration_missing' });
+  }
+
+  const admin = createClient(supabaseUrl, adminKey());
+  const { data: tokenRow, error: tokenError } = await admin
+    .from('premium_app_account_tokens')
+    .select('app_account_token')
+    .eq('user_id', userData.user.id)
     .maybeSingle();
-
-  if (!membership) {
-    return json(403, {
-      ok: false,
-      error: "not_applicable",
-      message: "not a member of this trip",
-    });
+  if (tokenError || typeof tokenRow?.app_account_token !== 'string') {
+    outcomeLog('account_token_missing');
+    return json(409, { ok: false, error: 'account_token_not_ready' });
   }
 
-  const { data, error } = await admin.rpc("apply_verified_purchase", {
-    p_group_id: groupId,
-    p_transaction_id: transactionId,
-    p_product_id: productId,
-  });
-
-  if (error) {
-    console.log(JSON.stringify({
-      event: "verify_purchase",
-      outcome: "rpc_error",
-      code: error.code,
-      // no transaction id / PII in logs
-    }));
-    return json(500, {
-      ok: false,
-      error: "unknown",
-      message: error.message,
-    });
+  const config = { ...baseConfig, appAccountToken: tokenRow.app_account_token };
+  const verified = await verifyStoreKitJws(signedTransaction, config);
+  if (!verified.ok) {
+    outcomeLog(verified.error);
+    return json(422, { ok: false, error: verified.error });
   }
 
-  const row = asRecord(data) ?? {};
-  // Pass through RPC payload (ok true/false, entitlement fields, error codes).
-  const status = row.ok === true || row.is_premium === true ? 200 : 200;
-  console.log(JSON.stringify({
-    event: "verify_purchase",
-    outcome: row.ok === true ? "granted" : String(row.error ?? "rejected"),
-    product: productKey.includes("small_trip") ? "small_trip" : "other",
-  }));
+  const transaction = validateStoreKitTransaction(
+    verified.payload,
+    config,
+    Date.now(),
+    verified.jwsSha256,
+  );
+  if (!transaction.ok) {
+    outcomeLog(transaction.error);
+    return json(422, { ok: false, error: transaction.error });
+  }
 
-  return json(status, {
-    ...row,
-    // Ensure client mapApplyPayload always sees explicit flags.
-    ok: row.ok === true || row.is_premium === true,
-    is_premium: row.is_premium === true || row.ok === true,
+  const clientTransactionId = requiredString(body, 'transaction_id', 'transactionId');
+  if (clientTransactionId && clientTransactionId !== transaction.transaction.transactionId) {
+    outcomeLog('transaction_id_mismatch');
+    return json(422, { ok: false, error: 'transaction_id_mismatch' });
+  }
+  const clientProductId = requiredString(body, 'product_id', 'productId');
+  if (clientProductId && clientProductId !== transaction.transaction.productId) {
+    outcomeLog('product_id_mismatch');
+    return json(422, { ok: false, error: 'product_id_mismatch' });
+  }
+
+  const item = transaction.transaction;
+  const { data: applied, error: applyError } = await admin.rpc('apply_storekit_transaction', {
+    p_user_id: userData.user.id,
+    p_transaction_id: item.transactionId,
+    p_original_transaction_id: item.originalTransactionId,
+    p_product_id: item.productId,
+    p_subscription_group_id: item.subscriptionGroupId,
+    p_environment: item.environment,
+    p_ownership_type: item.ownershipType,
+    p_app_account_token: item.appAccountToken,
+    p_status: item.status,
+    p_purchase_date: item.purchaseDate,
+    p_expires_at: item.expiresAt,
+    p_revocation_date: item.revocationDate,
+    p_signed_at: item.signedAt,
+    p_jws_sha256: item.jwsSha256,
+    p_source_version: 'storekit-v1',
   });
-});
+  if (applyError || !applied || applied.ok !== true || applied.durable !== true) {
+    outcomeLog('ledger_write_failed');
+    return json(503, { ok: false, error: 'entitlement_persistence_failed' });
+  }
+
+  outcomeLog(applied.duplicate === true ? 'duplicate_durable' : 'durable_grant');
+  return json(200, {
+    ok: true,
+    durable: true,
+    duplicate: applied.duplicate === true,
+    status: item.status,
+    productId: item.productId,
+    transactionId: item.transactionId,
+    isPremium: item.status === 'active',
+  });
+}
+
+Deno.serve(handler);
+
+export { handler };
