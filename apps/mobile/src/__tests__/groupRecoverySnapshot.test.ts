@@ -23,6 +23,10 @@ describe('Ticket 2 single recovery snapshot contract', () => {
       expect(migration).toContain(key);
     }
     expect(migration).toContain('not_member');
+    expect(migration).toContain('extensions.is_member(p_group_id)');
+    expect(migration).not.toMatch(
+      /select exists\(\s*select 1 from public\.memberships m/i,
+    );
     expect(migration).toContain('grant execute on function public.get_group_recovery_snapshot(uuid) to authenticated');
   });
 

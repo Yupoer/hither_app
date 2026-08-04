@@ -182,6 +182,9 @@ begin
 end;
 $$;
 
+revoke all on function public.trg_recompute_premium_for_membership()
+  from public, anon, authenticated;
+
 drop trigger if exists trg_recompute_premium_membership on public.memberships;
 create trigger trg_recompute_premium_membership
   after insert or update or delete on public.memberships
@@ -211,6 +214,9 @@ begin
   return new;
 end;
 $$;
+
+revoke all on function public.trg_recompute_premium_for_entitlement()
+  from public, anon, authenticated;
 
 drop trigger if exists trg_recompute_premium_entitlement
   on public.personal_premium_entitlements;
