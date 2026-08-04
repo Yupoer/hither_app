@@ -105,6 +105,8 @@ let nativeEnergySignpost: NativeEnergySignpost = () => undefined;
 interface EnergySession {
   stop: () => void;
   cancelPendingStartupSampling: () => void;
+  pauseForBackground: () => void;
+  resumeFromForeground: () => void;
 }
 
 function createZeroCounters(): EnergyCounterValues {
@@ -211,12 +213,36 @@ function startSampling(handler: EnergyObservationSampleHandler): EnergySession {
     startupTimers.clear();
   };
 
+  const clearSteadyTimer = () => {
+    if (steadyTimer) clearInterval(steadyTimer);
+    steadyTimer = null;
+  };
+
+  const startSteadyTimer = () => {
+    if (stopped || steadyTimer || currentAppState !== 'active') return;
+    // Keep the established five-minute cadence. The finite startup burst does
+    // not create a second steady timer or an eager network flush.
+    steadyTimer = setInterval(() => {
+      if (stopped) return;
+      invokeSample(handler, 'steady', null, Date.now());
+    }, ENERGY_STEADY_SAMPLE_INTERVAL_MS);
+  };
+
+  const pauseForBackground = () => {
+    cancelPendingStartupSampling();
+    clearSteadyTimer();
+  };
+
+  const resumeFromForeground = () => {
+    if (stopped) return;
+    startSteadyTimer();
+  };
+
   const stop = () => {
     if (stopped) return;
     stopped = true;
     cancelPendingStartupSampling();
-    if (steadyTimer) clearInterval(steadyTimer);
-    steadyTimer = null;
+    clearSteadyTimer();
     if (activeSession?.stop === stop) activeSession = null;
     if (activeController?.stop === stop) activeController = null;
   };
@@ -236,16 +262,15 @@ function startSampling(handler: EnergyObservationSampleHandler): EnergySession {
       }, delayMs);
       startupTimers.add(timer);
     }
+    startSteadyTimer();
   }
 
-  // Keep the established five-minute cadence. The finite startup burst does
-  // not create a second steady timer or an eager network flush.
-  steadyTimer = setInterval(() => {
-    if (stopped) return;
-    invokeSample(handler, 'steady', null, Date.now());
-  }, ENERGY_STEADY_SAMPLE_INTERVAL_MS);
-
-  return { stop, cancelPendingStartupSampling };
+  return {
+    stop,
+    cancelPendingStartupSampling,
+    pauseForBackground,
+    resumeFromForeground,
+  };
 }
 
 export const energyObservability = {
@@ -262,7 +287,11 @@ export const energyObservability = {
         ? 'active'
         : 'unknown';
     if (currentAppState !== 'active') {
-      activeSession?.cancelPendingStartupSampling();
+      // Background/inactive must cancel startup and steady timers so sampling
+      // itself is not a fixed energy cost while the app is not foreground.
+      activeSession?.pauseForBackground();
+    } else {
+      activeSession?.resumeFromForeground();
     }
   },
 

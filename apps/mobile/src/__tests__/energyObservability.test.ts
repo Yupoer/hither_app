@@ -56,7 +56,26 @@ describe('energyObservability', () => {
     expect(samples).toHaveLength(1);
 
     energyObservability.setAppState('active');
-    jest.advanceTimersByTime(ENERGY_STEADY_SAMPLE_INTERVAL_MS - 120_000);
+    jest.advanceTimersByTime(ENERGY_STEADY_SAMPLE_INTERVAL_MS);
+    expect(samples).toHaveLength(2);
+    expect(samples[1]?.kind).toBe('steady');
+  });
+
+  it('cancels the steady timer on background so no samples fire while inactive', () => {
+    const samples: EnergyObservationSample[] = [];
+    energyObservability.start((sample) => {
+      samples.push(sample);
+    });
+
+    jest.advanceTimersByTime(0);
+    expect(samples).toHaveLength(1);
+
+    energyObservability.setAppState('background');
+    jest.advanceTimersByTime(ENERGY_STEADY_SAMPLE_INTERVAL_MS * 2);
+    expect(samples).toHaveLength(1);
+
+    energyObservability.setAppState('active');
+    jest.advanceTimersByTime(ENERGY_STEADY_SAMPLE_INTERVAL_MS);
     expect(samples).toHaveLength(2);
     expect(samples[1]?.kind).toBe('steady');
   });

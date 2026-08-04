@@ -51,7 +51,8 @@ describe('OTA-09 coordination UI wiring contracts', () => {
     expect(hook).toContain('cancelCoordinationRequest');
     expect(hook).toContain("table: 'coordination_requests'");
     expect(hook).toContain("table: 'coordination_responses'");
-    expect(hook).toContain('OPEN_REQUEST_RECOVERY_INTERVAL_MS');
+    expect(hook).not.toContain('OPEN_REQUEST_RECOVERY_INTERVAL_MS');
+    expect(hook).not.toMatch(/setInterval\s*\(/);
     expect(client).toContain('createCoordinationRequest');
     expect(client).toContain('respondToCoordinationRequest');
   });

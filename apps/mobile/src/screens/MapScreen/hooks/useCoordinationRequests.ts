@@ -1,6 +1,7 @@
 /**
  * OTA-09 coordination request lifecycle hook for MapScreen.
- * Fetch / create / respond / override / cancel with realtime + pull refresh.
+ * Fetch / create / respond / override / cancel with Realtime + explicit load.
+ * No fixed read/write cadence; deadline settlement is server-owned.
  * Does not gate navigation start.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -20,7 +21,6 @@ import type {
 } from '../../../types';
 
 const RELOAD_MIN_INTERVAL_MS = 1_500;
-export const OPEN_REQUEST_RECOVERY_INTERVAL_MS = 60_000;
 
 export interface CoordinationRequestView extends CoordinationRequest {
   responses: CoordinationResponse[];
@@ -196,15 +196,8 @@ export function useCoordinationRequests(
     };
   }, [active, groupId, load, scheduleReload]);
 
-  // Missed Realtime events are recovered read-only, and only while an open
-  // deadline exists. With zero open requests there is no periodic read/write.
-  useEffect(() => {
-    if (!active || openCount === 0) return;
-    const recovery = setInterval(() => {
-      void load('silent');
-    }, OPEN_REQUEST_RECOVERY_INTERVAL_MS);
-    return () => clearInterval(recovery);
-  }, [active, load, openCount]);
+  // No fixed read/write cadence. Deadline settlement is server-owned; client
+  // receives updates via Realtime plus explicit load after local mutations.
 
   const createRequest = useCallback(
     async (

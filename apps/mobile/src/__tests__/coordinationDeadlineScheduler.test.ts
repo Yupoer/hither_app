@@ -29,8 +29,11 @@ describe('Ticket 3 server-owned coordination deadline', () => {
   it('does not resolve deadlines as a side effect of a client read', () => {
     const fetchFunction = service.slice(service.indexOf('export async function fetchCoordinationRequests'));
     expect(fetchFunction).not.toContain('resolveDueCoordinationRequests(groupId)');
-    expect(hook).toContain('OPEN_REQUEST_RECOVERY_INTERVAL_MS = 60_000');
-    expect(hook).toContain('openCount === 0');
+    // Ticket 05: no fixed client read cadence; Realtime + explicit load only.
+    expect(hook).not.toContain('OPEN_REQUEST_RECOVERY_INTERVAL_MS');
+    expect(hook).not.toMatch(/setInterval\s*\(/);
     expect(hook).not.toContain('POLL_INTERVAL_MS = 45_000');
+    expect(hook).toContain("table: 'coordination_requests'");
+    expect(hook).toContain("table: 'coordination_responses'");
   });
 });
