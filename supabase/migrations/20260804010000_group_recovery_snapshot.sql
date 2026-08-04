@@ -15,7 +15,6 @@ set search_path = ''
 as $$
 declare
   v_uid uuid := (select auth.uid());
-  v_is_member boolean;
   v_revision text := to_char(
     now() at time zone 'UTC',
     'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
@@ -25,11 +24,9 @@ begin
     raise exception 'not authenticated' using errcode = '28000';
   end if;
 
-  select exists(
-    select 1 from public.memberships m
-     where m.group_id = p_group_id and m.user_id = v_uid
-  ) into v_is_member;
-  if not v_is_member then
+  -- SECURITY DEFINER bypasses table RLS; use the expiry-aware membership
+  -- predicate so expired anonymous accounts cannot read full group state.
+  if not extensions.is_member(p_group_id) then
     raise exception 'not_member' using errcode = '42501';
   end if;
 
