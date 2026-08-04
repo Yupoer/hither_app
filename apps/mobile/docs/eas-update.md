@@ -10,9 +10,24 @@ Hither 已接上 **EAS Update**。下一次 **EAS Build → Submit / TestFlight*
 | Update URL | `https://u.expo.dev/0f62ed14-1f2e-4d7b-b5b6-4eda273f2e35` |
 | `runtimeVersion` | **手動字串**（bare workflow 不支援 policy）— 目前 `"0.1.3"`，應與 `expo.version` 同步 |
 | Channels | `development` / `preview` / `production`（寫在 `eas.json` **build** profiles 的 `channel`；勿加頂層 `update` key） |
-| 套件 | `expo-updates`（SDK 54 相容版） |
+| 套件 | `expo-updates`（Expo SDK 56 相容版）與 `expo-dev-client`（development build） |
 
 原生開關：`ios/Hither/Supporting/Expo.plist` 的 `EXUpdatesEnabled=true`，並帶 `EXUpdatesURL` + `EXUpdatesRuntimeVersion`（解析後的 app version 字串）。
+
+## iOS development build
+
+Expo Go 只適合驗證 JavaScript fallback；Hither 的 mobile ads、背景定位、通知
+與 Live Activity 等原生能力要使用 development build。第一次安裝或任何原生
+依賴、config plugin、權限、Expo/RN 版本變更後，重新建置並安裝 iOS binary：
+
+```bash
+npx eas build --profile development --platform ios
+npx expo start --dev-client
+```
+
+將 EAS 內部分發 build 安裝到 iPhone／iPad 後，從 `expo start --dev-client` 顯示
+的 QR code 開啟 Hither。純 JS/TS 與樣式變更可 Fast Refresh；原生 binary 變更
+則需重新 EAS build。Apple Developer 簽署與裝置註冊仍是 iOS 內部分發的必要條件。
 
 ## 第一次啟用（必須）
 
@@ -52,7 +67,7 @@ eas update --channel production --message "…"
 
 **TestFlight 收不到更新時先查：**
 
-1. Binary 的 `runtimeVersion` 必須是字串 `0.1.3`（指紋 hash 的舊包只收 fingerprint OTA）
+1. Binary 的 `runtimeVersion` 必須是字串，且與 `app.json` 的 `version` 相同（目前 `0.1.5`）；指紋 hash 的舊包只收 fingerprint OTA
 2. Build profile channel：`production` / `preview` / `diagnostic` 要與 `eas update --channel` 一致
 3. 設定頁 OTA 列：應顯示「已套用 · xxxxxxxx」而非一直「內建包」
 
@@ -68,8 +83,8 @@ eas update --channel production --message "…"
 ## `runtimeVersion` 注意
 
 - 專案是 **bare workflow**（有 `ios/`）→ **不能** 用 `{ "policy": "appVersion" }`，必須手動字串。
-- 慣例：讓 `runtimeVersion` === `expo.version`（目前都是 `0.1.3`）。
-- 升 `version`（例如 `0.1.3` → `0.1.4`）時，**同時**改：
+- 慣例：讓 `runtimeVersion` === `expo.version`（目前都是 `0.1.5`）。
+- 升 `version`（例如 `0.1.5` → `0.1.6`）時，**同時**改：
   1. `app.json` → `version` + `runtimeVersion`
   2. `ios/Hither/Supporting/Expo.plist` → `EXUpdatesRuntimeVersion`
   3. 出新 native build；之後 OTA 綁新 runtime
