@@ -15,11 +15,15 @@ describe('MapKit route UI contract', () => {
     expect(groupMap).toContain('pitch: 45');
   });
 
-  it('nudges iOS map chrome without moving Android controls', () => {
-    expect(groupMap).toContain('compassOffset');
-    expect(groupMap).toContain('appleLogoInsets');
-    expect(groupMap).toContain('bottomOverlap + 8');
-    expect(groupMap).toContain("Platform.OS === 'ios'");
+  it('anchors iOS map chrome without moving Android controls', () => {
+    expect(groupMap).toContain('platformizedMapViewProps');
+    expect(groupMap).not.toContain('Platform.OS');
+    expect(groupMap).not.toContain('PROVIDER_GOOGLE');
+    expect(groupMap).toContain('mapKitChromeLayout');
+    expect(groupMap).toContain('onRegionChangeComplete');
+    expect(groupMap).not.toContain('onRegionChange={');
+    expect(groupMap).toContain('settledRouteViewport');
+    expect(groupMap).not.toContain('bottom: Math.max(24, bottomOverlap + 8)');
   });
 
   it('keeps gathering switch separate from completing a point', () => {

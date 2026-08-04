@@ -1,316 +1,395 @@
 /**
- * StoreKit / Play Billing entry point via expo-iap.
+ * StoreKit 2 / Play subscription adapter.
  *
- * Only returns VerifiedPurchase after a successful store transaction.
- * Incomplete payment, cancel, or missing native IAP must never invent a
- * transaction id — Premium unlock requires server apply_verified_purchase.
- *
- * react-native / expo-iap are required lazily so unit tests (and web) do not
- * need a native runtime to import this module.
+ * `expo-iap` delivers purchase results through an event listener. This module
+ * keeps that listener single-flight and deliberately does not finish a
+ * transaction. The caller must first receive a durable server grant and only
+ * then call `finishPremiumPurchase`.
  */
-import { SMALL_TRIP_PASS } from '../entitlements';
 
-function platformOS(): string {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { Platform } = require('react-native') as { Platform?: { OS?: string } };
-    return Platform?.OS ?? 'unknown';
-  } catch {
-    return 'unknown';
-  }
-}
+import type { ProductSubscription, Purchase } from 'expo-iap';
+import { PREMIUM_CATALOG } from '../premiumCatalog';
+
+type IapModule = typeof import('expo-iap');
 
 export type PurchaseResultStatus =
   | 'purchased'
   | 'restored'
+  | 'pending'
   | 'cancelled'
   | 'unavailable'
   | 'failed';
 
-/** Outcome from native IAP after local/store verification. */
-export interface VerifiedPurchase {
+export interface StorePurchase {
   status: 'purchased' | 'restored';
-  /** Store transaction identifier — used for server-side duplicate detection. */
   transactionId: string;
   productId: string;
-  /** iOS StoreKit 2 JWS / Android purchase token for server verification. */
-  purchaseToken?: string | null;
+  /** StoreKit 2 JWS on iOS; Play purchase token on Android. Never log it. */
+  purchaseToken: string;
+  /** Original object required by expo-iap.finishTransaction. */
+  purchase: Purchase;
+  appAccountToken: string | null;
 }
-
 export type PurchaseResult =
-  | VerifiedPurchase
+  | StorePurchase
+  | { status: 'pending'; productId?: string; transactionId?: string }
   | { status: 'cancelled' }
   | { status: 'unavailable'; reason?: string }
   | { status: 'failed'; reason?: string };
 
-/** App Store / Play product SKU (must match store console + DB allow-list). */
-export const IAP_PRODUCT_IDS = {
-  smallTripPass: SMALL_TRIP_PASS.productId,
-} as const;
+export type PremiumStoreProduct = Pick<
+  ProductSubscription,
+  'id' | 'displayName' | 'displayPrice' | 'description' | 'currency' | 'type'
+> & {
+  introductoryPriceIOS?: string | null;
+  introductoryPriceNumberOfPeriodsIOS?: string | null;
+  introductoryPricePaymentModeIOS?: string | null;
+  introductoryOfferEligibleIOS?: boolean;
+  subscriptionGroupIdIOS?: string | null;
+  subscriptionPeriodUnitIOS?: string | null;
+  subscriptionPeriodNumberIOS?: string | null;
+};
 
-const ALLOWED_PRODUCT_IDS = new Set<string>([
-  IAP_PRODUCT_IDS.smallTripPass,
-  'small_trip_pass',
-  'hither.small_trip_pass',
-]);
-
-type ExpoIapModule = typeof import('expo-iap');
-
-let iapModule: ExpoIapModule | null | undefined;
-let connectionReady = false;
-
-function loadIap(): ExpoIapModule | null {
-  if (iapModule !== undefined) return iapModule;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    iapModule = require('expo-iap') as ExpoIapModule;
-  } catch {
-    iapModule = null;
-  }
-  return iapModule;
+/** UI may promise an introductory offer only after StoreKit confirms eligibility. */
+export function hasEligibleIntroductoryOffer(
+  product: PremiumStoreProduct,
+): product is PremiumStoreProduct & { introductoryPriceIOS: string } {
+  return product.introductoryOfferEligibleIOS === true
+    && typeof product.introductoryPriceIOS === 'string'
+    && product.introductoryPriceIOS.trim().length > 0;
 }
 
-async function ensureConnection(iap: ExpoIapModule): Promise<boolean> {
-  if (connectionReady) return true;
+type Deferred = {
+  resolve: (result: PurchaseResult) => void;
+  reject: (error: unknown) => void;
+  timer: ReturnType<typeof setTimeout>;
+};
+
+let connectionPromise: Promise<IapModule | null> | null = null;
+let updateSubscription: { remove: () => void } | null = null;
+let errorSubscription: { remove: () => void } | null = null;
+const waiters = new Map<string, Deferred[]>();
+const unclaimed = new Map<string, StorePurchase>();
+const introOfferEligibilityByGroup = new Map<string, Promise<boolean>>();
+
+function isIosRuntime(): boolean {
   try {
-    await iap.initConnection();
-    connectionReady = true;
-    return true;
+    const reactNative = require('react-native') as { Platform?: { OS?: string } };
+    return reactNative.Platform?.OS === 'ios';
   } catch {
-    connectionReady = false;
     return false;
   }
 }
 
-function mapPurchase(
-  purchase: {
-    id?: string | null;
-    transactionId?: string | null;
-    productId?: string | null;
-    purchaseToken?: string | null;
-  },
-  status: 'purchased' | 'restored',
-): PurchaseResult {
-  const productId = String(purchase.productId ?? '').trim();
-  const transactionId = String(
-    purchase.transactionId ?? purchase.id ?? '',
-  ).trim();
-  if (!transactionId || !productId) {
-    return { status: 'failed', reason: 'missing_transaction' };
+function introOfferEligibility(
+  iap: IapModule,
+  groupId: string | null | undefined,
+): Promise<boolean> {
+  if (!isIosRuntime() || !groupId?.trim()) return Promise.resolve(false);
+  const normalizedGroupId = groupId.trim();
+  const cached = introOfferEligibilityByGroup.get(normalizedGroupId);
+  if (cached) return cached;
+
+  const result = Promise.resolve()
+    .then(async () => {
+      try {
+        return (await iap.isEligibleForIntroOfferIOS(normalizedGroupId)) === true;
+      } catch {
+        // Eligibility is a StoreKit-only promise. A missing native method,
+        // unavailable store, or query error must never advertise a trial.
+        return false;
+      }
+    })
+    .catch(() => false);
+  introOfferEligibilityByGroup.set(normalizedGroupId, result);
+  return result;
+}
+
+function loadIap(): IapModule | null {
+  try {
+    // Lazy loading keeps Windows/Jest and Expo Go fail-closed when the native
+    // module is not linked. A development stub must not fabricate purchases.
+    return require('expo-iap') as IapModule;
+  } catch {
+    return null;
   }
-  if (!ALLOWED_PRODUCT_IDS.has(productId) && !ALLOWED_PRODUCT_IDS.has(productId.toLowerCase())) {
-    // Still accept store SKUs that map to small trip pass on the server.
-    // Server allow-list is authoritative.
-  }
+}
+
+function getTransactionId(purchase: Purchase): string | null {
+  const transactionId =
+    typeof purchase.transactionId === 'string' && purchase.transactionId.length > 0
+      ? purchase.transactionId
+      : typeof purchase.id === 'string' && purchase.id.length > 0
+        ? purchase.id
+        : null;
+  return transactionId;
+}
+
+function mapPurchase(purchase: Purchase, status: 'purchased' | 'restored'): StorePurchase | null {
+  const transactionId = getTransactionId(purchase);
+  const purchaseToken =
+    typeof purchase.purchaseToken === 'string' && purchase.purchaseToken.length > 0
+      ? purchase.purchaseToken
+      : null;
+  if (!transactionId || !purchaseToken || !purchase.productId) return null;
+
+  const appAccountToken =
+    'appAccountToken' in purchase
+    && typeof purchase.appAccountToken === 'string'
+      ? purchase.appAccountToken
+      : null;
   return {
     status,
     transactionId,
-    productId,
-    purchaseToken: purchase.purchaseToken ?? null,
+    productId: purchase.productId,
+    purchaseToken,
+    purchase,
+    appAccountToken,
   };
 }
 
-function isUserCancel(err: unknown): boolean {
-  const code =
-    err && typeof err === 'object' && 'code' in err
-      ? String((err as { code?: string }).code ?? '')
-      : '';
-  const message = err instanceof Error ? err.message : String(err ?? '');
+function resolvePurchase(purchase: StorePurchase): void {
+  const queue = waiters.get(purchase.productId);
+  const deferred = queue?.shift();
+  if (queue && queue.length === 0) waiters.delete(purchase.productId);
+  if (deferred) {
+    clearTimeout(deferred.timer);
+    deferred.resolve(purchase);
+    return;
+  }
+  unclaimed.set(purchase.transactionId, purchase);
+}
+
+async function ensureConnection(): Promise<IapModule | null> {
+  if (connectionPromise) return connectionPromise;
+  connectionPromise = Promise.resolve().then(async () => {
+    const iap = loadIap();
+    if (!iap) return null;
+    await iap.initConnection();
+    updateSubscription = iap.purchaseUpdatedListener((purchase) => {
+      if (purchase.purchaseState === 'pending') return;
+      const mapped = mapPurchase(purchase, 'purchased');
+      if (mapped) resolvePurchase(mapped);
+    }, { dedupeTransactionIOS: true });
+    errorSubscription = iap.purchaseErrorListener((error) => {
+      const productId = typeof error.productId === 'string' ? error.productId : null;
+      if (!productId) return;
+      const queue = waiters.get(productId);
+      const deferred = queue?.shift();
+      if (queue && queue.length === 0) waiters.delete(productId);
+      if (!deferred) return;
+      clearTimeout(deferred.timer);
+      const code = typeof error.code === 'string' ? error.code : '';
+      deferred.resolve(
+        /cancel|user/i.test(code)
+          ? { status: 'cancelled' }
+          : { status: 'failed', reason: code || 'store_purchase_failed' },
+      );
+    });
+    return iap;
+  }).catch(() => null);
+  return connectionPromise;
+}
+
+function addWaiter(productId: string, timeoutMs = 120_000): Promise<PurchaseResult> {
+  const existing = [...unclaimed.values()].find((purchase) => purchase.productId === productId);
+  if (existing) {
+    unclaimed.delete(existing.transactionId);
+    return Promise.resolve(existing);
+  }
+
+  return new Promise<PurchaseResult>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const queue = waiters.get(productId);
+      if (queue) {
+        const index = queue.findIndex((item) => item.timer === timer);
+        if (index >= 0) queue.splice(index, 1);
+        if (queue.length === 0) waiters.delete(productId);
+      }
+      resolve({ status: 'failed', reason: 'store_purchase_timeout' });
+    }, timeoutMs);
+    const queue = waiters.get(productId) ?? [];
+    queue.push({ resolve, reject, timer });
+    waiters.set(productId, queue);
+  });
+}
+
+export async function fetchPremiumProducts(): Promise<PremiumStoreProduct[]> {
+  if (!PREMIUM_CATALOG.ready) return [];
+  const iap = await ensureConnection();
+  if (!iap) return [];
+  try {
+    const products = await iap.fetchProducts({
+      skus: PREMIUM_CATALOG.products.map((product) => product.productId),
+      type: 'subs',
+    });
+    const mappedProducts = (products ?? [])
+      .filter((product): product is ProductSubscription => product.type === 'subs')
+      .map((product) => ({
+        id: product.id,
+        displayName: product.displayName,
+        displayPrice: product.displayPrice,
+        description: product.description,
+        currency: product.currency,
+        type: product.type,
+        introductoryPriceIOS:
+          'introductoryPriceIOS' in product ? product.introductoryPriceIOS : null,
+        introductoryPriceNumberOfPeriodsIOS:
+          'introductoryPriceNumberOfPeriodsIOS' in product
+            ? product.introductoryPriceNumberOfPeriodsIOS
+            : null,
+        introductoryPricePaymentModeIOS:
+          'introductoryPricePaymentModeIOS' in product
+            ? product.introductoryPricePaymentModeIOS
+            : null,
+        introductoryOfferEligibleIOS: false,
+        subscriptionGroupIdIOS:
+          'subscriptionGroupIdIOS' in product ? product.subscriptionGroupIdIOS : null,
+        subscriptionPeriodUnitIOS:
+          'subscriptionPeriodUnitIOS' in product ? product.subscriptionPeriodUnitIOS : null,
+        subscriptionPeriodNumberIOS:
+          'subscriptionPeriodNumberIOS' in product
+            ? product.subscriptionPeriodNumberIOS
+            : null,
+      }));
+
+    const groupIds = [...new Set(
+      mappedProducts
+        .map((product) => product.subscriptionGroupIdIOS?.trim() ?? '')
+        .filter(Boolean),
+    )];
+    const eligibility = new Map<string, boolean>();
+    await Promise.all(groupIds.map(async (groupId) => {
+      eligibility.set(groupId, await introOfferEligibility(iap, groupId));
+    }));
+    return mappedProducts.map((product) => ({
+      ...product,
+      introductoryOfferEligibleIOS:
+        product.subscriptionGroupIdIOS != null
+        && eligibility.get(product.subscriptionGroupIdIOS.trim()) === true,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function requestPremiumSubscription(
+  productId: string,
+  appAccountToken: string,
+): Promise<PurchaseResult> {
+  if (!PREMIUM_CATALOG.ready || !PREMIUM_CATALOG.products.some((item) => item.productId === productId)) {
+    return { status: 'unavailable', reason: 'subscription_catalog_not_ready' };
+  }
+  const iap = await ensureConnection();
+  if (!iap) return { status: 'unavailable', reason: 'native_iap_not_linked' };
+
+  const pending = addWaiter(productId);
+  try {
+    await iap.requestPurchase({
+      type: 'subs',
+      request: {
+        apple: { sku: productId, appAccountToken },
+        google: { skus: [productId], obfuscatedAccountId: appAccountToken },
+      },
+    });
+    return await pending;
+  } catch (error) {
+    const queue = waiters.get(productId);
+    const deferred = queue?.shift();
+    if (queue && queue.length === 0) waiters.delete(productId);
+    if (deferred) clearTimeout(deferred.timer);
+    return {
+      status: 'failed',
+      reason: error instanceof Error ? error.message : 'store_purchase_failed',
+    };
+  }
+}
+
+export async function getUnfinishedPremiumPurchases(): Promise<StorePurchase[]> {
+  const iap = await ensureConnection();
+  if (!iap) return [];
+  const purchases: Purchase[] = [];
+  try {
+    if (typeof iap.getPendingTransactionsIOS === 'function') {
+      purchases.push(...(await iap.getPendingTransactionsIOS()));
+    }
+  } catch {
+    // Android and older runtimes do not expose the iOS queue query.
+  }
+  try {
+    purchases.push(
+      ...(await iap.getAvailablePurchases({ onlyIncludeActiveItemsIOS: true })),
+    );
+  } catch {
+    // Store unavailable is handled by returning no trusted purchase.
+  }
+
+  const byTransaction = new Map<string, StorePurchase>();
+  for (const purchase of purchases) {
+    if (!PREMIUM_CATALOG.products.some((item) => item.productId === purchase.productId)) continue;
+    const mapped = mapPurchase(purchase, 'restored');
+    if (mapped) byTransaction.set(mapped.transactionId, mapped);
+  }
+  for (const purchase of unclaimed.values()) {
+    if (PREMIUM_CATALOG.products.some((item) => item.productId === purchase.productId)) {
+      byTransaction.set(purchase.transactionId, purchase);
+    }
+  }
+  return [...byTransaction.values()];
+}
+
+export async function restorePremiumPurchases(): Promise<StorePurchase[]> {
+  if (!PREMIUM_CATALOG.ready) return [];
+  const iap = await ensureConnection();
+  if (!iap) return [];
+  try {
+    await iap.restorePurchases();
+  } catch {
+    // The subsequent available-purchases query remains the source of truth.
+  }
+  return getUnfinishedPremiumPurchases();
+}
+
+/** Finish only after the server confirms a durable ledger/grant write. */
+export async function finishPremiumPurchase(purchase: StorePurchase): Promise<void> {
+  const iap = await ensureConnection();
+  if (!iap) throw new Error('native_iap_not_linked');
+  await iap.finishTransaction({ purchase: purchase.purchase, isConsumable: false });
+}
+
+/** Compatibility boundary for old callers; no product is guessed or unlocked. */
+export async function purchasePro(): Promise<PurchaseResult> {
+  return { status: 'unavailable', reason: 'use_premium_subscription_flow' };
+}
+
+/** Compatibility restore entry point; callers should use the coordinator. */
+export async function restorePurchases(): Promise<PurchaseResult> {
+  const [purchase] = await restorePremiumPurchases();
+  return purchase ?? { status: 'unavailable', reason: 'no_active_subscription' };
+}
+
+/** True when a store event contains the opaque token and stable transaction ID. */
+export function isVerifiedPurchase(result: PurchaseResult): result is StorePurchase {
   return (
-    /cancel|E_USER_CANCELLED|user-cancelled|UserCancelled/i.test(code)
-    || /cancel|cancelled|canceled/i.test(message)
+    (result.status === 'purchased' || result.status === 'restored')
+    && result.transactionId.length > 0
+    && result.purchaseToken.length > 0
   );
 }
 
-/**
- * Present App Store / Play purchase sheet for Small Trip Premium Pass.
- * Does not unlock Premium — caller must applyVerifiedPurchase on the server.
- */
-export async function purchasePro(): Promise<PurchaseResult> {
-  if (platformOS() === 'web') {
-    return { status: 'unavailable', reason: 'web_not_supported' };
-  }
-
-  const iap = loadIap();
-  if (!iap) {
-    return { status: 'unavailable', reason: 'native_iap_not_linked' };
-  }
-
-  try {
-    const connected = await ensureConnection(iap);
-    if (!connected) {
-      return { status: 'unavailable', reason: 'store_connection_failed' };
+export function __resetPurchaseAdapterForTests(): void {
+  connectionPromise = null;
+  updateSubscription?.remove();
+  errorSubscription?.remove();
+  updateSubscription = null;
+  errorSubscription = null;
+  for (const queue of waiters.values()) {
+    for (const deferred of queue) {
+      clearTimeout(deferred.timer);
+      deferred.reject(new Error('purchase_adapter_reset'));
     }
-
-    const sku = IAP_PRODUCT_IDS.smallTripPass;
-    const products = await iap.fetchProducts({
-      skus: [sku, 'small_trip_pass', 'hither.small_trip_pass'],
-      type: 'in-app',
-    });
-    const list = Array.isArray(products) ? products : [];
-    if (list.length === 0) {
-      return { status: 'unavailable', reason: 'product_not_found' };
-    }
-
-    const resolvedSku = String(
-      (list[0] as { id?: string; productId?: string }).id
-        ?? (list[0] as { productId?: string }).productId
-        ?? sku,
-    );
-
-    const purchase = await new Promise<PurchaseResult>((resolve) => {
-      let settled = false;
-      const finish = (result: PurchaseResult) => {
-        if (settled) return;
-        settled = true;
-        try {
-          subUpdate.remove();
-        } catch {
-          /* ignore */
-        }
-        try {
-          subError.remove();
-        } catch {
-          /* ignore */
-        }
-        resolve(result);
-      };
-
-      const subUpdate = iap.purchaseUpdatedListener((p) => {
-        finish(mapPurchase(p as {
-          id?: string | null;
-          transactionId?: string | null;
-          productId?: string | null;
-          purchaseToken?: string | null;
-        }, 'purchased'));
-      });
-      const subError = iap.purchaseErrorListener((err) => {
-        if (isUserCancel(err)) {
-          finish({ status: 'cancelled' });
-          return;
-        }
-        const reason =
-          err && typeof err === 'object' && 'message' in err
-            ? String((err as { message?: string }).message ?? 'purchase_error')
-            : 'purchase_error';
-        finish({ status: 'failed', reason });
-      });
-
-      void iap
-        .requestPurchase({
-          type: 'in-app',
-          request: {
-            apple: { sku: resolvedSku },
-            google: { skus: [resolvedSku] },
-          },
-        })
-        .catch((err: unknown) => {
-          if (isUserCancel(err)) {
-            finish({ status: 'cancelled' });
-            return;
-          }
-          finish({
-            status: 'failed',
-            reason: err instanceof Error ? err.message : 'request_failed',
-          });
-        });
-
-      // Safety timeout so UI never hangs if store never replies.
-      setTimeout(() => {
-        finish({ status: 'failed', reason: 'purchase_timeout' });
-      }, 120_000);
-    });
-
-    if (purchase.status === 'purchased' || purchase.status === 'restored') {
-      // Finish after server apply — caller may finish; best-effort here is OK
-      // only after we have a transaction id (server still must grant).
-      try {
-        const available = await iap.getAvailablePurchases();
-        const match = (available ?? []).find((p) => {
-          const tid = String(
-            (p as { transactionId?: string; id?: string }).transactionId
-              ?? (p as { id?: string }).id
-              ?? '',
-          );
-          return tid === purchase.transactionId;
-        });
-        if (match) {
-          // Defer finish to after server grant when possible; still clear queue
-          // so iOS does not replay forever if server already recorded txn.
-          await iap.finishTransaction({ purchase: match, isConsumable: false });
-        }
-      } catch {
-        /* server grant is authoritative; finish is best-effort */
-      }
-    }
-
-    return purchase;
-  } catch (err) {
-    if (isUserCancel(err)) return { status: 'cancelled' };
-    return {
-      status: 'failed',
-      reason: err instanceof Error ? err.message : 'purchase_exception',
-    };
   }
-}
-
-/**
- * Restore completed store purchases. Returns a verified purchase if any
- * matching Small Trip product is found; otherwise unavailable/none.
- * Premium unlock still requires server apply / restore_entitlements.
- */
-export async function restorePurchases(): Promise<PurchaseResult> {
-  if (platformOS() === 'web') {
-    return { status: 'unavailable', reason: 'web_not_supported' };
-  }
-
-  const iap = loadIap();
-  if (!iap) {
-    return { status: 'unavailable', reason: 'native_iap_not_linked' };
-  }
-
-  try {
-    const connected = await ensureConnection(iap);
-    if (!connected) {
-      return { status: 'unavailable', reason: 'store_connection_failed' };
-    }
-
-    try {
-      await iap.restorePurchases();
-    } catch {
-      /* Android may only need getAvailablePurchases */
-    }
-
-    const available = await iap.getAvailablePurchases();
-    const list = Array.isArray(available) ? available : [];
-    const match = list.find((p) => {
-      const pid = String((p as { productId?: string }).productId ?? '').toLowerCase();
-      return (
-        pid.includes('small_trip')
-        || ALLOWED_PRODUCT_IDS.has(pid)
-        || ALLOWED_PRODUCT_IDS.has(String((p as { productId?: string }).productId ?? ''))
-      );
-    });
-
-    if (!match) {
-      return { status: 'unavailable', reason: 'no_restorable_purchase' };
-    }
-
-    return mapPurchase(match as {
-      id?: string | null;
-      transactionId?: string | null;
-      productId?: string | null;
-      purchaseToken?: string | null;
-    }, 'restored');
-  } catch (err) {
-    return {
-      status: 'failed',
-      reason: err instanceof Error ? err.message : 'restore_exception',
-    };
-  }
-}
-
-/** True when the native layer reported a verified purchase/restore outcome. */
-export function isVerifiedPurchase(result: PurchaseResult): result is VerifiedPurchase {
-  return result.status === 'purchased' || result.status === 'restored';
+  waiters.clear();
+  unclaimed.clear();
+  introOfferEligibilityByGroup.clear();
 }

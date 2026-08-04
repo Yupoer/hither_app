@@ -115,7 +115,7 @@ describe('CoordinateDestinationSheet wiring contract', () => {
     expect(mapScreen).toContain('cameraAfterSuccessfulAdd');
     expect(groupMap).toContain('moveOnMarkerPress={false}');
     // Transit-oriented defaults live on native/maps boundary (not UI Platform branch).
-    expect(groupMap).toContain('defaultMapTransitProps');
+    expect(groupMap).toContain('platformizedMapViewProps');
   });
 
   it('keeps KML picker copyToCacheDirectory and native-boundary load pipeline', () => {

@@ -15,7 +15,6 @@ import {
   Animated as RNAnimated,
   AppState,
   type AppStateStatus,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -23,9 +22,10 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import MapView, { AnimatedRegion, Marker, MarkerAnimated, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { AnimatedRegion, Marker, MarkerAnimated, Polyline } from 'react-native-maps';
 import type { Coordinates, Destination, MemberLocation } from '../types';
 import { usePreferences, useTheme } from '../state/PreferencesContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { memberColor } from '../glass';
 import type { Palette } from '../theme';
 import { HitherText } from './HitherText';
@@ -38,7 +38,17 @@ import {
 } from './mapCameraMath';
 import { logError, logEvent } from '../utils/activityLog';
 import { useTranslation } from '../i18n';
-import { defaultMapTransitProps } from '../native/maps';
+import {
+  platformizedMapLifecycle,
+  platformizedMapViewProps,
+} from '../native/maps';
+import { energyObservability } from '../state/energyObservability';
+import {
+  displayRoutePoints,
+  routeViewportFromRegion,
+  type RouteViewport,
+} from '../utils/routeLod';
+import { mapKitChromeLayout } from '../utils/mapChromeLayout';
 import {
   pulsePeakScale,
   reduceMotionEmphasisScale,
@@ -225,6 +235,10 @@ const DestinationMarker = React.memo(function DestinationMarker({
     appActive,
     reduceMotion,
   });
+
+  useEffect(() => {
+    energyObservability.event('marker_tracking');
+  }, [bgColor, dest.emoji, dest.id, dest.markerColor, isActiveTarget, isCompleted]);
 
   useEffect(() => {
     if (!canPulse) {
@@ -487,7 +501,8 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
   const loadedLoggedRef = useRef(false);
   const readyAtRef = useRef<number | null>(null);
   const loadedTimeoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { height: windowHeight } = useWindowDimensions();
+  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const { colors, themeName } = useTheme();
   const { dayColors } = usePreferences();
 
@@ -504,6 +519,10 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
   }, []);
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
+  useEffect(() => {
+    energyObservability.increment('render');
+  });
+
   // Shift camera so the pin sits in the midpoint of the strip between the
   // gathering-point carousel (top) and the bottom sheet (bottom).
   const latOffset = latOffsetForVisibleBand(
@@ -519,23 +538,43 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
   const memberCenter = members.find((member) => member.coordinates)?.coordinates;
   const fallbackCenter = initialCenter ?? memberCenter;
   const mapInitialRegion = initialRegionFor(gathering?.coordinates ?? fallbackCenter, latOffset);
+  const [settledRouteViewport, setSettledRouteViewport] = useState<RouteViewport>(() =>
+    routeViewportFromRegion({
+      latitude: mapInitialRegion.latitude,
+      longitudeDelta: mapInitialRegion.longitudeDelta,
+      widthPx: Math.max(1, windowWidth),
+    }),
+  );
+  const displayRoute = useMemo(
+    () => displayRoutePoints(routePoints ?? [], settledRouteViewport),
+    [routePoints, settledRouteViewport],
+  );
+  const mapChrome = useMemo(
+    () => mapKitChromeLayout({ safeArea: insets, topChrome: topOverlap }),
+    [insets, topOverlap],
+  );
 
-  useEffect(() => {
-    if (Platform.OS !== 'android') return;
-    androidMapMountCount += 1;
-    // App lifecycle only — not Google Cloud Map Loads / billing.
-    logEvent('android_map_mount', { mapMountCount: androidMapMountCount });
-    return () => {
+  useEffect(() => platformizedMapLifecycle({
+    onAndroidMapMount: () => {
+      androidMapMountCount += 1;
+      // App lifecycle only — not Google Cloud Map Loads / billing.
+      logEvent('android_map_mount', { mapMountCount: androidMapMountCount });
+    },
+    onAndroidMapUnmount: () => {
       if (loadedTimeoutTimerRef.current) {
         clearTimeout(loadedTimeoutTimerRef.current);
         loadedTimeoutTimerRef.current = null;
       }
       logEvent('android_map_unmount', { mapMountCount: androidMapMountCount });
-    };
-  }, []);
+    },
+  }), []);
 
   const onMapReady = useCallback(() => {
-    if (Platform.OS !== 'android' || readyLoggedRef.current) return;
+    energyObservability.event('map_ready');
+  }, []);
+
+  const onAndroidMapReady = useCallback(() => {
+    if (readyLoggedRef.current) return;
     readyLoggedRef.current = true;
     readyAtRef.current = Date.now();
     logEvent('android_map_ready');
@@ -555,8 +594,8 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     }, MAP_LOADED_TIMEOUT_MS);
   }, []);
 
-  const onMapLoaded = useCallback(() => {
-    if (Platform.OS !== 'android' || loadedLoggedRef.current) return;
+  const onAndroidMapLoaded = useCallback(() => {
+    if (loadedLoggedRef.current) return;
     loadedLoggedRef.current = true;
     if (loadedTimeoutTimerRef.current) {
       clearTimeout(loadedTimeoutTimerRef.current);
@@ -571,6 +610,23 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       mapMountCount: androidMapMountCount,
     });
   }, []);
+
+  const mapPlatformProps = useMemo(
+    () => platformizedMapViewProps({
+      chrome: mapChrome,
+      onMapReady,
+      onAndroidMapReady,
+      onAndroidMapLoaded,
+      onUserLocationSample,
+    }),
+    [
+      mapChrome,
+      onAndroidMapLoaded,
+      onAndroidMapReady,
+      onMapReady,
+      onUserLocationSample,
+    ],
+  );
 
   useImperativeHandle(
     ref,
@@ -747,24 +803,12 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       key={`${mapInterfaceStyle}-${surfaceKey}`}
       ref={mapRef}
       style={StyleSheet.absoluteFill}
-      // Android uses Google Maps; iOS keeps the default MapKit provider.
-      provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+      // Provider, transit defaults, MapKit chrome, lifecycle callbacks and
+      // platform-owned location callbacks come from the native boundary.
+      {...(mapPlatformProps as Record<string, unknown>)}
       initialRegion={mapInitialRegion}
       userInterfaceStyle={mapInterfaceStyle}
       mapPadding={{ top: 42, left: 32, right: 32, bottom: 42 }}
-      // Apple Maps chrome: nudge compass right/down and keep the legal Apple
-      // logo just above the Peak sheet. Android ignores these iOS-only props.
-      {...(Platform.OS === 'ios'
-        ? {
-            compassOffset: { x: 56, y: 56 },
-            appleLogoInsets: {
-              top: 0,
-              right: 0,
-              left: 28,
-              bottom: Math.max(24, bottomOverlap + 8),
-            },
-          }
-        : {})}
       // Continuous local blue-dot from device GPS (offline). Self is not drawn
       // as a flock emoji pin — that would lag on cloud upload cadence.
       showsUserLocation
@@ -783,42 +827,24 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       }}
       // Help long-press win over pan on both platforms (esp. iOS MapKit).
       moveOnMarkerPress={false}
-      // Transit defaults from native boundary (platform selection not in UI).
-      // Android: showsTransit via maps patch. iOS MapKit: standard POIs
-      // (no Google-equivalent transit network toggle).
-      {...(defaultMapTransitProps() as Record<string, unknown>)}
-      onMapReady={onMapReady}
-      onMapLoaded={onMapLoaded}
-      // MapKit is the iOS foreground location owner. Android keeps Expo watcher
-      // only — do not bridge discarded Google Maps location callbacks.
-      {...(Platform.OS === 'ios' && onUserLocationSample
-        ? {
-            onUserLocationChange: (event: {
-              nativeEvent: {
-                coordinate?: {
-                  latitude: number;
-                  longitude: number;
-                  accuracy?: number;
-                  timestamp?: number;
-                };
-              };
-            }) => {
-              const coordinate = event.nativeEvent.coordinate;
-              if (!coordinate) return;
-              const { latitude, longitude, accuracy, timestamp } = coordinate;
-              if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
-              onUserLocationSample({
-                coordinates: { latitude, longitude },
-                accuracy: accuracy != null && Number.isFinite(accuracy) ? accuracy : null,
-                timestamp: timestamp != null && Number.isFinite(timestamp) ? timestamp : Date.now(),
-              });
-            },
-          }
-        : {})}
+      onRegionChangeComplete={(region) => {
+        const nextViewport = routeViewportFromRegion({
+          latitude: region.latitude,
+          longitudeDelta: region.longitudeDelta,
+          widthPx: Math.max(1, windowWidth),
+        });
+        setSettledRouteViewport((current) => (
+          current.latitude === nextViewport.latitude
+          && current.longitudeDelta === nextViewport.longitudeDelta
+          && current.widthPx === nextViewport.widthPx
+            ? current
+            : nextViewport
+        ));
+      }}
     >
       {routePoints && routePoints.length > 1 ? (
         <Polyline
-          coordinates={routePoints}
+          coordinates={displayRoute}
           strokeColor={routeColor ?? colors.accent}
           strokeWidth={5}
           lineCap="round"

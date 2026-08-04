@@ -2,11 +2,15 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const source = readFileSync(join(__dirname, '../components/GroupMap.tsx'), 'utf8');
+const mapsBoundary = readFileSync(join(__dirname, '../native/maps.ts'), 'utf8');
 const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
 
 describe('Android map contract', () => {
   it('selects Google provider only on Android and preserves every shared overlay', () => {
-    expect(source).toContain("Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined");
+    expect(source).toContain('platformizedMapViewProps');
+    expect(source).not.toContain('Platform.OS');
+    expect(source).not.toContain('PROVIDER_GOOGLE');
+    expect(mapsBoundary).toContain("if (isAndroid) props.provider = 'google'");
     expect(source).toContain('<DestinationMarker');
     expect(source).toContain('<MemberMarker');
     expect(source).toContain('<PendingPlaceMarker');
@@ -21,8 +25,9 @@ describe('Android map contract', () => {
   });
 
   it('binds native map location callbacks only to the iOS MapKit owner', () => {
-    expect(source).toContain("...(Platform.OS === 'ios' && onUserLocationSample");
     expect(source).not.toMatch(/onUserLocationChange=\{\(event\) =>/);
+    expect(mapsBoundary).toContain('onUserLocationChange');
+    expect(mapsBoundary).toContain("if (isIOS && options.onUserLocationSample)");
   });
 
   it('records each Android map lifecycle milestone without logging every location callback', () => {
@@ -37,13 +42,8 @@ describe('Android map contract', () => {
     // ready→loaded diagnostic only — no timer-driven surface remount
     expect(source).not.toMatch(/setTimeout\([^)]*setSurfaceKey/);
     expect(source).not.toMatch(/setInterval\([^)]*setSurfaceKey/);
-    const locationHandlerStart = source.indexOf('onUserLocationChange:');
-    expect(locationHandlerStart).toBeGreaterThanOrEqual(0);
-    const locationHandler = source.slice(
-      locationHandlerStart,
-      source.indexOf('}', source.indexOf('onUserLocationSample({', locationHandlerStart) + 1) + 1,
-    );
-    expect(locationHandler).not.toContain('logEvent(');
+    expect(mapsBoundary).toContain("energyObservability.increment('location_callback')");
+    expect(mapsBoundary).not.toContain("logEvent('location_callback'");
   });
 
   it('locks MapScreen initialCenter to the first available coordinate', () => {

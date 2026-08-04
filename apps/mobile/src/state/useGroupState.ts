@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
-import { getGroupState } from '../api/client';
+import { getGroupRecoverySnapshot } from '../api/client';
+import { energyObservability } from './energyObservability';
 import { isNetworkRequestError } from '../api/services/_helpers';
 import { supabase } from '../api/supabase';
 import type { GroupState } from '../types';
@@ -127,6 +128,22 @@ export function useGroupState(
   highAccuracyRef.current = highAccuracy;
 
   const loadInFlightRef = useRef<Promise<boolean> | null>(null);
+  // Realtime can report a newer revision while the recovery RPC is still in
+  // flight. Do not collapse that event into the old promise: the completion
+  // path schedules one immediate follow-up snapshot for the same group.
+  const pendingReloadRef = useRef(false);
+  const groupGenerationRef = useRef(0);
+  const inFlightRevisionRef = useRef<string | null>(null);
+  const latestRevisionRef = useRef('0');
+  const isOlderRevision = useCallback((candidate: string, current: string): boolean => {
+    if (candidate === current) return false;
+    const candidateMs = Date.parse(candidate);
+    const currentMs = Date.parse(current);
+    if (!Number.isNaN(candidateMs) && !Number.isNaN(currentMs)) {
+      return candidateMs < currentMs;
+    }
+    return candidate < current;
+  }, []);
 
   const refreshOpenOperations = useCallback(async (id: string) => {
     try {
@@ -184,11 +201,28 @@ export function useGroupState(
 
   const load = useCallback((): Promise<boolean> => {
     if (!groupId) return Promise.resolve(false);
-    if (loadInFlightRef.current) return loadInFlightRef.current;
+    if (loadInFlightRef.current) {
+      // Initial/group-foreground effects may call load twice for the same
+      // revision. Only a revision that arrived after this request needs a
+      // follow-up; Realtime callbacks explicitly mark their own events below.
+      if (latestRevisionRef.current !== inFlightRevisionRef.current) {
+        pendingReloadRef.current = true;
+      }
+      return loadInFlightRef.current;
+    }
+    const generation = groupGenerationRef.current;
+    inFlightRevisionRef.current = latestRevisionRef.current;
     const run = (async () => {
       try {
-        const next = await getGroupState(groupId);
-        if (activeRef.current) {
+        energyObservability.increment('snapshot');
+        energyObservability.event('snapshot');
+        const recovery = await getGroupRecoverySnapshot(groupId);
+        const next = recovery.state;
+        const staleResponse = isOlderRevision(recovery.revision, latestRevisionRef.current);
+        const isCurrentGeneration =
+          activeRef.current && groupGenerationRef.current === generation;
+        if (isCurrentGeneration && !staleResponse) {
+          latestRevisionRef.current = recovery.revision;
           setState((previous) =>
             mergeRemoteGroupStatePreservingOwnLocation(
               previous,
@@ -207,9 +241,15 @@ export function useGroupState(
         }
         try {
           // Persist snapshot and hydrate server entity versions (OTA-04 #6).
-          await hydrateCoreEntityVersions(groupId, next);
+          if (!staleResponse && isCurrentGeneration) {
+            await hydrateCoreEntityVersions(groupId, next);
+          }
           const snap = await readCoreSnapshot(groupId);
-          if (activeRef.current && snap) {
+          if (
+            activeRef.current
+            && groupGenerationRef.current === generation
+            && snap
+          ) {
             setSnapshotFreshness(coreSnapshotFreshness(snap, Date.now()));
           }
         } catch {
@@ -220,8 +260,9 @@ export function useGroupState(
         await refreshOpenOperations(groupId);
         return true;
       } catch (cause) {
+        if (!activeRef.current || groupGenerationRef.current !== generation) return false;
         const restored = await applyLocalSnapshot(groupId);
-        if (activeRef.current) {
+        if (activeRef.current && groupGenerationRef.current === generation) {
           if (restored) {
             // Offline / network failure with a prior snapshot: show cached data.
             setError(
@@ -242,11 +283,31 @@ export function useGroupState(
         if (activeRef.current) setLoading(false);
       }
     })().finally(() => {
+      if (loadInFlightRef.current !== run) return;
       loadInFlightRef.current = null;
+      inFlightRevisionRef.current = null;
+      const shouldFollow = pendingReloadRef.current;
+      pendingReloadRef.current = false;
+      if (!shouldFollow || !activeRef.current || !groupId) return;
+      if (groupGenerationRef.current !== generation) return;
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
+      // The old response is fully settled here. Start the newer request now,
+      // avoiding the 60-second poll ceiling and remaining observable under
+      // Jest's fake timers as well as native runtimes.
+      if (
+        activeRef.current
+        && groupGenerationRef.current === generation
+        && groupId
+      ) {
+        void loadRef.current();
+      }
     });
     loadInFlightRef.current = run;
     return run;
-  }, [applyLocalSnapshot, groupId, refreshOpenOperations]);
+  }, [applyLocalSnapshot, groupId, isOlderRevision, refreshOpenOperations]);
 
   const loadRef = useRef(load);
   loadRef.current = load;
@@ -262,6 +323,9 @@ export function useGroupState(
   useEffect(() => {
     activeRef.current = true;
     realtimeReadyRef.current = false;
+    const generation = groupGenerationRef.current + 1;
+    groupGenerationRef.current = generation;
+    pendingReloadRef.current = false;
     setLoading(true);
     setState(null);
     setDataSource('none');
@@ -269,6 +333,7 @@ export function useGroupState(
     setEmptyLocalSnapshot(false);
     setError(null);
     pendingPatchesRef.current.clear();
+    latestRevisionRef.current = '0';
 
     if (!groupId) {
       setLoading(false);
@@ -291,6 +356,15 @@ export function useGroupState(
     return () => {
       cancelled = true;
       activeRef.current = false;
+      if (groupGenerationRef.current === generation) {
+        groupGenerationRef.current += 1;
+        // A request for the previous group cannot be reused by the next
+        // effect. It may still settle in the background, but the new group
+        // must start its own recovery request immediately.
+        loadInFlightRef.current = null;
+        inFlightRevisionRef.current = null;
+        pendingReloadRef.current = false;
+      }
     };
   }, [applyLocalSnapshot, groupId]);
 
@@ -306,7 +380,17 @@ export function useGroupState(
     void loadRef.current();
     void flushCoreOperationOutbox().catch(() => undefined);
 
-    const scheduleReload = () => {
+    const scheduleReload = (payload?: { commit_timestamp?: string }) => {
+      const revision = payload?.commit_timestamp;
+      if (revision && isOlderRevision(revision, latestRevisionRef.current)) return;
+      if (revision && isOlderRevision(latestRevisionRef.current, revision)) {
+        latestRevisionRef.current = revision;
+      }
+      energyObservability.increment('realtime_callback');
+      if (loadInFlightRef.current) {
+        pendingReloadRef.current = true;
+        return;
+      }
       if (debounceRef.current) {
         clearTimeout(debounceRef.current);
       }
@@ -365,9 +449,10 @@ export function useGroupState(
             eventType: payload.eventType,
           });
           if (parsed === 'full-reload' || parsed === null) {
-            scheduleReload();
+            scheduleReload(payload as { commit_timestamp?: string });
             return;
           }
+          scheduleReload(payload as { commit_timestamp?: string });
           mergeLocationPatches(pendingPatchesRef.current, parsed);
           scheduleLocationPatch();
         },
@@ -420,7 +505,7 @@ export function useGroupState(
       clearInterval(timer);
       supabase.removeChannel(channel);
     };
-  }, [groupId, appState]);
+  }, [groupId, appState, isOlderRevision]);
 
   return {
     state,
