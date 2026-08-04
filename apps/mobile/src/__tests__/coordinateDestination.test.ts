@@ -130,4 +130,3 @@ describe('CoordinateDestinationSheet wiring contract', () => {
     expect(kmlIo).toContain('expo-file-system');
   });
 });
-

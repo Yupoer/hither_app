@@ -14,4 +14,3 @@
 - [ ] 診斷資料不包含 access token、精確座標、邀請碼、Apple transaction payload 或其他個人資料。
 - [ ] 固定 Map visible／非地圖頁、定位 on／off、網路 on／blocked 的三分鐘 A/B protocol，記錄 build、裝置、OS、電量、亮度與網路條件。
 - [ ] 測試驗證採樣時序、取消、去重、敏感資料排除與穩定期低頻行為。
-

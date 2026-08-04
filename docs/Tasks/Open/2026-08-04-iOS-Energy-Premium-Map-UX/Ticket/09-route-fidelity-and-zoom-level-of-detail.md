@@ -14,4 +14,3 @@
 - [ ] camera gesture 不會每個 frame 都在 JavaScript 重算整條路線；只有有效 tolerance／zoom band 變化時更新顯示 LOD。
 - [ ] iOS 與共用 fallback 路線分別有圓環、連續彎道、U-turn 與長路線回歸測試。
 - [ ] 實機 MapKit 視覺結果未驗證前，不以 unit test 宣稱道路呈現已通過。
-

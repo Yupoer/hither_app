@@ -1,8 +1,8 @@
 # 本地 WIP 整合與 master 交付 Spec
 
-建立日期：2026-08-04  
-狀態：ready-for-agent  
-文件範圍：只定義整合、驗證與交付，不代表任何程式、部署或發布已完成
+建立日期：2026-08-04
+狀態：partial — local integration + review-01 fixes; external gates Unverified/Blocked
+文件範圍：定義整合、驗證與交付；runtime/native/release gates 不得由 Jest 單獨宣告完成
 
 ## Problem Statement
 

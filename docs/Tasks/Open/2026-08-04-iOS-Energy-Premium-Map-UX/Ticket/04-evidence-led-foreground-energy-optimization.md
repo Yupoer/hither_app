@@ -13,4 +13,3 @@
 - [ ] 若沒有足夠實機證據，不進行推測性 memoization、關閉定位、移除 marker 動畫或降低必要同步；報告標示 Unverified。
 - [ ] 修正後以同裝置、同 build 類型與同條件重跑 before／after。
 - [ ] 自動化測試防止修正破壞 Realtime 即時、60 秒保底、30／60 秒被動定位 cadence 與明確操作立即性。
-

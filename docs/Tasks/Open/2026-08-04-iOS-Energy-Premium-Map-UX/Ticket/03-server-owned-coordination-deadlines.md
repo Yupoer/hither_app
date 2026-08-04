@@ -14,4 +14,3 @@
 - [ ] 排程失敗可觀測且可安全重試，不使用無上限 Client retry。
 - [ ] before／after 證據包含 idle 與 open-request 情境的 RPC／GET 數量。
 - [ ] server resolver、Realtime delivery、recovery 與冪等有端到端測試。
-

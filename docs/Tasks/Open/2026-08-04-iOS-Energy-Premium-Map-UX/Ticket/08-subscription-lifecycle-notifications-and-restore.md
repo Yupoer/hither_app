@@ -14,4 +14,3 @@
 - [ ] 到期、退款或撤銷會更新個人 Premium，並在最後一名有效 Premium 消失時關閉相關團隊功能。
 - [ ] monthly／annual 方案切換與 introductory offer 結束後續訂保持同一個人 ownership。
 - [ ] sandbox notifications、restore、重播、亂序與 membership 重算有端到端測試。
-

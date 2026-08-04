@@ -14,4 +14,3 @@
 - [ ] 到期、退款與撤銷造成最後一份有效 entitlement 消失時，團隊功能關閉。
 - [ ] 零、一、多名 Premium 成員及同一使用者加入多個團隊都有 server-authoritative 測試。
 - [ ] 舊七天 trip pass 資料有明確相容或淘汰策略，不被誤認為新的 auto-renewable subscription。
-

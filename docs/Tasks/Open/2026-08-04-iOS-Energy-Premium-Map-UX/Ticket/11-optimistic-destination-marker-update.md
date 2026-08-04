@@ -14,4 +14,3 @@
 - [ ] 關閉外層 overlay 或按右上角完成不是 marker commit 條件。
 - [ ] 本 ticket 不新增離線 outbox，失敗採已核准的 rollback 行為。
 - [ ] success、failure、out-of-order、快速連續修改與 Realtime race 有行為測試。
-

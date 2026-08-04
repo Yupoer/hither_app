@@ -452,7 +452,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const me = useMemo(() => members.find((m) => m.userId === user?.id), [members, user?.id]);
   const myScopeId = me?.subgroupId;
-  
+
   const [viewingScope, setViewingScope] = useState<'main' | 'sub'>('main');
   // Leave a subgroup → force main scope so we never filter against a stale id.
   useEffect(() => {
@@ -471,7 +471,7 @@ export default function MapScreen({ route, navigation }: Props) {
     }
     return all.filter((d) => d.subgroupId == null);
   }, [state?.destinations, isLeader, myScopeId]);
-  
+
   const [optimisticDestinations, setOptimisticDestinations] = useState<Destination[] | null>(null);
   const [pendingDestinationMutations, setPendingDestinationMutations] = useState<
     PendingDestinationMutation[]
@@ -4473,7 +4473,7 @@ export default function MapScreen({ route, navigation }: Props) {
         pointerEvents={atFull ? 'none' : 'box-none'}
       >
         <View style={{ alignItems: 'flex-start' }}>
-          <Pressable 
+          <Pressable
             style={{ zIndex: 2 }}
             onPress={() => {
               if (myScopeId) {
@@ -4482,8 +4482,8 @@ export default function MapScreen({ route, navigation }: Props) {
               }
             }}
           >
-            <liquidGlass.GlassView 
-              tintColor={glass.pill} 
+            <liquidGlass.GlassView
+              tintColor={glass.pill}
               style={styles.groupPill}
             >
               <View style={styles.pillAvatars}>
@@ -4502,7 +4502,7 @@ export default function MapScreen({ route, navigation }: Props) {
                 })()}
               </View>
               <Text style={styles.pillName} numberOfLines={1}>
-                {myScopeId 
+                {myScopeId
                   ? (viewingScope === 'main' ? (group?.name ?? 'Hither') : '小隊')
                   : (group?.name ?? 'Hither')}
               </Text>

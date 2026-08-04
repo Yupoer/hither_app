@@ -12,4 +12,3 @@
 - [ ] 中英文、動態字級、iPhone 窄寬與 iPad 寬版下，icon 與文字不重疊、不裁切。
 - [ ] VoiceOver label、role 與 action 保持可用，視覺調整不建立第二個 press target。
 - [ ] layout／snapshot 測試直接驗證 icon inset 與文字幾何中心。
-

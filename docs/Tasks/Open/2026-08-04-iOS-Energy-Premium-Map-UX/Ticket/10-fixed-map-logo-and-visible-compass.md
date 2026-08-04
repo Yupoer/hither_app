@@ -13,4 +13,3 @@
 - [ ] 若使用 native 修補，驗證 MapKit subview layout；若使用自繪羅盤，保留 heading、camera rotation、tap-to-north、accessibility 與 reduced-motion。
 - [ ] iPhone 與 iPad、Peak 與 Stage 1、直向與可用橫向配置都有 layout／snapshot 檢查。
 - [ ] release-like iOS 實機驗證前，報告明確標示 MapKit chrome 為 Unverified。
-

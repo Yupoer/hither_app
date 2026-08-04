@@ -1,8 +1,8 @@
 # iOS 能耗、Premium 訂閱、路線與地圖 UX Spec
 
-建立日期：2026-08-04  
-狀態：ready-for-agent；ticket breakdown 與測試接縫已於 2026-08-04 核准  
-規劃基準：`origin/master`（調查時為 `2b61da8`）  
+建立日期：2026-08-04
+狀態：ready-for-agent；ticket breakdown 與測試接縫已於 2026-08-04 核准
+規劃基準：`origin/master`（調查時為 `2b61da8`）
 目標執行方式：獨立 worktree，由 `Subagent 5.6 Luna-Effort-Max` 實作
 
 ## Problem Statement

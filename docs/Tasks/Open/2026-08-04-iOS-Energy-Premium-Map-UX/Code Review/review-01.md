@@ -1,16 +1,16 @@
 # iOS Energy、Premium、Map UX — Code Review 01
 
-**日期：** 2026-08-04  
-**結果：** Changes requested  
-**固定點：** `HEAD aa6f31b04f14ea09bae44187cd55b843776c4eeb` 相對目前 task-scoped working tree  
-**Spec 來源：** `Spec/ios-energy-premium-map-ux-spec-2026-08-04.md` 與 `Ticket/01`–`13`  
+**日期：** 2026-08-04
+**結果：** Changes requested
+**固定點：** `HEAD aa6f31b04f14ea09bae44187cd55b843776c4eeb` 相對目前 task-scoped working tree
+**Spec 來源：** `Spec/ios-energy-premium-map-ux-spec-2026-08-04.md` 與 `Ticket/01`–`13`
 **範圍說明：** 本分支沒有 task commit；spec 記錄的 `origin/master 2b61da8` 現在位於此分支前方，因此不能作為 `git diff <fixed-point>...HEAD` 的實作基準。本次納入 `apps/mobile/`、`supabase/` 的 tracked diff 與 untracked 新檔，排除既有且無關的 `CLAUDE.md`、`SETUP_NEW_MACHINE.md`、`support-site/` 變更。
 
 ## Standards
 
 ### [P3] Map UI 新增的 chrome 邏輯仍直接分支 `Platform.OS`
 
-**位置：** `apps/mobile/src/components/GroupMap.tsx:775-782`  
+**位置：** `apps/mobile/src/components/GroupMap.tsx:775-782`
 **標準：** `CLAUDE.md`「原生能力唯一入口是 `apps/mobile/src/native/`」及「UI 元件禁止直接判斷 `Platform.OS`」。
 
 本次修改在既有平台分支中加入 `compassOffset` 與 `appleLogoInsets`，讓 MapKit chrome 的平台策略繼續留在 UI 元件。Expo Go fallback、Android 或日後其他 runtime 的 prop 策略因此要同時修改 UI 與 native boundary，容易把 iOS-only props 下發到錯誤 runtime。
@@ -39,7 +39,7 @@ handler 先寫入 `premium_store_notifications`，之後才查帳號並呼叫 `a
 
 ### [P1] 缺少 `expiresDate` 的訂閱交易會被視為永久 active
 
-**位置：** `supabase/functions/_shared/storekit.ts:182-195`  
+**位置：** `supabase/functions/_shared/storekit.ts:182-195`
 **Spec：** `Spec/...md:108` 與 `Ticket/07...md:10-11` 要求驗證 purchase／expiry／revocation，必要資料不足時 fail closed。
 
 `expiresDate` 缺失時 `expiresAt` 會是 `null`，但 status 仍落入 `active`；後續 projection 又把 `expires_at is null` 視為有效且無期限。合法簽章但缺少 subscription expiry 的 payload 因此可能取得永久 Premium。
@@ -63,7 +63,7 @@ handler 先寫入 `premium_store_notifications`，之後才查帳號並呼叫 `a
 
 ### [P2] Legacy profile Pro 仍被投影成個人與團隊 Premium
 
-**位置：** `supabase/migrations/20260804000000_personal_premium_projection.sql:81-86,348-373`  
+**位置：** `supabase/migrations/20260804000000_personal_premium_projection.sql:81-86,348-373`
 **Spec：** `Spec/...md:101,107` 定義 Premium 為 Apple auto-renewable subscription，Client local Pro flag 不得授權；`Ticket/05...md:16` 要求舊資料不可誤認為新訂閱。
 
 `profile_has_lifetime_premium()` 會在沒有 StoreKit entitlement 時直接產生 `personalPremiumActive`，且 `group_has_active_subscription_premium()` 也把同一 legacy profile 狀態納入團隊投影。沒有 Apple entitlement 的舊 Pro 帳號因此仍可開啟新 Premium 能力。
@@ -72,7 +72,7 @@ handler 先寫入 `premium_store_notifications`，之後才查帳號並呼叫 `a
 
 ### [P2] Realtime 事件與 in-flight snapshot 競態會漏掉立即重抓
 
-**位置：** `apps/mobile/src/state/useGroupState.ts:196-205,326-338`  
+**位置：** `apps/mobile/src/state/useGroupState.ts:196-205,326-338`
 **Spec：** `Spec/...md:89` 要求 Realtime 是一般前景同步主路徑；`Ticket/02...md:12` 要求舊 snapshot 不得覆蓋較新 Realtime state。
 
 revision fence 會正確丟棄舊 snapshot，但 Realtime 安排的 reload 若在舊 snapshot 仍 in-flight 時觸發，`load()` 只回傳既有 Promise，沒有 pending-follow-up。舊 response 被丟棄後也不會立即再抓一次。
@@ -83,7 +83,7 @@ revision fence 會正確丟棄舊 snapshot，但 Realtime 安排的 reload 若�
 
 ### [P2] Route LOD 不是依 screen-space tolerance 連續派生
 
-**位置：** `apps/mobile/src/utils/routeLod.ts:29-52,113-127`  
+**位置：** `apps/mobile/src/utils/routeLod.ts:29-52,113-127`
 **Spec：** `Spec/...md:119` 與 `Ticket/09...md:12` 要求依 viewport／zoom 的 screen-space tolerance 派生，細節隨縮放連續變化。
 
 目前先把 viewport 切成五個 zoom band，再套用固定的 `0/2/8/24/64` 公尺 tolerance。同一 band 內 tolerance 不隨 meters-per-pixel 變化，跨 `1.5/6/20/70 m/px` 門檻時又會離散跳變。

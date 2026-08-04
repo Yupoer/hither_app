@@ -65,4 +65,3 @@ export function premiumProductForPlan(plan: PremiumPlan): PremiumProductConfig |
 export function premiumPlanForProduct(productId: string): PremiumPlan | null {
   return PREMIUM_CATALOG.products.find((product) => product.productId === productId)?.plan ?? null;
 }
-

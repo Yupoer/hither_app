@@ -14,4 +14,3 @@
 - [ ] 使用者取消、pending、付款失敗與驗證失敗都不建立 entitlement。
 - [ ] 同一交易重試不會重複 grant，且不會因 Client 重複 listener 產生多次付款流程。
 - [ ] Apple sandbox 合法交易與偽造／錯誤交易 fixtures 有 server 與 client 端到端測試。
-

@@ -14,4 +14,3 @@
 - [ ] 強制重新整理仍立即執行，不需等待下一個 60 秒週期。
 - [ ] before／after 證據記錄相同情境下的 request count、payload size、duration 與失敗恢復結果。
 - [ ] server、client projection、Realtime race 與 optimistic merge 有端到端回歸測試。
-

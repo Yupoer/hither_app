@@ -268,7 +268,7 @@ export default function DestinationReorderList({
     if (!draggingRef.current) return;
     draggingRef.current = false;
     onDragActiveChange?.(false);
-    
+
     setActiveId(null);
     pan.setValue(0);
 
@@ -297,7 +297,7 @@ export default function DestinationReorderList({
            break;
        }
     }
-    
+
     if (changed) {
       onReorder(updates);
     }
@@ -468,10 +468,10 @@ export default function DestinationReorderList({
                <Text style={styles.modalTitle}>選擇第 {colorPickerDay} 天的旗幟顏色</Text>
                <View style={styles.colorPickerContainer}>
                   {DAY_COLORS.map(c => (
-                     <Pressable 
-                        key={c} 
-                        onPress={() => { setDayColor(colorPickerDay!, c); setColorPickerDay(null); }} 
-                        style={[styles.colorPickerDot, { backgroundColor: c }]} 
+                     <Pressable
+                        key={c}
+                        onPress={() => { setDayColor(colorPickerDay!, c); setColorPickerDay(null); }}
+                        style={[styles.colorPickerDot, { backgroundColor: c }]}
                      />
                   ))}
                </View>
