@@ -70,7 +70,6 @@ let updateSubscription: { remove: () => void } | null = null;
 let errorSubscription: { remove: () => void } | null = null;
 const waiters = new Map<string, Deferred[]>();
 const unclaimed = new Map<string, StorePurchase>();
-const introOfferEligibilityByGroup = new Map<string, Promise<boolean>>();
 
 function isIosRuntime(): boolean {
   try {
@@ -84,10 +83,11 @@ function isIosRuntime(): boolean {
 function introOfferEligibility(
   iap: IapModule,
   groupId: string | null | undefined,
+  eligibilityByGroup: Map<string, Promise<boolean>>,
 ): Promise<boolean> {
   if (!isIosRuntime() || !groupId?.trim()) return Promise.resolve(false);
   const normalizedGroupId = groupId.trim();
-  const cached = introOfferEligibilityByGroup.get(normalizedGroupId);
+  const cached = eligibilityByGroup.get(normalizedGroupId);
   if (cached) return cached;
 
   const result = Promise.resolve()
@@ -101,7 +101,7 @@ function introOfferEligibility(
       }
     })
     .catch(() => false);
-  introOfferEligibilityByGroup.set(normalizedGroupId, result);
+  eligibilityByGroup.set(normalizedGroupId, result);
   return result;
 }
 
@@ -258,9 +258,16 @@ export async function fetchPremiumProducts(): Promise<PremiumStoreProduct[]> {
         .map((product) => product.subscriptionGroupIdIOS?.trim() ?? '')
         .filter(Boolean),
     )];
+    // Eligibility is a StoreKit account state, not durable product metadata.
+    // Deduplicate the monthly/annual query only within this catalog fetch so a
+    // later fetch can observe an account that has used or gained an offer.
+    const eligibilityByGroup = new Map<string, Promise<boolean>>();
     const eligibility = new Map<string, boolean>();
     await Promise.all(groupIds.map(async (groupId) => {
-      eligibility.set(groupId, await introOfferEligibility(iap, groupId));
+      eligibility.set(
+        groupId,
+        await introOfferEligibility(iap, groupId, eligibilityByGroup),
+      );
     }));
     return mappedProducts.map((product) => ({
       ...product,
@@ -391,5 +398,4 @@ export function __resetPurchaseAdapterForTests(): void {
   }
   waiters.clear();
   unclaimed.clear();
-  introOfferEligibilityByGroup.clear();
 }

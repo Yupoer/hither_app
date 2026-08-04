@@ -263,6 +263,27 @@ export type PlatformizedMapViewOptions = {
 };
 
 /**
+ * Normalize the iOS location event at the native boundary. The caller may
+ * install this as a MapView callback without branching on Platform.OS.
+ */
+export function handlePlatformizedUserLocationChange(
+  event: MapUserLocationChangeEvent,
+  onUserLocationSample?: PlatformizedMapViewOptions['onUserLocationSample'],
+): void {
+  if (Platform.OS !== 'ios' || !onUserLocationSample) return;
+  energyObservability.increment('location_callback');
+  const coordinate = event.nativeEvent.coordinate;
+  if (!coordinate) return;
+  const { latitude, longitude, accuracy, timestamp } = coordinate;
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+  onUserLocationSample({
+    coordinates: { latitude, longitude },
+    accuracy: accuracy != null && Number.isFinite(accuracy) ? accuracy : null,
+    timestamp: timestamp != null && Number.isFinite(timestamp) ? timestamp : Date.now(),
+  });
+}
+
+/**
  * Complete platform seam for the MapView surface. GroupMap owns map intent;
  * this boundary owns provider selection, MapKit chrome, lifecycle scoping and
  * the iOS-only user-location callback. Unsupported runtimes get safe defaults.
@@ -291,18 +312,8 @@ export function platformizedMapViewProps(
     props.onMapLoaded = options.onAndroidMapLoaded;
   }
   if (isIOS && options.onUserLocationSample) {
-    props.onUserLocationChange = (event) => {
-      energyObservability.increment('location_callback');
-      const coordinate = event.nativeEvent.coordinate;
-      if (!coordinate) return;
-      const { latitude, longitude, accuracy, timestamp } = coordinate;
-      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
-      options.onUserLocationSample?.({
-        coordinates: { latitude, longitude },
-        accuracy: accuracy != null && Number.isFinite(accuracy) ? accuracy : null,
-        timestamp: timestamp != null && Number.isFinite(timestamp) ? timestamp : Date.now(),
-      });
-    };
+    props.onUserLocationChange = (event) =>
+      handlePlatformizedUserLocationChange(event, options.onUserLocationSample);
   }
   return props;
 }

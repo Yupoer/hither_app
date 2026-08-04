@@ -36,7 +36,8 @@ describe('Ticket 6 catalog and StoreKit native boundary', () => {
 
   it('requires StoreKit group eligibility before showing an intro offer', () => {
     expect(adapter).toContain('isEligibleForIntroOfferIOS');
-    expect(adapter).toContain('introOfferEligibilityByGroup');
+    expect(adapter).toContain('const eligibilityByGroup');
+    expect(adapter).not.toContain('const introOfferEligibilityByGroup');
     expect(adapter).toContain('introductoryOfferEligibleIOS');
     expect(adapter).toContain("Platform?.OS === 'ios'");
     expect(paywall).toContain('hasEligibleIntroductoryOffer(product)');

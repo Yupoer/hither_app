@@ -39,6 +39,7 @@ import {
 import { logError, logEvent } from '../utils/activityLog';
 import { useTranslation } from '../i18n';
 import {
+  handlePlatformizedUserLocationChange,
   platformizedMapLifecycle,
   platformizedMapViewProps,
 } from '../native/maps';
@@ -611,22 +612,30 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     });
   }, []);
 
+  // Let the boundary build its platform-owned props first. The Android
+  // diagnostics capture refs, so attach those event handlers after the
+  // boundary call instead of passing ref-bearing callbacks into it during
+  // render.
   const mapPlatformProps = useMemo(
-    () => platformizedMapViewProps({
-      chrome: mapChrome,
-      onMapReady,
-      onAndroidMapReady,
-      onAndroidMapLoaded,
-      onUserLocationSample,
-    }),
-    [
-      mapChrome,
-      onAndroidMapLoaded,
-      onAndroidMapReady,
-      onMapReady,
-      onUserLocationSample,
-    ],
+    () => platformizedMapViewProps({ chrome: mapChrome }),
+    [mapChrome],
   );
+  const platformOnMapReady = mapPlatformProps.onMapReady;
+  const isGoogleMap = mapPlatformProps.provider === 'google';
+  const mapViewProps = {
+    ...mapPlatformProps,
+    onMapReady: () => {
+      platformOnMapReady?.();
+      onMapReady();
+      if (isGoogleMap) onAndroidMapReady();
+    },
+    ...(isGoogleMap ? { onMapLoaded: onAndroidMapLoaded } : {}),
+    ...(onUserLocationSample ? {
+      onUserLocationChange: (event: Parameters<NonNullable<typeof mapPlatformProps.onUserLocationChange>>[0]) => {
+        handlePlatformizedUserLocationChange(event, onUserLocationSample);
+      },
+    } : {}),
+  };
 
   useImperativeHandle(
     ref,
@@ -805,7 +814,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       style={StyleSheet.absoluteFill}
       // Provider, transit defaults, MapKit chrome, lifecycle callbacks and
       // platform-owned location callbacks come from the native boundary.
-      {...(mapPlatformProps as Record<string, unknown>)}
+      {...(mapViewProps as Record<string, unknown>)}
       initialRegion={mapInitialRegion}
       userInterfaceStyle={mapInterfaceStyle}
       mapPadding={{ top: 42, left: 32, right: 32, bottom: 42 }}

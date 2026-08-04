@@ -52,18 +52,47 @@ Deno.test('StoreKit validation rejects forged binding fields', () => {
   }
 });
 
-Deno.test('StoreKit validation fails closed when subscription type or expiry is missing', () => {
-  for (const [field, overrides] of [
-    ['type', { type: undefined }],
-    ['expiresDate', { expiresDate: undefined }],
-    ['invalid expiry date', { expiresDate: Number.MAX_SAFE_INTEGER }],
-    ['expiry before purchase', { expiresDate: 1_799_000_000_000 }],
-  ] as const) {
-    const result = validateStoreKitTransaction(payload(overrides), config, 1_800_000_010_000);
-    if (result.ok) throw new Error(`accepted ${field}`);
-    if (!['transaction_date_invalid', 'transaction_expiry_invalid'].includes(result.error)) {
-      throw new Error(`unexpected ${field} error: ${result.error}`);
-    }
+Deno.test('StoreKit validation rejects a missing subscription type precisely', () => {
+  const result = validateStoreKitTransaction(
+    payload({ type: undefined }),
+    config,
+    1_800_000_010_000,
+  );
+  if (result.ok || result.error !== 'transaction_type_mismatch') {
+    throw new Error(`expected transaction_type_mismatch, got ${result.ok ? 'accepted' : result.error}`);
+  }
+});
+
+Deno.test('StoreKit validation rejects a missing expiry precisely', () => {
+  const result = validateStoreKitTransaction(
+    payload({ expiresDate: undefined }),
+    config,
+    1_800_000_010_000,
+  );
+  if (result.ok || result.error !== 'transaction_date_invalid') {
+    throw new Error(`expected transaction_date_invalid, got ${result.ok ? 'accepted' : result.error}`);
+  }
+});
+
+Deno.test('StoreKit validation rejects an invalid expiry precisely', () => {
+  const result = validateStoreKitTransaction(
+    payload({ expiresDate: Number.MAX_SAFE_INTEGER }),
+    config,
+    1_800_000_010_000,
+  );
+  if (result.ok || result.error !== 'transaction_date_invalid') {
+    throw new Error(`expected transaction_date_invalid, got ${result.ok ? 'accepted' : result.error}`);
+  }
+});
+
+Deno.test('StoreKit validation rejects an expiry at or before purchase precisely', () => {
+  const result = validateStoreKitTransaction(
+    payload({ expiresDate: 1_800_000_000_000 }),
+    config,
+    1_800_000_010_000,
+  );
+  if (result.ok || result.error !== 'transaction_expiry_invalid') {
+    throw new Error(`expected transaction_expiry_invalid, got ${result.ok ? 'accepted' : result.error}`);
   }
 });
 
@@ -89,6 +118,28 @@ Deno.test('StoreKit validation maps expiry and revocation to terminal states', (
     config,
   );
   if (!revoked.ok || revoked.transaction.status !== 'revoked') throw new Error('expected revoked');
+});
+
+Deno.test('StoreKit validation rejects malformed revocation dates precisely', () => {
+  for (const [label, revocationDate] of [
+    ['missing value', undefined],
+    ['null value', null],
+    ['zero', 0],
+    ['fractional milliseconds', 1_800_000_002_000.5],
+    ['overflow date', Number.MAX_SAFE_INTEGER],
+    ['before purchase', 1_799_999_999_999],
+  ] as const) {
+    const result = validateStoreKitTransaction(
+      payload({ revocationDate }),
+      config,
+      1_800_000_010_000,
+    );
+    if (result.ok || result.error !== 'transaction_revocation_date_invalid') {
+      throw new Error(
+        `expected transaction_revocation_date_invalid for ${label}, got ${result.ok ? 'accepted' : result.error}`,
+      );
+    }
+  }
 });
 
 Deno.test('server configuration fails closed without root pin or exact two products', () => {

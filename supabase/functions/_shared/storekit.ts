@@ -201,7 +201,21 @@ export function validateStoreKitTransaction(
     return { ok: false, error: 'transaction_expiry_invalid' };
   }
 
-  const revocationDate = dateFromMilliseconds(payload.revocationDate);
+  // A revocation field is optional, but an emitted field must be valid. Do
+  // not let malformed revocation data fall through as an active entitlement.
+  const hasRevocationDate = Object.prototype.hasOwnProperty.call(payload, 'revocationDate');
+  const revocationDate = hasRevocationDate
+    ? dateFromMilliseconds(payload.revocationDate)
+    : null;
+  if (
+    hasRevocationDate
+    && (
+      !revocationDate
+      || Date.parse(revocationDate) < Date.parse(purchaseDate)
+    )
+  ) {
+    return { ok: false, error: 'transaction_revocation_date_invalid' };
+  }
   const status = revocationDate
     ? 'revoked'
     : payload.expiresDate != null && payload.expiresDate <= nowMs

@@ -68,7 +68,9 @@ afterEach(() => {
 
 describe('StoreKit introductory-offer eligibility', () => {
   it('queries one iOS subscription group and shares the result across plans', async () => {
-    const eligibility = jest.fn().mockResolvedValue(true);
+    const eligibility = jest.fn()
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
     const { adapter } = loadAdapter({ platform: 'ios', eligibility });
 
     const products = await adapter.fetchPremiumProducts();
@@ -79,8 +81,9 @@ describe('StoreKit introductory-offer eligibility', () => {
       expect.objectContaining({ id: 'premium.annual', introductoryOfferEligibleIOS: true }),
     ]));
 
-    await adapter.fetchPremiumProducts();
-    expect(eligibility).toHaveBeenCalledTimes(1);
+    const refreshedProducts = await adapter.fetchPremiumProducts();
+    expect(eligibility).toHaveBeenCalledTimes(2);
+    expect(refreshedProducts.every((item) => item.introductoryOfferEligibleIOS === false)).toBe(true);
   });
 
   it('fails closed when StoreKit eligibility rejects', async () => {
