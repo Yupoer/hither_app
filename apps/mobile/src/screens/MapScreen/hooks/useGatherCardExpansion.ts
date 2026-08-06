@@ -6,6 +6,8 @@ export function useGatherCardExpansion(defaultExpanded: boolean) {
   const [overrides, setOverrides] = useState<Record<string, boolean>>({});
   const overridesRef = useRef(overrides);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** When true, auto-collapse timers are suppressed (feature tour). */
+  const autoCollapsePausedRef = useRef(false);
 
   const replaceOverrides = useCallback((next: Record<string, boolean>) => {
     overridesRef.current = next;
@@ -18,8 +20,13 @@ export function useGatherCardExpansion(defaultExpanded: boolean) {
   }, []);
 
   const scheduleCollapse = useCallback((id: string) => {
+    if (autoCollapsePausedRef.current) return;
     clearTimer();
     timerRef.current = setTimeout(() => {
+      if (autoCollapsePausedRef.current) {
+        timerRef.current = null;
+        return;
+      }
       if (overridesRef.current[id] === true) replaceOverrides({});
       timerRef.current = null;
     }, AUTO_COLLAPSE_MS);
@@ -46,7 +53,26 @@ export function useGatherCardExpansion(defaultExpanded: boolean) {
     scheduleCollapse(id);
   }, [clearTimer, defaultExpanded, replaceOverrides, scheduleCollapse]);
 
+  /** Force a card open without starting auto-collapse (tour-friendly). */
+  const expandCard = useCallback((id: string) => {
+    clearTimer();
+    replaceOverrides({ [id]: true });
+    if (!autoCollapsePausedRef.current && !defaultExpanded) {
+      scheduleCollapse(id);
+    }
+  }, [clearTimer, defaultExpanded, replaceOverrides, scheduleCollapse]);
+
+  const pauseAutoCollapse = useCallback(() => {
+    autoCollapsePausedRef.current = true;
+    clearTimer();
+  }, [clearTimer]);
+
+  const resumeAutoCollapse = useCallback(() => {
+    autoCollapsePausedRef.current = false;
+  }, []);
+
   const registerCardActivity = useCallback((id: string) => {
+    if (autoCollapsePausedRef.current) return;
     if (!defaultExpanded && overridesRef.current[id] === true) scheduleCollapse(id);
   }, [defaultExpanded, scheduleCollapse]);
 
@@ -57,5 +83,12 @@ export function useGatherCardExpansion(defaultExpanded: boolean) {
 
   useEffect(() => clearTimer, [clearTimer]);
 
-  return { isCardExpanded, toggleCard, registerCardActivity };
+  return {
+    isCardExpanded,
+    toggleCard,
+    registerCardActivity,
+    expandCard,
+    pauseAutoCollapse,
+    resumeAutoCollapse,
+  };
 }

@@ -27,6 +27,8 @@ export interface AccountPreferences {
   quickCommands?: Array<CustomQuickCommand | null>;
   /** @deprecated Prefer `quickCommands[0]`; still read for older rows. */
   quickCommand?: CustomQuickCommand;
+  /** One-time group feature tour completed (account-scoped, best-effort sync). */
+  groupFeatureTourCompleted?: boolean;
 }
 
 export function normalizeCustomQuickCommand(value: unknown): CustomQuickCommand | null {
