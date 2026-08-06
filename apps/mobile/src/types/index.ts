@@ -65,6 +65,7 @@ export function normalizeCustomQuickCommands(prefs: unknown): Array<CustomQuickC
 /** Build AccountPreferences for profile writes / session state. */
 export function accountPreferencesFromSlots(
   slots: Array<CustomQuickCommand | null>,
+  extras?: Pick<AccountPreferences, 'groupFeatureTourCompleted'>,
 ): AccountPreferences {
   const quickCommands = Array.from({ length: CUSTOM_QUICK_COMMAND_SLOTS }, (_, i) => slots[i] ?? null);
   const first = quickCommands.find((s) => s != null) ?? null;
@@ -72,7 +73,34 @@ export function accountPreferencesFromSlots(
     quickCommands,
     // Keep legacy key so older clients / partial readers still see slot 0.
     ...(first ? { quickCommand: first } : {}),
+    ...(extras?.groupFeatureTourCompleted === true
+      ? { groupFeatureTourCompleted: true }
+      : extras?.groupFeatureTourCompleted === false
+        ? { groupFeatureTourCompleted: false }
+        : {}),
   };
+}
+
+/**
+ * Normalize a full server/local preferences object for session hydrate.
+ * Must preserve flags such as `groupFeatureTourCompleted` — slot-only rebuilds drop them.
+ */
+export function normalizeAccountPreferences(prefs: unknown): AccountPreferences {
+  const slots = normalizeCustomQuickCommands(prefs);
+  if (!prefs || typeof prefs !== 'object') {
+    return accountPreferencesFromSlots(slots);
+  }
+  const row = prefs as { groupFeatureTourCompleted?: unknown };
+  const tour =
+    row.groupFeatureTourCompleted === true
+      ? true
+      : row.groupFeatureTourCompleted === false
+        ? false
+        : undefined;
+  return accountPreferencesFromSlots(
+    slots,
+    tour === undefined ? undefined : { groupFeatureTourCompleted: tour },
+  );
 }
 
 /**

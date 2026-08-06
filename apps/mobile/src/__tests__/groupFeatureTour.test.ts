@@ -1,7 +1,11 @@
 /**
  * Tickets 06–09 — group feature tour foundation + lifecycle (pure seams).
  */
-import { TOUR_STEPS, GROUP_FEATURE_TOUR_STORAGE_KEY } from '../featureTour/constants';
+import {
+  TOUR_STEPS,
+  GROUP_FEATURE_TOUR_STORAGE_KEY,
+  buildTourSteps,
+} from '../featureTour/constants';
 import {
   advanceTour,
   createTourControllerState,
@@ -37,6 +41,35 @@ describe('group feature tour step order', () => {
     expect(ids[ids.length - 1]).toBe('getStarted');
     expect(stepCount()).toBe(TOUR_STEPS.length);
     expect(stepCount()).toBeGreaterThanOrEqual(15);
+  });
+
+  it('omits nav and personal-arrive when those controls are unavailable', () => {
+    const leaderHiddenNav = buildTourSteps({
+      navCommandVisible: false,
+      personalArriveVisible: true,
+    });
+    expect(stepOrder(leaderHiddenNav)).not.toContain('navCommand');
+    expect(stepOrder(leaderHiddenNav)).toContain('personalArrive');
+    expect(stepOrder(leaderHiddenNav)).toContain('paneMembers');
+
+    const memberNoArrive = buildTourSteps({
+      navCommandVisible: true,
+      personalArriveVisible: false,
+    });
+    expect(stepOrder(memberNoArrive)).toContain('navCommand');
+    expect(stepOrder(memberNoArrive)).not.toContain('personalArrive');
+
+    const bothMissing = buildTourSteps({
+      navCommandVisible: false,
+      personalArriveVisible: false,
+    });
+    expect(stepCount(bothMissing)).toBe(TOUR_STEPS.length - 2);
+    // Controller advances only over the filtered plan.
+    let state = startTour();
+    while (state.active && !isFinalStep(state, bothMissing)) {
+      state = advanceTour(state, bothMissing);
+    }
+    expect(currentStep(state, bothMissing)?.id).toBe('getStarted');
   });
 
   it('advances only forward and restarts at zero after stop', () => {

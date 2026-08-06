@@ -6,6 +6,7 @@ import React, {
   useState,
 } from 'react';
 import {
+  AccessibilityInfo,
   ActivityIndicator,
   Alert,
   AppState,
@@ -3903,11 +3904,77 @@ export default function MapScreen({ route, navigation }: Props) {
     heightSV.value = detents[midIndex] ?? detents[0];
   }, [detents, heightSV]);
 
+  // Mirror first-card control visibility so the tour never steps onto missing chrome.
+  const tourControlAvailability = useMemo(() => {
+    const dest = destinations[0];
+    if (!dest) {
+      return { navCommandVisible: false, personalArriveVisible: false };
+    }
+    const { flockNavigatingThis } = deriveCardNavFlags({
+      destId: dest.id,
+      isLeader,
+      sharedTargetId,
+      pendingLeaderTargetId,
+      journeyBusy,
+    });
+    const canMarkArrival = canMarkDestinationArrival({
+      destId: dest.id,
+      destOrder: dest.order,
+      destSubgroupId: dest.subgroupId,
+      scopedDestinations: destinations,
+      myArrivedDestinationIds: myCompletedDestinationIds,
+    });
+    const showArrivalControl =
+      Boolean(user?.id)
+      && canMarkArrival
+      && sharedTargetId === dest.id
+      && !dest.closedAt;
+    const navCmd = resolveNavCommand({
+      isLeader,
+      personallyArrived: myCompletedDestinationIds.has(dest.id),
+      flockNavigatingThis,
+      isNextTeamPending: true,
+      teamStartBlocked: false,
+    });
+    return {
+      navCommandVisible: navCmd.kind !== 'hidden',
+      personalArriveVisible: showArrivalControl,
+    };
+  }, [
+    destinations,
+    isLeader,
+    sharedTargetId,
+    pendingLeaderTargetId,
+    journeyBusy,
+    myCompletedDestinationIds,
+    user?.id,
+  ]);
+
+  const [tourReduceMotion, setTourReduceMotion] = useState(false);
+  useEffect(() => {
+    let mounted = true;
+    void AccessibilityInfo.isReduceMotionEnabled?.().then((enabled) => {
+      if (mounted) setTourReduceMotion(Boolean(enabled));
+    });
+    const sub = AccessibilityInfo.addEventListener(
+      'reduceMotionChanged',
+      setTourReduceMotion,
+    );
+    return () => {
+      mounted = false;
+      // RN returns { remove } on modern; older returns remove function.
+      if (sub && typeof (sub as { remove?: () => void }).remove === 'function') {
+        (sub as { remove: () => void }).remove();
+      }
+    };
+  }, []);
+
   const {
     tourActive,
     step: tourStep,
     targetRect: tourTargetRect,
     onNext: onTourNext,
+    completing: tourCompleting,
     reevaluate: reevaluateTour,
   } = useGroupFeatureTour({
     groupId,
@@ -3923,6 +3990,8 @@ export default function MapScreen({ route, navigation }: Props) {
     setSheetMid,
     selectSheetPane,
     measureTarget: measureTourTarget,
+    navCommandVisible: tourControlAvailability.navCommandVisible,
+    personalArriveVisible: tourControlAvailability.personalArriveVisible,
   });
   reevaluateTourRef.current = reevaluateTour;
 
@@ -4331,22 +4400,23 @@ export default function MapScreen({ route, navigation }: Props) {
     <>
       {/* Icon tabs: solid fill only — no Liquid Glass edge halo / white rim. */}
       <View style={styles.sheetPaneToggleWrap}>
-        <View
-          style={styles.sheetPaneToggleGlass}
-          ref={(n) => {
-            // Highlight active pane tab strip for Stage Two tour steps.
-            setTourTargetRef('paneMembers', sheetPane === 'members' ? n : tourTargetRefs.current.paneMembers ?? n);
-            setTourTargetRef('paneRoute', sheetPane === 'route' ? n : tourTargetRefs.current.paneRoute ?? n);
-            setTourTargetRef('paneTools', sheetPane === 'tools' ? n : tourTargetRefs.current.paneTools ?? n);
-            setTourTargetRef('paneStore', sheetPane === 'store' ? n : tourTargetRefs.current.paneStore ?? n);
-          }}
-          collapsable={false}
-        >
+        <View style={styles.sheetPaneToggleGlass} collapsable={false}>
           <SheetPaneTabs
             accent={accent}
             options={sheetPaneOptions}
             value={sheetPane}
             onChange={selectSheetPane}
+            onTabNode={(key, node) => {
+              const targetId =
+                key === 'members'
+                  ? 'paneMembers'
+                  : key === 'route'
+                    ? 'paneRoute'
+                    : key === 'tools'
+                      ? 'paneTools'
+                      : 'paneStore';
+              setTourTargetRef(targetId, node);
+            }}
           />
         </View>
       </View>
@@ -6400,6 +6470,8 @@ export default function MapScreen({ route, navigation }: Props) {
         }
         targetRect={tourTargetRect}
         onNext={onTourNext}
+        reduceMotion={tourReduceMotion}
+        ctaDisabled={tourCompleting}
       />
     </View>
   );

@@ -2,13 +2,74 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { AccountPreferences } from '../types';
 import { GROUP_FEATURE_TOUR_STORAGE_KEY } from './constants';
 
+/** Pending account preference sync after a failed profile write. */
+export const GROUP_FEATURE_TOUR_ACCOUNT_SYNC_PENDING_KEY =
+  'hither.groupFeatureTour.accountSyncPending';
+
 /** Lazy profile write so node Jest pure suites never load supabase. */
-async function bestEffortUpdatePreferences(preferences: AccountPreferences): Promise<void> {
+async function updatePreferencesOnAccount(
+  preferences: AccountPreferences,
+): Promise<void> {
+  const { updateProfile } = await import('../api/services/ProfileService');
+  await updateProfile({ preferences });
+}
+
+async function markAccountSyncPending(pending: boolean): Promise<void> {
+  if (pending) {
+    await AsyncStorage.setItem(GROUP_FEATURE_TOUR_ACCOUNT_SYNC_PENDING_KEY, '1');
+  } else {
+    await AsyncStorage.removeItem(GROUP_FEATURE_TOUR_ACCOUNT_SYNC_PENDING_KEY);
+  }
+}
+
+export async function isTourAccountSyncPending(): Promise<boolean> {
   try {
-    const { updateProfile } = await import('../api/services/ProfileService');
-    await updateProfile({ preferences });
+    const raw = await AsyncStorage.getItem(GROUP_FEATURE_TOUR_ACCOUNT_SYNC_PENDING_KEY);
+    return raw === '1' || raw === 'true';
   } catch {
-    // Best-effort; local flag already written.
+    return false;
+  }
+}
+
+/**
+ * Best-effort account write; records a pending flag on failure for later retry.
+ * Does not throw (caller has already succeeded locally when completing).
+ */
+async function bestEffortUpdatePreferences(
+  preferences: AccountPreferences,
+): Promise<void> {
+  try {
+    await updatePreferencesOnAccount(preferences);
+    await markAccountSyncPending(false);
+  } catch {
+    try {
+      await markAccountSyncPending(true);
+    } catch {
+      // Local pending marker is best-effort.
+    }
+  }
+}
+
+/**
+ * Retry a previously failed account sync (e.g. fresh launch / reevaluate).
+ * Returns true when the remote write succeeds or nothing was pending.
+ */
+export async function retryPendingTourAccountSync(opts?: {
+  existingPreferences?: AccountPreferences | null;
+  completed: boolean;
+}): Promise<boolean> {
+  const pending = await isTourAccountSyncPending();
+  if (!pending) return true;
+  const next: AccountPreferences = {
+    ...(opts?.existingPreferences ?? {}),
+    groupFeatureTourCompleted: opts?.completed ?? true,
+  };
+  try {
+    await updatePreferencesOnAccount(next);
+    await markAccountSyncPending(false);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -30,8 +91,8 @@ export async function writeGroupFeatureTourCompletedLocal(completed: boolean): P
 }
 
 /**
- * Complete the tour: local first (unblocks UI), then best-effort account sync.
- * Account failure must not throw to the UI caller after local write succeeds.
+ * Complete the tour: local flag must succeed (throws on local failure).
+ * Account sync is best-effort with pending retry on failure.
  */
 export async function completeGroupFeatureTour(opts?: {
   existingPreferences?: AccountPreferences | null;

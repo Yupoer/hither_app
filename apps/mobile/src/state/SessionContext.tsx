@@ -20,6 +20,7 @@ import {
 import {
   accountPreferencesFromSlots,
   CUSTOM_QUICK_COMMAND_SLOTS,
+  normalizeAccountPreferences,
   normalizeCustomQuickCommand,
   normalizeCustomQuickCommands,
   type AccountPreferences,
@@ -215,7 +216,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
             preferences?: unknown;
           }
         | null;
-      const slots = normalizeCustomQuickCommands(row?.preferences);
       if (active) {
         // Never carry an entitlement projection across accounts while the new
         // account is being reconciled with the server.
@@ -234,7 +234,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           proPurchasedAt: row?.pro_purchased_at ?? undefined,
           proExpiresAt: row?.pro_expires_at ?? undefined,
           anonymousExpiresAt: row?.anonymous_expires_at ?? undefined,
-          preferences: accountPreferencesFromSlots(slots),
+          preferences: normalizeAccountPreferences(row?.preferences),
         });
         setIsAnonymous(!!authUser.is_anonymous);
       }
@@ -471,9 +471,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           anonymousExpiresAt: row
             ? (row.anonymous_expires_at ?? undefined)
             : prev.anonymousExpiresAt,
-          preferences: accountPreferencesFromSlots(
-            normalizeCustomQuickCommands(row?.preferences),
-          ),
+          preferences: normalizeAccountPreferences(row?.preferences),
         };
       });
       // Mirror server anonymous flag on every refresh (upgrade confirm, etc.).

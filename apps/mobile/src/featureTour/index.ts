@@ -1,6 +1,8 @@
 export {
   GROUP_FEATURE_TOUR_STORAGE_KEY,
   TOUR_STEPS,
+  buildTourSteps,
+  type TourControlAvailability,
   type TourStepDef,
   type TourStepId,
   type TourTargetId,
@@ -12,6 +14,9 @@ export {
   clearGroupFeatureTour,
   isTourCompletedFromSources,
   shouldStartGroupFeatureTour,
+  retryPendingTourAccountSync,
+  isTourAccountSyncPending,
+  GROUP_FEATURE_TOUR_ACCOUNT_SYNC_PENDING_KEY,
 } from './storage';
 export {
   createTourControllerState,

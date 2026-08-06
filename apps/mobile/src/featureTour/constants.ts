@@ -54,7 +54,29 @@ export interface TourStepDef {
   final?: boolean;
 }
 
-/** Fixed step order: gathering card → Stage Two panes → header → done. */
+/** Control availability used to filter steps that target optional chrome. */
+export interface TourControlAvailability {
+  /** When false, skip the navigation-command step (e.g. navCmd.kind === 'hidden'). */
+  navCommandVisible: boolean;
+  /** When false, skip the personal-arrival step (showArrivalControl === false). */
+  personalArriveVisible: boolean;
+}
+
+/**
+ * Derive the live step plan from the full catalog + current control availability.
+ * Always includes gathering/Stage Two/header/final; omits controls not on screen.
+ */
+export function buildTourSteps(
+  availability: TourControlAvailability,
+): TourStepDef[] {
+  return TOUR_STEPS.filter((step) => {
+    if (step.id === 'navCommand' && !availability.navCommandVisible) return false;
+    if (step.id === 'personalArrive' && !availability.personalArriveVisible) return false;
+    return true;
+  });
+}
+
+/** Fixed catalog order: gathering card → Stage Two panes → header → done. */
 export const TOUR_STEPS: readonly TourStepDef[] = [
   {
     id: 'collapsedCard',

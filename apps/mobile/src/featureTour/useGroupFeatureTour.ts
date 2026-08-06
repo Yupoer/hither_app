@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { LayoutRectangle } from 'react-native';
 import type { AccountPreferences } from '../types';
 import {
-  TOUR_STEPS,
+  buildTourSteps,
   type TourStepDef,
   type TourTargetId,
 } from './constants';
@@ -18,6 +18,7 @@ import {
   completeGroupFeatureTour,
   isTourCompletedFromSources,
   readGroupFeatureTourCompletedLocal,
+  retryPendingTourAccountSync,
   shouldStartGroupFeatureTour,
   writeGroupFeatureTourCompletedLocal,
 } from './storage';
@@ -42,6 +43,10 @@ export interface UseGroupFeatureTourInput {
   setSheetMid: () => void;
   selectSheetPane: (key: 'members' | 'route' | 'tools' | 'store') => void;
   measureTarget: MeasureTargetFn;
+  /** When false, nav-command step is omitted from the plan. */
+  navCommandVisible?: boolean;
+  /** When false, personal-arrive step is omitted from the plan. */
+  personalArriveVisible?: boolean;
 }
 
 export interface UseGroupFeatureTourResult {
@@ -50,8 +55,12 @@ export interface UseGroupFeatureTourResult {
   stepIndex: number;
   targetRect: LayoutRectangle | null;
   onNext: () => void;
+  /** True while waiting for local durable complete. */
+  completing: boolean;
   /** Call after reset prefs to allow replay. */
   reevaluate: () => void;
+  /** Live step plan (filtered by control availability). */
+  steps: readonly TourStepDef[];
 }
 
 /**
@@ -61,12 +70,24 @@ export interface UseGroupFeatureTourResult {
 export function useGroupFeatureTour(
   input: UseGroupFeatureTourInput,
 ): UseGroupFeatureTourResult {
+  const steps = useMemo(
+    () =>
+      buildTourSteps({
+        navCommandVisible: input.navCommandVisible !== false,
+        personalArriveVisible: input.personalArriveVisible !== false,
+      }),
+    [input.navCommandVisible, input.personalArriveVisible],
+  );
+
   const [ctrl, setCtrl] = useState<TourControllerState>(() => createTourControllerState(false));
   const [targetRect, setTargetRect] = useState<LayoutRectangle | null>(null);
   const [gateReady, setGateReady] = useState(false);
   const [tourCompleted, setTourCompleted] = useState(true); // optimistic until load
+  const [completing, setCompleting] = useState(false);
   const appliedStepRef = useRef<number>(-1);
   const completingRef = useRef(false);
+  const stepsRef = useRef(steps);
+  stepsRef.current = steps;
 
   const reevaluate = useCallback(() => {
     setGateReady(false);
@@ -77,6 +98,13 @@ export function useGroupFeatureTour(
       if (accountDone && !local) {
         await writeGroupFeatureTourCompletedLocal(true).catch(() => undefined);
       }
+      // Retry a previously failed account write without blocking UI.
+      if (local || accountDone) {
+        void retryPendingTourAccountSync({
+          existingPreferences: input.accountPreferences,
+          completed: true,
+        });
+      }
       const done = isTourCompletedFromSources({
         localCompleted: local,
         accountCompleted: accountDone,
@@ -84,7 +112,7 @@ export function useGroupFeatureTour(
       setTourCompleted(done);
       setGateReady(true);
     })();
-  }, [input.accountPreferences?.groupFeatureTourCompleted]);
+  }, [input.accountPreferences]);
 
   useEffect(() => {
     reevaluate();
@@ -116,7 +144,7 @@ export function useGroupFeatureTour(
     input.denseChrome,
   ]);
 
-  const step = currentStep(ctrl);
+  const step = currentStep(ctrl, steps);
 
   // Apply step side effects (expand, sheet, pause).
   useEffect(() => {
@@ -137,7 +165,7 @@ export function useGroupFeatureTour(
     }
   }, [ctrl.active, ctrl.stepIndex, step, input]);
 
-  // Measure target for current step.
+  // Measure target for current step — no silent gatherCard fallback for missing controls.
   useEffect(() => {
     if (!ctrl.active || !step) {
       setTargetRect(null);
@@ -151,10 +179,7 @@ export function useGroupFeatureTour(
       }
       // Wait a frame for expand / sheet layout.
       await new Promise((r) => setTimeout(r, 80));
-      let rect = await input.measureTarget(step.target);
-      if (!rect && step.target !== 'gatherCard') {
-        rect = await input.measureTarget('gatherCard');
-      }
+      const rect = await input.measureTarget(step.target);
       if (!cancelled) setTargetRect(rect);
     };
     void run();
@@ -165,20 +190,30 @@ export function useGroupFeatureTour(
 
   const onNext = useCallback(() => {
     if (!ctrl.active || completingRef.current) return;
-    const cur = currentStep(ctrl);
-    if (cur?.final || ctrl.stepIndex >= TOUR_STEPS.length - 1) {
+    const plan = stepsRef.current;
+    const cur = currentStep(ctrl, plan);
+    if (cur?.final || ctrl.stepIndex >= plan.length - 1) {
       completingRef.current = true;
-      setCtrl(stopTour());
-      setTourCompleted(true);
-      input.resumeAutoCollapse();
-      void completeGroupFeatureTour({
-        existingPreferences: input.accountPreferences,
-      }).finally(() => {
-        completingRef.current = false;
-      });
+      setCompleting(true);
+      void (async () => {
+        try {
+          // Local write must succeed before UI dismisses the tour.
+          await completeGroupFeatureTour({
+            existingPreferences: input.accountPreferences,
+          });
+          setCtrl(stopTour());
+          setTourCompleted(true);
+          input.resumeAutoCollapse();
+        } catch {
+          // Keep overlay open so the user can retry Get started.
+        } finally {
+          completingRef.current = false;
+          setCompleting(false);
+        }
+      })();
       return;
     }
-    setCtrl((s) => advanceTour(s));
+    setCtrl((s) => advanceTour(s, plan));
   }, [ctrl, input]);
 
   return {
@@ -187,6 +222,8 @@ export function useGroupFeatureTour(
     stepIndex: ctrl.stepIndex,
     targetRect,
     onNext,
+    completing,
     reevaluate,
+    steps,
   };
 }

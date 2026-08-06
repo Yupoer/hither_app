@@ -6,7 +6,10 @@ import { GROUP_FEATURE_TOUR_STORAGE_KEY } from '../featureTour/constants';
 import {
   clearGroupFeatureTour,
   completeGroupFeatureTour,
+  GROUP_FEATURE_TOUR_ACCOUNT_SYNC_PENDING_KEY,
+  isTourAccountSyncPending,
   readGroupFeatureTourCompletedLocal,
+  retryPendingTourAccountSync,
   writeGroupFeatureTourCompletedLocal,
 } from '../featureTour/storage';
 
@@ -52,10 +55,42 @@ describe('group feature tour storage', () => {
     });
   });
 
-  it('does not throw when account sync fails after local write', async () => {
+  it('does not throw when account sync fails after local write; marks pending retry', async () => {
     updateProfile.mockRejectedValueOnce(new Error('network'));
     await expect(completeGroupFeatureTour()).resolves.toBeUndefined();
-    expect(storage.setItem).toHaveBeenCalled();
+    expect(storage.setItem).toHaveBeenCalledWith(GROUP_FEATURE_TOUR_STORAGE_KEY, '1');
+    expect(storage.setItem).toHaveBeenCalledWith(
+      GROUP_FEATURE_TOUR_ACCOUNT_SYNC_PENDING_KEY,
+      '1',
+    );
+  });
+
+  it('throws when local write fails so UI can keep the tour open', async () => {
+    storage.setItem.mockRejectedValueOnce(new Error('disk full'));
+    await expect(completeGroupFeatureTour()).rejects.toThrow('disk full');
+    expect(updateProfile).not.toHaveBeenCalled();
+  });
+
+  it('retries pending account sync and clears the flag on success', async () => {
+    storage.getItem.mockImplementation(async (key: string) =>
+      key === GROUP_FEATURE_TOUR_ACCOUNT_SYNC_PENDING_KEY ? '1' : null,
+    );
+    updateProfile.mockResolvedValueOnce(undefined);
+    await expect(
+      retryPendingTourAccountSync({
+        existingPreferences: { groupFeatureTourCompleted: true },
+        completed: true,
+      }),
+    ).resolves.toBe(true);
+    expect(updateProfile).toHaveBeenCalled();
+    expect(storage.removeItem).toHaveBeenCalledWith(
+      GROUP_FEATURE_TOUR_ACCOUNT_SYNC_PENDING_KEY,
+    );
+  });
+
+  it('reports pending account sync from storage', async () => {
+    storage.getItem.mockResolvedValueOnce('1');
+    expect(await isTourAccountSyncPending()).toBe(true);
   });
 
   it('clear removes local and sets account false', async () => {

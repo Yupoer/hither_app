@@ -1,6 +1,9 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
+  AccessibilityInfo,
+  Animated,
   BackHandler,
+  findNodeHandle,
   Platform,
   Pressable,
   StyleSheet,
@@ -19,8 +22,10 @@ export interface GroupFeatureTourOverlayProps {
   ctaLabel: string;
   targetRect: LayoutRectangle | null;
   onNext: () => void;
-  /** When true, skip fade (reduce-motion). */
+  /** When true, skip fade-in and land at full opacity immediately. */
   reduceMotion?: boolean;
+  /** Disable CTA while durable complete is in flight. */
+  ctaDisabled?: boolean;
 }
 
 const HOLE_PAD = 8;
@@ -39,16 +44,48 @@ export function GroupFeatureTourOverlay({
   targetRect,
   onNext,
   reduceMotion = false,
+  ctaDisabled = false,
 }: GroupFeatureTourOverlayProps) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const { width: winW, height: winH } = useWindowDimensions();
+  const ctaRef = useRef<View>(null);
+  const opacity = useRef(new Animated.Value(reduceMotion ? 1 : 0)).current;
 
   useEffect(() => {
     if (!visible || Platform.OS !== 'android') return undefined;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => true);
     return () => sub.remove();
   }, [visible]);
+
+  // Reduced motion: snap to full opacity. Otherwise short fade-in per step.
+  useEffect(() => {
+    if (!visible) {
+      opacity.setValue(0);
+      return;
+    }
+    if (reduceMotion) {
+      opacity.setValue(1);
+      return;
+    }
+    opacity.setValue(0);
+    Animated.timing(opacity, {
+      toValue: 1,
+      duration: 180,
+      useNativeDriver: true,
+    }).start();
+  }, [visible, title, body, reduceMotion, opacity]);
+
+  // Move screen-reader focus to the step card / CTA when the step changes.
+  useEffect(() => {
+    if (!visible) return;
+    const handle = findNodeHandle(ctaRef.current);
+    if (handle == null) return;
+    const timer = setTimeout(() => {
+      AccessibilityInfo.setAccessibilityFocus?.(handle);
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [visible, title, ctaLabel]);
 
   if (!visible) return null;
 
@@ -61,6 +98,8 @@ export function GroupFeatureTourOverlay({
       }
     : null;
 
+  // Prefer placing the card where it does not cover the hole; large text
+  // uses the same geometry so Dynamic Type only scales content size.
   const placeAbove =
     hole != null && hole.y + hole.h > winH * 0.55;
 
@@ -126,29 +165,40 @@ export function GroupFeatureTourOverlay({
         )}
       </View>
 
-      <View
+      <Animated.View
         style={[
           styles.card,
           {
             top: cardTop,
             marginHorizontal: 20,
-            opacity: reduceMotion ? 1 : 1,
+            opacity,
+            // winW kept for layout parity / a11y large-text horizontal inset.
+            maxWidth: winW - 40,
           },
         ]}
         accessibilityRole="summary"
         accessibilityLabel={`${title}. ${body}`}
       >
-        <Text style={styles.title}>{title}</Text>
-        <Text style={styles.body}>{body}</Text>
+        <Text style={styles.title} maxFontSizeMultiplier={1.6}>{title}</Text>
+        <Text style={styles.body} maxFontSizeMultiplier={1.6}>{body}</Text>
         <Pressable
+          ref={ctaRef}
           onPress={onNext}
-          style={({ pressed }) => [styles.cta, pressed && styles.ctaPressed]}
+          disabled={ctaDisabled}
+          style={({ pressed }) => [
+            styles.cta,
+            pressed && styles.ctaPressed,
+            ctaDisabled && styles.ctaDisabled,
+          ]}
           accessibilityRole="button"
           accessibilityLabel={ctaLabel || t('tour.next')}
+          accessibilityState={{ disabled: ctaDisabled }}
         >
-          <Text style={styles.ctaText}>{ctaLabel || t('tour.next')}</Text>
+          <Text style={styles.ctaText} maxFontSizeMultiplier={1.4}>
+            {ctaLabel || t('tour.next')}
+          </Text>
         </Pressable>
-      </View>
+      </Animated.View>
     </View>
   );
 }
@@ -198,6 +248,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   ctaPressed: { opacity: 0.85 },
+  ctaDisabled: { opacity: 0.55 },
   ctaText: {
     color: '#fff',
     fontSize: 16,
