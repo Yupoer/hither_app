@@ -20,6 +20,18 @@ export const translations: Record<Language, Dict> = {
   en: en as Dict,
 };
 
+/** Last language chosen by PreferencesProvider (for class components / non-hooks). */
+let activeLanguage: Language = 'zh';
+
+/** Called from PreferencesProvider whenever language changes. */
+export function setActiveLanguage(language: Language): void {
+  activeLanguage = language;
+}
+
+export function getActiveLanguage(): Language {
+  return activeLanguage;
+}
+
 /**
  * Public key type for `t()`. Kept as `keyof` the runtime catalog map so existing
  * call sites that pass dynamic keys stay type-compatible (expand phase).
@@ -51,6 +63,8 @@ export interface Translator {
 /** Resolve user-facing strings against the active language. */
 export function useTranslation(): Translator {
   const { language } = usePreferences();
+  // Keep non-hook callers (error boundary, FGS) in sync with the UI language.
+  setActiveLanguage(language);
   const dict = translations[language];
   return useMemo(() => ({
     language,

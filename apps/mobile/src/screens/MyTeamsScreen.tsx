@@ -14,6 +14,7 @@ import { GlassView } from '../native/liquidGlass';
 import { clearLiveActivities } from '../state/useLiveActivity';
 import { HitherText } from '../components/HitherText';
 import { runUiAction } from '../utils/uiAction';
+import { useTranslation } from '../i18n';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'MyTeams'>;
@@ -23,6 +24,7 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
   const { colors } = useTheme();
   const accent = colors.accent;
   const { user, setMembership } = useSession();
+  const { t } = useTranslation();
 
   const [joinedGroups, setJoinedGroups] = useState<JoinedGroupInfo[]>(route.params?.initialGroups || []);
   const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
@@ -94,10 +96,10 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
 
   function handleLeaveGroup(groupId: string) {
     alertBuzz();
-    Alert.alert('離開隊伍', '確定要離開這個隊伍嗎？', [
-      { text: '取消', style: 'cancel' },
+    Alert.alert(t('teams.leaveTitle'), t('teams.leaveMsg'), [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: '確定',
+        text: t('common.confirm'),
         style: 'destructive',
         onPress: () => {
           void runUiAction(
@@ -118,10 +120,10 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
 
   function handleClearAllGroups() {
     alertBuzz();
-    Alert.alert('清空隊伍', '確定要離開所有隊伍嗎？', [
-      { text: '取消', style: 'cancel' },
+    Alert.alert(t('teams.clearAllTitle'), t('teams.clearAllMsg'), [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: '確定清空',
+        text: t('teams.clearAllConfirm'),
         style: 'destructive',
         onPress: () => {
           void runUiAction(
@@ -147,9 +149,9 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
         <Pressable onPress={() => { lightTap(); navigation.goBack(); }} style={styles.backBtn} accessibilityRole="button">
           <Ionicons name="chevron-back" size={28} color="#fff" />
         </Pressable>
-        <Text style={styles.title}>我的隊伍</Text>
+        <Text style={styles.title}>{t('teams.title')}</Text>
         <Pressable onPress={handleClearAllGroups} style={styles.clearBtn} hitSlop={10}>
-          <Text style={styles.clearText}>清空</Text>
+          <Text style={styles.clearText}>{t('teams.clear')}</Text>
         </Pressable>
       </View>
 
@@ -199,8 +201,10 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
                   <View style={styles.teamCardLeft}>
                     <Text style={styles.teamCardName} numberOfLines={1}>{info.group.name}</Text>
                     <Text style={styles.teamCardSubtitle}>
-                      {info.memberCount} 人
-                      {info.group.inviteCode ? ` · 代碼 ${info.group.inviteCode}` : ''}
+                      {t('teams.memberCount', { count: info.memberCount })}
+                      {info.group.inviteCode
+                        ? t('teams.codeSuffix', { code: info.group.inviteCode })
+                        : ''}
                     </Text>
                   </View>
                   <View style={styles.teamCardRight}>
@@ -251,7 +255,7 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
 
                     {info.group.inviteCode ? (
                       <View style={styles.inviteCodeRow}>
-                        <Text style={styles.inviteCodeLabel}>加入代碼</Text>
+                        <Text style={styles.inviteCodeLabel}>{t('teams.inviteCode')}</Text>
                         <Text style={styles.inviteCodeValue}>{info.group.inviteCode}</Text>
                       </View>
                     ) : null}
@@ -261,14 +265,14 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
                         onPress={() => handleEnterGroup(info)}
                         style={({ pressed }) => [styles.inlineEnterBtn, { backgroundColor: accent }, pressed && styles.pressed]}
                       >
-                        <Text style={styles.inlineEnterText}>進入地圖</Text>
+                        <Text style={styles.inlineEnterText}>{t('teams.enterMap')}</Text>
                       </Pressable>
 
                       <Pressable
                         onPress={() => handleLeaveGroup(info.group.id)}
                         style={({ pressed }) => [styles.inlineLeaveBtn, pressed && styles.pressed]}
                       >
-                        <Text style={styles.inlineLeaveText}>離開</Text>
+                        <Text style={styles.inlineLeaveText}>{t('teams.leave')}</Text>
                       </Pressable>
                     </View>
                   </Animated.View>

@@ -185,7 +185,9 @@ export default function RoleSelectScreen({ navigation }: Props) {
                     style={[styles.ctaMyTeams, { backgroundColor: MY_TEAMS_FILL }]}
                   >
                     <Ionicons name="people-outline" size={20} color={accent} />
-                    <Text style={styles.ctaMyTeamsText}>查看我的隊伍 ({joinedGroups.length})</Text>
+                    <Text style={styles.ctaMyTeamsText}>
+                      {t('role.myTeams', { count: joinedGroups.length })}
+                    </Text>
                   </TouchableOpacity>
                 </Animated.View>
               ) : (
