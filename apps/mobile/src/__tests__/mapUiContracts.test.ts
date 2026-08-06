@@ -20,7 +20,10 @@ const preferences = readFileSync(
   'utf8',
 );
 const roleSelect = readFileSync(join(__dirname, '../screens/RoleSelectScreen.tsx'), 'utf8');
-const i18n = readFileSync(join(__dirname, '../i18n/index.ts'), 'utf8');
+const i18n = [
+  readFileSync(join(__dirname, '../i18n/locales/zh.ts'), 'utf8'),
+  readFileSync(join(__dirname, '../i18n/locales/en.ts'), 'utf8'),
+].join('\n');
 const overflowMarquee = readFileSync(join(__dirname, '../components/OverflowMarquee.tsx'), 'utf8');
 const useGroupState = readFileSync(join(__dirname, '../state/useGroupState.ts'), 'utf8');
 
