@@ -14,6 +14,7 @@ import {
   stopTour,
   type TourControllerState,
 } from './tourController';
+import { measureTargetWithRetry } from './measureTarget';
 import {
   completeGroupFeatureTour,
   isTourCompletedFromSources,
@@ -34,12 +35,17 @@ export interface UseGroupFeatureTourInput {
   denseChrome: boolean;
   isLeader: boolean;
   accountPreferences?: AccountPreferences | null;
-  /** Expand a gather card by destination id (first destination). */
+  /** Signed-in account id for scoped pending sync (required for account retry). */
+  accountId?: string | null;
+  /** Expand the tour destination gather card. */
   expandCard: (id: string) => void;
   pauseAutoCollapse: () => void;
   resumeAutoCollapse: () => void;
-  /** First destination id for expand, or null. */
-  firstDestinationId: string | null;
+  /**
+   * Single destination id for expand + availability lock.
+   * Must match the card that owns measured refs.
+   */
+  tourDestinationId: string | null;
   setSheetMid: () => void;
   selectSheetPane: (key: 'members' | 'route' | 'tools' | 'store') => void;
   measureTarget: MeasureTargetFn;
@@ -47,6 +53,8 @@ export interface UseGroupFeatureTourInput {
   navCommandVisible?: boolean;
   /** When false, personal-arrive step is omitted from the plan. */
   personalArriveVisible?: boolean;
+  /** Called when tour becomes active so MapScreen can lock carousel selection. */
+  onTourActiveChange?: (active: boolean, destinationId: string | null) => void;
 }
 
 export interface UseGroupFeatureTourResult {
@@ -87,44 +95,78 @@ export function useGroupFeatureTour(
   const appliedStepRef = useRef<number>(-1);
   const completingRef = useRef(false);
   const stepsRef = useRef(steps);
-  stepsRef.current = steps;
+  const measureRef = useRef(input.measureTarget);
+  const prefsRef = useRef(input.accountPreferences);
+  const accountIdRef = useRef(input.accountId);
+  const onActiveRef = useRef(input.onTourActiveChange);
+  const tourDestRef = useRef(input.tourDestinationId);
+  const expandRef = useRef(input.expandCard);
+  const pauseRef = useRef(input.pauseAutoCollapse);
+  const resumeRef = useRef(input.resumeAutoCollapse);
+  const setSheetMidRef = useRef(input.setSheetMid);
+  const selectPaneRef = useRef(input.selectSheetPane);
+
+  // Keep latest callbacks/values without writing refs during render body in a way
+  // that confuses React Compiler: schedule via effect.
+  useEffect(() => {
+    stepsRef.current = steps;
+    measureRef.current = input.measureTarget;
+    prefsRef.current = input.accountPreferences;
+    accountIdRef.current = input.accountId;
+    onActiveRef.current = input.onTourActiveChange;
+    tourDestRef.current = input.tourDestinationId;
+    expandRef.current = input.expandCard;
+    pauseRef.current = input.pauseAutoCollapse;
+    resumeRef.current = input.resumeAutoCollapse;
+    setSheetMidRef.current = input.setSheetMid;
+    selectPaneRef.current = input.selectSheetPane;
+  }, [
+    steps,
+    input.measureTarget,
+    input.accountPreferences,
+    input.accountId,
+    input.onTourActiveChange,
+    input.tourDestinationId,
+    input.expandCard,
+    input.pauseAutoCollapse,
+    input.resumeAutoCollapse,
+    input.setSheetMid,
+    input.selectSheetPane,
+  ]);
 
   const reevaluate = useCallback(() => {
-    setGateReady(false);
     void (async () => {
       const local = await readGroupFeatureTourCompletedLocal();
-      const accountDone = input.accountPreferences?.groupFeatureTourCompleted === true;
-      // If account says done but local missing, seed local.
+      const accountDone = prefsRef.current?.groupFeatureTourCompleted === true;
       if (accountDone && !local) {
         await writeGroupFeatureTourCompletedLocal(true).catch(() => undefined);
       }
-      // Retry a previously failed account write without blocking UI.
-      if (local || accountDone) {
-        void retryPendingTourAccountSync({
-          existingPreferences: input.accountPreferences,
-          completed: true,
-        });
-      }
+      // Retry only the pending record for this account (uses stored desired value).
+      void retryPendingTourAccountSync({
+        accountId: accountIdRef.current,
+        existingPreferences: prefsRef.current,
+      });
       const done = isTourCompletedFromSources({
-        localCompleted: local,
+        localCompleted: local || accountDone,
         accountCompleted: accountDone,
       });
       setTourCompleted(done);
       setGateReady(true);
     })();
-  }, [input.accountPreferences]);
+  }, []);
 
   useEffect(() => {
     reevaluate();
-  }, [reevaluate]);
+  }, [reevaluate, input.accountId, input.accountPreferences?.groupFeatureTourCompleted]);
 
   // Start when gate allows.
   useEffect(() => {
     if (!gateReady || tourCompleted || ctrl.active) return;
-    // Onboarding is async — resolve inside.
+    let cancelled = false;
     void (async () => {
       const { readOnboardingState } = await import('../onboarding/sync');
       const onboarding = await readOnboardingState();
+      if (cancelled) return;
       const ok = shouldStartGroupFeatureTour({
         onboardingCompleted: Boolean(onboarding?.completed),
         hasGroupId: Boolean(input.groupId),
@@ -132,8 +174,13 @@ export function useGroupFeatureTour(
         tourCompleted,
         passiveMode: input.passiveMode || !input.denseChrome,
       });
-      if (ok) setCtrl(startTour());
+      if (ok && !cancelled) {
+        setCtrl(startTour());
+      }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [
     gateReady,
     tourCompleted,
@@ -144,6 +191,11 @@ export function useGroupFeatureTour(
     input.denseChrome,
   ]);
 
+  // Notify MapScreen when tour active changes (carousel lock).
+  useEffect(() => {
+    onActiveRef.current?.(ctrl.active, tourDestRef.current);
+  }, [ctrl.active]);
+
   const step = currentStep(ctrl, steps);
 
   // Apply step side effects (expand, sheet, pause).
@@ -152,41 +204,44 @@ export function useGroupFeatureTour(
     if (appliedStepRef.current === ctrl.stepIndex) return;
     appliedStepRef.current = ctrl.stepIndex;
 
-    if (step.pauseAutoCollapse) input.pauseAutoCollapse();
-    if (step.expandCard && input.firstDestinationId) {
-      input.expandCard(input.firstDestinationId);
+    if (step.pauseAutoCollapse) pauseRef.current();
+    if (step.expandCard && tourDestRef.current) {
+      expandRef.current(tourDestRef.current);
     }
-    if (step.openStageTwo) input.setSheetMid();
-    if (step.sheetPane) input.selectSheetPane(step.sheetPane);
+    if (step.openStageTwo) setSheetMidRef.current();
+    if (step.sheetPane) selectPaneRef.current(step.sheetPane);
 
-    // Leaving gathering steps resumes auto-collapse.
     if (!step.pauseAutoCollapse && !step.expandCard) {
-      input.resumeAutoCollapse();
+      resumeRef.current();
     }
-  }, [ctrl.active, ctrl.stepIndex, step, input]);
+  }, [ctrl.active, ctrl.stepIndex, step]);
 
-  // Measure target for current step — no silent gatherCard fallback for missing controls.
+  // Measure target with bounded retry + stable-parent fallback.
+  // Clear happens only after async work starts (no sync setState in effect body).
   useEffect(() => {
-    if (!ctrl.active || !step) {
-      setTargetRect(null);
-      return;
-    }
+    if (!ctrl.active || !step) return;
     let cancelled = false;
     const run = async () => {
       if (!step.target) {
         if (!cancelled) setTargetRect(null);
         return;
       }
-      // Wait a frame for expand / sheet layout.
-      await new Promise((r) => setTimeout(r, 80));
-      const rect = await input.measureTarget(step.target);
+      const rect = await measureTargetWithRetry({
+        measure: (id) => measureRef.current(id),
+        target: step.target,
+        maxAttempts: 5,
+        retryDelayMs: 80,
+      });
       if (!cancelled) setTargetRect(rect);
     };
     void run();
     return () => {
       cancelled = true;
     };
-  }, [ctrl.active, ctrl.stepIndex, step, input.measureTarget]);
+  }, [ctrl.active, ctrl.stepIndex, step]);
+
+  // Derived: hide hole when tour inactive (avoids sync setState on deactivate).
+  const visibleTargetRect = ctrl.active ? targetRect : null;
 
   const onNext = useCallback(() => {
     if (!ctrl.active || completingRef.current) return;
@@ -197,13 +252,13 @@ export function useGroupFeatureTour(
       setCompleting(true);
       void (async () => {
         try {
-          // Local write must succeed before UI dismisses the tour.
           await completeGroupFeatureTour({
-            existingPreferences: input.accountPreferences,
+            accountId: accountIdRef.current,
+            existingPreferences: prefsRef.current,
           });
           setCtrl(stopTour());
           setTourCompleted(true);
-          input.resumeAutoCollapse();
+          resumeRef.current();
         } catch {
           // Keep overlay open so the user can retry Get started.
         } finally {
@@ -214,13 +269,13 @@ export function useGroupFeatureTour(
       return;
     }
     setCtrl((s) => advanceTour(s, plan));
-  }, [ctrl, input]);
+  }, [ctrl]);
 
   return {
     tourActive: ctrl.active,
     step,
     stepIndex: ctrl.stepIndex,
-    targetRect,
+    targetRect: visibleTargetRect,
     onNext,
     completing,
     reevaluate,

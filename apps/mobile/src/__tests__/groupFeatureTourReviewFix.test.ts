@@ -51,6 +51,9 @@ describe('REVIEW_FIX: optional control step plan', () => {
     expect(map).toContain('navCommandVisible:');
     expect(map).toContain('personalArriveVisible:');
     expect(map).toContain('navCmd.kind !== \'hidden\'');
+    // Plan/expand/refs share one destination (not hard-coded destinations[0] expand only).
+    expect(map).toContain('tourDestinationId');
+    expect(map).toContain('pickTourDestinationId');
   });
 });
 

@@ -2,9 +2,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { AccountPreferences } from '../types';
 import { GROUP_FEATURE_TOUR_STORAGE_KEY } from './constants';
 
-/** Pending account preference sync after a failed profile write. */
+/** Pending account preference sync after a failed profile write (JSON record). */
 export const GROUP_FEATURE_TOUR_ACCOUNT_SYNC_PENDING_KEY =
   'hither.groupFeatureTour.accountSyncPending';
+
+/** Per-account desired tour completion waiting for a successful profile write. */
+export interface TourAccountSyncPending {
+  accountId: string;
+  completed: boolean;
+}
 
 /** Lazy profile write so node Jest pure suites never load supabase. */
 async function updatePreferencesOnAccount(
@@ -14,36 +20,66 @@ async function updatePreferencesOnAccount(
   await updateProfile({ preferences });
 }
 
-async function markAccountSyncPending(pending: boolean): Promise<void> {
-  if (pending) {
-    await AsyncStorage.setItem(GROUP_FEATURE_TOUR_ACCOUNT_SYNC_PENDING_KEY, '1');
-  } else {
+export function parseTourAccountSyncPending(raw: string | null): TourAccountSyncPending | null {
+  if (!raw) return null;
+  // Legacy boolean marker from earlier REVIEW_FIX — not account-scoped; discard.
+  if (raw === '1' || raw === 'true') return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<TourAccountSyncPending>;
+    if (
+      typeof parsed.accountId === 'string'
+      && parsed.accountId.length > 0
+      && typeof parsed.completed === 'boolean'
+    ) {
+      return { accountId: parsed.accountId, completed: parsed.completed };
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+async function writePendingRecord(record: TourAccountSyncPending | null): Promise<void> {
+  if (!record) {
     await AsyncStorage.removeItem(GROUP_FEATURE_TOUR_ACCOUNT_SYNC_PENDING_KEY);
+    return;
+  }
+  await AsyncStorage.setItem(
+    GROUP_FEATURE_TOUR_ACCOUNT_SYNC_PENDING_KEY,
+    JSON.stringify(record),
+  );
+}
+
+export async function readTourAccountSyncPending(): Promise<TourAccountSyncPending | null> {
+  try {
+    const raw = await AsyncStorage.getItem(GROUP_FEATURE_TOUR_ACCOUNT_SYNC_PENDING_KEY);
+    return parseTourAccountSyncPending(raw);
+  } catch {
+    return null;
   }
 }
 
+/** @deprecated Prefer readTourAccountSyncPending; kept for test compatibility. */
 export async function isTourAccountSyncPending(): Promise<boolean> {
-  try {
-    const raw = await AsyncStorage.getItem(GROUP_FEATURE_TOUR_ACCOUNT_SYNC_PENDING_KEY);
-    return raw === '1' || raw === 'true';
-  } catch {
-    return false;
-  }
+  return (await readTourAccountSyncPending()) != null;
 }
 
 /**
- * Best-effort account write; records a pending flag on failure for later retry.
+ * Best-effort account write; records a per-account pending record on failure.
  * Does not throw (caller has already succeeded locally when completing).
  */
 async function bestEffortUpdatePreferences(
   preferences: AccountPreferences,
+  accountId: string | null | undefined,
+  completed: boolean,
 ): Promise<void> {
   try {
     await updatePreferencesOnAccount(preferences);
-    await markAccountSyncPending(false);
+    await writePendingRecord(null);
   } catch {
+    if (!accountId) return;
     try {
-      await markAccountSyncPending(true);
+      await writePendingRecord({ accountId, completed });
     } catch {
       // Local pending marker is best-effort.
     }
@@ -51,22 +87,28 @@ async function bestEffortUpdatePreferences(
 }
 
 /**
- * Retry a previously failed account sync (e.g. fresh launch / reevaluate).
- * Returns true when the remote write succeeds or nothing was pending.
+ * Retry a previously failed account sync for the given account only.
+ * Uses the stored desired `completed` value (completion and reset both retry correctly).
+ * Returns true when remote write succeeds or nothing is pending for this account.
  */
-export async function retryPendingTourAccountSync(opts?: {
+export async function retryPendingTourAccountSync(opts: {
+  accountId: string | null | undefined;
   existingPreferences?: AccountPreferences | null;
-  completed: boolean;
 }): Promise<boolean> {
-  const pending = await isTourAccountSyncPending();
+  const accountId = opts.accountId;
+  if (!accountId) return true;
+  const pending = await readTourAccountSyncPending();
   if (!pending) return true;
+  // Different account: do not apply or clear — leave for the correct session.
+  if (pending.accountId !== accountId) return false;
+
   const next: AccountPreferences = {
-    ...(opts?.existingPreferences ?? {}),
-    groupFeatureTourCompleted: opts?.completed ?? true,
+    ...(opts.existingPreferences ?? {}),
+    groupFeatureTourCompleted: pending.completed,
   };
   try {
     await updatePreferencesOnAccount(next);
-    await markAccountSyncPending(false);
+    await writePendingRecord(null);
     return true;
   } catch {
     return false;
@@ -92,9 +134,10 @@ export async function writeGroupFeatureTourCompletedLocal(completed: boolean): P
 
 /**
  * Complete the tour: local flag must succeed (throws on local failure).
- * Account sync is best-effort with pending retry on failure.
+ * Account sync is best-effort with per-account pending retry on failure.
  */
 export async function completeGroupFeatureTour(opts?: {
+  accountId?: string | null;
   existingPreferences?: AccountPreferences | null;
 }): Promise<void> {
   await writeGroupFeatureTourCompletedLocal(true);
@@ -102,13 +145,14 @@ export async function completeGroupFeatureTour(opts?: {
     ...(opts?.existingPreferences ?? {}),
     groupFeatureTourCompleted: true,
   };
-  await bestEffortUpdatePreferences(next);
+  await bestEffortUpdatePreferences(next, opts?.accountId, true);
 }
 
 /**
- * Clear tour completion (reset prefs). Local + best-effort account.
+ * Clear tour completion (reset prefs). Local + best-effort account with pending false.
  */
 export async function clearGroupFeatureTour(opts?: {
+  accountId?: string | null;
   existingPreferences?: AccountPreferences | null;
 }): Promise<void> {
   await writeGroupFeatureTourCompletedLocal(false);
@@ -116,7 +160,7 @@ export async function clearGroupFeatureTour(opts?: {
     ...(opts?.existingPreferences ?? {}),
     groupFeatureTourCompleted: false,
   };
-  await bestEffortUpdatePreferences(next);
+  await bestEffortUpdatePreferences(next, opts?.accountId, false);
 }
 
 /** Whether tour should be considered done from local or account preference. */

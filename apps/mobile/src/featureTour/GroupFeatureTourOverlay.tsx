@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   Animated,
@@ -6,14 +6,17 @@ import {
   findNodeHandle,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
   useWindowDimensions,
+  type LayoutChangeEvent,
   type LayoutRectangle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from '../i18n';
+import { placeTourCard } from './overlayLayout';
 
 export interface GroupFeatureTourOverlayProps {
   visible: boolean;
@@ -50,7 +53,15 @@ export function GroupFeatureTourOverlay({
   const insets = useSafeAreaInsets();
   const { width: winW, height: winH } = useWindowDimensions();
   const ctaRef = useRef<View>(null);
-  const opacity = useRef(new Animated.Value(reduceMotion ? 1 : 0)).current;
+  // Animated.Value is stable; useState avoids ref.current during render (compiler).
+  const [opacity] = useState(() => new Animated.Value(reduceMotion ? 1 : 0));
+  // Content key invalidates measured height without an effect setState.
+  const contentKey = `${title}\0${body}\0${ctaLabel}`;
+  const [cardLayout, setCardLayout] = useState<{ key: string; height: number | null }>({
+    key: contentKey,
+    height: null,
+  });
+  const cardHeight = cardLayout.key === contentKey ? cardLayout.height : null;
 
   useEffect(() => {
     if (!visible || Platform.OS !== 'android') return undefined;
@@ -87,27 +98,38 @@ export function GroupFeatureTourOverlay({
     return () => clearTimeout(timer);
   }, [visible, title, ctaLabel]);
 
+  const hole = useMemo(() => {
+    if (!targetRect) return null;
+    return {
+      x: Math.max(0, targetRect.x - HOLE_PAD),
+      y: Math.max(0, targetRect.y - HOLE_PAD),
+      w: targetRect.width + HOLE_PAD * 2,
+      h: targetRect.height + HOLE_PAD * 2,
+    };
+  }, [targetRect]);
+
+  const placement = useMemo(
+    () =>
+      placeTourCard({
+        hole,
+        windowWidth: winW,
+        windowHeight: winH,
+        insets: { top: insets.top, bottom: insets.bottom },
+        cardHeight,
+      }),
+    [hole, winW, winH, insets.top, insets.bottom, cardHeight],
+  );
+
+  const onCardLayout = (e: LayoutChangeEvent) => {
+    const h = e.nativeEvent.layout.height;
+    if (h <= 0) return;
+    setCardLayout((prev) => {
+      if (prev.key === contentKey && prev.height === h) return prev;
+      return { key: contentKey, height: h };
+    });
+  };
+
   if (!visible) return null;
-
-  const hole = targetRect
-    ? {
-        x: Math.max(0, targetRect.x - HOLE_PAD),
-        y: Math.max(0, targetRect.y - HOLE_PAD),
-        w: targetRect.width + HOLE_PAD * 2,
-        h: targetRect.height + HOLE_PAD * 2,
-      }
-    : null;
-
-  // Prefer placing the card where it does not cover the hole; large text
-  // uses the same geometry so Dynamic Type only scales content size.
-  const placeAbove =
-    hole != null && hole.y + hole.h > winH * 0.55;
-
-  const cardTop = hole
-    ? placeAbove
-      ? Math.max(insets.top + 12, hole.y - 140)
-      : Math.min(winH - insets.bottom - 160, hole.y + hole.h + 12)
-    : winH * 0.35;
 
   return (
     <View
@@ -120,7 +142,6 @@ export function GroupFeatureTourOverlay({
       <View style={StyleSheet.absoluteFill} pointerEvents="auto">
         {hole ? (
           <>
-            {/* Four dim strips around the hole (keeps hole “clear”). */}
             <View style={[styles.dim, { top: 0, left: 0, right: 0, height: hole.y }]} />
             <View
               style={[
@@ -145,7 +166,6 @@ export function GroupFeatureTourOverlay({
                 },
               ]}
             />
-            {/* Non-interactive hole frame for visual ring */}
             <View
               pointerEvents="none"
               style={[
@@ -166,38 +186,46 @@ export function GroupFeatureTourOverlay({
       </View>
 
       <Animated.View
+        onLayout={onCardLayout}
         style={[
           styles.card,
           {
-            top: cardTop,
+            top: placement.cardTop,
             marginHorizontal: 20,
             opacity,
-            // winW kept for layout parity / a11y large-text horizontal inset.
             maxWidth: winW - 40,
+            maxHeight: placement.maxCardHeight,
           },
         ]}
         accessibilityRole="summary"
         accessibilityLabel={`${title}. ${body}`}
       >
-        <Text style={styles.title} maxFontSizeMultiplier={1.6}>{title}</Text>
-        <Text style={styles.body} maxFontSizeMultiplier={1.6}>{body}</Text>
-        <Pressable
-          ref={ctaRef}
-          onPress={onNext}
-          disabled={ctaDisabled}
-          style={({ pressed }) => [
-            styles.cta,
-            pressed && styles.ctaPressed,
-            ctaDisabled && styles.ctaDisabled,
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel={ctaLabel || t('tour.next')}
-          accessibilityState={{ disabled: ctaDisabled }}
+        <ScrollView
+          bounces={false}
+          nestedScrollEnabled
+          style={{ maxHeight: Math.max(80, placement.maxCardHeight - 8) }}
+          contentContainerStyle={styles.cardScrollContent}
         >
-          <Text style={styles.ctaText} maxFontSizeMultiplier={1.4}>
-            {ctaLabel || t('tour.next')}
-          </Text>
-        </Pressable>
+          <Text style={styles.title} maxFontSizeMultiplier={1.6}>{title}</Text>
+          <Text style={styles.body} maxFontSizeMultiplier={1.6}>{body}</Text>
+          <Pressable
+            ref={ctaRef}
+            onPress={onNext}
+            disabled={ctaDisabled}
+            style={({ pressed }) => [
+              styles.cta,
+              pressed && styles.ctaPressed,
+              ctaDisabled && styles.ctaDisabled,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={ctaLabel || t('tour.next')}
+            accessibilityState={{ disabled: ctaDisabled }}
+          >
+            <Text style={styles.ctaText} maxFontSizeMultiplier={1.4}>
+              {ctaLabel || t('tour.next')}
+            </Text>
+          </Pressable>
+        </ScrollView>
       </Animated.View>
     </View>
   );
@@ -224,9 +252,12 @@ const styles = StyleSheet.create({
     right: 0,
     backgroundColor: '#1a2233',
     borderRadius: 16,
-    padding: 18,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255,255,255,0.12)',
+    overflow: 'hidden',
+  },
+  cardScrollContent: {
+    padding: 18,
   },
   title: {
     color: '#F5F7FB',

@@ -123,6 +123,8 @@ import {
   GroupFeatureTourOverlay,
   useGroupFeatureTour,
   clearGroupFeatureTour,
+  pickTourDestinationId,
+  tourDestinationIndex,
   type TourTargetId,
 } from '../featureTour';
 import { useCoordinationRequests } from './MapScreen/hooks/useCoordinationRequests';
@@ -3419,11 +3421,12 @@ export default function MapScreen({ route, navigation }: Props) {
     }
     await AsyncStorage.removeItem(ONBOARDING_STORAGE_KEY);
     await clearGroupFeatureTour({
+      accountId: user?.id ?? null,
       existingPreferences: user?.preferences ?? null,
     }).catch(() => undefined);
     reevaluateTourRef.current();
     Alert.alert(t('settings.resetAllPrefs'), t('settings.resetPrefsDone'));
-  }, [t, user?.preferences]);
+  }, [t, user?.id, user?.preferences]);
 
   const confirmResetPrefs = useCallback(() => {
     confirmAction(
@@ -3904,9 +3907,25 @@ export default function MapScreen({ route, navigation }: Props) {
     heightSV.value = detents[midIndex] ?? detents[0];
   }, [detents, heightSV]);
 
-  // Mirror first-card control visibility so the tour never steps onto missing chrome.
+  // Single tour destination: plan, expand, availability, and measured refs must match.
+  // Prefer shared navigation target when it is on the carousel; else selected card.
+  const tourDestinationId = useMemo(() => {
+    const ids = destinations.map((d) => d.id);
+    return pickTourDestinationId({
+      destinationIds: ids,
+      selectedIndex,
+      preferredId: sharedTargetId ?? null,
+    });
+  }, [destinations, selectedIndex, sharedTargetId]);
+
+  const tourDestination = useMemo(
+    () => destinations.find((d) => d.id === tourDestinationId) ?? destinations[0] ?? null,
+    [destinations, tourDestinationId],
+  );
+
+  // Mirror the *tour* card's control visibility so steps never describe missing chrome.
   const tourControlAvailability = useMemo(() => {
-    const dest = destinations[0];
+    const dest = tourDestination;
     if (!dest) {
       return { navCommandVisible: false, personalArriveVisible: false };
     }
@@ -3941,6 +3960,7 @@ export default function MapScreen({ route, navigation }: Props) {
       personalArriveVisible: showArrivalControl,
     };
   }, [
+    tourDestination,
     destinations,
     isLeader,
     sharedTargetId,
@@ -3969,6 +3989,22 @@ export default function MapScreen({ route, navigation }: Props) {
     };
   }, []);
 
+  const onTourActiveChange = useCallback(
+    (active: boolean, destinationId: string | null) => {
+      if (!active || !destinationId) return;
+      const ids = destinations.map((d) => d.id);
+      const idx = tourDestinationIndex(ids, destinationId);
+      if (idx !== selectedIndex) {
+        setSelectedIndex(idx);
+        // Snap carousel so measured refs attach to the same card as the plan.
+        requestAnimationFrame(() => {
+          carouselRef.current?.scrollTo?.({ x: idx * windowWidth, animated: false });
+        });
+      }
+    },
+    [destinations, selectedIndex, setSelectedIndex, windowWidth],
+  );
+
   const {
     tourActive,
     step: tourStep,
@@ -3983,15 +4019,17 @@ export default function MapScreen({ route, navigation }: Props) {
     denseChrome: showDenseChrome,
     isLeader: !!isLeader,
     accountPreferences: user?.preferences ?? null,
+    accountId: user?.id ?? null,
     expandCard,
     pauseAutoCollapse,
     resumeAutoCollapse,
-    firstDestinationId: destinations[0]?.id ?? null,
+    tourDestinationId,
     setSheetMid,
     selectSheetPane,
     measureTarget: measureTourTarget,
     navCommandVisible: tourControlAvailability.navCommandVisible,
     personalArriveVisible: tourControlAvailability.personalArriveVisible,
+    onTourActiveChange,
   });
   reevaluateTourRef.current = reevaluateTour;
 

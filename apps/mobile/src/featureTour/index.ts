@@ -16,7 +16,10 @@ export {
   shouldStartGroupFeatureTour,
   retryPendingTourAccountSync,
   isTourAccountSyncPending,
+  readTourAccountSyncPending,
+  parseTourAccountSyncPending,
   GROUP_FEATURE_TOUR_ACCOUNT_SYNC_PENDING_KEY,
+  type TourAccountSyncPending,
 } from './storage';
 export {
   createTourControllerState,
@@ -29,5 +32,8 @@ export {
   stepCount,
   type TourControllerState,
 } from './tourController';
+export { measureTargetWithRetry, STABLE_PARENT_BY_TARGET } from './measureTarget';
+export { placeTourCard } from './overlayLayout';
+export { pickTourDestinationId, tourDestinationIndex } from './tourDestination';
 export { GroupFeatureTourOverlay } from './GroupFeatureTourOverlay';
 export { useGroupFeatureTour } from './useGroupFeatureTour';
