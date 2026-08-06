@@ -1,9 +1,12 @@
 # Hither — 產品定位與策略（PM README）
 
-> 這份文件講**產品要往哪走、為什麼、缺什麼**。技術現況請看 [`current-app-functional-architecture.md`](./current-app-functional-architecture.md)，原始 PRD 看 [`MVP.md`](./MVP.md)，文件狀態與入口看 [`README.md`](./README.md)。
-> 撰寫日期：2026-07-09。這是一份策略與功能規格文件，會隨拍板更新。
+> 這份文件講**產品要往哪走、為什麼、缺什麼**。  
+> 技術現況：[`current-app-functional-architecture.md`](./current-app-functional-architecture.md)  
+> 決策紀錄：[`product-decision-log.md`](./product-decision-log.md)  
+> 文件索引：[`README.md`](./README.md)  
+> 任務／ticket：**GitHub Issues／PRs**（不再使用 `docs/Tasks`）。
 
-> 最新的商業決策、trade-off 與尚未定案項目請先看 [`docs/product-decision-log.md`](./product-decision-log.md)。本文件較早段落仍可能包含尚未同步的舊規則。
+> 撰寫日期：2026-07-09。策略文件會隨拍板更新；若與 decision log 衝突，以較新的 decision log 為準。
 
 ---
 
@@ -37,7 +40,7 @@ Hither 的品牌核心隱喻是**牧羊人的拐杖 (Shepherd's Crook)**：
 
 > ✅ **已實作（2026-07-09，UX 邏輯層 + 佔位 UI）**：`src/onboarding/` 模組——純資料流程狀態機（`flow.ts`）、題目與吉祥物 8 組合對照表（`content.ts`，題目為暫編版）、step registry（換 UI 只換 registry 內的 component）、共享 3 頁 + Leader/Member/Browser 三條分支、theme 頁即時切換含新增 forest 主題、expo-haptics 正向互動回饋、AsyncStorage 完成旗標（絕不二次顯示）、登入後答案一次性同步至 `profiles.onboarding`（失敗自動下次啟動重試）。jest+tsc 全綠。**未實機驗證**；migration `20260709010000_profiles_onboarding.sql` 待套用；正式 UI 依 §2 規範之後整包抽換。
 
-Onboarding 設計 brief 請見 [`onboarding-redesign-brief.md`](./Tasks/Completed/2026-07-14-Onboarding/Spec/onboarding-redesign-brief.md)；實際 UI 以 `apps/mobile/src/onboarding/` 為準。
+實際 Onboarding UI 以 `apps/mobile/src/onboarding/` 為準（歷史 brief 已移除，改以程式與 GitHub Spec 為準）。
 
 ### 2.1 共享流程頁面
 1. **第一頁：核心價值動畫**
