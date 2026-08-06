@@ -408,7 +408,7 @@ describe('map UI placement contracts', () => {
     // Create/join action row is a plain View (no entering animation).
     expect(roleSelect).toContain('<View style={styles.actionRow}>');
     expect(roleSelect).toContain('entering={FadeIn.duration(400)}');
-    expect(roleSelect).toContain('查看我的隊伍');
+    expect(roleSelect).toContain("t('role.myTeams'");
   });
 
   it('avoids Android elevation black-frame on translucent rounded role tiles', () => {

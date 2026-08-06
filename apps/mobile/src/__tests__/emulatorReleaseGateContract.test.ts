@@ -111,7 +111,8 @@ describe('recovery invariants referenced by the gate', () => {
 
   it('map failure stays map-local; root retry does not clear session state', () => {
     expect(groupMap).toContain('MapSubtreeBoundary');
-    expect(boundary).toContain('were not cleared');
+    expect(boundary).toContain('errorBoundary.terminalBody');
+    expect(boundary).toContain('Do not clear app state');
     expect(boundary).toContain('react_render_retry');
   });
 

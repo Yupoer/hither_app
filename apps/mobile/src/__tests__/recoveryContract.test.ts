@@ -53,8 +53,9 @@ describe('root / map recovery source contracts', () => {
     expect(boundary).toContain('getLastScreenName');
     expect(boundary).toContain('react_render_retry');
     expect(boundary).toContain('react_render_terminal');
-    expect(boundary).toContain('Still not working');
-    expect(boundary).toContain('were not cleared');
+    expect(boundary).toContain('errorBoundary.terminalTitle');
+    expect(boundary).toContain('errorBoundary.terminalBody');
+    expect(boundary).toContain('Do not clear app state');
     expect(boundary).toContain('remountKey');
     expect(boundary).toContain('pendingRetryEpisode');
     expect(boundary).toContain('componentDidUpdate');
