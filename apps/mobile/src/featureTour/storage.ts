@@ -6,6 +6,15 @@ import { GROUP_FEATURE_TOUR_STORAGE_KEY } from './constants';
 export const GROUP_FEATURE_TOUR_ACCOUNT_SYNC_PENDING_KEY =
   'hither.groupFeatureTour.accountSyncPending';
 
+/**
+ * Set while a prefs reset intentionally cleared the tour flag.
+ * Blocks reevaluate from re-hydrating local=true from stale in-memory
+ * `accountPreferences.groupFeatureTourCompleted === true` until session
+ * prefs catch up (false) or the user completes the tour again.
+ */
+export const GROUP_FEATURE_TOUR_RESET_INTENT_KEY =
+  'hither.groupFeatureTour.resetIntent';
+
 /** Per-account desired tour completion waiting for a successful profile write. */
 export interface TourAccountSyncPending {
   accountId: string;
@@ -62,6 +71,23 @@ export async function readTourAccountSyncPending(): Promise<TourAccountSyncPendi
 /** @deprecated Prefer readTourAccountSyncPending; kept for test compatibility. */
 export async function isTourAccountSyncPending(): Promise<boolean> {
   return (await readTourAccountSyncPending()) != null;
+}
+
+export async function readTourResetIntent(): Promise<boolean> {
+  try {
+    const raw = await AsyncStorage.getItem(GROUP_FEATURE_TOUR_RESET_INTENT_KEY);
+    return raw === '1' || raw === 'true';
+  } catch {
+    return false;
+  }
+}
+
+export async function writeTourResetIntent(active: boolean): Promise<void> {
+  if (active) {
+    await AsyncStorage.setItem(GROUP_FEATURE_TOUR_RESET_INTENT_KEY, '1');
+  } else {
+    await AsyncStorage.removeItem(GROUP_FEATURE_TOUR_RESET_INTENT_KEY);
+  }
 }
 
 /**
@@ -140,6 +166,7 @@ export async function completeGroupFeatureTour(opts?: {
   accountId?: string | null;
   existingPreferences?: AccountPreferences | null;
 }): Promise<void> {
+  await writeTourResetIntent(false);
   await writeGroupFeatureTourCompletedLocal(true);
   const next: AccountPreferences = {
     ...(opts?.existingPreferences ?? {}),
@@ -150,12 +177,14 @@ export async function completeGroupFeatureTour(opts?: {
 
 /**
  * Clear tour completion (reset prefs). Local + best-effort account with pending false.
+ * Sets reset intent so reevaluate cannot undo local false from stale memory prefs.
  */
 export async function clearGroupFeatureTour(opts?: {
   accountId?: string | null;
   existingPreferences?: AccountPreferences | null;
 }): Promise<void> {
   await writeGroupFeatureTourCompletedLocal(false);
+  await writeTourResetIntent(true);
   const next: AccountPreferences = {
     ...(opts?.existingPreferences ?? {}),
     groupFeatureTourCompleted: false,

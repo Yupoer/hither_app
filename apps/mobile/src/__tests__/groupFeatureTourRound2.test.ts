@@ -14,9 +14,13 @@ import {
   clearGroupFeatureTour,
   completeGroupFeatureTour,
   GROUP_FEATURE_TOUR_ACCOUNT_SYNC_PENDING_KEY,
+  GROUP_FEATURE_TOUR_RESET_INTENT_KEY,
   parseTourAccountSyncPending,
+  readGroupFeatureTourCompletedLocal,
   readTourAccountSyncPending,
+  readTourResetIntent,
   retryPendingTourAccountSync,
+  writeGroupFeatureTourCompletedLocal,
 } from '../featureTour/storage';
 
 jest.mock('@react-native-async-storage/async-storage', () =>
@@ -329,6 +333,130 @@ describe('R2: hook observable lifecycle', () => {
     });
     await flush();
     expect(expandCard).toHaveBeenCalledWith('dest-shared');
+  });
+});
+
+describe('R3: reset replay with stale account prefs', () => {
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    await AsyncStorage.clear();
+    updateProfile.mockResolvedValue(undefined);
+  });
+
+  function HookProbe(props: {
+    onSnapshot: (s: ReturnType<typeof useGroupFeatureTour>) => void;
+    input: Parameters<typeof useGroupFeatureTour>[0];
+  }) {
+    const snap = useGroupFeatureTour(props.input);
+    props.onSnapshot(snap);
+    return null;
+  }
+
+  function baseInput(overrides: Partial<Parameters<typeof useGroupFeatureTour>[0]> = {}) {
+    return {
+      groupId: 'g1',
+      destinationCount: 1,
+      passiveMode: false,
+      denseChrome: true,
+      isLeader: true,
+      accountId: 'user-a',
+      accountPreferences: { groupFeatureTourCompleted: true },
+      expandCard: jest.fn(),
+      pauseAutoCollapse: jest.fn(),
+      resumeAutoCollapse: jest.fn(),
+      tourDestinationId: 'dest-1',
+      setSheetMid: jest.fn(),
+      selectSheetPane: jest.fn(),
+      measureTarget: jest.fn(async () => ({ x: 0, y: 0, width: 100, height: 40 })),
+      navCommandVisible: true,
+      personalArriveVisible: true,
+      ...overrides,
+    };
+  }
+
+  it('clear sets reset intent and does not leave local completed', async () => {
+    await writeGroupFeatureTourCompletedLocal(true);
+    await clearGroupFeatureTour({
+      accountId: 'user-a',
+      existingPreferences: { groupFeatureTourCompleted: true },
+    });
+    expect(await readGroupFeatureTourCompletedLocal()).toBe(false);
+    expect(await readTourResetIntent()).toBe(true);
+  });
+
+  it('reevaluate after successful clear does not re-hydrate from stale prefs true', async () => {
+    await writeGroupFeatureTourCompletedLocal(true);
+    updateProfile.mockResolvedValue(undefined);
+    await clearGroupFeatureTour({
+      accountId: 'user-a',
+      existingPreferences: { groupFeatureTourCompleted: true },
+    });
+
+    const box: { latest?: ReturnType<typeof useGroupFeatureTour> } = {};
+    await act(async () => {
+      create(
+        React.createElement(HookProbe, {
+          // Stale in-memory prefs still claim completed — the bug Sol found.
+          input: baseInput({
+            accountPreferences: { groupFeatureTourCompleted: true },
+          }),
+          onSnapshot: (s) => {
+            box.latest = s;
+          },
+        }),
+      );
+    });
+    for (let i = 0; i < 15 && !box.latest?.tourActive; i++) {
+      await flush();
+    }
+    expect(await readGroupFeatureTourCompletedLocal()).toBe(false);
+    expect(box.latest?.tourActive).toBe(true);
+  });
+
+  it('reevaluate after failed account clear still allows replay via pending false', async () => {
+    await writeGroupFeatureTourCompletedLocal(true);
+    updateProfile.mockRejectedValueOnce(new Error('network'));
+    await clearGroupFeatureTour({
+      accountId: 'user-a',
+      existingPreferences: { groupFeatureTourCompleted: true },
+    });
+    expect(await readTourAccountSyncPending()).toEqual({
+      accountId: 'user-a',
+      completed: false,
+    });
+
+    updateProfile.mockResolvedValue(undefined);
+    const box: { latest?: ReturnType<typeof useGroupFeatureTour> } = {};
+    await act(async () => {
+      create(
+        React.createElement(HookProbe, {
+          input: baseInput({
+            accountPreferences: { groupFeatureTourCompleted: true },
+          }),
+          onSnapshot: (s) => {
+            box.latest = s;
+          },
+        }),
+      );
+    });
+    for (let i = 0; i < 15 && !box.latest?.tourActive; i++) {
+      await flush();
+    }
+    expect(box.latest?.tourActive).toBe(true);
+    expect(await readGroupFeatureTourCompletedLocal()).toBe(false);
+  });
+
+  it('MapScreen resetPrefs optimistically patches session tour flag', () => {
+    const { readFileSync } = require('node:fs') as typeof import('node:fs');
+    const { join } = require('node:path') as typeof import('node:path');
+    const map = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+    expect(map).toContain('groupFeatureTourCompleted: false');
+    expect(map).toContain('updateProfile');
+    expect(map).toContain('clearGroupFeatureTour');
+  });
+
+  it('exports reset intent key', () => {
+    expect(GROUP_FEATURE_TOUR_RESET_INTENT_KEY).toContain('resetIntent');
   });
 });
 

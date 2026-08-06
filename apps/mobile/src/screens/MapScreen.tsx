@@ -3424,9 +3424,22 @@ export default function MapScreen({ route, navigation }: Props) {
       accountId: user?.id ?? null,
       existingPreferences: user?.preferences ?? null,
     }).catch(() => undefined);
+    // Optimistically clear session prefs so reevaluate does not see stale true.
+    // clearGroupFeatureTour already best-effort wrote the account; this updates
+    // in-memory user.preferences. Failures are non-fatal (reset intent covers them).
+    try {
+      await updateProfile({
+        preferences: {
+          ...(user?.preferences ?? {}),
+          groupFeatureTourCompleted: false,
+        },
+      });
+    } catch {
+      // Pending / reset-intent paths keep replay working without session write.
+    }
     reevaluateTourRef.current();
     Alert.alert(t('settings.resetAllPrefs'), t('settings.resetPrefsDone'));
-  }, [t, user?.id, user?.preferences]);
+  }, [t, user?.id, user?.preferences, updateProfile]);
 
   const confirmResetPrefs = useCallback(() => {
     confirmAction(

@@ -18,7 +18,10 @@ export {
   isTourAccountSyncPending,
   readTourAccountSyncPending,
   parseTourAccountSyncPending,
+  readTourResetIntent,
+  writeTourResetIntent,
   GROUP_FEATURE_TOUR_ACCOUNT_SYNC_PENDING_KEY,
+  GROUP_FEATURE_TOUR_RESET_INTENT_KEY,
   type TourAccountSyncPending,
 } from './storage';
 export {

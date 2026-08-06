@@ -19,9 +19,12 @@ import {
   completeGroupFeatureTour,
   isTourCompletedFromSources,
   readGroupFeatureTourCompletedLocal,
+  readTourAccountSyncPending,
+  readTourResetIntent,
   retryPendingTourAccountSync,
   shouldStartGroupFeatureTour,
   writeGroupFeatureTourCompletedLocal,
+  writeTourResetIntent,
 } from './storage';
 
 export type MeasureTargetFn = (
@@ -136,19 +139,60 @@ export function useGroupFeatureTour(
 
   const reevaluate = useCallback(() => {
     void (async () => {
-      const local = await readGroupFeatureTourCompletedLocal();
-      const accountDone = prefsRef.current?.groupFeatureTourCompleted === true;
-      if (accountDone && !local) {
-        await writeGroupFeatureTourCompletedLocal(true).catch(() => undefined);
+      let local = await readGroupFeatureTourCompletedLocal();
+      const accountId = accountIdRef.current;
+      const pending = await readTourAccountSyncPending();
+      const resetIntent = await readTourResetIntent();
+      const prefsDone = prefsRef.current?.groupFeatureTourCompleted === true;
+
+      // Prefer per-account pending desired value over stale session prefs.
+      const pendingForAccount =
+        pending != null
+        && typeof accountId === 'string'
+        && pending.accountId === accountId
+          ? pending
+          : null;
+
+      // Effective account intent for this evaluation.
+      // - pending.completed wins for this account (reset retries false, complete retries true)
+      // - reset intent blocks account→local hydrate from stale memory prefs === true
+      let accountIntent: boolean;
+      if (pendingForAccount) {
+        accountIntent = pendingForAccount.completed;
+      } else if (resetIntent) {
+        accountIntent = false;
+      } else {
+        accountIntent = prefsDone;
       }
-      // Retry only the pending record for this account (uses stored desired value).
-      void retryPendingTourAccountSync({
-        accountId: accountIdRef.current,
-        existingPreferences: prefsRef.current,
-      });
+
+      // Cross-device hydrate: account says done and local is empty — only when not
+      // in a reset / pending-false path.
+      if (accountIntent && !local) {
+        await writeGroupFeatureTourCompletedLocal(true).catch(() => undefined);
+        local = true;
+      }
+
+      // Retry pending before computing done so a successful write can clear state.
+      if (pendingForAccount) {
+        await retryPendingTourAccountSync({
+          accountId,
+          existingPreferences: prefsRef.current,
+        });
+      } else {
+        void retryPendingTourAccountSync({
+          accountId,
+          existingPreferences: prefsRef.current,
+        });
+      }
+
+      // Clear reset intent once session prefs catch up (false) or local completed.
+      if (resetIntent && (!prefsDone || local)) {
+        await writeTourResetIntent(false).catch(() => undefined);
+      }
+
       const done = isTourCompletedFromSources({
-        localCompleted: local || accountDone,
-        accountCompleted: accountDone,
+        localCompleted: local,
+        accountCompleted: accountIntent,
       });
       setTourCompleted(done);
       setGateReady(true);
