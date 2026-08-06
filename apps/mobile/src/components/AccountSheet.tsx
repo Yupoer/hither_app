@@ -89,11 +89,10 @@ export default function AccountSheet({
     ? Math.max(0, Math.floor((Date.now() - new Date(user.createdAt).getTime()) / 86400000))
     : 0;
 
-  let providerText = 'Email 註冊';
-  if (user?.provider === 'google') providerText = 'Google 註冊';
-  if (user?.provider === 'anonymous') providerText = '匿名帳號';
-
-  if (user?.provider === 'apple') providerText = 'Apple';
+  let providerText = t('account.providerEmail');
+  if (user?.provider === 'google') providerText = t('account.providerGoogle');
+  if (user?.provider === 'anonymous') providerText = t('account.providerAnonymous');
+  if (user?.provider === 'apple') providerText = t('account.providerApple');
 
   function redeemErrorMessage(code: string): string {
     switch (code) {
@@ -295,10 +294,10 @@ export default function AccountSheet({
           </View>
 
           {/* Registration Info */}
-          <Text style={styles.sectionLabel}>註冊資訊</Text>
+          <Text style={styles.sectionLabel}>{t('account.regSection')}</Text>
           <View style={styles.card}>
             <View style={styles.row}>
-              <Text style={styles.rowLabel}>註冊方式</Text>
+              <Text style={styles.rowLabel}>{t('account.regMethod')}</Text>
               <Text style={styles.rowValue}>{providerText}</Text>
             </View>
             <View style={styles.divider} />
@@ -310,8 +309,8 @@ export default function AccountSheet({
             </View>
             <View style={styles.divider} />
             <View style={styles.row}>
-              <Text style={styles.rowLabel}>已註冊天數</Text>
-              <Text style={styles.rowValue}>{registeredDays} 天</Text>
+              <Text style={styles.rowLabel}>{t('account.regDays')}</Text>
+              <Text style={styles.rowValue}>{t('account.regDaysValue', { n: registeredDays })}</Text>
             </View>
           </View>
 
@@ -394,19 +393,19 @@ export default function AccountSheet({
           )}
 
           {/* Subscription Info */}
-          <Text style={styles.sectionLabel}>訂閱狀態</Text>
+          <Text style={styles.sectionLabel}>{t('account.subSection')}</Text>
           <View style={styles.card}>
             <View style={styles.row}>
-              <Text style={styles.rowLabel}>目前方案</Text>
+              <Text style={styles.rowLabel}>{t('account.currentPlan')}</Text>
               <Text style={[styles.rowValue, isPro && { color: accent }]}>
-                {isPro ? (user?.proPlan || 'Pro') : '免費版 (Free)'}
+                {isPro ? (user?.proPlan || 'Pro') : t('account.planFree')}
               </Text>
             </View>
             {isPro && user?.proPurchasedAt && (
               <>
                 <View style={styles.divider} />
                 <View style={styles.row}>
-                  <Text style={styles.rowLabel}>購買日期</Text>
+                  <Text style={styles.rowLabel}>{t('account.purchasedAt')}</Text>
                   <Text style={styles.rowValue}>
                     {new Date(user.proPurchasedAt).toLocaleDateString()}
                   </Text>
@@ -417,7 +416,7 @@ export default function AccountSheet({
               <>
                 <View style={styles.divider} />
                 <View style={styles.row}>
-                  <Text style={styles.rowLabel}>到期日期</Text>
+                  <Text style={styles.rowLabel}>{t('account.expiresAt')}</Text>
                   <Text style={styles.rowValue}>
                     {new Date(user.proExpiresAt).toLocaleDateString()}
                   </Text>
@@ -427,15 +426,15 @@ export default function AccountSheet({
           </View>
 
           {/* Promo Code — same server entitlement model (no Early Access state) */}
-          <Text style={styles.sectionLabel}>升級序號兌換</Text>
+          <Text style={styles.sectionLabel}>{t('account.redeemSection')}</Text>
           <View style={styles.card}>
             <Text style={styles.promoHint}>
-              輸入序號可解鎖與購買相同的 server 權益（Lifetime 或小團 Pass）。匿名帳號請先註冊。
+              {t('account.redeemHint')}
             </Text>
             <View style={styles.inputRow}>
               <TextInput
                 style={styles.input}
-                placeholder="請輸入序號"
+                placeholder={t('account.redeemPlaceholder')}
                 placeholderTextColor={glass.textTertiary}
                 keyboardAppearance="dark"
                 value={promoCode}
@@ -454,7 +453,7 @@ export default function AccountSheet({
                 {redeeming ? (
                   <ActivityIndicator color={accent} size="small" />
                 ) : (
-                  <Text style={[styles.redeemText, { color: accent }]}>兌換</Text>
+                  <Text style={[styles.redeemText, { color: accent }]}>{t('account.redeemCta')}</Text>
                 )}
               </Pressable>
             </View>

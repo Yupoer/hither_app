@@ -25,7 +25,8 @@ export function confirmAction(
   options: ConfirmOptions,
   onConfirm: () => void,
 ): void {
-  const { title, message, confirmLabel = '確定', cancelLabel = '取消', destructive } =
+  // Callers should pass localized labels via t('common.confirm') / t('common.cancel').
+  const { title, message, confirmLabel = 'OK', cancelLabel = 'Cancel', destructive } =
     options;
 
   if (Platform.OS === 'web') {

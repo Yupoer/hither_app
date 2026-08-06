@@ -118,6 +118,12 @@ import { useJourneyNavigation } from './MapScreen/hooks/useJourneyNavigation';
 import { useMapKitRoutes } from './MapScreen/hooks/useMapKitRoutes';
 import { energyObservability } from '../state/energyObservability';
 import { useGatherCardExpansion } from './MapScreen/hooks/useGatherCardExpansion';
+import {
+  GroupFeatureTourOverlay,
+  useGroupFeatureTour,
+  clearGroupFeatureTour,
+  type TourTargetId,
+} from '../featureTour';
 import { useCoordinationRequests } from './MapScreen/hooks/useCoordinationRequests';
 import { SettingsOverlay } from './MapScreen/components/SettingsOverlay';
 import { DiagnosticsOverlay } from './MapScreen/components/DiagnosticsOverlay';
@@ -321,9 +327,13 @@ function splitEtaParts(seconds: number | null): { value: string; unit: string } 
  * exists (aligned with DestinationReorderList day headers).
  * Date-only ISO is parsed at local noon to avoid TZ day-shift.
  */
-function formatTripDayLine(dayNum: number, departureDate?: string | null): string {
+function formatTripDayLine(
+  dayNum: number,
+  departureDate: string | null | undefined,
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string,
+): string {
   const day = Math.max(1, dayNum || 1);
-  const dayPart = `第 ${day} 天`;
+  const dayPart = t('map.tripDay', { day });
   if (!departureDate) return dayPart;
   const raw = departureDate.trim();
   const base = /^\d{4}-\d{2}-\d{2}$/.test(raw)
@@ -331,8 +341,34 @@ function formatTripDayLine(dayNum: number, departureDate?: string | null): strin
     : new Date(raw);
   if (Number.isNaN(base.getTime())) return dayPart;
   base.setDate(base.getDate() + (day - 1));
-  const datePart = `${base.getMonth() + 1}月${base.getDate()}號`;
+  const datePart = t('map.tripDayDate', {
+    month: base.getMonth() + 1,
+    day: base.getDate(),
+  });
   return `${dayPart} · ${datePart}`;
+}
+
+/** Localized nav command label from kind (tests keep zh on resolveNavCommand.label). */
+function navCommandDisplayLabel(
+  kind: import('../utils/gatherCommand').NavCommandKind,
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string,
+): string {
+  switch (kind) {
+    case 'leader_start':
+      return t('nav.leaderStart');
+    case 'leader_stop':
+      return t('nav.leaderStop');
+    case 'leader_mark_complete':
+      return t('nav.leaderComplete');
+    case 'member_navigating':
+      return t('nav.memberNavigating');
+    case 'member_waiting_complete':
+      return t('nav.memberWaitingComplete');
+    case 'member_request_start':
+      return t('nav.memberRequestStart');
+    default:
+      return '';
+  }
 }
 
 /**
@@ -372,11 +408,36 @@ export default function MapScreen({ route, navigation }: Props) {
     setArrivalRadiusM,
     setPassiveCompanionMode,
   } = usePreferences();
-  const { isCardExpanded, toggleCard, registerCardActivity } =
-    useGatherCardExpansion(gatherCardDefaultExpanded);
+  const {
+    isCardExpanded,
+    toggleCard,
+    registerCardActivity,
+    expandCard,
+    pauseAutoCollapse,
+    resumeAutoCollapse,
+  } = useGatherCardExpansion(gatherCardDefaultExpanded);
   const { colors } = useTheme();
   const accent = colors.accent;
   const { t, language } = useTranslation();
+  const tourTargetRefs = useRef<Partial<Record<TourTargetId, View | null>>>({});
+  const setTourTargetRef = useCallback((id: TourTargetId, node: View | null) => {
+    tourTargetRefs.current[id] = node;
+  }, []);
+  const measureTourTarget = useCallback(async (id: TourTargetId) => {
+    const node = tourTargetRefs.current[id];
+    if (!node || typeof (node as View).measureInWindow !== 'function') return null;
+    return await new Promise<{ x: number; y: number; width: number; height: number } | null>((resolve) => {
+      try {
+        (node as View).measureInWindow((x, y, width, height) => {
+          if (!width || !height) resolve(null);
+          else resolve({ x, y, width, height });
+        });
+      } catch {
+        resolve(null);
+      }
+    });
+  }, []);
+  const reevaluateTourRef = useRef<() => void>(() => undefined);
   // Live Dynamic Type layout — rebuilds when system fontScale changes.
   // a11y-layout:commandRow — always ONE row; density (size/labels) tracks
   // font bucket + physical width, never multi-row stacking.
@@ -2025,8 +2086,8 @@ export default function MapScreen({ route, navigation }: Props) {
       }
       if (pending && permission?.backgroundStatus !== 'granted') {
         showLocationPermissionAlert(
-          '需要背景定位',
-          '全天群組定位與鎖定螢幕導航需要「永遠」取用位置。請在設定允許後，鎖定螢幕仍可省電更新位置。',
+          t('map.bgLocationTitle'),
+          t('map.bgLocationBody'),
         );
       }
     });
@@ -2040,6 +2101,7 @@ export default function MapScreen({ route, navigation }: Props) {
     groupId,
     handleLocationRefreshRequest,
     showLocationPermissionAlert,
+    t,
   ]);
 
   const refreshAllLocations = useCallback(async () => {
@@ -2145,7 +2207,9 @@ export default function MapScreen({ route, navigation }: Props) {
   const notifyLeaderPlace = useCallback(
     async (items: GatherPointRequestItem[], source: 'search' | 'kml'): Promise<boolean> => {
       if (!groupId) return false;
-      const label = items.length === 1 ? items[0].title : `${items.length} 個地點`;
+      const label = items.length === 1
+        ? items[0].title
+        : t('map.placesCount', { count: items.length });
       const result = await runUiAction(
         'map.destination_suggest',
         async (token) => {
@@ -3353,8 +3417,12 @@ export default function MapScreen({ route, navigation }: Props) {
       console.warn('[settings] resetPrefs saveOnboardingProfile failed', e);
     }
     await AsyncStorage.removeItem(ONBOARDING_STORAGE_KEY);
+    await clearGroupFeatureTour({
+      existingPreferences: user?.preferences ?? null,
+    }).catch(() => undefined);
+    reevaluateTourRef.current();
     Alert.alert(t('settings.resetAllPrefs'), t('settings.resetPrefsDone'));
-  }, [t]);
+  }, [t, user?.preferences]);
 
   const confirmResetPrefs = useCallback(() => {
     confirmAction(
@@ -3407,10 +3475,10 @@ export default function MapScreen({ route, navigation }: Props) {
        } catch(e) {
          setOptimisticTripDays(null);
          setOptimisticDepartureDate(null);
-         Alert.alert('更新失敗', e instanceof Error ? e.message : String(e));
+         Alert.alert(t('map.updateFailed'), e instanceof Error ? e.message : String(e));
        }
     }
-  }, [groupId, rawDestinations, refresh]);
+  }, [groupId, rawDestinations, refresh, t]);
   // --- Derived view models --------------------------------------------------
   // Optimistic flip for the Solo switch — server round trip + realtime
   // refetch otherwise take long enough to read as the switch not responding,
@@ -3730,6 +3798,10 @@ export default function MapScreen({ route, navigation }: Props) {
         ) : (
           <View style={styles.headerIconSlot} />
         )}
+        <View
+          ref={(n) => setTourTargetRef('settings', n)}
+          collapsable={false}
+        >
         <AmicroButton
           icon="settings-outline"
           mode="rotate"
@@ -3740,7 +3812,10 @@ export default function MapScreen({ route, navigation }: Props) {
           onPress={lightTap}
           onAnimationComplete={openSettingsFromSheet}
         />
+        </View>
         <Pressable
+          ref={(n) => setTourTargetRef('avatar', n)}
+          collapsable={false}
           style={[styles.headerAvatar, { backgroundColor: user?.avatarColor ?? accent }]}
           onPress={openProfile}
           accessibilityRole="button"
@@ -3820,6 +3895,36 @@ export default function MapScreen({ route, navigation }: Props) {
     // Pill slide is handled by Segmented (same as 脫隊示警); no LayoutAnimation.
     setSheetPane(key);
   }, [sheetPane]);
+
+  const setSheetMid = useCallback(() => {
+    // Stage Two = mid detent (index 1 when available).
+    const midIndex = detents.length > 1 ? 1 : 0;
+    setDetent(midIndex);
+    heightSV.value = detents[midIndex] ?? detents[0];
+  }, [detents, heightSV]);
+
+  const {
+    tourActive,
+    step: tourStep,
+    targetRect: tourTargetRect,
+    onNext: onTourNext,
+    reevaluate: reevaluateTour,
+  } = useGroupFeatureTour({
+    groupId,
+    destinationCount: destinations.length,
+    passiveMode: inPassiveMode,
+    denseChrome: showDenseChrome,
+    isLeader: !!isLeader,
+    accountPreferences: user?.preferences ?? null,
+    expandCard,
+    pauseAutoCollapse,
+    resumeAutoCollapse,
+    firstDestinationId: destinations[0]?.id ?? null,
+    setSheetMid,
+    selectSheetPane,
+    measureTarget: measureTourTarget,
+  });
+  reevaluateTourRef.current = reevaluateTour;
 
   // Entitlement snapshot is bound to the groupId it was fetched for. A slow
   // response for team A must never apply after the user switched to team B.
@@ -4067,7 +4172,7 @@ export default function MapScreen({ route, navigation }: Props) {
         </Pressable>
         <Pressable style={styles.listRow} onPress={() => { lightTap(); setKmlVisible(true); }} accessibilityRole="button">
           <Text style={styles.listRowTitle}>
-            {canEditItinerary ? t('kml.entry') : '匯入並請求隊長同意'}
+            {canEditItinerary ? t('kml.entry') : t('map.kmlRequestLeader')}
           </Text>
           <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
         </Pressable>
@@ -4226,7 +4331,17 @@ export default function MapScreen({ route, navigation }: Props) {
     <>
       {/* Icon tabs: solid fill only — no Liquid Glass edge halo / white rim. */}
       <View style={styles.sheetPaneToggleWrap}>
-        <View style={styles.sheetPaneToggleGlass}>
+        <View
+          style={styles.sheetPaneToggleGlass}
+          ref={(n) => {
+            // Highlight active pane tab strip for Stage Two tour steps.
+            setTourTargetRef('paneMembers', sheetPane === 'members' ? n : tourTargetRefs.current.paneMembers ?? n);
+            setTourTargetRef('paneRoute', sheetPane === 'route' ? n : tourTargetRefs.current.paneRoute ?? n);
+            setTourTargetRef('paneTools', sheetPane === 'tools' ? n : tourTargetRefs.current.paneTools ?? n);
+            setTourTargetRef('paneStore', sheetPane === 'store' ? n : tourTargetRefs.current.paneStore ?? n);
+          }}
+          collapsable={false}
+        >
           <SheetPaneTabs
             accent={accent}
             options={sheetPaneOptions}
@@ -4503,7 +4618,7 @@ export default function MapScreen({ route, navigation }: Props) {
               </View>
               <Text style={styles.pillName} numberOfLines={1}>
                 {myScopeId
-                  ? (viewingScope === 'main' ? (group?.name ?? 'Hither') : '小隊')
+                  ? (viewingScope === 'main' ? (group?.name ?? 'Hither') : t('map.subgroupLabel'))
                   : (group?.name ?? 'Hither')}
               </Text>
               {/* large+: drop secondary count so the name can ellipsis cleanly */}
@@ -4846,12 +4961,13 @@ export default function MapScreen({ route, navigation }: Props) {
                 isNextTeamPending: true,
                 teamStartBlocked: false,
               });
+              const navLabel = navCommandDisplayLabel(navCmd.kind, t);
               const startAccessibilityHint = isLeader
-                ? navCmd.label === '結束'
-                  ? '按下後結束此集合點並回到停留狀態'
-                  : navCmd.label === '完成'
-                    ? '按下後完成此集合點'
-                    : '按下後開始導航；再次按下可結束'
+                ? navCmd.kind === 'leader_stop'
+                  ? t('nav.a11yEndHint')
+                  : navCmd.kind === 'leader_mark_complete'
+                    ? t('nav.a11yCompleteHint')
+                    : t('nav.a11yStartHint')
                 : undefined;
               const leaderActionDisabled = false;
               const commandDisabled = !isLeader && (
@@ -4864,6 +4980,10 @@ export default function MapScreen({ route, navigation }: Props) {
                   key={`carousel-dest-${dest.id}-${index}`}
                   style={{ width: windowWidth, paddingHorizontal: narrowScreen ? 10 : 14 }}
                 >
+                  <View
+                    ref={active ? (n) => setTourTargetRef('gatherCard', n) : undefined}
+                    collapsable={false}
+                  >
                   <liquidGlass.GlassView
                     tintColor={active ? glass.cardActive : glass.card}
                     style={[
@@ -4910,7 +5030,9 @@ export default function MapScreen({ route, navigation }: Props) {
                     <GatheringCardPressable
                       onToggle={() => toggleCard(dest.id)}
                       accessibilityLabel={dest.title}
-                      accessibilityHint={cardExpanded ? '收合集合點卡片' : '展開集合點卡片'}
+                      accessibilityHint={
+                        cardExpanded ? t('gather.cardCollapseHint') : t('gather.cardExpandHint')
+                      }
                     >
                     {/* Layout (expanded):
                         kicker · dots
@@ -4972,6 +5094,7 @@ export default function MapScreen({ route, navigation }: Props) {
                                 {formatTripDayLine(
                                   dest.day || 1,
                                   optimisticDepartureDate ?? group?.departureDate,
+                                  t,
                                 )}
                               </Text>
                               <Pressable
@@ -5075,6 +5198,8 @@ export default function MapScreen({ route, navigation }: Props) {
                               </View>
                               <View style={styles.metricDivider} />
                               <Pressable
+                                ref={active ? (n) => setTourTargetRef('externalMaps', n) : undefined}
+                                collapsable={false}
                                 style={styles.mapsChip}
                                 onPress={(event) => {
                                   event.stopPropagation();
@@ -5086,6 +5211,15 @@ export default function MapScreen({ route, navigation }: Props) {
                               >
                                 <Ionicons name="map" size={22} color="#fff" />
                               </Pressable>
+                              {/* Arrival progress chip is the people count control above; alias for tour. */}
+                              {active ? (
+                                <View
+                                  ref={(n) => setTourTargetRef('arrivalProgress', n)}
+                                  collapsable={false}
+                                  style={StyleSheet.absoluteFill}
+                                  pointerEvents="none"
+                                />
+                              ) : null}
                             </View>
                           </View>
                         ) : (
@@ -5136,6 +5270,8 @@ export default function MapScreen({ route, navigation }: Props) {
                     <View style={styles.commandRow} pointerEvents="box-none">
                       {navCmd.kind !== 'hidden' ? (
                         <Pressable
+                          ref={active ? (n) => setTourTargetRef('navCommand', n) : undefined}
+                          collapsable={false}
                           style={[
                             styles.navBtn,
                             navCmd.kind === 'member_waiting_complete'
@@ -5174,7 +5310,7 @@ export default function MapScreen({ route, navigation }: Props) {
                           }}
                           disabled={commandDisabled}
                           accessibilityRole="button"
-                          accessibilityLabel={navCmd.label}
+                          accessibilityLabel={navLabel}
                           accessibilityHint={startAccessibilityHint}
                           accessibilityState={{ disabled: commandDisabled }}
                         >
@@ -5233,13 +5369,15 @@ export default function MapScreen({ route, navigation }: Props) {
                               adjustsFontSizeToFit
                               minimumFontScale={0.75}
                             >
-                              {navCmd.label}
+                              {navLabel}
                             </Text>
                           ) : null}
                         </Pressable>
                       ) : null}
 
                       <Pressable
+                        ref={active ? (n) => setTourTargetRef('transport', n) : undefined}
+                        collapsable={false}
                         style={styles.cmdSquare}
                         onPress={() => {
                           registerCardActivity(dest.id);
@@ -5261,6 +5399,8 @@ export default function MapScreen({ route, navigation }: Props) {
                           for open stops when sequential rules allow marking. */}
                       {showArrivalControl ? personallyArrived ? (
                         <Pressable
+                          ref={active ? (n) => setTourTargetRef('personalArrive', n) : undefined}
+                          collapsable={false}
                           style={[
                             styles.cmdSquare,
                             styles.arrivalCmdSquare,
@@ -5282,6 +5422,8 @@ export default function MapScreen({ route, navigation }: Props) {
                         </Pressable>
                       ) : (
                         <Pressable
+                          ref={active ? (n) => setTourTargetRef('personalArrive', n) : undefined}
+                          collapsable={false}
                           style={[
                             styles.cmdSquare,
                             styles.arrivalCmdSquare,
@@ -5302,6 +5444,10 @@ export default function MapScreen({ route, navigation }: Props) {
                         </Pressable>
                       ) : null}
 
+                      <View
+                        ref={active ? (n) => setTourTargetRef('meetTime', n) : undefined}
+                        collapsable={false}
+                      >
                       <MeetTimeChip
                         meetAtIso={dest.meetAt as string | null | undefined}
                         meetRedMinutes={
@@ -5327,10 +5473,12 @@ export default function MapScreen({ route, navigation }: Props) {
                         captionLive={t('map.meetCountdown')}
                         captionDue={t('map.meetTimeCaption')}
                       />
+                      </View>
                     </View>
                     )}
                     </View>
                   </liquidGlass.GlassView>
+                  </View>
                 </View>
               );
             })}
@@ -5393,7 +5541,8 @@ export default function MapScreen({ route, navigation }: Props) {
                 <View key={request.id} style={styles.flockRow}>
                   <View style={styles.grow}>
                     <Text style={styles.flockName}>
-                      {members.find((member) => member.userId === request.requesterId)?.name ?? '隊員'}
+                      {members.find((member) => member.userId === request.requesterId)?.name
+                        ?? t('map.memberFallback')}
                     </Text>
                     <Text style={styles.overlayHint}>
                       {t('gatherRequest.target', {
@@ -6132,7 +6281,9 @@ export default function MapScreen({ route, navigation }: Props) {
                   accessibilityRole="button"
                 >
                   <Text style={styles.meetQuickBtnText}>
-                    {m < 60 ? `${m}分鐘` : `${m / 60}小時`}後
+                    {m < 60
+                      ? t('map.meetInMinutes', { n: m })
+                      : t('map.meetInHours', { n: m / 60 })}
                   </Text>
                 </Pressable>
               ))}
@@ -6229,6 +6380,27 @@ export default function MapScreen({ route, navigation }: Props) {
           </View>
         )}
       </OverlaySheet>
+
+      <GroupFeatureTourOverlay
+        visible={tourActive}
+        title={tourStep ? t(tourStep.titleKey as TranslationKey) : ''}
+        body={
+          tourStep
+            ? tourStep.roleBody
+              ? t(
+                  (isLeader
+                    ? `${tourStep.bodyKey}.leader`
+                    : `${tourStep.bodyKey}.member`) as TranslationKey,
+                )
+              : t(tourStep.bodyKey as TranslationKey)
+            : ''
+        }
+        ctaLabel={
+          tourStep?.final ? t('tour.getStarted') : t('tour.next')
+        }
+        targetRect={tourTargetRect}
+        onNext={onTourNext}
+      />
     </View>
   );
 }

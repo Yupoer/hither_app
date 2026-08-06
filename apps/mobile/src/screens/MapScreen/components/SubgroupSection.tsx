@@ -45,7 +45,7 @@ export const SubgroupSection = React.memo(function SubgroupSection({
           <View style={styles.subgroupHead}>
             <View style={styles.grow}>
               <Text style={styles.subgroupName}>
-                主團隊 · <Text style={{ fontFamily: DISPLAY_FONT }}>{mainMembers.length}</Text>
+                {t('map.mainTeamLabel')} · <Text style={{ fontFamily: DISPLAY_FONT }}>{mainMembers.length}</Text>
               </Text>
               <Text style={styles.subgroupMeta}>{t('subgroup.collab')}</Text>
             </View>
