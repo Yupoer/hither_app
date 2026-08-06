@@ -12,7 +12,7 @@ const mapScreen = read('screens/MapScreen.tsx');
 const segmented = read('screens/MapScreen/components/Segmented.tsx');
 const storePane = read('screens/MapScreen/components/StorePane.tsx');
 const rewardedAds = read('native/rewardedAds.ts');
-const i18n = read('i18n/index.ts');
+const i18n = [read('i18n/locales/zh.ts'), read('i18n/locales/en.ts')].join('\n');
 
 describe('four-pane store navigation contracts', () => {
   it('declares members route tools store options with icon tabs (all 4 visible)', () => {
