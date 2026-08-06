@@ -1,4 +1,5 @@
 import { Alert, Platform } from 'react-native';
+import { getActiveLanguage, translate } from '../i18n';
 
 /**
  * Cross-platform confirmation dialog.
@@ -13,7 +14,7 @@ import { Alert, Platform } from 'react-native';
 export interface ConfirmOptions {
   title: string;
   message?: string;
-  /** Label for the confirming button (native only; web uses OK/Cancel). */
+  /** Label for the confirming button (native only; web uses browser defaults). */
   confirmLabel?: string;
   /** Label for the cancel button (native only). */
   cancelLabel?: string;
@@ -25,8 +26,15 @@ export function confirmAction(
   options: ConfirmOptions,
   onConfirm: () => void,
 ): void {
-  const { title, message, confirmLabel = '確定', cancelLabel = '取消', destructive } =
-    options;
+  // Defaults resolve from the active catalog so zh never leaks English Cancel.
+  const language = getActiveLanguage();
+  const {
+    title,
+    message,
+    confirmLabel = translate(language, 'common.confirm'),
+    cancelLabel = translate(language, 'common.cancel'),
+    destructive,
+  } = options;
 
   if (Platform.OS === 'web') {
     const text = message ? `${title}\n\n${message}` : title;

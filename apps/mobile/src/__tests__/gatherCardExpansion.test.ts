@@ -97,4 +97,17 @@ describe('useGatherCardExpansion', () => {
     expect(hook.result.isCardExpanded('b')).toBe(true);
     hook.unmount();
   });
+
+  it('expandCard opens a card and pauseAutoCollapse blocks the timer', () => {
+    const hook = renderExpansion(false);
+    act(() => {
+      hook.result.pauseAutoCollapse();
+      hook.result.expandCard('tour-card');
+    });
+    expect(hook.result.isCardExpanded('tour-card')).toBe(true);
+    act(() => jest.advanceTimersByTime(20_000));
+    expect(hook.result.isCardExpanded('tour-card')).toBe(true);
+    act(() => hook.result.resumeAutoCollapse());
+    hook.unmount();
+  });
 });

@@ -17,17 +17,26 @@ const infoPlist = readFileSync(
   join(__dirname, '../../ios/Hither/Info.plist'),
   'utf8',
 );
-const androidManifest = readFileSync(
-  join(__dirname, '../../android/app/src/main/AndroidManifest.xml'),
-  'utf8',
+// `/android/` is gitignored (Expo prebuild output). CI and clean checkouts
+// only have the committed plugin config in app.json as the Android source of truth.
+const appJson = JSON.parse(
+  readFileSync(join(__dirname, '../../app.json'), 'utf8'),
+) as {
+  expo?: { plugins?: Array<string | [string, Record<string, unknown>?]> };
+};
+const gmaPlugin = (appJson.expo?.plugins ?? []).find(
+  (p): p is [string, { androidAppId?: string; iosAppId?: string }] =>
+    Array.isArray(p) && p[0] === 'react-native-google-mobile-ads',
 );
+const androidAppId = gmaPlugin?.[1]?.androidAppId;
+const iosAppId = gmaPlugin?.[1]?.iosAppId;
 
 describe('native AdMob alignment (ticket 02)', () => {
   it('ships GADApplicationIdentifier on iOS and APPLICATION_ID on Android', () => {
     expect(infoPlist).toContain('GADApplicationIdentifier');
     expect(infoPlist).toContain('ca-app-pub-8135109277557342~4266216474');
-    expect(androidManifest).toContain('com.google.android.gms.ads.APPLICATION_ID');
-    expect(androidManifest).toContain('ca-app-pub-8135109277557342~5387726456');
+    expect(androidAppId).toBe('ca-app-pub-8135109277557342~5387726456');
+    expect(iosAppId).toBe('ca-app-pub-8135109277557342~4266216474');
   });
 
   it('documents that Podfile.lock GMA link is a macOS native gate (not OTA)', () => {

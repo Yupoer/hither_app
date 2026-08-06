@@ -46,6 +46,9 @@ jobs:
       - name: Test (jest)
         run: npm test --silent
 
+      - name: Lint (eslint — full tree; featureTour at error severity)
+        run: npm run lint
+
       - name: Typecheck (tsc)
         run: npm run typecheck
 

@@ -21,6 +21,8 @@ interface SheetPaneTabsProps {
   value: SheetPaneKey;
   onChange: (key: SheetPaneKey) => void;
   accent: string;
+  /** Optional per-tab node capture for tour highlight measurement. */
+  onTabNode?: (key: SheetPaneKey, node: View | null) => void;
 }
 
 const TAB_ICONS: Record<
@@ -38,6 +40,7 @@ export const SheetPaneTabs = React.memo(function SheetPaneTabs({
   value,
   onChange,
   accent,
+  onTabNode,
 }: SheetPaneTabsProps) {
   const { scale, boldText } = useFontLayout();
   const styles = useMemo(() => makeStyles(scale, boldText), [scale, boldText]);
@@ -52,6 +55,8 @@ export const SheetPaneTabs = React.memo(function SheetPaneTabs({
           <React.Fragment key={opt.key}>
             {i > 0 ? <View style={styles.divider} /> : null}
             <Pressable
+              ref={(n) => onTabNode?.(opt.key, n)}
+              collapsable={false}
               style={({ pressed }) => [
                 styles.tab,
                 pressed && { opacity: 0.65 },

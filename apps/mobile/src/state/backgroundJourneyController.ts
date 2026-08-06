@@ -7,6 +7,7 @@ import {
   type TrackingMode,
 } from '../utils/locationPolicy';
 import type { ArrivalState } from '../utils/navigationArrival';
+import { getActiveLanguage, translate } from '../i18n';
 
 export const BACKGROUND_JOURNEY_TASK = 'hither-background-journey-location';
 export const BACKGROUND_JOURNEY_KEY = '@hither/background-journey';
@@ -144,11 +145,13 @@ export function backgroundLocationOptions(
     showsBackgroundLocationIndicator: mode !== 'passiveBackground',
     foregroundService: {
       notificationTitle:
-        powerMode === 'allDay' ? 'Hither 群組定位中' : 'Hither 導航中',
+        powerMode === 'allDay'
+          ? translate(getActiveLanguage(), 'fgs.groupTitle')
+          : translate(getActiveLanguage(), 'fgs.navTitle'),
       notificationBody:
         powerMode === 'allDay'
-          ? '以省電模式更新你在群組中的位置'
-          : '持續更新你與集合點的距離',
+          ? translate(getActiveLanguage(), 'fgs.groupBody')
+          : translate(getActiveLanguage(), 'fgs.navBody'),
     },
   };
 }

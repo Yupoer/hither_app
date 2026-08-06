@@ -2,6 +2,7 @@ import {
   accountPreferencesFromSlots,
   commandTypesWithCustomSlot,
   CUSTOM_QUICK_COMMAND_SLOTS,
+  normalizeAccountPreferences,
   normalizeCustomQuickCommand,
   normalizeCustomQuickCommands,
   quickCommandGridItems,
@@ -78,5 +79,37 @@ describe('custom quick command preferences', () => {
       ],
       quickCommand: { label: 'A', message: 'a' },
     });
+  });
+
+  it('preserves groupFeatureTourCompleted when hydrating full preferences', () => {
+    expect(
+      normalizeAccountPreferences({
+        quickCommand: { label: '集合', message: '回來' },
+        groupFeatureTourCompleted: true,
+      }),
+    ).toEqual({
+      quickCommands: [
+        { label: '集合', message: '回來' },
+        null,
+        null,
+      ],
+      quickCommand: { label: '集合', message: '回來' },
+      groupFeatureTourCompleted: true,
+    });
+    // Slot-only rebuild (bug) would drop the flag — prove the hydrate path keeps it.
+    expect(
+      accountPreferencesFromSlots(
+        normalizeCustomQuickCommands({
+          groupFeatureTourCompleted: true,
+          quickCommands: [null, null, null],
+        }),
+      ).groupFeatureTourCompleted,
+    ).toBeUndefined();
+    expect(
+      normalizeAccountPreferences({
+        groupFeatureTourCompleted: true,
+        quickCommands: [null, null, null],
+      }).groupFeatureTourCompleted,
+    ).toBe(true);
   });
 });

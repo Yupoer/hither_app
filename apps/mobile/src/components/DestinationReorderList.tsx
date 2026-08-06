@@ -177,14 +177,14 @@ export default function DestinationReorderList({
               : new Date(departureDate);
             if (!Number.isNaN(dateObj.getTime())) {
               dateObj.setDate(dateObj.getDate() + (d - 1));
-              dateStr = `${dateObj.getMonth() + 1}月${dateObj.getDate()}號`;
+              dateStr = t('map.tripDayDate', { month: dateObj.getMonth() + 1, day: dateObj.getDate() });
             }
           }
           nextOrder.push({
             type: 'header',
             day: d,
             id: `header-${d}`,
-            title: `第 ${d} 天`,
+            title: t('trip.dayTitle', { day: d }),
             dateStr,
           });
           const dayDests = sortedDests.filter((dest) => (dest.day || 1) === d);
@@ -203,7 +203,7 @@ export default function DestinationReorderList({
 
       setOrder(nextOrder);
     }
-  }, [destinations, tripDays, departureDate]);
+  }, [destinations, tripDays, departureDate, t]);
 
   const dragBoundsRef = useRef<{ min: number; max: number } | null>(null);
 
@@ -322,7 +322,7 @@ export default function DestinationReorderList({
             setShowSettings(true);
           }}>
             <Ionicons name="calendar-outline" size={16} color={colors.accent} style={{ marginRight: 6 }} />
-            <Text style={styles.setDaysText}>設定天數與日期</Text>
+            <Text style={styles.setDaysText}>{t('trip.setDaysAndDate')}</Text>
           </Pressable>}
           {onSync && <Pressable
             style={[styles.setDaysBtn, syncing && { opacity: 0.5 }]}
@@ -399,9 +399,9 @@ export default function DestinationReorderList({
       <Modal visible={showSettings} transparent animationType="fade">
          <View style={styles.modalOverlay}>
             <View style={styles.modalCard}>
-               <Text style={styles.modalTitle}>設定行程天數</Text>
+               <Text style={styles.modalTitle}>{t('trip.setDaysTitle')}</Text>
                <View style={styles.modalRow}>
-                  <Text style={styles.modalLabel}>出發日期</Text>
+                  <Text style={styles.modalLabel}>{t('trip.departureDate')}</Text>
                   {Platform.OS === 'android' ? (
                     <Pressable onPress={openAndroidDatePicker} style={styles.datePickerButton}>
                       <Ionicons name="calendar-outline" size={18} color={colors.accent} />
@@ -422,7 +422,7 @@ export default function DestinationReorderList({
                   )}
                </View>
                <View style={styles.modalRow}>
-                  <Text style={styles.modalLabel}>行程總天數</Text>
+                  <Text style={styles.modalLabel}>{t('trip.totalDays')}</Text>
                   <View style={styles.daysControls}>
                      <Pressable onPress={() => setEditDays(Math.max(1, editDays - 1))} style={styles.daysBtn}>
                         <Text style={styles.daysBtnText}>-</Text>
@@ -435,7 +435,7 @@ export default function DestinationReorderList({
                </View>
                <View style={styles.modalActions}>
                   <Pressable onPress={() => setShowSettings(false)} style={styles.modalActionBtn}>
-                     <Text style={styles.modalActionText}>取消</Text>
+                     <Text style={styles.modalActionText}>{t('common.cancel')}</Text>
                   </Pressable>
                   <Pressable onPress={() => {
                       setShowSettings(false);
@@ -455,7 +455,7 @@ export default function DestinationReorderList({
                         : clampDateNotBeforeToday(editDate);
                       onUpdateTripDetails(editDays, toSave.toISOString());
                   }} style={[styles.modalActionBtn, { backgroundColor: colors.accent }]}>
-                     <Text style={[styles.modalActionText, { color: '#fff' }]}>儲存</Text>
+                     <Text style={[styles.modalActionText, { color: '#fff' }]}>{t('trip.save')}</Text>
                   </Pressable>
                </View>
             </View>
@@ -465,7 +465,7 @@ export default function DestinationReorderList({
       <Modal visible={colorPickerDay !== null} transparent animationType="fade">
          <Pressable style={styles.modalOverlay} onPress={() => setColorPickerDay(null)}>
             <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
-               <Text style={styles.modalTitle}>選擇第 {colorPickerDay} 天的旗幟顏色</Text>
+               <Text style={styles.modalTitle}>{t('trip.dayFlagColor', { day: colorPickerDay ?? 1 })}</Text>
                <View style={styles.colorPickerContainer}>
                   {DAY_COLORS.map(c => (
                      <Pressable

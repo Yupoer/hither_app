@@ -1,9 +1,12 @@
 /**
- * Ticket 04 — automated portion of the release-like emulator gate.
- * Proves shared field/classification contracts exist; manual emulator steps
- * live in docs under the tickets folder.
+ * Automated portion of the release-like emulator gate.
+ * Proves shared field/classification contracts exist.
+ *
+ * Local superpowers/ticket runbooks were removed on master
+ * (`docs: drop Tasks/superpowers`); GitHub issues are the source of truth.
+ * Do not re-introduce path checks against deleted docs/ trees.
  */
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 jest.mock('@react-native-async-storage/async-storage', () => ({
@@ -41,22 +44,7 @@ jest.mock('../state/hitherDatabase', () => ({
 import { PERFORMANCE_SAFE_FIELDS } from '../state/performance';
 import { classifyUpstreamError } from '../utils/errorFingerprint';
 
-const docsDir = join(
-  __dirname,
-  '../../../../docs/superpowers/tickets/2026-07-24-ios-android-unexpected-error',
-);
-
 describe('emulator release gate artifacts', () => {
-  it('ships local runbook and results template (no external tracker)', () => {
-    expect(existsSync(join(docsDir, '04-emulator-release-gate.md'))).toBe(true);
-    expect(existsSync(join(docsDir, '04-results-template.md'))).toBe(true);
-    const runbook = readFileSync(join(docsDir, '04-emulator-release-gate.md'), 'utf8');
-    expect(runbook).toContain('re-entry');
-    expect(runbook).toContain('consent');
-    expect(runbook).toContain('leader_role_required');
-    expect(runbook).not.toMatch(/create.*GitHub issue/i);
-  });
-
   it('shares aggregatable error fields for iOS and Android', () => {
     for (const key of [
       'updateId',
@@ -111,7 +99,8 @@ describe('recovery invariants referenced by the gate', () => {
 
   it('map failure stays map-local; root retry does not clear session state', () => {
     expect(groupMap).toContain('MapSubtreeBoundary');
-    expect(boundary).toContain('were not cleared');
+    expect(boundary).toContain('errorBoundary.terminalBody');
+    expect(boundary).toContain('Do not clear app state');
     expect(boundary).toContain('react_render_retry');
   });
 

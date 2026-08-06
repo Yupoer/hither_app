@@ -10,8 +10,7 @@ import {
   updateProfile as updateProfileApi,
 } from '../api/client';
 import {
-  accountPreferencesFromSlots,
-  normalizeCustomQuickCommands,
+  normalizeAccountPreferences,
   type AccountPreferences,
   type User,
 } from '../types';
@@ -117,9 +116,7 @@ export function useAuthFlow({
         name,
         email: authUser.email ?? '',
         avatar: existingRow?.avatar ?? avatarForUser(authUser.id),
-        preferences: accountPreferencesFromSlots(
-          normalizeCustomQuickCommands(existingRow?.preferences),
-        ),
+        preferences: normalizeAccountPreferences(existingRow?.preferences),
       };
       setUser(nextUser);
       setIsAnonymous(false);
@@ -197,9 +194,7 @@ export function useAuthFlow({
         name,
         email: authUser.email ?? credential.email ?? '',
         avatar: existingRow?.avatar ?? avatarForUser(authUser.id),
-        preferences: accountPreferencesFromSlots(
-          normalizeCustomQuickCommands(existingRow?.preferences),
-        ),
+        preferences: normalizeAccountPreferences(existingRow?.preferences),
       };
       setUser(nextUser);
       setIsAnonymous(false);
@@ -345,9 +340,7 @@ export function useAuthFlow({
         name: row?.nickname ?? '',
         email: data.user.email ?? '',
         avatar: row?.avatar ?? undefined,
-        preferences: accountPreferencesFromSlots(
-          normalizeCustomQuickCommands(row?.preferences),
-        ),
+        preferences: normalizeAccountPreferences(row?.preferences),
       };
       setUser(nextUser);
       setIsAnonymous(false);

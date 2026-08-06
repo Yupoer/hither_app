@@ -29,7 +29,7 @@ describe('AppErrorBoundary and error telemetry contracts', () => {
     expect(boundary).toContain('getLastScreenName');
     expect(boundary).toContain('getLastRoute');
     expect(boundary).toContain('componentStack');
-    expect(boundary).toContain('Retry');
+    expect(boundary).toContain('errorBoundary.retry');
     expect(boundary).toContain('react_render_terminal');
     expect(boundary).toContain('pendingRetryEpisode');
     expect(app).toContain('setLastRoute');
