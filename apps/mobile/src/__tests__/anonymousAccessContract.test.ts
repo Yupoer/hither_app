@@ -56,10 +56,7 @@ function lastJoinGroupDefinition(): string {
   return last;
 }
 
-const i18n = [
-  readFileSync(join(mobileSrc, 'i18n/locales/zh.ts'), 'utf8'),
-  readFileSync(join(mobileSrc, 'i18n/locales/en.ts'), 'utf8'),
-].join('\n');
+const i18n = readFileSync(join(mobileSrc, 'i18n/index.ts'), 'utf8');
 const session = readFileSync(join(mobileSrc, 'state/SessionContext.tsx'), 'utf8');
 const authFlow = readFileSync(join(mobileSrc, 'state/useAuthFlow.ts'), 'utf8');
 const groupService = readFileSync(

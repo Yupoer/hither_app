@@ -17,7 +17,7 @@ const preferences = read('state/PreferencesContext.tsx');
 const mapScreen = read('screens/MapScreen.tsx');
 const panel = read('screens/MapScreen/components/PassiveCompanionPanel.tsx');
 const settings = read('screens/MapScreen/components/SettingsOverlay.tsx');
-const i18n = [read('i18n/locales/zh.ts'), read('i18n/locales/en.ts')].join('\n');
+const i18n = read('i18n/index.ts');
 const util = read('utils/passiveCompanion.ts');
 
 describe('OTA-07 full/passive presentation contract', () => {

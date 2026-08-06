@@ -12,7 +12,7 @@ const mapScreen = read('screens/MapScreen.tsx');
 const panel = read('screens/MapScreen/components/CoordinationRequestsPanel.tsx');
 const hook = read('screens/MapScreen/hooks/useCoordinationRequests.ts');
 const journeyNav = read('screens/MapScreen/hooks/useJourneyNavigation.ts');
-const i18n = [read('i18n/locales/zh.ts'), read('i18n/locales/en.ts')].join('\n');
+const i18n = read('i18n/index.ts');
 const client = read('api/client.ts');
 
 describe('OTA-09 coordination UI wiring contracts', () => {

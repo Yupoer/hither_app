@@ -9,10 +9,7 @@ const liquidGlass = readFileSync(join(root, 'native/liquidGlass.tsx'), 'utf8');
 const haptics = readFileSync(join(root, 'utils/haptics.ts'), 'utf8');
 const groupMap = readFileSync(join(root, 'components/GroupMap.tsx'), 'utf8');
 const mapsBoundary = readFileSync(join(root, 'native/maps.ts'), 'utf8');
-const translations = [
-  readFileSync(join(root, 'i18n/locales/zh.ts'), 'utf8'),
-  readFileSync(join(root, 'i18n/locales/en.ts'), 'utf8'),
-].join('\n');
+const translations = readFileSync(join(root, 'i18n/index.ts'), 'utf8');
 
 describe('Android in-app feature parity contracts', () => {
   it.each(['members', 'route', 'tools'] as const)(

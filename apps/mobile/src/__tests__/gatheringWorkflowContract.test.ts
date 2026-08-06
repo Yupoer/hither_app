@@ -13,10 +13,7 @@ const groupNotifications = readFileSync(
   join(__dirname, '../state/useGroupNotifications.ts'),
   'utf8',
 );
-const i18n = [
-  readFileSync(join(__dirname, '../i18n/locales/zh.ts'), 'utf8'),
-  readFileSync(join(__dirname, '../i18n/locales/en.ts'), 'utf8'),
-].join('\n');
+const i18n = readFileSync(join(__dirname, '../i18n/index.ts'), 'utf8');
 const reorderList = readFileSync(
   join(__dirname, '../components/DestinationReorderList.tsx'),
   'utf8',
