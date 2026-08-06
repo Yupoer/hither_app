@@ -7,7 +7,7 @@
 - **App**：React Native（Expo SDK 54）+ TypeScript，位於 `apps/mobile/`。
 - **後端**：Supabase（project `htqrucnjafhhvxdqslbv`），全表開 RLS，匿名登入。無自建 API server（Vapor 已退役）。
 - **原生層**：`ios_native/` 已退役僅剩參考文件。原生能力唯一入口是 `apps/mobile/src/native/`（location / maps / notifications / liveActivity / liquidGlass），用 `requireOptionalNativeModule` 偵測，Expo Go 下必須優雅降級走 JS fallback。UI 元件禁止直接判斷 `Platform.OS`。
-- **文件**：`docs/MVP.md` 是 2026-06-16 初版 PRD，多處已被實作取代；現況以 `docs/dev-status.md` 為準（注意該報告錨定的 commit，之後的變更不在其中）。
+- **文件**：長期文件在 `docs/`（見 `docs/README.md`）。產品決策看 `docs/product-decision-log.md`；程式現況看 `docs/current-app-functional-architecture.md`。**任務／Spec／ticket 一律 GitHub Issues／PRs**，不要再寫入 `docs/Tasks`。
 
 ## 工作規則
 

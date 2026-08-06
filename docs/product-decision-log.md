@@ -1,8 +1,9 @@
 # Hither 產品決策紀錄
 
-最後更新：2026-07-30
+最後更新：2026-08-06
 
-本文件記錄已確認的產品策略、尚未定案的方案與主要取捨。若舊文件與本文件衝突，以較新的已確認決策為準；程式現況則以 `current-app-functional-architecture.md` 為準。
+本文件記錄已確認的產品策略、尚未定案的方案與主要取捨。若舊文件與本文件衝突，以較新的已確認決策為準；程式現況則以 `current-app-functional-architecture.md` 為準。  
+任務與 Spec 不寫在本目錄，一律走 **GitHub Issues／PRs**。
 
 ## 已確認決策
 

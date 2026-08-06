@@ -1,8 +1,7 @@
 # Android Release Runbook
 
-**Plan:** `docs/android-full-implementation-plan-2026-07-20.md` (M3–M4)  
 **Package:** `app.hither.mobile`  
-**Last code evidence date:** 2026-07-20
+**Last updated:** 2026-08-06（歷史 plan 已移除；以本 runbook + `apps/mobile/eas.json` 為準）
 
 ## 1. Build identities & secrets
 

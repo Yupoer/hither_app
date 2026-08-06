@@ -620,10 +620,10 @@ docs/                     # product、design、QA、handoff、調查文件
 
 ## 17. 相關文件
 
-- [Android 版實作前調查報告](./Tasks/Completed/2026-07-20-Android-Platform/Report/android-preimplementation-research-2026-07-20.md)
-- [MVP](./MVP.md)
-- [Product](./PRODUCT.md)
-- [未完成功能差距](./Tasks/2026-07-25-Product-Gap/Spec/product-gap-spec-2026-07-25.md)
-- [APNs Live Activity setup](./Tasks/Completed/2026-07-13-Live-Activity-and-Push/Report/apns-live-activity-setup.md)
-- [Team navigation test matrix](./Tasks/Completed/2026-07-17-Team-Navigation-and-Diagnostics/Spec/team-navigation-test-matrix.md)
-- [Navigation energy acceptance](./Tasks/Completed/2026-07-19-Navigation-Performance/Spec/navigation-energy-acceptance.md)
+- [文件索引](./README.md)
+- [產品策略](./PRODUCT.md)
+- [產品決策紀錄](./product-decision-log.md)
+- [APNs / Live Activity setup](./apns-live-activity-setup.md)
+- [Android release runbook](./android-release-runbook.md)
+- [Hither Design System](./Hither%20Design%20System/readme.md)
+- 進行中功能與 ticket：**GitHub Issues／PRs**
