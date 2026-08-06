@@ -2,6 +2,7 @@ import React, { Component, type ErrorInfo, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { logError, logEvent } from '../utils/activityLog';
 import { getLastRoute, getLastScreenName } from '../state/performance';
+import { getActiveLanguage, translate } from '../i18n';
 
 interface Props {
   children: ReactNode;
@@ -101,31 +102,31 @@ export default class AppErrorBoundary extends Component<Props, State> {
 
   render(): ReactNode {
     if (this.state.hasError) {
+      const lang = getActiveLanguage();
       if (this.state.terminal) {
         // After Retry still fails, stop offering Retry. Do not clear app state.
         return (
           <View style={styles.container} accessibilityRole="alert">
-            <Text style={styles.title}>Still not working</Text>
+            <Text style={styles.title}>{translate(lang, 'errorBoundary.terminalTitle')}</Text>
             <Text style={styles.body}>
-              The screen failed again after retry. Close and reopen the app, or
-              return later. Your group and session data were not cleared.
+              {translate(lang, 'errorBoundary.terminalBody')}
             </Text>
           </View>
         );
       }
       return (
         <View style={styles.container} accessibilityRole="alert">
-          <Text style={styles.title}>Something went wrong</Text>
+          <Text style={styles.title}>{translate(lang, 'errorBoundary.title')}</Text>
           <Text style={styles.body}>
-            The screen hit an unexpected error. You can try again.
+            {translate(lang, 'errorBoundary.body')}
           </Text>
           <Pressable
             onPress={this.handleRetry}
             style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
             accessibilityRole="button"
-            accessibilityLabel="Retry"
+            accessibilityLabel={translate(lang, 'errorBoundary.retry')}
           >
-            <Text style={styles.buttonText}>Retry</Text>
+            <Text style={styles.buttonText}>{translate(lang, 'errorBoundary.retry')}</Text>
           </Pressable>
         </View>
       );
