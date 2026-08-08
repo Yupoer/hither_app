@@ -102,11 +102,48 @@ export function advanceArrivalCardExit(
 }
 
 /**
+ * Index to record when a card begins exit — must come from the full visible
+ * carousel (open + already-exiting), never open-only. Open-only indices
+ * collide when two cards close while the first is still in hold (#149).
+ */
+export function resolveExitIndexAtStart(
+  visibleOrder: readonly string[],
+  destinationId: string,
+  fallbackLength: number,
+): number {
+  const idx = visibleOrder.indexOf(destinationId);
+  return idx >= 0 ? idx : Math.max(0, fallbackLength);
+}
+
+/**
+ * Advance the tracked carousel order after open/exit membership changes.
+ * Exiting cards stay ranked until their exit record is removed (done).
+ */
+export function nextVisibleCarouselOrder(
+  previousOrder: readonly string[],
+  openIds: readonly string[],
+  exitingIds: readonly string[],
+): string[] {
+  const openSet = new Set(openIds);
+  const exitingSet = new Set(exitingIds);
+  const keep = previousOrder.filter((id) => openSet.has(id) || exitingSet.has(id));
+  for (const id of openIds) {
+    if (!keep.includes(id)) keep.push(id);
+  }
+  for (const id of exitingIds) {
+    if (!keep.includes(id)) keep.push(id);
+  }
+  return keep;
+}
+
+/**
  * Merge open destinations with cards still in hold/exit so closed_at cannot
  * skip the animation by filtering them out immediately.
  *
  * Re-inserts each exiting card at its original carousel index (not appended)
  * so completing a middle card keeps siblings stable through hold/exit.
+ * Overlapping exits must use distinct stable ranks from
+ * {@link nextVisibleCarouselOrder} / {@link resolveExitIndexAtStart}.
  */
 export function mergeExitingDestinations<T extends { id: string }>(
   openDestinations: readonly T[],

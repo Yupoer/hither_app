@@ -95,6 +95,39 @@ export function estimateRemainingFromGpsMove(opts: {
   return Math.max(0, remaining - moved);
 }
 
+/** GPS + remaining metres + directions generation for between-route estimates. */
+export type RouteAnchorState = {
+  gps: Coordinates;
+  remainingM: number;
+  generation: number;
+};
+
+/**
+ * MapScreen re-anchor seam: treat a directions completion as fresh when its
+ * generation differs from the stored anchor — even if remaining metres match.
+ */
+export function nextRouteAnchorFromResult(
+  prev: RouteAnchorState | null,
+  opts: {
+    deviceCoords: Coordinates;
+    routeDistanceM: number;
+    selfRouteGeneration: number;
+  },
+): { anchor: RouteAnchorState; isNew: boolean } {
+  const isNew = !prev || prev.generation !== opts.selfRouteGeneration;
+  if (!isNew && prev) {
+    return { anchor: prev, isNew: false };
+  }
+  return {
+    anchor: {
+      gps: opts.deviceCoords,
+      remainingM: opts.routeDistanceM,
+      generation: opts.selfRouteGeneration,
+    },
+    isNew: true,
+  };
+}
+
 export interface PersonalProgressModel {
   distanceMeters: number | null;
   etaSeconds: number | null;

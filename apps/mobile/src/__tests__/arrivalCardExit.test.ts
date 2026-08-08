@@ -8,6 +8,9 @@ import {
   beginArrivalCardExit,
   cancelCelebrateClearTimer,
   mergeExitingDestinations,
+  nextVisibleCarouselOrder,
+  resolveExitIndexAtStart,
+  type ArrivalCardExitRecord,
   type CelebrateClearStore,
 } from '../utils/arrivalCardExit';
 
@@ -176,5 +179,74 @@ describe('arrivalCardExit (#149)', () => {
     expect(map).toContain('ARRIVAL_EFFECT_HOLD_MS');
     // No orphan untracked 1600 clear that can race the hold.
     expect(map).not.toMatch(/setTimeout\(\(\) => \{\s*setArrivalCelebrateDestId[\s\S]*?\}, 1_600\)/);
+    // Overlapping exits must rank from full visible order, not open-only.
+    expect(map).toContain('nextVisibleCarouselOrder');
+    expect(map).toContain('resolveExitIndexAtStart');
+    expect(map).toContain('prevVisibleDestOrderRef');
+  });
+
+  it('sequential overlapping exits keep stable order through hold → exit → done (#149 Sol r3)', () => {
+    // Reproduce: [A,B,C] → close B (hold) → close C while B still holding.
+    // Open-only ranks both claim index 1 → [A,C,B]. Full-visible ranks fix it.
+    let visibleOrder = ['a', 'b', 'c'];
+    let open = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+    const records = new Map<string, ArrivalCardExitRecord>();
+    const snapshots = new Map([
+      ['a', { id: 'a' }],
+      ['b', { id: 'b' }],
+      ['c', { id: 'c' }],
+    ]);
+
+    // Close B.
+    const bIdx = resolveExitIndexAtStart(visibleOrder, 'b', visibleOrder.length);
+    const bHold = beginArrivalCardExit(records, 'b', 0, bIdx)!;
+    records.set('b', bHold);
+    open = [{ id: 'a' }, { id: 'c' }];
+    visibleOrder = nextVisibleCarouselOrder(
+      visibleOrder,
+      open.map((d) => d.id),
+      [...records.keys()],
+    );
+    expect(bIdx).toBe(1);
+    expect(visibleOrder).toEqual(['a', 'b', 'c']);
+    expect(
+      mergeExitingDestinations(open, snapshots, records).map((d) => d.id),
+    ).toEqual(['a', 'b', 'c']);
+
+    // Close C while B is still in the 3.2s hold (open-only would give C index 1).
+    const cIdx = resolveExitIndexAtStart(visibleOrder, 'c', visibleOrder.length);
+    const cHold = beginArrivalCardExit(records, 'c', 100, cIdx)!;
+    records.set('c', cHold);
+    open = [{ id: 'a' }];
+    visibleOrder = nextVisibleCarouselOrder(
+      visibleOrder,
+      open.map((d) => d.id),
+      [...records.keys()],
+    );
+    expect(cIdx).toBe(2);
+    expect(visibleOrder).toEqual(['a', 'b', 'c']);
+    expect(
+      mergeExitingDestinations(open, snapshots, records).map((d) => d.id),
+    ).toEqual(['a', 'b', 'c']);
+
+    // Advance B through exit while C still holding — order stays A,B,C.
+    const bExit = advanceArrivalCardExit(bHold, ARRIVAL_EFFECT_HOLD_MS);
+    records.set('b', bExit);
+    expect(bExit.phase).toBe('exit');
+    expect(
+      mergeExitingDestinations(open, snapshots, records).map((d) => d.id),
+    ).toEqual(['a', 'b', 'c']);
+
+    // B done → removed from records; C remains at stable rank → [A,C].
+    records.delete('b');
+    visibleOrder = nextVisibleCarouselOrder(
+      visibleOrder,
+      open.map((d) => d.id),
+      [...records.keys()],
+    );
+    expect(visibleOrder).toEqual(['a', 'c']);
+    expect(
+      mergeExitingDestinations(open, snapshots, records).map((d) => d.id),
+    ).toEqual(['a', 'c']);
   });
 });

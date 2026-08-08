@@ -106,6 +106,8 @@ import {
   cancelCelebrateClearTimer,
   clearAllCelebrateClearTimers,
   mergeExitingDestinations,
+  nextVisibleCarouselOrder,
+  resolveExitIndexAtStart,
   type ArrivalCardExitRecord,
   type CelebrateClearStore,
 } from '../utils/arrivalCardExit';
@@ -189,7 +191,10 @@ import {
   shouldAnchorInitial,
   type DistanceSource,
 } from '../utils/journeyProgress';
-import { derivePersonalProgress } from '../utils/personalProgress';
+import {
+  derivePersonalProgress,
+  nextRouteAnchorFromResult,
+} from '../utils/personalProgress';
 import {
   distanceMeters,
   etaSecondsFor,
@@ -1498,24 +1503,47 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // Detect newly completed stops → start hold/exit (not historical closed on mount).
   const knownClosedDestIdsRef = useRef<Set<string> | null>(null);
-  /** Prior open carousel order — capture index before closedAt drops the card. */
-  const prevOpenDestOrderRef = useRef<string[]>([]);
+  /**
+   * Full visible carousel order (open + hold/exit). Open-only ranks collide when
+   * a second card closes while the first is still exiting (#149 Sol r3).
+   */
+  const prevVisibleDestOrderRef = useRef<string[]>([]);
   useEffect(() => {
     const closedNow = allScopedDestinations.filter((d) => d.closedAt != null);
     if (knownClosedDestIdsRef.current == null) {
       // First paint: seed known closed so past history does not animate out.
       knownClosedDestIdsRef.current = new Set(closedNow.map((d) => d.id));
-      prevOpenDestOrderRef.current = openDestinations.map((d) => d.id);
+      prevVisibleDestOrderRef.current = openDestinations.map((d) => d.id);
       return;
     }
+    const newlyStarted: string[] = [];
     for (const dest of closedNow) {
       if (knownClosedDestIdsRef.current.has(dest.id)) continue;
       knownClosedDestIdsRef.current.add(dest.id);
-      const priorIdx = prevOpenDestOrderRef.current.indexOf(dest.id);
-      startArrivalCardExit(dest, priorIdx >= 0 ? priorIdx : openDestinations.length);
+      const priorIdx = resolveExitIndexAtStart(
+        prevVisibleDestOrderRef.current,
+        dest.id,
+        prevVisibleDestOrderRef.current.length,
+      );
+      startArrivalCardExit(dest, priorIdx);
+      newlyStarted.push(dest.id);
     }
-    prevOpenDestOrderRef.current = openDestinations.map((d) => d.id);
-  }, [allScopedDestinations, openDestinations, startArrivalCardExit]);
+    const exitingIds = new Set<string>([
+      ...arrivalExitRecords.keys(),
+      ...newlyStarted,
+    ]);
+    // Keep exiting cards ranked until their record is removed (exit complete).
+    prevVisibleDestOrderRef.current = nextVisibleCarouselOrder(
+      prevVisibleDestOrderRef.current,
+      openDestinations.map((d) => d.id),
+      [...exitingIds],
+    );
+  }, [
+    allScopedDestinations,
+    openDestinations,
+    startArrivalCardExit,
+    arrivalExitRecords,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -1757,18 +1785,19 @@ export default function MapScreen({ route, navigation }: Props) {
       // Anchor only when a *new* route result arrives — not every GPS tick.
       // Generation bumps on every accepted directions completion, even when the
       // integer remaining metres are unchanged (#145 Sol re-review).
-      const prevAnchor = routeAnchorRef.current;
-      const isNewRouteResult =
-        !prevAnchor || prevAnchor.generation !== selfRouteGeneration;
+      const { anchor, isNew: isNewRouteResult } = nextRouteAnchorFromResult(
+        routeAnchorRef.current,
+        {
+          deviceCoords,
+          routeDistanceM,
+          selfRouteGeneration,
+        },
+      );
       if (isNewRouteResult) {
-        routeAnchorRef.current = {
-          gps: deviceCoords,
-          remainingM: routeDistanceM,
-          generation: selfRouteGeneration,
-        };
-        setRouteAnchorGps(deviceCoords);
-        setRouteAnchorRemainingM(routeDistanceM);
-        setRouteAnchorGeneration(selfRouteGeneration);
+        routeAnchorRef.current = anchor;
+        setRouteAnchorGps(anchor.gps);
+        setRouteAnchorRemainingM(anchor.remainingM);
+        setRouteAnchorGeneration(anchor.generation);
       }
     }
     const deviceStraightM = distanceMeters(deviceCoords, navTarget.coordinates);

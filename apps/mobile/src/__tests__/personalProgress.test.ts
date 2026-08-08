@@ -377,7 +377,7 @@ describe('personal progress surface contracts', () => {
     expect(map).toContain('isNewRouteResult');
     // Generation identity, not distance equality, marks a fresh result (#145).
     expect(map).toContain('selfRouteGeneration');
-    expect(map).toContain('prevAnchor.generation !== selfRouteGeneration');
+    expect(map).toContain('nextRouteAnchorFromResult');
     expect(map).toContain('routeResultGeneration');
     // Markers use team completion, not personal arrivals.
     expect(map).toContain('completedDestinationIds={teamCompletedDestinationIds}');
