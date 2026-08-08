@@ -6,10 +6,7 @@ import {
   routeCacheKey,
   useMapKitRoutes,
 } from '../screens/MapScreen/hooks/useMapKitRoutes';
-import {
-  derivePersonalProgress,
-  nextRouteAnchorFromResult,
-} from '../utils/personalProgress';
+import { usePersonalProgressSurfaces } from '../screens/MapScreen/hooks/usePersonalProgressSurfaces';
 
 jest.mock('../native/maps', () => ({ getDirections: jest.fn() }));
 
@@ -143,7 +140,7 @@ describe('route signatures', () => {
   });
 });
 
-describe('useMapKitRoutes + MapScreen re-anchor seam (#145 Sol r3)', () => {
+describe('useMapKitRoutes + MapScreen progress surfaces (#145 Sol r4)', () => {
   beforeEach(() => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
       true;
@@ -156,8 +153,8 @@ describe('useMapKitRoutes + MapScreen re-anchor seam (#145 Sol r3)', () => {
   });
 
   it('bumps generation on two equal-distance completions and snaps progress', async () => {
-    // Production seam: useMapKitRoutes generation → nextRouteAnchorFromResult →
-    // derivePersonalProgress correction. Equal remaining metres must still re-anchor.
+    // Production seam: accepted useMapKitRoutes results update the shared
+    // MapScreen progress hook. Equal remaining metres must still re-anchor.
     mockGetDirections
       .mockResolvedValueOnce({
         distanceMeters: 1000,
@@ -171,6 +168,7 @@ describe('useMapKitRoutes + MapScreen re-anchor seam (#145 Sol r3)', () => {
       });
 
     let routes: ReturnType<typeof useMapKitRoutes> | undefined;
+    let surfaces: ReturnType<typeof usePersonalProgressSurfaces> | undefined;
     function Harness(props: {
       self: { latitude: number; longitude: number };
     }) {
@@ -179,6 +177,22 @@ describe('useMapKitRoutes + MapScreen re-anchor seam (#145 Sol r3)', () => {
         members: [],
         gathering,
         travelMode: 'walk',
+      });
+      surfaces = usePersonalProgressSurfaces({
+        resetKey: 'gps-route-test',
+        deviceCoords: props.self,
+        targetCoords: gathering.coordinates,
+        initialDistanceM: 2000,
+        startCoords: me,
+        hasDepartedStart: true,
+        travelMode: 'walk',
+        distanceSource: 'route',
+        routeDistanceM: routes.selfRoute?.distanceMeters,
+        routeEtaSeconds: routes.selfRoute?.expectedTravelTimeSeconds,
+        lastRouteDistanceM: routes.selfRoute?.distanceMeters,
+        routeResultGeneration: routes.selfRouteGeneration,
+        fallbackDistanceM: routes.selfRoute?.distanceMeters,
+        fallbackEtaSeconds: routes.selfRoute?.expectedTravelTimeSeconds,
       });
       return null;
     }
@@ -194,35 +208,21 @@ describe('useMapKitRoutes + MapScreen re-anchor seam (#145 Sol r3)', () => {
 
     expect(routes?.selfRoute?.distanceMeters).toBe(1000);
     expect(routes?.selfRouteGeneration).toBe(1);
-    const gen1 = routes!.selfRouteGeneration;
-    const eta1 = routes!.selfRoute!.expectedTravelTimeSeconds;
-
-    // First accepted result anchors at `me`.
-    let anchor = nextRouteAnchorFromResult(null, {
-      deviceCoords: me,
-      routeDistanceM: 1000,
-      selfRouteGeneration: gen1,
-    });
-    expect(anchor.isNew).toBe(true);
+    expect(surfaces?.routeAnchor?.gps).toEqual(me);
+    expect(surfaces?.gatheringCard.distanceMeters).toBe(1000);
+    expect(surfaces?.liveActivityPayload.distanceMeters).toBe(1000);
+    expect(surfaces?.gatheringCard).toEqual(surfaces?.liveActivityPayload);
 
     // GPS moves between throttled route results → local remaining drops.
     const midGps = { latitude: 25.0295, longitude: 121.56 };
-    const between = derivePersonalProgress({
-      deviceCoords: midGps,
-      targetCoords: gathering.coordinates,
-      initialDistanceM: 2000,
-      hasDepartedStart: true,
-      travelMode: 'walk',
-      distanceSource: 'route',
-      routeDistanceM: 1000,
-      lastRouteDistanceM: 1000,
-      routeAnchorGps: anchor.anchor.gps,
-      routeAnchorRemainingM: anchor.anchor.remainingM,
-      routeResultGeneration: gen1,
-      routeAnchorGeneration: anchor.anchor.generation,
-      routeEtaSeconds: eta1,
+    await act(async () => {
+      tree.update(React.createElement(Harness, { self: midGps }));
     });
-    expect(between.distanceMeters!).toBeLessThan(1000);
+    expect(routes?.selfRouteGeneration).toBe(1);
+    expect(surfaces?.gatheringCard.distanceMeters!).toBeLessThan(1000);
+    expect(surfaces?.gatheringCard.etaSeconds!).toBeLessThan(900);
+    expect(surfaces?.gatheringCard.progress!).toBeGreaterThan(0.5);
+    expect(surfaces?.gatheringCard).toEqual(surfaces?.liveActivityPayload);
 
     // Advance wall clock past routeMinIntervalMs * 0.4 so recompute can fire.
     await act(async () => {
@@ -240,53 +240,20 @@ describe('useMapKitRoutes + MapScreen re-anchor seam (#145 Sol r3)', () => {
     expect(mockGetDirections).toHaveBeenCalledTimes(2);
     expect(routes?.selfRoute?.distanceMeters).toBe(1000);
     expect(routes?.selfRouteGeneration).toBe(2);
-    const gen2 = routes!.selfRouteGeneration;
-    const eta2 = routes!.selfRoute!.expectedTravelTimeSeconds;
-    expect(eta2).toBe(720);
+    expect(surfaces?.isNewRouteResult).toBe(true);
+    expect(surfaces?.routeAnchor?.generation).toBe(2);
 
-    // MapScreen re-anchor seam: generation change, equal metres → isNew.
-    const reanchor = nextRouteAnchorFromResult(anchor.anchor, {
-      deviceCoords: meFarther,
-      routeDistanceM: 1000,
-      selfRouteGeneration: gen2,
-    });
-    expect(reanchor.isNew).toBe(true);
-    expect(reanchor.anchor.generation).toBe(2);
-
-    const afterSnap = derivePersonalProgress({
-      deviceCoords: meFarther,
-      targetCoords: gathering.coordinates,
-      initialDistanceM: 2000,
-      hasDepartedStart: true,
-      travelMode: 'walk',
-      distanceSource: 'route',
-      routeDistanceM: 1000,
-      lastRouteDistanceM: 1000,
-      routeAnchorGps: anchor.anchor.gps, // not yet applied — pre-snap sticky
-      routeAnchorRemainingM: anchor.anchor.remainingM,
-      routeResultGeneration: gen2,
-      routeAnchorGeneration: anchor.anchor.generation,
-      routeEtaSeconds: eta2,
-    });
-    // Fresh generation snaps distance to route metres and takes new ETA.
-    expect(afterSnap.distanceMeters).toBe(1000);
-    expect(afterSnap.etaSeconds).toBe(720);
+    expect(surfaces?.gatheringCard.distanceMeters).toBe(1000);
+    expect(surfaces?.gatheringCard.etaSeconds).toBe(720);
+    expect(surfaces?.gatheringCard.progress).toBe(0.5);
+    expect(surfaces?.liveActivityPayload.distanceMeters).toBe(1000);
+    expect(surfaces?.liveActivityPayload.etaSeconds).toBe(720);
+    expect(surfaces?.liveActivityPayload.progress).toBe(0.5);
+    expect(surfaces?.gatheringCard).toEqual(surfaces?.liveActivityPayload);
 
     await act(async () => {
       tree.unmount();
     });
   });
 
-  it('MapScreen wires nextRouteAnchorFromResult + selfRouteGeneration', () => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const fs = require('fs') as typeof import('fs');
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const path = require('path') as typeof import('path');
-    const map = fs.readFileSync(
-      path.join(__dirname, '../screens/MapScreen.tsx'),
-      'utf8',
-    );
-    expect(map).toContain('nextRouteAnchorFromResult');
-    expect(map).toContain('selfRouteGeneration');
-  });
 });

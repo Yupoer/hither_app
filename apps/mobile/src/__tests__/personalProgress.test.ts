@@ -344,14 +344,16 @@ describe('personal progress surface contracts', () => {
       path.join(__dirname, '../screens/MapScreen.tsx'),
       'utf8',
     );
-    expect(map).toContain('derivePersonalProgress');
+    expect(map).toContain('usePersonalProgressSurfaces');
+    expect(map).toContain('progressSurfaces.gatheringCard');
+    expect(map).toContain('progressSurfaces.liveActivityPayload');
     expect(map).toContain('personalDistanceM');
     expect(map).toContain('personalEtaSeconds');
     expect(map).toContain('personalProgressRatio');
     // Live Activity + passive consume the shared fields.
-    expect(map).toContain('distanceMeters: personalDistanceM ?? liveDistance');
-    expect(map).toContain('etaSeconds: personalEtaSeconds');
-    expect(map).toContain('progress: personalProgressRatio ?? liveProgress');
+    expect(map).toContain('distanceMeters: progressSurfaces.liveActivityPayload.distanceMeters');
+    expect(map).toContain('etaSeconds: progressSurfaces.liveActivityPayload.etaSeconds');
+    expect(map).toContain('progress: progressSurfaces.liveActivityPayload.progress');
     expect(map).toContain('teamSurfaceView.personal?.progress');
     expect(map).toContain('personalProgressRatio');
     // Team completion (closedAt) is distinct from personal arrival ids.
@@ -370,14 +372,11 @@ describe('personal progress surface contracts', () => {
     expect(map).not.toContain("t('locationUpdate.stale')");
     expect(map).toContain('personalFreshness: personalProgress.freshness');
     // #145: GPS-between-route estimate, monotonic max, last-valid retention.
-    expect(map).toContain('routeAnchorGps');
     expect(map).toContain('previousProgressMax');
     expect(map).toContain('lastValidDistanceM');
     // Anchor only on new route result — not every deviceCoords tick.
-    expect(map).toContain('isNewRouteResult');
     // Generation identity, not distance equality, marks a fresh result (#145).
     expect(map).toContain('selfRouteGeneration');
-    expect(map).toContain('nextRouteAnchorFromResult');
     expect(map).toContain('routeResultGeneration');
     // Markers use team completion, not personal arrivals.
     expect(map).toContain('completedDestinationIds={teamCompletedDestinationIds}');

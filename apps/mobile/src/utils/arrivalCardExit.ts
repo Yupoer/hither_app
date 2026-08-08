@@ -142,23 +142,57 @@ export function nextVisibleCarouselOrder(
  *
  * Re-inserts each exiting card at its original carousel index (not appended)
  * so completing a middle card keeps siblings stable through hold/exit.
- * Overlapping exits must use distinct stable ranks from
- * {@link nextVisibleCarouselOrder} / {@link resolveExitIndexAtStart}.
+ * When available, `visibleOrder` is the current full carousel order. It is the
+ * source of truth after an earlier exit finishes because immutable start
+ * indices no longer account for that removed card.
  */
 export function mergeExitingDestinations<T extends { id: string }>(
   openDestinations: readonly T[],
   exitingSnapshots: ReadonlyMap<string, T>,
   exitRecords: ReadonlyMap<string, ArrivalCardExitRecord>,
+  visibleOrder?: readonly string[],
 ): T[] {
   const openIds = new Set(openDestinations.map((d) => d.id));
   const merged = [...openDestinations];
-  const toInsert: { snap: T; index: number }[] = [];
+  const activeExits: { id: string; snap: T; index: number }[] = [];
   for (const [id, record] of exitRecords) {
     if (record.phase === 'done') continue;
     if (openIds.has(id)) continue;
     const snap = exitingSnapshots.get(id);
     if (!snap) continue;
-    toInsert.push({ snap, index: record.indexAtStart });
+    activeExits.push({ id, snap, index: record.indexAtStart });
+  }
+
+  // A completed earlier exit can disappear before a later exit finishes. In
+  // that state its immutable start index is one slot too far right. Rebuild
+  // from the tracked full visible order so only the completed card is removed.
+  if (visibleOrder && visibleOrder.length > 0) {
+    const itemsById = new Map<string, T>();
+    for (const destination of openDestinations) {
+      itemsById.set(destination.id, destination);
+    }
+    for (const item of activeExits) {
+      itemsById.set(item.id, item.snap);
+    }
+
+    const orderedIds: string[] = [];
+    const seen = new Set<string>();
+    const addIfActive = (id: string) => {
+      if (seen.has(id) || !itemsById.has(id)) return;
+      seen.add(id);
+      orderedIds.push(id);
+    };
+    for (const id of visibleOrder) addIfActive(id);
+    // New destinations can arrive without being in the previous tracked
+    // order; retain their current open order rather than dropping them.
+    for (const destination of openDestinations) addIfActive(destination.id);
+    for (const item of activeExits) addIfActive(item.id);
+    return orderedIds.map((id) => itemsById.get(id)!);
+  }
+
+  const toInsert: { snap: T; index: number }[] = [];
+  for (const item of activeExits) {
+    toInsert.push({ snap: item.snap, index: item.index });
   }
   // Ascending original index so earlier cards land first, then later ones.
   toInsert.sort((a, b) => a.index - b.index);

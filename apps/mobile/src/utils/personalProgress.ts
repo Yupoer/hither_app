@@ -280,6 +280,11 @@ export function derivePersonalProgress(
 
   const usedGpsLocalEstimate =
     gpsEstimatedRemaining != null
+    && input.routeAnchorRemainingM != null
+    // A newly accepted route result re-anchors at the current GPS sample.
+    // Until the next sample moves from that anchor, keep the route ETA rather
+    // than replacing it with a generic mode estimate for zero movement.
+    && Math.abs(gpsEstimatedRemaining - input.routeAnchorRemainingM) > 0.01
     && distanceMetersValue === gpsEstimatedRemaining
     && !routeIsFreshSnap;
 

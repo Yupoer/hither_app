@@ -140,6 +140,7 @@ import { useDeviceLocation } from './MapScreen/hooks/useDeviceLocation';
 import { useCarouselSelection } from './MapScreen/hooks/useCarouselSelection';
 import { useJourneyNavigation } from './MapScreen/hooks/useJourneyNavigation';
 import { useMapKitRoutes } from './MapScreen/hooks/useMapKitRoutes';
+import { usePersonalProgressSurfaces } from './MapScreen/hooks/usePersonalProgressSurfaces';
 import { energyObservability } from '../state/energyObservability';
 import { useGatherCardExpansion } from './MapScreen/hooks/useGatherCardExpansion';
 import {
@@ -191,10 +192,6 @@ import {
   shouldAnchorInitial,
   type DistanceSource,
 } from '../utils/journeyProgress';
-import {
-  derivePersonalProgress,
-  nextRouteAnchorFromResult,
-} from '../utils/personalProgress';
 import {
   distanceMeters,
   etaSecondsFor,
@@ -615,6 +612,8 @@ export default function MapScreen({ route, navigation }: Props) {
   const arrivalExitTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>[]>>(
     new Map(),
   );
+  /** Full visible carousel order, including cards in hold/exit. */
+  const prevVisibleDestOrderRef = useRef<string[]>([]);
   /** Personal 1.6s / completion 3.2s share celebrate UI — one clear timer per dest. */
   const celebrateClearTimersRef = useRef<CelebrateClearStore>(new Map());
   const arrivalExitRecordsRef = useRef(arrivalExitRecords);
@@ -641,6 +640,7 @@ export default function MapScreen({ route, navigation }: Props) {
         openDestinations,
         arrivalExitSnapshots,
         arrivalExitRecords,
+        prevVisibleDestOrderRef.current,
       ),
     [openDestinations, arrivalExitSnapshots, arrivalExitRecords],
   );
@@ -1507,7 +1507,6 @@ export default function MapScreen({ route, navigation }: Props) {
    * Full visible carousel order (open + hold/exit). Open-only ranks collide when
    * a second card closes while the first is still exiting (#149 Sol r3).
    */
-  const prevVisibleDestOrderRef = useRef<string[]>([]);
   useEffect(() => {
     const closedNow = allScopedDestinations.filter((d) => d.closedAt != null);
     if (knownClosedDestIdsRef.current == null) {
@@ -1667,14 +1666,6 @@ export default function MapScreen({ route, navigation }: Props) {
   const lastRouteDistanceRef = useRef<number | undefined>(undefined);
   const departedStartRef = useRef(false);
   /** GPS at last route sample — local estimate between throttled route results (#145). */
-  const routeAnchorRef = useRef<{
-    gps: NonNullable<typeof deviceCoords>;
-    remainingM: number;
-    generation: number;
-  } | null>(null);
-  const [routeAnchorGeneration, setRouteAnchorGeneration] = useState<number | null>(
-    null,
-  );
   /** Sticky presentation across GPS/route gaps + monotonic progress max (#145). */
   const presentationStickyRef = useRef<{
     key: string | null;
@@ -1689,12 +1680,6 @@ export default function MapScreen({ route, navigation }: Props) {
     etaSeconds: null,
     progress: null,
   });
-  const [routeAnchorGps, setRouteAnchorGps] = useState<
-    NonNullable<typeof deviceCoords> | null
-  >(null);
-  const [routeAnchorRemainingM, setRouteAnchorRemainingM] = useState<number | null>(
-    null,
-  );
   const [progressMaxSticky, setProgressMaxSticky] = useState<number | null>(null);
   const [lastValidPresentation, setLastValidPresentation] = useState<{
     distanceM: number | null;
@@ -1737,7 +1722,6 @@ export default function MapScreen({ route, navigation }: Props) {
       initialJourneyRef.current = null;
       lastRouteDistanceRef.current = undefined;
       departedStartRef.current = false;
-      routeAnchorRef.current = null;
       presentationStickyRef.current = {
         key: null,
         progressMax: null,
@@ -1750,9 +1734,6 @@ export default function MapScreen({ route, navigation }: Props) {
       setProgressDepartedStart(false);
       setJourneyStartCoords(null);
       setLastRouteDistanceM(undefined);
-      setRouteAnchorGps(null);
-      setRouteAnchorRemainingM(null);
-      setRouteAnchorGeneration(null);
       setProgressMaxSticky(null);
       setLastValidPresentation({ distanceM: null, etaSeconds: null, progress: null });
       return;
@@ -1770,10 +1751,6 @@ export default function MapScreen({ route, navigation }: Props) {
       };
       setProgressMaxSticky(null);
       setLastValidPresentation({ distanceM: null, etaSeconds: null, progress: null });
-      routeAnchorRef.current = null;
-      setRouteAnchorGps(null);
-      setRouteAnchorRemainingM(null);
-      setRouteAnchorGeneration(null);
     }
     // Never baseline progress from peer/stale pins — only real device GPS.
     if (!deviceCoords) return;
@@ -1782,23 +1759,6 @@ export default function MapScreen({ route, navigation }: Props) {
     if (routeDistanceM != null && Number.isFinite(routeDistanceM)) {
       lastRouteDistanceRef.current = routeDistanceM;
       setLastRouteDistanceM(routeDistanceM);
-      // Anchor only when a *new* route result arrives — not every GPS tick.
-      // Generation bumps on every accepted directions completion, even when the
-      // integer remaining metres are unchanged (#145 Sol re-review).
-      const { anchor, isNew: isNewRouteResult } = nextRouteAnchorFromResult(
-        routeAnchorRef.current,
-        {
-          deviceCoords,
-          routeDistanceM,
-          selfRouteGeneration,
-        },
-      );
-      if (isNewRouteResult) {
-        routeAnchorRef.current = anchor;
-        setRouteAnchorGps(anchor.gps);
-        setRouteAnchorRemainingM(anchor.remainingM);
-        setRouteAnchorGeneration(anchor.generation);
-      }
     }
     const deviceStraightM = distanceMeters(deviceCoords, navTarget.coordinates);
     const distanceM = initialJourneyDistance(routeDistanceM, deviceStraightM);
@@ -2098,69 +2058,46 @@ export default function MapScreen({ route, navigation }: Props) {
    * My Progress (passive), and Live Activity. Backend upload cadence is
    * independent and must not block these surfaces.
    */
-  const personalProgress = useMemo(
-    () =>
-      derivePersonalProgress({
-        deviceCoords,
-        targetCoords: navTarget?.coordinates,
-        initialDistanceM: initialDistanceM,
-        startCoords: journeyStartCoords,
-        // Same-render sticky: gatedProgress.departed may flip before state commits.
-        hasDepartedStart: progressDepartedStart || Boolean(gatedProgress?.departed),
-        travelMode,
-        routeEtaSeconds: selfRoute?.expectedTravelTimeSeconds,
-        routeDistanceM: selfRoute?.distanceMeters,
-        distanceSource: distanceSource ?? null,
-        lastRouteDistanceM: lastRouteDistanceM,
-        routeAnchorGps,
-        routeAnchorRemainingM,
-        routeResultGeneration: selfRouteGeneration,
-        routeAnchorGeneration,
-        previousProgressMax: progressMaxSticky,
-        lastValidDistanceM: lastValidPresentation.distanceM,
-        lastValidEtaSeconds: lastValidPresentation.etaSeconds,
-        lastValidProgress: lastValidPresentation.progress,
-        // Personal check-in / auto-arrive — not team stop completion.
-        arrived: localNavigationArrived,
-        // Team terminal: stop closed by leader (closedAt), not personal arrival.
-        completed: Boolean(
-          navTarget && teamCompletedDestinationIds.has(navTarget.id),
-        ),
-        arrivalRadiusM: localArrivalRadiusM,
-        // Age from single stale-threshold clock while journey is active.
-        sampleAgeMs:
-          deviceCoordsAcceptedAtMs != null
-            ? Math.max(0, progressClockMs - deviceCoordsAcceptedAtMs)
-            : null,
-        staleAfterMs: PERSONAL_PROGRESS_STALE_MS,
-      }),
-    [
-      deviceCoords,
-      deviceCoordsAcceptedAtMs,
-      progressClockMs,
-      navTarget,
-      initialDistanceM,
-      journeyStartCoords,
-      progressDepartedStart,
-      gatedProgress?.departed,
-      travelMode,
-      selfRoute?.expectedTravelTimeSeconds,
-      selfRoute?.distanceMeters,
-      selfRouteGeneration,
-      distanceSource,
-      lastRouteDistanceM,
-      routeAnchorGps,
-      routeAnchorRemainingM,
-      routeAnchorGeneration,
-      progressMaxSticky,
-      lastValidPresentation.distanceM,
-      lastValidPresentation.etaSeconds,
-      lastValidPresentation.progress,
-      localNavigationArrived,
-      teamCompletedDestinationIds,
-      localArrivalRadiusM,
-    ],
-  );
+  const progressSurfaces = usePersonalProgressSurfaces({
+    resetKey: journeyActive && groupId && navTarget
+      ? `${groupId}:${navTarget.id}:${state?.group.journeyStartedAt ?? ''}`
+      : null,
+    deviceCoords,
+    targetCoords: navTarget?.coordinates,
+    initialDistanceM,
+    startCoords: journeyStartCoords,
+    // Same-render sticky: gatedProgress.departed may flip before state commits.
+    hasDepartedStart: progressDepartedStart || Boolean(gatedProgress?.departed),
+    travelMode,
+    routeEtaSeconds: selfRoute?.expectedTravelTimeSeconds,
+    routeDistanceM: selfRoute?.distanceMeters,
+    distanceSource: distanceSource ?? null,
+    lastRouteDistanceM,
+    previousProgressMax: progressMaxSticky,
+    lastValidDistanceM: lastValidPresentation.distanceM,
+    lastValidEtaSeconds: lastValidPresentation.etaSeconds,
+    lastValidProgress: lastValidPresentation.progress,
+    routeResultGeneration: selfRouteGeneration,
+    // Personal check-in / auto-arrive — not team stop completion.
+    arrived: localNavigationArrived,
+    // Team terminal: stop closed by leader (closedAt), not personal arrival.
+    completed: Boolean(
+      navTarget && teamCompletedDestinationIds.has(navTarget.id),
+    ),
+    arrivalRadiusM: localArrivalRadiusM,
+    // Age from single stale-threshold clock while journey is active.
+    sampleAgeMs:
+      deviceCoordsAcceptedAtMs != null
+        ? Math.max(0, progressClockMs - deviceCoordsAcceptedAtMs)
+        : null,
+    staleAfterMs: PERSONAL_PROGRESS_STALE_MS,
+    fallbackDistanceM: liveDistance,
+    fallbackEtaSeconds:
+      selfRoute?.expectedTravelTimeSeconds
+      ?? (liveDistance != null ? etaSecondsFor(liveDistance, travelMode) : null),
+    fallbackProgress: liveProgress ?? null,
+  });
+  const { personalProgress } = progressSurfaces;
 
   // Stick presentation: monotonic progress max + last-valid distance/ETA (#145).
   useEffect(() => {
@@ -2210,12 +2147,10 @@ export default function MapScreen({ route, navigation }: Props) {
     personalProgress.etaSeconds,
   ]);
 
-  // Prefer shared model; fall back to legacy live* for non-nav card chips.
-  const personalDistanceM = personalProgress.distanceMeters ?? liveDistance;
-  const personalEtaSeconds = personalProgress.etaSeconds
-    ?? selfRoute?.expectedTravelTimeSeconds
-    ?? (liveDistance != null ? etaSecondsFor(liveDistance, travelMode) : undefined);
-  const personalProgressRatio = personalProgress.progress ?? liveProgress;
+  // Both presentation surfaces consume the same orchestration output.
+  const personalDistanceM = progressSurfaces.gatheringCard.distanceMeters;
+  const personalEtaSeconds = progressSurfaces.gatheringCard.etaSeconds;
+  const personalProgressRatio = progressSurfaces.gatheringCard.progress;
 
   // OTA-01 ticket 02: team surface + personal overlay (personal never rewrites team).
   const teamSurfaceView = useMemo(() => {
@@ -2316,10 +2251,10 @@ export default function MapScreen({ route, navigation }: Props) {
     status: navigationSessionState.session ? 'active' : undefined,
     // Gathering point title when a target exists; team name is fallback only.
     gatheringTitle: navTarget?.title ?? membership?.group.name,
-    distanceMeters: personalDistanceM ?? liveDistance,
-    etaSeconds: personalEtaSeconds,
+    distanceMeters: progressSurfaces.liveActivityPayload.distanceMeters ?? undefined,
+    etaSeconds: progressSurfaces.liveActivityPayload.etaSeconds ?? undefined,
     gatheringCoordinates: navTarget?.coordinates,
-    progress: personalProgressRatio ?? liveProgress,
+    progress: progressSurfaces.liveActivityPayload.progress ?? undefined,
     gatheredCount: liveGathered,
     memberCount: members.length,
     accentHex: accent,
