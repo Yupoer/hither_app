@@ -1490,6 +1490,37 @@ export default function MapScreen({ route, navigation }: Props) {
   } | null>(null);
   const lastRouteDistanceRef = useRef<number | undefined>(undefined);
   const departedStartRef = useRef(false);
+  /** GPS at last route sample — local estimate between throttled route results (#145). */
+  const routeAnchorRef = useRef<{
+    gps: NonNullable<typeof deviceCoords>;
+    remainingM: number;
+  } | null>(null);
+  /** Sticky presentation across GPS/route gaps + monotonic progress max (#145). */
+  const presentationStickyRef = useRef<{
+    key: string | null;
+    progressMax: number | null;
+    distanceM: number | null;
+    etaSeconds: number | null;
+    progress: number | null;
+  }>({
+    key: null,
+    progressMax: null,
+    distanceM: null,
+    etaSeconds: null,
+    progress: null,
+  });
+  const [routeAnchorGps, setRouteAnchorGps] = useState<
+    NonNullable<typeof deviceCoords> | null
+  >(null);
+  const [routeAnchorRemainingM, setRouteAnchorRemainingM] = useState<number | null>(
+    null,
+  );
+  const [progressMaxSticky, setProgressMaxSticky] = useState<number | null>(null);
+  const [lastValidPresentation, setLastValidPresentation] = useState<{
+    distanceM: number | null;
+    etaSeconds: number | null;
+    progress: number | null;
+  }>({ distanceM: null, etaSeconds: null, progress: null });
   const [initialDistanceM, setInitialDistanceM] = useState<number | undefined>();
   const [distanceSource, setDistanceSource] = useState<DistanceSource | undefined>();
   const [progressDepartedStart, setProgressDepartedStart] = useState(false);
@@ -1526,15 +1557,42 @@ export default function MapScreen({ route, navigation }: Props) {
       initialJourneyRef.current = null;
       lastRouteDistanceRef.current = undefined;
       departedStartRef.current = false;
+      routeAnchorRef.current = null;
+      presentationStickyRef.current = {
+        key: null,
+        progressMax: null,
+        distanceM: null,
+        etaSeconds: null,
+        progress: null,
+      };
       setInitialDistanceM(undefined);
       setDistanceSource(undefined);
       setProgressDepartedStart(false);
       setJourneyStartCoords(null);
       setLastRouteDistanceM(undefined);
+      setRouteAnchorGps(null);
+      setRouteAnchorRemainingM(null);
+      setProgressMaxSticky(null);
+      setLastValidPresentation({ distanceM: null, etaSeconds: null, progress: null });
       return;
     }
 
     const key = `${groupId}:${navTarget.id}:${state?.group.journeyStartedAt ?? ''}`;
+    // New destination / journey → reset monotonic progress + last-valid.
+    if (presentationStickyRef.current.key !== key) {
+      presentationStickyRef.current = {
+        key,
+        progressMax: null,
+        distanceM: null,
+        etaSeconds: null,
+        progress: null,
+      };
+      setProgressMaxSticky(null);
+      setLastValidPresentation({ distanceM: null, etaSeconds: null, progress: null });
+      routeAnchorRef.current = null;
+      setRouteAnchorGps(null);
+      setRouteAnchorRemainingM(null);
+    }
     // Never baseline progress from peer/stale pins — only real device GPS.
     if (!deviceCoords) return;
 
@@ -1542,6 +1600,10 @@ export default function MapScreen({ route, navigation }: Props) {
     if (routeDistanceM != null && Number.isFinite(routeDistanceM)) {
       lastRouteDistanceRef.current = routeDistanceM;
       setLastRouteDistanceM(routeDistanceM);
+      // Anchor GPS for local remaining estimate between throttled route results.
+      routeAnchorRef.current = { gps: deviceCoords, remainingM: routeDistanceM };
+      setRouteAnchorGps(deviceCoords);
+      setRouteAnchorRemainingM(routeDistanceM);
     }
     const deviceStraightM = distanceMeters(deviceCoords, navTarget.coordinates);
     const distanceM = initialJourneyDistance(routeDistanceM, deviceStraightM);
@@ -1854,6 +1916,12 @@ export default function MapScreen({ route, navigation }: Props) {
         routeDistanceM: selfRoute?.distanceMeters,
         distanceSource: distanceSource ?? null,
         lastRouteDistanceM: lastRouteDistanceM,
+        routeAnchorGps,
+        routeAnchorRemainingM,
+        previousProgressMax: progressMaxSticky,
+        lastValidDistanceM: lastValidPresentation.distanceM,
+        lastValidEtaSeconds: lastValidPresentation.etaSeconds,
+        lastValidProgress: lastValidPresentation.progress,
         // Personal check-in / auto-arrive — not team stop completion.
         arrived: localNavigationArrived,
         // Team terminal: stop closed by leader (closedAt), not personal arrival.
@@ -1882,11 +1950,65 @@ export default function MapScreen({ route, navigation }: Props) {
       selfRoute?.distanceMeters,
       distanceSource,
       lastRouteDistanceM,
+      routeAnchorGps,
+      routeAnchorRemainingM,
+      progressMaxSticky,
+      lastValidPresentation.distanceM,
+      lastValidPresentation.etaSeconds,
+      lastValidPresentation.progress,
       localNavigationArrived,
       teamCompletedDestinationIds,
       localArrivalRadiusM,
     ],
   );
+
+  // Stick presentation: monotonic progress max + last-valid distance/ETA (#145).
+  useEffect(() => {
+    if (!journeyActive || !navTarget || !groupId) return;
+    const key = `${groupId}:${navTarget.id}:${state?.group.journeyStartedAt ?? ''}`;
+    const sticky = presentationStickyRef.current;
+    if (sticky.key !== key) {
+      // Key was just set in baseline effect; align ref so subsequent samples stick.
+      sticky.key = key;
+    }
+    const nextProgress = personalProgress.progress;
+    if (nextProgress != null && Number.isFinite(nextProgress)) {
+      const max =
+        sticky.progressMax == null
+          ? nextProgress
+          : Math.max(sticky.progressMax, nextProgress);
+      if (sticky.progressMax == null || max > sticky.progressMax + 1e-9) {
+        sticky.progressMax = max;
+        setProgressMaxSticky(max);
+      }
+    }
+    if (
+      personalProgress.distanceMeters != null
+      && Number.isFinite(personalProgress.distanceMeters)
+    ) {
+      const d = personalProgress.distanceMeters;
+      const e = personalProgress.etaSeconds;
+      const p = personalProgress.progress;
+      if (
+        sticky.distanceM !== d
+        || sticky.etaSeconds !== e
+        || sticky.progress !== p
+      ) {
+        sticky.distanceM = d;
+        sticky.etaSeconds = e;
+        sticky.progress = p;
+        setLastValidPresentation({ distanceM: d, etaSeconds: e, progress: p });
+      }
+    }
+  }, [
+    journeyActive,
+    navTarget,
+    groupId,
+    state?.group.journeyStartedAt,
+    personalProgress.progress,
+    personalProgress.distanceMeters,
+    personalProgress.etaSeconds,
+  ]);
 
   // Prefer shared model; fall back to legacy live* for non-nav card chips.
   const personalDistanceM = personalProgress.distanceMeters ?? liveDistance;

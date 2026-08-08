@@ -145,6 +145,116 @@ describe('derivePersonalProgress (shared local model)', () => {
     });
     expect(model.distanceMeters).toBe(900);
   });
+
+  it('caps pre-arrival progress at 95% even when remaining distance is tiny', () => {
+    // 10m remaining of 1000m → raw 99%, must clamp to 0.95 until arrival
+    const nearDone = derivePersonalProgress({
+      deviceCoords: origin,
+      targetCoords: atTarget,
+      initialDistanceM: 1000,
+      hasDepartedStart: true,
+      travelMode: 'walk',
+      distanceSource: 'route',
+      routeDistanceM: 10,
+    });
+    expect(nearDone.arrived).toBe(false);
+    expect(nearDone.progress).toBeLessThanOrEqual(0.95);
+    expect(nearDone.progress).toBeCloseTo(0.95);
+  });
+
+  it('reaches 100% only on confirmed arrival', () => {
+    const model = derivePersonalProgress({
+      deviceCoords: atTarget,
+      targetCoords: atTarget,
+      initialDistanceM: 1000,
+      hasDepartedStart: true,
+      travelMode: 'walk',
+      arrivalRadiusM: 50,
+    });
+    expect(model.arrived).toBe(true);
+    expect(model.progress).toBe(1);
+  });
+
+  it('never decreases progress for the same destination (monotonic max)', () => {
+    const later = derivePersonalProgress({
+      deviceCoords: origin,
+      targetCoords: atTarget,
+      initialDistanceM: 1000,
+      hasDepartedStart: true,
+      travelMode: 'walk',
+      distanceSource: 'route',
+      routeDistanceM: 800, // raw progress 0.2
+      previousProgressMax: 0.55,
+    });
+    expect(later.progress).toBeCloseTo(0.55);
+  });
+
+  it('resets progress baseline when previousProgressMax is cleared for new destination', () => {
+    const model = derivePersonalProgress({
+      deviceCoords: origin,
+      targetCoords: atTarget,
+      initialDistanceM: 1000,
+      hasDepartedStart: true,
+      travelMode: 'walk',
+      distanceSource: 'route',
+      routeDistanceM: 700,
+      previousProgressMax: null,
+    });
+    expect(model.progress).toBeCloseTo(0.3);
+  });
+
+  it('estimates remaining from GPS move between throttled route results', () => {
+    // Anchor remaining 1000m at origin; move toward target by ~half the straight span.
+    const model = derivePersonalProgress({
+      deviceCoords: nearTarget,
+      targetCoords: atTarget,
+      initialDistanceM: 2000,
+      hasDepartedStart: true,
+      travelMode: 'walk',
+      distanceSource: 'route',
+      routeDistanceM: null, // no fresh route this sample
+      lastRouteDistanceM: 1000,
+      routeAnchorGps: origin,
+      routeAnchorRemainingM: 1000,
+    });
+    expect(model.distanceMeters).not.toBeNull();
+    expect(model.distanceMeters!).toBeLessThan(1000);
+    expect(model.distanceMeters!).toBeGreaterThanOrEqual(0);
+  });
+
+  it('corrects to fresh route result when available (overrides local estimate)', () => {
+    const model = derivePersonalProgress({
+      deviceCoords: nearTarget,
+      targetCoords: atTarget,
+      initialDistanceM: 2000,
+      hasDepartedStart: true,
+      travelMode: 'walk',
+      distanceSource: 'route',
+      routeDistanceM: 420,
+      lastRouteDistanceM: 1000,
+      routeAnchorGps: origin,
+      routeAnchorRemainingM: 1000,
+    });
+    expect(model.distanceMeters).toBe(420);
+  });
+
+  it('retains last valid distance/ETA/progress when GPS is missing', () => {
+    const model = derivePersonalProgress({
+      deviceCoords: null,
+      targetCoords: atTarget,
+      initialDistanceM: 1000,
+      hasDepartedStart: true,
+      travelMode: 'walk',
+      lastValidDistanceM: 640,
+      lastValidEtaSeconds: 480,
+      lastValidProgress: 0.4,
+    });
+    expect(model.distanceMeters).toBe(640);
+    expect(model.etaSeconds).toBe(480);
+    expect(model.progress).toBeCloseTo(0.4);
+    expect(model.freshness).toBe('stale');
+    expect(model.arrived).toBe(false);
+  });
 });
 
 describe('personal progress surface contracts', () => {
@@ -182,6 +292,10 @@ describe('personal progress surface contracts', () => {
     // appending a generic warning.
     expect(map).not.toContain("t('locationUpdate.stale')");
     expect(map).toContain('personalFreshness: personalProgress.freshness');
+    // #145: GPS-between-route estimate, monotonic max, last-valid retention.
+    expect(map).toContain('routeAnchorGps');
+    expect(map).toContain('previousProgressMax');
+    expect(map).toContain('lastValidDistanceM');
     // Markers use team completion, not personal arrivals.
     expect(map).toContain('completedDestinationIds={teamCompletedDestinationIds}');
     // Target pulse only while journey is active with a nav target.

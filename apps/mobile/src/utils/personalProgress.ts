@@ -17,6 +17,8 @@ import {
   journeyProgress,
   hasArrived,
   ARRIVAL_RADIUS_M,
+  capPreArrivalProgress,
+  monotonicProgress,
 } from './journeyProgress';
 
 export type ProgressFreshness = 'live' | 'stale' | 'unknown';
@@ -41,6 +43,19 @@ export interface PersonalProgressInput {
   distanceSource?: 'route' | 'fallback' | null;
   /** Last known route distance when current sample has no route. */
   lastRouteDistanceM?: number | null;
+  /**
+   * GPS position when the last route remaining sample was taken.
+   * Used to estimate remaining distance between throttled route results.
+   */
+  routeAnchorGps?: Coordinates | null;
+  /** Remaining metres at routeAnchorGps (usually lastRouteDistanceM). */
+  routeAnchorRemainingM?: number | null;
+  /** Sticky max progress for this destination (monotonic milestone). */
+  previousProgressMax?: number | null;
+  /** Last valid presentation values retained across GPS/route gaps. */
+  lastValidDistanceM?: number | null;
+  lastValidEtaSeconds?: number | null;
+  lastValidProgress?: number | null;
   /** Authoritative personal arrival (check-in / auto-arrive). */
   arrived?: boolean;
   /** Authoritative stop completion (team completed). */
@@ -54,6 +69,22 @@ export interface PersonalProgressInput {
   sampleAgeMs?: number | null;
   /** Default 30s — temporary GPS loss retains last values. */
   staleAfterMs?: number;
+}
+
+/**
+ * Between throttled MapKit/network route results, estimate remaining route
+ * metres from ground movement since the last route sample.
+ */
+export function estimateRemainingFromGpsMove(opts: {
+  lastRouteRemainingM: number;
+  lastRouteAt: Coordinates;
+  currentGps: Coordinates;
+}): number {
+  const remaining = opts.lastRouteRemainingM;
+  if (!Number.isFinite(remaining) || remaining < 0) return 0;
+  const moved = distanceMeters(opts.lastRouteAt, opts.currentGps);
+  if (!Number.isFinite(moved) || moved < 0) return remaining;
+  return Math.max(0, remaining - moved);
 }
 
 export interface PersonalProgressModel {
@@ -133,22 +164,50 @@ export function derivePersonalProgress(
     ? distanceMeters(input.deviceCoords as Coordinates, target)
     : null;
 
+  // Local GPS estimate between throttled route results (before correction).
+  let gpsEstimatedRemaining: number | null = null;
+  if (
+    hasDevice
+    && input.distanceSource === 'route'
+    && (input.routeDistanceM == null || !Number.isFinite(input.routeDistanceM))
+    && input.routeAnchorGps != null
+    && input.routeAnchorRemainingM != null
+    && Number.isFinite(input.routeAnchorRemainingM)
+  ) {
+    gpsEstimatedRemaining = estimateRemainingFromGpsMove({
+      lastRouteRemainingM: input.routeAnchorRemainingM,
+      lastRouteAt: input.routeAnchorGps,
+      currentGps: input.deviceCoords as Coordinates,
+    });
+  }
+
   const liveDistance = sameMetricDistance(
     input.distanceSource,
     input.routeDistanceM,
     straightM,
-    input.lastRouteDistanceM,
+    // Prefer GPS local estimate over stale lastRoute when available.
+    gpsEstimatedRemaining ?? input.lastRouteDistanceM,
   );
 
   // When no locked source yet, prefer route then straight.
-  const distanceMetersValue =
+  let distanceMetersValue =
     liveDistance
     ?? (input.routeDistanceM != null
       && Number.isFinite(input.routeDistanceM)
       && input.routeDistanceM >= 0
       ? input.routeDistanceM
       : null)
+    ?? gpsEstimatedRemaining
     ?? straightM;
+
+  // No live sample: retain last valid presentation (no zero / regress).
+  if (
+    distanceMetersValue == null
+    && input.lastValidDistanceM != null
+    && Number.isFinite(input.lastValidDistanceM)
+  ) {
+    distanceMetersValue = input.lastValidDistanceM;
+  }
 
   const geofenceArrived =
     straightM != null && hasArrived(straightM, arrivalRadius);
@@ -165,6 +224,32 @@ export function derivePersonalProgress(
     };
   }
 
+  // Full GPS loss with only sticky last-valid fields.
+  if (!hasDevice && distanceMetersValue === input.lastValidDistanceM) {
+    const stickyProgress =
+      input.lastValidProgress != null && Number.isFinite(input.lastValidProgress)
+        ? capPreArrivalProgress(
+            monotonicProgress(
+              input.lastValidProgress,
+              input.previousProgressMax,
+            ) ?? input.lastValidProgress,
+          )
+        : monotonicProgress(null, input.previousProgressMax);
+    return {
+      distanceMeters: distanceMetersValue,
+      etaSeconds:
+        input.lastValidEtaSeconds != null && Number.isFinite(input.lastValidEtaSeconds)
+          ? Math.max(0, input.lastValidEtaSeconds)
+          : distanceMetersValue != null
+            ? etaSecondsFor(distanceMetersValue, input.travelMode)
+            : null,
+      progress: stickyProgress,
+      freshness: distanceMetersValue != null ? 'stale' : 'unknown',
+      arrived: false,
+      completed: false,
+    };
+  }
+
   let freshness: ProgressFreshness = 'unknown';
   if (hasDevice) {
     const age = input.sampleAgeMs;
@@ -177,12 +262,28 @@ export function derivePersonalProgress(
     freshness = 'stale';
   }
 
+  const usedStickyDistance =
+    !hasDevice
+    || (
+      liveDistance == null
+      && straightM == null
+      && (input.routeDistanceM == null || !Number.isFinite(input.routeDistanceM))
+      && gpsEstimatedRemaining == null
+    );
+
   const etaSeconds =
     distanceMetersValue == null
-      ? null
+      ? input.lastValidEtaSeconds != null && Number.isFinite(input.lastValidEtaSeconds)
+        ? Math.max(0, input.lastValidEtaSeconds)
+        : null
       : input.routeEtaSeconds != null && Number.isFinite(input.routeEtaSeconds)
         ? Math.max(0, input.routeEtaSeconds)
-        : etaSecondsFor(distanceMetersValue, input.travelMode);
+        : usedStickyDistance
+          && input.lastValidEtaSeconds != null
+          && Number.isFinite(input.lastValidEtaSeconds)
+          && distanceMetersValue === input.lastValidDistanceM
+          ? Math.max(0, input.lastValidEtaSeconds)
+          : etaSecondsFor(distanceMetersValue, input.travelMode);
 
   let progress: number | null = null;
   const initialM = input.initialDistanceM;
@@ -206,7 +307,17 @@ export function derivePersonalProgress(
     } else {
       progress = journeyProgress(initialM, distanceMetersValue);
     }
-    progress = Math.min(1, Math.max(0, progress));
+    progress = capPreArrivalProgress(progress);
+  } else if (
+    input.lastValidProgress != null
+    && Number.isFinite(input.lastValidProgress)
+  ) {
+    progress = capPreArrivalProgress(input.lastValidProgress);
+  }
+
+  progress = monotonicProgress(progress, input.previousProgressMax);
+  if (progress != null) {
+    progress = capPreArrivalProgress(progress);
   }
 
   return {
