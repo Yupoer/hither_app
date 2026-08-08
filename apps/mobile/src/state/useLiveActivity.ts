@@ -11,6 +11,7 @@ import {
 } from '../api/services/LiveActivityService';
 import { liveActivity, notifications, type GroupActivityState } from '../native';
 import type { TravelMode } from '../utils/geo';
+import { LiveActivityLifecycleReconciler } from '../utils/liveActivityLifecycle';
 import { getSharedLiveActivityTokenGate } from '../utils/liveActivityTokenGate';
 import { diagnostics } from './diagnostics';
 import { useSession } from './SessionContext';
@@ -61,9 +62,6 @@ export function useLiveActivity(
   liveActivitiesEnabled = true,
 ): void {
   const { user } = useSession();
-  const handleRef = useRef<string | null>(null);
-  const destinationRef = useRef<string | null>(null);
-  const pushTokenRef = useRef<string | undefined>(undefined);
   const lastPersistAtRef = useRef(0);
   const stateRef = useRef(state);
   const sessionRef = useRef(session);
@@ -71,10 +69,29 @@ export function useLiveActivity(
   const deviceIdRef = useRef<string | null>(null);
   const enabledRef = useRef(liveActivitiesEnabled);
   const userIdRef = useRef<string | null>(user?.id ?? null);
+  const reconcilerRef = useRef<LiveActivityLifecycleReconciler | null>(null);
   stateRef.current = state;
   sessionRef.current = session;
   enabledRef.current = liveActivitiesEnabled;
   userIdRef.current = user?.id ?? null;
+
+  if (reconcilerRef.current == null) {
+    reconcilerRef.current = new LiveActivityLifecycleReconciler({
+      endGroupActivity: (activityId) => liveActivity.endGroupActivity(activityId),
+      endAllGroupActivities: () => liveActivity.endAllGroupActivities(),
+      startGroupActivity: () => liveActivity.startGroupActivity(stateRef.current),
+      deleteSession: (activityId) =>
+        deleteLiveActivitySession(activityId).catch(() => undefined),
+      deleteAllSessions: () =>
+        deleteMyLiveActivitySessions().catch(() => undefined),
+      ensureStartPermission: async () => {
+        // Android 13+ requires POST_NOTIFICATIONS before the foreground
+        // service notification can appear on the lock screen.
+        if (Platform.OS !== 'android') return true;
+        return notifications.requestPermission();
+      },
+    });
+  }
 
   /** Min interval between Supabase live_activity_sessions upserts (local LA still updates more often). */
   const PERSIST_MIN_MS = 30_000;
@@ -100,30 +117,23 @@ export function useLiveActivity(
     await upsertLiveActivitySession({
       ...currentSession,
       activityId,
-      pushToken: pushTokenRef.current,
+      pushToken: reconcilerRef.current?.currentPushToken,
       currentDistanceM: currentState.distanceMeters,
       etaSeconds: currentState.etaSeconds,
     });
   };
 
-  const finishActivity = async (activityId: string) => {
-    await liveActivity.endGroupActivity(activityId);
-    await deleteLiveActivitySession(activityId).catch(() => undefined);
-  };
-
   useEffect(() => {
     const subscription = liveActivity.addPushTokenListener((event) => {
+      const reconciler = reconcilerRef.current;
+      if (!reconciler) return;
       if (
-        event.activityId !== handleRef.current &&
+        event.activityId !== reconciler.currentHandle &&
         (!event.navigationSessionId ||
           event.navigationSessionId !== sessionRef.current?.navigationSessionId)
       ) return;
-      const previousId = handleRef.current;
-      handleRef.current = event.activityId;
-      pushTokenRef.current = event.pushToken;
-      if (previousId && previousId !== event.activityId) {
-        void finishActivity(previousId).catch(() => undefined);
-      }
+      // Token rotation for the active activity — keep handle, refresh push token
+      // via a no-op start for same destination is unnecessary; persist only.
       void persistSession(event.activityId, { force: true }).catch(() => undefined);
     });
     return () => subscription.remove();
@@ -219,89 +229,42 @@ export function useLiveActivity(
     });
   }, [liveActivitiesEnabled, user?.id]);
 
+  // Generation-aware start/stop (#146) — serialized; stale end-all cannot kill new activity.
   useEffect(() => {
-    let cancelled = false;
-    const desiredDestination = session?.destinationId ?? null;
+    const reconciler = reconcilerRef.current;
+    if (!reconciler) return;
 
-    if (active && session) {
-      if (
-        handleRef.current &&
-        destinationRef.current === desiredDestination
-      ) {
-        return () => {
-          cancelled = true;
-        };
-      }
-
-      void (async () => {
-        // Android 13+ requires POST_NOTIFICATIONS before the foreground
-        // service notification can appear on the lock screen.
-        if (Platform.OS === 'android') {
-          const granted = await notifications.requestPermission();
-          if (!granted || cancelled) return;
-        }
-        destinationRef.current = desiredDestination;
-        pushTokenRef.current = undefined;
-
-        // Always clear every Hither activity first. Push-to-start (APNs) can
-        // already have created a minimal lock-screen activity; starting another
-        // without end-all left two Live Activities (team+progress vs full ETA).
-        if (handleRef.current) {
-          const previousId = handleRef.current;
-          handleRef.current = null;
-          await finishActivity(previousId).catch(() => undefined);
-        }
-        await liveActivity.endAllGroupActivities();
-        if (cancelled) return;
-
-        const result = await liveActivity.startGroupActivity(stateRef.current);
-        if (!result) return;
-        if (cancelled) {
-          await finishActivity(result.activityId);
-          await liveActivity.endAllGroupActivities();
-          return;
-        }
-        handleRef.current = result.activityId;
-        pushTokenRef.current = result.pushToken;
-        await persistSession(result.activityId, { force: true }).catch(() => undefined);
-      })();
-    } else if (!active || handleRef.current) {
-      // Journey off, or session dropped while an activity is running.
+    if (active && session?.destinationId) {
+      void reconciler
+        .request({ kind: 'start', destinationId: session.destinationId })
+        .then(() => {
+          const handle = reconciler.currentHandle;
+          if (handle) {
+            void persistSession(handle, { force: true }).catch(() => undefined);
+          }
+        })
+        .catch(() => undefined);
+    } else if (!active) {
+      // Journey off — clear native + DB sessions.
       // Do NOT tear down while active but session is still hydrating (GPS baseline).
-      const activityId = handleRef.current;
-      handleRef.current = null;
-      destinationRef.current = null;
-      pushTokenRef.current = undefined;
-      void (async () => {
-        if (activityId) {
-          await finishActivity(activityId);
-        }
-        // End-all covers lost handles and multi-start races.
-        await liveActivity.endAllGroupActivities();
-        if (!active) {
-          await deleteMyLiveActivitySessions().catch(() => undefined);
-        }
-      })();
+      void reconciler
+        .request({ kind: 'stop', clearSessions: true })
+        .catch(() => undefined);
+    } else if (active && !session) {
+      // Active journey but session not ready yet — leave existing activity alone.
+    } else {
+      // Active with session lost destination: stop native only.
+      void reconciler
+        .request({ kind: 'stop', clearSessions: false })
+        .catch(() => undefined);
     }
-
-    return () => {
-      cancelled = true;
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, session?.destinationId]);
 
   useEffect(() => {
     return () => {
-      const activityId = handleRef.current;
-      handleRef.current = null;
-      void (async () => {
-        if (activityId) {
-          await finishActivity(activityId);
-        }
-        await liveActivity.endAllGroupActivities();
-      })();
+      void reconcilerRef.current?.dispose().catch(() => undefined);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const roundedDistance =
@@ -316,9 +279,10 @@ export function useLiveActivity(
   const destinationEmojiSig = state.destinationEmoji ?? '';
 
   useEffect(() => {
-    if (active && handleRef.current) {
-      void liveActivity.updateGroupActivity(handleRef.current, stateRef.current);
-      void persistSession(handleRef.current).catch(() => undefined);
+    const handle = reconcilerRef.current?.currentHandle;
+    if (active && handle) {
+      void liveActivity.updateGroupActivity(handle, stateRef.current);
+      void persistSession(handle).catch(() => undefined);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [

@@ -95,6 +95,13 @@ describe('ActivityKit remote push contract', () => {
     expect(liveHook).toContain('addPushTokenListener');
   });
 
+  it('uses generation-aware lifecycle reconciler for start/stop races (#146)', () => {
+    expect(liveHook).toContain('LiveActivityLifecycleReconciler');
+    expect(liveHook).toContain("kind: 'start'");
+    expect(liveHook).toContain("kind: 'stop'");
+    expect(liveHook).toContain('clearSessions');
+  });
+
   it('can end every Live Activity without a JS handle (leave / orphan cleanup)', () => {
     expect(nativeModule).toContain('endAllGroupActivities');
     expect(jsBridge).toContain('endAllGroupActivities');
