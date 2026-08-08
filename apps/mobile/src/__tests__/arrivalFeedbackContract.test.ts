@@ -38,6 +38,12 @@ describe('foreground arrival feedback', () => {
     expect(source).toContain('arrivalDimOverlay');
     expect(source).toContain('arrivalCenterCheckLayer');
     expect(source).toContain('1_600');
+    // #149: all-arrived card hold 3.2s + 440ms whole-card exit before remove.
+    expect(source).toContain('ARRIVAL_EFFECT_HOLD_MS');
+    expect(source).toContain('ARRIVAL_CARD_EXIT_MS');
+    expect(source).toContain('startArrivalCardExit');
+    expect(source).toContain('ArrivalCardExitShell');
+    expect(source).toContain('mergeExitingDestinations');
     expect(source).toContain('COMPLETE_PROMPT_DELAY_MS');
     expect(source).toContain("kind: 'destinationArrival'");
     expect(source).toContain('arrivalNotificationDestIdsRef.current');

@@ -17,6 +17,8 @@ import {
   journeyProgress,
   hasArrived,
   ARRIVAL_RADIUS_M,
+  capPreArrivalProgress,
+  monotonicProgress,
 } from './journeyProgress';
 
 export type ProgressFreshness = 'live' | 'stale' | 'unknown';
@@ -41,6 +43,27 @@ export interface PersonalProgressInput {
   distanceSource?: 'route' | 'fallback' | null;
   /** Last known route distance when current sample has no route. */
   lastRouteDistanceM?: number | null;
+  /**
+   * GPS position when the last route remaining sample was taken.
+   * Used to estimate remaining distance between throttled route results.
+   */
+  routeAnchorGps?: Coordinates | null;
+  /** Remaining metres at routeAnchorGps (usually lastRouteDistanceM). */
+  routeAnchorRemainingM?: number | null;
+  /**
+   * Generation of the current directions result (bumped on every accepted
+   * MapKit/network completion). Compared to routeAnchorGeneration so a fresh
+   * result that returns the same integer metres still snaps/re-anchors.
+   */
+  routeResultGeneration?: number | null;
+  /** Generation stored with the current GPS route anchor. */
+  routeAnchorGeneration?: number | null;
+  /** Sticky max progress for this destination (monotonic milestone). */
+  previousProgressMax?: number | null;
+  /** Last valid presentation values retained across GPS/route gaps. */
+  lastValidDistanceM?: number | null;
+  lastValidEtaSeconds?: number | null;
+  lastValidProgress?: number | null;
   /** Authoritative personal arrival (check-in / auto-arrive). */
   arrived?: boolean;
   /** Authoritative stop completion (team completed). */
@@ -54,6 +77,55 @@ export interface PersonalProgressInput {
   sampleAgeMs?: number | null;
   /** Default 30s — temporary GPS loss retains last values. */
   staleAfterMs?: number;
+}
+
+/**
+ * Between throttled MapKit/network route results, estimate remaining route
+ * metres from ground movement since the last route sample.
+ */
+export function estimateRemainingFromGpsMove(opts: {
+  lastRouteRemainingM: number;
+  lastRouteAt: Coordinates;
+  currentGps: Coordinates;
+}): number {
+  const remaining = opts.lastRouteRemainingM;
+  if (!Number.isFinite(remaining) || remaining < 0) return 0;
+  const moved = distanceMeters(opts.lastRouteAt, opts.currentGps);
+  if (!Number.isFinite(moved) || moved < 0) return remaining;
+  return Math.max(0, remaining - moved);
+}
+
+/** GPS + remaining metres + directions generation for between-route estimates. */
+export type RouteAnchorState = {
+  gps: Coordinates;
+  remainingM: number;
+  generation: number;
+};
+
+/**
+ * MapScreen re-anchor seam: treat a directions completion as fresh when its
+ * generation differs from the stored anchor — even if remaining metres match.
+ */
+export function nextRouteAnchorFromResult(
+  prev: RouteAnchorState | null,
+  opts: {
+    deviceCoords: Coordinates;
+    routeDistanceM: number;
+    selfRouteGeneration: number;
+  },
+): { anchor: RouteAnchorState; isNew: boolean } {
+  const isNew = !prev || prev.generation !== opts.selfRouteGeneration;
+  if (!isNew && prev) {
+    return { anchor: prev, isNew: false };
+  }
+  return {
+    anchor: {
+      gps: opts.deviceCoords,
+      remainingM: opts.routeDistanceM,
+      generation: opts.selfRouteGeneration,
+    },
+    isNew: true,
+  };
 }
 
 export interface PersonalProgressModel {
@@ -133,22 +205,97 @@ export function derivePersonalProgress(
     ? distanceMeters(input.deviceCoords as Coordinates, target)
     : null;
 
-  const liveDistance = sameMetricDistance(
-    input.distanceSource,
-    input.routeDistanceM,
-    straightM,
-    input.lastRouteDistanceM,
-  );
+  // Local GPS estimate between throttled route results (before correction).
+  // Always compute when we have an anchor — production keeps a finite stale
+  // routeDistanceM between MapKit/network samples, so we must not gate on null.
+  let gpsEstimatedRemaining: number | null = null;
+  if (
+    hasDevice
+    && input.distanceSource === 'route'
+    && input.routeAnchorGps != null
+    && input.routeAnchorRemainingM != null
+    && Number.isFinite(input.routeAnchorRemainingM)
+  ) {
+    gpsEstimatedRemaining = estimateRemainingFromGpsMove({
+      lastRouteRemainingM: input.routeAnchorRemainingM,
+      lastRouteAt: input.routeAnchorGps,
+      currentGps: input.deviceCoords as Coordinates,
+    });
+  }
+
+  const routeMFinite =
+    input.routeDistanceM != null
+    && Number.isFinite(input.routeDistanceM)
+    && input.routeDistanceM >= 0
+      ? input.routeDistanceM
+      : null;
+
+  // Fresh route result → snap. Prefer generation/identity over distance equality:
+  // directions often return the same integer metres for a new routed origin/ETA.
+  const hasGenerationPair =
+    input.routeResultGeneration != null
+    && Number.isFinite(input.routeResultGeneration)
+    && input.routeAnchorGeneration != null
+    && Number.isFinite(input.routeAnchorGeneration);
+  const generationIsFresh =
+    hasGenerationPair
+    && input.routeResultGeneration !== input.routeAnchorGeneration;
+  const distanceIsFresh =
+    input.routeAnchorRemainingM == null
+    || !Number.isFinite(input.routeAnchorRemainingM)
+    || (routeMFinite != null && routeMFinite !== input.routeAnchorRemainingM);
+  const routeIsFreshSnap =
+    routeMFinite != null
+    && (generationIsFresh || (!hasGenerationPair && distanceIsFresh));
+
+  let liveDistance: number | null = null;
+  if (input.distanceSource === 'route') {
+    if (routeIsFreshSnap && routeMFinite != null) {
+      liveDistance = routeMFinite;
+    } else if (gpsEstimatedRemaining != null) {
+      liveDistance = gpsEstimatedRemaining;
+    } else {
+      liveDistance = sameMetricDistance(
+        input.distanceSource,
+        input.routeDistanceM,
+        straightM,
+        input.lastRouteDistanceM,
+      );
+    }
+  } else {
+    liveDistance = sameMetricDistance(
+      input.distanceSource,
+      input.routeDistanceM,
+      straightM,
+      gpsEstimatedRemaining ?? input.lastRouteDistanceM,
+    );
+  }
 
   // When no locked source yet, prefer route then straight.
-  const distanceMetersValue =
+  let distanceMetersValue =
     liveDistance
-    ?? (input.routeDistanceM != null
-      && Number.isFinite(input.routeDistanceM)
-      && input.routeDistanceM >= 0
-      ? input.routeDistanceM
-      : null)
+    ?? routeMFinite
+    ?? gpsEstimatedRemaining
     ?? straightM;
+
+  const usedGpsLocalEstimate =
+    gpsEstimatedRemaining != null
+    && input.routeAnchorRemainingM != null
+    // A newly accepted route result re-anchors at the current GPS sample.
+    // Until the next sample moves from that anchor, keep the route ETA rather
+    // than replacing it with a generic mode estimate for zero movement.
+    && Math.abs(gpsEstimatedRemaining - input.routeAnchorRemainingM) > 0.01
+    && distanceMetersValue === gpsEstimatedRemaining
+    && !routeIsFreshSnap;
+
+  // No live sample: retain last valid presentation (no zero / regress).
+  if (
+    distanceMetersValue == null
+    && input.lastValidDistanceM != null
+    && Number.isFinite(input.lastValidDistanceM)
+  ) {
+    distanceMetersValue = input.lastValidDistanceM;
+  }
 
   const geofenceArrived =
     straightM != null && hasArrived(straightM, arrivalRadius);
@@ -165,6 +312,32 @@ export function derivePersonalProgress(
     };
   }
 
+  // Full GPS loss with only sticky last-valid fields.
+  if (!hasDevice && distanceMetersValue === input.lastValidDistanceM) {
+    const stickyProgress =
+      input.lastValidProgress != null && Number.isFinite(input.lastValidProgress)
+        ? capPreArrivalProgress(
+            monotonicProgress(
+              input.lastValidProgress,
+              input.previousProgressMax,
+            ) ?? input.lastValidProgress,
+          )
+        : monotonicProgress(null, input.previousProgressMax);
+    return {
+      distanceMeters: distanceMetersValue,
+      etaSeconds:
+        input.lastValidEtaSeconds != null && Number.isFinite(input.lastValidEtaSeconds)
+          ? Math.max(0, input.lastValidEtaSeconds)
+          : distanceMetersValue != null
+            ? etaSecondsFor(distanceMetersValue, input.travelMode)
+            : null,
+      progress: stickyProgress,
+      freshness: distanceMetersValue != null ? 'stale' : 'unknown',
+      arrived: false,
+      completed: false,
+    };
+  }
+
   let freshness: ProgressFreshness = 'unknown';
   if (hasDevice) {
     const age = input.sampleAgeMs;
@@ -177,12 +350,32 @@ export function derivePersonalProgress(
     freshness = 'stale';
   }
 
+  const usedStickyDistance =
+    !hasDevice
+    || (
+      liveDistance == null
+      && straightM == null
+      && (input.routeDistanceM == null || !Number.isFinite(input.routeDistanceM))
+      && gpsEstimatedRemaining == null
+    );
+
+  // Between-route GPS estimate: recompute ETA from distance (stale route ETA lies).
+  // Fresh route snap may keep routeEtaSeconds when provided.
   const etaSeconds =
     distanceMetersValue == null
-      ? null
-      : input.routeEtaSeconds != null && Number.isFinite(input.routeEtaSeconds)
-        ? Math.max(0, input.routeEtaSeconds)
-        : etaSecondsFor(distanceMetersValue, input.travelMode);
+      ? input.lastValidEtaSeconds != null && Number.isFinite(input.lastValidEtaSeconds)
+        ? Math.max(0, input.lastValidEtaSeconds)
+        : null
+      : usedGpsLocalEstimate
+        ? etaSecondsFor(distanceMetersValue, input.travelMode)
+        : input.routeEtaSeconds != null && Number.isFinite(input.routeEtaSeconds)
+          ? Math.max(0, input.routeEtaSeconds)
+          : usedStickyDistance
+            && input.lastValidEtaSeconds != null
+            && Number.isFinite(input.lastValidEtaSeconds)
+            && distanceMetersValue === input.lastValidDistanceM
+            ? Math.max(0, input.lastValidEtaSeconds)
+            : etaSecondsFor(distanceMetersValue, input.travelMode);
 
   let progress: number | null = null;
   const initialM = input.initialDistanceM;
@@ -206,7 +399,17 @@ export function derivePersonalProgress(
     } else {
       progress = journeyProgress(initialM, distanceMetersValue);
     }
-    progress = Math.min(1, Math.max(0, progress));
+    progress = capPreArrivalProgress(progress);
+  } else if (
+    input.lastValidProgress != null
+    && Number.isFinite(input.lastValidProgress)
+  ) {
+    progress = capPreArrivalProgress(input.lastValidProgress);
+  }
+
+  progress = monotonicProgress(progress, input.previousProgressMax);
+  if (progress != null) {
+    progress = capPreArrivalProgress(progress);
   }
 
   return {

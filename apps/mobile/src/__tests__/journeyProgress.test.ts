@@ -1,11 +1,14 @@
 import {
   ARRIVAL_RADIUS_M,
   ANCHOR_MAX_ACCURACY_M,
+  PRE_ARRIVAL_PROGRESS_CAP,
+  capPreArrivalProgress,
   gatedJourneyProgress,
   hasArrived,
   hasDepartedProgressStart,
   initialJourneyDistance,
   journeyProgress,
+  monotonicProgress,
   progressStartRadiusM,
   sameMetricDistance,
   shouldAnchorInitial,
@@ -119,6 +122,20 @@ describe('departed-start gate keeps progress at 0 until real movement', () => {
   it('detects departure via helper', () => {
     expect(hasDepartedProgressStart(5, 1000)).toBe(false);
     expect(hasDepartedProgressStart(40, 1000)).toBe(true);
+  });
+});
+
+describe('pre-arrival progress cap and monotonic milestones (#145)', () => {
+  it('caps raw progress at 95%', () => {
+    expect(PRE_ARRIVAL_PROGRESS_CAP).toBe(0.95);
+    expect(capPreArrivalProgress(0.99)).toBe(0.95);
+    expect(capPreArrivalProgress(0.5)).toBe(0.5);
+  });
+
+  it('keeps the higher of raw and previous max', () => {
+    expect(monotonicProgress(0.2, 0.55)).toBeCloseTo(0.55);
+    expect(monotonicProgress(0.7, 0.55)).toBeCloseTo(0.7);
+    expect(monotonicProgress(null, 0.4)).toBeCloseTo(0.4);
   });
 });
 

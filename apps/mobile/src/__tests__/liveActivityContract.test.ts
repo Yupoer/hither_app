@@ -95,6 +95,23 @@ describe('ActivityKit remote push contract', () => {
     expect(liveHook).toContain('addPushTokenListener');
   });
 
+  it('adopts rotated push tokens on the reconciler before persist (#146 Sol)', () => {
+    expect(liveHook).toContain('adoptPushToken');
+    expect(liveHook).toContain('adoptObservedActivity');
+    expect(liveHook).toContain('decidePushTokenAdoption');
+    // Persist still uses reconciler token (updated by adopt).
+    expect(liveHook).toContain('reconcilerRef.current?.currentPushToken');
+    // Adoption success required before persist (no foreign id + stale token).
+    expect(liveHook).toContain('if (!adopted) return');
+  });
+
+  it('uses generation-aware lifecycle reconciler for start/stop races (#146)', () => {
+    expect(liveHook).toContain('LiveActivityLifecycleReconciler');
+    expect(liveHook).toContain("kind: 'start'");
+    expect(liveHook).toContain("kind: 'stop'");
+    expect(liveHook).toContain('clearSessions');
+  });
+
   it('can end every Live Activity without a JS handle (leave / orphan cleanup)', () => {
     expect(nativeModule).toContain('endAllGroupActivities');
     expect(jsBridge).toContain('endAllGroupActivities');
@@ -138,6 +155,16 @@ describe('ActivityKit remote push contract', () => {
     expect(mapScreen).toContain('shouldAnchorInitial(');
     expect(mapScreen).toContain("m.status === 'arrived'");
     expect(mapScreen).toContain('memberArrived:');
+  });
+
+  it('animates progress bar and percent ~600ms with Reduce Motion branch (#147)', () => {
+    expect(widget).toContain('ProgressMotion');
+    expect(widget).toContain('durationSeconds: Double = 0.6');
+    expect(widget).toContain('reduceMotionDurationSeconds');
+    expect(widget).toContain('accessibilityReduceMotion');
+    expect(widget).toContain('contentTransition(.numericText())');
+    // Shared ProgressRow drives Lock Screen + expanded Dynamic Island.
+    expect(widget).toContain('ProgressRow(value: context.state.clampedProgress');
   });
 
   it('matches the approved black capsule information hierarchy', () => {

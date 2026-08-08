@@ -124,3 +124,29 @@ export function journeyProgress(initialM: number, currentM: number): number {
   if (!Number.isFinite(initialM) || initialM <= 0) return 0;
   return Math.min(1, Math.max(0, 1 - currentM / initialM));
 }
+
+/**
+ * Pre-arrival display cap: progress never shows 100% until confirmed arrival.
+ * Spec #145: unidirectional milestones, max 95% before arrival, 100% after.
+ */
+export const PRE_ARRIVAL_PROGRESS_CAP = 0.95;
+
+export function capPreArrivalProgress(progress: number): number {
+  if (!Number.isFinite(progress)) return 0;
+  return Math.min(PRE_ARRIVAL_PROGRESS_CAP, Math.max(0, progress));
+}
+
+/**
+ * Sticky max so route detours / GPS jitter cannot reverse the milestone bar
+ * for the same destination. Caller clears previousMax on destination change.
+ */
+export function monotonicProgress(
+  raw: number | null | undefined,
+  previousMax: number | null | undefined,
+): number | null {
+  if (raw == null || !Number.isFinite(raw)) {
+    return previousMax != null && Number.isFinite(previousMax) ? previousMax : null;
+  }
+  if (previousMax == null || !Number.isFinite(previousMax)) return raw;
+  return Math.max(previousMax, raw);
+}

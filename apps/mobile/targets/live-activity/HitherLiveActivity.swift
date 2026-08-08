@@ -237,14 +237,34 @@ private struct TravelModeBadge: View {
 
 // MARK: - Pieces
 
+/// Progress transition timing (#147): ~600ms ease on Lock Screen + Dynamic Island.
+/// Reduce Motion uses a short fade-style update (no long size-move animation).
+private enum ProgressMotion {
+  static let durationSeconds: Double = 0.6
+  static let reduceMotionDurationSeconds: Double = 0.12
+
+  static func animation(reduceMotion: Bool) -> Animation {
+    if reduceMotion {
+      return .easeInOut(duration: reduceMotionDurationSeconds)
+    }
+    return .easeInOut(duration: durationSeconds)
+  }
+}
+
 private struct ProgressBar: View {
   let value: Double
   let accent: Color
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
   var body: some View {
     GeometryReader { geo in
       ZStack(alignment: .leading) {
         Capsule().fill(Brand.track)
-        Capsule().fill(accent).frame(width: max(6, geo.size.width * value))
+        Capsule()
+          .fill(accent)
+          .frame(width: max(6, geo.size.width * value))
+          // Animate width to the latest target (including first 0→60%).
+          .animation(ProgressMotion.animation(reduceMotion: reduceMotion), value: value)
       }
     }
     .frame(height: 6)
@@ -255,6 +275,8 @@ private struct ProgressBar: View {
 private struct ProgressRow: View {
   let value: Double
   let accent: Color
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
   var body: some View {
     let pct = Int((min(1, max(0, value)) * 100).rounded())
     return HStack(spacing: 8) {
@@ -263,6 +285,8 @@ private struct ProgressRow: View {
         .font(.system(size: 12, weight: .semibold).monospacedDigit())
         .foregroundStyle(Brand.textSecondary)
         .frame(minWidth: 34, alignment: .trailing)
+        .contentTransition(.numericText())
+        .animation(ProgressMotion.animation(reduceMotion: reduceMotion), value: pct)
     }
   }
 }

@@ -46,7 +46,10 @@ import Animated, {
   interpolate,
   Extrapolation,
   withSpring,
+  withTiming,
+  Easing,
   FadeIn,
+  FadeInRight,
   FadeOut,
   ZoomIn,
   ZoomOut,
@@ -89,6 +92,26 @@ import {
   resolveNavCommand,
 } from '../utils/gatherCommand';
 import {
+  ARRIVED_FADE_MS,
+  ARRIVED_SPLIT_MS,
+  COUNTDOWN_WIDTH_FACTOR,
+  GATHER_CMD_MIN_HIT_PT,
+} from '../utils/gatherCommandLayout';
+import {
+  ARRIVAL_CARD_EXIT_MS,
+  ARRIVAL_EFFECT_HOLD_MS,
+  PERSONAL_ARRIVAL_CELEBRATE_MS,
+  armCelebrateClearTimer,
+  beginArrivalCardExit,
+  cancelCelebrateClearTimer,
+  clearAllCelebrateClearTimers,
+  mergeExitingDestinations,
+  nextVisibleCarouselOrder,
+  resolveExitIndexAtStart,
+  type ArrivalCardExitRecord,
+  type CelebrateClearStore,
+} from '../utils/arrivalCardExit';
+import {
   overlayPersonalOnTeamState,
   projectTeamGatheringState,
 } from '../utils/teamGatheringState';
@@ -117,6 +140,7 @@ import { useDeviceLocation } from './MapScreen/hooks/useDeviceLocation';
 import { useCarouselSelection } from './MapScreen/hooks/useCarouselSelection';
 import { useJourneyNavigation } from './MapScreen/hooks/useJourneyNavigation';
 import { useMapKitRoutes } from './MapScreen/hooks/useMapKitRoutes';
+import { usePersonalProgressSurfaces } from './MapScreen/hooks/usePersonalProgressSurfaces';
 import { energyObservability } from '../state/energyObservability';
 import { useGatherCardExpansion } from './MapScreen/hooks/useGatherCardExpansion';
 import {
@@ -168,7 +192,6 @@ import {
   shouldAnchorInitial,
   type DistanceSource,
 } from '../utils/journeyProgress';
-import { derivePersonalProgress } from '../utils/personalProgress';
 import {
   distanceMeters,
   etaSecondsFor,
@@ -579,7 +602,24 @@ export default function MapScreen({ route, navigation }: Props) {
   );
   // Open stops on today + future trip days (local device date). Past days
   // leave the carousel / reorder list and surface in 歷史行程 instead.
-  const destinations = useMemo(
+  // #149: cards mid exit-hold/exit stay visible after closedAt filters them out.
+  const [arrivalExitRecords, setArrivalExitRecords] = useState<
+    Map<string, ArrivalCardExitRecord>
+  >(() => new Map());
+  const [arrivalExitSnapshots, setArrivalExitSnapshots] = useState<
+    Map<string, Destination>
+  >(() => new Map());
+  const arrivalExitTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>[]>>(
+    new Map(),
+  );
+  /** Full visible carousel order, including cards in hold/exit. */
+  const prevVisibleDestOrderRef = useRef<string[]>([]);
+  /** Personal 1.6s / completion 3.2s share celebrate UI — one clear timer per dest. */
+  const celebrateClearTimersRef = useRef<CelebrateClearStore>(new Map());
+  const arrivalExitRecordsRef = useRef(arrivalExitRecords);
+  arrivalExitRecordsRef.current = arrivalExitRecords;
+
+  const openDestinations = useMemo(
     () =>
       filterActiveDestinations(
         allScopedDestinations,
@@ -593,6 +633,16 @@ export default function MapScreen({ route, navigation }: Props) {
       group?.departureDate,
       group?.tripDays,
     ],
+  );
+  const destinations = useMemo(
+    () =>
+      mergeExitingDestinations(
+        openDestinations,
+        arrivalExitSnapshots,
+        arrivalExitRecords,
+        prevVisibleDestOrderRef.current,
+      ),
+    [openDestinations, arrivalExitSnapshots, arrivalExitRecords],
   );
   const canEditItinerary = !!isLeader;
 
@@ -1349,7 +1399,7 @@ export default function MapScreen({ route, navigation }: Props) {
   // Prefer local prefs (available before inPassiveMode is derived below) so
   // passive mode can skip MapKit work without a temporal dead zone.
   const mapRoutesEnabled = !(preferencesReady && passiveCompanionMode);
-  const { selfRoute, memberRoutes } = useMapKitRoutes({
+  const { selfRoute, memberRoutes, selfRouteGeneration } = useMapKitRoutes({
     selfCoordinates: fromCoords,
     members,
     gathering: mapRoutesEnabled ? activePoint : null,
@@ -1378,6 +1428,131 @@ export default function MapScreen({ route, navigation }: Props) {
   const [autoArrivedDestId, setAutoArrivedDestId] = useState<string | null>(null);
   const [arrivalCelebrateDestId, setArrivalCelebrateDestId] = useState<string | null>(null);
   const [requestingStartDestId, setRequestingStartDestId] = useState<string | null>(null);
+
+  /** #149: after stop completes (closedAt), hold effect 3.2s then 440ms card exit. */
+  const startArrivalCardExit = useCallback((
+    destination: Destination,
+    indexAtStart = 0,
+  ) => {
+    const started = beginArrivalCardExit(
+      arrivalExitRecordsRef.current,
+      destination.id,
+      Date.now(),
+      indexAtStart,
+    );
+    if (!started) return; // idempotent — no double exit / ghost
+    setArrivalExitRecords((prev) => {
+      const next = new Map(prev);
+      next.set(destination.id, started);
+      return next;
+    });
+    setArrivalExitSnapshots((prev) => {
+      const next = new Map(prev);
+      next.set(destination.id, destination);
+      return next;
+    });
+    // Cancel personal-arrival 1.6s clear so it cannot truncate the 3.2s hold (#149).
+    cancelCelebrateClearTimer(celebrateClearTimersRef.current, destination.id);
+    setArrivalCelebrateDestId(destination.id);
+    armCelebrateClearTimer(
+      celebrateClearTimersRef.current,
+      destination.id,
+      ARRIVAL_EFFECT_HOLD_MS,
+      () => {
+        setArrivalCelebrateDestId((cur) => (cur === destination.id ? null : cur));
+      },
+    );
+
+    const clearTimers = () => {
+      const list = arrivalExitTimersRef.current.get(destination.id);
+      if (list) {
+        for (const t of list) clearTimeout(t);
+        arrivalExitTimersRef.current.delete(destination.id);
+      }
+    };
+    clearTimers();
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    timers.push(
+      setTimeout(() => {
+        setArrivalExitRecords((prev) => {
+          const cur = prev.get(destination.id);
+          if (!cur) return prev;
+          const next = new Map(prev);
+          next.set(destination.id, { ...cur, phase: 'exit' });
+          return next;
+        });
+      }, ARRIVAL_EFFECT_HOLD_MS),
+    );
+    timers.push(
+      setTimeout(() => {
+        setArrivalExitRecords((prev) => {
+          const next = new Map(prev);
+          next.delete(destination.id);
+          return next;
+        });
+        setArrivalExitSnapshots((prev) => {
+          const next = new Map(prev);
+          next.delete(destination.id);
+          return next;
+        });
+        arrivalExitTimersRef.current.delete(destination.id);
+      }, ARRIVAL_EFFECT_HOLD_MS + ARRIVAL_CARD_EXIT_MS),
+    );
+    arrivalExitTimersRef.current.set(destination.id, timers);
+  }, []);
+
+  // Detect newly completed stops → start hold/exit (not historical closed on mount).
+  const knownClosedDestIdsRef = useRef<Set<string> | null>(null);
+  /**
+   * Full visible carousel order (open + hold/exit). Open-only ranks collide when
+   * a second card closes while the first is still exiting (#149 Sol r3).
+   */
+  useEffect(() => {
+    const closedNow = allScopedDestinations.filter((d) => d.closedAt != null);
+    if (knownClosedDestIdsRef.current == null) {
+      // First paint: seed known closed so past history does not animate out.
+      knownClosedDestIdsRef.current = new Set(closedNow.map((d) => d.id));
+      prevVisibleDestOrderRef.current = openDestinations.map((d) => d.id);
+      return;
+    }
+    const newlyStarted: string[] = [];
+    for (const dest of closedNow) {
+      if (knownClosedDestIdsRef.current.has(dest.id)) continue;
+      knownClosedDestIdsRef.current.add(dest.id);
+      const priorIdx = resolveExitIndexAtStart(
+        prevVisibleDestOrderRef.current,
+        dest.id,
+        prevVisibleDestOrderRef.current.length,
+      );
+      startArrivalCardExit(dest, priorIdx);
+      newlyStarted.push(dest.id);
+    }
+    const exitingIds = new Set<string>([
+      ...arrivalExitRecords.keys(),
+      ...newlyStarted,
+    ]);
+    // Keep exiting cards ranked until their record is removed (exit complete).
+    prevVisibleDestOrderRef.current = nextVisibleCarouselOrder(
+      prevVisibleDestOrderRef.current,
+      openDestinations.map((d) => d.id),
+      [...exitingIds],
+    );
+  }, [
+    allScopedDestinations,
+    openDestinations,
+    startArrivalCardExit,
+    arrivalExitRecords,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      for (const timers of arrivalExitTimersRef.current.values()) {
+        for (const t of timers) clearTimeout(t);
+      }
+      arrivalExitTimersRef.current.clear();
+      clearAllCelebrateClearTimers(celebrateClearTimersRef.current);
+    };
+  }, []);
 
   // Wired after promptCompleteAfterArrival is defined (see below).
   const afterPersonalArrivalRef = useRef<
@@ -1490,6 +1665,27 @@ export default function MapScreen({ route, navigation }: Props) {
   } | null>(null);
   const lastRouteDistanceRef = useRef<number | undefined>(undefined);
   const departedStartRef = useRef(false);
+  /** GPS at last route sample — local estimate between throttled route results (#145). */
+  /** Sticky presentation across GPS/route gaps + monotonic progress max (#145). */
+  const presentationStickyRef = useRef<{
+    key: string | null;
+    progressMax: number | null;
+    distanceM: number | null;
+    etaSeconds: number | null;
+    progress: number | null;
+  }>({
+    key: null,
+    progressMax: null,
+    distanceM: null,
+    etaSeconds: null,
+    progress: null,
+  });
+  const [progressMaxSticky, setProgressMaxSticky] = useState<number | null>(null);
+  const [lastValidPresentation, setLastValidPresentation] = useState<{
+    distanceM: number | null;
+    etaSeconds: number | null;
+    progress: number | null;
+  }>({ distanceM: null, etaSeconds: null, progress: null });
   const [initialDistanceM, setInitialDistanceM] = useState<number | undefined>();
   const [distanceSource, setDistanceSource] = useState<DistanceSource | undefined>();
   const [progressDepartedStart, setProgressDepartedStart] = useState(false);
@@ -1526,15 +1722,36 @@ export default function MapScreen({ route, navigation }: Props) {
       initialJourneyRef.current = null;
       lastRouteDistanceRef.current = undefined;
       departedStartRef.current = false;
+      presentationStickyRef.current = {
+        key: null,
+        progressMax: null,
+        distanceM: null,
+        etaSeconds: null,
+        progress: null,
+      };
       setInitialDistanceM(undefined);
       setDistanceSource(undefined);
       setProgressDepartedStart(false);
       setJourneyStartCoords(null);
       setLastRouteDistanceM(undefined);
+      setProgressMaxSticky(null);
+      setLastValidPresentation({ distanceM: null, etaSeconds: null, progress: null });
       return;
     }
 
     const key = `${groupId}:${navTarget.id}:${state?.group.journeyStartedAt ?? ''}`;
+    // New destination / journey → reset monotonic progress + last-valid.
+    if (presentationStickyRef.current.key !== key) {
+      presentationStickyRef.current = {
+        key,
+        progressMax: null,
+        distanceM: null,
+        etaSeconds: null,
+        progress: null,
+      };
+      setProgressMaxSticky(null);
+      setLastValidPresentation({ distanceM: null, etaSeconds: null, progress: null });
+    }
     // Never baseline progress from peer/stale pins — only real device GPS.
     if (!deviceCoords) return;
 
@@ -1576,6 +1793,7 @@ export default function MapScreen({ route, navigation }: Props) {
     journeyActive,
     navTarget,
     selfRoute?.distanceMeters,
+    selfRouteGeneration,
     state?.group.journeyStartedAt,
   ]);
 
@@ -1840,60 +2058,99 @@ export default function MapScreen({ route, navigation }: Props) {
    * My Progress (passive), and Live Activity. Backend upload cadence is
    * independent and must not block these surfaces.
    */
-  const personalProgress = useMemo(
-    () =>
-      derivePersonalProgress({
-        deviceCoords,
-        targetCoords: navTarget?.coordinates,
-        initialDistanceM: initialDistanceM,
-        startCoords: journeyStartCoords,
-        // Same-render sticky: gatedProgress.departed may flip before state commits.
-        hasDepartedStart: progressDepartedStart || Boolean(gatedProgress?.departed),
-        travelMode,
-        routeEtaSeconds: selfRoute?.expectedTravelTimeSeconds,
-        routeDistanceM: selfRoute?.distanceMeters,
-        distanceSource: distanceSource ?? null,
-        lastRouteDistanceM: lastRouteDistanceM,
-        // Personal check-in / auto-arrive — not team stop completion.
-        arrived: localNavigationArrived,
-        // Team terminal: stop closed by leader (closedAt), not personal arrival.
-        completed: Boolean(
-          navTarget && teamCompletedDestinationIds.has(navTarget.id),
-        ),
-        arrivalRadiusM: localArrivalRadiusM,
-        // Age from single stale-threshold clock while journey is active.
-        sampleAgeMs:
-          deviceCoordsAcceptedAtMs != null
-            ? Math.max(0, progressClockMs - deviceCoordsAcceptedAtMs)
-            : null,
-        staleAfterMs: PERSONAL_PROGRESS_STALE_MS,
-      }),
-    [
-      deviceCoords,
-      deviceCoordsAcceptedAtMs,
-      progressClockMs,
-      navTarget,
-      initialDistanceM,
-      journeyStartCoords,
-      progressDepartedStart,
-      gatedProgress?.departed,
-      travelMode,
-      selfRoute?.expectedTravelTimeSeconds,
-      selfRoute?.distanceMeters,
-      distanceSource,
-      lastRouteDistanceM,
-      localNavigationArrived,
-      teamCompletedDestinationIds,
-      localArrivalRadiusM,
-    ],
-  );
+  const progressSurfaces = usePersonalProgressSurfaces({
+    resetKey: journeyActive && groupId && navTarget
+      ? `${groupId}:${navTarget.id}:${state?.group.journeyStartedAt ?? ''}`
+      : null,
+    deviceCoords,
+    targetCoords: navTarget?.coordinates,
+    initialDistanceM,
+    startCoords: journeyStartCoords,
+    // Same-render sticky: gatedProgress.departed may flip before state commits.
+    hasDepartedStart: progressDepartedStart || Boolean(gatedProgress?.departed),
+    travelMode,
+    routeEtaSeconds: selfRoute?.expectedTravelTimeSeconds,
+    routeDistanceM: selfRoute?.distanceMeters,
+    distanceSource: distanceSource ?? null,
+    lastRouteDistanceM,
+    previousProgressMax: progressMaxSticky,
+    lastValidDistanceM: lastValidPresentation.distanceM,
+    lastValidEtaSeconds: lastValidPresentation.etaSeconds,
+    lastValidProgress: lastValidPresentation.progress,
+    routeResultGeneration: selfRouteGeneration,
+    // Personal check-in / auto-arrive — not team stop completion.
+    arrived: localNavigationArrived,
+    // Team terminal: stop closed by leader (closedAt), not personal arrival.
+    completed: Boolean(
+      navTarget && teamCompletedDestinationIds.has(navTarget.id),
+    ),
+    arrivalRadiusM: localArrivalRadiusM,
+    // Age from single stale-threshold clock while journey is active.
+    sampleAgeMs:
+      deviceCoordsAcceptedAtMs != null
+        ? Math.max(0, progressClockMs - deviceCoordsAcceptedAtMs)
+        : null,
+    staleAfterMs: PERSONAL_PROGRESS_STALE_MS,
+    fallbackDistanceM: liveDistance,
+    fallbackEtaSeconds:
+      selfRoute?.expectedTravelTimeSeconds
+      ?? (liveDistance != null ? etaSecondsFor(liveDistance, travelMode) : null),
+    fallbackProgress: liveProgress ?? null,
+  });
+  const { personalProgress } = progressSurfaces;
 
-  // Prefer shared model; fall back to legacy live* for non-nav card chips.
-  const personalDistanceM = personalProgress.distanceMeters ?? liveDistance;
-  const personalEtaSeconds = personalProgress.etaSeconds
-    ?? selfRoute?.expectedTravelTimeSeconds
-    ?? (liveDistance != null ? etaSecondsFor(liveDistance, travelMode) : undefined);
-  const personalProgressRatio = personalProgress.progress ?? liveProgress;
+  // Stick presentation: monotonic progress max + last-valid distance/ETA (#145).
+  useEffect(() => {
+    if (!journeyActive || !navTarget || !groupId) return;
+    const key = `${groupId}:${navTarget.id}:${state?.group.journeyStartedAt ?? ''}`;
+    const sticky = presentationStickyRef.current;
+    if (sticky.key !== key) {
+      // Key was just set in baseline effect; align ref so subsequent samples stick.
+      sticky.key = key;
+    }
+    const nextProgress = personalProgress.progress;
+    if (nextProgress != null && Number.isFinite(nextProgress)) {
+      const max =
+        sticky.progressMax == null
+          ? nextProgress
+          : Math.max(sticky.progressMax, nextProgress);
+      if (sticky.progressMax == null || max > sticky.progressMax + 1e-9) {
+        sticky.progressMax = max;
+        setProgressMaxSticky(max);
+      }
+    }
+    if (
+      personalProgress.distanceMeters != null
+      && Number.isFinite(personalProgress.distanceMeters)
+    ) {
+      const d = personalProgress.distanceMeters;
+      const e = personalProgress.etaSeconds;
+      const p = personalProgress.progress;
+      if (
+        sticky.distanceM !== d
+        || sticky.etaSeconds !== e
+        || sticky.progress !== p
+      ) {
+        sticky.distanceM = d;
+        sticky.etaSeconds = e;
+        sticky.progress = p;
+        setLastValidPresentation({ distanceM: d, etaSeconds: e, progress: p });
+      }
+    }
+  }, [
+    journeyActive,
+    navTarget,
+    groupId,
+    state?.group.journeyStartedAt,
+    personalProgress.progress,
+    personalProgress.distanceMeters,
+    personalProgress.etaSeconds,
+  ]);
+
+  // Both presentation surfaces consume the same orchestration output.
+  const personalDistanceM = progressSurfaces.gatheringCard.distanceMeters;
+  const personalEtaSeconds = progressSurfaces.gatheringCard.etaSeconds;
+  const personalProgressRatio = progressSurfaces.gatheringCard.progress;
 
   // OTA-01 ticket 02: team surface + personal overlay (personal never rewrites team).
   const teamSurfaceView = useMemo(() => {
@@ -1994,10 +2251,10 @@ export default function MapScreen({ route, navigation }: Props) {
     status: navigationSessionState.session ? 'active' : undefined,
     // Gathering point title when a target exists; team name is fallback only.
     gatheringTitle: navTarget?.title ?? membership?.group.name,
-    distanceMeters: personalDistanceM ?? liveDistance,
-    etaSeconds: personalEtaSeconds,
+    distanceMeters: progressSurfaces.liveActivityPayload.distanceMeters ?? undefined,
+    etaSeconds: progressSurfaces.liveActivityPayload.etaSeconds ?? undefined,
     gatheringCoordinates: navTarget?.coordinates,
-    progress: personalProgressRatio ?? liveProgress,
+    progress: progressSurfaces.liveActivityPayload.progress ?? undefined,
     gatheredCount: liveGathered,
     memberCount: members.length,
     accentHex: accent,
@@ -2699,9 +2956,15 @@ export default function MapScreen({ route, navigation }: Props) {
       arrivalFeedbackShownRef.current = destination.id;
       setArrivalCelebrateDestId(destination.id);
       alertBuzz();
-      setTimeout(() => {
-        setArrivalCelebrateDestId((cur) => (cur === destination.id ? null : cur));
-      }, 1_600);
+      // Tracked so startArrivalCardExit can cancel this before the 3.2s hold.
+      armCelebrateClearTimer(
+        celebrateClearTimersRef.current,
+        destination.id,
+        PERSONAL_ARRIVAL_CELEBRATE_MS,
+        () => {
+          setArrivalCelebrateDestId((cur) => (cur === destination.id ? null : cur));
+        },
+      );
     }
     if (opts?.stopNav) void stopNavigation();
     if (
@@ -5096,6 +5359,7 @@ export default function MapScreen({ route, navigation }: Props) {
                 || navCmd.disabled
                 || Boolean(requestingStartDestId)
               );
+              const exitPhase = arrivalExitRecords.get(dest.id)?.phase ?? null;
               return (
                 <View
                   key={`carousel-dest-${dest.id}-${index}`}
@@ -5105,6 +5369,7 @@ export default function MapScreen({ route, navigation }: Props) {
                     ref={active ? (n) => setTourTargetRef('gatherCard', n) : undefined}
                     collapsable={false}
                   >
+                  <ArrivalCardExitShell exiting={exitPhase === 'exit'}>
                   <liquidGlass.GlassView
                     tintColor={active ? glass.cardActive : glass.card}
                     style={[
@@ -5385,6 +5650,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
                     </GatheringCardPressable>
                     {/* a11y-layout:commandRow — always one row.
+                        Order (#148): [Start/End | Arrived] [Countdown] [Transport]
                         Outside expand Pressable so Start never toggles the card.
                         Density tracks narrow + Dynamic Type. */}
                     {cardExpanded && (
@@ -5496,78 +5762,69 @@ export default function MapScreen({ route, navigation }: Props) {
                         </Pressable>
                       ) : null}
 
-                      <Pressable
-                        ref={active ? (n) => setTourTargetRef('transport', n) : undefined}
-                        collapsable={false}
-                        style={styles.cmdSquare}
-                        onPress={() => {
-                          registerCardActivity(dest.id);
-                          lightTap();
-                          const order = ['walk', 'transit', 'drive'] as const;
-                          setTravelMode(order[(order.indexOf(travelMode) + 1) % order.length]);
-                        }}
-                        accessibilityRole="button"
-                        accessibilityLabel={`${t(`map.travelMode.${travelMode}`)} ${etaLabel} ${distLabel}`.trim()}
-                      >
-                        <Ionicons
-                          name={modeIconName}
-                          size={chromeTight ? 18 : 20}
-                          color={accent}
-                        />
-                      </Pressable>
-
-                      {/* Personal check-in (arrive ≠ complete). Always visible
-                          for open stops when sequential rules allow marking. */}
-                      {showArrivalControl ? personallyArrived ? (
-                        <Pressable
-                          ref={active ? (n) => setTourTargetRef('personalArrive', n) : undefined}
+                      {/* Personal check-in splits from Start/End right (#148). */}
+                      {showArrivalControl ? (
+                        <Animated.View
+                          entering={
+                            tourReduceMotion
+                              ? FadeIn.duration(ARRIVED_FADE_MS)
+                              : FadeInRight.duration(ARRIVED_SPLIT_MS)
+                          }
                           collapsable={false}
-                          style={[
-                            styles.cmdSquare,
-                            styles.arrivalCmdSquare,
-                            styles.arrivalCmdArrived,
-                          ]}
-                          onPress={() => {
-                            registerCardActivity(dest.id);
-                            lightTap();
-                            if (user?.id) handleArrival(dest, user.id, false);
-                          }}
-                          accessibilityRole="button"
-                          accessibilityLabel={t('arrival.undo')}
                         >
-                          <Ionicons
-                            name="checkmark-circle"
-                            size={chromeTight ? 18 : 20}
-                            color={glass.ok}
-                          />
-                        </Pressable>
-                      ) : (
-                        <Pressable
-                          ref={active ? (n) => setTourTargetRef('personalArrive', n) : undefined}
-                          collapsable={false}
-                          style={[
-                            styles.cmdSquare,
-                            styles.arrivalCmdSquare,
-                          ]}
-                          onPress={() => {
-                            registerCardActivity(dest.id);
-                            lightTap();
-                            if (user?.id) handleSelfArrival(dest, user.id);
-                          }}
-                          accessibilityRole="button"
-                          accessibilityLabel={t('arrival.mark')}
-                        >
-                          <Ionicons
-                            name="checkmark-circle-outline"
-                            size={chromeTight ? 18 : 20}
-                            color={accent}
-                          />
-                        </Pressable>
+                          {personallyArrived ? (
+                            <Pressable
+                              ref={active ? (n) => setTourTargetRef('personalArrive', n) : undefined}
+                              collapsable={false}
+                              style={[
+                                styles.cmdSquare,
+                                styles.arrivalCmdSquare,
+                                styles.arrivalCmdArrived,
+                              ]}
+                              onPress={() => {
+                                registerCardActivity(dest.id);
+                                lightTap();
+                                if (user?.id) handleArrival(dest, user.id, false);
+                              }}
+                              accessibilityRole="button"
+                              accessibilityLabel={t('arrival.undo')}
+                            >
+                              <Ionicons
+                                name="checkmark-circle"
+                                size={chromeTight ? 18 : 20}
+                                color={glass.ok}
+                              />
+                            </Pressable>
+                          ) : (
+                            <Pressable
+                              ref={active ? (n) => setTourTargetRef('personalArrive', n) : undefined}
+                              collapsable={false}
+                              style={[
+                                styles.cmdSquare,
+                                styles.arrivalCmdSquare,
+                              ]}
+                              onPress={() => {
+                                registerCardActivity(dest.id);
+                                lightTap();
+                                if (user?.id) handleSelfArrival(dest, user.id);
+                              }}
+                              accessibilityRole="button"
+                              accessibilityLabel={t('arrival.mark')}
+                            >
+                              <Ionicons
+                                name="checkmark-circle-outline"
+                                size={chromeTight ? 18 : 20}
+                                color={accent}
+                              />
+                            </Pressable>
+                          )}
+                        </Animated.View>
                       ) : null}
 
                       <View
                         ref={active ? (n) => setTourTargetRef('meetTime', n) : undefined}
                         collapsable={false}
+                        style={styles.meetBtnSlot}
                       >
                       <MeetTimeChip
                         meetAtIso={dest.meetAt as string | null | undefined}
@@ -5595,10 +5852,32 @@ export default function MapScreen({ route, navigation }: Props) {
                         captionDue={t('map.meetTimeCaption')}
                       />
                       </View>
+
+                      {/* Transport last — fixed square; must not shift when Arrived splits. */}
+                      <Pressable
+                        ref={active ? (n) => setTourTargetRef('transport', n) : undefined}
+                        collapsable={false}
+                        style={styles.cmdSquare}
+                        onPress={() => {
+                          registerCardActivity(dest.id);
+                          lightTap();
+                          const order = ['walk', 'transit', 'drive'] as const;
+                          setTravelMode(order[(order.indexOf(travelMode) + 1) % order.length]);
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${t(`map.travelMode.${travelMode}`)} ${etaLabel} ${distLabel}`.trim()}
+                      >
+                        <Ionicons
+                          name={modeIconName}
+                          size={chromeTight ? 18 : 20}
+                          color={accent}
+                        />
+                      </Pressable>
                     </View>
                     )}
                     </View>
                   </liquidGlass.GlassView>
+                  </ArrivalCardExitShell>
                   </View>
                 </View>
               );
@@ -6530,6 +6809,35 @@ export default function MapScreen({ route, navigation }: Props) {
 
 /** Gathering-point card press shell — haptic only, no scale animation. */
 /**
+ * #149 whole-card exit: 440ms fade + slight upward slide when stop completes.
+ */
+function ArrivalCardExitShell({
+  exiting,
+  children,
+}: {
+  exiting: boolean;
+  children: React.ReactNode;
+}) {
+  const style = useAnimatedStyle(() => {
+    return {
+      opacity: withTiming(exiting ? 0 : 1, {
+        duration: ARRIVAL_CARD_EXIT_MS,
+        easing: Easing.out(Easing.cubic),
+      }),
+      transform: [
+        {
+          translateY: withTiming(exiting ? -16 : 0, {
+            duration: ARRIVAL_CARD_EXIT_MS,
+            easing: Easing.out(Easing.cubic),
+          }),
+        },
+      ],
+    };
+  }, [exiting]);
+  return <Animated.View style={style}>{children}</Animated.View>;
+}
+
+/**
  * Meet-time chip on the gather card. Owns due/live caption switching so the
  * parent carousel does not re-render 1×/s — only this chip ticks.
  * Due: top "{time} 集合", bottom "集合時間". Live: top "N 分鐘", bottom "集合倒數".
@@ -6966,8 +7274,11 @@ const makeStyles = (
   const compact = tight || narrow || bucket === 'large';
   const cardPad = compact ? s(14, 10) : s(18, 14);
   const cmdGap = tight ? s(5, 4) : compact ? s(6, 4) : s(8, 6);
-  // Every control is at least cmdSize×cmdSize; mode/maps stay exact squares.
-  const cmdSize = tight ? s(48, 44) : compact ? s(52, 48) : s(56, 52);
+  // Every control is at least 48pt; mode/arrived stay exact squares (#148).
+  const cmdSize = Math.max(
+    GATHER_CMD_MIN_HIT_PT,
+    tight ? s(48, 44) : compact ? s(52, 48) : s(56, 52),
+  );
   // Meet grows with free width; min leaves room for countdown digits.
   // Collapsed 3-btn row gets more meet width than expanded 4-btn.
   const meetMinW = tight ? s(72, 64) : compact ? s(84, 76) : s(104, 92);
@@ -7413,14 +7724,30 @@ const makeStyles = (
       backgroundColor: accentMix(glass.ok, 22),
       borderColor: glass.hairlineSoft,
     },
-    // Meet-time — flex-grows; minHeight floor only (no fixed height) so
+    // Meet-time slot keeps countdown from shifting when Arrived appears (#148).
+    meetBtnSlot: {
+      flexGrow: 0,
+      flexShrink: 0,
+      // 1.5× prior baseline; extra width is taken from the nav flex region.
+      minWidth: Math.max(
+        GATHER_CMD_MIN_HIT_PT,
+        Math.round((meetMinW - 8) * COUNTDOWN_WIDTH_FACTOR),
+      ),
+      maxWidth: Math.max(
+        GATHER_CMD_MIN_HIT_PT,
+        Math.round((meetMinW - 8) * COUNTDOWN_WIDTH_FACTOR) + (tight ? 0 : 24),
+      ),
+    },
+    // Meet-time — fixed-ish width (slot); minHeight floor only so
     // countdown +「集合倒數」never clip under large/bold system type.
     meetBtn: {
-      // Slightly less grow so nav 「完成／路徑／關閉」keeps two characters visible.
-      flexGrow: 1.1,
+      flexGrow: 1,
       flexShrink: 1,
-      flexBasis: 0,
-      minWidth: Math.max(48, meetMinW - 8),
+      flexBasis: '100%',
+      minWidth: Math.max(
+        GATHER_CMD_MIN_HIT_PT,
+        Math.round((meetMinW - 8) * COUNTDOWN_WIDTH_FACTOR),
+      ),
       minHeight: cmdSize,
       borderRadius: s(15, 12),
       flexDirection: 'column',
@@ -7435,6 +7762,7 @@ const makeStyles = (
       overflow: 'visible',
     },
     meetBtnExpanded: {
+      // When Arrived is hidden, allow countdown to absorb free nav space.
       flexGrow: 2.1,
     },
     meetBtnStack: {

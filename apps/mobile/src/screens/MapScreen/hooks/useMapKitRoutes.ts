@@ -32,6 +32,12 @@ interface MapKitRouteInputs {
 export interface MapKitRoutesState {
   selfRoute: DirectionsResult | null;
   memberRoutes: Record<string, DirectionsResult>;
+  /**
+   * Monotonic id for the latest accepted self directions completion.
+   * Bumps even when distance_m equals the previous result so consumers can
+   * re-anchor GPS estimates (#145 route-result freshness).
+   */
+  selfRouteGeneration: number;
 }
 
 type RouteGetter = typeof getDirections;
@@ -48,7 +54,7 @@ export async function loadMapKitRoutes(
   getRoute: RouteGetter = getDirections,
 ): Promise<MapKitRoutesState> {
   if (!gathering) {
-    return { selfRoute: null, memberRoutes: {} };
+    return { selfRoute: null, memberRoutes: {}, selfRouteGeneration: 0 };
   }
 
   // Member MapKit directions are N network/native calls per tick — only when
@@ -75,6 +81,7 @@ export async function loadMapKitRoutes(
   return {
     selfRoute,
     memberRoutes: Object.fromEntries(entries.filter((entry) => entry !== null)),
+    selfRouteGeneration: 0,
   };
 }
 
@@ -116,6 +123,7 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
   const [state, setState] = useState<MapKitRoutesState>({
     selfRoute: null,
     memberRoutes: {},
+    selfRouteGeneration: 0,
   });
   // ponytail: cache lives for one MapScreen mount; cap/TTL only if large groups
   // make measured memory or stale-route behavior a problem.
@@ -128,6 +136,7 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
   const lastEffectKeyRef = useRef<string>('');
   // Track last travel mode so sticky selfRoute does not keep a different mode's path.
   const lastTravelModeRef = useRef(travelMode);
+  const selfRouteGenerationRef = useRef(0);
 
   useEffect(() => {
     const policy = locationPolicy(highAccuracy);
@@ -198,7 +207,12 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
 
     // No target → clear polylines (nav stopped / arrived / next stop not set).
     if (!gathering) {
-      setState({ selfRoute: null, memberRoutes: {} });
+      selfRouteGenerationRef.current += 1;
+      setState({
+        selfRoute: null,
+        memberRoutes: {},
+        selfRouteGeneration: selfRouteGenerationRef.current,
+      });
       lastTravelModeRef.current = travelMode;
       return () => {
         active = false;
@@ -209,7 +223,12 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
     lastTravelModeRef.current = travelMode;
     // Drop previous mode's geometry immediately so only the selected mode shows.
     if (modeChanged) {
-      setState((prev) => ({ ...prev, selfRoute: null }));
+      selfRouteGenerationRef.current += 1;
+      setState((prev) => ({
+        ...prev,
+        selfRoute: null,
+        selfRouteGeneration: selfRouteGenerationRef.current,
+      }));
     }
 
     void loadMapKitRoutes(
@@ -226,9 +245,12 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
       // Fail-closed: empty/failed directions clear the previous polyline so
       // UI falls back to haversine distance + local 估算 ETA (never a stale path).
       // Out-of-order responses are ignored via `active` when effect re-runs.
+      // Always bump generation so equal-distance results still re-anchor (#145).
+      selfRouteGenerationRef.current += 1;
       setState({
         selfRoute: next.selfRoute,
         memberRoutes: next.memberRoutes,
+        selfRouteGeneration: selfRouteGenerationRef.current,
       });
     });
     return () => {
