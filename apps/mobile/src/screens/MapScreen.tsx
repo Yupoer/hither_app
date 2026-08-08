@@ -46,6 +46,8 @@ import Animated, {
   interpolate,
   Extrapolation,
   withSpring,
+  withTiming,
+  Easing,
   FadeIn,
   FadeInRight,
   FadeOut,
@@ -95,6 +97,13 @@ import {
   COUNTDOWN_WIDTH_FACTOR,
   GATHER_CMD_MIN_HIT_PT,
 } from '../utils/gatherCommandLayout';
+import {
+  ARRIVAL_CARD_EXIT_MS,
+  ARRIVAL_EFFECT_HOLD_MS,
+  beginArrivalCardExit,
+  mergeExitingDestinations,
+  type ArrivalCardExitRecord,
+} from '../utils/arrivalCardExit';
 import {
   overlayPersonalOnTeamState,
   projectTeamGatheringState,
@@ -586,7 +595,20 @@ export default function MapScreen({ route, navigation }: Props) {
   );
   // Open stops on today + future trip days (local device date). Past days
   // leave the carousel / reorder list and surface in 歷史行程 instead.
-  const destinations = useMemo(
+  // #149: cards mid exit-hold/exit stay visible after closedAt filters them out.
+  const [arrivalExitRecords, setArrivalExitRecords] = useState<
+    Map<string, ArrivalCardExitRecord>
+  >(() => new Map());
+  const [arrivalExitSnapshots, setArrivalExitSnapshots] = useState<
+    Map<string, Destination>
+  >(() => new Map());
+  const arrivalExitTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>[]>>(
+    new Map(),
+  );
+  const arrivalExitRecordsRef = useRef(arrivalExitRecords);
+  arrivalExitRecordsRef.current = arrivalExitRecords;
+
+  const openDestinations = useMemo(
     () =>
       filterActiveDestinations(
         allScopedDestinations,
@@ -600,6 +622,15 @@ export default function MapScreen({ route, navigation }: Props) {
       group?.departureDate,
       group?.tripDays,
     ],
+  );
+  const destinations = useMemo(
+    () =>
+      mergeExitingDestinations(
+        openDestinations,
+        arrivalExitSnapshots,
+        arrivalExitRecords,
+      ),
+    [openDestinations, arrivalExitSnapshots, arrivalExitRecords],
   );
   const canEditItinerary = !!isLeader;
 
@@ -1385,6 +1416,90 @@ export default function MapScreen({ route, navigation }: Props) {
   const [autoArrivedDestId, setAutoArrivedDestId] = useState<string | null>(null);
   const [arrivalCelebrateDestId, setArrivalCelebrateDestId] = useState<string | null>(null);
   const [requestingStartDestId, setRequestingStartDestId] = useState<string | null>(null);
+
+  /** #149: after stop completes (closedAt), hold effect 3.2s then 440ms card exit. */
+  const startArrivalCardExit = useCallback((destination: Destination) => {
+    const started = beginArrivalCardExit(
+      arrivalExitRecordsRef.current,
+      destination.id,
+      Date.now(),
+    );
+    if (!started) return; // idempotent — no double exit / ghost
+    setArrivalExitRecords((prev) => {
+      const next = new Map(prev);
+      next.set(destination.id, started);
+      return next;
+    });
+    setArrivalExitSnapshots((prev) => {
+      const next = new Map(prev);
+      next.set(destination.id, destination);
+      return next;
+    });
+    setArrivalCelebrateDestId(destination.id);
+
+    const clearTimers = () => {
+      const list = arrivalExitTimersRef.current.get(destination.id);
+      if (list) {
+        for (const t of list) clearTimeout(t);
+        arrivalExitTimersRef.current.delete(destination.id);
+      }
+    };
+    clearTimers();
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    timers.push(
+      setTimeout(() => {
+        setArrivalCelebrateDestId((cur) => (cur === destination.id ? null : cur));
+        setArrivalExitRecords((prev) => {
+          const cur = prev.get(destination.id);
+          if (!cur) return prev;
+          const next = new Map(prev);
+          next.set(destination.id, { ...cur, phase: 'exit' });
+          return next;
+        });
+      }, ARRIVAL_EFFECT_HOLD_MS),
+    );
+    timers.push(
+      setTimeout(() => {
+        setArrivalExitRecords((prev) => {
+          const next = new Map(prev);
+          next.delete(destination.id);
+          return next;
+        });
+        setArrivalExitSnapshots((prev) => {
+          const next = new Map(prev);
+          next.delete(destination.id);
+          return next;
+        });
+        arrivalExitTimersRef.current.delete(destination.id);
+      }, ARRIVAL_EFFECT_HOLD_MS + ARRIVAL_CARD_EXIT_MS),
+    );
+    arrivalExitTimersRef.current.set(destination.id, timers);
+  }, []);
+
+  // Detect newly completed stops → start hold/exit (not historical closed on mount).
+  const knownClosedDestIdsRef = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const closedNow = allScopedDestinations.filter((d) => d.closedAt != null);
+    if (knownClosedDestIdsRef.current == null) {
+      // First paint: seed known closed so past history does not animate out.
+      knownClosedDestIdsRef.current = new Set(closedNow.map((d) => d.id));
+      return;
+    }
+    for (const dest of closedNow) {
+      if (knownClosedDestIdsRef.current.has(dest.id)) continue;
+      knownClosedDestIdsRef.current.add(dest.id);
+      startArrivalCardExit(dest);
+    }
+  }, [allScopedDestinations, startArrivalCardExit]);
+
+  useEffect(() => {
+    return () => {
+      for (const timers of arrivalExitTimersRef.current.values()) {
+        for (const t of timers) clearTimeout(t);
+      }
+      arrivalExitTimersRef.current.clear();
+    };
+  }, []);
 
   // Wired after promptCompleteAfterArrival is defined (see below).
   const afterPersonalArrivalRef = useRef<
@@ -5225,6 +5340,7 @@ export default function MapScreen({ route, navigation }: Props) {
                 || navCmd.disabled
                 || Boolean(requestingStartDestId)
               );
+              const exitPhase = arrivalExitRecords.get(dest.id)?.phase ?? null;
               return (
                 <View
                   key={`carousel-dest-${dest.id}-${index}`}
@@ -5234,6 +5350,7 @@ export default function MapScreen({ route, navigation }: Props) {
                     ref={active ? (n) => setTourTargetRef('gatherCard', n) : undefined}
                     collapsable={false}
                   >
+                  <ArrivalCardExitShell exiting={exitPhase === 'exit'}>
                   <liquidGlass.GlassView
                     tintColor={active ? glass.cardActive : glass.card}
                     style={[
@@ -5741,6 +5858,7 @@ export default function MapScreen({ route, navigation }: Props) {
                     )}
                     </View>
                   </liquidGlass.GlassView>
+                  </ArrivalCardExitShell>
                   </View>
                 </View>
               );
@@ -6671,6 +6789,35 @@ export default function MapScreen({ route, navigation }: Props) {
 }
 
 /** Gathering-point card press shell — haptic only, no scale animation. */
+/**
+ * #149 whole-card exit: 440ms fade + slight upward slide when stop completes.
+ */
+function ArrivalCardExitShell({
+  exiting,
+  children,
+}: {
+  exiting: boolean;
+  children: React.ReactNode;
+}) {
+  const style = useAnimatedStyle(() => {
+    return {
+      opacity: withTiming(exiting ? 0 : 1, {
+        duration: ARRIVAL_CARD_EXIT_MS,
+        easing: Easing.out(Easing.cubic),
+      }),
+      transform: [
+        {
+          translateY: withTiming(exiting ? -16 : 0, {
+            duration: ARRIVAL_CARD_EXIT_MS,
+            easing: Easing.out(Easing.cubic),
+          }),
+        },
+      ],
+    };
+  }, [exiting]);
+  return <Animated.View style={style}>{children}</Animated.View>;
+}
+
 /**
  * Meet-time chip on the gather card. Owns due/live caption switching so the
  * parent carousel does not re-render 1×/s — only this chip ticks.
