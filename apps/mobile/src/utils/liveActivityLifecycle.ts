@@ -49,6 +49,39 @@ export class LiveActivityLifecycleReconciler {
     return this.pushToken;
   }
 
+  /**
+   * ActivityKit token rotation for the active activity.
+   * Updates push token (and adopts handle when missing) without bumping
+   * generation or starting a new activity. Ignores tokens for a different
+   * live handle so a stale event cannot clobber a newer journey.
+   */
+  adoptPushToken(activityId: string, pushToken: string | undefined): boolean {
+    if (!activityId || !pushToken) return false;
+    if (this.handle && this.handle !== activityId) return false;
+    if (!this.handle) {
+      this.handle = activityId;
+    }
+    this.pushToken = pushToken;
+    return true;
+  }
+
+  /**
+   * Observe-existing path: bind a recovered native activity to this reconciler
+   * when we have no handle yet, or when the id already matches.
+   */
+  adoptObservedActivity(opts: {
+    activityId: string;
+    pushToken?: string;
+    destinationId?: string | null;
+  }): boolean {
+    if (!opts.activityId) return false;
+    if (this.handle && this.handle !== opts.activityId) return false;
+    this.handle = opts.activityId;
+    if (opts.pushToken) this.pushToken = opts.pushToken;
+    if (opts.destinationId) this.destinationId = opts.destinationId;
+    return true;
+  }
+
   /** Bump generation so any in-flight work becomes stale after this call. */
   private nextGeneration(): number {
     this.generation += 1;

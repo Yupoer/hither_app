@@ -127,13 +127,26 @@ export function useLiveActivity(
     const subscription = liveActivity.addPushTokenListener((event) => {
       const reconciler = reconcilerRef.current;
       if (!reconciler) return;
-      if (
-        event.activityId !== reconciler.currentHandle &&
-        (!event.navigationSessionId ||
-          event.navigationSessionId !== sessionRef.current?.navigationSessionId)
-      ) return;
-      // Token rotation for the active activity — keep handle, refresh push token
-      // via a no-op start for same destination is unnecessary; persist only.
+      const sameHandle = event.activityId === reconciler.currentHandle;
+      const sameNavSession =
+        !!event.navigationSessionId
+        && event.navigationSessionId === sessionRef.current?.navigationSessionId;
+      if (!sameHandle && !sameNavSession && reconciler.currentHandle) return;
+
+      // Adopt rotated token (and handle when observing existing) before persist
+      // so Supabase receives the live push token, not the start-time value.
+      const token = event.pushToken;
+      if (token) {
+        if (sameHandle || !reconciler.currentHandle) {
+          reconciler.adoptPushToken(event.activityId, token);
+        } else if (sameNavSession) {
+          reconciler.adoptObservedActivity({
+            activityId: event.activityId,
+            pushToken: token,
+            destinationId: sessionRef.current?.destinationId,
+          });
+        }
+      }
       void persistSession(event.activityId, { force: true }).catch(() => undefined);
     });
     return () => subscription.remove();

@@ -100,9 +100,14 @@ import {
 import {
   ARRIVAL_CARD_EXIT_MS,
   ARRIVAL_EFFECT_HOLD_MS,
+  PERSONAL_ARRIVAL_CELEBRATE_MS,
+  armCelebrateClearTimer,
   beginArrivalCardExit,
+  cancelCelebrateClearTimer,
+  clearAllCelebrateClearTimers,
   mergeExitingDestinations,
   type ArrivalCardExitRecord,
+  type CelebrateClearStore,
 } from '../utils/arrivalCardExit';
 import {
   overlayPersonalOnTeamState,
@@ -605,6 +610,8 @@ export default function MapScreen({ route, navigation }: Props) {
   const arrivalExitTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>[]>>(
     new Map(),
   );
+  /** Personal 1.6s / completion 3.2s share celebrate UI — one clear timer per dest. */
+  const celebrateClearTimersRef = useRef<CelebrateClearStore>(new Map());
   const arrivalExitRecordsRef = useRef(arrivalExitRecords);
   arrivalExitRecordsRef.current = arrivalExitRecords;
 
@@ -1435,7 +1442,17 @@ export default function MapScreen({ route, navigation }: Props) {
       next.set(destination.id, destination);
       return next;
     });
+    // Cancel personal-arrival 1.6s clear so it cannot truncate the 3.2s hold (#149).
+    cancelCelebrateClearTimer(celebrateClearTimersRef.current, destination.id);
     setArrivalCelebrateDestId(destination.id);
+    armCelebrateClearTimer(
+      celebrateClearTimersRef.current,
+      destination.id,
+      ARRIVAL_EFFECT_HOLD_MS,
+      () => {
+        setArrivalCelebrateDestId((cur) => (cur === destination.id ? null : cur));
+      },
+    );
 
     const clearTimers = () => {
       const list = arrivalExitTimersRef.current.get(destination.id);
@@ -1448,7 +1465,6 @@ export default function MapScreen({ route, navigation }: Props) {
     const timers: ReturnType<typeof setTimeout>[] = [];
     timers.push(
       setTimeout(() => {
-        setArrivalCelebrateDestId((cur) => (cur === destination.id ? null : cur));
         setArrivalExitRecords((prev) => {
           const cur = prev.get(destination.id);
           if (!cur) return prev;
@@ -1498,6 +1514,7 @@ export default function MapScreen({ route, navigation }: Props) {
         for (const t of timers) clearTimeout(t);
       }
       arrivalExitTimersRef.current.clear();
+      clearAllCelebrateClearTimers(celebrateClearTimersRef.current);
     };
   }, []);
 
@@ -1722,10 +1739,16 @@ export default function MapScreen({ route, navigation }: Props) {
     if (routeDistanceM != null && Number.isFinite(routeDistanceM)) {
       lastRouteDistanceRef.current = routeDistanceM;
       setLastRouteDistanceM(routeDistanceM);
-      // Anchor GPS for local remaining estimate between throttled route results.
-      routeAnchorRef.current = { gps: deviceCoords, remainingM: routeDistanceM };
-      setRouteAnchorGps(deviceCoords);
-      setRouteAnchorRemainingM(routeDistanceM);
+      // Anchor only when a *new* route result arrives — not every GPS tick.
+      // Re-anchoring on deviceCoords would zero the between-route GPS estimate.
+      const prevAnchor = routeAnchorRef.current;
+      const isNewRouteResult =
+        !prevAnchor || prevAnchor.remainingM !== routeDistanceM;
+      if (isNewRouteResult) {
+        routeAnchorRef.current = { gps: deviceCoords, remainingM: routeDistanceM };
+        setRouteAnchorGps(deviceCoords);
+        setRouteAnchorRemainingM(routeDistanceM);
+      }
     }
     const deviceStraightM = distanceMeters(deviceCoords, navTarget.coordinates);
     const distanceM = initialJourneyDistance(routeDistanceM, deviceStraightM);
@@ -2943,9 +2966,15 @@ export default function MapScreen({ route, navigation }: Props) {
       arrivalFeedbackShownRef.current = destination.id;
       setArrivalCelebrateDestId(destination.id);
       alertBuzz();
-      setTimeout(() => {
-        setArrivalCelebrateDestId((cur) => (cur === destination.id ? null : cur));
-      }, 1_600);
+      // Tracked so startArrivalCardExit can cancel this before the 3.2s hold.
+      armCelebrateClearTimer(
+        celebrateClearTimersRef.current,
+        destination.id,
+        PERSONAL_ARRIVAL_CELEBRATE_MS,
+        () => {
+          setArrivalCelebrateDestId((cur) => (cur === destination.id ? null : cur));
+        },
+      );
     }
     if (opts?.stopNav) void stopNavigation();
     if (

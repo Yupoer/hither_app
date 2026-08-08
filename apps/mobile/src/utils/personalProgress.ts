@@ -165,11 +165,12 @@ export function derivePersonalProgress(
     : null;
 
   // Local GPS estimate between throttled route results (before correction).
+  // Always compute when we have an anchor — production keeps a finite stale
+  // routeDistanceM between MapKit/network samples, so we must not gate on null.
   let gpsEstimatedRemaining: number | null = null;
   if (
     hasDevice
     && input.distanceSource === 'route'
-    && (input.routeDistanceM == null || !Number.isFinite(input.routeDistanceM))
     && input.routeAnchorGps != null
     && input.routeAnchorRemainingM != null
     && Number.isFinite(input.routeAnchorRemainingM)
@@ -181,24 +182,57 @@ export function derivePersonalProgress(
     });
   }
 
-  const liveDistance = sameMetricDistance(
-    input.distanceSource,
-    input.routeDistanceM,
-    straightM,
-    // Prefer GPS local estimate over stale lastRoute when available.
-    gpsEstimatedRemaining ?? input.lastRouteDistanceM,
-  );
+  const routeMFinite =
+    input.routeDistanceM != null
+    && Number.isFinite(input.routeDistanceM)
+    && input.routeDistanceM >= 0
+      ? input.routeDistanceM
+      : null;
+
+  // Fresh route result differs from the anchor remaining → snap to it.
+  // Same remaining as the anchor (stale sticky route) → prefer GPS local move.
+  const routeIsFreshSnap =
+    routeMFinite != null
+    && (
+      input.routeAnchorRemainingM == null
+      || !Number.isFinite(input.routeAnchorRemainingM)
+      || routeMFinite !== input.routeAnchorRemainingM
+    );
+
+  let liveDistance: number | null = null;
+  if (input.distanceSource === 'route') {
+    if (routeIsFreshSnap && routeMFinite != null) {
+      liveDistance = routeMFinite;
+    } else if (gpsEstimatedRemaining != null) {
+      liveDistance = gpsEstimatedRemaining;
+    } else {
+      liveDistance = sameMetricDistance(
+        input.distanceSource,
+        input.routeDistanceM,
+        straightM,
+        input.lastRouteDistanceM,
+      );
+    }
+  } else {
+    liveDistance = sameMetricDistance(
+      input.distanceSource,
+      input.routeDistanceM,
+      straightM,
+      gpsEstimatedRemaining ?? input.lastRouteDistanceM,
+    );
+  }
 
   // When no locked source yet, prefer route then straight.
   let distanceMetersValue =
     liveDistance
-    ?? (input.routeDistanceM != null
-      && Number.isFinite(input.routeDistanceM)
-      && input.routeDistanceM >= 0
-      ? input.routeDistanceM
-      : null)
+    ?? routeMFinite
     ?? gpsEstimatedRemaining
     ?? straightM;
+
+  const usedGpsLocalEstimate =
+    gpsEstimatedRemaining != null
+    && distanceMetersValue === gpsEstimatedRemaining
+    && !routeIsFreshSnap;
 
   // No live sample: retain last valid presentation (no zero / regress).
   if (
@@ -271,19 +305,23 @@ export function derivePersonalProgress(
       && gpsEstimatedRemaining == null
     );
 
+  // Between-route GPS estimate: recompute ETA from distance (stale route ETA lies).
+  // Fresh route snap may keep routeEtaSeconds when provided.
   const etaSeconds =
     distanceMetersValue == null
       ? input.lastValidEtaSeconds != null && Number.isFinite(input.lastValidEtaSeconds)
         ? Math.max(0, input.lastValidEtaSeconds)
         : null
-      : input.routeEtaSeconds != null && Number.isFinite(input.routeEtaSeconds)
-        ? Math.max(0, input.routeEtaSeconds)
-        : usedStickyDistance
-          && input.lastValidEtaSeconds != null
-          && Number.isFinite(input.lastValidEtaSeconds)
-          && distanceMetersValue === input.lastValidDistanceM
-          ? Math.max(0, input.lastValidEtaSeconds)
-          : etaSecondsFor(distanceMetersValue, input.travelMode);
+      : usedGpsLocalEstimate
+        ? etaSecondsFor(distanceMetersValue, input.travelMode)
+        : input.routeEtaSeconds != null && Number.isFinite(input.routeEtaSeconds)
+          ? Math.max(0, input.routeEtaSeconds)
+          : usedStickyDistance
+            && input.lastValidEtaSeconds != null
+            && Number.isFinite(input.lastValidEtaSeconds)
+            && distanceMetersValue === input.lastValidDistanceM
+            ? Math.max(0, input.lastValidEtaSeconds)
+            : etaSecondsFor(distanceMetersValue, input.travelMode);
 
   let progress: number | null = null;
   const initialM = input.initialDistanceM;

@@ -1,10 +1,14 @@
 import {
   ARRIVAL_CARD_EXIT_MS,
   ARRIVAL_EFFECT_HOLD_MS,
+  PERSONAL_ARRIVAL_CELEBRATE_MS,
   advanceArrivalCardExit,
+  armCelebrateClearTimer,
   arrivalCardExitPhase,
   beginArrivalCardExit,
+  cancelCelebrateClearTimer,
   mergeExitingDestinations,
+  type CelebrateClearStore,
 } from '../utils/arrivalCardExit';
 
 describe('arrivalCardExit (#149)', () => {
@@ -61,5 +65,62 @@ describe('arrivalCardExit (#149)', () => {
     ]);
     const merged = mergeExitingDestinations(open, snapshots, records);
     expect(merged.map((d) => d.id)).toEqual(['a']);
+  });
+
+  it('completion hold cancels personal 1.6s clear so effect lasts 3.2s (#149 Sol)', () => {
+    jest.useFakeTimers();
+    const store: CelebrateClearStore = new Map();
+    let celebrateId: string | null = null;
+
+    // Personal arrival flash.
+    celebrateId = 'd1';
+    armCelebrateClearTimer(
+      store,
+      'd1',
+      PERSONAL_ARRIVAL_CELEBRATE_MS,
+      () => {
+        if (celebrateId === 'd1') celebrateId = null;
+      },
+    );
+
+    // Stop completes promptly → start 3.2s hold (must cancel 1.6s timer).
+    cancelCelebrateClearTimer(store, 'd1');
+    celebrateId = 'd1';
+    armCelebrateClearTimer(
+      store,
+      'd1',
+      ARRIVAL_EFFECT_HOLD_MS,
+      () => {
+        if (celebrateId === 'd1') celebrateId = null;
+      },
+    );
+
+    jest.advanceTimersByTime(PERSONAL_ARRIVAL_CELEBRATE_MS);
+    expect(celebrateId).toBe('d1'); // still holding past 1.6s
+
+    jest.advanceTimersByTime(ARRIVAL_EFFECT_HOLD_MS - PERSONAL_ARRIVAL_CELEBRATE_MS - 1);
+    expect(celebrateId).toBe('d1');
+
+    jest.advanceTimersByTime(1);
+    expect(celebrateId).toBeNull();
+
+    jest.useRealTimers();
+  });
+
+  it('MapScreen owns celebrate clear via armCelebrateClearTimer', () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = require('fs') as typeof import('fs');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const path = require('path') as typeof import('path');
+    const map = fs.readFileSync(
+      path.join(__dirname, '../screens/MapScreen.tsx'),
+      'utf8',
+    );
+    expect(map).toContain('armCelebrateClearTimer');
+    expect(map).toContain('cancelCelebrateClearTimer');
+    expect(map).toContain('PERSONAL_ARRIVAL_CELEBRATE_MS');
+    expect(map).toContain('ARRIVAL_EFFECT_HOLD_MS');
+    // No orphan untracked 1600 clear that can race the hold.
+    expect(map).not.toMatch(/setTimeout\(\(\) => \{\s*setArrivalCelebrateDestId[\s\S]*?\}, 1_600\)/);
   });
 });

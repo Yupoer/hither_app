@@ -145,4 +145,49 @@ describe('LiveActivityLifecycleReconciler (#146)', () => {
     expect(reconciler.currentDestinationId).toBe('c');
     expect(reconciler.currentHandle).toBeTruthy();
   });
+
+  it('adopts push-token rotation for the active handle (#146 Sol)', async () => {
+    const api = {
+      endGroupActivity: jest.fn(async () => undefined),
+      endAllGroupActivities: jest.fn(async () => undefined),
+      startGroupActivity: jest.fn(async () => ({
+        activityId: 'act-1',
+        pushToken: 'tok-initial',
+      })),
+      deleteSession: jest.fn(async () => undefined),
+      deleteAllSessions: jest.fn(async () => undefined),
+    };
+    const reconciler = new LiveActivityLifecycleReconciler(api);
+    await reconciler.request({ kind: 'start', destinationId: 'd1' });
+    expect(reconciler.currentPushToken).toBe('tok-initial');
+
+    expect(reconciler.adoptPushToken('act-1', 'tok-rotated')).toBe(true);
+    expect(reconciler.currentPushToken).toBe('tok-rotated');
+    expect(reconciler.currentHandle).toBe('act-1');
+
+    // Foreign activity must not clobber the live token.
+    expect(reconciler.adoptPushToken('act-other', 'tok-evil')).toBe(false);
+    expect(reconciler.currentPushToken).toBe('tok-rotated');
+  });
+
+  it('adopts observed existing activity when handle is missing', () => {
+    const api = {
+      endGroupActivity: jest.fn(async () => undefined),
+      endAllGroupActivities: jest.fn(async () => undefined),
+      startGroupActivity: jest.fn(async () => null),
+      deleteSession: jest.fn(async () => undefined),
+      deleteAllSessions: jest.fn(async () => undefined),
+    };
+    const reconciler = new LiveActivityLifecycleReconciler(api);
+    expect(
+      reconciler.adoptObservedActivity({
+        activityId: 'recovered',
+        pushToken: 'tok-obs',
+        destinationId: 'd1',
+      }),
+    ).toBe(true);
+    expect(reconciler.currentHandle).toBe('recovered');
+    expect(reconciler.currentPushToken).toBe('tok-obs');
+    expect(reconciler.currentDestinationId).toBe('d1');
+  });
 });

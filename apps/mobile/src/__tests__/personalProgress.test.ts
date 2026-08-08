@@ -222,6 +222,44 @@ describe('derivePersonalProgress (shared local model)', () => {
     expect(model.distanceMeters!).toBeGreaterThanOrEqual(0);
   });
 
+  it('uses GPS local estimate when routeDistanceM is still a finite stale result (#145 Sol)', () => {
+    // Production keeps sticky selfRoute.distanceMeters between throttled requests.
+    // Two accepted GPS samples with the same finite route remaining must move.
+    const atAnchor = derivePersonalProgress({
+      deviceCoords: origin,
+      targetCoords: atTarget,
+      initialDistanceM: 2000,
+      hasDepartedStart: true,
+      travelMode: 'walk',
+      distanceSource: 'route',
+      routeDistanceM: 1000,
+      lastRouteDistanceM: 1000,
+      routeAnchorGps: origin,
+      routeAnchorRemainingM: 1000,
+      routeEtaSeconds: 900,
+    });
+    const afterMove = derivePersonalProgress({
+      deviceCoords: nearTarget,
+      targetCoords: atTarget,
+      initialDistanceM: 2000,
+      hasDepartedStart: true,
+      travelMode: 'walk',
+      distanceSource: 'route',
+      routeDistanceM: 1000, // still finite, same stale route sample
+      lastRouteDistanceM: 1000,
+      routeAnchorGps: origin,
+      routeAnchorRemainingM: 1000,
+      routeEtaSeconds: 900,
+    });
+    expect(atAnchor.distanceMeters).toBe(1000);
+    expect(afterMove.distanceMeters).not.toBeNull();
+    expect(afterMove.distanceMeters!).toBeLessThan(1000);
+    expect(afterMove.distanceMeters!).toBeGreaterThanOrEqual(0);
+    // ETA must follow the local remaining, not the stale route ETA.
+    expect(afterMove.etaSeconds).not.toBe(900);
+    expect(afterMove.etaSeconds!).toBeLessThan(900);
+  });
+
   it('corrects to fresh route result when available (overrides local estimate)', () => {
     const model = derivePersonalProgress({
       deviceCoords: nearTarget,
@@ -296,6 +334,8 @@ describe('personal progress surface contracts', () => {
     expect(map).toContain('routeAnchorGps');
     expect(map).toContain('previousProgressMax');
     expect(map).toContain('lastValidDistanceM');
+    // Anchor only on new route result — not every deviceCoords tick.
+    expect(map).toContain('isNewRouteResult');
     // Markers use team completion, not personal arrivals.
     expect(map).toContain('completedDestinationIds={teamCompletedDestinationIds}');
     // Target pulse only while journey is active with a nav target.

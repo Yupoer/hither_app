@@ -95,6 +95,14 @@ describe('ActivityKit remote push contract', () => {
     expect(liveHook).toContain('addPushTokenListener');
   });
 
+  it('adopts rotated push tokens on the reconciler before persist (#146 Sol)', () => {
+    expect(liveHook).toContain('adoptPushToken');
+    expect(liveHook).toContain('adoptObservedActivity');
+    expect(liveHook).toContain('event.pushToken');
+    // Persist still uses reconciler token (updated by adopt).
+    expect(liveHook).toContain('reconcilerRef.current?.currentPushToken');
+  });
+
   it('uses generation-aware lifecycle reconciler for start/stop races (#146)', () => {
     expect(liveHook).toContain('LiveActivityLifecycleReconciler');
     expect(liveHook).toContain("kind: 'start'");
