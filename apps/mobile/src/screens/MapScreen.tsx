@@ -47,6 +47,7 @@ import Animated, {
   Extrapolation,
   withSpring,
   FadeIn,
+  FadeInRight,
   FadeOut,
   ZoomIn,
   ZoomOut,
@@ -88,6 +89,12 @@ import {
   resolveCompletePrompt,
   resolveNavCommand,
 } from '../utils/gatherCommand';
+import {
+  ARRIVED_FADE_MS,
+  ARRIVED_SPLIT_MS,
+  COUNTDOWN_WIDTH_FACTOR,
+  GATHER_CMD_MIN_HIT_PT,
+} from '../utils/gatherCommandLayout';
 import {
   overlayPersonalOnTeamState,
   projectTeamGatheringState,
@@ -5507,6 +5514,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
                     </GatheringCardPressable>
                     {/* a11y-layout:commandRow — always one row.
+                        Order (#148): [Start/End | Arrived] [Countdown] [Transport]
                         Outside expand Pressable so Start never toggles the card.
                         Density tracks narrow + Dynamic Type. */}
                     {cardExpanded && (
@@ -5618,78 +5626,69 @@ export default function MapScreen({ route, navigation }: Props) {
                         </Pressable>
                       ) : null}
 
-                      <Pressable
-                        ref={active ? (n) => setTourTargetRef('transport', n) : undefined}
-                        collapsable={false}
-                        style={styles.cmdSquare}
-                        onPress={() => {
-                          registerCardActivity(dest.id);
-                          lightTap();
-                          const order = ['walk', 'transit', 'drive'] as const;
-                          setTravelMode(order[(order.indexOf(travelMode) + 1) % order.length]);
-                        }}
-                        accessibilityRole="button"
-                        accessibilityLabel={`${t(`map.travelMode.${travelMode}`)} ${etaLabel} ${distLabel}`.trim()}
-                      >
-                        <Ionicons
-                          name={modeIconName}
-                          size={chromeTight ? 18 : 20}
-                          color={accent}
-                        />
-                      </Pressable>
-
-                      {/* Personal check-in (arrive ≠ complete). Always visible
-                          for open stops when sequential rules allow marking. */}
-                      {showArrivalControl ? personallyArrived ? (
-                        <Pressable
-                          ref={active ? (n) => setTourTargetRef('personalArrive', n) : undefined}
+                      {/* Personal check-in splits from Start/End right (#148). */}
+                      {showArrivalControl ? (
+                        <Animated.View
+                          entering={
+                            tourReduceMotion
+                              ? FadeIn.duration(ARRIVED_FADE_MS)
+                              : FadeInRight.duration(ARRIVED_SPLIT_MS)
+                          }
                           collapsable={false}
-                          style={[
-                            styles.cmdSquare,
-                            styles.arrivalCmdSquare,
-                            styles.arrivalCmdArrived,
-                          ]}
-                          onPress={() => {
-                            registerCardActivity(dest.id);
-                            lightTap();
-                            if (user?.id) handleArrival(dest, user.id, false);
-                          }}
-                          accessibilityRole="button"
-                          accessibilityLabel={t('arrival.undo')}
                         >
-                          <Ionicons
-                            name="checkmark-circle"
-                            size={chromeTight ? 18 : 20}
-                            color={glass.ok}
-                          />
-                        </Pressable>
-                      ) : (
-                        <Pressable
-                          ref={active ? (n) => setTourTargetRef('personalArrive', n) : undefined}
-                          collapsable={false}
-                          style={[
-                            styles.cmdSquare,
-                            styles.arrivalCmdSquare,
-                          ]}
-                          onPress={() => {
-                            registerCardActivity(dest.id);
-                            lightTap();
-                            if (user?.id) handleSelfArrival(dest, user.id);
-                          }}
-                          accessibilityRole="button"
-                          accessibilityLabel={t('arrival.mark')}
-                        >
-                          <Ionicons
-                            name="checkmark-circle-outline"
-                            size={chromeTight ? 18 : 20}
-                            color={accent}
-                          />
-                        </Pressable>
+                          {personallyArrived ? (
+                            <Pressable
+                              ref={active ? (n) => setTourTargetRef('personalArrive', n) : undefined}
+                              collapsable={false}
+                              style={[
+                                styles.cmdSquare,
+                                styles.arrivalCmdSquare,
+                                styles.arrivalCmdArrived,
+                              ]}
+                              onPress={() => {
+                                registerCardActivity(dest.id);
+                                lightTap();
+                                if (user?.id) handleArrival(dest, user.id, false);
+                              }}
+                              accessibilityRole="button"
+                              accessibilityLabel={t('arrival.undo')}
+                            >
+                              <Ionicons
+                                name="checkmark-circle"
+                                size={chromeTight ? 18 : 20}
+                                color={glass.ok}
+                              />
+                            </Pressable>
+                          ) : (
+                            <Pressable
+                              ref={active ? (n) => setTourTargetRef('personalArrive', n) : undefined}
+                              collapsable={false}
+                              style={[
+                                styles.cmdSquare,
+                                styles.arrivalCmdSquare,
+                              ]}
+                              onPress={() => {
+                                registerCardActivity(dest.id);
+                                lightTap();
+                                if (user?.id) handleSelfArrival(dest, user.id);
+                              }}
+                              accessibilityRole="button"
+                              accessibilityLabel={t('arrival.mark')}
+                            >
+                              <Ionicons
+                                name="checkmark-circle-outline"
+                                size={chromeTight ? 18 : 20}
+                                color={accent}
+                              />
+                            </Pressable>
+                          )}
+                        </Animated.View>
                       ) : null}
 
                       <View
                         ref={active ? (n) => setTourTargetRef('meetTime', n) : undefined}
                         collapsable={false}
+                        style={styles.meetBtnSlot}
                       >
                       <MeetTimeChip
                         meetAtIso={dest.meetAt as string | null | undefined}
@@ -5717,6 +5716,27 @@ export default function MapScreen({ route, navigation }: Props) {
                         captionDue={t('map.meetTimeCaption')}
                       />
                       </View>
+
+                      {/* Transport last — fixed square; must not shift when Arrived splits. */}
+                      <Pressable
+                        ref={active ? (n) => setTourTargetRef('transport', n) : undefined}
+                        collapsable={false}
+                        style={styles.cmdSquare}
+                        onPress={() => {
+                          registerCardActivity(dest.id);
+                          lightTap();
+                          const order = ['walk', 'transit', 'drive'] as const;
+                          setTravelMode(order[(order.indexOf(travelMode) + 1) % order.length]);
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${t(`map.travelMode.${travelMode}`)} ${etaLabel} ${distLabel}`.trim()}
+                      >
+                        <Ionicons
+                          name={modeIconName}
+                          size={chromeTight ? 18 : 20}
+                          color={accent}
+                        />
+                      </Pressable>
                     </View>
                     )}
                     </View>
@@ -7088,8 +7108,11 @@ const makeStyles = (
   const compact = tight || narrow || bucket === 'large';
   const cardPad = compact ? s(14, 10) : s(18, 14);
   const cmdGap = tight ? s(5, 4) : compact ? s(6, 4) : s(8, 6);
-  // Every control is at least cmdSize×cmdSize; mode/maps stay exact squares.
-  const cmdSize = tight ? s(48, 44) : compact ? s(52, 48) : s(56, 52);
+  // Every control is at least 48pt; mode/arrived stay exact squares (#148).
+  const cmdSize = Math.max(
+    GATHER_CMD_MIN_HIT_PT,
+    tight ? s(48, 44) : compact ? s(52, 48) : s(56, 52),
+  );
   // Meet grows with free width; min leaves room for countdown digits.
   // Collapsed 3-btn row gets more meet width than expanded 4-btn.
   const meetMinW = tight ? s(72, 64) : compact ? s(84, 76) : s(104, 92);
@@ -7535,14 +7558,30 @@ const makeStyles = (
       backgroundColor: accentMix(glass.ok, 22),
       borderColor: glass.hairlineSoft,
     },
-    // Meet-time — flex-grows; minHeight floor only (no fixed height) so
+    // Meet-time slot keeps countdown from shifting when Arrived appears (#148).
+    meetBtnSlot: {
+      flexGrow: 0,
+      flexShrink: 0,
+      // 1.5× prior baseline; extra width is taken from the nav flex region.
+      minWidth: Math.max(
+        GATHER_CMD_MIN_HIT_PT,
+        Math.round((meetMinW - 8) * COUNTDOWN_WIDTH_FACTOR),
+      ),
+      maxWidth: Math.max(
+        GATHER_CMD_MIN_HIT_PT,
+        Math.round((meetMinW - 8) * COUNTDOWN_WIDTH_FACTOR) + (tight ? 0 : 24),
+      ),
+    },
+    // Meet-time — fixed-ish width (slot); minHeight floor only so
     // countdown +「集合倒數」never clip under large/bold system type.
     meetBtn: {
-      // Slightly less grow so nav 「完成／路徑／關閉」keeps two characters visible.
-      flexGrow: 1.1,
+      flexGrow: 1,
       flexShrink: 1,
-      flexBasis: 0,
-      minWidth: Math.max(48, meetMinW - 8),
+      flexBasis: '100%',
+      minWidth: Math.max(
+        GATHER_CMD_MIN_HIT_PT,
+        Math.round((meetMinW - 8) * COUNTDOWN_WIDTH_FACTOR),
+      ),
       minHeight: cmdSize,
       borderRadius: s(15, 12),
       flexDirection: 'column',
@@ -7557,6 +7596,7 @@ const makeStyles = (
       overflow: 'visible',
     },
     meetBtnExpanded: {
+      // When Arrived is hidden, allow countdown to absorb free nav space.
       flexGrow: 2.1,
     },
     meetBtnStack: {

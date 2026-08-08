@@ -373,9 +373,14 @@ describe('map UI placement contracts', () => {
     const commandRow = mapScreen.indexOf('styles.commandRow');
     const arrivalButton = mapScreen.indexOf('arrivalCmdSquare', commandRow);
     const meetButton = mapScreen.indexOf('styles.meetBtn', commandRow);
+    // Transport is after countdown (#148 order: nav | arrived | countdown | transport).
+    const transportAfterMeet = mapScreen.indexOf("setTourTargetRef('transport'", meetButton);
 
     expect(arrivalButton).toBeGreaterThan(commandRow);
     expect(arrivalButton).toBeLessThan(meetButton);
+    expect(transportAfterMeet).toBeGreaterThan(meetButton);
+    expect(mapScreen).toContain('ARRIVED_SPLIT_MS');
+    expect(mapScreen).toContain('FadeInRight');
     expect(mapScreen).toContain('setDestinationArrivalAt');
     // Arrive is one-tap now — no multi-option time-choice Alert.
     expect(mapScreen).toContain('handleSelfArrival');
