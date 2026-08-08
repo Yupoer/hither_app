@@ -147,6 +147,16 @@ describe('ActivityKit remote push contract', () => {
     expect(mapScreen).toContain('memberArrived:');
   });
 
+  it('animates progress bar and percent ~600ms with Reduce Motion branch (#147)', () => {
+    expect(widget).toContain('ProgressMotion');
+    expect(widget).toContain('durationSeconds: Double = 0.6');
+    expect(widget).toContain('reduceMotionDurationSeconds');
+    expect(widget).toContain('accessibilityReduceMotion');
+    expect(widget).toContain('contentTransition(.numericText())');
+    // Shared ProgressRow drives Lock Screen + expanded Dynamic Island.
+    expect(widget).toContain('ProgressRow(value: context.state.clampedProgress');
+  });
+
   it('matches the approved black capsule information hierarchy', () => {
     expect(widget).toContain('static let card = Color.black');
     expect(widget).toContain('前往集合點');
