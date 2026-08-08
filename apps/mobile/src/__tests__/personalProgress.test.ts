@@ -276,6 +276,45 @@ describe('derivePersonalProgress (shared local model)', () => {
     expect(model.distanceMeters).toBe(420);
   });
 
+  it('snaps on new route generation even when remaining metres are equal (#145 Sol)', () => {
+    // Two distinct directions results can return the same integer remaining.
+    // Generation (not distance equality) marks freshness; snap + new ETA win.
+    const afterMoveLocal = derivePersonalProgress({
+      deviceCoords: nearTarget,
+      targetCoords: atTarget,
+      initialDistanceM: 2000,
+      hasDepartedStart: true,
+      travelMode: 'walk',
+      distanceSource: 'route',
+      routeDistanceM: 1000,
+      lastRouteDistanceM: 1000,
+      routeAnchorGps: origin,
+      routeAnchorRemainingM: 1000,
+      routeResultGeneration: 1,
+      routeAnchorGeneration: 1,
+      routeEtaSeconds: 900,
+    });
+    expect(afterMoveLocal.distanceMeters!).toBeLessThan(1000);
+
+    const afterEqualDistanceResult = derivePersonalProgress({
+      deviceCoords: nearTarget,
+      targetCoords: atTarget,
+      initialDistanceM: 2000,
+      hasDepartedStart: true,
+      travelMode: 'walk',
+      distanceSource: 'route',
+      routeDistanceM: 1000, // same metres as prior result
+      lastRouteDistanceM: 1000,
+      routeAnchorGps: origin,
+      routeAnchorRemainingM: 1000, // not yet re-anchored
+      routeResultGeneration: 2, // new directions completion
+      routeAnchorGeneration: 1,
+      routeEtaSeconds: 720, // new ETA for new routed origin
+    });
+    expect(afterEqualDistanceResult.distanceMeters).toBe(1000);
+    expect(afterEqualDistanceResult.etaSeconds).toBe(720);
+  });
+
   it('retains last valid distance/ETA/progress when GPS is missing', () => {
     const model = derivePersonalProgress({
       deviceCoords: null,
@@ -336,6 +375,10 @@ describe('personal progress surface contracts', () => {
     expect(map).toContain('lastValidDistanceM');
     // Anchor only on new route result — not every deviceCoords tick.
     expect(map).toContain('isNewRouteResult');
+    // Generation identity, not distance equality, marks a fresh result (#145).
+    expect(map).toContain('selfRouteGeneration');
+    expect(map).toContain('prevAnchor.generation !== selfRouteGeneration');
+    expect(map).toContain('routeResultGeneration');
     // Markers use team completion, not personal arrivals.
     expect(map).toContain('completedDestinationIds={teamCompletedDestinationIds}');
     // Target pulse only while journey is active with a nav target.

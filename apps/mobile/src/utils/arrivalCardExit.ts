@@ -63,6 +63,11 @@ export type ArrivalCardExitRecord = {
   /** Snapshot so the card can render after closedAt filters it out. */
   startedAtMs: number;
   phase: ArrivalCardExitPhase;
+  /**
+   * Carousel index when exit began — keep the completed card in place through
+   * hold/exit so siblings do not jump (#149 multi-card order).
+   */
+  indexAtStart: number;
 };
 
 /**
@@ -73,12 +78,14 @@ export function beginArrivalCardExit(
   existing: ReadonlyMap<string, ArrivalCardExitRecord>,
   destinationId: string,
   nowMs: number,
+  indexAtStart = 0,
 ): ArrivalCardExitRecord | null {
   if (existing.has(destinationId)) return null;
   return {
     destinationId,
     startedAtMs: nowMs,
     phase: 'hold',
+    indexAtStart: Math.max(0, Math.floor(indexAtStart)),
   };
 }
 
@@ -97,6 +104,9 @@ export function advanceArrivalCardExit(
 /**
  * Merge open destinations with cards still in hold/exit so closed_at cannot
  * skip the animation by filtering them out immediately.
+ *
+ * Re-inserts each exiting card at its original carousel index (not appended)
+ * so completing a middle card keeps siblings stable through hold/exit.
  */
 export function mergeExitingDestinations<T extends { id: string }>(
   openDestinations: readonly T[],
@@ -105,11 +115,19 @@ export function mergeExitingDestinations<T extends { id: string }>(
 ): T[] {
   const openIds = new Set(openDestinations.map((d) => d.id));
   const merged = [...openDestinations];
+  const toInsert: { snap: T; index: number }[] = [];
   for (const [id, record] of exitRecords) {
     if (record.phase === 'done') continue;
     if (openIds.has(id)) continue;
     const snap = exitingSnapshots.get(id);
-    if (snap) merged.push(snap);
+    if (!snap) continue;
+    toInsert.push({ snap, index: record.indexAtStart });
+  }
+  // Ascending original index so earlier cards land first, then later ones.
+  toInsert.sort((a, b) => a.index - b.index);
+  for (const item of toInsert) {
+    const idx = Math.max(0, Math.min(item.index, merged.length));
+    merged.splice(idx, 0, item.snap);
   }
   return merged;
 }

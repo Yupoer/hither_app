@@ -46,11 +46,49 @@ describe('arrivalCardExit (#149)', () => {
           destinationId: 'b',
           startedAtMs: 0,
           phase: 'exit' as const,
+          indexAtStart: 1,
         },
       ],
     ]);
     const merged = mergeExitingDestinations(open, snapshots, records);
-    expect(merged.map((d) => d.id)).toEqual(['a', 'c', 'b']);
+    // Original index preserved — not appended to the end.
+    expect(merged.map((d) => d.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('preserves middle-card order through hold → exit → done (#149 Sol)', () => {
+    const snapshots = new Map([
+      ['a', { id: 'a' }],
+      ['b', { id: 'b' }],
+      ['c', { id: 'c' }],
+    ]);
+    // [A,B,C] then B closes → open is [A,C]; B must stay at index 1.
+    const hold = beginArrivalCardExit(new Map(), 'b', 0, 1)!;
+    expect(hold.indexAtStart).toBe(1);
+    const holdRecords = new Map([['b', hold]]);
+    const holdMerged = mergeExitingDestinations(
+      [{ id: 'a' }, { id: 'c' }],
+      snapshots,
+      holdRecords,
+    );
+    expect(holdMerged.map((d) => d.id)).toEqual(['a', 'b', 'c']);
+
+    const exit = advanceArrivalCardExit(hold, ARRIVAL_EFFECT_HOLD_MS);
+    expect(exit.phase).toBe('exit');
+    const exitMerged = mergeExitingDestinations(
+      [{ id: 'a' }, { id: 'c' }],
+      snapshots,
+      new Map([['b', exit]]),
+    );
+    expect(exitMerged.map((d) => d.id)).toEqual(['a', 'b', 'c']);
+
+    const done = advanceArrivalCardExit(hold, ARRIVAL_EFFECT_HOLD_MS + ARRIVAL_CARD_EXIT_MS);
+    expect(done.phase).toBe('done');
+    const doneMerged = mergeExitingDestinations(
+      [{ id: 'a' }, { id: 'c' }],
+      snapshots,
+      new Map([['b', done]]),
+    );
+    expect(doneMerged.map((d) => d.id)).toEqual(['a', 'c']);
   });
 
   it('drops done cards and does not duplicate open cards', () => {
@@ -60,8 +98,24 @@ describe('arrivalCardExit (#149)', () => {
       ['b', { id: 'b' }],
     ]);
     const records = new Map([
-      ['a', { destinationId: 'a', startedAtMs: 0, phase: 'hold' as const }],
-      ['b', { destinationId: 'b', startedAtMs: 0, phase: 'done' as const }],
+      [
+        'a',
+        {
+          destinationId: 'a',
+          startedAtMs: 0,
+          phase: 'hold' as const,
+          indexAtStart: 0,
+        },
+      ],
+      [
+        'b',
+        {
+          destinationId: 'b',
+          startedAtMs: 0,
+          phase: 'done' as const,
+          indexAtStart: 1,
+        },
+      ],
     ]);
     const merged = mergeExitingDestinations(open, snapshots, records);
     expect(merged.map((d) => d.id)).toEqual(['a']);

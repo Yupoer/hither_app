@@ -1394,7 +1394,7 @@ export default function MapScreen({ route, navigation }: Props) {
   // Prefer local prefs (available before inPassiveMode is derived below) so
   // passive mode can skip MapKit work without a temporal dead zone.
   const mapRoutesEnabled = !(preferencesReady && passiveCompanionMode);
-  const { selfRoute, memberRoutes } = useMapKitRoutes({
+  const { selfRoute, memberRoutes, selfRouteGeneration } = useMapKitRoutes({
     selfCoordinates: fromCoords,
     members,
     gathering: mapRoutesEnabled ? activePoint : null,
@@ -1425,11 +1425,15 @@ export default function MapScreen({ route, navigation }: Props) {
   const [requestingStartDestId, setRequestingStartDestId] = useState<string | null>(null);
 
   /** #149: after stop completes (closedAt), hold effect 3.2s then 440ms card exit. */
-  const startArrivalCardExit = useCallback((destination: Destination) => {
+  const startArrivalCardExit = useCallback((
+    destination: Destination,
+    indexAtStart = 0,
+  ) => {
     const started = beginArrivalCardExit(
       arrivalExitRecordsRef.current,
       destination.id,
       Date.now(),
+      indexAtStart,
     );
     if (!started) return; // idempotent — no double exit / ghost
     setArrivalExitRecords((prev) => {
@@ -1494,19 +1498,24 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // Detect newly completed stops → start hold/exit (not historical closed on mount).
   const knownClosedDestIdsRef = useRef<Set<string> | null>(null);
+  /** Prior open carousel order — capture index before closedAt drops the card. */
+  const prevOpenDestOrderRef = useRef<string[]>([]);
   useEffect(() => {
     const closedNow = allScopedDestinations.filter((d) => d.closedAt != null);
     if (knownClosedDestIdsRef.current == null) {
       // First paint: seed known closed so past history does not animate out.
       knownClosedDestIdsRef.current = new Set(closedNow.map((d) => d.id));
+      prevOpenDestOrderRef.current = openDestinations.map((d) => d.id);
       return;
     }
     for (const dest of closedNow) {
       if (knownClosedDestIdsRef.current.has(dest.id)) continue;
       knownClosedDestIdsRef.current.add(dest.id);
-      startArrivalCardExit(dest);
+      const priorIdx = prevOpenDestOrderRef.current.indexOf(dest.id);
+      startArrivalCardExit(dest, priorIdx >= 0 ? priorIdx : openDestinations.length);
     }
-  }, [allScopedDestinations, startArrivalCardExit]);
+    prevOpenDestOrderRef.current = openDestinations.map((d) => d.id);
+  }, [allScopedDestinations, openDestinations, startArrivalCardExit]);
 
   useEffect(() => {
     return () => {
@@ -1633,7 +1642,11 @@ export default function MapScreen({ route, navigation }: Props) {
   const routeAnchorRef = useRef<{
     gps: NonNullable<typeof deviceCoords>;
     remainingM: number;
+    generation: number;
   } | null>(null);
+  const [routeAnchorGeneration, setRouteAnchorGeneration] = useState<number | null>(
+    null,
+  );
   /** Sticky presentation across GPS/route gaps + monotonic progress max (#145). */
   const presentationStickyRef = useRef<{
     key: string | null;
@@ -1711,6 +1724,7 @@ export default function MapScreen({ route, navigation }: Props) {
       setLastRouteDistanceM(undefined);
       setRouteAnchorGps(null);
       setRouteAnchorRemainingM(null);
+      setRouteAnchorGeneration(null);
       setProgressMaxSticky(null);
       setLastValidPresentation({ distanceM: null, etaSeconds: null, progress: null });
       return;
@@ -1731,6 +1745,7 @@ export default function MapScreen({ route, navigation }: Props) {
       routeAnchorRef.current = null;
       setRouteAnchorGps(null);
       setRouteAnchorRemainingM(null);
+      setRouteAnchorGeneration(null);
     }
     // Never baseline progress from peer/stale pins — only real device GPS.
     if (!deviceCoords) return;
@@ -1740,14 +1755,20 @@ export default function MapScreen({ route, navigation }: Props) {
       lastRouteDistanceRef.current = routeDistanceM;
       setLastRouteDistanceM(routeDistanceM);
       // Anchor only when a *new* route result arrives — not every GPS tick.
-      // Re-anchoring on deviceCoords would zero the between-route GPS estimate.
+      // Generation bumps on every accepted directions completion, even when the
+      // integer remaining metres are unchanged (#145 Sol re-review).
       const prevAnchor = routeAnchorRef.current;
       const isNewRouteResult =
-        !prevAnchor || prevAnchor.remainingM !== routeDistanceM;
+        !prevAnchor || prevAnchor.generation !== selfRouteGeneration;
       if (isNewRouteResult) {
-        routeAnchorRef.current = { gps: deviceCoords, remainingM: routeDistanceM };
+        routeAnchorRef.current = {
+          gps: deviceCoords,
+          remainingM: routeDistanceM,
+          generation: selfRouteGeneration,
+        };
         setRouteAnchorGps(deviceCoords);
         setRouteAnchorRemainingM(routeDistanceM);
+        setRouteAnchorGeneration(selfRouteGeneration);
       }
     }
     const deviceStraightM = distanceMeters(deviceCoords, navTarget.coordinates);
@@ -1783,6 +1804,7 @@ export default function MapScreen({ route, navigation }: Props) {
     journeyActive,
     navTarget,
     selfRoute?.distanceMeters,
+    selfRouteGeneration,
     state?.group.journeyStartedAt,
   ]);
 
@@ -2063,6 +2085,8 @@ export default function MapScreen({ route, navigation }: Props) {
         lastRouteDistanceM: lastRouteDistanceM,
         routeAnchorGps,
         routeAnchorRemainingM,
+        routeResultGeneration: selfRouteGeneration,
+        routeAnchorGeneration,
         previousProgressMax: progressMaxSticky,
         lastValidDistanceM: lastValidPresentation.distanceM,
         lastValidEtaSeconds: lastValidPresentation.etaSeconds,
@@ -2093,10 +2117,12 @@ export default function MapScreen({ route, navigation }: Props) {
       travelMode,
       selfRoute?.expectedTravelTimeSeconds,
       selfRoute?.distanceMeters,
+      selfRouteGeneration,
       distanceSource,
       lastRouteDistanceM,
       routeAnchorGps,
       routeAnchorRemainingM,
+      routeAnchorGeneration,
       progressMaxSticky,
       lastValidPresentation.distanceM,
       lastValidPresentation.etaSeconds,

@@ -50,6 +50,14 @@ export interface PersonalProgressInput {
   routeAnchorGps?: Coordinates | null;
   /** Remaining metres at routeAnchorGps (usually lastRouteDistanceM). */
   routeAnchorRemainingM?: number | null;
+  /**
+   * Generation of the current directions result (bumped on every accepted
+   * MapKit/network completion). Compared to routeAnchorGeneration so a fresh
+   * result that returns the same integer metres still snaps/re-anchors.
+   */
+  routeResultGeneration?: number | null;
+  /** Generation stored with the current GPS route anchor. */
+  routeAnchorGeneration?: number | null;
   /** Sticky max progress for this destination (monotonic milestone). */
   previousProgressMax?: number | null;
   /** Last valid presentation values retained across GPS/route gaps. */
@@ -189,15 +197,23 @@ export function derivePersonalProgress(
       ? input.routeDistanceM
       : null;
 
-  // Fresh route result differs from the anchor remaining → snap to it.
-  // Same remaining as the anchor (stale sticky route) → prefer GPS local move.
+  // Fresh route result → snap. Prefer generation/identity over distance equality:
+  // directions often return the same integer metres for a new routed origin/ETA.
+  const hasGenerationPair =
+    input.routeResultGeneration != null
+    && Number.isFinite(input.routeResultGeneration)
+    && input.routeAnchorGeneration != null
+    && Number.isFinite(input.routeAnchorGeneration);
+  const generationIsFresh =
+    hasGenerationPair
+    && input.routeResultGeneration !== input.routeAnchorGeneration;
+  const distanceIsFresh =
+    input.routeAnchorRemainingM == null
+    || !Number.isFinite(input.routeAnchorRemainingM)
+    || (routeMFinite != null && routeMFinite !== input.routeAnchorRemainingM);
   const routeIsFreshSnap =
     routeMFinite != null
-    && (
-      input.routeAnchorRemainingM == null
-      || !Number.isFinite(input.routeAnchorRemainingM)
-      || routeMFinite !== input.routeAnchorRemainingM
-    );
+    && (generationIsFresh || (!hasGenerationPair && distanceIsFresh));
 
   let liveDistance: number | null = null;
   if (input.distanceSource === 'route') {

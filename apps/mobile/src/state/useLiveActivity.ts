@@ -12,6 +12,7 @@ import {
 import { liveActivity, notifications, type GroupActivityState } from '../native';
 import type { TravelMode } from '../utils/geo';
 import { LiveActivityLifecycleReconciler } from '../utils/liveActivityLifecycle';
+import { decidePushTokenAdoption } from '../utils/liveActivityPushTokenAdoption';
 import { getSharedLiveActivityTokenGate } from '../utils/liveActivityTokenGate';
 import { diagnostics } from './diagnostics';
 import { useSession } from './SessionContext';
@@ -127,27 +128,27 @@ export function useLiveActivity(
     const subscription = liveActivity.addPushTokenListener((event) => {
       const reconciler = reconcilerRef.current;
       if (!reconciler) return;
-      const sameHandle = event.activityId === reconciler.currentHandle;
-      const sameNavSession =
-        !!event.navigationSessionId
-        && event.navigationSessionId === sessionRef.current?.navigationSessionId;
-      if (!sameHandle && !sameNavSession && reconciler.currentHandle) return;
+      const decision = decidePushTokenAdoption({
+        eventActivityId: event.activityId,
+        eventPushToken: event.pushToken,
+        eventNavigationSessionId: event.navigationSessionId,
+        currentHandle: reconciler.currentHandle,
+        currentNavigationSessionId: sessionRef.current?.navigationSessionId,
+      });
+      if (decision.action === 'ignore') return;
 
-      // Adopt rotated token (and handle when observing existing) before persist
-      // so Supabase receives the live push token, not the start-time value.
-      const token = event.pushToken;
-      if (token) {
-        if (sameHandle || !reconciler.currentHandle) {
-          reconciler.adoptPushToken(event.activityId, token);
-        } else if (sameNavSession) {
-          reconciler.adoptObservedActivity({
-            activityId: event.activityId,
-            pushToken: token,
+      // Adopt before persist so Supabase receives this event's token bound to
+      // the same activity id. Skip persist when adopt fails.
+      const adopted = decision.observeExisting
+        ? reconciler.adoptObservedActivity({
+            activityId: decision.activityId,
+            pushToken: decision.pushToken,
             destinationId: sessionRef.current?.destinationId,
-          });
-        }
-      }
-      void persistSession(event.activityId, { force: true }).catch(() => undefined);
+          })
+        : reconciler.adoptPushToken(decision.activityId, decision.pushToken);
+      if (!adopted) return;
+
+      void persistSession(decision.activityId, { force: true }).catch(() => undefined);
     });
     return () => subscription.remove();
     // The listener reads mutable refs so token rotation never resubscribes.
