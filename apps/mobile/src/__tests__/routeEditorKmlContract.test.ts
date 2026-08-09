@@ -14,7 +14,7 @@ const destinationService = readFileSync(
 const migration = readFileSync(
   join(
     __dirname,
-    '../../../../supabase/migrations/20260810000000_import_itinerary_batch.sql',
+    '../../../../supabase/migrations/20260810005000_import_itinerary_batch.sql',
   ),
   'utf8',
 );
