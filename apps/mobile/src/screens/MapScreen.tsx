@@ -202,6 +202,7 @@ import {
 import { dotWindow } from '../utils/pagination';
 import {
   alignMeetTimeToTripDay,
+  addMinutesToPickerValue,
   clampDateNotBeforeToday,
   minutesUntil,
   startOfTodayLocal,
@@ -233,6 +234,7 @@ import {
 import { liquidGlass, location, notifications, type MapRegion, type PlaceResult } from '../native';
 import {
   addDestination,
+  addDestinationsBatch,
   completeGatheringStop,
   deleteDestination,
   fetchSentInvites,
@@ -281,6 +283,7 @@ import type {
   VisitedWaypoint,
 } from '../types';
 import type { KmlPlacemark } from '../utils/kml';
+import { normalizeImportBatch, KmlImportError } from '../utils/kmlBatch';
 import {
   FREE_LIMITS,
   anonymousLeaderRequiresRegistration,
@@ -552,12 +555,11 @@ export default function MapScreen({ route, navigation }: Props) {
   // not re-surface main gather cards while the user is away from the main team.
   const rawDestinations: Destination[] = useMemo(() => {
     const all = state?.destinations ?? [];
-    if (isLeader) return all;
     if (myScopeId) {
       return all.filter((d) => d.subgroupId === myScopeId);
     }
     return all.filter((d) => d.subgroupId == null);
-  }, [state?.destinations, isLeader, myScopeId]);
+  }, [state?.destinations, myScopeId]);
 
   const [optimisticDestinations, setOptimisticDestinations] = useState<Destination[] | null>(null);
   const [pendingDestinationMutations, setPendingDestinationMutations] = useState<
@@ -1155,6 +1157,30 @@ export default function MapScreen({ route, navigation }: Props) {
   // Freeze the route overlay's scroll while a stop is being drag-reordered so
   // the two vertical gestures never fight.
   const [routeScrollEnabled, setRouteScrollEnabled] = useState(true);
+
+  // #154: each route-sheet open silently syncs once (ref survives Strict Mode remount).
+  const routeOpenSyncSessionRef = useRef<'idle' | 'started' | 'done'>('idle');
+  const [routeSyncFailed, setRouteSyncFailed] = useState(false);
+  useEffect(() => {
+    if (overlay !== 'route') {
+      routeOpenSyncSessionRef.current = 'idle';
+      setRouteSyncFailed(false);
+      return;
+    }
+    if (routeOpenSyncSessionRef.current !== 'idle') return;
+    routeOpenSyncSessionRef.current = 'started';
+    void (async () => {
+      try {
+        await syncFromDatabase();
+        routeOpenSyncSessionRef.current = 'done';
+        setRouteSyncFailed(false);
+      } catch {
+        routeOpenSyncSessionRef.current = 'done';
+        setRouteSyncFailed(true);
+      }
+    })();
+  }, [overlay, syncFromDatabase]);
+
 
   // --- Device GPS ----------------------------------------------------------
   const {
@@ -2642,20 +2668,20 @@ export default function MapScreen({ route, navigation }: Props) {
       onProgress(items.length);
       return;
     }
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      await addDestination(
-        groupId,
-        {
-          title: item.name,
-          coordinates: { latitude: item.latitude, longitude: item.longitude },
-          day: addDay,
-        },
-        myScopeId,
-      );
-      onProgress(i + 1);
+    // Validate full batch before any DB I/O; single atomic mutation (#152).
+    const normalized = normalizeImportBatch(items);
+    onProgress(0);
+    try {
+      await addDestinationsBatch(groupId, normalized, {
+        day: addDay,
+        subgroupId: myScopeId,
+      });
+      onProgress(normalized.length);
+    } catch (e) {
+      if (e instanceof KmlImportError) throw e;
+      throw new KmlImportError('persistence', 'persistence', e instanceof Error ? e.message : String(e));
     }
-    logEvent('kml_import', { count: items.length, day: addDay });
+    logEvent('kml_import', { count: normalized.length, day: addDay });
     await refresh();
   }, [groupId, canEditItinerary, notifyLeaderPlace, myScopeId, refresh, tripDayForAdd]);
 
@@ -5990,7 +6016,9 @@ export default function MapScreen({ route, navigation }: Props) {
             onReorder={handleReorder}
             onDelete={canEditItinerary ? handleDelete : undefined}
             onUpdateEmojiColor={canEditItinerary ? handleUpdateEmojiColor : undefined}
-            onSync={syncFromDatabaseAndUploadLogs}
+            onImport={() => setKmlVisible(true)}
+            onSync={routeSyncFailed ? syncFromDatabaseAndUploadLogs : undefined}
+            syncFailed={routeSyncFailed}
             colors={dark}
             emptyLabel={t('settings.noDestinations')}
             onDragActiveChange={(active) => setRouteScrollEnabled(!active)}
@@ -6673,12 +6701,15 @@ export default function MapScreen({ route, navigation }: Props) {
                   style={styles.meetQuickBtn}
                   onPress={() => {
                     lightTap();
-                    const shortcut = new Date(meetTimeEditor.value);
-                    shortcut.setMinutes(shortcut.getMinutes() + m);
-                    shortcut.setSeconds(0, 0);
+                    const shortcut = addMinutesToPickerValue(meetTimeEditor.value, m);
                     setMeetTimeEditor((s) => (s ? { ...s, value: shortcut } : s));
                   }}
                   accessibilityRole="button"
+                  accessibilityLabel={
+                    m < 60
+                      ? t('map.meetInMinutes', { n: m })
+                      : t('map.meetInHours', { n: m / 60 })
+                  }
                 >
                   <Text style={styles.meetQuickBtnText}>
                     {m < 60

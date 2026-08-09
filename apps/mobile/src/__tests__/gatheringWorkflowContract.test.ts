@@ -116,14 +116,22 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
 
   it('offers database reconciliation and refreshes before arrival writes', () => {
     expect(reorderList).toContain('onSync?: () => Promise<void>');
-    expect(reorderList).toContain("t('map.syncDb')");
+    expect(reorderList).toContain("t('kml.entry')");
+    expect(reorderList).toContain('onImport?:');
+    expect(reorderList).toContain("t('map.syncDbRetry')");
     expect(mapScreen).toContain('const syncFromDatabase = useCallback');
     expect(mapScreen).toContain('setOptimisticDestinations(null)');
     expect(mapScreen).toContain('syncFromDatabase()');
-    expect(mapScreen).toContain('onSync={syncFromDatabaseAndUploadLogs}');
+    // Open-once silent sync + import CTA; retry only after failed open-sync (#154).
+    expect(mapScreen).toContain('routeOpenSyncSessionRef');
+    expect(mapScreen).toContain('onImport={() => setKmlVisible(true)}');
+    expect(mapScreen).toContain(
+      'onSync={routeSyncFailed ? syncFromDatabaseAndUploadLogs : undefined}',
+    );
     expect(mapScreen).toContain('uploadLocalLogs');
     expect(mapScreen).toContain('const syncFromDatabaseAndUploadLogs');
     expect(i18n).toContain("'map.syncDb'");
+    expect(i18n).toContain("'map.syncDbRetry'");
   });
 
   it('gates foreground arrival ACK to session/status transitions', () => {
