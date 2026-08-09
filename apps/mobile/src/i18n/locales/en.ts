@@ -4,6 +4,7 @@ import type { ZhDict } from './zh';
 export const en: Record<keyof ZhDict, string> = {
   'common.cancel': 'Cancel',
   'common.confirm': 'Confirm',
+  'common.next': 'Next',
   'common.delete': 'Delete',
   'common.or': 'or',
 
@@ -1027,6 +1028,22 @@ export const en: Record<keyof ZhDict, string> = {
   'tour.settings.body': 'Language, theme, location, and account live here.',
   'tour.done.title': "You're ready",
   'tour.done.body': 'You know the main controls. Tap Get started to use the map.',
+  'tour.addPlace.star.title': 'Save favorite places',
+  'tour.addPlace.star.body':
+    'Tap the star to save or remove this place from your account favorites. Favorites work across teams.',
+  'tour.addPlace.center.title': 'Center on place',
+  'tour.addPlace.center.body':
+    'Tap the navigation icon to re-center the map on this place without adding it yet.',
+  'stay.favorites': 'Favorite places',
+  'stay.autoAdd': 'Auto-add stay cards when setting accommodation',
+  'stay.quickAdd': 'Quick-add stay',
+  'stay.setFromStop': 'Set stop as accommodation',
+  'stay.finishSet': 'Done',
+  'stay.remove': 'Remove stay',
+  'stay.defaultTitle': 'Stay',
+  'stay.favoriteA11y': 'Save as favorite place',
+  'stay.unfavoriteA11y': 'Remove from favorite places',
+  'stay.centerPlaceA11y': 'Center map on this place',
 };
 
 export type EnDict = typeof en;

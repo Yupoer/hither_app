@@ -17,8 +17,14 @@ import { radius, spacing, DAY_COLORS, type Palette } from '../theme';
 import { readOnboardingState } from '../onboarding/sync';
 import { usePreferences } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
-import { resolveVisibleStartDay } from '../utils/tripDay';
+import { dateForTripDay, localDayKey, resolveVisibleStartDay } from '../utils/tripDay';
 import { clampDateNotBeforeToday, startOfTodayLocal } from '../utils/meetTime';
+import {
+  accommodationBoundaryLocks,
+  dayCollapseStorageKey,
+  type AccommodationListItem,
+} from '../utils/accommodationSemantics';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   DESTINATION_EMOJI_CATEGORIES,
   DESTINATION_EMOJI_FALLBACK,
@@ -32,6 +38,19 @@ import { getColorForDay } from '../utils/destinationMarkerChrome';
 
 const ROW_HEIGHT = 56;
 const REVEAL_WIDTH = 76;
+
+export interface DailyAccommodationView {
+  stayDate: string;
+  title: string;
+  id: string;
+}
+
+export interface FavoritePlaceView {
+  id: string;
+  title: string;
+  address?: string;
+  coordinates: { latitude: number; longitude: number };
+}
 
 interface Props {
   groupId?: string;
@@ -52,6 +71,21 @@ interface Props {
   emptyLabel: string;
   dragHint?: string;
   onDragActiveChange?: (active: boolean) => void;
+  /** Daily accommodation by calendar date (YYYY-MM-DD). */
+  dailyByDate?: Record<string, DailyAccommodationView | undefined>;
+  /** Leader: clear daily accommodation for a date (does not delete cards). */
+  onClearDailyAccommodation?: (stayDate: string, day: number) => void;
+  /** Leader: enter set-from-stop mode for a day. */
+  onSetDailyFromDestination?: (destinationId: string, day: number) => void;
+  /** Quick-add mid accommodation card for a day. */
+  onQuickAddAccommodation?: (day: number) => void;
+  /** Team auto-add switch (default true). */
+  accommodationAutoAdd?: boolean;
+  onToggleAutoAdd?: (enabled: boolean) => void;
+  /** Account favorites for picker. */
+  favoritePlaces?: FavoritePlaceView[];
+  onPickFavorite?: (favorite: FavoritePlaceView, day: number) => void;
+  accountId?: string;
 }
 
 type ListItem =
@@ -73,6 +107,15 @@ export default function DestinationReorderList({
   emptyLabel,
   dragHint,
   onDragActiveChange,
+  dailyByDate,
+  onClearDailyAccommodation,
+  onSetDailyFromDestination,
+  onQuickAddAccommodation,
+  accommodationAutoAdd = true,
+  onToggleAutoAdd,
+  favoritePlaces,
+  onPickFavorite,
+  accountId,
 }: Props) {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const { t } = useTranslation();
@@ -108,6 +151,10 @@ export default function DestinationReorderList({
   const [syncing, setSyncing] = useState(false);
   const [editDays, setEditDays] = useState(tripDays ?? 1);
   const [editDate, setEditDate] = useState(departureDate ? new Date(departureDate) : new Date());
+  /** Day number currently in "set stop as accommodation" radio mode. */
+  const [setStayModeDay, setSetStayModeDay] = useState<number | null>(null);
+  const [collapsedDays, setCollapsedDays] = useState<Record<number, boolean>>({});
+  const [favoritesOpen, setFavoritesOpen] = useState(false);
 
   const openAndroidDatePicker = useCallback(() => {
     if (Platform.OS !== 'android') return;
@@ -121,6 +168,57 @@ export default function DestinationReorderList({
       },
     });
   }, [editDate]);
+
+  // Local collapse prefs: account + group + calendar date (first open = expanded).
+  useEffect(() => {
+    if (!accountId || !groupId || !departureDate || !tripDays) return;
+    let cancelled = false;
+    (async () => {
+      const next: Record<number, boolean> = {};
+      const days = Math.max(1, tripDays);
+      for (let d = 1; d <= days; d++) {
+        const date = dateForTripDay(departureDate, d);
+        if (!date) continue;
+        const key = dayCollapseStorageKey(accountId, groupId, localDayKey(date));
+        try {
+          const raw = await AsyncStorage.getItem(key);
+          if (raw === '1') next[d] = true;
+        } catch {
+          // ignore
+        }
+      }
+      if (!cancelled) setCollapsedDays(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [accountId, groupId, departureDate, tripDays]);
+
+  const toggleDayCollapsed = useCallback(
+    async (day: number) => {
+      setCollapsedDays((prev) => {
+        const nextCollapsed = !prev[day];
+        const next = { ...prev, [day]: nextCollapsed };
+        if (accountId && groupId && departureDate) {
+          const date = dateForTripDay(departureDate, day);
+          if (date) {
+            const key = dayCollapseStorageKey(accountId, groupId, localDayKey(date));
+            void AsyncStorage.setItem(key, nextCollapsed ? '1' : '0').catch(() => {});
+          }
+        }
+        return next;
+      });
+    },
+    [accountId, groupId, departureDate],
+  );
+
+  const stayDateForDay = useCallback(
+    (day: number): string | null => {
+      const date = dateForTripDay(departureDate, day);
+      return date ? localDayKey(date) : null;
+    },
+    [departureDate],
+  );
 
   const handleSync = useCallback(async () => {
     if (!onSync || syncing) return;
@@ -324,6 +422,17 @@ export default function DestinationReorderList({
             <Ionicons name="calendar-outline" size={16} color={colors.accent} style={{ marginRight: 6 }} />
             <Text style={styles.setDaysText}>{t('trip.setDaysAndDate')}</Text>
           </Pressable>}
+          {canReorder && onPickFavorite && (favoritePlaces?.length ?? 0) > 0 ? (
+            <Pressable
+              style={styles.setDaysBtn}
+              onPress={() => setFavoritesOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel={t('stay.favorites')}
+            >
+              <Ionicons name="star-outline" size={16} color={colors.accent} style={{ marginRight: 6 }} />
+              <Text style={styles.setDaysText}>{t('stay.favorites')}</Text>
+            </Pressable>
+          ) : null}
           {onSync && <Pressable
             style={[styles.setDaysBtn, syncing && { opacity: 0.5 }]}
             onPress={() => void handleSync()}
@@ -339,37 +448,113 @@ export default function DestinationReorderList({
         </View>
       )}
 
+      {canReorder && onToggleAutoAdd ? (
+        <Pressable
+          style={styles.autoAddRow}
+          onPress={() => onToggleAutoAdd(!accommodationAutoAdd)}
+          accessibilityRole="switch"
+          accessibilityState={{ checked: accommodationAutoAdd }}
+          accessibilityLabel={t('stay.autoAdd')}
+        >
+          <Text style={styles.autoAddLabel}>{t('stay.autoAdd')}</Text>
+          <View style={[styles.autoAddSwitch, accommodationAutoAdd && styles.autoAddSwitchOn]}>
+            <View style={[styles.autoAddKnob, accommodationAutoAdd && styles.autoAddKnobOn]} />
+          </View>
+        </Pressable>
+      ) : null}
+
       {order.length === 0 ? (
          <Text style={styles.empty}>{emptyLabel}</Text>
       ) : (
         <View style={styles.list}>
-          {order.map((item, index) => {
+          {order.map((item) => {
             if (item.type === 'header') {
                const bgColor = dayColors[item.day] || DAY_COLORS[(item.day - 1) % DAY_COLORS.length];
+               const stayDate = stayDateForDay(item.day);
+               const daily = stayDate && dailyByDate ? dailyByDate[stayDate] : undefined;
+               const collapsed = Boolean(collapsedDays[item.day]);
                return (
-                 <HeaderRow
-                   key={item.id}
-                   item={item}
-                   active={activeId === item.id}
-                   canReorder={canReorder}
-                   pan={pan}
-                   styles={styles}
-                   bgColor={bgColor}
-                   canEditColors={canReorder}
-                   onColorPress={onHeaderColorPress}
-                   onGrant={onGrant}
-                   onMove={onMove}
-                   onRelease={onRelease}
-                 />
+                 <View key={item.id}>
+                   <HeaderRow
+                     item={item}
+                     active={activeId === item.id}
+                     canReorder={canReorder}
+                     pan={pan}
+                     styles={styles}
+                     bgColor={bgColor}
+                     canEditColors={canReorder}
+                     onColorPress={onHeaderColorPress}
+                     onGrant={onGrant}
+                     onMove={onMove}
+                     onRelease={onRelease}
+                     dailyTitle={daily?.title}
+                     onRemoveDaily={
+                       canReorder && daily && onClearDailyAccommodation && stayDate
+                         ? () => onClearDailyAccommodation(stayDate, item.day)
+                         : undefined
+                     }
+                     collapsed={collapsed}
+                     onToggleCollapse={() => void toggleDayCollapsed(item.day)}
+                   />
+                   {!collapsed && canReorder ? (
+                     <View style={styles.dayActions}>
+                       {onQuickAddAccommodation ? (
+                         <Pressable
+                           style={styles.dashedBtn}
+                           onPress={() => onQuickAddAccommodation(item.day)}
+                           accessibilityRole="button"
+                           accessibilityLabel={t('stay.quickAdd')}
+                         >
+                           <Text style={[styles.dashedBtnText, { color: colors.accent }]}>
+                             {t('stay.quickAdd')}
+                           </Text>
+                         </Pressable>
+                       ) : null}
+                       {onSetDailyFromDestination ? (
+                         <Pressable
+                           style={styles.dashedBtn}
+                           onPress={() =>
+                             setSetStayModeDay((d) => (d === item.day ? null : item.day))
+                           }
+                           accessibilityRole="button"
+                           accessibilityLabel={
+                             setStayModeDay === item.day
+                               ? t('stay.finishSet')
+                               : t('stay.setFromStop')
+                           }
+                         >
+                           <Text style={[styles.dashedBtnText, { color: colors.accent }]}>
+                             {setStayModeDay === item.day
+                               ? t('stay.finishSet')
+                               : t('stay.setFromStop')}
+                           </Text>
+                         </Pressable>
+                       ) : null}
+                     </View>
+                   ) : null}
+                 </View>
                );
             }
+            if (collapsedDays[item.item.day || 1]) return null;
             const dayColor = getColorForDay(item.item.day, dayColors);
+            const dayItems: AccommodationListItem[] = destinations
+              .filter((d) => (d.day || 1) === (item.item.day || 1))
+              .map((d) => ({
+                id: d.id,
+                kind: d.kind === 'accommodation' ? 'accommodation' : 'stop',
+                order: d.order,
+                day: d.day || 1,
+                title: d.title,
+              }));
+            const { lockedIds } = accommodationBoundaryLocks(dayItems);
+            const locked = item.item.kind === 'accommodation' && lockedIds.has(item.item.id);
+            const inSetMode = setStayModeDay === (item.item.day || 1);
             return (
               <Row
                 key={item.id}
                 item={item.item}
                 active={activeId === item.id}
-                canReorder={canReorder}
+                canReorder={canReorder && !locked}
                 pan={pan}
                 styles={styles}
                 dayColor={dayColor}
@@ -377,8 +562,18 @@ export default function DestinationReorderList({
                 onMove={onMove}
                 onRelease={onRelease}
                 onDelete={onDelete}
+                isAccommodation={item.item.kind === 'accommodation'}
+                showSelect={inSetMode && item.item.kind !== 'accommodation'}
+                onSelectAsStay={
+                  inSetMode && onSetDailyFromDestination
+                    ? () => {
+                        onSetDailyFromDestination(item.item.id, item.item.day || 1);
+                        setSetStayModeDay(null);
+                      }
+                    : undefined
+                }
                 onEmojiPress={
-                  canReorder && onUpdateEmojiColor
+                  canReorder && onUpdateEmojiColor && item.item.kind !== 'accommodation'
                     ? (id) => {
                         const dest = destinations.find((d) => d.id === id);
                         setEmojiDraft(resolveDestinationEmoji(dest?.emoji));
@@ -395,6 +590,33 @@ export default function DestinationReorderList({
           })}
         </View>
       )}
+
+      <Modal visible={favoritesOpen} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>{t('stay.favorites')}</Text>
+            {(favoritePlaces ?? []).map((fav) => (
+              <Pressable
+                key={fav.id}
+                style={styles.favRow}
+                onPress={() => {
+                  // Default: add to first visible day; parent may open date picker.
+                  const day = Math.max(1, resolveVisibleStartDay(departureDate, tripDays));
+                  onPickFavorite?.(fav, day);
+                  setFavoritesOpen(false);
+                }}
+                accessibilityRole="button"
+              >
+                <Ionicons name="star" size={16} color={colors.accent} />
+                <Text style={styles.favTitle} numberOfLines={1}>{fav.title}</Text>
+              </Pressable>
+            ))}
+            <Pressable onPress={() => setFavoritesOpen(false)} style={styles.modalActionBtn}>
+              <Text style={styles.modalActionText}>{t('common.cancel')}</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
 
       <Modal visible={showSettings} transparent animationType="fade">
          <View style={styles.modalOverlay}>
@@ -642,6 +864,10 @@ const HeaderRow = memo(function HeaderRow({
   onGrant,
   onMove,
   onRelease,
+  dailyTitle,
+  onRemoveDaily,
+  collapsed,
+  onToggleCollapse,
 }: {
   item: any;
   active: boolean;
@@ -654,7 +880,12 @@ const HeaderRow = memo(function HeaderRow({
   onGrant: (id: string) => void;
   onMove: (id: string, dy: number) => void;
   onRelease: () => void;
+  dailyTitle?: string;
+  onRemoveDaily?: () => void;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 }) {
+  const { t } = useTranslation();
   const axisRef = useRef<null | 'v'>(null);
   const reorderable = canReorder && item.day > 1;
   const responder = useRef(
@@ -701,8 +932,8 @@ const HeaderRow = memo(function HeaderRow({
         ]}
         {...(reorderable ? responder.panHandlers : {})}
       >
-        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 16 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1 }}>
             <Pressable
               onPress={() => onColorPress(item.day)}
               disabled={!canEditColors}
@@ -711,8 +942,26 @@ const HeaderRow = memo(function HeaderRow({
               style={[styles.colorDot, { backgroundColor: bgColor }]}
             />
             <Text style={styles.headerTitle}>{item.title}</Text>
+            {dailyTitle ? (
+              <View style={styles.stayBadge}>
+                <Ionicons name="bed-outline" size={12} color="#fff" />
+                <Text style={styles.stayBadgeText} numberOfLines={1}>{dailyTitle}</Text>
+              </View>
+            ) : null}
           </View>
-          <Text style={styles.headerDate}>{item.dateStr}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            {onRemoveDaily ? (
+              <Pressable onPress={onRemoveDaily} accessibilityRole="button" accessibilityLabel={t('stay.remove')}>
+                <Text style={styles.removeStayText}>{t('stay.remove')}</Text>
+              </Pressable>
+            ) : null}
+            <Text style={styles.headerDate}>{item.dateStr}</Text>
+            {onToggleCollapse ? (
+              <Pressable onPress={onToggleCollapse} accessibilityRole="button" hitSlop={8}>
+                <Ionicons name={collapsed ? 'chevron-down' : 'chevron-up'} size={16} color="#999" />
+              </Pressable>
+            ) : null}
+          </View>
         </View>
         {reorderable ? <Text style={styles.handle}>≡</Text> : null}
       </Animated.View>
@@ -732,6 +981,9 @@ const Row = memo(function Row({
   onRelease,
   onDelete,
   onEmojiPress,
+  isAccommodation,
+  showSelect,
+  onSelectAsStay,
 }: {
   item: Destination;
   active: boolean;
@@ -744,6 +996,9 @@ const Row = memo(function Row({
   onRelease: () => void;
   onDelete?: (id: string) => void;
   onEmojiPress?: (id: string) => void;
+  isAccommodation?: boolean;
+  showSelect?: boolean;
+  onSelectAsStay?: () => void;
 }) {
   const translateX = useRef(new Animated.Value(0)).current;
   const axisRef = useRef<null | 'h' | 'v'>(null);
@@ -838,6 +1093,7 @@ const Row = memo(function Row({
       <Animated.View
         style={[
           styles.row,
+          isAccommodation && styles.rowAccommodation,
           active && styles.rowActive,
           {
             transform: [
@@ -848,6 +1104,16 @@ const Row = memo(function Row({
         ]}
         {...(canReorder || canSwipe ? responder.panHandlers : {})}
       >
+        {showSelect ? (
+          <Pressable
+            onPress={onSelectAsStay}
+            accessibilityRole="radio"
+            style={styles.selectRadio}
+            hitSlop={8}
+          >
+            <Ionicons name="ellipse-outline" size={20} color={dayColor} />
+          </Pressable>
+        ) : null}
         <Pressable
           onPress={() => onEmojiPress?.(item.id)}
           disabled={!onEmojiPress}
@@ -855,15 +1121,17 @@ const Row = memo(function Row({
           accessibilityLabel={onEmojiPress ? 'dest emoji' : undefined}
           style={[
             styles.emojiBadge,
-            { backgroundColor: dayColor },
+            { backgroundColor: isAccommodation ? '#555' : dayColor },
           ]}
         >
           <Text style={styles.emojiBadgeGlyph}>
-            {destinationEmojiDisplay(item.emoji, DESTINATION_EMOJI_FALLBACK)}
+            {isAccommodation
+              ? '🛏️'
+              : destinationEmojiDisplay(item.emoji, DESTINATION_EMOJI_FALLBACK)}
           </Text>
         </Pressable>
         <View style={styles.rowBody}>
-          <Text style={styles.rowTitle} numberOfLines={1}>
+          <Text style={[styles.rowTitle, isAccommodation && styles.rowTitleStay]} numberOfLines={1}>
             {item.title}
           </Text>
           {item.address ? (
@@ -885,7 +1153,65 @@ const makeStyles = (colors: Palette) =>
       justifyContent: 'flex-end',
       gap: spacing.sm,
       marginBottom: spacing.sm,
+      flexWrap: 'wrap',
     },
+    autoAddRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: spacing.sm,
+      paddingVertical: 6,
+    },
+    autoAddLabel: { color: colors.textSecondary, fontSize: 13, flex: 1 },
+    autoAddSwitch: {
+      width: 42,
+      height: 24,
+      borderRadius: 12,
+      backgroundColor: 'rgba(255,255,255,0.15)',
+      padding: 2,
+      justifyContent: 'center',
+    },
+    autoAddSwitchOn: { backgroundColor: colors.accent },
+    autoAddKnob: {
+      width: 20,
+      height: 20,
+      borderRadius: 10,
+      backgroundColor: '#fff',
+    },
+    autoAddKnobOn: { alignSelf: 'flex-end' },
+    dayActions: { gap: 8, marginBottom: spacing.sm, paddingHorizontal: 4 },
+    dashedBtn: {
+      borderWidth: 1,
+      borderStyle: 'dashed',
+      borderColor: colors.accent,
+      borderRadius: radius.md,
+      paddingVertical: 10,
+      alignItems: 'center',
+    },
+    dashedBtnText: { fontSize: 13, fontWeight: '600' },
+    stayBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      backgroundColor: 'rgba(255,255,255,0.12)',
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: 10,
+      marginLeft: 8,
+      maxWidth: 120,
+    },
+    stayBadgeText: { color: '#fff', fontSize: 11, flexShrink: 1 },
+    removeStayText: { color: colors.accent, fontSize: 12, fontWeight: '600' },
+    rowAccommodation: { backgroundColor: 'rgba(40,40,44,0.95)' },
+    rowTitleStay: { textAlign: 'right' },
+    selectRadio: { marginRight: 8 },
+    favRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingVertical: 10,
+    },
+    favTitle: { color: colors.textPrimary, fontSize: 15, flex: 1 },
     hint: {
       color: colors.textSecondary,
       fontSize: 12,

@@ -7,6 +7,7 @@ export const zh = {
   // Common
   'common.cancel': '取消',
   'common.confirm': '確認',
+  'common.next': '下一步',
   'common.delete': '刪除',
   'common.or': '或',
 
@@ -1038,6 +1039,22 @@ export const zh = {
   'tour.settings.body': '語言、主題、定位與帳號都在這裡。',
   'tour.done.title': '可以開始了',
   'tour.done.body': '你已了解主要操作。按下「開始使用」進入地圖。',
+  'tour.addPlace.star.title': '收藏常用地點',
+  'tour.addPlace.star.body':
+    '點星號可收藏或取消收藏此地點。常用地點屬於你的帳號，可跨團隊使用。',
+  'tour.addPlace.center.title': '置中此地點',
+  'tour.addPlace.center.body':
+    '點導航圖示可將地圖重新置中到此地點，不會立刻新增集合點。',
+  'stay.favorites': '常用地點',
+  'stay.autoAdd': '設定住宿時自動新增頭尾住宿卡',
+  'stay.quickAdd': '快速新增住宿點',
+  'stay.setFromStop': '設定集合點為住宿點',
+  'stay.finishSet': '完成',
+  'stay.remove': '移除住宿',
+  'stay.defaultTitle': '住宿',
+  'stay.favoriteA11y': '收藏為常用地點',
+  'stay.unfavoriteA11y': '取消常用地點',
+  'stay.centerPlaceA11y': '將地圖置中至此地點',
 } as const;
 
 export type ZhDict = typeof zh;
