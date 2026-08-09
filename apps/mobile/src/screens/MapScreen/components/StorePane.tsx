@@ -1047,27 +1047,7 @@ export const StorePane = React.memo(function StorePane({
         </View>
       ) : (
         <>
-          <View style={styles.balanceCard} testID="store-balance">
-            <Text style={styles.balanceLabel}>{t('store.balance')}</Text>
-            <Text
-              style={styles.balanceValue}
-              accessibilityRole="text"
-              accessibilityLabel={t('store.balanceA11y', { count: balance })}
-              maxFontSizeMultiplier={GLOBAL_FONT_SCALE_CAP}
-            >
-              {balance}
-            </Text>
-            <Text style={styles.shellHint}>
-              {fromCacheOnly ? t('store.offlineCachedHint') : t('store.balanceHint')}
-            </Text>
-          </View>
-
-          {offline ? (
-            <Text style={styles.shellHint} testID="store-offline-banner">
-              {t('store.offlineBody')}
-            </Text>
-          ) : null}
-
+          {/* Ad before balance/economy: Premium → ad → remaining store content (#155/#156). */}
           <Pressable
             style={[styles.cta, { backgroundColor: adDisabled ? glass.fill : accent }]}
             onPress={() => { void onWatchAd(); }}
@@ -1104,6 +1084,27 @@ export const StorePane = React.memo(function StorePane({
               accessibilityLabel={`ad debug ${adDebugLine}`}
             >
               {`debug: ${adDebugLine}`}
+            </Text>
+          ) : null}
+
+          <View style={styles.balanceCard} testID="store-balance">
+            <Text style={styles.balanceLabel}>{t('store.balance')}</Text>
+            <Text
+              style={styles.balanceValue}
+              accessibilityRole="text"
+              accessibilityLabel={t('store.balanceA11y', { count: balance })}
+              maxFontSizeMultiplier={GLOBAL_FONT_SCALE_CAP}
+            >
+              {balance}
+            </Text>
+            <Text style={styles.shellHint}>
+              {fromCacheOnly ? t('store.offlineCachedHint') : t('store.balanceHint')}
+            </Text>
+          </View>
+
+          {offline ? (
+            <Text style={styles.shellHint} testID="store-offline-banner">
+              {t('store.offlineBody')}
             </Text>
           ) : null}
         </>

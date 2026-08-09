@@ -63,13 +63,15 @@ describe('four-pane store navigation contracts', () => {
     expect(storePane).toContain('store-premium-section');
     expect(storePane).toContain('showRestore={false}');
     expect(storePane).toContain('store-ad-cta');
-    // Layout order: premium section appears before ad CTA and balance.
+    // Layout order: Premium → ad → balance/economy (#155/#156 Sol P1).
     const premiumIdx = storePane.indexOf('store-premium-section');
     const adIdx = storePane.indexOf('store-ad-cta');
     const balanceIdx = storePane.indexOf('store-balance');
     expect(premiumIdx).toBeGreaterThan(-1);
+    expect(adIdx).toBeGreaterThan(-1);
+    expect(balanceIdx).toBeGreaterThan(-1);
     expect(premiumIdx).toBeLessThan(adIdx);
-    expect(premiumIdx).toBeLessThan(balanceIdx);
+    expect(adIdx).toBeLessThan(balanceIdx);
     // Shared presentation: restore gated by showRestore.
     expect(premium).toContain('showRestore');
     expect(premium).toContain('restorePremiumSubscription');
