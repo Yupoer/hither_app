@@ -677,22 +677,29 @@ describe('Paywall contract (StoreKit subscription flow)', () => {
     join(__dirname, '../components/PaywallSheet.tsx'),
     'utf8',
   );
+  const premiumPresentation = readFileSync(
+    join(__dirname, '../components/PremiumPresentation.tsx'),
+    'utf8',
+  );
 
   it('uses monthly/annual StoreKit products and never performs a local unlock', () => {
-    expect(paywall).toContain('purchasePremiumSubscription');
-    expect(paywall).toContain('restorePremiumSubscription');
-    expect(paywall).toContain('PREMIUM_CATALOG');
-    expect(paywall).toContain('displayPrice');
-    expect(paywall).not.toContain('TEMPORARY_DIRECT_UPGRADE');
-    expect(paywall).not.toContain('setProStatusLocal(true)');
-    expect(paywall).not.toContain('setProStatus(');
-    expect(paywall).toContain('FREE_LIMITS');
+    expect(premiumPresentation).toContain('purchasePremiumSubscription');
+    expect(premiumPresentation).toContain('restorePremiumSubscription');
+    expect(premiumPresentation).toContain('PREMIUM_CATALOG');
+    expect(premiumPresentation).toContain('displayPrice');
+    expect(premiumPresentation).not.toContain('TEMPORARY_DIRECT_UPGRADE');
+    expect(premiumPresentation).not.toContain('setProStatusLocal(true)');
+    expect(premiumPresentation).not.toContain('setProStatus(');
+    expect(premiumPresentation).toContain('FREE_LIMITS');
+    // Paywall sheet hosts shared presentation with restore enabled.
+    expect(paywall).toContain('PremiumPresentation');
+    expect(paywall).toContain('showRestore');
   });
 
   it('restore success uses the server Premium projection', () => {
-    expect(paywall).toContain('restored.projection.personalPremiumActive');
-    expect(paywall).toContain('restored.projection.teamPremiumActive');
-    expect(paywall).not.toMatch(/restored\.projection\.[^\n]+\|\|\s*isPro/);
+    expect(premiumPresentation).toContain('restored.projection.personalPremiumActive');
+    expect(premiumPresentation).toContain('restored.projection.teamPremiumActive');
+    expect(premiumPresentation).not.toMatch(/restored\.projection\.[^\n]+\|\|\s*isPro/);
   });
 });
 

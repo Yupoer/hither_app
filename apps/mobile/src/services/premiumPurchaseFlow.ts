@@ -37,8 +37,27 @@ export type PremiumPurchaseFlowResult =
 
 const inFlight = new Map<string, Promise<PremiumPurchaseFlowResult>>();
 
+/** Shared in-flight product fetch so Store + Paywall do not double-hit the store. */
+let productsInFlight: Promise<PremiumStoreProduct[]> | null = null;
+let productsCache: PremiumStoreProduct[] | null = null;
+let productsCacheAt = 0;
+const PRODUCTS_CACHE_TTL_MS = 60_000;
+
 export async function loadPremiumStoreProducts(): Promise<PremiumStoreProduct[]> {
-  return fetchPremiumProducts();
+  if (productsCache && Date.now() - productsCacheAt < PRODUCTS_CACHE_TTL_MS) {
+    return productsCache;
+  }
+  if (productsInFlight) return productsInFlight;
+  productsInFlight = fetchPremiumProducts()
+    .then((next) => {
+      productsCache = next;
+      productsCacheAt = Date.now();
+      return next;
+    })
+    .finally(() => {
+      productsInFlight = null;
+    });
+  return productsInFlight;
 }
 
 function failedFromNative(result: PurchaseResult): PremiumPurchaseFlowResult {

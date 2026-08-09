@@ -21,6 +21,10 @@ const verifier = readFileSync(join(root, 'supabase/functions/verify-and-apply-pu
 const notifications = readFileSync(join(root, 'supabase/functions/apple-server-notifications/index.ts'), 'utf8');
 const storekit = readFileSync(join(root, 'supabase/functions/_shared/storekit.ts'), 'utf8');
 const paywall = readFileSync(join(__dirname, '../components/PaywallSheet.tsx'), 'utf8');
+const premiumPresentation = readFileSync(
+  join(__dirname, '../components/PremiumPresentation.tsx'),
+  'utf8',
+);
 
 describe('Ticket 6 catalog and StoreKit native boundary', () => {
   it('uses expo-iap subscriptions and a fail-closed build-time catalog', () => {
@@ -41,8 +45,9 @@ describe('Ticket 6 catalog and StoreKit native boundary', () => {
     expect(adapter).not.toContain('const introOfferEligibilityByGroup');
     expect(adapter).toContain('introductoryOfferEligibleIOS');
     expect(adapter).toContain("Platform?.OS === 'ios'");
-    expect(paywall).toContain('hasEligibleIntroductoryOffer(product)');
-    expect(paywall).toContain('introductoryPriceIOS');
+    expect(premiumPresentation).toContain('hasEligibleIntroductoryOffer(product)');
+    expect(premiumPresentation).toContain('introductoryPriceIOS');
+    expect(paywall).toContain('PremiumPresentation');
   });
 
   it('finishes only after durable server verification', () => {

@@ -52,6 +52,7 @@ import {
   truncateDiagText,
 } from '../../../state/diagnostics';
 import Constants from 'expo-constants';
+import PremiumPresentation from '../../../components/PremiumPresentation';
 
 /** Soft poll while SSV is pending; then idle CTA + slower background late-SSV poll. */
 const VERIFY_POLL_TICKS = 20;
@@ -1013,6 +1014,17 @@ export const StorePane = React.memo(function StorePane({
     >
       <Text style={[styles.heading, styles.headingFirst]}>{t('store.title')}</Text>
 
+      {/* Premium first (shared with Paywall); restore only via Settings paywall. */}
+      <View style={styles.premiumBlock} testID="store-premium-section">
+        <PremiumPresentation
+          showRestore={false}
+          onPurchaseSuccess={() => {
+            onEntitlementChanged?.();
+          }}
+          testID="store-premium-presentation"
+        />
+      </View>
+
       {loading && !snapshot ? (
         <View style={styles.shellCard} testID="store-loading">
           <ActivityIndicator color={accent} />
@@ -1244,6 +1256,9 @@ const makeStyles = (scale: number, boldText: boolean) => {
       marginBottom: s(8, 6),
     },
     headingFirst: { marginTop: 0 },
+    premiumBlock: {
+      marginBottom: s(12, 10),
+    },
     balanceCard: {
       backgroundColor: glass.fill,
       borderRadius: s(14, 12),
