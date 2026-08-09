@@ -66,6 +66,59 @@ describe('Ticket 6 catalog and StoreKit native boundary', () => {
   });
 });
 
+/**
+ * #156 Ordered Step 5 — automated / source-contract tier only.
+ * Real StoreKit / Play Billing product-load, purchase, and restore on device
+ * remain Unverified in agent CI hosts (no sandbox). Do not treat green Jest
+ * as device evidence (parent #155 non-goal).
+ */
+describe('#156 store-flow product-load / purchase-entry / restore seams', () => {
+  const storePane = readFileSync(
+    join(__dirname, '../screens/MapScreen/components/StorePane.tsx'),
+    'utf8',
+  );
+  const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+
+  it('loads catalog through shared coordinator cache (Store + Paywall single owner)', () => {
+    expect(coordinator).toContain('export async function loadPremiumStoreProducts');
+    expect(coordinator).toContain('productsInFlight');
+    expect(coordinator).toContain('PRODUCTS_CACHE_TTL_MS');
+    expect(coordinator).toContain('fetchPremiumProducts');
+    expect(premiumPresentation).toContain('loadPremiumStoreProducts');
+    // Presentation must not open a second native product lifecycle.
+    expect(premiumPresentation).not.toContain('fetchPremiumProducts');
+    expect(storePane).toContain('PremiumPresentation');
+    expect(paywall).toContain('PremiumPresentation');
+  });
+
+  it('purchase-entry wires iOS StoreKit and Android Play request shapes', () => {
+    expect(adapter).toContain("type: 'subs'");
+    expect(adapter).toContain('fetchProducts');
+    expect(adapter).toContain('skus: PREMIUM_CATALOG.products.map');
+    // expo-iap dual-platform requestPurchase payload (tiered iOS + Android entry).
+    expect(adapter).toContain('apple: { sku: productId, appAccountToken }');
+    expect(adapter).toContain(
+      'google: { skus: [productId], obfuscatedAccountId: appAccountToken }',
+    );
+    expect(coordinator).toContain('requestPremiumSubscription');
+    expect(premiumPresentation).toContain('purchasePremiumSubscription');
+    expect(premiumPresentation).toContain('handlePurchase');
+  });
+
+  it('Settings → Premium Paywall keeps restore; Store hides restore CTA', () => {
+    expect(mapScreen).toContain('PaywallSheet');
+    expect(paywall).toContain('showRestore');
+    expect(paywall).not.toContain('showRestore={false}');
+    expect(paywall).toContain('onRestoreSuccess');
+    expect(storePane).toContain('showRestore={false}');
+    expect(storePane).not.toContain('restorePremiumSubscription');
+    expect(premiumPresentation).toContain('restorePremiumSubscription');
+    expect(adapter).toContain('export async function restorePremiumPurchases');
+    expect(adapter).toContain('restorePurchases');
+    expect(coordinator).toContain('export async function restorePremiumSubscription');
+  });
+});
+
 describe('Tickets 7-8 server ledger and verification contract', () => {
   it('binds a server-generated account token and stores no raw JWS', () => {
     expect(ledger).toContain('get_or_create_premium_app_account_token');

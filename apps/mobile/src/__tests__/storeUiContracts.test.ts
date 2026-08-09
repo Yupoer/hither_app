@@ -76,7 +76,9 @@ describe('four-pane store navigation contracts', () => {
     expect(premium).toContain('showRestore');
     expect(premium).toContain('restorePremiumSubscription');
     expect(premium).toContain('purchasePremiumSubscription');
+    expect(premium).toContain('loadPremiumStoreProducts');
     expect(paywall).toContain('showRestore');
+    expect(paywall).not.toContain('showRestore={false}');
     expect(paywall).toContain('PremiumPresentation');
     // Store must not render its own restore CTA string/handler.
     expect(storePane).not.toContain('paywall.restore');
