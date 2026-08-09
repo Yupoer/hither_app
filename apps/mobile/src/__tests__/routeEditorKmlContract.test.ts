@@ -104,6 +104,13 @@ describe('route editor + KML contracts (#151)', () => {
       ),
       'utf8',
     );
+    const boundaryMigration = readFileSync(
+      join(
+        __dirname,
+        '../../../../supabase/migrations/20260810030000_itinerary_position_rpc_boundary.sql',
+      ),
+      'utf8',
+    );
     expect(positionMigration).toContain('add_itinerary_item');
     expect(positionMigration).toContain('reorder_itinerary_items');
     expect(positionMigration).toContain('for update');
@@ -113,6 +120,18 @@ describe('route editor + KML contracts (#151)', () => {
     expect(reorderSnapshotMigration).toContain('cannot reorder closed itinerary items');
     expect(reorderSnapshotMigration).toContain('reorder ids missing or out of scope');
     expect(reorderSnapshotMigration).toContain('permission denied');
+    // r3: RPC-only position/day boundary + approval/coordination share group lock.
+    expect(boundaryMigration).toContain('guard_itinerary_position_day');
+    expect(boundaryMigration).toContain('hither.allow_itinerary_position_write');
+    expect(boundaryMigration).toContain('trg_guard_itinerary_position_day');
+    expect(boundaryMigration).toContain('create or replace function public.resolve_gather_point_request');
+    expect(boundaryMigration).toContain('create or replace function public.coordination_apply_outcome');
+    expect(boundaryMigration).toMatch(
+      /resolve_gather_point_request[\s\S]*for update[\s\S]*allow_itinerary_position_write/,
+    );
+    expect(boundaryMigration).toMatch(
+      /coordination_apply_outcome[\s\S]*for update[\s\S]*allow_itinerary_position_write/,
+    );
     expect(destinationService).toContain("rpc('add_itinerary_item'");
     expect(destinationService).toContain("rpc('reorder_itinerary_items'");
     expect(destinationService).toContain("rpc('import_itinerary_batch'");

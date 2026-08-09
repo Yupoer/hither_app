@@ -1,6 +1,8 @@
--- pgTAP: reorder locked-snapshot + auth batch rules (#151 Sol r2).
+-- pgTAP: reorder locked-snapshot + auth batch rules (#151 Sol r2/r3).
 -- Proves stale client absolute positions are ignored after a concurrent-style
--- Day-1 shift (same outcome two sessions share under groups FOR UPDATE).
+-- Day-1 shift via authorized add_itinerary_item (groups FOR UPDATE + GUC).
+-- Note: single-connection pgTAP cannot open a second live session; two-session
+-- lock wait is Unverified without deployed Supabase (see PR waiver).
 -- Also: non-leader, mixed-scope, closed, duplicate rejection.
 begin;
 
@@ -59,7 +61,8 @@ select lives_ok(
 );
 
 -- Capture Day-2 ids and their pre-shift positions (stale client plan).
--- Concurrent Day-1 insert: shift positions >=1, insert D@1 (simulates add under lock).
+-- Concurrent Day-1 writer uses authorized add RPC (groups FOR UPDATE + GUC),
+-- not raw table writes (blocked by position/day guard).
 do $$
 declare
   v_b uuid;
@@ -70,7 +73,6 @@ begin
   select id into v_c from public.itinerary_items
   where group_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' and title = 'C';
 
-  -- Stash stale plan in a temp table for the next assertion.
   create temporary table stale_plan (
     id uuid primary key,
     stale_position integer not null,
@@ -81,20 +83,14 @@ begin
   select id, position, day from public.itinerary_items
   where id in (v_b, v_c);
 
-  -- Concurrent Day-1 writer (after client snapshot, before reorder lock release):
-  update public.itinerary_items
-  set position = position + 1
-  where group_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
-    and position >= 1;
-
-  insert into public.itinerary_items (
-    id, group_id, title, day, latitude, longitude, position
-  ) values (
-    'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+  -- Day-1 insert under the same lock contract as production add path.
+  perform public.add_itinerary_item(
     'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    null,
     'D',
-    1,
-    4, 4,
+    null,
+    4::float8,
+    4::float8,
     1
   );
 end $$;
