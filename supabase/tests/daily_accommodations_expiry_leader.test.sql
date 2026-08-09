@@ -8,7 +8,7 @@ create extension if not exists pgtap with schema extensions;
 create extension if not exists dblink;
 
 set search_path = extensions, public, auth;
-select plan(28);
+select plan(27);
 
 -- ============================================================
 -- Single-session block (transactional auth + fixtures)
@@ -63,28 +63,28 @@ insert into public.profiles (id, nickname, anonymous_expires_at) values
 
 insert into public.groups (id, name, invite_code, created_by, accommodation_auto_add) values
 (
-  'dgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   'Daily stay trip',
   'DAY001',
   'd1111111-1111-4111-8111-111111111111',
   true
 ),
 (
-  'dgbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+  'dbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
   'Anon leader daily trip',
   'DAY002',
   'd2222222-2222-4222-8222-222222222222',
   true
 ),
 (
-  'dgcccccc-cccc-4ccc-8ccc-cccccccccccc',
+  'dccccccc-cccc-4ccc-8ccc-cccccccccccc',
   'Concurrent race trip',
   'DAY003',
   'd1111111-1111-4111-8111-111111111111',
   true
 ),
 (
-  'dgdddddd-dddd-4ddd-8ddd-dddddddddddd',
+  'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
   'Rollback trip',
   'DAY004',
   'd1111111-1111-4111-8111-111111111111',
@@ -93,31 +93,31 @@ insert into public.groups (id, name, invite_code, created_by, accommodation_auto
 
 insert into public.memberships (group_id, user_id, role, created_at) values
   (
-    'dgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    'daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     'd1111111-1111-4111-8111-111111111111',
     'leader',
     now() - interval '2 days'
   ),
   (
-    'dgbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    'dbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
     'd2222222-2222-4222-8222-222222222222',
     'leader',
     now() - interval '2 days'
   ),
   (
-    'dgcccccc-cccc-4ccc-8ccc-cccccccccccc',
+    'dccccccc-cccc-4ccc-8ccc-cccccccccccc',
     'd1111111-1111-4111-8111-111111111111',
     'leader',
     now() - interval '2 days'
   ),
   (
-    'dgcccccc-cccc-4ccc-8ccc-cccccccccccc',
+    'dccccccc-cccc-4ccc-8ccc-cccccccccccc',
     'd3333333-3333-4333-8333-333333333333',
     'leader',
     now() - interval '2 days'
   ),
   (
-    'dgdddddd-dddd-4ddd-8ddd-dddddddddddd',
+    'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
     'd1111111-1111-4111-8111-111111111111',
     'leader',
     now() - interval '2 days'
@@ -129,13 +129,13 @@ select set_config('request.jwt.claim.sub', 'd2222222-2222-4222-8222-222222222222
 select set_config('request.jwt.claim.role', 'authenticated', true);
 
 select ok(
-  not extensions.is_member('dgbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),
+  not extensions.is_member('dbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),
   'expired anonymous leader is_member false despite role=leader'
 );
 
 select throws_ok(
   $$select public.set_daily_accommodation_with_auto_add(
-    'dgbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::uuid,
+    'dbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::uuid,
     '2026-08-10'::date,
     'Hotel',
     null,
@@ -151,7 +151,7 @@ select throws_ok(
 
 select throws_ok(
   $$select public.clear_daily_accommodation_with_downgrade(
-    'dgbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::uuid,
+    'dbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::uuid,
     '2026-08-10'::date,
     1
   )$$,
@@ -162,7 +162,7 @@ select throws_ok(
 
 select throws_ok(
   $$select public.set_accommodation_auto_add(
-    'dgbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::uuid,
+    'dbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::uuid,
     false
   )$$,
   null,
@@ -175,7 +175,7 @@ select throws_ok(
   $$insert into public.daily_accommodations (
     group_id, stay_date, title, latitude, longitude
   ) values (
-    'dgbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    'dbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
     '2026-08-10',
     'Hotel RLS',
     25.0,
@@ -191,7 +191,7 @@ select set_config('request.jwt.claim.sub', 'd1111111-1111-4111-8111-111111111111
 
 select lives_ok(
   $$select public.set_accommodation_auto_add(
-    'dgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'::uuid,
+    'daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'::uuid,
     true
   )$$,
   'active leader can set_accommodation_auto_add'
@@ -199,7 +199,7 @@ select lives_ok(
 
 select lives_ok(
   $$select public.set_daily_accommodation_with_auto_add(
-    'dgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'::uuid,
+    'daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'::uuid,
     '2026-08-11'::date,
     'Stay A',
     'Addr',
@@ -213,7 +213,7 @@ select lives_ok(
 
 select is(
   (select count(*)::int from public.daily_accommodations
-    where group_id = 'dgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    where group_id = 'daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
       and stay_date = '2026-08-11'),
   1,
   'none→some yields exactly one daily row'
@@ -221,7 +221,7 @@ select is(
 
 select is(
   (select count(*)::int from public.itinerary_items
-    where group_id = 'dgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    where group_id = 'daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
       and kind = 'accommodation'
       and stay_anchor = true
       and coalesce(day, 1) = 1),
@@ -232,7 +232,7 @@ select is(
 -- Second call serializes as some→some: still one daily; no extra auto-add cards.
 select lives_ok(
   $$select public.set_daily_accommodation_with_auto_add(
-    'dgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'::uuid,
+    'daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'::uuid,
     '2026-08-11'::date,
     'Stay B',
     'Addr2',
@@ -246,7 +246,7 @@ select lives_ok(
 
 select is(
   (select count(*)::int from public.daily_accommodations
-    where group_id = 'dgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    where group_id = 'daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
       and stay_date = '2026-08-11'),
   1,
   'serial some→some converges to one daily row'
@@ -254,7 +254,7 @@ select is(
 
 select is(
   (select count(*)::int from public.itinerary_items
-    where group_id = 'dgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    where group_id = 'daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
       and kind = 'accommodation'
       and coalesce(day, 1) = 1),
   2,
@@ -264,7 +264,7 @@ select is(
 -- Atomic clear + anchor downgrade.
 select lives_ok(
   $$select public.clear_daily_accommodation_with_downgrade(
-    'dgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'::uuid,
+    'daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'::uuid,
     '2026-08-11'::date,
     1
   )$$,
@@ -273,7 +273,7 @@ select lives_ok(
 
 select is(
   (select count(*)::int from public.daily_accommodations
-    where group_id = 'dgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    where group_id = 'daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
       and stay_date = '2026-08-11'),
   0,
   'clear removes daily row'
@@ -281,7 +281,7 @@ select is(
 
 select is(
   (select count(*)::int from public.itinerary_items
-    where group_id = 'dgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    where group_id = 'daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
       and kind = 'accommodation'
       and stay_anchor = true
       and coalesce(day, 1) = 1),
@@ -310,7 +310,7 @@ begin
   if TG_OP = 'INSERT'
      and NEW.kind = 'accommodation'
      and NEW.stay_anchor = true
-     and NEW.group_id = 'dgdddddd-dddd-4ddd-8ddd-dddddddddddd'::uuid
+     and NEW.group_id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'::uuid
   then
     select count(*)::int into n
     from public.itinerary_items i
@@ -339,7 +339,7 @@ select set_config('request.jwt.claim.role', 'authenticated', true);
 
 select throws_ok(
   $$select public.set_daily_accommodation_with_auto_add(
-    'dgdddddd-dddd-4ddd-8ddd-dddddddddddd'::uuid,
+    'dddddddd-dddd-4ddd-8ddd-dddddddddddd'::uuid,
     '2026-08-12'::date,
     'RollbackStay',
     null,
@@ -358,7 +358,7 @@ reset role;
 
 select is(
   (select count(*)::int from public.daily_accommodations
-    where group_id = 'dgdddddd-dddd-4ddd-8ddd-dddddddddddd'
+    where group_id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
       and stay_date = '2026-08-12'),
   0,
   'failed second card rolls back daily upsert (no partial daily row)'
@@ -366,7 +366,7 @@ select is(
 
 select is(
   (select count(*)::int from public.itinerary_items
-    where group_id = 'dgdddddd-dddd-4ddd-8ddd-dddddddddddd'
+    where group_id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
       and kind = 'accommodation'),
   0,
   'failed second card rolls back first card insert (no partial cards)'
@@ -376,7 +376,7 @@ drop trigger if exists trg_test_fail_second_stay_anchor on public.itinerary_item
 drop function if exists public._test_fail_second_stay_anchor();
 
 -- Commit fixtures + single-session results so dblink peers can see them.
--- (Race group dgcccccc has no daily row yet; leaders remain.)
+-- (Race group dccccccc has no daily row yet; leaders remain.)
 -- Role is already test-admin after reset above; commit ends local role state.
 commit;
 
@@ -403,20 +403,20 @@ select lives_ok(
     perform dblink_connect('daily_race_b', v_conninfo);
 
     perform dblink_exec('daily_race_a', $s$
-      select set_config('request.jwt.claim.sub', 'd1111111-1111-4111-8111-111111111111', false);
-      select set_config('request.jwt.claim.role', 'authenticated', false);
+      set request.jwt.claim.sub = 'd1111111-1111-4111-8111-111111111111';
+      set request.jwt.claim.role = 'authenticated';
       set role authenticated;
     $s$);
     perform dblink_exec('daily_race_b', $s$
-      select set_config('request.jwt.claim.sub', 'd3333333-3333-4333-8333-333333333333', false);
-      select set_config('request.jwt.claim.role', 'authenticated', false);
+      set request.jwt.claim.sub = 'd3333333-3333-4333-8333-333333333333';
+      set request.jwt.claim.role = 'authenticated';
       set role authenticated;
     $s$);
 
     -- Fire both none→some calls without waiting (true concurrent backends).
     perform dblink_send_query('daily_race_a', $q$
       select public.set_daily_accommodation_with_auto_add(
-        'dgcccccc-cccc-4ccc-8ccc-cccccccccccc'::uuid,
+        'dccccccc-cccc-4ccc-8ccc-cccccccccccc'::uuid,
         '2026-08-13'::date,
         'RaceStayA',
         'AddrA',
@@ -428,7 +428,7 @@ select lives_ok(
     $q$);
     perform dblink_send_query('daily_race_b', $q$
       select public.set_daily_accommodation_with_auto_add(
-        'dgcccccc-cccc-4ccc-8ccc-cccccccccccc'::uuid,
+        'dccccccc-cccc-4ccc-8ccc-cccccccccccc'::uuid,
         '2026-08-13'::date,
         'RaceStayB',
         'AddrB',
@@ -466,7 +466,7 @@ select lives_ok(
 
 select is(
   (select count(*)::int from public.daily_accommodations
-    where group_id = 'dgcccccc-cccc-4ccc-8ccc-cccccccccccc'
+    where group_id = 'dccccccc-cccc-4ccc-8ccc-cccccccccccc'
       and stay_date = '2026-08-13'),
   1,
   'concurrent none→some converges to exactly one daily row'
@@ -474,7 +474,7 @@ select is(
 
 select is(
   (select count(*)::int from public.itinerary_items
-    where group_id = 'dgcccccc-cccc-4ccc-8ccc-cccccccccccc'
+    where group_id = 'dccccccc-cccc-4ccc-8ccc-cccccccccccc'
       and kind = 'accommodation'
       and stay_anchor = true
       and coalesce(day, 1) = 1),
@@ -485,31 +485,31 @@ select is(
 -- Cleanup committed fixtures (no outer rollback after concurrent section).
 delete from public.itinerary_items
 where group_id in (
-  'dgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-  'dgbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-  'dgcccccc-cccc-4ccc-8ccc-cccccccccccc',
-  'dgdddddd-dddd-4ddd-8ddd-dddddddddddd'
+  'daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'dbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+  'dccccccc-cccc-4ccc-8ccc-cccccccccccc',
+  'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
 );
 delete from public.daily_accommodations
 where group_id in (
-  'dgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-  'dgbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-  'dgcccccc-cccc-4ccc-8ccc-cccccccccccc',
-  'dgdddddd-dddd-4ddd-8ddd-dddddddddddd'
+  'daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'dbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+  'dccccccc-cccc-4ccc-8ccc-cccccccccccc',
+  'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
 );
 delete from public.memberships
 where group_id in (
-  'dgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-  'dgbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-  'dgcccccc-cccc-4ccc-8ccc-cccccccccccc',
-  'dgdddddd-dddd-4ddd-8ddd-dddddddddddd'
+  'daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'dbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+  'dccccccc-cccc-4ccc-8ccc-cccccccccccc',
+  'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
 );
 delete from public.groups
 where id in (
-  'dgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-  'dgbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-  'dgcccccc-cccc-4ccc-8ccc-cccccccccccc',
-  'dgdddddd-dddd-4ddd-8ddd-dddddddddddd'
+  'daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'dbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+  'dccccccc-cccc-4ccc-8ccc-cccccccccccc',
+  'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
 );
 delete from public.profiles
 where id in (

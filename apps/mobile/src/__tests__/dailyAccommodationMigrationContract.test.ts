@@ -201,4 +201,32 @@ describe('daily accommodations pgTAP privilege contract (#158 REVIEW_FIX r4)', (
     expect(fromAuthToTrigger).not.toBeNull();
     expect(fromAuthToTrigger![0]).toMatch(/reset role;/);
   });
+
+  it('uses valid UUID fixtures, matches the pgTAP plan, and configures dblink with SET', () => {
+    const uuidCandidates =
+      sqlTest.match(
+        /'[0-9a-z]{8}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{12}'/gi,
+      ) ?? [];
+    expect(uuidCandidates.length).toBeGreaterThan(0);
+    for (const candidate of uuidCandidates) {
+      expect(candidate.slice(1, -1)).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+      );
+    }
+
+    const plan = Number(sqlTest.match(/select plan\((\d+)\)/i)?.[1]);
+    const assertions =
+      sqlTest.match(
+        /select\s+(?:has_function|ok|throws_ok|lives_ok|is)\s*\(/gi,
+      )?.length ?? 0;
+    expect(assertions).toBe(plan);
+
+    const raceSetup = sqlTest.match(
+      /perform dblink_exec\('daily_race_a'[\s\S]*?perform dblink_send_query/,
+    )?.[0];
+    expect(raceSetup).toBeDefined();
+    expect(raceSetup).not.toMatch(/select\s+set_config/i);
+    expect(raceSetup?.match(/set request\.jwt\.claim\.sub/g)).toHaveLength(2);
+    expect(raceSetup?.match(/set role authenticated/g)).toHaveLength(2);
+  });
 });
