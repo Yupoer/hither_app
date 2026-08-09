@@ -21,9 +21,12 @@ import { dateForTripDay, localDayKey, resolveVisibleStartDay } from '../utils/tr
 import { clampDateNotBeforeToday, startOfTodayLocal } from '../utils/meetTime';
 import {
   accommodationBoundaryLocks,
+  applyPureIndexAnchors,
   dayCollapseStorageKey,
+  dragIndexBoundsForDay,
   type AccommodationListItem,
 } from '../utils/accommodationSemantics';
+import { eligibleFavoriteDateOptions } from '../utils/favoriteDates';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   DESTINATION_EMOJI_CATEGORIES,
@@ -59,7 +62,9 @@ interface Props {
   tripDays?: number;
   departureDate?: string;
   onUpdateTripDetails: (days: number, date: string) => void;
-  onReorder: (updates: { id: string; position: number; day: number }[]) => void;
+  onReorder: (
+    updates: { id: string; position: number; day: number; stayAnchor?: boolean }[],
+  ) => void;
   onDelete?: (id: string) => void;
   /** Per-stop emoji (+ optional markerColor). Day color is via day-header picker. */
   onUpdateEmojiColor?: (
@@ -155,6 +160,8 @@ export default function DestinationReorderList({
   const [setStayModeDay, setSetStayModeDay] = useState<number | null>(null);
   const [collapsedDays, setCollapsedDays] = useState<Record<number, boolean>>({});
   const [favoritesOpen, setFavoritesOpen] = useState(false);
+  /** Favorite selected; date must be confirmed before write. */
+  const [favoritePending, setFavoritePending] = useState<FavoritePlaceView | null>(null);
 
   const openAndroidDatePicker = useCallback(() => {
     if (Platform.OS !== 'android') return;
@@ -327,6 +334,34 @@ export default function DestinationReorderList({
             }
          }
          dragBoundsRef.current = { min, max };
+      } else if (startIdx !== -1 && orderRef.current[startIdx].type === 'dest') {
+         // Map day-local accommodation bounds onto full list indices so mid
+         // cards cannot cross or replace locked first/last stay anchors.
+         const moving = orderRef.current[startIdx];
+         const day = moving.item.day || 1;
+         const dayIndices: number[] = [];
+         const dayItems: AccommodationListItem[] = [];
+         orderRef.current.forEach((entry, index) => {
+           if (entry.type !== 'dest' || (entry.item.day || 1) !== day) return;
+           dayIndices.push(index);
+           dayItems.push({
+             id: entry.item.id,
+             kind: entry.item.kind === 'accommodation' ? 'accommodation' : 'stop',
+             order: dayItems.length,
+             day,
+             title: entry.item.title,
+             stayAnchor: entry.item.stayAnchor,
+           });
+         });
+         const dayBounds = dragIndexBoundsForDay(dayItems, moving.item.id);
+         if (dayBounds && dayIndices.length > 0) {
+           dragBoundsRef.current = {
+             min: dayIndices[Math.max(0, Math.min(dayBounds.min, dayIndices.length - 1))],
+             max: dayIndices[Math.max(0, Math.min(dayBounds.max, dayIndices.length - 1))],
+           };
+         } else {
+           dragBoundsRef.current = null;
+         }
       } else {
          dragBoundsRef.current = null;
       }
@@ -370,16 +405,44 @@ export default function DestinationReorderList({
     setActiveId(null);
     pan.setValue(0);
 
-    const updates: { id: string; position: number; day: number }[] = [];
+    const updates: {
+      id: string;
+      position: number;
+      day: number;
+      stayAnchor?: boolean;
+    }[] = [];
     let currentDay = 1;
     let position = 0;
+    const byDay = new Map<number, AccommodationListItem[]>();
     for (const item of orderRef.current) {
       if (item.type === 'header') {
         currentDay = item.day;
       } else {
         updates.push({ id: item.id, position, day: currentDay });
+        const list = byDay.get(currentDay) ?? [];
+        list.push({
+          id: item.item.id,
+          kind: item.item.kind === 'accommodation' ? 'accommodation' : 'stop',
+          order: position,
+          day: currentDay,
+          title: item.item.title,
+          stayAnchor: item.item.stayAnchor,
+        });
+        byDay.set(currentDay, list);
         position++;
       }
+    }
+
+    // After drop: pure-index edges become stay anchors (persisted via reorder).
+    for (const [day, dayItems] of byDay) {
+      const anchored = applyPureIndexAnchors(dayItems);
+      for (const a of anchored) {
+        const u = updates.find((x) => x.id === a.id);
+        if (u && a.kind === 'accommodation') {
+          u.stayAnchor = Boolean(a.stayAnchor);
+        }
+      }
+      void day;
     }
 
     let changed = false;
@@ -390,7 +453,14 @@ export default function DestinationReorderList({
     );
     for (const u of updates) {
        const orig = destinations.find(d => d.id === u.id);
-       if (!orig || openIndexById.get(u.id) !== u.position || (orig.day || 1) !== u.day) {
+       if (
+         !orig
+         || openIndexById.get(u.id) !== u.position
+         || (orig.day || 1) !== u.day
+         || (u.stayAnchor !== undefined
+           && Boolean(orig.stayAnchor) !== Boolean(u.stayAnchor)
+           && orig.kind === 'accommodation')
+       ) {
            changed = true;
            break;
        }
@@ -545,6 +615,7 @@ export default function DestinationReorderList({
                 order: d.order,
                 day: d.day || 1,
                 title: d.title,
+                stayAnchor: d.stayAnchor,
               }));
             const { lockedIds } = accommodationBoundaryLocks(dayItems);
             const locked = item.item.kind === 'accommodation' && lockedIds.has(item.item.id);
@@ -591,7 +662,12 @@ export default function DestinationReorderList({
         </View>
       )}
 
-      <Modal visible={favoritesOpen} transparent animationType="fade">
+      <Modal
+        visible={favoritesOpen && !favoritePending}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setFavoritesOpen(false)}
+      >
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>{t('stay.favorites')}</Text>
@@ -600,10 +676,8 @@ export default function DestinationReorderList({
                 key={fav.id}
                 style={styles.favRow}
                 onPress={() => {
-                  // Default: add to first visible day; parent may open date picker.
-                  const day = Math.max(1, resolveVisibleStartDay(departureDate, tripDays));
-                  onPickFavorite?.(fav, day);
-                  setFavoritesOpen(false);
+                  // #160: show eligible-date picker first; write only after confirm.
+                  setFavoritePending(fav);
                 }}
                 accessibilityRole="button"
               >
@@ -611,7 +685,68 @@ export default function DestinationReorderList({
                 <Text style={styles.favTitle} numberOfLines={1}>{fav.title}</Text>
               </Pressable>
             ))}
-            <Pressable onPress={() => setFavoritesOpen(false)} style={styles.modalActionBtn}>
+            <Pressable
+              onPress={() => setFavoritesOpen(false)}
+              style={styles.modalActionBtn}
+              accessibilityRole="button"
+            >
+              <Text style={styles.modalActionText}>{t('common.cancel')}</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={favoritePending != null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          // Cancel: write nothing.
+          setFavoritePending(null);
+          setFavoritesOpen(false);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>
+              {favoritePending?.title ?? t('stay.favorites')}
+            </Text>
+            <Text style={styles.modalLabel}>{t('stay.pickDate')}</Text>
+            {eligibleFavoriteDateOptions({
+              departureDate,
+              tripDays,
+            }).map((opt) => (
+              <Pressable
+                key={opt.dateKey}
+                style={styles.favRow}
+                onPress={() => {
+                  const fav = favoritePending;
+                  if (fav) {
+                    onPickFavorite?.(fav, opt.day);
+                  }
+                  setFavoritePending(null);
+                  setFavoritesOpen(false);
+                }}
+                accessibilityRole="button"
+              >
+                <Ionicons name="calendar-outline" size={16} color={colors.accent} />
+                <Text style={styles.favTitle}>
+                  {t('trip.dayTitle', { day: opt.day })} · {opt.dateKey}
+                </Text>
+              </Pressable>
+            ))}
+            {eligibleFavoriteDateOptions({ departureDate, tripDays }).length === 0 ? (
+              <Text style={styles.empty}>{t('stay.noEligibleDates')}</Text>
+            ) : null}
+            <Pressable
+              onPress={() => {
+                // Cancel / ended-trip path: write nothing.
+                setFavoritePending(null);
+                setFavoritesOpen(false);
+              }}
+              style={styles.modalActionBtn}
+              accessibilityRole="button"
+            >
               <Text style={styles.modalActionText}>{t('common.cancel')}</Text>
             </Pressable>
           </View>

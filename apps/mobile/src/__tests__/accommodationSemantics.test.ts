@@ -1,8 +1,11 @@
 import {
   accommodationBoundaryLocks,
+  applyPureIndexAnchors,
   dayCollapseStorageKey,
+  downgradeAnchorsOnDailyChange,
   dragIndexBoundsForDay,
   isAccommodationDraggable,
+  quickAddAccommodationInsertPosition,
   shouldAutoAddAccommodationCards,
   type AccommodationListItem,
 } from '../utils/accommodationSemantics';
@@ -62,12 +65,12 @@ describe('shouldAutoAddAccommodationCards', () => {
 
 describe('accommodationBoundaryLocks', () => {
   const day: AccommodationListItem[] = [
-    { id: 'a1', kind: 'accommodation', order: 0, day: 1, title: 'Hotel' },
+    { id: 'a1', kind: 'accommodation', order: 0, day: 1, title: 'Hotel', stayAnchor: true },
     { id: 's1', kind: 'stop', order: 1, day: 1, title: 'Cafe' },
-    { id: 'a2', kind: 'accommodation', order: 2, day: 1, title: 'Hotel' },
+    { id: 'a2', kind: 'accommodation', order: 2, day: 1, title: 'Hotel', stayAnchor: true },
   ];
 
-  it('locks first and last accommodation', () => {
+  it('locks first and last accommodation with active anchors', () => {
     const locks = accommodationBoundaryLocks(day);
     expect(locks.firstLockedId).toBe('a1');
     expect(locks.lastLockedId).toBe('a2');
@@ -79,7 +82,7 @@ describe('accommodationBoundaryLocks', () => {
 
   it('single accommodation is both first and last (one card)', () => {
     const single: AccommodationListItem[] = [
-      { id: 'only', kind: 'accommodation', order: 0, day: 1, title: 'Inn' },
+      { id: 'only', kind: 'accommodation', order: 0, day: 1, title: 'Inn', stayAnchor: true },
     ];
     const locks = accommodationBoundaryLocks(single);
     expect(locks.firstLockedId).toBe('only');
@@ -87,15 +90,60 @@ describe('accommodationBoundaryLocks', () => {
     expect(locks.lockedIds.size).toBe(1);
   });
 
-  it('prevents mid accommodation from crossing locks', () => {
+  it('prevents mid accommodation from crossing locks (occupied edge)', () => {
     const withMid: AccommodationListItem[] = [
-      { id: 'a1', kind: 'accommodation', order: 0, day: 1, title: 'H' },
-      { id: 'm', kind: 'accommodation', order: 1, day: 1, title: 'Mid' },
+      { id: 'a1', kind: 'accommodation', order: 0, day: 1, title: 'H', stayAnchor: true },
+      { id: 'm', kind: 'accommodation', order: 1, day: 1, title: 'Mid', stayAnchor: false },
       { id: 's1', kind: 'stop', order: 2, day: 1, title: 'S' },
-      { id: 'a2', kind: 'accommodation', order: 3, day: 1, title: 'H' },
+      { id: 'a2', kind: 'accommodation', order: 3, day: 1, title: 'H', stayAnchor: true },
     ];
     const bounds = dragIndexBoundsForDay(withMid, 'm');
     expect(bounds).toEqual({ min: 1, max: 2 });
+    // Cannot drag mid onto locked first or last.
+    expect(dragIndexBoundsForDay(withMid, 'm')?.min).toBeGreaterThan(0);
+    expect(dragIndexBoundsForDay(withMid, 'm')?.max).toBeLessThan(3);
+  });
+
+  it('downgrades anchors on some→some / some→none so edges become draggable', () => {
+    const downgraded = downgradeAnchorsOnDailyChange(day);
+    expect(downgraded.every((i) => i.kind !== 'accommodation' || i.stayAnchor === false)).toBe(
+      true,
+    );
+    const locks = accommodationBoundaryLocks(downgraded);
+    expect(locks.lockedIds.size).toBe(0);
+    expect(isAccommodationDraggable(downgraded[0], downgraded)).toBe(true);
+    expect(isAccommodationDraggable(downgraded[2], downgraded)).toBe(true);
+  });
+
+  it('applyPureIndexAnchors re-locks edges after drop', () => {
+    const midOnly: AccommodationListItem[] = [
+      { id: 'a1', kind: 'accommodation', order: 0, day: 1, title: 'H', stayAnchor: false },
+      { id: 's1', kind: 'stop', order: 1, day: 1, title: 'S' },
+      { id: 'a2', kind: 'accommodation', order: 2, day: 1, title: 'H', stayAnchor: false },
+    ];
+    const applied = applyPureIndexAnchors(midOnly);
+    expect(applied[0].stayAnchor).toBe(true);
+    expect(applied[2].stayAnchor).toBe(true);
+    expect(applied[1].stayAnchor).toBe(false);
+  });
+});
+
+describe('quickAddAccommodationInsertPosition', () => {
+  it('inserts before occupied locked tail', () => {
+    const existing = [
+      { order: 0, day: 1, kind: 'accommodation', stayAnchor: true },
+      { order: 1, day: 1, kind: 'stop', stayAnchor: false },
+      { order: 2, day: 1, kind: 'accommodation', stayAnchor: true },
+    ];
+    expect(quickAddAccommodationInsertPosition(existing, 1)).toBe(2);
+  });
+
+  it('appends when tail is not a locked accommodation', () => {
+    const existing = [
+      { order: 0, day: 1, kind: 'stop' },
+      { order: 1, day: 1, kind: 'stop' },
+    ];
+    expect(quickAddAccommodationInsertPosition(existing, 1)).toBe(2);
   });
 });
 
@@ -187,13 +235,15 @@ describe('eligibleFavoriteDateOptions', () => {
     expect(opts.map((o) => o.day)).toEqual([2, 3]);
   });
 
-  it('returns none after trip', () => {
+  it('returns none after trip (cancel/ended path writes nothing)', () => {
     const opts = eligibleFavoriteDateOptions({
       departureDate: '2030-01-10',
       tripDays: 3,
       now: new Date('2030-01-20T12:00:00'),
     });
+    // No eligible day ⇒ UI cannot confirm a write.
     expect(opts).toEqual([]);
+    expect(opts.length).toBe(0);
   });
 });
 

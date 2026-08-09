@@ -2,6 +2,8 @@
 -- Daily accommodation (team+date snapshot) + account favorite places
 -- + itinerary accommodation kind + team auto-add switch.
 -- Expand-first: grants + RLS required for Data API exposure.
+-- REVIEW_FIX: expiry-aware leader writes; serialize none→some auto-add;
+-- stay_anchor for boundary lock downgrade on some→some / some→none.
 
 -- ============================================================
 -- groups.accommodation_auto_add (team-shared, default on)
@@ -29,6 +31,13 @@ end $$;
 
 comment on column public.itinerary_items.kind is
   'stop = gathering point; accommodation = independent stay snapshot card. Deleting a card never clears daily_accommodations.';
+
+-- Boundary anchors from auto-add / pure-index after drop; cleared on daily change.
+alter table public.itinerary_items
+  add column if not exists stay_anchor boolean not null default false;
+
+comment on column public.itinerary_items.stay_anchor is
+  'When true and pure-index first/last accommodation of the day, card is boundary-locked. Cleared on some→some / some→none so cards become draggable mid.';
 
 -- ============================================================
 -- daily_accommodations — team + calendar date, at most one row
@@ -62,43 +71,58 @@ comment on table public.daily_accommodations is
 
 alter table public.daily_accommodations enable row level security;
 
--- Members may read; leaders (行程編輯權限) may write.
+-- Members may read (expiry-aware is_member).
 create policy "daily_accommodations: select if member"
   on public.daily_accommodations for select to authenticated
   using (extensions.is_member(group_id));
 
+-- Leaders may write only while membership is active (expiry-aware).
+-- Raw memberships.role='leader' alone is insufficient: expired anonymous
+-- leaders retain a memberships row but is_member is false.
 create policy "daily_accommodations: insert if leader"
   on public.daily_accommodations for insert to authenticated
-  with check (exists (
-    select 1 from public.memberships m
-    where m.group_id = daily_accommodations.group_id
-      and m.user_id = (select auth.uid())
-      and m.role = 'leader'
-  ));
+  with check (
+    extensions.is_member(group_id)
+    and exists (
+      select 1 from public.memberships m
+      where m.group_id = daily_accommodations.group_id
+        and m.user_id = (select auth.uid())
+        and m.role = 'leader'
+    )
+  );
 
 create policy "daily_accommodations: update if leader"
   on public.daily_accommodations for update to authenticated
-  using (exists (
-    select 1 from public.memberships m
-    where m.group_id = daily_accommodations.group_id
-      and m.user_id = (select auth.uid())
-      and m.role = 'leader'
-  ))
-  with check (exists (
-    select 1 from public.memberships m
-    where m.group_id = daily_accommodations.group_id
-      and m.user_id = (select auth.uid())
-      and m.role = 'leader'
-  ));
+  using (
+    extensions.is_member(group_id)
+    and exists (
+      select 1 from public.memberships m
+      where m.group_id = daily_accommodations.group_id
+        and m.user_id = (select auth.uid())
+        and m.role = 'leader'
+    )
+  )
+  with check (
+    extensions.is_member(group_id)
+    and exists (
+      select 1 from public.memberships m
+      where m.group_id = daily_accommodations.group_id
+        and m.user_id = (select auth.uid())
+        and m.role = 'leader'
+    )
+  );
 
 create policy "daily_accommodations: delete if leader"
   on public.daily_accommodations for delete to authenticated
-  using (exists (
-    select 1 from public.memberships m
-    where m.group_id = daily_accommodations.group_id
-      and m.user_id = (select auth.uid())
-      and m.role = 'leader'
-  ));
+  using (
+    extensions.is_member(group_id)
+    and exists (
+      select 1 from public.memberships m
+      where m.group_id = daily_accommodations.group_id
+        and m.user_id = (select auth.uid())
+        and m.role = 'leader'
+    )
+  );
 
 grant select, insert, update, delete on public.daily_accommodations to authenticated;
 
@@ -192,6 +216,12 @@ begin
     raise exception 'not_authenticated';
   end if;
 
+  -- Expiry-aware active membership first, then leader role.
+  -- Expired anonymous leaders fail is_member even with memberships.role=leader.
+  if not extensions.is_member(p_group_id) then
+    raise exception 'not_leader';
+  end if;
+
   select exists(
     select 1 from public.memberships m
     where m.group_id = p_group_id
@@ -203,10 +233,13 @@ begin
     raise exception 'not_leader';
   end if;
 
+  -- Serialize concurrent none→some for this group so two callers cannot both
+  -- observe absence and double-insert first/last cards.
   select coalesce(g.accommodation_auto_add, true)
     into v_auto_add
   from public.groups g
-  where g.id = p_group_id;
+  where g.id = p_group_id
+  for update;
 
   if not found then
     raise exception 'group_not_found';
@@ -233,12 +266,22 @@ begin
     updated_at = now()
   returning * into v_row;
 
-  -- Auto-add only on none → some while switch is on.
-  if (not v_previous_exists) and v_auto_add then
-    v_day := coalesce(p_day, 1);
+  v_day := coalesce(p_day, 1);
 
-    -- Shift all main-itinerary positions +2 so we can insert at ends of day.
-    -- Strategy: insert first card at day-start position and last at day-end+1.
+  -- some→some: downgrade existing stay anchors so pure-index locks release.
+  if v_previous_exists then
+    update public.itinerary_items i
+      set stay_anchor = false
+    where i.group_id = p_group_id
+      and i.subgroup_id is null
+      and coalesce(i.day, 1) = v_day
+      and i.kind = 'accommodation'
+      and i.stay_anchor = true;
+  end if;
+
+  -- Auto-add only on none → some while switch is on (under group lock).
+  -- Any failure below rolls back the whole transaction including the upsert.
+  if (not v_previous_exists) and v_auto_add then
     select coalesce(min(i.position), 0), coalesce(max(i.position), -1)
       into v_min_pos, v_max_pos
     from public.itinerary_items i
@@ -254,12 +297,11 @@ begin
       and i.position >= v_min_pos;
 
     insert into public.itinerary_items (
-      group_id, title, address, latitude, longitude, position, day, kind
+      group_id, title, address, latitude, longitude, position, day, kind, stay_anchor
     ) values (
-      p_group_id, p_title, p_address, p_latitude, p_longitude, v_min_pos, v_day, 'accommodation'
+      p_group_id, p_title, p_address, p_latitude, p_longitude, v_min_pos, v_day, 'accommodation', true
     ) returning id into v_first_id;
 
-    -- After first insert, max of day is at least v_min_pos; append after day items.
     select coalesce(max(i.position), v_min_pos)
       into v_max_pos
     from public.itinerary_items i
@@ -274,9 +316,9 @@ begin
       and i.position > v_max_pos;
 
     insert into public.itinerary_items (
-      group_id, title, address, latitude, longitude, position, day, kind
+      group_id, title, address, latitude, longitude, position, day, kind, stay_anchor
     ) values (
-      p_group_id, p_title, p_address, p_latitude, p_longitude, v_max_pos + 1, v_day, 'accommodation'
+      p_group_id, p_title, p_address, p_latitude, p_longitude, v_max_pos + 1, v_day, 'accommodation', true
     ) returning id into v_last_id;
   end if;
 
@@ -297,4 +339,4 @@ grant execute on function public.set_daily_accommodation_with_auto_add(
 ) to authenticated;
 
 comment on function public.set_daily_accommodation_with_auto_add is
-  'Leader-only. Upserts daily accommodation snapshot. On none→some with accommodation_auto_add, atomically inserts first+last accommodation cards. Explicit auth via memberships.role=leader.';
+  'Leader-only (expiry-aware is_member + role). Upserts daily accommodation under group row lock. On none→some with accommodation_auto_add, atomically inserts first+last stay_anchor cards; any insert failure rolls back. some→some clears stay_anchor for that day.';

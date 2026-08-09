@@ -7,11 +7,23 @@ import type { AccountPreferences } from '../types';
 
 export const ADD_PLACE_TOUR_STORAGE_KEY = 'hither.addPlaceTour.v1';
 
+/** Local completion key scoped by account so one user cannot suppress another. */
+export function addPlaceTourStorageKey(accountId?: string | null): string {
+  if (accountId && accountId.length > 0) {
+    return `${ADD_PLACE_TOUR_STORAGE_KEY}:${accountId}`;
+  }
+  return ADD_PLACE_TOUR_STORAGE_KEY;
+}
+
 export type AddPlaceTourStepId = 'star' | 'center';
+
+export type AddPlaceTourTargetId = 'addPlaceFavoriteStar' | 'addPlaceCenter';
 
 export interface AddPlaceTourStep {
   id: AddPlaceTourStepId;
   targetTestId: 'add-place-favorite-star' | 'add-place-center-btn';
+  /** Measured highlight target (registry id). */
+  target: AddPlaceTourTargetId;
   titleKey: string;
   bodyKey: string;
 }
@@ -20,12 +32,14 @@ export const ADD_PLACE_TOUR_STEPS: readonly AddPlaceTourStep[] = [
   {
     id: 'star',
     targetTestId: 'add-place-favorite-star',
+    target: 'addPlaceFavoriteStar',
     titleKey: 'tour.addPlace.star.title',
     bodyKey: 'tour.addPlace.star.body',
   },
   {
     id: 'center',
     targetTestId: 'add-place-center-btn',
+    target: 'addPlaceCenter',
     titleKey: 'tour.addPlace.center.title',
     bodyKey: 'tour.addPlace.center.body',
   },
@@ -40,9 +54,11 @@ export function isAddPlaceTourCompletedFromSources(input: {
   return false;
 }
 
-export async function readAddPlaceTourCompletedLocal(): Promise<boolean> {
+export async function readAddPlaceTourCompletedLocal(
+  accountId?: string | null,
+): Promise<boolean> {
   try {
-    const raw = await AsyncStorage.getItem(ADD_PLACE_TOUR_STORAGE_KEY);
+    const raw = await AsyncStorage.getItem(addPlaceTourStorageKey(accountId));
     return raw === '1' || raw === 'true';
   } catch {
     return false;
@@ -51,11 +67,13 @@ export async function readAddPlaceTourCompletedLocal(): Promise<boolean> {
 
 export async function writeAddPlaceTourCompletedLocal(
   completed: boolean,
+  accountId?: string | null,
 ): Promise<void> {
+  const key = addPlaceTourStorageKey(accountId);
   if (completed) {
-    await AsyncStorage.setItem(ADD_PLACE_TOUR_STORAGE_KEY, '1');
+    await AsyncStorage.setItem(key, '1');
   } else {
-    await AsyncStorage.removeItem(ADD_PLACE_TOUR_STORAGE_KEY);
+    await AsyncStorage.removeItem(key);
   }
 }
 
@@ -67,7 +85,7 @@ export async function completeAddPlaceTour(opts: {
   accountId?: string | null;
   existingPreferences?: AccountPreferences | null;
 }): Promise<void> {
-  await writeAddPlaceTourCompletedLocal(true);
+  await writeAddPlaceTourCompletedLocal(true, opts.accountId);
   if (!opts.accountId) return;
   try {
     const { updateProfile } = await import('../api/services/ProfileService');

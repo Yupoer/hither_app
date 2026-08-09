@@ -251,7 +251,7 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
     supabase
       .from('itinerary_items')
       .select(
-        'id, title, address, latitude, longitude, position, day, meet_at, meet_red_minutes, subgroup_id, closed_at, closed_by_session_id, emoji, marker_color, kind',
+        'id, title, address, latitude, longitude, position, day, meet_at, meet_red_minutes, subgroup_id, closed_at, closed_by_session_id, emoji, marker_color, kind, stay_anchor',
       )
       .eq('group_id', groupId)
       .order('position', { ascending: true }),
@@ -259,7 +259,8 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
       .from('member_locations')
       .select('user_id, latitude, longitude, updated_at')
       .eq('group_id', groupId),
-    listDailyAccommodations(groupId).catch(() => [] as DailyAccommodation[]),
+    // Do not swallow load failures as an empty list (false "no stay").
+    listDailyAccommodations(groupId),
   ]);
 
   orThrow(groupRes.error);
@@ -369,9 +370,8 @@ export async function getGroupRecoverySnapshot(
     ? payload.realtime_revision
     : generatedAt ?? '0';
   // Daily accommodations are a separate source of truth; batch-load (not per-day).
-  const dailyAccommodations = await listDailyAccommodations(groupId).catch(
-    () => [] as DailyAccommodation[],
-  );
+  // Propagate load failures — do not present errors as "no stay".
+  const dailyAccommodations = await listDailyAccommodations(groupId);
   return {
     state: {
       group: mapGroup(groupRow),

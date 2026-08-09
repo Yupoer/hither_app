@@ -43,6 +43,7 @@ export { useGroupFeatureTour } from './useGroupFeatureTour';
 export {
   ADD_PLACE_TOUR_STORAGE_KEY,
   ADD_PLACE_TOUR_STEPS,
+  addPlaceTourStorageKey,
   completeAddPlaceTour,
   isAddPlaceTourCompletedFromSources,
   readAddPlaceTourCompletedLocal,
@@ -50,4 +51,5 @@ export {
   writeAddPlaceTourCompletedLocal,
   type AddPlaceTourStep,
   type AddPlaceTourStepId,
+  type AddPlaceTourTargetId,
 } from './addPlaceTour';

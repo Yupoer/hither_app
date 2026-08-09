@@ -1,6 +1,6 @@
 /**
  * Pure accommodation itinerary semantics: auto-add transitions,
- * boundary locks from pure index, and reorder constraints.
+ * boundary locks from pure index + stay_anchor, and reorder constraints.
  */
 
 export type DestinationKind = 'stop' | 'accommodation';
@@ -11,6 +11,11 @@ export interface AccommodationListItem {
   order: number;
   day: number;
   title: string;
+  /**
+   * When true (or undefined for legacy rows), a pure-index first/last
+   * accommodation is boundary-locked. Explicit false = downgraded mid card.
+   */
+  stayAnchor?: boolean;
 }
 
 export type DailyAccomPresence = 'none' | 'some';
@@ -31,7 +36,13 @@ export function shouldAutoAddAccommodationCards(input: {
   );
 }
 
-/** Pure-index lock: first/last accommodation of the day is boundary-locked. */
+/** True when the item is an active boundary anchor (default true when unset). */
+export function isActiveStayAnchor(item: AccommodationListItem): boolean {
+  if (item.kind !== 'accommodation') return false;
+  return item.stayAnchor !== false;
+}
+
+/** Pure-index lock: first/last accommodation of the day with active stay anchor. */
 export function accommodationBoundaryLocks(
   dayItems: readonly AccommodationListItem[],
 ): {
@@ -48,11 +59,11 @@ export function accommodationBoundaryLocks(
   const lockedIds = new Set<string>();
   let firstLockedId: string | null = null;
   let lastLockedId: string | null = null;
-  if (first.kind === 'accommodation') {
+  if (first.kind === 'accommodation' && isActiveStayAnchor(first)) {
     lockedIds.add(first.id);
     firstLockedId = first.id;
   }
-  if (last.kind === 'accommodation') {
+  if (last.kind === 'accommodation' && isActiveStayAnchor(last)) {
     lockedIds.add(last.id);
     lastLockedId = last.id;
   }
@@ -120,15 +131,62 @@ export function validateDayOrderAfterDrop(
 }
 
 /**
+ * After drop: pure-index edges among accommodations become stay anchors.
+ * Stops clear stayAnchor. Mid accommodations clear stayAnchor.
+ */
+export function applyPureIndexAnchors(
+  dayItems: readonly AccommodationListItem[],
+): AccommodationListItem[] {
+  const sorted = [...dayItems].sort((a, b) => a.order - b.order);
+  if (sorted.length === 0) return [];
+  return sorted.map((item, i, arr) => {
+    if (item.kind !== 'accommodation') {
+      return { ...item, stayAnchor: false };
+    }
+    const isEdge = i === 0 || i === arr.length - 1;
+    return { ...item, stayAnchor: isEdge };
+  });
+}
+
+/**
  * When changing/clearing daily accommodation, existing locked cards become
- * mid (draggable) — no new cards, no kind change.
+ * mid (draggable) — no new cards, no kind change. Explicit stayAnchor=false
+ * so pure-index first/last no longer lock until the next drop re-anchors.
  */
 export function downgradeAnchorsOnDailyChange(
   dayItems: readonly AccommodationListItem[],
 ): AccommodationListItem[] {
-  // Pure index: after list stays the same, locks recompute as mid if
-  // positions no longer first/last. Caller keeps snapshots as-is.
-  return dayItems.map((item) => ({ ...item }));
+  return dayItems.map((item) =>
+    item.kind === 'accommodation'
+      ? { ...item, stayAnchor: false }
+      : { ...item },
+  );
+}
+
+/**
+ * Insert position for a quick-add mid accommodation card within a day.
+ * Inserts before an occupied locked tail (last item is accommodation anchor);
+ * otherwise appends after the last same-day item.
+ */
+export function quickAddAccommodationInsertPosition(
+  existing: readonly { order: number; day: number; kind?: string; stayAnchor?: boolean }[],
+  targetDay: number,
+): number {
+  const sameDay = existing
+    .filter((d) => d.day === targetDay)
+    .sort((a, b) => a.order - b.order);
+  if (sameDay.length === 0) {
+    const earlier = existing.filter((d) => d.day < targetDay);
+    return earlier.length > 0 ? Math.max(...earlier.map((d) => d.order)) + 1 : 0;
+  }
+  const last = sameDay[sameDay.length - 1];
+  const lastIsLockedTail =
+    last.kind === 'accommodation' && last.stayAnchor !== false;
+  if (lastIsLockedTail) {
+    // Insert at the tail's position so the locked card shifts right.
+    return last.order;
+  }
+  return Math.max(...sameDay.map((d) => d.order)) + 1;
 }
 
 /** Local collapse storage key: account + group + calendar date. */

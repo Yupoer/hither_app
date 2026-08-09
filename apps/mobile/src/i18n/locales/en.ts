@@ -1041,6 +1041,8 @@ export const en: Record<keyof ZhDict, string> = {
   'stay.finishSet': 'Done',
   'stay.remove': 'Remove stay',
   'stay.defaultTitle': 'Stay',
+  'stay.pickDate': 'Choose a trip day',
+  'stay.noEligibleDates': 'No eligible days left in this trip',
   'stay.favoriteA11y': 'Save as favorite place',
   'stay.unfavoriteA11y': 'Remove from favorite places',
   'stay.centerPlaceA11y': 'Center map on this place',

@@ -395,6 +395,7 @@ describe('addDestination', () => {
       longitude: 121.564,
       position: 3, // after day-1 last (position 2)
       kind: 'stop',
+      stay_anchor: false,
     });
   });
 

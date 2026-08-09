@@ -158,10 +158,15 @@ export async function setDailyAccommodation(
   };
 }
 
-/** Clear daily accommodation for a date. Does not delete itinerary cards. */
+/**
+ * Clear daily accommodation for a date. Does not delete itinerary cards.
+ * When `day` is provided, downgrades stay_anchor on that day's accommodation
+ * cards so pure-index locks release (some→none).
+ */
 export async function clearDailyAccommodation(
   groupId: string,
   stayDate: string,
+  day?: number,
 ): Promise<void> {
   if (isDemoGroup(groupId)) return;
   const { error } = await supabase
@@ -170,6 +175,16 @@ export async function clearDailyAccommodation(
     .eq('group_id', groupId)
     .eq('stay_date', stayDate);
   orThrow(error);
+  if (typeof day === 'number' && day > 0) {
+    const { error: anchorError } = await supabase
+      .from('itinerary_items')
+      .update({ stay_anchor: false })
+      .eq('group_id', groupId)
+      .eq('day', day)
+      .eq('kind', 'accommodation')
+      .is('subgroup_id', null);
+    orThrow(anchorError);
+  }
 }
 
 export async function setAccommodationAutoAdd(

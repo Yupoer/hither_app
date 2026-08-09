@@ -152,6 +152,7 @@ import {
   type TourTargetId,
   ADD_PLACE_TOUR_STEPS,
   completeAddPlaceTour,
+  measureTargetWithRetry,
   readAddPlaceTourCompletedLocal,
   shouldStartAddPlaceTour,
 } from '../featureTour';
@@ -960,6 +961,12 @@ export default function MapScreen({ route, navigation }: Props) {
   const [favoriteBusy, setFavoriteBusy] = useState(false);
   const [addPlaceTourStep, setAddPlaceTourStep] = useState<number | null>(null);
   const [addPlaceTourLocalDone, setAddPlaceTourLocalDone] = useState(true);
+  const [addPlaceTourTargetRect, setAddPlaceTourTargetRect] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
   /** Center rename modal draft (independent of pendingPlaceTitle until confirm). */
   const [renameModalVisible, setRenameModalVisible] = useState(false);
   const [renameDraft, setRenameDraft] = useState('');
@@ -1012,7 +1019,7 @@ export default function MapScreen({ route, navigation }: Props) {
       .catch(() => {
         if (!cancelled) setFavoritePlaces([]);
       });
-    void readAddPlaceTourCompletedLocal().then((done) => {
+    void readAddPlaceTourCompletedLocal(user?.id).then((done) => {
       if (!cancelled) setAddPlaceTourLocalDone(done);
     });
     return () => {
@@ -1020,23 +1027,64 @@ export default function MapScreen({ route, navigation }: Props) {
     };
   }, [user?.id]);
 
-  // Start independent Add Place tour when confirm card is ready (explanation-only).
+  // Start independent Add Place tour only after star/center targets measure ready.
   useEffect(() => {
     if (!confirmCardReady || !pendingPlace) {
       setAddPlaceTourStep(null);
+      setAddPlaceTourTargetRect(null);
       return;
     }
-    if (
-      shouldStartAddPlaceTour({
-        pendingPlaceVisible: true,
-        targetsReady: true,
-        localCompleted: addPlaceTourLocalDone,
-        accountPreferences: user?.preferences ?? null,
-      })
-    ) {
-      setAddPlaceTourStep(0);
+    let cancelled = false;
+    void (async () => {
+      const rect = await measureTargetWithRetry({
+        measure: measureTourTarget,
+        target: 'addPlaceFavoriteStar',
+      });
+      if (cancelled) return;
+      const targetsReady = Boolean(rect && rect.width > 0 && rect.height > 0);
+      if (
+        shouldStartAddPlaceTour({
+          pendingPlaceVisible: true,
+          targetsReady,
+          localCompleted: addPlaceTourLocalDone,
+          accountPreferences: user?.preferences ?? null,
+        })
+      ) {
+        setAddPlaceTourStep(0);
+        setAddPlaceTourTargetRect(rect);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    confirmCardReady,
+    pendingPlace,
+    addPlaceTourLocalDone,
+    user?.preferences,
+    measureTourTarget,
+  ]);
+
+  // Remeasure highlight when the Add Place tour step advances.
+  useEffect(() => {
+    if (addPlaceTourStep == null) {
+      setAddPlaceTourTargetRect(null);
+      return;
     }
-  }, [confirmCardReady, pendingPlace, addPlaceTourLocalDone, user?.preferences]);
+    const step = ADD_PLACE_TOUR_STEPS[addPlaceTourStep];
+    if (!step) return;
+    let cancelled = false;
+    void (async () => {
+      const rect = await measureTargetWithRetry({
+        measure: measureTourTarget,
+        target: step.target,
+      });
+      if (!cancelled) setAddPlaceTourTargetRect(rect);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [addPlaceTourStep, measureTourTarget]);
 
   const pendingIsFavorite = useMemo(() => {
     if (!pendingPlace) return false;
@@ -3520,7 +3568,9 @@ export default function MapScreen({ route, navigation }: Props) {
   }, []);
 
   const handleReorder = useCallback(
-    async (updates: { id: string; position: number; day: number }[]): Promise<boolean> => {
+    async (
+      updates: { id: string; position: number; day: number; stayAnchor?: boolean }[],
+    ): Promise<boolean> => {
       if (!groupId) return false;
 
       const result = await runUiAction(
@@ -3540,6 +3590,7 @@ export default function MapScreen({ route, navigation }: Props) {
             position: number;
             day: number;
             meetAt?: string;
+            stayAnchor?: boolean;
           }[] = updates.map((update, index) => {
             const original = rawDestinations.find((dest) => dest.id === update.id);
             const position = openPositionSlots[index] ?? update.position;
@@ -3560,6 +3611,7 @@ export default function MapScreen({ route, navigation }: Props) {
               dest.order = u.position;
               dest.day = u.day;
               if (u.meetAt !== undefined) dest.meetAt = u.meetAt;
+              if (u.stayAnchor !== undefined) dest.stayAnchor = u.stayAnchor;
             }
           });
           newDests.sort((a, b) => {
@@ -5207,6 +5259,7 @@ export default function MapScreen({ route, navigation }: Props) {
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <Pressable
                     testID="add-place-favorite-star"
+                    ref={(node) => setTourTargetRef('addPlaceFavoriteStar', node as View | null)}
                     style={({ pressed }) => [
                       styles.confirmArrow,
                       { backgroundColor: accentMix(accent, 18) },
@@ -5234,6 +5287,7 @@ export default function MapScreen({ route, navigation }: Props) {
                   </Pressable>
                   <Pressable
                     testID="add-place-center-btn"
+                    ref={(node) => setTourTargetRef('addPlaceCenter', node as View | null)}
                     style={({ pressed }) => [
                       styles.confirmArrow,
                       { backgroundColor: accentMix(accent, 18) },
@@ -5292,61 +5346,48 @@ export default function MapScreen({ route, navigation }: Props) {
         );
       })()}
 
-      {/* Add Place contextual tour — independent of group tour; Next only. */}
-      {addPlaceTourStep != null && pendingPlace && ADD_PLACE_TOUR_STEPS[addPlaceTourStep] ? (
-        <View
-          pointerEvents="box-none"
-          style={{
-            position: 'absolute',
-            left: 16,
-            right: 16,
-            top: '40%',
-            zIndex: 40,
-          }}
-        >
-          <View
-            style={{
-              backgroundColor: 'rgba(20,22,28,0.96)',
-              borderRadius: 16,
-              padding: 16,
-              gap: 10,
-            }}
-          >
-            <Text style={{ color: '#fff', fontSize: 17, fontWeight: '700' }}>
-              {t(ADD_PLACE_TOUR_STEPS[addPlaceTourStep].titleKey as TranslationKey)}
-            </Text>
-            <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 14, lineHeight: 20 }}>
-              {t(ADD_PLACE_TOUR_STEPS[addPlaceTourStep].bodyKey as TranslationKey)}
-            </Text>
-            <Pressable
-              style={{
-                alignSelf: 'flex-end',
-                backgroundColor: accent,
-                paddingHorizontal: 16,
-                paddingVertical: 10,
-                borderRadius: 12,
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={t('tour.next')}
-              onPress={() => {
-                const next = addPlaceTourStep + 1;
-                if (next >= ADD_PLACE_TOUR_STEPS.length) {
-                  setAddPlaceTourStep(null);
-                  setAddPlaceTourLocalDone(true);
-                  void completeAddPlaceTour({
-                    accountId: user?.id,
-                    existingPreferences: user?.preferences ?? null,
-                  });
-                  return;
-                }
-                setAddPlaceTourStep(next);
-              }}
-            >
-              <Text style={{ color: '#fff', fontWeight: '700' }}>{t('tour.next')}</Text>
-            </Pressable>
-          </View>
-        </View>
-      ) : null}
+      {/* Add Place contextual tour — measured targets + full-screen blocker. */}
+      <GroupFeatureTourOverlay
+        visible={
+          addPlaceTourStep != null
+          && pendingPlace != null
+          && ADD_PLACE_TOUR_STEPS[addPlaceTourStep] != null
+        }
+        title={
+          addPlaceTourStep != null && ADD_PLACE_TOUR_STEPS[addPlaceTourStep]
+            ? t(ADD_PLACE_TOUR_STEPS[addPlaceTourStep].titleKey as TranslationKey)
+            : ''
+        }
+        body={
+          addPlaceTourStep != null && ADD_PLACE_TOUR_STEPS[addPlaceTourStep]
+            ? t(ADD_PLACE_TOUR_STEPS[addPlaceTourStep].bodyKey as TranslationKey)
+            : ''
+        }
+        ctaLabel={
+          addPlaceTourStep != null
+          && addPlaceTourStep >= ADD_PLACE_TOUR_STEPS.length - 1
+            ? t('tour.getStarted')
+            : t('tour.next')
+        }
+        targetRect={addPlaceTourTargetRect}
+        onNext={() => {
+          if (addPlaceTourStep == null) return;
+          const next = addPlaceTourStep + 1;
+          if (next >= ADD_PLACE_TOUR_STEPS.length) {
+            setAddPlaceTourStep(null);
+            setAddPlaceTourTargetRect(null);
+            setAddPlaceTourLocalDone(true);
+            // Final-step-only persistence.
+            void completeAddPlaceTour({
+              accountId: user?.id,
+              existingPreferences: user?.preferences ?? null,
+            });
+            return;
+          }
+          setAddPlaceTourStep(next);
+        }}
+        reduceMotion={tourReduceMotion}
+      />
 
       {/* Center rename modal — only updates draft name; add still uses bottom card. */}
       <Modal
@@ -6214,11 +6255,11 @@ export default function MapScreen({ route, navigation }: Props) {
             }
             onClearDailyAccommodation={
               canEditItinerary && groupId
-                ? (stayDate) => {
+                ? (stayDate, day) => {
                     void runUiAction(
                       'map.clear_daily_accommodation',
                       async () => {
-                        await clearDailyAccommodation(groupId, stayDate);
+                        await clearDailyAccommodation(groupId, stayDate, day);
                         await refresh();
                       },
                       { screen: 'Map' },

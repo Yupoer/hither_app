@@ -484,6 +484,13 @@ export function useGroupState(
         { event: '*', schema: 'public', table: 'itinerary_items', filter },
         scheduleReload,
       )
+      // Daily stay snapshots are independent of itinerary events; remote clear
+      // or some→some must fence-reload peers (not wait for poll).
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'daily_accommodations', filter },
+        scheduleReload,
+      )
       // Leader start/stop nav writes groups.journey_status + active_destination_id.
       // Without this, followers only learn via the 5-minute poll and never show
       // the planned route polyline / multi-mode alts / Live Activity in time.

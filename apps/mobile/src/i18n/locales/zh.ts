@@ -1052,6 +1052,8 @@ export const zh = {
   'stay.finishSet': '完成',
   'stay.remove': '移除住宿',
   'stay.defaultTitle': '住宿',
+  'stay.pickDate': '選擇行程日',
+  'stay.noEligibleDates': '此行程已無可用日期',
   'stay.favoriteA11y': '收藏為常用地點',
   'stay.unfavoriteA11y': '取消常用地點',
   'stay.centerPlaceA11y': '將地圖置中至此地點',

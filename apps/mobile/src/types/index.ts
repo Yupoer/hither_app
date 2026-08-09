@@ -460,6 +460,11 @@ export interface Destination {
    * daily_accommodations). Default `stop` for backward compatibility.
    */
   kind?: DestinationKind;
+  /**
+   * Boundary lock candidate for accommodation cards (auto-add / pure-index after drop).
+   * Cleared on some→some / some→none so cards become draggable mid.
+   */
+  stayAnchor?: boolean;
 }
 
 /** Per-team per-date accommodation snapshot (client shape). */

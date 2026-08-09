@@ -8,6 +8,7 @@ import {
   validateDestinationColor,
   validateDestinationEmoji,
 } from '../../utils/destinationEmojiColor';
+import { quickAddAccommodationInsertPosition } from '../../utils/accommodationSemantics';
 import { orThrow } from './_helpers';
 
 // ── Row shape ──────────────────────────────────────────────────────────────
@@ -28,6 +29,7 @@ export interface ItineraryRow {
   emoji?: string | null;
   marker_color?: string | null;
   kind?: string | null;
+  stay_anchor?: boolean | null;
 }
 
 // ── Mapper ─────────────────────────────────────────────────────────────────
@@ -53,6 +55,7 @@ export function mapDestination(row: ItineraryRow): Destination {
     emoji: row.emoji ?? null,
     markerColor: row.marker_color ?? null,
     kind,
+    stayAnchor: kind === 'accommodation' ? Boolean(row.stay_anchor) : false,
   };
 }
 
@@ -76,9 +79,11 @@ export async function addDestination(
   }
   const targetDay = Math.max(1, input.day ?? 1);
   const kind = input.kind === 'accommodation' ? 'accommodation' : 'stop';
+  // Quick-add mid cards are never stay anchors; auto-add RPC sets anchors.
+  const stayAnchor = false;
   let scopedQuery = supabase
     .from('itinerary_items')
-    .select('id, position, day')
+    .select('id, position, day, kind, stay_anchor')
     .eq('group_id', groupId);
   scopedQuery = subgroupId
     ? scopedQuery.eq('subgroup_id', subgroupId)
@@ -88,25 +93,34 @@ export async function addDestination(
   });
   orThrow(listError);
 
-  const existing = ((rows ?? []) as { id: string; position: number; day: number }[]).map(
-    (row) => ({
-      id: row.id,
-      order: row.position,
-      day: row.day ?? 1,
-    }),
-  );
+  const existing = ((rows ?? []) as {
+    id: string;
+    position: number;
+    day: number;
+    kind?: string | null;
+    stay_anchor?: boolean | null;
+  }[]).map((row) => ({
+    id: row.id,
+    order: row.position,
+    day: row.day ?? 1,
+    kind: row.kind === 'accommodation' ? 'accommodation' : 'stop',
+    stayAnchor: Boolean(row.stay_anchor),
+  }));
 
-  // Inline append plan (keep service free of utils import cycles in tests).
-  // Quick-add accommodation inserts as a mid card (end of day before a
-  // possible last boundary is handled by pure-index locks after drop).
-  const sameDay = existing.filter((d) => d.day === targetDay);
+  // Quick-add accommodation inserts before an occupied locked tail so the new
+  // card is mid (draggable), not an immediate locked last boundary.
   let insertPosition: number;
-  if (sameDay.length > 0) {
-    insertPosition = Math.max(...sameDay.map((d) => d.order)) + 1;
+  if (kind === 'accommodation') {
+    insertPosition = quickAddAccommodationInsertPosition(existing, targetDay);
   } else {
-    const earlier = existing.filter((d) => d.day < targetDay);
-    insertPosition =
-      earlier.length > 0 ? Math.max(...earlier.map((d) => d.order)) + 1 : 0;
+    const sameDay = existing.filter((d) => d.day === targetDay);
+    if (sameDay.length > 0) {
+      insertPosition = Math.max(...sameDay.map((d) => d.order)) + 1;
+    } else {
+      const earlier = existing.filter((d) => d.day < targetDay);
+      insertPosition =
+        earlier.length > 0 ? Math.max(...earlier.map((d) => d.order)) + 1 : 0;
+    }
   }
 
   // Shift later rows high→low so positions never collide mid-update.
@@ -132,6 +146,7 @@ export async function addDestination(
     longitude: input.coordinates.longitude,
     position: insertPosition,
     kind,
+    stay_anchor: kind === 'accommodation' ? stayAnchor : false,
   });
   if (error) {
     // Free Plan itinerary cap (5 points) — server trigger is authoritative.
@@ -183,18 +198,30 @@ export async function completeGatheringStop(
 
 export async function reorderDestinations(
   groupId: string,
-  updates: { id: string; position: number; day: number; meetAt?: string }[],
+  updates: {
+    id: string;
+    position: number;
+    day: number;
+    meetAt?: string;
+    stayAnchor?: boolean;
+  }[],
 ): Promise<void> {
   if (isDemoGroup(groupId)) {
     return;
   }
   const results = await Promise.all(
     updates.map((up) => {
-      const patch: { position: number; day: number; meet_at?: string } = {
+      const patch: {
+        position: number;
+        day: number;
+        meet_at?: string;
+        stay_anchor?: boolean;
+      } = {
         position: up.position,
         day: up.day,
       };
       if (up.meetAt !== undefined) patch.meet_at = up.meetAt;
+      if (up.stayAnchor !== undefined) patch.stay_anchor = up.stayAnchor;
       return supabase
         .from('itinerary_items')
         .update(patch)
