@@ -1,4 +1,5 @@
--- REVIEW_FIX #158 r3: executable daily-accommodation security + concurrency tests.
+-- REVIEW_FIX #158 r4: executable daily-accommodation security + concurrency tests.
+-- Trigger DDL runs as test-admin (reset role); authenticated only for JWT RPC calls.
 -- pgTAP-oriented. Requires full schema (is_member, memberships, groups, etc.).
 -- Single-session tests run inside a transaction (set local role/jwt).
 -- Concurrent dblink race runs after COMMIT so peer sessions see fixtures.
@@ -292,7 +293,13 @@ select is(
 -- Deterministic second-insert failure → full transaction rollback.
 -- Trigger fails only the 2nd stay_anchor accommodation insert so the
 -- daily upsert + first card cannot stick after the RPC aborts.
+--
+-- CRITICAL: authenticated has DML only (no TRIGGER / ownership on
+-- itinerary_items). Install and remove the helper under test-admin
+-- (reset role), then switch to authenticated only for the RPC call.
 -- ============================================================
+reset role;
+
 create or replace function public._test_fail_second_stay_anchor()
 returns trigger
 language plpgsql
@@ -325,6 +332,11 @@ create trigger trg_test_fail_second_stay_anchor
   before insert on public.itinerary_items
   for each row execute function public._test_fail_second_stay_anchor();
 
+-- RPC under authenticated JWT (active leader); trigger runs in same txn.
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'd1111111-1111-4111-8111-111111111111', true);
+select set_config('request.jwt.claim.role', 'authenticated', true);
+
 select throws_ok(
   $$select public.set_daily_accommodation_with_auto_add(
     'dgdddddd-dddd-4ddd-8ddd-dddddddddddd'::uuid,
@@ -340,6 +352,9 @@ select throws_ok(
   'test_second_card_fail',
   'second stay_anchor card failure aborts set RPC'
 );
+
+-- Counts as admin so RLS cannot mask residual rows if any.
+reset role;
 
 select is(
   (select count(*)::int from public.daily_accommodations
@@ -362,6 +377,7 @@ drop function if exists public._test_fail_second_stay_anchor();
 
 -- Commit fixtures + single-session results so dblink peers can see them.
 -- (Race group dgcccccc has no daily row yet; leaders remain.)
+-- Role is already test-admin after reset above; commit ends local role state.
 commit;
 
 -- ============================================================

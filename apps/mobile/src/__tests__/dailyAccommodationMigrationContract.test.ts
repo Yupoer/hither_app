@@ -129,3 +129,52 @@ describe('daily accommodations + favorites migration contract (#159 #160)', () =
     );
   });
 });
+
+describe('daily accommodations pgTAP privilege contract (#158 REVIEW_FIX r4)', () => {
+  const sqlTest = readFileSync(
+    join(
+      __dirname,
+      '../../../../supabase/tests/daily_accommodations_expiry_leader.test.sql',
+    ),
+    'utf8',
+  );
+
+  it('installs rollback helper trigger under test-admin, not authenticated', () => {
+    // Sol P1: set local role authenticated must not span CREATE FUNCTION/TRIGGER
+    // (authenticated has DML only; no TRIGGER privilege on itinerary_items).
+    const triggerSection = sqlTest.match(
+      /Deterministic second-insert failure[\s\S]*?drop function if exists public\._test_fail_second_stay_anchor\(\);/,
+    );
+    expect(triggerSection).not.toBeNull();
+    const body = triggerSection![0];
+
+    // Admin first for DDL
+    expect(body).toMatch(
+      /reset role;\s*create or replace function public\._test_fail_second_stay_anchor/,
+    );
+    expect(body).toMatch(
+      /create trigger trg_test_fail_second_stay_anchor[\s\S]*?set local role authenticated;/,
+    );
+    // RPC under authenticated only
+    expect(body).toMatch(
+      /set local role authenticated;[\s\S]*throws_ok\([\s\S]*set_daily_accommodation_with_auto_add/,
+    );
+    // Admin again for residual counts + DROP
+    expect(body).toMatch(
+      /throws_ok\([\s\S]*?reset role;[\s\S]*failed second card rolls back/,
+    );
+    expect(body).toMatch(
+      /reset role;[\s\S]*drop trigger if exists trg_test_fail_second_stay_anchor/,
+    );
+  });
+
+  it('never creates the fail-second-card trigger while role is still authenticated from L126 block', () => {
+    // From first set local role authenticated until the rollback helper,
+    // there must be a reset role before CREATE FUNCTION/TRIGGER.
+    const fromAuthToTrigger = sqlTest.match(
+      /set local role authenticated;[\s\S]*?create or replace function public\._test_fail_second_stay_anchor/,
+    );
+    expect(fromAuthToTrigger).not.toBeNull();
+    expect(fromAuthToTrigger![0]).toMatch(/reset role;/);
+  });
+});
