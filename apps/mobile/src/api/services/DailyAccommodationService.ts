@@ -181,14 +181,19 @@ export async function clearDailyAccommodation(
   orThrow(error);
 }
 
+/**
+ * Team-shared auto-add switch. Routes through expiry-aware RPC so expired
+ * anonymous leaders (role=leader retained, is_member false) cannot toggle
+ * via the legacy groups UPDATE policy.
+ */
 export async function setAccommodationAutoAdd(
   groupId: string,
   enabled: boolean,
 ): Promise<void> {
   if (isDemoGroup(groupId)) return;
-  const { error } = await supabase
-    .from('groups')
-    .update({ accommodation_auto_add: enabled })
-    .eq('id', groupId);
+  const { error } = await supabase.rpc('set_accommodation_auto_add', {
+    p_group_id: groupId,
+    p_enabled: enabled,
+  });
   orThrow(error);
 }

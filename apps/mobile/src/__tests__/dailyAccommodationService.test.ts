@@ -17,6 +17,7 @@ jest.mock('../api/demo', () => ({
 
 import {
   clearDailyAccommodation,
+  setAccommodationAutoAdd,
   setDailyAccommodation,
 } from '../api/services/DailyAccommodationService';
 
@@ -79,5 +80,14 @@ describe('DailyAccommodationService atomic clear (#161)', () => {
     );
     expect(result.autoAdded).toBe(true);
     expect(result.daily.title).toBe('Hotel');
+  });
+
+  it('setAccommodationAutoAdd uses expiry-aware RPC (not legacy groups UPDATE)', async () => {
+    await setAccommodationAutoAdd('group-1', false);
+    expect(rpc).toHaveBeenCalledWith('set_accommodation_auto_add', {
+      p_group_id: 'group-1',
+      p_enabled: false,
+    });
+    expect(from).not.toHaveBeenCalled();
   });
 });

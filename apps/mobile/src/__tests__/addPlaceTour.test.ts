@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   ADD_PLACE_TOUR_ACCOUNT_SYNC_PENDING_KEY,
   ADD_PLACE_TOUR_STEPS,
+  addPlaceTourAccountSyncPendingKey,
   addPlaceTourStorageKey,
   areAddPlaceTourTargetsReady,
   completeAddPlaceTour,
@@ -86,6 +87,18 @@ describe('Add Place tour (#162)', () => {
     expect(addPlaceTourStorageKey(null)).toBe('hither.addPlaceTour.v1');
   });
 
+  it('scopes pending account-sync key by account', () => {
+    expect(addPlaceTourAccountSyncPendingKey('user-a')).toBe(
+      'hither.addPlaceTour.accountSyncPending:user-a',
+    );
+    expect(addPlaceTourAccountSyncPendingKey('user-b')).toBe(
+      'hither.addPlaceTour.accountSyncPending:user-b',
+    );
+    expect(addPlaceTourAccountSyncPendingKey('user-a')).not.toBe(
+      addPlaceTourAccountSyncPendingKey('user-b'),
+    );
+  });
+
   it('requires both star and center non-zero rects before start', () => {
     expect(
       areAddPlaceTourTargetsReady({
@@ -110,16 +123,17 @@ describe('Add Place tour (#162)', () => {
     expect(isMeasuredTourRect({ width: 10, height: 10 })).toBe(true);
   });
 
-  it('stores account-scoped pending desired on failed complete and retries', async () => {
+  it('stores per-account pending on failed complete and retries only that account', async () => {
     updateProfile.mockRejectedValueOnce(new Error('network'));
     await completeAddPlaceTour({
       accountId: 'user-a',
       existingPreferences: {},
     });
-    expect(await readAddPlaceTourAccountSyncPending()).toEqual({
+    expect(await readAddPlaceTourAccountSyncPending('user-a')).toEqual({
       accountId: 'user-a',
       completed: true,
     });
+    expect(await readAddPlaceTourAccountSyncPending('user-b')).toBeNull();
 
     updateProfile.mockResolvedValueOnce(undefined);
     await expect(
@@ -131,23 +145,93 @@ describe('Add Place tour (#162)', () => {
     expect(updateProfile).toHaveBeenLastCalledWith({
       preferences: expect.objectContaining({ addPlaceTourCompleted: true }),
     });
-    expect(await readAddPlaceTourAccountSyncPending()).toBeNull();
+    expect(await readAddPlaceTourAccountSyncPending('user-a')).toBeNull();
   });
 
   it('does not apply another account pending marker', async () => {
     await AsyncStorage.setItem(
-      ADD_PLACE_TOUR_ACCOUNT_SYNC_PENDING_KEY,
+      addPlaceTourAccountSyncPendingKey('user-a'),
       JSON.stringify({ accountId: 'user-a', completed: true }),
     );
     updateProfile.mockClear();
     await expect(
       retryPendingAddPlaceTourAccountSync({ accountId: 'user-b' }),
-    ).resolves.toBe(false);
+    ).resolves.toBe(true);
     expect(updateProfile).not.toHaveBeenCalled();
-    expect(await readAddPlaceTourAccountSyncPending()).toEqual({
+    expect(await readAddPlaceTourAccountSyncPending('user-a')).toEqual({
       accountId: 'user-a',
       completed: true,
     });
+  });
+
+  it('A fail → B success does not clear A pending; A can still retry', async () => {
+    updateProfile.mockRejectedValueOnce(new Error('a-network'));
+    await completeAddPlaceTour({ accountId: 'user-a', existingPreferences: {} });
+    expect(await readAddPlaceTourAccountSyncPending('user-a')).toEqual({
+      accountId: 'user-a',
+      completed: true,
+    });
+
+    updateProfile.mockResolvedValueOnce(undefined);
+    await completeAddPlaceTour({ accountId: 'user-b', existingPreferences: {} });
+    // B success must not wipe A's pending retry.
+    expect(await readAddPlaceTourAccountSyncPending('user-a')).toEqual({
+      accountId: 'user-a',
+      completed: true,
+    });
+    expect(await readAddPlaceTourAccountSyncPending('user-b')).toBeNull();
+
+    updateProfile.mockResolvedValueOnce(undefined);
+    await expect(
+      retryPendingAddPlaceTourAccountSync({
+        accountId: 'user-a',
+        existingPreferences: {},
+      }),
+    ).resolves.toBe(true);
+    expect(await readAddPlaceTourAccountSyncPending('user-a')).toBeNull();
+  });
+
+  it('A fail → B fail keeps both pending independently (no overwrite)', async () => {
+    updateProfile.mockRejectedValueOnce(new Error('a-network'));
+    await completeAddPlaceTour({ accountId: 'user-a', existingPreferences: {} });
+
+    updateProfile.mockRejectedValueOnce(new Error('b-network'));
+    await completeAddPlaceTour({ accountId: 'user-b', existingPreferences: {} });
+
+    expect(await readAddPlaceTourAccountSyncPending('user-a')).toEqual({
+      accountId: 'user-a',
+      completed: true,
+    });
+    expect(await readAddPlaceTourAccountSyncPending('user-b')).toEqual({
+      accountId: 'user-b',
+      completed: true,
+    });
+
+    // B retry success must not clear A.
+    updateProfile.mockResolvedValueOnce(undefined);
+    await expect(
+      retryPendingAddPlaceTourAccountSync({ accountId: 'user-b' }),
+    ).resolves.toBe(true);
+    expect(await readAddPlaceTourAccountSyncPending('user-b')).toBeNull();
+    expect(await readAddPlaceTourAccountSyncPending('user-a')).toEqual({
+      accountId: 'user-a',
+      completed: true,
+    });
+  });
+
+  it('migrates matching legacy global pending into per-account key', async () => {
+    await AsyncStorage.setItem(
+      ADD_PLACE_TOUR_ACCOUNT_SYNC_PENDING_KEY,
+      JSON.stringify({ accountId: 'user-a', completed: true }),
+    );
+    expect(await readAddPlaceTourAccountSyncPending('user-a')).toEqual({
+      accountId: 'user-a',
+      completed: true,
+    });
+    expect(await AsyncStorage.getItem(ADD_PLACE_TOUR_ACCOUNT_SYNC_PENDING_KEY)).toBeNull();
+    expect(
+      await AsyncStorage.getItem(addPlaceTourAccountSyncPendingKey('user-a')),
+    ).toEqual(JSON.stringify({ accountId: 'user-a', completed: true }));
   });
 
   it('discards legacy unscoped pending markers', () => {

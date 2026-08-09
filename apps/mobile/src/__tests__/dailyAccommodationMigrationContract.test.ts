@@ -111,4 +111,21 @@ describe('daily accommodations + favorites migration contract (#159 #160)', () =
     expect(migration).toContain('if v_previous_exists then');
     expect(migration).toContain('set stay_anchor = false');
   });
+
+  it('routes accommodation_auto_add toggle through expiry-aware RPC (not groups role-only UPDATE)', () => {
+    expect(migration).toContain('function extensions.set_accommodation_auto_add');
+    expect(migration).toContain('function public.set_accommodation_auto_add');
+    expect(migration).toMatch(
+      /function extensions\.set_accommodation_auto_add[\s\S]*security definer/i,
+    );
+    expect(migration).toMatch(
+      /function public\.set_accommodation_auto_add[\s\S]*security invoker/i,
+    );
+    expect(migration).toMatch(
+      /set_accommodation_auto_add[\s\S]*if not extensions\.is_member\(p_group_id\)/i,
+    );
+    expect(migration).toContain(
+      'grant execute on function public.set_accommodation_auto_add',
+    );
+  });
 });

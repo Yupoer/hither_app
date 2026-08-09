@@ -1,15 +1,20 @@
 /**
  * Independent Add Place contextual tour (#162).
  * Separate completion flag from group feature tour; explanation-only.
- * Account completion uses the same pending-desired + retry pattern as
- * group feature tour so a failed profile write cannot strand other devices.
+ * Account completion uses per-account pending-desired + retry so a failed
+ * profile write for one account cannot clear or overwrite another account's
+ * pending sync on a shared device.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { AccountPreferences } from '../types';
 
 export const ADD_PLACE_TOUR_STORAGE_KEY = 'hither.addPlaceTour.v1';
 
-/** Pending account preference sync after a failed profile write (JSON record). */
+/**
+ * Prefix for per-account pending profile sync records.
+ * Full key = `${ADD_PLACE_TOUR_ACCOUNT_SYNC_PENDING_KEY}:${accountId}`.
+ * Legacy unscoped key (same string without suffix) is migrated on read.
+ */
 export const ADD_PLACE_TOUR_ACCOUNT_SYNC_PENDING_KEY =
   'hither.addPlaceTour.accountSyncPending';
 
@@ -19,6 +24,11 @@ export function addPlaceTourStorageKey(accountId?: string | null): string {
     return `${ADD_PLACE_TOUR_STORAGE_KEY}:${accountId}`;
   }
   return ADD_PLACE_TOUR_STORAGE_KEY;
+}
+
+/** Pending account-sync storage key for one account only. */
+export function addPlaceTourAccountSyncPendingKey(accountId: string): string {
+  return `${ADD_PLACE_TOUR_ACCOUNT_SYNC_PENDING_KEY}:${accountId}`;
 }
 
 export type AddPlaceTourStepId = 'star' | 'center';
@@ -125,22 +135,58 @@ export function parseAddPlaceTourAccountSyncPending(
 }
 
 async function writeAddPlacePendingRecord(
+  accountId: string,
   record: AddPlaceTourAccountSyncPending | null,
 ): Promise<void> {
+  const key = addPlaceTourAccountSyncPendingKey(accountId);
   if (!record) {
-    await AsyncStorage.removeItem(ADD_PLACE_TOUR_ACCOUNT_SYNC_PENDING_KEY);
+    await AsyncStorage.removeItem(key);
+    // Also drop legacy unscoped key if it belonged to this account.
+    try {
+      const legacy = parseAddPlaceTourAccountSyncPending(
+        await AsyncStorage.getItem(ADD_PLACE_TOUR_ACCOUNT_SYNC_PENDING_KEY),
+      );
+      if (legacy?.accountId === accountId) {
+        await AsyncStorage.removeItem(ADD_PLACE_TOUR_ACCOUNT_SYNC_PENDING_KEY);
+      }
+    } catch {
+      // best-effort
+    }
     return;
   }
-  await AsyncStorage.setItem(
-    ADD_PLACE_TOUR_ACCOUNT_SYNC_PENDING_KEY,
-    JSON.stringify(record),
-  );
+  await AsyncStorage.setItem(key, JSON.stringify(record));
 }
 
-export async function readAddPlaceTourAccountSyncPending(): Promise<AddPlaceTourAccountSyncPending | null> {
+/**
+ * Read pending account-sync for one account only.
+ * Does not return another account's pending marker.
+ * Migrates a matching legacy global record into the per-account key.
+ */
+export async function readAddPlaceTourAccountSyncPending(
+  accountId: string | null | undefined,
+): Promise<AddPlaceTourAccountSyncPending | null> {
+  if (!accountId) return null;
   try {
-    const raw = await AsyncStorage.getItem(ADD_PLACE_TOUR_ACCOUNT_SYNC_PENDING_KEY);
-    return parseAddPlaceTourAccountSyncPending(raw);
+    const scopedRaw = await AsyncStorage.getItem(
+      addPlaceTourAccountSyncPendingKey(accountId),
+    );
+    const scoped = parseAddPlaceTourAccountSyncPending(scopedRaw);
+    if (scoped && scoped.accountId === accountId) return scoped;
+
+    // Migrate legacy single-key record if it matches this account.
+    const legacyRaw = await AsyncStorage.getItem(
+      ADD_PLACE_TOUR_ACCOUNT_SYNC_PENDING_KEY,
+    );
+    const legacy = parseAddPlaceTourAccountSyncPending(legacyRaw);
+    if (legacy && legacy.accountId === accountId) {
+      await AsyncStorage.setItem(
+        addPlaceTourAccountSyncPendingKey(accountId),
+        JSON.stringify(legacy),
+      );
+      await AsyncStorage.removeItem(ADD_PLACE_TOUR_ACCOUNT_SYNC_PENDING_KEY);
+      return legacy;
+    }
+    return null;
   } catch {
     return null;
   }
@@ -155,8 +201,8 @@ async function updatePreferencesOnAccount(
 
 /**
  * Complete tour only on final step. Local first; account sync with
- * account-scoped pending retry on failure (group-tour pattern).
- * Does not touch groupFeatureTourCompleted.
+ * per-account pending retry on failure. Never clears another account's
+ * pending record on success or failure.
  */
 export async function completeAddPlaceTour(opts: {
   accountId?: string | null;
@@ -170,10 +216,10 @@ export async function completeAddPlaceTour(opts: {
   };
   try {
     await updatePreferencesOnAccount(next);
-    await writeAddPlacePendingRecord(null);
+    await writeAddPlacePendingRecord(opts.accountId, null);
   } catch {
     try {
-      await writeAddPlacePendingRecord({
+      await writeAddPlacePendingRecord(opts.accountId, {
         accountId: opts.accountId,
         completed: true,
       });
@@ -185,7 +231,8 @@ export async function completeAddPlaceTour(opts: {
 
 /**
  * Retry a previously failed account sync for the given account only.
- * Clears pending only after the account write succeeds.
+ * Clears that account's pending only after the account write succeeds.
+ * Never reads or clears another account's pending storage.
  */
 export async function retryPendingAddPlaceTourAccountSync(opts: {
   accountId: string | null | undefined;
@@ -193,7 +240,7 @@ export async function retryPendingAddPlaceTourAccountSync(opts: {
 }): Promise<boolean> {
   const accountId = opts.accountId;
   if (!accountId) return true;
-  const pending = await readAddPlaceTourAccountSyncPending();
+  const pending = await readAddPlaceTourAccountSyncPending(accountId);
   if (!pending) return true;
   if (pending.accountId !== accountId) return false;
 
@@ -203,7 +250,7 @@ export async function retryPendingAddPlaceTourAccountSync(opts: {
   };
   try {
     await updatePreferencesOnAccount(next);
-    await writeAddPlacePendingRecord(null);
+    await writeAddPlacePendingRecord(accountId, null);
     return true;
   } catch {
     return false;

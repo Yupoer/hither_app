@@ -478,3 +478,79 @@ comment on function public.set_daily_accommodation_with_auto_add is
   'SECURITY INVOKER Data API wrapper → extensions.set_daily_accommodation_with_auto_add.';
 comment on function public.clear_daily_accommodation_with_downgrade is
   'SECURITY INVOKER Data API wrapper → extensions.clear_daily_accommodation_with_downgrade. Atomic some→none.';
+
+-- ============================================================
+-- accommodation_auto_add toggle — must not use legacy groups UPDATE
+-- policy alone (role=leader without is_member). Expired anonymous
+-- leaders retain memberships.role=leader and could flip the switch
+-- via Data API; route through expiry-aware RPC instead.
+-- ============================================================
+
+create or replace function extensions.set_accommodation_auto_add(
+  p_group_id uuid,
+  p_enabled boolean
+)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_uid uuid := (select auth.uid());
+  v_is_leader boolean;
+begin
+  if v_uid is null then
+    raise exception 'not_authenticated';
+  end if;
+
+  -- Expiry-aware active membership first (expired anon fails here).
+  if not extensions.is_member(p_group_id) then
+    raise exception 'not_leader';
+  end if;
+
+  select exists(
+    select 1 from public.memberships m
+    where m.group_id = p_group_id
+      and m.user_id = v_uid
+      and m.role = 'leader'
+  ) into v_is_leader;
+
+  if not v_is_leader then
+    raise exception 'not_leader';
+  end if;
+
+  update public.groups g
+     set accommodation_auto_add = coalesce(p_enabled, true)
+   where g.id = p_group_id;
+
+  if not found then
+    raise exception 'group_not_found';
+  end if;
+end;
+$$;
+
+drop function if exists public.set_accommodation_auto_add(uuid, boolean);
+
+create or replace function public.set_accommodation_auto_add(
+  p_group_id uuid,
+  p_enabled boolean
+)
+returns void
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  perform extensions.set_accommodation_auto_add(p_group_id, p_enabled);
+end;
+$$;
+
+revoke all on function extensions.set_accommodation_auto_add(uuid, boolean) from public;
+grant execute on function extensions.set_accommodation_auto_add(uuid, boolean) to authenticated;
+revoke all on function public.set_accommodation_auto_add(uuid, boolean) from public;
+grant execute on function public.set_accommodation_auto_add(uuid, boolean) to authenticated;
+
+comment on function extensions.set_accommodation_auto_add is
+  'Privileged DEFINER body. Leader-only expiry-aware toggle for groups.accommodation_auto_add.';
+comment on function public.set_accommodation_auto_add is
+  'SECURITY INVOKER Data API wrapper → extensions.set_accommodation_auto_add. Do not write groups.accommodation_auto_add via legacy role-only UPDATE policy.';

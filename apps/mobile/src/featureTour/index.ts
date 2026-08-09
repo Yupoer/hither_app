@@ -44,6 +44,7 @@ export {
   ADD_PLACE_TOUR_STORAGE_KEY,
   ADD_PLACE_TOUR_ACCOUNT_SYNC_PENDING_KEY,
   ADD_PLACE_TOUR_STEPS,
+  addPlaceTourAccountSyncPendingKey,
   addPlaceTourStorageKey,
   areAddPlaceTourTargetsReady,
   completeAddPlaceTour,
