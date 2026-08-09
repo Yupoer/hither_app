@@ -12,6 +12,7 @@ import {
   loadKmlKmzFromAsset,
   type KmlLoadErrorCode,
 } from '../utils/kmlLoad';
+import { kmlImportErrorI18nKey } from '../utils/kmlBatch';
 import { FREE_LIMITS, remainingDestinationSlots } from '../entitlements';
 import { diagnostics } from '../state/diagnostics';
 
@@ -20,7 +21,7 @@ type Step =
   | { kind: 'preview'; items: KmlPlacemark[] }
   | { kind: 'importing'; done: number; total: number }
   | { kind: 'done' }
-  | { kind: 'error'; code: KmlLoadErrorCode };
+  | { kind: 'error'; code: KmlLoadErrorCode | string };
 
 /**
  * Google My Maps KML import: teaching screen → file picker → preview (locked
@@ -100,8 +101,22 @@ export default React.memo(function KmlImportSheet({
       await onImport(items, (done) => setStep({ kind: 'importing', done, total: items.length }));
       setStep({ kind: 'done' });
       setTimeout(handleClose, 1000);
-    } catch {
-      setStep({ kind: 'error', code: 'unknown' });
+    } catch (err) {
+      // Persistence/permission failures must not surface as parse errors (#152).
+      const key = kmlImportErrorI18nKey(err);
+      const code =
+        key === 'kml.errPermission'
+          ? 'permission'
+          : key === 'kml.errPersistence'
+            ? 'persistence'
+            : key === 'kml.errValidation'
+              ? 'validation'
+              : key === 'kml.errInvalidCoords'
+                ? 'invalid_coords'
+                : key === 'kml.errNoPoints'
+                  ? 'no_points'
+                  : 'persistence';
+      setStep({ kind: 'error', code });
     }
   }, [onImport, handleClose]);
 
@@ -120,8 +135,11 @@ export default React.memo(function KmlImportSheet({
     return Math.min(items.length, batchCap);
   };
 
-  const errorCopy = (code: KmlLoadErrorCode): string => {
-    const key = kmlErrorI18nKey(code) as TranslationKey;
+  const errorCopy = (code: KmlLoadErrorCode | string): string => {
+    if (code === 'permission') return t('kml.errPermission' as TranslationKey);
+    if (code === 'persistence') return t('kml.errPersistence' as TranslationKey);
+    if (code === 'validation') return t('kml.errValidation' as TranslationKey);
+    const key = kmlErrorI18nKey(code as KmlLoadErrorCode) as TranslationKey;
     const translated = t(key);
     if (!translated || translated === key) return t('kml.parseError');
     return translated;
