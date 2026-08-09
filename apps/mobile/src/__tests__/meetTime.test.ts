@@ -1,5 +1,6 @@
 import {
   alignMeetTimeToTripDay,
+  addMinutesToPickerValue,
   clampDateNotBeforeToday,
   minutesUntil,
   meetCountdownShort,
@@ -108,5 +109,27 @@ describe('meetCountdownShort', () => {
     expect(meetCountdownShort('2026-07-09T09:55:00Z', now)).toBe('遲5');
     expect(meetCountdownShort('2026-07-09T08:30:00Z', now)).toBe('遲1hr30');
     expect(meetCountdownShort('2026-07-07T22:00:00Z', now)).toBe('遲1d12hr');
+  });
+});
+
+
+describe('addMinutesToPickerValue', () => {
+  it('adds onto the current picker value, not wall-clock now', () => {
+    const base = new Date(2026, 6, 18, 10, 15, 30, 0);
+    const next = addMinutesToPickerValue(base, 30);
+    expect(next.getHours()).toBe(10);
+    expect(next.getMinutes()).toBe(45);
+    expect(next.getSeconds()).toBe(0);
+  });
+
+  it('rolls across midnight on consecutive presses', () => {
+    let v = new Date(2026, 6, 18, 23, 40, 0, 0);
+    v = addMinutesToPickerValue(v, 30);
+    expect(v.getDate()).toBe(19);
+    expect(v.getHours()).toBe(0);
+    expect(v.getMinutes()).toBe(10);
+    v = addMinutesToPickerValue(v, 60);
+    expect(v.getHours()).toBe(1);
+    expect(v.getMinutes()).toBe(10);
   });
 });
