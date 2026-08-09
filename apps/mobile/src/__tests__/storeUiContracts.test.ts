@@ -56,6 +56,35 @@ describe('four-pane store navigation contracts', () => {
     expect(storePane).not.toContain('balance +1');
   });
 
+  it('Store orders Premium then ad then economy content and hides restore', () => {
+    const premium = read('components/PremiumPresentation.tsx');
+    const paywall = read('components/PaywallSheet.tsx');
+    expect(storePane).toContain('PremiumPresentation');
+    expect(storePane).toContain('store-premium-section');
+    expect(storePane).toContain('showRestore={false}');
+    expect(storePane).toContain('store-ad-cta');
+    // Layout order: Premium → ad → balance/economy (#155/#156 Sol P1).
+    const premiumIdx = storePane.indexOf('store-premium-section');
+    const adIdx = storePane.indexOf('store-ad-cta');
+    const balanceIdx = storePane.indexOf('store-balance');
+    expect(premiumIdx).toBeGreaterThan(-1);
+    expect(adIdx).toBeGreaterThan(-1);
+    expect(balanceIdx).toBeGreaterThan(-1);
+    expect(premiumIdx).toBeLessThan(adIdx);
+    expect(adIdx).toBeLessThan(balanceIdx);
+    // Shared presentation: restore gated by showRestore.
+    expect(premium).toContain('showRestore');
+    expect(premium).toContain('restorePremiumSubscription');
+    expect(premium).toContain('purchasePremiumSubscription');
+    expect(premium).toContain('loadPremiumStoreProducts');
+    expect(paywall).toContain('showRestore');
+    expect(paywall).not.toContain('showRestore={false}');
+    expect(paywall).toContain('PremiumPresentation');
+    // Store must not render its own restore CTA string/handler.
+    expect(storePane).not.toContain('paywall.restore');
+    expect(storePane).not.toContain('restorePremiumSubscription');
+  });
+
   it('fails reward session on no-fill; verifying not client-failed; offline banner', () => {
     expect(storePane).toContain('updateRewardSessionStatus');
     expect(storePane).toContain("updateRewardSessionStatus(sessionRef, 'failed')");
