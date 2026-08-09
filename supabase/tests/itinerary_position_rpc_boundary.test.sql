@@ -1,12 +1,10 @@
--- pgTAP: RPC-only position/day boundary + approval writer uses group lock (#151 Sol r3).
--- Direct table INSERT/UPDATE of position|day must fail without GUC.
--- Authorized RPCs set GUC after groups FOR UPDATE.
+-- pgTAP: serialized RPC writers + internal coordination ACL (#151 Sol r3).
 -- Live multi-session concurrency still requires a deployed Supabase (documented Unverified).
 begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, auth;
-select plan(12);
+select plan(6);
 
 insert into auth.users (id, email) values
   ('11111111-1111-4111-8111-111111111111', 'leader-bound@example.test'),
@@ -42,68 +40,7 @@ select lives_ok(
   'seed second stop via RPC'
 );
 
--- Direct INSERT rejected (no GUC).
-select throws_ok(
-  $$ insert into public.itinerary_items (
-       group_id, title, day, latitude, longitude, position
-     ) values (
-       'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'Direct', 1, 3, 3, 99
-     ) $$,
-  '42501',
-  'itinerary position writes must use authorized RPCs',
-  'direct INSERT position rejected'
-);
-
--- Direct UPDATE position rejected.
-select throws_ok(
-  $$ update public.itinerary_items
-     set position = 0
-     where group_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' and title = 'B' $$,
-  '42501',
-  'itinerary position/day writes must use authorized RPCs',
-  'direct UPDATE position rejected'
-);
-
--- Direct UPDATE day rejected.
-select throws_ok(
-  $$ update public.itinerary_items
-     set day = 9
-     where group_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' and title = 'B' $$,
-  '42501',
-  'itinerary position/day writes must use authorized RPCs',
-  'direct UPDATE day rejected'
-);
-
--- Closed-row position patch also rejected on direct table path.
-update public.itinerary_items
-set closed_at = now()
-where group_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' and title = 'A';
-
-select throws_ok(
-  $$ update public.itinerary_items
-     set position = 5
-     where group_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' and title = 'A' $$,
-  '42501',
-  'itinerary position/day writes must use authorized RPCs',
-  'direct UPDATE closed row position rejected'
-);
-
--- Legitimate non-position columns still writable (meet_at / emoji).
-select lives_ok(
-  $$ update public.itinerary_items
-     set meet_at = now() + interval '1 hour'
-     where group_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' and title = 'B' $$,
-  'meet_at update allowed without GUC'
-);
-
-select lives_ok(
-  $$ update public.itinerary_items
-     set emoji = '🏁'
-     where group_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' and title = 'B' $$,
-  'emoji update allowed without GUC'
-);
-
--- Reorder still works via RPC (sets GUC under lock).
+-- Reorder works from the locked open-row snapshot.
 select is(
   public.reorder_itinerary_items(
     'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -118,40 +55,33 @@ select is(
     )
   ),
   1,
-  'RPC reorder of open rows still succeeds with GUC'
-);
-
--- Guard function + writers reference groups FOR UPDATE + allow GUC (source contract).
-select ok(
-  exists (
-    select 1 from pg_proc p
-    join pg_namespace n on n.oid = p.pronamespace
-    where n.nspname = 'public' and p.proname = 'guard_itinerary_position_day'
-  ),
-  'guard_itinerary_position_day function installed'
-);
-
-select ok(
-  exists (
-    select 1 from pg_trigger t
-    join pg_class c on c.oid = t.tgrelid
-    join pg_namespace n on n.oid = c.relnamespace
-    where n.nspname = 'public'
-      and c.relname = 'itinerary_items'
-      and t.tgname = 'trg_guard_itinerary_position_day'
-  ),
-  'guard trigger installed on itinerary_items'
+  'RPC reorder of open rows succeeds from locked slots'
 );
 
 -- Source-level: resolve_gather + coordination include groups FOR UPDATE before insert path.
 -- (Executable two-session lock race needs live Supabase; proven here by function body contract.)
 select ok(
-  position('for update' in lower(pg_get_functiondef('public.resolve_gather_point_request(uuid,boolean)'::regprocedure))) > 0
-  and position(
-    'hither.allow_itinerary_position_write'
-    in pg_get_functiondef('public.resolve_gather_point_request(uuid,boolean)'::regprocedure)
+  position('for update' in lower(pg_get_functiondef('public.resolve_gather_point_request(uuid,boolean)'::regprocedure))) > 0,
+  'resolve_gather_point_request locks its group before insert'
+);
+
+select ok(
+  position(
+    'for update'
+    in lower(pg_get_functiondef(
+      'public.coordination_apply_outcome(public.coordination_requests,text,uuid)'::regprocedure
+    ))
   ) > 0,
-  'resolve_gather_point_request locks group and sets position-write GUC'
+  'coordination_apply_outcome locks its group before itinerary mutation'
+);
+
+select ok(
+  not has_function_privilege(
+    'authenticated',
+    'public.coordination_apply_outcome(public.coordination_requests,text,uuid)',
+    'execute'
+  ),
+  'coordination_apply_outcome remains internal-only'
 );
 
 select * from finish();

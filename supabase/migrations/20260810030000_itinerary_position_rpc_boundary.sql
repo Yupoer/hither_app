@@ -1,53 +1,8 @@
--- #151 Sol r3: RPC-only position/day boundary + lock every server position writer.
--- 1) Trigger rejects direct table INSERT and position/day UPDATE unless a
---    transaction-local GUC is set by authorized writers (PostgREST cannot set it).
--- 2) coordination_apply_outcome + resolve_gather_point_request take groups FOR UPDATE
---    before max(position)/insert (same serialization as import/add/reorder).
--- 3) import/add/reorder set the GUC after the group lock.
+-- #151 Sol r3: lock every server-side itinerary position writer.
+-- Direct table writes remain available during the documented old-client rollout;
+-- the new client uses the serialized RPCs below.
 
--- ── Guard: position/day only via authorized writers ──────────────────────────
-
-create or replace function public.guard_itinerary_position_day()
-returns trigger
-language plpgsql
-set search_path = ''
-as $$
-declare
-  v_allow text := current_setting('hither.allow_itinerary_position_write', true);
-begin
-  if v_allow is not distinct from '1' then
-    return new;
-  end if;
-
-  if tg_op = 'INSERT' then
-    raise exception 'itinerary position writes must use authorized RPCs'
-      using errcode = '42501';
-  end if;
-
-  if tg_op = 'UPDATE'
-    and (
-      new.position is distinct from old.position
-      or new.day is distinct from old.day
-    )
-  then
-    raise exception 'itinerary position/day writes must use authorized RPCs'
-      using errcode = '42501';
-  end if;
-
-  return new;
-end;
-$$;
-
-drop trigger if exists trg_guard_itinerary_position_day on public.itinerary_items;
-create trigger trg_guard_itinerary_position_day
-  before insert or update on public.itinerary_items
-  for each row
-  execute function public.guard_itinerary_position_day();
-
-comment on function public.guard_itinerary_position_day() is
-  'Blocks direct Data-API position/day mutations; authorized RPCs set hither.allow_itinerary_position_write=1.';
-
--- ── import_itinerary_batch: set allow GUC after group lock ───────────────────
+-- ── import_itinerary_batch: serialize after group lock ───────────────────────
 
 create or replace function public.import_itinerary_batch(
   p_group_id uuid,
@@ -105,7 +60,6 @@ begin
   if not found then
     raise exception 'group not found' using errcode = 'P0002';
   end if;
-  perform set_config('hither.allow_itinerary_position_write', '1', true);
 
   select coalesce(max(i.position), -1) + 1 into v_insert_pos
   from public.itinerary_items i
@@ -202,7 +156,7 @@ $$;
 revoke all on function public.import_itinerary_batch(uuid, uuid, integer, jsonb) from public, anon;
 grant execute on function public.import_itinerary_batch(uuid, uuid, integer, jsonb) to authenticated;
 
--- ── add_itinerary_item: set allow GUC after group lock ───────────────────────
+-- ── add_itinerary_item: serialize after group lock ───────────────────────────
 
 create or replace function public.add_itinerary_item(
   p_group_id uuid,
@@ -267,7 +221,6 @@ begin
   if not found then
     raise exception 'group not found' using errcode = 'P0002';
   end if;
-  perform set_config('hither.allow_itinerary_position_write', '1', true);
 
   select coalesce(max(i.position), -1) + 1 into v_insert_pos
   from public.itinerary_items i
@@ -442,7 +395,6 @@ begin
   if not found then
     raise exception 'group not found' using errcode = 'P0002';
   end if;
-  perform set_config('hither.allow_itinerary_position_write', '1', true);
 
   select count(*)::integer into v_found
   from public.itinerary_items i
@@ -528,7 +480,7 @@ revoke all on function public.reorder_itinerary_items(uuid, jsonb) from public, 
 grant execute on function public.reorder_itinerary_items(uuid, jsonb) to authenticated;
 
 comment on function public.reorder_itinerary_items(uuid, jsonb) is
-  'Reorder open itinerary items from ordered IDs under groups FOR UPDATE; positions from locked snapshot; GUC-gated position writes.';
+  'Reorder open itinerary items from ordered IDs under groups FOR UPDATE; positions come from the locked snapshot.';
 
 -- ── resolve_gather_point_request: groups FOR UPDATE before max+insert ────────
 
@@ -570,7 +522,6 @@ begin
     if not found then
       raise exception 'group not found' using errcode = 'P0002';
     end if;
-    perform set_config('hither.allow_itinerary_position_write', '1', true);
 
     select coalesce(max(i.position), -1) into v_position
     from public.itinerary_items i
@@ -712,7 +663,6 @@ begin
     if not found then
       raise exception 'group not found' using errcode = 'P0002';
     end if;
-    perform set_config('hither.allow_itinerary_position_write', '1', true);
 
     if v_dest_id is not null then
       update public.itinerary_items i

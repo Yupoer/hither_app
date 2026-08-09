@@ -73,6 +73,14 @@ describe('route editor + KML contracts (#151)', () => {
     expect(mapScreen).toContain('routeOpenSyncGenerationRef.current += 1');
   });
 
+  it('meet-time sheet exposes approved sections and selected quick state', () => {
+    expect(mapScreen).toContain("t('meetTime.quickSection')");
+    expect(mapScreen).toContain("t('meetTime.timeSection')");
+    expect(mapScreen).toContain("t('meetTime.redInfo')");
+    expect(mapScreen).toContain('meetTimeEditor.quickMinutes === m');
+    expect(mapScreen).toContain('styles.meetDateSummary');
+  });
+
   it('KmlImportSheet maps persistence separately from parse', () => {
     expect(kmlSheet).toContain('kmlImportErrorI18nKey');
     expect(kmlSheet).toContain('kml.errPersistence');
@@ -120,17 +128,14 @@ describe('route editor + KML contracts (#151)', () => {
     expect(reorderSnapshotMigration).toContain('cannot reorder closed itinerary items');
     expect(reorderSnapshotMigration).toContain('reorder ids missing or out of scope');
     expect(reorderSnapshotMigration).toContain('permission denied');
-    // r3: RPC-only position/day boundary + approval/coordination share group lock.
-    expect(boundaryMigration).toContain('guard_itinerary_position_day');
-    expect(boundaryMigration).toContain('hither.allow_itinerary_position_write');
-    expect(boundaryMigration).toContain('trg_guard_itinerary_position_day');
+    // r3: approval/coordination writers share the same group lock as add/reorder.
     expect(boundaryMigration).toContain('create or replace function public.resolve_gather_point_request');
     expect(boundaryMigration).toContain('create or replace function public.coordination_apply_outcome');
     expect(boundaryMigration).toMatch(
-      /resolve_gather_point_request[\s\S]*for update[\s\S]*allow_itinerary_position_write/,
+      /resolve_gather_point_request[\s\S]*for update/,
     );
     expect(boundaryMigration).toMatch(
-      /coordination_apply_outcome[\s\S]*for update[\s\S]*allow_itinerary_position_write/,
+      /coordination_apply_outcome[\s\S]*for update/,
     );
     expect(destinationService).toContain("rpc('add_itinerary_item'");
     expect(destinationService).toContain("rpc('reorder_itinerary_items'");

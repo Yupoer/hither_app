@@ -92,23 +92,45 @@ select is(
   'rejection leaves prior rows intact'
 );
 
--- 5) Invalid item rolls back whole batch (injected failure).
+-- 5) A real insert-time failure rolls back earlier rows and position shifts.
+reset role;
+create or replace function pg_temp.fail_import_item()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.title = 'Persist Fail' then
+    raise exception 'injected persistence failure' using errcode = '23514';
+  end if;
+  return new;
+end;
+$$;
+create trigger test_fail_import_item
+  before insert on public.itinerary_items
+  for each row execute function pg_temp.fail_import_item();
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
+select set_config('request.jwt.claim.role', 'authenticated', true);
+
 select throws_ok(
   $$ select public.import_itinerary_batch(
     'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     null,
     1,
-    '[{"title":"Good","latitude":1,"longitude":2},{"title":"","latitude":1,"longitude":2}]'::jsonb
+    '[{"title":"Good","latitude":1,"longitude":2},{"title":"Persist Fail","latitude":1,"longitude":2}]'::jsonb
   ) $$,
-  '22023',
-  'invalid import item title',
-  'bad title aborts batch'
+  '23514',
+  'injected persistence failure',
+  'second insert failure aborts batch'
 );
 
-select is(
-  (select count(*)::int from public.itinerary_items where group_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'),
-  2,
-  'failed batch does not leave partial inserts'
+select results_eq(
+  $$ select title, position
+     from public.itinerary_items
+     where group_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+     order by position $$,
+  $$ values ('Stop A'::text, 0), ('Stop B'::text, 1) $$,
+  'insert failure restores rows and positions'
 );
 
 -- 6) add_itinerary_item also rejects cross-group subgroup.

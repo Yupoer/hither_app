@@ -530,6 +530,9 @@ export const zh = {
 
   // Map · meet time (countdown / set / clear) + member status
   'meetTime.redSection': '時間變紅警示時機',
+  'meetTime.quickSection': '快速設定',
+  'meetTime.timeSection': '集合時間',
+  'meetTime.redInfo': '倒數提醒說明',
   'meetTime.redOption': '剩 {minutes} 分',
   'meetTime.redHint': '倒數進入此時段會變紅，並透過推播通知所有人還剩幾分鐘集合',
   'meetTime.selected': '集合時間：{datetime}',

@@ -126,7 +126,10 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(mapScreen).toContain('routeOpenSyncSessionRef');
     expect(mapScreen).toContain('onImport={() => setKmlVisible(true)}');
     expect(mapScreen).toContain(
-      'onSync={routeSyncFailed ? syncFromDatabaseAndUploadLogs : undefined}',
+      'onSync={routeSyncFailed ? retryRouteSync : undefined}',
+    );
+    expect(mapScreen).toContain(
+      'if (await syncFromDatabaseAndUploadLogs()) setRouteSyncFailed(false)',
     );
     expect(mapScreen).toContain('uploadLocalLogs');
     expect(mapScreen).toContain('const syncFromDatabaseAndUploadLogs');
