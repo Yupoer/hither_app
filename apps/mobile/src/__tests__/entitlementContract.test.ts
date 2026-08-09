@@ -503,29 +503,11 @@ describe('joinGroup member_limit', () => {
 
 describe('addDestination itinerary_point_limit', () => {
   it('surfaces server itinerary_point_limit at 6th free point', async () => {
-    // Existing 5 rows → insert blocked by server (we simulate the error).
-    const existing = Array.from({ length: 5 }, (_, i) => ({
-      id: `d${i}`,
-      position: i,
-      day: 1,
-    }));
-    const chain: Record<string, unknown> = {};
-    const self = () => chain;
-    Object.assign(chain, {
-      select: self,
-      eq: self,
-      is: self,
-      order: jest.fn().mockResolvedValue({ data: existing, error: null }),
-      insert: jest.fn().mockResolvedValue({
-        error: { code: 'P0004', message: 'itinerary_point_limit' },
-      }),
-      update: () => ({
-        eq: () => ({
-          eq: () => Promise.resolve({ error: null }),
-        }),
-      }),
+    // Server trigger is authoritative; RPC surfaces P0004 / message.
+    mockedRpc.mockResolvedValue({
+      data: null,
+      error: { code: 'P0004', message: 'itinerary_point_limit' },
     });
-    mockedFrom.mockReturnValue(chain);
 
     await expect(
       addDestination('g1', {
@@ -677,22 +659,29 @@ describe('Paywall contract (StoreKit subscription flow)', () => {
     join(__dirname, '../components/PaywallSheet.tsx'),
     'utf8',
   );
+  const premiumPresentation = readFileSync(
+    join(__dirname, '../components/PremiumPresentation.tsx'),
+    'utf8',
+  );
 
   it('uses monthly/annual StoreKit products and never performs a local unlock', () => {
-    expect(paywall).toContain('purchasePremiumSubscription');
-    expect(paywall).toContain('restorePremiumSubscription');
-    expect(paywall).toContain('PREMIUM_CATALOG');
-    expect(paywall).toContain('displayPrice');
-    expect(paywall).not.toContain('TEMPORARY_DIRECT_UPGRADE');
-    expect(paywall).not.toContain('setProStatusLocal(true)');
-    expect(paywall).not.toContain('setProStatus(');
-    expect(paywall).toContain('FREE_LIMITS');
+    expect(premiumPresentation).toContain('purchasePremiumSubscription');
+    expect(premiumPresentation).toContain('restorePremiumSubscription');
+    expect(premiumPresentation).toContain('PREMIUM_CATALOG');
+    expect(premiumPresentation).toContain('displayPrice');
+    expect(premiumPresentation).not.toContain('TEMPORARY_DIRECT_UPGRADE');
+    expect(premiumPresentation).not.toContain('setProStatusLocal(true)');
+    expect(premiumPresentation).not.toContain('setProStatus(');
+    expect(premiumPresentation).toContain('FREE_LIMITS');
+    // Paywall sheet hosts shared presentation with restore enabled.
+    expect(paywall).toContain('PremiumPresentation');
+    expect(paywall).toContain('showRestore');
   });
 
   it('restore success uses the server Premium projection', () => {
-    expect(paywall).toContain('restored.projection.personalPremiumActive');
-    expect(paywall).toContain('restored.projection.teamPremiumActive');
-    expect(paywall).not.toMatch(/restored\.projection\.[^\n]+\|\|\s*isPro/);
+    expect(premiumPresentation).toContain('restored.projection.personalPremiumActive');
+    expect(premiumPresentation).toContain('restored.projection.teamPremiumActive');
+    expect(premiumPresentation).not.toMatch(/restored\.projection\.[^\n]+\|\|\s*isPro/);
   });
 });
 

@@ -72,6 +72,10 @@ interface Props {
     next: { emoji: string | null; markerColor?: string | null },
   ) => void | Promise<void>;
   onSync?: () => Promise<void>;
+  /** Open KML/KMZ import sheet (replaces header sync CTA). */
+  onImport?: () => void;
+  /** When true, show retry sync affordance after silent open-sync failure. */
+  syncFailed?: boolean;
   colors: Palette;
   emptyLabel: string;
   dragHint?: string;
@@ -108,6 +112,8 @@ export default function DestinationReorderList({
   onDelete,
   onUpdateEmojiColor,
   onSync,
+  onImport,
+  syncFailed = false,
   colors,
   emptyLabel,
   dragHint,
@@ -482,7 +488,7 @@ export default function DestinationReorderList({
 
   return (
     <View>
-      {(canReorder || onSync) && (
+      {(canReorder || onImport || (syncFailed && onSync)) && (
         <View style={styles.topActions}>
           {canReorder && <Pressable style={styles.setDaysBtn} onPress={() => {
             setEditDays(tripDays ?? 1);
@@ -503,7 +509,16 @@ export default function DestinationReorderList({
               <Text style={styles.setDaysText}>{t('stay.favorites')}</Text>
             </Pressable>
           ) : null}
-          {onSync && <Pressable
+          {onImport && <Pressable
+            style={styles.setDaysBtn}
+            onPress={() => onImport()}
+            accessibilityRole="button"
+            accessibilityLabel={t('kml.entry')}
+          >
+            <Ionicons name="cloud-upload-outline" size={16} color={colors.accent} style={{ marginRight: 6 }} />
+            <Text style={styles.setDaysText}>{t('kml.entry')}</Text>
+          </Pressable>}
+          {syncFailed && onSync && <Pressable
             style={[styles.setDaysBtn, syncing && { opacity: 0.5 }]}
             onPress={() => void handleSync()}
             disabled={syncing}
@@ -512,7 +527,7 @@ export default function DestinationReorderList({
           >
             <Ionicons name="refresh-outline" size={16} color={colors.accent} style={{ marginRight: 6 }} />
             <Text style={styles.setDaysText}>
-              {syncing ? t('map.syncDbSyncing') : t('map.syncDb')}
+              {syncing ? t('map.syncDbSyncing') : t('map.syncDbRetry')}
             </Text>
           </Pressable>}
         </View>
@@ -1022,7 +1037,7 @@ const HeaderRow = memo(function HeaderRow({
 }) {
   const { t } = useTranslation();
   const axisRef = useRef<null | 'v'>(null);
-  const reorderable = canReorder && item.day > 1;
+  const reorderable = canReorder;
   const responder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: (evt) => {

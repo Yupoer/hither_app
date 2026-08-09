@@ -1,5 +1,5 @@
-/**
- * API client barrel — re-exports every domain service so existing imports
+﻿/**
+ * API client barrel ??re-exports every domain service so existing imports
  * (`import { createGroup, addDestination, ... } from '../api/client'`) continue
  * to work without changes. New code should import directly from the specific
  * service file for faster comprehension and smaller dependency surface.
@@ -58,6 +58,7 @@ export type {
 export {
   mapDestination,
   addDestination,
+  addDestinationsBatch,
   deleteDestination,
   completeGatheringStop,
   reorderDestinations,

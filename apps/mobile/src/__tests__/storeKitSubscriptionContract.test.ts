@@ -21,6 +21,10 @@ const verifier = readFileSync(join(root, 'supabase/functions/verify-and-apply-pu
 const notifications = readFileSync(join(root, 'supabase/functions/apple-server-notifications/index.ts'), 'utf8');
 const storekit = readFileSync(join(root, 'supabase/functions/_shared/storekit.ts'), 'utf8');
 const paywall = readFileSync(join(__dirname, '../components/PaywallSheet.tsx'), 'utf8');
+const premiumPresentation = readFileSync(
+  join(__dirname, '../components/PremiumPresentation.tsx'),
+  'utf8',
+);
 
 describe('Ticket 6 catalog and StoreKit native boundary', () => {
   it('uses expo-iap subscriptions and a fail-closed build-time catalog', () => {
@@ -41,8 +45,9 @@ describe('Ticket 6 catalog and StoreKit native boundary', () => {
     expect(adapter).not.toContain('const introOfferEligibilityByGroup');
     expect(adapter).toContain('introductoryOfferEligibleIOS');
     expect(adapter).toContain("Platform?.OS === 'ios'");
-    expect(paywall).toContain('hasEligibleIntroductoryOffer(product)');
-    expect(paywall).toContain('introductoryPriceIOS');
+    expect(premiumPresentation).toContain('hasEligibleIntroductoryOffer(product)');
+    expect(premiumPresentation).toContain('introductoryPriceIOS');
+    expect(paywall).toContain('PremiumPresentation');
   });
 
   it('finishes only after durable server verification', () => {
@@ -58,6 +63,62 @@ describe('Ticket 6 catalog and StoreKit native boundary', () => {
       service.indexOf('export async function applyVerifiedPurchase'),
     );
     expect(subscriptionSource).not.toContain('apply_verified_purchase');
+  });
+});
+
+/**
+ * #156 Ordered Step 5 — source-contract tier (static seams).
+ * Behavioral component/integration coverage lives in:
+ *   premiumPurchaseFlowBehavior.test.ts (cache, purchase, restore coordinator)
+ *   premiumStoreFlowBehavior.test.ts (Store/Paywall render + result branches)
+ * Real StoreKit / Play Billing product-load, purchase, and restore on device
+ * remain Unverified in agent CI hosts (no sandbox). Do not treat green Jest
+ * as device evidence (parent #155 non-goal).
+ */
+describe('#156 store-flow product-load / purchase-entry / restore seams', () => {
+  const storePane = readFileSync(
+    join(__dirname, '../screens/MapScreen/components/StorePane.tsx'),
+    'utf8',
+  );
+  const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+
+  it('loads catalog through shared coordinator cache (Store + Paywall single owner)', () => {
+    expect(coordinator).toContain('export async function loadPremiumStoreProducts');
+    expect(coordinator).toContain('productsInFlight');
+    expect(coordinator).toContain('PRODUCTS_CACHE_TTL_MS');
+    expect(coordinator).toContain('fetchPremiumProducts');
+    expect(premiumPresentation).toContain('loadPremiumStoreProducts');
+    // Presentation must not open a second native product lifecycle.
+    expect(premiumPresentation).not.toContain('fetchPremiumProducts');
+    expect(storePane).toContain('PremiumPresentation');
+    expect(paywall).toContain('PremiumPresentation');
+  });
+
+  it('purchase-entry wires iOS StoreKit and Android Play request shapes', () => {
+    expect(adapter).toContain("type: 'subs'");
+    expect(adapter).toContain('fetchProducts');
+    expect(adapter).toContain('skus: PREMIUM_CATALOG.products.map');
+    // expo-iap dual-platform requestPurchase payload (tiered iOS + Android entry).
+    expect(adapter).toContain('apple: { sku: productId, appAccountToken }');
+    expect(adapter).toContain(
+      'google: { skus: [productId], obfuscatedAccountId: appAccountToken }',
+    );
+    expect(coordinator).toContain('requestPremiumSubscription');
+    expect(premiumPresentation).toContain('purchasePremiumSubscription');
+    expect(premiumPresentation).toContain('handlePurchase');
+  });
+
+  it('Settings → Premium Paywall keeps restore; Store hides restore CTA', () => {
+    expect(mapScreen).toContain('PaywallSheet');
+    expect(paywall).toContain('showRestore');
+    expect(paywall).not.toContain('showRestore={false}');
+    expect(paywall).toContain('onRestoreSuccess');
+    expect(storePane).toContain('showRestore={false}');
+    expect(storePane).not.toContain('restorePremiumSubscription');
+    expect(premiumPresentation).toContain('restorePremiumSubscription');
+    expect(adapter).toContain('export async function restorePremiumPurchases');
+    expect(adapter).toContain('restorePurchases');
+    expect(coordinator).toContain('export async function restorePremiumSubscription');
   });
 });
 
