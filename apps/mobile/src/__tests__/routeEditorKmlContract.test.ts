@@ -54,6 +54,15 @@ describe('route editor + KML contracts (#151)', () => {
     // Merged exiting list still exists for carousel presentation.
     expect(mapScreen).toContain('mergeExitingDestinations');
     expect(mapScreen).toContain('const destinations = useMemo');
+    // Persisted position slots must come from open editor scope, not carousel.
+    const handleStart = mapScreen.indexOf('const handleReorder = useCallback');
+    const handleEnd = mapScreen.indexOf('reorderForNavigationRef.current = handleReorder');
+    const handleBlock = mapScreen.slice(handleStart, handleEnd);
+    expect(handleBlock).toContain('openPositionSlotsFromOpenDestinations(openDestinations)');
+    expect(handleBlock).toContain('mapOpenReorderToPersistedPositions');
+    expect(handleBlock).not.toMatch(
+      /openPositionSlots\s*=\s*\[\.\.\.destinations\]/,
+    );
   });
 
   it('open-sync completion is gated by generation after close/reopen', () => {
@@ -88,12 +97,26 @@ describe('route editor + KML contracts (#151)', () => {
       ),
       'utf8',
     );
+    const reorderSnapshotMigration = readFileSync(
+      join(
+        __dirname,
+        '../../../../supabase/migrations/20260810020000_reorder_itinerary_locked_snapshot.sql',
+      ),
+      'utf8',
+    );
     expect(positionMigration).toContain('add_itinerary_item');
     expect(positionMigration).toContain('reorder_itinerary_items');
     expect(positionMigration).toContain('for update');
+    // r2: ordered IDs → locked slots; full-batch validate; ignore stale positions.
+    expect(reorderSnapshotMigration).toContain('Client "position" is ignored');
+    expect(reorderSnapshotMigration).toContain('duplicate reorder id');
+    expect(reorderSnapshotMigration).toContain('cannot reorder closed itinerary items');
+    expect(reorderSnapshotMigration).toContain('reorder ids missing or out of scope');
+    expect(reorderSnapshotMigration).toContain('permission denied');
     expect(destinationService).toContain("rpc('add_itinerary_item'");
     expect(destinationService).toContain("rpc('reorder_itinerary_items'");
     expect(destinationService).toContain("rpc('import_itinerary_batch'");
+    expect(destinationService).toContain('reorder_incomplete');
     // No direct multi-step position shift on the client path.
     expect(destinationService).not.toMatch(
       /\.from\('itinerary_items'\)[\s\S]{0,200}\.update\(\{\s*position:/,

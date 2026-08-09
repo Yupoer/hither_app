@@ -208,6 +208,10 @@ import {
   startOfTodayLocal,
 } from '../utils/meetTime';
 import {
+  mapOpenReorderToPersistedPositions,
+  openPositionSlotsFromOpenDestinations,
+} from '../utils/openReorderSlots';
+import {
   locationFreshness,
   resolveSelfAwareLastUpdated,
 } from '../utils/locationFreshness';
@@ -3468,29 +3472,27 @@ export default function MapScreen({ route, navigation }: Props) {
           logEvent('destination_reorder', { count: updates.length });
 
           const departureDate = group?.departureDate;
-          // Closed stops are intentionally absent from the editor, but their
-          // original position slots remain reserved so editing open stops cannot
-          // move anything across a historical closure or create duplicate slots.
-          const openPositionSlots = [...destinations]
-            .sort((a, b) => a.order - b.order)
-            .map((destination) => destination.order);
+          // Persist slots from open editor scope only — never from carousel
+          // destinations (which include exit-hold closed snapshots). Closed
+          // rows keep their reserved absolute positions on the server.
+          const openPositionSlots = openPositionSlotsFromOpenDestinations(openDestinations);
+          const withSlots = mapOpenReorderToPersistedPositions(updates, openPositionSlots);
           const persistedUpdates: {
             id: string;
             position: number;
             day: number;
             meetAt?: string;
-          }[] = updates.map((update, index) => {
+          }[] = withSlots.map((update) => {
             const original = rawDestinations.find((dest) => dest.id === update.id);
-            const position = openPositionSlots[index] ?? update.position;
             if (!departureDate || !original?.meetAt || (original.day || 1) === update.day) {
-              return { ...update, position };
+              return { ...update };
             }
             const alignedMeetAt = alignMeetTimeToTripDay(
               new Date(original.meetAt),
               departureDate,
               update.day,
             );
-            return { ...update, position, meetAt: alignedMeetAt.toISOString() };
+            return { ...update, meetAt: alignedMeetAt.toISOString() };
           });
           const newDests = rawDestinations.map((d) => ({ ...d }));
           persistedUpdates.forEach((u) => {
@@ -3551,7 +3553,7 @@ export default function MapScreen({ route, navigation }: Props) {
       t,
       refresh,
       rawDestinations,
-      destinations,
+      openDestinations,
       group?.departureDate,
     ],
   );

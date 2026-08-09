@@ -194,7 +194,9 @@ export async function reorderDestinations(
     return;
   }
   if (!updates.length) return;
-  // One RPC: group row lock then apply all position/day(/meet_at) patches.
+  // Ordered IDs under groups FOR UPDATE; server recomputes positions from the
+  // locked snapshot (client absolute positions are not trusted). Full batch
+  // validates or aborts — partial RLS success is rejected.
   const payload = updates.map((up) => {
     const row: {
       id: string;
@@ -203,17 +205,25 @@ export async function reorderDestinations(
       meet_at?: string | null;
     } = {
       id: up.id,
+      // Hint only (optimistic UI); server ignores and assigns locked slots.
       position: up.position,
       day: up.day,
     };
     if (up.meetAt !== undefined) row.meet_at = up.meetAt;
     return row;
   });
-  const { error } = await supabase.rpc('reorder_itinerary_items', {
+  const { data, error } = await supabase.rpc('reorder_itinerary_items', {
     p_group_id: groupId,
     p_updates: payload,
   });
   orThrow(error);
+  if (typeof data === 'number' && data !== updates.length) {
+    const err = new Error(
+      `reorder_incomplete: expected ${updates.length} got ${data}`,
+    ) as Error & { code?: string };
+    err.code = 'reorder_incomplete';
+    throw err;
+  }
 }
 
 /**

@@ -705,6 +705,18 @@ describe('notifications, commands & journey', () => {
     });
   });
 
+  it('reorderDestinations rejects incomplete batch count from RPC', async () => {
+    mockedRpc.mockResolvedValue({ data: 1, error: null });
+
+    await expect(
+      reorderDestinations('g1', [
+        { id: 'd1', position: 0, day: 1 },
+        { id: 'd2', position: 1, day: 1 },
+      ]),
+    ).rejects.toMatchObject({ code: 'reorder_incomplete' });
+  });
+
+
   it('setDestinationMeetTime(null) clears the meet time', async () => {
     const update = jest.fn(() => ({ eq: () => Promise.resolve({ error: null }) }));
     mockedFrom.mockImplementation(() => ({ update }));
