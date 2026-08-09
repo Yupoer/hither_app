@@ -503,29 +503,11 @@ describe('joinGroup member_limit', () => {
 
 describe('addDestination itinerary_point_limit', () => {
   it('surfaces server itinerary_point_limit at 6th free point', async () => {
-    // Existing 5 rows → insert blocked by server (we simulate the error).
-    const existing = Array.from({ length: 5 }, (_, i) => ({
-      id: `d${i}`,
-      position: i,
-      day: 1,
-    }));
-    const chain: Record<string, unknown> = {};
-    const self = () => chain;
-    Object.assign(chain, {
-      select: self,
-      eq: self,
-      is: self,
-      order: jest.fn().mockResolvedValue({ data: existing, error: null }),
-      insert: jest.fn().mockResolvedValue({
-        error: { code: 'P0004', message: 'itinerary_point_limit' },
-      }),
-      update: () => ({
-        eq: () => ({
-          eq: () => Promise.resolve({ error: null }),
-        }),
-      }),
+    // Server trigger is authoritative; RPC surfaces P0004 / message.
+    mockedRpc.mockResolvedValue({
+      data: null,
+      error: { code: 'P0004', message: 'itinerary_point_limit' },
     });
-    mockedFrom.mockReturnValue(chain);
 
     await expect(
       addDestination('g1', {

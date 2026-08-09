@@ -61,3 +61,14 @@ export function meetCountdownShort(meetAtIso: string, now: Date): string {
   const over = Math.abs(m);
   return over >= 60 ? `遲${formatCompactDurationFromMinutes(over)}` : `遲${over}`;
 }
+
+/**
+ * Add minutes onto the current picker draft (not wall-clock "now").
+ * Handles day rollover via Date arithmetic; clears seconds/ms.
+ */
+export function addMinutesToPickerValue(value: Date, minutes: number): Date {
+  const next = new Date(value.getTime());
+  next.setMinutes(next.getMinutes() + minutes);
+  next.setSeconds(0, 0);
+  return next;
+}

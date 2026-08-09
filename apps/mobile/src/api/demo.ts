@@ -164,6 +164,32 @@ export function demoAddDestination(input: {
   } as Destination);
 }
 
+
+
+/** Atomic-ish demo batch: all-or-nothing relative to in-memory state snapshot. */
+export function demoAddDestinationsBatch(
+  items: {
+    title: string;
+    address?: string;
+    coordinates: Coordinates;
+    day?: number;
+    subgroupId?: string;
+  }[],
+): void {
+  if (!items.length) return;
+  const snapshot = state.destinations.map((d) => ({ ...d }));
+  const seqBefore = destSeq;
+  try {
+    for (const item of items) {
+      demoAddDestination(item);
+    }
+  } catch (e) {
+    state.destinations = snapshot;
+    destSeq = seqBefore;
+    throw e;
+  }
+}
+
 export function demoDeleteDestination(destinationId: string): void {
   state.destinations = state.destinations
     .filter((d) => d.id !== destinationId)

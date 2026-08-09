@@ -45,15 +45,19 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toMatch(/accuracySubhint:\s*\{[\s\S]*?color:\s*glass\.textTertiary/);
   });
 
-  it('lets the leader see subgroup destinations after approving a request', () => {
+  it('scopes itinerary to current open scope for everyone including leaders (#154)', () => {
     const scopeStart = mapScreen.indexOf('const rawDestinations');
     const scopeEnd = mapScreen.indexOf('const [optimisticDestinations', scopeStart);
     const scopeBlock = mapScreen.slice(scopeStart, scopeEnd);
 
-    expect(scopeBlock).toContain('if (isLeader) return all;');
+    // Leaders no longer receive the unscoped full list — route editor stays
+    // on current/open scope (main vs subgroup).
+    expect(scopeBlock).not.toContain('if (isLeader) return all;');
+    expect(scopeBlock).toContain('d.subgroupId === myScopeId');
+    expect(scopeBlock).toContain('d.subgroupId == null');
   });
 
-  it('keeps history and KML on the route pane with arrival manage; no add/import on reorder overlay', () => {
+  it('keeps history and KML on the route pane; reorder overlay wires import CTA (#151/#154)', () => {
     // Route sheet pane body (not the full-screen reorder overlay).
     const routePane = mapScreen.indexOf('// ─── 路線');
     const toolsPane = mapScreen.indexOf('// ─── 工具', routePane);
@@ -65,7 +69,7 @@ describe('map UI placement contracts', () => {
     expect(routeBlock).toContain("t('history.title')");
     expect(routeBlock).toContain("setOverlay('arrivalManage')");
 
-    // Reorder overlay lists destinations only — no bottom add/import rows.
+    // Reorder overlay: import via DestinationReorderList (no bottom add row).
     const overlayRoute = mapScreen.indexOf("visible={overlay === 'route'}");
     const overlayRouteEnd = mapScreen.indexOf('<SettingsOverlay', overlayRoute);
     const overlayBlock = mapScreen.slice(
@@ -73,8 +77,8 @@ describe('map UI placement contracts', () => {
       overlayRouteEnd > 0 ? overlayRouteEnd : overlayRoute + 3500,
     );
     expect(overlayBlock).toContain('DestinationReorderList');
+    expect(overlayBlock).toContain('onImport={() => setKmlVisible(true)}');
     expect(overlayBlock).not.toContain("t('map.addStop')");
-    expect(overlayBlock).not.toContain("t('kml.entry')");
   });
 
   it('groups high accuracy with the refreshed member controls', () => {
@@ -185,7 +189,7 @@ describe('map UI placement contracts', () => {
   it('aligns per-destination meet clocks when itinerary dates change', () => {
     expect(mapScreen).toContain('alignMeetTimeToTripDay');
     expect(mapScreen).toContain('meetAt: alignedMeetAt.toISOString()');
-    expect(mapScreen).toContain('const shortcut = new Date(meetTimeEditor.value)');
+    expect(mapScreen).toContain('addMinutesToPickerValue(meetTimeEditor.value, m)');
     expect(mapScreen).toContain('reorderDestinations(groupId, meetUpdates)');
   });
 

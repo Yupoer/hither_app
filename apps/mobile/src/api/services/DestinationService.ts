@@ -2,13 +2,14 @@
  * DestinationService — itinerary CRUD (add, delete, reorder, meet-time).
  */
 import { supabase } from '../supabase';
-import { demoAddDestination, demoUpdateDestinationEmoji, isDemoGroup } from '../demo';
+import { demoAddDestination, demoAddDestinationsBatch, demoUpdateDestinationEmoji, isDemoGroup } from '../demo';
 import type { Coordinates, Destination } from '../../types';
 import {
   validateDestinationColor,
   validateDestinationEmoji,
 } from '../../utils/destinationEmojiColor';
 import { orThrow } from './_helpers';
+import { KmlImportError, type NormalizedImportItem } from '../../utils/kmlBatch';
 
 // ── Row shape ──────────────────────────────────────────────────────────────
 
@@ -65,59 +66,15 @@ export async function addDestination(
     return;
   }
   const targetDay = Math.max(1, input.day ?? 1);
-  let scopedQuery = supabase
-    .from('itinerary_items')
-    .select('id, position, day')
-    .eq('group_id', groupId);
-  scopedQuery = subgroupId
-    ? scopedQuery.eq('subgroup_id', subgroupId)
-    : scopedQuery.is('subgroup_id', null);
-  const { data: rows, error: listError } = await scopedQuery.order('position', {
-    ascending: true,
-  });
-  orThrow(listError);
-
-  const existing = ((rows ?? []) as { id: string; position: number; day: number }[]).map(
-    (row) => ({
-      id: row.id,
-      order: row.position,
-      day: row.day ?? 1,
-    }),
-  );
-
-  // Inline append plan (keep service free of utils import cycles in tests).
-  const sameDay = existing.filter((d) => d.day === targetDay);
-  let insertPosition: number;
-  if (sameDay.length > 0) {
-    insertPosition = Math.max(...sameDay.map((d) => d.order)) + 1;
-  } else {
-    const earlier = existing.filter((d) => d.day < targetDay);
-    insertPosition =
-      earlier.length > 0 ? Math.max(...earlier.map((d) => d.order)) + 1 : 0;
-  }
-
-  // Shift later rows high→low so positions never collide mid-update.
-  const toShift = existing
-    .filter((d) => d.order >= insertPosition)
-    .sort((a, b) => b.order - a.order);
-  for (const row of toShift) {
-    const { error: shiftError } = await supabase
-      .from('itinerary_items')
-      .update({ position: row.order + 1 })
-      .eq('id', row.id)
-      .eq('group_id', groupId);
-    orThrow(shiftError);
-  }
-
-  const { error } = await supabase.from('itinerary_items').insert({
-    group_id: groupId,
-    subgroup_id: subgroupId ?? null,
-    title: input.title,
-    address: input.address ?? null,
-    day: targetDay,
-    latitude: input.coordinates.latitude,
-    longitude: input.coordinates.longitude,
-    position: insertPosition,
+  // Server-side lock + shift + insert (shared with import_itinerary_batch / reorder).
+  const { error } = await supabase.rpc('add_itinerary_item', {
+    p_group_id: groupId,
+    p_subgroup_id: subgroupId ?? null,
+    p_title: input.title,
+    p_address: input.address ?? null,
+    p_latitude: input.coordinates.latitude,
+    p_longitude: input.coordinates.longitude,
+    p_day: targetDay,
   });
   if (error) {
     // Free Plan itinerary cap (5 points) — server trigger is authoritative.
@@ -131,6 +88,68 @@ export async function addDestination(
     }
     orThrow(error);
   }
+}
+
+
+/**
+ * Atomic multi-stop insert for KML import. One RPC round-trip: positions are
+ * computed server-side and either all rows land or none do. Does not call
+ * UI-facing addDestination in a loop.
+ */
+export async function addDestinationsBatch(
+  groupId: string,
+  items: NormalizedImportItem[],
+  options?: { day?: number; subgroupId?: string },
+): Promise<void> {
+  if (!items.length) return;
+  const targetDay = Math.max(1, options?.day ?? 1);
+  const subgroupId = options?.subgroupId;
+
+  if (isDemoGroup(groupId)) {
+    demoAddDestinationsBatch(
+      items.map((item) => ({
+        title: item.title,
+        address: item.address,
+        coordinates: { latitude: item.latitude, longitude: item.longitude },
+        day: targetDay,
+        subgroupId,
+      })),
+    );
+    return;
+  }
+
+  const payload = items.map((item) => ({
+    title: item.title,
+    latitude: item.latitude,
+    longitude: item.longitude,
+    address: item.address ?? null,
+  }));
+
+  const { error } = await supabase.rpc('import_itinerary_batch', {
+    p_group_id: groupId,
+    p_subgroup_id: subgroupId ?? null,
+    p_day: targetDay,
+    p_items: payload,
+  });
+
+  if (!error) return;
+
+  const code = (error as { code?: string }).code;
+  const message = error.message ?? '';
+  if (code === '42501' || /leader membership|authentication required|permission/i.test(message)) {
+    throw new KmlImportError('permission', code ?? 'permission', message);
+  }
+  if (code === 'P0004' || /itinerary_point_limit/i.test(message)) {
+    const err = new KmlImportError('persistence', 'itinerary_point_limit', message) as KmlImportError & {
+      code?: string;
+    };
+    err.code = 'itinerary_point_limit';
+    throw err;
+  }
+  if (code === '22023' || /invalid import/i.test(message)) {
+    throw new KmlImportError('validation', code ?? 'invalid_batch', message);
+  }
+  throw new KmlImportError('persistence', code ?? 'persistence', message);
 }
 
 export async function deleteDestination(
@@ -174,21 +193,37 @@ export async function reorderDestinations(
   if (isDemoGroup(groupId)) {
     return;
   }
-  const results = await Promise.all(
-    updates.map((up) => {
-      const patch: { position: number; day: number; meet_at?: string } = {
-        position: up.position,
-        day: up.day,
-      };
-      if (up.meetAt !== undefined) patch.meet_at = up.meetAt;
-      return supabase
-        .from('itinerary_items')
-        .update(patch)
-        .eq('id', up.id)
-        .eq('group_id', groupId);
-    }),
-  );
-  orThrow(results.find((r) => r.error)?.error ?? null);
+  if (!updates.length) return;
+  // Ordered IDs under groups FOR UPDATE; server recomputes positions from the
+  // locked snapshot (client absolute positions are not trusted). Full batch
+  // validates or aborts — partial RLS success is rejected.
+  const payload = updates.map((up) => {
+    const row: {
+      id: string;
+      position: number;
+      day: number;
+      meet_at?: string | null;
+    } = {
+      id: up.id,
+      // Hint only (optimistic UI); server ignores and assigns locked slots.
+      position: up.position,
+      day: up.day,
+    };
+    if (up.meetAt !== undefined) row.meet_at = up.meetAt;
+    return row;
+  });
+  const { data, error } = await supabase.rpc('reorder_itinerary_items', {
+    p_group_id: groupId,
+    p_updates: payload,
+  });
+  orThrow(error);
+  if (typeof data === 'number' && data !== updates.length) {
+    const err = new Error(
+      `reorder_incomplete: expected ${updates.length} got ${data}`,
+    ) as Error & { code?: string };
+    err.code = 'reorder_incomplete';
+    throw err;
+  }
 }
 
 /**

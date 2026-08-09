@@ -202,10 +202,15 @@ import {
 import { dotWindow } from '../utils/pagination';
 import {
   alignMeetTimeToTripDay,
+  addMinutesToPickerValue,
   clampDateNotBeforeToday,
   minutesUntil,
   startOfTodayLocal,
 } from '../utils/meetTime';
+import {
+  mapOpenReorderToPersistedPositions,
+  openPositionSlotsFromOpenDestinations,
+} from '../utils/openReorderSlots';
 import {
   locationFreshness,
   resolveSelfAwareLastUpdated,
@@ -233,6 +238,7 @@ import {
 import { liquidGlass, location, notifications, type MapRegion, type PlaceResult } from '../native';
 import {
   addDestination,
+  addDestinationsBatch,
   completeGatheringStop,
   deleteDestination,
   fetchSentInvites,
@@ -281,6 +287,7 @@ import type {
   VisitedWaypoint,
 } from '../types';
 import type { KmlPlacemark } from '../utils/kml';
+import { normalizeImportBatch, KmlImportError } from '../utils/kmlBatch';
 import {
   FREE_LIMITS,
   anonymousLeaderRequiresRegistration,
@@ -552,12 +559,11 @@ export default function MapScreen({ route, navigation }: Props) {
   // not re-surface main gather cards while the user is away from the main team.
   const rawDestinations: Destination[] = useMemo(() => {
     const all = state?.destinations ?? [];
-    if (isLeader) return all;
     if (myScopeId) {
       return all.filter((d) => d.subgroupId === myScopeId);
     }
     return all.filter((d) => d.subgroupId == null);
-  }, [state?.destinations, isLeader, myScopeId]);
+  }, [state?.destinations, myScopeId]);
 
   const [optimisticDestinations, setOptimisticDestinations] = useState<Destination[] | null>(null);
   const [pendingDestinationMutations, setPendingDestinationMutations] = useState<
@@ -661,7 +667,7 @@ export default function MapScreen({ route, navigation }: Props) {
    * Opt-in diagnostic Log batch is owned by logBatchScheduler, not this control.
    */
   const syncFromDatabaseAndUploadLogs = useCallback(async () => {
-    await runUiAction(
+    const result = await runUiAction(
       'map.sync_db_and_logs',
       async (token) => {
         await syncFromDatabase();
@@ -676,20 +682,20 @@ export default function MapScreen({ route, navigation }: Props) {
         if (!token.isCurrent()) return;
         if (!logResult) {
           Alert.alert(t('map.syncDbOkTitle'), t('map.syncDbOkLogsFailed'));
-          return;
+          return true;
         }
         const logsFailed =
           logResult.diagnosticRemaining < 0 || logResult.performanceRemaining < 0;
         if (logsFailed) {
           Alert.alert(t('map.syncDbOkTitle'), t('map.syncDbOkLogsFailed'));
-          return;
+          return true;
         }
         const totalSent = logResult.diagnosticSent + logResult.performanceSent;
         const totalRemaining =
           logResult.diagnosticRemaining + logResult.performanceRemaining;
         if (totalSent === 0 && totalRemaining === 0) {
           Alert.alert(t('map.syncDbOkTitle'), t('map.syncDbOkNoLogs'));
-          return;
+          return true;
         }
         // Complete only when both queues report remaining === 0.
         if (totalRemaining > 0) {
@@ -700,15 +706,17 @@ export default function MapScreen({ route, navigation }: Props) {
               remaining: String(totalRemaining),
             }),
           );
-          return;
+          return true;
         }
         Alert.alert(
           t('map.syncDbOkTitle'),
           t('map.syncDbOkFull', { sent: String(totalSent) }),
         );
+        return true;
       },
       { screen: 'Map' },
     );
+    return result === true;
   }, [syncFromDatabase, t]);
 
   // Keep translator out of effect deps — unstable `t` historically re-subscribed
@@ -1016,6 +1024,7 @@ export default function MapScreen({ route, navigation }: Props) {
     id: string;
     value: Date;
     redMin: number;
+    quickMinutes: number | null;
   } | null>(null);
   // Meet labels / location freshness tick inside small memo children
   // (MeetCountdown, LocationFreshnessText) so MapScreen is not re-rendered on a timer.
@@ -1116,7 +1125,12 @@ export default function MapScreen({ route, navigation }: Props) {
         ((MEET_RED_OPTIONS as readonly number[]).includes(meetRedMin)
           ? meetRedMin
           : DEFAULT_MEET_RED_MIN);
-      setMeetTimeEditor({ id: dest.id, value: initial, redMin: red });
+      setMeetTimeEditor({
+        id: dest.id,
+        value: initial,
+        redMin: red,
+        quickMinutes: null,
+      });
     },
     [canEditItinerary, group?.departureDate, meetRedMin],
   );
@@ -1133,7 +1147,9 @@ export default function MapScreen({ route, navigation }: Props) {
         const next = new Date(meetTimeEditor.value);
         next.setFullYear(selected.getFullYear(), selected.getMonth(), selected.getDate());
         const clamped = clampDateNotBeforeToday(next);
-        setMeetTimeEditor((s) => (s ? { ...s, value: clamped } : s));
+        setMeetTimeEditor((s) =>
+          s ? { ...s, value: clamped, quickMinutes: null } : s,
+        );
         // Chain into time picker so date+time is one flow on Android.
         DateTimePickerAndroid.open({
           value: clamped,
@@ -1145,7 +1161,11 @@ export default function MapScreen({ route, navigation }: Props) {
               if (!s) return s;
               const merged = new Date(s.value);
               merged.setHours(timeSelected.getHours(), timeSelected.getMinutes(), 0, 0);
-              return { ...s, value: clampDateNotBeforeToday(merged) };
+              return {
+                ...s,
+                value: clampDateNotBeforeToday(merged),
+                quickMinutes: null,
+              };
             });
           },
         });
@@ -1155,6 +1175,39 @@ export default function MapScreen({ route, navigation }: Props) {
   // Freeze the route overlay's scroll while a stop is being drag-reordered so
   // the two vertical gestures never fight.
   const [routeScrollEnabled, setRouteScrollEnabled] = useState(true);
+
+  // #154: each route-sheet open silently syncs once (ref survives Strict Mode remount).
+  // Generation invalidates in-flight completions after close/reopen (#151 Sol P1).
+  const routeOpenSyncSessionRef = useRef<'idle' | 'started' | 'done'>('idle');
+  const routeOpenSyncGenerationRef = useRef(0);
+  const [routeSyncFailed, setRouteSyncFailed] = useState(false);
+  useEffect(() => {
+    if (overlay !== 'route') {
+      routeOpenSyncGenerationRef.current += 1;
+      routeOpenSyncSessionRef.current = 'idle';
+      setRouteSyncFailed(false);
+      return;
+    }
+    if (routeOpenSyncSessionRef.current !== 'idle') return;
+    routeOpenSyncSessionRef.current = 'started';
+    const generation = routeOpenSyncGenerationRef.current;
+    void (async () => {
+      try {
+        await syncFromDatabase();
+        if (generation !== routeOpenSyncGenerationRef.current) return;
+        routeOpenSyncSessionRef.current = 'done';
+        setRouteSyncFailed(false);
+      } catch {
+        if (generation !== routeOpenSyncGenerationRef.current) return;
+        routeOpenSyncSessionRef.current = 'done';
+        setRouteSyncFailed(true);
+      }
+    })();
+  }, [overlay, syncFromDatabase]);
+
+  const retryRouteSync = useCallback(async () => {
+    if (await syncFromDatabaseAndUploadLogs()) setRouteSyncFailed(false);
+  }, [syncFromDatabaseAndUploadLogs]);
 
   // --- Device GPS ----------------------------------------------------------
   const {
@@ -2642,20 +2695,20 @@ export default function MapScreen({ route, navigation }: Props) {
       onProgress(items.length);
       return;
     }
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      await addDestination(
-        groupId,
-        {
-          title: item.name,
-          coordinates: { latitude: item.latitude, longitude: item.longitude },
-          day: addDay,
-        },
-        myScopeId,
-      );
-      onProgress(i + 1);
+    // Validate full batch before any DB I/O; single atomic mutation (#152).
+    const normalized = normalizeImportBatch(items);
+    onProgress(0);
+    try {
+      await addDestinationsBatch(groupId, normalized, {
+        day: addDay,
+        subgroupId: myScopeId,
+      });
+      onProgress(normalized.length);
+    } catch (e) {
+      if (e instanceof KmlImportError) throw e;
+      throw new KmlImportError('persistence', 'persistence', e instanceof Error ? e.message : String(e));
     }
-    logEvent('kml_import', { count: items.length, day: addDay });
+    logEvent('kml_import', { count: normalized.length, day: addDay });
     await refresh();
   }, [groupId, canEditItinerary, notifyLeaderPlace, myScopeId, refresh, tripDayForAdd]);
 
@@ -3436,29 +3489,27 @@ export default function MapScreen({ route, navigation }: Props) {
           logEvent('destination_reorder', { count: updates.length });
 
           const departureDate = group?.departureDate;
-          // Closed stops are intentionally absent from the editor, but their
-          // original position slots remain reserved so editing open stops cannot
-          // move anything across a historical closure or create duplicate slots.
-          const openPositionSlots = [...destinations]
-            .sort((a, b) => a.order - b.order)
-            .map((destination) => destination.order);
+          // Persist slots from open editor scope only — never from carousel
+          // destinations (which include exit-hold closed snapshots). Closed
+          // rows keep their reserved absolute positions on the server.
+          const openPositionSlots = openPositionSlotsFromOpenDestinations(openDestinations);
+          const withSlots = mapOpenReorderToPersistedPositions(updates, openPositionSlots);
           const persistedUpdates: {
             id: string;
             position: number;
             day: number;
             meetAt?: string;
-          }[] = updates.map((update, index) => {
+          }[] = withSlots.map((update) => {
             const original = rawDestinations.find((dest) => dest.id === update.id);
-            const position = openPositionSlots[index] ?? update.position;
             if (!departureDate || !original?.meetAt || (original.day || 1) === update.day) {
-              return { ...update, position };
+              return { ...update };
             }
             const alignedMeetAt = alignMeetTimeToTripDay(
               new Date(original.meetAt),
               departureDate,
               update.day,
             );
-            return { ...update, position, meetAt: alignedMeetAt.toISOString() };
+            return { ...update, meetAt: alignedMeetAt.toISOString() };
           });
           const newDests = rawDestinations.map((d) => ({ ...d }));
           persistedUpdates.forEach((u) => {
@@ -3519,7 +3570,7 @@ export default function MapScreen({ route, navigation }: Props) {
       t,
       refresh,
       rawDestinations,
-      destinations,
+      openDestinations,
       group?.departureDate,
     ],
   );
@@ -5982,7 +6033,7 @@ export default function MapScreen({ route, navigation }: Props) {
           ) : null}
           <DestinationReorderList
             groupId={groupId ?? undefined}
-            destinations={destinations}
+            destinations={openDestinations}
             canReorder={canEditItinerary}
             tripDays={optimisticTripDays ?? group?.tripDays}
             departureDate={optimisticDepartureDate ?? group?.departureDate}
@@ -5990,7 +6041,9 @@ export default function MapScreen({ route, navigation }: Props) {
             onReorder={handleReorder}
             onDelete={canEditItinerary ? handleDelete : undefined}
             onUpdateEmojiColor={canEditItinerary ? handleUpdateEmojiColor : undefined}
-            onSync={syncFromDatabaseAndUploadLogs}
+            onImport={() => setKmlVisible(true)}
+            onSync={routeSyncFailed ? retryRouteSync : undefined}
+            syncFailed={routeSyncFailed}
             colors={dark}
             emptyLabel={t('settings.noDestinations')}
             onDragActiveChange={(active) => setRouteScrollEnabled(!active)}
@@ -6666,21 +6719,47 @@ export default function MapScreen({ route, navigation }: Props) {
       >
         {meetTimeEditor && (
           <View style={styles.meetEditorBody}>
+            <Text style={[styles.sectionLabel, styles.meetSectionLabel]}>
+              {t('meetTime.quickSection')}
+            </Text>
             <View style={styles.meetQuickRow}>
               {[10, 30, 60].map((m) => (
                 <Pressable
                   key={m}
-                  style={styles.meetQuickBtn}
+                  style={[
+                    styles.meetQuickBtn,
+                    meetTimeEditor.quickMinutes === m && {
+                      borderColor: accent,
+                      backgroundColor: accentMix(accent, 14),
+                    },
+                  ]}
                   onPress={() => {
                     lightTap();
-                    const shortcut = new Date(meetTimeEditor.value);
-                    shortcut.setMinutes(shortcut.getMinutes() + m);
-                    shortcut.setSeconds(0, 0);
-                    setMeetTimeEditor((s) => (s ? { ...s, value: shortcut } : s));
+                    const shortcut = addMinutesToPickerValue(meetTimeEditor.value, m);
+                    setMeetTimeEditor((s) =>
+                      s ? { ...s, value: shortcut, quickMinutes: m } : s,
+                    );
                   }}
                   accessibilityRole="button"
+                  accessibilityLabel={
+                    m < 60
+                      ? t('map.meetInMinutes', { n: m })
+                      : t('map.meetInHours', { n: m / 60 })
+                  }
                 >
-                  <Text style={styles.meetQuickBtnText}>
+                  <Ionicons
+                    name="time-outline"
+                    size={16}
+                    color={
+                      meetTimeEditor.quickMinutes === m ? accent : glass.textSecondary
+                    }
+                  />
+                  <Text
+                    style={[
+                      styles.meetQuickBtnText,
+                      meetTimeEditor.quickMinutes === m && { color: accent },
+                    ]}
+                  >
                     {m < 60
                       ? t('map.meetInMinutes', { n: m })
                       : t('map.meetInHours', { n: m / 60 })}
@@ -6689,33 +6768,40 @@ export default function MapScreen({ route, navigation }: Props) {
               ))}
             </View>
 
-            <Text style={styles.meetSelectedClock}>
-              {t('meetTime.selected', {
-                datetime: meetTimeEditor.value.toLocaleString(undefined, {
-                  month: 'numeric',
-                  day: 'numeric',
+            <Text style={[styles.sectionLabel, styles.meetSectionLabel]}>
+              {t('meetTime.timeSection')}
+            </Text>
+            <Pressable
+              style={styles.meetDateSummary}
+              onPress={
+                Platform.OS === 'android'
+                  ? () => {
+                      lightTap();
+                      openAndroidMeetDate();
+                    }
+                  : undefined
+              }
+              accessibilityRole={Platform.OS === 'android' ? 'button' : undefined}
+              accessibilityLabel={t('meetTime.pickDateTime')}
+            >
+              <Ionicons name="calendar-outline" size={20} color={accent} />
+              <Text style={styles.meetSelectedClock}>
+                {meetTimeEditor.value.toLocaleString(undefined, {
+                  month: '2-digit',
+                  day: '2-digit',
                   hour: '2-digit',
                   minute: '2-digit',
                   hour12: false,
-                }),
-              })}
-            </Text>
+                })}
+              </Text>
+              <Ionicons
+                name="chevron-forward"
+                size={18}
+                color={glass.textSecondary}
+              />
+            </Pressable>
 
-            {Platform.OS === 'android' ? (
-              <Pressable
-                style={styles.meetAndroidPickBtn}
-                onPress={() => {
-                  lightTap();
-                  openAndroidMeetDate();
-                }}
-                accessibilityRole="button"
-              >
-                <Ionicons name="calendar-outline" size={18} color={accent} />
-                <Text style={[styles.meetAndroidPickText, { color: accent }]}>
-                  {t('meetTime.pickDateTime')}
-                </Text>
-              </Pressable>
-            ) : (
+            {Platform.OS !== 'android' && (
               <View style={styles.meetPickerWrap}>
                 <DateTimePicker
                   value={meetTimeEditor.value}
@@ -6726,7 +6812,13 @@ export default function MapScreen({ route, navigation }: Props) {
                   onChange={(_event, selected) =>
                     selected &&
                     setMeetTimeEditor((s) =>
-                      s ? { ...s, value: clampDateNotBeforeToday(selected) } : s,
+                      s
+                        ? {
+                            ...s,
+                            value: clampDateNotBeforeToday(selected),
+                            quickMinutes: null,
+                          }
+                        : s,
                     )
                   }
                 />
@@ -6734,9 +6826,25 @@ export default function MapScreen({ route, navigation }: Props) {
             )}
 
             <View style={{ marginTop: 10, marginBottom: 6 }}>
-              <Text style={[styles.sectionLabel, { marginTop: 0, marginBottom: 8 }]}>
-                {t('meetTime.redSection')}
-              </Text>
+              <View style={styles.meetSectionHeader}>
+                <Text style={[styles.sectionLabel, { marginTop: 0 }]}>
+                  {t('meetTime.redSection')}
+                </Text>
+                <Pressable
+                  hitSlop={10}
+                  onPress={() =>
+                    Alert.alert(t('meetTime.redSection'), t('meetTime.redHint'))
+                  }
+                  accessibilityRole="button"
+                  accessibilityLabel={t('meetTime.redInfo')}
+                >
+                  <Ionicons
+                    name="information-circle-outline"
+                    size={20}
+                    color={accent}
+                  />
+                </Pressable>
+              </View>
               <Text style={styles.meetRedHint}>{t('meetTime.redHint')}</Text>
               <Segmented
                 accent={accent}
@@ -7894,10 +8002,16 @@ const makeStyles = (
     // Meet-time editor sheet: roomy, full-width controls (not the old cramped
     // left-aligned chips).
     meetEditorBody: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 40, gap: 14 },
+    meetSectionLabel: { marginTop: 0, marginBottom: -6 },
     meetQuickRow: { flexDirection: 'row', gap: 10, justifyContent: 'center', marginBottom: -4 },
     meetQuickBtn: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 5,
       paddingVertical: 8,
-      paddingHorizontal: 16,
+      paddingHorizontal: 8,
       borderRadius: 20,
       backgroundColor: glass.fill,
       borderWidth: StyleSheet.hairlineWidth,
@@ -7905,25 +8019,29 @@ const makeStyles = (
     },
     meetQuickBtnText: { color: glass.textSecondary, fontSize: 14, fontWeight: '600' },
     meetSelectedClock: {
-      textAlign: 'center',
+      flex: 1,
       fontSize: 16,
       fontWeight: '600',
       color: glass.textPrimary,
       fontVariant: ['tabular-nums'],
     },
-    meetAndroidPickBtn: {
+    meetDateSummary: {
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'center',
-      gap: 8,
-      minHeight: 48,
+      gap: 10,
+      minHeight: 50,
       borderRadius: 14,
       backgroundColor: glass.fill,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairline,
       paddingHorizontal: 14,
     },
-    meetAndroidPickText: { fontSize: 16, fontWeight: '600' },
+    meetSectionHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 8,
+    },
     meetRedHint: {
       fontSize: 13,
       color: glass.textSecondary,

@@ -1,4 +1,4 @@
-import type { Destination } from '../types';
+﻿import type { Destination } from '../types';
 
 /**
  * Parse a date-only ISO (`YYYY-MM-DD`) or full ISO string as a local calendar
@@ -30,10 +30,10 @@ function startOfLocalDay(date: Date): Date {
 /**
  * Trip-day clock from local device date.
  *
- * - `null` — no departure/tripDays; date gate disabled
- * - `0` — before trip start
- * - `1..tripDays` — in progress
- * - `> tripDays` — after trip end
+ * - `null` ??no departure/tripDays; date gate disabled
+ * - `0` ??before trip start
+ * - `1..tripDays` ??in progress
+ * - `> tripDays` ??after trip end
  */
 export function currentTripDayNumber(
   departureDate: string | null | undefined,
@@ -135,13 +135,13 @@ export function filterActiveDestinations(
   const open = destinations.filter((dest) => !dest.closedAt);
   const current = currentTripDayNumber(departureDate, tripDays, now);
 
-  // Gate off or trip not started → all open stops.
+  // Gate off or trip not started ??all open stops.
   if (current == null || current <= 0) {
     return sortDestinationsByDayOrder(open);
   }
 
   const days = typeof tripDays === 'number' && tripDays > 0 ? Math.floor(tripDays) : 1;
-  // Trip fully over → nothing active.
+  // Trip fully over ??nothing active.
   if (current > days) return [];
 
   return sortDestinationsByDayOrder(
@@ -188,6 +188,39 @@ export function positionForAppendOnDay(
   return { position: insertPosition, shiftIds };
 }
 
+
+export interface BatchAppendPlan {
+  /** First position assigned to the batch. */
+  insertStart: number;
+  /** Number of new stops. */
+  count: number;
+  /** Positions for each new stop in order. */
+  positions: number[];
+  /** Existing rows to bump by +count (already high→low). */
+  shifts: { id: string; from: number; to: number }[];
+}
+
+/**
+ * Append `count` stops at the end of `targetDay` with a single +count shift
+ * for every later row (avoids N full-list read/shift loops).
+ */
+export function positionForBatchAppendOnDay(
+  existing: { id: string; order: number; day: number }[],
+  targetDay: number,
+  count: number,
+): BatchAppendPlan {
+  const n = Math.max(0, Math.floor(count));
+  const single = positionForAppendOnDay(existing, targetDay);
+  if (n === 0) {
+    return { insertStart: single.position, count: 0, positions: [], shifts: [] };
+  }
+  const positions = Array.from({ length: n }, (_, i) => single.position + i);
+  const shifts = existing
+    .filter((d) => d.order >= single.position)
+    .sort((a, b) => b.order - a.order)
+    .map((d) => ({ id: d.id, from: d.order, to: d.order + n }));
+  return { insertStart: single.position, count: n, positions, shifts };
+}
 /** Calendar Date for a trip day number (local noon). */
 export function dateForTripDay(
   departureDate: string | null | undefined,

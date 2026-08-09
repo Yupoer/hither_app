@@ -369,6 +369,7 @@ export const zh = {
   'map.syncDbOkFull': '集合點已同步。日誌已上傳 {sent} 筆。',
   'map.syncDbOkPartial': '集合點已同步。日誌已上傳 {sent} 筆，仍有 {remaining} 筆待傳。',
   'map.syncDbOkNoLogs': '集合點已同步。目前沒有待上傳的日誌。',
+  'map.syncDbRetry': "重試同步",
   'map.syncDbOkLogsFailed': '集合點已同步，但日誌上傳未完成，請稍後再試。',
   'map.edit': '編輯',
   'map.cmdTitle': '快捷指令',
@@ -529,6 +530,9 @@ export const zh = {
 
   // Map · meet time (countdown / set / clear) + member status
   'meetTime.redSection': '時間變紅警示時機',
+  'meetTime.quickSection': '快速設定',
+  'meetTime.timeSection': '集合時間',
+  'meetTime.redInfo': '倒數提醒說明',
   'meetTime.redOption': '剩 {minutes} 分',
   'meetTime.redHint': '倒數進入此時段會變紅，並透過推播通知所有人還剩幾分鐘集合',
   'meetTime.selected': '集合時間：{datetime}',
@@ -895,6 +899,9 @@ export const zh = {
   'kml.importN': '匯入 {n} 個景點',
   'kml.importing': '匯入中 {done}/{total}',
   'kml.done': '匯入完成',
+  'kml.errPermission': "你沒有匯入集合點的權限",
+  'kml.errPersistence': "無法儲存集合點，請再試一次",
+  'kml.errValidation': "檔案中部分集合點資料無效",
   'kml.retry': '重試',
   'destEmoji.title': '選擇集合點圖示',
   'destEmoji.preview': '點擊圖示進行預覽',
