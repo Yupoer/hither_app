@@ -45,7 +45,7 @@ describe('daily accommodations + favorites migration contract (#159 #160)', () =
   it('serializes none→some auto-add under group lock and rolls back on insert failure', () => {
     expect(migration).toContain('for update');
     expect(migration).toContain('stay_anchor');
-    expect(migration).toContain("(not v_previous_exists) and v_auto_add");
+    expect(migration).toContain('(not v_previous_exists) and v_auto_add');
     // Two card inserts; any failure aborts the plpgsql function transaction.
     expect(migration.match(/kind, stay_anchor/g)?.length).toBeGreaterThanOrEqual(2);
     expect(migration).toContain('first_card_id');
@@ -68,12 +68,43 @@ describe('daily accommodations + favorites migration contract (#159 #160)', () =
     expect(migration).toContain('stay_anchor boolean not null default false');
   });
 
-  it('provides atomic auto-add RPC with leader auth and revoked default execute', () => {
-    expect(migration).toContain('set_daily_accommodation_with_auto_add');
-    expect(migration).toContain('security definer');
-    expect(migration).toContain("raise exception 'not_leader'");
-    expect(migration).toContain('revoke all on function public.set_daily_accommodation_with_auto_add');
-    expect(migration).toContain('grant execute on function public.set_daily_accommodation_with_auto_add');
+  it('keeps privileged DEFINER bodies in non-exposed extensions schema with INVOKER public wrappers', () => {
+    expect(migration).toContain(
+      'function extensions.set_daily_accommodation_with_auto_add',
+    );
+    expect(migration).toContain(
+      'function extensions.clear_daily_accommodation_with_downgrade',
+    );
+    expect(migration).toMatch(
+      /create or replace function public\.set_daily_accommodation_with_auto_add[\s\S]*security invoker/i,
+    );
+    expect(migration).toMatch(
+      /create or replace function public\.clear_daily_accommodation_with_downgrade[\s\S]*security invoker/i,
+    );
+    // DEFINER only on extensions bodies (public wrappers are INVOKER).
+    expect(migration).toMatch(
+      /function extensions\.set_daily_accommodation_with_auto_add[\s\S]*security definer/i,
+    );
+    expect(migration).toMatch(
+      /function extensions\.clear_daily_accommodation_with_downgrade[\s\S]*security definer/i,
+    );
+    expect(migration).toContain(
+      'revoke all on function public.set_daily_accommodation_with_auto_add',
+    );
+    expect(migration).toContain(
+      'grant execute on function public.set_daily_accommodation_with_auto_add',
+    );
+    expect(migration).toContain(
+      'grant execute on function public.clear_daily_accommodation_with_downgrade',
+    );
+  });
+
+  it('atomic clear + stay_anchor downgrade under group lock', () => {
+    expect(migration).toContain('clear_daily_accommodation_with_downgrade');
+    expect(migration).toContain('delete from public.daily_accommodations');
+    expect(migration).toMatch(
+      /clear_daily_accommodation_with_downgrade[\s\S]*for update[\s\S]*set stay_anchor = false/i,
+    );
   });
 
   it('downgrades stay_anchor on some→some path', () => {

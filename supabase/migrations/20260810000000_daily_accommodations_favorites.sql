@@ -182,10 +182,13 @@ create policy "account_favorite_places: delete own"
 grant select, insert, update, delete on public.account_favorite_places to authenticated;
 
 -- ============================================================
--- Atomic none→some auto-add RPC (SECURITY DEFINER, non-default grants)
--- Inserts daily accommodation + first/last accommodation cards in one txn.
+-- Privileged daily-accommodation mutations live in non-exposed
+-- `extensions` schema (SECURITY DEFINER). Public Data API surface
+-- is SECURITY INVOKER wrappers only (#159 / REVIEW_FIX r2).
 -- ============================================================
-create or replace function public.set_daily_accommodation_with_auto_add(
+
+-- Atomic set + none→some auto-add (DEFINER body).
+create or replace function extensions.set_daily_accommodation_with_auto_add(
   p_group_id uuid,
   p_stay_date date,
   p_title text,
@@ -331,12 +334,147 @@ begin
 end;
 $$;
 
+-- Atomic clear + stay_anchor downgrade (DEFINER body). All-or-nothing.
+create or replace function extensions.clear_daily_accommodation_with_downgrade(
+  p_group_id uuid,
+  p_stay_date date,
+  p_day int default null
+)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_uid uuid := (select auth.uid());
+  v_is_leader boolean;
+  v_day int;
+begin
+  if v_uid is null then
+    raise exception 'not_authenticated';
+  end if;
+
+  if not extensions.is_member(p_group_id) then
+    raise exception 'not_leader';
+  end if;
+
+  select exists(
+    select 1 from public.memberships m
+    where m.group_id = p_group_id
+      and m.user_id = v_uid
+      and m.role = 'leader'
+  ) into v_is_leader;
+
+  if not v_is_leader then
+    raise exception 'not_leader';
+  end if;
+
+  -- Same group-row serialization as set path (concurrent set/clear races).
+  perform 1 from public.groups g where g.id = p_group_id for update;
+  if not found then
+    raise exception 'group_not_found';
+  end if;
+
+  delete from public.daily_accommodations d
+  where d.group_id = p_group_id
+    and d.stay_date = p_stay_date;
+
+  -- some→none: release pure-index boundary locks for the trip day.
+  v_day := coalesce(nullif(p_day, 0), 1);
+  update public.itinerary_items i
+    set stay_anchor = false
+  where i.group_id = p_group_id
+    and i.subgroup_id is null
+    and coalesce(i.day, 1) = v_day
+    and i.kind = 'accommodation'
+    and i.stay_anchor = true;
+end;
+$$;
+
+-- Public wrappers: SECURITY INVOKER, Data API entry points only.
+-- Drop any prior public DEFINER overload from earlier PR revisions.
+drop function if exists public.set_daily_accommodation_with_auto_add(
+  uuid, date, text, text, double precision, double precision, uuid, int
+);
+
+create or replace function public.set_daily_accommodation_with_auto_add(
+  p_group_id uuid,
+  p_stay_date date,
+  p_title text,
+  p_address text,
+  p_latitude double precision,
+  p_longitude double precision,
+  p_source_destination_id uuid default null,
+  p_day int default null
+)
+returns jsonb
+language sql
+security invoker
+set search_path = ''
+as $$
+  select extensions.set_daily_accommodation_with_auto_add(
+    p_group_id,
+    p_stay_date,
+    p_title,
+    p_address,
+    p_latitude,
+    p_longitude,
+    p_source_destination_id,
+    p_day
+  );
+$$;
+
+create or replace function public.clear_daily_accommodation_with_downgrade(
+  p_group_id uuid,
+  p_stay_date date,
+  p_day int default null
+)
+returns void
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  perform extensions.clear_daily_accommodation_with_downgrade(
+    p_group_id,
+    p_stay_date,
+    p_day
+  );
+end;
+$$;
+
+revoke all on function extensions.set_daily_accommodation_with_auto_add(
+  uuid, date, text, text, double precision, double precision, uuid, int
+) from public;
+revoke all on function extensions.clear_daily_accommodation_with_downgrade(
+  uuid, date, int
+) from public;
+-- Callers reach DEFINER only via public INVOKER wrappers (or direct SQL grants).
+grant execute on function extensions.set_daily_accommodation_with_auto_add(
+  uuid, date, text, text, double precision, double precision, uuid, int
+) to authenticated;
+grant execute on function extensions.clear_daily_accommodation_with_downgrade(
+  uuid, date, int
+) to authenticated;
+
 revoke all on function public.set_daily_accommodation_with_auto_add(
   uuid, date, text, text, double precision, double precision, uuid, int
+) from public;
+revoke all on function public.clear_daily_accommodation_with_downgrade(
+  uuid, date, int
 ) from public;
 grant execute on function public.set_daily_accommodation_with_auto_add(
   uuid, date, text, text, double precision, double precision, uuid, int
 ) to authenticated;
+grant execute on function public.clear_daily_accommodation_with_downgrade(
+  uuid, date, int
+) to authenticated;
 
+comment on function extensions.set_daily_accommodation_with_auto_add is
+  'Privileged DEFINER body (non-exposed schema). Leader-only expiry-aware; group FOR UPDATE; atomic none→some auto-add; some→some stay_anchor clear.';
+comment on function extensions.clear_daily_accommodation_with_downgrade is
+  'Privileged DEFINER body. Leader-only expiry-aware; group FOR UPDATE; delete daily row + stay_anchor downgrade in one transaction.';
 comment on function public.set_daily_accommodation_with_auto_add is
-  'Leader-only (expiry-aware is_member + role). Upserts daily accommodation under group row lock. On none→some with accommodation_auto_add, atomically inserts first+last stay_anchor cards; any insert failure rolls back. some→some clears stay_anchor for that day.';
+  'SECURITY INVOKER Data API wrapper → extensions.set_daily_accommodation_with_auto_add.';
+comment on function public.clear_daily_accommodation_with_downgrade is
+  'SECURITY INVOKER Data API wrapper → extensions.clear_daily_accommodation_with_downgrade. Atomic some→none.';

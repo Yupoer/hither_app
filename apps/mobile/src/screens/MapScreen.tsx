@@ -151,9 +151,12 @@ import {
   tourDestinationIndex,
   type TourTargetId,
   ADD_PLACE_TOUR_STEPS,
+  areAddPlaceTourTargetsReady,
   completeAddPlaceTour,
+  isMeasuredTourRect,
   measureTargetWithRetry,
   readAddPlaceTourCompletedLocal,
+  retryPendingAddPlaceTourAccountSync,
   shouldStartAddPlaceTour,
 } from '../featureTour';
 import { useCoordinationRequests } from './MapScreen/hooks/useCoordinationRequests';
@@ -1022,12 +1025,17 @@ export default function MapScreen({ route, navigation }: Props) {
     void readAddPlaceTourCompletedLocal(user?.id).then((done) => {
       if (!cancelled) setAddPlaceTourLocalDone(done);
     });
+    // Retry account completion sync left pending after a prior profile write failure.
+    void retryPendingAddPlaceTourAccountSync({
+      accountId: user.id,
+      existingPreferences: user.preferences ?? null,
+    });
     return () => {
       cancelled = true;
     };
   }, [user?.id]);
 
-  // Start independent Add Place tour only after star/center targets measure ready.
+  // Start only after BOTH star and center targets measure non-zero rects.
   useEffect(() => {
     if (!confirmCardReady || !pendingPlace) {
       setAddPlaceTourStep(null);
@@ -1036,12 +1044,17 @@ export default function MapScreen({ route, navigation }: Props) {
     }
     let cancelled = false;
     void (async () => {
-      const rect = await measureTargetWithRetry({
+      const starRect = await measureTargetWithRetry({
         measure: measureTourTarget,
         target: 'addPlaceFavoriteStar',
       });
       if (cancelled) return;
-      const targetsReady = Boolean(rect && rect.width > 0 && rect.height > 0);
+      const centerRect = await measureTargetWithRetry({
+        measure: measureTourTarget,
+        target: 'addPlaceCenter',
+      });
+      if (cancelled) return;
+      const targetsReady = areAddPlaceTourTargetsReady({ starRect, centerRect });
       if (
         shouldStartAddPlaceTour({
           pendingPlaceVisible: true,
@@ -1051,7 +1064,7 @@ export default function MapScreen({ route, navigation }: Props) {
         })
       ) {
         setAddPlaceTourStep(0);
-        setAddPlaceTourTargetRect(rect);
+        setAddPlaceTourTargetRect(starRect);
       }
     })();
     return () => {
@@ -1066,6 +1079,7 @@ export default function MapScreen({ route, navigation }: Props) {
   ]);
 
   // Remeasure highlight when the Add Place tour step advances.
+  // Never clobber a good hole with null — only accept non-zero rects.
   useEffect(() => {
     if (addPlaceTourStep == null) {
       setAddPlaceTourTargetRect(null);
@@ -1079,7 +1093,10 @@ export default function MapScreen({ route, navigation }: Props) {
         measure: measureTourTarget,
         target: step.target,
       });
-      if (!cancelled) setAddPlaceTourTargetRect(rect);
+      if (cancelled) return;
+      if (isMeasuredTourRect(rect)) {
+        setAddPlaceTourTargetRect(rect);
+      }
     })();
     return () => {
       cancelled = true;
@@ -5377,14 +5394,25 @@ export default function MapScreen({ route, navigation }: Props) {
             setAddPlaceTourStep(null);
             setAddPlaceTourTargetRect(null);
             setAddPlaceTourLocalDone(true);
-            // Final-step-only persistence.
+            // Final-step-only persistence (pending retry if account write fails).
             void completeAddPlaceTour({
               accountId: user?.id,
               existingPreferences: user?.preferences ?? null,
             });
             return;
           }
-          setAddPlaceTourStep(next);
+          // Block advance until the next step has a non-zero measured rect.
+          const nextStep = ADD_PLACE_TOUR_STEPS[next];
+          if (!nextStep) return;
+          void (async () => {
+            const rect = await measureTargetWithRetry({
+              measure: measureTourTarget,
+              target: nextStep.target,
+            });
+            if (!isMeasuredTourRect(rect)) return;
+            setAddPlaceTourTargetRect(rect);
+            setAddPlaceTourStep(next);
+          })();
         }}
         reduceMotion={tourReduceMotion}
       />

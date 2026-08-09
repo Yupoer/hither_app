@@ -1,11 +1,34 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
+  ADD_PLACE_TOUR_ACCOUNT_SYNC_PENDING_KEY,
   ADD_PLACE_TOUR_STEPS,
   addPlaceTourStorageKey,
+  areAddPlaceTourTargetsReady,
+  completeAddPlaceTour,
   isAddPlaceTourCompletedFromSources,
+  isMeasuredTourRect,
+  parseAddPlaceTourAccountSyncPending,
+  readAddPlaceTourAccountSyncPending,
+  retryPendingAddPlaceTourAccountSync,
   shouldStartAddPlaceTour,
 } from '../featureTour/addPlaceTour';
 
+jest.mock('@react-native-async-storage/async-storage', () =>
+  require('@react-native-async-storage/async-storage/jest/async-storage-mock'),
+);
+
+const updateProfile = jest.fn();
+jest.mock('../api/services/ProfileService', () => ({
+  updateProfile: (...args: unknown[]) => updateProfile(...args),
+}));
+
 describe('Add Place tour (#162)', () => {
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    await AsyncStorage.clear();
+    updateProfile.mockResolvedValue(undefined);
+  });
+
   it('has star then center steps with real target test ids and registry targets', () => {
     expect(ADD_PLACE_TOUR_STEPS.map((s) => s.id)).toEqual(['star', 'center']);
     expect(ADD_PLACE_TOUR_STEPS[0].targetTestId).toBe('add-place-favorite-star');
@@ -61,5 +84,106 @@ describe('Add Place tour (#162)', () => {
     expect(addPlaceTourStorageKey('user-b')).toBe('hither.addPlaceTour.v1:user-b');
     expect(addPlaceTourStorageKey('user-a')).not.toBe(addPlaceTourStorageKey('user-b'));
     expect(addPlaceTourStorageKey(null)).toBe('hither.addPlaceTour.v1');
+  });
+
+  it('requires both star and center non-zero rects before start', () => {
+    expect(
+      areAddPlaceTourTargetsReady({
+        starRect: { width: 40, height: 40 },
+        centerRect: { width: 80, height: 48 },
+      }),
+    ).toBe(true);
+    expect(
+      areAddPlaceTourTargetsReady({
+        starRect: { width: 40, height: 40 },
+        centerRect: null,
+      }),
+    ).toBe(false);
+    expect(
+      areAddPlaceTourTargetsReady({
+        starRect: { width: 0, height: 0 },
+        centerRect: { width: 80, height: 48 },
+      }),
+    ).toBe(false);
+    expect(isMeasuredTourRect(null)).toBe(false);
+    expect(isMeasuredTourRect({ width: 0, height: 10 })).toBe(false);
+    expect(isMeasuredTourRect({ width: 10, height: 10 })).toBe(true);
+  });
+
+  it('stores account-scoped pending desired on failed complete and retries', async () => {
+    updateProfile.mockRejectedValueOnce(new Error('network'));
+    await completeAddPlaceTour({
+      accountId: 'user-a',
+      existingPreferences: {},
+    });
+    expect(await readAddPlaceTourAccountSyncPending()).toEqual({
+      accountId: 'user-a',
+      completed: true,
+    });
+
+    updateProfile.mockResolvedValueOnce(undefined);
+    await expect(
+      retryPendingAddPlaceTourAccountSync({
+        accountId: 'user-a',
+        existingPreferences: {},
+      }),
+    ).resolves.toBe(true);
+    expect(updateProfile).toHaveBeenLastCalledWith({
+      preferences: expect.objectContaining({ addPlaceTourCompleted: true }),
+    });
+    expect(await readAddPlaceTourAccountSyncPending()).toBeNull();
+  });
+
+  it('does not apply another account pending marker', async () => {
+    await AsyncStorage.setItem(
+      ADD_PLACE_TOUR_ACCOUNT_SYNC_PENDING_KEY,
+      JSON.stringify({ accountId: 'user-a', completed: true }),
+    );
+    updateProfile.mockClear();
+    await expect(
+      retryPendingAddPlaceTourAccountSync({ accountId: 'user-b' }),
+    ).resolves.toBe(false);
+    expect(updateProfile).not.toHaveBeenCalled();
+    expect(await readAddPlaceTourAccountSyncPending()).toEqual({
+      accountId: 'user-a',
+      completed: true,
+    });
+  });
+
+  it('discards legacy unscoped pending markers', () => {
+    expect(parseAddPlaceTourAccountSyncPending('1')).toBeNull();
+    expect(parseAddPlaceTourAccountSyncPending('true')).toBeNull();
+  });
+});
+
+describe('Add Place tour measure failure/retry (#162)', () => {
+  it('measureTargetWithRetry eventually yields a non-zero rect or stays unready', async () => {
+    const { measureTargetWithRetry } = await import('../featureTour/measureTarget');
+    const sleep = jest.fn(async () => undefined);
+    const failThenOk = jest
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ x: 0, y: 0, width: 0, height: 0 })
+      .mockResolvedValueOnce({ x: 12, y: 40, width: 44, height: 44 });
+    const rect = await measureTargetWithRetry({
+      measure: failThenOk,
+      target: 'addPlaceCenter',
+      maxAttempts: 5,
+      sleep,
+    });
+    expect(isMeasuredTourRect(rect)).toBe(true);
+    expect(failThenOk).toHaveBeenCalledTimes(3);
+
+    const alwaysNull = jest.fn().mockResolvedValue(null);
+    const missing = await measureTargetWithRetry({
+      measure: alwaysNull,
+      target: 'addPlaceFavoriteStar',
+      maxAttempts: 2,
+      sleep,
+    });
+    expect(isMeasuredTourRect(missing)).toBe(false);
+    expect(
+      areAddPlaceTourTargetsReady({ starRect: missing, centerRect: rect }),
+    ).toBe(false);
   });
 });

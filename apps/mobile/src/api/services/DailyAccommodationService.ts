@@ -160,8 +160,9 @@ export async function setDailyAccommodation(
 
 /**
  * Clear daily accommodation for a date. Does not delete itinerary cards.
- * When `day` is provided, downgrades stay_anchor on that day's accommodation
- * cards so pure-index locks release (some→none).
+ * Delete + stay_anchor downgrade run in one expiry-aware DB transaction
+ * (public INVOKER → extensions DEFINER RPC) so some→none cannot leave
+ * locked cards if either half fails.
  */
 export async function clearDailyAccommodation(
   groupId: string,
@@ -169,22 +170,15 @@ export async function clearDailyAccommodation(
   day?: number,
 ): Promise<void> {
   if (isDemoGroup(groupId)) return;
-  const { error } = await supabase
-    .from('daily_accommodations')
-    .delete()
-    .eq('group_id', groupId)
-    .eq('stay_date', stayDate);
+  const { error } = await supabase.rpc(
+    'clear_daily_accommodation_with_downgrade',
+    {
+      p_group_id: groupId,
+      p_stay_date: stayDate,
+      p_day: typeof day === 'number' && day > 0 ? day : null,
+    },
+  );
   orThrow(error);
-  if (typeof day === 'number' && day > 0) {
-    const { error: anchorError } = await supabase
-      .from('itinerary_items')
-      .update({ stay_anchor: false })
-      .eq('group_id', groupId)
-      .eq('day', day)
-      .eq('kind', 'accommodation')
-      .is('subgroup_id', null);
-    orThrow(anchorError);
-  }
 }
 
 export async function setAccommodationAutoAdd(
