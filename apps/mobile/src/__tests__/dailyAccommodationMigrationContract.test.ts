@@ -9,6 +9,14 @@ const migration = readFileSync(
   'utf8',
 );
 
+const rpcGrantMigration = readFileSync(
+  join(
+    __dirname,
+    '../../../../supabase/migrations/20260810000100_restrict_daily_accommodation_rpc_grants.sql',
+  ),
+  'utf8',
+);
+
 describe('daily accommodations + favorites migration contract (#159 #160)', () => {
   it('creates daily_accommodations with group/date uniqueness and grants+RLS', () => {
     expect(migration).toContain('create table if not exists public.daily_accommodations');
@@ -127,6 +135,22 @@ describe('daily accommodations + favorites migration contract (#159 #160)', () =
     expect(migration).toContain(
       'grant execute on function public.set_accommodation_auto_add',
     );
+  });
+
+  it('limits all accommodation RPCs to authenticated after public-schema defaults', () => {
+    for (const schema of ['extensions', 'public']) {
+      for (const name of [
+        'set_daily_accommodation_with_auto_add',
+        'clear_daily_accommodation_with_downgrade',
+        'set_accommodation_auto_add',
+      ]) {
+        expect(rpcGrantMigration).toContain(`function ${schema}.${name}`);
+      }
+    }
+    expect(
+      rpcGrantMigration.match(/from public, anon, service_role/g),
+    ).toHaveLength(6);
+    expect(rpcGrantMigration.match(/to authenticated/g)).toHaveLength(6);
   });
 });
 
