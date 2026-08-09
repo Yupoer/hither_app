@@ -52,6 +52,7 @@ import {
   truncateDiagText,
 } from '../../../state/diagnostics';
 import Constants from 'expo-constants';
+import PremiumPresentation from '../../../components/PremiumPresentation';
 
 /** Soft poll while SSV is pending; then idle CTA + slower background late-SSV poll. */
 const VERIFY_POLL_TICKS = 20;
@@ -1013,6 +1014,17 @@ export const StorePane = React.memo(function StorePane({
     >
       <Text style={[styles.heading, styles.headingFirst]}>{t('store.title')}</Text>
 
+      {/* Premium first (shared with Paywall); restore only via Settings paywall. */}
+      <View style={styles.premiumBlock} testID="store-premium-section">
+        <PremiumPresentation
+          showRestore={false}
+          onPurchaseSuccess={() => {
+            onEntitlementChanged?.();
+          }}
+          testID="store-premium-presentation"
+        />
+      </View>
+
       {loading && !snapshot ? (
         <View style={styles.shellCard} testID="store-loading">
           <ActivityIndicator color={accent} />
@@ -1035,27 +1047,7 @@ export const StorePane = React.memo(function StorePane({
         </View>
       ) : (
         <>
-          <View style={styles.balanceCard} testID="store-balance">
-            <Text style={styles.balanceLabel}>{t('store.balance')}</Text>
-            <Text
-              style={styles.balanceValue}
-              accessibilityRole="text"
-              accessibilityLabel={t('store.balanceA11y', { count: balance })}
-              maxFontSizeMultiplier={GLOBAL_FONT_SCALE_CAP}
-            >
-              {balance}
-            </Text>
-            <Text style={styles.shellHint}>
-              {fromCacheOnly ? t('store.offlineCachedHint') : t('store.balanceHint')}
-            </Text>
-          </View>
-
-          {offline ? (
-            <Text style={styles.shellHint} testID="store-offline-banner">
-              {t('store.offlineBody')}
-            </Text>
-          ) : null}
-
+          {/* Ad before balance/economy: Premium → ad → remaining store content (#155/#156). */}
           <Pressable
             style={[styles.cta, { backgroundColor: adDisabled ? glass.fill : accent }]}
             onPress={() => { void onWatchAd(); }}
@@ -1092,6 +1084,27 @@ export const StorePane = React.memo(function StorePane({
               accessibilityLabel={`ad debug ${adDebugLine}`}
             >
               {`debug: ${adDebugLine}`}
+            </Text>
+          ) : null}
+
+          <View style={styles.balanceCard} testID="store-balance">
+            <Text style={styles.balanceLabel}>{t('store.balance')}</Text>
+            <Text
+              style={styles.balanceValue}
+              accessibilityRole="text"
+              accessibilityLabel={t('store.balanceA11y', { count: balance })}
+              maxFontSizeMultiplier={GLOBAL_FONT_SCALE_CAP}
+            >
+              {balance}
+            </Text>
+            <Text style={styles.shellHint}>
+              {fromCacheOnly ? t('store.offlineCachedHint') : t('store.balanceHint')}
+            </Text>
+          </View>
+
+          {offline ? (
+            <Text style={styles.shellHint} testID="store-offline-banner">
+              {t('store.offlineBody')}
             </Text>
           ) : null}
         </>
@@ -1244,6 +1257,9 @@ const makeStyles = (scale: number, boldText: boolean) => {
       marginBottom: s(8, 6),
     },
     headingFirst: { marginTop: 0 },
+    premiumBlock: {
+      marginBottom: s(12, 10),
+    },
     balanceCard: {
       backgroundColor: glass.fill,
       borderRadius: s(14, 12),
