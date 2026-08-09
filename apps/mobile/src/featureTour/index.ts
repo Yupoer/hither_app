@@ -40,3 +40,14 @@ export { placeTourCard } from './overlayLayout';
 export { pickTourDestinationId, tourDestinationIndex } from './tourDestination';
 export { GroupFeatureTourOverlay } from './GroupFeatureTourOverlay';
 export { useGroupFeatureTour } from './useGroupFeatureTour';
+export {
+  ADD_PLACE_TOUR_STORAGE_KEY,
+  ADD_PLACE_TOUR_STEPS,
+  completeAddPlaceTour,
+  isAddPlaceTourCompletedFromSources,
+  readAddPlaceTourCompletedLocal,
+  shouldStartAddPlaceTour,
+  writeAddPlaceTourCompletedLocal,
+  type AddPlaceTourStep,
+  type AddPlaceTourStepId,
+} from './addPlaceTour';
