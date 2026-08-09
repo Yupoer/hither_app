@@ -333,50 +333,8 @@ describe('joinGroup', () => {
 });
 
 describe('addDestination', () => {
-  // Chainable mock: list existing stops (id/position/day), optional shifts,
-  // then insert. `order` resolves the select; `update().eq().eq()` shifts.
-  function itineraryTable(
-    existing: { id: string; position: number; day: number }[] | null,
-    insertResult: unknown,
-  ) {
-    const obj: Record<string, unknown> = {};
-    const self = () => obj;
-    const updateChain: Record<string, unknown> = {};
-    Object.assign(updateChain, {
-      eq: jest.fn(() => updateChain),
-      then: undefined,
-    });
-    // Make update().eq().eq() awaitable as a thenable result.
-    (updateChain as { eq: jest.Mock }).eq.mockImplementation(() => ({
-      eq: jest.fn(() => Promise.resolve({ error: null })),
-    }));
-
-    Object.assign(obj, {
-      select: self,
-      eq: self,
-      is: self,
-      order: () =>
-        Promise.resolve({
-          data: existing,
-          error: null,
-        }),
-      limit: self,
-      update: jest.fn(() => updateChain),
-      insert: jest.fn(() => Promise.resolve(insertResult)),
-    });
-    return obj as { insert: jest.Mock; update: jest.Mock };
-  }
-
-  it('appends the new stop to the end of the target day (and shifts later rows)', async () => {
-    const itinerary = itineraryTable(
-      [
-        { id: 'a', position: 0, day: 1 },
-        { id: 'b', position: 1, day: 1 },
-        { id: 'c', position: 2, day: 1 },
-      ],
-      { error: null },
-    );
-    mockedFrom.mockImplementation(() => itinerary);
+  it('calls add_itinerary_item RPC with day-append payload (server serializes positions)', async () => {
+    mockedRpc.mockResolvedValue({ data: 'new-id', error: null });
 
     await addDestination('g1', {
       title: '台北101',
@@ -384,27 +342,19 @@ describe('addDestination', () => {
       coordinates: { latitude: 25.034, longitude: 121.564 },
     });
 
-    expect(itinerary.insert).toHaveBeenCalledWith({
-      group_id: 'g1',
-      subgroup_id: null,
-      title: '台北101',
-      address: '台北市信義區',
-      day: 1,
-      latitude: 25.034,
-      longitude: 121.564,
-      position: 3, // after day-1 last (position 2)
+    expect(mockedRpc).toHaveBeenCalledWith('add_itinerary_item', {
+      p_group_id: 'g1',
+      p_subgroup_id: null,
+      p_title: '台北101',
+      p_address: '台北市信義區',
+      p_latitude: 25.034,
+      p_longitude: 121.564,
+      p_day: 1,
     });
   });
 
-  it('with a subgroupId: inserts subgroup_id and scopes list to that subgroup', async () => {
-    const itinerary = itineraryTable(
-      [
-        { id: 's1', position: 0, day: 1 },
-        { id: 's2', position: 1, day: 1 },
-      ],
-      { error: null },
-    );
-    mockedFrom.mockImplementation(() => itinerary);
+  it('with a subgroupId: passes p_subgroup_id to the locked RPC', async () => {
+    mockedRpc.mockResolvedValue({ data: 'sg-id', error: null });
 
     await addDestination(
       'g1',
@@ -412,35 +362,14 @@ describe('addDestination', () => {
       'sg1',
     );
 
-    expect(itinerary.insert).toHaveBeenCalledWith(
-      expect.objectContaining({ subgroup_id: 'sg1', position: 2 }),
+    expect(mockedRpc).toHaveBeenCalledWith(
+      'add_itinerary_item',
+      expect.objectContaining({ p_subgroup_id: 'sg1', p_title: '小隊集合點' }),
     );
   });
 
-  it('uses position 0 when the itinerary is empty', async () => {
-    const itinerary = itineraryTable([], { error: null });
-    mockedFrom.mockImplementation(() => itinerary);
-
-    await addDestination('g1', {
-      title: '中正紀念堂',
-      coordinates: { latitude: 25.036, longitude: 121.518 },
-    });
-
-    expect(itinerary.insert).toHaveBeenCalledWith(
-      expect.objectContaining({ position: 0, address: null }),
-    );
-  });
-
-  it('inserts at end of target day and shifts later-day positions', async () => {
-    const itinerary = itineraryTable(
-      [
-        { id: 'd1', position: 0, day: 1 },
-        { id: 'd2', position: 1, day: 2 },
-        { id: 'd3', position: 2, day: 3 },
-      ],
-      { error: null },
-    );
-    mockedFrom.mockImplementation(() => itinerary);
+  it('passes target day to RPC (server places after earlier days)', async () => {
+    mockedRpc.mockResolvedValue({ data: 'd2', error: null });
 
     await addDestination('g1', {
       title: 'Day2 new',
@@ -448,24 +377,24 @@ describe('addDestination', () => {
       day: 2,
     });
 
-    expect(itinerary.insert).toHaveBeenCalledWith(
-      expect.objectContaining({ day: 2, position: 2 }),
+    expect(mockedRpc).toHaveBeenCalledWith(
+      'add_itinerary_item',
+      expect.objectContaining({ p_day: 2 }),
     );
-    expect(itinerary.update).toHaveBeenCalled();
   });
 
-  it('throws when the insert is rejected (e.g. a follower hitting RLS)', async () => {
-    const itinerary = itineraryTable([{ id: 'x', position: 0, day: 1 }], {
-      error: { code: '42501', message: 'new row violates row-level security' },
+  it('throws when the RPC is rejected (e.g. a follower hitting permission)', async () => {
+    mockedRpc.mockResolvedValue({
+      data: null,
+      error: { code: '42501', message: 'permission denied' },
     });
-    mockedFrom.mockImplementation(() => itinerary);
 
     await expect(
       addDestination('g1', {
         title: '某處',
         coordinates: { latitude: 0, longitude: 0 },
       }),
-    ).rejects.toThrow('row-level security');
+    ).rejects.toThrow('permission denied');
   });
 });
 
@@ -741,10 +670,7 @@ describe('notifications, commands & journey', () => {
   });
 
   it('reorderDestinations writes an aligned meet time when supplied', async () => {
-    const eqGroup = jest.fn().mockResolvedValue({ error: null });
-    const eqId = jest.fn(() => ({ eq: eqGroup }));
-    const update = jest.fn(() => ({ eq: eqId }));
-    mockedFrom.mockImplementation(() => ({ update }));
+    mockedRpc.mockResolvedValue({ data: 1, error: null });
 
     await reorderDestinations('g1', [
       {
@@ -755,22 +681,28 @@ describe('notifications, commands & journey', () => {
       },
     ]);
 
-    expect(update).toHaveBeenCalledWith({
-      position: 2,
-      day: 3,
-      meet_at: '2026-08-02T06:30:00.000Z',
+    expect(mockedRpc).toHaveBeenCalledWith('reorder_itinerary_items', {
+      p_group_id: 'g1',
+      p_updates: [
+        {
+          id: 'd1',
+          position: 2,
+          day: 3,
+          meet_at: '2026-08-02T06:30:00.000Z',
+        },
+      ],
     });
   });
 
   it('reorderDestinations does not overwrite meet_at when no value is supplied', async () => {
-    const eqGroup = jest.fn().mockResolvedValue({ error: null });
-    const eqId = jest.fn(() => ({ eq: eqGroup }));
-    const update = jest.fn(() => ({ eq: eqId }));
-    mockedFrom.mockImplementation(() => ({ update }));
+    mockedRpc.mockResolvedValue({ data: 1, error: null });
 
     await reorderDestinations('g1', [{ id: 'd1', position: 1, day: 1 }]);
 
-    expect(update).toHaveBeenCalledWith({ position: 1, day: 1 });
+    expect(mockedRpc).toHaveBeenCalledWith('reorder_itinerary_items', {
+      p_group_id: 'g1',
+      p_updates: [{ id: 'd1', position: 1, day: 1 }],
+    });
   });
 
   it('setDestinationMeetTime(null) clears the meet time', async () => {

@@ -7,6 +7,10 @@ const reorder = readFileSync(
   'utf8',
 );
 const kmlSheet = readFileSync(join(__dirname, '../components/KmlImportSheet.tsx'), 'utf8');
+const destinationService = readFileSync(
+  join(__dirname, '../api/services/DestinationService.ts'),
+  'utf8',
+);
 const migration = readFileSync(
   join(
     __dirname,
@@ -40,17 +44,59 @@ describe('route editor + KML contracts (#151)', () => {
     expect(reorder).toContain("t('kml.entry')");
   });
 
+  it('route editor mutations use openDestinations only (exiting snapshots carousel-only)', () => {
+    // DestinationReorderList must not receive merged exiting carousel rows.
+    const reorderStart = mapScreen.indexOf('<DestinationReorderList');
+    expect(reorderStart).toBeGreaterThan(-1);
+    const reorderBlock = mapScreen.slice(reorderStart, reorderStart + 600);
+    expect(reorderBlock).toContain('destinations={openDestinations}');
+    expect(reorderBlock).not.toContain('destinations={destinations}');
+    // Merged exiting list still exists for carousel presentation.
+    expect(mapScreen).toContain('mergeExitingDestinations');
+    expect(mapScreen).toContain('const destinations = useMemo');
+  });
+
+  it('open-sync completion is gated by generation after close/reopen', () => {
+    expect(mapScreen).toContain('routeOpenSyncGenerationRef');
+    expect(mapScreen).toContain(
+      'if (generation !== routeOpenSyncGenerationRef.current) return',
+    );
+    expect(mapScreen).toContain('routeOpenSyncGenerationRef.current += 1');
+  });
+
   it('KmlImportSheet maps persistence separately from parse', () => {
     expect(kmlSheet).toContain('kmlImportErrorI18nKey');
     expect(kmlSheet).toContain('kml.errPersistence');
     expect(kmlSheet).not.toMatch(/catch \{\s*setStep\(\{ kind: 'error', code: 'unknown' \}\)/);
   });
 
-  it('migration is security invoker with leader auth and revoke public/anon', () => {
+  it('migration is security invoker with leader auth, subgroup ownership, revoke public/anon', () => {
     expect(migration).toContain('security invoker');
     expect(migration).toContain('leader membership required');
+    expect(migration).toContain('subgroup does not belong to group');
+    expect(migration).toContain('s.group_id = p_group_id');
     expect(migration).toContain('revoke all on function public.import_itinerary_batch');
     expect(migration).toContain('grant execute');
     expect(migration).not.toMatch(/security definer/i);
+  });
+
+  it('position writers share locked server RPCs (add/reorder/import)', () => {
+    const positionMigration = readFileSync(
+      join(
+        __dirname,
+        '../../../../supabase/migrations/20260810010000_itinerary_position_serialization.sql',
+      ),
+      'utf8',
+    );
+    expect(positionMigration).toContain('add_itinerary_item');
+    expect(positionMigration).toContain('reorder_itinerary_items');
+    expect(positionMigration).toContain('for update');
+    expect(destinationService).toContain("rpc('add_itinerary_item'");
+    expect(destinationService).toContain("rpc('reorder_itinerary_items'");
+    expect(destinationService).toContain("rpc('import_itinerary_batch'");
+    // No direct multi-step position shift on the client path.
+    expect(destinationService).not.toMatch(
+      /\.from\('itinerary_items'\)[\s\S]{0,200}\.update\(\{\s*position:/,
+    );
   });
 });

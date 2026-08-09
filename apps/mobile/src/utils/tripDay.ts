@@ -243,4 +243,3 @@ export function endOfTripDayIso(
   const end = new Date(base.getFullYear(), base.getMonth(), base.getDate(), 23, 59, 59, 0);
   return end.toISOString();
 }
-

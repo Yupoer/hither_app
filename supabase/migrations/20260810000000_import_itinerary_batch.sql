@@ -36,6 +36,15 @@ begin
     raise exception 'leader membership required' using errcode = '42501';
   end if;
 
+  -- Reject cross-group subgroup injection (FK is single-column on subgroups.id).
+  if p_subgroup_id is not null and not exists (
+    select 1 from public.subgroups s
+    where s.id = p_subgroup_id
+      and s.group_id = p_group_id
+  ) then
+    raise exception 'subgroup does not belong to group' using errcode = '22023';
+  end if;
+
   if p_items is null or jsonb_typeof(p_items) <> 'array' then
     raise exception 'invalid import batch' using errcode = '22023';
   end if;

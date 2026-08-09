@@ -163,4 +163,3 @@ export {
   deleteMyLiveActivitySessionsForGroups,
 } from './services/LiveActivityService';
 export type { LiveActivitySessionInput } from './services/LiveActivityService';
-

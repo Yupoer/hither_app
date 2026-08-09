@@ -1159,22 +1159,28 @@ export default function MapScreen({ route, navigation }: Props) {
   const [routeScrollEnabled, setRouteScrollEnabled] = useState(true);
 
   // #154: each route-sheet open silently syncs once (ref survives Strict Mode remount).
+  // Generation invalidates in-flight completions after close/reopen (#151 Sol P1).
   const routeOpenSyncSessionRef = useRef<'idle' | 'started' | 'done'>('idle');
+  const routeOpenSyncGenerationRef = useRef(0);
   const [routeSyncFailed, setRouteSyncFailed] = useState(false);
   useEffect(() => {
     if (overlay !== 'route') {
+      routeOpenSyncGenerationRef.current += 1;
       routeOpenSyncSessionRef.current = 'idle';
       setRouteSyncFailed(false);
       return;
     }
     if (routeOpenSyncSessionRef.current !== 'idle') return;
     routeOpenSyncSessionRef.current = 'started';
+    const generation = routeOpenSyncGenerationRef.current;
     void (async () => {
       try {
         await syncFromDatabase();
+        if (generation !== routeOpenSyncGenerationRef.current) return;
         routeOpenSyncSessionRef.current = 'done';
         setRouteSyncFailed(false);
       } catch {
+        if (generation !== routeOpenSyncGenerationRef.current) return;
         routeOpenSyncSessionRef.current = 'done';
         setRouteSyncFailed(true);
       }
@@ -6008,7 +6014,7 @@ export default function MapScreen({ route, navigation }: Props) {
           ) : null}
           <DestinationReorderList
             groupId={groupId ?? undefined}
-            destinations={destinations}
+            destinations={openDestinations}
             canReorder={canEditItinerary}
             tripDays={optimisticTripDays ?? group?.tripDays}
             departureDate={optimisticDepartureDate ?? group?.departureDate}
