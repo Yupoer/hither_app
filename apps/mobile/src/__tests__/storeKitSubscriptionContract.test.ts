@@ -67,7 +67,10 @@ describe('Ticket 6 catalog and StoreKit native boundary', () => {
 });
 
 /**
- * #156 Ordered Step 5 — automated / source-contract tier only.
+ * #156 Ordered Step 5 — source-contract tier (static seams).
+ * Behavioral component/integration coverage lives in:
+ *   premiumPurchaseFlowBehavior.test.ts (cache, purchase, restore coordinator)
+ *   premiumStoreFlowBehavior.test.ts (Store/Paywall render + result branches)
  * Real StoreKit / Play Billing product-load, purchase, and restore on device
  * remain Unverified in agent CI hosts (no sandbox). Do not treat green Jest
  * as device evidence (parent #155 non-goal).
