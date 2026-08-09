@@ -119,6 +119,13 @@ describe('route editor + KML contracts (#151)', () => {
       ),
       'utf8',
     );
+    const accommodationRpcMigration = readFileSync(
+      join(
+        __dirname,
+        '../../../../supabase/migrations/20260810030100_accommodation_position_rpc_integration.sql',
+      ),
+      'utf8',
+    );
     expect(positionMigration).toContain('add_itinerary_item');
     expect(positionMigration).toContain('reorder_itinerary_items');
     expect(positionMigration).toContain('for update');
@@ -137,6 +144,14 @@ describe('route editor + KML contracts (#151)', () => {
     expect(boundaryMigration).toMatch(
       /coordination_apply_outcome[\s\S]*for update/,
     );
+    expect(accommodationRpcMigration).toMatch(
+      /add_itinerary_item[\s\S]*p_kind text default 'stop'[\s\S]*p_stay_anchor boolean default false/,
+    );
+    expect(accommodationRpcMigration).toMatch(
+      /if v_kind = 'accommodation'[\s\S]*order by i\.position desc[\s\S]*tail\.stay_anchor/,
+    );
+    expect(accommodationRpcMigration).toContain("v_item ? 'stay_anchor'");
+    expect(accommodationRpcMigration).toContain('v_has_stay_anchors[v_idx]');
     expect(destinationService).toContain("rpc('add_itinerary_item'");
     expect(destinationService).toContain("rpc('reorder_itinerary_items'");
     expect(destinationService).toContain("rpc('import_itinerary_batch'");

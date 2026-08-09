@@ -40,6 +40,11 @@ describe('map UI placement contracts', () => {
     expect(statusCallback).toContain("status === 'CHANNEL_ERROR'");
     expect(statusCallback).toContain('loadRef.current()');
   });
+
+  it('subscribes to daily_accommodations for remote stay convergence (#159)', () => {
+    expect(useGroupState).toContain("table: 'daily_accommodations'");
+    expect(useGroupState).toContain('scheduleReload');
+  });
   it('renders arrival radius hint with tertiary subhint style', () => {
     expect(mapScreen).toContain("styles.accuracySubhint}>{t('arrival.radiusHint')}");
     expect(mapScreen).toMatch(/accuracySubhint:\s*\{[\s\S]*?color:\s*glass\.textTertiary/);

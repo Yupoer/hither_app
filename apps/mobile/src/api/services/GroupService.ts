@@ -34,6 +34,10 @@ import type {
 import { generateInviteCode, requireUserId, orThrow } from './_helpers';
 import { mapDestination, type ItineraryRow } from './DestinationService';
 import {
+  listDailyAccommodations,
+  type DailyAccommodation,
+} from './DailyAccommodationService';
+import {
   ANON_EXPIRED_ERROR,
   ANON_LEADER_REGISTRATION_REQUIRED,
   classifyAnonymousAccessError,
@@ -54,6 +58,7 @@ export interface GroupRow {
   straggler_threshold_m?: number | null;
   trip_days?: number | null;
   departure_date?: string | null;
+  accommodation_auto_add?: boolean | null;
 }
 
 export interface MembershipRow {
@@ -112,6 +117,7 @@ export function mapGroup(row: GroupRow): Group {
     stragglerThresholdM: row.straggler_threshold_m ?? 500,
     tripDays: row.trip_days ?? undefined,
     departureDate: row.departure_date ?? undefined,
+    accommodationAutoAdd: row.accommodation_auto_add ?? true,
   };
 }
 
@@ -229,11 +235,12 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
     }
     return getDemoState(uid, profile?.nickname, profile?.avatar ?? undefined);
   }
-  const [groupRes, membersRes, itineraryRes, locationsRes] = await Promise.all([
+  const [groupRes, membersRes, itineraryRes, locationsRes, dailyAccommodations] =
+    await Promise.all([
     supabase
       .from('groups')
       .select(
-        'id, name, invite_code, created_by, created_at, journey_status, active_destination_id, journey_started_at, straggler_alerts, straggler_threshold_m, trip_days, departure_date',
+        'id, name, invite_code, created_by, created_at, journey_status, active_destination_id, journey_started_at, straggler_alerts, straggler_threshold_m, trip_days, departure_date, accommodation_auto_add',
       )
       .eq('id', groupId)
       .single(),
@@ -244,7 +251,7 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
     supabase
       .from('itinerary_items')
       .select(
-        'id, title, address, latitude, longitude, position, day, meet_at, meet_red_minutes, subgroup_id, closed_at, closed_by_session_id, emoji, marker_color',
+        'id, title, address, latitude, longitude, position, day, meet_at, meet_red_minutes, subgroup_id, closed_at, closed_by_session_id, emoji, marker_color, kind, stay_anchor',
       )
       .eq('group_id', groupId)
       .order('position', { ascending: true }),
@@ -252,6 +259,8 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
       .from('member_locations')
       .select('user_id, latitude, longitude, updated_at')
       .eq('group_id', groupId),
+    // Do not swallow load failures as an empty list (false "no stay").
+    listDailyAccommodations(groupId),
   ]);
 
   orThrow(groupRes.error);
@@ -298,6 +307,7 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
     destinations,
     subgroups,
     nextDestination: destinations[0],
+    dailyAccommodations,
   };
 }
 
@@ -359,6 +369,9 @@ export async function getGroupRecoverySnapshot(
   const revision = typeof payload.realtime_revision === 'string'
     ? payload.realtime_revision
     : generatedAt ?? '0';
+  // Daily accommodations are a separate source of truth; batch-load (not per-day).
+  // Propagate load failures — do not present errors as "no stay".
+  const dailyAccommodations = await listDailyAccommodations(groupId);
   return {
     state: {
       group: mapGroup(groupRow),
@@ -366,6 +379,7 @@ export async function getGroupRecoverySnapshot(
       destinations,
       subgroups,
       nextDestination: destinations[0],
+      dailyAccommodations,
     },
     generatedAt,
     revision,

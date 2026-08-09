@@ -86,6 +86,7 @@ describe('pure mappers (snake_case row -> camelCase type)', () => {
       stragglerThresholdM: 500,
       tripDays: undefined,
       departureDate: undefined,
+      accommodationAutoAdd: true,
     });
   });
 
@@ -350,6 +351,8 @@ describe('addDestination', () => {
       p_latitude: 25.034,
       p_longitude: 121.564,
       p_day: 1,
+      p_kind: 'stop',
+      p_stay_anchor: false,
     });
   });
 
@@ -702,6 +705,19 @@ describe('notifications, commands & journey', () => {
     expect(mockedRpc).toHaveBeenCalledWith('reorder_itinerary_items', {
       p_group_id: 'g1',
       p_updates: [{ id: 'd1', position: 1, day: 1 }],
+    });
+  });
+
+  it('reorderDestinations forwards an explicit accommodation anchor change', async () => {
+    mockedRpc.mockResolvedValue({ data: 1, error: null });
+
+    await reorderDestinations('g1', [
+      { id: 'd1', position: 1, day: 1, stayAnchor: false },
+    ]);
+
+    expect(mockedRpc).toHaveBeenCalledWith('reorder_itinerary_items', {
+      p_group_id: 'g1',
+      p_updates: [{ id: 'd1', position: 1, day: 1, stay_anchor: false }],
     });
   });
 

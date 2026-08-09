@@ -39,9 +39,13 @@ export function placeTourCard(input: PlaceTourCardInput): PlaceTourCardResult {
   const usable = Math.max(120, bottomSafe - topSafe);
 
   if (!input.hole) {
+    // Final get-started card: true vertical center of the usable viewport
+    // (safe-area aware). Do not use a fixed 0.35 window-height bias.
+    const usedH = Math.min(cardH, usable);
+    const centered = topSafe + (usable - usedH) / 2;
     const top = Math.min(
-      Math.max(topSafe, input.windowHeight * 0.35),
-      bottomSafe - Math.min(cardH, usable),
+      Math.max(topSafe, centered),
+      bottomSafe - usedH,
     );
     return {
       cardTop: top,

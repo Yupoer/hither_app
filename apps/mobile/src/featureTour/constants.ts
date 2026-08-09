@@ -15,7 +15,9 @@ export type TourTargetId =
   | 'paneTools'
   | 'paneStore'
   | 'avatar'
-  | 'settings';
+  | 'settings'
+  | 'addPlaceFavoriteStar'
+  | 'addPlaceCenter';
 
 export type TourStepId =
   | 'collapsedCard'

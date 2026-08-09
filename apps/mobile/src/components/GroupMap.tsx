@@ -60,6 +60,7 @@ import {
   destinationMarkerColor,
   destinationMarkerEmoji,
 } from '../utils/destinationMarkerChrome';
+import { mergeMapMarkers } from '../utils/mapMarkerMerge';
 
 export {
   DEFAULT_LATITUDE_DELTA,
@@ -97,6 +98,13 @@ export interface GroupMapProps {
   members: MemberLocation[];
   gathering?: Destination;
   destinations?: Destination[];
+  /** Team daily accommodation for the visible day (always shown; deduped). */
+  dailyAccommodation?: {
+    id: string;
+    title: string;
+    coordinates: Coordinates;
+    sourceDestinationId?: string | null;
+  } | null;
   pendingPlace?: { coordinates: Coordinates; name: string } | null;
   currentUserId?: string;
   /** First available user location, used before a gathering point exists. */
@@ -462,6 +470,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     members,
     gathering,
     destinations,
+    dailyAccommodation = null,
     pendingPlace,
     currentUserId,
     initialCenter,
@@ -859,7 +868,35 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
         />
       ) : null}
 
-      {destinations?.map((dest) => {
+      {mergeMapMarkers({
+        destinations: destinations ?? [],
+        dailyAccommodation: dailyAccommodation ?? null,
+      }).map((marker) => {
+        if (marker.kind === 'daily_accommodation') {
+          const fakeDest = {
+            id: marker.id,
+            title: marker.title,
+            order: -1,
+            day: 1,
+            coordinates: marker.coordinates,
+            emoji: '🛏️',
+            markerColor: null,
+          } as Destination;
+          return (
+            <DestinationMarker
+              key={marker.id}
+              dest={fakeDest}
+              bgColor="#6B7280"
+              styles={styles}
+              isActiveTarget={false}
+              isCompleted={false}
+              reduceMotion={reduceMotion}
+              appActive={appActive}
+            />
+          );
+        }
+        const dest = (destinations ?? []).find((d) => d.id === marker.id);
+        if (!dest) return null;
         // Prefer per-stop palette color; fall back to day color when unset.
         const bgColor = destinationMarkerColor(dest, dayColors);
         const isCompleted = completedDestinationIds instanceof Set

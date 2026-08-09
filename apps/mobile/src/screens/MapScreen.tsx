@@ -150,6 +150,14 @@ import {
   pickTourDestinationId,
   tourDestinationIndex,
   type TourTargetId,
+  ADD_PLACE_TOUR_STEPS,
+  areAddPlaceTourTargetsReady,
+  completeAddPlaceTour,
+  isMeasuredTourRect,
+  measureTargetWithRetry,
+  readAddPlaceTourCompletedLocal,
+  retryPendingAddPlaceTourAccountSync,
+  shouldStartAddPlaceTour,
 } from '../featureTour';
 import { useCoordinationRequests } from './MapScreen/hooks/useCoordinationRequests';
 import { SettingsOverlay } from './MapScreen/components/SettingsOverlay';
@@ -222,7 +230,9 @@ import {
   type HistoryDayGroup,
 } from '../utils/history';
 import {
+  dateForTripDay,
   filterActiveDestinations,
+  localDayKey,
   nextOrderedDestination,
   resolveAddDay,
 } from '../utils/tripDay';
@@ -263,6 +273,14 @@ import {
   isNetworkRequestError,
   setDestinationArrival,
   setDestinationArrivalAt,
+  setDailyAccommodation,
+  clearDailyAccommodation,
+  setAccommodationAutoAdd,
+  listFavoritePlaces,
+  saveFavoritePlace,
+  unsaveFavoriteByExactMatch,
+  findFavoriteByExactMatch,
+  type FavoritePlace,
   submitGatherPointRequest,
   updateMyLocation,
   updateGroupTripDetails,
@@ -533,6 +551,7 @@ export default function MapScreen({ route, navigation }: Props) {
     return () => sub.remove();
   }, [groupId, navigationSessionState.refresh, refresh]);
   const group = state?.group ?? membership?.group ?? null;
+  const dailyAccommodations = state?.dailyAccommodations ?? [];
 
   const mapRef = useRef<GroupMapHandle | null>(null);
   const carouselRef = useRef<ScrollView | null>(null);
@@ -949,6 +968,16 @@ export default function MapScreen({ route, navigation }: Props) {
   const searchOpenCompleteResolveRef = useRef<(() => void) | null>(null);
   // A place picked in search, awaiting the bottom "add / cancel" confirm card.
   const [pendingPlace, setPendingPlace] = useState<PlaceResult | null>(null);
+  const [favoritePlaces, setFavoritePlaces] = useState<FavoritePlace[]>([]);
+  const [favoriteBusy, setFavoriteBusy] = useState(false);
+  const [addPlaceTourStep, setAddPlaceTourStep] = useState<number | null>(null);
+  const [addPlaceTourLocalDone, setAddPlaceTourLocalDone] = useState(true);
+  const [addPlaceTourTargetRect, setAddPlaceTourTargetRect] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
   /** Center rename modal draft (independent of pendingPlaceTitle until confirm). */
   const [renameModalVisible, setRenameModalVisible] = useState(false);
   const [renameDraft, setRenameDraft] = useState('');
@@ -986,6 +1015,135 @@ export default function MapScreen({ route, navigation }: Props) {
     opacity: interpolate(confirmCardAnim.value, [0, 0.4], [0, 1], Extrapolation.CLAMP),
     transform: [{ translateY: interpolate(confirmCardAnim.value, [0, 1], [120, 0], Extrapolation.CLAMP) }],
   }));
+
+  // Load account favorites once per signed-in session (cross-team reuse).
+  useEffect(() => {
+    if (!user?.id) {
+      setFavoritePlaces([]);
+      return;
+    }
+    let cancelled = false;
+    void listFavoritePlaces()
+      .then((rows) => {
+        if (!cancelled) setFavoritePlaces(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setFavoritePlaces([]);
+      });
+    void readAddPlaceTourCompletedLocal(user?.id).then((done) => {
+      if (!cancelled) setAddPlaceTourLocalDone(done);
+    });
+    // Retry account completion sync left pending after a prior profile write failure.
+    void retryPendingAddPlaceTourAccountSync({
+      accountId: user.id,
+      existingPreferences: user.preferences ?? null,
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
+  // Start only after BOTH star and center targets measure non-zero rects.
+  useEffect(() => {
+    if (!confirmCardReady || !pendingPlace) {
+      setAddPlaceTourStep(null);
+      setAddPlaceTourTargetRect(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const starRect = await measureTargetWithRetry({
+        measure: measureTourTarget,
+        target: 'addPlaceFavoriteStar',
+      });
+      if (cancelled) return;
+      const centerRect = await measureTargetWithRetry({
+        measure: measureTourTarget,
+        target: 'addPlaceCenter',
+      });
+      if (cancelled) return;
+      const targetsReady = areAddPlaceTourTargetsReady({ starRect, centerRect });
+      if (
+        shouldStartAddPlaceTour({
+          pendingPlaceVisible: true,
+          targetsReady,
+          localCompleted: addPlaceTourLocalDone,
+          accountPreferences: user?.preferences ?? null,
+        })
+      ) {
+        setAddPlaceTourStep(0);
+        setAddPlaceTourTargetRect(starRect);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    confirmCardReady,
+    pendingPlace,
+    addPlaceTourLocalDone,
+    user?.preferences,
+    measureTourTarget,
+  ]);
+
+  // Remeasure highlight when the Add Place tour step advances.
+  // Never clobber a good hole with null — only accept non-zero rects.
+  useEffect(() => {
+    if (addPlaceTourStep == null) {
+      setAddPlaceTourTargetRect(null);
+      return;
+    }
+    const step = ADD_PLACE_TOUR_STEPS[addPlaceTourStep];
+    if (!step) return;
+    let cancelled = false;
+    void (async () => {
+      const rect = await measureTargetWithRetry({
+        measure: measureTourTarget,
+        target: step.target,
+      });
+      if (cancelled) return;
+      if (isMeasuredTourRect(rect)) {
+        setAddPlaceTourTargetRect(rect);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [addPlaceTourStep, measureTourTarget]);
+
+  const pendingIsFavorite = useMemo(() => {
+    if (!pendingPlace) return false;
+    return Boolean(
+      findFavoriteByExactMatch(
+        favoritePlaces,
+        pendingPlaceTitle || pendingPlace.name,
+        pendingPlace.coordinates,
+      ),
+    );
+  }, [pendingPlace, pendingPlaceTitle, favoritePlaces]);
+
+  const togglePendingFavorite = useCallback(async () => {
+    if (!pendingPlace || !user?.id || favoriteBusy) return;
+    const title = pendingPlaceTitle.trim() || pendingPlace.name;
+    setFavoriteBusy(true);
+    try {
+      if (pendingIsFavorite) {
+        await unsaveFavoriteByExactMatch(title, pendingPlace.coordinates);
+      } else {
+        await saveFavoritePlace({
+          title,
+          address: pendingPlace.address,
+          coordinates: pendingPlace.coordinates,
+        });
+      }
+      setFavoritePlaces(await listFavoritePlaces());
+    } catch {
+      // best-effort
+    } finally {
+      setFavoriteBusy(false);
+    }
+  }, [pendingPlace, pendingPlaceTitle, user?.id, favoriteBusy, pendingIsFavorite]);
+
   /** Dismiss the confirm card (used by both Cancel and Add buttons). */
   function dismissConfirmCard() {
     setConfirmCardReady(false);
@@ -3480,7 +3638,9 @@ export default function MapScreen({ route, navigation }: Props) {
   }, []);
 
   const handleReorder = useCallback(
-    async (updates: { id: string; position: number; day: number }[]): Promise<boolean> => {
+    async (
+      updates: { id: string; position: number; day: number; stayAnchor?: boolean }[],
+    ): Promise<boolean> => {
       if (!groupId) return false;
 
       const result = await runUiAction(
@@ -3499,6 +3659,7 @@ export default function MapScreen({ route, navigation }: Props) {
             position: number;
             day: number;
             meetAt?: string;
+            stayAnchor?: boolean;
           }[] = withSlots.map((update) => {
             const original = rawDestinations.find((dest) => dest.id === update.id);
             if (!departureDate || !original?.meetAt || (original.day || 1) === update.day) {
@@ -3518,6 +3679,7 @@ export default function MapScreen({ route, navigation }: Props) {
               dest.order = u.position;
               dest.day = u.day;
               if (u.meetAt !== undefined) dest.meetAt = u.meetAt;
+              if (u.stayAnchor !== undefined) dest.stayAnchor = u.stayAnchor;
             }
           });
           newDests.sort((a, b) => {
@@ -4910,6 +5072,17 @@ export default function MapScreen({ route, navigation }: Props) {
           members={members}
           gathering={activePoint}
           destinations={destinations}
+          dailyAccommodation={(() => {
+            const todayKey = localDayKey(new Date());
+            const daily = dailyAccommodations.find((d) => d.stayDate === todayKey);
+            if (!daily) return null;
+            return {
+              id: daily.id,
+              title: daily.title,
+              coordinates: daily.coordinates,
+              sourceDestinationId: daily.sourceDestinationId,
+            };
+          })()}
           pendingPlace={pendingPlace}
           currentUserId={user?.id}
           initialCenter={mapInitialCenter ?? undefined}
@@ -5151,16 +5324,53 @@ export default function MapScreen({ route, navigation }: Props) {
                     ) : null}
                   </View>
                 </View>
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.confirmArrow,
-                    { backgroundColor: accentMix(accent, 18) },
-                    pressed && { opacity: 0.8 }
-                  ]}
-                  onPress={() => mapRef.current?.focusOblique(pendingPlace.coordinates)}
-                >
-                  <Ionicons name="navigate" size={28} color={accent} />
-                </Pressable>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Pressable
+                    testID="add-place-favorite-star"
+                    ref={(node) => setTourTargetRef('addPlaceFavoriteStar', node as View | null)}
+                    style={({ pressed }) => [
+                      styles.confirmArrow,
+                      { backgroundColor: accentMix(accent, 18) },
+                      pressed && { opacity: 0.8 },
+                    ]}
+                    onPress={() => {
+                      // Tour is explanation-only: block real action while active.
+                      if (addPlaceTourStep != null) return;
+                      void togglePendingFavorite();
+                    }}
+                    disabled={favoriteBusy || !user?.id}
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      pendingIsFavorite
+                        ? t('stay.unfavoriteA11y')
+                        : t('stay.favoriteA11y')
+                    }
+                    accessibilityState={{ selected: pendingIsFavorite, busy: favoriteBusy }}
+                  >
+                    <Ionicons
+                      name={pendingIsFavorite ? 'star' : 'star-outline'}
+                      size={26}
+                      color={accent}
+                    />
+                  </Pressable>
+                  <Pressable
+                    testID="add-place-center-btn"
+                    ref={(node) => setTourTargetRef('addPlaceCenter', node as View | null)}
+                    style={({ pressed }) => [
+                      styles.confirmArrow,
+                      { backgroundColor: accentMix(accent, 18) },
+                      pressed && { opacity: 0.8 }
+                    ]}
+                    onPress={() => {
+                      if (addPlaceTourStep != null) return;
+                      mapRef.current?.focusOblique(pendingPlace.coordinates);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('stay.centerPlaceA11y')}
+                  >
+                    <Ionicons name="navigate" size={28} color={accent} />
+                  </Pressable>
+                </View>
               </View>
               <View style={styles.confirmBtnRow}>
                 <Pressable
@@ -5203,6 +5413,60 @@ export default function MapScreen({ route, navigation }: Props) {
           </Animated.View>
         );
       })()}
+
+      {/* Add Place contextual tour — measured targets + full-screen blocker. */}
+      <GroupFeatureTourOverlay
+        visible={
+          addPlaceTourStep != null
+          && pendingPlace != null
+          && ADD_PLACE_TOUR_STEPS[addPlaceTourStep] != null
+        }
+        title={
+          addPlaceTourStep != null && ADD_PLACE_TOUR_STEPS[addPlaceTourStep]
+            ? t(ADD_PLACE_TOUR_STEPS[addPlaceTourStep].titleKey as TranslationKey)
+            : ''
+        }
+        body={
+          addPlaceTourStep != null && ADD_PLACE_TOUR_STEPS[addPlaceTourStep]
+            ? t(ADD_PLACE_TOUR_STEPS[addPlaceTourStep].bodyKey as TranslationKey)
+            : ''
+        }
+        ctaLabel={
+          addPlaceTourStep != null
+          && addPlaceTourStep >= ADD_PLACE_TOUR_STEPS.length - 1
+            ? t('tour.getStarted')
+            : t('tour.next')
+        }
+        targetRect={addPlaceTourTargetRect}
+        onNext={() => {
+          if (addPlaceTourStep == null) return;
+          const next = addPlaceTourStep + 1;
+          if (next >= ADD_PLACE_TOUR_STEPS.length) {
+            setAddPlaceTourStep(null);
+            setAddPlaceTourTargetRect(null);
+            setAddPlaceTourLocalDone(true);
+            // Final-step-only persistence (pending retry if account write fails).
+            void completeAddPlaceTour({
+              accountId: user?.id,
+              existingPreferences: user?.preferences ?? null,
+            });
+            return;
+          }
+          // Block advance until the next step has a non-zero measured rect.
+          const nextStep = ADD_PLACE_TOUR_STEPS[next];
+          if (!nextStep) return;
+          void (async () => {
+            const rect = await measureTargetWithRetry({
+              measure: measureTourTarget,
+              target: nextStep.target,
+            });
+            if (!isMeasuredTourRect(rect)) return;
+            setAddPlaceTourTargetRect(rect);
+            setAddPlaceTourStep(next);
+          })();
+        }}
+        reduceMotion={tourReduceMotion}
+      />
 
       {/* Center rename modal — only updates draft name; add still uses bottom card. */}
       <Modal
@@ -6047,6 +6311,130 @@ export default function MapScreen({ route, navigation }: Props) {
             colors={dark}
             emptyLabel={t('settings.noDestinations')}
             onDragActiveChange={(active) => setRouteScrollEnabled(!active)}
+            accountId={user?.id}
+            accommodationAutoAdd={group?.accommodationAutoAdd ?? true}
+            dailyByDate={Object.fromEntries(
+              dailyAccommodations.map((d) => [
+                d.stayDate,
+                { id: d.id, stayDate: d.stayDate, title: d.title },
+              ]),
+            )}
+            favoritePlaces={favoritePlaces}
+            onToggleAutoAdd={
+              canEditItinerary && groupId
+                ? (enabled) => {
+                    void runUiAction(
+                      'map.accommodation_auto_add',
+                      async () => {
+                        await setAccommodationAutoAdd(groupId, enabled);
+                        await refresh();
+                      },
+                      { screen: 'Map' },
+                    );
+                  }
+                : undefined
+            }
+            onClearDailyAccommodation={
+              canEditItinerary && groupId
+                ? (stayDate, day) => {
+                    void runUiAction(
+                      'map.clear_daily_accommodation',
+                      async () => {
+                        await clearDailyAccommodation(groupId, stayDate, day);
+                        await refresh();
+                      },
+                      { screen: 'Map' },
+                    );
+                  }
+                : undefined
+            }
+            onSetDailyFromDestination={
+              canEditItinerary && groupId
+                ? (destinationId, day) => {
+                    const dest = destinations.find((d) => d.id === destinationId);
+                    if (!dest) return;
+                    const date = dateForTripDay(
+                      optimisticDepartureDate ?? group?.departureDate,
+                      day,
+                    );
+                    if (!date) return;
+                    void runUiAction(
+                      'map.set_daily_accommodation',
+                      async () => {
+                        await setDailyAccommodation(groupId, localDayKey(date), {
+                          title: dest.title,
+                          address: dest.address,
+                          coordinates: dest.coordinates,
+                          sourceDestinationId: dest.id,
+                          day,
+                        });
+                        await refresh();
+                      },
+                      { screen: 'Map' },
+                    );
+                  }
+                : undefined
+            }
+            onQuickAddAccommodation={
+              canEditItinerary && groupId
+                ? (day) => {
+                    const daily = dailyAccommodations.find((d) => {
+                      const date = dateForTripDay(
+                        optimisticDepartureDate ?? group?.departureDate,
+                        day,
+                      );
+                      return date ? d.stayDate === localDayKey(date) : false;
+                    });
+                    const title = daily?.title ?? t('stay.defaultTitle');
+                    const coords = daily?.coordinates ?? {
+                      latitude: 0,
+                      longitude: 0,
+                    };
+                    if (!daily) return;
+                    void runUiAction(
+                      'map.quick_add_accommodation',
+                      async () => {
+                        await addDestination(
+                          groupId,
+                          {
+                            title,
+                            address: daily.address,
+                            coordinates: coords,
+                            day,
+                            kind: 'accommodation',
+                          },
+                          myScopeId,
+                        );
+                        await refresh();
+                      },
+                      { screen: 'Map' },
+                    );
+                  }
+                : undefined
+            }
+            onPickFavorite={
+              canEditItinerary && groupId
+                ? (fav, day) => {
+                    void runUiAction(
+                      'map.add_favorite_to_day',
+                      async () => {
+                        await addDestination(
+                          groupId,
+                          {
+                            title: fav.title,
+                            address: fav.address,
+                            coordinates: fav.coordinates,
+                            day,
+                          },
+                          myScopeId,
+                        );
+                        await refresh();
+                      },
+                      { screen: 'Map' },
+                    );
+                  }
+                : undefined
+            }
           />
         </ScrollView>
       </OverlaySheet>

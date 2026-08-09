@@ -28,11 +28,14 @@ export interface ItineraryRow {
   closed_by_session_id?: string | null;
   emoji?: string | null;
   marker_color?: string | null;
+  kind?: string | null;
+  stay_anchor?: boolean | null;
 }
 
 // ── Mapper ─────────────────────────────────────────────────────────────────
 
 export function mapDestination(row: ItineraryRow): Destination {
+  const kind = row.kind === 'accommodation' ? 'accommodation' : 'stop';
   return {
     id: row.id,
     title: row.title,
@@ -51,6 +54,8 @@ export function mapDestination(row: ItineraryRow): Destination {
     closedBySessionId: row.closed_by_session_id ?? undefined,
     emoji: row.emoji ?? null,
     markerColor: row.marker_color ?? null,
+    kind,
+    stayAnchor: kind === 'accommodation' ? Boolean(row.stay_anchor) : false,
   };
 }
 
@@ -58,7 +63,14 @@ export function mapDestination(row: ItineraryRow): Destination {
 
 export async function addDestination(
   groupId: string,
-  input: { title: string; address?: string; coordinates: Coordinates; day?: number },
+  input: {
+    title: string;
+    address?: string;
+    coordinates: Coordinates;
+    day?: number;
+    /** Default stop; use accommodation for quick-add stay cards. */
+    kind?: 'stop' | 'accommodation';
+  },
   subgroupId?: string,
 ): Promise<void> {
   if (isDemoGroup(groupId)) {
@@ -66,6 +78,12 @@ export async function addDestination(
     return;
   }
   const targetDay = Math.max(1, input.day ?? 1);
+  const kind = input.kind === 'accommodation' ? 'accommodation' : 'stop';
+  // Quick-add mid cards are never stay anchors; auto-add RPC sets anchors.
+  const stayAnchor = false;
+  // Quick-add accommodation inserts before an occupied locked tail so the new
+  // card is mid (draggable), not an immediate locked last boundary.
+  // Shift later rows high→low so positions never collide mid-update.
   // Server-side lock + shift + insert (shared with import_itinerary_batch / reorder).
   const { error } = await supabase.rpc('add_itinerary_item', {
     p_group_id: groupId,
@@ -75,6 +93,8 @@ export async function addDestination(
     p_latitude: input.coordinates.latitude,
     p_longitude: input.coordinates.longitude,
     p_day: targetDay,
+    p_kind: kind,
+    p_stay_anchor: stayAnchor,
   });
   if (error) {
     // Free Plan itinerary cap (5 points) — server trigger is authoritative.
@@ -188,7 +208,13 @@ export async function completeGatheringStop(
 
 export async function reorderDestinations(
   groupId: string,
-  updates: { id: string; position: number; day: number; meetAt?: string }[],
+  updates: {
+    id: string;
+    position: number;
+    day: number;
+    meetAt?: string;
+    stayAnchor?: boolean;
+  }[],
 ): Promise<void> {
   if (isDemoGroup(groupId)) {
     return;
@@ -203,6 +229,7 @@ export async function reorderDestinations(
       position: number;
       day: number;
       meet_at?: string | null;
+      stay_anchor?: boolean;
     } = {
       id: up.id,
       // Hint only (optimistic UI); server ignores and assigns locked slots.
@@ -210,6 +237,7 @@ export async function reorderDestinations(
       day: up.day,
     };
     if (up.meetAt !== undefined) row.meet_at = up.meetAt;
+    if (up.stayAnchor !== undefined) row.stay_anchor = up.stayAnchor;
     return row;
   });
   const { data, error } = await supabase.rpc('reorder_itinerary_items', {

@@ -40,3 +40,24 @@ export { placeTourCard } from './overlayLayout';
 export { pickTourDestinationId, tourDestinationIndex } from './tourDestination';
 export { GroupFeatureTourOverlay } from './GroupFeatureTourOverlay';
 export { useGroupFeatureTour } from './useGroupFeatureTour';
+export {
+  ADD_PLACE_TOUR_STORAGE_KEY,
+  ADD_PLACE_TOUR_ACCOUNT_SYNC_PENDING_KEY,
+  ADD_PLACE_TOUR_STEPS,
+  addPlaceTourAccountSyncPendingKey,
+  addPlaceTourStorageKey,
+  areAddPlaceTourTargetsReady,
+  completeAddPlaceTour,
+  isAddPlaceTourCompletedFromSources,
+  isMeasuredTourRect,
+  parseAddPlaceTourAccountSyncPending,
+  readAddPlaceTourAccountSyncPending,
+  readAddPlaceTourCompletedLocal,
+  retryPendingAddPlaceTourAccountSync,
+  shouldStartAddPlaceTour,
+  writeAddPlaceTourCompletedLocal,
+  type AddPlaceTourAccountSyncPending,
+  type AddPlaceTourStep,
+  type AddPlaceTourStepId,
+  type AddPlaceTourTargetId,
+} from './addPlaceTour';

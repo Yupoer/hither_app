@@ -29,6 +29,8 @@ export interface AccountPreferences {
   quickCommand?: CustomQuickCommand;
   /** One-time group feature tour completed (account-scoped, best-effort sync). */
   groupFeatureTourCompleted?: boolean;
+  /** Independent Add Place contextual tour completion (does not affect group tour). */
+  addPlaceTourCompleted?: boolean;
 }
 
 export function normalizeCustomQuickCommand(value: unknown): CustomQuickCommand | null {
@@ -65,7 +67,7 @@ export function normalizeCustomQuickCommands(prefs: unknown): Array<CustomQuickC
 /** Build AccountPreferences for profile writes / session state. */
 export function accountPreferencesFromSlots(
   slots: Array<CustomQuickCommand | null>,
-  extras?: Pick<AccountPreferences, 'groupFeatureTourCompleted'>,
+  extras?: Pick<AccountPreferences, 'groupFeatureTourCompleted' | 'addPlaceTourCompleted'>,
 ): AccountPreferences {
   const quickCommands = Array.from({ length: CUSTOM_QUICK_COMMAND_SLOTS }, (_, i) => slots[i] ?? null);
   const first = quickCommands.find((s) => s != null) ?? null;
@@ -77,6 +79,11 @@ export function accountPreferencesFromSlots(
       ? { groupFeatureTourCompleted: true }
       : extras?.groupFeatureTourCompleted === false
         ? { groupFeatureTourCompleted: false }
+        : {}),
+    ...(extras?.addPlaceTourCompleted === true
+      ? { addPlaceTourCompleted: true }
+      : extras?.addPlaceTourCompleted === false
+        ? { addPlaceTourCompleted: false }
         : {}),
   };
 }
@@ -90,17 +97,26 @@ export function normalizeAccountPreferences(prefs: unknown): AccountPreferences 
   if (!prefs || typeof prefs !== 'object') {
     return accountPreferencesFromSlots(slots);
   }
-  const row = prefs as { groupFeatureTourCompleted?: unknown };
+  const row = prefs as {
+    groupFeatureTourCompleted?: unknown;
+    addPlaceTourCompleted?: unknown;
+  };
   const tour =
     row.groupFeatureTourCompleted === true
       ? true
       : row.groupFeatureTourCompleted === false
         ? false
         : undefined;
-  return accountPreferencesFromSlots(
-    slots,
-    tour === undefined ? undefined : { groupFeatureTourCompleted: tour },
-  );
+  const addPlaceTour =
+    row.addPlaceTourCompleted === true
+      ? true
+      : row.addPlaceTourCompleted === false
+        ? false
+        : undefined;
+  return accountPreferencesFromSlots(slots, {
+    ...(tour === undefined ? {} : { groupFeatureTourCompleted: tour }),
+    ...(addPlaceTour === undefined ? {} : { addPlaceTourCompleted: addPlaceTour }),
+  });
 }
 
 /**
@@ -171,6 +187,11 @@ export interface Group {
   tripDays?: number;
   /** Start date of the trip (ISO-8601). */
   departureDate?: string;
+  /**
+   * Team-shared switch: on none→some daily accommodation, auto-insert first+last
+   * accommodation itinerary cards. Default true. Toggle never backfills cards.
+   */
+  accommodationAutoAdd?: boolean;
 }
 
 /** Role within a group. */
@@ -399,6 +420,9 @@ export interface ItineraryOperation {
   createdAt: string;
 }
 
+/** Itinerary row kind: gathering stop vs accommodation snapshot card. */
+export type DestinationKind = 'stop' | 'accommodation';
+
 /** A gathering point / itinerary stop. */
 export interface Destination {
   id: string;
@@ -431,6 +455,27 @@ export interface Destination {
    * Null/undefined → stable client fallback.
    */
   markerColor?: string | null;
+  /**
+   * Independent accommodation card snapshot (not the same source of truth as
+   * daily_accommodations). Default `stop` for backward compatibility.
+   */
+  kind?: DestinationKind;
+  /**
+   * Boundary lock candidate for accommodation cards (auto-add / pure-index after drop).
+   * Cleared on some→some / some→none so cards become draggable mid.
+   */
+  stayAnchor?: boolean;
+}
+
+/** Per-team per-date accommodation snapshot (client shape). */
+export interface DailyAccommodation {
+  id: string;
+  groupId: string;
+  stayDate: string;
+  title: string;
+  address?: string;
+  coordinates: Coordinates;
+  sourceDestinationId?: string | null;
 }
 
 /** Aggregated live view of a group, consumed by the Map screen. */
@@ -442,6 +487,8 @@ export interface GroupState {
   subgroups: Subgroup[];
   /** The destination the group is currently heading to, if any. */
   nextDestination?: Destination;
+  /** Team daily accommodations (batch-loaded; key by stayDate). */
+  dailyAccommodations?: DailyAccommodation[];
 }
 
 /**

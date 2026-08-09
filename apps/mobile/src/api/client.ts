@@ -75,6 +75,30 @@ export {
 export type { ItineraryRow } from './services/DestinationService';
 
 export {
+  mapDailyAccommodation,
+  listDailyAccommodations,
+  getDailyAccommodationForDate,
+  setDailyAccommodation,
+  clearDailyAccommodation,
+  setAccommodationAutoAdd,
+} from './services/DailyAccommodationService';
+export type {
+  DailyAccommodation as DailyAccommodationDto,
+  SetDailyAccommodationInput,
+  SetDailyAccommodationResult,
+} from './services/DailyAccommodationService';
+
+export {
+  mapFavoritePlace,
+  listFavoritePlaces,
+  findFavoriteByExactMatch,
+  saveFavoritePlace,
+  unsaveFavoritePlace,
+  unsaveFavoriteByExactMatch,
+} from './services/FavoritePlacesService';
+export type { FavoritePlace } from './services/FavoritePlacesService';
+
+export {
   recordVisitedWaypoint,
   fetchVisitedWaypoints,
   deleteVisitedWaypoint,
