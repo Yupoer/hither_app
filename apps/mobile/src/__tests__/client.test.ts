@@ -86,6 +86,7 @@ describe('pure mappers (snake_case row -> camelCase type)', () => {
       stragglerThresholdM: 500,
       tripDays: undefined,
       departureDate: undefined,
+      accommodationAutoAdd: true,
     });
   });
 
@@ -393,6 +394,7 @@ describe('addDestination', () => {
       latitude: 25.034,
       longitude: 121.564,
       position: 3, // after day-1 last (position 2)
+      kind: 'stop',
     });
   });
 

@@ -27,11 +27,13 @@ export interface ItineraryRow {
   closed_by_session_id?: string | null;
   emoji?: string | null;
   marker_color?: string | null;
+  kind?: string | null;
 }
 
 // ── Mapper ─────────────────────────────────────────────────────────────────
 
 export function mapDestination(row: ItineraryRow): Destination {
+  const kind = row.kind === 'accommodation' ? 'accommodation' : 'stop';
   return {
     id: row.id,
     title: row.title,
@@ -50,6 +52,7 @@ export function mapDestination(row: ItineraryRow): Destination {
     closedBySessionId: row.closed_by_session_id ?? undefined,
     emoji: row.emoji ?? null,
     markerColor: row.marker_color ?? null,
+    kind,
   };
 }
 
@@ -57,7 +60,14 @@ export function mapDestination(row: ItineraryRow): Destination {
 
 export async function addDestination(
   groupId: string,
-  input: { title: string; address?: string; coordinates: Coordinates; day?: number },
+  input: {
+    title: string;
+    address?: string;
+    coordinates: Coordinates;
+    day?: number;
+    /** Default stop; use accommodation for quick-add stay cards. */
+    kind?: 'stop' | 'accommodation';
+  },
   subgroupId?: string,
 ): Promise<void> {
   if (isDemoGroup(groupId)) {
@@ -65,6 +75,7 @@ export async function addDestination(
     return;
   }
   const targetDay = Math.max(1, input.day ?? 1);
+  const kind = input.kind === 'accommodation' ? 'accommodation' : 'stop';
   let scopedQuery = supabase
     .from('itinerary_items')
     .select('id, position, day')
@@ -86,6 +97,8 @@ export async function addDestination(
   );
 
   // Inline append plan (keep service free of utils import cycles in tests).
+  // Quick-add accommodation inserts as a mid card (end of day before a
+  // possible last boundary is handled by pure-index locks after drop).
   const sameDay = existing.filter((d) => d.day === targetDay);
   let insertPosition: number;
   if (sameDay.length > 0) {
@@ -118,6 +131,7 @@ export async function addDestination(
     latitude: input.coordinates.latitude,
     longitude: input.coordinates.longitude,
     position: insertPosition,
+    kind,
   });
   if (error) {
     // Free Plan itinerary cap (5 points) — server trigger is authoritative.
