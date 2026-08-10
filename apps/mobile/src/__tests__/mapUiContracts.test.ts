@@ -62,7 +62,7 @@ describe('map UI placement contracts', () => {
     expect(scopeBlock).toContain('d.subgroupId == null');
   });
 
-  it('keeps history and KML on the route pane; reorder overlay wires import CTA (#151/#154)', () => {
+  it('keeps history on the route pane; reorder overlay wires import CTA (#151/#154)', () => {
     // Route sheet pane body (not the full-screen reorder overlay).
     const routePane = mapScreen.indexOf('// ─── 路線');
     const toolsPane = mapScreen.indexOf('// ─── 工具', routePane);
@@ -70,7 +70,8 @@ describe('map UI placement contracts', () => {
 
     expect(routeBlock).toContain("t('map.stopsReorder'");
     expect(routeBlock).toContain("t('arrival.manage')");
-    expect(routeBlock).toContain("t('kml.entry')");
+    // Import CTA lives only on the reorder overlay — not the route sheet list.
+    expect(routeBlock).not.toContain("t('kml.entry')");
     expect(routeBlock).toContain("t('history.title')");
     expect(routeBlock).toContain("setOverlay('arrivalManage')");
 
@@ -392,6 +393,7 @@ describe('map UI placement contracts', () => {
     expect(transportRef).toBeLessThan(meetRef);
     expect(mapScreen).toContain('ARRIVED_SPLIT_MS');
     expect(mapScreen).toContain('FadeInRight');
+    expect(mapScreen).toContain('FadeOutRight');
     expect(mapScreen).toContain('setDestinationArrivalAt');
     // Arrive is one-tap now — no multi-option time-choice Alert.
     expect(mapScreen).toContain('handleSelfArrival');

@@ -192,6 +192,31 @@ describe('legalDragIndicesForList (cross-day)', () => {
     expect(legal).not.toContain(indexOf('h4b'));
   });
 
+  it('allows a mid stop to drop into an empty day block', () => {
+    // Day1 has stop A; Day2 and Day3 are empty headers only.
+    const order: ReorderListEntry[] = [
+      header(1),
+      dest('A', 1),
+      header(2),
+      header(3),
+    ];
+    const legal = legalDragIndicesForList(order, 'A');
+    const h2 = order.findIndex((e) => e.type === 'header' && e.day === 2);
+    const h3 = order.findIndex((e) => e.type === 'header' && e.day === 3);
+    // Empty-day header indices must be legal so drag can enter that block.
+    expect(legal).toContain(h2);
+    expect(legal).toContain(h3);
+    // After drop into day 2 header slot, A sits under day 2.
+    const intoDay2 = orderAfterDragMove(order, 1, h2);
+    let day = 1;
+    let assigned = 0;
+    for (const e of intoDay2) {
+      if (e.type === 'header') day = e.day;
+      else if (e.type === 'dest' && e.id === 'A') assigned = day;
+    }
+    expect(assigned).toBe(2);
+  });
+
   it('freezes locked boundary accommodations', () => {
     const order: ReorderListEntry[] = [
       header(1),

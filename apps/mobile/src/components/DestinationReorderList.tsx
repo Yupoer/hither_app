@@ -353,7 +353,7 @@ export default function DestinationReorderList({
 
       const rawTarget = Math.round(startIndex + dy / ROW_HEIGHT);
       // Multi-day legal slots (recomputed each move). Locked head/tail freeze;
-      // mid stops may cross day headers while preserving stay anchors.
+      // mid stops may enter other day blocks (including empty days).
       const legal = legalDragIndicesForList(toReorderEntries(orderRef.current), id);
       const target = snapToLegalDragIndex(
         legal.length > 0 ? legal : [currentIndex],
@@ -509,126 +509,161 @@ export default function DestinationReorderList({
          <Text style={styles.empty}>{emptyLabel}</Text>
       ) : (
         <View style={styles.list}>
-          {order.map((item) => {
-            if (item.type === 'header') {
-               const bgColor = dayColors[item.day] || DAY_COLORS[(item.day - 1) % DAY_COLORS.length];
-               const stayDate = stayDateForDay(item.day);
-               const daily = stayDate && dailyByDate ? dailyByDate[stayDate] : undefined;
-               const collapsed = Boolean(collapsedDays[item.day]);
-               const dayStopCount = destinations.filter((d) => (d.day || 1) === item.day).length;
-               const hasDaily = Boolean(daily);
-               return (
-                 <View key={item.id}>
-                   <HeaderRow
-                     item={item}
-                     styles={styles}
-                     bgColor={bgColor}
-                     canEditColors={canReorder}
-                     onColorPress={onHeaderColorPress}
-                     dailyTitle={daily?.title}
-                     onRemoveDaily={
-                       // Mutual exclusive with set-from-stop: only when stay is set.
-                       canReorder && hasDaily && onClearDailyAccommodation && stayDate
-                         ? () => onClearDailyAccommodation(stayDate, item.day)
-                         : undefined
-                     }
-                     collapsed={collapsed}
-                     onToggleCollapse={() => void toggleDayCollapsed(item.day)}
-                     setStayLabel={
-                       // Only when no daily stay yet (mutual exclusive with remove).
-                       canReorder
-                       && !hasDaily
-                       && onSetDailyFromDestination
-                       && dayStopCount > 0
-                         ? setStayModeDay === item.day
-                           ? t('stay.finishSet')
-                           : t('stay.setFromStop')
-                         : undefined
-                     }
-                     setStayActive={setStayModeDay === item.day}
-                     onToggleSetStay={
-                       canReorder
-                       && !hasDaily
-                       && onSetDailyFromDestination
-                       && dayStopCount > 0
-                         ? () =>
-                             setSetStayModeDay((d) => (d === item.day ? null : item.day))
-                         : undefined
-                     }
-                     accent={colors.accent}
-                   />
-                   {!collapsed && canReorder && dayStopCount > 0 && onQuickAddAccommodation ? (
-                     <View style={styles.dayActions}>
-                       <Pressable
-                         style={styles.dashedBtn}
-                         onPress={() => onQuickAddAccommodation(item.day)}
-                         accessibilityRole="button"
-                         accessibilityLabel={t('stay.quickAdd')}
-                       >
-                         <Text style={[styles.dashedBtnText, { color: colors.accent }]}>
-                           {t('stay.quickAdd')}
-                         </Text>
-                       </Pressable>
-                     </View>
-                   ) : null}
-                 </View>
-               );
+          {(() => {
+            // Group into day blocks: header + dests (+ quick-add at end of each day).
+            type DayBlock =
+              | { kind: 'day'; header: Extract<ListItem, { type: 'header' }>; dests: Extract<ListItem, { type: 'dest' }>[] }
+              | { kind: 'orphan'; dest: Extract<ListItem, { type: 'dest' }> };
+            const blocks: DayBlock[] = [];
+            let current: Extract<DayBlock, { kind: 'day' }> | null = null;
+            for (const item of order) {
+              if (item.type === 'header') {
+                current = { kind: 'day', header: item, dests: [] };
+                blocks.push(current);
+              } else if (current) {
+                current.dests.push(item);
+              } else {
+                blocks.push({ kind: 'orphan', dest: item });
+              }
             }
-            if (collapsedDays[item.item.day || 1]) return null;
-            const dayColor = getColorForDay(item.item.day, dayColors);
-            const dayItems: AccommodationListItem[] = destinations
-              .filter((d) => (d.day || 1) === (item.item.day || 1))
-              .map((d) => ({
-                id: d.id,
-                kind: d.kind === 'accommodation' ? 'accommodation' : 'stop',
-                order: d.order,
-                day: d.day || 1,
-                title: d.title,
-                stayAnchor: d.stayAnchor,
-              }));
-            const { lockedIds } = accommodationBoundaryLocks(dayItems);
-            const locked = item.item.kind === 'accommodation' && lockedIds.has(item.item.id);
-            const inSetMode = setStayModeDay === (item.item.day || 1);
-            return (
-              <Row
-                key={item.id}
-                item={item.item}
-                active={activeId === item.id}
-                canReorder={canReorder && !locked}
-                pan={pan}
-                styles={styles}
-                dayColor={dayColor}
-                onGrant={onGrant}
-                onMove={onMove}
-                onRelease={onRelease}
-                onDelete={onDelete}
-                isAccommodation={item.item.kind === 'accommodation'}
-                boundaryLocked={locked}
-                showSelect={inSetMode && item.item.kind !== 'accommodation'}
-                onSelectAsStay={
-                  inSetMode && onSetDailyFromDestination
-                    ? () => {
-                        onSetDailyFromDestination(item.item.id, item.item.day || 1);
-                        setSetStayModeDay(null);
-                      }
-                    : undefined
-                }
-                onEmojiPress={
-                  canReorder && onUpdateEmojiColor && item.item.kind !== 'accommodation'
-                    ? (id) => {
-                        const dest = destinations.find((d) => d.id === id);
-                        setEmojiDraft(resolveDestinationEmoji(dest?.emoji));
-                        setEmojiCategory('common');
-                        setEmojiPreviewDayColor(getColorForDay(dest?.day, dayColors));
-                        setEmojiSaveError(false);
-                        setEmojiSaving(false);
-                        setEmojiPickerDestId(id);
-                      }
-                    : undefined
-                }
-              />
-            );
-          })}
+
+            const renderDestRow = (item: Extract<ListItem, { type: 'dest' }>) => {
+              if (collapsedDays[item.item.day || 1]) return null;
+              const dayColor = getColorForDay(item.item.day, dayColors);
+              const dayItems: AccommodationListItem[] = destinations
+                .filter((d) => (d.day || 1) === (item.item.day || 1))
+                .map((d) => ({
+                  id: d.id,
+                  kind: d.kind === 'accommodation' ? 'accommodation' : 'stop',
+                  order: d.order,
+                  day: d.day || 1,
+                  title: d.title,
+                  stayAnchor: d.stayAnchor,
+                }));
+              const { lockedIds } = accommodationBoundaryLocks(dayItems);
+              const locked = item.item.kind === 'accommodation' && lockedIds.has(item.item.id);
+              const inSetMode = setStayModeDay === (item.item.day || 1);
+              return (
+                <Row
+                  key={item.id}
+                  item={item.item}
+                  active={activeId === item.id}
+                  canReorder={canReorder && !locked}
+                  pan={pan}
+                  styles={styles}
+                  dayColor={dayColor}
+                  onGrant={onGrant}
+                  onMove={onMove}
+                  onRelease={onRelease}
+                  onDelete={onDelete}
+                  isAccommodation={item.item.kind === 'accommodation'}
+                  boundaryLocked={locked}
+                  showSelect={inSetMode && item.item.kind !== 'accommodation'}
+                  onSelectAsStay={
+                    inSetMode && onSetDailyFromDestination
+                      ? () => {
+                          onSetDailyFromDestination(item.item.id, item.item.day || 1);
+                          setSetStayModeDay(null);
+                        }
+                      : undefined
+                  }
+                  onEmojiPress={
+                    canReorder && onUpdateEmojiColor && item.item.kind !== 'accommodation'
+                      ? (id) => {
+                          const dest = destinations.find((d) => d.id === id);
+                          setEmojiDraft(resolveDestinationEmoji(dest?.emoji));
+                          setEmojiCategory('common');
+                          setEmojiPreviewDayColor(getColorForDay(dest?.day, dayColors));
+                          setEmojiSaveError(false);
+                          setEmojiSaving(false);
+                          setEmojiPickerDestId(id);
+                        }
+                      : undefined
+                  }
+                />
+              );
+            };
+
+            return blocks.map((block, blockIndex) => {
+              if (block.kind === 'orphan') {
+                return renderDestRow(block.dest);
+              }
+              const item = block.header;
+              const bgColor = dayColors[item.day] || DAY_COLORS[(item.day - 1) % DAY_COLORS.length];
+              const stayDate = stayDateForDay(item.day);
+              const daily = stayDate && dailyByDate ? dailyByDate[stayDate] : undefined;
+              const collapsed = Boolean(collapsedDays[item.day]);
+              const dayStopCount = block.dests.length;
+              const hasDaily = Boolean(daily);
+              const showQuickAdd =
+                !collapsed && canReorder && onQuickAddAccommodation != null;
+              return (
+                <View
+                  key={item.id}
+                  style={[
+                    styles.dayBlock,
+                    blockIndex > 0 ? styles.dayBlockSpaced : null,
+                  ]}
+                  testID={`day-block-${item.day}`}
+                >
+                  <HeaderRow
+                    item={item}
+                    styles={styles}
+                    bgColor={bgColor}
+                    canEditColors={canReorder}
+                    onColorPress={onHeaderColorPress}
+                    dailyTitle={daily?.title}
+                    onRemoveDaily={
+                      canReorder && hasDaily && onClearDailyAccommodation && stayDate
+                        ? () => onClearDailyAccommodation(stayDate, item.day)
+                        : undefined
+                    }
+                    collapsed={collapsed}
+                    onToggleCollapse={() => void toggleDayCollapsed(item.day)}
+                    setStayLabel={
+                      canReorder
+                      && !hasDaily
+                      && onSetDailyFromDestination
+                      && dayStopCount > 0
+                        ? setStayModeDay === item.day
+                          ? t('stay.finishSet')
+                          : t('stay.setFromStop')
+                        : undefined
+                    }
+                    setStayActive={setStayModeDay === item.day}
+                    onToggleSetStay={
+                      canReorder
+                      && !hasDaily
+                      && onSetDailyFromDestination
+                      && dayStopCount > 0
+                        ? () =>
+                            setSetStayModeDay((d) => (d === item.day ? null : item.day))
+                        : undefined
+                    }
+                    accent={colors.accent}
+                  />
+                  {!collapsed
+                    ? block.dests.map((destItem) => renderDestRow(destItem))
+                    : null}
+                  {/* Quick-add stays at the end of all gathering points for the day. */}
+                  {showQuickAdd ? (
+                    <View style={styles.dayActions}>
+                      <Pressable
+                        style={styles.dashedBtn}
+                        onPress={() => onQuickAddAccommodation(item.day)}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('stay.quickAdd')}
+                      >
+                        <Text style={[styles.dashedBtnText, { color: colors.accent }]}>
+                          {t('stay.quickAdd')}
+                        </Text>
+                      </Pressable>
+                    </View>
+                  ) : null}
+                </View>
+              );
+            });
+          })()}
         </View>
       )}
 
@@ -1276,7 +1311,20 @@ const makeStyles = (colors: Palette) =>
       marginBottom: spacing.sm,
       flexWrap: 'wrap',
     },
-    dayActions: { gap: 8, marginBottom: spacing.sm, paddingHorizontal: 4 },
+    dayBlock: {
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+    },
+    dayBlockSpaced: {
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.border,
+    },
+    dayActions: {
+      gap: 8,
+      marginTop: spacing.xs,
+      marginBottom: spacing.sm,
+      paddingHorizontal: spacing.md,
+    },
     dashedBtn: {
       borderWidth: 1,
       borderStyle: 'dashed',
@@ -1309,7 +1357,8 @@ const makeStyles = (colors: Palette) =>
     stayBadgeText: { color: '#fff', fontSize: 12, flexShrink: 1 },
     removeStayText: { color: colors.accent, fontSize: 12, fontWeight: '600' },
     rowAccommodation: { backgroundColor: 'rgba(40,40,44,0.95)' },
-    rowTitleStay: { textAlign: 'right' },
+    // Stay cards share left alignment with gathering-point rows.
+    rowTitleStay: { textAlign: 'left' },
     selectRadio: { marginRight: 8 },
     favRow: {
       flexDirection: 'row',

@@ -253,10 +253,11 @@ export function legalDragIndicesForList(
     return [movingIdx];
   }
 
+  // Allow any full-list index whose post-splice order preserves stay anchors.
+  // Include header indices so empty day blocks are valid drop targets (insert
+  // lands after the day header once the mover is spliced in).
   const legal = new Set<number>([movingIdx]);
   for (let target = 0; target < order.length; target++) {
-    // Only aim at dest rows (or current slot); headers are not stop slots.
-    if (order[target].type === 'header') continue;
     const proposed = orderAfterDragMove(order, movingIdx, target);
     if (proposedOrderPreservesBoundaryLocks(proposed, movingId)) {
       legal.add(target);

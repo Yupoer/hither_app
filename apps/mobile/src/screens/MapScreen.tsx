@@ -51,6 +51,7 @@ import Animated, {
   FadeIn,
   FadeInRight,
   FadeOut,
+  FadeOutRight,
   ZoomIn,
   ZoomOut,
 } from 'react-native-reanimated';
@@ -4778,12 +4779,6 @@ export default function MapScreen({ route, navigation }: Props) {
           ) : null}
           <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
         </Pressable>
-        <Pressable style={styles.listRow} onPress={() => { lightTap(); setKmlVisible(true); }} accessibilityRole="button">
-          <Text style={styles.listRowTitle}>
-            {canEditItinerary ? t('kml.entry') : t('map.kmlRequestLeader')}
-          </Text>
-          <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
-        </Pressable>
         <Pressable
           style={[styles.listRow, styles.listRowLast]}
           onPress={() => { lightTap(); openHistoryOverlay(); }}
@@ -4795,7 +4790,7 @@ export default function MapScreen({ route, navigation }: Props) {
       </View>
     </>
   ), [
-    t, styles, nextStopTitle, nextStopDistLabel, destinations.length, canEditItinerary,
+    t, styles, nextStopTitle, nextStopDistLabel, destinations.length,
     openHistoryOverlay, isLeader, opsOpenCount, editButtonActive, extraPointCredits, accent,
   ]);
 
@@ -6099,6 +6094,11 @@ export default function MapScreen({ route, navigation }: Props) {
                               ? FadeIn.duration(ARRIVED_FADE_MS)
                               : FadeInRight.duration(ARRIVED_SPLIT_MS)
                           }
+                          exiting={
+                            tourReduceMotion
+                              ? FadeOut.duration(ARRIVED_FADE_MS)
+                              : FadeOutRight.duration(ARRIVED_SPLIT_MS)
+                          }
                           collapsable={false}
                         >
                           {personallyArrived ? (
@@ -7234,7 +7234,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
             <View style={{ marginTop: 10, marginBottom: 6 }}>
               <View style={styles.meetSectionHeader}>
-                <Text style={[styles.sectionLabel, { marginTop: 0 }]}>
+                <Text style={styles.meetSectionHeaderLabel}>
                   {t('meetTime.redSection')}
                 </Text>
                 <Pressable
@@ -7244,6 +7244,7 @@ export default function MapScreen({ route, navigation }: Props) {
                   }
                   accessibilityRole="button"
                   accessibilityLabel={t('meetTime.redInfo')}
+                  style={styles.meetSectionHeaderInfo}
                 >
                   <Ionicons
                     name="information-circle-outline"
@@ -8445,8 +8446,27 @@ const makeStyles = (
     meetSectionHeader: {
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'space-between',
+      justifyContent: 'flex-start',
+      gap: 6,
       marginBottom: 8,
+      minHeight: 22,
+    },
+    // Strip sectionLabel margins so title + info icon share one baseline.
+    meetSectionHeaderLabel: {
+      fontSize: 13,
+      fontWeight: '700',
+      letterSpacing: 0.4,
+      textTransform: 'uppercase',
+      color: glass.textTertiary,
+      marginTop: 0,
+      marginBottom: 0,
+      marginLeft: 0,
+      includeFontPadding: false,
+      textAlignVertical: 'center' as const,
+    },
+    meetSectionHeaderInfo: {
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     meetPickerWrap: { alignItems: 'center', marginBottom: 4 },
     meetSetBtn: {
