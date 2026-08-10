@@ -223,13 +223,41 @@ export function proposedOrderPreservesBoundaryLocks(
  * Full-list indices where handleMove may place `movingId`.
  * Recomputed each move so cross-day splices stay consistent.
  * Locked head/tail accommodations only return their current index.
+ * Day headers: only middle days; cannot cross the previous or next day header.
  */
 export function legalDragIndicesForList(
   order: readonly ReorderListEntry[],
   movingId: string,
 ): number[] {
-  const movingIdx = order.findIndex((e) => e.type === 'dest' && e.id === movingId);
+  const movingIdx = order.findIndex((e) => e.id === movingId);
   if (movingIdx < 0) return [];
+
+  const movingEntry = order[movingIdx];
+
+  // ── Day header drag: stay between previous and next day boundaries ──────
+  if (movingEntry.type === 'header') {
+    const headerIndices: number[] = [];
+    order.forEach((e, i) => {
+      if (e.type === 'header') headerIndices.push(i);
+    });
+    const hPos = headerIndices.indexOf(movingIdx);
+    if (hPos <= 0 || hPos >= headerIndices.length - 1) {
+      // First / last day headers are fixed.
+      return [movingIdx];
+    }
+    // May only land among dest slots of adjacent days (between prev and next headers).
+    const prevHeaderIdx = headerIndices[hPos - 1];
+    const nextHeaderIdx = headerIndices[hPos + 1];
+    const legal = new Set<number>([movingIdx]);
+    for (let target = prevHeaderIdx + 1; target < nextHeaderIdx; target++) {
+      if (order[target]?.type === 'dest') legal.add(target);
+    }
+    // Also allow landing just before next header (end of previous adjacent day).
+    if (nextHeaderIdx > prevHeaderIdx + 1) {
+      legal.add(nextHeaderIdx);
+    }
+    return [...legal].sort((a, b) => a - b);
+  }
 
   // Day-local lock freeze (head/tail accommodation).
   let currentDay = 1;
@@ -469,21 +497,19 @@ export function validateDayOrderAfterDrop(
 }
 
 /**
- * After drop: pure-index edges among accommodations become stay anchors.
- * Stops clear stayAnchor. Mid accommodations clear stayAnchor.
+ * After drop: clear stay anchors on all rows.
+ * Head/tail auto-add is product-disabled; pure-index edge locks must not
+ * re-freeze quick-add / copied stay cards (user can drag + swipe-delete).
  */
 export function applyPureIndexAnchors(
   dayItems: readonly AccommodationListItem[],
 ): AccommodationListItem[] {
   const sorted = [...dayItems].sort((a, b) => a.order - b.order);
   if (sorted.length === 0) return [];
-  return sorted.map((item, i, arr) => {
-    if (item.kind !== 'accommodation') {
-      return { ...item, stayAnchor: false };
-    }
-    const isEdge = i === 0 || i === arr.length - 1;
-    return { ...item, stayAnchor: isEdge };
-  });
+  return sorted.map((item) => ({
+    ...item,
+    stayAnchor: false,
+  }));
 }
 
 /**

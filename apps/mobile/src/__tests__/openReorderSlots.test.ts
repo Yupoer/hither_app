@@ -1,4 +1,5 @@
 import {
+  buildOpenReorderPayload,
   mapOpenReorderToPersistedPositions,
   openPositionSlotsFromOpenDestinations,
 } from '../utils/openReorderSlots';
@@ -80,5 +81,30 @@ describe('openReorderSlots (#151 Sol r2 exit-hold)', () => {
     );
     expect(duringHold).toEqual(afterExit);
     expect(duringHold.map((u) => u.position)).toEqual([1, 2]);
+  });
+
+  it('buildOpenReorderPayload keeps multi-day ids and days intact', () => {
+    const open = [
+      { id: 'd1a', order: 0, day: 1 },
+      { id: 'd1b', order: 1, day: 1 },
+      { id: 'd2a', order: 2, day: 2 },
+      { id: 'd3a', order: 3, day: 3 },
+    ];
+    const payload = buildOpenReorderPayload(open);
+    expect(payload.map((u) => u.id)).toEqual(['d1a', 'd1b', 'd2a', 'd3a']);
+    expect(payload.map((u) => u.day)).toEqual([1, 1, 2, 3]);
+    expect(payload.map((u) => u.position)).toEqual([0, 1, 2, 3]);
+  });
+
+  it('buildOpenReorderPayload remaps onto sparse open slots', () => {
+    const open = [
+      { id: 'a', order: 2, day: 1 },
+      { id: 'b', order: 5, day: 2 },
+    ];
+    const payload = buildOpenReorderPayload(open);
+    expect(payload).toEqual([
+      { id: 'a', position: 2, day: 1, stayAnchor: undefined, meetAt: undefined },
+      { id: 'b', position: 5, day: 2, stayAnchor: undefined, meetAt: undefined },
+    ]);
   });
 });

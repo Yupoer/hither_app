@@ -31,13 +31,14 @@ describe('route editor + KML contracts (#151)', () => {
     expect(block).not.toContain('await addDestination(');
   });
 
-  it('route list is scope-filtered for leaders and day-1 reorderable', () => {
+  it('route list is scope-filtered for leaders; middle day headers may drag', () => {
     expect(mapScreen).not.toMatch(/rawDestinations[\s\S]{0,200}if \(isLeader\) return all/);
-    // Stops remain day-agnostic reorderable; day headers are never draggable.
+    // Stops reorder freely; first/last day headers stay fixed, middle may drag.
     expect(reorder).toContain('canReorder={canReorder && !locked}');
     expect(reorder).toContain("type === 'header'");
-    expect(reorder).toMatch(/headers are never draggable|Day headers are never draggable/);
-    expect(reorder).not.toContain('canReorder && item.day > 1');
+    expect(reorder).toContain('canDragHeader');
+    expect(reorder).toContain('isEdgeDay');
+    expect(reorder).toContain('drop-after-header');
   });
   it('open-once sync + import CTA replace always-on sync button', () => {
     expect(mapScreen).toContain('routeOpenSyncSessionRef');
@@ -46,12 +47,13 @@ describe('route editor + KML contracts (#151)', () => {
     expect(reorder).toContain("t('kml.entry')");
   });
 
-  it('route editor mutations use openDestinations only (exiting snapshots carousel-only)', () => {
+  it('route editor mutations use full open reorder list (exiting snapshots carousel-only)', () => {
     // DestinationReorderList must not receive merged exiting carousel rows.
     const reorderStart = mapScreen.indexOf('<DestinationReorderList');
     expect(reorderStart).toBeGreaterThan(-1);
     const reorderBlock = mapScreen.slice(reorderStart, reorderStart + 600);
-    expect(reorderBlock).toContain('destinations={openDestinations}');
+    // Full open list (all days) — not day-gated carousel openDestinations.
+    expect(reorderBlock).toContain('openDestinationsForReorder');
     expect(reorderBlock).not.toContain('destinations={destinations}');
     // Merged exiting list still exists for carousel presentation.
     expect(mapScreen).toContain('mergeExitingDestinations');
@@ -59,6 +61,7 @@ describe('route editor + KML contracts (#151)', () => {
     // Slot remap lives on applyReorderToDestinations (shared local + nav persist).
     expect(mapScreen).toContain('openPositionSlotsFromOpenDestinations');
     expect(mapScreen).toContain('mapOpenReorderToPersistedPositions');
+    expect(mapScreen).toContain('buildOpenReorderPayload');
     expect(mapScreen).not.toMatch(
       /openPositionSlots\s*=\s*\[\.\.\.destinations\]/,
     );

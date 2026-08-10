@@ -217,6 +217,7 @@ import {
   startOfTodayLocal,
 } from '../utils/meetTime';
 import {
+  buildOpenReorderPayload,
   mapOpenReorderToPersistedPositions,
   openPositionSlotsFromOpenDestinations,
 } from '../utils/openReorderSlots';
@@ -235,6 +236,7 @@ import {
   filterActiveDestinations,
   localDayKey,
   nextOrderedDestination,
+  openDestinationsForReorder,
   resolveAddDay,
 } from '../utils/tripDay';
 import { createArrivalState, reduceArrival, type ArrivalState } from '../utils/navigationArrival';
@@ -279,6 +281,7 @@ import {
   listFavoritePlaces,
   saveFavoritePlace,
   unsaveFavoriteByExactMatch,
+  unsaveFavoritePlace,
   findFavoriteByExactMatch,
   type FavoritePlace,
   submitGatherPointRequest,
@@ -3716,11 +3719,8 @@ export default function MapScreen({ route, navigation }: Props) {
       base: Destination[],
       updates: { id: string; position: number; day: number; stayAnchor?: boolean }[],
     ): Destination[] => {
-      const openForSlots = filterActiveDestinations(
-        base,
-        optimisticDepartureDate ?? group?.departureDate,
-        optimisticTripDays ?? group?.tripDays,
-      );
+      // Full open list (all trip days) — never day-gate the write slots.
+      const openForSlots = openDestinationsForReorder(base);
       const openPositionSlots = openPositionSlotsFromOpenDestinations(openForSlots);
       const withSlots = mapOpenReorderToPersistedPositions(updates, openPositionSlots);
       const departureDate = optimisticDepartureDate ?? group?.departureDate;
@@ -3750,12 +3750,7 @@ export default function MapScreen({ route, navigation }: Props) {
       });
       return newDests;
     },
-    [
-      group?.departureDate,
-      group?.tripDays,
-      optimisticDepartureDate,
-      optimisticTripDays,
-    ],
+    [group?.departureDate, optimisticDepartureDate],
   );
 
   /**
@@ -3792,11 +3787,8 @@ export default function MapScreen({ route, navigation }: Props) {
           const newDests = applyReorderToDestinations(base, updates);
           setOptimisticDestinations(newDests);
 
-          const openForSlots = filterActiveDestinations(
-            base,
-            optimisticDepartureDate ?? group?.departureDate,
-            optimisticTripDays ?? group?.tripDays,
-          );
+          // Full open itinerary slots (all days) for immediate nav promote.
+          const openForSlots = openDestinationsForReorder(base);
           const openPositionSlots = openPositionSlotsFromOpenDestinations(openForSlots);
           const withSlots = mapOpenReorderToPersistedPositions(updates, openPositionSlots);
           const departureDate = optimisticDepartureDate ?? group?.departureDate;
@@ -3994,28 +3986,12 @@ export default function MapScreen({ route, navigation }: Props) {
           }
           if (!token.isCurrent()) return;
 
-          // 5) Final open-list reorder against absolute slots.
+          // 5) Final open-list reorder against absolute slots (ALL open days).
+          // Must not use filterActiveDestinations — day-gating drops past-day
+          // rows from the write and makes Day1 appear to become Day2 after 完成.
           if (dirty.destinations && draftDests) {
-            const openDraft = filterActiveDestinations(
-              draftDests,
-              optimisticDepartureDate ?? group?.departureDate,
-              optimisticTripDays ?? group?.tripDays,
-            );
-            const openSlots = openPositionSlotsFromOpenDestinations(openDraft);
-            // Build relative updates from open draft order, then map slots.
-            const relative = [...openDraft]
-              .sort((a, b) => {
-                if ((a.day || 1) !== (b.day || 1)) return (a.day || 1) - (b.day || 1);
-                return a.order - b.order;
-              })
-              .map((d, index) => ({
-                id: d.id,
-                position: index,
-                day: d.day || 1,
-                stayAnchor: d.kind === 'accommodation' ? Boolean(d.stayAnchor) : undefined,
-                meetAt: d.meetAt,
-              }));
-            const withSlots = mapOpenReorderToPersistedPositions(relative, openSlots);
+            const openDraft = openDestinationsForReorder(draftDests);
+            const withSlots = buildOpenReorderPayload(openDraft);
             await reorderDestinations(groupId, withSlots);
           }
           if (!token.isCurrent()) return;
@@ -5376,29 +5352,25 @@ export default function MapScreen({ route, navigation }: Props) {
           members={members}
           gathering={activePoint}
           destinations={destinations}
-          dailyAccommodation={(() => {
-            const todayKey = localDayKey(new Date());
-            const daily = dailyAccommodations.find((d) => d.stayDate === todayKey);
-            if (!daily) return null;
+          dailyAccommodations={(() => {
             const departure = optimisticDepartureDate ?? group?.departureDate;
             const tripDays = optimisticTripDays ?? group?.tripDays ?? 1;
-            let dayNum = 1;
-            if (departure) {
+            const dayForStayDate = (stayDate: string): number => {
+              if (!departure) return 1;
               for (let d = 1; d <= Math.max(1, tripDays); d++) {
                 const date = dateForTripDay(departure, d);
-                if (date && localDayKey(date) === daily.stayDate) {
-                  dayNum = d;
-                  break;
-                }
+                if (date && localDayKey(date) === stayDate) return d;
               }
-            }
-            return {
+              return 1;
+            };
+            // Every trip-day stay — not only today (bed markers for all days).
+            return dailyAccommodations.map((daily) => ({
               id: daily.id,
               title: daily.title,
               coordinates: daily.coordinates,
               sourceDestinationId: daily.sourceDestinationId,
-              day: dayNum,
-            };
+              day: dayForStayDate(daily.stayDate),
+            }));
           })()}
           stayCalloutLabel={t('stay.defaultTitle')}
           pendingPlace={pendingPlace}
@@ -6087,16 +6059,13 @@ export default function MapScreen({ route, navigation }: Props) {
                             })()}
                           </Text>
                           {destinations.length > 1 && (
-                            <View style={styles.dots}>
-                              {dotWindow(destinations.length, selectedIndex, DOTS_MAX_VISIBLE).map(
-                                (i2) => (
-                                  <View
-                                    key={`dot-${destinations[i2]?.id || i2}-${i2}`}
-                                    style={[styles.dot, i2 === selectedIndex && styles.dotActive]}
-                                  />
-                                ),
-                              )}
-                            </View>
+                            <CarouselDots
+                              total={destinations.length}
+                              active={selectedIndex}
+                              maxVisible={DOTS_MAX_VISIBLE}
+                              destinationIds={destinations.map((d) => d.id)}
+                              styles={styles}
+                            />
                           )}
                         </View>
                         {/* Collapsed / expanded swap in-tree — one shot, no Zoom / layout morph. */}
@@ -6633,7 +6602,9 @@ export default function MapScreen({ route, navigation }: Props) {
           ) : null}
           <DestinationReorderList
             groupId={groupId ?? undefined}
-            destinations={openDestinations}
+            destinations={openDestinationsForReorder(
+              optimisticDestinations ?? allScopedDestinations,
+            )}
             canReorder={canEditItinerary}
             tripDays={optimisticTripDays ?? group?.tripDays}
             departureDate={optimisticDepartureDate ?? group?.departureDate}
@@ -6656,10 +6627,27 @@ export default function MapScreen({ route, navigation }: Props) {
             dailyByDate={Object.fromEntries(
               dailyAccommodations.map((d) => [
                 d.stayDate,
-                { id: d.id, stayDate: d.stayDate, title: d.title },
+                {
+                  id: d.id,
+                  stayDate: d.stayDate,
+                  title: d.title,
+                  coordinates: d.coordinates,
+                },
               ]),
             )}
             favoritePlaces={favoritePlaces}
+            onDeleteFavorite={
+              user?.id
+                ? (fav) => {
+                    lightTap();
+                    const snapshot = favoritePlaces;
+                    setFavoritePlaces((prev) => prev.filter((f) => f.id !== fav.id));
+                    void unsaveFavoritePlace(fav.id).catch(() => {
+                      setFavoritePlaces(snapshot);
+                    });
+                  }
+                : undefined
+            }
             onClearDailyAccommodation={
               canEditItinerary && groupId
                 ? (stayDate, _day) => {
@@ -7817,6 +7805,55 @@ const MeetTimeChip = React.memo(function MeetTimeChip({
     </Pressable>
   );
 });
+
+/**
+ * Gathering-point pagination dots (max 5 visible).
+ * In the middle range the window slides: active stays in slot 3 while the
+ * strip shifts left/right with LayoutAnimation (clamped at the first/last two).
+ */
+function CarouselDots({
+  total,
+  active,
+  maxVisible,
+  destinationIds,
+  styles,
+}: {
+  total: number;
+  active: number;
+  maxVisible: number;
+  destinationIds: readonly string[];
+  styles: { dots: object; dot: object; dotActive: object };
+}) {
+  const indices = useMemo(
+    () => dotWindow(total, active, maxVisible),
+    [total, active, maxVisible],
+  );
+  const prevStartRef = useRef(indices[0] ?? 0);
+  useEffect(() => {
+    const start = indices[0] ?? 0;
+    if (start !== prevStartRef.current) {
+      // Mid-range window slide (not clamped at ends) — animate the shift.
+      LayoutAnimation.configureNext({
+        duration: 220,
+        update: { type: LayoutAnimation.Types.easeInEaseOut },
+        create: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
+        delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
+      });
+      prevStartRef.current = start;
+    }
+  }, [indices]);
+
+  return (
+    <View style={styles.dots}>
+      {indices.map((i2) => (
+        <View
+          key={`dot-${destinationIds[i2] ?? i2}`}
+          style={[styles.dot, i2 === active && styles.dotActive]}
+        />
+      ))}
+    </View>
+  );
+}
 
 function GatheringCardPressable({
   onToggle,

@@ -1,6 +1,7 @@
 import {
   currentTripDayNumber,
   filterActiveDestinations,
+  openDestinationsForReorder,
   nextOrderedDestination,
   positionForAppendOnDay,
   promoteDestinationWithinDay,
@@ -97,6 +98,26 @@ describe('filterActiveDestinations', () => {
   it('shows all open when date gate disabled', () => {
     const active = filterActiveDestinations(list, null, null, new Date(2026, 6, 17, 12));
     expect(active.map((d) => d.id)).toEqual(['d1a', 'd1b', 'd2a', 'd3a']);
+  });
+});
+
+describe('openDestinationsForReorder', () => {
+  it('keeps all open days even mid-trip (unlike filterActiveDestinations)', () => {
+    const list = [
+      dest('d1a', 1, 0),
+      dest('d2a', 2, 1),
+      dest('closed', 1, 2, '2026-07-17T10:00:00.000Z'),
+    ];
+    const open = openDestinationsForReorder(list);
+    expect(open.map((d) => d.id)).toEqual(['d1a', 'd2a']);
+    // Day-gate would drop d1a mid-trip — reorder must not.
+    const gated = filterActiveDestinations(
+      list,
+      '2026-07-16',
+      3,
+      new Date(2026, 6, 17, 12),
+    );
+    expect(gated.map((d) => d.id)).toEqual(['d2a']);
   });
 });
 

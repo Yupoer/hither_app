@@ -123,8 +123,22 @@ export function promoteDestinationWithinDay(
 }
 
 /**
- * Active itinerary for carousel / sheet / reorder: open stops on today and
- * future trip days. Past days are hidden (they surface in history instead).
+ * All open (not closed) stops in day/order sequence.
+ * Use for route-editor reorder + flush so past trip days are never dropped
+ * from the write payload (carousel still uses filterActiveDestinations).
+ */
+export function openDestinationsForReorder(
+  destinations: readonly Destination[],
+): Destination[] {
+  return sortDestinationsByDayOrder(
+    destinations.filter((dest) => !dest.closedAt),
+  );
+}
+
+/**
+ * Active itinerary for carousel / sheet: open stops on today and future trip
+ * days. Past days are hidden (they surface in history instead).
+ * Do not use this for route-editor flush reorder — use openDestinationsForReorder.
  */
 export function filterActiveDestinations(
   destinations: Destination[],

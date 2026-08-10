@@ -310,9 +310,10 @@ describe('map UI placement contracts', () => {
   it('keeps gathering-card page dots lightweight during stage morphs', () => {
     expect(mapScreen).toContain('styles.dots');
     expect(mapScreen).toContain('styles.dotActive');
-    // Static dots — layout transitions were too expensive during sheet stage changes.
+    // Dots use CarouselDots (window slide via LayoutAnimation, no Reanimated layout).
     expect(mapScreen).not.toContain('layout={LinearTransition.springify()');
-    expect(mapScreen).toContain('style={[styles.dot, i2 === selectedIndex && styles.dotActive]}');
+    expect(mapScreen).toContain('function CarouselDots');
+    expect(mapScreen).toContain('style={[styles.dot, i2 === active && styles.dotActive]}');
   });
 
   it('uses gathering-card press without scale bounce on expand or collapse', () => {
@@ -411,6 +412,22 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).not.toMatch(
       /showArrivalControl\s*=\s*[\s\S]{0,200}sharedTargetId === dest\.id/,
     );
+    // Regression: never re-gate personal arrive on journey/start/flock state.
+    // Both tour + card showArrivalControl blocks must stay free of these.
+    const arriveBlocks = mapScreen.match(
+      /const showArrivalControl\s*=\s*[\s\S]{0,180}?;/g,
+    ) ?? [];
+    expect(arriveBlocks.length).toBeGreaterThanOrEqual(2);
+    for (const block of arriveBlocks) {
+      expect(block).not.toMatch(/sharedTargetId/);
+      expect(block).not.toMatch(/journeyActive/);
+      expect(block).not.toMatch(/flockNavigating/);
+      expect(block).not.toMatch(/navCmd/);
+    }
+    // Flush reorder must use full open list (not day-gated carousel filter).
+    expect(mapScreen).toContain('openDestinationsForReorder');
+    expect(mapScreen).toContain('buildOpenReorderPayload');
+    expect(mapScreen).toContain('dailyAccommodations={');
   });
 
   it('pins a far fixed gap before viewing my teams and does not vertical-center', () => {

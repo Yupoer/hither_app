@@ -17,7 +17,7 @@ import { radius, spacing, DAY_COLORS, type Palette } from '../theme';
 import { readOnboardingState } from '../onboarding/sync';
 import { usePreferences } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
-import { dateForTripDay, localDayKey, resolveVisibleStartDay } from '../utils/tripDay';
+import { dateForTripDay, localDayKey } from '../utils/tripDay';
 import { clampDateNotBeforeToday, startOfTodayLocal } from '../utils/meetTime';
 import {
   accommodationBoundaryLocks,
@@ -34,6 +34,7 @@ import {
   type ReorderListEntry,
 } from '../utils/accommodationSemantics';
 import { eligibleFavoriteDateOptions } from '../utils/favoriteDates';
+import { placeExactMatchKey } from '../utils/placeIdentity';
 import { lightTap, selectionTick } from '../utils/haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
@@ -58,6 +59,7 @@ export interface DailyAccommodationView {
   stayDate: string;
   title: string;
   id: string;
+  coordinates?: { latitude: number; longitude: number };
 }
 
 export interface FavoritePlaceView {
@@ -108,6 +110,8 @@ interface Props {
   /** Account favorites for picker. */
   favoritePlaces?: FavoritePlaceView[];
   onPickFavorite?: (favorite: FavoritePlaceView, day: number) => void;
+  /** Remove a favorite from the account list. */
+  onDeleteFavorite?: (favorite: FavoritePlaceView) => void;
   accountId?: string;
 }
 
@@ -139,6 +143,7 @@ export default function DestinationReorderList({
   onQuickAddAccommodation,
   favoritePlaces,
   onPickFavorite,
+  onDeleteFavorite,
   accountId,
 }: Props) {
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -343,13 +348,9 @@ export default function DestinationReorderList({
     if (!draggingRef.current) {
       const nextOrder: ListItem[] = [];
       const days = Math.max(1, tripDays || 1);
-      // Past trip days are hidden from the active itinerary; start headers at today.
-      const startDay = Math.min(
-        days,
-        Math.max(1, resolveVisibleStartDay(departureDate, tripDays)),
-      );
-      // If the whole trip is already past, show no day headers (list may be empty).
-      const gatePastTrip = resolveVisibleStartDay(departureDate, tripDays) > days;
+      // Route editor always shows the full trip (day 1..N). Day-gating belongs
+      // to the carousel only — hiding past days here caused Day1→Day2 after 完成.
+      const startDay = 1;
 
       const sortedDests = [...destinations].sort((a, b) => {
         const dayA = a.day || 1;
@@ -358,36 +359,31 @@ export default function DestinationReorderList({
         return a.order - b.order;
       });
 
-      if (!gatePastTrip) {
-        for (let d = startDay; d <= days; d++) {
-          let dateStr = '';
-          if (departureDate) {
-            const dateObj = /^\d{4}-\d{2}-\d{2}$/.test(departureDate.trim())
-              ? new Date(`${departureDate.trim()}T12:00:00`)
-              : new Date(departureDate);
-            if (!Number.isNaN(dateObj.getTime())) {
-              dateObj.setDate(dateObj.getDate() + (d - 1));
-              dateStr = t('map.tripDayDate', { month: dateObj.getMonth() + 1, day: dateObj.getDate() });
-            }
-          }
-          nextOrder.push({
-            type: 'header',
-            day: d,
-            id: `header-${d}`,
-            title: t('trip.dayTitle', { day: d }),
-            dateStr,
-          });
-          const dayDests = sortedDests.filter((dest) => (dest.day || 1) === d);
-          for (const dest of dayDests) {
-            nextOrder.push({ type: 'dest', item: dest, id: dest.id });
+      for (let d = startDay; d <= days; d++) {
+        let dateStr = '';
+        if (departureDate) {
+          const dateObj = /^\d{4}-\d{2}-\d{2}$/.test(departureDate.trim())
+            ? new Date(`${departureDate.trim()}T12:00:00`)
+            : new Date(departureDate);
+          if (!Number.isNaN(dateObj.getTime())) {
+            dateObj.setDate(dateObj.getDate() + (d - 1));
+            dateStr = t('map.tripDayDate', { month: dateObj.getMonth() + 1, day: dateObj.getDate() });
           }
         }
+        nextOrder.push({
+          type: 'header',
+          day: d,
+          id: `header-${d}`,
+          title: t('trip.dayTitle', { day: d }),
+          dateStr,
+        });
+        const dayDests = sortedDests.filter((dest) => (dest.day || 1) === d);
+        for (const dest of dayDests) {
+          nextOrder.push({ type: 'dest', item: dest, id: dest.id });
+        }
       }
-      const dangling = sortedDests.filter(
-        (dest) => (dest.day || 1) > days || (dest.day || 1) < startDay,
-      );
-      // Only surface dangling future-over days; past days stay out of the active list.
-      for (const dest of dangling.filter((d) => (d.day || 1) > days)) {
+      // Destinations past tripDays still surface as orphans.
+      for (const dest of sortedDests.filter((d) => (d.day || 1) > days)) {
         nextOrder.push({ type: 'dest', item: dest, id: dest.id });
       }
 
@@ -414,9 +410,12 @@ export default function DestinationReorderList({
   const handleGrant = useCallback(
     (id: string) => {
       const startIdx = orderRef.current.findIndex((d) => d.id === id);
-      // Day headers are never draggable (product: only stops reorder).
-      if (startIdx === -1 || orderRef.current[startIdx].type === 'header') {
-        return;
+      if (startIdx === -1) return;
+      const entry = orderRef.current[startIdx];
+      // Middle day headers may drag (first/last day headers stay fixed).
+      if (entry.type === 'header') {
+        const days = Math.max(1, tripDays || 1);
+        if (entry.day <= 1 || entry.day >= days) return;
       }
       draggingRef.current = true;
       onDragActiveChange?.(true);
@@ -440,7 +439,7 @@ export default function DestinationReorderList({
       pan.setValue(0);
       selectionTick();
     },
-    [pan, onDragActiveChange, toReorderEntries, getMeasuredGeometry],
+    [pan, onDragActiveChange, toReorderEntries, getMeasuredGeometry, tripDays],
   );
 
   const handleMove = useCallback(
@@ -526,9 +525,22 @@ export default function DestinationReorderList({
     try {
       const startIndex = startIndexRef.current;
       const target = dropTargetIndexRef.current;
+      const moving = orderRef.current[startIndex];
       // Commit ghost drop once: single splice, single setOrder, no mid-drag thrash.
       if (target !== startIndex) {
-        const next = orderAfterDragMove(orderRef.current, startIndex, target);
+        let next = orderAfterDragMove(orderRef.current, startIndex, target);
+        // Day-header drag: re-number days by header order after splice so
+        // destinations between headers inherit the new day partition.
+        if (moving?.type === 'header') {
+          let dayCounter = 0;
+          next = next.map((item) => {
+            if (item.type === 'header') {
+              dayCounter += 1;
+              return { ...item, day: dayCounter, id: `header-${dayCounter}`, title: t('trip.dayTitle', { day: dayCounter }) };
+            }
+            return item;
+          });
+        }
         orderRef.current = next;
         setOrder(next);
       }
@@ -596,7 +608,7 @@ export default function DestinationReorderList({
       // Unlock parent ScrollView even if update computation throws.
       endDragSession();
     }
-  }, [onReorder, destinations, endDragSession]);
+  }, [onReorder, destinations, endDragSession, t]);
 
   const handlersRef = useRef({ handleGrant, handleMove, handleRelease });
   handlersRef.current = { handleGrant, handleMove, handleRelease };
@@ -703,8 +715,21 @@ export default function DestinationReorderList({
                   stayAnchor: d.stayAnchor,
                 }));
               const { lockedIds } = accommodationBoundaryLocks(dayItems);
-              const locked = item.item.kind === 'accommodation' && lockedIds.has(item.item.id);
+              // Stay cards stay free to drag/swipe (auto-add edge locks disabled).
+              const locked = false;
+              void lockedIds;
               const inSetMode = setStayModeDay === visualDay;
+              const stayDateKey = stayDateForDay(visualDay);
+              const dailyForDay = stayDateKey && dailyByDate
+                ? dailyByDate[stayDateKey]
+                : undefined;
+              const stayHighlight = Boolean(
+                dailyForDay
+                && item.item.coordinates
+                && dailyForDay.coordinates
+                && placeExactMatchKey(item.item.title, item.item.coordinates)
+                  === placeExactMatchKey(dailyForDay.title, dailyForDay.coordinates),
+              );
               return (
                 <Row
                   key={item.id}
@@ -719,6 +744,7 @@ export default function DestinationReorderList({
                   onRelease={onRelease}
                   onDelete={onDelete}
                   isAccommodation={item.item.kind === 'accommodation'}
+                  stayHighlight={stayHighlight}
                   boundaryLocked={locked}
                   showSelect={inSetMode && item.item.kind !== 'accommodation'}
                   selectSelected={pendingStayDestId === item.item.id}
@@ -733,7 +759,7 @@ export default function DestinationReorderList({
                   }
                   onLayoutHeight={(h) => recordMeasuredHeight(item.id, h)}
                   onEmojiPress={
-                    canReorder && onUpdateEmojiColor && item.item.kind !== 'accommodation'
+                    canReorder && onUpdateEmojiColor
                       ? (id) => {
                           lightTap();
                           const dest = destinations.find((d) => d.id === id);
@@ -777,26 +803,32 @@ export default function DestinationReorderList({
               const collapsed = Boolean(collapsedDays[item.day]);
               const dayStopCount = block.dests.length;
               const hasDaily = Boolean(daily);
+              const totalDays = Math.max(1, tripDays || 1);
+              const isEdgeDay = item.day <= 1 || item.day >= totalDays;
               // Empty day (no gathering points) must not show quick-add stay CTA.
               const showQuickAdd =
                 !collapsed
                 && canReorder
                 && onQuickAddAccommodation != null
                 && dayStopCount > 0;
-              const headerDrop =
-                dropTargetIndex === flatIndex ? (
-                  <View style={[styles.dropLine, { backgroundColor: colors.accent }]} />
-                ) : null;
+              // Drop on a header index = first slot of that day → draw AFTER header,
+              // never between previous day's quick-add and this header.
+              const headerIndex = flatIndex;
+              const dropAfterHeader = dropTargetIndex === headerIndex;
               flatIndex += 1; // header occupies one order slot
               const destNodes = !collapsed
-                ? block.dests.map((destItem) => {
+                ? block.dests.map((destItem, destIdx) => {
+                    // First dest: header already claimed the "after header" line.
                     const line =
-                      dropTargetIndex === flatIndex ? (
-                        <View
-                          key={`drop-${flatIndex}`}
-                          style={[styles.dropLine, { backgroundColor: colors.accent }]}
-                        />
-                      ) : null;
+                      dropTargetIndex === flatIndex
+                      && !(dropAfterHeader && destIdx === 0)
+                        ? (
+                          <View
+                            key={`drop-${flatIndex}`}
+                            style={[styles.dropLine, { backgroundColor: colors.accent }]}
+                          />
+                        )
+                        : null;
                     const row = renderDestRow(destItem, item.day);
                     flatIndex += 1;
                     return (
@@ -819,7 +851,6 @@ export default function DestinationReorderList({
                   ]}
                   testID={`day-block-${item.day}`}
                 >
-                  {headerDrop}
                   <HeaderRow
                     item={item}
                     styles={styles}
@@ -836,10 +867,31 @@ export default function DestinationReorderList({
                         : undefined
                     }
                     collapsed={collapsed}
-                    onToggleCollapse={() => {
-                      selectionTick();
-                      void toggleDayCollapsed(item.day);
-                    }}
+                    onToggleCollapse={
+                      // First / last day: no collapse (product).
+                      !isEdgeDay
+                        ? () => {
+                            selectionTick();
+                            void toggleDayCollapsed(item.day);
+                          }
+                        : undefined
+                    }
+                    canDragHeader={canReorder && !isEdgeDay}
+                    onHeaderGrant={
+                      canReorder && !isEdgeDay
+                        ? () => onGrant(item.id)
+                        : undefined
+                    }
+                    onHeaderMove={
+                      canReorder && !isEdgeDay
+                        ? (dy, pageY) => onMove(item.id, dy, pageY)
+                        : undefined
+                    }
+                    onHeaderRelease={
+                      canReorder && !isEdgeDay ? () => onRelease() : undefined
+                    }
+                    headerActive={activeId === item.id}
+                    headerPan={pan}
                     setStayLabel={
                       canReorder
                       && !hasDaily
@@ -880,6 +932,13 @@ export default function DestinationReorderList({
                     accent={colors.accent}
                     onLayoutHeight={(h) => recordMeasuredHeight(item.id, h)}
                   />
+                  {dropAfterHeader ? (
+                    <View
+                      key={`drop-after-header-${item.day}`}
+                      style={[styles.dropLine, { backgroundColor: colors.accent }]}
+                      testID={`drop-after-header-${item.day}`}
+                    />
+                  ) : null}
                   {destNodes}
                   {/* Quick-add only when the day already has gathering points. */}
                   {showQuickAdd ? (
@@ -931,28 +990,47 @@ export default function DestinationReorderList({
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>{t('stay.favorites')}</Text>
-            {(favoritePlaces ?? []).map((fav) => (
+            <View style={styles.modalTitleRow}>
+              <Text style={[styles.modalTitle, styles.modalTitleGrow]}>{t('stay.favorites')}</Text>
               <Pressable
-                key={fav.id}
-                style={styles.favRow}
-                onPress={() => {
-                  // #160: show eligible-date picker first; write only after confirm.
-                  setFavoritePending(fav);
-                }}
+                onPress={() => setFavoritesOpen(false)}
                 accessibilityRole="button"
+                accessibilityLabel={t('common.cancel')}
+                hitSlop={8}
+                style={styles.modalTitleCancel}
               >
-                <Ionicons name="star" size={16} color={colors.accent} />
-                <Text style={styles.favTitle} numberOfLines={1}>{fav.title}</Text>
+                <Text style={styles.modalActionText}>{t('common.cancel')}</Text>
               </Pressable>
+            </View>
+            {(favoritePlaces ?? []).map((fav) => (
+              <View key={fav.id} style={styles.favRow}>
+                <Pressable
+                  style={styles.favRowMain}
+                  onPress={() => {
+                    // #160: show eligible-date picker first; write only after confirm.
+                    setFavoritePending(fav);
+                  }}
+                  accessibilityRole="button"
+                >
+                  <Ionicons name="star" size={16} color={colors.accent} />
+                  <Text style={styles.favTitle} numberOfLines={1}>{fav.title}</Text>
+                </Pressable>
+                {onDeleteFavorite ? (
+                  <Pressable
+                    onPress={() => {
+                      lightTap();
+                      onDeleteFavorite(fav);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('stay.unfavoriteA11y')}
+                    hitSlop={8}
+                    style={styles.favDeleteBtn}
+                  >
+                    <Ionicons name="trash-outline" size={18} color="#FF5A5F" />
+                  </Pressable>
+                ) : null}
+              </View>
             ))}
-            <Pressable
-              onPress={() => setFavoritesOpen(false)}
-              style={styles.modalActionBtn}
-              accessibilityRole="button"
-            >
-              <Text style={styles.modalActionText}>{t('common.cancel')}</Text>
-            </Pressable>
           </View>
         </View>
       </Modal>
@@ -1258,6 +1336,12 @@ const HeaderRow = memo(function HeaderRow({
   onRemoveDaily,
   collapsed,
   onToggleCollapse,
+  canDragHeader,
+  onHeaderGrant,
+  onHeaderMove,
+  onHeaderRelease,
+  headerActive,
+  headerPan,
   setStayLabel,
   setStayActive,
   onToggleSetStay,
@@ -1273,6 +1357,12 @@ const HeaderRow = memo(function HeaderRow({
   onRemoveDaily?: () => void;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
+  canDragHeader?: boolean;
+  onHeaderGrant?: () => void;
+  onHeaderMove?: (dy: number, pageY?: number) => void;
+  onHeaderRelease?: () => void;
+  headerActive?: boolean;
+  headerPan?: Animated.Value;
   /** Label for set-stay control placed after day title (not dashed). */
   setStayLabel?: string;
   setStayActive?: boolean;
@@ -1282,10 +1372,36 @@ const HeaderRow = memo(function HeaderRow({
 }) {
   const { t } = useTranslation();
   const hasStay = Boolean(dailyTitle);
+  const canDragHeaderRef = useRef(canDragHeader);
+  canDragHeaderRef.current = canDragHeader;
+  const onHeaderGrantRef = useRef(onHeaderGrant);
+  onHeaderGrantRef.current = onHeaderGrant;
+  const onHeaderMoveRef = useRef(onHeaderMove);
+  onHeaderMoveRef.current = onHeaderMove;
+  const onHeaderReleaseRef = useRef(onHeaderRelease);
+  onHeaderReleaseRef.current = onHeaderRelease;
+  const dragResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => Boolean(canDragHeaderRef.current),
+      onMoveShouldSetPanResponder: (_e, g) =>
+        Boolean(canDragHeaderRef.current)
+        && Math.abs(g.dy) > 4
+        && Math.abs(g.dy) > Math.abs(g.dx),
+      onPanResponderGrant: () => onHeaderGrantRef.current?.(),
+      onPanResponderMove: (_e, g) => onHeaderMoveRef.current?.(g.dy, g.moveY),
+      onPanResponderRelease: () => onHeaderReleaseRef.current?.(),
+      onPanResponderTerminate: () => onHeaderReleaseRef.current?.(),
+    }),
+  ).current;
 
   return (
-    <View
+    <Animated.View
       onLayout={(e) => onLayoutHeight?.(e.nativeEvent.layout.height)}
+      style={
+        headerActive && headerPan
+          ? { transform: [{ translateY: headerPan }], zIndex: 10, elevation: 6 }
+          : undefined
+      }
     >
       {/* Row 1: day title, date, collapse (+ set-stay only when no accommodation). */}
       <View style={[styles.headerRow, hasStay && styles.headerRowCompact]}>
@@ -1329,6 +1445,11 @@ const HeaderRow = memo(function HeaderRow({
                 <Ionicons name={collapsed ? 'chevron-down' : 'chevron-up'} size={16} color="#999" />
               </Pressable>
             ) : null}
+            {canDragHeader ? (
+              <View {...dragResponder.panHandlers} hitSlop={8}>
+                <Text style={styles.handle}>≡</Text>
+              </View>
+            ) : null}
           </View>
         </View>
       </View>
@@ -1351,7 +1472,7 @@ const HeaderRow = memo(function HeaderRow({
           ) : null}
         </View>
       ) : null}
-    </View>
+    </Animated.View>
   );
 });
 
@@ -1368,6 +1489,7 @@ const Row = memo(function Row({
   onDelete,
   onEmojiPress,
   isAccommodation,
+  stayHighlight,
   boundaryLocked,
   showSelect,
   selectSelected,
@@ -1386,6 +1508,8 @@ const Row = memo(function Row({
   onDelete?: (id: string) => void;
   onEmojiPress?: (id: string) => void;
   isAccommodation?: boolean;
+  /** Same name+coords as daily stay — distinct row background. */
+  stayHighlight?: boolean;
   /** Head/tail stay card: always-visible trash, no swipe-to-delete. */
   boundaryLocked?: boolean;
   showSelect?: boolean;
@@ -1508,7 +1632,7 @@ const Row = memo(function Row({
       <Animated.View
         style={[
           styles.row,
-          isAccommodation && styles.rowAccommodation,
+          stayHighlight && styles.rowStayMatch,
           active && styles.rowActive,
           {
             transform: [
@@ -1541,17 +1665,16 @@ const Row = memo(function Row({
           accessibilityLabel={onEmojiPress ? 'dest emoji' : undefined}
           style={[
             styles.emojiBadge,
-            { backgroundColor: isAccommodation ? '#555' : dayColor },
+            { backgroundColor: dayColor },
           ]}
         >
+          {/* Quick-add stay is a plain copy — no special bed glyph. */}
           <Text style={styles.emojiBadgeGlyph}>
-            {isAccommodation
-              ? '🛏️'
-              : destinationEmojiDisplay(item.emoji, DESTINATION_EMOJI_FALLBACK)}
+            {destinationEmojiDisplay(item.emoji, DESTINATION_EMOJI_FALLBACK)}
           </Text>
         </Pressable>
         <View style={styles.rowBody}>
-          <Text style={[styles.rowTitle, isAccommodation && styles.rowTitleStay]} numberOfLines={1}>
+          <Text style={styles.rowTitle} numberOfLines={1}>
             {item.title}
           </Text>
           {item.address ? (
@@ -1642,6 +1765,8 @@ const makeStyles = (colors: Palette) =>
     stayBadgeText: { color: '#fff', fontSize: 12, flexShrink: 1 },
     removeStayText: { color: colors.accent, fontSize: 12, fontWeight: '600' },
     rowAccommodation: { backgroundColor: 'rgba(40,40,44,0.95)' },
+    /** Same name+coords as the day's stay — distinct from normal stop rows. */
+    rowStayMatch: { backgroundColor: 'rgba(90, 140, 200, 0.22)' },
     // Stay cards share left alignment with gathering-point rows.
     rowTitleStay: { textAlign: 'left' },
     selectRadio: { marginRight: 8 },
@@ -1651,7 +1776,25 @@ const makeStyles = (colors: Palette) =>
       gap: 8,
       paddingVertical: 10,
     },
+    favRowMain: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    favDeleteBtn: {
+      paddingHorizontal: 6,
+      paddingVertical: 4,
+    },
     favTitle: { color: colors.textPrimary, fontSize: 15, flex: 1 },
+    modalTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: spacing.sm,
+      gap: 8,
+    },
+    modalTitleGrow: { flex: 1, marginBottom: 0 },
+    modalTitleCancel: { flexShrink: 0 },
     hint: {
       color: colors.textSecondary,
       fontSize: 12,

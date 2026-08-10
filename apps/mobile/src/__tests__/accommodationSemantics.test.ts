@@ -123,15 +123,15 @@ describe('accommodationBoundaryLocks', () => {
     expect(isAccommodationDraggable(downgraded[2], downgraded)).toBe(true);
   });
 
-  it('applyPureIndexAnchors re-locks edges after drop', () => {
+  it('applyPureIndexAnchors clears anchors so stay cards stay draggable', () => {
     const midOnly: AccommodationListItem[] = [
       { id: 'a1', kind: 'accommodation', order: 0, day: 1, title: 'H', stayAnchor: false },
       { id: 's1', kind: 'stop', order: 1, day: 1, title: 'S' },
       { id: 'a2', kind: 'accommodation', order: 2, day: 1, title: 'H', stayAnchor: false },
     ];
     const applied = applyPureIndexAnchors(midOnly);
-    expect(applied[0].stayAnchor).toBe(true);
-    expect(applied[2].stayAnchor).toBe(true);
+    expect(applied[0].stayAnchor).toBe(false);
+    expect(applied[2].stayAnchor).toBe(false);
     expect(applied[1].stayAnchor).toBe(false);
   });
 });
@@ -327,6 +327,7 @@ describe('mergeMapMarkers', () => {
         title: 'Hotel',
         coordinates: { latitude: 25.033, longitude: 121.565 },
         sourceDestinationId: 'dest-1',
+        day: 1,
       },
       destinations: [
         {
@@ -346,16 +347,17 @@ describe('mergeMapMarkers', () => {
       ],
     });
     expect(markers).toHaveLength(2);
-    expect(markers[0].kind).toBe('daily_accommodation');
-    expect(markers[1].id).toBe('dest-2');
+    expect(markers.some((m) => m.kind === 'daily_accommodation')).toBe(true);
+    expect(markers.some((m) => m.id === 'dest-2')).toBe(true);
   });
 
-  it('dedupes by normalized coordinates when ids differ', () => {
+  it('dedupes by normalized coordinates when ids differ (bed wins)', () => {
     const markers = mergeMapMarkers({
       dailyAccommodation: {
         id: 'd1',
         title: 'Stay',
         coordinates: { latitude: 25.0330001, longitude: 121.5650001 },
+        day: 1,
       },
       destinations: [
         {
@@ -369,6 +371,63 @@ describe('mergeMapMarkers', () => {
     });
     expect(markers).toHaveLength(1);
     expect(markers[0].kind).toBe('daily_accommodation');
+  });
+
+  it('shows one bed per day for the same hotel coords', () => {
+    const coords = { latitude: 25.033, longitude: 121.565 };
+    const markers = mergeMapMarkers({
+      dailyAccommodations: [
+        { id: 'd1', title: 'Hotel', coordinates: coords, day: 1 },
+        { id: 'd2', title: 'Hotel', coordinates: coords, day: 2 },
+      ],
+      destinations: [
+        {
+          id: 's1',
+          title: 'Hotel',
+          order: 0,
+          day: 1,
+          kind: 'accommodation' as const,
+          coordinates: coords,
+        },
+        {
+          id: 's2',
+          title: 'Hotel',
+          order: 1,
+          day: 2,
+          kind: 'accommodation' as const,
+          coordinates: coords,
+        },
+      ],
+    });
+    const beds = markers.filter((m) => m.kind === 'daily_accommodation');
+    expect(beds).toHaveLength(2);
+    expect(beds.map((m) => m.day).sort()).toEqual([1, 2]);
+  });
+
+  it('upgrades a stop pin to bed when accommodation shares coords', () => {
+    const coords = { latitude: 25.1, longitude: 121.5 };
+    const markers = mergeMapMarkers({
+      destinations: [
+        {
+          id: 'stop',
+          title: 'Hotel lobby',
+          order: 0,
+          day: 1,
+          coordinates: coords,
+        },
+        {
+          id: 'acc',
+          title: 'Hotel',
+          order: 1,
+          day: 1,
+          kind: 'accommodation' as const,
+          coordinates: coords,
+        },
+      ],
+    });
+    expect(markers).toHaveLength(1);
+    expect(markers[0].id).toBe('acc');
+    expect(markers[0].emoji).toBe('🛏️');
   });
 });
 

@@ -101,13 +101,24 @@ export interface GroupMapProps {
   members: MemberLocation[];
   gathering?: Destination;
   destinations?: Destination[];
-  /** Team daily accommodation for the visible day (always shown; deduped). */
-  dailyAccommodation?: {
+  /**
+   * Team daily accommodations for the trip (all days). Bed markers win over
+   * normal pins at the same place; multi-day same hotel → one bed per day.
+   */
+  dailyAccommodations?: ReadonlyArray<{
     id: string;
     title: string;
     coordinates: Coordinates;
     sourceDestinationId?: string | null;
     /** Trip day (1-based) for bed marker day-color + callout. */
+    day?: number;
+  }> | null;
+  /** @deprecated Prefer dailyAccommodations. */
+  dailyAccommodation?: {
+    id: string;
+    title: string;
+    coordinates: Coordinates;
+    sourceDestinationId?: string | null;
     day?: number;
   } | null;
   /** Localized label for stay callout (e.g. 住宿 / Stay). */
@@ -487,6 +498,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     members,
     gathering,
     destinations,
+    dailyAccommodations = null,
     dailyAccommodation = null,
     stayCalloutLabel,
     pendingPlace,
@@ -888,6 +900,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
 
       {mergeMapMarkers({
         destinations: destinations ?? [],
+        dailyAccommodations: dailyAccommodations ?? undefined,
         dailyAccommodation: dailyAccommodation ?? null,
       }).map((marker) => {
         const stayLabel = stayCalloutLabel ?? 'Stay';
