@@ -133,7 +133,8 @@ export function demoAddDestination(input: {
   day?: number;
   /** Scope stop to a 小隊; omit/undefined = main team itinerary. */
   subgroupId?: string;
-}): void {
+  kind?: 'stop' | 'accommodation';
+}): string {
   const targetDay = Math.max(1, input.day ?? 1);
   const scoped = state.destinations.filter((d) =>
     input.subgroupId ? d.subgroupId === input.subgroupId : d.subgroupId == null,
@@ -153,15 +154,19 @@ export function demoAddDestination(input: {
     }
     return d.order >= insertOrder ? { ...d, order: d.order + 1 } : d;
   });
+  const id = `demo-dest-${++destSeq}`;
   state.destinations.push({
-    id: `demo-dest-${++destSeq}`,
+    id,
     title: input.title,
     address: input.address,
     coordinates: input.coordinates,
     order: insertOrder,
     day: targetDay,
     subgroupId: input.subgroupId,
+    kind: input.kind === 'accommodation' ? 'accommodation' : 'stop',
+    stayAnchor: false,
   } as Destination);
+  return id;
 }
 
 

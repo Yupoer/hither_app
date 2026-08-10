@@ -298,6 +298,7 @@ import { lightTap, mediumTap, rigidTap, selectionTick, alertBuzz } from '../util
 import { AVATAR_EMOJI, AVATAR_COLORS } from '../constants/avatars';
 import type {
   Coordinates,
+  DailyAccommodation,
   Destination,
   DestinationArrival,
   GatherPointRequest,
@@ -552,7 +553,7 @@ export default function MapScreen({ route, navigation }: Props) {
     return () => sub.remove();
   }, [groupId, navigationSessionState.refresh, refresh]);
   const group = state?.group ?? membership?.group ?? null;
-  const dailyAccommodations = state?.dailyAccommodations ?? [];
+  const serverDailyAccommodations = state?.dailyAccommodations ?? [];
 
   const mapRef = useRef<GroupMapHandle | null>(null);
   const carouselRef = useRef<ScrollView | null>(null);
@@ -586,6 +587,14 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [state?.destinations, myScopeId]);
 
   const [optimisticDestinations, setOptimisticDestinations] = useState<Destination[] | null>(null);
+  /**
+   * Route-sheet draft for daily stays. null = use server snapshot.
+   * All stay set/clear while the route overlay is open lands here until flush.
+   */
+  const [draftDailyAccommodations, setDraftDailyAccommodations] = useState<
+    DailyAccommodation[] | null
+  >(null);
+  const dailyAccommodations = draftDailyAccommodations ?? serverDailyAccommodations;
   const [pendingDestinationMutations, setPendingDestinationMutations] = useState<
     PendingDestinationMutation[]
   >([]);
@@ -604,7 +613,18 @@ export default function MapScreen({ route, navigation }: Props) {
   const [destinationArrivals, setDestinationArrivals] = useState<DestinationArrival[]>([]);
   const [gatherPointRequests, setGatherPointRequests] = useState<GatherPointRequest[]>([]);
   const [resolvingGatherRequestId, setResolvingGatherRequestId] = useState<string | null>(null);
-  const optimisticTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
+  /** Route overlay draft dirtiness — flushed only on sheet dismiss (完成 / swipe). */
+  const routeDraftDirtyRef = useRef({
+    destinations: false,
+    daily: false,
+    trip: false,
+    deletedIds: [] as string[],
+  });
+  const routeFlushInFlightRef = useRef(false);
+  const draftDailyRef = useRef(draftDailyAccommodations);
+  draftDailyRef.current = draftDailyAccommodations;
+  const optimisticDestinationsRef = useRef(optimisticDestinations);
+  optimisticDestinationsRef.current = optimisticDestinations;
   const workflowReloadRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [optimisticTripDays, setOptimisticTripDays] = useState<number | null>(null);
   const [optimisticDepartureDate, setOptimisticDepartureDate] = useState<string | null>(null);
@@ -675,8 +695,15 @@ export default function MapScreen({ route, navigation }: Props) {
   /** Pull destinations/group state only — used before arrival writes too. */
   const syncFromDatabase = useCallback(async () => {
     setOptimisticDestinations(null);
+    setDraftDailyAccommodations(null);
     setOptimisticTripDays(null);
     setOptimisticDepartureDate(null);
+    routeDraftDirtyRef.current = {
+      destinations: false,
+      daily: false,
+      trip: false,
+      deletedIds: [],
+    };
     if (!(await refresh())) {
       throw new Error(t('map.syncDbFailedMsg'));
     }
@@ -3645,61 +3672,113 @@ export default function MapScreen({ route, navigation }: Props) {
     );
   }, []);
 
+  /**
+   * Apply reorder updates onto a destination list (open-scope slot remap).
+   * Shared by route draft and navigation promote.
+   */
+  const applyReorderToDestinations = useCallback(
+    (
+      base: Destination[],
+      updates: { id: string; position: number; day: number; stayAnchor?: boolean }[],
+    ): Destination[] => {
+      const openForSlots = filterActiveDestinations(
+        base,
+        optimisticDepartureDate ?? group?.departureDate,
+        optimisticTripDays ?? group?.tripDays,
+      );
+      const openPositionSlots = openPositionSlotsFromOpenDestinations(openForSlots);
+      const withSlots = mapOpenReorderToPersistedPositions(updates, openPositionSlots);
+      const departureDate = optimisticDepartureDate ?? group?.departureDate;
+      const newDests = base.map((d) => ({ ...d }));
+      for (const update of withSlots) {
+        const dest = newDests.find((d) => d.id === update.id);
+        if (!dest) continue;
+        dest.order = update.position;
+        dest.day = update.day;
+        if (update.stayAnchor !== undefined) dest.stayAnchor = update.stayAnchor;
+        const original = base.find((d) => d.id === update.id);
+        if (
+          departureDate
+          && original?.meetAt
+          && (original.day || 1) !== update.day
+        ) {
+          dest.meetAt = alignMeetTimeToTripDay(
+            new Date(original.meetAt),
+            departureDate,
+            update.day,
+          ).toISOString();
+        }
+      }
+      newDests.sort((a, b) => {
+        if ((a.day || 1) !== (b.day || 1)) return (a.day || 1) - (b.day || 1);
+        return a.order - b.order;
+      });
+      return newDests;
+    },
+    [
+      group?.departureDate,
+      group?.tripDays,
+      optimisticDepartureDate,
+      optimisticTripDays,
+    ],
+  );
+
+  /**
+   * Route-editor reorder is local-only (Optimistic UI).
+   * Network write happens in flushRouteDraft when the sheet is dismissed.
+   */
   const handleReorder = useCallback(
     async (
       updates: { id: string; position: number; day: number; stayAnchor?: boolean }[],
     ): Promise<boolean> => {
       if (!groupId) return false;
+      logEvent('destination_reorder_local', { count: updates.length });
+      const base = optimisticDestinationsRef.current ?? rawDestinations;
+      setOptimisticDestinations(applyReorderToDestinations(base, updates));
+      routeDraftDirtyRef.current.destinations = true;
+      return true;
+    },
+    [groupId, rawDestinations, applyReorderToDestinations],
+  );
 
+  /**
+   * Navigation promote must hit the server immediately (not the route draft).
+   */
+  const persistReorderNow = useCallback(
+    async (
+      updates: { id: string; position: number; day: number; stayAnchor?: boolean }[],
+    ): Promise<boolean> => {
+      if (!groupId) return false;
       const result = await runUiAction(
         'map.destination_reorder',
         async (token) => {
           logEvent('destination_reorder', { count: updates.length });
+          const base = optimisticDestinationsRef.current ?? rawDestinations;
+          const newDests = applyReorderToDestinations(base, updates);
+          setOptimisticDestinations(newDests);
 
-          const departureDate = group?.departureDate;
-          // Persist slots from open editor scope only — never from carousel
-          // destinations (which include exit-hold closed snapshots). Closed
-          // rows keep their reserved absolute positions on the server.
-          const openPositionSlots = openPositionSlotsFromOpenDestinations(openDestinations);
+          const openForSlots = filterActiveDestinations(
+            base,
+            optimisticDepartureDate ?? group?.departureDate,
+            optimisticTripDays ?? group?.tripDays,
+          );
+          const openPositionSlots = openPositionSlotsFromOpenDestinations(openForSlots);
           const withSlots = mapOpenReorderToPersistedPositions(updates, openPositionSlots);
-          const persistedUpdates: {
-            id: string;
-            position: number;
-            day: number;
-            meetAt?: string;
-            stayAnchor?: boolean;
-          }[] = withSlots.map((update) => {
-            const original = rawDestinations.find((dest) => dest.id === update.id);
+          const departureDate = optimisticDepartureDate ?? group?.departureDate;
+          const persistedUpdates = withSlots.map((update) => {
+            const original = base.find((dest) => dest.id === update.id);
             if (!departureDate || !original?.meetAt || (original.day || 1) === update.day) {
               return { ...update };
             }
-            const alignedMeetAt = alignMeetTimeToTripDay(
-              new Date(original.meetAt),
-              departureDate,
-              update.day,
-            );
-            return { ...update, meetAt: alignedMeetAt.toISOString() };
+            return {
+              ...update,
+              meetAt: alignMeetTimeToTripDay(
+                new Date(original.meetAt),
+                departureDate,
+                update.day,
+              ).toISOString(),
+            };
           });
-          const newDests = rawDestinations.map((d) => ({ ...d }));
-          persistedUpdates.forEach((u) => {
-            const dest = newDests.find((d) => d.id === u.id);
-            if (dest) {
-              dest.order = u.position;
-              dest.day = u.day;
-              if (u.meetAt !== undefined) dest.meetAt = u.meetAt;
-              if (u.stayAnchor !== undefined) dest.stayAnchor = u.stayAnchor;
-            }
-          });
-          newDests.sort((a, b) => {
-            if ((a.day || 1) !== (b.day || 1)) return (a.day || 1) - (b.day || 1);
-            return a.order - b.order;
-          });
-          setOptimisticDestinations(newDests);
-
-          if (optimisticTimeoutRef.current) clearTimeout(optimisticTimeoutRef.current);
-          optimisticTimeoutRef.current = setTimeout(() => {
-            setOptimisticDestinations(null);
-          }, 3000);
 
           try {
             await reorderDestinations(groupId, persistedUpdates);
@@ -3719,12 +3798,7 @@ export default function MapScreen({ route, navigation }: Props) {
         {
           screen: 'Map',
           suppressBanner: true,
-          // Timeout skips the task catch (token already stale) — still roll back optimistic UI.
           onError: (kind) => {
-            if (optimisticTimeoutRef.current) {
-              clearTimeout(optimisticTimeoutRef.current);
-              optimisticTimeoutRef.current = undefined;
-            }
             setOptimisticDestinations(null);
             void refresh();
             if (kind === 'timeout') {
@@ -3740,15 +3814,220 @@ export default function MapScreen({ route, navigation }: Props) {
       t,
       refresh,
       rawDestinations,
-      openDestinations,
+      applyReorderToDestinations,
       group?.departureDate,
+      group?.tripDays,
+      optimisticDepartureDate,
+      optimisticTripDays,
     ],
   );
-  reorderForNavigationRef.current = handleReorder;
+  reorderForNavigationRef.current = persistReorderNow;
+
+  /**
+   * Upload route-sheet draft after 完成 / swipe-dismiss.
+   * UI already reflects draft; this only syncs the backend once.
+   */
+  const flushRouteDraft = useCallback(async () => {
+    if (!groupId || routeFlushInFlightRef.current) return;
+    const dirty = routeDraftDirtyRef.current;
+    const hasWork =
+      dirty.destinations
+      || dirty.daily
+      || dirty.trip
+      || dirty.deletedIds.length > 0;
+    if (!hasWork) {
+      setOptimisticDestinations(null);
+      setDraftDailyAccommodations(null);
+      return;
+    }
+    routeFlushInFlightRef.current = true;
+    try {
+      await runUiAction(
+        'map.route_draft_flush',
+        async (token) => {
+          logEvent('route_draft_flush', {
+            destinations: dirty.destinations,
+            daily: dirty.daily,
+            trip: dirty.trip,
+            deleted: dirty.deletedIds.length,
+          });
+
+          // 1) Trip meta first (day count / departure) so day alignment is stable.
+          if (dirty.trip) {
+            const days = optimisticTripDays ?? group?.tripDays;
+            const date = optimisticDepartureDate ?? group?.departureDate;
+            if (typeof days === 'number' && date) {
+              await updateGroupTripDetails(groupId, days, date);
+            }
+          }
+          if (!token.isCurrent()) return;
+
+          // 2) Deletes before reorder so slots free up.
+          for (const id of dirty.deletedIds) {
+            if (id.startsWith('draft-')) continue;
+            await deleteDestination(groupId, id);
+          }
+          if (!token.isCurrent()) return;
+
+          // 3) Materialize draft-only quick-add accommodations; map temp → real ids.
+          let draftDests = optimisticDestinationsRef.current;
+          if (draftDests) {
+            const idMap = new Map<string, string>();
+            const nextDests: Destination[] = [];
+            for (const dest of draftDests) {
+              if (!dest.id.startsWith('draft-')) {
+                nextDests.push(dest);
+                continue;
+              }
+              const newId = await addDestination(
+                groupId,
+                {
+                  title: dest.title,
+                  address: dest.address,
+                  coordinates: dest.coordinates,
+                  day: dest.day || 1,
+                  kind: dest.kind === 'accommodation' ? 'accommodation' : 'stop',
+                },
+                myScopeId,
+              );
+              if (newId) {
+                idMap.set(dest.id, newId);
+                nextDests.push({ ...dest, id: newId });
+              }
+            }
+            draftDests = nextDests;
+            if (idMap.size > 0) {
+              setOptimisticDestinations(nextDests);
+              dirty.destinations = true;
+            }
+          }
+          if (!token.isCurrent()) return;
+
+          // 4) Daily stay set/clear from draft snapshot.
+          if (dirty.daily && draftDailyRef.current) {
+            const serverByDate = new Map(
+              serverDailyAccommodations.map((d) => [d.stayDate, d]),
+            );
+            const draftByDate = new Map(
+              draftDailyRef.current.map((d) => [d.stayDate, d]),
+            );
+            for (const [stayDate, serverRow] of serverByDate) {
+              if (!draftByDate.has(stayDate)) {
+                const day = (() => {
+                  const dep = optimisticDepartureDate ?? group?.departureDate;
+                  if (!dep) return undefined;
+                  // Best-effort: match by stayDate via open dests day.
+                  const match = (draftDests ?? rawDestinations).find((d) => {
+                    const date = dateForTripDay(dep, d.day || 1);
+                    return date ? localDayKey(date) === stayDate : false;
+                  });
+                  return match?.day;
+                })();
+                await clearDailyAccommodation(groupId, stayDate, day);
+              }
+              void serverRow;
+            }
+            for (const [stayDate, draftRow] of draftByDate) {
+              const serverRow = serverByDate.get(stayDate);
+              if (
+                serverRow
+                && serverRow.title === draftRow.title
+                && serverRow.sourceDestinationId === draftRow.sourceDestinationId
+              ) {
+                continue;
+              }
+              const day = (() => {
+                const dep = optimisticDepartureDate ?? group?.departureDate;
+                if (!dep) return draftRow.sourceDestinationId ? undefined : undefined;
+                const match = (draftDests ?? rawDestinations).find((d) => {
+                  if (draftRow.sourceDestinationId && d.id === draftRow.sourceDestinationId) {
+                    return true;
+                  }
+                  const date = dateForTripDay(dep, d.day || 1);
+                  return date ? localDayKey(date) === stayDate : false;
+                });
+                return match?.day;
+              })();
+              await setDailyAccommodation(groupId, stayDate, {
+                title: draftRow.title,
+                address: draftRow.address,
+                coordinates: draftRow.coordinates,
+                sourceDestinationId: draftRow.sourceDestinationId ?? undefined,
+                day,
+              });
+            }
+          }
+          if (!token.isCurrent()) return;
+
+          // 5) Final open-list reorder against absolute slots.
+          if (dirty.destinations && draftDests) {
+            const openDraft = filterActiveDestinations(
+              draftDests,
+              optimisticDepartureDate ?? group?.departureDate,
+              optimisticTripDays ?? group?.tripDays,
+            );
+            const openSlots = openPositionSlotsFromOpenDestinations(openDraft);
+            // Build relative updates from open draft order, then map slots.
+            const relative = [...openDraft]
+              .sort((a, b) => {
+                if ((a.day || 1) !== (b.day || 1)) return (a.day || 1) - (b.day || 1);
+                return a.order - b.order;
+              })
+              .map((d, index) => ({
+                id: d.id,
+                position: index,
+                day: d.day || 1,
+                stayAnchor: d.kind === 'accommodation' ? Boolean(d.stayAnchor) : undefined,
+                meetAt: d.meetAt,
+              }));
+            const withSlots = mapOpenReorderToPersistedPositions(relative, openSlots);
+            await reorderDestinations(groupId, withSlots);
+          }
+          if (!token.isCurrent()) return;
+
+          await refresh();
+          if (!token.isCurrent()) return;
+          setOptimisticDestinations(null);
+          setDraftDailyAccommodations(null);
+          setOptimisticTripDays(null);
+          setOptimisticDepartureDate(null);
+          routeDraftDirtyRef.current = {
+            destinations: false,
+            daily: false,
+            trip: false,
+            deletedIds: [],
+          };
+        },
+        {
+          screen: 'Map',
+          suppressBanner: true,
+          onError: (kind) => {
+            logError('route_draft_flush_failed', new Error(kind));
+            Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
+            // Keep draft visible so the user can reopen and retry.
+          },
+        },
+      );
+    } finally {
+      routeFlushInFlightRef.current = false;
+    }
+  }, [
+    groupId,
+    group?.departureDate,
+    group?.tripDays,
+    optimisticTripDays,
+    optimisticDepartureDate,
+    serverDailyAccommodations,
+    rawDestinations,
+    myScopeId,
+    refresh,
+    t,
+  ]);
   const handleDelete = useCallback(
     (id: string) => {
       if (!groupId || !canEditItinerary) return;
-      const target = destinations.find((d) => d.id === id);
+      const target =
+        (optimisticDestinationsRef.current ?? destinations).find((d) => d.id === id);
       confirmAction(
         {
           title: t('settings.deleteTitle'),
@@ -3757,37 +4036,21 @@ export default function MapScreen({ route, navigation }: Props) {
           destructive: true,
         },
         () => {
-          void runUiAction(
-            'map.destination_delete',
-            async (token) => {
-              logEvent('destination_delete', { id });
-              try {
-                await deleteDestination(groupId, id);
-                if (!token.isCurrent()) return;
-                await refresh();
-              } catch (e) {
-                logError('destination_delete_failed', e, { id });
-                if (token.isCurrent()) {
-                  Alert.alert(t('settings.deleteFailed'));
-                  await refresh();
-                }
-                throw e;
-              }
-            },
-            {
-              screen: 'Map',
-              suppressBanner: true,
-              onError: (kind) => {
-                if (kind === 'timeout') {
-                  Alert.alert(t('settings.deleteFailed'), t('interaction.timeout'));
-                }
-              },
-            },
-          );
+          // Route editor: local draft only. Network on sheet flush.
+          logEvent('destination_delete_local', { id });
+          const base = optimisticDestinationsRef.current ?? rawDestinations;
+          setOptimisticDestinations(base.filter((d) => d.id !== id));
+          if (!id.startsWith('draft-')) {
+            routeDraftDirtyRef.current.deletedIds = [
+              ...routeDraftDirtyRef.current.deletedIds.filter((x) => x !== id),
+              id,
+            ];
+          }
+          routeDraftDirtyRef.current.destinations = true;
         },
       );
     },
-    [canEditItinerary, groupId, destinations, refresh, t],
+    [canEditItinerary, groupId, destinations, rawDestinations, t],
   );
 
   const handleUpdateEmojiColor = useCallback(
@@ -3947,39 +4210,27 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [group?.tripDays, group?.departureDate, optimisticTripDays, optimisticDepartureDate]);
 
   const handleUpdateTripDetails = useCallback(async (days: number, date: string) => {
-    if (groupId) {
-       // Departure picker enforces ≥ today for new choices. Existing past
-       // departures can be re-saved unchanged so in-progress trips don't jump.
-       setOptimisticTripDays(days);
-       setOptimisticDepartureDate(date);
-       try {
-         await updateGroupTripDetails(groupId, days, date);
-         const meetUpdates = rawDestinations
-           .filter((destination) => destination.meetAt)
-           .map((destination) => {
-             const alignedMeetAt = alignMeetTimeToTripDay(
-               new Date(destination.meetAt as string),
-               date,
-               destination.day || 1,
-             );
-             return {
-               id: destination.id,
-               position: destination.order,
-               day: destination.day || 1,
-               meetAt: alignedMeetAt.toISOString(),
-             };
-           });
-         if (meetUpdates.length > 0) {
-           await reorderDestinations(groupId, meetUpdates);
-         }
-         refresh();
-       } catch(e) {
-         setOptimisticTripDays(null);
-         setOptimisticDepartureDate(null);
-         Alert.alert(t('map.updateFailed'), e instanceof Error ? e.message : String(e));
-       }
-    }
-  }, [groupId, rawDestinations, refresh, t]);
+    if (!groupId) return;
+    // Departure picker enforces ≥ today for new choices. Existing past
+    // departures can be re-saved unchanged so in-progress trips don't jump.
+    // Route sheet: local draft only — flush on dismiss.
+    setOptimisticTripDays(days);
+    setOptimisticDepartureDate(date);
+    routeDraftDirtyRef.current.trip = true;
+    // Align meet times in the local destination draft (if any).
+    const base = optimisticDestinationsRef.current ?? rawDestinations;
+    const aligned = base.map((destination) => {
+      if (!destination.meetAt) return destination;
+      const alignedMeetAt = alignMeetTimeToTripDay(
+        new Date(destination.meetAt),
+        date,
+        destination.day || 1,
+      );
+      return { ...destination, meetAt: alignedMeetAt.toISOString() };
+    });
+    setOptimisticDestinations(aligned);
+    routeDraftDirtyRef.current.destinations = true;
+  }, [groupId, rawDestinations]);
   // --- Derived view models --------------------------------------------------
   // Optimistic flip for the Solo switch — server round trip + realtime
   // refetch otherwise take long enough to read as the switch not responding,
@@ -6253,14 +6504,20 @@ export default function MapScreen({ route, navigation }: Props) {
       </BottomSheet>
       </Animated.View>
 
-      {/* Route overlay: reorder gathering points. */}
+      {/* Route overlay: reorder gathering points (local draft until dismiss). */}
       <OverlaySheet
         visible={overlay === 'route'}
         onClose={() => {
+          // 完成 and swipe-dismiss both commit: unlock scroll, close, flush.
+          setRouteScrollEnabled(true);
           setEditButtonActive(false);
           setOverlay(null);
+          void flushRouteDraft();
         }}
-        onOpenComplete={() => setEditButtonActive(false)}
+        onOpenComplete={() => {
+          setEditButtonActive(false);
+          setRouteScrollEnabled(true);
+        }}
         title={t('map.gatheringPoints')}
         accent={accent}
         doneLabel={t('map.done')}
@@ -6336,7 +6593,11 @@ export default function MapScreen({ route, navigation }: Props) {
             syncFailed={routeSyncFailed}
             colors={dark}
             emptyLabel={t('settings.noDestinations')}
-            onDragActiveChange={(active) => setRouteScrollEnabled(!active)}
+            onDragActiveChange={(active) => {
+              // Defensive: never leave scroll locked after drag ends.
+              setRouteScrollEnabled(!active);
+              if (!active) setRouteScrollEnabled(true);
+            }}
             onDragAutoScroll={handleRouteDragAutoScroll}
             accountId={user?.id}
             dailyByDate={Object.fromEntries(
@@ -6348,22 +6609,23 @@ export default function MapScreen({ route, navigation }: Props) {
             favoritePlaces={favoritePlaces}
             onClearDailyAccommodation={
               canEditItinerary && groupId
-                ? (stayDate, day) => {
-                    void runUiAction(
-                      'map.clear_daily_accommodation',
-                      async () => {
-                        await clearDailyAccommodation(groupId, stayDate, day);
-                        await refresh();
-                      },
-                      { screen: 'Map' },
-                    );
+                ? (stayDate, _day) => {
+                    // Local draft only — flush on sheet dismiss.
+                    setDraftDailyAccommodations((prev) => {
+                      const base = prev ?? serverDailyAccommodations;
+                      return base.filter((d) => d.stayDate !== stayDate);
+                    });
+                    routeDraftDirtyRef.current.daily = true;
                   }
                 : undefined
             }
             onSetDailyFromDestination={
               canEditItinerary && groupId
                 ? (destinationId, day) => {
-                    const dest = destinations.find((d) => d.id === destinationId);
+                    const baseDests = optimisticDestinationsRef.current ?? rawDestinations;
+                    const dest =
+                      baseDests.find((d) => d.id === destinationId)
+                      ?? destinations.find((d) => d.id === destinationId);
                     if (!dest) return;
                     const departure = optimisticDepartureDate ?? group?.departureDate;
                     const date = dateForTripDay(departure, day);
@@ -6374,27 +6636,31 @@ export default function MapScreen({ route, navigation }: Props) {
                       );
                       return;
                     }
-                    void runUiAction(
-                      'map.set_daily_accommodation',
-                      async () => {
-                        await setDailyAccommodation(groupId, localDayKey(date), {
-                          title: dest.title,
-                          address: dest.address,
-                          coordinates: dest.coordinates,
-                          sourceDestinationId: dest.id,
-                          day,
-                        });
-                        await refresh();
-                      },
-                      { screen: 'Map' },
-                    );
+                    const stayDate = localDayKey(date);
+                    const next: DailyAccommodation = {
+                      id: `draft-daily-${stayDate}`,
+                      groupId,
+                      stayDate,
+                      title: dest.title,
+                      address: dest.address,
+                      coordinates: dest.coordinates,
+                      sourceDestinationId: dest.id,
+                    };
+                    setDraftDailyAccommodations((prev) => {
+                      const base = prev ?? serverDailyAccommodations;
+                      return [
+                        ...base.filter((d) => d.stayDate !== stayDate),
+                        next,
+                      ];
+                    });
+                    routeDraftDirtyRef.current.daily = true;
                   }
                 : undefined
             }
             onQuickAddAccommodation={
               canEditItinerary && groupId
                 ? (day) => {
-                    // Works with or without daily stay set (product: always show CTA).
+                    // Local draft card — only days with existing stops show this CTA.
                     const daily = dailyAccommodations.find((d) => {
                       const date = dateForTripDay(
                         optimisticDepartureDate ?? group?.departureDate,
@@ -6405,6 +6671,7 @@ export default function MapScreen({ route, navigation }: Props) {
                     const dayStops = openDestinations
                       .filter((d) => (d.day || 1) === day)
                       .sort((a, b) => a.order - b.order);
+                    if (dayStops.length === 0) return;
                     const allSorted = openDestinations.slice().sort((a, b) => {
                       if ((a.day || 1) !== (b.day || 1)) {
                         return (a.day || 1) - (b.day || 1);
@@ -6422,47 +6689,76 @@ export default function MapScreen({ route, navigation }: Props) {
                         latitude: 0,
                         longitude: 0,
                       };
-                    void runUiAction(
-                      'map.quick_add_accommodation',
-                      async () => {
-                        await addDestination(
-                          groupId,
-                          {
-                            title,
-                            address,
-                            coordinates: coords,
-                            day,
-                            kind: 'accommodation',
-                          },
-                          myScopeId,
-                        );
-                        await refresh();
-                      },
-                      { screen: 'Map' },
+                    const base = optimisticDestinationsRef.current ?? rawDestinations;
+                    const sameDay = base.filter((d) => (d.day || 1) === day);
+                    const insertOrder =
+                      sameDay.length > 0
+                        ? Math.max(...sameDay.map((d) => d.order)) + 1
+                        : (fallbackStop?.order ?? 0) + 1;
+                    const tempId = `draft-acc-${Date.now()}-${destinationMutationSequenceRef.current++}`;
+                    const draftCard: Destination = {
+                      id: tempId,
+                      title,
+                      address,
+                      coordinates: coords,
+                      order: insertOrder,
+                      day,
+                      kind: 'accommodation',
+                      stayAnchor: false,
+                      subgroupId: myScopeId,
+                    };
+                    const shifted = base.map((d) => {
+                      if ((d.day || 1) !== day) return d;
+                      if (d.order >= insertOrder) return { ...d, order: d.order + 1 };
+                      return d;
+                    });
+                    setOptimisticDestinations(
+                      [...shifted, draftCard].sort((a, b) => {
+                        if ((a.day || 1) !== (b.day || 1)) {
+                          return (a.day || 1) - (b.day || 1);
+                        }
+                        return a.order - b.order;
+                      }),
                     );
+                    routeDraftDirtyRef.current.destinations = true;
                   }
                 : undefined
             }
             onPickFavorite={
               canEditItinerary && groupId
                 ? (fav, day) => {
-                    void runUiAction(
-                      'map.add_favorite_to_day',
-                      async () => {
-                        await addDestination(
-                          groupId,
-                          {
-                            title: fav.title,
-                            address: fav.address,
-                            coordinates: fav.coordinates,
-                            day,
-                          },
-                          myScopeId,
-                        );
-                        await refresh();
-                      },
-                      { screen: 'Map' },
+                    // Local draft stop from favorites — flush on dismiss.
+                    const base = optimisticDestinationsRef.current ?? rawDestinations;
+                    const sameDay = base.filter((d) => (d.day || 1) === day);
+                    const insertOrder =
+                      sameDay.length > 0
+                        ? Math.max(...sameDay.map((d) => d.order)) + 1
+                        : 0;
+                    const tempId = `draft-fav-${Date.now()}-${destinationMutationSequenceRef.current++}`;
+                    const draftStop: Destination = {
+                      id: tempId,
+                      title: fav.title,
+                      address: fav.address,
+                      coordinates: fav.coordinates,
+                      order: insertOrder,
+                      day,
+                      kind: 'stop',
+                      subgroupId: myScopeId,
+                    };
+                    const shifted = base.map((d) => {
+                      if ((d.day || 1) !== day) return d;
+                      if (d.order >= insertOrder) return { ...d, order: d.order + 1 };
+                      return d;
+                    });
+                    setOptimisticDestinations(
+                      [...shifted, draftStop].sort((a, b) => {
+                        if ((a.day || 1) !== (b.day || 1)) {
+                          return (a.day || 1) - (b.day || 1);
+                        }
+                        return a.order - b.order;
+                      }),
                     );
+                    routeDraftDirtyRef.current.destinations = true;
                   }
                 : undefined
             }

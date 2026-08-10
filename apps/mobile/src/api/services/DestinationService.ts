@@ -72,10 +72,9 @@ export async function addDestination(
     kind?: 'stop' | 'accommodation';
   },
   subgroupId?: string,
-): Promise<void> {
+): Promise<string | undefined> {
   if (isDemoGroup(groupId)) {
-    demoAddDestination({ ...input, subgroupId });
-    return;
+    return demoAddDestination({ ...input, subgroupId, kind: input.kind });
   }
   const targetDay = Math.max(1, input.day ?? 1);
   const kind = input.kind === 'accommodation' ? 'accommodation' : 'stop';
@@ -85,7 +84,8 @@ export async function addDestination(
   // card is mid (draggable), not an immediate locked last boundary.
   // Shift later rows high→low so positions never collide mid-update.
   // Server-side lock + shift + insert (shared with import_itinerary_batch / reorder).
-  const { error } = await supabase.rpc('add_itinerary_item', {
+  // RPC returns the new row uuid (used by route-editor draft flush).
+  const { data, error } = await supabase.rpc('add_itinerary_item', {
     p_group_id: groupId,
     p_subgroup_id: subgroupId ?? null,
     p_title: input.title,
@@ -108,6 +108,7 @@ export async function addDestination(
     }
     orThrow(error);
   }
+  return typeof data === 'string' ? data : undefined;
 }
 
 

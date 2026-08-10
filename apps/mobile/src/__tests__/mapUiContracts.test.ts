@@ -196,7 +196,9 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain('alignMeetTimeToTripDay');
     expect(mapScreen).toContain('meetAt: alignedMeetAt.toISOString()');
     expect(mapScreen).toContain('addMinutesToPickerValue(meetTimeEditor.value, m)');
-    expect(mapScreen).toContain('reorderDestinations(groupId, meetUpdates)');
+    // Trip date edits are route-draft local; flush writes trip + reorder together.
+    expect(mapScreen).toContain('routeDraftDirtyRef.current.trip = true');
+    expect(mapScreen).toContain('flushRouteDraft');
   });
 
   it('persists the gathering-card default and exposes it in Settings', () => {

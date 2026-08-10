@@ -41,8 +41,11 @@ describe('Amicro native animation contracts', () => {
   it('holds edit success until the route sheet is fully open', () => {
     expect(map).toContain('active={editButtonActive}');
     expect(map).toContain('resetAfterComplete={false}');
-    expect(map).toContain('onOpenComplete={() => setEditButtonActive(false)}');
+    expect(map).toContain('setEditButtonActive(false)');
+    expect(map).toContain('setRouteScrollEnabled(true)');
+    // Dismiss commits draft then closes (local UI first, network flush async).
     expect(map).toMatch(/setEditButtonActive\(false\);\s+setOverlay\(null\);/);
+    expect(map).toContain('flushRouteDraft');
   });
 
   it('places reorder as a standalone framed full-row action outside listGroup', () => {

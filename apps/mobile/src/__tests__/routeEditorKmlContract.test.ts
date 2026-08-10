@@ -56,15 +56,32 @@ describe('route editor + KML contracts (#151)', () => {
     // Merged exiting list still exists for carousel presentation.
     expect(mapScreen).toContain('mergeExitingDestinations');
     expect(mapScreen).toContain('const destinations = useMemo');
-    // Persisted position slots must come from open editor scope, not carousel.
-    const handleStart = mapScreen.indexOf('const handleReorder = useCallback');
-    const handleEnd = mapScreen.indexOf('reorderForNavigationRef.current = handleReorder');
-    const handleBlock = mapScreen.slice(handleStart, handleEnd);
-    expect(handleBlock).toContain('openPositionSlotsFromOpenDestinations(openDestinations)');
-    expect(handleBlock).toContain('mapOpenReorderToPersistedPositions');
-    expect(handleBlock).not.toMatch(
+    // Slot remap lives on applyReorderToDestinations (shared local + nav persist).
+    expect(mapScreen).toContain('openPositionSlotsFromOpenDestinations');
+    expect(mapScreen).toContain('mapOpenReorderToPersistedPositions');
+    expect(mapScreen).not.toMatch(
       /openPositionSlots\s*=\s*\[\.\.\.destinations\]/,
     );
+  });
+
+  it('route editor reorder is local draft; network flush on sheet dismiss', () => {
+    expect(mapScreen).toContain('destination_reorder_local');
+    expect(mapScreen).toContain('flushRouteDraft');
+    expect(mapScreen).toContain('route_draft_flush');
+    // Navigation promote still persists immediately.
+    expect(mapScreen).toContain('reorderForNavigationRef.current = persistReorderNow');
+    // Route list onReorder is the local handler.
+    expect(mapScreen).toContain('onReorder={handleReorder}');
+    // No 3s optimistic timeout that clobbers draft.
+    expect(mapScreen).not.toMatch(/setOptimisticDestinations\(null\);\s*\}, 3000\)/);
+  });
+
+  it('quick-add CTA requires day stops; stay commit waits for finish', () => {
+    expect(reorder).toContain('dayStopCount > 0');
+    expect(reorder).toContain('pendingStayDestId');
+    expect(reorder).toContain('stay.finishSet');
+    // Checkbox must not call onSetDailyFromDestination immediately.
+    expect(reorder).toMatch(/setPendingStayDestId\(item\.item\.id\)/);
   });
 
   it('open-sync completion is gated by generation after close/reopen', () => {

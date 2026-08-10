@@ -170,6 +170,14 @@ export default function DestinationReorderList({
   const startCenterYRef = useRef(0);
   /** Extra dy from programmatic parent scroll during drag. */
   const scrollAccumRef = useRef(0);
+  /**
+   * Legal full-list indices for the active drag. Recomputed on grant and after
+   * each successful splice — never on every pan frame (O(n²) freeze root cause).
+   */
+  const legalIndicesRef = useRef<number[]>([]);
+  /** Coalesce edge auto-scroll to one scrollTo per animation frame. */
+  const autoScrollRafRef = useRef<number | null>(null);
+  const pendingAutoScrollRef = useRef(0);
   const pan = useRef(new Animated.Value(0)).current;
 
   const [showSettings, setShowSettings] = useState(false);
@@ -178,10 +186,30 @@ export default function DestinationReorderList({
   const [editDate, setEditDate] = useState(departureDate ? new Date(departureDate) : new Date());
   /** Day number currently in "set stop as accommodation" radio mode. */
   const [setStayModeDay, setSetStayModeDay] = useState<number | null>(null);
+  /**
+   * Pending stay pick while in set-stay mode. Checkbox only updates this;
+   * commit happens when the header control shows「完成」and is pressed.
+   */
+  const [pendingStayDestId, setPendingStayDestId] = useState<string | null>(null);
   const [collapsedDays, setCollapsedDays] = useState<Record<number, boolean>>({});
   const [favoritesOpen, setFavoritesOpen] = useState(false);
   /** Favorite selected; date must be confirmed before write. */
   const [favoritePending, setFavoritePending] = useState<FavoritePlaceView | null>(null);
+
+  const endDragSession = useCallback(() => {
+    draggingRef.current = false;
+    legalIndicesRef.current = [];
+    scrollAccumRef.current = 0;
+    pendingAutoScrollRef.current = 0;
+    if (autoScrollRafRef.current != null) {
+      cancelAnimationFrame(autoScrollRafRef.current);
+      autoScrollRafRef.current = null;
+    }
+    // Always re-enable parent scroll even if release races with unmount.
+    onDragActiveChange?.(false);
+    setActiveId(null);
+    pan.setValue(0);
+  }, [onDragActiveChange, pan]);
 
   const openAndroidDatePicker = useCallback(() => {
     if (Platform.OS !== 'android') return;
@@ -358,11 +386,10 @@ export default function DestinationReorderList({
       setActiveId(id);
       startIndexRef.current = startIdx;
       scrollAccumRef.current = 0;
-      startCenterYRef.current = reorderRowCenterY(
-        toReorderEntries(orderRef.current),
-        startIdx,
-        REORDER_LAYOUT,
-      );
+      const entries = toReorderEntries(orderRef.current);
+      startCenterYRef.current = reorderRowCenterY(entries, startIdx, REORDER_LAYOUT);
+      // Cache legal slots once at grant; refresh only after a successful splice.
+      legalIndicesRef.current = legalDragIndicesForList(entries, id);
       pan.setValue(0);
     },
     [pan, onDragActiveChange, toReorderEntries],
@@ -370,19 +397,31 @@ export default function DestinationReorderList({
 
   const handleMove = useCallback(
     (id: string, dy: number, pageY?: number) => {
+      if (!draggingRef.current) return;
       const startIndex = startIndexRef.current;
       const currentIndex = orderRef.current.findIndex((d) => d.id === id);
       if (currentIndex === -1) return;
 
       // Edge auto-scroll so other day blocks off-screen stay reachable.
+      // Coalesce to one scrollTo per animation frame (pan fires more often).
       if (typeof pageY === 'number' && onDragAutoScroll) {
         const winH = Dimensions.get('window').height;
-        if (pageY < DRAG_EDGE_PX) {
-          onDragAutoScroll(-DRAG_SCROLL_STEP);
-          scrollAccumRef.current -= DRAG_SCROLL_STEP;
-        } else if (pageY > winH - DRAG_EDGE_PX) {
-          onDragAutoScroll(DRAG_SCROLL_STEP);
-          scrollAccumRef.current += DRAG_SCROLL_STEP;
+        let step = 0;
+        if (pageY < DRAG_EDGE_PX) step = -DRAG_SCROLL_STEP;
+        else if (pageY > winH - DRAG_EDGE_PX) step = DRAG_SCROLL_STEP;
+        if (step !== 0) {
+          // Apply accum now so pan math tracks the virtual list scroll.
+          scrollAccumRef.current += step;
+          pendingAutoScrollRef.current += step;
+          if (autoScrollRafRef.current == null) {
+            autoScrollRafRef.current = requestAnimationFrame(() => {
+              autoScrollRafRef.current = null;
+              const delta = pendingAutoScrollRef.current;
+              pendingAutoScrollRef.current = 0;
+              if (!draggingRef.current || delta === 0) return;
+              onDragAutoScroll(delta);
+            });
+          }
         }
       }
 
@@ -397,7 +436,10 @@ export default function DestinationReorderList({
         REORDER_LAYOUT,
       );
       const direction = effectiveDy === 0 ? 0 : effectiveDy > 0 ? 1 : -1;
-      const legal = legalDragIndicesForList(entries, id);
+      const legal =
+        legalIndicesRef.current.length > 0
+          ? legalIndicesRef.current
+          : legalDragIndicesForList(entries, id);
       const target = snapToLegalDragIndex(
         legal.length > 0 ? legal : [currentIndex],
         rawTarget,
@@ -411,6 +453,8 @@ export default function DestinationReorderList({
         next.splice(insertAt, 0, moved);
         orderRef.current = next;
         setOrder(next);
+        // Legal slots change after cross-day splice; recompute once, not every pan.
+        legalIndicesRef.current = legalDragIndicesForList(toReorderEntries(next), id);
       }
 
       const idxNow = orderRef.current.findIndex((d) => d.id === id);
@@ -427,12 +471,6 @@ export default function DestinationReorderList({
 
   const handleRelease = useCallback(() => {
     if (!draggingRef.current) return;
-    draggingRef.current = false;
-    onDragActiveChange?.(false);
-    scrollAccumRef.current = 0;
-
-    setActiveId(null);
-    pan.setValue(0);
 
     const updates: {
       id: string;
@@ -440,65 +478,70 @@ export default function DestinationReorderList({
       day: number;
       stayAnchor?: boolean;
     }[] = [];
-    let currentDay = 1;
-    let position = 0;
-    const byDay = new Map<number, AccommodationListItem[]>();
-    for (const item of orderRef.current) {
-      if (item.type === 'header') {
-        currentDay = item.day;
-      } else {
-        updates.push({ id: item.id, position, day: currentDay });
-        const list = byDay.get(currentDay) ?? [];
-        list.push({
-          id: item.item.id,
-          kind: item.item.kind === 'accommodation' ? 'accommodation' : 'stop',
-          order: position,
-          day: currentDay,
-          title: item.item.title,
-          stayAnchor: item.item.stayAnchor,
-        });
-        byDay.set(currentDay, list);
-        position++;
-      }
-    }
-
-    // After drop: pure-index edges become stay anchors (persisted via reorder).
-    for (const [day, dayItems] of byDay) {
-      const anchored = applyPureIndexAnchors(dayItems);
-      for (const a of anchored) {
-        const u = updates.find((x) => x.id === a.id);
-        if (u && a.kind === 'accommodation') {
-          u.stayAnchor = Boolean(a.stayAnchor);
+    try {
+      let currentDay = 1;
+      let position = 0;
+      const byDay = new Map<number, AccommodationListItem[]>();
+      for (const item of orderRef.current) {
+        if (item.type === 'header') {
+          currentDay = item.day;
+        } else {
+          updates.push({ id: item.id, position, day: currentDay });
+          const list = byDay.get(currentDay) ?? [];
+          list.push({
+            id: item.item.id,
+            kind: item.item.kind === 'accommodation' ? 'accommodation' : 'stop',
+            order: position,
+            day: currentDay,
+            title: item.item.title,
+            stayAnchor: item.item.stayAnchor,
+          });
+          byDay.set(currentDay, list);
+          position++;
         }
       }
-      void day;
-    }
 
-    let changed = false;
-    const openIndexById = new Map(
-      [...destinations]
-        .sort((a, b) => a.order - b.order)
-        .map((destination, index) => [destination.id, index]),
-    );
-    for (const u of updates) {
-       const orig = destinations.find(d => d.id === u.id);
-       if (
-         !orig
-         || openIndexById.get(u.id) !== u.position
-         || (orig.day || 1) !== u.day
-         || (u.stayAnchor !== undefined
-           && Boolean(orig.stayAnchor) !== Boolean(u.stayAnchor)
-           && orig.kind === 'accommodation')
-       ) {
-           changed = true;
-           break;
-       }
-    }
+      // After drop: pure-index edges become stay anchors (persisted via reorder).
+      for (const [day, dayItems] of byDay) {
+        const anchored = applyPureIndexAnchors(dayItems);
+        for (const a of anchored) {
+          const u = updates.find((x) => x.id === a.id);
+          if (u && a.kind === 'accommodation') {
+            u.stayAnchor = Boolean(a.stayAnchor);
+          }
+        }
+        void day;
+      }
 
-    if (changed) {
-      onReorder(updates);
+      let changed = false;
+      const openIndexById = new Map(
+        [...destinations]
+          .sort((a, b) => a.order - b.order)
+          .map((destination, index) => [destination.id, index]),
+      );
+      for (const u of updates) {
+        const orig = destinations.find((d) => d.id === u.id);
+        if (
+          !orig
+          || openIndexById.get(u.id) !== u.position
+          || (orig.day || 1) !== u.day
+          || (u.stayAnchor !== undefined
+            && Boolean(orig.stayAnchor) !== Boolean(u.stayAnchor)
+            && orig.kind === 'accommodation')
+        ) {
+          changed = true;
+          break;
+        }
+      }
+
+      if (changed) {
+        onReorder(updates);
+      }
+    } finally {
+      // Unlock parent ScrollView even if update computation throws.
+      endDragSession();
     }
-  }, [pan, onReorder, destinations, onDragActiveChange]);
+  }, [onReorder, destinations, endDragSession]);
 
   const handlersRef = useRef({ handleGrant, handleMove, handleRelease });
   handlersRef.current = { handleGrant, handleMove, handleRelease };
@@ -579,11 +622,16 @@ export default function DestinationReorderList({
               }
             }
 
-            const renderDestRow = (item: Extract<ListItem, { type: 'dest' }>) => {
-              if (collapsedDays[item.item.day || 1]) return null;
-              const dayColor = getColorForDay(item.item.day, dayColors);
+            const renderDestRow = (
+              item: Extract<ListItem, { type: 'dest' }>,
+              /** Day block this row is rendered under (may differ from item.day mid-drag). */
+              blockDay?: number,
+            ) => {
+              const visualDay = blockDay ?? item.item.day ?? 1;
+              if (collapsedDays[visualDay] || collapsedDays[item.item.day || 1]) return null;
+              const dayColor = getColorForDay(visualDay, dayColors);
               const dayItems: AccommodationListItem[] = destinations
-                .filter((d) => (d.day || 1) === (item.item.day || 1))
+                .filter((d) => (d.day || 1) === visualDay)
                 .map((d) => ({
                   id: d.id,
                   kind: d.kind === 'accommodation' ? 'accommodation' : 'stop',
@@ -594,7 +642,7 @@ export default function DestinationReorderList({
                 }));
               const { lockedIds } = accommodationBoundaryLocks(dayItems);
               const locked = item.item.kind === 'accommodation' && lockedIds.has(item.item.id);
-              const inSetMode = setStayModeDay === (item.item.day || 1);
+              const inSetMode = setStayModeDay === visualDay;
               return (
                 <Row
                   key={item.id}
@@ -611,11 +659,12 @@ export default function DestinationReorderList({
                   isAccommodation={item.item.kind === 'accommodation'}
                   boundaryLocked={locked}
                   showSelect={inSetMode && item.item.kind !== 'accommodation'}
+                  selectSelected={pendingStayDestId === item.item.id}
                   onSelectAsStay={
-                    inSetMode && onSetDailyFromDestination
+                    inSetMode
                       ? () => {
-                          onSetDailyFromDestination(item.item.id, item.item.day || 1);
-                          setSetStayModeDay(null);
+                          // Local draft only — commit on header「完成」.
+                          setPendingStayDestId(item.item.id);
                         }
                       : undefined
                   }
@@ -647,8 +696,12 @@ export default function DestinationReorderList({
               const collapsed = Boolean(collapsedDays[item.day]);
               const dayStopCount = block.dests.length;
               const hasDaily = Boolean(daily);
+              // Empty day (no gathering points) must not show quick-add stay CTA.
               const showQuickAdd =
-                !collapsed && canReorder && onQuickAddAccommodation != null;
+                !collapsed
+                && canReorder
+                && onQuickAddAccommodation != null
+                && dayStopCount > 0;
               return (
                 <View
                   key={item.id}
@@ -688,16 +741,32 @@ export default function DestinationReorderList({
                       && !hasDaily
                       && onSetDailyFromDestination
                       && dayStopCount > 0
-                        ? () =>
-                            setSetStayModeDay((d) => (d === item.day ? null : item.day))
+                        ? () => {
+                            if (setStayModeDay === item.day) {
+                              // Header「完成」: commit pending radio selection, then exit.
+                              if (pendingStayDestId && onSetDailyFromDestination) {
+                                const pick = block.dests.find(
+                                  (d) => d.item.id === pendingStayDestId,
+                                );
+                                if (pick && pick.item.kind !== 'accommodation') {
+                                  onSetDailyFromDestination(pick.item.id, item.day);
+                                }
+                              }
+                              setPendingStayDestId(null);
+                              setSetStayModeDay(null);
+                            } else {
+                              setPendingStayDestId(null);
+                              setSetStayModeDay(item.day);
+                            }
+                          }
                         : undefined
                     }
                     accent={colors.accent}
                   />
                   {!collapsed
-                    ? block.dests.map((destItem) => renderDestRow(destItem))
+                    ? block.dests.map((destItem) => renderDestRow(destItem, item.day))
                     : null}
-                  {/* Quick-add stays at the end of all gathering points for the day. */}
+                  {/* Quick-add only when the day already has gathering points. */}
                   {showQuickAdd ? (
                     <View style={styles.dayActions}>
                       <Pressable
@@ -1162,6 +1231,7 @@ const Row = memo(function Row({
   isAccommodation,
   boundaryLocked,
   showSelect,
+  selectSelected,
   onSelectAsStay,
 }: {
   item: Destination;
@@ -1179,6 +1249,8 @@ const Row = memo(function Row({
   /** Head/tail stay card: always-visible trash, no swipe-to-delete. */
   boundaryLocked?: boolean;
   showSelect?: boolean;
+  /** Local pending stay selection (not yet committed). */
+  selectSelected?: boolean;
   onSelectAsStay?: () => void;
 }) {
   const translateX = useRef(new Animated.Value(0)).current;
@@ -1304,10 +1376,15 @@ const Row = memo(function Row({
           <Pressable
             onPress={onSelectAsStay}
             accessibilityRole="radio"
+            accessibilityState={{ selected: !!selectSelected }}
             style={styles.selectRadio}
             hitSlop={8}
           >
-            <Ionicons name="ellipse-outline" size={20} color={dayColor} />
+            <Ionicons
+              name={selectSelected ? 'checkmark-circle' : 'ellipse-outline'}
+              size={20}
+              color={dayColor}
+            />
           </Pressable>
         ) : null}
         <Pressable

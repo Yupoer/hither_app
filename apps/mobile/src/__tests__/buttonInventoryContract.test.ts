@@ -37,7 +37,9 @@ const HIGH_RISK_ACTION_IDS = [
   // Map / sheet (batch 3b)
   'map.destination_add',
   'map.destination_add_coords',
-  'map.destination_delete',
+  // Route sheet: deletes/reorders/stays batch through route_draft_flush on dismiss.
+  // Navigation promote still uses map.destination_reorder immediately.
+  'map.route_draft_flush',
   'map.destination_reorder',
   'map.destination_suggest',
   'map.confirm_add_destination',
@@ -86,7 +88,9 @@ describe('button inventory / high-risk action contract', () => {
   it('wires Map/Sheet high-risk async handlers through runUiAction', () => {
     expect(mapScreen).toContain("'map.destination_add'");
     expect(mapScreen).toContain("'map.destination_add_coords'");
-    expect(mapScreen).toContain("'map.destination_delete'");
+    // Route-editor mutations are local draft; network write is map.route_draft_flush.
+    expect(mapScreen).toContain("'map.route_draft_flush'");
+    // Navigation promote still persists reorder immediately.
     expect(mapScreen).toContain("'map.destination_reorder'");
     expect(mapScreen).toContain("'map.destination_suggest'");
     expect(mapScreen).toContain("'map.confirm_add_destination'");
