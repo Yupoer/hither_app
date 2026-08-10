@@ -2,6 +2,7 @@ import {
   accommodationBoundaryLocks,
   applyPureIndexAnchors,
   crossDayGapCorrection,
+  dayBlockRange,
   dayCollapseStorageKey,
   DEFAULT_REORDER_LAYOUT,
   downgradeAnchorsOnDailyChange,
@@ -9,9 +10,11 @@ import {
   dragTargetIndexFromOffset,
   isAccommodationDraggable,
   legalDragIndicesForList,
+  moveDayBlockBefore,
   orderAfterDragMove,
   proposedOrderPreservesBoundaryLocks,
   quickAddAccommodationInsertPosition,
+  renumberReorderListDays,
   shouldAutoAddAccommodationCards,
   snapToLegalDragIndex,
   type AccommodationListItem,
@@ -220,7 +223,7 @@ describe('legalDragIndicesForList (cross-day)', () => {
     expect(assigned).toBe(2);
   });
 
-  it('freezes Day1 header but allows last-day header drag', () => {
+  it('freezes Day1 header; Day2+ may land on other day headers or end', () => {
     const order: ReorderListEntry[] = [
       header(1),
       dest('A', 1),
@@ -234,11 +237,56 @@ describe('legalDragIndicesForList (cross-day)', () => {
     const h3 = order.findIndex((e) => e.id === 'header-3');
     expect(legalDragIndicesForList(order, 'header-1')).toEqual([h1]);
     const legalLast = legalDragIndicesForList(order, 'header-3');
+    expect(legalLast).toContain(h2);
     expect(legalLast).toContain(h3);
-    expect(legalLast.length).toBeGreaterThan(1);
+    expect(legalLast).toContain(order.length);
+    // Never mid-dest of another day.
+    expect(legalLast).not.toContain(order.findIndex((e) => e.id === 'A'));
     const legalMid = legalDragIndicesForList(order, 'header-2');
     expect(legalMid).toContain(h2);
-    expect(legalMid.length).toBeGreaterThan(1);
+    expect(legalMid).toContain(h3);
+    expect(legalMid).toContain(order.length);
+  });
+
+  it('moveDayBlockBefore moves whole day (header+dests) and keeps all ids', () => {
+    const order: ReorderListEntry[] = [
+      header(1), dest('A', 1), dest('B', 1),
+      header(2), dest('C', 2), dest('D', 2),
+      header(3), dest('E', 3),
+    ];
+    const h2 = order.findIndex((e) => e.id === 'header-2');
+    const h3 = order.findIndex((e) => e.id === 'header-3');
+    // Move day2 before day3 is no structural change of relative order among 2/3;
+    // move day3 before day2:
+    const moved = moveDayBlockBefore(order, h3, h2);
+    const renumbered = renumberReorderListDays(moved);
+    const ids = renumbered.filter((e) => e.type === 'dest').map((e) => e.id);
+    expect(ids).toEqual(['A', 'B', 'E', 'C', 'D']);
+    expect(ids).toHaveLength(5);
+    // Day assignment after renumber.
+    const dayOf = (id: string) => {
+      const e = renumbered.find((x) => x.type === 'dest' && x.id === id);
+      return e && e.type === 'dest' ? e.day : -1;
+    };
+    expect(dayOf('A')).toBe(1);
+    expect(dayOf('B')).toBe(1);
+    expect(dayOf('E')).toBe(2);
+    expect(dayOf('C')).toBe(3);
+    expect(dayOf('D')).toBe(3);
+  });
+
+  it('moveDayBlockBefore cannot pull a block above Day1', () => {
+    const order: ReorderListEntry[] = [
+      header(1), dest('A', 1),
+      header(2), dest('B', 2),
+    ];
+    const h2 = order.findIndex((e) => e.id === 'header-2');
+    const h1 = order.findIndex((e) => e.id === 'header-1');
+    const moved = moveDayBlockBefore(order, h2, h1);
+    // Still Day1 first with A, then B.
+    const renumbered = renumberReorderListDays(moved);
+    expect(renumbered.filter((e) => e.type === 'dest').map((e) => e.id)).toEqual(['A', 'B']);
+    expect(dayBlockRange(renumbered, 0)?.end).toBeGreaterThan(1);
   });
 
   it('freezes locked boundary accommodations', () => {

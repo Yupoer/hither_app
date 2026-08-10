@@ -31,15 +31,16 @@ describe('route editor + KML contracts (#151)', () => {
     expect(block).not.toContain('await addDestination(');
   });
 
-  it('route list is scope-filtered for leaders; day>1 headers may drag', () => {
+  it('route list is scope-filtered for leaders; day>1 whole-day blocks may drag', () => {
     expect(mapScreen).not.toMatch(/rawDestinations[\s\S]{0,200}if \(isLeader\) return all/);
-    // Stops reorder freely; Day1 header fixed, Day2…last may drag; all days collapse.
+    // Stops reorder freely; Day1 header fixed; Day2+ swipe-toggle drag moves whole block.
     expect(reorder).toContain('canReorder={canReorder && !locked}');
     expect(reorder).toContain("type === 'header'");
     expect(reorder).toContain('canDragHeader');
+    expect(reorder).toContain('moveDayBlockBefore');
     expect(reorder).toContain('item.day > 1');
     expect(reorder).toContain('entry.day <= 1');
-    expect(reorder).not.toContain('isEdgeDay');
+    expect(reorder).toContain('headerAffordanceByDay');
     expect(reorder).toContain('drop-after-header');
   });
   it('open-once sync + import CTA replace always-on sync button', () => {

@@ -98,27 +98,30 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(migrations).toContain('drop policy if exists "itinerary_items: insert if in that subgroup"');
   });
 
-  it('gates quick-add stay CTA on daily stay; every day collapses; day>1 drags', () => {
+  it('gates quick-add stay CTA; day headers use left-swipe collapse↔drag mutex', () => {
     // 「新增住宿點」only after stay is set (hasDaily).
     expect(reorderList).toMatch(/showQuickAdd[\s\S]{0,200}hasDaily/);
-    // Collapse + drag both available (no left-swipe mutual exclusion).
-    expect(reorderList).toContain('showCollapseAffordance = true');
-    expect(reorderList).toContain('showDragAffordance = canReorder && item.day > 1');
-    expect(reorderList).not.toContain('headerAffordanceByDay');
-    expect(reorderList).not.toContain('canSwipeToggleAffordance');
-    // Swipe-to-delete still uses reveal width on rows.
+    // Default collapse; left-swipe toggles drag handle (not both at once).
+    expect(reorderList).toContain('headerAffordanceByDay');
+    expect(reorderList).toContain('canSwipeToggleAffordance');
+    expect(reorderList).toContain('onSwipeToggleAffordance');
+    expect(reorderList).toContain("headerAffordance === 'collapse'");
+    expect(reorderList).toContain("headerAffordance === 'drag'");
+    // Whole-day block move (not bare header).
+    expect(reorderList).toContain('moveDayBlockBefore');
     expect(reorderList).toContain('REVEAL_WIDTH');
   });
 
   it('locks stay cards to bed emoji and allows them as set-stay radio sources', () => {
     expect(reorderList).toContain('STAY_MARKER_EMOJI');
     expect(reorderList).toContain('STAY_BADGE_BG');
-    // Stay chrome only when the day has daily stay set (copied cards on bare days look normal).
-    expect(reorderList).toContain('treatAsStayCard');
-    expect(reorderList).toContain('isAccommodation={treatAsStayCard}');
-    // No emoji picker while treating as stay card.
+    // Bed badge for kind=accommodation; highlight is match-only.
+    expect(reorderList).toContain('isAccommodation={isStayCard}');
+    expect(reorderList).toContain('stayHighlight');
+    expect(reorderList).toContain('placeExactMatchKey');
+    // No emoji picker for accommodation kind.
     expect(reorderList).toMatch(
-      /onEmojiPress=\{\s*[\s\S]*?!treatAsStayCard/,
+      /onEmojiPress=\{\s*[\s\S]*?!isStayCard/,
     );
     // Set-stay checkboxes include accommodation (cross-day moved stay cards).
     expect(reorderList).toContain('showSelect={inSetMode}');
@@ -129,9 +132,9 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(reorderList).not.toMatch(
       /if \(pick && pick\.item\.kind !== 'accommodation'\)/,
     );
-    // Soft stay row tint (not high-sat Day1 red solid).
-    expect(reorderList).toContain('rowAccommodation');
-    expect(reorderList).toMatch(/rgba\(160,\s*130,\s*125/);
+    // Soft stay row tint (muted low sat/brightness).
+    expect(reorderList).toContain('rowStayMatch');
+    expect(reorderList).toMatch(/rgba\(100,\s*90,\s*86/);
   });
 
   it('reconciles group state periodically even when Realtime misses an event', () => {
