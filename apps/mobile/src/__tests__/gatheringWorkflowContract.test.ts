@@ -98,6 +98,16 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(migrations).toContain('drop policy if exists "itinerary_items: insert if in that subgroup"');
   });
 
+  it('gates quick-add stay CTA on daily accommodation and day-header swipe modes', () => {
+    // 「新增住宿點」only after stay is set (hasDaily).
+    expect(reorderList).toMatch(/showQuickAdd[\s\S]{0,200}hasDaily/);
+    // Default collapse; left-swipe toggles drag handle (not both at once).
+    expect(reorderList).toContain("headerAffordanceByDay");
+    expect(reorderList).toContain("canSwipeToggleAffordance");
+    expect(reorderList).toContain("onSwipeToggleAffordance");
+    expect(reorderList).toContain("REVEAL_WIDTH");
+  });
+
   it('reconciles group state periodically even when Realtime misses an event', () => {
     expect(groupState).toContain('realtimeReadyRef');
     expect(groupState).toContain("status === 'SUBSCRIBED'");

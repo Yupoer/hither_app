@@ -56,22 +56,26 @@ describe('four-pane store navigation contracts', () => {
     expect(storePane).not.toContain('balance +1');
   });
 
-  it('Store orders Premium then ad then economy content and hides restore', () => {
+  it('Store orders Premium then balance then ad and hides restore', () => {
     const premium = read('components/PremiumPresentation.tsx');
     const paywall = read('components/PaywallSheet.tsx');
     expect(storePane).toContain('PremiumPresentation');
     expect(storePane).toContain('store-premium-section');
     expect(storePane).toContain('showRestore={false}');
     expect(storePane).toContain('store-ad-cta');
-    // Layout order: Premium → ad → balance/economy (#155/#156 Sol P1).
+    expect(storePane).toContain('store-premium-ad-divider');
+    // Layout order: Premium → divider → balance → ad.
     const premiumIdx = storePane.indexOf('store-premium-section');
+    const dividerIdx = storePane.indexOf('store-premium-ad-divider');
     const adIdx = storePane.indexOf('store-ad-cta');
     const balanceIdx = storePane.indexOf('store-balance');
     expect(premiumIdx).toBeGreaterThan(-1);
     expect(adIdx).toBeGreaterThan(-1);
     expect(balanceIdx).toBeGreaterThan(-1);
-    expect(premiumIdx).toBeLessThan(adIdx);
-    expect(adIdx).toBeLessThan(balanceIdx);
+    expect(dividerIdx).toBeGreaterThan(premiumIdx);
+    expect(premiumIdx).toBeLessThan(balanceIdx);
+    expect(balanceIdx).toBeLessThan(adIdx);
+    expect(dividerIdx).toBeLessThan(adIdx);
     // Shared presentation: restore gated by showRestore.
     expect(premium).toContain('showRestore');
     expect(premium).toContain('restorePremiumSubscription');

@@ -310,10 +310,12 @@ describe('map UI placement contracts', () => {
   it('keeps gathering-card page dots lightweight during stage morphs', () => {
     expect(mapScreen).toContain('styles.dots');
     expect(mapScreen).toContain('styles.dotActive');
-    // Dots use CarouselDots (window slide via LayoutAnimation, no Reanimated layout).
+    // Dots use CarouselDots (two-phase strip slide + pill re-center, no Reanimated layout).
     expect(mapScreen).not.toContain('layout={LinearTransition.springify()');
     expect(mapScreen).toContain('function CarouselDots');
-    expect(mapScreen).toContain('style={[styles.dot, i2 === active && styles.dotActive]}');
+    expect(mapScreen).toContain('DOT_PITCH_PX');
+    expect(mapScreen).toContain('dotsStrip');
+    expect(mapScreen).toContain('pillSlot');
   });
 
   it('uses gathering-card press without scale bounce on expand or collapse', () => {
@@ -406,24 +408,27 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).not.toContain("arrival.timeAutomatic");
     expect(mapScreen).not.toContain('handleArrival(dest, user.id, true)');
     expect(mapScreen).not.toContain('await syncFromDatabase();\n        await setDestinationArrivalAt');
-    // Personal arrive is sequential-rules only (not gated on sharedTargetId).
+    // Personal arrive: sequential rules + team nav active on this card only
+    // (Start splits 「已抵達」; End swallows it back into Start).
     expect(mapScreen).toContain('canMarkArrival');
     expect(mapScreen).toContain('expanded={!showArrivalControl}');
     expect(mapScreen).not.toMatch(
       /showArrivalControl\s*=\s*[\s\S]{0,200}sharedTargetId === dest\.id/,
     );
-    // Regression: never re-gate personal arrive on journey/start/flock state.
-    // Both tour + card showArrivalControl blocks must stay free of these.
     const arriveBlocks = mapScreen.match(
-      /const showArrivalControl\s*=\s*[\s\S]{0,180}?;/g,
+      /const showArrivalControl\s*=\s*[\s\S]{0,220}?;/g,
     ) ?? [];
     expect(arriveBlocks.length).toBeGreaterThanOrEqual(2);
     for (const block of arriveBlocks) {
       expect(block).not.toMatch(/sharedTargetId/);
       expect(block).not.toMatch(/journeyActive/);
-      expect(block).not.toMatch(/flockNavigating/);
       expect(block).not.toMatch(/navCmd/);
+      // Must gate on flockNavigatingThis so pre-start shows 3 controls only.
+      expect(block).toMatch(/flockNavigatingThis/);
     }
+    // Route editor count + list share openForRouteEditor (not day-gated carousel).
+    expect(mapScreen).toContain('openForRouteEditor');
+    expect(mapScreen).toContain("t('map.stopsReorder', { count: openForRouteEditor.length })");
     // Flush reorder must use full open list (not day-gated carousel filter).
     expect(mapScreen).toContain('openDestinationsForReorder');
     expect(mapScreen).toContain('buildOpenReorderPayload');

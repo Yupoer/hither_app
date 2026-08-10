@@ -52,9 +52,10 @@ describe('route editor + KML contracts (#151)', () => {
     const reorderStart = mapScreen.indexOf('<DestinationReorderList');
     expect(reorderStart).toBeGreaterThan(-1);
     const reorderBlock = mapScreen.slice(reorderStart, reorderStart + 600);
-    // Full open list (all days) — not day-gated carousel openDestinations.
-    expect(reorderBlock).toContain('openDestinationsForReorder');
+    // Full open list (all days) via openForRouteEditor — not day-gated carousel.
+    expect(reorderBlock).toContain('destinations={openForRouteEditor}');
     expect(reorderBlock).not.toContain('destinations={destinations}');
+    expect(mapScreen).toContain('openDestinationsForReorder');
     // Merged exiting list still exists for carousel presentation.
     expect(mapScreen).toContain('mergeExitingDestinations');
     expect(mapScreen).toContain('const destinations = useMemo');

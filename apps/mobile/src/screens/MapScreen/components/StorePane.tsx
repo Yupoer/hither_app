@@ -1025,6 +1025,9 @@ export const StorePane = React.memo(function StorePane({
         />
       </View>
 
+      {/* Divider between Premium and the ad / economy block. */}
+      <View style={styles.sectionDivider} testID="store-premium-ad-divider" />
+
       {loading && !snapshot ? (
         <View style={styles.shellCard} testID="store-loading">
           <ActivityIndicator color={accent} />
@@ -1047,7 +1050,22 @@ export const StorePane = React.memo(function StorePane({
         </View>
       ) : (
         <>
-          {/* Ad before balance/economy: Premium → ad → remaining store content (#155/#156). */}
+          {/* Premium → divider → balance → ad (#store layout). */}
+          <View style={styles.balanceCard} testID="store-balance">
+            <Text style={styles.balanceLabel}>{t('store.balance')}</Text>
+            <Text
+              style={styles.balanceValue}
+              accessibilityRole="text"
+              accessibilityLabel={t('store.balanceA11y', { count: balance })}
+              maxFontSizeMultiplier={GLOBAL_FONT_SCALE_CAP}
+            >
+              {balance}
+            </Text>
+            <Text style={styles.shellHint}>
+              {fromCacheOnly ? t('store.offlineCachedHint') : t('store.balanceHint')}
+            </Text>
+          </View>
+
           <Pressable
             style={[styles.cta, { backgroundColor: adDisabled ? glass.fill : accent }]}
             onPress={() => { void onWatchAd(); }}
@@ -1086,21 +1104,6 @@ export const StorePane = React.memo(function StorePane({
               {`debug: ${adDebugLine}`}
             </Text>
           ) : null}
-
-          <View style={styles.balanceCard} testID="store-balance">
-            <Text style={styles.balanceLabel}>{t('store.balance')}</Text>
-            <Text
-              style={styles.balanceValue}
-              accessibilityRole="text"
-              accessibilityLabel={t('store.balanceA11y', { count: balance })}
-              maxFontSizeMultiplier={GLOBAL_FONT_SCALE_CAP}
-            >
-              {balance}
-            </Text>
-            <Text style={styles.shellHint}>
-              {fromCacheOnly ? t('store.offlineCachedHint') : t('store.balanceHint')}
-            </Text>
-          </View>
 
           {offline ? (
             <Text style={styles.shellHint} testID="store-offline-banner">
@@ -1258,6 +1261,11 @@ const makeStyles = (scale: number, boldText: boolean) => {
     },
     headingFirst: { marginTop: 0 },
     premiumBlock: {
+      marginBottom: s(12, 10),
+    },
+    sectionDivider: {
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: glass.hairline,
       marginBottom: s(12, 10),
     },
     balanceCard: {

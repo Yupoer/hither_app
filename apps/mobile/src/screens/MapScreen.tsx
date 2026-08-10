@@ -9,6 +9,7 @@ import {
   AccessibilityInfo,
   ActivityIndicator,
   Alert,
+  Animated as RnAnimated,
   AppState,
   KeyboardAvoidingView,
   LayoutAnimation,
@@ -208,7 +209,12 @@ import {
   walkingEtaSeconds,
   type TravelMode,
 } from '../utils/geo';
-import { dotWindow } from '../utils/pagination';
+import {
+  DOT_PITCH_PX,
+  dotWindow,
+  dotWindowRelative,
+  dotWindowStart,
+} from '../utils/pagination';
 import {
   alignMeetTimeToTripDay,
   addMinutesToPickerValue,
@@ -691,6 +697,15 @@ export default function MapScreen({ route, navigation }: Props) {
         prevVisibleDestOrderRef.current,
       ),
     [openDestinations, arrivalExitSnapshots, arrivalExitRecords],
+  );
+  /**
+   * Full open itinerary for the route editor (all open days + stay cards).
+   * Must not use day-gated `destinations` — that under-counts past-day stops
+   * and desyncs the「調整順序」label from the list body.
+   */
+  const openForRouteEditor = useMemo(
+    () => openDestinationsForReorder(optimisticDestinations ?? allScopedDestinations),
+    [optimisticDestinations, allScopedDestinations],
   );
   const canEditItinerary = !!isLeader;
 
@@ -4702,13 +4717,13 @@ export default function MapScreen({ route, navigation }: Props) {
       scopedDestinations: destinations,
       myArrivedDestinationIds: myCompletedDestinationIds,
     });
-    // Personal check-in is user-scoped: available whenever sequential rules
-    // allow it. Do not gate on sharedTargetId — End clears the team target and
-    // must not hide 「已抵達」.
+    // Product: 「已抵達」only while team nav is active on this card
+    // (Start splits it out; End swallows it back into Start width).
     const showArrivalControl =
       Boolean(user?.id)
       && canMarkArrival
-      && !dest.closedAt;
+      && !dest.closedAt
+      && flockNavigatingThis;
     const navCmd = resolveNavCommand({
       isLeader,
       personallyArrived: myCompletedDestinationIds.has(dest.id),
@@ -5010,9 +5025,9 @@ export default function MapScreen({ route, navigation }: Props) {
           color={accent}
           activeColor={accent}
           size={48}
-          label={t('map.stopsReorder', { count: destinations.length })}
+          label={t('map.stopsReorder', { count: openForRouteEditor.length })}
           labelColor="#fff"
-          accessibilityLabel={t('map.stopsReorder', { count: destinations.length })}
+          accessibilityLabel={t('map.stopsReorder', { count: openForRouteEditor.length })}
           testID="map-edit-itinerary"
           style={styles.reorderActionPressable}
           onPress={() => {
@@ -5931,12 +5946,14 @@ export default function MapScreen({ route, navigation }: Props) {
                 scopedDestinations: destinations,
                 myArrivedDestinationIds: myCompletedDestinationIds,
               });
-              // Personal check-in is user-scoped (not team phase). Keep visible
-              // after Start/End so members can still mark arrival.
+              // Product: only show 「已抵達」while this card's team nav is active.
+              // Pre-start: Start occupies the arrived slot (3 controls).
+              // Post-start: Arrived splits out. Post-end: Start swallows it again.
               const showArrivalControl =
                 Boolean(user?.id)
                 && canMarkArrival
-                && !dest.closedAt;
+                && !dest.closedAt
+                && flockNavigatingThis;
               const personallyArrived = myCompletedDestinationIds.has(dest.id) || (
                 autoArrivedDestId === dest.id ||
                 (navTarget?.id === dest.id && (
@@ -6602,9 +6619,7 @@ export default function MapScreen({ route, navigation }: Props) {
           ) : null}
           <DestinationReorderList
             groupId={groupId ?? undefined}
-            destinations={openDestinationsForReorder(
-              optimisticDestinations ?? allScopedDestinations,
-            )}
+            destinations={openForRouteEditor}
             canReorder={canEditItinerary}
             tripDays={optimisticTripDays ?? group?.tripDays}
             departureDate={optimisticDepartureDate ?? group?.departureDate}
@@ -6702,6 +6717,7 @@ export default function MapScreen({ route, navigation }: Props) {
               canEditItinerary && groupId
                 ? (day) => {
                     // Local draft card — only days with existing stops show this CTA.
+                    // Use full open route-editor list (not day-gated carousel).
                     const daily = dailyAccommodations.find((d) => {
                       const date = dateForTripDay(
                         optimisticDepartureDate ?? group?.departureDate,
@@ -6709,11 +6725,11 @@ export default function MapScreen({ route, navigation }: Props) {
                       );
                       return date ? d.stayDate === localDayKey(date) : false;
                     });
-                    const dayStops = openDestinations
+                    const dayStops = openForRouteEditor
                       .filter((d) => (d.day || 1) === day)
                       .sort((a, b) => a.order - b.order);
                     if (dayStops.length === 0) return;
-                    const allSorted = openDestinations.slice().sort((a, b) => {
+                    const allSorted = openForRouteEditor.slice().sort((a, b) => {
                       if ((a.day || 1) !== (b.day || 1)) {
                         return (a.day || 1) - (b.day || 1);
                       }
@@ -7808,8 +7824,10 @@ const MeetTimeChip = React.memo(function MeetTimeChip({
 
 /**
  * Gathering-point pagination dots (max 5 visible).
- * In the middle range the window slides: active stays in slot 3 while the
- * strip shifts left/right with LayoutAnimation (clamped at the first/last two).
+ *
+ * Mid-range slide (e.g. card 3 → 4): whole strip shifts left one pitch so the
+ * active bar appears to move 3rd → 2nd slot, then the bar re-centers 2nd → 3rd.
+ * Edge clamps skip the two-phase move and just retarget the bar.
  */
 function CarouselDots({
   total,
@@ -7822,35 +7840,116 @@ function CarouselDots({
   active: number;
   maxVisible: number;
   destinationIds: readonly string[];
-  styles: { dots: object; dot: object; dotActive: object };
+  styles: {
+    dots: object;
+    dotsViewport: object;
+    dotsStrip: object;
+    dot: object;
+    dotActive: object;
+  };
 }) {
-  const indices = useMemo(
+  const targetStart = dotWindowStart(total, active, maxVisible);
+  const targetRel = dotWindowRelative(total, active, maxVisible);
+  const targetIndices = useMemo(
     () => dotWindow(total, active, maxVisible),
     [total, active, maxVisible],
   );
-  const prevStartRef = useRef(indices[0] ?? 0);
+
+  const [displayIndices, setDisplayIndices] = useState(targetIndices);
+  // RN Animated (not reanimated) — MapScreen's `Animated` is reanimated.
+  const stripX = useRef(new RnAnimated.Value(0)).current;
+  const pillSlot = useRef(new RnAnimated.Value(targetRel)).current;
+  const prevRef = useRef({ start: targetStart, rel: targetRel, active });
+  const animGenRef = useRef(0);
+
   useEffect(() => {
-    const start = indices[0] ?? 0;
-    if (start !== prevStartRef.current) {
-      // Mid-range window slide (not clamped at ends) — animate the shift.
-      LayoutAnimation.configureNext({
-        duration: 220,
-        update: { type: LayoutAnimation.Types.easeInEaseOut },
-        create: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
-        delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
-      });
-      prevStartRef.current = start;
+    const prev = prevRef.current;
+    const deltaStart = targetStart - prev.start;
+    const gen = ++animGenRef.current;
+
+    if (deltaStart === 0) {
+      // Same window: bar slides within the strip only.
+      setDisplayIndices(targetIndices);
+      RnAnimated.timing(pillSlot, {
+        toValue: targetRel,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
+      prevRef.current = { start: targetStart, rel: targetRel, active };
+      return;
     }
-  }, [indices]);
+
+    // Phase 1: strip + bar shift together by one pitch (left when start++).
+    const dir = deltaStart > 0 ? -1 : 1;
+    const pitch = DOT_PITCH_PX * Math.abs(deltaStart);
+    stripX.setValue(0);
+    // Keep previous indices during the slide so keys move with the strip.
+    RnAnimated.timing(stripX, {
+      toValue: dir * pitch,
+      duration: 180,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (!finished || animGenRef.current !== gen) return;
+      // After left slide, bar that was at prev.rel sits one slot left/right.
+      const interimRel = prev.rel + dir;
+      stripX.setValue(0);
+      setDisplayIndices(targetIndices);
+      pillSlot.setValue(interimRel);
+      // Phase 2: re-center bar (2nd → 3rd when advancing mid-range).
+      RnAnimated.timing(pillSlot, {
+        toValue: targetRel,
+        duration: 160,
+        useNativeDriver: true,
+      }).start();
+      prevRef.current = { start: targetStart, rel: targetRel, active };
+    });
+  }, [targetStart, targetRel, targetIndices, active, stripX, pillSlot]);
+
+  const viewportWidth =
+    displayIndices.length <= 0
+      ? 0
+      : // inactive pitch * (n-1) + active width allowance
+        DOT_PITCH_PX * Math.max(0, displayIndices.length - 1) + 18;
 
   return (
-    <View style={styles.dots}>
-      {indices.map((i2) => (
-        <View
-          key={`dot-${destinationIds[i2] ?? i2}`}
-          style={[styles.dot, i2 === active && styles.dotActive]}
+    <View style={[styles.dots, styles.dotsViewport, { maxWidth: viewportWidth + 4 }]}>
+      <RnAnimated.View
+        style={[
+          styles.dotsStrip,
+          { transform: [{ translateX: stripX }] },
+        ]}
+      >
+        {displayIndices.map((i2) => (
+          <View
+            key={`dot-${destinationIds[i2] ?? i2}`}
+            // Base dots stay inactive size; the sliding pill overlays the active slot.
+            style={styles.dot}
+          />
+        ))}
+        <RnAnimated.View
+          pointerEvents="none"
+          style={[
+            styles.dot,
+            styles.dotActive,
+            {
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              transform: [
+                {
+                  translateX: pillSlot.interpolate({
+                    inputRange: [0, Math.max(1, displayIndices.length - 1)],
+                    outputRange: [
+                      0,
+                      DOT_PITCH_PX * Math.max(0, displayIndices.length - 1),
+                    ],
+                  }),
+                },
+              ],
+            },
+          ]}
         />
-      ))}
+      </RnAnimated.View>
     </View>
   );
 }
@@ -8890,6 +8989,13 @@ const makeStyles = (
     },
     meetClearText: { fontSize: 17, fontWeight: '600', color: glass.textSecondary, textAlign: 'center' },
     dots: { flexDirection: 'row', gap: 6, alignItems: 'center' },
+    dotsViewport: { overflow: 'hidden' },
+    dotsStrip: {
+      flexDirection: 'row',
+      gap: 6,
+      alignItems: 'center',
+      position: 'relative',
+    },
     dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.35)' },
     dotActive: { width: 18, backgroundColor: accent },
 
