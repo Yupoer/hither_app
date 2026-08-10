@@ -84,6 +84,15 @@ describe('route editor + KML contracts (#151)', () => {
     expect(reorder).toMatch(/setPendingStayDestId\(item\.item\.id\)/);
   });
 
+  it('ghost drag: no mid-move setOrder; deleteBg hidden while active; release commits', () => {
+    // Move path must not re-parent rows (cross-day freeze root cause).
+    expect(reorder).toContain('Do NOT setOrder mid-move');
+    expect(reorder).toContain('orderAfterDragMove');
+    expect(reorder).toContain('canSwipe && !active');
+    expect(reorder).toContain('selectionTick');
+    expect(reorder).toContain('lightTap');
+  });
+
   it('open-sync completion is gated by generation after close/reopen', () => {
     expect(mapScreen).toContain('routeOpenSyncGenerationRef');
     expect(mapScreen).toContain(

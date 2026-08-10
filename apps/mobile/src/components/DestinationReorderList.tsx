@@ -26,12 +26,14 @@ import {
   DEFAULT_REORDER_LAYOUT,
   dragTargetIndexFromOffset,
   legalDragIndicesForList,
+  orderAfterDragMove,
   reorderRowCenterY,
   snapToLegalDragIndex,
   type AccommodationListItem,
   type ReorderListEntry,
 } from '../utils/accommodationSemantics';
 import { eligibleFavoriteDateOptions } from '../utils/favoriteDates';
+import { lightTap, selectionTick } from '../utils/haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   DESTINATION_EMOJI_CATEGORIES,
@@ -171,14 +173,19 @@ export default function DestinationReorderList({
   /** Extra dy from programmatic parent scroll during drag. */
   const scrollAccumRef = useRef(0);
   /**
-   * Legal full-list indices for the active drag. Recomputed on grant and after
-   * each successful splice — never on every pan frame (O(n²) freeze root cause).
+   * Legal full-list indices cached at grant. Ghost drag never mutates order mid-
+   * pan, so this set stays valid for the whole gesture (no O(n²) recompute).
    */
   const legalIndicesRef = useRef<number[]>([]);
+  /** Aim index while ghost-dragging (applied once on release). */
+  const dropTargetIndexRef = useRef(0);
+  const lastDropHapticIndexRef = useRef(-1);
   /** Coalesce edge auto-scroll to one scrollTo per animation frame. */
   const autoScrollRafRef = useRef<number | null>(null);
   const pendingAutoScrollRef = useRef(0);
   const pan = useRef(new Animated.Value(0)).current;
+  /** Insertion line under finger aim (null when not dragging). */
+  const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
 
   const [showSettings, setShowSettings] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -201,6 +208,8 @@ export default function DestinationReorderList({
     legalIndicesRef.current = [];
     scrollAccumRef.current = 0;
     pendingAutoScrollRef.current = 0;
+    dropTargetIndexRef.current = 0;
+    lastDropHapticIndexRef.current = -1;
     if (autoScrollRafRef.current != null) {
       cancelAnimationFrame(autoScrollRafRef.current);
       autoScrollRafRef.current = null;
@@ -208,6 +217,7 @@ export default function DestinationReorderList({
     // Always re-enable parent scroll even if release races with unmount.
     onDragActiveChange?.(false);
     setActiveId(null);
+    setDropTargetIndex(null);
     pan.setValue(0);
   }, [onDragActiveChange, pan]);
 
@@ -385,12 +395,17 @@ export default function DestinationReorderList({
       onDragActiveChange?.(true);
       setActiveId(id);
       startIndexRef.current = startIdx;
+      dropTargetIndexRef.current = startIdx;
+      lastDropHapticIndexRef.current = startIdx;
       scrollAccumRef.current = 0;
+      pendingAutoScrollRef.current = 0;
       const entries = toReorderEntries(orderRef.current);
       startCenterYRef.current = reorderRowCenterY(entries, startIdx, REORDER_LAYOUT);
-      // Cache legal slots once at grant; refresh only after a successful splice.
+      // Ghost drag: order is frozen mid-gesture → legal slots stay valid for the whole drag.
       legalIndicesRef.current = legalDragIndicesForList(entries, id);
+      setDropTargetIndex(startIdx);
       pan.setValue(0);
+      selectionTick();
     },
     [pan, onDragActiveChange, toReorderEntries],
   );
@@ -399,18 +414,17 @@ export default function DestinationReorderList({
     (id: string, dy: number, pageY?: number) => {
       if (!draggingRef.current) return;
       const startIndex = startIndexRef.current;
-      const currentIndex = orderRef.current.findIndex((d) => d.id === id);
-      if (currentIndex === -1) return;
+      // Ghost drag: row stays in DOM place; only pan follows the finger.
+      // Do NOT setOrder mid-move — that re-parented rows under new day headers
+      // and left deleteBg + pan offsets broken (red bar / freeze screenshot).
 
       // Edge auto-scroll so other day blocks off-screen stay reachable.
-      // Coalesce to one scrollTo per animation frame (pan fires more often).
       if (typeof pageY === 'number' && onDragAutoScroll) {
         const winH = Dimensions.get('window').height;
         let step = 0;
         if (pageY < DRAG_EDGE_PX) step = -DRAG_SCROLL_STEP;
         else if (pageY > winH - DRAG_EDGE_PX) step = DRAG_SCROLL_STEP;
         if (step !== 0) {
-          // Apply accum now so pan math tracks the virtual list scroll.
           scrollAccumRef.current += step;
           pendingAutoScrollRef.current += step;
           if (autoScrollRafRef.current == null) {
@@ -427,8 +441,6 @@ export default function DestinationReorderList({
 
       const effectiveDy = dy + scrollAccumRef.current;
       const entries = toReorderEntries(orderRef.current);
-      // Geometry includes headers + day quick-add gaps so cross-day aim lands
-      // on the next day block instead of sticking mid-day.
       const rawTarget = dragTargetIndexFromOffset(
         entries,
         startIndex,
@@ -441,30 +453,19 @@ export default function DestinationReorderList({
           ? legalIndicesRef.current
           : legalDragIndicesForList(entries, id);
       const target = snapToLegalDragIndex(
-        legal.length > 0 ? legal : [currentIndex],
+        legal.length > 0 ? legal : [startIndex],
         rawTarget,
         direction,
       );
-
-      if (target !== currentIndex) {
-        const next = orderRef.current.slice();
-        const [moved] = next.splice(currentIndex, 1);
-        const insertAt = Math.max(0, Math.min(target, next.length));
-        next.splice(insertAt, 0, moved);
-        orderRef.current = next;
-        setOrder(next);
-        // Legal slots change after cross-day splice; recompute once, not every pan.
-        legalIndicesRef.current = legalDragIndicesForList(toReorderEntries(next), id);
+      dropTargetIndexRef.current = target;
+      if (target !== lastDropHapticIndexRef.current) {
+        lastDropHapticIndexRef.current = target;
+        selectionTick();
+        setDropTargetIndex(target);
       }
 
-      const idxNow = orderRef.current.findIndex((d) => d.id === id);
-      const currentCenter = reorderRowCenterY(
-        toReorderEntries(orderRef.current),
-        idxNow,
-        REORDER_LAYOUT,
-      );
-      // Keep the floating row under the finger in list space.
-      pan.setValue(startCenterYRef.current + effectiveDy - currentCenter);
+      // Pure finger offset — order/layout Y never changes during the gesture.
+      pan.setValue(effectiveDy);
     },
     [pan, toReorderEntries, onDragAutoScroll],
   );
@@ -479,6 +480,15 @@ export default function DestinationReorderList({
       stayAnchor?: boolean;
     }[] = [];
     try {
+      const startIndex = startIndexRef.current;
+      const target = dropTargetIndexRef.current;
+      // Commit ghost drop once: single splice, single setOrder, no mid-drag thrash.
+      if (target !== startIndex) {
+        const next = orderAfterDragMove(orderRef.current, startIndex, target);
+        orderRef.current = next;
+        setOrder(next);
+      }
+
       let currentDay = 1;
       let position = 0;
       const byDay = new Map<number, AccommodationListItem[]>();
@@ -535,6 +545,7 @@ export default function DestinationReorderList({
       }
 
       if (changed) {
+        lightTap();
         onReorder(updates);
       }
     } finally {
@@ -558,6 +569,7 @@ export default function DestinationReorderList({
       {(canReorder || onImport || (syncFailed && onSync)) && (
         <View style={styles.topActions}>
           {canReorder && <Pressable style={styles.setDaysBtn} onPress={() => {
+            lightTap();
             setEditDays(tripDays ?? 1);
             setEditDate(departureDate ? new Date(departureDate) : new Date());
             setShowSettings(true);
@@ -568,7 +580,10 @@ export default function DestinationReorderList({
           {canReorder && onPickFavorite && (favoritePlaces?.length ?? 0) > 0 ? (
             <Pressable
               style={styles.setDaysBtn}
-              onPress={() => setFavoritesOpen(true)}
+              onPress={() => {
+                lightTap();
+                setFavoritesOpen(true);
+              }}
               accessibilityRole="button"
               accessibilityLabel={t('stay.favorites')}
             >
@@ -578,7 +593,10 @@ export default function DestinationReorderList({
           ) : null}
           {onImport && <Pressable
             style={styles.setDaysBtn}
-            onPress={() => onImport()}
+            onPress={() => {
+              lightTap();
+              onImport();
+            }}
             accessibilityRole="button"
             accessibilityLabel={t('kml.entry')}
           >
@@ -664,6 +682,7 @@ export default function DestinationReorderList({
                     inSetMode
                       ? () => {
                           // Local draft only — commit on header「完成」.
+                          selectionTick();
                           setPendingStayDestId(item.item.id);
                         }
                       : undefined
@@ -671,6 +690,7 @@ export default function DestinationReorderList({
                   onEmojiPress={
                     canReorder && onUpdateEmojiColor && item.item.kind !== 'accommodation'
                       ? (id) => {
+                          lightTap();
                           const dest = destinations.find((d) => d.id === id);
                           setEmojiDraft(resolveDestinationEmoji(dest?.emoji));
                           setEmojiCategory('common');
@@ -685,9 +705,25 @@ export default function DestinationReorderList({
               );
             };
 
+            // Flat index walk matches order[] for ghost drop indicator.
+            let flatIndex = 0;
             return blocks.map((block, blockIndex) => {
               if (block.kind === 'orphan') {
-                return renderDestRow(block.dest);
+                const line =
+                  dropTargetIndex === flatIndex ? (
+                    <View
+                      key={`drop-${flatIndex}`}
+                      style={[styles.dropLine, { backgroundColor: colors.accent }]}
+                    />
+                  ) : null;
+                const row = renderDestRow(block.dest);
+                flatIndex += 1;
+                return (
+                  <React.Fragment key={block.dest.id}>
+                    {line}
+                    {row}
+                  </React.Fragment>
+                );
               }
               const item = block.header;
               const bgColor = dayColors[item.day] || DAY_COLORS[(item.day - 1) % DAY_COLORS.length];
@@ -702,6 +738,33 @@ export default function DestinationReorderList({
                 && canReorder
                 && onQuickAddAccommodation != null
                 && dayStopCount > 0;
+              const headerDrop =
+                dropTargetIndex === flatIndex ? (
+                  <View style={[styles.dropLine, { backgroundColor: colors.accent }]} />
+                ) : null;
+              flatIndex += 1; // header occupies one order slot
+              const destNodes = !collapsed
+                ? block.dests.map((destItem) => {
+                    const line =
+                      dropTargetIndex === flatIndex ? (
+                        <View
+                          key={`drop-${flatIndex}`}
+                          style={[styles.dropLine, { backgroundColor: colors.accent }]}
+                        />
+                      ) : null;
+                    const row = renderDestRow(destItem, item.day);
+                    flatIndex += 1;
+                    return (
+                      <React.Fragment key={destItem.id}>
+                        {line}
+                        {row}
+                      </React.Fragment>
+                    );
+                  })
+                : (() => {
+                    flatIndex += block.dests.length;
+                    return null;
+                  })();
               return (
                 <View
                   key={item.id}
@@ -711,6 +774,7 @@ export default function DestinationReorderList({
                   ]}
                   testID={`day-block-${item.day}`}
                 >
+                  {headerDrop}
                   <HeaderRow
                     item={item}
                     styles={styles}
@@ -720,11 +784,17 @@ export default function DestinationReorderList({
                     dailyTitle={daily?.title}
                     onRemoveDaily={
                       canReorder && hasDaily && onClearDailyAccommodation && stayDate
-                        ? () => onClearDailyAccommodation(stayDate, item.day)
+                        ? () => {
+                            lightTap();
+                            onClearDailyAccommodation(stayDate, item.day);
+                          }
                         : undefined
                     }
                     collapsed={collapsed}
-                    onToggleCollapse={() => void toggleDayCollapsed(item.day)}
+                    onToggleCollapse={() => {
+                      selectionTick();
+                      void toggleDayCollapsed(item.day);
+                    }}
                     setStayLabel={
                       canReorder
                       && !hasDaily
@@ -742,6 +812,7 @@ export default function DestinationReorderList({
                       && onSetDailyFromDestination
                       && dayStopCount > 0
                         ? () => {
+                            lightTap();
                             if (setStayModeDay === item.day) {
                               // Header「完成」: commit pending radio selection, then exit.
                               if (pendingStayDestId && onSetDailyFromDestination) {
@@ -763,15 +834,16 @@ export default function DestinationReorderList({
                     }
                     accent={colors.accent}
                   />
-                  {!collapsed
-                    ? block.dests.map((destItem) => renderDestRow(destItem, item.day))
-                    : null}
+                  {destNodes}
                   {/* Quick-add only when the day already has gathering points. */}
                   {showQuickAdd ? (
                     <View style={styles.dayActions}>
                       <Pressable
                         style={styles.dashedBtn}
-                        onPress={() => onQuickAddAccommodation(item.day)}
+                        onPress={() => {
+                          lightTap();
+                          onQuickAddAccommodation(item.day);
+                        }}
                         accessibilityRole="button"
                         accessibilityLabel={t('stay.quickAdd')}
                       >
@@ -1336,7 +1408,9 @@ const Row = memo(function Row({
 
   return (
     <View style={active && { zIndex: 10, elevation: 6 }}>
-      {canSwipe ? (
+      {/* Hide delete strip while vertically dragging — otherwise red full-width
+          bar stays in the original slot while the row floats (screenshot bug). */}
+      {canSwipe && !active ? (
         <View style={styles.deleteBg}>
           <Animated.View
             style={{ opacity: translateX.interpolate({
@@ -1346,6 +1420,7 @@ const Row = memo(function Row({
           >
             <Pressable
               onPress={() => {
+                lightTap();
                 snap(false);
                 onDelete?.(item.id);
               }}
@@ -1464,14 +1539,23 @@ const makeStyles = (colors: Palette) =>
     },
     dashedBtnText: { fontSize: 13, fontWeight: '600' },
     headerSetStayBtn: {
-      borderWidth: 1,
+      borderWidth: 1.5,
       borderColor: colors.accent,
-      borderRadius: radius.sm,
-      paddingHorizontal: 8,
-      paddingVertical: 3,
-      maxWidth: 160,
+      borderRadius: radius.md,
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+      minHeight: 34,
+      maxWidth: 200,
+      justifyContent: 'center',
     },
-    headerSetStayText: { fontSize: 11, fontWeight: '600' },
+    headerSetStayText: { fontSize: 14, fontWeight: '700' },
+    dropLine: {
+      height: 3,
+      borderRadius: 2,
+      marginVertical: 2,
+      marginHorizontal: spacing.sm,
+      opacity: 0.9,
+    },
     stayBadge: {
       flexDirection: 'row',
       alignItems: 'center',

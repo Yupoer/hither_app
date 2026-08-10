@@ -1153,24 +1153,60 @@ export default function MapScreen({ route, navigation }: Props) {
   const togglePendingFavorite = useCallback(async () => {
     if (!pendingPlace || !user?.id || favoriteBusy) return;
     const title = pendingPlaceTitle.trim() || pendingPlace.name;
+    const wasFavorite = pendingIsFavorite;
+    const coords = pendingPlace.coordinates;
+    const address = pendingPlace.address;
+    // Optimistic UI: flip star immediately, network in background.
+    selectionTick();
+    const snapshot = favoritePlaces;
+    if (wasFavorite) {
+      setFavoritePlaces((prev) =>
+        prev.filter(
+          (f) =>
+            !(
+              f.title === title
+              && Math.abs(f.coordinates.latitude - coords.latitude) < 1e-5
+              && Math.abs(f.coordinates.longitude - coords.longitude) < 1e-5
+            ),
+        ),
+      );
+    } else {
+      const optimistic: FavoritePlace = {
+        id: `draft-fav-${Date.now()}`,
+        userId: user.id,
+        title,
+        address,
+        coordinates: coords,
+      };
+      setFavoritePlaces((prev) => [...prev, optimistic]);
+    }
     setFavoriteBusy(true);
     try {
-      if (pendingIsFavorite) {
-        await unsaveFavoriteByExactMatch(title, pendingPlace.coordinates);
+      if (wasFavorite) {
+        await unsaveFavoriteByExactMatch(title, coords);
       } else {
         await saveFavoritePlace({
           title,
-          address: pendingPlace.address,
-          coordinates: pendingPlace.coordinates,
+          address,
+          coordinates: coords,
         });
       }
+      // Reconcile with server ids when available.
       setFavoritePlaces(await listFavoritePlaces());
     } catch {
-      // best-effort
+      // Rollback optimistic flip.
+      setFavoritePlaces(snapshot);
     } finally {
       setFavoriteBusy(false);
     }
-  }, [pendingPlace, pendingPlaceTitle, user?.id, favoriteBusy, pendingIsFavorite]);
+  }, [
+    pendingPlace,
+    pendingPlaceTitle,
+    user?.id,
+    favoriteBusy,
+    pendingIsFavorite,
+    favoritePlaces,
+  ]);
 
   /** Dismiss the confirm card (used by both Cancel and Add buttons). */
   function dismissConfirmCard() {
@@ -6509,6 +6545,7 @@ export default function MapScreen({ route, navigation }: Props) {
         visible={overlay === 'route'}
         onClose={() => {
           // 完成 and swipe-dismiss both commit: unlock scroll, close, flush.
+          lightTap();
           setRouteScrollEnabled(true);
           setEditButtonActive(false);
           setOverlay(null);
