@@ -220,6 +220,27 @@ describe('legalDragIndicesForList (cross-day)', () => {
     expect(assigned).toBe(2);
   });
 
+  it('freezes Day1 header but allows last-day header drag', () => {
+    const order: ReorderListEntry[] = [
+      header(1),
+      dest('A', 1),
+      header(2),
+      dest('B', 2),
+      header(3),
+      dest('C', 3),
+    ];
+    const h1 = order.findIndex((e) => e.id === 'header-1');
+    const h2 = order.findIndex((e) => e.id === 'header-2');
+    const h3 = order.findIndex((e) => e.id === 'header-3');
+    expect(legalDragIndicesForList(order, 'header-1')).toEqual([h1]);
+    const legalLast = legalDragIndicesForList(order, 'header-3');
+    expect(legalLast).toContain(h3);
+    expect(legalLast.length).toBeGreaterThan(1);
+    const legalMid = legalDragIndicesForList(order, 'header-2');
+    expect(legalMid).toContain(h2);
+    expect(legalMid.length).toBeGreaterThan(1);
+  });
+
   it('freezes locked boundary accommodations', () => {
     const order: ReorderListEntry[] = [
       header(1),
@@ -320,7 +341,7 @@ describe('legalDragIndicesForList (cross-day)', () => {
 });
 
 describe('mergeMapMarkers', () => {
-  it('always includes daily accommodation and dedupes by identity/coords', () => {
+  it('keeps the gathering stop when daily stay is set from that stop', () => {
     const markers = mergeMapMarkers({
       dailyAccommodation: {
         id: 'd1',
@@ -346,12 +367,13 @@ describe('mergeMapMarkers', () => {
         },
       ],
     });
-    expect(markers).toHaveLength(2);
-    expect(markers.some((m) => m.kind === 'daily_accommodation')).toBe(true);
+    // Stop pin stays; daily bed does not hide/replace the gathering point.
+    expect(markers.some((m) => m.id === 'dest-1')).toBe(true);
     expect(markers.some((m) => m.id === 'dest-2')).toBe(true);
+    expect(markers.some((m) => m.kind === 'daily_accommodation')).toBe(false);
   });
 
-  it('dedupes by normalized coordinates when ids differ (bed wins)', () => {
+  it('does not replace a gathering stop with a daily bed at same coords', () => {
     const markers = mergeMapMarkers({
       dailyAccommodation: {
         id: 'd1',
@@ -370,10 +392,11 @@ describe('mergeMapMarkers', () => {
       ],
     });
     expect(markers).toHaveLength(1);
-    expect(markers[0].kind).toBe('daily_accommodation');
+    expect(markers[0].id).toBe('x');
+    expect(markers[0].kind).toBe('destination');
   });
 
-  it('shows one bed per day for the same hotel coords', () => {
+  it('shows daily beds per day when only accommodation cards exist', () => {
     const coords = { latitude: 25.033, longitude: 121.565 };
     const markers = mergeMapMarkers({
       dailyAccommodations: [
@@ -399,12 +422,17 @@ describe('mergeMapMarkers', () => {
         },
       ],
     });
-    const beds = markers.filter((m) => m.kind === 'daily_accommodation');
-    expect(beds).toHaveLength(2);
-    expect(beds.map((m) => m.day).sort()).toEqual([1, 2]);
+    // Accommodation cards claim slots first (bed emoji); daily upgrades optional.
+    expect(markers).toHaveLength(2);
+    expect(markers.every((m) => m.day === 1 || m.day === 2)).toBe(true);
+    expect(
+      markers.every(
+        (m) => m.kind === 'daily_accommodation' || m.emoji === '🛏️',
+      ),
+    ).toBe(true);
   });
 
-  it('upgrades a stop pin to bed when accommodation shares coords', () => {
+  it('keeps a gathering stop over an accommodation card at the same coords', () => {
     const coords = { latitude: 25.1, longitude: 121.5 };
     const markers = mergeMapMarkers({
       destinations: [
@@ -425,9 +453,33 @@ describe('mergeMapMarkers', () => {
         },
       ],
     });
+    // Gathering stop wins so setting stay never erases the stop pin.
     expect(markers).toHaveLength(1);
-    expect(markers[0].id).toBe('acc');
-    expect(markers[0].emoji).toBe('🛏️');
+    expect(markers[0].id).toBe('stop');
+    expect(markers[0].kind).toBe('destination');
+  });
+
+  it('shows a daily bed when no destination claims the day+coords slot', () => {
+    const markers = mergeMapMarkers({
+      dailyAccommodation: {
+        id: 'd1',
+        title: 'Hotel only',
+        coordinates: { latitude: 25.2, longitude: 121.6 },
+        day: 1,
+      },
+      destinations: [
+        {
+          id: 'cafe',
+          title: 'Cafe',
+          order: 0,
+          day: 1,
+          coordinates: { latitude: 25.3, longitude: 121.7 },
+        },
+      ],
+    });
+    expect(markers).toHaveLength(2);
+    expect(markers.some((m) => m.kind === 'daily_accommodation')).toBe(true);
+    expect(markers.some((m) => m.id === 'cafe')).toBe(true);
   });
 });
 

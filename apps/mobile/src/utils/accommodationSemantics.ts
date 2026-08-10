@@ -223,7 +223,8 @@ export function proposedOrderPreservesBoundaryLocks(
  * Full-list indices where handleMove may place `movingId`.
  * Recomputed each move so cross-day splices stay consistent.
  * Locked head/tail accommodations only return their current index.
- * Day headers: only middle days; cannot cross the previous or next day header.
+ * Day headers: Day1 is fixed; Day2…last may drag. Cannot cross past the
+ * previous day header (or Day1 when moving day 2).
  */
 export function legalDragIndicesForList(
   order: readonly ReorderListEntry[],
@@ -241,20 +242,30 @@ export function legalDragIndicesForList(
       if (e.type === 'header') headerIndices.push(i);
     });
     const hPos = headerIndices.indexOf(movingIdx);
-    if (hPos <= 0 || hPos >= headerIndices.length - 1) {
-      // First / last day headers are fixed.
+    // Day1 header is fixed; every later day (including last) may reorder.
+    if (hPos <= 0) {
       return [movingIdx];
     }
-    // May only land among dest slots of adjacent days (between prev and next headers).
     const prevHeaderIdx = headerIndices[hPos - 1];
-    const nextHeaderIdx = headerIndices[hPos + 1];
+    const nextHeaderIdx =
+      hPos + 1 < headerIndices.length ? headerIndices[hPos + 1] : order.length;
     const legal = new Set<number>([movingIdx]);
+    // Land among dest slots of the previous adjacent day (and own block).
     for (let target = prevHeaderIdx + 1; target < nextHeaderIdx; target++) {
       if (order[target]?.type === 'dest') legal.add(target);
     }
-    // Also allow landing just before next header (end of previous adjacent day).
-    if (nextHeaderIdx > prevHeaderIdx + 1) {
+    // Allow landing at next header index (start of following day) when present;
+    // for the last day, allow landing at end-of-list append slots via dests only.
+    if (hPos + 1 < headerIndices.length && nextHeaderIdx > prevHeaderIdx + 1) {
       legal.add(nextHeaderIdx);
+    }
+    // Last day: also allow any dest after prev header through end of list.
+    if (hPos === headerIndices.length - 1) {
+      for (let target = prevHeaderIdx + 1; target < order.length; target++) {
+        if (order[target]?.type === 'dest' || target === movingIdx) {
+          legal.add(target);
+        }
+      }
     }
     return [...legal].sort((a, b) => a - b);
   }

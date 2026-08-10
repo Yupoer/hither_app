@@ -35,7 +35,7 @@ import {
 } from '../utils/accommodationSemantics';
 import { eligibleFavoriteDateOptions } from '../utils/favoriteDates';
 import { placeExactMatchKey } from '../utils/placeIdentity';
-import { lightTap, mediumTap, selectionTick } from '../utils/haptics';
+import { lightTap, selectionTick } from '../utils/haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   DESTINATION_EMOJI_CATEGORIES,
@@ -233,13 +233,6 @@ export default function DestinationReorderList({
    */
   const [pendingStayDestId, setPendingStayDestId] = useState<string | null>(null);
   const [collapsedDays, setCollapsedDays] = useState<Record<number, boolean>>({});
-  /**
-   * Middle-day header chrome: default collapse; left-swipe toggles drag handle.
-   * Edge days never expose either affordance.
-   */
-  const [headerAffordanceByDay, setHeaderAffordanceByDay] = useState<
-    Record<number, 'collapse' | 'drag'>
-  >({});
   const [favoritesOpen, setFavoritesOpen] = useState(false);
   /** Favorite selected; date must be confirmed before write. */
   const [favoritePending, setFavoritePending] = useState<FavoritePlaceView | null>(null);
@@ -421,11 +414,8 @@ export default function DestinationReorderList({
       const startIdx = orderRef.current.findIndex((d) => d.id === id);
       if (startIdx === -1) return;
       const entry = orderRef.current[startIdx];
-      // Middle day headers may drag (first/last day headers stay fixed).
-      if (entry.type === 'header') {
-        const days = Math.max(1, tripDays || 1);
-        if (entry.day <= 1 || entry.day >= days) return;
-      }
+      // Day1 header is fixed; Day2…last may drag.
+      if (entry.type === 'header' && entry.day <= 1) return;
       draggingRef.current = true;
       onDragActiveChange?.(true);
       setActiveId(id);
@@ -448,7 +438,7 @@ export default function DestinationReorderList({
       pan.setValue(0);
       selectionTick();
     },
-    [pan, onDragActiveChange, toReorderEntries, getMeasuredGeometry, tripDays],
+    [pan, onDragActiveChange, toReorderEntries, getMeasuredGeometry],
   );
 
   const handleMove = useCallback(
@@ -732,8 +722,15 @@ export default function DestinationReorderList({
               const dailyForDay = stayDateKey && dailyByDate
                 ? dailyByDate[stayDateKey]
                 : undefined;
+              const hasDailyForVisual = Boolean(dailyForDay);
+              // Stay chrome (bed badge + wash) only when this day has a daily
+              // stay set. A copied accommodation card on a bare day looks normal.
+              const treatAsStayCard =
+                hasDailyForVisual && item.item.kind === 'accommodation';
+              // Source stop (or stay card) matching the day's daily still tints.
               const stayHighlight = Boolean(
-                dailyForDay
+                hasDailyForVisual
+                && dailyForDay
                 && item.item.coordinates
                 && dailyForDay.coordinates
                 && placeExactMatchKey(item.item.title, item.item.coordinates)
@@ -752,7 +749,7 @@ export default function DestinationReorderList({
                   onMove={onMove}
                   onRelease={onRelease}
                   onDelete={onDelete}
-                  isAccommodation={item.item.kind === 'accommodation'}
+                  isAccommodation={treatAsStayCard}
                   stayHighlight={stayHighlight}
                   boundaryLocked={locked}
                   // Accommodation cards can also become the day's stay source
@@ -773,7 +770,7 @@ export default function DestinationReorderList({
                     // Stay cards always show a fixed bed — no emoji picker.
                     canReorder
                     && onUpdateEmojiColor
-                    && item.item.kind !== 'accommodation'
+                    && !treatAsStayCard
                       ? (id) => {
                           lightTap();
                           const dest = destinations.find((d) => d.id === id);
@@ -817,8 +814,6 @@ export default function DestinationReorderList({
               const collapsed = Boolean(collapsedDays[item.day]);
               const dayStopCount = block.dests.length;
               const hasDaily = Boolean(daily);
-              const totalDays = Math.max(1, tripDays || 1);
-              const isEdgeDay = item.day <= 1 || item.day >= totalDays;
               // Quick-add stay card only after daily accommodation is set
               // (avoids mis-taps while dragging day blocks with no stay yet).
               const showQuickAdd =
@@ -827,10 +822,9 @@ export default function DestinationReorderList({
                 && onQuickAddAccommodation != null
                 && dayStopCount > 0
                 && hasDaily;
-              const headerAffordance = headerAffordanceByDay[item.day] ?? 'collapse';
-              const showCollapseAffordance = !isEdgeDay && headerAffordance === 'collapse';
-              const showDragAffordance =
-                canReorder && !isEdgeDay && headerAffordance === 'drag';
+              // Every day can collapse; Day2…last can drag (Day1 fixed).
+              const showCollapseAffordance = true;
+              const showDragAffordance = canReorder && item.day > 1;
               // Drop on a header index = first slot of that day → draw AFTER header,
               // never between previous day's quick-add and this header.
               const headerIndex = flatIndex;
@@ -888,7 +882,6 @@ export default function DestinationReorderList({
                     }
                     collapsed={collapsed}
                     onToggleCollapse={
-                      // First / last day: no collapse (product).
                       showCollapseAffordance
                         ? () => {
                             selectionTick();
@@ -897,17 +890,6 @@ export default function DestinationReorderList({
                         : undefined
                     }
                     canDragHeader={showDragAffordance}
-                    canSwipeToggleAffordance={canReorder && !isEdgeDay}
-                    onSwipeToggleAffordance={() => {
-                      mediumTap();
-                      setHeaderAffordanceByDay((prev) => {
-                        const cur = prev[item.day] ?? 'collapse';
-                        return {
-                          ...prev,
-                          [item.day]: cur === 'collapse' ? 'drag' : 'collapse',
-                        };
-                      });
-                    }}
                     onHeaderGrant={
                       showDragAffordance
                         ? () => onGrant(item.id)
@@ -920,6 +902,9 @@ export default function DestinationReorderList({
                     }
                     onHeaderRelease={
                       showDragAffordance ? () => onRelease() : undefined
+                    }
+                    onHeaderCancel={
+                      showDragAffordance ? () => endDragSession() : undefined
                     }
                     headerActive={activeId === item.id}
                     headerPan={pan}
@@ -1370,11 +1355,10 @@ const HeaderRow = memo(function HeaderRow({
   collapsed,
   onToggleCollapse,
   canDragHeader,
-  canSwipeToggleAffordance,
-  onSwipeToggleAffordance,
   onHeaderGrant,
   onHeaderMove,
   onHeaderRelease,
+  onHeaderCancel,
   headerActive,
   headerPan,
   setStayLabel,
@@ -1393,12 +1377,12 @@ const HeaderRow = memo(function HeaderRow({
   collapsed?: boolean;
   onToggleCollapse?: () => void;
   canDragHeader?: boolean;
-  /** Middle days: left-swipe past trash threshold toggles collapse ↔ drag. */
-  canSwipeToggleAffordance?: boolean;
-  onSwipeToggleAffordance?: () => void;
   onHeaderGrant?: () => void;
   onHeaderMove?: (dy: number, pageY?: number) => void;
+  /** Finger released — commit drop. */
   onHeaderRelease?: () => void;
+  /** Gesture stolen/cancelled — do not commit. */
+  onHeaderCancel?: () => void;
   headerActive?: boolean;
   headerPan?: Animated.Value;
   /** Label for set-stay control placed after day title (not dashed). */
@@ -1412,18 +1396,14 @@ const HeaderRow = memo(function HeaderRow({
   const hasStay = Boolean(dailyTitle);
   const canDragHeaderRef = useRef(canDragHeader);
   canDragHeaderRef.current = canDragHeader;
-  const canSwipeToggleRef = useRef(canSwipeToggleAffordance);
-  canSwipeToggleRef.current = canSwipeToggleAffordance;
-  const onSwipeToggleRef = useRef(onSwipeToggleAffordance);
-  onSwipeToggleRef.current = onSwipeToggleAffordance;
   const onHeaderGrantRef = useRef(onHeaderGrant);
   onHeaderGrantRef.current = onHeaderGrant;
   const onHeaderMoveRef = useRef(onHeaderMove);
   onHeaderMoveRef.current = onHeaderMove;
   const onHeaderReleaseRef = useRef(onHeaderRelease);
   onHeaderReleaseRef.current = onHeaderRelease;
-  const swipeX = useRef(new Animated.Value(0)).current;
-  const headerAxisRef = useRef<null | 'h' | 'v'>(null);
+  const onHeaderCancelRef = useRef(onHeaderCancel);
+  onHeaderCancelRef.current = onHeaderCancel;
   const dragResponder = useRef(
     PanResponder.create({
       // Only claim from the ≡ handle itself (vertical drag).
@@ -1432,60 +1412,14 @@ const HeaderRow = memo(function HeaderRow({
         Boolean(canDragHeaderRef.current)
         && Math.abs(g.dy) > 4
         && Math.abs(g.dy) > Math.abs(g.dx),
+      // Keep ownership for the whole gesture so ScrollView cannot mid-commit.
+      onPanResponderTerminationRequest: () => false,
+      onShouldBlockNativeResponder: () => true,
       onPanResponderGrant: () => onHeaderGrantRef.current?.(),
       onPanResponderMove: (_e, g) => onHeaderMoveRef.current?.(g.dy, g.moveY),
       onPanResponderRelease: () => onHeaderReleaseRef.current?.(),
-      onPanResponderTerminate: () => onHeaderReleaseRef.current?.(),
-    }),
-  ).current;
-
-  const swipeResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_e, g) =>
-        Boolean(canSwipeToggleRef.current)
-        && Math.abs(g.dx) > 8
-        && Math.abs(g.dx) > Math.abs(g.dy) * 1.2,
-      onPanResponderTerminationRequest: () => false,
-      onPanResponderGrant: () => {
-        headerAxisRef.current = null;
-      },
-      onPanResponderMove: (_e, g) => {
-        if (!canSwipeToggleRef.current) return;
-        if (headerAxisRef.current == null && Math.abs(g.dx) > 6) {
-          headerAxisRef.current = 'h';
-        }
-        if (headerAxisRef.current === 'h') {
-          // Rubber-band left only (same distance language as swipe-to-delete).
-          const next = Math.max(-REVEAL_WIDTH, Math.min(0, g.dx));
-          swipeX.setValue(next);
-        }
-      },
-      onPanResponderRelease: (_e, g) => {
-        if (headerAxisRef.current === 'h' && canSwipeToggleRef.current) {
-          const crossed = g.dx < -REVEAL_WIDTH / 2;
-          Animated.spring(swipeX, {
-            toValue: 0,
-            useNativeDriver: false,
-            bounciness: 6,
-            speed: 18,
-          }).start();
-          if (crossed) {
-            onSwipeToggleRef.current?.();
-          }
-        } else {
-          swipeX.setValue(0);
-        }
-        headerAxisRef.current = null;
-      },
-      onPanResponderTerminate: () => {
-        Animated.spring(swipeX, {
-          toValue: 0,
-          useNativeDriver: false,
-          bounciness: 0,
-        }).start();
-        headerAxisRef.current = null;
-      },
+      // Stolen/cancelled → cancel without reorder commit.
+      onPanResponderTerminate: () => onHeaderCancelRef.current?.(),
     }),
   ).current;
 
@@ -1497,14 +1431,12 @@ const HeaderRow = memo(function HeaderRow({
           ? { transform: [{ translateY: headerPan }], zIndex: 10, elevation: 6 }
           : undefined
       }
-      {...(canSwipeToggleAffordance ? swipeResponder.panHandlers : {})}
     >
-      {/* Row 1: day title, date, collapse OR drag (swipe toggles). */}
-      <Animated.View
+      {/* Row 1: day title, date, collapse + drag (both when allowed). */}
+      <View
         style={[
           styles.headerRow,
           hasStay && styles.headerRowCompact,
-          { transform: [{ translateX: swipeX }] },
         ]}
       >
         <View style={styles.headerRowInner}>
@@ -1548,13 +1480,13 @@ const HeaderRow = memo(function HeaderRow({
               </Pressable>
             ) : null}
             {canDragHeader ? (
-              <View {...dragResponder.panHandlers} hitSlop={8}>
+              <View {...dragResponder.panHandlers} hitSlop={12}>
                 <Text style={styles.handle}>≡</Text>
               </View>
             ) : null}
           </View>
         </View>
-      </Animated.View>
+      </View>
       {/* Row 2: accommodation place + remove (only when stay is set). */}
       {hasStay ? (
         <View style={styles.headerStayRow}>

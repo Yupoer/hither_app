@@ -1,7 +1,9 @@
 /**
  * Merge daily accommodation markers with itinerary destination markers.
- * Priority: bed / accommodation wins over normal stops at the same place.
- * Multi-day stays at the same coordinates still each get a bed marker.
+ * Gathering stops always win over daily bed pins at the same place so setting
+ * stay from a stop never hides that gathering point on the map.
+ * Multi-day stays at the same coordinates still each get a bed marker when no
+ * stop occupies that day+coords slot.
  */
 
 import type { Coordinates, Destination } from '../types';
@@ -52,9 +54,9 @@ function bedPriority(marker: MapMarkerInput): number {
 
 /**
  * Build display markers for the map.
- * - All daily stays are included (not only "today").
- * - At the same day+coords, bed / accommodation replaces a normal stop pin.
- * - Same hotel across days → one bed per day.
+ * - All itinerary destinations are included (stops never suppressed by stay).
+ * - Daily bed markers fill empty day+coords slots, or upgrade accommodation cards.
+ * - Same hotel across days → one bed per day when no stop claims the slot.
  */
 export function mergeMapMarkers(input: {
   destinations: readonly Destination[];
@@ -69,19 +71,15 @@ export function mergeMapMarkers(input: {
     dailies.push(input.dailyAccommodation);
   }
 
-  // slotKey → marker (upgrade in place when bed beats stop)
+  // slotKey → marker (upgrade in place when bed beats stop-less slot)
   const bySlot = new Map<string, MapMarkerInput>();
   const identityTaken = new Set<string>();
 
-  const consider = (marker: MapMarkerInput, destKind?: string | null) => {
+  const consider = (
+    marker: MapMarkerInput,
+    destKind?: string | null,
+  ) => {
     if (identityTaken.has(marker.id)) return;
-    if (
-      marker.sourceDestinationId
-      && identityTaken.has(marker.sourceDestinationId)
-    ) {
-      // Source already shown as bed; skip duplicate dest pin.
-      return;
-    }
 
     const slot = markerSlotKey(marker.coordinates, marker.day);
     const existing = bySlot.get(slot);
@@ -89,23 +87,35 @@ export function mergeMapMarkers(input: {
     const existingBed = existing
       ? isBedKind(existing.kind, existing.emoji === '🛏️' ? 'accommodation' : null)
       : false;
+    const existingIsStop =
+      existing != null
+      && existing.kind === 'destination'
+      && existing.emoji !== '🛏️';
+    const incomingIsStop =
+      marker.kind === 'destination' && !incomingBed;
 
     if (!existing) {
       bySlot.set(slot, marker);
       identityTaken.add(marker.id);
-      if (marker.sourceDestinationId) identityTaken.add(marker.sourceDestinationId);
       return;
     }
 
-    // Upgrade stop → bed when accommodation arrives later.
-    if (incomingBed && !existingBed) {
+    // Gathering stops always keep the pin — daily bed never hides them.
+    if (existingIsStop && incomingBed) {
+      return;
+    }
+    if (incomingIsStop && existingBed) {
       identityTaken.delete(existing.id);
-      if (existing.sourceDestinationId) {
-        identityTaken.delete(existing.sourceDestinationId);
-      }
       bySlot.set(slot, marker);
       identityTaken.add(marker.id);
-      if (marker.sourceDestinationId) identityTaken.add(marker.sourceDestinationId);
+      return;
+    }
+
+    // Upgrade empty/other → accommodation card bed.
+    if (incomingBed && !existingBed) {
+      identityTaken.delete(existing.id);
+      bySlot.set(slot, marker);
+      identityTaken.add(marker.id);
       return;
     }
 
@@ -113,32 +123,17 @@ export function mergeMapMarkers(input: {
     if (incomingBed && existingBed) {
       if (bedPriority(marker) > bedPriority(existing)) {
         identityTaken.delete(existing.id);
-        if (existing.sourceDestinationId) {
-          identityTaken.delete(existing.sourceDestinationId);
-        }
         bySlot.set(slot, marker);
         identityTaken.add(marker.id);
-        if (marker.sourceDestinationId) identityTaken.add(marker.sourceDestinationId);
       }
       return;
     }
 
-    // Non-bed when bed already occupies slot: drop.
+    // Non-bed when bed already occupies slot (and existing is not a stop): drop.
     if (!incomingBed && existingBed) return;
   };
 
-  // Dailies first so bed claims the slot early.
-  for (const daily of dailies) {
-    consider({
-      id: `daily:${daily.id}`,
-      title: daily.title,
-      coordinates: daily.coordinates,
-      kind: 'daily_accommodation',
-      day: daily.day,
-      sourceDestinationId: daily.sourceDestinationId ?? null,
-    });
-  }
-
+  // Destinations first so gathering stops claim slots before daily beds.
   for (const dest of input.destinations) {
     consider(
       {
@@ -152,6 +147,17 @@ export function mergeMapMarkers(input: {
       },
       dest.kind,
     );
+  }
+
+  for (const daily of dailies) {
+    consider({
+      id: `daily:${daily.id}`,
+      title: daily.title,
+      coordinates: daily.coordinates,
+      kind: 'daily_accommodation',
+      day: daily.day,
+      sourceDestinationId: daily.sourceDestinationId ?? null,
+    });
   }
 
   return [...bySlot.values()];

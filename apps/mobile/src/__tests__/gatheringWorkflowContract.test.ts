@@ -98,22 +98,27 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(migrations).toContain('drop policy if exists "itinerary_items: insert if in that subgroup"');
   });
 
-  it('gates quick-add stay CTA on daily accommodation and day-header swipe modes', () => {
+  it('gates quick-add stay CTA on daily stay; every day collapses; day>1 drags', () => {
     // 「新增住宿點」only after stay is set (hasDaily).
     expect(reorderList).toMatch(/showQuickAdd[\s\S]{0,200}hasDaily/);
-    // Default collapse; left-swipe toggles drag handle (not both at once).
-    expect(reorderList).toContain("headerAffordanceByDay");
-    expect(reorderList).toContain("canSwipeToggleAffordance");
-    expect(reorderList).toContain("onSwipeToggleAffordance");
-    expect(reorderList).toContain("REVEAL_WIDTH");
+    // Collapse + drag both available (no left-swipe mutual exclusion).
+    expect(reorderList).toContain('showCollapseAffordance = true');
+    expect(reorderList).toContain('showDragAffordance = canReorder && item.day > 1');
+    expect(reorderList).not.toContain('headerAffordanceByDay');
+    expect(reorderList).not.toContain('canSwipeToggleAffordance');
+    // Swipe-to-delete still uses reveal width on rows.
+    expect(reorderList).toContain('REVEAL_WIDTH');
   });
 
   it('locks stay cards to bed emoji and allows them as set-stay radio sources', () => {
     expect(reorderList).toContain('STAY_MARKER_EMOJI');
     expect(reorderList).toContain('STAY_BADGE_BG');
-    // No emoji picker for accommodation kind.
+    // Stay chrome only when the day has daily stay set (copied cards on bare days look normal).
+    expect(reorderList).toContain('treatAsStayCard');
+    expect(reorderList).toContain('isAccommodation={treatAsStayCard}');
+    // No emoji picker while treating as stay card.
     expect(reorderList).toMatch(
-      /onEmojiPress=\{\s*[\s\S]*?kind !== 'accommodation'/,
+      /onEmojiPress=\{\s*[\s\S]*?!treatAsStayCard/,
     );
     // Set-stay checkboxes include accommodation (cross-day moved stay cards).
     expect(reorderList).toContain('showSelect={inSetMode}');
