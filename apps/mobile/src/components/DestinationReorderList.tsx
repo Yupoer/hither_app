@@ -537,7 +537,8 @@ export default function DestinationReorderList({
       if (target !== startIndex) {
         let next: ListItem[];
         if (moving?.type === 'header') {
-          // Whole day block (header + all dests) — never move a bare header.
+          // Whole day block (header + all dests). May insert mid-dest of a
+          // neighboring day; renumber stamps day from preceding headers.
           next = moveDayBlockBefore(orderRef.current, startIndex, target);
           let dayCounter = 0;
           next = next.map((item) => {
@@ -774,7 +775,7 @@ export default function DestinationReorderList({
                     inSetMode
                       ? () => {
                           // Local draft only — commit on header「完成」.
-                          // Does not remove or convert the source destination.
+                          // Commit deletes the source gathering point and keeps stay.
                           selectionTick();
                           setPendingStayDestId(item.item.id);
                         }
