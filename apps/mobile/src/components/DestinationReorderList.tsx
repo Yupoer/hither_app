@@ -23,7 +23,10 @@ import {
   accommodationBoundaryLocks,
   applyPureIndexAnchors,
   dayCollapseStorageKey,
+  DEFAULT_REORDER_LAYOUT,
+  dragTargetIndexFromOffset,
   legalDragIndicesForList,
+  reorderRowCenterY,
   snapToLegalDragIndex,
   type AccommodationListItem,
   type ReorderListEntry,
@@ -41,8 +44,12 @@ import {
 } from '../utils/destinationEmojiColor';
 import { getColorForDay } from '../utils/destinationMarkerChrome';
 
-const ROW_HEIGHT = 56;
+const ROW_HEIGHT = DEFAULT_REORDER_LAYOUT.rowHeight;
+const REORDER_LAYOUT = DEFAULT_REORDER_LAYOUT;
 const REVEAL_WIDTH = 76;
+/** Auto-scroll parent when finger is within this distance of screen edges. */
+const DRAG_EDGE_PX = 120;
+const DRAG_SCROLL_STEP = 14;
 
 export interface DailyAccommodationView {
   stayDate: string;
@@ -82,6 +89,11 @@ interface Props {
   emptyLabel: string;
   dragHint?: string;
   onDragActiveChange?: (active: boolean) => void;
+  /**
+   * While dragging near the screen edge, parent should scroll by `deltaY`
+   * (content coordinates). Enables reaching other day blocks off-screen.
+   */
+  onDragAutoScroll?: (deltaY: number) => void;
   /** Daily accommodation by calendar date (YYYY-MM-DD). */
   dailyByDate?: Record<string, DailyAccommodationView | undefined>;
   /** Leader: clear daily accommodation for a date (does not delete cards). */
@@ -117,6 +129,7 @@ export default function DestinationReorderList({
   emptyLabel,
   dragHint,
   onDragActiveChange,
+  onDragAutoScroll,
   dailyByDate,
   onClearDailyAccommodation,
   onSetDailyFromDestination,
@@ -153,6 +166,10 @@ export default function DestinationReorderList({
     setColorPickerDay(day);
   }, []);
   const startIndexRef = useRef(0);
+  /** List-space center Y of the row at drag grant (for finger tracking). */
+  const startCenterYRef = useRef(0);
+  /** Extra dy from programmatic parent scroll during drag. */
+  const scrollAccumRef = useRef(0);
   const pan = useRef(new Animated.Value(0)).current;
 
   const [showSettings, setShowSettings] = useState(false);
@@ -340,24 +357,51 @@ export default function DestinationReorderList({
       onDragActiveChange?.(true);
       setActiveId(id);
       startIndexRef.current = startIdx;
+      scrollAccumRef.current = 0;
+      startCenterYRef.current = reorderRowCenterY(
+        toReorderEntries(orderRef.current),
+        startIdx,
+        REORDER_LAYOUT,
+      );
       pan.setValue(0);
     },
-    [pan, onDragActiveChange],
+    [pan, onDragActiveChange, toReorderEntries],
   );
 
   const handleMove = useCallback(
-    (id: string, dy: number) => {
+    (id: string, dy: number, pageY?: number) => {
       const startIndex = startIndexRef.current;
       const currentIndex = orderRef.current.findIndex((d) => d.id === id);
       if (currentIndex === -1) return;
 
-      const rawTarget = Math.round(startIndex + dy / ROW_HEIGHT);
-      // Multi-day legal slots (recomputed each move). Locked head/tail freeze;
-      // mid stops may enter other day blocks (including empty days).
-      const legal = legalDragIndicesForList(toReorderEntries(orderRef.current), id);
+      // Edge auto-scroll so other day blocks off-screen stay reachable.
+      if (typeof pageY === 'number' && onDragAutoScroll) {
+        const winH = Dimensions.get('window').height;
+        if (pageY < DRAG_EDGE_PX) {
+          onDragAutoScroll(-DRAG_SCROLL_STEP);
+          scrollAccumRef.current -= DRAG_SCROLL_STEP;
+        } else if (pageY > winH - DRAG_EDGE_PX) {
+          onDragAutoScroll(DRAG_SCROLL_STEP);
+          scrollAccumRef.current += DRAG_SCROLL_STEP;
+        }
+      }
+
+      const effectiveDy = dy + scrollAccumRef.current;
+      const entries = toReorderEntries(orderRef.current);
+      // Geometry includes headers + day quick-add gaps so cross-day aim lands
+      // on the next day block instead of sticking mid-day.
+      const rawTarget = dragTargetIndexFromOffset(
+        entries,
+        startIndex,
+        effectiveDy,
+        REORDER_LAYOUT,
+      );
+      const direction = effectiveDy === 0 ? 0 : effectiveDy > 0 ? 1 : -1;
+      const legal = legalDragIndicesForList(entries, id);
       const target = snapToLegalDragIndex(
         legal.length > 0 ? legal : [currentIndex],
         rawTarget,
+        direction,
       );
 
       if (target !== currentIndex) {
@@ -370,15 +414,22 @@ export default function DestinationReorderList({
       }
 
       const idxNow = orderRef.current.findIndex((d) => d.id === id);
-      pan.setValue(dy + (startIndex - idxNow) * ROW_HEIGHT);
+      const currentCenter = reorderRowCenterY(
+        toReorderEntries(orderRef.current),
+        idxNow,
+        REORDER_LAYOUT,
+      );
+      // Keep the floating row under the finger in list space.
+      pan.setValue(startCenterYRef.current + effectiveDy - currentCenter);
     },
-    [pan, toReorderEntries],
+    [pan, toReorderEntries, onDragAutoScroll],
   );
 
   const handleRelease = useCallback(() => {
     if (!draggingRef.current) return;
     draggingRef.current = false;
     onDragActiveChange?.(false);
+    scrollAccumRef.current = 0;
 
     setActiveId(null);
     pan.setValue(0);
@@ -453,7 +504,8 @@ export default function DestinationReorderList({
   handlersRef.current = { handleGrant, handleMove, handleRelease };
   const onGrant = useCallback((id: string) => handlersRef.current.handleGrant(id), []);
   const onMove = useCallback(
-    (id: string, dy: number) => handlersRef.current.handleMove(id, dy),
+    (id: string, dy: number, pageY?: number) =>
+      handlersRef.current.handleMove(id, dy, pageY),
     [],
   );
   const onRelease = useCallback(() => handlersRef.current.handleRelease(), []);
@@ -1119,7 +1171,7 @@ const Row = memo(function Row({
   styles: ReturnType<typeof makeStyles>;
   dayColor: string;
   onGrant: (id: string) => void;
-  onMove: (id: string, dy: number) => void;
+  onMove: (id: string, dy: number, pageY?: number) => void;
   onRelease: () => void;
   onDelete?: (id: string) => void;
   onEmojiPress?: (id: string) => void;
@@ -1189,7 +1241,7 @@ const Row = memo(function Row({
           const next = Math.max(-REVEAL_WIDTH, Math.min(0, base + g.dx));
           translateX.setValue(next);
         } else if (axisRef.current === 'v') {
-          onMoveRef.current(itemIdRef.current, g.dy);
+          onMoveRef.current(itemIdRef.current, g.dy, g.moveY);
         }
       },
       onPanResponderRelease: (_evt, g) => {

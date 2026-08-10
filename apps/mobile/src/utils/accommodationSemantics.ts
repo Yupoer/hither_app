@@ -257,7 +257,12 @@ export function legalDragIndicesForList(
   // Include header indices so empty day blocks are valid drop targets (insert
   // lands after the day header once the mover is spliced in).
   const legal = new Set<number>([movingIdx]);
+  const firstHeaderIdx = order.findIndex((e) => e.type === 'header');
   for (let target = 0; target < order.length; target++) {
+    // Never offer "before the first day header" — that slot is not a day block.
+    if (firstHeaderIdx >= 0 && target < firstHeaderIdx && target !== movingIdx) {
+      continue;
+    }
     const proposed = orderAfterDragMove(order, movingIdx, target);
     if (proposedOrderPreservesBoundaryLocks(proposed, movingId)) {
       legal.add(target);
@@ -266,10 +271,16 @@ export function legalDragIndicesForList(
   return [...legal].sort((a, b) => a - b);
 }
 
-/** Nearest legal full-list index to the finger aim. */
+/**
+ * Nearest legal full-list index to the finger aim.
+ * On equal distance, prefer the index in the drag direction so sparse legal
+ * sets (e.g. mid stop with locked hotels → [2, 4]) can cross into the next day.
+ * @param direction -1 up, 0 none/unknown, +1 down
+ */
 export function snapToLegalDragIndex(
   legalIndices: readonly number[],
   rawTarget: number,
+  direction: number = 0,
 ): number {
   if (legalIndices.length === 0) return rawTarget;
   let best = legalIndices[0];
@@ -280,9 +291,117 @@ export function snapToLegalDragIndex(
     if (dist < bestDist) {
       best = idx;
       bestDist = dist;
+    } else if (dist === bestDist && direction !== 0) {
+      // Tie-break: prefer the slot further along the drag direction.
+      if (direction > 0 && idx > best) best = idx;
+      if (direction < 0 && idx < best) best = idx;
     }
   }
   return best;
+}
+
+/** Row heights used to map finger travel → reorder index (includes day gaps). */
+export type ReorderLayoutHeights = {
+  headerHeight: number;
+  rowHeight: number;
+  /** Quick-add strip after each day section (not an order index). */
+  dayGapHeight: number;
+};
+
+export const DEFAULT_REORDER_LAYOUT: ReorderLayoutHeights = {
+  headerHeight: 48,
+  rowHeight: 56,
+  dayGapHeight: 52,
+};
+
+/**
+ * Top Y and height of each order row in list coordinates, accounting for
+ * quick-add gaps after each day section (empty days: gap after header).
+ */
+export function reorderRowGeometry(
+  order: readonly ReorderListEntry[],
+  heights: ReorderLayoutHeights = DEFAULT_REORDER_LAYOUT,
+): { tops: number[]; rowHeights: number[]; total: number } {
+  const tops: number[] = [];
+  const rowHeights: number[] = [];
+  let y = 0;
+  for (let i = 0; i < order.length; i++) {
+    tops.push(y);
+    const h =
+      order[i].type === 'header' ? heights.headerHeight : heights.rowHeight;
+    rowHeights.push(h);
+    y += h;
+    const next = order[i + 1];
+    const endOfDay =
+      order[i].type === 'header'
+        ? !next || next.type === 'header' // empty day block
+        : !next || next.type === 'header'; // last dest of day
+    if (endOfDay && heights.dayGapHeight > 0) {
+      y += heights.dayGapHeight;
+    }
+  }
+  return { tops, rowHeights, total: y };
+}
+
+export function reorderRowCenterY(
+  order: readonly ReorderListEntry[],
+  index: number,
+  heights: ReorderLayoutHeights = DEFAULT_REORDER_LAYOUT,
+): number {
+  if (index < 0 || index >= order.length) return 0;
+  const { tops, rowHeights } = reorderRowGeometry(order, heights);
+  return tops[index] + rowHeights[index] / 2;
+}
+
+/**
+ * Map finger offset (from grant center) to a full-list order index.
+ * Day gaps and headers are included so dragging into another day block lands
+ * on that day's header / first slot instead of sticking mid-day.
+ */
+export function dragTargetIndexFromOffset(
+  order: readonly ReorderListEntry[],
+  startIndex: number,
+  dy: number,
+  heights: ReorderLayoutHeights = DEFAULT_REORDER_LAYOUT,
+): number {
+  if (order.length === 0) return 0;
+  const clampedStart = Math.max(0, Math.min(startIndex, order.length - 1));
+  const { tops, rowHeights, total } = reorderRowGeometry(order, heights);
+  const startCenter = tops[clampedStart] + rowHeights[clampedStart] / 2;
+  const fingerY = Math.max(0, Math.min(Math.max(total - 1, 0), startCenter + dy));
+
+  for (let i = 0; i < order.length; i++) {
+    const top = tops[i];
+    const nextTop = i + 1 < order.length ? tops[i + 1] : total;
+    if (fingerY < nextTop || i === order.length - 1) {
+      const mid = top + rowHeights[i] / 2;
+      // Past midpoint (or into following gap) → aim at next index.
+      if (fingerY >= mid && i < order.length - 1) return i + 1;
+      return i;
+    }
+  }
+  return order.length - 1;
+}
+
+/**
+ * @deprecated Prefer dragTargetIndexFromOffset (geometry-aware).
+ * Kept for tests that assert header-crossing correction.
+ */
+export function crossDayGapCorrection(
+  order: readonly ReorderListEntry[],
+  startIndex: number,
+  rawAim: number,
+  extraPerHeader: number = 1,
+): number {
+  if (extraPerHeader === 0 || order.length === 0) return 0;
+  const lo = Math.min(startIndex, rawAim);
+  const hi = Math.max(startIndex, rawAim);
+  let headers = 0;
+  for (let i = lo + 1; i <= hi && i < order.length; i++) {
+    if (order[i]?.type === 'header') headers += 1;
+  }
+  const signed = rawAim >= startIndex ? headers : -headers;
+  return signed * extraPerHeader;
 }
 
 /** Continuous min/max over legal full-list indices. */

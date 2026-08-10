@@ -1,9 +1,12 @@
 import {
   accommodationBoundaryLocks,
   applyPureIndexAnchors,
+  crossDayGapCorrection,
   dayCollapseStorageKey,
+  DEFAULT_REORDER_LAYOUT,
   downgradeAnchorsOnDailyChange,
   dragIndexBoundsForDay,
+  dragTargetIndexFromOffset,
   isAccommodationDraggable,
   legalDragIndicesForList,
   orderAfterDragMove,
@@ -247,6 +250,72 @@ describe('legalDragIndicesForList (cross-day)', () => {
   it('snapToLegalDragIndex picks nearest legal slot', () => {
     expect(snapToLegalDragIndex([1, 5, 9], 6)).toBe(5);
     expect(snapToLegalDragIndex([1, 5, 9], 0)).toBe(1);
+  });
+
+  it('snapToLegalDragIndex breaks ties in drag direction (cross-day)', () => {
+    // Sparse legal mid-day with locked hotels: mid=2, empty day=4.
+    expect(snapToLegalDragIndex([2, 4], 3, 1)).toBe(4);
+    expect(snapToLegalDragIndex([2, 4], 3, -1)).toBe(2);
+    // No direction keeps first best (lower index).
+    expect(snapToLegalDragIndex([2, 4], 3, 0)).toBe(2);
+  });
+
+  it('crossDayGapCorrection counts headers between start and aim', () => {
+    const order: ReorderListEntry[] = [
+      header(1),
+      dest('A', 1),
+      header(2),
+      header(3),
+    ];
+    // Dragging down from A (1) toward day3 (aim ~3): crosses H2 and H3 → +2.
+    expect(crossDayGapCorrection(order, 1, 3, 1)).toBe(2);
+    // Dragging up from end toward start: negative.
+    expect(crossDayGapCorrection(order, 3, 1, 1)).toBe(-2);
+  });
+
+  it('dragTargetIndexFromOffset reaches empty day with modest dy (geometry)', () => {
+    const order: ReorderListEntry[] = [
+      header(1),
+      dest('A', 1),
+      header(2),
+      header(3),
+    ];
+    // Past mid of A (+ day gap) should aim at day2 header index 2.
+    const toDay2 = dragTargetIndexFromOffset(order, 1, 40, DEFAULT_REORDER_LAYOUT);
+    expect(toDay2).toBeGreaterThanOrEqual(2);
+    const legal = legalDragIndicesForList(order, 'A');
+    const snapped = snapToLegalDragIndex(legal, toDay2, 1);
+    const proposed = orderAfterDragMove(order, 1, snapped);
+    let day = 1;
+    let assigned = 0;
+    for (const e of proposed) {
+      if (e.type === 'header') day = e.day;
+      else if (e.type === 'dest' && e.id === 'A') assigned = day;
+    }
+    expect(assigned).toBeGreaterThanOrEqual(2);
+  });
+
+  it('dragTargetIndexFromOffset moves mid stop across locked-hotel day into next day', () => {
+    const order: ReorderListEntry[] = [
+      header(1),
+      dest('h1', 1, 'accommodation', true),
+      dest('S', 1),
+      dest('h2', 1, 'accommodation', true),
+      header(2),
+    ];
+    const start = order.findIndex((e) => e.type === 'dest' && e.id === 'S');
+    // Large enough dy to clear day1 tail + gap into day2 header.
+    const raw = dragTargetIndexFromOffset(order, start, 120, DEFAULT_REORDER_LAYOUT);
+    const legal = legalDragIndicesForList(order, 'S');
+    const target = snapToLegalDragIndex(legal, raw, 1);
+    const proposed = orderAfterDragMove(order, start, target);
+    let day = 1;
+    let assigned = 0;
+    for (const e of proposed) {
+      if (e.type === 'header') day = e.day;
+      else if (e.type === 'dest' && e.id === 'S') assigned = day;
+    }
+    expect(assigned).toBe(2);
   });
 });
 

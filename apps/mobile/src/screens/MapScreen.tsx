@@ -1332,8 +1332,15 @@ export default function MapScreen({ route, navigation }: Props) {
     });
   }, [meetTimeEditor]);
   // Freeze the route overlay's scroll while a stop is being drag-reordered so
-  // the two vertical gestures never fight.
+  // the two vertical gestures never fight. Auto-scroll still works via ref.
   const [routeScrollEnabled, setRouteScrollEnabled] = useState(true);
+  const routeScrollRef = useRef<ScrollView>(null);
+  const routeScrollYRef = useRef(0);
+  const handleRouteDragAutoScroll = useCallback((deltaY: number) => {
+    const nextY = Math.max(0, routeScrollYRef.current + deltaY);
+    routeScrollYRef.current = nextY;
+    routeScrollRef.current?.scrollTo({ y: nextY, animated: false });
+  }, []);
 
   // #154: each route-sheet open silently syncs once (ref survives Strict Mode remount).
   // Generation invalidates in-flight completions after close/reopen (#151 Sol P1).
@@ -6259,8 +6266,13 @@ export default function MapScreen({ route, navigation }: Props) {
         doneLabel={t('map.done')}
       >
         <ScrollView
+          ref={routeScrollRef}
           contentContainerStyle={styles.overlayBody}
           scrollEnabled={routeScrollEnabled}
+          onScroll={(event: NativeSyntheticEvent<NativeScrollEvent>) => {
+            routeScrollYRef.current = event.nativeEvent.contentOffset.y;
+          }}
+          scrollEventThrottle={16}
         >
           <Text style={styles.overlayHint}>{t('map.routeHint')}</Text>
           {isLeader && gatherPointRequests.length > 0 ? (
@@ -6325,6 +6337,7 @@ export default function MapScreen({ route, navigation }: Props) {
             colors={dark}
             emptyLabel={t('settings.noDestinations')}
             onDragActiveChange={(active) => setRouteScrollEnabled(!active)}
+            onDragAutoScroll={handleRouteDragAutoScroll}
             accountId={user?.id}
             dailyByDate={Object.fromEntries(
               dailyAccommodations.map((d) => [
@@ -6381,6 +6394,7 @@ export default function MapScreen({ route, navigation }: Props) {
             onQuickAddAccommodation={
               canEditItinerary && groupId
                 ? (day) => {
+                    // Works with or without daily stay set (product: always show CTA).
                     const daily = dailyAccommodations.find((d) => {
                       const date = dateForTripDay(
                         optimisticDepartureDate ?? group?.departureDate,
@@ -6388,12 +6402,26 @@ export default function MapScreen({ route, navigation }: Props) {
                       );
                       return date ? d.stayDate === localDayKey(date) : false;
                     });
+                    const dayStops = openDestinations
+                      .filter((d) => (d.day || 1) === day)
+                      .sort((a, b) => a.order - b.order);
+                    const allSorted = openDestinations.slice().sort((a, b) => {
+                      if ((a.day || 1) !== (b.day || 1)) {
+                        return (a.day || 1) - (b.day || 1);
+                      }
+                      return a.order - b.order;
+                    });
+                    const fallbackStop =
+                      dayStops[dayStops.length - 1]
+                      ?? allSorted[allSorted.length - 1];
                     const title = daily?.title ?? t('stay.defaultTitle');
-                    const coords = daily?.coordinates ?? {
-                      latitude: 0,
-                      longitude: 0,
-                    };
-                    if (!daily) return;
+                    const address = daily?.address ?? fallbackStop?.address;
+                    const coords = daily?.coordinates
+                      ?? fallbackStop?.coordinates
+                      ?? {
+                        latitude: 0,
+                        longitude: 0,
+                      };
                     void runUiAction(
                       'map.quick_add_accommodation',
                       async () => {
@@ -6401,7 +6429,7 @@ export default function MapScreen({ route, navigation }: Props) {
                           groupId,
                           {
                             title,
-                            address: daily.address,
+                            address,
                             coordinates: coords,
                             day,
                             kind: 'accommodation',

@@ -672,7 +672,11 @@ describe('Paywall contract (StoreKit subscription flow)', () => {
     expect(premiumPresentation).not.toContain('TEMPORARY_DIRECT_UPGRADE');
     expect(premiumPresentation).not.toContain('setProStatusLocal(true)');
     expect(premiumPresentation).not.toContain('setProStatus(');
-    expect(premiumPresentation).toContain('FREE_LIMITS');
+    // Comparison table is the free/premium source of truth — no prose plan intros.
+    expect(premiumPresentation).toContain('PREMIUM_COMPARE_ROWS');
+    expect(premiumPresentation).not.toContain('FREE_LIMITS');
+    expect(premiumPresentation).not.toContain("t('paywall.freePlanTitle')");
+    expect(premiumPresentation).not.toContain("t('paywall.premiumHint')");
     // Paywall sheet hosts shared presentation with restore enabled.
     expect(paywall).toContain('PremiumPresentation');
     expect(paywall).toContain('showRestore');

@@ -14,7 +14,6 @@ import {
   restorePremiumSubscription,
 } from '../services/premiumPurchaseFlow';
 import { PREMIUM_CATALOG, premiumProductForPlan, type PremiumPlan } from '../premiumCatalog';
-import { FREE_LIMITS } from '../entitlements';
 import { glass, accentMix } from '../glass';
 import {
   hasEligibleIntroductoryOffer,
@@ -190,13 +189,7 @@ export default React.memo(function PremiumPresentation({
     <View style={styles.body} testID={testID} accessibilityRole="summary">
       {trigger ? <Text style={styles.trigger}>{t(trigger)}</Text> : null}
 
-      <Text style={styles.planLabel}>{t('paywall.freePlanTitle')}</Text>
-      <Text style={styles.planHint}>
-        {t('paywall.freePlanHint', { members: FREE_LIMITS.groupMembers, points: '∞' })}
-      </Text>
-
-      <Text style={[styles.planLabel, { marginTop: 4 }]}>{t('paywall.premiumTitle')}</Text>
-      <Text style={styles.planHint}>{t('paywall.premiumHint')}</Text>
+      {/* Free/Premium prose removed — comparison table below is the source of truth. */}
       <Text style={[styles.statusLine, { color: accent }]}>{statusLine}</Text>
 
       <View style={styles.table}>
@@ -291,8 +284,6 @@ export default React.memo(function PremiumPresentation({
 const styles = StyleSheet.create({
   body: { paddingHorizontal: 0, paddingBottom: 8, gap: 10 },
   trigger: { fontSize: 14, color: glass.textSecondary, lineHeight: 20 },
-  planLabel: { fontSize: 14, fontWeight: '700', color: '#fff' },
-  planHint: { fontSize: 13, color: glass.textSecondary, lineHeight: 18 },
   statusLine: { fontSize: 13, fontWeight: '600', marginBottom: 4 },
   table: {
     backgroundColor: glass.fill,
