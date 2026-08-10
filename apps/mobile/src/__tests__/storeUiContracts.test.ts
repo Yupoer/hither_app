@@ -176,6 +176,14 @@ describe('four-pane store navigation contracts', () => {
     expect(mapScreen).toContain('liveActivityAllowed');
     expect(mapScreen).toContain('liveActivityEffective');
     expect(mapScreen).toContain('openStoreForLiveActivity');
+    // Premium session (isPro) must also unlock the tools LA row.
+    expect(mapScreen).toContain('liveActivityUnlocked');
+    expect(mapScreen).toContain('liveActivityEffective || isPro');
+    // Do not force full sheet (kills Stage-1 gather-card hit testing).
+    expect(mapScreen).toMatch(/openStoreForLiveActivity[\s\S]*?midIndex/);
+    expect(mapScreen).not.toMatch(
+      /openStoreForLiveActivity[\s\S]*?setDetent\(Math\.max\(0, detents\.length - 1\)\)/,
+    );
   });
 
   it('route pane shows extra credits only when > 0', () => {

@@ -59,6 +59,13 @@ export function normalizeImportBatch(
 /** Map typed import error to i18n key (caller translates). */
 export function kmlImportErrorI18nKey(error: unknown): string {
   if (error instanceof KmlImportError) {
+    if (
+      error.code === 'itinerary_point_limit'
+      || error.code === 'P0004'
+      || /itinerary_point_limit/i.test(error.message)
+    ) {
+      return 'kml.errPointLimit';
+    }
     switch (error.stage) {
       case 'permission':
         return 'kml.errPermission';
@@ -79,7 +86,7 @@ export function kmlImportErrorI18nKey(error: unknown): string {
     return 'kml.errPermission';
   }
   if (code === 'P0004' || /itinerary_point_limit/.test(msg)) {
-    return 'kml.errPersistence';
+    return 'kml.errPointLimit';
   }
   // Downstream write failures must never look like parse errors.
   return 'kml.errPersistence';

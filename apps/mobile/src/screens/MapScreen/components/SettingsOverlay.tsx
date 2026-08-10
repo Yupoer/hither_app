@@ -53,6 +53,10 @@ interface SettingsOverlayProps {
    * Membership stays so MyTeams and the back stack can re-enter the map.
    */
   onGoHome?: () => void;
+  /** Team: auto-add first/last stay cards when setting daily accommodation. */
+  accommodationAutoAdd?: boolean;
+  canEditAccommodationAutoAdd?: boolean;
+  onToggleAccommodationAutoAdd?: (enabled: boolean) => void;
   styles: any;
 }
 
@@ -110,6 +114,9 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
   onOpenAccount,
   onOpenDiagnostics,
   onGoHome,
+  accommodationAutoAdd = true,
+  canEditAccommodationAutoAdd = false,
+  onToggleAccommodationAutoAdd,
   styles,
 }: SettingsOverlayProps) {
   const { t } = useTranslation();
@@ -349,6 +356,27 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             accessibilityLabel={t('settings.liveActivity')}
           />
         </View>
+        {onToggleAccommodationAutoAdd ? (
+          <View style={styles.accuracyRow}>
+            <View style={styles.accuracyCopy}>
+              <Text style={styles.accuracyLabel}>{t('stay.autoAdd')}</Text>
+              <Text style={styles.accuracySubhint}>{t('stay.autoAddHint')}</Text>
+            </View>
+            <NativeSwitch
+              style={styles.accuracySwitch}
+              accent={accent}
+              value={accommodationAutoAdd}
+              disabled={!canEditAccommodationAutoAdd}
+              onValueChange={onToggleAccommodationAutoAdd}
+              accessibilityRole="switch"
+              accessibilityState={{
+                checked: accommodationAutoAdd,
+                disabled: !canEditAccommodationAutoAdd,
+              }}
+              accessibilityLabel={t('stay.autoAdd')}
+            />
+          </View>
+        ) : null}
         <View style={styles.accuracyRow}>
           <View style={styles.accuracyCopy}>
             <Text style={styles.accuracyLabel}>{t('settings.gatherCardDefaultExpanded')}</Text>

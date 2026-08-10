@@ -109,13 +109,15 @@ export default React.memo(function KmlImportSheet({
           ? 'permission'
           : key === 'kml.errPersistence'
             ? 'persistence'
-            : key === 'kml.errValidation'
-              ? 'validation'
-              : key === 'kml.errInvalidCoords'
-                ? 'invalid_coords'
-                : key === 'kml.errNoPoints'
-                  ? 'no_points'
-                  : 'persistence';
+            : key === 'kml.errPointLimit'
+              ? 'point_limit'
+              : key === 'kml.errValidation'
+                ? 'validation'
+                : key === 'kml.errInvalidCoords'
+                  ? 'invalid_coords'
+                  : key === 'kml.errNoPoints'
+                    ? 'no_points'
+                    : 'persistence';
       setStep({ kind: 'error', code });
     }
   }, [onImport, handleClose]);
@@ -138,6 +140,7 @@ export default React.memo(function KmlImportSheet({
   const errorCopy = (code: KmlLoadErrorCode | string): string => {
     if (code === 'permission') return t('kml.errPermission' as TranslationKey);
     if (code === 'persistence') return t('kml.errPersistence' as TranslationKey);
+    if (code === 'point_limit') return t('kml.errPointLimit' as TranslationKey);
     if (code === 'validation') return t('kml.errValidation' as TranslationKey);
     const key = kmlErrorI18nKey(code as KmlLoadErrorCode) as TranslationKey;
     const translated = t(key);

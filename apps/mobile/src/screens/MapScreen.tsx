@@ -2448,8 +2448,8 @@ export default function MapScreen({ route, navigation }: Props) {
   // distance is sufficient for the initial Android notification and is
   // replaced by the locked baseline on the next render.
   const liveActivityBaselineM = initialDistanceM ?? liveDistance ?? numericDistance;
-  // Preference (liveActivityEnabled) ≠ entitlement (liveActivityEffective).
-  const liveActivityAllowed = liveActivityEnabled && liveActivityEffective;
+  // Preference (liveActivityEnabled) ≠ entitlement (store + Premium session).
+  const liveActivityAllowed = liveActivityEnabled && (liveActivityEffective || isPro);
   useLiveActivity(
     journeyActive
       && !personalProgress.arrived
@@ -4526,6 +4526,8 @@ export default function MapScreen({ route, navigation }: Props) {
   // response for team A must never apply after the user switched to team B.
   const storeEntitlementGenRef = useRef(0);
   const storeEntitlementGroupRef = useRef<string | null>(null);
+  /** Last group that successfully applied a store snapshot (for fail-closed scope). */
+  const storeEntitlementAppliedGroupRef = useRef<string | null>(null);
   storeEntitlementGroupRef.current = groupId ?? null;
 
   const refreshStoreEntitlements = useCallback(async () => {
@@ -4536,25 +4538,33 @@ export default function MapScreen({ route, navigation }: Props) {
         && storeEntitlementGroupRef.current === requestGroupId) {
         setLiveActivityEffective(false);
         setExtraPointCredits(0);
+        storeEntitlementAppliedGroupRef.current = null;
       }
       return;
     }
-    // Fail-closed before await so useLiveActivity never sees old team's true.
-    setLiveActivityEffective(false);
-    setExtraPointCredits(0);
+    // Fail-closed only when switching teams so a same-group refresh (e.g. isPro
+    // flip) does not flash Tools back to the locked Live Activity row.
+    if (storeEntitlementAppliedGroupRef.current !== requestGroupId) {
+      setLiveActivityEffective(false);
+      setExtraPointCredits(0);
+    }
     try {
       const snap = await getStoreSnapshot(requestGroupId);
       if (gen !== storeEntitlementGenRef.current) return;
       if (storeEntitlementGroupRef.current !== requestGroupId) return;
-      setLiveActivityEffective(!!snap.liveActivityEffective);
+      // Server bit is authoritative; Premium session is a client safety net when
+      // snapshot lags after IAP/promo (tools must not stay locked while isPro).
+      setLiveActivityEffective(!!snap.liveActivityEffective || isPro);
       setExtraPointCredits(Math.max(0, snap.extraPointCredits ?? 0));
+      storeEntitlementAppliedGroupRef.current = requestGroupId;
     } catch {
       if (gen !== storeEntitlementGenRef.current) return;
       if (storeEntitlementGroupRef.current !== requestGroupId) return;
-      setLiveActivityEffective(false);
-      setExtraPointCredits(0);
+      // Keep Premium-granted LA unlocked offline when session already knows isPro.
+      setLiveActivityEffective(isPro);
+      if (!isPro) setExtraPointCredits(0);
     }
-  }, [groupId, isAnonymous]);
+  }, [groupId, isAnonymous, isPro]);
 
   useEffect(() => {
     void refreshStoreEntitlements();
@@ -4564,8 +4574,10 @@ export default function MapScreen({ route, navigation }: Props) {
     lightTap();
     setStoreHighlightProduct('personal_live_activity_lifetime');
     setSheetPane('store');
-    // Expand to full sheet so pinned product can enter viewport.
-    setDetent(Math.max(0, detents.length - 1));
+    // Raise to mid sheet at most — forcing full (Peak) sets atFull and
+    // pointerEvents=none on gathering cards, which broke Stage-1 interaction.
+    const midIndex = Math.min(1, Math.max(0, detents.length - 1));
+    setDetent((prev) => (prev < midIndex ? midIndex : prev));
   }, [detents.length]);
 
   // ─── 成員：位置、狀態、個別操作、小隊（無「成員」標題） ────────────────
@@ -4788,9 +4800,11 @@ export default function MapScreen({ route, navigation }: Props) {
   ]);
 
   // ─── 工具：同行者模式入口 → 定位分享 → 抵達距離 → 快捷指令 ─────────
+  // Premium (isPro) or store LA entitlement both hide the locked deep-link.
+  const liveActivityUnlocked = liveActivityEffective || isPro;
   const toolsPaneBody = useMemo(() => (
     <>
-      {!liveActivityEffective ? (
+      {!liveActivityUnlocked ? (
         <Pressable
           style={styles.liveActivityLockedRow}
           onPress={openStoreForLiveActivity}
@@ -4888,7 +4902,7 @@ export default function MapScreen({ route, navigation }: Props) {
     styles, t, groupId, isLeader, dark, openCustomQuickCommand, accent,
     arrivalRadiusM, setArrivalRadiusM, setPassiveCompanionMode,
     sharingEnabled, handleSharingEnabledChangeAnimated, sharingApplying,
-    liveActivityEffective, openStoreForLiveActivity,
+    liveActivityUnlocked, openStoreForLiveActivity,
   ]);
 
   const storePaneBody = useMemo(() => (
@@ -5741,7 +5755,7 @@ export default function MapScreen({ route, navigation }: Props) {
                         day line ····· people N/M
                         小隊行程 badge (subgroup only)
                         📍 dist | 🚗 eta | map
-                        [導航] [移動] [抵達?] [集合倒數]
+                        [導航] [移動] [抵達?] [交通] [集合倒數]
                        Collapsed: title marquee + compact ETA·dist only. */}
                     <View style={styles.cardHead}>
                       <View style={styles.grow}>
@@ -6136,6 +6150,27 @@ export default function MapScreen({ route, navigation }: Props) {
                         </Animated.View>
                       ) : null}
 
+                      {/* Transport before meet countdown (product: swap order). */}
+                      <Pressable
+                        ref={active ? (n) => setTourTargetRef('transport', n) : undefined}
+                        collapsable={false}
+                        style={styles.cmdSquare}
+                        onPress={() => {
+                          registerCardActivity(dest.id);
+                          lightTap();
+                          const order = ['walk', 'transit', 'drive'] as const;
+                          setTravelMode(order[(order.indexOf(travelMode) + 1) % order.length]);
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${t(`map.travelMode.${travelMode}`)} ${etaLabel} ${distLabel}`.trim()}
+                      >
+                        <Ionicons
+                          name={modeIconName}
+                          size={chromeTight ? 18 : 20}
+                          color={accent}
+                        />
+                      </Pressable>
+
                       <View
                         ref={active ? (n) => setTourTargetRef('meetTime', n) : undefined}
                         collapsable={false}
@@ -6167,27 +6202,6 @@ export default function MapScreen({ route, navigation }: Props) {
                         captionDue={t('map.meetTimeCaption')}
                       />
                       </View>
-
-                      {/* Transport last — fixed square; must not shift when Arrived splits. */}
-                      <Pressable
-                        ref={active ? (n) => setTourTargetRef('transport', n) : undefined}
-                        collapsable={false}
-                        style={styles.cmdSquare}
-                        onPress={() => {
-                          registerCardActivity(dest.id);
-                          lightTap();
-                          const order = ['walk', 'transit', 'drive'] as const;
-                          setTravelMode(order[(order.indexOf(travelMode) + 1) % order.length]);
-                        }}
-                        accessibilityRole="button"
-                        accessibilityLabel={`${t(`map.travelMode.${travelMode}`)} ${etaLabel} ${distLabel}`.trim()}
-                      >
-                        <Ionicons
-                          name={modeIconName}
-                          size={chromeTight ? 18 : 20}
-                          color={accent}
-                        />
-                      </Pressable>
                     </View>
                     )}
                     </View>
@@ -6312,7 +6326,6 @@ export default function MapScreen({ route, navigation }: Props) {
             emptyLabel={t('settings.noDestinations')}
             onDragActiveChange={(active) => setRouteScrollEnabled(!active)}
             accountId={user?.id}
-            accommodationAutoAdd={group?.accommodationAutoAdd ?? true}
             dailyByDate={Object.fromEntries(
               dailyAccommodations.map((d) => [
                 d.stayDate,
@@ -6320,20 +6333,6 @@ export default function MapScreen({ route, navigation }: Props) {
               ]),
             )}
             favoritePlaces={favoritePlaces}
-            onToggleAutoAdd={
-              canEditItinerary && groupId
-                ? (enabled) => {
-                    void runUiAction(
-                      'map.accommodation_auto_add',
-                      async () => {
-                        await setAccommodationAutoAdd(groupId, enabled);
-                        await refresh();
-                      },
-                      { screen: 'Map' },
-                    );
-                  }
-                : undefined
-            }
             onClearDailyAccommodation={
               canEditItinerary && groupId
                 ? (stayDate, day) => {
@@ -6353,11 +6352,15 @@ export default function MapScreen({ route, navigation }: Props) {
                 ? (destinationId, day) => {
                     const dest = destinations.find((d) => d.id === destinationId);
                     if (!dest) return;
-                    const date = dateForTripDay(
-                      optimisticDepartureDate ?? group?.departureDate,
-                      day,
-                    );
-                    if (!date) return;
+                    const departure = optimisticDepartureDate ?? group?.departureDate;
+                    const date = dateForTripDay(departure, day);
+                    if (!date) {
+                      Alert.alert(
+                        t('interaction.error'),
+                        t('stay.needDepartureDate'),
+                      );
+                      return;
+                    }
                     void runUiAction(
                       'map.set_daily_accommodation',
                       async () => {
@@ -6454,6 +6457,22 @@ export default function MapScreen({ route, navigation }: Props) {
           setOverlay(null);
           goHomeCreateOrJoin();
         }}
+        accommodationAutoAdd={group?.accommodationAutoAdd ?? true}
+        canEditAccommodationAutoAdd={!!canEditItinerary && !!groupId}
+        onToggleAccommodationAutoAdd={
+          canEditItinerary && groupId
+            ? (enabled) => {
+                void runUiAction(
+                  'map.accommodation_auto_add',
+                  async () => {
+                    await setAccommodationAutoAdd(groupId, enabled);
+                    await refresh();
+                  },
+                  { screen: 'Map' },
+                );
+              }
+            : undefined
+        }
         styles={styles}
       />
 

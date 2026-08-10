@@ -42,6 +42,15 @@ describe('kmlImportErrorI18nKey', () => {
       'kml.errPermission',
     );
   });
+
+  it('maps free-plan point limit to dedicated copy key', () => {
+    expect(
+      kmlImportErrorI18nKey(new KmlImportError('persistence', 'itinerary_point_limit')),
+    ).toBe('kml.errPointLimit');
+    expect(kmlImportErrorI18nKey(new KmlImportError('persistence', 'P0004'))).toBe(
+      'kml.errPointLimit',
+    );
+  });
 });
 
 describe('positionForBatchAppendOnDay', () => {

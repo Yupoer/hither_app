@@ -382,12 +382,14 @@ describe('map UI placement contracts', () => {
     const commandRow = mapScreen.indexOf('styles.commandRow');
     const arrivalButton = mapScreen.indexOf('arrivalCmdSquare', commandRow);
     const meetButton = mapScreen.indexOf('styles.meetBtn', commandRow);
-    // Transport is after countdown (#148 order: nav | arrived | countdown | transport).
-    const transportAfterMeet = mapScreen.indexOf("setTourTargetRef('transport'", meetButton);
+    // Product order: nav | arrived | transport | countdown (transport before meet).
+    const transportRef = mapScreen.indexOf("setTourTargetRef('transport'", commandRow);
+    const meetRef = mapScreen.indexOf("setTourTargetRef('meetTime'", commandRow);
 
     expect(arrivalButton).toBeGreaterThan(commandRow);
     expect(arrivalButton).toBeLessThan(meetButton);
-    expect(transportAfterMeet).toBeGreaterThan(meetButton);
+    expect(transportRef).toBeGreaterThan(commandRow);
+    expect(transportRef).toBeLessThan(meetRef);
     expect(mapScreen).toContain('ARRIVED_SPLIT_MS');
     expect(mapScreen).toContain('FadeInRight');
     expect(mapScreen).toContain('setDestinationArrivalAt');

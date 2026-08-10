@@ -1043,6 +1043,8 @@ export const en: Record<keyof ZhDict, string> = {
     'Tap the navigation icon to re-center the map on this place without adding it yet.',
   'stay.favorites': 'Favorite places',
   'stay.autoAdd': 'Auto-add stay cards when setting accommodation',
+  'stay.autoAddHint': 'When you set a daily stay, add stay cards at the start and end of that day.',
+  'stay.needDepartureDate': 'Set a departure date first so trip days can be resolved.',
   'stay.quickAdd': 'Quick-add stay',
   'stay.setFromStop': 'Set stop as accommodation',
   'stay.finishSet': 'Done',
@@ -1053,6 +1055,7 @@ export const en: Record<keyof ZhDict, string> = {
   'stay.favoriteA11y': 'Save as favorite place',
   'stay.unfavoriteA11y': 'Remove from favorite places',
   'stay.centerPlaceA11y': 'Center map on this place',
+  'kml.errPointLimit': 'Free plan open-stop limit reached — upgrade Premium or import fewer points',
 };
 
 export type EnDict = typeof en;

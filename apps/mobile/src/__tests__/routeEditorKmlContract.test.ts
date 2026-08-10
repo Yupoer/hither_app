@@ -33,10 +33,12 @@ describe('route editor + KML contracts (#151)', () => {
 
   it('route list is scope-filtered for leaders and day-1 reorderable', () => {
     expect(mapScreen).not.toMatch(/rawDestinations[\s\S]{0,200}if \(isLeader\) return all/);
-    expect(reorder).toContain('const reorderable = canReorder;');
+    // Stops remain day-agnostic reorderable; day headers are never draggable.
+    expect(reorder).toContain('canReorder={canReorder && !locked}');
+    expect(reorder).toContain("type === 'header'");
+    expect(reorder).toMatch(/headers are never draggable|Day headers are never draggable/);
     expect(reorder).not.toContain('canReorder && item.day > 1');
   });
-
   it('open-once sync + import CTA replace always-on sync button', () => {
     expect(mapScreen).toContain('routeOpenSyncSessionRef');
     expect(mapScreen).toContain('onImport={() => setKmlVisible(true)}');

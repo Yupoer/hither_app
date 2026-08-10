@@ -1054,6 +1054,8 @@ export const zh = {
     '點導航圖示可將地圖重新置中到此地點，不會立刻新增集合點。',
   'stay.favorites': '常用地點',
   'stay.autoAdd': '設定住宿時自動新增頭尾住宿卡',
+  'stay.autoAddHint': '設定每日住宿時，自動在當日行程頭尾新增住宿卡。',
+  'stay.needDepartureDate': '請先設定出發日期，才能對應行程天數。',
   'stay.quickAdd': '快速新增住宿點',
   'stay.setFromStop': '設定集合點為住宿點',
   'stay.finishSet': '完成',
@@ -1064,6 +1066,7 @@ export const zh = {
   'stay.favoriteA11y': '收藏為常用地點',
   'stay.unfavoriteA11y': '取消常用地點',
   'stay.centerPlaceA11y': '將地圖置中至此地點',
+  'kml.errPointLimit': '免費版開放集合點已達上限，請升級 Premium 或減少匯入數量',
 } as const;
 
 export type ZhDict = typeof zh;

@@ -163,7 +163,8 @@ export async function addDestinationsBatch(
     const err = new KmlImportError('persistence', 'itinerary_point_limit', message) as KmlImportError & {
       code?: string;
     };
-    err.code = 'itinerary_point_limit';
+    // Preserve code so kmlImportErrorI18nKey maps to kml.errPointLimit.
+    err.code = 'P0004';
     throw err;
   }
   if (code === '22023' || /invalid import/i.test(message)) {

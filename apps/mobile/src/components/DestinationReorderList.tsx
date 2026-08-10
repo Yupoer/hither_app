@@ -88,9 +88,6 @@ interface Props {
   onSetDailyFromDestination?: (destinationId: string, day: number) => void;
   /** Quick-add mid accommodation card for a day. */
   onQuickAddAccommodation?: (day: number) => void;
-  /** Team auto-add switch (default true). */
-  accommodationAutoAdd?: boolean;
-  onToggleAutoAdd?: (enabled: boolean) => void;
   /** Account favorites for picker. */
   favoritePlaces?: FavoritePlaceView[];
   onPickFavorite?: (favorite: FavoritePlaceView, day: number) => void;
@@ -122,8 +119,6 @@ export default function DestinationReorderList({
   onClearDailyAccommodation,
   onSetDailyFromDestination,
   onQuickAddAccommodation,
-  accommodationAutoAdd = true,
-  onToggleAutoAdd,
   favoritePlaces,
   onPickFavorite,
   accountId,
@@ -320,27 +315,17 @@ export default function DestinationReorderList({
 
   const handleGrant = useCallback(
     (id: string) => {
+      const startIdx = orderRef.current.findIndex((d) => d.id === id);
+      // Day headers are never draggable (product: only stops reorder).
+      if (startIdx === -1 || orderRef.current[startIdx].type === 'header') {
+        return;
+      }
       draggingRef.current = true;
       onDragActiveChange?.(true);
       setActiveId(id);
-      const startIdx = orderRef.current.findIndex((d) => d.id === id);
       startIndexRef.current = startIdx;
 
-      if (startIdx !== -1 && orderRef.current[startIdx].type === 'header') {
-         let min = 0;
-         let max = orderRef.current.length - 1;
-         for (let i = startIdx - 1; i >= 0; i--) {
-            if (orderRef.current[i].type === 'header') {
-               min = i + 1; break;
-            }
-         }
-         for (let i = startIdx + 1; i < orderRef.current.length; i++) {
-            if (orderRef.current[i].type === 'header') {
-               max = i - 1; break;
-            }
-         }
-         dragBoundsRef.current = { min, max };
-      } else if (startIdx !== -1 && orderRef.current[startIdx].type === 'dest') {
+      if (orderRef.current[startIdx].type === 'dest') {
          // Map day-local accommodation bounds onto full list indices so mid
          // cards cannot cross or replace locked first/last stay anchors.
          const moving = orderRef.current[startIdx];
@@ -533,21 +518,6 @@ export default function DestinationReorderList({
         </View>
       )}
 
-      {canReorder && onToggleAutoAdd ? (
-        <Pressable
-          style={styles.autoAddRow}
-          onPress={() => onToggleAutoAdd(!accommodationAutoAdd)}
-          accessibilityRole="switch"
-          accessibilityState={{ checked: accommodationAutoAdd }}
-          accessibilityLabel={t('stay.autoAdd')}
-        >
-          <Text style={styles.autoAddLabel}>{t('stay.autoAdd')}</Text>
-          <View style={[styles.autoAddSwitch, accommodationAutoAdd && styles.autoAddSwitchOn]}>
-            <View style={[styles.autoAddKnob, accommodationAutoAdd && styles.autoAddKnobOn]} />
-          </View>
-        </Pressable>
-      ) : null}
-
       {order.length === 0 ? (
          <Text style={styles.empty}>{emptyLabel}</Text>
       ) : (
@@ -558,20 +528,15 @@ export default function DestinationReorderList({
                const stayDate = stayDateForDay(item.day);
                const daily = stayDate && dailyByDate ? dailyByDate[stayDate] : undefined;
                const collapsed = Boolean(collapsedDays[item.day]);
+               const dayStopCount = destinations.filter((d) => (d.day || 1) === item.day).length;
                return (
                  <View key={item.id}>
                    <HeaderRow
                      item={item}
-                     active={activeId === item.id}
-                     canReorder={canReorder}
-                     pan={pan}
                      styles={styles}
                      bgColor={bgColor}
                      canEditColors={canReorder}
                      onColorPress={onHeaderColorPress}
-                     onGrant={onGrant}
-                     onMove={onMove}
-                     onRelease={onRelease}
                      dailyTitle={daily?.title}
                      onRemoveDaily={
                        canReorder && daily && onClearDailyAccommodation && stayDate
@@ -580,41 +545,34 @@ export default function DestinationReorderList({
                      }
                      collapsed={collapsed}
                      onToggleCollapse={() => void toggleDayCollapsed(item.day)}
-                   />
-                   {!collapsed && canReorder ? (
-                     <View style={styles.dayActions}>
-                       {onQuickAddAccommodation ? (
-                         <Pressable
-                           style={styles.dashedBtn}
-                           onPress={() => onQuickAddAccommodation(item.day)}
-                           accessibilityRole="button"
-                           accessibilityLabel={t('stay.quickAdd')}
-                         >
-                           <Text style={[styles.dashedBtnText, { color: colors.accent }]}>
-                             {t('stay.quickAdd')}
-                           </Text>
-                         </Pressable>
-                       ) : null}
-                       {onSetDailyFromDestination ? (
-                         <Pressable
-                           style={styles.dashedBtn}
-                           onPress={() =>
+                     setStayLabel={
+                       canReorder && onSetDailyFromDestination && dayStopCount > 0
+                         ? setStayModeDay === item.day
+                           ? t('stay.finishSet')
+                           : t('stay.setFromStop')
+                         : undefined
+                     }
+                     setStayActive={setStayModeDay === item.day}
+                     onToggleSetStay={
+                       canReorder && onSetDailyFromDestination && dayStopCount > 0
+                         ? () =>
                              setSetStayModeDay((d) => (d === item.day ? null : item.day))
-                           }
-                           accessibilityRole="button"
-                           accessibilityLabel={
-                             setStayModeDay === item.day
-                               ? t('stay.finishSet')
-                               : t('stay.setFromStop')
-                           }
-                         >
-                           <Text style={[styles.dashedBtnText, { color: colors.accent }]}>
-                             {setStayModeDay === item.day
-                               ? t('stay.finishSet')
-                               : t('stay.setFromStop')}
-                           </Text>
-                         </Pressable>
-                       ) : null}
+                         : undefined
+                     }
+                     accent={colors.accent}
+                   />
+                   {!collapsed && canReorder && dayStopCount > 0 && onQuickAddAccommodation ? (
+                     <View style={styles.dayActions}>
+                       <Pressable
+                         style={styles.dashedBtn}
+                         onPress={() => onQuickAddAccommodation(item.day)}
+                         accessibilityRole="button"
+                         accessibilityLabel={t('stay.quickAdd')}
+                       >
+                         <Text style={[styles.dashedBtnText, { color: colors.accent }]}>
+                           {t('stay.quickAdd')}
+                         </Text>
+                       </Pressable>
                      </View>
                    ) : null}
                  </View>
@@ -1004,86 +962,41 @@ export default function DestinationReorderList({
 
 const HeaderRow = memo(function HeaderRow({
   item,
-  active,
-  canReorder,
-  pan,
   styles,
   bgColor,
   canEditColors,
   onColorPress,
-  onGrant,
-  onMove,
-  onRelease,
   dailyTitle,
   onRemoveDaily,
   collapsed,
   onToggleCollapse,
+  setStayLabel,
+  setStayActive,
+  onToggleSetStay,
+  accent,
 }: {
-  item: any;
-  active: boolean;
-  canReorder: boolean;
-  pan: Animated.Value;
+  item: { day: number; title: string; dateStr: string };
   styles: any;
   bgColor: string;
   canEditColors: boolean;
   onColorPress: (day: number) => void;
-  onGrant: (id: string) => void;
-  onMove: (id: string, dy: number) => void;
-  onRelease: () => void;
   dailyTitle?: string;
   onRemoveDaily?: () => void;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
+  /** Label for set-stay control placed after day title (not dashed). */
+  setStayLabel?: string;
+  setStayActive?: boolean;
+  onToggleSetStay?: () => void;
+  accent: string;
 }) {
   const { t } = useTranslation();
-  const axisRef = useRef<null | 'v'>(null);
-  const reorderable = canReorder;
-  const responder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: (evt) => {
-        if (!reorderable) return false;
-        const screenWidth = Dimensions.get('window').width;
-        if (evt.nativeEvent.pageX > screenWidth - 60) return true;
-        return false;
-      },
-      onPanResponderTerminationRequest: () => false,
-      onPanResponderGrant: (evt) => {
-        const screenWidth = Dimensions.get('window').width;
-        if (reorderable && evt.nativeEvent.pageX > screenWidth - 60) {
-           axisRef.current = 'v';
-           onGrant(item.id);
-        }
-      },
-      onPanResponderMove: (_evt, g) => {
-        if (axisRef.current === 'v') {
-          onMove(item.id, g.dy);
-        }
-      },
-      onPanResponderRelease: () => {
-        if (axisRef.current === 'v') onRelease();
-        axisRef.current = null;
-      },
-      onPanResponderTerminate: () => {
-        if (axisRef.current === 'v') onRelease();
-        axisRef.current = null;
-      },
-    })
-  ).current;
 
   return (
-    <View style={active && { zIndex: 10, elevation: 6 }}>
-      <Animated.View
-        style={[
-          styles.headerRow,
-          active && styles.rowActive,
-          {
-            transform: [{ translateY: active ? pan : 0 }],
-          },
-        ]}
-        {...(reorderable ? responder.panHandlers : {})}
-      >
+    <View>
+      <View style={styles.headerRow}>
         <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 8 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1, flexWrap: 'wrap', gap: 6 }}>
             <Pressable
               onPress={() => onColorPress(item.day)}
               disabled={!canEditColors}
@@ -1092,6 +1005,28 @@ const HeaderRow = memo(function HeaderRow({
               style={[styles.colorDot, { backgroundColor: bgColor }]}
             />
             <Text style={styles.headerTitle}>{item.title}</Text>
+            {onToggleSetStay && setStayLabel ? (
+              <Pressable
+                style={[
+                  styles.headerSetStayBtn,
+                  setStayActive && { backgroundColor: accent },
+                ]}
+                onPress={onToggleSetStay}
+                accessibilityRole="button"
+                accessibilityState={{ selected: !!setStayActive }}
+                accessibilityLabel={setStayLabel}
+              >
+                <Text
+                  style={[
+                    styles.headerSetStayText,
+                    { color: setStayActive ? '#111' : accent },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {setStayLabel}
+                </Text>
+              </Pressable>
+            ) : null}
             {dailyTitle ? (
               <View style={styles.stayBadge}>
                 <Ionicons name="bed-outline" size={12} color="#fff" />
@@ -1113,8 +1048,7 @@ const HeaderRow = memo(function HeaderRow({
             ) : null}
           </View>
         </View>
-        {reorderable ? <Text style={styles.handle}>≡</Text> : null}
-      </Animated.View>
+      </View>
     </View>
   );
 });
@@ -1305,30 +1239,6 @@ const makeStyles = (colors: Palette) =>
       marginBottom: spacing.sm,
       flexWrap: 'wrap',
     },
-    autoAddRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: spacing.sm,
-      paddingVertical: 6,
-    },
-    autoAddLabel: { color: colors.textSecondary, fontSize: 13, flex: 1 },
-    autoAddSwitch: {
-      width: 42,
-      height: 24,
-      borderRadius: 12,
-      backgroundColor: 'rgba(255,255,255,0.15)',
-      padding: 2,
-      justifyContent: 'center',
-    },
-    autoAddSwitchOn: { backgroundColor: colors.accent },
-    autoAddKnob: {
-      width: 20,
-      height: 20,
-      borderRadius: 10,
-      backgroundColor: '#fff',
-    },
-    autoAddKnobOn: { alignSelf: 'flex-end' },
     dayActions: { gap: 8, marginBottom: spacing.sm, paddingHorizontal: 4 },
     dashedBtn: {
       borderWidth: 1,
@@ -1339,6 +1249,15 @@ const makeStyles = (colors: Palette) =>
       alignItems: 'center',
     },
     dashedBtnText: { fontSize: 13, fontWeight: '600' },
+    headerSetStayBtn: {
+      borderWidth: 1,
+      borderColor: colors.accent,
+      borderRadius: radius.sm,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      maxWidth: 160,
+    },
+    headerSetStayText: { fontSize: 11, fontWeight: '600' },
     stayBadge: {
       flexDirection: 'row',
       alignItems: 'center',
