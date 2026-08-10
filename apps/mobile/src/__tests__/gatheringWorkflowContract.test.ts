@@ -108,6 +108,27 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(reorderList).toContain("REVEAL_WIDTH");
   });
 
+  it('locks stay cards to bed emoji and allows them as set-stay radio sources', () => {
+    expect(reorderList).toContain('STAY_MARKER_EMOJI');
+    expect(reorderList).toContain('STAY_BADGE_BG');
+    // No emoji picker for accommodation kind.
+    expect(reorderList).toMatch(
+      /onEmojiPress=\{\s*[\s\S]*?kind !== 'accommodation'/,
+    );
+    // Set-stay checkboxes include accommodation (cross-day moved stay cards).
+    expect(reorderList).toContain('showSelect={inSetMode}');
+    expect(reorderList).not.toContain(
+      'showSelect={inSetMode && item.item.kind !== \'accommodation\'}',
+    );
+    // Commit path must not refuse accommodation picks.
+    expect(reorderList).not.toMatch(
+      /if \(pick && pick\.item\.kind !== 'accommodation'\)/,
+    );
+    // Soft stay row tint (not high-sat Day1 red solid).
+    expect(reorderList).toContain('rowAccommodation');
+    expect(reorderList).toMatch(/rgba\(160,\s*130,\s*125/);
+  });
+
   it('reconciles group state periodically even when Realtime misses an event', () => {
     expect(groupState).toContain('realtimeReadyRef');
     expect(groupState).toContain("status === 'SUBSCRIBED'");

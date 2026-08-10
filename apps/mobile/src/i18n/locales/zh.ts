@@ -397,7 +397,8 @@ export const zh = {
   'map.memberRole': '隊員',
   'map.leaderRole': '隊長',
   'map.done': '完成',
-  'map.routeHint': '拖曳右側把手可調整順序，最上面就是下一個集合點。',
+  'map.routeHint':
+    '第 2 天起（不含首尾天）：天數列往左滑可切換「收合」與「拖曳」；拖曳把手可調整天的順序。最上面是下一個集合點。',
   'map.addStop': '加入',
   'gatherRequest.sentTitle': '已送出請求',
   'gatherRequest.sentBody': '請等待隊長同意後加入集合點。',

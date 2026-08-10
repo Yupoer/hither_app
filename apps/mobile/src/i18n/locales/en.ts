@@ -387,7 +387,8 @@ export const en: Record<keyof ZhDict, string> = {
   'map.memberRole': 'Member',
   'map.leaderRole': 'Leader',
   'map.done': 'Done',
-  'map.routeHint': 'Drag the handle to reorder. The top stop is where the flock heads next.',
+  'map.routeHint':
+    'On middle days (not first or last): swipe a day header left to switch Collapse and Drag. Use the handle to reorder days. The top stop is next.',
   'map.addStop': 'Add',
   'gatherRequest.sentTitle': 'Request sent',
   'gatherRequest.sentBody': 'Wait for the leader to approve these gathering points.',

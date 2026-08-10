@@ -46,11 +46,13 @@ import {
   resolveDestinationEmoji,
   type DestinationEmojiCategory,
 } from '../utils/destinationEmojiColor';
-import { getColorForDay } from '../utils/destinationMarkerChrome';
+import { getColorForDay, STAY_MARKER_EMOJI } from '../utils/destinationMarkerChrome';
 
 const ROW_HEIGHT = DEFAULT_REORDER_LAYOUT.rowHeight;
 const REORDER_LAYOUT = DEFAULT_REORDER_LAYOUT;
 const REVEAL_WIDTH = 76;
+/** Low-sat terracotta for stay emoji badge (works on dark glass; not Day1 #E5575C). */
+const STAY_BADGE_BG = '#8B6F6A';
 /** Auto-scroll parent when finger is within this distance of screen edges. */
 const DRAG_EDGE_PX = 160;
 const DRAG_SCROLL_STEP = 22;
@@ -753,7 +755,9 @@ export default function DestinationReorderList({
                   isAccommodation={item.item.kind === 'accommodation'}
                   stayHighlight={stayHighlight}
                   boundaryLocked={locked}
-                  showSelect={inSetMode && item.item.kind !== 'accommodation'}
+                  // Accommodation cards can also become the day's stay source
+                  // (e.g. after dragging a Day1 stay card onto another day).
+                  showSelect={inSetMode}
                   selectSelected={pendingStayDestId === item.item.id}
                   onSelectAsStay={
                     inSetMode
@@ -766,7 +770,10 @@ export default function DestinationReorderList({
                   }
                   onLayoutHeight={(h) => recordMeasuredHeight(item.id, h)}
                   onEmojiPress={
-                    canReorder && onUpdateEmojiColor
+                    // Stay cards always show a fixed bed — no emoji picker.
+                    canReorder
+                    && onUpdateEmojiColor
+                    && item.item.kind !== 'accommodation'
                       ? (id) => {
                           lightTap();
                           const dest = destinations.find((d) => d.id === id);
@@ -940,7 +947,9 @@ export default function DestinationReorderList({
                                 const pick = block.dests.find(
                                   (d) => d.item.id === pendingStayDestId,
                                 );
-                                if (pick && pick.item.kind !== 'accommodation') {
+                                // Allow accommodation cards as stay source
+                                // (moved cross-day stay copies keep kind).
+                                if (pick) {
                                   onSetDailyFromDestination(pick.item.id, item.day);
                                 }
                               }
@@ -1725,6 +1734,7 @@ const Row = memo(function Row({
       <Animated.View
         style={[
           styles.row,
+          isAccommodation && styles.rowAccommodation,
           stayHighlight && styles.rowStayMatch,
           active && styles.rowActive,
           {
@@ -1758,12 +1768,14 @@ const Row = memo(function Row({
           accessibilityLabel={onEmojiPress ? 'dest emoji' : undefined}
           style={[
             styles.emojiBadge,
-            { backgroundColor: dayColor },
+            // Stay cards: muted bed badge (not high-sat day red).
+            { backgroundColor: isAccommodation ? STAY_BADGE_BG : dayColor },
           ]}
         >
-          {/* Quick-add stay is a plain copy — no special bed glyph. */}
           <Text style={styles.emojiBadgeGlyph}>
-            {destinationEmojiDisplay(item.emoji, DESTINATION_EMOJI_FALLBACK)}
+            {isAccommodation
+              ? STAY_MARKER_EMOJI
+              : destinationEmojiDisplay(item.emoji, DESTINATION_EMOJI_FALLBACK)}
           </Text>
         </Pressable>
         <View style={styles.rowBody}>
@@ -1857,9 +1869,10 @@ const makeStyles = (colors: Palette) =>
     },
     stayBadgeText: { color: '#fff', fontSize: 12, flexShrink: 1 },
     removeStayText: { color: colors.accent, fontSize: 12, fontWeight: '600' },
-    rowAccommodation: { backgroundColor: 'rgba(40,40,44,0.95)' },
-    /** Same name+coords as the day's stay — distinct from normal stop rows. */
-    rowStayMatch: { backgroundColor: 'rgba(90, 140, 200, 0.22)' },
+    /** Accommodation card row: soft low-sat wash (readable on dark glass). */
+    rowAccommodation: { backgroundColor: 'rgba(160, 130, 125, 0.16)' },
+    /** Same name+coords as the day's stay — slightly stronger same-hue wash. */
+    rowStayMatch: { backgroundColor: 'rgba(160, 130, 125, 0.28)' },
     // Stay cards share left alignment with gathering-point rows.
     rowTitleStay: { textAlign: 'left' },
     selectRadio: { marginRight: 8 },
