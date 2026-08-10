@@ -223,29 +223,68 @@ describe('legalDragIndicesForList (cross-day)', () => {
     expect(assigned).toBe(2);
   });
 
-  it('freezes Day1 header; Day2+ may land on other day headers or end', () => {
+  it('freezes Day1 header; Day2+ may land mid-dest within neighbor span only', () => {
     const order: ReorderListEntry[] = [
       header(1),
       dest('A', 1),
+      dest('B', 1),
       header(2),
-      dest('B', 2),
+      dest('C', 2),
       header(3),
-      dest('C', 3),
+      dest('D', 3),
     ];
     const h1 = order.findIndex((e) => e.id === 'header-1');
     const h2 = order.findIndex((e) => e.id === 'header-2');
     const h3 = order.findIndex((e) => e.id === 'header-3');
+    const idxA = order.findIndex((e) => e.id === 'A');
+    const idxB = order.findIndex((e) => e.id === 'B');
+    const idxD = order.findIndex((e) => e.id === 'D');
     expect(legalDragIndicesForList(order, 'header-1')).toEqual([h1]);
-    const legalLast = legalDragIndicesForList(order, 'header-3');
-    expect(legalLast).toContain(h2);
-    expect(legalLast).toContain(h3);
-    expect(legalLast).toContain(order.length);
-    // Never mid-dest of another day.
-    expect(legalLast).not.toContain(order.findIndex((e) => e.id === 'A'));
+
+    // Day2: after H1 through H3 (inclusive) — mid-dest of Day1 allowed.
     const legalMid = legalDragIndicesForList(order, 'header-2');
+    expect(legalMid).toContain(idxA);
+    expect(legalMid).toContain(idxB);
     expect(legalMid).toContain(h2);
     expect(legalMid).toContain(h3);
-    expect(legalMid).toContain(order.length);
+    // Cannot go before Day1 or after Day3 header.
+    expect(legalMid).not.toContain(h1);
+    expect(legalMid).not.toContain(idxD);
+    expect(legalMid).not.toContain(order.length);
+
+    // Day3 (last): after H2 through end — not into Day1 stops.
+    const legalLast = legalDragIndicesForList(order, 'header-3');
+    expect(legalLast).toContain(h3);
+    expect(legalLast).toContain(order.length);
+    expect(legalLast).toContain(order.findIndex((e) => e.id === 'C'));
+    expect(legalLast).not.toContain(idxA);
+    expect(legalLast).not.toContain(h1);
+  });
+
+  it('moveDayBlockBefore into Day1 mid-dest reassigns trailing stops to Day2', () => {
+    const order: ReorderListEntry[] = [
+      header(1), dest('A', 1), dest('B', 1), dest('C', 1),
+      header(2), dest('D', 2), dest('E', 2),
+      header(3), dest('F', 3),
+    ];
+    const h2 = order.findIndex((e) => e.id === 'header-2');
+    const idxB = order.findIndex((e) => e.id === 'B');
+    // Drop Day2 block before B (between A and B).
+    const moved = moveDayBlockBefore(order, h2, idxB);
+    const renumbered = renumberReorderListDays(moved);
+    const ids = renumbered.filter((e) => e.type === 'dest').map((e) => e.id);
+    expect(ids).toEqual(['A', 'D', 'E', 'B', 'C', 'F']);
+    const dayOf = (id: string) => {
+      const e = renumbered.find((x) => x.type === 'dest' && x.id === id);
+      return e && e.type === 'dest' ? e.day : -1;
+    };
+    expect(dayOf('A')).toBe(1);
+    // Between Day2 header and Day3: D,E + former Day1 trailing B,C.
+    expect(dayOf('D')).toBe(2);
+    expect(dayOf('E')).toBe(2);
+    expect(dayOf('B')).toBe(2);
+    expect(dayOf('C')).toBe(2);
+    expect(dayOf('F')).toBe(3);
   });
 
   it('moveDayBlockBefore moves whole day (header+dests) and keeps all ids', () => {
@@ -275,7 +314,7 @@ describe('legalDragIndicesForList (cross-day)', () => {
     expect(dayOf('D')).toBe(3);
   });
 
-  it('moveDayBlockBefore cannot pull a block above Day1', () => {
+  it('moveDayBlockBefore cannot pull a block above Day1 header', () => {
     const order: ReorderListEntry[] = [
       header(1), dest('A', 1),
       header(2), dest('B', 2),
@@ -283,10 +322,18 @@ describe('legalDragIndicesForList (cross-day)', () => {
     const h2 = order.findIndex((e) => e.id === 'header-2');
     const h1 = order.findIndex((e) => e.id === 'header-1');
     const moved = moveDayBlockBefore(order, h2, h1);
-    // Still Day1 first with A, then B.
     const renumbered = renumberReorderListDays(moved);
-    expect(renumbered.filter((e) => e.type === 'dest').map((e) => e.id)).toEqual(['A', 'B']);
-    expect(dayBlockRange(renumbered, 0)?.end).toBeGreaterThan(1);
+    // Day1 header stays first; clamp inserts right after H1 (may empty Day1).
+    expect(renumbered[0]).toMatchObject({ type: 'header', day: 1 });
+    expect(renumbered.filter((e) => e.type === 'header').map((e) => e.type === 'header' && e.day)).toEqual([1, 2]);
+    const ids = renumbered.filter((e) => e.type === 'dest').map((e) => e.id);
+    expect(ids).toEqual(['B', 'A']);
+    const dayOf = (id: string) => {
+      const e = renumbered.find((x) => x.type === 'dest' && x.id === id);
+      return e && e.type === 'dest' ? e.day : -1;
+    };
+    expect(dayOf('B')).toBe(2);
+    expect(dayOf('A')).toBe(2);
   });
 
   it('freezes locked boundary accommodations', () => {

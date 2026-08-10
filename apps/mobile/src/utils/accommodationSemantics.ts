@@ -177,7 +177,8 @@ export function dayBlockRange(
 /**
  * Move an entire day block (header + all dests until next header) so it
  * sits before `beforeIndex` in the original list (or at end when
- * beforeIndex === order.length). Day1 (first header) is never moved.
+ * beforeIndex === order.length). Day1 (first header) is never moved, but
+ * other day blocks may insert between Day1's destinations.
  * Does not renumber day fields — call renumberReorderListDays after.
  */
 export function moveDayBlockBefore<T extends DayBlockListEntry>(
@@ -189,10 +190,6 @@ export function moveDayBlockBefore<T extends DayBlockListEntry>(
   if (!range) return [...order];
   const firstHeader = order.findIndex((e) => e.type === 'header');
   if (firstHeader < 0 || fromHeaderIndex === firstHeader) return [...order];
-
-  // Day1 block occupies [firstHeader, day1End) and never moves.
-  let day1End = firstHeader + 1;
-  while (day1End < order.length && order[day1End].type !== 'header') day1End += 1;
 
   const block = order.slice(range.start, range.end);
   const rest = [...order.slice(0, range.start), ...order.slice(range.end)];
@@ -209,8 +206,9 @@ export function moveDayBlockBefore<T extends DayBlockListEntry>(
     // Target inside the moving block → no-op.
     return [...order];
   }
-  // Never insert into / before the end of the Day1 block.
-  if (insertAt < day1End) insertAt = day1End;
+  // Never insert at or before the Day1 header (Day1 stays first).
+  // Mid-dest slots inside Day1 are allowed so Day2+ can split Day1 stops.
+  if (insertAt <= firstHeader) insertAt = firstHeader + 1;
 
   return [...rest.slice(0, insertAt), ...block, ...rest.slice(insertAt)];
 }
@@ -300,8 +298,10 @@ export function proposedOrderPreservesBoundaryLocks(
  * Recomputed each move so cross-day splices stay consistent.
  * Locked head/tail accommodations only return their current index.
  * Day headers: Day1 is fixed; Day2…last may drag as whole blocks.
- * Legal drops are other day-start header indices (day≥2) or end-of-list
- * (append as last day). Never land mid-dest inside another day.
+ * Legal drops for day D are insert-before indices after header(D-1) and
+ * up to header(D+1) (or end of list) — including mid-dest slots so a day
+ * can land between another day's gathering points. Cannot pass the next
+ * day header (e.g. Day2 cannot move after Day3) or before Day1.
  */
 export function legalDragIndicesForList(
   order: readonly ReorderListEntry[],
@@ -312,7 +312,7 @@ export function legalDragIndicesForList(
 
   const movingEntry = order[movingIdx];
 
-  // ── Day header drag: whole-block reorder among day starts ──────────────
+  // ── Day header drag: whole-block within neighboring day span ───────────
   if (movingEntry.type === 'header') {
     const headerIndices: number[] = [];
     order.forEach((e, i) => {
@@ -323,14 +323,19 @@ export function legalDragIndicesForList(
     if (hPos <= 0) {
       return [movingIdx];
     }
-    const legal = new Set<number>([movingIdx]);
-    // Drop on another day≥2 header = insert this block before that day.
-    for (let i = 1; i < headerIndices.length; i++) {
-      legal.add(headerIndices[i]);
+    const prevHeaderIdx = headerIndices[hPos - 1];
+    const nextHeaderIdx =
+      hPos + 1 < headerIndices.length
+        ? headerIndices[hPos + 1]
+        : order.length;
+    // Inclusive of next header (insert just before next day) and end-of-list
+    // for the last day; exclusive of prev header (cannot go before Day N-1).
+    const legal: number[] = [];
+    for (let i = prevHeaderIdx + 1; i <= nextHeaderIdx; i++) {
+      legal.push(i);
     }
-    // Append after the last day block.
-    legal.add(order.length);
-    return [...legal].sort((a, b) => a - b);
+    if (!legal.includes(movingIdx)) legal.push(movingIdx);
+    return legal.sort((a, b) => a - b);
   }
 
   // Day-local lock freeze (head/tail accommodation).

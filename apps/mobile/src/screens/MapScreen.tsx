@@ -6700,6 +6700,7 @@ export default function MapScreen({ route, navigation }: Props) {
                       title: dest.title,
                       address: dest.address,
                       coordinates: dest.coordinates,
+                      // Snapshot only (no FK); source stop is discarded below.
                       sourceDestinationId: dest.id,
                     };
                     setDraftDailyAccommodations((prev) => {
@@ -6709,7 +6710,17 @@ export default function MapScreen({ route, navigation }: Props) {
                         next,
                       ];
                     });
+                    // Setting stay from a gathering point discards that stop;
+                    // only the daily accommodation setting remains.
+                    setOptimisticDestinations(baseDests.filter((d) => d.id !== destinationId));
+                    if (!destinationId.startsWith('draft-')) {
+                      routeDraftDirtyRef.current.deletedIds = [
+                        ...routeDraftDirtyRef.current.deletedIds.filter((x) => x !== destinationId),
+                        destinationId,
+                      ];
+                    }
                     routeDraftDirtyRef.current.daily = true;
+                    routeDraftDirtyRef.current.destinations = true;
                   }
                 : undefined
             }
