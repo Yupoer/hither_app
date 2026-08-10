@@ -34,6 +34,8 @@ export function mergeMapMarkers(input: {
     title: string;
     coordinates: Coordinates;
     sourceDestinationId?: string | null;
+    /** Trip day for bed marker color / callout (1-based). */
+    day?: number;
   } | null;
 }): MapMarkerInput[] {
   const out: MapMarkerInput[] = [];
@@ -65,6 +67,7 @@ export function mergeMapMarkers(input: {
       title: daily.title,
       coordinates: daily.coordinates,
       kind: 'daily_accommodation',
+      day: daily.day,
       sourceDestinationId: daily.sourceDestinationId ?? null,
     });
   }

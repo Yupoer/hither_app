@@ -46,28 +46,37 @@ describe('DailyAccommodationService atomic clear (#161)', () => {
     });
   });
 
-  it('setDailyAccommodation still uses set RPC', async () => {
-    rpc.mockResolvedValue({
-      data: {
-        daily: {
-          id: 'd1',
-          group_id: 'group-1',
-          stay_date: '2026-08-11',
-          title: 'Hotel',
-          address: null,
-          latitude: 1,
-          longitude: 2,
+  it('setDailyAccommodation forces auto-add off then uses set RPC', async () => {
+    rpc.mockImplementation(async (name: string) => {
+      if (name === 'set_accommodation_auto_add') {
+        return { data: null, error: null };
+      }
+      return {
+        data: {
+          daily: {
+            id: 'd1',
+            group_id: 'group-1',
+            stay_date: '2026-08-11',
+            title: 'Hotel',
+            address: null,
+            latitude: 1,
+            longitude: 2,
+          },
+          auto_added: false,
+          first_card_id: null,
+          last_card_id: null,
         },
-        auto_added: true,
-        first_card_id: 'a',
-        last_card_id: 'b',
-      },
-      error: null,
+        error: null,
+      };
     });
     const result = await setDailyAccommodation('group-1', '2026-08-11', {
       title: 'Hotel',
       coordinates: { latitude: 1, longitude: 2 },
       day: 1,
+    });
+    expect(rpc).toHaveBeenCalledWith('set_accommodation_auto_add', {
+      p_group_id: 'group-1',
+      p_enabled: false,
     });
     expect(rpc).toHaveBeenCalledWith(
       'set_daily_accommodation_with_auto_add',
@@ -78,7 +87,7 @@ describe('DailyAccommodationService atomic clear (#161)', () => {
         p_day: 1,
       }),
     );
-    expect(result.autoAdded).toBe(true);
+    expect(result.autoAdded).toBe(false);
     expect(result.daily.title).toBe('Hotel');
   });
 

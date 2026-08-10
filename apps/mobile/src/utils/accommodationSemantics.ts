@@ -308,36 +308,67 @@ export type ReorderLayoutHeights = {
   dayGapHeight: number;
 };
 
+/**
+ * Defaults biased slightly tall so unmeasured first paint undershoots less
+ * than the old 48/56 (headers with stay row + quick-add strip are taller).
+ */
 export const DEFAULT_REORDER_LAYOUT: ReorderLayoutHeights = {
-  headerHeight: 48,
-  rowHeight: 56,
-  dayGapHeight: 52,
+  headerHeight: 72,
+  rowHeight: 60,
+  dayGapHeight: 56,
+};
+
+/** Optional onLayout measurements keyed by list entry id / trip day. */
+export type MeasuredReorderGeometry = {
+  /** Measured height of header or dest row by entry id. */
+  heightById?: ReadonlyMap<string, number> | null;
+  /** Measured quick-add / day-actions strip height by trip day number. */
+  gapByDay?: ReadonlyMap<number, number> | null;
 };
 
 /**
  * Top Y and height of each order row in list coordinates, accounting for
  * quick-add gaps after each day section (empty days: gap after header).
+ * Prefer measured heights when present so drag aim tracks real layout.
  */
 export function reorderRowGeometry(
   order: readonly ReorderListEntry[],
   heights: ReorderLayoutHeights = DEFAULT_REORDER_LAYOUT,
+  measured?: MeasuredReorderGeometry | null,
 ): { tops: number[]; rowHeights: number[]; total: number } {
   const tops: number[] = [];
   const rowHeights: number[] = [];
   let y = 0;
   for (let i = 0; i < order.length; i++) {
     tops.push(y);
+    const entry = order[i];
+    const measuredH = measured?.heightById?.get(entry.id);
     const h =
-      order[i].type === 'header' ? heights.headerHeight : heights.rowHeight;
+      typeof measuredH === 'number' && measuredH > 0
+        ? measuredH
+        : entry.type === 'header'
+          ? heights.headerHeight
+          : heights.rowHeight;
     rowHeights.push(h);
     y += h;
     const next = order[i + 1];
     const endOfDay =
-      order[i].type === 'header'
+      entry.type === 'header'
         ? !next || next.type === 'header' // empty day block
         : !next || next.type === 'header'; // last dest of day
-    if (endOfDay && heights.dayGapHeight > 0) {
-      y += heights.dayGapHeight;
+    if (endOfDay) {
+      const day =
+        entry.type === 'header'
+          ? entry.day
+          : entry.type === 'dest'
+            ? entry.day
+            : 1;
+      const gapMeasured = measured?.gapByDay?.get(day);
+      const gap =
+        typeof gapMeasured === 'number' && gapMeasured > 0
+          ? gapMeasured
+          : heights.dayGapHeight;
+      if (gap > 0) y += gap;
     }
   }
   return { tops, rowHeights, total: y };
@@ -347,9 +378,10 @@ export function reorderRowCenterY(
   order: readonly ReorderListEntry[],
   index: number,
   heights: ReorderLayoutHeights = DEFAULT_REORDER_LAYOUT,
+  measured?: MeasuredReorderGeometry | null,
 ): number {
   if (index < 0 || index >= order.length) return 0;
-  const { tops, rowHeights } = reorderRowGeometry(order, heights);
+  const { tops, rowHeights } = reorderRowGeometry(order, heights, measured);
   return tops[index] + rowHeights[index] / 2;
 }
 
@@ -357,30 +389,37 @@ export function reorderRowCenterY(
  * Map finger offset (from grant center) to a full-list order index.
  * Day gaps and headers are included so dragging into another day block lands
  * on that day's header / first slot instead of sticking mid-day.
+ * Returns `order.length` when the finger is past the last row midpoint
+ * (append / last insertion line).
  */
 export function dragTargetIndexFromOffset(
   order: readonly ReorderListEntry[],
   startIndex: number,
   dy: number,
   heights: ReorderLayoutHeights = DEFAULT_REORDER_LAYOUT,
+  measured?: MeasuredReorderGeometry | null,
 ): number {
   if (order.length === 0) return 0;
   const clampedStart = Math.max(0, Math.min(startIndex, order.length - 1));
-  const { tops, rowHeights, total } = reorderRowGeometry(order, heights);
+  const { tops, rowHeights, total } = reorderRowGeometry(order, heights, measured);
   const startCenter = tops[clampedStart] + rowHeights[clampedStart] / 2;
-  const fingerY = Math.max(0, Math.min(Math.max(total - 1, 0), startCenter + dy));
+  // Allow a small overscroll past total so the bottom insertion line is reachable.
+  const maxY = Math.max(total + heights.rowHeight / 2, 0);
+  const fingerY = Math.max(0, Math.min(maxY, startCenter + dy));
 
   for (let i = 0; i < order.length; i++) {
     const top = tops[i];
     const nextTop = i + 1 < order.length ? tops[i + 1] : total;
     if (fingerY < nextTop || i === order.length - 1) {
       const mid = top + rowHeights[i] / 2;
-      // Past midpoint (or into following gap) → aim at next index.
-      if (fingerY >= mid && i < order.length - 1) return i + 1;
+      // Past midpoint (or into following gap) → aim at next index (may be length).
+      if (fingerY >= mid) {
+        return i + 1 < order.length ? i + 1 : order.length;
+      }
       return i;
     }
   }
-  return order.length - 1;
+  return order.length;
 }
 
 /**

@@ -103,8 +103,10 @@ export interface SetDailyAccommodationResult {
 }
 
 /**
- * Upsert daily accommodation. On none→some with team auto-add on, the RPC
- * also inserts first+last accommodation cards atomically.
+ * Upsert daily accommodation.
+ * Product: head/tail auto-add cards are temporarily disabled — always force
+ * the team switch off before the RPC so none→some never materializes boundary
+ * stay cards. Quick-add + set-stay remain the only ways to add stay rows.
  */
 export async function setDailyAccommodation(
   groupId: string,
@@ -123,6 +125,9 @@ export async function setDailyAccommodation(
     };
     return { daily, autoAdded: false };
   }
+
+  // Temporarily disable head/tail auto-add for all teams (UI switch removed).
+  await setAccommodationAutoAdd(groupId, false);
 
   const { data, error } = await supabase.rpc(
     'set_daily_accommodation_with_auto_add',

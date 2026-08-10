@@ -59,6 +59,9 @@ import {
 import {
   destinationMarkerColor,
   destinationMarkerEmoji,
+  getColorForDay,
+  stayMarkerDescription,
+  STAY_MARKER_EMOJI,
 } from '../utils/destinationMarkerChrome';
 import { mergeMapMarkers } from '../utils/mapMarkerMerge';
 
@@ -104,7 +107,11 @@ export interface GroupMapProps {
     title: string;
     coordinates: Coordinates;
     sourceDestinationId?: string | null;
+    /** Trip day (1-based) for bed marker day-color + callout. */
+    day?: number;
   } | null;
+  /** Localized label for stay callout (e.g. 住宿 / Stay). */
+  stayCalloutLabel?: string;
   pendingPlace?: { coordinates: Coordinates; name: string } | null;
   currentUserId?: string;
   /** First available user location, used before a gathering point exists. */
@@ -224,6 +231,7 @@ const DestinationMarker = React.memo(function DestinationMarker({
   isCompleted,
   reduceMotion,
   appActive,
+  calloutDescription,
 }: {
   dest: Destination;
   bgColor: string;
@@ -232,6 +240,8 @@ const DestinationMarker = React.memo(function DestinationMarker({
   isCompleted: boolean;
   reduceMotion: boolean;
   appActive: boolean;
+  /** Override Marker description (stay: "Day N · 住宿"). */
+  calloutDescription?: string;
 }) {
   // Pulse briefly every 5s — never leave tracksViewChanges true continuously.
   const [pulseOn, setPulseOn] = useState(false);
@@ -286,6 +296,11 @@ const DestinationMarker = React.memo(function DestinationMarker({
   }, [canPulse, isActiveTarget, reduceMotion, scaleAnim]);
 
   const markerEmoji = destinationMarkerEmoji(dest);
+  const description =
+    calloutDescription
+    ?? (dest.kind === 'accommodation'
+      ? stayMarkerDescription(dest.day, 'Stay')
+      : `Day ${dest.day || 1}`);
 
   // Capture bitmap only on appearance / pulse window / style change — never continuous.
   const tracksViewChanges = useTracksViewChanges([
@@ -293,7 +308,9 @@ const DestinationMarker = React.memo(function DestinationMarker({
     dest.title,
     dest.emoji,
     dest.markerColor,
+    dest.kind,
     markerEmoji,
+    description,
     isActiveTarget,
     isCompleted,
     pulseOn,
@@ -311,7 +328,7 @@ const DestinationMarker = React.memo(function DestinationMarker({
     <Marker
       coordinate={dest.coordinates}
       title={dest.title}
-      description={`Day ${dest.day || 1}`}
+      description={description}
       anchor={{ x: 0.5, y: 0.5 }}
       style={{ zIndex: isActiveTarget ? 3 : 1 }}
       tracksViewChanges={tracksViewChanges}
@@ -471,6 +488,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     gathering,
     destinations,
     dailyAccommodation = null,
+    stayCalloutLabel,
     pendingPlace,
     currentUserId,
     initialCenter,
@@ -872,33 +890,40 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
         destinations: destinations ?? [],
         dailyAccommodation: dailyAccommodation ?? null,
       }).map((marker) => {
+        const stayLabel = stayCalloutLabel ?? 'Stay';
         if (marker.kind === 'daily_accommodation') {
+          const dayNum = marker.day || 1;
           const fakeDest = {
             id: marker.id,
             title: marker.title,
             order: -1,
-            day: 1,
+            day: dayNum,
             coordinates: marker.coordinates,
-            emoji: '🛏️',
+            emoji: STAY_MARKER_EMOJI,
+            kind: 'accommodation' as const,
             markerColor: null,
           } as Destination;
           return (
             <DestinationMarker
               key={marker.id}
               dest={fakeDest}
-              bgColor="#6B7280"
+              bgColor={getColorForDay(dayNum, dayColors)}
               styles={styles}
               isActiveTarget={false}
               isCompleted={false}
               reduceMotion={reduceMotion}
               appActive={appActive}
+              calloutDescription={stayMarkerDescription(dayNum, stayLabel)}
             />
           );
         }
         const dest = (destinations ?? []).find((d) => d.id === marker.id);
         if (!dest) return null;
-        // Prefer per-stop palette color; fall back to day color when unset.
-        const bgColor = destinationMarkerColor(dest, dayColors);
+        // Stay cards use day color + bed; stops prefer per-stop color then day.
+        const bgColor =
+          dest.kind === 'accommodation'
+            ? getColorForDay(dest.day, dayColors)
+            : destinationMarkerColor(dest, dayColors);
         const isCompleted = completedDestinationIds instanceof Set
           ? completedDestinationIds.has(dest.id)
           : Boolean(
@@ -917,6 +942,11 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
             isCompleted={isCompleted}
             reduceMotion={reduceMotion}
             appActive={appActive}
+            calloutDescription={
+              dest.kind === 'accommodation'
+                ? stayMarkerDescription(dest.day, stayLabel)
+                : undefined
+            }
           />
         );
       })}

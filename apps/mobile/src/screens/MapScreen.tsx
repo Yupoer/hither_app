@@ -276,7 +276,6 @@ import {
   setDestinationArrivalAt,
   setDailyAccommodation,
   clearDailyAccommodation,
-  setAccommodationAutoAdd,
   listFavoritePlaces,
   saveFavoritePlace,
   unsaveFavoriteByExactMatch,
@@ -4727,10 +4726,12 @@ export default function MapScreen({ route, navigation }: Props) {
       scopedDestinations: destinations,
       myArrivedDestinationIds: myCompletedDestinationIds,
     });
+    // Personal check-in is user-scoped: available whenever sequential rules
+    // allow it. Do not gate on sharedTargetId — End clears the team target and
+    // must not hide 「已抵達」.
     const showArrivalControl =
       Boolean(user?.id)
       && canMarkArrival
-      && sharedTargetId === dest.id
       && !dest.closedAt;
     const navCmd = resolveNavCommand({
       isLeader,
@@ -5379,13 +5380,27 @@ export default function MapScreen({ route, navigation }: Props) {
             const todayKey = localDayKey(new Date());
             const daily = dailyAccommodations.find((d) => d.stayDate === todayKey);
             if (!daily) return null;
+            const departure = optimisticDepartureDate ?? group?.departureDate;
+            const tripDays = optimisticTripDays ?? group?.tripDays ?? 1;
+            let dayNum = 1;
+            if (departure) {
+              for (let d = 1; d <= Math.max(1, tripDays); d++) {
+                const date = dateForTripDay(departure, d);
+                if (date && localDayKey(date) === daily.stayDate) {
+                  dayNum = d;
+                  break;
+                }
+              }
+            }
             return {
               id: daily.id,
               title: daily.title,
               coordinates: daily.coordinates,
               sourceDestinationId: daily.sourceDestinationId,
+              day: dayNum,
             };
           })()}
+          stayCalloutLabel={t('stay.defaultTitle')}
           pendingPlace={pendingPlace}
           currentUserId={user?.id}
           initialCenter={mapInitialCenter ?? undefined}
@@ -5944,10 +5959,11 @@ export default function MapScreen({ route, navigation }: Props) {
                 scopedDestinations: destinations,
                 myArrivedDestinationIds: myCompletedDestinationIds,
               });
+              // Personal check-in is user-scoped (not team phase). Keep visible
+              // after Start/End so members can still mark arrival.
               const showArrivalControl =
                 Boolean(user?.id)
                 && canMarkArrival
-                && sharedTargetId === dest.id
                 && !dest.closedAt;
               const personallyArrived = myCompletedDestinationIds.has(dest.id) || (
                 autoArrivedDestId === dest.id ||
@@ -5980,7 +5996,7 @@ export default function MapScreen({ route, navigation }: Props) {
               const exitPhase = arrivalExitRecords.get(dest.id)?.phase ?? null;
               return (
                 <View
-                  key={`carousel-dest-${dest.id}-${index}`}
+                  key={`carousel-dest-${dest.id}`}
                   style={{ width: windowWidth, paddingHorizontal: narrowScreen ? 10 : 14 }}
                 >
                   <View
@@ -6818,22 +6834,6 @@ export default function MapScreen({ route, navigation }: Props) {
           setOverlay(null);
           goHomeCreateOrJoin();
         }}
-        accommodationAutoAdd={group?.accommodationAutoAdd ?? true}
-        canEditAccommodationAutoAdd={!!canEditItinerary && !!groupId}
-        onToggleAccommodationAutoAdd={
-          canEditItinerary && groupId
-            ? (enabled) => {
-                void runUiAction(
-                  'map.accommodation_auto_add',
-                  async () => {
-                    await setAccommodationAutoAdd(groupId, enabled);
-                    await refresh();
-                  },
-                  { screen: 'Map' },
-                );
-              }
-            : undefined
-        }
         styles={styles}
       />
 

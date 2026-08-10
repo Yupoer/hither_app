@@ -1046,7 +1046,7 @@ export const en: Record<keyof ZhDict, string> = {
   'stay.autoAddHint': 'When you set a daily stay, add stay cards at the start and end of that day.',
   'stay.needDepartureDate': 'Set a departure date first so trip days can be resolved.',
   'stay.quickAdd': 'Quick-add stay',
-  'stay.setFromStop': 'Set stop as accommodation',
+  'stay.setFromStop': 'Set stay',
   'stay.finishSet': 'Done',
   'stay.remove': 'Remove stay',
   'stay.defaultTitle': 'Stay',

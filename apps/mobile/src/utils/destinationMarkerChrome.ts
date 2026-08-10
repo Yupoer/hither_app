@@ -34,8 +34,21 @@ export function destinationMarkerColor(
   return getColorForDay(dest.day, dayColors);
 }
 
+/** Bed icon for daily stay / accommodation cards on the map. */
+export const STAY_MARKER_EMOJI = '🛏️';
+
 export function destinationMarkerEmoji(
-  dest: Pick<Destination, 'emoji'>,
+  dest: Pick<Destination, 'emoji' | 'kind'>,
 ): string {
+  if (dest.kind === 'accommodation') return STAY_MARKER_EMOJI;
   return destinationEmojiDisplay(dest.emoji);
+}
+
+/** Callout description: "Day N · 住宿" / "Day N · Stay". */
+export function stayMarkerDescription(
+  day: number | undefined,
+  stayLabel: string,
+): string {
+  const d = Math.max(1, day || 1);
+  return `Day ${d} · ${stayLabel}`;
 }

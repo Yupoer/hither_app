@@ -118,12 +118,19 @@ export function resolveExitIndexAtStart(
 /**
  * Advance the tracked carousel order after open/exit membership changes.
  * Exiting cards stay ranked until their exit record is removed (done).
+ *
+ * When nothing is exiting, openIds is the sole source of truth (day/order
+ * sort from filterActiveDestinations). Freezing previousOrder here used to
+ * lock a stale carousel after reorder / day edits.
  */
 export function nextVisibleCarouselOrder(
   previousOrder: readonly string[],
   openIds: readonly string[],
   exitingIds: readonly string[],
 ): string[] {
+  if (exitingIds.length === 0) {
+    return [...openIds];
+  }
   const openSet = new Set(openIds);
   const exitingSet = new Set(exitingIds);
   const keep = previousOrder.filter((id) => openSet.has(id) || exitingSet.has(id));
@@ -145,6 +152,9 @@ export function nextVisibleCarouselOrder(
  * When available, `visibleOrder` is the current full carousel order. It is the
  * source of truth after an earlier exit finishes because immutable start
  * indices no longer account for that removed card.
+ *
+ * With no active exits, openDestinations order always wins — never freeze a
+ * stale visibleOrder after itinerary reorder.
  */
 export function mergeExitingDestinations<T extends { id: string }>(
   openDestinations: readonly T[],
@@ -161,6 +171,11 @@ export function mergeExitingDestinations<T extends { id: string }>(
     const snap = exitingSnapshots.get(id);
     if (!snap) continue;
     activeExits.push({ id, snap, index: record.indexAtStart });
+  }
+
+  // No exit animation in flight → open list is already day/order sorted.
+  if (activeExits.length === 0) {
+    return merged;
   }
 
   // A completed earlier exit can disappear before a later exit finishes. In

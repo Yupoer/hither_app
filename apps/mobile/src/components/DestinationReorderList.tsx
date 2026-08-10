@@ -30,6 +30,7 @@ import {
   reorderRowCenterY,
   snapToLegalDragIndex,
   type AccommodationListItem,
+  type MeasuredReorderGeometry,
   type ReorderListEntry,
 } from '../utils/accommodationSemantics';
 import { eligibleFavoriteDateOptions } from '../utils/favoriteDates';
@@ -50,8 +51,8 @@ const ROW_HEIGHT = DEFAULT_REORDER_LAYOUT.rowHeight;
 const REORDER_LAYOUT = DEFAULT_REORDER_LAYOUT;
 const REVEAL_WIDTH = 76;
 /** Auto-scroll parent when finger is within this distance of screen edges. */
-const DRAG_EDGE_PX = 120;
-const DRAG_SCROLL_STEP = 14;
+const DRAG_EDGE_PX = 160;
+const DRAG_SCROLL_STEP = 22;
 
 export interface DailyAccommodationView {
   stayDate: string;
@@ -186,6 +187,32 @@ export default function DestinationReorderList({
   const pan = useRef(new Animated.Value(0)).current;
   /** Insertion line under finger aim (null when not dragging). */
   const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
+  /** onLayout heights so drag aim matches real header / stay / quick-add sizes. */
+  const measuredHeightByIdRef = useRef(new Map<string, number>());
+  const measuredGapByDayRef = useRef(new Map<number, number>());
+  const [, setMeasureTick] = useState(0);
+
+  const getMeasuredGeometry = useCallback((): MeasuredReorderGeometry => ({
+    heightById: measuredHeightByIdRef.current,
+    gapByDay: measuredGapByDayRef.current,
+  }), []);
+
+  const recordMeasuredHeight = useCallback((id: string, height: number) => {
+    if (!(height > 0)) return;
+    const prev = measuredHeightByIdRef.current.get(id);
+    if (prev != null && Math.abs(prev - height) < 0.5) return;
+    measuredHeightByIdRef.current.set(id, height);
+    // Refresh geometry used by idle layout (drag reads refs directly).
+    setMeasureTick((n) => n + 1);
+  }, []);
+
+  const recordMeasuredGap = useCallback((day: number, height: number) => {
+    if (!(height > 0)) return;
+    const prev = measuredGapByDayRef.current.get(day);
+    if (prev != null && Math.abs(prev - height) < 0.5) return;
+    measuredGapByDayRef.current.set(day, height);
+    setMeasureTick((n) => n + 1);
+  }, []);
 
   const [showSettings, setShowSettings] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -400,14 +427,20 @@ export default function DestinationReorderList({
       scrollAccumRef.current = 0;
       pendingAutoScrollRef.current = 0;
       const entries = toReorderEntries(orderRef.current);
-      startCenterYRef.current = reorderRowCenterY(entries, startIdx, REORDER_LAYOUT);
+      const measured = getMeasuredGeometry();
+      startCenterYRef.current = reorderRowCenterY(
+        entries,
+        startIdx,
+        REORDER_LAYOUT,
+        measured,
+      );
       // Ghost drag: order is frozen mid-gesture → legal slots stay valid for the whole drag.
       legalIndicesRef.current = legalDragIndicesForList(entries, id);
       setDropTargetIndex(startIdx);
       pan.setValue(0);
       selectionTick();
     },
-    [pan, onDragActiveChange, toReorderEntries],
+    [pan, onDragActiveChange, toReorderEntries, getMeasuredGeometry],
   );
 
   const handleMove = useCallback(
@@ -419,11 +452,17 @@ export default function DestinationReorderList({
       // and left deleteBg + pan offsets broken (red bar / freeze screenshot).
 
       // Edge auto-scroll so other day blocks off-screen stay reachable.
+      // Proximity scales step so the further into the edge band, the faster.
       if (typeof pageY === 'number' && onDragAutoScroll) {
         const winH = Dimensions.get('window').height;
         let step = 0;
-        if (pageY < DRAG_EDGE_PX) step = -DRAG_SCROLL_STEP;
-        else if (pageY > winH - DRAG_EDGE_PX) step = DRAG_SCROLL_STEP;
+        if (pageY < DRAG_EDGE_PX) {
+          const t = 1 - pageY / DRAG_EDGE_PX;
+          step = -Math.max(DRAG_SCROLL_STEP, Math.round(DRAG_SCROLL_STEP * (1 + t * 1.5)));
+        } else if (pageY > winH - DRAG_EDGE_PX) {
+          const t = 1 - (winH - pageY) / DRAG_EDGE_PX;
+          step = Math.max(DRAG_SCROLL_STEP, Math.round(DRAG_SCROLL_STEP * (1 + t * 1.5)));
+        }
         if (step !== 0) {
           scrollAccumRef.current += step;
           pendingAutoScrollRef.current += step;
@@ -441,22 +480,27 @@ export default function DestinationReorderList({
 
       const effectiveDy = dy + scrollAccumRef.current;
       const entries = toReorderEntries(orderRef.current);
+      const measured = getMeasuredGeometry();
       const rawTarget = dragTargetIndexFromOffset(
         entries,
         startIndex,
         effectiveDy,
         REORDER_LAYOUT,
+        measured,
       );
       const direction = effectiveDy === 0 ? 0 : effectiveDy > 0 ? 1 : -1;
       const legal =
         legalIndicesRef.current.length > 0
           ? legalIndicesRef.current
           : legalDragIndicesForList(entries, id);
-      const target = snapToLegalDragIndex(
-        legal.length > 0 ? legal : [startIndex],
-        rawTarget,
-        direction,
-      );
+      // Allow aiming past the last row (append) — clamp to max legal if needed.
+      const legalOrSelf = legal.length > 0 ? legal : [startIndex];
+      const maxLegal = legalOrSelf[legalOrSelf.length - 1];
+      const aim =
+        rawTarget > maxLegal && maxLegal === entries.length - 1
+          ? maxLegal
+          : rawTarget;
+      const target = snapToLegalDragIndex(legalOrSelf, aim, direction);
       dropTargetIndexRef.current = target;
       if (target !== lastDropHapticIndexRef.current) {
         lastDropHapticIndexRef.current = target;
@@ -467,7 +511,7 @@ export default function DestinationReorderList({
       // Pure finger offset — order/layout Y never changes during the gesture.
       pan.setValue(effectiveDy);
     },
-    [pan, toReorderEntries, onDragAutoScroll],
+    [pan, toReorderEntries, onDragAutoScroll, getMeasuredGeometry],
   );
 
   const handleRelease = useCallback(() => {
@@ -687,6 +731,7 @@ export default function DestinationReorderList({
                         }
                       : undefined
                   }
+                  onLayoutHeight={(h) => recordMeasuredHeight(item.id, h)}
                   onEmojiPress={
                     canReorder && onUpdateEmojiColor && item.item.kind !== 'accommodation'
                       ? (id) => {
@@ -707,7 +752,7 @@ export default function DestinationReorderList({
 
             // Flat index walk matches order[] for ghost drop indicator.
             let flatIndex = 0;
-            return blocks.map((block, blockIndex) => {
+            const blockNodes = blocks.map((block, blockIndex) => {
               if (block.kind === 'orphan') {
                 const line =
                   dropTargetIndex === flatIndex ? (
@@ -833,11 +878,15 @@ export default function DestinationReorderList({
                         : undefined
                     }
                     accent={colors.accent}
+                    onLayoutHeight={(h) => recordMeasuredHeight(item.id, h)}
                   />
                   {destNodes}
                   {/* Quick-add only when the day already has gathering points. */}
                   {showQuickAdd ? (
-                    <View style={styles.dayActions}>
+                    <View
+                      style={styles.dayActions}
+                      onLayout={(e) => recordMeasuredGap(item.day, e.nativeEvent.layout.height)}
+                    >
                       <Pressable
                         style={styles.dashedBtn}
                         onPress={() => {
@@ -856,6 +905,20 @@ export default function DestinationReorderList({
                 </View>
               );
             });
+            // Insertion line after the last row (aim past last midpoint).
+            const endDrop =
+              dropTargetIndex === flatIndex ? (
+                <View
+                  key={`drop-end-${flatIndex}`}
+                  style={[styles.dropLine, { backgroundColor: colors.accent }]}
+                />
+              ) : null;
+            return (
+              <>
+                {blockNodes}
+                {endDrop}
+              </>
+            );
           })()}
         </View>
       )}
@@ -1199,6 +1262,7 @@ const HeaderRow = memo(function HeaderRow({
   setStayActive,
   onToggleSetStay,
   accent,
+  onLayoutHeight,
 }: {
   item: { day: number; title: string; dateStr: string };
   styles: any;
@@ -1214,12 +1278,15 @@ const HeaderRow = memo(function HeaderRow({
   setStayActive?: boolean;
   onToggleSetStay?: () => void;
   accent: string;
+  onLayoutHeight?: (height: number) => void;
 }) {
   const { t } = useTranslation();
   const hasStay = Boolean(dailyTitle);
 
   return (
-    <View>
+    <View
+      onLayout={(e) => onLayoutHeight?.(e.nativeEvent.layout.height)}
+    >
       {/* Row 1: day title, date, collapse (+ set-stay only when no accommodation). */}
       <View style={[styles.headerRow, hasStay && styles.headerRowCompact]}>
         <View style={styles.headerRowInner}>
@@ -1305,6 +1372,7 @@ const Row = memo(function Row({
   showSelect,
   selectSelected,
   onSelectAsStay,
+  onLayoutHeight,
 }: {
   item: Destination;
   active: boolean;
@@ -1324,6 +1392,7 @@ const Row = memo(function Row({
   /** Local pending stay selection (not yet committed). */
   selectSelected?: boolean;
   onSelectAsStay?: () => void;
+  onLayoutHeight?: (height: number) => void;
 }) {
   const translateX = useRef(new Animated.Value(0)).current;
   const axisRef = useRef<null | 'h' | 'v'>(null);
@@ -1407,7 +1476,10 @@ const Row = memo(function Row({
   ).current;
 
   return (
-    <View style={active && { zIndex: 10, elevation: 6 }}>
+    <View
+      style={active && { zIndex: 10, elevation: 6 }}
+      onLayout={(e) => onLayoutHeight?.(e.nativeEvent.layout.height)}
+    >
       {/* Hide delete strip while vertically dragging — otherwise red full-width
           bar stays in the original slot while the row floats (screenshot bug). */}
       {canSwipe && !active ? (

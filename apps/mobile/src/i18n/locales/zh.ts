@@ -1057,7 +1057,7 @@ export const zh = {
   'stay.autoAddHint': '設定每日住宿時，自動在當日行程頭尾新增住宿卡。',
   'stay.needDepartureDate': '請先設定出發日期，才能對應行程天數。',
   'stay.quickAdd': '快速新增住宿點',
-  'stay.setFromStop': '設定集合點為住宿點',
+  'stay.setFromStop': '設定住宿',
   'stay.finishSet': '完成',
   'stay.remove': '移除住宿',
   'stay.defaultTitle': '住宿',

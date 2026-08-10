@@ -405,8 +405,12 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).not.toContain("arrival.timeAutomatic");
     expect(mapScreen).not.toContain('handleArrival(dest, user.id, true)');
     expect(mapScreen).not.toContain('await syncFromDatabase();\n        await setDestinationArrivalAt');
-    expect(mapScreen).toContain('sharedTargetId === dest.id');
+    // Personal arrive is sequential-rules only (not gated on sharedTargetId).
+    expect(mapScreen).toContain('canMarkArrival');
     expect(mapScreen).toContain('expanded={!showArrivalControl}');
+    expect(mapScreen).not.toMatch(
+      /showArrivalControl\s*=\s*[\s\S]{0,200}sharedTargetId === dest\.id/,
+    );
   });
 
   it('pins a far fixed gap before viewing my teams and does not vertical-center', () => {

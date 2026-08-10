@@ -62,10 +62,11 @@ describe('foreground arrival feedback', () => {
       source.indexOf('liquidGlass.GlassView') + 2500,
     );
     // First GlassView may be elsewhere — use carousel card marker.
-    const carouselCard = source.slice(
-      source.indexOf('key={`carousel-dest-${dest.id}-${index}`}'),
-      source.indexOf('key={`carousel-dest-${dest.id}-${index}`}') + 4000,
-    );
+    // Stable key (no index) so reorder remounts do not kill celebrate chrome.
+    const cardKeyNeedle = 'key={`carousel-dest-${dest.id}`}';
+    const cardKeyIdx = source.indexOf(cardKeyNeedle);
+    expect(cardKeyIdx).toBeGreaterThanOrEqual(0);
+    const carouselCard = source.slice(cardKeyIdx, cardKeyIdx + 4000);
     const dimIdx = carouselCard.indexOf('styles.arrivalDimOverlay');
     const pressableIdx = carouselCard.indexOf('<GatheringCardPressable');
     expect(dimIdx).toBeGreaterThanOrEqual(0);

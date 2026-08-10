@@ -255,4 +255,29 @@ describe('arrivalCardExit (#149)', () => {
       mergeExitingDestinations(open, snapshots, records, visibleOrder).map((d) => d.id),
     ).toEqual(['a', 'c', 'd']);
   });
+
+  it('follows open day/order when nothing is exiting (reorder must not freeze)', () => {
+    // Stale previous order after itinerary edit: day4 cards first, day2 later.
+    const previousOrder = ['d4a', 'd4b', 'd2a', 'd4c'];
+    const openSorted = [
+      { id: 'd2a' },
+      { id: 'd4a' },
+      { id: 'd4b' },
+      { id: 'd4c' },
+    ];
+    const next = nextVisibleCarouselOrder(
+      previousOrder,
+      openSorted.map((d) => d.id),
+      [],
+    );
+    expect(next).toEqual(['d2a', 'd4a', 'd4b', 'd4c']);
+    expect(
+      mergeExitingDestinations(
+        openSorted,
+        new Map(),
+        new Map(),
+        previousOrder,
+      ).map((d) => d.id),
+    ).toEqual(['d2a', 'd4a', 'd4b', 'd4c']);
+  });
 });

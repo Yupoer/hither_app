@@ -34,6 +34,12 @@ describe('destinationMarkerColor / emoji (map projection)', () => {
     expect(destinationMarkerEmoji({ emoji: '🍜' })).toBe('🍜');
     expect(destinationMarkerEmoji({ emoji: null })).toBe(DESTINATION_EMOJI_FALLBACK);
   });
+
+  it('forces bed emoji for accommodation cards', () => {
+    expect(
+      destinationMarkerEmoji({ emoji: '🍜', kind: 'accommodation' }),
+    ).toBe('🛏️');
+  });
 });
 
 describe('GroupMap destination marker wiring contract', () => {
