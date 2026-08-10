@@ -523,13 +523,13 @@ export const en: Record<keyof ZhDict, string> = {
   'flock.here': 'here',
   'flock.you': 'You',
 
-  'meetTime.redSection': 'Countdown turns red at',
+  'meetTime.redSection': 'Countdown reminder',
   'meetTime.quickSection': 'Quick set',
   'meetTime.timeSection': 'Meet time',
   'meetTime.redInfo': 'About countdown reminders',
   'meetTime.redOption': '{minutes} min left',
   'meetTime.redHint':
-    'When the countdown enters this window it turns red and everyone gets a push about minutes left',
+    'When the countdown enters the remaining time, everyone is notified by push',
   'meetTime.selected': 'Meet at {datetime}',
   'meetTime.pickDateTime': 'Pick date & time',
   'meetTime.countdown': '{minutes} min to gather',

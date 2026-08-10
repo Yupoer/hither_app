@@ -44,7 +44,16 @@ export default function RootNavigator() {
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="RoleSelect" component={RoleSelectScreen} />
       <Stack.Screen name="Auth" component={AuthScreen} />
-      <Stack.Screen name="Map" component={MapScreen} />
+      {/* Map is a full team workspace: disable interactive / full-screen pop so
+          list swipe-to-delete and peak horizontal pans never return to RoleSelect. */}
+      <Stack.Screen
+        name="Map"
+        component={MapScreen}
+        options={{
+          gestureEnabled: false,
+          fullScreenGestureEnabled: false,
+        }}
+      />
       <Stack.Screen name="MyTeams" component={MyTeamsScreen} />
     </Stack.Navigator>
   );

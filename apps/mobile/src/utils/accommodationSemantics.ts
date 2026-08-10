@@ -116,6 +116,185 @@ export function dragIndexBoundsForDay(
 }
 
 /**
+ * Flat reorder-list entry used for multi-day drag bounds (headers + dests).
+ * Headers mark day sections (same walk as DestinationReorderList handleRelease).
+ */
+export type ReorderListEntry =
+  | { type: 'header'; day: number; id: string }
+  | {
+      type: 'dest';
+      id: string;
+      day: number;
+      kind: DestinationKind;
+      stayAnchor?: boolean;
+      title?: string;
+    };
+
+function listEntryToAccommodation(
+  entry: Extract<ReorderListEntry, { type: 'dest' }>,
+  order: number,
+  day: number,
+): AccommodationListItem {
+  return {
+    id: entry.id,
+    kind: entry.kind,
+    order,
+    day,
+    title: entry.title ?? '',
+    stayAnchor: entry.stayAnchor,
+  };
+}
+
+/** Apply the same splice semantics as DestinationReorderList.handleMove. */
+export function orderAfterDragMove<T>(
+  order: readonly T[],
+  fromIndex: number,
+  toIndex: number,
+): T[] {
+  if (fromIndex < 0 || fromIndex >= order.length) return [...order];
+  const next = order.slice();
+  const [moved] = next.splice(fromIndex, 1);
+  const clamped = Math.max(0, Math.min(toIndex, next.length));
+  next.splice(clamped, 0, moved);
+  return next;
+}
+
+/**
+ * Active stay-anchor accommodations (except the mover) must remain pure-index
+ * first and/or last of their day after the proposed order.
+ */
+export function proposedOrderPreservesBoundaryLocks(
+  proposed: readonly ReorderListEntry[],
+  movingId: string,
+): boolean {
+  const days: AccommodationListItem[][] = [];
+  let run: AccommodationListItem[] = [];
+  let currentDay = 1;
+  let started = false;
+
+  const flush = () => {
+    days.push(run);
+    run = [];
+  };
+
+  for (const entry of proposed) {
+    if (entry.type === 'header') {
+      if (started) flush();
+      currentDay = entry.day;
+      started = true;
+      run = [];
+      continue;
+    }
+    if (!started) {
+      started = true;
+      currentDay = entry.day;
+    }
+    run.push(listEntryToAccommodation(entry, run.length, currentDay));
+  }
+  if (started) flush();
+
+  for (const dayItems of days) {
+    if (dayItems.length === 0) continue;
+    const anchors = dayItems.filter(
+      (i) => i.kind === 'accommodation' && isActiveStayAnchor(i) && i.id !== movingId,
+    );
+    if (anchors.length === 0) continue;
+
+    for (const a of anchors) {
+      const idx = dayItems.findIndex((i) => i.id === a.id);
+      if (idx !== 0 && idx !== dayItems.length - 1) return false;
+    }
+
+    if (anchors.length >= 2) {
+      const first = dayItems[0];
+      const last = dayItems[dayItems.length - 1];
+      if (
+        !(first.kind === 'accommodation' && isActiveStayAnchor(first))
+        || !(last.kind === 'accommodation' && isActiveStayAnchor(last))
+      ) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+/**
+ * Full-list indices where handleMove may place `movingId`.
+ * Recomputed each move so cross-day splices stay consistent.
+ * Locked head/tail accommodations only return their current index.
+ */
+export function legalDragIndicesForList(
+  order: readonly ReorderListEntry[],
+  movingId: string,
+): number[] {
+  const movingIdx = order.findIndex((e) => e.type === 'dest' && e.id === movingId);
+  if (movingIdx < 0) return [];
+
+  // Day-local lock freeze (head/tail accommodation).
+  let currentDay = 1;
+  let movingDay = 1;
+  const byDay = new Map<number, AccommodationListItem[]>();
+  for (const entry of order) {
+    if (entry.type === 'header') {
+      currentDay = entry.day;
+      continue;
+    }
+    const list = byDay.get(currentDay) ?? [];
+    if (entry.id === movingId) movingDay = currentDay;
+    list.push(listEntryToAccommodation(entry, list.length, currentDay));
+    byDay.set(currentDay, list);
+  }
+  // Only pure-index head/tail accommodations freeze — a mid stop with a
+  // single in-day slot must still be free to cross into other days.
+  const sourceItems = byDay.get(movingDay) ?? [];
+  const { lockedIds } = accommodationBoundaryLocks(sourceItems);
+  if (lockedIds.has(movingId)) {
+    return [movingIdx];
+  }
+
+  const legal = new Set<number>([movingIdx]);
+  for (let target = 0; target < order.length; target++) {
+    // Only aim at dest rows (or current slot); headers are not stop slots.
+    if (order[target].type === 'header') continue;
+    const proposed = orderAfterDragMove(order, movingIdx, target);
+    if (proposedOrderPreservesBoundaryLocks(proposed, movingId)) {
+      legal.add(target);
+    }
+  }
+  return [...legal].sort((a, b) => a - b);
+}
+
+/** Nearest legal full-list index to the finger aim. */
+export function snapToLegalDragIndex(
+  legalIndices: readonly number[],
+  rawTarget: number,
+): number {
+  if (legalIndices.length === 0) return rawTarget;
+  let best = legalIndices[0];
+  let bestDist = Math.abs(best - rawTarget);
+  for (let i = 1; i < legalIndices.length; i++) {
+    const idx = legalIndices[i];
+    const dist = Math.abs(idx - rawTarget);
+    if (dist < bestDist) {
+      best = idx;
+      bestDist = dist;
+    }
+  }
+  return best;
+}
+
+/** Continuous min/max over legal full-list indices. */
+export function dragIndexBoundsForList(
+  order: readonly ReorderListEntry[],
+  movingId: string,
+): { min: number; max: number } | null {
+  const legal = legalDragIndicesForList(order, movingId);
+  if (legal.length === 0) return null;
+  return { min: legal[0], max: legal[legal.length - 1] };
+}
+
+/**
  * After a drop, pure-index locks recompute. Refuse silent replacement of an
  * already-occupied edge with a different accommodation id.
  * Returns null when the proposed order is illegal.

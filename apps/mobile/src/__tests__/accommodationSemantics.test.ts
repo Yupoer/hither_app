@@ -5,9 +5,14 @@ import {
   downgradeAnchorsOnDailyChange,
   dragIndexBoundsForDay,
   isAccommodationDraggable,
+  legalDragIndicesForList,
+  orderAfterDragMove,
+  proposedOrderPreservesBoundaryLocks,
   quickAddAccommodationInsertPosition,
   shouldAutoAddAccommodationCards,
+  snapToLegalDragIndex,
   type AccommodationListItem,
+  type ReorderListEntry,
 } from '../utils/accommodationSemantics';
 import { mergeMapMarkers } from '../utils/mapMarkerMerge';
 import {
@@ -144,6 +149,79 @@ describe('quickAddAccommodationInsertPosition', () => {
       { order: 1, day: 1, kind: 'stop' },
     ];
     expect(quickAddAccommodationInsertPosition(existing, 1)).toBe(2);
+  });
+});
+
+describe('legalDragIndicesForList (cross-day)', () => {
+  const dest = (
+    id: string,
+    day: number,
+    kind: 'stop' | 'accommodation' = 'stop',
+    stayAnchor?: boolean,
+  ): ReorderListEntry => ({
+    type: 'dest',
+    id,
+    day,
+    kind,
+    stayAnchor,
+    title: id,
+  });
+  const header = (day: number): ReorderListEntry => ({
+    type: 'header',
+    day,
+    id: `header-${day}`,
+  });
+
+  it('allows a mid stop to move to another day mid slot', () => {
+    // Day1: hotel, A, hotel | Day2: hotel, B, hotel | Day3: hotel, C, hotel | Day4: hotel, D, hotel
+    const order: ReorderListEntry[] = [
+      header(1), dest('h1a', 1, 'accommodation', true), dest('A', 1), dest('h1b', 1, 'accommodation', true),
+      header(2), dest('h2a', 2, 'accommodation', true), dest('B', 2), dest('h2b', 2, 'accommodation', true),
+      header(3), dest('h3a', 3, 'accommodation', true), dest('C', 3), dest('h3b', 3, 'accommodation', true),
+      header(4), dest('h4a', 4, 'accommodation', true), dest('D', 4), dest('h4b', 4, 'accommodation', true),
+    ];
+    const legal = legalDragIndicesForList(order, 'B');
+    const indexOf = (id: string) => order.findIndex((e) => e.type === 'dest' && e.id === id);
+    // Can stay on B or land on other mid stops (A/C/D) by swapping into their slots.
+    expect(legal).toContain(indexOf('B'));
+    expect(legal).toContain(indexOf('A'));
+    expect(legal).toContain(indexOf('C'));
+    expect(legal).toContain(indexOf('D'));
+    // Cannot land on locked head/tail hotels.
+    expect(legal).not.toContain(indexOf('h1a'));
+    expect(legal).not.toContain(indexOf('h4b'));
+  });
+
+  it('freezes locked boundary accommodations', () => {
+    const order: ReorderListEntry[] = [
+      header(1),
+      dest('h1', 1, 'accommodation', true),
+      dest('s1', 1),
+      dest('h2', 1, 'accommodation', true),
+    ];
+    const headIdx = order.findIndex((e) => e.type === 'dest' && e.id === 'h1');
+    expect(legalDragIndicesForList(order, 'h1')).toEqual([headIdx]);
+    expect(legalDragIndicesForList(order, 'h2')).toEqual([
+      order.findIndex((e) => e.type === 'dest' && e.id === 'h2'),
+    ]);
+  });
+
+  it('rejects proposed orders that push stay anchors off the edge', () => {
+    const base: ReorderListEntry[] = [
+      header(1),
+      dest('h1', 1, 'accommodation', true),
+      dest('s1', 1),
+      dest('h2', 1, 'accommodation', true),
+    ];
+    const bad = orderAfterDragMove(base, 2, 1); // move s1 before h1
+    expect(proposedOrderPreservesBoundaryLocks(bad, 's1')).toBe(false);
+    const good = orderAfterDragMove(base, 2, 2); // no-op mid
+    expect(proposedOrderPreservesBoundaryLocks(good, 's1')).toBe(true);
+  });
+
+  it('snapToLegalDragIndex picks nearest legal slot', () => {
+    expect(snapToLegalDragIndex([1, 5, 9], 6)).toBe(5);
+    expect(snapToLegalDragIndex([1, 5, 9], 0)).toBe(1);
   });
 });
 

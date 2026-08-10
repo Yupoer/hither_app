@@ -7252,7 +7252,6 @@ export default function MapScreen({ route, navigation }: Props) {
                   />
                 </Pressable>
               </View>
-              <Text style={styles.meetRedHint}>{t('meetTime.redHint')}</Text>
               <Segmented
                 accent={accent}
                 options={MEET_RED_OPTIONS.map((m) => ({
@@ -8448,12 +8447,6 @@ const makeStyles = (
       alignItems: 'center',
       justifyContent: 'space-between',
       marginBottom: 8,
-    },
-    meetRedHint: {
-      fontSize: 13,
-      color: glass.textSecondary,
-      marginBottom: 10,
-      lineHeight: 18,
     },
     meetPickerWrap: { alignItems: 'center', marginBottom: 4 },
     meetSetBtn: {

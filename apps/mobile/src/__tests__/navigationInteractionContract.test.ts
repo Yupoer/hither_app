@@ -34,8 +34,13 @@ describe('navigation interaction contract (go home / re-enter map)', () => {
     expect(authScreen).toContain("navigation.replace('Map'");
     expect(myTeamsScreen).toContain("navigation.replace('Map'");
     // Root stack still exposes a single Map route name (not nested stacks).
-    expect(rootNavigator).toContain('<Stack.Screen name="Map"');
+    expect(rootNavigator).toContain('name="Map"');
     expect(rootNavigator).toContain('<Stack.Screen name="RoleSelect"');
+  });
+
+  it('Map disables interactive / full-screen pop so horizontal swipes cannot leave the team layer', () => {
+    expect(rootNavigator).toContain('gestureEnabled: false');
+    expect(rootNavigator).toContain('fullScreenGestureEnabled: false');
   });
 
   it('leave-group path still resets to RoleSelect separately from go-home', () => {

@@ -23,8 +23,10 @@ import {
   accommodationBoundaryLocks,
   applyPureIndexAnchors,
   dayCollapseStorageKey,
-  dragIndexBoundsForDay,
+  legalDragIndicesForList,
+  snapToLegalDragIndex,
   type AccommodationListItem,
+  type ReorderListEntry,
 } from '../utils/accommodationSemantics';
 import { eligibleFavoriteDateOptions } from '../utils/favoriteDates';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -311,7 +313,21 @@ export default function DestinationReorderList({
     }
   }, [destinations, tripDays, departureDate, t]);
 
-  const dragBoundsRef = useRef<{ min: number; max: number } | null>(null);
+  const toReorderEntries = useCallback((list: ListItem[]): ReorderListEntry[] => {
+    return list.map((entry) => {
+      if (entry.type === 'header') {
+        return { type: 'header' as const, day: entry.day, id: entry.id };
+      }
+      return {
+        type: 'dest' as const,
+        id: entry.item.id,
+        day: entry.item.day || 1,
+        kind: entry.item.kind === 'accommodation' ? 'accommodation' : 'stop',
+        stayAnchor: entry.item.stayAnchor,
+        title: entry.item.title,
+      };
+    });
+  }, []);
 
   const handleGrant = useCallback(
     (id: string) => {
@@ -324,39 +340,6 @@ export default function DestinationReorderList({
       onDragActiveChange?.(true);
       setActiveId(id);
       startIndexRef.current = startIdx;
-
-      if (orderRef.current[startIdx].type === 'dest') {
-         // Map day-local accommodation bounds onto full list indices so mid
-         // cards cannot cross or replace locked first/last stay anchors.
-         const moving = orderRef.current[startIdx];
-         const day = moving.item.day || 1;
-         const dayIndices: number[] = [];
-         const dayItems: AccommodationListItem[] = [];
-         orderRef.current.forEach((entry, index) => {
-           if (entry.type !== 'dest' || (entry.item.day || 1) !== day) return;
-           dayIndices.push(index);
-           dayItems.push({
-             id: entry.item.id,
-             kind: entry.item.kind === 'accommodation' ? 'accommodation' : 'stop',
-             order: dayItems.length,
-             day,
-             title: entry.item.title,
-             stayAnchor: entry.item.stayAnchor,
-           });
-         });
-         const dayBounds = dragIndexBoundsForDay(dayItems, moving.item.id);
-         if (dayBounds && dayIndices.length > 0) {
-           dragBoundsRef.current = {
-             min: dayIndices[Math.max(0, Math.min(dayBounds.min, dayIndices.length - 1))],
-             max: dayIndices[Math.max(0, Math.min(dayBounds.max, dayIndices.length - 1))],
-           };
-         } else {
-           dragBoundsRef.current = null;
-         }
-      } else {
-         dragBoundsRef.current = null;
-      }
-
       pan.setValue(0);
     },
     [pan, onDragActiveChange],
@@ -366,26 +349,30 @@ export default function DestinationReorderList({
     (id: string, dy: number) => {
       const startIndex = startIndexRef.current;
       const currentIndex = orderRef.current.findIndex((d) => d.id === id);
-      const len = orderRef.current.length;
-      let target = Math.round(startIndex + dy / ROW_HEIGHT);
-      if (dragBoundsRef.current) {
-         target = Math.max(dragBoundsRef.current.min, Math.min(target, dragBoundsRef.current.max));
-      } else {
-         target = Math.max(0, Math.min(target, len - 1));
-      }
+      if (currentIndex === -1) return;
 
-      if (target !== currentIndex && currentIndex !== -1) {
+      const rawTarget = Math.round(startIndex + dy / ROW_HEIGHT);
+      // Multi-day legal slots (recomputed each move). Locked head/tail freeze;
+      // mid stops may cross day headers while preserving stay anchors.
+      const legal = legalDragIndicesForList(toReorderEntries(orderRef.current), id);
+      const target = snapToLegalDragIndex(
+        legal.length > 0 ? legal : [currentIndex],
+        rawTarget,
+      );
+
+      if (target !== currentIndex) {
         const next = orderRef.current.slice();
         const [moved] = next.splice(currentIndex, 1);
-        next.splice(target, 0, moved);
+        const insertAt = Math.max(0, Math.min(target, next.length));
+        next.splice(insertAt, 0, moved);
         orderRef.current = next;
-        setOrder(next); // This triggers a re-render. With memo, it's fast.
+        setOrder(next);
       }
 
       const idxNow = orderRef.current.findIndex((d) => d.id === id);
       pan.setValue(dy + (startIndex - idxNow) * ROW_HEIGHT);
     },
-    [pan],
+    [pan, toReorderEntries],
   );
 
   const handleRelease = useCallback(() => {
@@ -529,6 +516,7 @@ export default function DestinationReorderList({
                const daily = stayDate && dailyByDate ? dailyByDate[stayDate] : undefined;
                const collapsed = Boolean(collapsedDays[item.day]);
                const dayStopCount = destinations.filter((d) => (d.day || 1) === item.day).length;
+               const hasDaily = Boolean(daily);
                return (
                  <View key={item.id}>
                    <HeaderRow
@@ -539,14 +527,19 @@ export default function DestinationReorderList({
                      onColorPress={onHeaderColorPress}
                      dailyTitle={daily?.title}
                      onRemoveDaily={
-                       canReorder && daily && onClearDailyAccommodation && stayDate
+                       // Mutual exclusive with set-from-stop: only when stay is set.
+                       canReorder && hasDaily && onClearDailyAccommodation && stayDate
                          ? () => onClearDailyAccommodation(stayDate, item.day)
                          : undefined
                      }
                      collapsed={collapsed}
                      onToggleCollapse={() => void toggleDayCollapsed(item.day)}
                      setStayLabel={
-                       canReorder && onSetDailyFromDestination && dayStopCount > 0
+                       // Only when no daily stay yet (mutual exclusive with remove).
+                       canReorder
+                       && !hasDaily
+                       && onSetDailyFromDestination
+                       && dayStopCount > 0
                          ? setStayModeDay === item.day
                            ? t('stay.finishSet')
                            : t('stay.setFromStop')
@@ -554,7 +547,10 @@ export default function DestinationReorderList({
                      }
                      setStayActive={setStayModeDay === item.day}
                      onToggleSetStay={
-                       canReorder && onSetDailyFromDestination && dayStopCount > 0
+                       canReorder
+                       && !hasDaily
+                       && onSetDailyFromDestination
+                       && dayStopCount > 0
                          ? () =>
                              setSetStayModeDay((d) => (d === item.day ? null : item.day))
                          : undefined
@@ -607,6 +603,7 @@ export default function DestinationReorderList({
                 onRelease={onRelease}
                 onDelete={onDelete}
                 isAccommodation={item.item.kind === 'accommodation'}
+                boundaryLocked={locked}
                 showSelect={inSetMode && item.item.kind !== 'accommodation'}
                 onSelectAsStay={
                   inSetMode && onSetDailyFromDestination
@@ -991,12 +988,14 @@ const HeaderRow = memo(function HeaderRow({
   accent: string;
 }) {
   const { t } = useTranslation();
+  const hasStay = Boolean(dailyTitle);
 
   return (
     <View>
-      <View style={styles.headerRow}>
-        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 8 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1, flexWrap: 'wrap', gap: 6 }}>
+      {/* Row 1: day title, date, collapse (+ set-stay only when no accommodation). */}
+      <View style={[styles.headerRow, hasStay && styles.headerRowCompact]}>
+        <View style={styles.headerRowInner}>
+          <View style={styles.headerLeft}>
             <Pressable
               onPress={() => onColorPress(item.day)}
               disabled={!canEditColors}
@@ -1005,7 +1004,7 @@ const HeaderRow = memo(function HeaderRow({
               style={[styles.colorDot, { backgroundColor: bgColor }]}
             />
             <Text style={styles.headerTitle}>{item.title}</Text>
-            {onToggleSetStay && setStayLabel ? (
+            {!hasStay && onToggleSetStay && setStayLabel ? (
               <Pressable
                 style={[
                   styles.headerSetStayBtn,
@@ -1027,19 +1026,8 @@ const HeaderRow = memo(function HeaderRow({
                 </Text>
               </Pressable>
             ) : null}
-            {dailyTitle ? (
-              <View style={styles.stayBadge}>
-                <Ionicons name="bed-outline" size={12} color="#fff" />
-                <Text style={styles.stayBadgeText} numberOfLines={1}>{dailyTitle}</Text>
-              </View>
-            ) : null}
           </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            {onRemoveDaily ? (
-              <Pressable onPress={onRemoveDaily} accessibilityRole="button" accessibilityLabel={t('stay.remove')}>
-                <Text style={styles.removeStayText}>{t('stay.remove')}</Text>
-              </Pressable>
-            ) : null}
+          <View style={styles.headerRight}>
             <Text style={styles.headerDate}>{item.dateStr}</Text>
             {onToggleCollapse ? (
               <Pressable onPress={onToggleCollapse} accessibilityRole="button" hitSlop={8}>
@@ -1049,6 +1037,25 @@ const HeaderRow = memo(function HeaderRow({
           </View>
         </View>
       </View>
+      {/* Row 2: accommodation place + remove (only when stay is set). */}
+      {hasStay ? (
+        <View style={styles.headerStayRow}>
+          <View style={styles.stayBadge}>
+            <Ionicons name="bed-outline" size={12} color="#fff" />
+            <Text style={styles.stayBadgeText} numberOfLines={1}>{dailyTitle}</Text>
+          </View>
+          {onRemoveDaily ? (
+            <Pressable
+              onPress={onRemoveDaily}
+              accessibilityRole="button"
+              accessibilityLabel={t('stay.remove')}
+              hitSlop={8}
+            >
+              <Text style={styles.removeStayText}>{t('stay.remove')}</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
     </View>
   );
 });
@@ -1066,6 +1073,7 @@ const Row = memo(function Row({
   onDelete,
   onEmojiPress,
   isAccommodation,
+  boundaryLocked,
   showSelect,
   onSelectAsStay,
 }: {
@@ -1081,13 +1089,28 @@ const Row = memo(function Row({
   onDelete?: (id: string) => void;
   onEmojiPress?: (id: string) => void;
   isAccommodation?: boolean;
+  /** Head/tail stay card: always-visible trash, no swipe-to-delete. */
+  boundaryLocked?: boolean;
   showSelect?: boolean;
   onSelectAsStay?: () => void;
 }) {
   const translateX = useRef(new Animated.Value(0)).current;
   const axisRef = useRef<null | 'h' | 'v'>(null);
   const openRef = useRef(false);
-  const canSwipe = !!onDelete;
+  // Boundary-locked stays use a permanent trash control — no horizontal swipe.
+  const canSwipe = !!onDelete && !boundaryLocked;
+  const canSwipeRef = useRef(canSwipe);
+  canSwipeRef.current = canSwipe;
+  const canReorderRef = useRef(canReorder);
+  canReorderRef.current = canReorder;
+  const itemIdRef = useRef(item.id);
+  itemIdRef.current = item.id;
+  const onGrantRef = useRef(onGrant);
+  onGrantRef.current = onGrant;
+  const onMoveRef = useRef(onMove);
+  onMoveRef.current = onMove;
+  const onReleaseRef = useRef(onRelease);
+  onReleaseRef.current = onRelease;
 
   const snap = useCallback(
     (open: boolean) => {
@@ -1100,51 +1123,53 @@ const Row = memo(function Row({
     },
     [translateX],
   );
+  const snapRef = useRef(snap);
+  snapRef.current = snap;
 
   const responder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: (evt) => {
-        if (!canReorder) return false;
+        if (!canReorderRef.current) return false;
         const screenWidth = Dimensions.get('window').width;
         if (evt.nativeEvent.pageX > screenWidth - 60) return true;
         return false;
       },
       onMoveShouldSetPanResponder: (_evt, g) =>
-        canSwipe && Math.abs(g.dx) > 6 && Math.abs(g.dx) > Math.abs(g.dy),
+        canSwipeRef.current && Math.abs(g.dx) > 6 && Math.abs(g.dx) > Math.abs(g.dy),
       onPanResponderTerminationRequest: () => false,
       onPanResponderGrant: (evt) => {
         axisRef.current = null;
         const screenWidth = Dimensions.get('window').width;
-        if (canReorder && evt.nativeEvent.pageX > screenWidth - 60) {
+        if (canReorderRef.current && evt.nativeEvent.pageX > screenWidth - 60) {
            axisRef.current = 'v';
-           onGrant(item.id);
+           onGrantRef.current(itemIdRef.current);
         }
       },
       onPanResponderMove: (_evt, g) => {
-        if (axisRef.current === null && canSwipe && Math.abs(g.dx) > 6) {
+        if (axisRef.current === null && canSwipeRef.current && Math.abs(g.dx) > 6) {
           axisRef.current = 'h';
         }
-        if (axisRef.current === 'h' && canSwipe) {
+        if (axisRef.current === 'h' && canSwipeRef.current) {
           const base = openRef.current ? -REVEAL_WIDTH : 0;
           const next = Math.max(-REVEAL_WIDTH, Math.min(0, base + g.dx));
           translateX.setValue(next);
         } else if (axisRef.current === 'v') {
-          onMove(item.id, g.dy);
+          onMoveRef.current(itemIdRef.current, g.dy);
         }
       },
       onPanResponderRelease: (_evt, g) => {
-        if (axisRef.current === 'h' && canSwipe) {
+        if (axisRef.current === 'h' && canSwipeRef.current) {
           const base = openRef.current ? -REVEAL_WIDTH : 0;
           const next = base + g.dx;
-          snap(next < -REVEAL_WIDTH / 2);
+          snapRef.current(next < -REVEAL_WIDTH / 2);
         } else if (axisRef.current === 'v') {
-          onRelease();
+          onReleaseRef.current();
         }
         axisRef.current = null;
       },
       onPanResponderTerminate: () => {
-        if (axisRef.current === 'v') onRelease();
-        else if (axisRef.current === 'h') snap(openRef.current);
+        if (axisRef.current === 'v') onReleaseRef.current();
+        else if (axisRef.current === 'h') snapRef.current(openRef.current);
         axisRef.current = null;
       },
     }),
@@ -1224,7 +1249,19 @@ const Row = memo(function Row({
             </Text>
           ) : null}
         </View>
-        {canReorder ? <Text style={styles.handle}>≡</Text> : null}
+        {boundaryLocked && onDelete ? (
+          <Pressable
+            onPress={() => onDelete(item.id)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="delete"
+            style={styles.inlineTrash}
+          >
+            <Ionicons name="trash-outline" size={20} color="#FF5A5F" />
+          </Pressable>
+        ) : canReorder ? (
+          <Text style={styles.handle}>≡</Text>
+        ) : null}
       </Animated.View>
     </View>
   );
@@ -1264,12 +1301,12 @@ const makeStyles = (colors: Palette) =>
       gap: 4,
       backgroundColor: 'rgba(255,255,255,0.12)',
       paddingHorizontal: 8,
-      paddingVertical: 2,
+      paddingVertical: 4,
       borderRadius: 10,
-      marginLeft: 8,
-      maxWidth: 120,
+      flexShrink: 1,
+      maxWidth: '70%',
     },
-    stayBadgeText: { color: '#fff', fontSize: 11, flexShrink: 1 },
+    stayBadgeText: { color: '#fff', fontSize: 12, flexShrink: 1 },
     removeStayText: { color: colors.accent, fontSize: 12, fontWeight: '600' },
     rowAccommodation: { backgroundColor: 'rgba(40,40,44,0.95)' },
     rowTitleStay: { textAlign: 'right' },
@@ -1299,7 +1336,7 @@ const makeStyles = (colors: Palette) =>
       overflow: 'hidden',
     },
     headerRow: {
-      height: ROW_HEIGHT,
+      minHeight: ROW_HEIGHT,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
@@ -1307,6 +1344,41 @@ const makeStyles = (colors: Palette) =>
       backgroundColor: colors.glass,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: colors.border,
+    },
+    headerRowCompact: {
+      minHeight: 44,
+      borderBottomWidth: 0,
+    },
+    headerRowInner: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingRight: 4,
+    },
+    headerLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flexShrink: 1,
+      gap: 6,
+    },
+    headerRight: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      flexShrink: 0,
+    },
+    headerStayRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing.lg,
+      paddingBottom: 10,
+      paddingTop: 2,
+      backgroundColor: colors.glass,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+      gap: 8,
     },
     headerTitle: {
       color: colors.textPrimary,
@@ -1316,6 +1388,10 @@ const makeStyles = (colors: Palette) =>
     headerDate: {
       color: colors.textSecondary,
       fontSize: 14,
+    },
+    inlineTrash: {
+      paddingHorizontal: spacing.xs,
+      paddingVertical: 4,
     },
     row: {
       height: ROW_HEIGHT,
