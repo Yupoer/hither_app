@@ -52,11 +52,15 @@ import { getColorForDay, STAY_MARKER_EMOJI } from '../utils/destinationMarkerChr
 const ROW_HEIGHT = DEFAULT_REORDER_LAYOUT.rowHeight;
 const REORDER_LAYOUT = DEFAULT_REORDER_LAYOUT;
 const REVEAL_WIDTH = 76;
+/** Fixed right-column width so day ≡ and stop ≡ share one vertical line. */
+const HANDLE_SLOT = 28;
 /** Low-sat terracotta for stay emoji badge (works on dark glass; not Day1 #E5575C). */
 const STAY_BADGE_BG = '#8B6F6A';
 /** Auto-scroll parent when finger is within this distance of screen edges. */
 const DRAG_EDGE_PX = 160;
 const DRAG_SCROLL_STEP = 22;
+
+export type RouteInteractionMode = 'drag' | 'select' | 'none';
 
 export interface DailyAccommodationView {
   stayDate: string;
@@ -116,6 +120,14 @@ interface Props {
   /** Remove a favorite from the account list. */
   onDeleteFavorite?: (favorite: FavoritePlaceView) => void;
   accountId?: string;
+  /**
+   * Stop-row interaction chrome (does not control day-header drag).
+   * Default drag keeps ≡ handles visible.
+   */
+  interactionMode?: RouteInteractionMode;
+  /** Multi-select ids when interactionMode === 'select'. */
+  selectedIds?: string[];
+  onSelectedIdsChange?: (ids: string[]) => void;
 }
 
 type ListItem =
@@ -148,10 +160,25 @@ export default function DestinationReorderList({
   onPickFavorite,
   onDeleteFavorite,
   accountId,
+  interactionMode = 'drag',
+  selectedIds = [],
+  onSelectedIdsChange,
 }: Props) {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const { t } = useTranslation();
   const { dayColors, setDayColor } = usePreferences();
+  const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const toggleSelectedId = useCallback(
+    (id: string) => {
+      if (!onSelectedIdsChange) return;
+      if (selectedIdSet.has(id)) {
+        onSelectedIdsChange(selectedIds.filter((x) => x !== id));
+      } else {
+        onSelectedIdsChange([...selectedIds, id]);
+      }
+    },
+    [onSelectedIdsChange, selectedIdSet, selectedIds],
+  );
 
   const [order, setOrder] = useState<ListItem[]>([]);
   const orderRef = useRef(order);
@@ -652,7 +679,7 @@ export default function DestinationReorderList({
             <Ionicons name="calendar-outline" size={16} color={colors.accent} style={{ marginRight: 6 }} />
             <Text style={styles.setDaysText}>{t('trip.setDaysAndDate')}</Text>
           </Pressable>}
-          {canReorder && onPickFavorite && (favoritePlaces?.length ?? 0) > 0 ? (
+          {canReorder && onPickFavorite ? (
             <Pressable
               style={styles.setDaysBtn}
               onPress={() => {
@@ -752,12 +779,17 @@ export default function DestinationReorderList({
                 && placeExactMatchKey(item.item.title, item.item.coordinates)
                   === placeExactMatchKey(dailyForDay.title, dailyForDay.coordinates),
               );
+              const multiSelectMode =
+                canReorder && interactionMode === 'select' && !inSetMode;
+              const canDragStop =
+                canReorder && !locked && interactionMode === 'drag';
               return (
                 <Row
                   key={item.id}
                   item={item.item}
                   active={activeId === item.id}
-                  canReorder={canReorder && !locked}
+                  canDrag={canDragStop}
+                  canSwipeDelete={canReorder && !!onDelete && !locked}
                   pan={pan}
                   styles={styles}
                   dayColor={dayColor}
@@ -781,12 +813,23 @@ export default function DestinationReorderList({
                         }
                       : undefined
                   }
+                  multiSelect={multiSelectMode}
+                  multiSelected={selectedIdSet.has(item.item.id)}
+                  onToggleMultiSelect={
+                    multiSelectMode
+                      ? () => {
+                          selectionTick();
+                          toggleSelectedId(item.item.id);
+                        }
+                      : undefined
+                  }
                   onLayoutHeight={(h) => recordMeasuredHeight(item.id, h)}
                   onEmojiPress={
                     // Stay cards always show a fixed bed — no emoji picker.
                     canReorder
                     && onUpdateEmojiColor
                     && !isStayCard
+                    && interactionMode !== 'select'
                       ? (id) => {
                           lightTap();
                           const dest = destinations.find((d) => d.id === id);
@@ -1051,35 +1094,39 @@ export default function DestinationReorderList({
                 <Text style={styles.modalActionText}>{t('common.cancel')}</Text>
               </Pressable>
             </View>
-            {(favoritePlaces ?? []).map((fav) => (
-              <View key={fav.id} style={styles.favRow}>
-                <Pressable
-                  style={styles.favRowMain}
-                  onPress={() => {
-                    // #160: show eligible-date picker first; write only after confirm.
-                    setFavoritePending(fav);
-                  }}
-                  accessibilityRole="button"
-                >
-                  <Ionicons name="star" size={16} color={colors.accent} />
-                  <Text style={styles.favTitle} numberOfLines={1}>{fav.title}</Text>
-                </Pressable>
-                {onDeleteFavorite ? (
+            {(favoritePlaces ?? []).length === 0 ? (
+              <Text style={styles.empty}>{t('stay.noFavorites')}</Text>
+            ) : (
+              (favoritePlaces ?? []).map((fav) => (
+                <View key={fav.id} style={styles.favRow}>
                   <Pressable
+                    style={styles.favRowMain}
                     onPress={() => {
-                      lightTap();
-                      onDeleteFavorite(fav);
+                      // #160: show eligible-date picker first; write only after confirm.
+                      setFavoritePending(fav);
                     }}
                     accessibilityRole="button"
-                    accessibilityLabel={t('stay.unfavoriteA11y')}
-                    hitSlop={8}
-                    style={styles.favDeleteBtn}
                   >
-                    <Ionicons name="trash-outline" size={18} color="#FF5A5F" />
+                    <Ionicons name="star" size={16} color={colors.accent} />
+                    <Text style={styles.favTitle} numberOfLines={1}>{fav.title}</Text>
                   </Pressable>
-                ) : null}
-              </View>
-            ))}
+                  {onDeleteFavorite ? (
+                    <Pressable
+                      onPress={() => {
+                        lightTap();
+                        onDeleteFavorite(fav);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('stay.unfavoriteA11y')}
+                      hitSlop={8}
+                      style={styles.favDeleteBtn}
+                    >
+                      <Ionicons name="trash-outline" size={18} color="#FF5A5F" />
+                    </Pressable>
+                  ) : null}
+                </View>
+              ))
+            )}
           </View>
         </View>
       </Modal>
@@ -1573,7 +1620,11 @@ const HeaderRow = memo(function HeaderRow({
               </Pressable>
             ) : null}
             {canDragHeader ? (
-              <View {...dragResponder.panHandlers} hitSlop={12}>
+              <View
+                style={styles.handleSlot}
+                {...dragResponder.panHandlers}
+                hitSlop={12}
+              >
                 <Text style={styles.handle}>≡</Text>
               </View>
             ) : null}
@@ -1606,7 +1657,8 @@ const HeaderRow = memo(function HeaderRow({
 const Row = memo(function Row({
   item,
   active,
-  canReorder,
+  canDrag,
+  canSwipeDelete,
   pan,
   styles,
   dayColor,
@@ -1621,11 +1673,17 @@ const Row = memo(function Row({
   showSelect,
   selectSelected,
   onSelectAsStay,
+  multiSelect,
+  multiSelected,
+  onToggleMultiSelect,
   onLayoutHeight,
 }: {
   item: Destination;
   active: boolean;
-  canReorder: boolean;
+  /** Vertical drag handle (interactionMode === 'drag'). */
+  canDrag: boolean;
+  /** Horizontal swipe-to-delete (independent of drag mode). */
+  canSwipeDelete: boolean;
   pan: Animated.Value;
   styles: ReturnType<typeof makeStyles>;
   dayColor: string;
@@ -1643,17 +1701,20 @@ const Row = memo(function Row({
   /** Local pending stay selection (not yet committed). */
   selectSelected?: boolean;
   onSelectAsStay?: () => void;
+  multiSelect?: boolean;
+  multiSelected?: boolean;
+  onToggleMultiSelect?: () => void;
   onLayoutHeight?: (height: number) => void;
 }) {
   const translateX = useRef(new Animated.Value(0)).current;
   const axisRef = useRef<null | 'h' | 'v'>(null);
   const openRef = useRef(false);
   // Boundary-locked stays use a permanent trash control — no horizontal swipe.
-  const canSwipe = !!onDelete && !boundaryLocked;
+  const canSwipe = canSwipeDelete && !!onDelete && !boundaryLocked && !multiSelect;
   const canSwipeRef = useRef(canSwipe);
   canSwipeRef.current = canSwipe;
-  const canReorderRef = useRef(canReorder);
-  canReorderRef.current = canReorder;
+  const canDragRef = useRef(canDrag);
+  canDragRef.current = canDrag;
   const itemIdRef = useRef(item.id);
   itemIdRef.current = item.id;
   const onGrantRef = useRef(onGrant);
@@ -1680,7 +1741,7 @@ const Row = memo(function Row({
   const responder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: (evt) => {
-        if (!canReorderRef.current) return false;
+        if (!canDragRef.current) return false;
         const screenWidth = Dimensions.get('window').width;
         if (evt.nativeEvent.pageX > screenWidth - 60) return true;
         return false;
@@ -1691,7 +1752,7 @@ const Row = memo(function Row({
       onPanResponderGrant: (evt) => {
         axisRef.current = null;
         const screenWidth = Dimensions.get('window').width;
-        if (canReorderRef.current && evt.nativeEvent.pageX > screenWidth - 60) {
+        if (canDragRef.current && evt.nativeEvent.pageX > screenWidth - 60) {
            axisRef.current = 'v';
            onGrantRef.current(itemIdRef.current);
         }
@@ -1762,6 +1823,7 @@ const Row = memo(function Row({
           isAccommodation && styles.rowAccommodation,
           stayHighlight && styles.rowStayMatch,
           active && styles.rowActive,
+          multiSelected && styles.rowMultiSelected,
           {
             transform: [
               { translateX: canSwipe ? translateX : 0 },
@@ -1769,7 +1831,7 @@ const Row = memo(function Row({
             ],
           },
         ]}
-        {...(canReorder || canSwipe ? responder.panHandlers : {})}
+        {...(canDrag || canSwipe ? responder.panHandlers : {})}
       >
         {showSelect ? (
           <Pressable
@@ -1785,11 +1847,31 @@ const Row = memo(function Row({
               color={dayColor}
             />
           </Pressable>
+        ) : multiSelect ? (
+          <Pressable
+            onPress={onToggleMultiSelect}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: !!multiSelected }}
+            style={styles.selectRadio}
+            hitSlop={8}
+          >
+            <Ionicons
+              name={multiSelected ? 'checkbox' : 'square-outline'}
+              size={22}
+              color={multiSelected ? dayColor : colorsFallback(dayColor)}
+            />
+          </Pressable>
         ) : null}
         <Pressable
-          onPress={() => onEmojiPress?.(item.id)}
-          disabled={!onEmojiPress}
-          accessibilityRole={onEmojiPress ? 'button' : undefined}
+          onPress={() => {
+            if (multiSelect && onToggleMultiSelect) {
+              onToggleMultiSelect();
+              return;
+            }
+            onEmojiPress?.(item.id);
+          }}
+          disabled={!onEmojiPress && !multiSelect}
+          accessibilityRole={onEmojiPress || multiSelect ? 'button' : undefined}
           accessibilityLabel={onEmojiPress ? 'dest emoji' : undefined}
           style={[
             styles.emojiBadge,
@@ -1803,7 +1885,15 @@ const Row = memo(function Row({
               : destinationEmojiDisplay(item.emoji, DESTINATION_EMOJI_FALLBACK)}
           </Text>
         </Pressable>
-        <View style={styles.rowBody}>
+        <Pressable
+          style={styles.rowBody}
+          onPress={
+            multiSelect && onToggleMultiSelect
+              ? onToggleMultiSelect
+              : undefined
+          }
+          disabled={!multiSelect}
+        >
           <Text style={styles.rowTitle} numberOfLines={1}>
             {item.title}
           </Text>
@@ -1812,8 +1902,8 @@ const Row = memo(function Row({
               {item.address}
             </Text>
           ) : null}
-        </View>
-        {boundaryLocked && onDelete ? (
+        </Pressable>
+        {boundaryLocked && onDelete && !multiSelect ? (
           <Pressable
             onPress={() => onDelete(item.id)}
             hitSlop={8}
@@ -1823,14 +1913,22 @@ const Row = memo(function Row({
           >
             <Ionicons name="trash-outline" size={20} color="#FF5A5F" />
           </Pressable>
-        ) : canReorder ? (
-          <Text style={styles.handle}>≡</Text>
+        ) : canDrag ? (
+          <View style={styles.handleSlot}>
+            <Text style={styles.handle}>≡</Text>
+          </View>
+        ) : multiSelect ? (
+          <View style={styles.handleSlot} />
         ) : null}
       </Animated.View>
     </View>
   );
 });
 
+/** Dim checkbox outline when unchecked (day color may be bright). */
+function colorsFallback(_dayColor: string): string {
+  return 'rgba(255,255,255,0.45)';
+}
 const makeStyles = (colors: Palette) =>
   StyleSheet.create({
     topActions: {
@@ -1962,7 +2060,8 @@ const makeStyles = (colors: Palette) =>
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      paddingRight: 4,
+      // Match stop rows: no extra right inset so ≡ columns share one edge.
+      paddingRight: 0,
     },
     headerLeft: {
       flexDirection: 'row',
@@ -2017,6 +2116,9 @@ const makeStyles = (colors: Palette) =>
       shadowOpacity: 0.25,
       shadowRadius: 8,
       shadowOffset: { width: 0, height: 3 },
+    },
+    rowMultiSelected: {
+      backgroundColor: 'rgba(255,255,255,0.06)',
     },
     rowIndex: {
       color: colors.accent,
@@ -2188,7 +2290,17 @@ const makeStyles = (colors: Palette) =>
       marginBottom: spacing.sm,
       textAlign: 'center',
     },
-    handle: { color: colors.textSecondary, fontSize: 22, paddingHorizontal: spacing.xs },
+    handleSlot: {
+      width: HANDLE_SLOT,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    handle: {
+      color: colors.textSecondary,
+      fontSize: 22,
+      textAlign: 'center',
+      width: HANDLE_SLOT,
+    },
     deleteBg: {
       ...StyleSheet.absoluteFill,
       backgroundColor: colors.danger,

@@ -1427,11 +1427,19 @@ export default function MapScreen({ route, navigation }: Props) {
   const routeOpenSyncSessionRef = useRef<'idle' | 'started' | 'done'>('idle');
   const routeOpenSyncGenerationRef = useRef(0);
   const [routeSyncFailed, setRouteSyncFailed] = useState(false);
+  /** Route list interaction: drag handles / multi-select / hidden (default drag). */
+  const [routeInteractionMode, setRouteInteractionMode] = useState<
+    'drag' | 'select' | 'none'
+  >('drag');
+  const [routeSelectedIds, setRouteSelectedIds] = useState<string[]>([]);
   useEffect(() => {
     if (overlay !== 'route') {
       routeOpenSyncGenerationRef.current += 1;
       routeOpenSyncSessionRef.current = 'idle';
       setRouteSyncFailed(false);
+      // Reset list chrome when leaving the sheet.
+      setRouteInteractionMode('drag');
+      setRouteSelectedIds([]);
       return;
     }
     if (routeOpenSyncSessionRef.current !== 'idle') return;
@@ -1439,7 +1447,18 @@ export default function MapScreen({ route, navigation }: Props) {
     const generation = routeOpenSyncGenerationRef.current;
     void (async () => {
       try {
-        await syncFromDatabase();
+        // Never wipe an in-progress / failed-retry draft. Soft refresh only.
+        const dirty = routeDraftDirtyRef.current;
+        const hasDirty =
+          dirty.destinations
+          || dirty.daily
+          || dirty.trip
+          || dirty.deletedIds.length > 0;
+        if (hasDirty) {
+          if (!(await refresh())) throw new Error(t('map.syncDbFailedMsg'));
+        } else {
+          await syncFromDatabase();
+        }
         if (generation !== routeOpenSyncGenerationRef.current) return;
         routeOpenSyncSessionRef.current = 'done';
         setRouteSyncFailed(false);
@@ -1449,7 +1468,7 @@ export default function MapScreen({ route, navigation }: Props) {
         setRouteSyncFailed(true);
       }
     })();
-  }, [overlay, syncFromDatabase]);
+  }, [overlay, syncFromDatabase, refresh, t]);
 
   const retryRouteSync = useCallback(async () => {
     if (await syncFromDatabaseAndUploadLogs()) setRouteSyncFailed(false);
@@ -3871,7 +3890,13 @@ export default function MapScreen({ route, navigation }: Props) {
    */
   const flushRouteDraft = useCallback(async () => {
     if (!groupId || routeFlushInFlightRef.current) return;
-    const dirty = routeDraftDirtyRef.current;
+    // Snapshot so mid-flight mutations to the ref cannot scramble steps.
+    const dirty = {
+      destinations: routeDraftDirtyRef.current.destinations,
+      daily: routeDraftDirtyRef.current.daily,
+      trip: routeDraftDirtyRef.current.trip,
+      deletedIds: [...routeDraftDirtyRef.current.deletedIds],
+    };
     const hasWork =
       dirty.destinations
       || dirty.daily
@@ -3911,7 +3936,7 @@ export default function MapScreen({ route, navigation }: Props) {
           }
           if (!token.isCurrent()) return;
 
-          // 3) Materialize draft-only quick-add accommodations; map temp → real ids.
+          // 3) Materialize draft-only rows; map temp → real ids.
           let draftDests = optimisticDestinationsRef.current;
           if (draftDests) {
             const idMap = new Map<string, string>();
@@ -3932,15 +3957,17 @@ export default function MapScreen({ route, navigation }: Props) {
                 },
                 myScopeId,
               );
-              if (newId) {
-                idMap.set(dest.id, newId);
-                nextDests.push({ ...dest, id: newId });
+              if (!newId) {
+                throw new Error('draft_materialize_empty');
               }
+              idMap.set(dest.id, newId);
+              nextDests.push({ ...dest, id: newId });
             }
             draftDests = nextDests;
             if (idMap.size > 0) {
               setOptimisticDestinations(nextDests);
               dirty.destinations = true;
+              routeDraftDirtyRef.current.destinations = true;
             }
           }
           if (!token.isCurrent()) return;
@@ -3990,11 +4017,17 @@ export default function MapScreen({ route, navigation }: Props) {
                 });
                 return match?.day;
               })();
+              // Never pass draft-* as FK-ish source id after materialize map.
+              const sourceId = draftRow.sourceDestinationId;
+              const resolvedSource =
+                sourceId && sourceId.startsWith('draft-')
+                  ? undefined
+                  : sourceId ?? undefined;
               await setDailyAccommodation(groupId, stayDate, {
                 title: draftRow.title,
                 address: draftRow.address,
                 coordinates: draftRow.coordinates,
-                sourceDestinationId: draftRow.sourceDestinationId ?? undefined,
+                sourceDestinationId: resolvedSource,
                 day,
               });
             }
@@ -4006,6 +4039,9 @@ export default function MapScreen({ route, navigation }: Props) {
           // rows from the write and makes Day1 appear to become Day2 after 完成.
           if (dirty.destinations && draftDests) {
             const openDraft = openDestinationsForReorder(draftDests);
+            if (openDraft.some((d) => d.id.startsWith('draft-'))) {
+              throw new Error('draft_ids_in_reorder');
+            }
             const withSlots = buildOpenReorderPayload(openDraft);
             await reorderDestinations(groupId, withSlots);
           }
@@ -4027,9 +4063,16 @@ export default function MapScreen({ route, navigation }: Props) {
         {
           screen: 'Map',
           suppressBanner: true,
+          // Multi-step batch (trip + deletes + adds + stays + reorder + refresh).
+          timeoutMs: 60_000,
           onError: (kind) => {
             logError('route_draft_flush_failed', new Error(kind));
-            Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
+            // Leader is already required to open the editor — never blame role.
+            if (kind === 'timeout') {
+              Alert.alert(t('map.routeSaveFailedTitle'), t('interaction.timeout'));
+            } else {
+              Alert.alert(t('map.routeSaveFailedTitle'), t('map.routeSaveFailed'));
+            }
             // Keep draft visible so the user can reopen and retry.
           },
         },
@@ -4073,10 +4116,40 @@ export default function MapScreen({ route, navigation }: Props) {
             ];
           }
           routeDraftDirtyRef.current.destinations = true;
+          setRouteSelectedIds((prev) => prev.filter((x) => x !== id));
         },
       );
     },
     [canEditItinerary, groupId, destinations, rawDestinations, t],
+  );
+
+  /** Multi-select delete from route sheet — one confirm, local draft only. */
+  const handleDeleteMany = useCallback(
+    (ids: string[]) => {
+      if (!groupId || !canEditItinerary || ids.length === 0) return;
+      confirmAction(
+        {
+          title: t('settings.deleteTitle'),
+          message: t('route.deleteManyMsg', { count: ids.length }),
+          confirmLabel: t('settings.deleteConfirm'),
+          destructive: true,
+        },
+        () => {
+          logEvent('destination_delete_many_local', { count: ids.length });
+          const idSet = new Set(ids);
+          const base = optimisticDestinationsRef.current ?? rawDestinations;
+          setOptimisticDestinations(base.filter((d) => !idSet.has(d.id)));
+          const serverIds = ids.filter((id) => !id.startsWith('draft-'));
+          routeDraftDirtyRef.current.deletedIds = [
+            ...routeDraftDirtyRef.current.deletedIds.filter((x) => !idSet.has(x)),
+            ...serverIds,
+          ];
+          routeDraftDirtyRef.current.destinations = true;
+          setRouteSelectedIds([]);
+        },
+      );
+    },
+    [canEditItinerary, groupId, rawDestinations, t],
   );
 
   const handleUpdateEmojiColor = useCallback(
@@ -6560,6 +6633,59 @@ export default function MapScreen({ route, navigation }: Props) {
         title={t('map.gatheringPoints')}
         accent={accent}
         doneLabel={t('map.done')}
+        headerLeft={
+          canEditItinerary ? (
+            routeSelectedIds.length > 0 ? (
+              <Pressable
+                onPress={() => {
+                  lightTap();
+                  handleDeleteMany(routeSelectedIds);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={t('route.deleteSelectedA11y')}
+                hitSlop={8}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+              >
+                <Ionicons name="trash-outline" size={18} color="#FF5A5F" />
+                <Text style={{ color: '#FF5A5F', fontSize: 14, fontWeight: '700' }}>
+                  {t('route.deleteSelected', { count: routeSelectedIds.length })}
+                </Text>
+              </Pressable>
+            ) : (
+              <Pressable
+                onPress={() => {
+                  lightTap();
+                  setRouteSelectedIds([]);
+                  setRouteInteractionMode((prev) =>
+                    prev === 'drag' ? 'select' : prev === 'select' ? 'none' : 'drag',
+                  );
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  routeInteractionMode === 'drag'
+                    ? t('route.modeDragA11y')
+                    : routeInteractionMode === 'select'
+                      ? t('route.modeSelectA11y')
+                      : t('route.modeHiddenA11y')
+                }
+                hitSlop={8}
+                style={{ paddingVertical: 2, paddingHorizontal: 2 }}
+              >
+                <Ionicons
+                  name={
+                    routeInteractionMode === 'drag'
+                      ? 'reorder-three-outline'
+                      : routeInteractionMode === 'select'
+                        ? 'checkbox-outline'
+                        : 'lock-closed-outline'
+                  }
+                  size={22}
+                  color={accent}
+                />
+              </Pressable>
+            )
+          ) : undefined
+        }
       >
         <ScrollView
           ref={routeScrollRef}
@@ -6632,6 +6758,9 @@ export default function MapScreen({ route, navigation }: Props) {
             syncFailed={routeSyncFailed}
             colors={dark}
             emptyLabel={t('settings.noDestinations')}
+            interactionMode={routeInteractionMode}
+            selectedIds={routeSelectedIds}
+            onSelectedIdsChange={setRouteSelectedIds}
             onDragActiveChange={(active) => {
               // Defensive: never leave scroll locked after drag ends.
               setRouteScrollEnabled(!active);

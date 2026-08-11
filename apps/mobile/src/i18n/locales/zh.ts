@@ -250,6 +250,8 @@ export const zh = {
   'map.loading': '載入群組位置中…',
   'map.setFailedTitle': '設定失敗',
   'map.setFailedMsg': '無法設定集合點。請確認你是隊長，並再試一次。',
+  'map.routeSaveFailedTitle': '儲存失敗',
+  'map.routeSaveFailed': '無法儲存行程變更，請再試一次。',
   'map.searchA11y': '搜尋下一集合點',
   'map.locateA11y': '定位到我的位置',
   'map.fitAllA11y': '縮放至可看見所有隊員',
@@ -1053,6 +1055,7 @@ export const zh = {
   'tour.addPlace.center.body':
     '點導航圖示可將地圖重新置中到此地點，不會立刻新增集合點。',
   'stay.favorites': '常用地點',
+  'stay.noFavorites': '尚未收藏常用地點。在地圖加入地點時可點星號收藏。',
   'stay.autoAdd': '設定住宿時自動新增頭尾住宿卡',
   'stay.autoAddHint': '設定每日住宿時，自動在當日行程頭尾新增住宿卡。',
   'stay.needDepartureDate': '請先設定出發日期，才能對應行程天數。',
@@ -1066,6 +1069,12 @@ export const zh = {
   'stay.favoriteA11y': '收藏為常用地點',
   'stay.unfavoriteA11y': '取消常用地點',
   'stay.centerPlaceA11y': '將地圖置中至此地點',
+  'route.modeDragA11y': '拖曳模式',
+  'route.modeSelectA11y': '多選刪除模式',
+  'route.modeHiddenA11y': '隱藏把手模式',
+  'route.deleteSelected': '刪除 ({count})',
+  'route.deleteSelectedA11y': '刪除已選集合點',
+  'route.deleteManyMsg': '確定刪除 {count} 個集合點？',
   'kml.errPointLimit': '免費版開放集合點已達上限，請升級 Premium 或減少匯入數量',
 } as const;
 
