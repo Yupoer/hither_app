@@ -36,6 +36,7 @@ export default function OverlaySheet({
   title,
   accent,
   doneLabel = 'Done',
+  headerLeft,
   opaque = false,
   edgeToEdge = false,
   children,
@@ -48,6 +49,8 @@ export default function OverlaySheet({
   title: string;
   accent: string;
   doneLabel?: string;
+  /** Optional control on the left of the title (e.g. route list mode toggle). */
+  headerLeft?: React.ReactNode;
   /** 100% opaque panel (no map bleed-through). Used by Settings. */
   opaque?: boolean;
   /** Flush left/right (no 8px inset). Used by Settings full-bleed sheet. */
@@ -199,8 +202,12 @@ export default function OverlaySheet({
             <View style={styles.grabber} />
           </View>
           <View style={styles.header}>
-            <View style={styles.headerSide} />
-            <Text style={styles.title}>{title}</Text>
+            <View style={[styles.headerSide, styles.headerSideLeft]}>
+              {headerLeft ?? null}
+            </View>
+            <Text style={styles.title} numberOfLines={1}>
+              {title}
+            </Text>
             <Pressable
               onPress={handleDone}
               accessibilityRole="button"
@@ -250,8 +257,21 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 18,
   },
-  headerSide: { width: 60 },
-  title: { fontSize: 19, fontWeight: '700', color: '#fff' },
+  headerSide: {
+    minWidth: 60,
+    maxWidth: 110,
+    flexShrink: 1,
+    justifyContent: 'center',
+  },
+  headerSideLeft: { alignItems: 'flex-start' },
+  title: {
+    flex: 1,
+    fontSize: 19,
+    fontWeight: '700',
+    color: '#fff',
+    textAlign: 'center',
+    paddingHorizontal: 4,
+  },
   done: { fontSize: 16, fontWeight: '600', textAlign: 'right' },
   body: { flex: 1 },
 });

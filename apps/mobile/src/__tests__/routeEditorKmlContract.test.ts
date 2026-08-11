@@ -33,8 +33,9 @@ describe('route editor + KML contracts (#151)', () => {
 
   it('route list is scope-filtered for leaders; day>1 whole-day blocks may drag', () => {
     expect(mapScreen).not.toMatch(/rawDestinations[\s\S]{0,200}if \(isLeader\) return all/);
-    // Stops reorder freely; Day1 header fixed; Day2+ swipe-toggle drag moves whole block.
-    expect(reorder).toContain('canReorder={canReorder && !locked}');
+    // Stops drag only in interactionMode drag; Day1 header fixed; Day2+ swipe-toggle drag moves whole block.
+    expect(reorder).toContain('interactionMode === \'drag\'');
+    expect(reorder).toContain('canDrag={canDragStop}');
     expect(reorder).toContain("type === 'header'");
     expect(reorder).toContain('canDragHeader');
     expect(reorder).toContain('moveDayBlockBefore');
@@ -81,6 +82,40 @@ describe('route editor + KML contracts (#151)', () => {
     expect(mapScreen).toContain('onReorder={handleReorder}');
     // No 3s optimistic timeout that clobbers draft.
     expect(mapScreen).not.toMatch(/setOptimisticDestinations\(null\);\s*\}, 3000\)/);
+  });
+
+  it('route flush uses neutral errors, longer timeout, and dirty snapshot', () => {
+    const start = mapScreen.indexOf('const flushRouteDraft = useCallback');
+    expect(start).toBeGreaterThanOrEqual(0);
+    const block = mapScreen.slice(start, start + 9000);
+    expect(block).toContain('timeoutMs: 60_000');
+    expect(block).toContain("t('map.routeSaveFailedTitle')");
+    expect(block).toContain("t('map.routeSaveFailed')");
+    expect(block).toContain("t('interaction.timeout')");
+    // Must not blame leader role on route-sheet save failures.
+    expect(block).not.toContain("t('map.setFailedMsg')");
+    expect(block).toContain('deletedIds: [...routeDraftDirtyRef.current.deletedIds]');
+    expect(block).toContain('draft_ids_in_reorder');
+    expect(block).toContain('draft_materialize_empty');
+  });
+
+  it('open-route sync preserves dirty draft instead of wiping', () => {
+    expect(mapScreen).toContain('Never wipe an in-progress / failed-retry draft');
+    expect(mapScreen).toContain('hasDirty');
+  });
+
+  it('favorites CTA stays visible with empty list; multi-mode + bulk delete wired', () => {
+    // Empty favorites must not hide the entry (regression).
+    expect(reorder).not.toMatch(
+      /onPickFavorite && \(favoritePlaces\?\.length \?\? 0\) > 0/,
+    );
+    expect(reorder).toContain("t('stay.noFavorites')");
+    expect(reorder).toContain('HANDLE_SLOT');
+    expect(reorder).toContain('multiSelect');
+    expect(mapScreen).toContain('routeInteractionMode');
+    expect(mapScreen).toContain('handleDeleteMany');
+    expect(mapScreen).toContain('headerLeft');
+    expect(mapScreen).toContain("t('route.deleteSelected'");
   });
 
   it('quick-add CTA requires day stops; stay commit waits for finish', () => {

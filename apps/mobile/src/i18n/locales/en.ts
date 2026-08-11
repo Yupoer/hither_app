@@ -242,6 +242,8 @@ export const en: Record<keyof ZhDict, string> = {
   'map.loading': 'Loading group locations…',
   'map.setFailedTitle': 'Failed',
   'map.setFailedMsg': "Couldn't set the gathering point. Make sure you're the leader and try again.",
+  'map.routeSaveFailedTitle': 'Save failed',
+  'map.routeSaveFailed': "Couldn't save itinerary changes. Please try again.",
   'map.searchA11y': 'Search next gathering point',
   'map.locateA11y': 'Center on my location',
   'map.fitAllA11y': 'Zoom to fit all members',
@@ -1042,6 +1044,7 @@ export const en: Record<keyof ZhDict, string> = {
   'tour.addPlace.center.body':
     'Tap the navigation icon to re-center the map on this place without adding it yet.',
   'stay.favorites': 'Favorite places',
+  'stay.noFavorites': 'No favorites yet. Tap the star when adding a place on the map.',
   'stay.autoAdd': 'Auto-add stay cards when setting accommodation',
   'stay.autoAddHint': 'When you set a daily stay, add stay cards at the start and end of that day.',
   'stay.needDepartureDate': 'Set a departure date first so trip days can be resolved.',
@@ -1055,6 +1058,12 @@ export const en: Record<keyof ZhDict, string> = {
   'stay.favoriteA11y': 'Save as favorite place',
   'stay.unfavoriteA11y': 'Remove from favorite places',
   'stay.centerPlaceA11y': 'Center map on this place',
+  'route.modeDragA11y': 'Drag mode',
+  'route.modeSelectA11y': 'Multi-select delete mode',
+  'route.modeHiddenA11y': 'Hide handles mode',
+  'route.deleteSelected': 'Delete ({count})',
+  'route.deleteSelectedA11y': 'Delete selected gathering points',
+  'route.deleteManyMsg': 'Delete {count} gathering points?',
   'kml.errPointLimit': 'Free plan open-stop limit reached — upgrade Premium or import fewer points',
 };
 
