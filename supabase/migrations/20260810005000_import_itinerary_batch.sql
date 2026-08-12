@@ -1,4 +1,4 @@
--- Atomic KML/itinerary batch import (#152 / parent #151).
+﻿-- Atomic KML/itinerary batch import (#152 / parent #151).
 -- security invoker: RLS + membership checks apply; one transaction for shift+insert.
 
 create or replace function public.import_itinerary_batch(

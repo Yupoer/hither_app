@@ -66,6 +66,10 @@ jobs:
         with:
           version: 2.109.1
 
+      - name: Strip migration BOM for local supabase CLI
+        working-directory: ${{ github.workspace }}
+        run: node supabase/scripts/strip-migration-bom.mjs
+
       - name: Supabase SQL kick authorization (pgTAP)
         working-directory: ${{ github.workspace }}
         run: |
