@@ -6,6 +6,7 @@ name: CI
 #   3. iOS runtime / OTA alignment           -> verify:runtime
 #   4. Expo dependency version drift         -> expo install --check
 #   5. Expo doctor                           -> expo-doctor (blocking)
+#   6. Kick RPC authorization matrix         -> supabase test db (pgTAP)
 #
 # Store/TestFlight release must pass runtime alignment so incompatible native
 # binaries cannot load an OTA built for a different engine/RN/Hermes set.
@@ -60,6 +61,16 @@ jobs:
 
       - name: Expo doctor
         run: npx --yes expo-doctor
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.109.1
+
+      - name: Supabase SQL kick authorization (pgTAP)
+        working-directory: ${{ github.workspace }}
+        run: |
+          supabase db start
+          supabase test db --local supabase/tests/kick_group_member.test.sql
 
   # Turn a red build on the default branch into an actionable, deduped issue.
   open-issue:
