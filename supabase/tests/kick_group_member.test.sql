@@ -92,6 +92,16 @@ insert into public.memberships (group_id, user_id, role, created_at) values
     now() - interval '2 days'
   );
 
+-- profiles.anonymous_expires_at is stripped on INSERT unless this GUC is set.
+-- Force the anonymous flag + expired stamp after fixtures so is_member is expiry-aware.
+select public.allow_anonymous_expiry_write();
+update auth.users
+  set is_anonymous = true
+  where id = 'e3333333-3333-4333-8333-333333333333';
+update public.profiles
+  set anonymous_expires_at = now() - interval '1 hour'
+  where id = 'e3333333-3333-4333-8333-333333333333';
+
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'e1111111-1111-4111-8111-111111111111', true);
 select set_config('request.jwt.claim.role', 'authenticated', true);
@@ -167,6 +177,12 @@ select throws_ok(
 
 -- Expired anonymous leader denied via is_member (memberships row still present)
 select set_config('request.jwt.claim.sub', 'e3333333-3333-4333-8333-333333333333', true);
+select set_config('request.jwt.claim.role', 'authenticated', true);
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"e3333333-3333-4333-8333-333333333333","role":"authenticated"}',
+  true
+);
 select throws_ok(
   $$select public.kick_group_member(
     'e6bbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
