@@ -69,6 +69,11 @@ import {
 } from '../utils/mapCameraFlow';
 import { resolveNotificationRecipients } from '../utils/notificationDeliveryPolicy';
 import { keyboardAvoidBottomOffset } from '../utils/keyboardSurface';
+import {
+  gatherRequestPageIndex,
+  resolveGatherRequestSelection,
+  sortGatherRequestsFifo,
+} from '../utils/gatherRequestInbox';
 import DestinationSearch from '../components/DestinationSearch';
 import MeetCountdown from '../components/MeetCountdown';
 import DestinationReorderList from '../components/DestinationReorderList';
@@ -654,6 +659,25 @@ export default function MapScreen({ route, navigation }: Props) {
   const [destinationArrivals, setDestinationArrivals] = useState<DestinationArrival[]>([]);
   const [gatherPointRequests, setGatherPointRequests] = useState<GatherPointRequest[]>([]);
   const [resolvingGatherRequestId, setResolvingGatherRequestId] = useState<string | null>(null);
+  /** Selected request id for Route pane horizontal FIFO inbox (#173). */
+  const [selectedGatherRequestId, setSelectedGatherRequestId] = useState<string | null>(null);
+  const gatherRequestPagerRef = useRef<ScrollView | null>(null);
+  const sortedGatherRequests = useMemo(
+    () => sortGatherRequestsFifo(gatherPointRequests),
+    [gatherPointRequests],
+  );
+  const sortedGatherRequestIds = useMemo(
+    () => sortedGatherRequests.map((r) => r.id),
+    [sortedGatherRequests],
+  );
+  useEffect(() => {
+    setSelectedGatherRequestId((prev) =>
+      resolveGatherRequestSelection({
+        sortedIds: sortedGatherRequestIds,
+        previousId: prev,
+      }),
+    );
+  }, [sortedGatherRequestIds]);
   /** Route overlay draft dirtiness — flushed only on sheet dismiss (完成 / swipe). */
   const routeDraftDirtyRef = useRef({
     destinations: false,
@@ -5140,9 +5164,136 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // ─── 路線：集合點、排序、Google Maps 匯入、歷史 ───────────────────────
   const opsOpenCount = exceptionOpenCount + coordination.openCount;
+  const gatherRequestPageW = Math.max(200, windowWidth - 32);
   const routePaneBody = useMemo(() => (
     <>
-      <Text style={[styles.sheetHeading, styles.sheetHeadingFirst]}>{t('map.gatheringPoints')}</Text>
+      {/* #173: leader pending gather requests — FIFO horizontal cards at Route top. */}
+      {isLeader && sortedGatherRequests.length > 0 ? (
+        <View testID="route-gather-request-inbox" style={{ marginBottom: 12 }}>
+          <Text style={[styles.sheetHeading, styles.sheetHeadingFirst]}>
+            {t('gatherRequest.pending')}
+          </Text>
+          <ScrollView
+            ref={gatherRequestPagerRef}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            decelerationRate="fast"
+            style={{ marginHorizontal: -4 }}
+            onMomentumScrollEnd={(e) => {
+              const page = Math.round(
+                e.nativeEvent.contentOffset.x / Math.max(1, gatherRequestPageW),
+              );
+              const id = sortedGatherRequestIds[page];
+              if (id) setSelectedGatherRequestId(id);
+            }}
+            onLayout={() => {
+              const page = gatherRequestPageIndex(
+                sortedGatherRequestIds,
+                selectedGatherRequestId,
+              );
+              gatherRequestPagerRef.current?.scrollTo({
+                x: page * gatherRequestPageW,
+                animated: false,
+              });
+            }}
+          >
+            {sortedGatherRequests.map((request) => (
+              <View
+                key={request.id}
+                style={{
+                  width: gatherRequestPageW,
+                  paddingHorizontal: 4,
+                }}
+              >
+                <View style={[styles.tripSummaryCard, { marginBottom: 0 }]}>
+                  <Text style={styles.tripCardKicker} numberOfLines={1}>
+                    {members.find((member) => member.userId === request.requesterId)?.name
+                      ?? t('map.memberFallback')}
+                  </Text>
+                  <Text style={styles.tripCardTitle} numberOfLines={2}>
+                    {request.items.map((item) => item.title).join('、')}
+                  </Text>
+                  <Text style={styles.tripCardMeta} numberOfLines={1}>
+                    {t('gatherRequest.target', {
+                      team: request.subgroupId
+                        ? subgroups.find((item) => item.id === request.subgroupId)?.name
+                          ?? t('gatherRequest.unknownTeam')
+                        : t('gatherRequest.mainTeam'),
+                    })}
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                    <Pressable
+                      style={[
+                        styles.chip,
+                        { flex: 1, minHeight: 44 },
+                        resolvingGatherRequestId === request.id ? { opacity: 0.5 } : null,
+                      ]}
+                      onPress={() => void handleGatherPointRequest(request.id, false)}
+                      disabled={!!resolvingGatherRequestId}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('gatherRequest.reject')}
+                      testID={`gather-request-reject-${request.id}`}
+                    >
+                      <Text style={styles.chipText}>{t('gatherRequest.reject')}</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[
+                        styles.chip,
+                        {
+                          flex: 1,
+                          minHeight: 44,
+                          backgroundColor: accentMix(accent, 24),
+                        },
+                        resolvingGatherRequestId === request.id ? { opacity: 0.5 } : null,
+                      ]}
+                      onPress={() => void handleGatherPointRequest(request.id, true)}
+                      disabled={!!resolvingGatherRequestId}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('gatherRequest.approve')}
+                      testID={`gather-request-approve-${request.id}`}
+                    >
+                      <Text style={styles.chipText}>{t('gatherRequest.approve')}</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+            ))}
+          </ScrollView>
+          {sortedGatherRequests.length > 1 ? (
+            <View
+              style={{
+                flexDirection: 'row',
+                justifyContent: 'center',
+                gap: 6,
+                marginTop: 8,
+              }}
+              accessibilityRole="adjustable"
+            >
+              {sortedGatherRequestIds.map((id) => (
+                <View
+                  key={id}
+                  style={{
+                    width: id === selectedGatherRequestId ? 14 : 6,
+                    height: 6,
+                    borderRadius: 3,
+                    backgroundColor:
+                      id === selectedGatherRequestId ? accent : glass.textTertiary,
+                  }}
+                />
+              ))}
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+      <Text
+        style={[
+          styles.sheetHeading,
+          !(isLeader && sortedGatherRequests.length > 0) && styles.sheetHeadingFirst,
+        ]}
+      >
+        {t('map.gatheringPoints')}
+      </Text>
       {extraPointCredits > 0 ? (
         <Text
           style={styles.extraCreditsHint}
@@ -5227,6 +5378,9 @@ export default function MapScreen({ route, navigation }: Props) {
   ), [
     t, styles, nextStopTitle, nextStopDistLabel, destinations.length,
     openHistoryOverlay, isLeader, opsOpenCount, editButtonActive, extraPointCredits, accent,
+    sortedGatherRequests, sortedGatherRequestIds, selectedGatherRequestId,
+    gatherRequestPageW, resolvingGatherRequestId, members, subgroups,
+    handleGatherPointRequest,
   ]);
 
   // ─── 工具：同行者模式入口 → 定位分享 → 抵達距離 → 快捷指令 ─────────
@@ -5564,70 +5718,7 @@ export default function MapScreen({ route, navigation }: Props) {
       ) : (
         <View style={[styles.flex, { backgroundColor: '#0c0e12' }]} />
       )}
-      {/* OTA-04/02: personal nav announcement response (user-scoped; never team phase). */}
-      {showDenseChrome
-        && !isLeader
-        && navigationSessionState.session?.status === 'active'
-        && user?.id ? (
-        <View
-          pointerEvents="box-none"
-          style={{
-            position: 'absolute',
-            top: insets.top + 8,
-            left: 16,
-            right: 16,
-            zIndex: 29,
-          }}
-        >
-          <View
-            style={{
-              backgroundColor: glass.pill,
-              borderRadius: 12,
-              paddingHorizontal: 12,
-              paddingVertical: 10,
-              gap: 8,
-            }}
-          >
-            <Text style={{ color: glass.textSecondary, fontSize: 13 }}>
-              {t('navResponse.prompt')}
-            </Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-              {(
-                [
-                  ['acknowledged', 'navResponse.acknowledged'],
-                  ['late', 'navResponse.late'],
-                  ['needs_help', 'navResponse.needsHelp'],
-                ] as const
-              ).map(([kind, labelKey]) => (
-                <Pressable
-                  key={kind}
-                  onPress={() => {
-                    mediumTap();
-                    void navigationSessionState
-                      .respondToAnnouncement(kind)
-                      .then(() => Alert.alert(t('navResponse.sent')))
-                      .catch(() =>
-                        Alert.alert(t('map.setFailedTitle'), t('map.journeyFailed')),
-                      );
-                  }}
-                  accessibilityRole="button"
-                  accessibilityLabel={t(labelKey)}
-                  style={{
-                    backgroundColor: accent,
-                    borderRadius: 10,
-                    paddingHorizontal: 10,
-                    paddingVertical: 6,
-                  }}
-                >
-                  <Text style={{ color: '#0c1a12', fontSize: 12, fontWeight: '600' }}>
-                    {t(labelKey)}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          </View>
-        </View>
-      ) : null}
+      {/* #175: navigation response banner removed entirely (not moved to Tools). */}
 
       {/* OTA-07: reduced presentation — covers dense chrome; same state tree. */}
       {inPassiveMode ? (
@@ -6024,9 +6115,6 @@ export default function MapScreen({ route, navigation }: Props) {
               const chromeCompact =
                 narrowScreen || fontBucket === 'large' || fontBucket === 'xl';
               const chromeTight = fontBucket === 'xl' || (narrowScreen && fontBucket === 'large');
-              // On tight density, drop nav label so meet countdown + mode stay
-              // square-floor sized in one row (especially when Maps appears).
-              const navIconOnly = chromeTight;
               // Use active itinerary (carousel list), not raw history-inclusive
               // scope — past-day open rows must not hide the arrive control.
               const canMarkArrival = canMarkDestinationArrival({
@@ -6044,6 +6132,9 @@ export default function MapScreen({ route, navigation }: Props) {
                 && canMarkArrival
                 && !dest.closedAt
                 && flockNavigatingThis;
+              // #176: icon-only Start only when Arrived is also present under tight
+              // density. When Arrived is absent, Start fills that slot (not square).
+              const navIconOnly = chromeTight && showArrivalControl;
               const personallyArrived = myCompletedDestinationIds.has(dest.id) || (
                 autoArrivedDestId === dest.id ||
                 (navTarget?.id === dest.id && (
@@ -6714,52 +6805,6 @@ export default function MapScreen({ route, navigation }: Props) {
           scrollEventThrottle={16}
         >
           <Text style={styles.overlayHint}>{t('map.routeHint')}</Text>
-          {isLeader && gatherPointRequests.length > 0 ? (
-            <View style={styles.listGroup}>
-              <Text style={styles.sectionLabel}>{t('gatherRequest.pending')}</Text>
-              {gatherPointRequests.map((request) => (
-                <View key={request.id} style={styles.flockRow}>
-                  <View style={styles.grow}>
-                    <Text style={styles.flockName}>
-                      {members.find((member) => member.userId === request.requesterId)?.name
-                        ?? t('map.memberFallback')}
-                    </Text>
-                    <Text style={styles.overlayHint}>
-                      {t('gatherRequest.target', {
-                        team: request.subgroupId
-                          ? subgroups.find((item) => item.id === request.subgroupId)?.name
-                            ?? t('gatherRequest.unknownTeam')
-                          : t('gatherRequest.mainTeam'),
-                      })}
-                    </Text>
-                    <Text style={styles.overlayHint}>
-                      {request.items.map((item) => item.title).join('、')}
-                    </Text>
-                  </View>
-                  <Pressable
-                    style={[styles.chip, resolvingGatherRequestId ? { opacity: 0.5 } : null]}
-                    onPress={() => void handleGatherPointRequest(request.id, false)}
-                    disabled={!!resolvingGatherRequestId}
-                    accessibilityRole="button"
-                  >
-                    <Text style={styles.chipText}>{t('gatherRequest.reject')}</Text>
-                  </Pressable>
-                  <Pressable
-                    style={[
-                      styles.chip,
-                      { backgroundColor: accentMix(accent, 24) },
-                      resolvingGatherRequestId ? { opacity: 0.5 } : null,
-                    ]}
-                    onPress={() => void handleGatherPointRequest(request.id, true)}
-                    disabled={!!resolvingGatherRequestId}
-                    accessibilityRole="button"
-                  >
-                    <Text style={styles.chipText}>{t('gatherRequest.approve')}</Text>
-                  </Pressable>
-                </View>
-              ))}
-            </View>
-          ) : null}
           <DestinationReorderList
             groupId={groupId ?? undefined}
             destinations={openForRouteEditor}
@@ -8062,14 +8107,26 @@ function CarouselDots({
     });
   }, [targetStart, targetRel, targetIndices, active, stripX, pillSlot]);
 
+  // #174: fixed width for inactive pitch + active pill so last slot is not clipped.
+  // Active pill is ~18 wide; inactive pitch DOT_PITCH_PX (6+6).
   const viewportWidth =
     displayIndices.length <= 0
       ? 0
-      : // inactive pitch * (n-1) + active width allowance
-        DOT_PITCH_PX * Math.max(0, displayIndices.length - 1) + 18;
+      : DOT_PITCH_PX * Math.max(0, displayIndices.length - 1) + 22;
 
   return (
-    <View style={[styles.dots, styles.dotsViewport, { maxWidth: viewportWidth + 4 }]}>
+    <View
+      style={[
+        styles.dots,
+        styles.dotsViewport,
+        {
+          width: viewportWidth + 8,
+          maxWidth: undefined,
+          flexShrink: 0,
+          overflow: 'visible',
+        },
+      ]}
+    >
       <RnAnimated.View
         style={[
           styles.dotsStrip,
