@@ -9,7 +9,6 @@ import {
   AccessibilityInfo,
   ActivityIndicator,
   Alert,
-  Animated as RnAnimated,
   AppState,
   Keyboard,
   LayoutAnimation,
@@ -215,12 +214,7 @@ import {
   walkingEtaSeconds,
   type TravelMode,
 } from '../utils/geo';
-import {
-  DOT_PITCH_PX,
-  dotWindow,
-  dotWindowRelative,
-  dotWindowStart,
-} from '../utils/pagination';
+import { indicatorRowGeometry } from '../utils/pagination';
 import {
   alignMeetTimeToTripDay,
   addMinutesToPickerValue,
@@ -8077,11 +8071,8 @@ const MeetTimeChip = React.memo(function MeetTimeChip({
 });
 
 /**
- * Gathering-point pagination dots (max 5 visible).
- *
- * Mid-range slide (e.g. card 3 → 4): whole strip shifts left one pitch so the
- * active bar appears to move 3rd → 2nd slot, then the bar re-centers 2nd → 3rd.
- * Edge clamps skip the two-phase move and just retarget the bar.
+ * Gathering-point pagination (max 5 visible). Each item occupies its own
+ * active pill / inactive dot width in normal flow — no absolute overlay.
  */
 function CarouselDots({
   total,
@@ -8096,126 +8087,23 @@ function CarouselDots({
   destinationIds: readonly string[];
   styles: {
     dots: object;
-    dotsViewport: object;
-    dotsStrip: object;
     dot: object;
     dotActive: object;
   };
 }) {
-  const targetStart = dotWindowStart(total, active, maxVisible);
-  const targetRel = dotWindowRelative(total, active, maxVisible);
-  const targetIndices = useMemo(
-    () => dotWindow(total, active, maxVisible),
+  const row = useMemo(
+    () => indicatorRowGeometry(total, active, maxVisible),
     [total, active, maxVisible],
   );
 
-  const [displayIndices, setDisplayIndices] = useState(targetIndices);
-  // RN Animated (not reanimated) — MapScreen's `Animated` is reanimated.
-  const stripX = useRef(new RnAnimated.Value(0)).current;
-  const pillSlot = useRef(new RnAnimated.Value(targetRel)).current;
-  const prevRef = useRef({ start: targetStart, rel: targetRel, active });
-  const animGenRef = useRef(0);
-
-  useEffect(() => {
-    const prev = prevRef.current;
-    const deltaStart = targetStart - prev.start;
-    const gen = ++animGenRef.current;
-
-    if (deltaStart === 0) {
-      // Same window: bar slides within the strip only.
-      setDisplayIndices(targetIndices);
-      RnAnimated.timing(pillSlot, {
-        toValue: targetRel,
-        duration: 200,
-        useNativeDriver: true,
-      }).start();
-      prevRef.current = { start: targetStart, rel: targetRel, active };
-      return;
-    }
-
-    // Phase 1: strip + bar shift together by one pitch (left when start++).
-    const dir = deltaStart > 0 ? -1 : 1;
-    const pitch = DOT_PITCH_PX * Math.abs(deltaStart);
-    stripX.setValue(0);
-    // Keep previous indices during the slide so keys move with the strip.
-    RnAnimated.timing(stripX, {
-      toValue: dir * pitch,
-      duration: 180,
-      useNativeDriver: true,
-    }).start(({ finished }) => {
-      if (!finished || animGenRef.current !== gen) return;
-      // After left slide, bar that was at prev.rel sits one slot left/right.
-      const interimRel = prev.rel + dir;
-      stripX.setValue(0);
-      setDisplayIndices(targetIndices);
-      pillSlot.setValue(interimRel);
-      // Phase 2: re-center bar (2nd → 3rd when advancing mid-range).
-      RnAnimated.timing(pillSlot, {
-        toValue: targetRel,
-        duration: 160,
-        useNativeDriver: true,
-      }).start();
-      prevRef.current = { start: targetStart, rel: targetRel, active };
-    });
-  }, [targetStart, targetRel, targetIndices, active, stripX, pillSlot]);
-
-  // #174: fixed width for inactive pitch + active pill so last slot is not clipped.
-  // Active pill is ~18 wide; inactive pitch DOT_PITCH_PX (6+6).
-  const viewportWidth =
-    displayIndices.length <= 0
-      ? 0
-      : DOT_PITCH_PX * Math.max(0, displayIndices.length - 1) + 22;
-
   return (
-    <View
-      style={[
-        styles.dots,
-        styles.dotsViewport,
-        {
-          width: viewportWidth + 8,
-          maxWidth: undefined,
-          flexShrink: 0,
-          overflow: 'visible',
-        },
-      ]}
-    >
-      <RnAnimated.View
-        style={[
-          styles.dotsStrip,
-          { transform: [{ translateX: stripX }] },
-        ]}
-      >
-        {displayIndices.map((i2) => (
-          <View
-            key={`dot-${destinationIds[i2] ?? i2}`}
-            // Base dots stay inactive size; the sliding pill overlays the active slot.
-            style={styles.dot}
-          />
-        ))}
-        <RnAnimated.View
-          pointerEvents="none"
-          style={[
-            styles.dot,
-            styles.dotActive,
-            {
-              position: 'absolute',
-              left: 0,
-              top: 0,
-              transform: [
-                {
-                  translateX: pillSlot.interpolate({
-                    inputRange: [0, Math.max(1, displayIndices.length - 1)],
-                    outputRange: [
-                      0,
-                      DOT_PITCH_PX * Math.max(0, displayIndices.length - 1),
-                    ],
-                  }),
-                },
-              ],
-            },
-          ]}
+    <View style={[styles.dots, { flexShrink: 0 }]}>
+      {row.items.map((item) => (
+        <View
+          key={`dot-${destinationIds[item.index] ?? item.index}`}
+          style={[styles.dot, item.active ? styles.dotActive : null]}
         />
-      </RnAnimated.View>
+      ))}
     </View>
   );
 }
@@ -9275,13 +9163,6 @@ const makeStyles = (
     },
     meetClearText: { fontSize: 17, fontWeight: '600', color: glass.textSecondary, textAlign: 'center' },
     dots: { flexDirection: 'row', gap: 6, alignItems: 'center' },
-    dotsViewport: { overflow: 'hidden' },
-    dotsStrip: {
-      flexDirection: 'row',
-      gap: 6,
-      alignItems: 'center',
-      position: 'relative',
-    },
     dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.35)' },
     dotActive: { width: 18, backgroundColor: accent },
 
