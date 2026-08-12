@@ -10,11 +10,12 @@ import {
   advanceTour,
   createTourControllerState,
   currentStep,
+  retreatTour,
   startTour,
   stopTour,
   type TourControllerState,
 } from './tourController';
-import { measureTargetWithRetry } from './measureTarget';
+import { getWindowSize, measureTourStepRects } from './measureTarget';
 import {
   completeGroupFeatureTour,
   isTourCompletedFromSources,
@@ -73,6 +74,8 @@ export interface UseGroupFeatureTourResult {
   targetRect: LayoutRectangle | null;
   placementRect: LayoutRectangle | null;
   onNext: () => void;
+  onPrev: () => void;
+  canGoPrev: boolean;
   /** True while waiting for local durable complete. */
   completing: boolean;
   /** Call after reset prefs to allow replay. */
@@ -304,25 +307,17 @@ export function useGroupFeatureTour(
         }
         return;
       }
-      const rect = await measureTargetWithRetry({
+      const win = getWindowSize();
+      const measured = await measureTourStepRects({
         measure: (id) => measureRef.current(id),
-        target: step.target,
-        maxAttempts: step.expandCard ? 8 : 5,
-        retryDelayMs: 80,
+        step,
+        winW: win.width,
+        winH: win.height,
         requireStable: Boolean(step.expandCard),
       });
-      let place: LayoutRectangle | null = null;
-      if (step.openStageTwo) {
-        place = await measureTargetWithRetry({
-          measure: (id) => measureRef.current(id),
-          target: 'stageTwoPlacement',
-          maxAttempts: 5,
-          retryDelayMs: 80,
-        });
-      }
       if (!cancelled) {
-        setTargetRect(rect);
-        setPlacementRect(place);
+        setTargetRect(measured.targetRect);
+        setPlacementRect(measured.placementRect);
       }
     };
     void run();
@@ -369,6 +364,13 @@ export function useGroupFeatureTour(
     setCtrl((s) => advanceTour(s, plan));
   }, [ctrl]);
 
+  const onPrev = useCallback(() => {
+    if (!ctrl.active || completingRef.current) return;
+    if (ctrl.stepIndex <= 0) return;
+    appliedStepRef.current = -1;
+    setCtrl((s) => retreatTour(s));
+  }, [ctrl]);
+
   return {
     tourActive: ctrl.active,
     step,
@@ -376,6 +378,8 @@ export function useGroupFeatureTour(
     targetRect: visibleTargetRect,
     placementRect: visiblePlacementRect,
     onNext,
+    onPrev,
+    canGoPrev: ctrl.active && ctrl.stepIndex > 0,
     completing,
     reevaluate,
     steps,

@@ -1013,6 +1013,7 @@ export const en: Record<keyof ZhDict, string> = {
 
   // Group feature tour
   'tour.next': 'Next',
+  'tour.prev': 'Previous',
   'tour.getStarted': 'Get started',
   'tour.collapsedCard.title': 'Gathering card',
   'tour.collapsedCard.body': 'This shows the current stop. Tap to expand more actions.',

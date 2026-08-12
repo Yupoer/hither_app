@@ -1,5 +1,6 @@
 import type { LayoutRectangle } from 'react-native';
-import type { TourTargetId } from './constants';
+import type { TourStepDef, TourTargetId } from './constants';
+import { clipRectToWindow } from './overlayLayout';
 
 export type MeasureFn = (id: TourTargetId) => Promise<LayoutRectangle | null>;
 
@@ -71,4 +72,77 @@ export async function measureTargetWithRetry(
     }
   }
   return last;
+}
+
+/** Extra settle time so Stage Two sheet/pane layout is measurable. */
+export const STAGE_TWO_SETTLE_MS = 300;
+
+export function getWindowSize(): { width: number; height: number } {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { Dimensions } = require('react-native') as typeof import('react-native');
+    const win = Dimensions?.get?.('window');
+    if (win && win.width > 0 && win.height > 0) {
+      return { width: win.width, height: win.height };
+    }
+  } catch {
+    /* jest mocks often omit Dimensions */
+  }
+  return { width: 390, height: 844 };
+}
+
+/**
+ * Measure the current step hole + optional Stage Two placement rect.
+ * Stage Two waits for the sheet to settle, clips to the window, and falls
+ * back to the tab strip when the pane target is still missing.
+ */
+export async function measureTourStepRects(opts: {
+  measure: MeasureFn;
+  step: Pick<TourStepDef, 'target' | 'expandCard' | 'openStageTwo'>;
+  winW: number;
+  winH: number;
+  sleep?: (ms: number) => Promise<void>;
+  requireStable?: boolean;
+}): Promise<{
+  targetRect: LayoutRectangle | null;
+  placementRect: LayoutRectangle | null;
+}> {
+  const sleep = opts.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+  if (!opts.step.target) {
+    return { targetRect: null, placementRect: null };
+  }
+
+  if (opts.step.openStageTwo) {
+    await sleep(STAGE_TWO_SETTLE_MS);
+  }
+
+  const rect = await measureTargetWithRetry({
+    measure: opts.measure,
+    target: opts.step.target,
+    maxAttempts: opts.step.openStageTwo ? 10 : opts.step.expandCard ? 8 : 5,
+    retryDelayMs: 80,
+    requireStable: opts.requireStable ?? Boolean(opts.step.expandCard),
+    sleep,
+  });
+
+  let place: LayoutRectangle | null = null;
+  if (opts.step.openStageTwo) {
+    place = await measureTargetWithRetry({
+      measure: opts.measure,
+      target: 'stageTwoPlacement',
+      maxAttempts: 5,
+      retryDelayMs: 80,
+      sleep,
+    });
+  }
+
+  if (opts.step.openStageTwo) {
+    const clipped = clipRectToWindow(rect, opts.winW, opts.winH);
+    return {
+      targetRect: clipped ?? place,
+      placementRect: place,
+    };
+  }
+
+  return { targetRect: rect, placementRect: place };
 }

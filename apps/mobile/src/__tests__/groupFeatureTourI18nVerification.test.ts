@@ -46,6 +46,8 @@ describe('integrated tour + i18n verification', () => {
     }
     expect(translate('zh', 'tour.next')).toBe('下一個');
     expect(translate('en', 'tour.next')).toBe('Next');
+    expect(translate('zh', 'tour.prev')).toBe('上一個');
+    expect(translate('en', 'tour.prev')).toBe('Previous');
     expect(translate('zh', 'tour.getStarted')).toBe('開始使用');
     expect(translate('en', 'tour.getStarted')).toBe('Get started');
   });

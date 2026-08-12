@@ -154,6 +154,7 @@ import {
   GroupFeatureTourOverlay,
   useGroupFeatureTour,
   clearGroupFeatureTour,
+  holeKindForTarget,
   pickTourDestinationId,
   tourDestinationIndex,
   type TourTargetId,
@@ -4992,6 +4993,8 @@ export default function MapScreen({ route, navigation }: Props) {
     step: tourStep,
     targetRect: tourTargetRect,
     onNext: onTourNext,
+    onPrev: onTourPrev,
+    canGoPrev: tourCanGoPrev,
     completing: tourCompleting,
     placementRect: tourPlacementRect,
   } = useGroupFeatureTour({
@@ -7932,7 +7935,10 @@ export default function MapScreen({ route, navigation }: Props) {
         }
         targetRect={tourTargetRect}
         placementRect={tourPlacementRect}
+        targetKind={holeKindForTarget(tourStep?.target)}
         onNext={onTourNext}
+        onPrev={onTourPrev}
+        canGoPrev={tourCanGoPrev}
         reduceMotion={tourReduceMotion}
         ctaDisabled={tourCompleting}
       />

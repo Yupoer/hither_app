@@ -29,6 +29,13 @@ export function advanceTour(
   return { active: true, stepIndex: next };
 }
 
+/** Step backward. Index 0 is unchanged. Never deactivates the tour. */
+export function retreatTour(state: TourControllerState): TourControllerState {
+  if (!state.active) return state;
+  if (state.stepIndex <= 0) return state;
+  return { active: true, stepIndex: state.stepIndex - 1 };
+}
+
 export function isFinalStep(
   state: TourControllerState,
   steps: readonly TourStepDef[] = TOUR_STEPS,

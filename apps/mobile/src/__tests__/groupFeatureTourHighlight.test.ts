@@ -5,7 +5,7 @@ import React from 'react';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { measureTargetWithRetry } from '../featureTour/measureTarget';
-import { HOLE_PAD, HOLE_RADIUS, paddedHole, placeTourCard } from '../featureTour/overlayLayout';
+import { HOLE_PAD, HOLE_RADIUS, holeRadius, paddedHole, placeTourCard } from '../featureTour/overlayLayout';
 
 jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 47, bottom: 34, left: 0, right: 0 }),
@@ -72,9 +72,12 @@ describe('paddedHole + ring share one rounded geometry (#182)', () => {
     });
     expect(HOLE_RADIUS).toBeGreaterThan(0);
     expect(overlaySrc).toContain('paddedHole');
-    expect(overlaySrc).toContain('HOLE_RADIUS');
+    expect(overlaySrc).toContain('holeRadius');
     expect(overlaySrc).toContain('HoleCorner');
     expect(overlaySrc).toContain('tour-hole-ring');
+    const compact = paddedHole({ x: 10, y: 20, width: 52, height: 52 });
+    expect(holeRadius(compact, 'compact')).toBe(Math.min(compact.w, compact.h) / 2);
+    expect(holeRadius({ w: 376, h: 256 }, 'card')).toBeLessThanOrEqual(16);
   });
 });
 
@@ -116,8 +119,9 @@ describe('measureTargetWithRetry requireStable (#182)', () => {
 
 describe('expanding steps wait for a stable rect (#182)', () => {
   it('useGroupFeatureTour asks for stability on expandCard steps', () => {
+    const measureSrc = readFileSync(join(__dirname, '../featureTour/measureTarget.ts'), 'utf8');
     expect(hookSrc).toContain('requireStable: Boolean(step.expandCard)');
-    expect(hookSrc).toContain("target: 'stageTwoPlacement'");
+    expect(measureSrc).toContain("target: 'stageTwoPlacement'");
     expect(hookSrc).toContain('placementRect');
   });
 });
