@@ -451,7 +451,9 @@ export function useAuthFlow({
       avatarColor?: string;
       preferences?: AccountPreferences;
     }) => {
-      const prev = user;
+      // #169: profiles row is SoT — commit local session only after server write.
+      // Overlay keeps its own draft; do not optimistically pollute committed avatar.
+      await updateProfileApi(fields);
       const nickname = fields.nickname?.trim();
       setUser((u) =>
         u
@@ -464,14 +466,8 @@ export function useAuthFlow({
             }
           : u,
       );
-      try {
-        await updateProfileApi(fields);
-      } catch (e) {
-        setUser(prev);
-        throw e;
-      }
     },
-    [user, setUser],
+    [setUser],
   );
 
   return {

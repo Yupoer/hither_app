@@ -207,6 +207,7 @@ export const en: Record<keyof ZhDict, string> = {
   'profile.title': 'Profile',
   'profile.avatar': 'Avatar',
   'profile.avatarColor': 'Avatar background colour',
+  'profile.saving': 'Saving…',
   'profile.saveFailed': "Couldn't save your profile",
   'profile.syncHint': 'Your name and avatar sync to everyone in the group.',
   'solo.title': 'Solo mode',

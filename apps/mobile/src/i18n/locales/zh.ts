@@ -215,6 +215,7 @@ export const zh = {
   'profile.title': '個人資料',
   'profile.avatar': '頭像',
   'profile.avatarColor': '頭像背景顏色',
+  'profile.saving': '儲存中…',
   'profile.saveFailed': '個人資料儲存失敗',
   'profile.syncHint': '名字與頭像會即時同步給群組成員。',
   'solo.title': 'Solo 模式',
