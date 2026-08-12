@@ -24,6 +24,11 @@ begin
     raise exception 'cannot kick self' using errcode = '22023';
   end if;
 
+  -- Expiry-aware membership first (anonymous 14-day gate via is_member).
+  if not extensions.is_member(p_group_id) then
+    raise exception 'not a group member' using errcode = '42501';
+  end if;
+
   -- Caller must be active leader of this group.
   if not exists (
     select 1

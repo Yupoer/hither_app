@@ -110,6 +110,8 @@ export function useGroupState(
 ): UseGroupStateResult {
   const { myUserId = null, highAccuracy = false } = options;
   const [state, setState] = useState<GroupState | null>(null);
+  /** Mirrors React state so recovery can merge + persist one authoritative snapshot. */
+  const stateRef = useRef<GroupState | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [dataSource, setDataSource] = useState<GroupStateDataSource>('none');
@@ -144,11 +146,6 @@ export function useGroupState(
   const pendingReloadReasonRef = useRef<GroupReloadReason | null>(null);
   /** Reason consumed by the in-flight recovery load. */
   const inFlightReasonRef = useRef<GroupReloadReason>('unknown');
-  /**
-   * After a membership empty-itinerary fence, allow one poll-style follow-up so
-   * a true server empty can still converge without waiting for the slow interval.
-   */
-  const fencedFollowUpRef = useRef(false);
   const groupGenerationRef = useRef(0);
   const inFlightRevisionRef = useRef<string | null>(null);
   const latestRevisionRef = useRef('0');
@@ -190,7 +187,9 @@ export function useGroupState(
   const applyOptimisticGathering = useCallback((gathering: ActiveGatheringState) => {
     setState((prev) => {
       if (!prev) return prev;
-      return projectOptimisticGathering(prev, gathering);
+      const next = projectOptimisticGathering(prev, gathering);
+      stateRef.current = next;
+      return next;
     });
     setDataSource('local_cache');
     if (groupId) void refreshOpenOperations(groupId);
@@ -216,6 +215,7 @@ export function useGroupState(
       }
       const next = groupStateFromCoreSnapshot(snapshot);
       const freshness = coreSnapshotFreshness(snapshot, Date.now());
+      stateRef.current = next;
       setState(next);
       setDataSource('local_cache');
       setSnapshotFreshness(freshness);
@@ -258,65 +258,60 @@ export function useGroupState(
         const staleResponse = isOlderRevision(recovery.revision, latestRevisionRef.current);
         const isCurrentGeneration =
           activeRef.current && groupGenerationRef.current === generation;
+        // One authoritative merge for React state + SQLite. Do not persist the
+        // raw empty remote when membership fence preserves local cards (#167).
+        let persistSnapshot: GroupState | null = null;
         if (isCurrentGeneration && !staleResponse) {
           latestRevisionRef.current = recovery.revision;
           const preserveLocalGathering = openOperationsRef.current.some(
             (operation) => isLeaderGatheringOperation(operation),
           );
-          setState((previous) => {
-            const previousCount = previous?.destinations.length ?? 0;
-            const remoteCount = next.destinations.length;
-            const fenced = shouldFenceEmptyItinerary({
-              reason: loadReason,
-              previousDestinationCount: previousCount,
-              remoteDestinationCount: remoteCount,
-            });
-            const meta = describeRecoveryMerge({
-              reason: loadReason,
-              revision: recovery.revision,
-              previousDestinationCount: previousCount,
-              remoteDestinationCount: remoteCount,
-              preserveLocalGathering,
-              fencedEmptyItinerary: fenced,
-            });
-            if (
-              meta.outcome === 'fenced_empty_itinerary'
-              || meta.outcome === 'preserved_local_gathering'
-              || loadReason === 'membership_change'
-              || loadReason === 'itinerary_mutation'
-            ) {
-              // Compact seam log for membership vs itinerary diagnostics.
-              // eslint-disable-next-line no-console
-              console.info('[group-recovery-merge]', meta);
-            }
-            if (fenced && !fencedFollowUpRef.current) {
-              fencedFollowUpRef.current = true;
-              pendingReloadRef.current = true;
-              pendingReloadReasonRef.current = pickStrongerReloadReason(
-                pendingReloadReasonRef.current,
-                'poll_manual_refresh',
-              );
-            } else if (!fenced) {
-              fencedFollowUpRef.current = false;
-            }
-            return mergeRemoteGroupStatePreservingOwnLocation(
-              previous,
-              next,
-              myUserIdRef.current,
-              {
-                preserveLocalGathering,
-                reloadReason: loadReason,
-              },
-            );
+          const previous = stateRef.current;
+          const previousCount = previous?.destinations.length ?? 0;
+          const remoteCount = next.destinations.length;
+          const fenced = shouldFenceEmptyItinerary({
+            reason: loadReason,
+            previousDestinationCount: previousCount,
+            remoteDestinationCount: remoteCount,
           });
+          const meta = describeRecoveryMerge({
+            reason: loadReason,
+            revision: recovery.revision,
+            previousDestinationCount: previousCount,
+            remoteDestinationCount: remoteCount,
+            preserveLocalGathering,
+            fencedEmptyItinerary: fenced,
+          });
+          if (
+            meta.outcome === 'fenced_empty_itinerary'
+            || meta.outcome === 'preserved_local_gathering'
+            || loadReason === 'membership_change'
+            || loadReason === 'itinerary_mutation'
+          ) {
+            // Compact seam log for membership vs itinerary diagnostics.
+            // eslint-disable-next-line no-console
+            console.info('[group-recovery-merge]', meta);
+          }
+          const merged = mergeRemoteGroupStatePreservingOwnLocation(
+            previous,
+            next,
+            myUserIdRef.current,
+            {
+              preserveLocalGathering,
+              reloadReason: loadReason,
+            },
+          );
+          stateRef.current = merged;
+          setState(merged);
+          persistSnapshot = merged;
           setError(null);
           setDataSource('remote');
           setEmptyLocalSnapshot(false);
         }
         try {
-          // Persist snapshot and hydrate server entity versions (OTA-04 #6).
-          if (!staleResponse && isCurrentGeneration) {
-            await hydrateCoreEntityVersions(groupId, next);
+          // Persist the same merged snapshot used for paint (never raw empty fenced next).
+          if (!staleResponse && isCurrentGeneration && persistSnapshot) {
+            await hydrateCoreEntityVersions(groupId, persistSnapshot);
           }
           const snap = await readCoreSnapshot(groupId);
           if (
@@ -340,6 +335,7 @@ export function useGroupState(
         if (notMember) {
           // Membership revoked (e.g. kick) — do not paint stale local cards.
           if (activeRef.current && groupGenerationRef.current === generation) {
+            stateRef.current = null;
             setState(null);
             setDataSource('none');
             setError('not_member');
@@ -415,8 +411,8 @@ export function useGroupState(
     groupGenerationRef.current = generation;
     pendingReloadRef.current = false;
     pendingReloadReasonRef.current = null;
-    fencedFollowUpRef.current = false;
     setLoading(true);
+    stateRef.current = null;
     setState(null);
     setDataSource('none');
     setSnapshotFreshness({ unit: 'missing' });
@@ -518,6 +514,7 @@ export function useGroupState(
           void loadRef.current('location_change');
           return prev;
         }
+        stateRef.current = next;
         return next;
       });
     };

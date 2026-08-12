@@ -14,6 +14,11 @@ describe('kick_group_member (#168)', () => {
     expect(migration).toContain('create or replace function public.kick_group_member(p_group_id uuid, p_user_id uuid)');
     expect(migration).toContain('security definer');
     expect(migration).toContain("set search_path = ''");
+    // Expiry-aware gate before raw memberships role check (#166 Sol P1).
+    expect(migration).toContain('extensions.is_member(p_group_id)');
+    expect(migration.indexOf('extensions.is_member(p_group_id)')).toBeLessThan(
+      migration.indexOf("m.role = 'leader'"),
+    );
     expect(migration).toContain("m.role = 'leader'");
     expect(migration).toContain('cannot kick self');
     expect(migration).toContain('cannot kick leader');
