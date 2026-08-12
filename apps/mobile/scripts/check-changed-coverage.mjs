@@ -104,6 +104,9 @@ function main() {
   const coverageDir = path.join(appRoot, 'coverage-changed');
   fs.rmSync(coverageDir, { recursive: true, force: true });
 
+  // Do not pass a coverage-threshold JSON blob on the jest argv: shell:true
+  // strips quotes and Jest JSON.parse fails on both bash and PowerShell.
+  // This script already enforces the threshold from coverage-summary.json.
   const args = [
     'jest',
     '--coverage',
@@ -111,7 +114,6 @@ function main() {
     coverageDir,
     '--coverageReporters=json-summary',
     '--coverageReporters=text-summary',
-    `--coverageThreshold=${JSON.stringify({ global: { functions: threshold } })}`,
     ...changed.flatMap((f) => ['--collectCoverageFrom', f]),
     '--passWithNoTests',
   ];
