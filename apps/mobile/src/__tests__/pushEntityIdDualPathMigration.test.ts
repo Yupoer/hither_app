@@ -28,11 +28,10 @@ describe('push entity_id dual-path migrations (BUG-6 / SUG-4)', () => {
   it('on_command_insert keeps custom role-based category + entity_id', () => {
     const body = latestFunctionBody('on_command_insert');
     expect(body.length).toBeGreaterThan(0);
-    // custom → membership role lookup (follower_requests vs leader_commands)
+    // custom → membership role lookup; missing role defaults to follower_requests (#170)
     expect(body).toContain("new.type = 'custom'");
-    expect(body).toContain("when m.role = 'follower' then 'follower_requests'");
-    expect(body).toContain("else 'leader_commands'");
-    expect(body).toContain("coalesce(v_category, 'leader_commands')");
+    expect(body).toMatch(/case when m\.role = 'leader' then 'leader_commands' else 'follower_requests' end/);
+    expect(body).toContain("coalesce(v_category, 'follower_requests')");
     // request_start still follower_requests
     expect(body).toContain("'request_start'");
     expect(body).toContain('follower_requests');

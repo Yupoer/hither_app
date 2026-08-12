@@ -144,7 +144,7 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(groupState).toContain("status === 'CHANNEL_ERROR'");
     expect(groupState).toContain("status === 'CLOSED'");
     expect(groupState).toContain('const timer = setInterval');
-    expect(groupState).toContain('void loadRef.current()');
+    expect(groupState).toMatch(/void loadRef\.current\(/);
     expect(groupState).not.toContain('const profilesChannel');
   });
 
