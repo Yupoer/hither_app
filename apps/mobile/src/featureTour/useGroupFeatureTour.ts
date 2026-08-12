@@ -65,6 +65,7 @@ export interface UseGroupFeatureTourResult {
   step: TourStepDef | null;
   stepIndex: number;
   targetRect: LayoutRectangle | null;
+  placementRect: LayoutRectangle | null;
   onNext: () => void;
   /** True while waiting for local durable complete. */
   completing: boolean;
@@ -92,6 +93,7 @@ export function useGroupFeatureTour(
 
   const [ctrl, setCtrl] = useState<TourControllerState>(() => createTourControllerState(false));
   const [targetRect, setTargetRect] = useState<LayoutRectangle | null>(null);
+  const [placementRect, setPlacementRect] = useState<LayoutRectangle | null>(null);
   const [gateReady, setGateReady] = useState(false);
   const [tourCompleted, setTourCompleted] = useState(true); // optimistic until load
   const [completing, setCompleting] = useState(false);
@@ -277,16 +279,32 @@ export function useGroupFeatureTour(
     let cancelled = false;
     const run = async () => {
       if (!step.target) {
-        if (!cancelled) setTargetRect(null);
+        if (!cancelled) {
+          setTargetRect(null);
+          setPlacementRect(null);
+        }
         return;
       }
       const rect = await measureTargetWithRetry({
         measure: (id) => measureRef.current(id),
         target: step.target,
-        maxAttempts: 5,
+        maxAttempts: step.expandCard ? 8 : 5,
         retryDelayMs: 80,
+        requireStable: Boolean(step.expandCard),
       });
-      if (!cancelled) setTargetRect(rect);
+      let place: LayoutRectangle | null = null;
+      if (step.openStageTwo) {
+        place = await measureTargetWithRetry({
+          measure: (id) => measureRef.current(id),
+          target: 'stageTwoPlacement',
+          maxAttempts: 5,
+          retryDelayMs: 80,
+        });
+      }
+      if (!cancelled) {
+        setTargetRect(rect);
+        setPlacementRect(place);
+      }
     };
     void run();
     return () => {
@@ -296,6 +314,7 @@ export function useGroupFeatureTour(
 
   // Derived: hide hole when tour inactive (avoids sync setState on deactivate).
   const visibleTargetRect = ctrl.active ? targetRect : null;
+  const visiblePlacementRect = ctrl.active ? placementRect : null;
 
   const onNext = useCallback(() => {
     if (!ctrl.active || completingRef.current) return;
@@ -330,6 +349,7 @@ export function useGroupFeatureTour(
     step,
     stepIndex: ctrl.stepIndex,
     targetRect: visibleTargetRect,
+    placementRect: visiblePlacementRect,
     onNext,
     completing,
     reevaluate,

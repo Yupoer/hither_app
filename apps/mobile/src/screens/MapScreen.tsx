@@ -499,7 +499,7 @@ export default function MapScreen({ route, navigation }: Props) {
       }
     });
   }, []);
-  const reevaluateTourRef = useRef<() => void>(() => undefined);
+
   // Live Dynamic Type layout — rebuilds when system fontScale changes.
   // a11y-layout:commandRow — always ONE row; density (size/labels) tracks
   // font bucket + physical width, never multi-row stacking.
@@ -4381,9 +4381,6 @@ export default function MapScreen({ route, navigation }: Props) {
     } catch {
       // Pending / reset-intent paths keep replay working without session write.
     }
-    // Reevaluate tour gate only — blocked while onboarding replay is pending.
-    // Must not force navigation off Map / settings.
-    reevaluateTourRef.current();
     Alert.alert(t('settings.resetAllPrefs'), t('settings.resetPrefsDone'));
   }, [t, user?.id, user?.preferences, updateProfile]);
 
@@ -4996,7 +4993,7 @@ export default function MapScreen({ route, navigation }: Props) {
     targetRect: tourTargetRect,
     onNext: onTourNext,
     completing: tourCompleting,
-    reevaluate: reevaluateTour,
+    placementRect: tourPlacementRect,
   } = useGroupFeatureTour({
     groupId,
     destinationCount: destinations.length,
@@ -5016,7 +5013,6 @@ export default function MapScreen({ route, navigation }: Props) {
     personalArriveVisible: tourControlAvailability.personalArriveVisible,
     onTourActiveChange,
   });
-  reevaluateTourRef.current = reevaluateTour;
 
   // Entitlement snapshot is bound to the groupId it was fetched for. A slow
   // response for team A must never apply after the user switched to team B.
@@ -5079,6 +5075,11 @@ export default function MapScreen({ route, navigation }: Props) {
   // ─── 成員：位置、狀態、個別操作、小隊（無「成員」標題） ────────────────
   const membersPaneBody = useMemo(() => (
     <>
+      <View
+        ref={(n) => setTourTargetRef('paneMembers', n)}
+        collapsable={false}
+        testID="tour-members-content"
+      >
       {/* My status + refresh on one row (stage 1+ body) */}
       <View style={styles.myStatusBar}>
         <Pressable
@@ -5100,6 +5101,22 @@ export default function MapScreen({ route, navigation }: Props) {
           t={t}
           onPress={refreshAllLocations}
         />
+      </View>
+      {subgroups.length === 0 && (
+        <View style={styles.list}>
+          {topFlockMemo.map((f, i) => renderFlockRow(f, i === topFlockMemo.length - 1, i))}
+        </View>
+      )}
+      <SubgroupSection
+        subgroups={subgroups}
+        flock={flock}
+        mySubgroupId={mySubgroupId}
+        sentInvites={sentInvites}
+        accent={accent}
+        setInviteSheetOpen={setInviteSheetOpen}
+        renderFlockRow={renderFlockRow}
+        styles={styles}
+      />
       </View>
       {pendingInvites.length > 0 && (
         <View style={styles.list}>
@@ -5144,21 +5161,6 @@ export default function MapScreen({ route, navigation }: Props) {
           })}
         </View>
       )}
-      {subgroups.length === 0 && (
-        <View style={styles.list}>
-          {topFlockMemo.map((f, i) => renderFlockRow(f, i === topFlockMemo.length - 1, i))}
-        </View>
-      )}
-      <SubgroupSection
-        subgroups={subgroups}
-        flock={flock}
-        mySubgroupId={mySubgroupId}
-        sentInvites={sentInvites}
-        accent={accent}
-        setInviteSheetOpen={setInviteSheetOpen}
-        renderFlockRow={renderFlockRow}
-        styles={styles}
-      />
 
       <View style={styles.listGroup}>
         <Pressable
@@ -5195,7 +5197,7 @@ export default function MapScreen({ route, navigation }: Props) {
     t, styles, refreshingLocations, refreshAllLocations, refreshCooldownUntil, accent, highAccuracy,
     setHighAccuracy, pendingInvites, fontBucket, handleAcceptInvite, handleDeclineInvite,
     subgroups, topFlockMemo, renderFlockRow, flock, mySubgroupId, sentInvites,
-    openMyStatusPicker, myStatusLabel,
+    openMyStatusPicker, myStatusLabel, setTourTargetRef,
   ]);
 
   // ─── 路線：集合點、排序、Google Maps 匯入、歷史 ───────────────────────
@@ -5570,7 +5572,12 @@ export default function MapScreen({ route, navigation }: Props) {
   const sheetChildren = useMemo(() => (
     <>
       {/* Icon tabs: solid fill only — no Liquid Glass edge halo / white rim. */}
-      <View style={styles.sheetPaneToggleWrap}>
+      <View
+        style={styles.sheetPaneToggleWrap}
+        ref={(n) => setTourTargetRef('stageTwoPlacement', n)}
+        collapsable={false}
+        testID="tour-stage-two-placement"
+      >
         <View style={styles.sheetPaneToggleGlass} collapsable={false}>
           <SheetPaneTabs
             accent={accent}
@@ -5578,14 +5585,13 @@ export default function MapScreen({ route, navigation }: Props) {
             value={sheetPane}
             onChange={selectSheetPane}
             onTabNode={(key, node) => {
+              if (key === 'members') return;
               const targetId =
-                key === 'members'
-                  ? 'paneMembers'
-                  : key === 'route'
-                    ? 'paneRoute'
-                    : key === 'tools'
-                      ? 'paneTools'
-                      : 'paneStore';
+                key === 'route'
+                  ? 'paneRoute'
+                  : key === 'tools'
+                    ? 'paneTools'
+                    : 'paneStore';
               setTourTargetRef(targetId, node);
             }}
           />
@@ -6331,6 +6337,8 @@ export default function MapScreen({ route, navigation }: Props) {
                                 )}
                               </Text>
                               <Pressable
+                                ref={active ? (n) => setTourTargetRef('arrivalProgress', n) : undefined}
+                                collapsable={false}
                                 style={styles.arrivalPeopleChip}
                                 disabled={!isLeader}
                                 onPress={(event) => {
@@ -6444,15 +6452,6 @@ export default function MapScreen({ route, navigation }: Props) {
                               >
                                 <Ionicons name="map" size={22} color="#fff" />
                               </Pressable>
-                              {/* Arrival progress chip is the people count control above; alias for tour. */}
-                              {active ? (
-                                <View
-                                  ref={(n) => setTourTargetRef('arrivalProgress', n)}
-                                  collapsable={false}
-                                  style={StyleSheet.absoluteFill}
-                                  pointerEvents="none"
-                                />
-                              ) : null}
                             </View>
                           </View>
                         ) : (
@@ -7911,7 +7910,11 @@ export default function MapScreen({ route, navigation }: Props) {
 
       <GroupFeatureTourOverlay
         visible={tourActive}
-        title={tourStep ? t(tourStep.titleKey as TranslationKey) : ''}
+        title={
+          tourStep && !tourStep.final
+            ? t(tourStep.titleKey as TranslationKey)
+            : ''
+        }
         body={
           tourStep
             ? tourStep.roleBody
@@ -7927,6 +7930,7 @@ export default function MapScreen({ route, navigation }: Props) {
           tourStep?.final ? t('tour.getStarted') : t('tour.next')
         }
         targetRect={tourTargetRect}
+        placementRect={tourPlacementRect}
         onNext={onTourNext}
         reduceMotion={tourReduceMotion}
         ctaDisabled={tourCompleting}
