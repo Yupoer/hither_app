@@ -310,12 +310,16 @@ describe('map UI placement contracts', () => {
   it('keeps gathering-card page dots lightweight during stage morphs', () => {
     expect(mapScreen).toContain('styles.dots');
     expect(mapScreen).toContain('styles.dotActive');
-    // Dots use CarouselDots (two-phase strip slide + pill re-center, no Reanimated layout).
+    // Dots use CarouselDots in normal flex flow — no absolute active overlay.
     expect(mapScreen).not.toContain('layout={LinearTransition.springify()');
     expect(mapScreen).toContain('function CarouselDots');
-    expect(mapScreen).toContain('DOT_PITCH_PX');
-    expect(mapScreen).toContain('dotsStrip');
-    expect(mapScreen).toContain('pillSlot');
+    expect(mapScreen).toContain('indicatorRowGeometry');
+    expect(mapScreen).not.toContain('pillSlot');
+    const carouselStart = mapScreen.indexOf('function CarouselDots');
+    const carouselEnd = mapScreen.indexOf('function GatheringCardPressable', carouselStart);
+    const carouselBlock = mapScreen.slice(carouselStart, carouselEnd);
+    expect(carouselBlock).not.toMatch(/position:\s*['"]absolute['"]/);
+    expect(carouselBlock).not.toContain('RnAnimated');
   });
 
   it('uses gathering-card press without scale bounce on expand or collapse', () => {

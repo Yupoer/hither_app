@@ -36,9 +36,10 @@ describe('Start same-day promote + carousel identity (#174)', () => {
     expect(journey).not.toMatch(/carouselRef:\s*_carouselRef/);
   });
 
-  it('pagination dots use fixed non-clipping width', () => {
-    expect(map).toContain('overflow: \'visible\'');
+  it('pagination dots occupy real flex width without an overlay pill', () => {
+    expect(map).toContain('indicatorRowGeometry');
     expect(map).toContain('flexShrink: 0');
-    expect(map).toMatch(/DOT_PITCH_PX \* Math\.max\(0, displayIndices\.length - 1\) \+ 22/);
+    expect(map).not.toContain('pillSlot');
+    expect(map).not.toMatch(/DOT_PITCH_PX \* Math\.max\(0, displayIndices\.length - 1\) \+ 22/);
   });
 });

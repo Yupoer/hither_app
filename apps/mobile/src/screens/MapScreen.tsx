@@ -9,7 +9,6 @@ import {
   AccessibilityInfo,
   ActivityIndicator,
   Alert,
-  Animated as RnAnimated,
   AppState,
   Keyboard,
   LayoutAnimation,
@@ -215,12 +214,7 @@ import {
   walkingEtaSeconds,
   type TravelMode,
 } from '../utils/geo';
-import {
-  DOT_PITCH_PX,
-  dotWindow,
-  dotWindowRelative,
-  dotWindowStart,
-} from '../utils/pagination';
+import { indicatorRowGeometry } from '../utils/pagination';
 import {
   alignMeetTimeToTripDay,
   addMinutesToPickerValue,
@@ -505,7 +499,7 @@ export default function MapScreen({ route, navigation }: Props) {
       }
     });
   }, []);
-  const reevaluateTourRef = useRef<() => void>(() => undefined);
+
   // Live Dynamic Type layout — rebuilds when system fontScale changes.
   // a11y-layout:commandRow — always ONE row; density (size/labels) tracks
   // font bucket + physical width, never multi-row stacking.
@@ -4387,9 +4381,6 @@ export default function MapScreen({ route, navigation }: Props) {
     } catch {
       // Pending / reset-intent paths keep replay working without session write.
     }
-    // Reevaluate tour gate only — blocked while onboarding replay is pending.
-    // Must not force navigation off Map / settings.
-    reevaluateTourRef.current();
     Alert.alert(t('settings.resetAllPrefs'), t('settings.resetPrefsDone'));
   }, [t, user?.id, user?.preferences, updateProfile]);
 
@@ -5002,7 +4993,7 @@ export default function MapScreen({ route, navigation }: Props) {
     targetRect: tourTargetRect,
     onNext: onTourNext,
     completing: tourCompleting,
-    reevaluate: reevaluateTour,
+    placementRect: tourPlacementRect,
   } = useGroupFeatureTour({
     groupId,
     destinationCount: destinations.length,
@@ -5015,6 +5006,7 @@ export default function MapScreen({ route, navigation }: Props) {
     pauseAutoCollapse,
     resumeAutoCollapse,
     tourDestinationId,
+    selectedDestinationId: selectedDestination?.id ?? null,
     setSheetMid,
     selectSheetPane,
     measureTarget: measureTourTarget,
@@ -5022,7 +5014,6 @@ export default function MapScreen({ route, navigation }: Props) {
     personalArriveVisible: tourControlAvailability.personalArriveVisible,
     onTourActiveChange,
   });
-  reevaluateTourRef.current = reevaluateTour;
 
   // Entitlement snapshot is bound to the groupId it was fetched for. A slow
   // response for team A must never apply after the user switched to team B.
@@ -5085,6 +5076,11 @@ export default function MapScreen({ route, navigation }: Props) {
   // ─── 成員：位置、狀態、個別操作、小隊（無「成員」標題） ────────────────
   const membersPaneBody = useMemo(() => (
     <>
+      <View
+        ref={(n) => setTourTargetRef('paneMembers', n)}
+        collapsable={false}
+        testID="tour-members-content"
+      >
       {/* My status + refresh on one row (stage 1+ body) */}
       <View style={styles.myStatusBar}>
         <Pressable
@@ -5106,6 +5102,22 @@ export default function MapScreen({ route, navigation }: Props) {
           t={t}
           onPress={refreshAllLocations}
         />
+      </View>
+      {subgroups.length === 0 && (
+        <View style={styles.list}>
+          {topFlockMemo.map((f, i) => renderFlockRow(f, i === topFlockMemo.length - 1, i))}
+        </View>
+      )}
+      <SubgroupSection
+        subgroups={subgroups}
+        flock={flock}
+        mySubgroupId={mySubgroupId}
+        sentInvites={sentInvites}
+        accent={accent}
+        setInviteSheetOpen={setInviteSheetOpen}
+        renderFlockRow={renderFlockRow}
+        styles={styles}
+      />
       </View>
       {pendingInvites.length > 0 && (
         <View style={styles.list}>
@@ -5150,21 +5162,6 @@ export default function MapScreen({ route, navigation }: Props) {
           })}
         </View>
       )}
-      {subgroups.length === 0 && (
-        <View style={styles.list}>
-          {topFlockMemo.map((f, i) => renderFlockRow(f, i === topFlockMemo.length - 1, i))}
-        </View>
-      )}
-      <SubgroupSection
-        subgroups={subgroups}
-        flock={flock}
-        mySubgroupId={mySubgroupId}
-        sentInvites={sentInvites}
-        accent={accent}
-        setInviteSheetOpen={setInviteSheetOpen}
-        renderFlockRow={renderFlockRow}
-        styles={styles}
-      />
 
       <View style={styles.listGroup}>
         <Pressable
@@ -5201,7 +5198,7 @@ export default function MapScreen({ route, navigation }: Props) {
     t, styles, refreshingLocations, refreshAllLocations, refreshCooldownUntil, accent, highAccuracy,
     setHighAccuracy, pendingInvites, fontBucket, handleAcceptInvite, handleDeclineInvite,
     subgroups, topFlockMemo, renderFlockRow, flock, mySubgroupId, sentInvites,
-    openMyStatusPicker, myStatusLabel,
+    openMyStatusPicker, myStatusLabel, setTourTargetRef,
   ]);
 
   // ─── 路線：集合點、排序、Google Maps 匯入、歷史 ───────────────────────
@@ -5576,7 +5573,12 @@ export default function MapScreen({ route, navigation }: Props) {
   const sheetChildren = useMemo(() => (
     <>
       {/* Icon tabs: solid fill only — no Liquid Glass edge halo / white rim. */}
-      <View style={styles.sheetPaneToggleWrap}>
+      <View
+        style={styles.sheetPaneToggleWrap}
+        ref={(n) => setTourTargetRef('stageTwoPlacement', n)}
+        collapsable={false}
+        testID="tour-stage-two-placement"
+      >
         <View style={styles.sheetPaneToggleGlass} collapsable={false}>
           <SheetPaneTabs
             accent={accent}
@@ -5584,14 +5586,13 @@ export default function MapScreen({ route, navigation }: Props) {
             value={sheetPane}
             onChange={selectSheetPane}
             onTabNode={(key, node) => {
+              if (key === 'members') return;
               const targetId =
-                key === 'members'
-                  ? 'paneMembers'
-                  : key === 'route'
-                    ? 'paneRoute'
-                    : key === 'tools'
-                      ? 'paneTools'
-                      : 'paneStore';
+                key === 'route'
+                  ? 'paneRoute'
+                  : key === 'tools'
+                    ? 'paneTools'
+                    : 'paneStore';
               setTourTargetRef(targetId, node);
             }}
           />
@@ -6337,6 +6338,8 @@ export default function MapScreen({ route, navigation }: Props) {
                                 )}
                               </Text>
                               <Pressable
+                                ref={active ? (n) => setTourTargetRef('arrivalProgress', n) : undefined}
+                                collapsable={false}
                                 style={styles.arrivalPeopleChip}
                                 disabled={!isLeader}
                                 onPress={(event) => {
@@ -6450,15 +6453,6 @@ export default function MapScreen({ route, navigation }: Props) {
                               >
                                 <Ionicons name="map" size={22} color="#fff" />
                               </Pressable>
-                              {/* Arrival progress chip is the people count control above; alias for tour. */}
-                              {active ? (
-                                <View
-                                  ref={(n) => setTourTargetRef('arrivalProgress', n)}
-                                  collapsable={false}
-                                  style={StyleSheet.absoluteFill}
-                                  pointerEvents="none"
-                                />
-                              ) : null}
                             </View>
                           </View>
                         ) : (
@@ -7917,7 +7911,11 @@ export default function MapScreen({ route, navigation }: Props) {
 
       <GroupFeatureTourOverlay
         visible={tourActive}
-        title={tourStep ? t(tourStep.titleKey as TranslationKey) : ''}
+        title={
+          tourStep && !tourStep.final
+            ? t(tourStep.titleKey as TranslationKey)
+            : ''
+        }
         body={
           tourStep
             ? tourStep.roleBody
@@ -7933,6 +7931,7 @@ export default function MapScreen({ route, navigation }: Props) {
           tourStep?.final ? t('tour.getStarted') : t('tour.next')
         }
         targetRect={tourTargetRect}
+        placementRect={tourPlacementRect}
         onNext={onTourNext}
         reduceMotion={tourReduceMotion}
         ctaDisabled={tourCompleting}
@@ -8077,11 +8076,8 @@ const MeetTimeChip = React.memo(function MeetTimeChip({
 });
 
 /**
- * Gathering-point pagination dots (max 5 visible).
- *
- * Mid-range slide (e.g. card 3 → 4): whole strip shifts left one pitch so the
- * active bar appears to move 3rd → 2nd slot, then the bar re-centers 2nd → 3rd.
- * Edge clamps skip the two-phase move and just retarget the bar.
+ * Gathering-point pagination (max 5 visible). Each item occupies its own
+ * active pill / inactive dot width in normal flow — no absolute overlay.
  */
 function CarouselDots({
   total,
@@ -8096,126 +8092,23 @@ function CarouselDots({
   destinationIds: readonly string[];
   styles: {
     dots: object;
-    dotsViewport: object;
-    dotsStrip: object;
     dot: object;
     dotActive: object;
   };
 }) {
-  const targetStart = dotWindowStart(total, active, maxVisible);
-  const targetRel = dotWindowRelative(total, active, maxVisible);
-  const targetIndices = useMemo(
-    () => dotWindow(total, active, maxVisible),
+  const row = useMemo(
+    () => indicatorRowGeometry(total, active, maxVisible),
     [total, active, maxVisible],
   );
 
-  const [displayIndices, setDisplayIndices] = useState(targetIndices);
-  // RN Animated (not reanimated) — MapScreen's `Animated` is reanimated.
-  const stripX = useRef(new RnAnimated.Value(0)).current;
-  const pillSlot = useRef(new RnAnimated.Value(targetRel)).current;
-  const prevRef = useRef({ start: targetStart, rel: targetRel, active });
-  const animGenRef = useRef(0);
-
-  useEffect(() => {
-    const prev = prevRef.current;
-    const deltaStart = targetStart - prev.start;
-    const gen = ++animGenRef.current;
-
-    if (deltaStart === 0) {
-      // Same window: bar slides within the strip only.
-      setDisplayIndices(targetIndices);
-      RnAnimated.timing(pillSlot, {
-        toValue: targetRel,
-        duration: 200,
-        useNativeDriver: true,
-      }).start();
-      prevRef.current = { start: targetStart, rel: targetRel, active };
-      return;
-    }
-
-    // Phase 1: strip + bar shift together by one pitch (left when start++).
-    const dir = deltaStart > 0 ? -1 : 1;
-    const pitch = DOT_PITCH_PX * Math.abs(deltaStart);
-    stripX.setValue(0);
-    // Keep previous indices during the slide so keys move with the strip.
-    RnAnimated.timing(stripX, {
-      toValue: dir * pitch,
-      duration: 180,
-      useNativeDriver: true,
-    }).start(({ finished }) => {
-      if (!finished || animGenRef.current !== gen) return;
-      // After left slide, bar that was at prev.rel sits one slot left/right.
-      const interimRel = prev.rel + dir;
-      stripX.setValue(0);
-      setDisplayIndices(targetIndices);
-      pillSlot.setValue(interimRel);
-      // Phase 2: re-center bar (2nd → 3rd when advancing mid-range).
-      RnAnimated.timing(pillSlot, {
-        toValue: targetRel,
-        duration: 160,
-        useNativeDriver: true,
-      }).start();
-      prevRef.current = { start: targetStart, rel: targetRel, active };
-    });
-  }, [targetStart, targetRel, targetIndices, active, stripX, pillSlot]);
-
-  // #174: fixed width for inactive pitch + active pill so last slot is not clipped.
-  // Active pill is ~18 wide; inactive pitch DOT_PITCH_PX (6+6).
-  const viewportWidth =
-    displayIndices.length <= 0
-      ? 0
-      : DOT_PITCH_PX * Math.max(0, displayIndices.length - 1) + 22;
-
   return (
-    <View
-      style={[
-        styles.dots,
-        styles.dotsViewport,
-        {
-          width: viewportWidth + 8,
-          maxWidth: undefined,
-          flexShrink: 0,
-          overflow: 'visible',
-        },
-      ]}
-    >
-      <RnAnimated.View
-        style={[
-          styles.dotsStrip,
-          { transform: [{ translateX: stripX }] },
-        ]}
-      >
-        {displayIndices.map((i2) => (
-          <View
-            key={`dot-${destinationIds[i2] ?? i2}`}
-            // Base dots stay inactive size; the sliding pill overlays the active slot.
-            style={styles.dot}
-          />
-        ))}
-        <RnAnimated.View
-          pointerEvents="none"
-          style={[
-            styles.dot,
-            styles.dotActive,
-            {
-              position: 'absolute',
-              left: 0,
-              top: 0,
-              transform: [
-                {
-                  translateX: pillSlot.interpolate({
-                    inputRange: [0, Math.max(1, displayIndices.length - 1)],
-                    outputRange: [
-                      0,
-                      DOT_PITCH_PX * Math.max(0, displayIndices.length - 1),
-                    ],
-                  }),
-                },
-              ],
-            },
-          ]}
+    <View style={[styles.dots, { flexShrink: 0 }]}>
+      {row.items.map((item) => (
+        <View
+          key={`dot-${destinationIds[item.index] ?? item.index}`}
+          style={[styles.dot, item.active ? styles.dotActive : null]}
         />
-      </RnAnimated.View>
+      ))}
     </View>
   );
 }
@@ -9275,13 +9168,6 @@ const makeStyles = (
     },
     meetClearText: { fontSize: 17, fontWeight: '600', color: glass.textSecondary, textAlign: 'center' },
     dots: { flexDirection: 'row', gap: 6, alignItems: 'center' },
-    dotsViewport: { overflow: 'hidden' },
-    dotsStrip: {
-      flexDirection: 'row',
-      gap: 6,
-      alignItems: 'center',
-      position: 'relative',
-    },
     dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.35)' },
     dotActive: { width: 18, backgroundColor: accent },
 

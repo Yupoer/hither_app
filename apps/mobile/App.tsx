@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, Platform, type AppStateStatus, Text, TextInput, View } from 'react-native';
 import {
   DarkTheme,
@@ -18,6 +18,10 @@ import {
   readOnboardingState,
   shouldPresentFullOnboarding,
 } from './src/onboarding/sync';
+import {
+  isOnboardingHomeBoundary,
+  shouldRecheckOnboardingOnRouteChange,
+} from './src/onboarding/gate';
 import AppErrorBoundary from './src/components/AppErrorBoundary';
 import CrookIcon from './src/components/CrookIcon';
 import { BouncingDots } from './src/components/AmicroButton';
@@ -200,39 +204,46 @@ function ThemedNavigation() {
     };
   }, [ready, diagnosticUploadEnabled, initializing, user]);
 
-  // First-launch + home-boundary onboarding gate (#171).
+  // First-launch + home-boundary onboarding gate (#171 / #181).
   // Full onboarding is independent of group feature tour. Reset only marks
-  // replay intent; presentation happens at create/join home (no membership),
-  // never forced while the user is still inside a team Map session.
+  // replay intent. Presentation happens at RoleSelect / create-join home,
+  // never while the user is still on a team Map session.
   const [needsOnboarding, setNeedsOnboarding] = useState<boolean | null>(null);
+  const onboardingReadGen = useRef(0);
+  const lastRouteNameRef = useRef<string | null>(null);
 
-  useEffect(() => {
-    let active = true;
-    const atHomeBoundary = !(user && membership);
-    // While fully in-team, never promote onboarding (stay on Map after reset).
-    if (user && membership) {
+  const reevaluateOnboarding = useCallback((mode: 'session' | 'consume') => {
+    const gen = ++onboardingReadGen.current;
+    const routeName = mode === 'consume' ? 'RoleSelect' : lastRouteNameRef.current;
+    const atHomeBoundary = isOnboardingHomeBoundary({
+      hasUser: Boolean(user),
+      hasMembership: Boolean(membership),
+      routeName,
+    });
+    if (!atHomeBoundary) {
       setNeedsOnboarding(false);
-      return () => {
-        active = false;
-      };
+      return;
     }
+    if (mode === 'consume') setNeedsOnboarding(null);
     void (async () => {
       const [state, replayIntent] = await Promise.all([
         readOnboardingState(),
         readOnboardingReplayIntent(),
       ]);
-      if (!active) return;
-      const present = shouldPresentFullOnboarding({
-        storageCompleted: Boolean(state?.completed),
-        replayIntent,
-        atHomeBoundary,
-      });
-      setNeedsOnboarding(present);
+      if (gen !== onboardingReadGen.current) return;
+      setNeedsOnboarding(
+        shouldPresentFullOnboarding({
+          storageCompleted: Boolean(state?.completed),
+          replayIntent,
+          atHomeBoundary: true,
+        }),
+      );
     })();
-    return () => {
-      active = false;
-    };
   }, [user, membership]);
+
+  useEffect(() => {
+    reevaluateOnboarding('session');
+  }, [reevaluateOnboarding]);
 
   const navigatorReady =
     !initializing && needsOnboarding === false && fontsLoaded;
@@ -311,11 +322,21 @@ function ThemedNavigation() {
       theme={navTheme}
       onReady={() => {
         const deepest = getDeepestRoute(navigationRef.getRootState());
-        if (deepest) setLastRoute(deepest.name, deepest.key);
+        if (deepest) {
+          setLastRoute(deepest.name, deepest.key);
+          lastRouteNameRef.current = deepest.name;
+        }
       }}
       onStateChange={(state) => {
         const deepest = getDeepestRoute(state);
         if (deepest) setLastRoute(deepest.name, deepest.key);
+        const nextName = deepest?.name ?? null;
+        if (shouldRecheckOnboardingOnRouteChange(lastRouteNameRef.current, nextName)) {
+          lastRouteNameRef.current = nextName;
+          reevaluateOnboarding('consume');
+          return;
+        }
+        lastRouteNameRef.current = nextName;
       }}
     >
       <RootNavigator />

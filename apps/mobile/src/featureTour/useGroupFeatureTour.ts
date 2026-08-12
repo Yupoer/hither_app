@@ -49,6 +49,12 @@ export interface UseGroupFeatureTourInput {
    * Must match the card that owns measured refs.
    */
   tourDestinationId: string | null;
+  /**
+   * Currently selected carousel destination id.
+   * Measurement waits until this matches tourDestinationId so gatherCard ref
+   * is the tour card (preferred shared target may differ from initial selection).
+   */
+  selectedDestinationId?: string | null;
   setSheetMid: () => void;
   selectSheetPane: (key: 'members' | 'route' | 'tools' | 'store') => void;
   measureTarget: MeasureTargetFn;
@@ -65,6 +71,7 @@ export interface UseGroupFeatureTourResult {
   step: TourStepDef | null;
   stepIndex: number;
   targetRect: LayoutRectangle | null;
+  placementRect: LayoutRectangle | null;
   onNext: () => void;
   /** True while waiting for local durable complete. */
   completing: boolean;
@@ -92,6 +99,7 @@ export function useGroupFeatureTour(
 
   const [ctrl, setCtrl] = useState<TourControllerState>(() => createTourControllerState(false));
   const [targetRect, setTargetRect] = useState<LayoutRectangle | null>(null);
+  const [placementRect, setPlacementRect] = useState<LayoutRectangle | null>(null);
   const [gateReady, setGateReady] = useState(false);
   const [tourCompleted, setTourCompleted] = useState(true); // optimistic until load
   const [completing, setCompleting] = useState(false);
@@ -272,30 +280,66 @@ export function useGroupFeatureTour(
 
   // Measure target with bounded retry + stable-parent fallback.
   // Clear happens only after async work starts (no sync setState in effect body).
+  // Remeasure when carousel selection catches up to tourDestinationId so the
+  // first collapsedCard step does not stick to the pre-lock gatherCard rect.
   useEffect(() => {
     if (!ctrl.active || !step) return;
+    const tourDest = input.tourDestinationId;
+    const selectedDest = input.selectedDestinationId;
+    // When caller reports selection, wait until it matches the tour card.
+    if (
+      tourDest
+      && selectedDest !== undefined
+      && selectedDest !== null
+      && selectedDest !== tourDest
+    ) {
+      return;
+    }
     let cancelled = false;
     const run = async () => {
       if (!step.target) {
-        if (!cancelled) setTargetRect(null);
+        if (!cancelled) {
+          setTargetRect(null);
+          setPlacementRect(null);
+        }
         return;
       }
       const rect = await measureTargetWithRetry({
         measure: (id) => measureRef.current(id),
         target: step.target,
-        maxAttempts: 5,
+        maxAttempts: step.expandCard ? 8 : 5,
         retryDelayMs: 80,
+        requireStable: Boolean(step.expandCard),
       });
-      if (!cancelled) setTargetRect(rect);
+      let place: LayoutRectangle | null = null;
+      if (step.openStageTwo) {
+        place = await measureTargetWithRetry({
+          measure: (id) => measureRef.current(id),
+          target: 'stageTwoPlacement',
+          maxAttempts: 5,
+          retryDelayMs: 80,
+        });
+      }
+      if (!cancelled) {
+        setTargetRect(rect);
+        setPlacementRect(place);
+      }
     };
     void run();
     return () => {
       cancelled = true;
     };
-  }, [ctrl.active, ctrl.stepIndex, step]);
+  }, [
+    ctrl.active,
+    ctrl.stepIndex,
+    step,
+    input.tourDestinationId,
+    input.selectedDestinationId,
+  ]);
 
   // Derived: hide hole when tour inactive (avoids sync setState on deactivate).
   const visibleTargetRect = ctrl.active ? targetRect : null;
+  const visiblePlacementRect = ctrl.active ? placementRect : null;
 
   const onNext = useCallback(() => {
     if (!ctrl.active || completingRef.current) return;
@@ -330,6 +374,7 @@ export function useGroupFeatureTour(
     step,
     stepIndex: ctrl.stepIndex,
     targetRect: visibleTargetRect,
+    placementRect: visiblePlacementRect,
     onNext,
     completing,
     reevaluate,

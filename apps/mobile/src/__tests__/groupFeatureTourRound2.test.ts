@@ -492,6 +492,79 @@ describe('R2: overlay observable render', () => {
   });
 });
 
+describe('REVIEW_FIX #179: remeasure after carousel locks to preferred dest', () => {
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    await AsyncStorage.clear();
+    updateProfile.mockResolvedValue(undefined);
+  });
+
+  /**
+   * Repro: preferred tour destination ≠ initial selected card.
+   * First collapsedCard measure must not stick to the pre-lock gatherCard rect.
+   */
+  it('final gatherCard rect comes from preferred destination after selection aligns', async () => {
+    const rectInitial = { x: 0, y: 100, width: 300, height: 80 };
+    const rectPreferred = { x: 80, y: 100, width: 300, height: 80 };
+
+    function AlignProbe() {
+      const [selectedId, setSelectedId] = React.useState('dest-a');
+      const measureTarget = React.useCallback(async () => {
+        // Simulate MapScreen: only the active carousel card owns gatherCard ref.
+        return selectedId === 'dest-b' ? rectPreferred : rectInitial;
+      }, [selectedId]);
+      const onTourActiveChange = React.useCallback(
+        (active: boolean, destinationId: string | null) => {
+          if (active && destinationId) setSelectedId(destinationId);
+        },
+        [],
+      );
+      const snap = useGroupFeatureTour({
+        groupId: 'g1',
+        destinationCount: 2,
+        passiveMode: false,
+        denseChrome: true,
+        isLeader: true,
+        accountId: 'user-a',
+        accountPreferences: { groupFeatureTourCompleted: false },
+        expandCard: jest.fn(),
+        pauseAutoCollapse: jest.fn(),
+        resumeAutoCollapse: jest.fn(),
+        tourDestinationId: 'dest-b',
+        selectedDestinationId: selectedId,
+        setSheetMid: jest.fn(),
+        selectSheetPane: jest.fn(),
+        measureTarget,
+        navCommandVisible: true,
+        personalArriveVisible: true,
+        onTourActiveChange,
+      });
+      return React.createElement('probe', {
+        tourActive: snap.tourActive,
+        targetRect: snap.targetRect,
+        stepId: snap.step?.id ?? null,
+      });
+    }
+
+    let tree: ReturnType<typeof create>;
+    await act(async () => {
+      tree = create(React.createElement(AlignProbe));
+    });
+    for (let i = 0; i < 20; i++) {
+      await flush();
+      const probe = tree!.root.findAll(
+        (n) => n.props && n.props.tourActive === true,
+      )[0];
+      if (probe?.props.targetRect) break;
+    }
+    const probe = tree!.root.findAll((n) => n.props && 'targetRect' in n.props)[0];
+    expect(probe?.props.tourActive).toBe(true);
+    expect(probe?.props.stepId).toBe('collapsedCard');
+    expect(probe?.props.targetRect).toEqual(rectPreferred);
+    expect(probe?.props.targetRect).not.toEqual(rectInitial);
+  });
+});
+
 describe('R2: MapScreen wires single tour destination + accountId', () => {
   it('source contracts', () => {
     const { readFileSync } = require('node:fs') as typeof import('node:fs');
@@ -501,6 +574,7 @@ describe('R2: MapScreen wires single tour destination + accountId', () => {
     expect(map).toContain('tourDestinationId');
     expect(map).toContain('accountId: user?.id');
     expect(map).toContain('onTourActiveChange');
+    expect(map).toContain('selectedDestinationId');
     expect(map).not.toContain('firstDestinationId:');
   });
 

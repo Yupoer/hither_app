@@ -14,6 +14,7 @@ export type TourTargetId =
   | 'paneRoute'
   | 'paneTools'
   | 'paneStore'
+  | 'stageTwoPlacement'
   | 'avatar'
   | 'settings'
   | 'addPlaceFavoriteStar'

@@ -30,5 +30,44 @@ export function dotWindowRelative(
   return active - dotWindowStart(total, active, maxVisible);
 }
 
-/** Pitch (px) of one inactive dot + gap — used for strip slide animation. */
-export const DOT_PITCH_PX = 12; // 6px dot + 6px gap (matches MapScreen styles)
+export const DOT_INACTIVE_PX = 6;
+export const DOT_ACTIVE_PX = 18;
+export const DOT_GAP_PX = 6;
+
+/** Inactive width + gap. Kept for callers that still reason in slot pitch. */
+export const DOT_PITCH_PX = DOT_INACTIVE_PX + DOT_GAP_PX;
+
+export interface IndicatorItemGeometry {
+  index: number;
+  active: boolean;
+  width: number;
+}
+
+export interface IndicatorRowGeometry {
+  items: IndicatorItemGeometry[];
+  totalWidth: number;
+}
+
+/**
+ * Visible indicator items in normal flow. Each item owns its active/inactive
+ * width; the row width is the sum of those widths plus gaps. No overlay slot.
+ */
+export function indicatorRowGeometry(
+  total: number,
+  active: number,
+  maxVisible = 5,
+): IndicatorRowGeometry {
+  const indexes = dotWindow(total, active, maxVisible);
+  const items = indexes.map((index) => {
+    const isActive = index === active;
+    return {
+      index,
+      active: isActive,
+      width: isActive ? DOT_ACTIVE_PX : DOT_INACTIVE_PX,
+    };
+  });
+  const totalWidth =
+    items.reduce((sum, item) => sum + item.width, 0)
+    + DOT_GAP_PX * Math.max(0, items.length - 1);
+  return { items, totalWidth };
+}

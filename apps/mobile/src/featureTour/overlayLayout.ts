@@ -10,6 +10,23 @@ export interface OverlayHole {
   h: number;
 }
 
+export const HOLE_PAD = 8;
+export const HOLE_RADIUS = 14;
+
+export function paddedHole(rect: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}): OverlayHole {
+  return {
+    x: Math.max(0, rect.x - HOLE_PAD),
+    y: Math.max(0, rect.y - HOLE_PAD),
+    w: rect.width + HOLE_PAD * 2,
+    h: rect.height + HOLE_PAD * 2,
+  };
+}
+
 export interface PlaceTourCardInput {
   hole: OverlayHole | null;
   windowWidth: number;
