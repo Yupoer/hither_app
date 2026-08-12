@@ -51,8 +51,53 @@ jobs:
       - name: Test (jest)
         run: npm test --silent
 
+      # Durable PR marker (not github.base_ref): <!-- hither-test-meta parent: N|pure-chore -->
+      - name: Resolve META_PARENT from PR metadata
+        id: test_meta
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = /<!--\s*hither-test-meta\s+parent:\s*([A-Za-z0-9_-]+)\s*-->/i;
+            const ref = context.ref || '';
+            if (ref === 'refs/heads/master' || ref === 'refs/heads/main') {
+              core.setOutput('parent', '');
+              core.info('default-branch push: META_PARENT unset (validate whole map)');
+              return;
+            }
+            let body = '';
+            if (context.eventName === 'pull_request') {
+              body = context.payload.pull_request?.body || '';
+            } else {
+              const branch = ref.replace(/^refs\/heads\//, '');
+              const prs = await github.rest.pulls.list({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                head: `${context.repo.owner}:${branch}`,
+                state: 'open',
+                per_page: 5,
+              });
+              if (prs.data.length === 0) {
+                core.setFailed(
+                  `No open PR for branch ${branch}. Open a PR and add <!-- hither-test-meta parent: <issue>|pure-chore --> to the body.`,
+                );
+                return;
+              }
+              body = prs.data[0].body || '';
+            }
+            const m = body.match(marker);
+            if (!m) {
+              core.setFailed(
+                'Missing durable PR meta marker in PR body: <!-- hither-test-meta parent: <issue-number>|pure-chore -->',
+              );
+              return;
+            }
+            core.setOutput('parent', m[1]);
+            core.info(`Resolved META_PARENT=${m[1]}`);
+
       - name: Test meta (L1 map + L2 anti-fake)
         run: npm run test:meta
+        env:
+          META_PARENT: ${{ steps.test_meta.outputs.parent }}
 
       - name: Coverage changed functions ≥85%
         run: npm run test:coverage:changed

@@ -1,5 +1,5 @@
 {
   "version": 1,
-  "description": "L1 meta gate: each child acceptance maps to a real test. Luna FULL_IMPLEMENT must append entries for the parent being delivered. Empty entries is valid for pure chore PRs with no ticket acceptances.",
+  "description": "L1 meta gate: each child acceptance maps to a real test. FULL_IMPLEMENT must append entries for the parent being delivered. Empty entries is valid only when META_PARENT=pure-chore (PR body: <!-- hither-test-meta parent: pure-chore -->). Required parent ids fail L1 if zero matching entries.",
   "entries": []
 }

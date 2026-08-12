@@ -6,7 +6,13 @@
  * Env:
  *   META_SCOPE=changed|all  (default: all for L2; L1 always validates entire map)
  *   COVERAGE_BASE           used when META_SCOPE=changed
- *   META_PARENT             if set, only L1 entries with this parent number are required non-empty
+ *   META_PARENT             parent issue number → require ≥1 matching map entry and validate them;
+ *                           "pure-chore" → empty map allowed (standalone chore with no ticket acceptances);
+ *                           unset → validate all entries (empty map OK for unscoped local runs)
+ *
+ * PR metadata (CI must set META_PARENT from this durable marker in the PR body):
+ *   <!-- hither-test-meta parent: 123 -->
+ *   <!-- hither-test-meta parent: pure-chore -->
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -149,6 +155,20 @@ function checkL2(files) {
   return findings;
 }
 
+/**
+ * @returns {{ kind: 'unset' } | { kind: 'pure-chore' } | { kind: 'parent', n: number } | { kind: 'invalid', raw: string }}
+ */
+function parseMetaParent(raw) {
+  if (raw == null) return { kind: 'unset' };
+  const s = String(raw).trim();
+  if (s === '') return { kind: 'unset' };
+  if (s.toLowerCase() === 'pure-chore') return { kind: 'pure-chore' };
+  if (!/^\d+$/.test(s)) return { kind: 'invalid', raw: s };
+  const n = Number(s);
+  if (!Number.isInteger(n) || n <= 0) return { kind: 'invalid', raw: s };
+  return { kind: 'parent', n };
+}
+
 function checkL1() {
   const findings = [];
   if (!fs.existsSync(mapPath)) {
@@ -187,13 +207,36 @@ function checkL1() {
     return findings;
   }
 
-  const parentFilter = process.env.META_PARENT
-    ? Number(process.env.META_PARENT)
-    : null;
+  const parentMeta = parseMetaParent(process.env.META_PARENT);
+  if (parentMeta.kind === 'invalid') {
+    findings.push({
+      level: 'L1',
+      file: 'src/__tests__/acceptance-map.json',
+      line: 0,
+      id: 'meta-parent-invalid',
+      msg: `META_PARENT must be a positive integer parent issue id or "pure-chore" (got ${JSON.stringify(parentMeta.raw)})`,
+    });
+    return findings;
+  }
 
-  for (const [idx, ent] of map.entries.entries()) {
-    if (parentFilter != null && Number(ent.parent) !== parentFilter) continue;
+  const indexed = map.entries.map((ent, idx) => ({ ent, idx }));
+  let scoped = indexed;
+  if (parentMeta.kind === 'parent') {
+    scoped = indexed.filter(({ ent }) => Number(ent.parent) === parentMeta.n);
+    if (scoped.length === 0) {
+      findings.push({
+        level: 'L1',
+        file: 'src/__tests__/acceptance-map.json',
+        line: 0,
+        id: 'parent-entries-missing',
+        msg: `META_PARENT=${parentMeta.n} requires ≥1 acceptance-map entry with parent=${parentMeta.n}; found 0 (use <!-- hither-test-meta parent: pure-chore --> for empty-map chores)`,
+      });
+      return findings;
+    }
+  }
+  // pure-chore | unset: empty scoped list is valid; still validate any present entries
 
+  for (const { ent, idx } of scoped) {
     const req = ['parent', 'child', 'acceptance', 'testFile', 'testNamePattern'];
     for (const k of req) {
       if (ent[k] === undefined || ent[k] === null || ent[k] === '') {
