@@ -2,11 +2,13 @@ name: CI
 
 # Hither CI — gates required before store/TestFlight release:
 #   1. Logic regressions                     -> jest (incl. nativeModuleVersions guard)
-#   2. TypeScript regressions                -> tsc --noEmit
-#   3. iOS runtime / OTA alignment           -> verify:runtime
-#   4. Expo dependency version drift         -> expo install --check
-#   5. Expo doctor                           -> expo-doctor (blocking)
-#   6. Kick RPC authorization matrix         -> supabase test db (pgTAP)
+#   2. Test meta (acceptance map L1 + anti-fake L2)
+#   3. Changed-function coverage ≥85%        -> test:coverage:changed
+#   4. TypeScript regressions                -> tsc --noEmit
+#   5. iOS runtime / OTA alignment           -> verify:runtime
+#   6. Expo dependency version drift         -> expo install --check
+#   7. Expo doctor                           -> expo-doctor (blocking)
+#   8. Kick RPC authorization matrix         -> supabase test db (pgTAP)
 #
 # Store/TestFlight release must pass runtime alignment so incompatible native
 # binaries cannot load an OTA built for a different engine/RN/Hermes set.
@@ -34,6 +36,8 @@ jobs:
         working-directory: apps/mobile
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -46,6 +50,15 @@ jobs:
 
       - name: Test (jest)
         run: npm test --silent
+
+      - name: Test meta (L1 map + L2 anti-fake)
+        run: npm run test:meta
+
+      - name: Coverage changed functions ≥85%
+        run: npm run test:coverage:changed
+        env:
+          COVERAGE_BASE: ${{ github.base_ref && format('origin/{0}', github.base_ref) || 'origin/master' }}
+          COVERAGE_THRESHOLD: '85'
 
       - name: Lint (eslint — full tree; featureTour at error severity)
         run: npm run lint
@@ -97,7 +110,7 @@ jobs:
               ``,
               `@claude The CI pipeline (\`.github/workflows/ci.yml\`) is red. Open the run above,`,
               `read the failing step's logs, find the root cause, and open a PR that fixes it.`,
-              `Gates are: jest, tsc --noEmit, verify:runtime, expo install --check, expo-doctor. Keep the fix minimal.`,
+              `Gates are: jest, test:meta, test:coverage:changed, lint, tsc --noEmit, verify:runtime, expo install --check, expo-doctor, supabase test db (pgTAP). Keep the fix minimal.`,
             ].join("\n");
             // Dedupe: skip if an open ci-failure issue already exists for this sha.
             const existing = await github.rest.issues.listForRepo({

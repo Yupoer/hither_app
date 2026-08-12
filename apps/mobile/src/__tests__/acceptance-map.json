@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "description": "L1 meta gate: each child acceptance maps to a real test. Luna FULL_IMPLEMENT must append entries for the parent being delivered. Empty entries is valid for pure chore PRs with no ticket acceptances.",
+  "entries": []
+}
