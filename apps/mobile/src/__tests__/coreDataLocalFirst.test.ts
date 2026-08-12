@@ -871,7 +871,9 @@ describe('OTA-04 contract surfaces', () => {
     expect(journey).not.toMatch(/await completeGatheringStop\(/);
     expect(map).toContain('completeGatheringStop(groupId, destination.id)');
     expect(map).toContain('applyOptimisticGathering');
-    expect(map).toContain('respondToAnnouncement');
+    // #175: navigation response banner UI removed from Map root (session API may remain).
+    expect(map).not.toContain('navResponse.prompt');
+    expect(map).not.toContain('respondToAnnouncement(kind)');
     expect(map).not.toContain('hasCoreConflict');
     expect(map).not.toContain('coreData.pendingSync');
     expect(journey).toContain('enqueueLeaderGatheringSwitch');

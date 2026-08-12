@@ -66,7 +66,7 @@ export const MARQUEE_SPEED_MAX = 80;
 export const DEFAULT_MARQUEE_SPEED = 40;
 
 /** Local geofence radius for "arrived" (metres). Four stepped detents. */
-export const ARRIVAL_RADIUS_OPTIONS = [30, 50, 100, 300] as const;
+export const ARRIVAL_RADIUS_OPTIONS = [30, 50, 100, 300, 500] as const;
 export const ARRIVAL_RADIUS_MIN_M = ARRIVAL_RADIUS_OPTIONS[0];
 export const ARRIVAL_RADIUS_MAX_M = ARRIVAL_RADIUS_OPTIONS[ARRIVAL_RADIUS_OPTIONS.length - 1];
 export const DEFAULT_ARRIVAL_RADIUS_M = 50;
