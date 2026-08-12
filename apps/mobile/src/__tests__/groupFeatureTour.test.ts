@@ -11,6 +11,7 @@ import {
   createTourControllerState,
   currentStep,
   isFinalStep,
+  retreatTour,
   startTour,
   stopTour,
   stepOrder,
@@ -90,6 +91,17 @@ describe('group feature tour step order', () => {
     expect(currentStep(state)?.id).toBe('collapsedCard');
     state = stopTour();
     expect(createTourControllerState(false).active).toBe(false);
+  });
+
+  it('retreatTour stays on step 0 and never deactivates', () => {
+    const atStart = startTour();
+    expect(retreatTour(atStart)).toEqual({ active: true, stepIndex: 0 });
+    const mid = { active: true, stepIndex: 4 };
+    expect(retreatTour(mid)).toEqual({ active: true, stepIndex: 3 });
+    expect(retreatTour({ active: false, stepIndex: 2 })).toEqual({
+      active: false,
+      stepIndex: 2,
+    });
   });
 });
 

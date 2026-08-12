@@ -2,6 +2,7 @@
  * Public seam: npm run test:meta / META_PARENT env contract (#178).
  * Required parent bundles must fail L1 when the acceptance map has zero matching entries.
  */
+import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 
@@ -29,5 +30,14 @@ describe('test:meta META_PARENT contract', () => {
     const result = runMeta({ META_PARENT: 'pure-chore' });
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('[test:meta] PASS');
+  });
+});
+
+describe('test:coverage:changed argv contract', () => {
+  it('does not pass coverageThreshold JSON on the jest argv', () => {
+    const src = readFileSync(join(appRoot, 'scripts/check-changed-coverage.mjs'), 'utf8');
+    expect(src).not.toMatch(/`--coverageThreshold=/);
+    expect(src).toContain('coverage-summary.json');
+    expect(src).toContain('functions');
   });
 });

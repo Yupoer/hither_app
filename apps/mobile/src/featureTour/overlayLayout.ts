@@ -11,7 +11,26 @@ export interface OverlayHole {
 }
 
 export const HOLE_PAD = 8;
-export const HOLE_RADIUS = 14;
+/** Card-kind corner cap. Compact chips use a circular radius instead. */
+export const HOLE_RADIUS = 16;
+
+export type OverlayHoleKind = 'compact' | 'card';
+
+const COMPACT_HOLE_TARGETS: ReadonlySet<string> = new Set([
+  'externalMaps',
+  'avatar',
+  'settings',
+  'arrivalProgress',
+  'navCommand',
+  'personalArrive',
+  'transport',
+  'meetTime',
+]);
+
+export function holeKindForTarget(target: string | null | undefined): OverlayHoleKind {
+  if (target && COMPACT_HOLE_TARGETS.has(target)) return 'compact';
+  return 'card';
+}
 
 export function paddedHole(rect: {
   x: number;
@@ -25,6 +44,33 @@ export function paddedHole(rect: {
     w: rect.width + HOLE_PAD * 2,
     h: rect.height + HOLE_PAD * 2,
   };
+}
+
+/** Shared radius for the dim cutout corners and the white ring. */
+export function holeRadius(
+  padded: { w: number; h: number },
+  kind: OverlayHoleKind,
+): number {
+  const halfMin = Math.min(padded.w, padded.h) / 2;
+  if (kind === 'compact') return halfMin;
+  return Math.min(HOLE_RADIUS, halfMin);
+}
+
+/** Intersect a measured rect with the window. Zero/negative size → null. */
+export function clipRectToWindow(
+  rect: { x: number; y: number; width: number; height: number } | null | undefined,
+  winW: number,
+  winH: number,
+): { x: number; y: number; width: number; height: number } | null {
+  if (!rect) return null;
+  const x = Math.max(0, rect.x);
+  const y = Math.max(0, rect.y);
+  const right = Math.min(winW, rect.x + rect.width);
+  const bottom = Math.min(winH, rect.y + rect.height);
+  const width = right - x;
+  const height = bottom - y;
+  if (width <= 0 || height <= 0) return null;
+  return { x, y, width, height };
 }
 
 export interface PlaceTourCardInput {
@@ -74,6 +120,21 @@ export function placeTourCard(input: PlaceTourCardInput): PlaceTourCardResult {
   const placeAbove = input.hole.y + input.hole.h > input.windowHeight * 0.55;
   const spaceAbove = input.hole.y - gap - topSafe;
   const spaceBelow = bottomSafe - (input.hole.y + input.hole.h + gap);
+
+  // Huge hole: no usable band above or below — ignore the hole and pin
+  // the card into the safe viewport (prefer bottom; top if bottom is worse).
+  const PIN_MIN = 140;
+  if (spaceAbove < PIN_MIN && spaceBelow < PIN_MIN) {
+    const maxH = Math.max(PIN_MIN, usable);
+    const usedH = Math.min(cardH, maxH);
+    const pinToTop = spaceBelow < spaceAbove;
+    const top = pinToTop ? topSafe : Math.max(topSafe, bottomSafe - usedH);
+    return {
+      cardTop: Math.min(top, Math.max(topSafe, bottomSafe - Math.min(usedH, usable))),
+      maxCardHeight: maxH,
+      placeAbove: pinToTop,
+    };
+  }
 
   if (placeAbove) {
     const maxH = Math.max(100, spaceAbove);

@@ -1024,6 +1024,7 @@ export const zh = {
 
   // Group feature tour
   'tour.next': '下一個',
+  'tour.prev': '上一個',
   'tour.getStarted': '開始使用',
   'tour.collapsedCard.title': '集合點卡片',
   'tour.collapsedCard.body': '這裡顯示目前集合點。輕點可展開更多操作。',

@@ -28,6 +28,7 @@ export {
   createTourControllerState,
   currentStep,
   advanceTour,
+  retreatTour,
   isFinalStep,
   startTour,
   stopTour,
@@ -35,8 +36,13 @@ export {
   stepCount,
   type TourControllerState,
 } from './tourController';
-export { measureTargetWithRetry, STABLE_PARENT_BY_TARGET } from './measureTarget';
-export { placeTourCard } from './overlayLayout';
+export { measureTargetWithRetry, measureTourStepRects, STABLE_PARENT_BY_TARGET, STAGE_TWO_SETTLE_MS } from './measureTarget';
+export {
+  placeTourCard,
+  holeRadius,
+  holeKindForTarget,
+  clipRectToWindow,
+} from './overlayLayout';
 export { pickTourDestinationId, tourDestinationIndex } from './tourDestination';
 export { GroupFeatureTourOverlay } from './GroupFeatureTourOverlay';
 export { useGroupFeatureTour } from './useGroupFeatureTour';

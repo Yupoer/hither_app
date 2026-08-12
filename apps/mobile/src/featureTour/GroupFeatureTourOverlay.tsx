@@ -16,7 +16,13 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from '../i18n';
-import { HOLE_RADIUS, paddedHole, placeTourCard, type OverlayHole } from './overlayLayout';
+import {
+  holeRadius,
+  paddedHole,
+  placeTourCard,
+  type OverlayHole,
+  type OverlayHoleKind,
+} from './overlayLayout';
 
 export interface GroupFeatureTourOverlayProps {
   visible: boolean;
@@ -26,7 +32,11 @@ export interface GroupFeatureTourOverlayProps {
   targetRect: LayoutRectangle | null;
   /** Optional separate rect for tooltip placement (Stage Two shared tab strip). */
   placementRect?: LayoutRectangle | null;
+  /** Compact chips get a circular hole; gather/pane cards stay rounded-rect. */
+  targetKind?: OverlayHoleKind;
   onNext: () => void;
+  onPrev?: () => void;
+  canGoPrev?: boolean;
   /** When true, skip fade-in and land at full opacity immediately. */
   reduceMotion?: boolean;
   /** Disable CTA while durable complete is in flight. */
@@ -38,11 +48,12 @@ const DIM = 'rgba(0,0,0,0.62)';
 function HoleCorner({
   hole,
   corner,
+  r,
 }: {
   hole: OverlayHole;
   corner: 'tl' | 'tr' | 'bl' | 'br';
+  r: number;
 }) {
-  const r = HOLE_RADIUS;
   const pos =
     corner === 'tl'
       ? { top: hole.y, left: hole.x }
@@ -62,9 +73,16 @@ function HoleCorner({
   return (
     <View
       pointerEvents="none"
-      style={[styles.holeCornerClip, pos]}
+      testID="tour-hole-corner"
+      style={[styles.holeCornerClip, pos, { width: r, height: r }]}
     >
-      <View style={[styles.holeCornerFill, circlePos]} />
+      <View
+        style={[
+          styles.holeCornerFill,
+          circlePos,
+          { width: r * 2, height: r * 2, borderRadius: r, borderWidth: r },
+        ]}
+      />
     </View>
   );
 }
@@ -80,7 +98,10 @@ export function GroupFeatureTourOverlay({
   ctaLabel,
   targetRect,
   placementRect = null,
+  targetKind = 'card',
   onNext,
+  onPrev,
+  canGoPrev = false,
   reduceMotion = false,
   ctaDisabled = false,
 }: GroupFeatureTourOverlayProps) {
@@ -137,6 +158,7 @@ export function GroupFeatureTourOverlay({
     () => (targetRect ? paddedHole(targetRect) : null),
     [targetRect],
   );
+  const r = hole ? holeRadius(hole, targetKind) : 0;
   const placementHole = useMemo(() => {
     if (placementRect) return paddedHole(placementRect);
     return hole;
@@ -170,61 +192,68 @@ export function GroupFeatureTourOverlay({
   return (
     <View
       style={styles.root}
-      pointerEvents="box-none"
+      pointerEvents="auto"
       accessibilityViewIsModal
       importantForAccessibility="yes"
     >
-      {/* Full-screen intercept */}
-      <View style={StyleSheet.absoluteFill} pointerEvents="auto">
-        {hole ? (
-          <>
-            <View style={[styles.dim, { top: 0, left: 0, right: 0, height: hole.y }]} />
-            <View
-              style={[
-                styles.dim,
-                { top: hole.y + hole.h, left: 0, right: 0, bottom: 0 },
-              ]}
-            />
-            <View
-              style={[
-                styles.dim,
-                { top: hole.y, left: 0, width: hole.x, height: hole.h },
-              ]}
-            />
-            <View
-              style={[
-                styles.dim,
-                {
-                  top: hole.y,
-                  left: hole.x + hole.w,
-                  right: 0,
-                  height: hole.h,
-                },
-              ]}
-            />
-            <HoleCorner hole={hole} corner="tl" />
-            <HoleCorner hole={hole} corner="tr" />
-            <HoleCorner hole={hole} corner="bl" />
-            <HoleCorner hole={hole} corner="br" />
-            <View
-              pointerEvents="none"
-              testID="tour-hole-ring"
-              style={[
-                styles.holeRing,
-                {
-                  top: hole.y,
-                  left: hole.x,
-                  width: hole.w,
-                  height: hole.h,
-                  borderRadius: HOLE_RADIUS,
-                },
-              ]}
-            />
-          </>
-        ) : (
-          <View style={[StyleSheet.absoluteFill, styles.dim]} />
-        )}
-      </View>
+      {/* Full-screen sink: swallows dim/hole touches. Does not call onNext. */}
+      <View
+        testID="tour-pointer-sink"
+        style={StyleSheet.absoluteFill}
+        pointerEvents="auto"
+        onStartShouldSetResponder={() => true}
+      />
+      {hole ? (
+        <>
+          <View pointerEvents="none" style={[styles.dim, { top: 0, left: 0, right: 0, height: hole.y }]} />
+          <View
+            pointerEvents="none"
+            style={[
+              styles.dim,
+              { top: hole.y + hole.h, left: 0, right: 0, bottom: 0 },
+            ]}
+          />
+          <View
+            pointerEvents="none"
+            style={[
+              styles.dim,
+              { top: hole.y, left: 0, width: hole.x, height: hole.h },
+            ]}
+          />
+          <View
+            pointerEvents="none"
+            style={[
+              styles.dim,
+              {
+                top: hole.y,
+                left: hole.x + hole.w,
+                right: 0,
+                height: hole.h,
+              },
+            ]}
+          />
+          <HoleCorner hole={hole} corner="tl" r={r} />
+          <HoleCorner hole={hole} corner="tr" r={r} />
+          <HoleCorner hole={hole} corner="bl" r={r} />
+          <HoleCorner hole={hole} corner="br" r={r} />
+          <View
+            pointerEvents="none"
+            testID="tour-hole-ring"
+            style={[
+              styles.holeRing,
+              {
+                top: hole.y,
+                left: hole.x,
+                width: hole.w,
+                height: hole.h,
+                borderRadius: r,
+              },
+            ]}
+          />
+        </>
+      ) : (
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.dim]} />
+      )}
 
       <Animated.View
         onLayout={onCardLayout}
@@ -251,23 +280,39 @@ export function GroupFeatureTourOverlay({
             <Text style={styles.title} maxFontSizeMultiplier={1.6}>{title}</Text>
           ) : null}
           <Text style={styles.body} maxFontSizeMultiplier={1.6}>{body}</Text>
-          <Pressable
-            ref={ctaRef}
-            onPress={onNext}
-            disabled={ctaDisabled}
-            style={({ pressed }) => [
-              styles.cta,
-              pressed && styles.ctaPressed,
-              ctaDisabled && styles.ctaDisabled,
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel={ctaLabel || t('tour.next')}
-            accessibilityState={{ disabled: ctaDisabled }}
-          >
-            <Text style={styles.ctaText} maxFontSizeMultiplier={1.4}>
-              {ctaLabel || t('tour.next')}
-            </Text>
-          </Pressable>
+          <View style={[styles.ctaRow, canGoPrev && onPrev ? styles.ctaRowWithPrev : null]}>
+            {canGoPrev && onPrev ? (
+              <Pressable
+                testID="tour-prev"
+                onPress={onPrev}
+                style={({ pressed }) => [styles.prevCta, pressed && styles.ctaPressed]}
+                accessibilityRole="button"
+                accessibilityLabel={t('tour.prev')}
+              >
+                <Text style={styles.prevCtaText} maxFontSizeMultiplier={1.4}>
+                  {t('tour.prev')}
+                </Text>
+              </Pressable>
+            ) : null}
+            <Pressable
+              ref={ctaRef}
+              testID="tour-next"
+              onPress={onNext}
+              disabled={ctaDisabled}
+              style={({ pressed }) => [
+                styles.cta,
+                pressed && styles.ctaPressed,
+                ctaDisabled && styles.ctaDisabled,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={ctaLabel || t('tour.next')}
+              accessibilityState={{ disabled: ctaDisabled }}
+            >
+              <Text style={styles.ctaText} maxFontSizeMultiplier={1.4}>
+                {ctaLabel || t('tour.next')}
+              </Text>
+            </Pressable>
+          </View>
         </ScrollView>
       </Animated.View>
     </View>
@@ -291,17 +336,31 @@ const styles = StyleSheet.create({
   },
   holeCornerClip: {
     position: 'absolute',
-    width: HOLE_RADIUS,
-    height: HOLE_RADIUS,
     overflow: 'hidden',
   },
   holeCornerFill: {
     position: 'absolute',
-    width: HOLE_RADIUS * 2,
-    height: HOLE_RADIUS * 2,
-    borderRadius: HOLE_RADIUS,
-    borderWidth: HOLE_RADIUS,
     borderColor: DIM,
+  },
+  ctaRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+  },
+  ctaRowWithPrev: {
+    justifyContent: 'space-between',
+  },
+  prevCta: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.28)',
+  },
+  prevCtaText: {
+    color: 'rgba(245,247,251,0.9)',
+    fontSize: 16,
+    fontWeight: '600',
   },
   card: {
     position: 'absolute',
