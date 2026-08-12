@@ -70,7 +70,8 @@ describe('layoutGatherCommandWidths (#148)', () => {
     expect(withArrived.navWidth!).toBeLessThan(withoutArrived.navWidth!);
   });
 
-  it('never drops hit targets below 48pt', () => {
+  it('never drops hit targets below 44pt (#176)', () => {
+    expect(GATHER_CMD_MIN_HIT_PT).toBe(44);
     const layout = layoutGatherCommandWidths({
       rowWidth: 280,
       baseGap: 10,
@@ -84,6 +85,29 @@ describe('layoutGatherCommandWidths (#148)', () => {
     expect(layout.countdownWidth).toBeGreaterThanOrEqual(GATHER_CMD_MIN_HIT_PT);
     expect(layout.navWidth!).toBeGreaterThanOrEqual(GATHER_CMD_MIN_HIT_PT);
     expect(layout.gap).toBeLessThanOrEqual(6);
+  });
+
+  it('gives Start a wider floor when Arrived is absent', () => {
+    const without = layoutGatherCommandWidths({
+      rowWidth: 320,
+      baseGap: 8,
+      squareSize: 48,
+      countdownBaseWidth: 72,
+      showNav: true,
+      showArrived: false,
+      narrow: false,
+    });
+    const withArrived = layoutGatherCommandWidths({
+      rowWidth: 320,
+      baseGap: 8,
+      squareSize: 48,
+      countdownBaseWidth: 72,
+      showNav: true,
+      showArrived: true,
+      narrow: false,
+    });
+    expect(without.navWidth!).toBeGreaterThan(withArrived.navWidth!);
+    expect(without.order).toEqual(['nav', 'arrived', 'countdown', 'transport']);
   });
 
   it('uses 220–300ms split timing constant', () => {
