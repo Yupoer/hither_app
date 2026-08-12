@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -21,6 +22,10 @@ import { glass, accentMix } from '../glass';
 import { useTranslation, type TranslationKey } from '../i18n';
 import { runUiAction } from '../utils/uiAction';
 import { isAnonymousAccessExpired } from '../anonymousAccess';
+import {
+  KEYBOARD_SURFACE_GAP_PT,
+  keyboardScrollPaddingBottom,
+} from '../utils/keyboardSurface';
 
 export default function AccountSheet({
   visible,
@@ -45,6 +50,33 @@ export default function AccountSheet({
     linkWithApple,
   } = useSession();
   const { t } = useTranslation();
+  const scrollRef = useRef<ScrollView>(null);
+  const redeemOffsetY = useRef(0);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    if (!visible) {
+      setKeyboardHeight(0);
+      return;
+    }
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      setKeyboardHeight(e.endCoordinates?.height ?? 0);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [visible]);
+
+  const scrollPaddingBottom = keyboardScrollPaddingBottom({
+    safeAreaBottom: insets.bottom + 20,
+    keyboardHeight,
+  });
 
   const premiumExpiresAt = tripEntitlement?.expiresAt ?? null;
   const premiumSourceRaw = tripEntitlement?.source ?? null;
@@ -240,10 +272,12 @@ export default function AccountSheet({
     >
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={KEYBOARD_SURFACE_GAP_PT}
         style={{ flex: 1 }}
       >
         <ScrollView
-          contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 20 }]}
+          ref={scrollRef}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: scrollPaddingBottom }]}
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
         >
@@ -427,7 +461,13 @@ export default function AccountSheet({
 
           {/* Promo Code — same server entitlement model (no Early Access state) */}
           <Text style={styles.sectionLabel}>{t('account.redeemSection')}</Text>
-          <View style={styles.card}>
+          <View
+            style={styles.card}
+            onLayout={(e) => {
+              redeemOffsetY.current = e.nativeEvent.layout.y;
+            }}
+            testID="account-redeem-section"
+          >
             <Text style={styles.promoHint}>
               {t('account.redeemHint')}
             </Text>
@@ -441,6 +481,16 @@ export default function AccountSheet({
                 onChangeText={setPromoCode}
                 autoCapitalize="characters"
                 autoCorrect={false}
+                testID="account-redeem-input"
+                onFocus={() => {
+                  // Keep redeem row above keyboard with 12pt gap.
+                  requestAnimationFrame(() => {
+                    scrollRef.current?.scrollTo({
+                      y: Math.max(0, redeemOffsetY.current - KEYBOARD_SURFACE_GAP_PT),
+                      animated: true,
+                    });
+                  });
+                }}
               />
               <Pressable
                 style={({ pressed }) => [

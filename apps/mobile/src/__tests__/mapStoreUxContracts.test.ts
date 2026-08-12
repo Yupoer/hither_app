@@ -48,20 +48,18 @@ describe('native AdMob alignment (ticket 02)', () => {
   });
 });
 
-describe('long-press center rename (ticket 05)', () => {
-  it('keeps bottom confirm card and opens center rename on name press', () => {
+describe('long-press inline rename (#172)', () => {
+  it('keeps bottom confirm card with inline name TextInput (no rename Modal)', () => {
     expect(mapScreen).toContain('testID="confirm-place-name"');
-    expect(mapScreen).toContain('testID="confirm-rename-modal"');
-    expect(mapScreen).toContain('openRenameModal');
-    expect(mapScreen).toContain('confirmRenameModal');
-    expect(mapScreen).toContain('cancelRenameModal');
+    expect(mapScreen).toContain('setPendingPlaceTitle');
     expect(mapScreen).toContain("t('confirmGather.add')");
-    // Confirm rename only updates draft title — not addDestination.
-    const renameStart = mapScreen.indexOf('const confirmRenameModal');
-    const renameBlock = mapScreen.slice(renameStart, renameStart + 400);
-    expect(renameBlock).toContain('setPendingPlaceTitle');
-    expect(renameBlock).not.toContain('addDestination');
-    expect(renameBlock).not.toContain('handlePickDestination');
+    expect(mapScreen).toContain('keyboardAvoidBottomOffset');
+    expect(mapScreen).not.toContain('testID="confirm-rename-modal"');
+    expect(mapScreen).not.toContain('openRenameModal');
+    expect(mapScreen).not.toContain('confirmRenameModal');
+    // Add still uses pendingPlaceTitle draft only — no dual rename state.
+    const addStart = mapScreen.indexOf("name: pendingPlaceTitle.trim() || pendingPlace.name");
+    expect(addStart).toBeGreaterThan(-1);
   });
 
   it('retains draft on add failure and clears only on success dismiss', () => {

@@ -11,10 +11,9 @@ import {
   Alert,
   Animated as RnAnimated,
   AppState,
-  KeyboardAvoidingView,
+  Keyboard,
   LayoutAnimation,
   Linking,
-  Modal,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Platform,
@@ -69,6 +68,7 @@ import {
   cameraOnSearchPick,
 } from '../utils/mapCameraFlow';
 import { resolveNotificationRecipients } from '../utils/notificationDeliveryPolicy';
+import { keyboardAvoidBottomOffset } from '../utils/keyboardSurface';
 import DestinationSearch from '../components/DestinationSearch';
 import MeetCountdown from '../components/MeetCountdown';
 import DestinationReorderList from '../components/DestinationReorderList';
@@ -1056,19 +1056,19 @@ export default function MapScreen({ route, navigation }: Props) {
     width: number;
     height: number;
   } | null>(null);
-  /** Center rename modal draft (independent of pendingPlaceTitle until confirm). */
-  const [renameModalVisible, setRenameModalVisible] = useState(false);
-  const [renameDraft, setRenameDraft] = useState('');
   /** Distinguishes long-press vs search for post-add camera (ticket 06). */
   const pendingPlaceSourceRef = useRef<'search' | 'longpress' | null>(null);
   // Editable only during this add confirmation. There is no later rename
   // action, so the persisted itinerary title stays stable after creation.
+  // Single draft owned by pending place flow (inline TextInput — no Modal).
   const [pendingPlaceTitle, setPendingPlaceTitle] = useState('');
   // Two-phase flow: pendingPlace is set immediately when a place is picked
   // (so the search sheet can close and the bottom sheet collapses to peek).
   // confirmCardReady flips true instantly — then the bounce-up
   // card appears and the search bar / recenter capsule hide.
   const [confirmCardReady, setConfirmCardReady] = useState(false);
+  /** Keyboard height while confirm card is up — lifts card with 12pt gap. */
+  const [confirmKeyboardHeight, setConfirmKeyboardHeight] = useState(0);
   const [kmlVisible, setKmlVisible] = useState(false);
   const [coordSheetVisible, setCoordSheetVisible] = useState(false);
   const [coordSheetInitial, setCoordSheetInitial] = useState<
@@ -1093,6 +1093,26 @@ export default function MapScreen({ route, navigation }: Props) {
     opacity: interpolate(confirmCardAnim.value, [0, 0.4], [0, 1], Extrapolation.CLAMP),
     transform: [{ translateY: interpolate(confirmCardAnim.value, [0, 1], [120, 0], Extrapolation.CLAMP) }],
   }));
+
+  // Keyboard inset for absolute confirm card (12pt gap; restore on dismiss).
+  useEffect(() => {
+    if (!confirmCardReady) {
+      setConfirmKeyboardHeight(0);
+      return;
+    }
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      setConfirmKeyboardHeight(e.endCoordinates?.height ?? 0);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setConfirmKeyboardHeight(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [confirmCardReady]);
 
   // Load account favorites once per signed-in session (cross-team reuse).
   useEffect(() => {
@@ -1164,8 +1184,9 @@ export default function MapScreen({ route, navigation }: Props) {
     measureTourTarget,
   ]);
 
-  // Remeasure highlight when the Add Place tour step advances.
-  // Never clobber a good hole with null — only accept non-zero rects.
+  // Remeasure highlight when the Add Place tour step advances or keyboard
+  // moves the confirm card. Never clobber a good hole with null — only accept
+  // non-zero rects. Step 0 always measures star (never Add/center fallback).
   useEffect(() => {
     if (addPlaceTourStep == null) {
       setAddPlaceTourTargetRect(null);
@@ -1187,7 +1208,7 @@ export default function MapScreen({ route, navigation }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [addPlaceTourStep, measureTourTarget]);
+  }, [addPlaceTourStep, measureTourTarget, confirmKeyboardHeight]);
 
   const pendingIsFavorite = useMemo(() => {
     if (!pendingPlace) return false;
@@ -1263,27 +1284,10 @@ export default function MapScreen({ route, navigation }: Props) {
     setConfirmCardReady(false);
     setPendingPlace(null);
     setPendingPlaceTitle('');
-    setRenameModalVisible(false);
-    setRenameDraft('');
+    setConfirmKeyboardHeight(0);
     pendingPlaceSourceRef.current = null;
   }
 
-  const openRenameModal = useCallback(() => {
-    setRenameDraft(pendingPlaceTitle);
-    setRenameModalVisible(true);
-  }, [pendingPlaceTitle]);
-
-  const confirmRenameModal = useCallback(() => {
-    const next = renameDraft.trim();
-    if (!next) return;
-    setPendingPlaceTitle(next);
-    setRenameModalVisible(false);
-  }, [renameDraft]);
-
-  const cancelRenameModal = useCallback(() => {
-    setRenameModalVisible(false);
-    setRenameDraft('');
-  }, []);
   const [paywallTrigger, setPaywallTrigger] = useState<TranslationKey | undefined>(undefined);
   const [paywallVisible, setPaywallVisible] = useState(false);
   const openPaywall = useCallback((trigger?: TranslationKey) => {
@@ -5732,10 +5736,14 @@ export default function MapScreen({ route, navigation }: Props) {
           ? distanceMeters(fromCoords, pendingPlace.coordinates)
           : null;
         const pMin = pDist != null ? shortEta(walkingEtaSeconds(pDist)) : null;
+        const confirmBottom = keyboardAvoidBottomOffset({
+          baseBottom: insets.bottom + 24,
+          keyboardHeight: confirmKeyboardHeight,
+        });
         return (
-          // Sits above the hidden sheet; centred vertically near the bottom.
+          // Sits above the hidden sheet; lifts with keyboard (12pt gap).
           <Animated.View
-            style={[styles.confirmCard, { bottom: insets.bottom + 24 }, confirmCardStyle]}
+            style={[styles.confirmCard, { bottom: confirmBottom }, confirmCardStyle]}
             pointerEvents="box-none"
           >
             <liquidGlass.GlassView tintColor={glass.cardActive} style={styles.confirmCardInner}>
@@ -5744,20 +5752,21 @@ export default function MapScreen({ route, navigation }: Props) {
                   <Text style={styles.confirmKicker} numberOfLines={1}>
                     {t('confirmGather.going', { name: '' })}
                   </Text>
-                  {/* Name is a press target → center rename modal (keep bottom card). */}
-                  <Pressable
-                    onPress={openRenameModal}
-                    accessibilityRole="button"
-                    accessibilityLabel={t('confirmGather.going', {
-                      name: pendingPlaceTitle || pendingPlace.name,
-                    })}
+                  {/* Inline rename — single draft; no separate Modal. */}
+                  <TextInput
+                    value={pendingPlaceTitle}
+                    onChangeText={setPendingPlaceTitle}
+                    style={styles.confirmTitleInput}
+                    placeholder={pendingPlace.name || t('map.droppedPin')}
+                    placeholderTextColor={glass.textTertiary}
+                    maxLength={120}
+                    returnKeyType="done"
+                    blurOnSubmit
+                    onSubmitEditing={() => Keyboard.dismiss()}
+                    accessibilityLabel={t('map.renameTitle')}
                     accessibilityHint={t('map.droppedPinHint')}
                     testID="confirm-place-name"
-                  >
-                    <Text style={styles.confirmTitleInput} numberOfLines={1}>
-                      {pendingPlaceTitle || pendingPlace.name || t('map.droppedPin')}
-                    </Text>
-                  </Pressable>
+                  />
                   <Text style={styles.confirmNameHint} numberOfLines={1}>
                     {t('map.droppedPinHint')}
                   </Text>
@@ -5917,70 +5926,6 @@ export default function MapScreen({ route, navigation }: Props) {
         }}
         reduceMotion={tourReduceMotion}
       />
-
-      {/* Center rename modal — only updates draft name; add still uses bottom card. */}
-      <Modal
-        visible={renameModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={cancelRenameModal}
-      >
-        <KeyboardAvoidingView
-          style={styles.renameModalOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <Pressable style={styles.renameModalOverlay} onPress={cancelRenameModal}>
-            <Pressable
-              style={styles.renameModalCard}
-              onPress={(e) => e.stopPropagation()}
-              testID="confirm-rename-modal"
-            >
-              <Text style={styles.renameModalTitle}>{t('map.renameTitle')}</Text>
-              <TextInput
-                value={renameDraft}
-                onChangeText={setRenameDraft}
-                style={styles.renameModalInput}
-                autoFocus
-                maxLength={120}
-                placeholder={t('map.droppedPin')}
-                placeholderTextColor={glass.textTertiary}
-                returnKeyType="done"
-                onSubmitEditing={confirmRenameModal}
-                accessibilityLabel={t('map.renameTitle')}
-                testID="confirm-rename-input"
-              />
-              <View style={styles.renameModalActions}>
-                <Pressable
-                  style={styles.renameModalBtn}
-                  onPress={cancelRenameModal}
-                  accessibilityRole="button"
-                  accessibilityLabel={t('common.cancel')}
-                >
-                  <Text style={styles.renameModalBtnText}>{t('common.cancel')}</Text>
-                </Pressable>
-                <Pressable
-                  style={[
-                    styles.renameModalBtn,
-                    styles.renameModalBtnPrimary,
-                    { backgroundColor: accent },
-                    !renameDraft.trim() && { opacity: 0.45 },
-                  ]}
-                  onPress={confirmRenameModal}
-                  disabled={!renameDraft.trim()}
-                  accessibilityRole="button"
-                  accessibilityLabel={t('common.confirm')}
-                  accessibilityState={{ disabled: !renameDraft.trim() }}
-                  testID="confirm-rename-ok"
-                >
-                  <Text style={[styles.renameModalBtnText, { color: '#111' }]}>
-                    {t('common.confirm')}
-                  </Text>
-                </Pressable>
-              </View>
-            </Pressable>
-          </Pressable>
-        </KeyboardAvoidingView>
-      </Modal>
 
       {/* Gathering-point carousel — above locate/group capsules; sheet wrapper
           zIndex is higher so the sheet covers cards on overlap. */}
@@ -9087,6 +9032,9 @@ const makeStyles = (
       color: '#fff',
       fontSize: 18,
       fontWeight: '700',
+      paddingVertical: 2,
+      paddingHorizontal: 0,
+      margin: 0,
       paddingVertical: 0,
       paddingHorizontal: 2,
       minHeight: 26,

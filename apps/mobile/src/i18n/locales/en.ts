@@ -516,7 +516,7 @@ export const en: Record<keyof ZhDict, string> = {
   'map.meetAtClock': 'Meet at {time}',
   'map.meetDue': 'Meet time {time} — due',
   'map.droppedPin': 'New gathering point',
-  'map.droppedPinHint': 'Tap the name to rename',
+  'map.droppedPinHint': 'Edit the name here',
   'map.renameTitle': 'Gathering point name',
   'map.coverFlowNext': 'Next pane',
   'map.coverFlowPrev': 'Previous pane',

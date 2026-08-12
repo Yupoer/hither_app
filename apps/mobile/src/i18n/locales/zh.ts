@@ -522,7 +522,7 @@ export const zh = {
   'map.meetAtClock': '{time} 集合',
   'map.meetDue': '集合時間 {time} 已到',
   'map.droppedPin': '新集合點',
-  'map.droppedPinHint': '點一下名稱可改名',
+  'map.droppedPinHint': '直接在此編輯名稱',
   'map.renameTitle': '集合點名稱',
   'map.coverFlowNext': '下一個分頁',
   'map.coverFlowPrev': '上一個分頁',
