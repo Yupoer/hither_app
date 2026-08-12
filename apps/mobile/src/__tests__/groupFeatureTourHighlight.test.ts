@@ -122,6 +122,14 @@ describe('expanding steps wait for a stable rect (#182)', () => {
   });
 });
 
+describe('measure waits for carousel selection alignment (#179)', () => {
+  it('hook remeasures when selectedDestinationId catches up to tourDestinationId', () => {
+    expect(hookSrc).toContain('selectedDestinationId');
+    expect(hookSrc).toContain('selectedDest !== tourDest');
+    expect(map).toContain('selectedDestinationId: selectedDestination?.id');
+  });
+});
+
 describe('MapScreen highlight owners (#182)', () => {
   it('pins arrival progress to the people chip, not the metrics row', () => {
     expect(map).toMatch(/setTourTargetRef\('arrivalProgress'/);

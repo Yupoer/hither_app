@@ -5006,6 +5006,7 @@ export default function MapScreen({ route, navigation }: Props) {
     pauseAutoCollapse,
     resumeAutoCollapse,
     tourDestinationId,
+    selectedDestinationId: selectedDestination?.id ?? null,
     setSheetMid,
     selectSheetPane,
     measureTarget: measureTourTarget,

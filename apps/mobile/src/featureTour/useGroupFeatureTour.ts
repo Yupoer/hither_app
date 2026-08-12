@@ -49,6 +49,12 @@ export interface UseGroupFeatureTourInput {
    * Must match the card that owns measured refs.
    */
   tourDestinationId: string | null;
+  /**
+   * Currently selected carousel destination id.
+   * Measurement waits until this matches tourDestinationId so gatherCard ref
+   * is the tour card (preferred shared target may differ from initial selection).
+   */
+  selectedDestinationId?: string | null;
   setSheetMid: () => void;
   selectSheetPane: (key: 'members' | 'route' | 'tools' | 'store') => void;
   measureTarget: MeasureTargetFn;
@@ -274,8 +280,21 @@ export function useGroupFeatureTour(
 
   // Measure target with bounded retry + stable-parent fallback.
   // Clear happens only after async work starts (no sync setState in effect body).
+  // Remeasure when carousel selection catches up to tourDestinationId so the
+  // first collapsedCard step does not stick to the pre-lock gatherCard rect.
   useEffect(() => {
     if (!ctrl.active || !step) return;
+    const tourDest = input.tourDestinationId;
+    const selectedDest = input.selectedDestinationId;
+    // When caller reports selection, wait until it matches the tour card.
+    if (
+      tourDest
+      && selectedDest !== undefined
+      && selectedDest !== null
+      && selectedDest !== tourDest
+    ) {
+      return;
+    }
     let cancelled = false;
     const run = async () => {
       if (!step.target) {
@@ -310,7 +329,13 @@ export function useGroupFeatureTour(
     return () => {
       cancelled = true;
     };
-  }, [ctrl.active, ctrl.stepIndex, step]);
+  }, [
+    ctrl.active,
+    ctrl.stepIndex,
+    step,
+    input.tourDestinationId,
+    input.selectedDestinationId,
+  ]);
 
   // Derived: hide hole when tour inactive (avoids sync setState on deactivate).
   const visibleTargetRect = ctrl.active ? targetRect : null;
