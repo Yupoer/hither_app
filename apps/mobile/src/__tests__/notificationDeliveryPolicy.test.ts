@@ -1,6 +1,7 @@
 import {
   buildAlignedNotificationEventId,
   buildNotificationEventId,
+  classifyCommandNotification,
   eventIdFromPushData,
   markNotificationDelivered,
   resolveNotificationRecipients,
@@ -64,6 +65,21 @@ describe('resolveNotificationRecipients', () => {
     );
     expect(r.recipientIds).not.toContain('solo1');
     expect(r.recipientIds).not.toContain('leader1');
+  });
+
+  it('follower quick_command reaches leader + other non-solo followers (#170)', () => {
+    const r = resolveNotificationRecipients({
+      event: 'quick_command',
+      senderId: 'member1',
+      members,
+    });
+    expect(r.deliveryKind).toBe('sync_broadcast');
+    expect(r.recipientIds).toContain('leader1');
+    expect(r.recipientIds).toContain('member2');
+    expect(r.recipientIds).toContain('subLeader');
+    expect(r.recipientIds).toContain('subMember');
+    expect(r.recipientIds).not.toContain('member1');
+    expect(r.recipientIds).not.toContain('solo1');
   });
 
   it('exception stays in sender scope', () => {
@@ -204,6 +220,45 @@ describe('buildAlignedNotificationEventId / push data', () => {
     });
     expect(markNotificationDelivered('u1', id, 'push')).toBe(true);
     expect(markNotificationDelivered('u1', id, 'realtime')).toBe(false);
+  });
+});
+
+describe('classifyCommandNotification (#170)', () => {
+  it('maps follower fixed + custom without leader drift', () => {
+    expect(classifyCommandNotification({ commandType: 'need_restroom' })).toEqual({
+      pushCategory: 'follower_requests',
+      prefCategory: 'followerRequests',
+      policyEvent: 'quick_command',
+    });
+    expect(classifyCommandNotification({
+      commandType: 'custom',
+      senderRole: 'follower',
+    }).prefCategory).toBe('followerRequests');
+    // Missing role must not become leader_commands
+    expect(classifyCommandNotification({
+      commandType: 'custom',
+      senderRole: null,
+    }).pushCategory).toBe('follower_requests');
+    expect(classifyCommandNotification({
+      commandType: 'custom',
+      senderRole: 'leader',
+    }).pushCategory).toBe('leader_commands');
+  });
+
+  it('maps request_start to leader-only route_request policy', () => {
+    const c = classifyCommandNotification({ commandType: 'request_start' });
+    expect(c.policyEvent).toBe('route_request');
+    expect(c.pushCategory).toBe('follower_requests');
+  });
+
+  it('maps leader fixed types to leader_commands / quick_command', () => {
+    expect(classifyCommandNotification({
+      commandType: 'gather',
+      isLeaderFixedType: true,
+    })).toMatchObject({
+      pushCategory: 'leader_commands',
+      policyEvent: 'quick_command',
+    });
   });
 });
 

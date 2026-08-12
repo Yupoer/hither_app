@@ -26,8 +26,15 @@ describe('useGroupNotifications leader fallback + dual-path (BUG-5 / SUG-3)', ()
 
   it('builds dual-path event identity via buildAlignedNotificationEventId', () => {
     expect(source).toContain('buildAlignedNotificationEventId');
-    expect(source).toContain("pushCategory: leader ? 'leader_commands'");
+    expect(source).toContain('resolveCommandNotificationClass');
+    expect(source).toContain('classified.pushCategory');
     expect(source).toContain("pushCategory: 'journey'");
+  });
+
+  it('does not treat missing custom sender role as leader (#170)', () => {
+    expect(source).toContain("role === 'leader' ? 'leader'");
+    expect(source).not.toMatch(/role !== 'follower'/);
+    expect(source).toContain('resolveCommandNotificationClass');
   });
 
   it('straggler Realtime uses sender_id (not reporter_id) for dual-path (BUG-7)', () => {
