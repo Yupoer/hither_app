@@ -13,6 +13,7 @@ import {
 import { retreatTour, startTour } from '../featureTour/tourController';
 import { getWindowSize, measureTourStepRects, STAGE_TWO_SETTLE_MS } from '../featureTour/measureTarget';
 import { TOUR_STEPS } from '../featureTour/constants';
+import * as featureTour from '../featureTour';
 
 jest.mock('@react-native-async-storage/async-storage', () =>
   require('@react-native-async-storage/async-storage/jest/async-storage-mock'),
@@ -106,6 +107,22 @@ function flush() {
     await Promise.resolve();
   });
 }
+
+describe('featureTour barrel public seams', () => {
+  it('re-exports retreatTour, hole helpers, and measure seams', () => {
+    const names = Object.keys(featureTour);
+    expect(names.length).toBeGreaterThan(20);
+    for (const key of names) {
+      expect(featureTour[key as keyof typeof featureTour]).not.toBeUndefined();
+    }
+    expect(typeof featureTour.retreatTour).toBe('function');
+    expect(typeof featureTour.holeRadius).toBe('function');
+    expect(typeof featureTour.clipRectToWindow).toBe('function');
+    expect(typeof featureTour.holeKindForTarget).toBe('function');
+    expect(typeof featureTour.measureTourStepRects).toBe('function');
+    expect(featureTour.STAGE_TWO_SETTLE_MS).toBe(300);
+  });
+});
 
 describe('holeRadius compact vs card', () => {
   it('compact chips are circular; card corners stay ≤ 16', () => {
