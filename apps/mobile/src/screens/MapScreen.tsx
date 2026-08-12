@@ -72,6 +72,7 @@ import { keyboardAvoidBottomOffset } from '../utils/keyboardSurface';
 import {
   gatherRequestPageIndex,
   resolveGatherRequestSelection,
+  rollbackGatherRequestSelection,
   sortGatherRequestsFifo,
 } from '../utils/gatherRequestInbox';
 import DestinationSearch from '../components/DestinationSearch';
@@ -662,6 +663,8 @@ export default function MapScreen({ route, navigation }: Props) {
   /** Selected request id for Route pane horizontal FIFO inbox (#173). */
   const [selectedGatherRequestId, setSelectedGatherRequestId] = useState<string | null>(null);
   const gatherRequestPagerRef = useRef<ScrollView | null>(null);
+  const lastGatherRequestIdsRef = useRef<string[]>([]);
+  const pendingRemovedGatherRequestIdRef = useRef<string | null>(null);
   const sortedGatherRequests = useMemo(
     () => sortGatherRequestsFifo(gatherPointRequests),
     [gatherPointRequests],
@@ -671,12 +674,17 @@ export default function MapScreen({ route, navigation }: Props) {
     [sortedGatherRequests],
   );
   useEffect(() => {
-    setSelectedGatherRequestId((prev) =>
-      resolveGatherRequestSelection({
+    setSelectedGatherRequestId((prev) => {
+      const next = resolveGatherRequestSelection({
         sortedIds: sortedGatherRequestIds,
+        previousSortedIds: lastGatherRequestIdsRef.current,
         previousId: prev,
-      }),
-    );
+        removedId: pendingRemovedGatherRequestIdRef.current,
+      });
+      lastGatherRequestIdsRef.current = sortedGatherRequestIds;
+      pendingRemovedGatherRequestIdRef.current = null;
+      return next;
+    });
   }, [sortedGatherRequestIds]);
   /** Route overlay draft dirtiness — flushed only on sheet dismiss (完成 / swipe). */
   const routeDraftDirtyRef = useRef({
@@ -3152,6 +3160,15 @@ export default function MapScreen({ route, navigation }: Props) {
   const handleGatherPointRequest = useCallback(async (requestId: string, approve: boolean) => {
     if (resolvingGatherRequestId) return;
     setResolvingGatherRequestId(requestId);
+    pendingRemovedGatherRequestIdRef.current = requestId;
+    const remainingIds = sortedGatherRequestIds.filter((id) => id !== requestId);
+    const nextSelectedId = resolveGatherRequestSelection({
+      sortedIds: remainingIds,
+      previousSortedIds: sortedGatherRequestIds,
+      previousId: selectedGatherRequestId,
+      removedId: requestId,
+    });
+    setSelectedGatherRequestId(nextSelectedId);
     // Optimistic remove so double-taps cannot re-fire the same pending card.
     setGatherPointRequests((prev) => prev.filter((row) => row.id !== requestId));
     try {
@@ -3167,6 +3184,14 @@ export default function MapScreen({ route, navigation }: Props) {
       }
     } catch (error) {
       logError('gather_request_resolve_failed', error, { requestId, approve });
+      pendingRemovedGatherRequestIdRef.current = null;
+      setSelectedGatherRequestId(
+        rollbackGatherRequestSelection({
+          sortedIds: sortedGatherRequestIds,
+          failedId: requestId,
+          fallbackId: nextSelectedId,
+        }),
+      );
       // Restore pending list from server if the RPC truly failed.
       void loadGatheringWorkflow().catch(() => undefined);
       Alert.alert(
@@ -3180,7 +3205,15 @@ export default function MapScreen({ route, navigation }: Props) {
     } finally {
       setResolvingGatherRequestId(null);
     }
-  }, [groupId, loadGatheringWorkflow, refresh, resolvingGatherRequestId, t]);
+  }, [
+    groupId,
+    loadGatheringWorkflow,
+    refresh,
+    resolvingGatherRequestId,
+    selectedGatherRequestId,
+    sortedGatherRequestIds,
+    t,
+  ]);
 
   /** @returns true when complete RPC + refresh succeeded (for auto-complete notify). */
   const runCompleteGatheringStop = useCallback(async (destination: Destination): Promise<boolean> => {
@@ -5165,6 +5198,16 @@ export default function MapScreen({ route, navigation }: Props) {
   // ─── 路線：集合點、排序、Google Maps 匯入、歷史 ───────────────────────
   const opsOpenCount = exceptionOpenCount + coordination.openCount;
   const gatherRequestPageW = Math.max(200, windowWidth - 32);
+  useEffect(() => {
+    const page = gatherRequestPageIndex(
+      sortedGatherRequestIds,
+      selectedGatherRequestId,
+    );
+    gatherRequestPagerRef.current?.scrollTo({
+      x: page * gatherRequestPageW,
+      animated: true,
+    });
+  }, [gatherRequestPageW, selectedGatherRequestId, sortedGatherRequestIds]);
   const routePaneBody = useMemo(() => (
     <>
       {/* #173: leader pending gather requests — FIFO horizontal cards at Route top. */}

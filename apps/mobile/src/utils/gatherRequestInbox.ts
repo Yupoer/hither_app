@@ -28,17 +28,46 @@ export function resolveGatherRequestSelection(input: {
   sortedIds: readonly string[];
   previousId: string | null | undefined;
   removedId?: string | null;
+  previousSortedIds?: readonly string[];
 }): string | null {
   const ids = input.sortedIds;
   if (ids.length === 0) return null;
   if (input.previousId && ids.includes(input.previousId)) {
     return input.previousId;
   }
-  if (input.removedId) {
-    // Prefer the card that was after the removed one in the prior order.
-    // Without prior order, fall back to first remaining.
+  const removed =
+    input.removedId
+    ?? (input.previousId && !ids.includes(input.previousId) ? input.previousId : null);
+  const prior = input.previousSortedIds;
+  if (removed && prior && prior.length > 0) {
+    const removedIndex = prior.indexOf(removed);
+    if (removedIndex >= 0) {
+      const nextId = prior[removedIndex + 1];
+      if (nextId && ids.includes(nextId)) return nextId;
+      for (let i = removedIndex - 1; i >= 0; i -= 1) {
+        const prevId = prior[i];
+        if (prevId && ids.includes(prevId)) return prevId;
+      }
+    }
   }
   return ids[0] ?? null;
+}
+
+/** After a failed optimistic remove, re-select the failed card when it is back. */
+export function rollbackGatherRequestSelection(input: {
+  sortedIds: readonly string[];
+  failedId: string;
+  fallbackId?: string | null;
+}): string | null {
+  if (input.sortedIds.includes(input.failedId)) return input.failedId;
+  if (input.fallbackId && input.sortedIds.includes(input.fallbackId)) {
+    return input.fallbackId;
+  }
+  return resolveGatherRequestSelection({
+    sortedIds: input.sortedIds,
+    previousId: input.failedId,
+    removedId: input.failedId,
+  });
 }
 
 export function gatherRequestPageIndex(

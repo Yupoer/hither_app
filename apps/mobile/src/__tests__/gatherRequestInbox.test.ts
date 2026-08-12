@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import {
   gatherRequestPageIndex,
   resolveGatherRequestSelection,
+  rollbackGatherRequestSelection,
   sortGatherRequestsFifo,
 } from '../utils/gatherRequestInbox';
 
@@ -22,16 +23,56 @@ describe('gather request inbox FIFO (#173)', () => {
     expect(
       resolveGatherRequestSelection({
         sortedIds: ['a', 'b', 'c'],
+        previousSortedIds: ['a', 'b', 'c'],
         previousId: 'b',
+      }),
+    ).toBe('b');
+  });
+
+  it('selects the next FIFO card after removing the first or middle request', () => {
+    expect(
+      resolveGatherRequestSelection({
+        sortedIds: ['b', 'c'],
+        previousSortedIds: ['a', 'b', 'c'],
+        previousId: 'a',
+        removedId: 'a',
       }),
     ).toBe('b');
     expect(
       resolveGatherRequestSelection({
         sortedIds: ['a', 'c'],
+        previousSortedIds: ['a', 'b', 'c'],
         previousId: 'b',
         removedId: 'b',
       }),
-    ).toBe('a');
+    ).toBe('c');
+  });
+
+  it('selects the previous FIFO card after removing the last request', () => {
+    expect(
+      resolveGatherRequestSelection({
+        sortedIds: ['a', 'b'],
+        previousSortedIds: ['a', 'b', 'c'],
+        previousId: 'c',
+        removedId: 'c',
+      }),
+    ).toBe('b');
+  });
+
+  it('restores the failed request id after optimistic-remove rollback', () => {
+    expect(
+      rollbackGatherRequestSelection({
+        sortedIds: ['a', 'b', 'c'],
+        failedId: 'b',
+      }),
+    ).toBe('b');
+    expect(
+      rollbackGatherRequestSelection({
+        sortedIds: ['a', 'c'],
+        failedId: 'b',
+        fallbackId: 'c',
+      }),
+    ).toBe('c');
   });
 
   it('maps selected id to paging index', () => {
@@ -49,5 +90,7 @@ describe('gather request inbox FIFO (#173)', () => {
     const editorBlock = map.slice(editorStart, editorEnd);
     expect(editorBlock).not.toContain('gatherPointRequests.map');
     expect(editorBlock).not.toContain('handleGatherPointRequest');
+    expect(map).toContain('previousSortedIds');
+    expect(map).toContain('rollbackGatherRequestSelection');
   });
 });
