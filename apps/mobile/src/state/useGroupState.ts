@@ -335,6 +335,18 @@ export function useGroupState(
         return true;
       } catch (cause) {
         if (!activeRef.current || groupGenerationRef.current !== generation) return false;
+        const message = cause instanceof Error ? cause.message : String(cause ?? '');
+        const notMember = /not_member/i.test(message);
+        if (notMember) {
+          // Membership revoked (e.g. kick) — do not paint stale local cards.
+          if (activeRef.current && groupGenerationRef.current === generation) {
+            setState(null);
+            setDataSource('none');
+            setError('not_member');
+            setEmptyLocalSnapshot(false);
+          }
+          return false;
+        }
         const restored = await applyLocalSnapshot(groupId, generation);
         if (activeRef.current && groupGenerationRef.current === generation) {
           if (restored) {

@@ -99,6 +99,13 @@ export const zh = {
   'group.leaveTitle': '離開群組',
   'group.leaveMsg': '確定要離開目前的群組嗎？',
   'group.leaveConfirm': '離開',
+  'group.kick': '移出',
+  'group.kickTitle': '移出隊員',
+  'group.kickMsg': '確定要將 {name} 移出隊伍？邀請碼會一併更新。',
+  'group.kickConfirm': '移出',
+  'group.kickFailed': '移出失敗，請再試一次',
+  'group.kickedTitle': '你已被移出隊伍',
+  'group.kickedMsg': '隊長已將你移出此隊伍，請重新加入或建立新隊伍。',
   'group.copied': '已複製代碼',
 
   // Settings

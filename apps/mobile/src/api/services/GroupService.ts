@@ -564,6 +564,30 @@ export async function leaveGroups(groupIds: string[]): Promise<void> {
   }
 }
 
+/**
+ * Leader-only atomic kick: removes a follower membership and rotates the
+ * group invite code in one SECURITY DEFINER transaction. Returns the new code.
+ */
+export async function kickGroupMember(
+  groupId: string,
+  userId: string,
+): Promise<string> {
+  if (isDemoGroup(groupId)) {
+    throw new Error('kick_not_supported_in_demo');
+  }
+  await requireUserId();
+  const { data, error } = await supabase.rpc('kick_group_member', {
+    p_group_id: groupId,
+    p_user_id: userId,
+  });
+  orThrow(error);
+  if (typeof data !== 'string' || data.length !== 6) {
+    throw new Error('kick_group_member_invalid_code');
+  }
+  invalidateMyJoinedGroupsCache();
+  return data;
+}
+
 export async function setJourneyStatus(
   groupId: string,
   status: JourneyStatus,

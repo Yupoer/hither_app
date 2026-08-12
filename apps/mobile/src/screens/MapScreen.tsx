@@ -276,6 +276,7 @@ import {
   setSolo,
   reportStraggler,
   leaveGroups,
+  kickGroupMember,
   requestGroupLocationRefresh,
   resolveGatherPointRequestResilient,
   sendCommand,
@@ -575,6 +576,38 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const me = useMemo(() => members.find((m) => m.userId === user?.id), [members, user?.id]);
   const myScopeId = me?.subgroupId;
+
+  // Kicked follower: recovery RPC raises not_member → clear session + RoleSelect.
+  const kickedHandledRef = useRef(false);
+  useEffect(() => {
+    if (!user?.id || !groupId || isDemoGroup(groupId)) return;
+    if (membership?.group.id !== groupId) return;
+    if (isLeader) return;
+    const stillMember = members.some((m) => m.userId === user.id);
+    const accessLost = groupStateError === 'not_member'
+      || (!loading && !!state && state.group?.id === groupId && !stillMember && members.length > 0);
+    if (!accessLost) {
+      if (stillMember) kickedHandledRef.current = false;
+      return;
+    }
+    if (kickedHandledRef.current) return;
+    kickedHandledRef.current = true;
+    leaveGroup();
+    Alert.alert(t('group.kickedTitle'), t('group.kickedMsg'));
+    navigation.reset({ index: 0, routes: [{ name: 'RoleSelect' }] });
+  }, [
+    user?.id,
+    groupId,
+    members,
+    state,
+    loading,
+    groupStateError,
+    membership?.group.id,
+    isLeader,
+    leaveGroup,
+    navigation,
+    t,
+  ]);
 
   const [viewingScope, setViewingScope] = useState<'main' | 'sub'>('main');
   // Leave a subgroup → force main scope so we never filter against a stale id.
@@ -4544,9 +4577,43 @@ export default function MapScreen({ route, navigation }: Props) {
     [flock],
   );
 
+  const confirmKickMember = useCallback(
+    (target: { userId: string; name: string }) => {
+      if (!groupId || !isLeader || target.userId === user?.id) return;
+      confirmAction(
+        {
+          title: t('group.kickTitle'),
+          message: t('group.kickMsg', { name: target.name }),
+          confirmLabel: t('group.kickConfirm'),
+          cancelLabel: t('common.cancel'),
+          destructive: true,
+        },
+        () => {
+          void runUiAction(
+            'map.kick_member',
+            async (token) => {
+              try {
+                await kickGroupMember(groupId, target.userId);
+                if (!token.isCurrent()) return;
+                await refresh();
+              } catch (e) {
+                logError('kick_member_failed', e, { groupId, userId: target.userId });
+                if (!token.isCurrent()) return;
+                Alert.alert(t('group.kickFailed'));
+              }
+            },
+            { screen: 'Map' },
+          );
+        },
+      );
+    },
+    [groupId, isLeader, user?.id, t, refresh],
+  );
+
   // One flock row, shared by the main list and the subgroup cards.
   // Display: name + "角色 · 距離/狀態 · 最後更新". Solo is NOT on the card.
   const renderFlockRow = useCallback((f: (typeof flock)[number], last: boolean, index?: number) => {
+    const isMe = f.userId === user?.id;
     return (
       <FlockRow
         key={`flock-${f.userId}-${index ?? 0}`}
@@ -4560,16 +4627,18 @@ export default function MapScreen({ route, navigation }: Props) {
         dist={f.dist}
         arrived={f.arrived}
         lastUpdated={f.lastUpdated}
-        isMe={f.userId === user?.id}
+        isMe={isMe}
+        canKick={isLeader && !isMe && !f.isLeader}
         last={last}
         styles={styles}
         t={t}
         accent={accent}
         onSelfMerge={doSelfMerge}
         onSelfSplit={doSelfSplit}
+        onKick={() => confirmKickMember({ userId: f.userId, name: f.name })}
       />
     );
-  }, [user?.id, t, doSelfMerge, doSelfSplit, styles, accent]);
+  }, [user?.id, t, doSelfMerge, doSelfSplit, styles, accent, isLeader, confirmKickMember]);
 
   // Floating chrome rides just above the sheet's live top edge; its baseline
   // follows the sheet's animated gap to the screen bottom. At full the map
@@ -8194,12 +8263,14 @@ const FlockRow = React.memo(function FlockRow({
   arrived,
   lastUpdated,
   isMe,
+  canKick = false,
   last,
   styles,
   t,
   accent,
   onSelfMerge,
   onSelfSplit,
+  onKick,
 }: {
   userId: string;
   name: string;
@@ -8212,6 +8283,7 @@ const FlockRow = React.memo(function FlockRow({
   arrived: boolean;
   lastUpdated?: string;
   isMe: boolean;
+  canKick?: boolean;
   last: boolean;
   styles: any;
   t: (key: TranslationKey, params?: Record<string, string | number>) => string;
@@ -8219,6 +8291,7 @@ const FlockRow = React.memo(function FlockRow({
   accent: string;
   onSelfMerge: () => void | Promise<unknown>;
   onSelfSplit: () => void | Promise<unknown>;
+  onKick?: () => void;
 }) {
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
@@ -8308,6 +8381,21 @@ const FlockRow = React.memo(function FlockRow({
           )}
         </View>
       )}
+      {!isMe && canKick && onKick ? (
+        <View style={styles.selfControls}>
+          <Pressable
+            onPress={onKick}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={t('group.kick')}
+            style={({ pressed }) => pressed && styles.rowActionPressed}
+          >
+            <Text style={[styles.rowActionSecondary, { color: glass.danger }]}>
+              {t('group.kick')}
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
     </View>
   );
 });
