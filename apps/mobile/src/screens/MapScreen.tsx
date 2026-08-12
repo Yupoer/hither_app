@@ -299,7 +299,7 @@ import {
 import { supabase } from '../api/supabase';
 import { captureScreen } from 'react-native-view-shot';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ONBOARDING_STORAGE_KEY } from '../onboarding/sync';
+import { markOnboardingReplayForHome } from '../onboarding/sync';
 import { isDemoGroup } from '../api/demo';
 import { confirmAction } from '../utils/confirm';
 import { logEvent, logError } from '../utils/activityLog';
@@ -4298,7 +4298,8 @@ export default function MapScreen({ route, navigation }: Props) {
       logError('reset_prefs_failed', e);
       console.warn('[settings] resetPrefs saveOnboardingProfile failed', e);
     }
-    await AsyncStorage.removeItem(ONBOARDING_STORAGE_KEY);
+    // #171: mark durable onboarding replay for create/join home — do not navigate.
+    await markOnboardingReplayForHome().catch(() => undefined);
     await clearGroupFeatureTour({
       accountId: user?.id ?? null,
       existingPreferences: user?.preferences ?? null,
@@ -4316,6 +4317,8 @@ export default function MapScreen({ route, navigation }: Props) {
     } catch {
       // Pending / reset-intent paths keep replay working without session write.
     }
+    // Reevaluate tour gate only — blocked while onboarding replay is pending.
+    // Must not force navigation off Map / settings.
     reevaluateTourRef.current();
     Alert.alert(t('settings.resetAllPrefs'), t('settings.resetPrefsDone'));
   }, [t, user?.id, user?.preferences, updateProfile]);

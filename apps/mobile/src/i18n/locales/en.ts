@@ -180,7 +180,7 @@ export const en: Record<keyof ZhDict, string> = {
   'settings.resetPrefsConfirm':
     'This clears your quiz results and travel preferences, and re-runs the preference survey. Reset?',
   'settings.resetPrefsDone':
-    'Preferences reset — the survey runs again once you sign out or end the group.',
+    'Preferences reset. Full onboarding runs again when you return to create or join a group; the team tour runs after you rejoin with a real gathering point.',
   'account.section': 'Account',
   'account.upgradeButton': 'Create account (keeps your data)',
   'account.email': 'Email',

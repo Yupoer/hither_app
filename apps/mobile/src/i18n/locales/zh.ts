@@ -188,7 +188,7 @@ export const zh = {
   'settings.resetPrefs': '重設旅行偏好',
   'settings.resetPrefsConfirm':
     '將清除性格測驗與旅行偏好資料，並重新進行偏好問卷。確定要重設？',
-  'settings.resetPrefsDone': '已重設。登出或結束群組後，會重新進行旅行偏好問卷。',
+  'settings.resetPrefsDone': '已重設。回到建立／加入隊伍首頁時會重跑完整導覽；重新入隊並有真實集合點後會再播隊伍教學。',
   'account.section': '帳號',
   'account.upgradeButton': '建立帳號（保留現有資料）',
   'account.email': 'Email',
