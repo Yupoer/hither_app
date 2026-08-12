@@ -1,6 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { shouldStartGroupFeatureTour } from '../featureTour/storage';
+import {
+  isOnboardingHomeBoundary,
+  shouldRecheckOnboardingOnRouteChange,
+} from '../onboarding/gate';
 
 /**
  * Pure onboarding gates are duplicated as local copies of the production
@@ -123,19 +127,38 @@ describe('onboarding + tour replay gate (#171)', () => {
     it('reset marks onboarding replay and clears tour without navigation', () => {
       expect(map).toContain('markOnboardingReplayForHome');
       expect(map).toContain('clearGroupFeatureTour');
-      expect(map).toContain('reevaluateTourRef.current()');
-      // No navigation from resetPrefs body
       const start = map.indexOf('const resetPrefs = useCallback');
-      const body = map.slice(start, start + 1800);
+      const body = map.slice(start, map.indexOf('const confirmResetPrefs'));
+      expect(body).not.toContain('reevaluateTourRef.current()');
       expect(body).not.toContain('navigation.');
       expect(body).not.toContain('setNeedsOnboarding');
     });
 
-    it('App only presents onboarding via shouldPresentFullOnboarding at home', () => {
+    it('App presents onboarding via shouldPresentFullOnboarding at RoleSelect home', () => {
       expect(app).toContain('shouldPresentFullOnboarding');
       expect(app).toContain('readOnboardingReplayIntent');
-      expect(app).toContain('atHomeBoundary');
-      expect(app).toMatch(/if \(user && membership\)[\s\S]*setNeedsOnboarding\(false\)/);
+      expect(app).toContain('isOnboardingHomeBoundary');
+      expect(app).toContain('shouldRecheckOnboardingOnRouteChange');
+      expect(app).toContain("reevaluateOnboarding('consume')");
+    });
+
+    it('RoleSelect is a home boundary even with membership (#181)', () => {
+      expect(
+        isOnboardingHomeBoundary({
+          hasUser: true,
+          hasMembership: true,
+          routeName: 'RoleSelect',
+        }),
+      ).toBe(true);
+      expect(
+        isOnboardingHomeBoundary({
+          hasUser: true,
+          hasMembership: true,
+          routeName: 'Map',
+        }),
+      ).toBe(false);
+      expect(shouldRecheckOnboardingOnRouteChange('Map', 'RoleSelect')).toBe(true);
+      expect(shouldRecheckOnboardingOnRouteChange(null, 'RoleSelect')).toBe(false);
     });
 
     it('exports durable replay intent key separate from tour storage', () => {

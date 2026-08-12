@@ -16,7 +16,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from '../i18n';
-import { placeTourCard } from './overlayLayout';
+import { HOLE_RADIUS, paddedHole, placeTourCard, type OverlayHole } from './overlayLayout';
 
 export interface GroupFeatureTourOverlayProps {
   visible: boolean;
@@ -24,6 +24,8 @@ export interface GroupFeatureTourOverlayProps {
   body: string;
   ctaLabel: string;
   targetRect: LayoutRectangle | null;
+  /** Optional separate rect for tooltip placement (Stage Two shared tab strip). */
+  placementRect?: LayoutRectangle | null;
   onNext: () => void;
   /** When true, skip fade-in and land at full opacity immediately. */
   reduceMotion?: boolean;
@@ -31,9 +33,41 @@ export interface GroupFeatureTourOverlayProps {
   ctaDisabled?: boolean;
 }
 
-const HOLE_PAD = 8;
-const HOLE_RADIUS = 14;
 const DIM = 'rgba(0,0,0,0.62)';
+
+function HoleCorner({
+  hole,
+  corner,
+}: {
+  hole: OverlayHole;
+  corner: 'tl' | 'tr' | 'bl' | 'br';
+}) {
+  const r = HOLE_RADIUS;
+  const pos =
+    corner === 'tl'
+      ? { top: hole.y, left: hole.x }
+      : corner === 'tr'
+        ? { top: hole.y, left: hole.x + hole.w - r }
+        : corner === 'bl'
+          ? { top: hole.y + hole.h - r, left: hole.x }
+          : { top: hole.y + hole.h - r, left: hole.x + hole.w - r };
+  const circlePos =
+    corner === 'tl'
+      ? { top: 0, left: 0 }
+      : corner === 'tr'
+        ? { top: 0, right: 0 }
+        : corner === 'bl'
+          ? { bottom: 0, left: 0 }
+          : { bottom: 0, right: 0 };
+  return (
+    <View
+      pointerEvents="none"
+      style={[styles.holeCornerClip, pos]}
+    >
+      <View style={[styles.holeCornerFill, circlePos]} />
+    </View>
+  );
+}
 
 /**
  * Full-screen tour chrome: dim mask with a “hole” over the measured target,
@@ -45,6 +79,7 @@ export function GroupFeatureTourOverlay({
   body,
   ctaLabel,
   targetRect,
+  placementRect = null,
   onNext,
   reduceMotion = false,
   ctaDisabled = false,
@@ -98,27 +133,28 @@ export function GroupFeatureTourOverlay({
     return () => clearTimeout(timer);
   }, [visible, title, ctaLabel]);
 
-  const hole = useMemo(() => {
-    if (!targetRect) return null;
-    return {
-      x: Math.max(0, targetRect.x - HOLE_PAD),
-      y: Math.max(0, targetRect.y - HOLE_PAD),
-      w: targetRect.width + HOLE_PAD * 2,
-      h: targetRect.height + HOLE_PAD * 2,
-    };
-  }, [targetRect]);
+  const hole = useMemo(
+    () => (targetRect ? paddedHole(targetRect) : null),
+    [targetRect],
+  );
+  const placementHole = useMemo(() => {
+    if (placementRect) return paddedHole(placementRect);
+    return hole;
+  }, [placementRect, hole]);
 
   const placement = useMemo(
     () =>
       placeTourCard({
-        hole,
+        hole: placementHole,
         windowWidth: winW,
         windowHeight: winH,
         insets: { top: insets.top, bottom: insets.bottom },
         cardHeight,
       }),
-    [hole, winW, winH, insets.top, insets.bottom, cardHeight],
+    [placementHole, winW, winH, insets.top, insets.bottom, cardHeight],
   );
+
+  const a11yLabel = [title, body].filter((part) => part.trim().length > 0).join('. ');
 
   const onCardLayout = (e: LayoutChangeEvent) => {
     const h = e.nativeEvent.layout.height;
@@ -166,8 +202,13 @@ export function GroupFeatureTourOverlay({
                 },
               ]}
             />
+            <HoleCorner hole={hole} corner="tl" />
+            <HoleCorner hole={hole} corner="tr" />
+            <HoleCorner hole={hole} corner="bl" />
+            <HoleCorner hole={hole} corner="br" />
             <View
               pointerEvents="none"
+              testID="tour-hole-ring"
               style={[
                 styles.holeRing,
                 {
@@ -191,14 +232,14 @@ export function GroupFeatureTourOverlay({
           styles.card,
           {
             top: placement.cardTop,
-            marginHorizontal: 20,
+            left: 20,
+            right: 20,
             opacity,
-            maxWidth: winW - 40,
             maxHeight: placement.maxCardHeight,
           },
         ]}
         accessibilityRole="summary"
-        accessibilityLabel={`${title}. ${body}`}
+        accessibilityLabel={a11yLabel}
       >
         <ScrollView
           bounces={false}
@@ -206,7 +247,9 @@ export function GroupFeatureTourOverlay({
           style={{ maxHeight: Math.max(80, placement.maxCardHeight - 8) }}
           contentContainerStyle={styles.cardScrollContent}
         >
-          <Text style={styles.title} maxFontSizeMultiplier={1.6}>{title}</Text>
+          {title.trim().length > 0 ? (
+            <Text style={styles.title} maxFontSizeMultiplier={1.6}>{title}</Text>
+          ) : null}
           <Text style={styles.body} maxFontSizeMultiplier={1.6}>{body}</Text>
           <Pressable
             ref={ctaRef}
@@ -246,10 +289,22 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.55)',
   },
+  holeCornerClip: {
+    position: 'absolute',
+    width: HOLE_RADIUS,
+    height: HOLE_RADIUS,
+    overflow: 'hidden',
+  },
+  holeCornerFill: {
+    position: 'absolute',
+    width: HOLE_RADIUS * 2,
+    height: HOLE_RADIUS * 2,
+    borderRadius: HOLE_RADIUS,
+    borderWidth: HOLE_RADIUS,
+    borderColor: DIM,
+  },
   card: {
     position: 'absolute',
-    left: 0,
-    right: 0,
     backgroundColor: '#1a2233',
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
