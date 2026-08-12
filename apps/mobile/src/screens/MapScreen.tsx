@@ -71,8 +71,8 @@ import { resolveNotificationRecipients } from '../utils/notificationDeliveryPoli
 import { keyboardAvoidBottomOffset } from '../utils/keyboardSurface';
 import {
   gatherRequestPageIndex,
+  recoverGatherRequestAfterFailedResolve,
   resolveGatherRequestSelection,
-  rollbackGatherRequestSelection,
   sortGatherRequestsFifo,
 } from '../utils/gatherRequestInbox';
 import DestinationSearch from '../components/DestinationSearch';
@@ -3161,6 +3161,9 @@ export default function MapScreen({ route, navigation }: Props) {
     if (resolvingGatherRequestId) return;
     setResolvingGatherRequestId(requestId);
     pendingRemovedGatherRequestIdRef.current = requestId;
+    // Snapshot before optimistic remove so offline resolve+reload can restore the card.
+    const removedSnapshot =
+      gatherPointRequests.find((row) => row.id === requestId) ?? null;
     const remainingIds = sortedGatherRequestIds.filter((id) => id !== requestId);
     const nextSelectedId = resolveGatherRequestSelection({
       sortedIds: remainingIds,
@@ -3185,14 +3188,19 @@ export default function MapScreen({ route, navigation }: Props) {
     } catch (error) {
       logError('gather_request_resolve_failed', error, { requestId, approve });
       pendingRemovedGatherRequestIdRef.current = null;
-      setSelectedGatherRequestId(
-        rollbackGatherRequestSelection({
-          sortedIds: sortedGatherRequestIds,
+      // Local restore first: reload may also fail offline (#173).
+      if (removedSnapshot) {
+        const recovered = recoverGatherRequestAfterFailedResolve({
+          currentRequests: gatherPointRequests.filter((row) => row.id !== requestId),
+          removedSnapshot,
           failedId: requestId,
-          fallbackId: nextSelectedId,
-        }),
-      );
-      // Restore pending list from server if the RPC truly failed.
+          fallbackSelectedId: nextSelectedId,
+        });
+        setGatherPointRequests(recovered.requests);
+        setSelectedGatherRequestId(recovered.selectedId);
+      } else {
+        setSelectedGatherRequestId(nextSelectedId);
+      }
       void loadGatheringWorkflow().catch(() => undefined);
       Alert.alert(
         t('map.setFailedTitle'),
@@ -3206,6 +3214,7 @@ export default function MapScreen({ route, navigation }: Props) {
       setResolvingGatherRequestId(null);
     }
   }, [
+    gatherPointRequests,
     groupId,
     loadGatheringWorkflow,
     refresh,

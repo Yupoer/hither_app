@@ -70,6 +70,40 @@ export function rollbackGatherRequestSelection(input: {
   });
 }
 
+/**
+ * Put a snapshot row back into the inbox after optimistic remove + failed resolve.
+ * Dedupes by id and re-applies FIFO sort so offline recovery does not leave a gap.
+ */
+export function restoreGatherRequestAfterFailedResolve<T extends GatherRequestSortable>(input: {
+  current: readonly T[];
+  snapshot: T;
+}): T[] {
+  const without = input.current.filter((row) => row.id !== input.snapshot.id);
+  return sortGatherRequestsFifo([...without, input.snapshot]);
+}
+
+/**
+ * Public recovery path when resolve RPC fails (and server reload may also fail):
+ * restore the removed card locally and re-select it when present.
+ */
+export function recoverGatherRequestAfterFailedResolve<T extends GatherRequestSortable>(input: {
+  currentRequests: readonly T[];
+  removedSnapshot: T;
+  failedId: string;
+  fallbackSelectedId?: string | null;
+}): { requests: T[]; selectedId: string | null } {
+  const requests = restoreGatherRequestAfterFailedResolve({
+    current: input.currentRequests,
+    snapshot: input.removedSnapshot,
+  });
+  const selectedId = rollbackGatherRequestSelection({
+    sortedIds: requests.map((row) => row.id),
+    failedId: input.failedId,
+    fallbackId: input.fallbackSelectedId,
+  });
+  return { requests, selectedId };
+}
+
 export function gatherRequestPageIndex(
   sortedIds: readonly string[],
   selectedId: string | null | undefined,

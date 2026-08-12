@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   gatherRequestPageIndex,
+  recoverGatherRequestAfterFailedResolve,
   resolveGatherRequestSelection,
+  restoreGatherRequestAfterFailedResolve,
   rollbackGatherRequestSelection,
   sortGatherRequestsFifo,
 } from '../utils/gatherRequestInbox';
@@ -75,6 +77,31 @@ describe('gather request inbox FIFO (#173)', () => {
     ).toBe('c');
   });
 
+  it('restores request list and selection when resolve and reload both fail (#173)', () => {
+    // Public path: optimistic remove hid middle card; resolve RPC fails and
+    // immediate loadGatheringWorkflow also fails — local snapshot must restore.
+    const afterOptimistic = [
+      { id: 'a', createdAt: '2026-08-01T10:00:00.000Z' },
+      { id: 'c', createdAt: '2026-08-01T12:00:00.000Z' },
+    ];
+    const removedSnapshot = { id: 'b', createdAt: '2026-08-01T11:00:00.000Z' };
+    const recovered = recoverGatherRequestAfterFailedResolve({
+      currentRequests: afterOptimistic,
+      removedSnapshot,
+      failedId: 'b',
+      fallbackSelectedId: 'c',
+    });
+    expect(recovered.requests.map((r) => r.id)).toEqual(['a', 'b', 'c']);
+    expect(recovered.selectedId).toBe('b');
+    // Deduped restore when snapshot already present.
+    expect(
+      restoreGatherRequestAfterFailedResolve({
+        current: recovered.requests,
+        snapshot: removedSnapshot,
+      }).map((r) => r.id),
+    ).toEqual(['a', 'b', 'c']);
+  });
+
   it('maps selected id to paging index', () => {
     expect(gatherRequestPageIndex(['a', 'b', 'c'], 'c')).toBe(2);
     expect(gatherRequestPageIndex(['a', 'b'], 'missing')).toBe(0);
@@ -91,6 +118,7 @@ describe('gather request inbox FIFO (#173)', () => {
     expect(editorBlock).not.toContain('gatherPointRequests.map');
     expect(editorBlock).not.toContain('handleGatherPointRequest');
     expect(map).toContain('previousSortedIds');
-    expect(map).toContain('rollbackGatherRequestSelection');
+    expect(map).toContain('recoverGatherRequestAfterFailedResolve');
+    expect(map).toContain('removedSnapshot');
   });
 });
