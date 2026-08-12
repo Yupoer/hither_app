@@ -16,7 +16,7 @@ insert into auth.users (id, email, is_anonymous) values
   ('e5555555-5555-4555-8555-555555555555', 'kick-other-follower@example.test', false),
   ('e6666666-6666-4666-8666-666666666666', 'kick-second-leader@example.test', false);
 
-insert into public.profiles (id, display_name, anonymous_expires_at) values
+insert into public.profiles (id, nickname, anonymous_expires_at) values
   ('e1111111-1111-4111-8111-111111111111', 'Leader', null),
   ('e2222222-2222-4222-8222-222222222222', 'Follower', null),
   (
