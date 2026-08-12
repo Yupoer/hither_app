@@ -11,10 +11,9 @@ import {
   Alert,
   Animated as RnAnimated,
   AppState,
-  KeyboardAvoidingView,
+  Keyboard,
   LayoutAnimation,
   Linking,
-  Modal,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Platform,
@@ -69,6 +68,13 @@ import {
   cameraOnSearchPick,
 } from '../utils/mapCameraFlow';
 import { resolveNotificationRecipients } from '../utils/notificationDeliveryPolicy';
+import { keyboardAvoidBottomOffset } from '../utils/keyboardSurface';
+import {
+  gatherRequestPageIndex,
+  recoverGatherRequestAfterFailedResolve,
+  resolveGatherRequestSelection,
+  sortGatherRequestsFifo,
+} from '../utils/gatherRequestInbox';
 import DestinationSearch from '../components/DestinationSearch';
 import MeetCountdown from '../components/MeetCountdown';
 import DestinationReorderList from '../components/DestinationReorderList';
@@ -276,6 +282,7 @@ import {
   setSolo,
   reportStraggler,
   leaveGroups,
+  kickGroupMember,
   requestGroupLocationRefresh,
   resolveGatherPointRequestResilient,
   sendCommand,
@@ -298,7 +305,7 @@ import {
 import { supabase } from '../api/supabase';
 import { captureScreen } from 'react-native-view-shot';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ONBOARDING_STORAGE_KEY } from '../onboarding/sync';
+import { markOnboardingReplayForHome } from '../onboarding/sync';
 import { isDemoGroup } from '../api/demo';
 import { confirmAction } from '../utils/confirm';
 import { logEvent, logError } from '../utils/activityLog';
@@ -576,6 +583,38 @@ export default function MapScreen({ route, navigation }: Props) {
   const me = useMemo(() => members.find((m) => m.userId === user?.id), [members, user?.id]);
   const myScopeId = me?.subgroupId;
 
+  // Kicked follower: recovery RPC raises not_member → clear session + RoleSelect.
+  const kickedHandledRef = useRef(false);
+  useEffect(() => {
+    if (!user?.id || !groupId || isDemoGroup(groupId)) return;
+    if (membership?.group.id !== groupId) return;
+    if (isLeader) return;
+    const stillMember = members.some((m) => m.userId === user.id);
+    const accessLost = groupStateError === 'not_member'
+      || (!loading && !!state && state.group?.id === groupId && !stillMember && members.length > 0);
+    if (!accessLost) {
+      if (stillMember) kickedHandledRef.current = false;
+      return;
+    }
+    if (kickedHandledRef.current) return;
+    kickedHandledRef.current = true;
+    leaveGroup();
+    Alert.alert(t('group.kickedTitle'), t('group.kickedMsg'));
+    navigation.reset({ index: 0, routes: [{ name: 'RoleSelect' }] });
+  }, [
+    user?.id,
+    groupId,
+    members,
+    state,
+    loading,
+    groupStateError,
+    membership?.group.id,
+    isLeader,
+    leaveGroup,
+    navigation,
+    t,
+  ]);
+
   const [viewingScope, setViewingScope] = useState<'main' | 'sub'>('main');
   // Leave a subgroup → force main scope so we never filter against a stale id.
   useEffect(() => {
@@ -621,6 +660,32 @@ export default function MapScreen({ route, navigation }: Props) {
   const [destinationArrivals, setDestinationArrivals] = useState<DestinationArrival[]>([]);
   const [gatherPointRequests, setGatherPointRequests] = useState<GatherPointRequest[]>([]);
   const [resolvingGatherRequestId, setResolvingGatherRequestId] = useState<string | null>(null);
+  /** Selected request id for Route pane horizontal FIFO inbox (#173). */
+  const [selectedGatherRequestId, setSelectedGatherRequestId] = useState<string | null>(null);
+  const gatherRequestPagerRef = useRef<ScrollView | null>(null);
+  const lastGatherRequestIdsRef = useRef<string[]>([]);
+  const pendingRemovedGatherRequestIdRef = useRef<string | null>(null);
+  const sortedGatherRequests = useMemo(
+    () => sortGatherRequestsFifo(gatherPointRequests),
+    [gatherPointRequests],
+  );
+  const sortedGatherRequestIds = useMemo(
+    () => sortedGatherRequests.map((r) => r.id),
+    [sortedGatherRequests],
+  );
+  useEffect(() => {
+    setSelectedGatherRequestId((prev) => {
+      const next = resolveGatherRequestSelection({
+        sortedIds: sortedGatherRequestIds,
+        previousSortedIds: lastGatherRequestIdsRef.current,
+        previousId: prev,
+        removedId: pendingRemovedGatherRequestIdRef.current,
+      });
+      lastGatherRequestIdsRef.current = sortedGatherRequestIds;
+      pendingRemovedGatherRequestIdRef.current = null;
+      return next;
+    });
+  }, [sortedGatherRequestIds]);
   /** Route overlay draft dirtiness — flushed only on sheet dismiss (完成 / swipe). */
   const routeDraftDirtyRef = useRef({
     destinations: false,
@@ -1023,19 +1088,19 @@ export default function MapScreen({ route, navigation }: Props) {
     width: number;
     height: number;
   } | null>(null);
-  /** Center rename modal draft (independent of pendingPlaceTitle until confirm). */
-  const [renameModalVisible, setRenameModalVisible] = useState(false);
-  const [renameDraft, setRenameDraft] = useState('');
   /** Distinguishes long-press vs search for post-add camera (ticket 06). */
   const pendingPlaceSourceRef = useRef<'search' | 'longpress' | null>(null);
   // Editable only during this add confirmation. There is no later rename
   // action, so the persisted itinerary title stays stable after creation.
+  // Single draft owned by pending place flow (inline TextInput — no Modal).
   const [pendingPlaceTitle, setPendingPlaceTitle] = useState('');
   // Two-phase flow: pendingPlace is set immediately when a place is picked
   // (so the search sheet can close and the bottom sheet collapses to peek).
   // confirmCardReady flips true instantly — then the bounce-up
   // card appears and the search bar / recenter capsule hide.
   const [confirmCardReady, setConfirmCardReady] = useState(false);
+  /** Keyboard height while confirm card is up — lifts card with 12pt gap. */
+  const [confirmKeyboardHeight, setConfirmKeyboardHeight] = useState(0);
   const [kmlVisible, setKmlVisible] = useState(false);
   const [coordSheetVisible, setCoordSheetVisible] = useState(false);
   const [coordSheetInitial, setCoordSheetInitial] = useState<
@@ -1060,6 +1125,26 @@ export default function MapScreen({ route, navigation }: Props) {
     opacity: interpolate(confirmCardAnim.value, [0, 0.4], [0, 1], Extrapolation.CLAMP),
     transform: [{ translateY: interpolate(confirmCardAnim.value, [0, 1], [120, 0], Extrapolation.CLAMP) }],
   }));
+
+  // Keyboard inset for absolute confirm card (12pt gap; restore on dismiss).
+  useEffect(() => {
+    if (!confirmCardReady) {
+      setConfirmKeyboardHeight(0);
+      return;
+    }
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      setConfirmKeyboardHeight(e.endCoordinates?.height ?? 0);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setConfirmKeyboardHeight(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [confirmCardReady]);
 
   // Load account favorites once per signed-in session (cross-team reuse).
   useEffect(() => {
@@ -1131,8 +1216,9 @@ export default function MapScreen({ route, navigation }: Props) {
     measureTourTarget,
   ]);
 
-  // Remeasure highlight when the Add Place tour step advances.
-  // Never clobber a good hole with null — only accept non-zero rects.
+  // Remeasure highlight when the Add Place tour step advances or keyboard
+  // moves the confirm card. Never clobber a good hole with null — only accept
+  // non-zero rects. Step 0 always measures star (never Add/center fallback).
   useEffect(() => {
     if (addPlaceTourStep == null) {
       setAddPlaceTourTargetRect(null);
@@ -1154,7 +1240,7 @@ export default function MapScreen({ route, navigation }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [addPlaceTourStep, measureTourTarget]);
+  }, [addPlaceTourStep, measureTourTarget, confirmKeyboardHeight]);
 
   const pendingIsFavorite = useMemo(() => {
     if (!pendingPlace) return false;
@@ -1230,27 +1316,10 @@ export default function MapScreen({ route, navigation }: Props) {
     setConfirmCardReady(false);
     setPendingPlace(null);
     setPendingPlaceTitle('');
-    setRenameModalVisible(false);
-    setRenameDraft('');
+    setConfirmKeyboardHeight(0);
     pendingPlaceSourceRef.current = null;
   }
 
-  const openRenameModal = useCallback(() => {
-    setRenameDraft(pendingPlaceTitle);
-    setRenameModalVisible(true);
-  }, [pendingPlaceTitle]);
-
-  const confirmRenameModal = useCallback(() => {
-    const next = renameDraft.trim();
-    if (!next) return;
-    setPendingPlaceTitle(next);
-    setRenameModalVisible(false);
-  }, [renameDraft]);
-
-  const cancelRenameModal = useCallback(() => {
-    setRenameModalVisible(false);
-    setRenameDraft('');
-  }, []);
   const [paywallTrigger, setPaywallTrigger] = useState<TranslationKey | undefined>(undefined);
   const [paywallVisible, setPaywallVisible] = useState(false);
   const openPaywall = useCallback((trigger?: TranslationKey) => {
@@ -3091,6 +3160,18 @@ export default function MapScreen({ route, navigation }: Props) {
   const handleGatherPointRequest = useCallback(async (requestId: string, approve: boolean) => {
     if (resolvingGatherRequestId) return;
     setResolvingGatherRequestId(requestId);
+    pendingRemovedGatherRequestIdRef.current = requestId;
+    // Snapshot before optimistic remove so offline resolve+reload can restore the card.
+    const removedSnapshot =
+      gatherPointRequests.find((row) => row.id === requestId) ?? null;
+    const remainingIds = sortedGatherRequestIds.filter((id) => id !== requestId);
+    const nextSelectedId = resolveGatherRequestSelection({
+      sortedIds: remainingIds,
+      previousSortedIds: sortedGatherRequestIds,
+      previousId: selectedGatherRequestId,
+      removedId: requestId,
+    });
+    setSelectedGatherRequestId(nextSelectedId);
     // Optimistic remove so double-taps cannot re-fire the same pending card.
     setGatherPointRequests((prev) => prev.filter((row) => row.id !== requestId));
     try {
@@ -3106,7 +3187,20 @@ export default function MapScreen({ route, navigation }: Props) {
       }
     } catch (error) {
       logError('gather_request_resolve_failed', error, { requestId, approve });
-      // Restore pending list from server if the RPC truly failed.
+      pendingRemovedGatherRequestIdRef.current = null;
+      // Local restore first: reload may also fail offline (#173).
+      if (removedSnapshot) {
+        const recovered = recoverGatherRequestAfterFailedResolve({
+          currentRequests: gatherPointRequests.filter((row) => row.id !== requestId),
+          removedSnapshot,
+          failedId: requestId,
+          fallbackSelectedId: nextSelectedId,
+        });
+        setGatherPointRequests(recovered.requests);
+        setSelectedGatherRequestId(recovered.selectedId);
+      } else {
+        setSelectedGatherRequestId(nextSelectedId);
+      }
       void loadGatheringWorkflow().catch(() => undefined);
       Alert.alert(
         t('map.setFailedTitle'),
@@ -3119,7 +3213,16 @@ export default function MapScreen({ route, navigation }: Props) {
     } finally {
       setResolvingGatherRequestId(null);
     }
-  }, [groupId, loadGatheringWorkflow, refresh, resolvingGatherRequestId, t]);
+  }, [
+    gatherPointRequests,
+    groupId,
+    loadGatheringWorkflow,
+    refresh,
+    resolvingGatherRequestId,
+    selectedGatherRequestId,
+    sortedGatherRequestIds,
+    t,
+  ]);
 
   /** @returns true when complete RPC + refresh succeeded (for auto-complete notify). */
   const runCompleteGatheringStop = useCallback(async (destination: Destination): Promise<boolean> => {
@@ -4265,7 +4368,8 @@ export default function MapScreen({ route, navigation }: Props) {
       logError('reset_prefs_failed', e);
       console.warn('[settings] resetPrefs saveOnboardingProfile failed', e);
     }
-    await AsyncStorage.removeItem(ONBOARDING_STORAGE_KEY);
+    // #171: mark durable onboarding replay for create/join home — do not navigate.
+    await markOnboardingReplayForHome().catch(() => undefined);
     await clearGroupFeatureTour({
       accountId: user?.id ?? null,
       existingPreferences: user?.preferences ?? null,
@@ -4283,6 +4387,8 @@ export default function MapScreen({ route, navigation }: Props) {
     } catch {
       // Pending / reset-intent paths keep replay working without session write.
     }
+    // Reevaluate tour gate only — blocked while onboarding replay is pending.
+    // Must not force navigation off Map / settings.
     reevaluateTourRef.current();
     Alert.alert(t('settings.resetAllPrefs'), t('settings.resetPrefsDone'));
   }, [t, user?.id, user?.preferences, updateProfile]);
@@ -4544,9 +4650,43 @@ export default function MapScreen({ route, navigation }: Props) {
     [flock],
   );
 
+  const confirmKickMember = useCallback(
+    (target: { userId: string; name: string }) => {
+      if (!groupId || !isLeader || target.userId === user?.id) return;
+      confirmAction(
+        {
+          title: t('group.kickTitle'),
+          message: t('group.kickMsg', { name: target.name }),
+          confirmLabel: t('group.kickConfirm'),
+          cancelLabel: t('common.cancel'),
+          destructive: true,
+        },
+        () => {
+          void runUiAction(
+            'map.kick_member',
+            async (token) => {
+              try {
+                await kickGroupMember(groupId, target.userId);
+                if (!token.isCurrent()) return;
+                await refresh();
+              } catch (e) {
+                logError('kick_member_failed', e, { groupId, userId: target.userId });
+                if (!token.isCurrent()) return;
+                Alert.alert(t('group.kickFailed'));
+              }
+            },
+            { screen: 'Map' },
+          );
+        },
+      );
+    },
+    [groupId, isLeader, user?.id, t, refresh],
+  );
+
   // One flock row, shared by the main list and the subgroup cards.
   // Display: name + "角色 · 距離/狀態 · 最後更新". Solo is NOT on the card.
   const renderFlockRow = useCallback((f: (typeof flock)[number], last: boolean, index?: number) => {
+    const isMe = f.userId === user?.id;
     return (
       <FlockRow
         key={`flock-${f.userId}-${index ?? 0}`}
@@ -4560,16 +4700,18 @@ export default function MapScreen({ route, navigation }: Props) {
         dist={f.dist}
         arrived={f.arrived}
         lastUpdated={f.lastUpdated}
-        isMe={f.userId === user?.id}
+        isMe={isMe}
+        canKick={isLeader && !isMe && !f.isLeader}
         last={last}
         styles={styles}
         t={t}
         accent={accent}
         onSelfMerge={doSelfMerge}
         onSelfSplit={doSelfSplit}
+        onKick={() => confirmKickMember({ userId: f.userId, name: f.name })}
       />
     );
-  }, [user?.id, t, doSelfMerge, doSelfSplit, styles, accent]);
+  }, [user?.id, t, doSelfMerge, doSelfSplit, styles, accent, isLeader, confirmKickMember]);
 
   // Floating chrome rides just above the sheet's live top edge; its baseline
   // follows the sheet's animated gap to the screen bottom. At full the map
@@ -5064,9 +5206,146 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // ─── 路線：集合點、排序、Google Maps 匯入、歷史 ───────────────────────
   const opsOpenCount = exceptionOpenCount + coordination.openCount;
+  const gatherRequestPageW = Math.max(200, windowWidth - 32);
+  useEffect(() => {
+    const page = gatherRequestPageIndex(
+      sortedGatherRequestIds,
+      selectedGatherRequestId,
+    );
+    gatherRequestPagerRef.current?.scrollTo({
+      x: page * gatherRequestPageW,
+      animated: true,
+    });
+  }, [gatherRequestPageW, selectedGatherRequestId, sortedGatherRequestIds]);
   const routePaneBody = useMemo(() => (
     <>
-      <Text style={[styles.sheetHeading, styles.sheetHeadingFirst]}>{t('map.gatheringPoints')}</Text>
+      {/* #173: leader pending gather requests — FIFO horizontal cards at Route top. */}
+      {isLeader && sortedGatherRequests.length > 0 ? (
+        <View testID="route-gather-request-inbox" style={{ marginBottom: 12 }}>
+          <Text style={[styles.sheetHeading, styles.sheetHeadingFirst]}>
+            {t('gatherRequest.pending')}
+          </Text>
+          <ScrollView
+            ref={gatherRequestPagerRef}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            decelerationRate="fast"
+            style={{ marginHorizontal: -4 }}
+            onMomentumScrollEnd={(e) => {
+              const page = Math.round(
+                e.nativeEvent.contentOffset.x / Math.max(1, gatherRequestPageW),
+              );
+              const id = sortedGatherRequestIds[page];
+              if (id) setSelectedGatherRequestId(id);
+            }}
+            onLayout={() => {
+              const page = gatherRequestPageIndex(
+                sortedGatherRequestIds,
+                selectedGatherRequestId,
+              );
+              gatherRequestPagerRef.current?.scrollTo({
+                x: page * gatherRequestPageW,
+                animated: false,
+              });
+            }}
+          >
+            {sortedGatherRequests.map((request) => (
+              <View
+                key={request.id}
+                style={{
+                  width: gatherRequestPageW,
+                  paddingHorizontal: 4,
+                }}
+              >
+                <View style={[styles.tripSummaryCard, { marginBottom: 0 }]}>
+                  <Text style={styles.tripCardKicker} numberOfLines={1}>
+                    {members.find((member) => member.userId === request.requesterId)?.name
+                      ?? t('map.memberFallback')}
+                  </Text>
+                  <Text style={styles.tripCardTitle} numberOfLines={2}>
+                    {request.items.map((item) => item.title).join('、')}
+                  </Text>
+                  <Text style={styles.tripCardMeta} numberOfLines={1}>
+                    {t('gatherRequest.target', {
+                      team: request.subgroupId
+                        ? subgroups.find((item) => item.id === request.subgroupId)?.name
+                          ?? t('gatherRequest.unknownTeam')
+                        : t('gatherRequest.mainTeam'),
+                    })}
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                    <Pressable
+                      style={[
+                        styles.chip,
+                        { flex: 1, minHeight: 44 },
+                        resolvingGatherRequestId === request.id ? { opacity: 0.5 } : null,
+                      ]}
+                      onPress={() => void handleGatherPointRequest(request.id, false)}
+                      disabled={!!resolvingGatherRequestId}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('gatherRequest.reject')}
+                      testID={`gather-request-reject-${request.id}`}
+                    >
+                      <Text style={styles.chipText}>{t('gatherRequest.reject')}</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[
+                        styles.chip,
+                        {
+                          flex: 1,
+                          minHeight: 44,
+                          backgroundColor: accentMix(accent, 24),
+                        },
+                        resolvingGatherRequestId === request.id ? { opacity: 0.5 } : null,
+                      ]}
+                      onPress={() => void handleGatherPointRequest(request.id, true)}
+                      disabled={!!resolvingGatherRequestId}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('gatherRequest.approve')}
+                      testID={`gather-request-approve-${request.id}`}
+                    >
+                      <Text style={styles.chipText}>{t('gatherRequest.approve')}</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+            ))}
+          </ScrollView>
+          {sortedGatherRequests.length > 1 ? (
+            <View
+              style={{
+                flexDirection: 'row',
+                justifyContent: 'center',
+                gap: 6,
+                marginTop: 8,
+              }}
+              accessibilityRole="adjustable"
+            >
+              {sortedGatherRequestIds.map((id) => (
+                <View
+                  key={id}
+                  style={{
+                    width: id === selectedGatherRequestId ? 14 : 6,
+                    height: 6,
+                    borderRadius: 3,
+                    backgroundColor:
+                      id === selectedGatherRequestId ? accent : glass.textTertiary,
+                  }}
+                />
+              ))}
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+      <Text
+        style={[
+          styles.sheetHeading,
+          !(isLeader && sortedGatherRequests.length > 0) && styles.sheetHeadingFirst,
+        ]}
+      >
+        {t('map.gatheringPoints')}
+      </Text>
       {extraPointCredits > 0 ? (
         <Text
           style={styles.extraCreditsHint}
@@ -5151,6 +5430,9 @@ export default function MapScreen({ route, navigation }: Props) {
   ), [
     t, styles, nextStopTitle, nextStopDistLabel, destinations.length,
     openHistoryOverlay, isLeader, opsOpenCount, editButtonActive, extraPointCredits, accent,
+    sortedGatherRequests, sortedGatherRequestIds, selectedGatherRequestId,
+    gatherRequestPageW, resolvingGatherRequestId, members, subgroups,
+    handleGatherPointRequest,
   ]);
 
   // ─── 工具：同行者模式入口 → 定位分享 → 抵達距離 → 快捷指令 ─────────
@@ -5488,70 +5770,7 @@ export default function MapScreen({ route, navigation }: Props) {
       ) : (
         <View style={[styles.flex, { backgroundColor: '#0c0e12' }]} />
       )}
-      {/* OTA-04/02: personal nav announcement response (user-scoped; never team phase). */}
-      {showDenseChrome
-        && !isLeader
-        && navigationSessionState.session?.status === 'active'
-        && user?.id ? (
-        <View
-          pointerEvents="box-none"
-          style={{
-            position: 'absolute',
-            top: insets.top + 8,
-            left: 16,
-            right: 16,
-            zIndex: 29,
-          }}
-        >
-          <View
-            style={{
-              backgroundColor: glass.pill,
-              borderRadius: 12,
-              paddingHorizontal: 12,
-              paddingVertical: 10,
-              gap: 8,
-            }}
-          >
-            <Text style={{ color: glass.textSecondary, fontSize: 13 }}>
-              {t('navResponse.prompt')}
-            </Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-              {(
-                [
-                  ['acknowledged', 'navResponse.acknowledged'],
-                  ['late', 'navResponse.late'],
-                  ['needs_help', 'navResponse.needsHelp'],
-                ] as const
-              ).map(([kind, labelKey]) => (
-                <Pressable
-                  key={kind}
-                  onPress={() => {
-                    mediumTap();
-                    void navigationSessionState
-                      .respondToAnnouncement(kind)
-                      .then(() => Alert.alert(t('navResponse.sent')))
-                      .catch(() =>
-                        Alert.alert(t('map.setFailedTitle'), t('map.journeyFailed')),
-                      );
-                  }}
-                  accessibilityRole="button"
-                  accessibilityLabel={t(labelKey)}
-                  style={{
-                    backgroundColor: accent,
-                    borderRadius: 10,
-                    paddingHorizontal: 10,
-                    paddingVertical: 6,
-                  }}
-                >
-                  <Text style={{ color: '#0c1a12', fontSize: 12, fontWeight: '600' }}>
-                    {t(labelKey)}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          </View>
-        </View>
-      ) : null}
+      {/* #175: navigation response banner removed entirely (not moved to Tools). */}
 
       {/* OTA-07: reduced presentation — covers dense chrome; same state tree. */}
       {inPassiveMode ? (
@@ -5660,10 +5879,14 @@ export default function MapScreen({ route, navigation }: Props) {
           ? distanceMeters(fromCoords, pendingPlace.coordinates)
           : null;
         const pMin = pDist != null ? shortEta(walkingEtaSeconds(pDist)) : null;
+        const confirmBottom = keyboardAvoidBottomOffset({
+          baseBottom: insets.bottom + 24,
+          keyboardHeight: confirmKeyboardHeight,
+        });
         return (
-          // Sits above the hidden sheet; centred vertically near the bottom.
+          // Sits above the hidden sheet; lifts with keyboard (12pt gap).
           <Animated.View
-            style={[styles.confirmCard, { bottom: insets.bottom + 24 }, confirmCardStyle]}
+            style={[styles.confirmCard, { bottom: confirmBottom }, confirmCardStyle]}
             pointerEvents="box-none"
           >
             <liquidGlass.GlassView tintColor={glass.cardActive} style={styles.confirmCardInner}>
@@ -5672,20 +5895,21 @@ export default function MapScreen({ route, navigation }: Props) {
                   <Text style={styles.confirmKicker} numberOfLines={1}>
                     {t('confirmGather.going', { name: '' })}
                   </Text>
-                  {/* Name is a press target → center rename modal (keep bottom card). */}
-                  <Pressable
-                    onPress={openRenameModal}
-                    accessibilityRole="button"
-                    accessibilityLabel={t('confirmGather.going', {
-                      name: pendingPlaceTitle || pendingPlace.name,
-                    })}
+                  {/* Inline rename — single draft; no separate Modal. */}
+                  <TextInput
+                    value={pendingPlaceTitle}
+                    onChangeText={setPendingPlaceTitle}
+                    style={styles.confirmTitleInput}
+                    placeholder={pendingPlace.name || t('map.droppedPin')}
+                    placeholderTextColor={glass.textTertiary}
+                    maxLength={120}
+                    returnKeyType="done"
+                    blurOnSubmit
+                    onSubmitEditing={() => Keyboard.dismiss()}
+                    accessibilityLabel={t('map.renameTitle')}
                     accessibilityHint={t('map.droppedPinHint')}
                     testID="confirm-place-name"
-                  >
-                    <Text style={styles.confirmTitleInput} numberOfLines={1}>
-                      {pendingPlaceTitle || pendingPlace.name || t('map.droppedPin')}
-                    </Text>
-                  </Pressable>
+                  />
                   <Text style={styles.confirmNameHint} numberOfLines={1}>
                     {t('map.droppedPinHint')}
                   </Text>
@@ -5846,70 +6070,6 @@ export default function MapScreen({ route, navigation }: Props) {
         reduceMotion={tourReduceMotion}
       />
 
-      {/* Center rename modal — only updates draft name; add still uses bottom card. */}
-      <Modal
-        visible={renameModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={cancelRenameModal}
-      >
-        <KeyboardAvoidingView
-          style={styles.renameModalOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <Pressable style={styles.renameModalOverlay} onPress={cancelRenameModal}>
-            <Pressable
-              style={styles.renameModalCard}
-              onPress={(e) => e.stopPropagation()}
-              testID="confirm-rename-modal"
-            >
-              <Text style={styles.renameModalTitle}>{t('map.renameTitle')}</Text>
-              <TextInput
-                value={renameDraft}
-                onChangeText={setRenameDraft}
-                style={styles.renameModalInput}
-                autoFocus
-                maxLength={120}
-                placeholder={t('map.droppedPin')}
-                placeholderTextColor={glass.textTertiary}
-                returnKeyType="done"
-                onSubmitEditing={confirmRenameModal}
-                accessibilityLabel={t('map.renameTitle')}
-                testID="confirm-rename-input"
-              />
-              <View style={styles.renameModalActions}>
-                <Pressable
-                  style={styles.renameModalBtn}
-                  onPress={cancelRenameModal}
-                  accessibilityRole="button"
-                  accessibilityLabel={t('common.cancel')}
-                >
-                  <Text style={styles.renameModalBtnText}>{t('common.cancel')}</Text>
-                </Pressable>
-                <Pressable
-                  style={[
-                    styles.renameModalBtn,
-                    styles.renameModalBtnPrimary,
-                    { backgroundColor: accent },
-                    !renameDraft.trim() && { opacity: 0.45 },
-                  ]}
-                  onPress={confirmRenameModal}
-                  disabled={!renameDraft.trim()}
-                  accessibilityRole="button"
-                  accessibilityLabel={t('common.confirm')}
-                  accessibilityState={{ disabled: !renameDraft.trim() }}
-                  testID="confirm-rename-ok"
-                >
-                  <Text style={[styles.renameModalBtnText, { color: '#111' }]}>
-                    {t('common.confirm')}
-                  </Text>
-                </Pressable>
-              </View>
-            </Pressable>
-          </Pressable>
-        </KeyboardAvoidingView>
-      </Modal>
-
       {/* Gathering-point carousel — above locate/group capsules; sheet wrapper
           zIndex is higher so the sheet covers cards on overlap. */}
       {showDenseChrome && destinations.length > 0 && (
@@ -6007,9 +6167,6 @@ export default function MapScreen({ route, navigation }: Props) {
               const chromeCompact =
                 narrowScreen || fontBucket === 'large' || fontBucket === 'xl';
               const chromeTight = fontBucket === 'xl' || (narrowScreen && fontBucket === 'large');
-              // On tight density, drop nav label so meet countdown + mode stay
-              // square-floor sized in one row (especially when Maps appears).
-              const navIconOnly = chromeTight;
               // Use active itinerary (carousel list), not raw history-inclusive
               // scope — past-day open rows must not hide the arrive control.
               const canMarkArrival = canMarkDestinationArrival({
@@ -6027,6 +6184,9 @@ export default function MapScreen({ route, navigation }: Props) {
                 && canMarkArrival
                 && !dest.closedAt
                 && flockNavigatingThis;
+              // #176: icon-only Start only when Arrived is also present under tight
+              // density. When Arrived is absent, Start fills that slot (not square).
+              const navIconOnly = chromeTight && showArrivalControl;
               const personallyArrived = myCompletedDestinationIds.has(dest.id) || (
                 autoArrivedDestId === dest.id ||
                 (navTarget?.id === dest.id && (
@@ -6697,52 +6857,6 @@ export default function MapScreen({ route, navigation }: Props) {
           scrollEventThrottle={16}
         >
           <Text style={styles.overlayHint}>{t('map.routeHint')}</Text>
-          {isLeader && gatherPointRequests.length > 0 ? (
-            <View style={styles.listGroup}>
-              <Text style={styles.sectionLabel}>{t('gatherRequest.pending')}</Text>
-              {gatherPointRequests.map((request) => (
-                <View key={request.id} style={styles.flockRow}>
-                  <View style={styles.grow}>
-                    <Text style={styles.flockName}>
-                      {members.find((member) => member.userId === request.requesterId)?.name
-                        ?? t('map.memberFallback')}
-                    </Text>
-                    <Text style={styles.overlayHint}>
-                      {t('gatherRequest.target', {
-                        team: request.subgroupId
-                          ? subgroups.find((item) => item.id === request.subgroupId)?.name
-                            ?? t('gatherRequest.unknownTeam')
-                          : t('gatherRequest.mainTeam'),
-                      })}
-                    </Text>
-                    <Text style={styles.overlayHint}>
-                      {request.items.map((item) => item.title).join('、')}
-                    </Text>
-                  </View>
-                  <Pressable
-                    style={[styles.chip, resolvingGatherRequestId ? { opacity: 0.5 } : null]}
-                    onPress={() => void handleGatherPointRequest(request.id, false)}
-                    disabled={!!resolvingGatherRequestId}
-                    accessibilityRole="button"
-                  >
-                    <Text style={styles.chipText}>{t('gatherRequest.reject')}</Text>
-                  </Pressable>
-                  <Pressable
-                    style={[
-                      styles.chip,
-                      { backgroundColor: accentMix(accent, 24) },
-                      resolvingGatherRequestId ? { opacity: 0.5 } : null,
-                    ]}
-                    onPress={() => void handleGatherPointRequest(request.id, true)}
-                    disabled={!!resolvingGatherRequestId}
-                    accessibilityRole="button"
-                  >
-                    <Text style={styles.chipText}>{t('gatherRequest.approve')}</Text>
-                  </Pressable>
-                </View>
-              ))}
-            </View>
-          ) : null}
           <DestinationReorderList
             groupId={groupId ?? undefined}
             destinations={openForRouteEditor}
@@ -8045,14 +8159,26 @@ function CarouselDots({
     });
   }, [targetStart, targetRel, targetIndices, active, stripX, pillSlot]);
 
+  // #174: fixed width for inactive pitch + active pill so last slot is not clipped.
+  // Active pill is ~18 wide; inactive pitch DOT_PITCH_PX (6+6).
   const viewportWidth =
     displayIndices.length <= 0
       ? 0
-      : // inactive pitch * (n-1) + active width allowance
-        DOT_PITCH_PX * Math.max(0, displayIndices.length - 1) + 18;
+      : DOT_PITCH_PX * Math.max(0, displayIndices.length - 1) + 22;
 
   return (
-    <View style={[styles.dots, styles.dotsViewport, { maxWidth: viewportWidth + 4 }]}>
+    <View
+      style={[
+        styles.dots,
+        styles.dotsViewport,
+        {
+          width: viewportWidth + 8,
+          maxWidth: undefined,
+          flexShrink: 0,
+          overflow: 'visible',
+        },
+      ]}
+    >
       <RnAnimated.View
         style={[
           styles.dotsStrip,
@@ -8194,12 +8320,14 @@ const FlockRow = React.memo(function FlockRow({
   arrived,
   lastUpdated,
   isMe,
+  canKick = false,
   last,
   styles,
   t,
   accent,
   onSelfMerge,
   onSelfSplit,
+  onKick,
 }: {
   userId: string;
   name: string;
@@ -8212,6 +8340,7 @@ const FlockRow = React.memo(function FlockRow({
   arrived: boolean;
   lastUpdated?: string;
   isMe: boolean;
+  canKick?: boolean;
   last: boolean;
   styles: any;
   t: (key: TranslationKey, params?: Record<string, string | number>) => string;
@@ -8219,6 +8348,7 @@ const FlockRow = React.memo(function FlockRow({
   accent: string;
   onSelfMerge: () => void | Promise<unknown>;
   onSelfSplit: () => void | Promise<unknown>;
+  onKick?: () => void;
 }) {
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
@@ -8308,6 +8438,21 @@ const FlockRow = React.memo(function FlockRow({
           )}
         </View>
       )}
+      {!isMe && canKick && onKick ? (
+        <View style={styles.selfControls}>
+          <Pressable
+            onPress={onKick}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={t('group.kick')}
+            style={({ pressed }) => pressed && styles.rowActionPressed}
+          >
+            <Text style={[styles.rowActionSecondary, { color: glass.danger }]}>
+              {t('group.kick')}
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
     </View>
   );
 });
@@ -8996,7 +9141,8 @@ const makeStyles = (
       color: '#fff',
       fontSize: 18,
       fontWeight: '700',
-      paddingVertical: 0,
+      margin: 0,
+      paddingVertical: 2,
       paddingHorizontal: 2,
       minHeight: 26,
     },

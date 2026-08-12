@@ -9,8 +9,8 @@ const source = readFileSync(
 describe('group itinerary reconciliation', () => {
   it('keeps a slow reconciliation poll even when Realtime is subscribed', () => {
     expect(source).toContain('GROUP_POLL_INTERVAL_MS');
-    expect(source).toMatch(/setInterval\([\s\S]*loadRef\.current\(\)/);
-    expect(source).not.toMatch(/if \(!realtimeReadyRef\.current\) \{\s*void loadRef\.current\(\);\s*\}/);
+    expect(source).toMatch(/setInterval\([\s\S]*loadRef\.current\(/);
+    expect(source).not.toMatch(/if \(!realtimeReadyRef\.current\) \{\s*void loadRef\.current\(/);
   });
 
   it('reports remote pull failure even when a local cache is restored', () => {

@@ -19,6 +19,66 @@ export type NotificationEventKind =
   | 'add_gathering'
   | 'meet_time';
 
+/** Push / preference category for a commands INSERT (#170). */
+export type CommandPushCategory = 'leader_commands' | 'follower_requests';
+
+/**
+ * Classify a command row into push preference category + policy event.
+ *
+ * - Fixed leader types → leader_commands / quick_command
+ * - Fixed follower types (need_*) → follower_requests / quick_command (whole-group)
+ * - request_start → follower_requests / route_request (leaders only)
+ * - custom → role of sender; missing/unknown role must NOT drift to leader
+ *   (would mis-route follower custom under leaderCommands prefs).
+ */
+export function classifyCommandNotification(input: {
+  commandType: string;
+  /** Explicit membership role of sender; null/undefined when lookup failed. */
+  senderRole?: 'leader' | 'follower' | null;
+  /** Whether `commandType` is in the leader fixed set (caller supplies isLeaderCommand). */
+  isLeaderFixedType?: boolean;
+}): {
+  pushCategory: CommandPushCategory;
+  prefCategory: 'leaderCommands' | 'followerRequests';
+  policyEvent: NotificationEventKind;
+} {
+  const type = input.commandType;
+  if (type === 'request_start') {
+    return {
+      pushCategory: 'follower_requests',
+      prefCategory: 'followerRequests',
+      policyEvent: 'route_request',
+    };
+  }
+  if (type === 'custom') {
+    const isLeader = input.senderRole === 'leader';
+    return {
+      pushCategory: isLeader ? 'leader_commands' : 'follower_requests',
+      prefCategory: isLeader ? 'leaderCommands' : 'followerRequests',
+      policyEvent: 'quick_command',
+    };
+  }
+  const leaderFixed =
+    input.isLeaderFixedType
+    ?? [
+      'gather', 'find_gathering', 'depart', 'rest', 'be_careful',
+      'go_left', 'go_right', 'stop', 'hurry_up',
+    ].includes(type);
+  if (leaderFixed) {
+    return {
+      pushCategory: 'leader_commands',
+      prefCategory: 'leaderCommands',
+      policyEvent: 'quick_command',
+    };
+  }
+  // Follower fixed (need_restroom, need_break, need_help, found_something, …)
+  return {
+    pushCategory: 'follower_requests',
+    prefCategory: 'followerRequests',
+    policyEvent: 'quick_command',
+  };
+}
+
 export type DeliveryKind =
   /** Sender's own device after a successful local op (once). */
   | 'operator_local_confirm'

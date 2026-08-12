@@ -7,6 +7,7 @@ import { useTranslation } from '../i18n';
 import { isLeaderCommand, type CommandType, type NotificationCategory } from '../types';
 import {
   buildAlignedNotificationEventId,
+  classifyCommandNotification,
   eventIdFromPushData,
   getProcessNotificationSeen,
   markNotificationDelivered,
@@ -56,6 +57,18 @@ function categoryToPolicyEvent(
     default:
       return 'quick_command';
   }
+}
+
+/** Resolve command category without drifting unknown custom roles to leader (#170). */
+export function resolveCommandNotificationClass(
+  commandType: CommandType,
+  senderRole: 'leader' | 'follower' | null | undefined,
+): ReturnType<typeof classifyCommandNotification> {
+  return classifyCommandNotification({
+    commandType,
+    senderRole: senderRole ?? null,
+    isLeaderFixedType: isLeaderCommand(commandType),
+  });
 }
 
 export function useGroupNotifications(): void {
@@ -223,7 +236,7 @@ export function useGroupNotifications(): void {
           if (row.sender_id === myUserId) return; // never notify the sender
           if (row.type === 'request_start' && !isLeaderRef.current) return;
           void (async () => {
-            let leader = isLeaderCommand(row.type);
+            let senderRole: 'leader' | 'follower' | null = null;
             if (row.type === 'custom') {
               const { data: senderMem } = await supabase
                 .from('memberships')
@@ -231,28 +244,31 @@ export function useGroupNotifications(): void {
                 .eq('group_id', groupId)
                 .eq('user_id', row.sender_id)
                 .maybeSingle();
-              leader = (senderMem as { role?: string } | null)?.role !== 'follower';
+              const role = (senderMem as { role?: string } | null)?.role;
+              // Only explicit leader; missing/error must not drift to leaderCommands.
+              senderRole = role === 'leader' ? 'leader' : role === 'follower' ? 'follower' : null;
+            } else if (isLeaderCommand(row.type)) {
+              senderRole = 'leader';
+            } else {
+              senderRole = 'follower';
             }
+            const classified = resolveCommandNotificationClass(row.type, senderRole);
             const label = row.type === 'custom'
               ? (row.message?.trim() || tRef.current('map.cmdTitle'))
               : tRef.current(`command.${row.type}` as const);
-            const title = leader
+            const title = classified.prefCategory === 'leaderCommands'
               ? tRef.current('notif.leaderTitle', { label })
               : tRef.current('notif.memberTitle', { label });
-            const eventKind = categoryToPolicyEvent(
-              leader ? 'leaderCommands' : 'followerRequests',
-              row.type,
-            );
             await fire({
-              category: leader ? 'leaderCommands' : 'followerRequests',
+              category: classified.prefCategory,
               title,
               body: row.message ?? label,
-              eventKind,
+              eventKind: classified.policyEvent,
               senderId: row.sender_id,
               // Prefer command row id (also sent as entity_id on push); fallback type:sender.
               entityId: row.id ?? undefined,
               commandType: row.type,
-              pushCategory: leader ? 'leader_commands' : 'follower_requests',
+              pushCategory: classified.pushCategory,
             });
           })();
         },

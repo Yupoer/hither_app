@@ -1,13 +1,15 @@
 /**
- * Gathering card command-row layout (#148).
+ * Gathering card command-row layout (#148 / #176).
  *
- * Final order: [Start/End | Arrived] [Countdown] [Transport]
- * - Arrived + transport: fixed squares
+ * Final order: Start, conditional Arrived, Countdown, Transport (trailing)
+ * - Arrived + transport: fixed squares when present
+ * - Arrived absent → Start fills its slot (flex grow, not icon-only square)
  * - Countdown: 1.5× baseline width on normal screens (extra taken from nav)
- * - All hit targets ≥ 48pt; narrow screens shrink gaps first
+ * - All hit targets ≥ 44pt; narrow screens shrink gaps first
+ * - Density from available width / font — no device model strings
  */
 
-export const GATHER_CMD_MIN_HIT_PT = 48;
+export const GATHER_CMD_MIN_HIT_PT = 44;
 /** Arrived split-in duration (ms). Spec: 220–300ms. */
 export const ARRIVED_SPLIT_MS = 260;
 /** Reduce Motion fade instead of size-move. */
@@ -39,7 +41,8 @@ export type GatherCommandLayout = {
 
 /**
  * Pure width allocation. Extra countdown width is taken only from the nav slot.
- * Gaps shrink on narrow before any control drops below 48pt.
+ * Gaps shrink on narrow before any control drops below 44pt.
+ * When Arrived is absent, Start absorbs that width (flex) instead of becoming square-only.
  */
 export function layoutGatherCommandWidths(
   input: GatherCommandLayoutInput,
@@ -52,11 +55,6 @@ export function layoutGatherCommandWidths(
     gap = Math.max(4, Math.min(gap, 6));
   }
 
-  const fixedCount =
-    (input.showNav ? 0 : 0) // nav is flexible
-    + (input.showArrived ? 1 : 0)
-    + 1 // transport always
-    + 1; // countdown always
   // Count flex slots for gap: nav?(1) + arrived? + countdown + transport
   const slotCount =
     (input.showNav ? 1 : 0) + (input.showArrived ? 1 : 0) + 2;
@@ -70,7 +68,6 @@ export function layoutGatherCommandWidths(
         GATHER_CMD_MIN_HIT_PT,
         Math.min(
           input.countdownBaseWidth * COUNTDOWN_WIDTH_FACTOR,
-          // On narrow: use largest that fits after min nav + squares + gaps
           Math.max(
             GATHER_CMD_MIN_HIT_PT,
             input.rowWidth
@@ -91,8 +88,12 @@ export function layoutGatherCommandWidths(
   if (input.showNav) {
     const remaining =
       input.rowWidth - gapsTotal - fixedSquares - countdownWidth;
-    navWidth = Math.max(GATHER_CMD_MIN_HIT_PT, remaining);
-    // If row is too tight, shrink countdown after nav hits floor.
+    // When Arrived is missing, Start fills its slot: at least squareSize * 2
+    // so it is not forced into icon-only square density.
+    const navFloor = input.showArrived
+      ? GATHER_CMD_MIN_HIT_PT
+      : Math.max(GATHER_CMD_MIN_HIT_PT, squareSize * 1.6);
+    navWidth = Math.max(navFloor, remaining);
     const overflow =
       gapsTotal + fixedSquares + countdownWidth + navWidth - input.rowWidth;
     if (overflow > 0) {
@@ -106,15 +107,11 @@ export function layoutGatherCommandWidths(
       );
     }
   } else {
-    // No nav: countdown takes remaining after squares.
     countdownWidth = Math.max(
       GATHER_CMD_MIN_HIT_PT,
       input.rowWidth - gapsTotal - fixedSquares,
     );
   }
-
-  // Silence unused in case of future fixedCount use.
-  void fixedCount;
 
   return {
     gap,

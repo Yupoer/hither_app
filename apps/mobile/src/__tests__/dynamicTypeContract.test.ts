@@ -92,8 +92,11 @@ describe('Dynamic Type contract', () => {
     expect(preferences).toMatch(/TEXT_SCALE_OPTIONS\s*=\s*\[[^\]]*0\.8/);
     expect(settingsOverlay).toContain("settings.textSize");
     expect(settingsOverlay).toContain("settings.textSizeXs");
-    expect(settingsOverlay).toContain("key: '0.8'");
+    // #175: five-step native PrefSlider (not Segmented keys).
+    expect(settingsOverlay).toContain('settings-text-scale-slider');
+    expect(settingsOverlay).toContain('values={[0.8, 0.9, 1.0, 1.1, 1.2]}');
     expect(settingsOverlay).toContain('setTextScale');
+    expect(settingsOverlay).not.toMatch(/Segmented[\s\S]{0,200}textSizeXs/);
     expect(hitherText).toContain('textScale');
     expect(hitherText).toContain("typeRole === 'emoji'");
   });

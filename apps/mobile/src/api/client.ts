@@ -42,6 +42,7 @@ export {
   getCachedMyJoinedGroups,
   invalidateMyJoinedGroupsCache,
   leaveGroups,
+  kickGroupMember,
 } from './services/GroupService';
 
 export type {

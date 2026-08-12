@@ -5,8 +5,8 @@ import {
 } from '../state/PreferencesContext';
 
 describe('arrival radius detents', () => {
-  it('exposes the four supported radii', () => {
-    expect(ARRIVAL_RADIUS_OPTIONS).toEqual([30, 50, 100, 300]);
+  it('exposes five supported radii including 500 (#175)', () => {
+    expect(ARRIVAL_RADIUS_OPTIONS).toEqual([30, 50, 100, 300, 500]);
   });
 
   it('keeps exact detents', () => {
@@ -14,12 +14,14 @@ describe('arrival radius detents', () => {
     expect(clampArrivalRadiusM(50)).toBe(50);
     expect(clampArrivalRadiusM(100)).toBe(100);
     expect(clampArrivalRadiusM(300)).toBe(300);
+    expect(clampArrivalRadiusM(500)).toBe(500);
   });
 
   it('snaps legacy continuous values to the nearest option', () => {
     expect(clampArrivalRadiusM(87)).toBe(100);
     expect(clampArrivalRadiusM(220)).toBe(300);
     expect(clampArrivalRadiusM(10)).toBe(30);
+    expect(clampArrivalRadiusM(450)).toBe(500);
   });
 
   it('chooses the lower detent on exact midpoints', () => {
@@ -27,6 +29,8 @@ describe('arrival radius detents', () => {
     expect(clampArrivalRadiusM(75)).toBe(50);
     // Midpoint 200 between 100 and 300 → lower 100.
     expect(clampArrivalRadiusM(200)).toBe(100);
+    // Midpoint 400 between 300 and 500 → lower 300.
+    expect(clampArrivalRadiusM(400)).toBe(300);
   });
 
   it('falls back to the default for non-finite input', () => {

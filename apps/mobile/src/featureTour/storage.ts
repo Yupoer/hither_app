@@ -205,6 +205,10 @@ export function isTourCompletedFromSources(input: {
 /**
  * Pure gate: should the group feature tour activate?
  * Tests drive this without MapScreen.
+ *
+ * #171: requires durable onboarding completion (not a pending onboarding
+ * replay). Empty groups wait for the first real destination — never invents
+ * demo cards. Tour completion is a separate owner from onboarding.
  */
 export function shouldStartGroupFeatureTour(input: {
   onboardingCompleted: boolean;
@@ -213,7 +217,10 @@ export function shouldStartGroupFeatureTour(input: {
   tourCompleted: boolean;
   /** Passive companion mode blocks dense chrome tour. */
   passiveMode?: boolean;
+  /** When prefs reset marked onboarding for home replay, block tour. */
+  onboardingReplayPending?: boolean;
 }): boolean {
+  if (input.onboardingReplayPending) return false;
   if (!input.onboardingCompleted) return false;
   if (!input.hasGroupId) return false;
   if (input.destinationCount < 1) return false;

@@ -151,6 +151,18 @@ describe('group feature tour trigger gate', () => {
       }),
     ).toBe(false);
   });
+
+  it('does not start while onboarding replay is pending (#171)', () => {
+    expect(
+      shouldStartGroupFeatureTour({
+        onboardingCompleted: true,
+        hasGroupId: true,
+        destinationCount: 2,
+        tourCompleted: false,
+        onboardingReplayPending: true,
+      }),
+    ).toBe(false);
+  });
 });
 
 describe('tour completion sources', () => {

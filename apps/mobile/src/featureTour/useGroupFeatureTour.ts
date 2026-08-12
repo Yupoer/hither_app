@@ -208,15 +208,25 @@ export function useGroupFeatureTour(
     if (!gateReady || tourCompleted || ctrl.active) return;
     let cancelled = false;
     void (async () => {
-      const { readOnboardingState } = await import('../onboarding/sync');
+      const {
+        readOnboardingState,
+        readOnboardingReplayIntent,
+        isOnboardingCompleteForTourGate,
+      } = await import('../onboarding/sync');
       const onboarding = await readOnboardingState();
+      const replayIntent = await readOnboardingReplayIntent();
       if (cancelled) return;
+      const onboardingOk = isOnboardingCompleteForTourGate({
+        storageCompleted: Boolean(onboarding?.completed),
+        replayIntent,
+      });
       const ok = shouldStartGroupFeatureTour({
-        onboardingCompleted: Boolean(onboarding?.completed),
+        onboardingCompleted: onboardingOk,
         hasGroupId: Boolean(input.groupId),
         destinationCount: input.destinationCount,
         tourCompleted,
         passiveMode: input.passiveMode || !input.denseChrome,
+        onboardingReplayPending: replayIntent,
       });
       if (ok && !cancelled) {
         setCtrl(startTour());

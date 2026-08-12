@@ -38,7 +38,7 @@ describe('map UI placement contracts', () => {
     expect(subStart).toBeGreaterThanOrEqual(0);
     expect(statusCallback).toContain("status === 'SUBSCRIBED'");
     expect(statusCallback).toContain("status === 'CHANNEL_ERROR'");
-    expect(statusCallback).toContain('loadRef.current()');
+    expect(statusCallback).toMatch(/loadRef\.current\(/);
   });
 
   it('subscribes to daily_accommodations for remote stay convergence (#159)', () => {

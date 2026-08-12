@@ -306,18 +306,26 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
           onChange={(v) => setThemeName(v as ThemeName)}
         />
         <Text style={styles.settingsInlineLabel}>{t('settings.textSize')}</Text>
-        <Segmented
-          accent={accent}
-          options={[
-            { key: '0.8', label: t('settings.textSizeXs') },
-            { key: '0.9', label: t('settings.textSizeSm') },
-            { key: '1', label: t('settings.textSizeMd') },
-            { key: '1.1', label: t('settings.textSizeLg') },
-            { key: '1.2', label: t('settings.textSizeXl') },
-          ]}
-          value={String(textScale)}
-          onChange={(v) => setTextScale(Number(v) as TextScalePref)}
-        />
+        <View testID="settings-text-scale-slider">
+          <PrefSlider
+            accent={accent}
+            values={[0.8, 0.9, 1.0, 1.1, 1.2]}
+            value={textScale}
+            onChange={(v) => setTextScale(v as TextScalePref)}
+            accessibilityLabel={t('settings.textSize')}
+          />
+          <Text style={[styles.settingsInlineLabel, { marginTop: 4, opacity: 0.8 }]}>
+            {textScale === 0.8
+              ? t('settings.textSizeXs')
+              : textScale === 0.9
+                ? t('settings.textSizeSm')
+                : textScale === 1.1
+                  ? t('settings.textSizeLg')
+                  : textScale === 1.2
+                    ? t('settings.textSizeXl')
+                    : t('settings.textSizeMd')}
+          </Text>
+        </View>
 
         <SectionLabel label={t('settings.notifSection')} styles={styles} />
         <NotificationPreferencesCard colors={{ ...themes.night, accent }} />

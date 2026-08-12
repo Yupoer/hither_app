@@ -34,6 +34,11 @@ jest.mock('../api/services/ProfileService', () => ({
 
 jest.mock('../onboarding/sync', () => ({
   readOnboardingState: jest.fn(async () => ({ completed: true })),
+  readOnboardingReplayIntent: jest.fn(async () => false),
+  isOnboardingCompleteForTourGate: jest.fn(
+    (input: { storageCompleted: boolean; replayIntent: boolean }) =>
+      !input.replayIntent && input.storageCompleted,
+  ),
 }));
 
 jest.mock('../i18n', () => ({
@@ -453,6 +458,7 @@ describe('R3: reset replay with stale account prefs', () => {
     expect(map).toContain('groupFeatureTourCompleted: false');
     expect(map).toContain('updateProfile');
     expect(map).toContain('clearGroupFeatureTour');
+    expect(map).toContain('markOnboardingReplayForHome');
   });
 
   it('exports reset intent key', () => {

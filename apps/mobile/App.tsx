@@ -13,7 +13,11 @@ import { StatusBar } from 'expo-status-bar';
 import { useFonts, Fredoka_500Medium, Fredoka_600SemiBold } from '@expo-google-fonts/fredoka';
 import RootNavigator from './src/navigation/RootNavigator';
 import OnboardingScreen from './src/onboarding/OnboardingScreen';
-import { readOnboardingState } from './src/onboarding/sync';
+import {
+  readOnboardingReplayIntent,
+  readOnboardingState,
+  shouldPresentFullOnboarding,
+} from './src/onboarding/sync';
 import AppErrorBoundary from './src/components/AppErrorBoundary';
 import CrookIcon from './src/components/CrookIcon';
 import { BouncingDots } from './src/components/AmicroButton';
@@ -196,31 +200,35 @@ function ThemedNavigation() {
     };
   }, [ready, diagnosticUploadEnabled, initializing, user]);
 
-  // First-launch Onboarding gate: a local AsyncStorage flag
-  // (hither.onboarding.v1), independent of session/auth. `null` means
-  // "still checking" — held alongside the session splash below so neither
-  // flashes the wrong first screen.
+  // First-launch + home-boundary onboarding gate (#171).
+  // Full onboarding is independent of group feature tour. Reset only marks
+  // replay intent; presentation happens at create/join home (no membership),
+  // never forced while the user is still inside a team Map session.
   const [needsOnboarding, setNeedsOnboarding] = useState<boolean | null>(null);
-  useEffect(() => {
-    let active = true;
-    readOnboardingState().then((state) => {
-      if (active) setNeedsOnboarding(!state?.completed);
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
 
-  // Re-surface Onboarding when the user signs out or ends a group AND the
-  // onboarding flag has been cleared (via "reset travel preferences"). This
-  // only ever PROMOTES to onboarding — it never hides it — so signing in or
-  // joining a group can't race a not-yet-flushed completion write.
   useEffect(() => {
-    if (user && membership) return; // fully in-app, nothing to re-check
     let active = true;
-    readOnboardingState().then((state) => {
-      if (active && !state?.completed) setNeedsOnboarding(true);
-    });
+    const atHomeBoundary = !(user && membership);
+    // While fully in-team, never promote onboarding (stay on Map after reset).
+    if (user && membership) {
+      setNeedsOnboarding(false);
+      return () => {
+        active = false;
+      };
+    }
+    void (async () => {
+      const [state, replayIntent] = await Promise.all([
+        readOnboardingState(),
+        readOnboardingReplayIntent(),
+      ]);
+      if (!active) return;
+      const present = shouldPresentFullOnboarding({
+        storageCompleted: Boolean(state?.completed),
+        replayIntent,
+        atHomeBoundary,
+      });
+      setNeedsOnboarding(present);
+    })();
     return () => {
       active = false;
     };

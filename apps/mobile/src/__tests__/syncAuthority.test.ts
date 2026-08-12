@@ -1,6 +1,9 @@
 import type { GroupState } from '../types';
 import {
+  describeRecoveryMerge,
   mergeRemoteGroupStatePreservingOwnLocation,
+  pickStrongerReloadReason,
+  shouldFenceEmptyItinerary,
   SYNC_AUTHORITY,
 } from '../utils/syncAuthority';
 
@@ -88,5 +91,81 @@ describe('syncAuthority', () => {
     expect(merged.members[0]?.coordinates).toEqual({ latitude: 25.1, longitude: 121.5 });
     expect(merged.members[0]?.lastUpdated).toBe('2026-07-26T10:00:00.000Z');
     expect(merged.members[1]?.coordinates).toEqual({ latitude: 25.3, longitude: 121.7 });
+  });
+
+  it('fences membership-only empty remote itinerary over nonempty local cards', () => {
+    expect(shouldFenceEmptyItinerary({
+      reason: 'membership_change',
+      previousDestinationCount: 2,
+      remoteDestinationCount: 0,
+    })).toBe(true);
+    expect(shouldFenceEmptyItinerary({
+      reason: 'itinerary_mutation',
+      previousDestinationCount: 2,
+      remoteDestinationCount: 0,
+    })).toBe(false);
+    expect(shouldFenceEmptyItinerary({
+      reason: 'poll_manual_refresh',
+      previousDestinationCount: 2,
+      remoteDestinationCount: 0,
+    })).toBe(false);
+
+    const previous = state({
+      destinations: [
+        { id: 'a', title: 'A' } as GroupState['destinations'][number],
+        { id: 'b', title: 'B' } as GroupState['destinations'][number],
+      ],
+      nextDestination: { id: 'a', title: 'A' } as GroupState['nextDestination'],
+      members: [
+        {
+          userId: 'leader', name: 'L', role: 'leader', status: 'active',
+          coordinates: { latitude: 1, longitude: 2 },
+          lastUpdated: 't1',
+        },
+      ],
+    });
+    const remoteEmpty = state({
+      destinations: [],
+      nextDestination: undefined,
+      members: [
+        {
+          userId: 'leader', name: 'L', role: 'leader', status: 'active',
+          coordinates: { latitude: 1, longitude: 2 },
+          lastUpdated: 't1',
+        },
+        {
+          userId: 'new', name: 'New', role: 'follower', status: 'active',
+          coordinates: { latitude: 3, longitude: 4 },
+          lastUpdated: 't2',
+        },
+      ],
+    });
+
+    const fenced = mergeRemoteGroupStatePreservingOwnLocation(
+      previous,
+      remoteEmpty,
+      'leader',
+      { reloadReason: 'membership_change' },
+    );
+    expect(fenced.destinations).toHaveLength(2);
+    expect(fenced.members).toHaveLength(2);
+    expect(describeRecoveryMerge({
+      reason: 'membership_change',
+      revision: 'r1',
+      previousDestinationCount: 2,
+      remoteDestinationCount: 0,
+    }).outcome).toBe('fenced_empty_itinerary');
+
+    const cleared = mergeRemoteGroupStatePreservingOwnLocation(
+      previous,
+      remoteEmpty,
+      'leader',
+      { reloadReason: 'itinerary_mutation' },
+    );
+    expect(cleared.destinations).toHaveLength(0);
+    expect(pickStrongerReloadReason('membership_change', 'itinerary_mutation'))
+      .toBe('itinerary_mutation');
+    expect(pickStrongerReloadReason('itinerary_mutation', 'membership_change'))
+      .toBe('itinerary_mutation');
   });
 });

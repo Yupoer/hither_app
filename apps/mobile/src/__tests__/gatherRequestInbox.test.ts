@@ -1,0 +1,124 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import {
+  gatherRequestPageIndex,
+  recoverGatherRequestAfterFailedResolve,
+  resolveGatherRequestSelection,
+  restoreGatherRequestAfterFailedResolve,
+  rollbackGatherRequestSelection,
+  sortGatherRequestsFifo,
+} from '../utils/gatherRequestInbox';
+
+const map = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+
+describe('gather request inbox FIFO (#173)', () => {
+  it('sorts by created_at then id', () => {
+    const sorted = sortGatherRequestsFifo([
+      { id: 'b', createdAt: '2026-08-01T12:00:00.000Z' },
+      { id: 'a', createdAt: '2026-08-01T10:00:00.000Z' },
+      { id: 'c', createdAt: '2026-08-01T10:00:00.000Z' },
+    ]);
+    expect(sorted.map((r) => r.id)).toEqual(['a', 'c', 'b']);
+  });
+
+  it('keeps selection by request id after sibling changes', () => {
+    expect(
+      resolveGatherRequestSelection({
+        sortedIds: ['a', 'b', 'c'],
+        previousSortedIds: ['a', 'b', 'c'],
+        previousId: 'b',
+      }),
+    ).toBe('b');
+  });
+
+  it('selects the next FIFO card after removing the first or middle request', () => {
+    expect(
+      resolveGatherRequestSelection({
+        sortedIds: ['b', 'c'],
+        previousSortedIds: ['a', 'b', 'c'],
+        previousId: 'a',
+        removedId: 'a',
+      }),
+    ).toBe('b');
+    expect(
+      resolveGatherRequestSelection({
+        sortedIds: ['a', 'c'],
+        previousSortedIds: ['a', 'b', 'c'],
+        previousId: 'b',
+        removedId: 'b',
+      }),
+    ).toBe('c');
+  });
+
+  it('selects the previous FIFO card after removing the last request', () => {
+    expect(
+      resolveGatherRequestSelection({
+        sortedIds: ['a', 'b'],
+        previousSortedIds: ['a', 'b', 'c'],
+        previousId: 'c',
+        removedId: 'c',
+      }),
+    ).toBe('b');
+  });
+
+  it('restores the failed request id after optimistic-remove rollback', () => {
+    expect(
+      rollbackGatherRequestSelection({
+        sortedIds: ['a', 'b', 'c'],
+        failedId: 'b',
+      }),
+    ).toBe('b');
+    expect(
+      rollbackGatherRequestSelection({
+        sortedIds: ['a', 'c'],
+        failedId: 'b',
+        fallbackId: 'c',
+      }),
+    ).toBe('c');
+  });
+
+  it('restores request list and selection when resolve and reload both fail (#173)', () => {
+    // Public path: optimistic remove hid middle card; resolve RPC fails and
+    // immediate loadGatheringWorkflow also fails — local snapshot must restore.
+    const afterOptimistic = [
+      { id: 'a', createdAt: '2026-08-01T10:00:00.000Z' },
+      { id: 'c', createdAt: '2026-08-01T12:00:00.000Z' },
+    ];
+    const removedSnapshot = { id: 'b', createdAt: '2026-08-01T11:00:00.000Z' };
+    const recovered = recoverGatherRequestAfterFailedResolve({
+      currentRequests: afterOptimistic,
+      removedSnapshot,
+      failedId: 'b',
+      fallbackSelectedId: 'c',
+    });
+    expect(recovered.requests.map((r) => r.id)).toEqual(['a', 'b', 'c']);
+    expect(recovered.selectedId).toBe('b');
+    // Deduped restore when snapshot already present.
+    expect(
+      restoreGatherRequestAfterFailedResolve({
+        current: recovered.requests,
+        snapshot: removedSnapshot,
+      }).map((r) => r.id),
+    ).toEqual(['a', 'b', 'c']);
+  });
+
+  it('maps selected id to paging index', () => {
+    expect(gatherRequestPageIndex(['a', 'b', 'c'], 'c')).toBe(2);
+    expect(gatherRequestPageIndex(['a', 'b'], 'missing')).toBe(0);
+  });
+
+  it('shows requests on Route pane for leader and not in route editor overlay', () => {
+    expect(map).toContain('testID="route-gather-request-inbox"');
+    expect(map).toContain('sortGatherRequestsFifo');
+    // Editor overlay block must not map gatherPointRequests for approval.
+    const editorStart = map.indexOf("visible={overlay === 'route'}");
+    expect(editorStart).toBeGreaterThan(-1);
+    const editorEnd = map.indexOf('DestinationReorderList', editorStart);
+    const editorBlock = map.slice(editorStart, editorEnd);
+    expect(editorBlock).not.toContain('gatherPointRequests.map');
+    expect(editorBlock).not.toContain('handleGatherPointRequest');
+    expect(map).toContain('previousSortedIds');
+    expect(map).toContain('recoverGatherRequestAfterFailedResolve');
+    expect(map).toContain('removedSnapshot');
+  });
+});
