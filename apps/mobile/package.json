@@ -20,6 +20,8 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "test": "jest",
+    "test:meta": "node scripts/check-test-meta.mjs",
+    "test:coverage:changed": "node scripts/check-changed-coverage.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "expo lint",
     "postinstall": "patch-package",

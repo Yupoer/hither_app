@@ -38,7 +38,7 @@ jobs:
 
             The app lives in `apps/mobile` (React Native + Expo SDK 54, Supabase backend).
             Read `CLAUDE.md` first and follow its rules. The CI gates you must keep green:
-              cd apps/mobile && npm ci && npm test && npm run typecheck && npx expo install --check
+              cd apps/mobile && npm ci && npm test && npm run test:meta && npm run test:coverage:changed && npm run typecheck && npx expo install --check
             Expo Go compatibility is the #1 recurring failure class — native access must stay
             behind `src/native/` with a JS fallback; do not branch on Platform.OS in UI.
 

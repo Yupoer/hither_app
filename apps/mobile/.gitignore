@@ -5,6 +5,7 @@ web-build/
 *.log
 .DS_Store
 coverage/
+coverage-changed/
 .env
 .env.*
 !.env.example
