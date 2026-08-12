@@ -17,8 +17,12 @@ import {
 } from '../utils/groupStatePatches';
 import { isOwnLocationChange, locationPolicy } from '../utils/locationPolicy';
 import {
+  describeRecoveryMerge,
   isLeaderGatheringOperation,
   mergeRemoteGroupStatePreservingOwnLocation,
+  pickStrongerReloadReason,
+  shouldFenceEmptyItinerary,
+  type GroupReloadReason,
 } from '../utils/syncAuthority';
 import {
   coreSnapshotFreshness,
@@ -72,7 +76,7 @@ interface UseGroupStateResult {
   loading: boolean;
   error: string | null;
   /** Force an immediate refresh (e.g. pull-to-refresh, recenter). */
-  refresh: () => Promise<boolean>;
+  refresh: (reason?: GroupReloadReason) => Promise<boolean>;
   /** Where the current state was loaded from (OTA-04 local-first). */
   dataSource: GroupStateDataSource;
   /** Snapshot freshness for offline / stale banners. */
@@ -136,6 +140,15 @@ export function useGroupState(
   // flight. Do not collapse that event into the old promise: the completion
   // path schedules one immediate follow-up snapshot for the same group.
   const pendingReloadRef = useRef(false);
+  /** Strongest reason among coalesced reload requests for the next load. */
+  const pendingReloadReasonRef = useRef<GroupReloadReason | null>(null);
+  /** Reason consumed by the in-flight recovery load. */
+  const inFlightReasonRef = useRef<GroupReloadReason>('unknown');
+  /**
+   * After a membership empty-itinerary fence, allow one poll-style follow-up so
+   * a true server empty can still converge without waiting for the slow interval.
+   */
+  const fencedFollowUpRef = useRef(false);
   const groupGenerationRef = useRef(0);
   const inFlightRevisionRef = useRef<string | null>(null);
   const latestRevisionRef = useRef('0');
@@ -216,7 +229,7 @@ export function useGroupState(
     }
   }, [refreshOpenOperations]);
 
-  const load = useCallback((): Promise<boolean> => {
+  const load = useCallback((reason: GroupReloadReason = 'unknown'): Promise<boolean> => {
     if (!groupId) return Promise.resolve(false);
     if (loadInFlightRef.current) {
       // Initial/group-foreground effects may call load twice for the same
@@ -225,10 +238,17 @@ export function useGroupState(
       if (latestRevisionRef.current !== inFlightRevisionRef.current) {
         pendingReloadRef.current = true;
       }
+      pendingReloadReasonRef.current = pickStrongerReloadReason(
+        pendingReloadReasonRef.current,
+        reason,
+      );
       return loadInFlightRef.current;
     }
     const generation = groupGenerationRef.current;
     inFlightRevisionRef.current = latestRevisionRef.current;
+    const loadReason = pickStrongerReloadReason(pendingReloadReasonRef.current, reason);
+    pendingReloadReasonRef.current = null;
+    inFlightReasonRef.current = loadReason;
     const run = (async () => {
       try {
         energyObservability.increment('snapshot');
@@ -240,18 +260,55 @@ export function useGroupState(
           activeRef.current && groupGenerationRef.current === generation;
         if (isCurrentGeneration && !staleResponse) {
           latestRevisionRef.current = recovery.revision;
-          setState((previous) =>
-            mergeRemoteGroupStatePreservingOwnLocation(
+          const preserveLocalGathering = openOperationsRef.current.some(
+            (operation) => isLeaderGatheringOperation(operation),
+          );
+          setState((previous) => {
+            const previousCount = previous?.destinations.length ?? 0;
+            const remoteCount = next.destinations.length;
+            const fenced = shouldFenceEmptyItinerary({
+              reason: loadReason,
+              previousDestinationCount: previousCount,
+              remoteDestinationCount: remoteCount,
+            });
+            const meta = describeRecoveryMerge({
+              reason: loadReason,
+              revision: recovery.revision,
+              previousDestinationCount: previousCount,
+              remoteDestinationCount: remoteCount,
+              preserveLocalGathering,
+              fencedEmptyItinerary: fenced,
+            });
+            if (
+              meta.outcome === 'fenced_empty_itinerary'
+              || meta.outcome === 'preserved_local_gathering'
+              || loadReason === 'membership_change'
+              || loadReason === 'itinerary_mutation'
+            ) {
+              // Compact seam log for membership vs itinerary diagnostics.
+              // eslint-disable-next-line no-console
+              console.info('[group-recovery-merge]', meta);
+            }
+            if (fenced && !fencedFollowUpRef.current) {
+              fencedFollowUpRef.current = true;
+              pendingReloadRef.current = true;
+              pendingReloadReasonRef.current = pickStrongerReloadReason(
+                pendingReloadReasonRef.current,
+                'poll_manual_refresh',
+              );
+            } else if (!fenced) {
+              fencedFollowUpRef.current = false;
+            }
+            return mergeRemoteGroupStatePreservingOwnLocation(
               previous,
               next,
               myUserIdRef.current,
               {
-                preserveLocalGathering: openOperationsRef.current.some(
-                  (operation) => isLeaderGatheringOperation(operation),
-                ),
+                preserveLocalGathering,
+                reloadReason: loadReason,
               },
-            ),
-          );
+            );
+          });
           setError(null);
           setDataSource('remote');
           setEmptyLocalSnapshot(false);
@@ -319,7 +376,9 @@ export function useGroupState(
         && groupGenerationRef.current === generation
         && groupId
       ) {
-        void loadRef.current();
+        const followReason = pendingReloadReasonRef.current ?? 'unknown';
+        pendingReloadReasonRef.current = null;
+        void loadRef.current(followReason);
       }
     });
     loadInFlightRef.current = run;
@@ -343,6 +402,8 @@ export function useGroupState(
     const generation = groupGenerationRef.current + 1;
     groupGenerationRef.current = generation;
     pendingReloadRef.current = false;
+    pendingReloadReasonRef.current = null;
+    fencedFollowUpRef.current = false;
     setLoading(true);
     setState(null);
     setDataSource('none');
@@ -367,7 +428,7 @@ export function useGroupState(
         // loading stays true until remote attempt finishes unless we have cache;
         // applyLocalSnapshot does not clear loading — load() does.
       }
-      await loadRef.current();
+      await loadRef.current('subscription_hydrate');
     })();
 
     return () => {
@@ -381,6 +442,7 @@ export function useGroupState(
         loadInFlightRef.current = null;
         inFlightRevisionRef.current = null;
         pendingReloadRef.current = false;
+        pendingReloadReasonRef.current = null;
       }
     };
   }, [applyLocalSnapshot, groupId]);
@@ -394,16 +456,23 @@ export function useGroupState(
     activeRef.current = true;
 
     // Soft refresh when returning from background so peer pins catch up.
-    void loadRef.current();
+    void loadRef.current('poll_manual_refresh');
     void flushCoreOperationOutbox().catch(() => undefined);
 
-    const scheduleReload = (payload?: { commit_timestamp?: string }) => {
+    const scheduleReload = (
+      reason: GroupReloadReason,
+      payload?: { commit_timestamp?: string },
+    ) => {
       const revision = payload?.commit_timestamp;
       if (revision && isOlderRevision(revision, latestRevisionRef.current)) return;
       if (revision && isOlderRevision(latestRevisionRef.current, revision)) {
         latestRevisionRef.current = revision;
       }
       energyObservability.increment('realtime_callback');
+      pendingReloadReasonRef.current = pickStrongerReloadReason(
+        pendingReloadReasonRef.current,
+        reason,
+      );
       if (loadInFlightRef.current) {
         pendingReloadRef.current = true;
         return;
@@ -412,7 +481,9 @@ export function useGroupState(
         clearTimeout(debounceRef.current);
       }
       debounceRef.current = setTimeout(() => {
-        loadRef.current();
+        const nextReason = pendingReloadReasonRef.current ?? reason;
+        pendingReloadReasonRef.current = null;
+        loadRef.current(nextReason);
       }, REALTIME_DEBOUNCE_MS);
     };
 
@@ -423,7 +494,7 @@ export function useGroupState(
 
       setState((prev) => {
         if (!prev) {
-          void loadRef.current();
+          void loadRef.current('location_change');
           return prev;
         }
         const next = applyMemberLocationPatches(
@@ -432,7 +503,7 @@ export function useGroupState(
           myUserIdRef.current,
         );
         if (next === null) {
-          void loadRef.current();
+          void loadRef.current('location_change');
           return prev;
         }
         return next;
@@ -466,10 +537,10 @@ export function useGroupState(
             eventType: payload.eventType,
           });
           if (parsed === 'full-reload' || parsed === null) {
-            scheduleReload(payload as { commit_timestamp?: string });
+            scheduleReload('location_change', payload as { commit_timestamp?: string });
             return;
           }
-          scheduleReload(payload as { commit_timestamp?: string });
+          scheduleReload('location_change', payload as { commit_timestamp?: string });
           mergeLocationPatches(pendingPatchesRef.current, parsed);
           scheduleLocationPatch();
         },
@@ -477,19 +548,19 @@ export function useGroupState(
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'memberships', filter },
-        scheduleReload,
+        (payload) => scheduleReload('membership_change', payload as { commit_timestamp?: string }),
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'itinerary_items', filter },
-        scheduleReload,
+        (payload) => scheduleReload('itinerary_mutation', payload as { commit_timestamp?: string }),
       )
       // Daily stay snapshots are independent of itinerary events; remote clear
       // or some→some must fence-reload peers (not wait for poll).
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'daily_accommodations', filter },
-        scheduleReload,
+        (payload) => scheduleReload('accommodation_change', payload as { commit_timestamp?: string }),
       )
       // Leader start/stop nav writes groups.journey_status + active_destination_id.
       // Without this, followers only learn via the 5-minute poll and never show
@@ -497,12 +568,12 @@ export function useGroupState(
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'groups', filter: groupRowFilter },
-        scheduleReload,
+        (payload) => scheduleReload('group_update', payload as { commit_timestamp?: string }),
       )
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'profiles' },
-        scheduleReload,
+        (payload) => scheduleReload('profile_update', payload as { commit_timestamp?: string }),
       )
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
@@ -510,7 +581,7 @@ export function useGroupState(
           // A new member can subscribe after the leader has already written
           // itinerary rows. Hydrate once after the channel is ready instead
           // of relying on an event that happened before this subscription.
-          void loadRef.current();
+          void loadRef.current('subscription_hydrate');
           return;
         }
         if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR' || status === 'CLOSED') {
@@ -519,7 +590,7 @@ export function useGroupState(
       });
 
     const timer = setInterval(() => {
-      void loadRef.current();
+      void loadRef.current('poll_manual_refresh');
     }, GROUP_POLL_INTERVAL_MS);
 
     return () => {
