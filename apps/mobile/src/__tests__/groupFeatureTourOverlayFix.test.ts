@@ -112,8 +112,9 @@ describe('featureTour barrel public seams', () => {
   it('re-exports retreatTour, hole helpers, and measure seams', () => {
     const names = Object.keys(featureTour);
     expect(names.length).toBeGreaterThan(20);
+    const barrel = featureTour as Record<string, unknown>;
     for (const key of names) {
-      expect(featureTour[key as keyof typeof featureTour]).not.toBeUndefined();
+      expect(barrel[key]).not.toBeUndefined();
     }
     expect(typeof featureTour.retreatTour).toBe('function');
     expect(typeof featureTour.holeRadius).toBe('function');
