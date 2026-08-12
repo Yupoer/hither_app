@@ -1,12 +1,12 @@
 import * as Crypto from 'expo-crypto';
 import { useState, useMemo, useEffect, useCallback, useRef, RefObject } from 'react';
+import { Dimensions, type ScrollView } from 'react-native';
 import { isNetworkRequestError } from '../../../api/services/_helpers';
 import { distanceMeters } from '../../../utils/geo';
 import { resolveGatheringOutboxAfterSessionStart } from '../../../utils/gatheringSessionOutbox';
 import { promoteDestinationWithinDay } from '../../../utils/tripDay';
 import type { Coordinates, Destination, GroupState, JourneyStatus } from '../../../types';
 import type { NavigationSession } from '../../../types/navigation';
-import type { ScrollView } from 'react-native';
 import type { GroupMapHandle } from '../../../components/GroupMap';
 import { presentExternalMapsChooser } from '../../../native/externalNavigation';
 import type { TravelMode } from '../../../native/maps';
@@ -76,7 +76,7 @@ export function useJourneyNavigation({
   refresh: _refresh,
   t,
   mapRef,
-  carouselRef: _carouselRef,
+  carouselRef,
   setSelectedIndex,
   navigationSession,
   startSession,
@@ -314,11 +314,27 @@ export function useJourneyNavigation({
       pendingStartRef.current = { operationId: enqueued.operationId, base: enqueued.base };
       onOptimisticGathering?.(enqueued.local);
 
+      // #174: selection identity is destination id; index is only a projection.
+      const startedDestId = dest.id;
       if (reorderForNavigation) {
-        const updates = promoteDestinationWithinDay(destinations, dest.id);
-        const nextIndex = updates.findIndex((item) => item.id === dest.id);
+        const updates = promoteDestinationWithinDay(destinations, startedDestId);
         if (!(await reorderForNavigation(updates))) throw new Error('destination_reorder_failed');
-        setSelectedIndex(Math.max(0, nextIndex));
+        // Prefer navigationDestinations order after same-day promotion.
+        const promotedIds = updates.map((u) => u.id);
+        const navIds = navigationDestinations.map((d) => d.id);
+        const carouselOrder = promotedIds.filter(
+          (id) => id === startedDestId || navIds.includes(id),
+        );
+        const nextIndex = Math.max(0, carouselOrder.indexOf(startedDestId));
+        setSelectedIndex(nextIndex);
+        // Explicit scrollTo via carousel ref (not only numeric index effect).
+        const pageW = Dimensions.get('window').width;
+        requestAnimationFrame(() => {
+          carouselRef.current?.scrollTo({
+            x: nextIndex * pageW,
+            animated: true,
+          });
+        });
       } else {
         setSelectedIndex(index);
       }
@@ -399,7 +415,9 @@ export function useJourneyNavigation({
     onOptimisticGathering,
     reorderForNavigation,
     destinations,
+    navigationDestinations,
     setSelectedIndex,
+    carouselRef,
     createRequestId,
     runTeamEnd,
     restorePendingStart,
