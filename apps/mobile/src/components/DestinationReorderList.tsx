@@ -13,6 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import type { Destination } from '../types';
+import type { TourTargetId } from '../featureTour/constants';
 import { radius, spacing, DAY_COLORS, type Palette } from '../theme';
 import { readOnboardingState } from '../onboarding/sync';
 import { usePreferences } from '../state/PreferencesContext';
@@ -128,6 +129,8 @@ interface Props {
   /** Multi-select ids when interactionMode === 'select'. */
   selectedIds?: string[];
   onSelectedIdsChange?: (ids: string[]) => void;
+  /** Route reorder tour target registry; explanation-only, no action wiring. */
+  onTourTargetRef?: (id: TourTargetId, node: View | null) => void;
 }
 
 type ListItem =
@@ -163,6 +166,7 @@ export default function DestinationReorderList({
   interactionMode = 'drag',
   selectedIds = [],
   onSelectedIdsChange,
+  onTourTargetRef,
 }: Props) {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const { t } = useTranslation();
@@ -670,7 +674,10 @@ export default function DestinationReorderList({
     <View>
       {(canReorder || onImport || (syncFailed && onSync)) && (
         <View style={styles.topActions}>
-          {canReorder && <Pressable style={styles.setDaysBtn} onPress={() => {
+          {canReorder && <Pressable
+            ref={(node) => onTourTargetRef?.('routeTripDetails', node)}
+            style={styles.setDaysBtn}
+            onPress={() => {
             lightTap();
             setEditDays(tripDays ?? 1);
             setEditDate(departureDate ? new Date(departureDate) : new Date());
@@ -681,6 +688,7 @@ export default function DestinationReorderList({
           </Pressable>}
           {canReorder && onPickFavorite ? (
             <Pressable
+              ref={(node) => onTourTargetRef?.('routeFavorites', node)}
               style={styles.setDaysBtn}
               onPress={() => {
                 lightTap();
@@ -694,6 +702,7 @@ export default function DestinationReorderList({
             </Pressable>
           ) : null}
           {onImport && <Pressable
+            ref={(node) => onTourTargetRef?.('routeImport', node)}
             style={styles.setDaysBtn}
             onPress={() => {
               lightTap();
@@ -741,6 +750,17 @@ export default function DestinationReorderList({
                 blocks.push({ kind: 'orphan', dest: item });
               }
             }
+
+            const firstDayBlockIndex = blocks.findIndex((block) => block.kind === 'day');
+            const firstAccommodationId = order.find(
+              (item) => item.type === 'dest' && item.item.kind === 'accommodation',
+            )?.id ?? null;
+            const firstSetStayBlockIndex = blocks.findIndex((block) => {
+              if (block.kind !== 'day' || block.dests.length === 0) return false;
+              const stayDate = stayDateForDay(block.header.day);
+              const hasDaily = Boolean(stayDate && dailyByDate?.[stayDate]);
+              return !hasDaily;
+            });
 
             const renderDestRow = (
               item: Extract<ListItem, { type: 'dest' }>,
@@ -824,6 +844,11 @@ export default function DestinationReorderList({
                       : undefined
                   }
                   onLayoutHeight={(h) => recordMeasuredHeight(item.id, h)}
+                  tourTargetRef={
+                    firstAccommodationId === item.item.id
+                      ? (node) => onTourTargetRef?.('routeAccommodation', node)
+                      : undefined
+                  }
                   onEmojiPress={
                     // Stay cards always show a fixed bed — no emoji picker.
                     canReorder
@@ -1023,6 +1048,20 @@ export default function DestinationReorderList({
                     }
                     accent={colors.accent}
                     onLayoutHeight={(h) => recordMeasuredHeight(item.id, h)}
+                    tourTargetRef={
+                      blockIndex === firstDayBlockIndex
+                        ? (node) => onTourTargetRef?.('routeDate', node)
+                        : undefined
+                    }
+                    accommodationTargetRef={
+                      firstAccommodationId == null
+                      && (
+                        blockIndex === firstSetStayBlockIndex
+                        || (firstSetStayBlockIndex === -1 && blockIndex === firstDayBlockIndex)
+                      )
+                        ? (node) => onTourTargetRef?.('routeAccommodation', node)
+                        : undefined
+                    }
                   />
                   {dropAfterHeader ? (
                     <View
@@ -1446,6 +1485,8 @@ const HeaderRow = memo(function HeaderRow({
   onToggleSetStay,
   accent,
   onLayoutHeight,
+  tourTargetRef,
+  accommodationTargetRef,
 }: {
   item: { day: number; title: string; dateStr: string };
   styles: any;
@@ -1474,6 +1515,8 @@ const HeaderRow = memo(function HeaderRow({
   onToggleSetStay?: () => void;
   accent: string;
   onLayoutHeight?: (height: number) => void;
+  tourTargetRef?: (node: View | null) => void;
+  accommodationTargetRef?: (node: View | null) => void;
 }) {
   const { t } = useTranslation();
   const hasStay = Boolean(dailyTitle);
@@ -1563,6 +1606,16 @@ const HeaderRow = memo(function HeaderRow({
 
   return (
     <Animated.View
+      ref={(node) => {
+        const view = node as View | null;
+        tourTargetRef?.(view);
+        // If no set-stay control is rendered (for example, every day already
+        // has a saved accommodation), keep the route tour target measurable
+        // on the day header instead of silently blocking the six-step tour.
+        if (hasStay || !onToggleSetStay || !setStayLabel) {
+          accommodationTargetRef?.(view);
+        }
+      }}
       onLayout={(e) => onLayoutHeight?.(e.nativeEvent.layout.height)}
       style={
         headerActive && headerPan
@@ -1591,6 +1644,9 @@ const HeaderRow = memo(function HeaderRow({
             <Text style={styles.headerTitle}>{item.title}</Text>
             {!hasStay && onToggleSetStay && setStayLabel ? (
               <Pressable
+                ref={(node) => {
+                  if (!hasStay) accommodationTargetRef?.(node);
+                }}
                 style={[
                   styles.headerSetStayBtn,
                   setStayActive && { backgroundColor: accent },
@@ -1677,6 +1733,7 @@ const Row = memo(function Row({
   multiSelected,
   onToggleMultiSelect,
   onLayoutHeight,
+  tourTargetRef,
 }: {
   item: Destination;
   active: boolean;
@@ -1705,6 +1762,7 @@ const Row = memo(function Row({
   multiSelected?: boolean;
   onToggleMultiSelect?: () => void;
   onLayoutHeight?: (height: number) => void;
+  tourTargetRef?: (node: View | null) => void;
 }) {
   const translateX = useRef(new Animated.Value(0)).current;
   const axisRef = useRef<null | 'h' | 'v'>(null);
@@ -1789,6 +1847,7 @@ const Row = memo(function Row({
 
   return (
     <View
+      ref={(node) => tourTargetRef?.(node as View | null)}
       style={active && { zIndex: 10, elevation: 6 }}
       onLayout={(e) => onLayoutHeight?.(e.nativeEvent.layout.height)}
     >

@@ -68,3 +68,22 @@ export {
   type AddPlaceTourStepId,
   type AddPlaceTourTargetId,
 } from './addPlaceTour';
+export {
+  ROUTE_REORDER_TOUR_STORAGE_KEY,
+  ROUTE_REORDER_TOUR_ACCOUNT_SYNC_PENDING_KEY,
+  ROUTE_REORDER_TOUR_STEPS,
+  routeReorderTourStorageKey,
+  routeReorderTourAccountSyncPendingKey,
+  parseRouteReorderTourAccountSyncPending,
+  readRouteReorderTourCompletedLocal,
+  writeRouteReorderTourCompletedLocal,
+  readRouteReorderTourAccountSyncPending,
+  retryPendingRouteReorderTourAccountSync,
+  completeRouteReorderTour,
+  clearRouteReorderTour,
+  shouldStartRouteReorderTour,
+  useRouteReorderTour,
+  type RouteReorderTourTargetId,
+  type RouteReorderTourStep,
+  type RouteReorderTourAccountSyncPending,
+} from './routeReorderTour';

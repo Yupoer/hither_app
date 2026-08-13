@@ -19,7 +19,13 @@ export type TourTargetId =
   | 'settings'
   | 'search'
   | 'addPlaceFavoriteStar'
-  | 'addPlaceCenter';
+  | 'addPlaceCenter'
+  | 'routeMode'
+  | 'routeDate'
+  | 'routeAccommodation'
+  | 'routeTripDetails'
+  | 'routeFavorites'
+  | 'routeImport';
 
 export type TourStepId =
   | 'collapsedCard'
