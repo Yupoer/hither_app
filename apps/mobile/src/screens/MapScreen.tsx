@@ -67,6 +67,10 @@ import {
   cameraOnSearchPick,
 } from '../utils/mapCameraFlow';
 import { resolveNotificationRecipients } from '../utils/notificationDeliveryPolicy';
+import {
+  assessLocationRefreshResponses,
+  waitForLocationRefreshResponses,
+} from '../utils/locationRefreshResponse';
 import { keyboardAvoidBottomOffset } from '../utils/keyboardSurface';
 import {
   gatherRequestPageIndex,
@@ -155,6 +159,7 @@ import {
   useGroupFeatureTour,
   clearGroupFeatureTour,
   clearAddPlaceTour,
+  clearRouteReorderTour,
   holeKindForTarget,
   pickTourDestinationId,
   tourDestinationIndex,
@@ -167,6 +172,9 @@ import {
   readAddPlaceTourCompletedLocal,
   retryPendingAddPlaceTourAccountSync,
   shouldStartAddPlaceTour,
+  useRouteReorderTour,
+  routeTourScrollOffset,
+  ROUTE_REORDER_TOUR_STEPS,
 } from '../featureTour';
 import { useCoordinationRequests } from './MapScreen/hooks/useCoordinationRequests';
 import { SettingsOverlay } from './MapScreen/components/SettingsOverlay';
@@ -188,6 +196,7 @@ import { useOrganizerExceptions } from '../state/useOrganizerExceptions';
 import { useSubgroupInvites } from '../state/useSubgroupInvites';
 import { clearLiveActivities, useLiveActivity } from '../state/useLiveActivity';
 import {
+  prepareBackgroundJourneyPermissions,
   startBackgroundJourney,
   stopBackgroundJourney,
 } from '../state/backgroundJourney';
@@ -199,7 +208,7 @@ import {
 } from '../api/services/NavigationService';
 import {
   consumePendingLocationPermission,
-  consumePendingLocationRefresh,
+  recoverPendingLocationRefreshes,
   rememberPendingLocationPermission,
 } from '../state/backgroundLocationRefresh';
 import {
@@ -294,7 +303,6 @@ import {
   findFavoriteByExactMatch,
   type FavoritePlace,
   submitGatherPointRequest,
-  updateMyLocation,
   updateGroupTripDetails,
   updateDestinationEmojiColor,
 } from '../api/client';
@@ -570,6 +578,8 @@ export default function MapScreen({ route, navigation }: Props) {
   const carouselRef = useRef<ScrollView | null>(null);
 
   const members = useMemo(() => state?.members ?? [], [state?.members]);
+  const membersRef = useRef(members);
+  membersRef.current = members;
   // My current scope: undefined = main group's itinerary, a subgroup id =
   // that subgroup's own itinerary. Everything itinerary-related below reads
   // only from this scope's list (carousel, reorder, nav target, meet-time,
@@ -1084,6 +1094,8 @@ export default function MapScreen({ route, navigation }: Props) {
     width: number;
     height: number;
   } | null>(null);
+  const [addPlaceTourTransitioning, setAddPlaceTourTransitioning] = useState(false);
+  const addPlaceTourGenerationRef = useRef(0);
   /** Distinguishes long-press vs search for post-add camera (ticket 06). */
   const pendingPlaceSourceRef = useRef<'search' | 'longpress' | null>(null);
   // Editable only during this add confirmation. There is no later rename
@@ -1171,23 +1183,26 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // Start only after BOTH star and center targets measure non-zero rects.
   useEffect(() => {
+    const generation = ++addPlaceTourGenerationRef.current;
     if (!confirmCardReady || !pendingPlace) {
       setAddPlaceTourStep(null);
       setAddPlaceTourTargetRect(null);
+      setAddPlaceTourTransitioning(false);
       return;
     }
     let cancelled = false;
     void (async () => {
+      setAddPlaceTourTransitioning(true);
       const starRect = await measureTargetWithRetry({
         measure: measureTourTarget,
         target: 'addPlaceFavoriteStar',
       });
-      if (cancelled) return;
+      if (cancelled || generation !== addPlaceTourGenerationRef.current) return;
       const centerRect = await measureTargetWithRetry({
         measure: measureTourTarget,
         target: 'addPlaceCenter',
       });
-      if (cancelled) return;
+      if (cancelled || generation !== addPlaceTourGenerationRef.current) return;
       const targetsReady = areAddPlaceTourTargetsReady({ starRect, centerRect });
       if (
         shouldStartAddPlaceTour({
@@ -1199,6 +1214,9 @@ export default function MapScreen({ route, navigation }: Props) {
       ) {
         setAddPlaceTourStep(0);
         setAddPlaceTourTargetRect(starRect);
+      }
+      if (generation === addPlaceTourGenerationRef.current) {
+        setAddPlaceTourTransitioning(false);
       }
     })();
     return () => {
@@ -1223,15 +1241,18 @@ export default function MapScreen({ route, navigation }: Props) {
     const step = ADD_PLACE_TOUR_STEPS[addPlaceTourStep];
     if (!step) return;
     let cancelled = false;
+    const generation = ++addPlaceTourGenerationRef.current;
+    setAddPlaceTourTransitioning(true);
     void (async () => {
       const rect = await measureTargetWithRetry({
         measure: measureTourTarget,
         target: step.target,
       });
-      if (cancelled) return;
+      if (cancelled || generation !== addPlaceTourGenerationRef.current) return;
       if (isMeasuredTourRect(rect)) {
         setAddPlaceTourTargetRect(rect);
       }
+      setAddPlaceTourTransitioning(false);
     })();
     return () => {
       cancelled = true;
@@ -1479,13 +1500,87 @@ export default function MapScreen({ route, navigation }: Props) {
   // Freeze the route overlay's scroll while a stop is being drag-reordered so
   // the two vertical gestures never fight. Auto-scroll still works via ref.
   const [routeScrollEnabled, setRouteScrollEnabled] = useState(true);
+  const [routeOverlayOpenComplete, setRouteOverlayOpenComplete] = useState(false);
   const routeScrollRef = useRef<ScrollView>(null);
   const routeScrollYRef = useRef(0);
+  const routeScrollViewportHeightRef = useRef(0);
   const handleRouteDragAutoScroll = useCallback((deltaY: number) => {
     const nextY = Math.max(0, routeScrollYRef.current + deltaY);
     routeScrollYRef.current = nextY;
     routeScrollRef.current?.scrollTo({ y: nextY, animated: false });
   }, []);
+
+  const routeGatheringPointCount = useMemo(
+    () => openForRouteEditor.filter((destination) => destination.kind !== 'accommodation').length,
+    [openForRouteEditor],
+  );
+  const scrollRouteTourTarget = useCallback(async (target: string): Promise<void> => {
+    const settleRouteScroll = () => new Promise<void>((resolve) => {
+      requestAnimationFrame(() => resolve());
+    });
+    // The route sheet owns the scroll container.  A zero scroll exposes the
+    // header/top actions; accommodation is measured against the route viewport.
+    if (target === 'routeMode' || target === 'routeDate' || target === 'routeTripDetails'
+      || target === 'routeFavorites' || target === 'routeImport') {
+      routeScrollYRef.current = 0;
+      routeScrollRef.current?.scrollTo({ y: 0, animated: false });
+      await settleRouteScroll();
+      return;
+    }
+    if (target === 'routeAccommodation') {
+      const targetNode = tourTargetRefs.current.routeAccommodation;
+      const scrollNode = routeScrollRef.current;
+      if (!targetNode || !scrollNode) return;
+      const measureInWindow = (node: unknown) => new Promise<{
+        y: number;
+        height: number;
+      } | null>((resolve) => {
+        const measurable = node as {
+          measureInWindow?: (callback: (x: number, y: number, width: number, height: number) => void) => void;
+        };
+        if (typeof measurable.measureInWindow !== 'function') {
+          resolve(null);
+          return;
+        }
+        measurable.measureInWindow((_x, y, _width, height) => resolve({ y, height }));
+      });
+      const [targetRect, containerRect] = await Promise.all([
+        measureInWindow(targetNode),
+        measureInWindow(scrollNode),
+      ]);
+      if (!targetRect || !containerRect) return;
+      const nextY = routeTourScrollOffset({
+        currentOffset: routeScrollYRef.current,
+        targetPageY: targetRect.y,
+        targetHeight: targetRect.height,
+        containerPageY: containerRect.y,
+        viewportHeight: routeScrollViewportHeightRef.current || containerRect.height,
+      });
+      routeScrollYRef.current = nextY;
+      scrollNode.scrollTo({ y: nextY, animated: false });
+      await settleRouteScroll();
+    }
+  }, []);
+  const {
+    tourActive: routeTourActive,
+    step: routeTourStep,
+    targetRect: routeTourTargetRect,
+    onNext: onRouteTourNext,
+    onPrev: onRouteTourPrev,
+    canGoPrev: routeTourCanGoPrev,
+    transitioning: routeTourTransitioning,
+    completing: routeTourCompleting,
+    reevaluate: reevaluateRouteTour,
+  } = useRouteReorderTour({
+    routeOverlayOpenComplete,
+    isLeader: !!isLeader,
+    canEditItinerary,
+    gatheringPointCount: routeGatheringPointCount,
+    accountId: user?.id ?? null,
+    accountPreferences: user?.preferences ?? null,
+    measureTarget: measureTourTarget,
+    scrollToTarget: scrollRouteTourTarget,
+  });
 
   // #154: each route-sheet open silently syncs once (ref survives Strict Mode remount).
   // Generation invalidates in-flight completions after close/reopen (#151 Sol P1).
@@ -2098,6 +2193,9 @@ export default function MapScreen({ route, navigation }: Props) {
     NonNullable<typeof deviceCoords> | null
   >(null);
   const [lastRouteDistanceM, setLastRouteDistanceM] = useState<number | undefined>();
+  const [backgroundPermissionsPreparedFor, setBackgroundPermissionsPreparedFor] =
+    useState<string | null>(null);
+  const backgroundPermissionPrepareInFlightRef = useRef<string | null>(null);
 
   // Journey progress baseline (foreground only) — separate from GPS ownership.
   useEffect(() => {
@@ -2188,12 +2286,34 @@ export default function MapScreen({ route, navigation }: Props) {
    */
   useEffect(() => {
     if (!groupId) {
+      setBackgroundPermissionsPreparedFor(null);
       void stopBackgroundJourney();
       return;
     }
 
     // Foreground owns GPS.
     if (appState === 'active') {
+      backgroundPermissionDeniedRef.current = null;
+      if (sharingEnabled && backgroundPermissionsPreparedFor !== groupId
+        && backgroundPermissionPrepareInFlightRef.current !== groupId) {
+        backgroundPermissionPrepareInFlightRef.current = groupId;
+        void prepareBackgroundJourneyPermissions()
+          .then((result) => {
+            if (result === 'ready') {
+              setBackgroundPermissionsPreparedFor(groupId);
+            } else {
+              setBackgroundPermissionsPreparedFor(null);
+              void rememberPendingLocationPermission();
+            }
+          })
+          .finally(() => {
+            if (backgroundPermissionPrepareInFlightRef.current === groupId) {
+              backgroundPermissionPrepareInFlightRef.current = null;
+            }
+          });
+      } else if (!sharingEnabled && backgroundPermissionsPreparedFor != null) {
+        setBackgroundPermissionsPreparedFor(null);
+      }
       void stopBackgroundJourney();
       return;
     }
@@ -2227,6 +2347,7 @@ export default function MapScreen({ route, navigation }: Props) {
       sharingEnabled,
       teamNavigationActive: hasNavigationSession || Boolean(journeyActive && navTarget),
       appState: appState === 'background' ? 'background' : 'inactive',
+      permissionsPrepared: backgroundPermissionsPreparedFor === groupId,
     }).then((result) => {
       if (result === 'hidden') {
         void purgeLocationOutbox();
@@ -2238,6 +2359,7 @@ export default function MapScreen({ route, navigation }: Props) {
     });
   }, [
     appState,
+    backgroundPermissionsPreparedFor,
     deviceCoords,
     groupId,
     highAccuracy,
@@ -2682,41 +2804,15 @@ export default function MapScreen({ route, navigation }: Props) {
   const [refreshingLocations, setRefreshingLocations] = useState(false);
   const [refreshCooldownUntil, setRefreshCooldownUntil] = useState(0);
 
-  const handleLocationRefreshRequest = useCallback(async (refreshGroupId = groupId) => {
-    if (!refreshGroupId) return;
-    const permission = await location.getPermissionState().catch(() => null);
-    if (!permission || permission.foregroundStatus !== 'granted') {
-      if (permission?.foregroundCanAskAgain !== false) {
-        const granted = await location.requestPermission();
-        if (granted) return handleLocationRefreshRequest(refreshGroupId);
-      }
-      showLocationPermissionAlert();
-      return;
-    }
-
-    const fix = await location.getCurrentLocation(false).catch(() => null);
-    if (!fix) {
-      showLocationPermissionAlert();
-      return;
-    }
-    // A manual refresh must surface a failed self update; otherwise the UI can
-    // falsely report the old timestamp as if the tap had worked.
-    await updateMyLocation(fix.coordinates, refreshGroupId);
-    await refresh();
-  }, [groupId, refresh, showLocationPermissionAlert]);
-
   useEffect(() => {
     const remove = notifications.addForegroundListener((data) => {
       if (data.category !== 'location_refresh') return;
-      void handleLocationRefreshRequest(
-        typeof data.groupId === 'string' ? data.groupId : groupId,
-      ).catch((error) => Alert.alert(
-        t('map.setFailedTitle'),
-        error instanceof Error ? error.message : t('map.setFailedMsg'),
-      ));
+      // The server ledger is the source of truth. Recover all pending groups
+      // with one foreground GPS fix, then ACK each exact requested_at version.
+      void recoverPendingLocationRefreshes();
     });
     return remove;
-  }, [groupId, handleLocationRefreshRequest]);
+  }, []);
 
   useEffect(() => {
     if (appState !== 'active') return;
@@ -2734,15 +2830,10 @@ export default function MapScreen({ route, navigation }: Props) {
         );
       }
     });
-    void consumePendingLocationRefresh(groupId).then((pendingGroupId) => {
-      if (pendingGroupId && pendingGroupId === groupId) {
-        void handleLocationRefreshRequest(pendingGroupId).catch(() => undefined);
-      }
-    });
+    void recoverPendingLocationRefreshes();
   }, [
     appState,
     groupId,
-    handleLocationRefreshRequest,
     showLocationPermissionAlert,
     t,
   ]);
@@ -2782,16 +2873,58 @@ export default function MapScreen({ route, navigation }: Props) {
       }
 
       // 2) Then ask the server to fan out refresh requests to peers.
-      //    Success is silent; cooldown / failure still alert.
+      //    Realtime is the fast path; the bounded wait makes the result honest
+      //    before the final pull, without synthesizing peer timestamps.
+      const refreshStartedAtMs = Date.now();
+      const baselineLastUpdated = new Map(
+        membersRef.current.map((member) => [member.userId, member.lastUpdated]),
+      );
       const result = await requestGroupLocationRefresh(groupId);
       const retryAfter = Math.max(0, result.retryAfterSeconds);
       setRefreshCooldownUntil(Date.now() + retryAfter * 1000);
       if (result.accepted) {
-        // Quiet success only when remote pull returns true. useGroupState.refresh
+        const expectedUserIds = result.recipientIds;
+        const responseResult = await waitForLocationRefreshResponses({
+          getMembers: () => membersRef.current,
+          expectedUserIds,
+          baselineLastUpdated,
+          requestedAtMs: refreshStartedAtMs,
+        });
+        // The final pull reconciles missed Realtime events. useGroupState.refresh
         // returns false on remote failure even if a local cache is still shown.
         const pulled = await refresh();
         if (!pulled) {
           Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
+        } else {
+          const finalResponseResult = assessLocationRefreshResponses({
+            members: membersRef.current,
+            expectedUserIds,
+            baselineLastUpdated,
+            requestedAtMs: refreshStartedAtMs,
+          });
+          const visibleResult = finalResponseResult.respondedUserIds.length
+            >= responseResult.respondedUserIds.length
+            ? finalResponseResult
+            : responseResult;
+          if (visibleResult.status === 'all') {
+            Alert.alert(
+              t('map.refreshLocationsResultTitle'),
+              t('map.refreshLocationsResultAll'),
+            );
+          } else if (visibleResult.status === 'partial') {
+            Alert.alert(
+              t('map.refreshLocationsResultTitle'),
+              t('map.refreshLocationsResultPartial', {
+                responded: visibleResult.respondedUserIds.length,
+                expected: visibleResult.expectedUserIds.length,
+              }),
+            );
+          } else {
+            Alert.alert(
+              t('map.refreshLocationsResultTitle'),
+              t('map.refreshLocationsResultNone'),
+            );
+          }
         }
       } else {
         Alert.alert(
@@ -2811,6 +2944,7 @@ export default function MapScreen({ route, navigation }: Props) {
     refreshingLocations,
     showLocationPermissionAlert,
     t,
+    user?.id,
   ]);
 
   const fitAllMembers = useCallback(() => {
@@ -4377,6 +4511,15 @@ export default function MapScreen({ route, navigation }: Props) {
         groupFeatureTourCompleted: false,
       },
     }).catch(() => undefined);
+    await clearRouteReorderTour({
+      accountId: user?.id ?? null,
+      existingPreferences: {
+        ...(user?.preferences ?? {}),
+        groupFeatureTourCompleted: false,
+        addPlaceTourCompleted: false,
+      },
+    }).catch(() => undefined);
+    reevaluateRouteTour();
     setAddPlaceTourLocalDone(false);
     // Optimistically clear session prefs so reevaluate does not see stale true.
     // clearGroupFeatureTour already best-effort wrote the account; this updates
@@ -4387,13 +4530,14 @@ export default function MapScreen({ route, navigation }: Props) {
           ...(user?.preferences ?? {}),
           groupFeatureTourCompleted: false,
           addPlaceTourCompleted: false,
+          routeReorderTourCompleted: false,
         },
       });
     } catch {
       // Pending / reset-intent paths keep replay working without session write.
     }
     Alert.alert(t('settings.resetAllPrefs'), t('settings.resetPrefsDone'));
-  }, [t, user?.id, user?.preferences, updateProfile]);
+  }, [t, user?.id, user?.preferences, updateProfile, reevaluateRouteTour]);
 
   const confirmResetPrefs = useCallback(() => {
     confirmAction(
@@ -5010,6 +5154,7 @@ export default function MapScreen({ route, navigation }: Props) {
     onNext: onTourNext,
     onPrev: onTourPrev,
     canGoPrev: tourCanGoPrev,
+    transitioning: tourTransitioning,
     completing: tourCompleting,
     placementRect: tourPlacementRect,
   } = useGroupFeatureTour({
@@ -6054,12 +6199,14 @@ export default function MapScreen({ route, navigation }: Props) {
             : t('tour.next')
         }
         targetRect={addPlaceTourTargetRect}
+        ctaDisabled={addPlaceTourTransitioning}
         onNext={() => {
-          if (addPlaceTourStep == null) return;
+          if (addPlaceTourStep == null || addPlaceTourTransitioning) return;
           const next = addPlaceTourStep + 1;
           if (next >= ADD_PLACE_TOUR_STEPS.length) {
             setAddPlaceTourStep(null);
             setAddPlaceTourTargetRect(null);
+            setAddPlaceTourTransitioning(false);
             setAddPlaceTourLocalDone(true);
             // Final-step-only persistence (pending retry if account write fails).
             void completeAddPlaceTour({
@@ -6071,12 +6218,18 @@ export default function MapScreen({ route, navigation }: Props) {
           // Block advance until the next step has a non-zero measured rect.
           const nextStep = ADD_PLACE_TOUR_STEPS[next];
           if (!nextStep) return;
+          const generation = ++addPlaceTourGenerationRef.current;
+          setAddPlaceTourTransitioning(true);
           void (async () => {
             const rect = await measureTargetWithRetry({
               measure: measureTourTarget,
               target: nextStep.target,
             });
-            if (!isMeasuredTourRect(rect)) return;
+            if (generation !== addPlaceTourGenerationRef.current) return;
+            if (!isMeasuredTourRect(rect)) {
+              setAddPlaceTourTransitioning(false);
+              return;
+            }
             setAddPlaceTourTargetRect(rect);
             setAddPlaceTourStep(next);
           })();
@@ -6790,6 +6943,7 @@ export default function MapScreen({ route, navigation }: Props) {
           // 完成 and swipe-dismiss both commit: unlock scroll, close, flush.
           lightTap();
           setRouteScrollEnabled(true);
+          setRouteOverlayOpenComplete(false);
           setEditButtonActive(false);
           setOverlay(null);
           void flushRouteDraft();
@@ -6797,6 +6951,7 @@ export default function MapScreen({ route, navigation }: Props) {
         onOpenComplete={() => {
           setEditButtonActive(false);
           setRouteScrollEnabled(true);
+          setRouteOverlayOpenComplete(true);
         }}
         title={t('map.gatheringPoints')}
         accent={accent}
@@ -6805,6 +6960,7 @@ export default function MapScreen({ route, navigation }: Props) {
           canEditItinerary ? (
             routeSelectedIds.length > 0 ? (
               <Pressable
+                ref={(node) => setTourTargetRef('routeMode', node as View | null)}
                 onPress={() => {
                   lightTap();
                   handleDeleteMany(routeSelectedIds);
@@ -6821,6 +6977,7 @@ export default function MapScreen({ route, navigation }: Props) {
               </Pressable>
             ) : (
               <Pressable
+                ref={(node) => setTourTargetRef('routeMode', node as View | null)}
                 onPress={() => {
                   lightTap();
                   setRouteSelectedIds([]);
@@ -6859,6 +7016,9 @@ export default function MapScreen({ route, navigation }: Props) {
           ref={routeScrollRef}
           contentContainerStyle={styles.overlayBody}
           scrollEnabled={routeScrollEnabled}
+          onLayout={(event) => {
+            routeScrollViewportHeightRef.current = event.nativeEvent.layout.height;
+          }}
           onScroll={(event: NativeSyntheticEvent<NativeScrollEvent>) => {
             routeScrollYRef.current = event.nativeEvent.contentOffset.y;
           }}
@@ -6889,6 +7049,7 @@ export default function MapScreen({ route, navigation }: Props) {
               if (!active) setRouteScrollEnabled(true);
             }}
             onDragAutoScroll={handleRouteDragAutoScroll}
+            onTourTargetRef={setTourTargetRef}
             accountId={user?.id}
             dailyByDate={Object.fromEntries(
               dailyAccommodations.map((d) => [
@@ -7924,6 +8085,24 @@ export default function MapScreen({ route, navigation }: Props) {
       </OverlaySheet>
 
       <GroupFeatureTourOverlay
+        visible={routeTourActive && overlay === 'route'}
+        title={routeTourStep ? t(routeTourStep.titleKey as TranslationKey) : ''}
+        body={routeTourStep ? t(routeTourStep.bodyKey as TranslationKey) : ''}
+        ctaLabel={
+          routeTourStep
+            && routeTourStep === ROUTE_REORDER_TOUR_STEPS[ROUTE_REORDER_TOUR_STEPS.length - 1]
+            ? t('tour.getStarted')
+            : t('tour.next')
+        }
+        targetRect={routeTourTargetRect}
+        onNext={onRouteTourNext}
+        onPrev={onRouteTourPrev}
+        canGoPrev={routeTourCanGoPrev}
+        reduceMotion={tourReduceMotion}
+        ctaDisabled={routeTourTransitioning || routeTourCompleting}
+      />
+
+      <GroupFeatureTourOverlay
         visible={tourActive}
         title={
           tourStep && !tourStep.final
@@ -7951,7 +8130,7 @@ export default function MapScreen({ route, navigation }: Props) {
         onPrev={onTourPrev}
         canGoPrev={tourCanGoPrev}
         reduceMotion={tourReduceMotion}
-        ctaDisabled={tourCompleting}
+        ctaDisabled={tourTransitioning || tourCompleting}
       />
     </View>
   );

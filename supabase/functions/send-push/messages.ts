@@ -36,6 +36,8 @@ export interface PushPayload {
   request_id?: string | null;
   count?: number | null;
   sender_name?: string;
+  /** Server-authorized location-refresh recipients from the durable ledger. */
+  recipient_ids?: string[] | null;
   /** Nickname of the member who fell behind (straggler). */
   member_name?: string;
   /** Optional distance in metres for straggler copy. */
@@ -88,13 +90,23 @@ function formatMeetClock(iso: string | null | undefined): string | null {
   return `${month}月${day}日 ${hour}:${minute}`;
 }
 
+function nameOr(raw: string | null | undefined, fallback: string): string {
+  const value = raw?.trim();
+  return value && value.length > 0 ? value : fallback;
+}
+
+function placeOr(raw: string | null | undefined): string {
+  const value = raw?.trim();
+  return value && value.length > 0 ? `「${value}」` : "集合點";
+}
+
 /** Build the alert title/body for a push payload. */
 export function buildMessage(p: PushPayload): { title: string; body: string } {
   switch (p.category) {
     case "add_gathering":
       return {
-        title: "新的集合點",
-        body: p.title ? `集合點：${p.title}` : "隊長新增了一個集合點",
+        title: `${nameOr(p.sender_name, "隊長")} 新增集合點`,
+        body: p.title ? `集合點：${p.title}` : "新增了一個集合點",
       };
     case "journey":
       if (p.status === "gathering_completed") {
@@ -102,14 +114,20 @@ export function buildMessage(p: PushPayload): { title: string; body: string } {
           title: "集合點已完成",
           body:
             p.message?.trim() ||
-            "隊長已完成此卡片，將前往下一個集合點",
+            `${nameOr(p.sender_name, "隊長")} 已完成${placeOr(p.title)}，將前往下一個集合點`,
         };
       }
-      return p.status === "going"
-        ? { title: "出發囉", body: "隊長已開始前往集合點" }
-        : { title: "暫停", body: "隊長已暫停前往集合點" };
-    case "arrival":
-      return { title: "隊友已抵達", body: "一位隊友已抵達集合點" };
+      {
+        const sender = nameOr(p.sender_name, "隊長");
+        const place = placeOr(p.title);
+        return p.status === "going"
+          ? { title: "出發囉", body: `${sender} 已開始前往${place}` }
+          : { title: "暫停", body: `${sender} 已暫停前往${place}` };
+      }
+    case "arrival": {
+      const member = nameOr(p.member_name ?? p.sender_name, "隊友");
+      return { title: `${member} 已抵達`, body: `${member} 已抵達${placeOr(p.title)}` };
+    }
     case "straggler": {
       const name = p.member_name?.trim();
       return {
@@ -121,13 +139,16 @@ export function buildMessage(p: PushPayload): { title: string; body: string } {
       return { title: "Hither", body: "集合進度已更新" };
     case "navigation_session":
       return p.status === "active"
-        ? { title: "開始集合導航", body: "隊長已開始前往集合點" }
+        ? {
+          title: "開始集合導航",
+          body: `${nameOr(p.sender_name, "隊長")} 已開始前往${placeOr(p.title)}`,
+        }
         : { title: "集合導航已結束", body: "這次集合導航已結束" };
     case "location_refresh":
       return { title: "Hither", body: "" };
     case "meet_time_set": {
       const clock = formatMeetClock(p.meet_at);
-      const place = p.title ? `「${p.title}」` : "集合點";
+      const place = placeOr(p.title);
       return {
         title: "集合時間已設定",
         body: clock
@@ -138,11 +159,11 @@ export function buildMessage(p: PushPayload): { title: string; body: string } {
     case "meet_time_cleared":
       return {
         title: "集合時間已清除",
-        body: p.title ? `「${p.title}」的集合時間已取消` : "集合時間已取消",
+        body: p.title ? `${placeOr(p.title)}的集合時間已取消` : "集合時間已取消",
       };
     case "meet_warning": {
       const mins = typeof p.minutes === "number" ? p.minutes : null;
-      const place = p.title ? `「${p.title}」` : "集合點";
+      const place = placeOr(p.title);
       return {
         title: "集合時間快到了",
         body: mins != null
@@ -151,7 +172,7 @@ export function buildMessage(p: PushPayload): { title: string; body: string } {
       };
     }
     case "meet_due": {
-      const place = p.title ? `「${p.title}」` : "集合點";
+      const place = placeOr(p.title);
       return {
         title: "集合時間到了",
         body: `該前往${place}集合了`,
@@ -161,21 +182,22 @@ export function buildMessage(p: PushPayload): { title: string; body: string } {
       const count = typeof p.count === "number" ? p.count : 1;
       return {
         title: "集合點加入請求",
-        body: `${p.sender_name ?? "隊員"}請求加入${count > 1 ? `${count} 個` : ""}集合點`,
+        body: `${nameOr(p.sender_name, "隊員")}請求加入${p.title ? placeOr(p.title) : `${count > 1 ? `${count} 個` : ""}集合點`}`,
       };
     }
     case "leader_commands": {
-      // Role prefix (隊長), not nickname/user id — matches in-app local copy.
-      const label = p.type === "custom"
-        ? (p.message?.trim() || COMMAND_LABEL.custom || "指令")
-        : ((p.type && COMMAND_LABEL[p.type]) || "指令");
-      return { title: `隊長：${label}`, body: p.message?.trim() || label };
+      const label = (p.type && COMMAND_LABEL[p.type]) || "指令";
+      return {
+        title: nameOr(p.sender_name, "隊長"),
+        body: p.message?.trim() || label,
+      };
     }
     case "follower_requests": {
-      const label = p.type === "custom"
-        ? (p.message?.trim() || COMMAND_LABEL.custom || "請求")
-        : ((p.type && COMMAND_LABEL[p.type]) || "請求");
-      return { title: `成員：${label}`, body: p.message?.trim() || label };
+      const label = (p.type && COMMAND_LABEL[p.type]) || "請求";
+      return {
+        title: nameOr(p.sender_name, "成員"),
+        body: p.message?.trim() || label,
+      };
     }
     default:
       return { title: "Hither", body: p.message ?? "" };

@@ -236,33 +236,33 @@ export function useGroupNotifications(): void {
           if (row.sender_id === myUserId) return; // never notify the sender
           if (row.type === 'request_start' && !isLeaderRef.current) return;
           void (async () => {
-            let senderRole: 'leader' | 'follower' | null = null;
-            if (row.type === 'custom') {
-              const { data: senderMem } = await supabase
-                .from('memberships')
-                .select('role')
-                .eq('group_id', groupId)
-                .eq('user_id', row.sender_id)
-                .maybeSingle();
-              const role = (senderMem as { role?: string } | null)?.role;
-              // Only explicit leader; missing/error must not drift to leaderCommands.
-              senderRole = role === 'leader' ? 'leader' : role === 'follower' ? 'follower' : null;
-            } else if (isLeaderCommand(row.type)) {
-              senderRole = 'leader';
-            } else {
-              senderRole = 'follower';
-            }
+            const [{ data: senderMem }, { data: senderProfile }] = await Promise.all([
+              row.type === 'custom'
+                ? supabase
+                  .from('memberships')
+                  .select('role')
+                  .eq('group_id', groupId)
+                  .eq('user_id', row.sender_id)
+                  .maybeSingle()
+                : Promise.resolve({ data: { role: isLeaderCommand(row.type) ? 'leader' : 'follower' } }),
+              supabase.from('profiles').select('nickname').eq('id', row.sender_id).maybeSingle(),
+            ]);
+            const role = (senderMem as { role?: string } | null)?.role;
+            // Only explicit leader; missing/error must not drift to leaderCommands.
+            const senderRole = role === 'leader' ? 'leader' : role === 'follower' ? 'follower' : null;
             const classified = resolveCommandNotificationClass(row.type, senderRole);
             const label = row.type === 'custom'
-              ? (row.message?.trim() || tRef.current('map.cmdTitle'))
+              ? tRef.current('map.cmdTitle')
               : tRef.current(`command.${row.type}` as const);
-            const title = classified.prefCategory === 'leaderCommands'
-              ? tRef.current('notif.leaderTitle', { label })
-              : tRef.current('notif.memberTitle', { label });
+            const senderName = (senderProfile as { nickname?: string } | null)?.nickname?.trim();
+            const title = senderName
+              || (classified.prefCategory === 'leaderCommands'
+                ? tRef.current('notif.leaderTitle', { label })
+                : tRef.current('notif.memberTitle', { label }));
             await fire({
               category: classified.prefCategory,
               title,
-              body: row.message ?? label,
+              body: row.message?.trim() || label,
               eventKind: classified.policyEvent,
               senderId: row.sender_id,
               // Prefer command row id (also sent as entity_id on push); fallback type:sender.
@@ -283,16 +283,26 @@ export function useGroupNotifications(): void {
             title: string;
           };
           if (row.created_by === myUserId) return;
-          void fire({
-            category: 'addGathering',
-            title: tRef.current('notif.addGatheringTitle'),
-            body: tRef.current('notif.addGatheringBody', { title: row.title }),
-            eventKind: 'add_gathering',
-            senderId: row.created_by ?? 'unknown',
-            entityId: row.id ?? undefined,
-            titleKey: row.title,
-            pushCategory: 'add_gathering',
-          });
+          void (async () => {
+            const { data: senderProfile } = row.created_by
+              ? await supabase.from('profiles').select('nickname').eq('id', row.created_by).maybeSingle()
+              : { data: null };
+            const senderName = (senderProfile as { nickname?: string } | null)?.nickname?.trim();
+            await fire({
+              category: 'addGathering',
+              title: senderName
+                ? `${senderName} ${tRef.current('notif.addGatheringTitle')}`
+                : tRef.current('notif.addGatheringTitle'),
+              body: row.title
+                ? tRef.current('notif.addGatheringBody', { title: row.title })
+                : tRef.current('notif.addGatheringBody', { title: tRef.current('map.gatheringPoints') }),
+              eventKind: 'add_gathering',
+              senderId: row.created_by ?? 'unknown',
+              entityId: row.id ?? undefined,
+              titleKey: row.title,
+              pushCategory: 'add_gathering',
+            });
+          })();
         },
       )
       .on(
@@ -339,16 +349,30 @@ export function useGroupNotifications(): void {
           // Operator local confirm is client-side after startSession — not here.
           if (isLeaderRef.current) return;
           const going = next.journey_status === 'going';
-          void fire({
-            category: 'journey',
-            title: tRef.current(going ? 'notif.journeyGoingTitle' : 'notif.journeyPausedTitle'),
-            body: tRef.current(going ? 'notif.journeyGoingBody' : 'notif.journeyPausedBody'),
-            // Members receive journey as sync-style event (exclude sender on server).
-            eventKind: 'exception',
-            senderId: 'leader',
-            status: next.journey_status,
-            pushCategory: 'journey',
-          });
+          void (async () => {
+            const [{ data: leader }, { data: destination }] = await Promise.all([
+              supabase.from('memberships').select('user_id').eq('group_id', groupId).eq('role', 'leader').limit(1).maybeSingle(),
+              next.active_destination_id
+                ? supabase.from('itinerary_items').select('title').eq('id', next.active_destination_id).maybeSingle()
+                : Promise.resolve({ data: null }),
+            ]);
+            const leaderId = (leader as { user_id?: string } | null)?.user_id ?? 'leader';
+            const { data: leaderProfile } = leaderId !== 'leader'
+              ? await supabase.from('profiles').select('nickname').eq('id', leaderId).maybeSingle()
+              : { data: null };
+            const name = (leaderProfile as { nickname?: string } | null)?.nickname?.trim() || tRef.current('notif.leaderTitle', { label: '' }).replace(/[:：]\s*$/, '');
+            const title = (destination as { title?: string } | null)?.title?.trim() || tRef.current('map.gatheringPoints');
+            await fire({
+              category: 'journey',
+              title: going ? tRef.current('notif.journeyGoingTitle') : tRef.current('notif.journeyPausedTitle'),
+              body: tRef.current(going ? 'notif.journeyGoingBody' : 'notif.journeyPausedBody', { name, title }),
+              eventKind: 'exception',
+              senderId: leaderId,
+              entityId: undefined,
+              status: next.journey_status,
+              pushCategory: 'journey',
+            });
+          })();
         },
       )
       .on(
@@ -373,18 +397,31 @@ export function useGroupNotifications(): void {
           if (!arriverId || arriverId === myUserId) return;
           // Leaders only (policy matrix also enforces; early gate saves prefs I/O).
           if (!isLeaderRef.current) return;
-          void fire({
-            category: 'journey',
-            title: tRef.current('notif.memberArrivalTitle'),
-            body: tRef.current('notif.memberArrivalBody'),
-            eventKind: 'member_arrival',
-            senderId: arriverId,
-            // Dual-path: send-push uses destination_id as entity segment when
-            // entity_id is absent (see buildAlignedNotificationEventId).
-            entityId: row.destination_id ?? row.id ?? undefined,
-            commandType: row.source ?? undefined,
-            pushCategory: 'arrival',
-          });
+          void (async () => {
+            const [{ data: memberProfile }, { data: destination }] = await Promise.all([
+              supabase.from('profiles').select('nickname').eq('id', arriverId).maybeSingle(),
+              row.destination_id
+                ? supabase.from('itinerary_items').select('title').eq('id', row.destination_id).maybeSingle()
+                : Promise.resolve({ data: null }),
+            ]);
+            const name = (memberProfile as { nickname?: string } | null)?.nickname?.trim()
+              || tRef.current('group.travelerFallback');
+            const title = (destination as { title?: string } | null)?.title?.trim()
+              || tRef.current('map.gatheringPoints');
+            await fire({
+              category: 'journey',
+              title: tRef.current('notif.memberArrivalTitle', { name }),
+              body: tRef.current('notif.memberArrivalBody', { name, title }),
+              eventKind: 'member_arrival',
+              senderId: arriverId,
+              // Keep destination_id as the event identity segment, matching push.
+              // send-push uses member_id when destination_id is absent;
+              // preserve that same fallback for Realtime deduplication.
+              entityId: row.destination_id ?? arriverId,
+              commandType: row.source ?? undefined,
+              pushCategory: 'arrival',
+            });
+          })();
         },
       )
       .subscribe();

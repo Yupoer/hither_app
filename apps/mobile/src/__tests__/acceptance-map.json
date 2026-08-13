@@ -1,5 +1,34 @@
 {
   "version": 1,
   "description": "L1 meta gate: each child acceptance maps to a real test. FULL_IMPLEMENT must append entries for the parent being delivered. Empty entries is valid only when META_PARENT=pure-chore (PR body: <!-- hither-test-meta parent: pure-chore -->). Required parent ids fail L1 if zero matching entries.",
-  "entries": []
+  "entries": [
+    {
+      "parent": 187,
+      "child": 188,
+      "acceptance": "Group tour pane and target geometry commit atomically; Add Place highlights the favorite star.",
+      "testFile": "groupFeatureTourOverlayFix.test.ts",
+      "testNamePattern": "commits pane and target as one snapshot"
+    },
+    {
+      "parent": 187,
+      "child": 189,
+      "acceptance": "Leader-only route reorder tour has six measured steps and a zero-gathering-point stop gate.",
+      "testFile": "routeReorderTour.test.ts",
+      "testNamePattern": "requires leader edit access"
+    },
+    {
+      "parent": 187,
+      "child": 190,
+      "acceptance": "Push and Realtime fallback use nickname, destination title, and command message consistently.",
+      "testFile": "notificationSemanticsContract.test.ts",
+      "testNamePattern": "uses sender nickname as title"
+    },
+    {
+      "parent": 187,
+      "child": 191,
+      "acceptance": "Per-recipient pending refresh survives missed delivery and uses exact versioned ACKs with lifecycle guards.",
+      "testFile": "locationRefreshPendingContract.test.ts",
+      "testNamePattern": "keeps a per-recipient versioned ledger"
+    }
+  ]
 }

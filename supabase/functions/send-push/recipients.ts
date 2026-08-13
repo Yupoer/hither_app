@@ -1,5 +1,16 @@
 import type { PushPayload } from "./messages.ts";
 
+export function locationRefreshRecipientIds(
+  payload: Pick<PushPayload, "category" | "sender_id" | "recipient_ids">,
+): string[] {
+  if (payload.category !== "location_refresh" || !Array.isArray(payload.recipient_ids)) {
+    return [];
+  }
+  return [...new Set(
+    payload.recipient_ids.filter((userId) => userId.length > 0 && userId !== payload.sender_id),
+  )];
+}
+
 export function requestStartRecipientIds<
   T extends { user_id: string; role: string },
 >(payload: PushPayload, members: T[]): string[] | null {

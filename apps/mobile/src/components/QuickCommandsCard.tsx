@@ -153,9 +153,9 @@ export default function QuickCommandsCard({
     const label = cmd.label;
     const message = cmd.message;
     try {
-      // Prefer short label for notification title (隊長/成員：{label});
-      // fall back to message body when label is empty.
-      await sendCommand(groupId, 'custom', label.trim() || message);
+      // The label is UI-only.  The persisted command message is the body;
+      // send-push and Realtime both prefix the sender nickname in the title.
+      await sendCommand(groupId, 'custom', message.trim() || label);
       Alert.alert(t('command.sent'));
     } catch {
       Alert.alert(t('command.sendFailed'));

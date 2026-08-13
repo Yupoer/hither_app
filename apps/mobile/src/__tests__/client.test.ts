@@ -473,6 +473,7 @@ describe('notifications, commands & journey', () => {
     await expect(requestGroupLocationRefresh('g1')).resolves.toEqual({
       accepted: true,
       retryAfterSeconds: 60,
+      recipientIds: [],
     });
     expect(mockedRpc).toHaveBeenCalledWith('request_group_location_refresh', {
       p_group_id: 'g1',
@@ -581,6 +582,7 @@ describe('notifications, commands & journey', () => {
     await expect(requestGroupLocationRefresh('g1')).resolves.toEqual({
       accepted: false,
       retryAfterSeconds: 37,
+      recipientIds: [],
     });
   });
 

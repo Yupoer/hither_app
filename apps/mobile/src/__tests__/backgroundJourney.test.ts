@@ -134,7 +134,7 @@ describe('background journey controller', () => {
       accuracy: number;
       pausesUpdatesAutomatically: boolean;
     };
-    // Default (highAccuracy unset) uses Balanced + OS pause when stationary.
+    // Default journey (highAccuracy unset) uses Balanced + OS pause when stationary.
     expect(opts.accuracy).toBe(3);
     expect(opts.pausesUpdatesAutomatically).toBe(true);
   });
@@ -173,7 +173,7 @@ describe('background journey controller', () => {
     };
     expect(opts.accuracy).toBe(2);
     expect(opts.deferredUpdatesInterval).toBe(180_000);
-    expect(opts.pausesUpdatesAutomatically).toBe(true);
+    expect(opts.pausesUpdatesAutomatically).toBe(false);
   });
 
   it('restarts native updates when highAccuracy profile changes', async () => {
@@ -207,6 +207,40 @@ describe('background journey controller', () => {
 
     expect(storage.setItem).not.toHaveBeenCalled();
     expect(location.startLocationUpdatesAsync).not.toHaveBeenCalled();
+  });
+
+  it('does not prompt from a background transition when active preparation was not completed', async () => {
+    const { controller, location, storage } = harness();
+
+    await expect(
+      controller.start({
+        ...config,
+        appState: 'background',
+        permissionsPrepared: false,
+      }),
+    ).resolves.toBe('permission_denied');
+
+    expect(location.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
+    expect(location.requestBackgroundPermissionsAsync).not.toHaveBeenCalled();
+    expect(storage.setItem).not.toHaveBeenCalled();
+    expect(location.startLocationUpdatesAsync).not.toHaveBeenCalled();
+  });
+
+  it('starts in the background after permissions were prepared while active', async () => {
+    const { controller, location } = harness();
+
+    await expect(controller.preparePermissions()).resolves.toBe('ready');
+    await expect(
+      controller.start({
+        ...config,
+        appState: 'background',
+        permissionsPrepared: true,
+      }),
+    ).resolves.toBe('started');
+
+    expect(location.requestForegroundPermissionsAsync).toHaveBeenCalledTimes(1);
+    expect(location.requestBackgroundPermissionsAsync).toHaveBeenCalledTimes(1);
+    expect(location.startLocationUpdatesAsync).toHaveBeenCalledTimes(1);
   });
 
   it('stops idempotently and always clears persisted state', async () => {

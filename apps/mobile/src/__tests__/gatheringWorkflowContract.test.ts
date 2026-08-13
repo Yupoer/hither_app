@@ -199,15 +199,16 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(mapScreen).toContain('leader_mark_complete');
     expect(migrations).toContain('coalesce(i.day, 1) >= v_current_day');
     expect(pushMessages).toContain('gathering_completed');
-    expect(pushMessages).toContain('隊長已完成此卡片');
+    expect(pushMessages).toMatch(/nameOr\(p\.sender_name/);
+    expect(pushMessages).toMatch(/placeOr\(p\.title\)/);
   });
 
-  it('fans quick commands to the whole group with role titles (not user id)', () => {
+  it('fans quick commands to the whole group with sender nickname titles', () => {
     expect(pushIndex).toContain('wholeGroupCommand');
-    // Exclude the sender; titles use 隊長/成員 + command label.
+    // Exclude the sender; the server enriches nickname once and uses message as body.
     expect(pushIndex).toContain('member.user_id !== payload.sender_id');
-    expect(pushMessages).toContain('title: `隊長：${label}`');
-    expect(pushMessages).toContain('title: `成員：${label}`');
+    expect(pushMessages).toMatch(/title: nameOr\(p\.sender_name/);
+    expect(pushMessages).toContain('body: p.message?.trim() || label');
     expect(pushMessages).toContain('gathering_request');
   });
 

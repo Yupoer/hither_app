@@ -120,7 +120,7 @@ describe('measureTargetWithRetry requireStable (#182)', () => {
 describe('expanding steps wait for a stable rect (#182)', () => {
   it('useGroupFeatureTour asks for stability on expandCard steps', () => {
     const measureSrc = readFileSync(join(__dirname, '../featureTour/measureTarget.ts'), 'utf8');
-    expect(hookSrc).toContain('requireStable: Boolean(step.expandCard)');
+    expect(hookSrc).toContain('requireStable: Boolean(requestedStep.expandCard)');
     expect(measureSrc).toContain("target: 'stageTwoPlacement'");
     expect(hookSrc).toContain('placementRect');
   });

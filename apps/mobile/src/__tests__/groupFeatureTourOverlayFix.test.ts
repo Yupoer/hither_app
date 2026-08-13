@@ -70,7 +70,15 @@ jest.mock('react-native', () => ({
         this.v = v;
       }
     },
-    timing: () => ({ start: (cb?: () => void) => cb?.() }),
+    timing: (_value: unknown, config: { duration?: number } = {}) => ({
+      start: (cb?: () => void) => {
+        if ((config.duration ?? 0) === 0) {
+          cb?.();
+          return;
+        }
+        setTimeout(() => cb?.(), config.duration);
+      },
+    }),
     View: 'Animated.View',
   },
 }));
@@ -83,16 +91,22 @@ const { act, create } = require('react-test-renderer') as {
   act: (callback: () => void | Promise<void>) => Promise<void>;
   create: (element: React.ReactElement) => {
     unmount: () => void;
-    root: {
+  root: {
       findAll: (fn: (n: { props: Record<string, unknown> }) => boolean) => Array<{
         props: Record<string, unknown>;
       }>;
     };
+    update: (element: React.ReactElement) => void;
   };
 };
 
 const { GroupFeatureTourOverlay } = require('../featureTour/GroupFeatureTourOverlay') as typeof import('../featureTour/GroupFeatureTourOverlay');
 const { useGroupFeatureTour } = require('../featureTour/useGroupFeatureTour') as typeof import('../featureTour/useGroupFeatureTour');
+
+afterEach(() => {
+  jest.clearAllTimers();
+  jest.useRealTimers();
+});
 
 function flattenStyle(style: unknown): Record<string, unknown> {
   if (!style) return {};
@@ -121,7 +135,8 @@ describe('featureTour barrel public seams', () => {
     expect(typeof featureTour.clipRectToWindow).toBe('function');
     expect(typeof featureTour.holeKindForTarget).toBe('function');
     expect(typeof featureTour.measureTourStepRects).toBe('function');
-    expect(featureTour.STAGE_TWO_SETTLE_MS).toBe(300);
+    // Stage Two uses bounded measurement retries; there is no fixed settle sleep.
+    expect(featureTour.STAGE_TWO_SETTLE_MS).toBe(0);
   });
 });
 
@@ -195,6 +210,131 @@ describe('overlay chrome fades together', () => {
     expect(overlaySrc).not.toMatch(
       /if \(!visible\) \{\s*opacity\.setValue\(0\);\s*return;\s*\}\s*if \(reduceMotion\) \{\s*opacity\.setValue\(1\);\s*return;\s*\}\s*opacity\.setValue\(0\);/,
     );
+  });
+
+  it('keeps copy, hole, and placement atomic through fade-out and superseded steps', async () => {
+    jest.useFakeTimers();
+    const rectA = { x: 20, y: 80, width: 52, height: 52 };
+    const placementA = { x: 16, y: 100, width: 358, height: 48 };
+    const rectB = { x: 240, y: 560, width: 52, height: 52 };
+    const placementB = { x: 16, y: 620, width: 358, height: 48 };
+    const rectC = { x: 120, y: 300, width: 52, height: 52 };
+    const placementC = { x: 16, y: 360, width: 358, height: 48 };
+    const readText = (tree: ReturnType<typeof create>) =>
+      tree.root.findAll((n) => n.props.children != null)
+        .map((n) => n.props.children)
+        .filter((child): child is string => typeof child === 'string');
+    const readRing = (tree: ReturnType<typeof create>) => {
+      const ring = tree.root.findAll((n) => n.props.testID === 'tour-hole-ring')[0];
+      return flattenStyle(ring.props.style);
+    };
+    const readCardTop = (tree: ReturnType<typeof create>) => {
+      const card = tree.root.findAll((n) => n.props.accessibilityRole === 'summary')[0];
+      return flattenStyle(card.props.style).top;
+    };
+
+    let tree: ReturnType<typeof create>;
+    await act(async () => {
+      tree = create(
+        React.createElement(GroupFeatureTourOverlay, {
+          visible: true,
+          title: 'Old title',
+          body: 'Old body',
+          ctaLabel: 'Old CTA',
+          targetRect: rectA,
+          placementRect: placementA,
+          onNext: jest.fn(),
+        }),
+      );
+    });
+    expect(readText(tree!)).toContain('Old title');
+    expect(readRing(tree!).left).toBe(paddedHole(rectA).x);
+    const oldCardTop = readCardTop(tree!);
+
+    await act(async () => {
+      tree!.update(
+        React.createElement(GroupFeatureTourOverlay, {
+          visible: true,
+          title: 'New title',
+          body: 'New body',
+          ctaLabel: 'New CTA',
+          targetRect: rectB,
+          placementRect: placementB,
+          onNext: jest.fn(),
+        }),
+      );
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(149);
+    });
+    expect(readText(tree!)).toContain('Old title');
+    expect(readRing(tree!).left).toBe(paddedHole(rectA).x);
+    expect(readCardTop(tree!)).toBe(oldCardTop);
+
+    await act(async () => {
+      jest.advanceTimersByTime(1);
+    });
+    expect(readText(tree!)).toContain('New title');
+    expect(readRing(tree!).left).toBe(paddedHole(rectB).x);
+    expect(readCardTop(tree!)).not.toBe(oldCardTop);
+
+    await act(async () => {
+      tree!.update(
+        React.createElement(GroupFeatureTourOverlay, {
+          visible: true,
+          title: 'Superseded title',
+          body: 'Superseded body',
+          ctaLabel: 'Superseded CTA',
+          targetRect: rectC,
+          placementRect: placementC,
+          onNext: jest.fn(),
+        }),
+      );
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(75);
+    });
+    await act(async () => {
+      tree!.update(
+        React.createElement(GroupFeatureTourOverlay, {
+          visible: true,
+          title: 'Final title',
+          body: 'Final body',
+          ctaLabel: 'Final CTA',
+          targetRect: rectA,
+          placementRect: placementA,
+          onNext: jest.fn(),
+        }),
+      );
+    });
+    expect(readText(tree!)).toContain('New title');
+    await act(async () => {
+      jest.advanceTimersByTime(149);
+    });
+    expect(readText(tree!)).toContain('New title');
+    await act(async () => {
+      jest.advanceTimersByTime(1);
+    });
+    expect(readText(tree!)).toContain('Final title');
+    expect(readText(tree!)).not.toContain('Superseded title');
+    expect(readRing(tree!).left).toBe(paddedHole(rectA).x);
+
+    await act(async () => {
+      tree!.update(
+        React.createElement(GroupFeatureTourOverlay, {
+          visible: true,
+          title: 'Reduced title',
+          body: 'Reduced body',
+          ctaLabel: 'Reduced CTA',
+          targetRect: rectC,
+          placementRect: placementC,
+          onNext: jest.fn(),
+          reduceMotion: true,
+        }),
+      );
+    });
+    expect(readText(tree!)).toContain('Reduced title');
+    expect(readRing(tree!).left).toBe(paddedHole(rectC).x);
   });
 });
 
@@ -422,6 +562,8 @@ describe('hook onPrev + canGoPrev', () => {
       box.latest?.onNext();
     });
     await flush();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await flush();
     expect(box.latest?.stepIndex).toBe(1);
     expect(box.latest?.canGoPrev).toBe(true);
     expect(expandCard).toHaveBeenCalled();
@@ -431,6 +573,8 @@ describe('hook onPrev + canGoPrev', () => {
       box.latest?.onPrev();
     });
     await flush();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await flush();
     expect(box.latest?.stepIndex).toBe(0);
     expect(box.latest?.tourActive).toBe(true);
     expect(box.latest?.canGoPrev).toBe(false);
@@ -438,6 +582,8 @@ describe('hook onPrev + canGoPrev', () => {
     await act(async () => {
       box.latest?.onNext();
     });
+    await flush();
+    await new Promise((resolve) => setTimeout(resolve, 100));
     await flush();
     expect(box.latest?.stepIndex).toBe(1);
     expect(expandCard.mock.calls.length).toBeGreaterThan(expandCount);
@@ -456,5 +602,20 @@ describe('MapScreen wires prev + members highlight', () => {
     expect(map).toContain("'paneMembers'");
     expect(map).toContain("setTourTargetRef('search'");
     expect(map).toContain('clearAddPlaceTour');
+  });
+
+  it('commits pane and target as one snapshot and highlights the add-place favorite star', () => {
+    const { readFileSync } = require('node:fs') as typeof import('node:fs');
+    const { join } = require('node:path') as typeof import('node:path');
+    const tour = readFileSync(join(__dirname, '../featureTour/useGroupFeatureTour.ts'), 'utf8');
+    const measure = readFileSync(join(__dirname, '../featureTour/measureTarget.ts'), 'utf8');
+    const map = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+    expect(tour).toContain('const [snapshot, setSnapshot]');
+    expect(tour).toContain('ctrl.stepIndex !== snapshot.stepIndex');
+    expect(tour).toContain('setSnapshot({');
+    expect(measure).toContain('Bounded measurement retry');
+    expect(measure).not.toContain('await sleep(STAGE_TWO_SETTLE_MS)');
+    expect(map).toContain("testID=\"add-place-favorite-star\"");
+    expect(map).toContain("setTourTargetRef('addPlaceFavoriteStar'");
   });
 });

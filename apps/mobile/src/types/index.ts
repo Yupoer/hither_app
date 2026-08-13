@@ -31,6 +31,8 @@ export interface AccountPreferences {
   groupFeatureTourCompleted?: boolean;
   /** Independent Add Place contextual tour completion (does not affect group tour). */
   addPlaceTourCompleted?: boolean;
+  /** Leader-only route reorder tour completion (account-scoped, best-effort sync). */
+  routeReorderTourCompleted?: boolean;
 }
 
 export function normalizeCustomQuickCommand(value: unknown): CustomQuickCommand | null {
@@ -67,7 +69,10 @@ export function normalizeCustomQuickCommands(prefs: unknown): Array<CustomQuickC
 /** Build AccountPreferences for profile writes / session state. */
 export function accountPreferencesFromSlots(
   slots: Array<CustomQuickCommand | null>,
-  extras?: Pick<AccountPreferences, 'groupFeatureTourCompleted' | 'addPlaceTourCompleted'>,
+  extras?: Pick<
+    AccountPreferences,
+    'groupFeatureTourCompleted' | 'addPlaceTourCompleted' | 'routeReorderTourCompleted'
+  >,
 ): AccountPreferences {
   const quickCommands = Array.from({ length: CUSTOM_QUICK_COMMAND_SLOTS }, (_, i) => slots[i] ?? null);
   const first = quickCommands.find((s) => s != null) ?? null;
@@ -85,6 +90,11 @@ export function accountPreferencesFromSlots(
       : extras?.addPlaceTourCompleted === false
         ? { addPlaceTourCompleted: false }
         : {}),
+    ...(extras?.routeReorderTourCompleted === true
+      ? { routeReorderTourCompleted: true }
+      : extras?.routeReorderTourCompleted === false
+        ? { routeReorderTourCompleted: false }
+        : {}),
   };
 }
 
@@ -100,6 +110,7 @@ export function normalizeAccountPreferences(prefs: unknown): AccountPreferences 
   const row = prefs as {
     groupFeatureTourCompleted?: unknown;
     addPlaceTourCompleted?: unknown;
+    routeReorderTourCompleted?: unknown;
   };
   const tour =
     row.groupFeatureTourCompleted === true
@@ -113,9 +124,16 @@ export function normalizeAccountPreferences(prefs: unknown): AccountPreferences 
       : row.addPlaceTourCompleted === false
         ? false
         : undefined;
+  const routeReorderTour =
+    row.routeReorderTourCompleted === true
+      ? true
+      : row.routeReorderTourCompleted === false
+        ? false
+        : undefined;
   return accountPreferencesFromSlots(slots, {
     ...(tour === undefined ? {} : { groupFeatureTourCompleted: tour }),
     ...(addPlaceTour === undefined ? {} : { addPlaceTourCompleted: addPlaceTour }),
+    ...(routeReorderTour === undefined ? {} : { routeReorderTourCompleted: routeReorderTour }),
   });
 }
 

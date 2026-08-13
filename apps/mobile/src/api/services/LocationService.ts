@@ -5,10 +5,12 @@ import { supabase } from '../supabase';
 import { demoUpdateMyLocation, isDemoGroup } from '../demo';
 import type { Coordinates } from '../../types';
 import { requireUserId, orThrow } from './_helpers';
+import { normalizeLocationRefreshRecipientIds } from '../../utils/locationRefreshResponse';
 
 export interface LocationRefreshResult {
   accepted: boolean;
   retryAfterSeconds: number;
+  recipientIds: string[];
 }
 
 export interface LocationBatchEvent {
@@ -36,6 +38,13 @@ export interface LocationBatchResult {
 interface LocationRefreshRow {
   accepted?: boolean;
   retry_after_seconds?: number;
+  recipient_ids?: unknown;
+}
+
+export interface PendingLocationRefresh {
+  groupId: string;
+  requestedBy: string;
+  requestedAt: string;
 }
 
 export async function updateMyLocation(
@@ -100,5 +109,41 @@ export async function requestGroupLocationRefresh(
   return {
     accepted: row.accepted === true,
     retryAfterSeconds: Math.max(0, Math.ceil(row.retry_after_seconds ?? 0)),
+    recipientIds: normalizeLocationRefreshRecipientIds(row.recipient_ids),
   };
+}
+
+export async function listMyPendingLocationRefreshes(): Promise<PendingLocationRefresh[]> {
+  await requireUserId();
+  const { data, error } = await supabase.rpc('list_my_pending_location_refreshes');
+  orThrow(error);
+  return (Array.isArray(data) ? data : []).flatMap((row) => {
+    const value = row as {
+      group_id?: unknown;
+      requested_by?: unknown;
+      requested_at?: unknown;
+    };
+    return typeof value.group_id === 'string'
+      && typeof value.requested_by === 'string'
+      && typeof value.requested_at === 'string'
+      ? [{
+          groupId: value.group_id,
+          requestedBy: value.requested_by,
+          requestedAt: value.requested_at,
+        }]
+      : [];
+  });
+}
+
+export async function ackMyLocationRefresh(
+  groupId: string,
+  requestedAt: string,
+): Promise<boolean> {
+  await requireUserId();
+  const { data, error } = await supabase.rpc('ack_my_location_refresh', {
+    p_group_id: groupId,
+    p_requested_at: requestedAt,
+  });
+  orThrow(error);
+  return data === true;
 }

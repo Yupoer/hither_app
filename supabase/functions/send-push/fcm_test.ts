@@ -11,7 +11,10 @@ import {
   buildMessage,
   prefColumn,
 } from "./messages.ts";
-import { requestStartRecipientIds } from "./recipients.ts";
+import {
+  locationRefreshRecipientIds,
+  requestStartRecipientIds,
+} from "./recipients.ts";
 
 Deno.test("builds an Android alert with string data values", () => {
   const alert = {
@@ -60,7 +63,7 @@ Deno.test("builds the follower request_start message", () => {
       message: "請開始前往「台北車站」",
     }),
     {
-      title: "成員：要求開始",
+      title: "成員",
       body: "請開始前往「台北車站」",
     },
   );
@@ -80,6 +83,27 @@ Deno.test("builds the follower request_start message", () => {
     ["leader"],
   );
   assertEquals(prefColumn("follower_requests"), "follower_requests");
+});
+
+Deno.test("uses only the server-authorized location-refresh recipient set", () => {
+  assertEquals(
+    locationRefreshRecipientIds({
+      category: "location_refresh",
+      group_id: "g1",
+      sender_id: "leader",
+      recipient_ids: ["active-follower"],
+    }),
+    ["active-follower"],
+  );
+  assertEquals(
+    locationRefreshRecipientIds({
+      category: "journey",
+      group_id: "g1",
+      sender_id: "leader",
+      recipient_ids: ["active-follower"],
+    }),
+    [],
+  );
 });
 
 Deno.test("marks UNREGISTERED and invalid token as dead", () => {

@@ -18,13 +18,16 @@ describe('remote location refresh wiring', () => {
     expect(mapScreen).not.toContain('refreshLocations(refreshDeviceLocation, refresh)');
   });
 
-  it('force-refreshes self first, then peer fan-out, and stays silent on success', () => {
+  it('force-refreshes self, waits for bounded peer responses, then pulls final state', () => {
     expect(mapScreen).toContain(
       'const selfFix = await refreshDeviceLocation({ requireUpload: true })',
     );
     expect(mapScreen).toContain('requestGroupLocationRefresh(groupId)');
     // Success alert removed — cooldown / failure feedback remains.
-    expect(mapScreen).not.toContain("Alert.alert(t('map.refreshLocationsAccepted'))");
+    expect(mapScreen).toContain('waitForLocationRefreshResponses');
+    expect(mapScreen).toContain('requestedAtMs: refreshStartedAtMs');
+    expect(mapScreen).toContain('map.refreshLocationsResultPartial');
+    expect(mapScreen).toContain('map.refreshLocationsResultNone');
     expect(mapScreen).toContain("t('map.refreshLocationsCooldown'");
     expect(mapScreen).toContain("t('map.setFailedTitle')");
     // Client cooldown early-return + button disable while cooling.
@@ -51,8 +54,13 @@ describe('remote location refresh wiring', () => {
     expect(task).toContain('TaskManager.defineTask');
     expect(task).toContain('Notifications.registerTaskAsync');
     expect(task).toContain('location.getCurrentLocation');
-    expect(task).toContain('enqueueLocationOutbox');
-    expect(task).toContain('flushLocationOutbox');
+    // Durable pending rows are uploaded directly and ACKed by requested_at;
+    // the refresh path no longer relies on the local journey outbox.
+    expect(task).toContain('listMyPendingLocationRefreshes');
+    expect(task).toContain('ingestLocationBatch');
+    expect(task).toContain('ackMyLocationRefresh');
+    expect(task).not.toContain('enqueueLocationOutbox');
+    expect(task).not.toContain('flushLocationOutbox');
     expect(task).toContain('rememberPendingLocationPermission');
     expect(task).toContain('consumePendingLocationPermission');
     expect(mapScreen).toContain('consumePendingLocationPermission');

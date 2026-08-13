@@ -94,6 +94,14 @@ describe('locationPolicy', () => {
       pausesUpdatesAutomatically: true,
     });
   });
+
+  it('keeps passive background heartbeat from being auto-paused', () => {
+    expect(backgroundLocationOptions('allDay', true, 'passiveBackground')).toMatchObject({
+      accuracy: 2,
+      pausesUpdatesAutomatically: false,
+      showsBackgroundLocationIndicator: false,
+    });
+  });
 });
 
 describe('motion cadence', () => {

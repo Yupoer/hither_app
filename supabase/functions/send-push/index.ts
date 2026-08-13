@@ -29,8 +29,12 @@ import {
   prefColumn,
   type PushPayload,
 } from "./messages.ts";
-import { specialAlertRecipientIds } from "./recipients.ts";
+import {
+  locationRefreshRecipientIds,
+  specialAlertRecipientIds,
+} from "./recipients.ts";
 import { eventIdFromPayload } from "./eventId.ts";
+import { deliverWithSenderFallback } from "./senderFallback.ts";
 
 interface MembershipRow {
   user_id: string;
@@ -134,6 +138,54 @@ async function loadTokenRows(userIds: string[]): Promise<DeviceTokenRow[]> {
       platform: normalizePlatform(row.platform),
     }),
   );
+}
+
+/**
+ * Resolve notification copy inputs once per webhook.  The row payload carries
+ * stable ids; names/titles are enrichment only, so event identity stays based
+ * on the original ids and Realtime can dedupe the same event.
+ */
+async function enrichNotificationPayload(payload: PushPayload): Promise<PushPayload> {
+  const memberId = payload.member_id ?? (
+    payload.category === "arrival" || payload.category === "straggler"
+      ? payload.sender_id
+      : null
+  );
+  let destinationId = payload.destination_id ?? null;
+
+  if (!destinationId && payload.category === "journey") {
+    const { data } = await supabase
+      .from("groups")
+      .select("active_destination_id")
+      .eq("id", payload.group_id)
+      .maybeSingle();
+    destinationId = (data?.active_destination_id as string | null | undefined) ?? null;
+  }
+
+  const [destinationResponse, memberResponse] = await Promise.all([
+    !payload.title && destinationId
+      ? supabase.from("itinerary_items").select("title").eq("id", destinationId).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    !payload.member_name && memberId && memberId !== payload.sender_id
+      ? supabase.from("profiles").select("nickname").eq("id", memberId).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+  ]);
+
+  // Enrichment is deliberately best effort.  A missing row keeps the explicit
+  // generic fallback in buildMessage; it must not drop a valid notification.
+  const title = !payload.title
+    ? (destinationResponse.data?.title as string | undefined)?.trim()
+    : undefined;
+  const memberName = !payload.member_name
+    ? memberId === payload.sender_id
+      ? payload.sender_name?.trim()
+      : (memberResponse.data?.nickname as string | undefined)?.trim()
+    : undefined;
+  return {
+    ...payload,
+    ...(title ? { title } : {}),
+    ...(memberName ? { member_name: memberName } : {}),
+  };
 }
 
 async function sendAlerts(
@@ -257,14 +309,22 @@ Deno.serve(async (req) => {
     const sender = memberByUser.get(payload.sender_id);
     if (!sender) return json({ error: "sender is not a group member" }, 403);
 
-    const { data: senderProfile, error: senderProfileError } = await supabase
-      .from("profiles")
-      .select("nickname")
-      .eq("id", payload.sender_id)
-      .maybeSingle();
-    if (senderProfileError) throw senderProfileError;
-    const senderName = (senderProfile?.nickname as string | undefined)?.trim() || "隊員";
-    payload = { ...payload, sender_name: senderName };
+    payload = await deliverWithSenderFallback(
+      payload,
+      sender.role,
+      async () => {
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("nickname")
+          .eq("id", payload.sender_id)
+          .maybeSingle();
+        return {
+          data: data as { nickname?: unknown } | null,
+          error,
+        };
+      },
+      enrichNotificationPayload,
+    );
 
     if (payload.category === "navigation_session") {
       return await handleNavigationSession(
@@ -332,12 +392,7 @@ Deno.serve(async (req) => {
     );
 
     const tokenRows = await loadTokenRows(allowedAlertUsers);
-    const refreshCandidates = payload.category === "location_refresh"
-      ? members
-        .filter((member) => member.user_id !== payload.sender_id)
-        .filter((member) => member.status !== "offline")
-        .map((member) => member.user_id)
-      : [];
+    const refreshCandidates = locationRefreshRecipientIds(payload);
     const refreshTokenRows = await loadTokenRows(refreshCandidates);
     const liveSessions = await loadLiveSessions(payload, members, sender);
 
