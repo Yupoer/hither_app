@@ -1044,6 +1044,8 @@ export const en: Record<keyof ZhDict, string> = {
   'tour.avatar.body': 'Change your avatar and profile from here.',
   'tour.settings.title': 'Settings',
   'tour.settings.body': 'Language, theme, location, and account live here.',
+  'tour.search.title': 'Search',
+  'tour.search.body': 'Tap here to search and add the next gathering point.',
   'tour.done.title': "You're ready",
   'tour.done.body': 'You know the main controls. Tap Get started to use the map.',
   'tour.addPlace.star.title': 'Save favorite places',

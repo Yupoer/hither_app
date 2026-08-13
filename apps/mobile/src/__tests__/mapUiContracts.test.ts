@@ -314,6 +314,7 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).not.toContain('layout={LinearTransition.springify()');
     expect(mapScreen).toContain('function CarouselDots');
     expect(mapScreen).toContain('indicatorRowGeometry');
+    expect(mapScreen).toContain('withTiming(item.active ? 18 : 6');
     expect(mapScreen).not.toContain('pillSlot');
     const carouselStart = mapScreen.indexOf('function CarouselDots');
     const carouselEnd = mapScreen.indexOf('function GatheringCardPressable', carouselStart);

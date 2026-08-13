@@ -62,7 +62,7 @@ const map = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
 const overlaySrc = readFileSync(join(__dirname, '../featureTour/GroupFeatureTourOverlay.tsx'), 'utf8');
 const hookSrc = readFileSync(join(__dirname, '../featureTour/useGroupFeatureTour.ts'), 'utf8');
 
-describe('paddedHole + ring share one rounded geometry (#182)', () => {
+describe('paddedHole + ring share one rectangular geometry', () => {
   it('pads the measured rect with the same inset the overlay uses', () => {
     expect(paddedHole({ x: 10, y: 20, width: 100, height: 40 })).toEqual({
       x: 2,
@@ -73,11 +73,11 @@ describe('paddedHole + ring share one rounded geometry (#182)', () => {
     expect(HOLE_RADIUS).toBeGreaterThan(0);
     expect(overlaySrc).toContain('paddedHole');
     expect(overlaySrc).toContain('holeRadius');
-    expect(overlaySrc).toContain('HoleCorner');
+    expect(overlaySrc).not.toContain('HoleCorner');
     expect(overlaySrc).toContain('tour-hole-ring');
     const compact = paddedHole({ x: 10, y: 20, width: 52, height: 52 });
-    expect(holeRadius(compact, 'compact')).toBe(Math.min(compact.w, compact.h) / 2);
-    expect(holeRadius({ w: 376, h: 256 }, 'card')).toBeLessThanOrEqual(16);
+    expect(holeRadius(compact, 'compact')).toBe(0);
+    expect(holeRadius({ w: 376, h: 256 }, 'card')).toBe(0);
   });
 });
 
@@ -144,17 +144,14 @@ describe('MapScreen highlight owners (#182)', () => {
     expect(Math.abs(arrivalRefIdx - chipIdx)).toBeLessThan(400);
   });
 
-  it('pins members to status+list and Stage Two placement to the tab strip', () => {
-    expect(map).toContain('tour-members-content');
+  it('pins members to the members icon tab, not the pane body', () => {
+    expect(map).not.toContain('tour-members-content');
     expect(map).toContain('tour-stage-two-placement');
     expect(map).toContain("setTourTargetRef('stageTwoPlacement'");
-    const membersWrap = map.slice(
-      map.indexOf('tour-members-content'),
-      map.indexOf('tour-members-content') + 1800,
-    );
-    expect(membersWrap).toContain('myStatusBar');
-    expect(membersWrap).not.toContain('settings.preciseLocation');
-    expect(membersWrap).not.toContain('map.inviteMembers');
+    expect(map).toContain("key === 'members'");
+    expect(map).toContain("'paneMembers'");
+    expect(map).not.toMatch(/if \(key === 'members'\) return;/);
+    expect(map).toContain("setTourTargetRef('search'");
   });
 });
 

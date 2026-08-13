@@ -1055,6 +1055,8 @@ export const zh = {
   'tour.avatar.body': '點這裡可更換頭像與個人資料。',
   'tour.settings.title': '設定',
   'tour.settings.body': '語言、主題、定位與帳號都在這裡。',
+  'tour.search.title': '搜尋',
+  'tour.search.body': '點這裡搜尋並新增下一個集合點。',
   'tour.done.title': '可以開始了',
   'tour.done.body': '你已了解主要操作。按下「開始使用」進入地圖。',
   'tour.addPlace.star.title': '收藏常用地點',

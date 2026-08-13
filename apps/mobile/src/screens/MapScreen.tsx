@@ -154,6 +154,7 @@ import {
   GroupFeatureTourOverlay,
   useGroupFeatureTour,
   clearGroupFeatureTour,
+  clearAddPlaceTour,
   holeKindForTarget,
   pickTourDestinationId,
   tourDestinationIndex,
@@ -4369,6 +4370,14 @@ export default function MapScreen({ route, navigation }: Props) {
       accountId: user?.id ?? null,
       existingPreferences: user?.preferences ?? null,
     }).catch(() => undefined);
+    await clearAddPlaceTour({
+      accountId: user?.id ?? null,
+      existingPreferences: {
+        ...(user?.preferences ?? {}),
+        groupFeatureTourCompleted: false,
+      },
+    }).catch(() => undefined);
+    setAddPlaceTourLocalDone(false);
     // Optimistically clear session prefs so reevaluate does not see stale true.
     // clearGroupFeatureTour already best-effort wrote the account; this updates
     // in-memory user.preferences. Failures are non-fatal (reset intent covers them).
@@ -4377,6 +4386,7 @@ export default function MapScreen({ route, navigation }: Props) {
         preferences: {
           ...(user?.preferences ?? {}),
           groupFeatureTourCompleted: false,
+          addPlaceTourCompleted: false,
         },
       });
     } catch {
@@ -4762,6 +4772,10 @@ export default function MapScreen({ route, navigation }: Props) {
     const actions = (
       <>
         {!pendingPlace ? (
+          <View
+            ref={(n) => setTourTargetRef('search', n)}
+            collapsable={false}
+          >
           <AmicroButton
             icon="search"
             activeIcon="close"
@@ -4780,6 +4794,7 @@ export default function MapScreen({ route, navigation }: Props) {
               });
             }}
           />
+          </View>
         ) : (
           <View style={styles.headerIconSlot} />
         )}
@@ -5079,11 +5094,6 @@ export default function MapScreen({ route, navigation }: Props) {
   // ─── 成員：位置、狀態、個別操作、小隊（無「成員」標題） ────────────────
   const membersPaneBody = useMemo(() => (
     <>
-      <View
-        ref={(n) => setTourTargetRef('paneMembers', n)}
-        collapsable={false}
-        testID="tour-members-content"
-      >
       {/* My status + refresh on one row (stage 1+ body) */}
       <View style={styles.myStatusBar}>
         <Pressable
@@ -5121,7 +5131,6 @@ export default function MapScreen({ route, navigation }: Props) {
         renderFlockRow={renderFlockRow}
         styles={styles}
       />
-      </View>
       {pendingInvites.length > 0 && (
         <View style={styles.list}>
           {pendingInvites.map((inv, i) => {
@@ -5201,7 +5210,7 @@ export default function MapScreen({ route, navigation }: Props) {
     t, styles, refreshingLocations, refreshAllLocations, refreshCooldownUntil, accent, highAccuracy,
     setHighAccuracy, pendingInvites, fontBucket, handleAcceptInvite, handleDeclineInvite,
     subgroups, topFlockMemo, renderFlockRow, flock, mySubgroupId, sentInvites,
-    openMyStatusPicker, myStatusLabel, setTourTargetRef,
+    openMyStatusPicker, myStatusLabel,
   ]);
 
   // ─── 路線：集合點、排序、Google Maps 匯入、歷史 ───────────────────────
@@ -5589,13 +5598,14 @@ export default function MapScreen({ route, navigation }: Props) {
             value={sheetPane}
             onChange={selectSheetPane}
             onTabNode={(key, node) => {
-              if (key === 'members') return;
               const targetId =
-                key === 'route'
-                  ? 'paneRoute'
-                  : key === 'tools'
-                    ? 'paneTools'
-                    : 'paneStore';
+                key === 'members'
+                  ? 'paneMembers'
+                  : key === 'route'
+                    ? 'paneRoute'
+                    : key === 'tools'
+                      ? 'paneTools'
+                      : 'paneStore';
               setTourTargetRef(targetId, node);
             }}
           />
@@ -6319,6 +6329,7 @@ export default function MapScreen({ route, navigation }: Props) {
                               maxVisible={DOTS_MAX_VISIBLE}
                               destinationIds={destinations.map((d) => d.id)}
                               styles={styles}
+                              reduceMotion={tourReduceMotion}
                             />
                           )}
                         </View>
@@ -8091,6 +8102,7 @@ function CarouselDots({
   maxVisible,
   destinationIds,
   styles,
+  reduceMotion = false,
 }: {
   total: number;
   active: number;
@@ -8101,6 +8113,7 @@ function CarouselDots({
     dot: object;
     dotActive: object;
   };
+  reduceMotion?: boolean;
 }) {
   const row = useMemo(
     () => indicatorRowGeometry(total, active, maxVisible),
@@ -8110,9 +8123,17 @@ function CarouselDots({
   return (
     <View style={[styles.dots, { flexShrink: 0 }]}>
       {row.items.map((item) => (
-        <View
+        <Animated.View
           key={`dot-${destinationIds[item.index] ?? item.index}`}
-          style={[styles.dot, item.active ? styles.dotActive : null]}
+          style={[
+            styles.dot,
+            item.active ? styles.dotActive : null,
+            {
+              width: withTiming(item.active ? 18 : 6, {
+                duration: reduceMotion ? 0 : 200,
+              }),
+            },
+          ]}
         />
       ))}
     </View>

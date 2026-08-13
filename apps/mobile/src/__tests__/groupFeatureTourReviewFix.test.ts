@@ -72,10 +72,10 @@ describe('REVIEW_FIX: Stage Two per-tab targets', () => {
     expect(map).toContain("'paneTools'");
     expect(map).toContain("'paneStore'");
     expect(map).toContain("'stageTwoPlacement'");
-    // Members highlight is the status+list wrapper, not the tab button.
-    expect(map).toContain("setTourTargetRef('paneMembers'");
-    expect(map).toContain('tour-members-content');
-    expect(map).toMatch(/if \(key === 'members'\) return;/);
+    // Members highlight is the icon tab, same as route/tools/store.
+    expect(map).toContain("'paneMembers'");
+    expect(map).not.toContain('tour-members-content');
+    expect(map).not.toMatch(/if \(key === 'members'\) return;/);
     // Old bug: one strip ref assigned to all four.
     expect(map).not.toMatch(
       /setTourTargetRef\('paneMembers'[\s\S]*setTourTargetRef\('paneRoute'[\s\S]*sheetPane ===/,

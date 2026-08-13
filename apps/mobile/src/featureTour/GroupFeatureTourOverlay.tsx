@@ -20,7 +20,6 @@ import {
   holeRadius,
   paddedHole,
   placeTourCard,
-  type OverlayHole,
   type OverlayHoleKind,
 } from './overlayLayout';
 
@@ -44,47 +43,14 @@ export interface GroupFeatureTourOverlayProps {
 }
 
 const DIM = 'rgba(0,0,0,0.62)';
+const FADE_OUT_MS = 150;
+const FADE_IN_MS = 180;
+/** Title/body may scroll; keep Prev/Next outside the clipped region. */
+const CTA_RESERVE_PX = 56;
 
-function HoleCorner({
-  hole,
-  corner,
-  r,
-}: {
-  hole: OverlayHole;
-  corner: 'tl' | 'tr' | 'bl' | 'br';
-  r: number;
-}) {
-  const pos =
-    corner === 'tl'
-      ? { top: hole.y, left: hole.x }
-      : corner === 'tr'
-        ? { top: hole.y, left: hole.x + hole.w - r }
-        : corner === 'bl'
-          ? { top: hole.y + hole.h - r, left: hole.x }
-          : { top: hole.y + hole.h - r, left: hole.x + hole.w - r };
-  const circlePos =
-    corner === 'tl'
-      ? { top: 0, left: 0 }
-      : corner === 'tr'
-        ? { top: 0, right: 0 }
-        : corner === 'bl'
-          ? { bottom: 0, left: 0 }
-          : { bottom: 0, right: 0 };
-  return (
-    <View
-      pointerEvents="none"
-      testID="tour-hole-corner"
-      style={[styles.holeCornerClip, pos, { width: r, height: r }]}
-    >
-      <View
-        style={[
-          styles.holeCornerFill,
-          circlePos,
-          { width: r * 2, height: r * 2, borderRadius: r, borderWidth: r },
-        ]}
-      />
-    </View>
-  );
+function rectKey(rect: LayoutRectangle | null | undefined): string {
+  if (!rect) return 'null';
+  return `${rect.x},${rect.y},${rect.width},${rect.height}`;
 }
 
 /**
@@ -111,8 +77,21 @@ export function GroupFeatureTourOverlay({
   const ctaRef = useRef<View>(null);
   // Animated.Value is stable; useState avoids ref.current during render (compiler).
   const [opacity] = useState(() => new Animated.Value(reduceMotion ? 1 : 0));
+  const incomingKey = `${title}\0${body}\0${ctaLabel}\0${rectKey(targetRect)}\0${rectKey(placementRect)}\0${targetKind}`;
+  const [shown, setShown] = useState({
+    key: incomingKey,
+    title,
+    body,
+    ctaLabel,
+    targetRect,
+    placementRect,
+    targetKind,
+  });
+  const shownKeyRef = useRef(incomingKey);
+  const fadeGenRef = useRef(0);
+  const [transitioning, setTransitioning] = useState(false);
   // Content key invalidates measured height without an effect setState.
-  const contentKey = `${title}\0${body}\0${ctaLabel}`;
+  const contentKey = `${shown.title}\0${shown.body}\0${shown.ctaLabel}`;
   const [cardLayout, setCardLayout] = useState<{ key: string; height: number | null }>({
     key: contentKey,
     height: null,
@@ -125,23 +104,71 @@ export function GroupFeatureTourOverlay({
     return () => sub.remove();
   }, [visible]);
 
-  // Reduced motion: snap to full opacity. Otherwise short fade-in per step.
+  // Fade the whole chrome (dim + hole + ring + card) together.
+  // Step changes fade out, swap, fade in — never snap opacity to 0 while visible.
   useEffect(() => {
     if (!visible) {
+      fadeGenRef.current += 1;
       opacity.setValue(0);
+      setTransitioning(false);
       return;
     }
+    const nextShown = {
+      key: incomingKey,
+      title,
+      body,
+      ctaLabel,
+      targetRect,
+      placementRect,
+      targetKind,
+    };
     if (reduceMotion) {
+      fadeGenRef.current += 1;
+      shownKeyRef.current = incomingKey;
+      setShown(nextShown);
       opacity.setValue(1);
+      setTransitioning(false);
       return;
     }
-    opacity.setValue(0);
+    if (shownKeyRef.current === incomingKey) {
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: FADE_IN_MS,
+        useNativeDriver: true,
+      }).start();
+      return;
+    }
+    const gen = ++fadeGenRef.current;
+    setTransitioning(true);
     Animated.timing(opacity, {
-      toValue: 1,
-      duration: 180,
+      toValue: 0,
+      duration: FADE_OUT_MS,
       useNativeDriver: true,
-    }).start();
-  }, [visible, title, body, reduceMotion, opacity]);
+    }).start(({ finished }) => {
+      if (!finished || gen !== fadeGenRef.current) return;
+      shownKeyRef.current = incomingKey;
+      setShown(nextShown);
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: FADE_IN_MS,
+        useNativeDriver: true,
+      }).start(({ finished: fadedIn }) => {
+        if (!fadedIn || gen !== fadeGenRef.current) return;
+        setTransitioning(false);
+      });
+    });
+  }, [
+    visible,
+    incomingKey,
+    title,
+    body,
+    ctaLabel,
+    targetRect,
+    placementRect,
+    targetKind,
+    reduceMotion,
+    opacity,
+  ]);
 
   // Move screen-reader focus to the step card / CTA when the step changes.
   useEffect(() => {
@@ -155,14 +182,14 @@ export function GroupFeatureTourOverlay({
   }, [visible, title, ctaLabel]);
 
   const hole = useMemo(
-    () => (targetRect ? paddedHole(targetRect) : null),
-    [targetRect],
+    () => (shown.targetRect ? paddedHole(shown.targetRect) : null),
+    [shown.targetRect],
   );
-  const r = hole ? holeRadius(hole, targetKind) : 0;
+  const r = hole ? holeRadius(hole, shown.targetKind) : 0;
   const placementHole = useMemo(() => {
-    if (placementRect) return paddedHole(placementRect);
+    if (shown.placementRect) return paddedHole(shown.placementRect);
     return hole;
-  }, [placementRect, hole]);
+  }, [shown.placementRect, hole]);
 
   const placement = useMemo(
     () =>
@@ -176,7 +203,8 @@ export function GroupFeatureTourOverlay({
     [placementHole, winW, winH, insets.top, insets.bottom, cardHeight],
   );
 
-  const a11yLabel = [title, body].filter((part) => part.trim().length > 0).join('. ');
+  const a11yLabel = [shown.title, shown.body].filter((part) => part.trim().length > 0).join('. ');
+  const ctaBlocked = ctaDisabled || transitioning;
 
   const onCardLayout = (e: LayoutChangeEvent) => {
     const h = e.nativeEvent.layout.height;
@@ -203,57 +231,54 @@ export function GroupFeatureTourOverlay({
         pointerEvents="auto"
         onStartShouldSetResponder={() => true}
       />
-      {hole ? (
-        <>
-          <View pointerEvents="none" style={[styles.dim, { top: 0, left: 0, right: 0, height: hole.y }]} />
-          <View
-            pointerEvents="none"
-            style={[
-              styles.dim,
-              { top: hole.y + hole.h, left: 0, right: 0, bottom: 0 },
-            ]}
-          />
-          <View
-            pointerEvents="none"
-            style={[
-              styles.dim,
-              { top: hole.y, left: 0, width: hole.x, height: hole.h },
-            ]}
-          />
-          <View
-            pointerEvents="none"
-            style={[
-              styles.dim,
-              {
-                top: hole.y,
-                left: hole.x + hole.w,
-                right: 0,
-                height: hole.h,
-              },
-            ]}
-          />
-          <HoleCorner hole={hole} corner="tl" r={r} />
-          <HoleCorner hole={hole} corner="tr" r={r} />
-          <HoleCorner hole={hole} corner="bl" r={r} />
-          <HoleCorner hole={hole} corner="br" r={r} />
-          <View
-            pointerEvents="none"
-            testID="tour-hole-ring"
-            style={[
-              styles.holeRing,
-              {
-                top: hole.y,
-                left: hole.x,
-                width: hole.w,
-                height: hole.h,
-                borderRadius: r,
-              },
-            ]}
-          />
-        </>
-      ) : (
-        <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.dim]} />
-      )}
+      <Animated.View
+        pointerEvents="none"
+        style={[StyleSheet.absoluteFill, { opacity }]}
+      >
+        {hole ? (
+          <>
+            <View style={[styles.dim, { top: 0, left: 0, right: 0, height: hole.y }]} />
+            <View
+              style={[
+                styles.dim,
+                { top: hole.y + hole.h, left: 0, right: 0, bottom: 0 },
+              ]}
+            />
+            <View
+              style={[
+                styles.dim,
+                { top: hole.y, left: 0, width: hole.x, height: hole.h },
+              ]}
+            />
+            <View
+              style={[
+                styles.dim,
+                {
+                  top: hole.y,
+                  left: hole.x + hole.w,
+                  right: 0,
+                  height: hole.h,
+                },
+              ]}
+            />
+            <View
+              testID="tour-hole-ring"
+              style={[
+                styles.holeRing,
+                {
+                  top: hole.y,
+                  left: hole.x,
+                  width: hole.w,
+                  height: hole.h,
+                  borderRadius: r,
+                },
+              ]}
+            />
+          </>
+        ) : (
+          <View style={[StyleSheet.absoluteFill, styles.dim]} />
+        )}
+      </Animated.View>
 
       <Animated.View
         onLayout={onCardLayout}
@@ -273,47 +298,48 @@ export function GroupFeatureTourOverlay({
         <ScrollView
           bounces={false}
           nestedScrollEnabled
-          style={{ maxHeight: Math.max(80, placement.maxCardHeight - 8) }}
+          style={{ maxHeight: Math.max(80, placement.maxCardHeight - CTA_RESERVE_PX) }}
           contentContainerStyle={styles.cardScrollContent}
         >
-          {title.trim().length > 0 ? (
-            <Text style={styles.title} maxFontSizeMultiplier={1.6}>{title}</Text>
+          {shown.title.trim().length > 0 ? (
+            <Text style={styles.title} maxFontSizeMultiplier={1.6}>{shown.title}</Text>
           ) : null}
-          <Text style={styles.body} maxFontSizeMultiplier={1.6}>{body}</Text>
-          <View style={[styles.ctaRow, canGoPrev && onPrev ? styles.ctaRowWithPrev : null]}>
-            {canGoPrev && onPrev ? (
-              <Pressable
-                testID="tour-prev"
-                onPress={onPrev}
-                style={({ pressed }) => [styles.prevCta, pressed && styles.ctaPressed]}
-                accessibilityRole="button"
-                accessibilityLabel={t('tour.prev')}
-              >
-                <Text style={styles.prevCtaText} maxFontSizeMultiplier={1.4}>
-                  {t('tour.prev')}
-                </Text>
-              </Pressable>
-            ) : null}
+          <Text style={styles.body} maxFontSizeMultiplier={1.6}>{shown.body}</Text>
+        </ScrollView>
+        <View style={[styles.ctaRow, canGoPrev && onPrev ? styles.ctaRowWithPrev : null]}>
+          {canGoPrev && onPrev ? (
             <Pressable
-              ref={ctaRef}
-              testID="tour-next"
-              onPress={onNext}
-              disabled={ctaDisabled}
-              style={({ pressed }) => [
-                styles.cta,
-                pressed && styles.ctaPressed,
-                ctaDisabled && styles.ctaDisabled,
-              ]}
+              testID="tour-prev"
+              onPress={onPrev}
+              disabled={ctaBlocked}
+              style={({ pressed }) => [styles.prevCta, pressed && styles.ctaPressed]}
               accessibilityRole="button"
-              accessibilityLabel={ctaLabel || t('tour.next')}
-              accessibilityState={{ disabled: ctaDisabled }}
+              accessibilityLabel={t('tour.prev')}
             >
-              <Text style={styles.ctaText} maxFontSizeMultiplier={1.4}>
-                {ctaLabel || t('tour.next')}
+              <Text style={styles.prevCtaText} maxFontSizeMultiplier={1.4}>
+                {t('tour.prev')}
               </Text>
             </Pressable>
-          </View>
-        </ScrollView>
+          ) : null}
+          <Pressable
+            ref={ctaRef}
+            testID="tour-next"
+            onPress={onNext}
+            disabled={ctaBlocked}
+            style={({ pressed }) => [
+              styles.cta,
+              pressed && styles.ctaPressed,
+              ctaBlocked && styles.ctaDisabled,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={shown.ctaLabel || t('tour.next')}
+            accessibilityState={{ disabled: ctaBlocked }}
+          >
+            <Text style={styles.ctaText} maxFontSizeMultiplier={1.4}>
+              {shown.ctaLabel || t('tour.next')}
+            </Text>
+          </Pressable>
+        </View>
       </Animated.View>
     </View>
   );
@@ -333,19 +359,14 @@ const styles = StyleSheet.create({
     position: 'absolute',
     borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.55)',
-  },
-  holeCornerClip: {
-    position: 'absolute',
-    overflow: 'hidden',
-  },
-  holeCornerFill: {
-    position: 'absolute',
-    borderColor: DIM,
+    borderRadius: 0,
   },
   ctaRow: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
     alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingBottom: 18,
   },
   ctaRowWithPrev: {
     justifyContent: 'space-between',
@@ -371,7 +392,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   cardScrollContent: {
-    padding: 18,
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 8,
   },
   title: {
     color: '#F5F7FB',
