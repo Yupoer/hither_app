@@ -60,7 +60,7 @@ Deno.test("builds the follower request_start message", () => {
       message: "請開始前往「台北車站」",
     }),
     {
-      title: "成員：要求開始",
+      title: "成員",
       body: "請開始前往「台北車站」",
     },
   );

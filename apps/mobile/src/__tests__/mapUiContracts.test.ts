@@ -665,9 +665,9 @@ describe('map UI placement contracts', () => {
     );
   });
 
-  it('sends the custom command label (fallback message) to the group', () => {
-    // Prefer short label so push/local titles read 隊長/成員：{label}.
-    expect(quickCommandsCard).toContain("sendCommand(groupId, 'custom', label.trim() || message)");
+  it('sends the custom command message while keeping the label UI-only', () => {
+    // Push and Realtime use the persisted message as the body; the sender nickname is the title.
+    expect(quickCommandsCard).toContain("sendCommand(groupId, 'custom', message.trim() || label)");
   });
 
   it('lets users re-edit a configured custom command via long-press with haptics', () => {

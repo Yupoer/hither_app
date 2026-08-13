@@ -136,6 +136,54 @@ async function loadTokenRows(userIds: string[]): Promise<DeviceTokenRow[]> {
   );
 }
 
+/**
+ * Resolve notification copy inputs once per webhook.  The row payload carries
+ * stable ids; names/titles are enrichment only, so event identity stays based
+ * on the original ids and Realtime can dedupe the same event.
+ */
+async function enrichNotificationPayload(payload: PushPayload): Promise<PushPayload> {
+  const memberId = payload.member_id ?? (
+    payload.category === "arrival" || payload.category === "straggler"
+      ? payload.sender_id
+      : null
+  );
+  let destinationId = payload.destination_id ?? null;
+
+  if (!destinationId && payload.category === "journey") {
+    const { data } = await supabase
+      .from("groups")
+      .select("active_destination_id")
+      .eq("id", payload.group_id)
+      .maybeSingle();
+    destinationId = (data?.active_destination_id as string | null | undefined) ?? null;
+  }
+
+  const [destinationResponse, memberResponse] = await Promise.all([
+    !payload.title && destinationId
+      ? supabase.from("itinerary_items").select("title").eq("id", destinationId).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    !payload.member_name && memberId && memberId !== payload.sender_id
+      ? supabase.from("profiles").select("nickname").eq("id", memberId).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+  ]);
+
+  // Enrichment is deliberately best effort.  A missing row keeps the explicit
+  // generic fallback in buildMessage; it must not drop a valid notification.
+  const title = !payload.title
+    ? (destinationResponse.data?.title as string | undefined)?.trim()
+    : undefined;
+  const memberName = !payload.member_name
+    ? memberId === payload.sender_id
+      ? payload.sender_name?.trim()
+      : (memberResponse.data?.nickname as string | undefined)?.trim()
+    : undefined;
+  return {
+    ...payload,
+    ...(title ? { title } : {}),
+    ...(memberName ? { member_name: memberName } : {}),
+  };
+}
+
 async function sendAlerts(
   tokenRows: DeviceTokenRow[],
   payload: PushPayload,
@@ -263,8 +311,10 @@ Deno.serve(async (req) => {
       .eq("id", payload.sender_id)
       .maybeSingle();
     if (senderProfileError) throw senderProfileError;
-    const senderName = (senderProfile?.nickname as string | undefined)?.trim() || "隊員";
-    payload = { ...payload, sender_name: senderName };
+    const senderName =
+      (senderProfile?.nickname as string | undefined)?.trim()
+      || (sender.role === "leader" ? "隊長" : "成員");
+    payload = await enrichNotificationPayload({ ...payload, sender_name: senderName });
 
     if (payload.category === "navigation_session") {
       return await handleNavigationSession(
