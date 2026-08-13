@@ -311,6 +311,10 @@ export function startBackgroundJourney(
   return controller.start(config);
 }
 
+export function prepareBackgroundJourneyPermissions(): Promise<'ready' | 'permission_denied'> {
+  return controller.preparePermissions();
+}
+
 export function stopBackgroundJourney(): Promise<void> {
   uploadGate = { lastCoords: null, lastAtMs: 0 };
   motionState = createMotionState();

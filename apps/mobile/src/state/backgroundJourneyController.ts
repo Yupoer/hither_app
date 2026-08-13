@@ -37,6 +37,11 @@ export interface BackgroundJourneyConfig {
   teamNavigationActive?: boolean;
   /** App state at the time the background task was configured. */
   appState?: 'active' | 'background' | 'inactive';
+  /**
+   * MapScreen prepares both permission prompts while active.  Background
+   * transitions pass this flag so starting the native task never prompts.
+   */
+  permissionsPrepared?: boolean;
 }
 
 interface PermissionResult {
@@ -173,7 +178,18 @@ export function createBackgroundJourneyController(
   location: BackgroundLocationAdapter,
   storage: BackgroundStorageAdapter,
 ) {
+  const preparePermissions = async (): Promise<'ready' | 'permission_denied'> => {
+    const foreground = await location.requestForegroundPermissionsAsync();
+    if (foreground.status !== 'granted') return 'permission_denied';
+
+    const background = await location.requestBackgroundPermissionsAsync();
+    if (background.status !== 'granted') return 'permission_denied';
+    return 'ready';
+  };
+
   return {
+    preparePermissions,
+
     async start(
       config: BackgroundJourneyConfig,
     ): Promise<'started' | 'permission_denied' | 'hidden'> {
@@ -190,11 +206,15 @@ export function createBackgroundJourneyController(
         return 'hidden';
       }
 
-      const foreground = await location.requestForegroundPermissionsAsync();
-      if (foreground.status !== 'granted') return 'permission_denied';
-
-      const background = await location.requestBackgroundPermissionsAsync();
-      if (background.status !== 'granted') return 'permission_denied';
+      if (config.permissionsPrepared !== true) {
+        // An explicit false from MapScreen means this is a background
+        // transition without an active-state permission preparation.  Do not
+        // open a permission prompt from the background task.
+        if (config.permissionsPrepared === false && config.appState != null) {
+          return 'permission_denied';
+        }
+        if (await preparePermissions() !== 'ready') return 'permission_denied';
+      }
 
       let previous: BackgroundJourneyConfig | null = null;
       const rawPrevious = await storage.getItem(BACKGROUND_JOURNEY_KEY);
