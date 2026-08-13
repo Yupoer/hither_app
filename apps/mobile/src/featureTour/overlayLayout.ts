@@ -117,37 +117,50 @@ export function placeTourCard(input: PlaceTourCardInput): PlaceTourCardResult {
 
   const spaceAbove = input.hole.y - gap - topSafe;
   const spaceBelow = bottomSafe - (input.hole.y + input.hole.h + gap);
+  const PIN_MIN = 160;
+  const holeIsTopHeavy =
+    input.hole.y < input.windowHeight * 0.25 || spaceAbove < PIN_MIN;
 
-  // Huge hole: both bands too small — pin to the bottom safe edge so the
-  // CTA stays tappable instead of clipping into the sliver above the card.
-  const PIN_MIN = 140;
-  if (spaceAbove < PIN_MIN && spaceBelow < PIN_MIN) {
-    const maxH = Math.max(PIN_MIN, usable);
-    const usedH = Math.min(cardH, maxH);
+  const pinBottom = (): PlaceTourCardResult => {
+    const maxH = Math.max(PIN_MIN, Math.min(usable, Math.max(cardH, PIN_MIN)));
+    const usedH = Math.min(Math.max(cardH, PIN_MIN), usable);
     const top = Math.max(topSafe, bottomSafe - usedH);
+    return { cardTop: top, maxCardHeight: maxH, placeAbove: false };
+  };
+
+  // Expanded gather card sits near the top and eats most of the screen.
+  // Never park the tooltip in the sliver above it.
+  if (holeIsTopHeavy) {
+    if (spaceBelow >= PIN_MIN) {
+      const maxH = spaceBelow;
+      const top = input.hole.y + input.hole.h + gap;
+      const usedH = Math.min(cardH, maxH);
+      return {
+        cardTop: Math.max(topSafe, Math.min(top, bottomSafe - usedH)),
+        maxCardHeight: maxH,
+        placeAbove: false,
+      };
+    }
+    return pinBottom();
+  }
+
+  if (spaceAbove < PIN_MIN && spaceBelow < PIN_MIN) {
+    return pinBottom();
+  }
+
+  if (spaceBelow >= spaceAbove) {
+    const maxH = Math.max(100, spaceBelow);
+    const top = input.hole.y + input.hole.h + gap;
+    const usedH = Math.min(cardH, maxH);
     return {
-      cardTop: Math.min(top, Math.max(topSafe, bottomSafe - Math.min(usedH, usable))),
+      cardTop: Math.max(topSafe, Math.min(top, bottomSafe - usedH)),
       maxCardHeight: maxH,
       placeAbove: false,
     };
   }
 
-  // Prefer the band below the hole. The 55%-from-top rule used to force
-  // expanded gather cards into a ~100px strip above the card and hide the CTA.
-  const preferBelow = spaceBelow >= spaceAbove || spaceBelow >= PIN_MIN;
-  if (!preferBelow) {
-    const maxH = Math.max(100, spaceAbove);
-    const usedH = Math.min(cardH, maxH);
-    const top = Math.max(topSafe, input.hole.y - gap - usedH);
-    return { cardTop: top, maxCardHeight: maxH, placeAbove: true };
-  }
-
-  const maxH = Math.max(100, spaceBelow);
-  const top = input.hole.y + input.hole.h + gap;
+  const maxH = Math.max(100, spaceAbove);
   const usedH = Math.min(cardH, maxH);
-  return {
-    cardTop: Math.max(topSafe, Math.min(top, bottomSafe - usedH)),
-    maxCardHeight: maxH,
-    placeAbove: false,
-  };
+  const top = Math.max(topSafe, input.hole.y - gap - usedH);
+  return { cardTop: top, maxCardHeight: maxH, placeAbove: true };
 }

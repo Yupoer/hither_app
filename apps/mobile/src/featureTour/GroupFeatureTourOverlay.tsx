@@ -48,11 +48,6 @@ const FADE_IN_MS = 180;
 /** Title/body may scroll; keep Prev/Next outside the clipped region. */
 const CTA_RESERVE_PX = 56;
 
-function rectKey(rect: LayoutRectangle | null | undefined): string {
-  if (!rect) return 'null';
-  return `${rect.x},${rect.y},${rect.width},${rect.height}`;
-}
-
 /**
  * Full-screen tour chrome: dim mask with a “hole” over the measured target,
  * tooltip card, and a single Next / Get started control. Blocks underlying UI.
@@ -77,19 +72,17 @@ export function GroupFeatureTourOverlay({
   const ctaRef = useRef<View>(null);
   // Animated.Value is stable; useState avoids ref.current during render (compiler).
   const [opacity] = useState(() => new Animated.Value(reduceMotion ? 1 : 0));
-  const incomingKey = `${title}\0${body}\0${ctaLabel}\0${rectKey(targetRect)}\0${rectKey(placementRect)}\0${targetKind}`;
+  // Fade only on copy change. Measure updates must not restart fade-out or
+  // the overlay stays at opacity 0 (expand-card rect churn) and looks stuck.
+  const stepKey = `${title}\0${body}\0${ctaLabel}`;
   const [shown, setShown] = useState({
-    key: incomingKey,
+    key: stepKey,
     title,
     body,
     ctaLabel,
-    targetRect,
-    placementRect,
-    targetKind,
   });
-  const shownKeyRef = useRef(incomingKey);
+  const shownKeyRef = useRef(stepKey);
   const fadeGenRef = useRef(0);
-  const [transitioning, setTransitioning] = useState(false);
   // Content key invalidates measured height without an effect setState.
   const contentKey = `${shown.title}\0${shown.body}\0${shown.ctaLabel}`;
   const [cardLayout, setCardLayout] = useState<{ key: string; height: number | null }>({
@@ -104,33 +97,23 @@ export function GroupFeatureTourOverlay({
     return () => sub.remove();
   }, [visible]);
 
-  // Fade the whole chrome (dim + hole + ring + card) together.
-  // Step changes fade out, swap, fade in — never snap opacity to 0 while visible.
+  // Fade the whole chrome (dim + hole + ring + card) together on copy change.
+  // Never require `finished` — a superseded timing would leave opacity at 0.
   useEffect(() => {
     if (!visible) {
       fadeGenRef.current += 1;
       opacity.setValue(0);
-      setTransitioning(false);
       return;
     }
-    const nextShown = {
-      key: incomingKey,
-      title,
-      body,
-      ctaLabel,
-      targetRect,
-      placementRect,
-      targetKind,
-    };
+    const nextShown = { key: stepKey, title, body, ctaLabel };
     if (reduceMotion) {
       fadeGenRef.current += 1;
-      shownKeyRef.current = incomingKey;
+      shownKeyRef.current = stepKey;
       setShown(nextShown);
       opacity.setValue(1);
-      setTransitioning(false);
       return;
     }
-    if (shownKeyRef.current === incomingKey) {
+    if (shownKeyRef.current === stepKey) {
       Animated.timing(opacity, {
         toValue: 1,
         duration: FADE_IN_MS,
@@ -139,36 +122,21 @@ export function GroupFeatureTourOverlay({
       return;
     }
     const gen = ++fadeGenRef.current;
-    setTransitioning(true);
     Animated.timing(opacity, {
       toValue: 0,
       duration: FADE_OUT_MS,
       useNativeDriver: true,
-    }).start(({ finished }) => {
-      if (!finished || gen !== fadeGenRef.current) return;
-      shownKeyRef.current = incomingKey;
+    }).start(() => {
+      if (gen !== fadeGenRef.current) return;
+      shownKeyRef.current = stepKey;
       setShown(nextShown);
       Animated.timing(opacity, {
         toValue: 1,
         duration: FADE_IN_MS,
         useNativeDriver: true,
-      }).start(({ finished: fadedIn }) => {
-        if (!fadedIn || gen !== fadeGenRef.current) return;
-        setTransitioning(false);
-      });
+      }).start();
     });
-  }, [
-    visible,
-    incomingKey,
-    title,
-    body,
-    ctaLabel,
-    targetRect,
-    placementRect,
-    targetKind,
-    reduceMotion,
-    opacity,
-  ]);
+  }, [visible, stepKey, title, body, ctaLabel, reduceMotion, opacity]);
 
   // Move screen-reader focus to the step card / CTA when the step changes.
   useEffect(() => {
@@ -182,14 +150,14 @@ export function GroupFeatureTourOverlay({
   }, [visible, title, ctaLabel]);
 
   const hole = useMemo(
-    () => (shown.targetRect ? paddedHole(shown.targetRect) : null),
-    [shown.targetRect],
+    () => (targetRect ? paddedHole(targetRect) : null),
+    [targetRect],
   );
-  const r = hole ? holeRadius(hole, shown.targetKind) : 0;
+  const r = hole ? holeRadius(hole, targetKind) : 0;
   const placementHole = useMemo(() => {
-    if (shown.placementRect) return paddedHole(shown.placementRect);
+    if (placementRect) return paddedHole(placementRect);
     return hole;
-  }, [shown.placementRect, hole]);
+  }, [placementRect, hole]);
 
   const placement = useMemo(
     () =>
@@ -204,7 +172,7 @@ export function GroupFeatureTourOverlay({
   );
 
   const a11yLabel = [shown.title, shown.body].filter((part) => part.trim().length > 0).join('. ');
-  const ctaBlocked = ctaDisabled || transitioning;
+  const ctaBlocked = ctaDisabled;
 
   const onCardLayout = (e: LayoutChangeEvent) => {
     const h = e.nativeEvent.layout.height;

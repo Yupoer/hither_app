@@ -189,7 +189,9 @@ describe('overlay chrome fades together', () => {
     expect(overlaySrc).toContain('FADE_OUT_MS = 150');
     expect(overlaySrc).toContain('FADE_IN_MS = 180');
     expect(overlaySrc).toContain('CTA_RESERVE_PX');
-    expect(overlaySrc).toContain('setTransitioning(true)');
+    expect(overlaySrc).toContain('stepKey');
+    expect(overlaySrc).not.toContain('setTransitioning');
+    expect(overlaySrc).not.toMatch(/rectKey\(targetRect\)/);
     expect(overlaySrc).not.toMatch(
       /if \(!visible\) \{\s*opacity\.setValue\(0\);\s*return;\s*\}\s*if \(reduceMotion\) \{\s*opacity\.setValue\(1\);\s*return;\s*\}\s*opacity\.setValue\(0\);/,
     );
@@ -338,6 +340,22 @@ describe('placeTourCard huge hole stays in the safe viewport', () => {
     const bottomSafe = 844 - 34 - 12;
     expect(placed.cardTop + Math.min(160, placed.maxCardHeight)).toBeLessThanOrEqual(bottomSafe);
     expect(placed.maxCardHeight).toBeGreaterThanOrEqual(140);
+  });
+
+  it('pins to the bottom when the expanded card leaves only a sliver below', () => {
+    const placed = placeTourCard({
+      hole: { x: 8, y: 70, w: 374, h: 620 },
+      windowWidth: 390,
+      windowHeight: 844,
+      insets: { top: 47, bottom: 34 },
+      cardHeight: 160,
+    });
+    const topSafe = 47 + 12;
+    const bottomSafe = 844 - 34 - 12;
+    expect(placed.placeAbove).toBe(false);
+    expect(placed.cardTop).toBeGreaterThanOrEqual(topSafe);
+    expect(placed.cardTop + Math.min(160, placed.maxCardHeight)).toBeLessThanOrEqual(bottomSafe);
+    expect(placed.maxCardHeight).toBeGreaterThanOrEqual(160);
   });
 });
 
