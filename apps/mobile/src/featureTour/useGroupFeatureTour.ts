@@ -315,8 +315,8 @@ export function useGroupFeatureTour(
     let cancelled = false;
     const generation = ++measureGenerationRef.current;
     transitioningRef.current = true;
-    setTransitioning(true);
     const run = async () => {
+      setTransitioning(true);
       if (!requestedStep.target) {
         if (!cancelled && generation === measureGenerationRef.current) {
           setSnapshot({

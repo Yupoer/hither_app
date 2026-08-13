@@ -255,6 +255,13 @@ export function useRouteReorderTour(
   const scrollRef = useRef(input.scrollToTarget);
   const prefsRef = useRef(input.accountPreferences);
   const accountIdRef = useRef(input.accountId);
+  const tourEligible = input.routeOverlayOpenComplete
+    && loaded
+    && !localCompleted
+    && input.accountPreferences?.routeReorderTourCompleted !== true
+    && input.isLeader
+    && input.canEditItinerary
+    && input.gatheringPointCount > 0;
 
   useEffect(() => {
     measureRef.current = input.measureTarget;
@@ -289,16 +296,7 @@ export function useRouteReorderTour(
   }, [reevaluate, input.accountId, input.accountPreferences?.routeReorderTourCompleted]);
 
   useEffect(() => {
-    if (input.routeOverlayOpenComplete && input.gatheringPointCount === 0) {
-      setActive(false);
-      return;
-    }
-    if (!input.routeOverlayOpenComplete || !loaded || localCompleted
-      || input.accountPreferences?.routeReorderTourCompleted === true
-      || !input.isLeader || !input.canEditItinerary || input.gatheringPointCount < 1) {
-      setActive(false);
-      return;
-    }
+    if (!tourEligible) return;
 
     let cancelled = false;
     const generation = ++generationRef.current;
@@ -336,10 +334,13 @@ export function useRouteReorderTour(
     input.accountPreferences?.routeReorderTourCompleted,
     loaded,
     localCompleted,
+    tourEligible,
   ]);
 
+  const tourActive = active && tourEligible;
+
   const onNext = useCallback(() => {
-    if (!active || transitioningRef.current || completing) return;
+    if (!tourActive || transitioningRef.current || completing) return;
     if (snapshot.stepIndex >= ROUTE_REORDER_TOUR_STEPS.length - 1) {
       transitioningRef.current = true;
       setCompleting(true);
@@ -377,10 +378,10 @@ export function useRouteReorderTour(
       transitioningRef.current = false;
       setTransitioning(false);
     });
-  }, [active, completing, snapshot.stepIndex]);
+  }, [completing, snapshot.stepIndex, tourActive]);
 
   const onPrev = useCallback(() => {
-    if (!active || transitioningRef.current || completing || snapshot.stepIndex <= 0) return;
+    if (!tourActive || transitioningRef.current || completing || snapshot.stepIndex <= 0) return;
     const previousIndex = snapshot.stepIndex - 1;
     const previous = ROUTE_REORDER_TOUR_STEPS[previousIndex];
     if (!previous) return;
@@ -403,18 +404,18 @@ export function useRouteReorderTour(
       transitioningRef.current = false;
       setTransitioning(false);
     });
-  }, [active, completing, snapshot.stepIndex]);
+  }, [completing, snapshot.stepIndex, tourActive]);
 
   return {
-    tourActive: active,
-    step: active ? ROUTE_REORDER_TOUR_STEPS[snapshot.stepIndex] ?? null : null,
+    tourActive,
+    step: tourActive ? ROUTE_REORDER_TOUR_STEPS[snapshot.stepIndex] ?? null : null,
     stepIndex: snapshot.stepIndex,
-    targetRect: active ? snapshot.targetRect : null,
+    targetRect: tourActive ? snapshot.targetRect : null,
     transitioning,
     completing,
     onNext,
     onPrev,
-    canGoPrev: active && snapshot.stepIndex > 0 && !transitioning,
+    canGoPrev: tourActive && snapshot.stepIndex > 0 && !transitioning,
     reevaluate,
   };
 }

@@ -107,10 +107,17 @@ export function GroupFeatureTourOverlay({
     }
     const nextShown = { key: stepKey, title, body, ctaLabel };
     if (reduceMotion) {
-      fadeGenRef.current += 1;
+      const gen = ++fadeGenRef.current;
       shownKeyRef.current = stepKey;
-      setShown(nextShown);
       opacity.setValue(1);
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: 0,
+        useNativeDriver: true,
+      }).start(() => {
+        if (gen !== fadeGenRef.current) return;
+        setShown(nextShown);
+      });
       return;
     }
     if (shownKeyRef.current === stepKey) {
