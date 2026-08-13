@@ -82,6 +82,7 @@ export {
   completeRouteReorderTour,
   clearRouteReorderTour,
   shouldStartRouteReorderTour,
+  routeTourScrollOffset,
   useRouteReorderTour,
   type RouteReorderTourTargetId,
   type RouteReorderTourStep,

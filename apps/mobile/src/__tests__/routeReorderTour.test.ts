@@ -7,6 +7,7 @@ import {
   parseRouteReorderTourAccountSyncPending,
   readRouteReorderTourCompletedLocal,
   readRouteReorderTourAccountSyncPending,
+  routeTourScrollOffset,
   routeReorderTourAccountSyncPendingKey,
   routeReorderTourStorageKey,
   retryPendingRouteReorderTourAccountSync,
@@ -73,6 +74,30 @@ describe('route reorder tour (#189)', () => {
     expect(shouldStartRouteReorderTour({ ...ready, gatheringPointCount: 0 })).toBe(false);
     expect(shouldStartRouteReorderTour({ ...ready, targetsReady: false })).toBe(false);
     expect(shouldStartRouteReorderTour({ ...ready, accountCompleted: true })).toBe(false);
+  });
+
+  it('scrolls long route targets into a small, large-text viewport', () => {
+    expect(routeTourScrollOffset({
+      currentOffset: 120,
+      targetPageY: 760,
+      targetHeight: 64,
+      containerPageY: 80,
+      viewportHeight: 320,
+    })).toBe(560);
+    expect(routeTourScrollOffset({
+      currentOffset: 520,
+      targetPageY: 200,
+      targetHeight: 420,
+      containerPageY: 80,
+      viewportHeight: 320,
+    })).toBe(624);
+    expect(routeTourScrollOffset({
+      currentOffset: 520,
+      targetPageY: 180,
+      targetHeight: 80,
+      containerPageY: 80,
+      viewportHeight: 320,
+    })).toBe(520);
   });
 
   it('scopes local completion and pending retry by account', async () => {
@@ -218,6 +243,10 @@ describe('route reorder tour (#189)', () => {
     expect(mapScreen).toContain('setRouteOverlayOpenComplete(true)');
     expect(mapScreen).toContain('onTourTargetRef={setTourTargetRef}');
     expect(mapScreen).toContain("setTourTargetRef('routeMode'");
+    expect(mapScreen).toContain("target === 'routeAccommodation'");
+    expect(mapScreen).toContain('measureInWindow');
+    expect(mapScreen).toContain('routeTourScrollOffset');
+    expect(list).toContain("onTourTargetRef?.('routeAccommodation'");
     expect(list).toContain("onTourTargetRef?.('routeFavorites'");
     expect(list).toContain("onTourTargetRef?.('routeImport'");
     expect(mapScreen).toContain('routeTourActive');

@@ -134,7 +134,7 @@ describe('background journey controller', () => {
       accuracy: number;
       pausesUpdatesAutomatically: boolean;
     };
-    // Default (highAccuracy unset) uses Balanced + OS pause when stationary.
+    // Default journey (highAccuracy unset) uses Balanced + OS pause when stationary.
     expect(opts.accuracy).toBe(3);
     expect(opts.pausesUpdatesAutomatically).toBe(true);
   });
@@ -173,7 +173,7 @@ describe('background journey controller', () => {
     };
     expect(opts.accuracy).toBe(2);
     expect(opts.deferredUpdatesInterval).toBe(180_000);
-    expect(opts.pausesUpdatesAutomatically).toBe(true);
+    expect(opts.pausesUpdatesAutomatically).toBe(false);
   });
 
   it('restarts native updates when highAccuracy profile changes', async () => {

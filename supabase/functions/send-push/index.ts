@@ -31,6 +31,7 @@ import {
 } from "./messages.ts";
 import { specialAlertRecipientIds } from "./recipients.ts";
 import { eventIdFromPayload } from "./eventId.ts";
+import { deliverWithSenderFallback } from "./senderFallback.ts";
 
 interface MembershipRow {
   user_id: string;
@@ -305,16 +306,22 @@ Deno.serve(async (req) => {
     const sender = memberByUser.get(payload.sender_id);
     if (!sender) return json({ error: "sender is not a group member" }, 403);
 
-    const { data: senderProfile, error: senderProfileError } = await supabase
-      .from("profiles")
-      .select("nickname")
-      .eq("id", payload.sender_id)
-      .maybeSingle();
-    if (senderProfileError) throw senderProfileError;
-    const senderName =
-      (senderProfile?.nickname as string | undefined)?.trim()
-      || (sender.role === "leader" ? "隊長" : "成員");
-    payload = await enrichNotificationPayload({ ...payload, sender_name: senderName });
+    payload = await deliverWithSenderFallback(
+      payload,
+      sender.role,
+      async () => {
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("nickname")
+          .eq("id", payload.sender_id)
+          .maybeSingle();
+        return {
+          data: data as { nickname?: unknown } | null,
+          error,
+        };
+      },
+      enrichNotificationPayload,
+    );
 
     if (payload.category === "navigation_session") {
       return await handleNavigationSession(

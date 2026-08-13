@@ -48,6 +48,16 @@ const FADE_IN_MS = 180;
 /** Title/body may scroll; keep Prev/Next outside the clipped region. */
 const CTA_RESERVE_PX = 56;
 
+type DisplayedTourSnapshot = {
+  key: string;
+  title: string;
+  body: string;
+  ctaLabel: string;
+  targetRect: LayoutRectangle | null;
+  placementRect: LayoutRectangle | null;
+  targetKind: OverlayHoleKind;
+};
+
 /**
  * Full-screen tour chrome: dim mask with a “hole” over the measured target,
  * tooltip card, and a single Next / Get started control. Blocks underlying UI.
@@ -72,14 +82,17 @@ export function GroupFeatureTourOverlay({
   const ctaRef = useRef<View>(null);
   // Animated.Value is stable; useState avoids ref.current during render (compiler).
   const [opacity] = useState(() => new Animated.Value(reduceMotion ? 1 : 0));
-  // Fade only on copy change. Measure updates must not restart fade-out or
-  // the overlay stays at opacity 0 (expand-card rect churn) and looks stuck.
+  // Fade only on copy change. The displayed snapshot also owns both measured
+  // rects and the hole kind so copy, geometry, and placement never mix steps.
   const stepKey = `${title}\0${body}\0${ctaLabel}`;
-  const [shown, setShown] = useState({
+  const [shown, setShown] = useState<DisplayedTourSnapshot>({
     key: stepKey,
     title,
     body,
     ctaLabel,
+    targetRect,
+    placementRect,
+    targetKind,
   });
   const shownKeyRef = useRef(stepKey);
   const fadeGenRef = useRef(0);
@@ -105,7 +118,15 @@ export function GroupFeatureTourOverlay({
       opacity.setValue(0);
       return;
     }
-    const nextShown = { key: stepKey, title, body, ctaLabel };
+    const nextShown: DisplayedTourSnapshot = {
+      key: stepKey,
+      title,
+      body,
+      ctaLabel,
+      targetRect,
+      placementRect,
+      targetKind,
+    };
     if (reduceMotion) {
       const gen = ++fadeGenRef.current;
       shownKeyRef.current = stepKey;
@@ -121,11 +142,16 @@ export function GroupFeatureTourOverlay({
       return;
     }
     if (shownKeyRef.current === stepKey) {
+      const gen = ++fadeGenRef.current;
+      opacity.stopAnimation?.();
+      setShown(nextShown);
       Animated.timing(opacity, {
         toValue: 1,
         duration: FADE_IN_MS,
         useNativeDriver: true,
-      }).start();
+      }).start(() => {
+        if (gen !== fadeGenRef.current) return;
+      });
       return;
     }
     const gen = ++fadeGenRef.current;
@@ -143,7 +169,18 @@ export function GroupFeatureTourOverlay({
         useNativeDriver: true,
       }).start();
     });
-  }, [visible, stepKey, title, body, ctaLabel, reduceMotion, opacity]);
+  }, [
+    visible,
+    stepKey,
+    title,
+    body,
+    ctaLabel,
+    targetRect,
+    placementRect,
+    targetKind,
+    reduceMotion,
+    opacity,
+  ]);
 
   // Move screen-reader focus to the step card / CTA when the step changes.
   useEffect(() => {
@@ -157,14 +194,14 @@ export function GroupFeatureTourOverlay({
   }, [visible, title, ctaLabel]);
 
   const hole = useMemo(
-    () => (targetRect ? paddedHole(targetRect) : null),
-    [targetRect],
+    () => (shown.targetRect ? paddedHole(shown.targetRect) : null),
+    [shown.targetRect],
   );
-  const r = hole ? holeRadius(hole, targetKind) : 0;
+  const r = hole ? holeRadius(hole, shown.targetKind) : 0;
   const placementHole = useMemo(() => {
-    if (placementRect) return paddedHole(placementRect);
+    if (shown.placementRect) return paddedHole(shown.placementRect);
     return hole;
-  }, [placementRect, hole]);
+  }, [shown.placementRect, hole]);
 
   const placement = useMemo(
     () =>

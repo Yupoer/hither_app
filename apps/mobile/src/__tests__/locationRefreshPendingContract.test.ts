@@ -31,7 +31,9 @@ describe('durable location refresh contract (#191)', () => {
     expect(migration).toContain('create or replace function public.list_my_pending_location_refreshes()');
     expect(migration).toContain('create or replace function public.ack_my_location_refresh(');
     expect(migration).toMatch(/security definer[\s\S]*set search_path = ''/g);
+    expect(migration).toContain('and public.anonymous_access_is_active(m.user_id)');
     expect(migration).toContain('and requested_at = p_requested_at');
+    expect(migration).toContain('and extensions.is_member(p_group_id)');
   });
 
   it('uploads one fix for all pending groups and ACKs only accepted request versions', () => {
@@ -50,6 +52,6 @@ describe('durable location refresh contract (#191)', () => {
     expect(controller).toContain('config.permissionsPrepared === false && config.appState != null');
     expect(mapScreen).toContain('prepareBackgroundJourneyPermissions');
     expect(mapScreen).toContain('permissionsPrepared: backgroundPermissionsPreparedFor === groupId');
-    expect(controller).toContain('pausesUpdatesAutomatically: true');
+    expect(controller).toContain("pausesUpdatesAutomatically: mode !== 'passiveBackground'");
   });
 });

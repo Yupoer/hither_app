@@ -63,6 +63,37 @@ export const ROUTE_REORDER_TOUR_STEPS: readonly RouteReorderTourStep[] = [
   },
 ];
 
+/** Return the smallest scroll delta that makes a route-tour target readable. */
+export function routeTourScrollOffset({
+  currentOffset,
+  targetPageY,
+  targetHeight,
+  containerPageY,
+  viewportHeight,
+  margin = 16,
+}: {
+  currentOffset: number;
+  targetPageY: number;
+  targetHeight: number;
+  containerPageY: number;
+  viewportHeight: number;
+  margin?: number;
+}): number {
+  const safeViewport = Math.max(0, viewportHeight);
+  const safeMargin = Math.max(0, margin);
+  const visibleTop = containerPageY + safeMargin;
+  const visibleBottom = containerPageY + safeViewport - safeMargin;
+  const targetBottom = targetPageY + targetHeight;
+  const delta = targetHeight + safeMargin * 2 > safeViewport
+    ? targetPageY - visibleTop
+    : targetPageY < visibleTop
+      ? targetPageY - visibleTop
+      : targetBottom > visibleBottom
+        ? targetBottom - visibleBottom
+        : 0;
+  return Math.max(0, currentOffset + delta);
+}
+
 export function routeReorderTourStorageKey(accountId?: string | null): string {
   return accountId ? `${ROUTE_REORDER_TOUR_STORAGE_KEY}:${accountId}` : ROUTE_REORDER_TOUR_STORAGE_KEY;
 }

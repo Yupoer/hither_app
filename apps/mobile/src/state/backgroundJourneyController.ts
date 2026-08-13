@@ -145,8 +145,10 @@ export function backgroundLocationOptions(
     timeInterval: policy.timeInterval,
     deferredUpdatesDistance: deferredDistance,
     deferredUpdatesInterval: deferredInterval,
-    // Allow Core Location auto-pause for all walking profiles.
-    pausesUpdatesAutomatically: true,
+    // Passive presence has only a declared heartbeat; do not let Core Location
+    // pause it indefinitely after a stationary interval. Journey modes may use
+    // the OS pause policy to conserve power while still actively navigating.
+    pausesUpdatesAutomatically: mode !== 'passiveBackground',
     showsBackgroundLocationIndicator: mode !== 'passiveBackground',
     foregroundService: {
       notificationTitle:

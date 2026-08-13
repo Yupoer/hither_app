@@ -67,6 +67,11 @@ import {
   cameraOnSearchPick,
 } from '../utils/mapCameraFlow';
 import { resolveNotificationRecipients } from '../utils/notificationDeliveryPolicy';
+import {
+  assessLocationRefreshResponses,
+  expectedLocationRefreshRecipientIds,
+  waitForLocationRefreshResponses,
+} from '../utils/locationRefreshResponse';
 import { keyboardAvoidBottomOffset } from '../utils/keyboardSurface';
 import {
   gatherRequestPageIndex,
@@ -169,6 +174,7 @@ import {
   retryPendingAddPlaceTourAccountSync,
   shouldStartAddPlaceTour,
   useRouteReorderTour,
+  routeTourScrollOffset,
   ROUTE_REORDER_TOUR_STEPS,
 } from '../featureTour';
 import { useCoordinationRequests } from './MapScreen/hooks/useCoordinationRequests';
@@ -573,6 +579,8 @@ export default function MapScreen({ route, navigation }: Props) {
   const carouselRef = useRef<ScrollView | null>(null);
 
   const members = useMemo(() => state?.members ?? [], [state?.members]);
+  const membersRef = useRef(members);
+  membersRef.current = members;
   // My current scope: undefined = main group's itinerary, a subgroup id =
   // that subgroup's own itinerary. Everything itinerary-related below reads
   // only from this scope's list (carousel, reorder, nav target, meet-time,
@@ -1496,6 +1504,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const [routeOverlayOpenComplete, setRouteOverlayOpenComplete] = useState(false);
   const routeScrollRef = useRef<ScrollView>(null);
   const routeScrollYRef = useRef(0);
+  const routeScrollViewportHeightRef = useRef(0);
   const handleRouteDragAutoScroll = useCallback((deltaY: number) => {
     const nextY = Math.max(0, routeScrollYRef.current + deltaY);
     routeScrollYRef.current = nextY;
@@ -1508,11 +1517,44 @@ export default function MapScreen({ route, navigation }: Props) {
   );
   const scrollRouteTourTarget = useCallback((target: string) => {
     // The route sheet owns the scroll container.  A zero scroll exposes the
-    // header/top actions; later targets rely on the list's bounded remeasure.
+    // header/top actions; accommodation is measured against the route viewport.
     if (target === 'routeMode' || target === 'routeDate' || target === 'routeTripDetails'
       || target === 'routeFavorites' || target === 'routeImport') {
       routeScrollYRef.current = 0;
       routeScrollRef.current?.scrollTo({ y: 0, animated: false });
+      return;
+    }
+    if (target === 'routeAccommodation') {
+      const targetNode = tourTargetRefs.current.routeAccommodation;
+      const scrollNode = routeScrollRef.current;
+      if (!targetNode || !scrollNode) return;
+      const measureInWindow = (node: unknown) => new Promise<{
+        y: number;
+        height: number;
+      } | null>((resolve) => {
+        const measurable = node as {
+          measureInWindow?: (callback: (x: number, y: number, width: number, height: number) => void) => void;
+        };
+        if (typeof measurable.measureInWindow !== 'function') {
+          resolve(null);
+          return;
+        }
+        measurable.measureInWindow((_x, y, _width, height) => resolve({ y, height }));
+      });
+      void Promise.all([measureInWindow(targetNode), measureInWindow(scrollNode)]).then(
+        ([targetRect, containerRect]) => {
+          if (!targetRect || !containerRect) return;
+          const nextY = routeTourScrollOffset({
+            currentOffset: routeScrollYRef.current,
+            targetPageY: targetRect.y,
+            targetHeight: targetRect.height,
+            containerPageY: containerRect.y,
+            viewportHeight: routeScrollViewportHeightRef.current || containerRect.height,
+          });
+          routeScrollYRef.current = nextY;
+          scrollNode.scrollTo({ y: nextY, animated: false });
+        },
+      );
     }
   }, []);
   const {
@@ -2827,16 +2869,61 @@ export default function MapScreen({ route, navigation }: Props) {
       }
 
       // 2) Then ask the server to fan out refresh requests to peers.
-      //    Success is silent; cooldown / failure still alert.
+      //    Realtime is the fast path; the bounded wait makes the result honest
+      //    before the final pull, without synthesizing peer timestamps.
+      const refreshStartedAtMs = Date.now();
+      const expectedUserIds = expectedLocationRefreshRecipientIds(
+        membersRef.current,
+        user?.id,
+      );
+      const baselineLastUpdated = new Map(
+        membersRef.current.map((member) => [member.userId, member.lastUpdated]),
+      );
       const result = await requestGroupLocationRefresh(groupId);
       const retryAfter = Math.max(0, result.retryAfterSeconds);
       setRefreshCooldownUntil(Date.now() + retryAfter * 1000);
       if (result.accepted) {
-        // Quiet success only when remote pull returns true. useGroupState.refresh
+        const responseResult = await waitForLocationRefreshResponses({
+          getMembers: () => membersRef.current,
+          expectedUserIds,
+          baselineLastUpdated,
+          requestedAtMs: refreshStartedAtMs,
+        });
+        // The final pull reconciles missed Realtime events. useGroupState.refresh
         // returns false on remote failure even if a local cache is still shown.
         const pulled = await refresh();
         if (!pulled) {
           Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
+        } else {
+          const finalResponseResult = assessLocationRefreshResponses({
+            members: membersRef.current,
+            expectedUserIds,
+            baselineLastUpdated,
+            requestedAtMs: refreshStartedAtMs,
+          });
+          const visibleResult = finalResponseResult.respondedUserIds.length
+            >= responseResult.respondedUserIds.length
+            ? finalResponseResult
+            : responseResult;
+          if (visibleResult.status === 'all') {
+            Alert.alert(
+              t('map.refreshLocationsResultTitle'),
+              t('map.refreshLocationsResultAll'),
+            );
+          } else if (visibleResult.status === 'partial') {
+            Alert.alert(
+              t('map.refreshLocationsResultTitle'),
+              t('map.refreshLocationsResultPartial', {
+                responded: visibleResult.respondedUserIds.length,
+                expected: visibleResult.expectedUserIds.length,
+              }),
+            );
+          } else {
+            Alert.alert(
+              t('map.refreshLocationsResultTitle'),
+              t('map.refreshLocationsResultNone'),
+            );
+          }
         }
       } else {
         Alert.alert(
@@ -2856,6 +2943,7 @@ export default function MapScreen({ route, navigation }: Props) {
     refreshingLocations,
     showLocationPermissionAlert,
     t,
+    user?.id,
   ]);
 
   const fitAllMembers = useCallback(() => {
@@ -6927,6 +7015,9 @@ export default function MapScreen({ route, navigation }: Props) {
           ref={routeScrollRef}
           contentContainerStyle={styles.overlayBody}
           scrollEnabled={routeScrollEnabled}
+          onLayout={(event) => {
+            routeScrollViewportHeightRef.current = event.nativeEvent.layout.height;
+          }}
           onScroll={(event: NativeSyntheticEvent<NativeScrollEvent>) => {
             routeScrollYRef.current = event.nativeEvent.contentOffset.y;
           }}

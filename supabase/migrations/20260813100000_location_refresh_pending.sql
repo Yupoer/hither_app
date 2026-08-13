@@ -64,6 +64,7 @@ begin
    where m.group_id = p_group_id
      and m.user_id <> v_uid
      and coalesce(m.status, 'active') <> 'offline'
+     and public.anonymous_access_is_active(m.user_id)
   on conflict (group_id, user_id) do update
         set requested_by = excluded.requested_by,
             requested_at = excluded.requested_at;
@@ -110,7 +111,8 @@ begin
   delete from public.location_refresh_pending
    where group_id = p_group_id
      and user_id = (select auth.uid())
-     and requested_at = p_requested_at;
+     and requested_at = p_requested_at
+     and extensions.is_member(p_group_id);
   get diagnostics v_deleted = row_count;
   return v_deleted = 1;
 end;
