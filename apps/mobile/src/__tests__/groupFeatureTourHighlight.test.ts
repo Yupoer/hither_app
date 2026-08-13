@@ -5,7 +5,17 @@ import React from 'react';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { measureTargetWithRetry } from '../featureTour/measureTarget';
-import { HOLE_PAD, HOLE_RADIUS, holeRadius, paddedHole, placeTourCard } from '../featureTour/overlayLayout';
+import {
+  HOLE_PAD,
+  HOLE_RADIUS,
+  SHEET_PANE_TAB_WRAP_MARGIN_TOP,
+  expectedSheetChromeTop,
+  holeRadius,
+  isSheetTourTarget,
+  paddedHole,
+  placeTourCard,
+  snapTourRectY,
+} from '../featureTour/overlayLayout';
 
 jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 47, bottom: 34, left: 0, right: 0 }),
@@ -131,6 +141,54 @@ describe('measure waits for carousel selection alignment (#179)', () => {
     expect(hookSrc).toContain('selectedDestinationId');
     expect(hookSrc).toContain('selectedDest !== tourDest');
     expect(map).toContain('selectedDestinationId: selectedDestination?.id');
+  });
+});
+
+describe('Stage Two tab Y snap (peek-layout measure → live mid chrome)', () => {
+  const windowHeight = 844;
+  const peek = 78;
+  const mid = Math.round((844 - 47 - 6) * 0.55);
+  const expectedY = expectedSheetChromeTop({
+    windowHeight,
+    sheetHeight: mid,
+    headerHeight: peek,
+  });
+
+  it('computes the members tab top from mid sheet + header + wrap margin', () => {
+    expect(SHEET_PANE_TAB_WRAP_MARGIN_TOP).toBe(10);
+    // 844 - 435 + 78 + 10 = 497 on this viewport.
+    expect(expectedY).toBe(windowHeight - mid + peek + SHEET_PANE_TAB_WRAP_MARGIN_TOP);
+    expect(expectedY).toBeLessThan(windowHeight * 0.7);
+    expect(expectedY).toBeGreaterThan(windowHeight * 0.4);
+  });
+
+  it('snaps a peek-layout bottom rect up and leaves a correct mid rect alone', () => {
+    const peekLayout = { x: 18, y: 790, width: 88, height: 52 };
+    const snapped = snapTourRectY(peekLayout, expectedY);
+    expect(snapped).toEqual({ ...peekLayout, y: expectedY });
+    expect(snapped.x).toBe(18);
+    expect(snapped.width).toBe(88);
+    expect(snapped.height).toBe(52);
+
+    const alreadyMid = { x: 18, y: expectedY + 8, width: 88, height: 52 };
+    expect(snapTourRectY(alreadyMid, expectedY)).toBe(alreadyMid);
+  });
+
+  it('only sheet chrome targets snap; gather/header chips do not', () => {
+    expect(isSheetTourTarget('paneMembers')).toBe(true);
+    expect(isSheetTourTarget('paneRoute')).toBe(true);
+    expect(isSheetTourTarget('paneTools')).toBe(true);
+    expect(isSheetTourTarget('paneStore')).toBe(true);
+    expect(isSheetTourTarget('stageTwoPlacement')).toBe(true);
+    expect(isSheetTourTarget('gatherCard')).toBe(false);
+    expect(isSheetTourTarget('search')).toBe(false);
+    expect(isSheetTourTarget('addPlaceFavoriteStar')).toBe(false);
+  });
+
+  it('MapScreen snaps sheet-target measures to the live mid chrome Y', () => {
+    expect(map).toContain('expectedSheetChromeTop');
+    expect(map).toContain('snapTourRectY');
+    expect(map).toContain('isSheetTourTarget');
   });
 });
 

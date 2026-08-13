@@ -44,6 +44,12 @@ export interface AddPlaceTourStep {
   bodyKey: string;
 }
 
+/**
+ * Confirm-card entrance springs translateY 120 → 0 (~450–500ms).
+ * Measure only after that bounce or the star hole lands on 加入.
+ */
+export const ADD_PLACE_TOUR_SETTLE_MS = 500;
+
 export const ADD_PLACE_TOUR_STEPS: readonly AddPlaceTourStep[] = [
   {
     id: 'star',

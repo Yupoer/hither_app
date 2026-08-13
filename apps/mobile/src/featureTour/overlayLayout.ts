@@ -54,6 +54,50 @@ export function holeRadius(
   return 0;
 }
 
+/** Sheet tab strip wrap margin — keep in sync with MapScreen.sheetPaneToggleWrap. */
+export const SHEET_PANE_TAB_WRAP_MARGIN_TOP = 10;
+/** Trust measureInWindow when it is already this close to the live chrome. */
+export const SHEET_TOUR_Y_SLOP_PX = 24;
+
+const SHEET_TOUR_TARGETS: ReadonlySet<string> = new Set([
+  'paneMembers',
+  'paneRoute',
+  'paneTools',
+  'paneStore',
+  'stageTwoPlacement',
+]);
+
+export function isSheetTourTarget(id: string | null | undefined): boolean {
+  return Boolean(id && SHEET_TOUR_TARGETS.has(id));
+}
+
+/** Visual top of the Stage Two icon-tab row at the live sheet height. */
+export function expectedSheetChromeTop(input: {
+  windowHeight: number;
+  sheetHeight: number;
+  headerHeight: number;
+  wrapMarginTop?: number;
+  bottomOffset?: number;
+}): number {
+  const wrap = input.wrapMarginTop ?? SHEET_PANE_TAB_WRAP_MARGIN_TOP;
+  const bottom = input.bottomOffset ?? 0;
+  return input.windowHeight - input.sheetHeight - bottom + input.headerHeight + wrap;
+}
+
+/**
+ * measureInWindow on sheet children still sees peek Yoga layout (Reanimated
+ * height/bottom never enter Yoga). Snap Y to the live mid chrome when the
+ * measured top is far from that expected line. Keep x/width/height.
+ */
+export function snapTourRectY<T extends { y: number }>(
+  rect: T,
+  expectedY: number,
+  slop: number = SHEET_TOUR_Y_SLOP_PX,
+): T {
+  if (Math.abs(rect.y - expectedY) <= slop) return rect;
+  return { ...rect, y: expectedY };
+}
+
 /** Intersect a measured rect with the window. Zero/negative size → null. */
 export function clipRectToWindow(
   rect: { x: number; y: number; width: number; height: number } | null | undefined,

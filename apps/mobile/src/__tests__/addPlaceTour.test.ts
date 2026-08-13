@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   ADD_PLACE_TOUR_ACCOUNT_SYNC_PENDING_KEY,
+  ADD_PLACE_TOUR_SETTLE_MS,
   ADD_PLACE_TOUR_STEPS,
   addPlaceTourAccountSyncPendingKey,
   addPlaceTourStorageKey,
@@ -38,6 +39,10 @@ describe('Add Place tour (#162)', () => {
     expect(ADD_PLACE_TOUR_STEPS[1].targetTestId).toBe('add-place-center-btn');
     expect(ADD_PLACE_TOUR_STEPS[0].target).toBe('addPlaceFavoriteStar');
     expect(ADD_PLACE_TOUR_STEPS[1].target).toBe('addPlaceCenter');
+  });
+
+  it('waits for the confirm-card bounce before the first star measure', () => {
+    expect(ADD_PLACE_TOUR_SETTLE_MS).toBeGreaterThanOrEqual(400);
   });
 
   it('clearAddPlaceTour resets local and account so the tour can start again', async () => {

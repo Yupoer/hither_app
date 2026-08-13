@@ -164,14 +164,18 @@ import {
   pickTourDestinationId,
   tourDestinationIndex,
   type TourTargetId,
+  ADD_PLACE_TOUR_SETTLE_MS,
   ADD_PLACE_TOUR_STEPS,
   areAddPlaceTourTargetsReady,
   completeAddPlaceTour,
+  expectedSheetChromeTop,
   isMeasuredTourRect,
+  isSheetTourTarget,
   measureTargetWithRetry,
   readAddPlaceTourCompletedLocal,
   retryPendingAddPlaceTourAccountSync,
   shouldStartAddPlaceTour,
+  snapTourRectY,
   useRouteReorderTour,
   routeTourScrollOffset,
   ROUTE_REORDER_TOUR_STEPS,
@@ -1193,6 +1197,10 @@ export default function MapScreen({ route, navigation }: Props) {
     let cancelled = false;
     void (async () => {
       setAddPlaceTourTransitioning(true);
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, ADD_PLACE_TOUR_SETTLE_MS);
+      });
+      if (cancelled) return;
       const starRect = await measureTargetWithRetry({
         measure: measureTourTarget,
         target: 'addPlaceFavoriteStar',
@@ -5040,6 +5048,26 @@ export default function MapScreen({ route, navigation }: Props) {
     setSheetPane(key);
   }, [sheetPane]);
 
+  // Reanimated sheet height never enters Yoga. measureInWindow on tab nodes
+  // still reports peek layout (Y near the bottom). Snap Stage Two targets to
+  // the live mid chrome so the hole sits on 成員/路線/工具/商店, not 精準定位.
+  const measureSheetTourTarget = useCallback(
+    async (id: TourTargetId) => {
+      const rect = await measureTourTarget(id);
+      if (!rect || !isSheetTourTarget(id)) return rect;
+      const mid = detents.length > 1 ? detents[1] : detents[0];
+      return snapTourRectY(
+        rect,
+        expectedSheetChromeTop({
+          windowHeight,
+          sheetHeight: mid,
+          headerHeight: sheetHeaderH,
+        }),
+      );
+    },
+    [measureTourTarget, detents, windowHeight, sheetHeaderH],
+  );
+
   const setSheetMid = useCallback(() => {
     // Stage Two = mid detent (index 1 when available).
     const midIndex = detents.length > 1 ? 1 : 0;
@@ -5172,7 +5200,7 @@ export default function MapScreen({ route, navigation }: Props) {
     selectedDestinationId: selectedDestination?.id ?? null,
     setSheetMid,
     selectSheetPane,
-    measureTarget: measureTourTarget,
+    measureTarget: measureSheetTourTarget,
     navCommandVisible: tourControlAvailability.navCommandVisible,
     personalArriveVisible: tourControlAvailability.personalArriveVisible,
     onTourActiveChange,
