@@ -74,8 +74,11 @@ export async function measureTargetWithRetry(
   return last;
 }
 
-/** Extra settle time so Stage Two sheet/pane layout is measurable. */
-export const STAGE_TWO_SETTLE_MS = 300;
+/**
+ * Kept as a compatibility export for existing tests/callers.  Stage Two
+ * correctness now comes from bounded target retries, not a fixed sleep.
+ */
+export const STAGE_TWO_SETTLE_MS = 0;
 
 export function getWindowSize(): { width: number; height: number } {
   try {
@@ -93,8 +96,8 @@ export function getWindowSize(): { width: number; height: number } {
 
 /**
  * Measure the current step hole + optional Stage Two placement rect.
- * Stage Two waits for the sheet to settle, clips to the window, and falls
- * back to the tab strip when the pane target is still missing.
+ * Stage Two retries until the sheet/pane target is measurable, clips to the
+ * window, and falls back to the tab strip when the pane target is missing.
  */
 export async function measureTourStepRects(opts: {
   measure: MeasureFn;
@@ -110,10 +113,6 @@ export async function measureTourStepRects(opts: {
   const sleep = opts.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
   if (!opts.step.target) {
     return { targetRect: null, placementRect: null };
-  }
-
-  if (opts.step.openStageTwo) {
-    await sleep(STAGE_TWO_SETTLE_MS);
   }
 
   const rect = await measureTargetWithRetry({

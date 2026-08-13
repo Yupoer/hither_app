@@ -73,6 +73,8 @@ export interface UseGroupFeatureTourResult {
   stepIndex: number;
   targetRect: LayoutRectangle | null;
   placementRect: LayoutRectangle | null;
+  /** True while a new pane/target snapshot is being measured. */
+  transitioning: boolean;
   onNext: () => void;
   onPrev: () => void;
   canGoPrev: boolean;
@@ -101,13 +103,23 @@ export function useGroupFeatureTour(
   );
 
   const [ctrl, setCtrl] = useState<TourControllerState>(() => createTourControllerState(false));
-  const [targetRect, setTargetRect] = useState<LayoutRectangle | null>(null);
-  const [placementRect, setPlacementRect] = useState<LayoutRectangle | null>(null);
+  /** Copy and geometry become visible together after the target is measured. */
+  const [snapshot, setSnapshot] = useState<{
+    stepIndex: number;
+    step: TourStepDef | null;
+    pane: TourStepDef['sheetPane'] | null;
+    targetRect: LayoutRectangle | null;
+    placementRect: LayoutRectangle | null;
+  }>({ stepIndex: 0, step: null, pane: null, targetRect: null, placementRect: null });
+  const [transitioning, setTransitioning] = useState(false);
+  const [measureNonce, setMeasureNonce] = useState(0);
   const [gateReady, setGateReady] = useState(false);
   const [tourCompleted, setTourCompleted] = useState(true); // optimistic until load
   const [completing, setCompleting] = useState(false);
   const appliedStepRef = useRef<number>(-1);
   const completingRef = useRef(false);
+  const transitioningRef = useRef(false);
+  const measureGenerationRef = useRef(0);
   const stepsRef = useRef(steps);
   const measureRef = useRef(input.measureTarget);
   const prefsRef = useRef(input.accountPreferences);
@@ -261,32 +273,34 @@ export function useGroupFeatureTour(
     onActiveRef.current?.(ctrl.active, tourDestRef.current);
   }, [ctrl.active]);
 
-  const step = currentStep(ctrl, steps);
+  // `ctrl` is the requested step used to drive the sheet.  The overlay uses
+  // the committed snapshot so a new copy never renders over the old hole.
+  const requestedStep = currentStep(ctrl, steps);
 
   // Apply step side effects (expand, sheet, pause).
   useEffect(() => {
-    if (!ctrl.active || !step) return;
+    if (!ctrl.active || !requestedStep) return;
     if (appliedStepRef.current === ctrl.stepIndex) return;
     appliedStepRef.current = ctrl.stepIndex;
 
-    if (step.pauseAutoCollapse) pauseRef.current();
-    if (step.expandCard && tourDestRef.current) {
+    if (requestedStep.pauseAutoCollapse) pauseRef.current();
+    if (requestedStep.expandCard && tourDestRef.current) {
       expandRef.current(tourDestRef.current);
     }
-    if (step.openStageTwo) setSheetMidRef.current();
-    if (step.sheetPane) selectPaneRef.current(step.sheetPane);
+    if (requestedStep.openStageTwo) setSheetMidRef.current();
+    if (requestedStep.sheetPane) selectPaneRef.current(requestedStep.sheetPane);
 
-    if (!step.pauseAutoCollapse && !step.expandCard) {
+    if (!requestedStep.pauseAutoCollapse && !requestedStep.expandCard) {
       resumeRef.current();
     }
-  }, [ctrl.active, ctrl.stepIndex, step]);
+  }, [ctrl.active, ctrl.stepIndex, requestedStep]);
 
   // Measure target with bounded retry + stable-parent fallback.
   // Clear happens only after async work starts (no sync setState in effect body).
   // Remeasure when carousel selection catches up to tourDestinationId so the
   // first collapsedCard step does not stick to the pre-lock gatherCard rect.
   useEffect(() => {
-    if (!ctrl.active || !step) return;
+    if (!ctrl.active || !requestedStep) return;
     const tourDest = input.tourDestinationId;
     const selectedDest = input.selectedDestinationId;
     // When caller reports selection, wait until it matches the tour card.
@@ -299,25 +313,49 @@ export function useGroupFeatureTour(
       return;
     }
     let cancelled = false;
+    const generation = ++measureGenerationRef.current;
+    transitioningRef.current = true;
+    setTransitioning(true);
     const run = async () => {
-      if (!step.target) {
-        if (!cancelled) {
-          setTargetRect(null);
-          setPlacementRect(null);
+      if (!requestedStep.target) {
+        if (!cancelled && generation === measureGenerationRef.current) {
+          setSnapshot({
+            stepIndex: ctrl.stepIndex,
+            step: requestedStep,
+            pane: requestedStep.sheetPane ?? null,
+            targetRect: null,
+            placementRect: null,
+          });
+          transitioningRef.current = false;
+          setTransitioning(false);
         }
         return;
       }
       const win = getWindowSize();
       const measured = await measureTourStepRects({
         measure: (id) => measureRef.current(id),
-        step,
+        step: requestedStep,
         winW: win.width,
         winH: win.height,
-        requireStable: Boolean(step.expandCard),
+        requireStable: Boolean(requestedStep.expandCard),
       });
-      if (!cancelled) {
-        setTargetRect(measured.targetRect);
-        setPlacementRect(measured.placementRect);
+      if (!cancelled && generation === measureGenerationRef.current) {
+        // A missing target is a retryable measurement failure.  Keep the old
+        // copy/rect pair committed until the requested target is usable.
+        if (!measured.targetRect) {
+          transitioningRef.current = false;
+          setTransitioning(false);
+          return;
+        }
+        setSnapshot({
+          stepIndex: ctrl.stepIndex,
+          step: requestedStep,
+          pane: requestedStep.sheetPane ?? null,
+          targetRect: measured.targetRect,
+          placementRect: measured.placementRect,
+        });
+        transitioningRef.current = false;
+        setTransitioning(false);
       }
     };
     void run();
@@ -327,18 +365,27 @@ export function useGroupFeatureTour(
   }, [
     ctrl.active,
     ctrl.stepIndex,
-    step,
+    requestedStep,
     input.tourDestinationId,
     input.selectedDestinationId,
+    measureNonce,
   ]);
 
   // Derived: hide hole when tour inactive (avoids sync setState on deactivate).
-  const visibleTargetRect = ctrl.active ? targetRect : null;
-  const visiblePlacementRect = ctrl.active ? placementRect : null;
+  const visibleTargetRect = ctrl.active ? snapshot.targetRect : null;
+  const visiblePlacementRect = ctrl.active ? snapshot.placementRect : null;
 
   const onNext = useCallback(() => {
-    if (!ctrl.active || completingRef.current) return;
+    if (!ctrl.active || completingRef.current || transitioningRef.current) return;
     const plan = stepsRef.current;
+    // A failed measurement leaves the requested step ahead of the committed
+    // snapshot. Retry it instead of advancing again.
+    if (ctrl.stepIndex !== snapshot.stepIndex) {
+      transitioningRef.current = true;
+      setTransitioning(true);
+      setMeasureNonce((n) => n + 1);
+      return;
+    }
     const cur = currentStep(ctrl, plan);
     if (cur?.final || ctrl.stepIndex >= plan.length - 1) {
       completingRef.current = true;
@@ -361,25 +408,33 @@ export function useGroupFeatureTour(
       })();
       return;
     }
+    transitioningRef.current = true;
+    setTransitioning(true);
     setCtrl((s) => advanceTour(s, plan));
-  }, [ctrl]);
+  }, [ctrl, snapshot.stepIndex]);
 
   const onPrev = useCallback(() => {
-    if (!ctrl.active || completingRef.current) return;
-    if (ctrl.stepIndex <= 0) return;
+    if (!ctrl.active || completingRef.current || transitioningRef.current) return;
+    if (ctrl.stepIndex <= 0 || ctrl.stepIndex !== snapshot.stepIndex) return;
     appliedStepRef.current = -1;
+    transitioningRef.current = true;
+    setTransitioning(true);
     setCtrl((s) => retreatTour(s));
-  }, [ctrl]);
+  }, [ctrl, snapshot.stepIndex]);
 
   return {
     tourActive: ctrl.active,
-    step,
-    stepIndex: ctrl.stepIndex,
+    step: ctrl.active ? snapshot.step : null,
+    stepIndex: snapshot.stepIndex,
     targetRect: visibleTargetRect,
     placementRect: visiblePlacementRect,
+    transitioning: ctrl.active && (transitioning || ctrl.stepIndex !== snapshot.stepIndex),
     onNext,
     onPrev,
-    canGoPrev: ctrl.active && ctrl.stepIndex > 0,
+    canGoPrev: ctrl.active
+      && !transitioning
+      && ctrl.stepIndex === snapshot.stepIndex
+      && snapshot.stepIndex > 0,
     completing,
     reevaluate,
     steps,

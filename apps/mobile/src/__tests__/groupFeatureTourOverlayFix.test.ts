@@ -121,7 +121,8 @@ describe('featureTour barrel public seams', () => {
     expect(typeof featureTour.clipRectToWindow).toBe('function');
     expect(typeof featureTour.holeKindForTarget).toBe('function');
     expect(typeof featureTour.measureTourStepRects).toBe('function');
-    expect(featureTour.STAGE_TWO_SETTLE_MS).toBe(300);
+    // Stage Two uses bounded measurement retries; there is no fixed settle sleep.
+    expect(featureTour.STAGE_TWO_SETTLE_MS).toBe(0);
   });
 });
 
@@ -422,6 +423,8 @@ describe('hook onPrev + canGoPrev', () => {
       box.latest?.onNext();
     });
     await flush();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await flush();
     expect(box.latest?.stepIndex).toBe(1);
     expect(box.latest?.canGoPrev).toBe(true);
     expect(expandCard).toHaveBeenCalled();
@@ -431,6 +434,8 @@ describe('hook onPrev + canGoPrev', () => {
       box.latest?.onPrev();
     });
     await flush();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await flush();
     expect(box.latest?.stepIndex).toBe(0);
     expect(box.latest?.tourActive).toBe(true);
     expect(box.latest?.canGoPrev).toBe(false);
@@ -438,6 +443,8 @@ describe('hook onPrev + canGoPrev', () => {
     await act(async () => {
       box.latest?.onNext();
     });
+    await flush();
+    await new Promise((resolve) => setTimeout(resolve, 100));
     await flush();
     expect(box.latest?.stepIndex).toBe(1);
     expect(expandCard.mock.calls.length).toBeGreaterThan(expandCount);
@@ -456,5 +463,20 @@ describe('MapScreen wires prev + members highlight', () => {
     expect(map).toContain("'paneMembers'");
     expect(map).toContain("setTourTargetRef('search'");
     expect(map).toContain('clearAddPlaceTour');
+  });
+
+  it('commits pane and target as one snapshot and highlights the add-place favorite star', () => {
+    const { readFileSync } = require('node:fs') as typeof import('node:fs');
+    const { join } = require('node:path') as typeof import('node:path');
+    const tour = readFileSync(join(__dirname, '../featureTour/useGroupFeatureTour.ts'), 'utf8');
+    const measure = readFileSync(join(__dirname, '../featureTour/measureTarget.ts'), 'utf8');
+    const map = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+    expect(tour).toContain('const [snapshot, setSnapshot]');
+    expect(tour).toContain('ctrl.stepIndex !== snapshot.stepIndex');
+    expect(tour).toContain('setSnapshot({');
+    expect(measure).toContain('Bounded measurement retry');
+    expect(measure).not.toContain('await sleep(STAGE_TWO_SETTLE_MS)');
+    expect(map).toContain("testID=\"add-place-favorite-star\"");
+    expect(map).toContain("setTourTargetRef('addPlaceFavoriteStar'");
   });
 });

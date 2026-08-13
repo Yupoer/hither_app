@@ -107,6 +107,6 @@ describe('REVIEW_FIX: durable complete + a11y overlay', () => {
   it('MapScreen passes reduceMotion and completing into the overlay', () => {
     const map = read('screens/MapScreen.tsx');
     expect(map).toContain('reduceMotion={tourReduceMotion}');
-    expect(map).toContain('ctaDisabled={tourCompleting}');
+    expect(map).toContain('ctaDisabled={tourTransitioning || tourCompleting}');
   });
 });
