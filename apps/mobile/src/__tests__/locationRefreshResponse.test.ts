@@ -1,6 +1,6 @@
 import {
   assessLocationRefreshResponses,
-  expectedLocationRefreshRecipientIds,
+  normalizeLocationRefreshRecipientIds,
   waitForLocationRefreshResponses,
 } from '../utils/locationRefreshResponse';
 
@@ -17,13 +17,30 @@ describe('location refresh response classification', () => {
       { userId: 'a', status: 'active', lastUpdated: '2026-08-13T00:00:04.000Z' },
       { userId: 'b', status: 'active', lastUpdated: '2026-08-13T00:00:03.000Z' },
     ];
-    expect(expectedLocationRefreshRecipientIds(members, 'self')).toEqual(['a', 'b']);
     expect(assessLocationRefreshResponses({
       members,
       expectedUserIds: ['a', 'b'],
       baselineLastUpdated: baseline,
       requestedAtMs: Date.parse('2026-08-13T00:00:02.000Z'),
     })).toMatchObject({ status: 'all', respondedUserIds: ['a', 'b'] });
+  });
+
+  it('counts only the expiry-aware recipient ids returned by the request RPC', () => {
+    const members = [
+      { userId: 'active', status: 'active', lastUpdated: '2026-08-13T00:00:04.000Z' },
+      { userId: 'expired-anonymous', status: 'active', lastUpdated: null },
+    ];
+    const expectedUserIds = normalizeLocationRefreshRecipientIds(['active']);
+    expect(assessLocationRefreshResponses({
+      members,
+      expectedUserIds,
+      baselineLastUpdated: new Map([['active', null]]),
+      requestedAtMs: Date.parse('2026-08-13T00:00:02.000Z'),
+    })).toMatchObject({
+      status: 'all',
+      expectedUserIds: ['active'],
+      respondedUserIds: ['active'],
+    });
   });
 
   it('classifies partial responses without inventing timestamps', () => {

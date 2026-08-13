@@ -5,10 +5,12 @@ import { supabase } from '../supabase';
 import { demoUpdateMyLocation, isDemoGroup } from '../demo';
 import type { Coordinates } from '../../types';
 import { requireUserId, orThrow } from './_helpers';
+import { normalizeLocationRefreshRecipientIds } from '../../utils/locationRefreshResponse';
 
 export interface LocationRefreshResult {
   accepted: boolean;
   retryAfterSeconds: number;
+  recipientIds: string[];
 }
 
 export interface LocationBatchEvent {
@@ -36,6 +38,7 @@ export interface LocationBatchResult {
 interface LocationRefreshRow {
   accepted?: boolean;
   retry_after_seconds?: number;
+  recipient_ids?: unknown;
 }
 
 export interface PendingLocationRefresh {
@@ -106,6 +109,7 @@ export async function requestGroupLocationRefresh(
   return {
     accepted: row.accepted === true,
     retryAfterSeconds: Math.max(0, Math.ceil(row.retry_after_seconds ?? 0)),
+    recipientIds: normalizeLocationRefreshRecipientIds(row.recipient_ids),
   };
 }
 

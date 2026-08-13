@@ -252,7 +252,7 @@ export interface UseRouteReorderTourInput {
   accountId?: string | null;
   accountPreferences?: AccountPreferences | null;
   measureTarget: (id: TourTargetId) => Promise<LayoutRectangle | null>;
-  scrollToTarget?: (id: RouteReorderTourTargetId) => void;
+  scrollToTarget?: (id: RouteReorderTourTargetId) => void | Promise<void>;
 }
 
 export interface UseRouteReorderTourResult {
@@ -370,7 +370,7 @@ export function useRouteReorderTour(
 
   const tourActive = active && tourEligible;
 
-  const onNext = useCallback(() => {
+  const onNext = useCallback(async () => {
     if (!tourActive || transitioningRef.current || completing) return;
     if (snapshot.stepIndex >= ROUTE_REORDER_TOUR_STEPS.length - 1) {
       transitioningRef.current = true;
@@ -393,12 +393,14 @@ export function useRouteReorderTour(
     const generation = ++generationRef.current;
     transitioningRef.current = true;
     setTransitioning(true);
-    scrollRef.current?.(next.id);
-    void measureTargetWithRetry({
-      measure: (id) => measureRef.current(id),
-      target: next.target,
-      maxAttempts: 6,
-    }).then((rect) => {
+    try {
+      await scrollRef.current?.(next.id);
+      if (generation !== generationRef.current) return;
+      const rect = await measureTargetWithRetry({
+        measure: (id) => measureRef.current(id),
+        target: next.target,
+        maxAttempts: 6,
+      });
       if (generation !== generationRef.current) return;
       if (!rect || rect.width <= 0 || rect.height <= 0) {
         transitioningRef.current = false;
@@ -408,10 +410,14 @@ export function useRouteReorderTour(
       setSnapshot({ stepIndex: nextIndex, targetRect: rect });
       transitioningRef.current = false;
       setTransitioning(false);
-    });
+    } catch {
+      if (generation !== generationRef.current) return;
+      transitioningRef.current = false;
+      setTransitioning(false);
+    }
   }, [completing, snapshot.stepIndex, tourActive]);
 
-  const onPrev = useCallback(() => {
+  const onPrev = useCallback(async () => {
     if (!tourActive || transitioningRef.current || completing || snapshot.stepIndex <= 0) return;
     const previousIndex = snapshot.stepIndex - 1;
     const previous = ROUTE_REORDER_TOUR_STEPS[previousIndex];
@@ -419,12 +425,14 @@ export function useRouteReorderTour(
     const generation = ++generationRef.current;
     transitioningRef.current = true;
     setTransitioning(true);
-    scrollRef.current?.(previous.id);
-    void measureTargetWithRetry({
-      measure: (id) => measureRef.current(id),
-      target: previous.target,
-      maxAttempts: 6,
-    }).then((rect) => {
+    try {
+      await scrollRef.current?.(previous.id);
+      if (generation !== generationRef.current) return;
+      const rect = await measureTargetWithRetry({
+        measure: (id) => measureRef.current(id),
+        target: previous.target,
+        maxAttempts: 6,
+      });
       if (generation !== generationRef.current) return;
       if (!rect || rect.width <= 0 || rect.height <= 0) {
         transitioningRef.current = false;
@@ -434,7 +442,11 @@ export function useRouteReorderTour(
       setSnapshot({ stepIndex: previousIndex, targetRect: rect });
       transitioningRef.current = false;
       setTransitioning(false);
-    });
+    } catch {
+      if (generation !== generationRef.current) return;
+      transitioningRef.current = false;
+      setTransitioning(false);
+    }
   }, [completing, snapshot.stepIndex, tourActive]);
 
   return {

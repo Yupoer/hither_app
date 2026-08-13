@@ -29,7 +29,10 @@ import {
   prefColumn,
   type PushPayload,
 } from "./messages.ts";
-import { specialAlertRecipientIds } from "./recipients.ts";
+import {
+  locationRefreshRecipientIds,
+  specialAlertRecipientIds,
+} from "./recipients.ts";
 import { eventIdFromPayload } from "./eventId.ts";
 import { deliverWithSenderFallback } from "./senderFallback.ts";
 
@@ -389,12 +392,7 @@ Deno.serve(async (req) => {
     );
 
     const tokenRows = await loadTokenRows(allowedAlertUsers);
-    const refreshCandidates = payload.category === "location_refresh"
-      ? members
-        .filter((member) => member.user_id !== payload.sender_id)
-        .filter((member) => member.status !== "offline")
-        .map((member) => member.user_id)
-      : [];
+    const refreshCandidates = locationRefreshRecipientIds(payload);
     const refreshTokenRows = await loadTokenRows(refreshCandidates);
     const liveSessions = await loadLiveSessions(payload, members, sender);
 

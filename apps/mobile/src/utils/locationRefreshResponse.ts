@@ -12,13 +12,11 @@ export interface LocationRefreshResponseResult {
   respondedUserIds: string[];
 }
 
-export function expectedLocationRefreshRecipientIds(
-  members: readonly LocationRefreshMemberSnapshot[],
-  requesterId: string | null | undefined,
-): string[] {
-  return members
-    .filter((member) => member.userId !== requesterId && member.status !== 'offline')
-    .map((member) => member.userId);
+export function normalizeLocationRefreshRecipientIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter(
+    (userId): userId is string => typeof userId === 'string' && userId.length > 0,
+  ))];
 }
 
 function timestampMs(value: string | null | undefined): number | null {

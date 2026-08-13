@@ -27,6 +27,7 @@ declare
   v_now timestamptz := now();
   v_requested_at timestamptz;
   v_retry integer;
+  v_recipient_ids uuid[];
 begin
   if v_uid is null or not extensions.is_member(p_group_id) then
     raise exception 'group membership required' using errcode = '42501';
@@ -58,13 +59,19 @@ begin
      where group_id = p_group_id;
   end if;
 
-  insert into public.location_refresh_pending(group_id, user_id, requested_by, requested_at)
-  select p_group_id, m.user_id, v_uid, v_now
+  -- This is the single expiry-aware recipient set shared with the durable
+  -- ledger, the Edge fan-out, and the initiator's response accounting.
+  select coalesce(array_agg(m.user_id order by m.user_id), '{}'::uuid[])
+    into v_recipient_ids
     from public.memberships m
    where m.group_id = p_group_id
      and m.user_id <> v_uid
      and coalesce(m.status, 'active') <> 'offline'
-     and public.anonymous_access_is_active(m.user_id)
+     and public.anonymous_access_is_active(m.user_id);
+
+  insert into public.location_refresh_pending(group_id, user_id, requested_by, requested_at)
+  select p_group_id, recipients.user_id, v_uid, v_now
+    from unnest(v_recipient_ids) as recipients(user_id)
   on conflict (group_id, user_id) do update
         set requested_by = excluded.requested_by,
             requested_at = excluded.requested_at;
@@ -72,10 +79,15 @@ begin
   perform extensions.notify_push(jsonb_build_object(
     'category', 'location_refresh',
     'group_id', p_group_id,
-    'sender_id', v_uid
+    'sender_id', v_uid,
+    'recipient_ids', to_jsonb(v_recipient_ids)
   ));
 
-  return jsonb_build_object('accepted', true, 'retry_after_seconds', 60);
+  return jsonb_build_object(
+    'accepted', true,
+    'retry_after_seconds', 60,
+    'recipient_ids', to_jsonb(v_recipient_ids)
+  );
 end;
 $$;
 

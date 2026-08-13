@@ -69,7 +69,6 @@ import {
 import { resolveNotificationRecipients } from '../utils/notificationDeliveryPolicy';
 import {
   assessLocationRefreshResponses,
-  expectedLocationRefreshRecipientIds,
   waitForLocationRefreshResponses,
 } from '../utils/locationRefreshResponse';
 import { keyboardAvoidBottomOffset } from '../utils/keyboardSurface';
@@ -1515,13 +1514,17 @@ export default function MapScreen({ route, navigation }: Props) {
     () => openForRouteEditor.filter((destination) => destination.kind !== 'accommodation').length,
     [openForRouteEditor],
   );
-  const scrollRouteTourTarget = useCallback((target: string) => {
+  const scrollRouteTourTarget = useCallback(async (target: string): Promise<void> => {
+    const settleRouteScroll = () => new Promise<void>((resolve) => {
+      requestAnimationFrame(() => resolve());
+    });
     // The route sheet owns the scroll container.  A zero scroll exposes the
     // header/top actions; accommodation is measured against the route viewport.
     if (target === 'routeMode' || target === 'routeDate' || target === 'routeTripDetails'
       || target === 'routeFavorites' || target === 'routeImport') {
       routeScrollYRef.current = 0;
       routeScrollRef.current?.scrollTo({ y: 0, animated: false });
+      await settleRouteScroll();
       return;
     }
     if (target === 'routeAccommodation') {
@@ -1541,20 +1544,21 @@ export default function MapScreen({ route, navigation }: Props) {
         }
         measurable.measureInWindow((_x, y, _width, height) => resolve({ y, height }));
       });
-      void Promise.all([measureInWindow(targetNode), measureInWindow(scrollNode)]).then(
-        ([targetRect, containerRect]) => {
-          if (!targetRect || !containerRect) return;
-          const nextY = routeTourScrollOffset({
-            currentOffset: routeScrollYRef.current,
-            targetPageY: targetRect.y,
-            targetHeight: targetRect.height,
-            containerPageY: containerRect.y,
-            viewportHeight: routeScrollViewportHeightRef.current || containerRect.height,
-          });
-          routeScrollYRef.current = nextY;
-          scrollNode.scrollTo({ y: nextY, animated: false });
-        },
-      );
+      const [targetRect, containerRect] = await Promise.all([
+        measureInWindow(targetNode),
+        measureInWindow(scrollNode),
+      ]);
+      if (!targetRect || !containerRect) return;
+      const nextY = routeTourScrollOffset({
+        currentOffset: routeScrollYRef.current,
+        targetPageY: targetRect.y,
+        targetHeight: targetRect.height,
+        containerPageY: containerRect.y,
+        viewportHeight: routeScrollViewportHeightRef.current || containerRect.height,
+      });
+      routeScrollYRef.current = nextY;
+      scrollNode.scrollTo({ y: nextY, animated: false });
+      await settleRouteScroll();
     }
   }, []);
   const {
@@ -2872,10 +2876,6 @@ export default function MapScreen({ route, navigation }: Props) {
       //    Realtime is the fast path; the bounded wait makes the result honest
       //    before the final pull, without synthesizing peer timestamps.
       const refreshStartedAtMs = Date.now();
-      const expectedUserIds = expectedLocationRefreshRecipientIds(
-        membersRef.current,
-        user?.id,
-      );
       const baselineLastUpdated = new Map(
         membersRef.current.map((member) => [member.userId, member.lastUpdated]),
       );
@@ -2883,6 +2883,7 @@ export default function MapScreen({ route, navigation }: Props) {
       const retryAfter = Math.max(0, result.retryAfterSeconds);
       setRefreshCooldownUntil(Date.now() + retryAfter * 1000);
       if (result.accepted) {
+        const expectedUserIds = result.recipientIds;
         const responseResult = await waitForLocationRefreshResponses({
           getMembers: () => membersRef.current,
           expectedUserIds,

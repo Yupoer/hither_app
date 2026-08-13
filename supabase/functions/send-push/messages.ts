@@ -36,6 +36,8 @@ export interface PushPayload {
   request_id?: string | null;
   count?: number | null;
   sender_name?: string;
+  /** Server-authorized location-refresh recipients from the durable ledger. */
+  recipient_ids?: string[] | null;
   /** Nickname of the member who fell behind (straggler). */
   member_name?: string;
   /** Optional distance in metres for straggler copy. */

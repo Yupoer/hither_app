@@ -106,6 +106,7 @@ describe('LocationService durable refresh seams', () => {
     await expect(requestGroupLocationRefresh('group-1')).resolves.toEqual({
       accepted: true,
       retryAfterSeconds: 2,
+      recipientIds: [],
     });
     await expect(listMyPendingLocationRefreshes()).resolves.toEqual([{
       groupId: 'group-1',

@@ -6,7 +6,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set search_path = extensions, public, auth;
 
-select plan(26);
+select plan(27);
 
 insert into auth.users (id, email) values
   ('f1111111-1111-4111-8111-111111111111', 'refresh-leader@example.test'),
@@ -40,6 +40,9 @@ create temporary table location_refresh_pending_test_versions (
 );
 create temporary table location_refresh_pending_test_latest (
   requested_at timestamptz not null
+);
+create temporary table location_refresh_request_test_result (
+  result jsonb not null
 );
 
 select has_table(
@@ -138,10 +141,18 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub', 'f1111111-1111-4111-8111-111111111111', true);
 select set_config('request.jwt.claim.role', 'authenticated', true);
 
+insert into location_refresh_request_test_result (result)
+select public.request_group_location_refresh('fgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+
 select is(
-  (public.request_group_location_refresh('fgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')->>'accepted'),
+  ((select result from location_refresh_request_test_result)->>'accepted'),
   'true',
   'member request is accepted'
+);
+select is(
+  ((select result from location_refresh_request_test_result)->>'recipient_ids'),
+  '["f2222222-2222-4222-8222-222222222222"]',
+  'the response exposes the same expiry-aware recipient set used by the ledger'
 );
 
 reset role;

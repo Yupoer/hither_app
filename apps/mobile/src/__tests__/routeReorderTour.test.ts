@@ -230,6 +230,60 @@ describe('route reorder tour (#189)', () => {
     root.unmount();
   });
 
+  it('waits for an async accommodation scroll before measuring its post-scroll rect', async () => {
+    let scrollResolved = false;
+    let releaseScroll = () => {};
+    const scrollPromise = new Promise<void>((resolve) => {
+      releaseScroll = () => {
+        scrollResolved = true;
+        resolve();
+      };
+    });
+    const measureTarget = jest.fn(async (id) => ({
+      x: 8,
+      y: id === 'routeAccommodation' && scrollResolved ? 740 : 12,
+      width: 120,
+      height: 36,
+    }));
+    const scrollToTarget = jest.fn((id: string) => (
+      id === 'routeAccommodation' ? scrollPromise : Promise.resolve()
+    ));
+    let latest: ReturnType<typeof useRouteReorderTour> | undefined;
+    function Probe() {
+      latest = useRouteReorderTour({
+        routeOverlayOpenComplete: true,
+        isLeader: true,
+        canEditItinerary: true,
+        gatheringPointCount: 1,
+        accountId: 'user-a',
+        accountPreferences: { routeReorderTourCompleted: false },
+        measureTarget,
+        scrollToTarget,
+      });
+      return null;
+    }
+
+    const root = create(React.createElement(Probe));
+    for (let i = 0; i < 5 && !latest?.tourActive; i += 1) await flushRouteTour();
+    await act(async () => latest?.onNext());
+    const callsBeforeAccommodation = measureTarget.mock.calls.length;
+    let transition: void | Promise<void>;
+    await act(async () => {
+      transition = latest?.onNext();
+      await Promise.resolve();
+    });
+    expect(scrollToTarget).toHaveBeenCalledWith('routeAccommodation');
+    expect(measureTarget).toHaveBeenCalledTimes(callsBeforeAccommodation);
+
+    releaseScroll();
+    await act(async () => {
+      await transition;
+    });
+    expect(measureTarget).toHaveBeenLastCalledWith('routeAccommodation');
+    expect(latest?.targetRect?.y).toBe(740);
+    root.unmount();
+  });
+
   it('wires the tour to route-sheet completion and target refs without invoking route actions', () => {
     const mapScreen = readFileSync(
       join(__dirname, '../screens/MapScreen.tsx'),

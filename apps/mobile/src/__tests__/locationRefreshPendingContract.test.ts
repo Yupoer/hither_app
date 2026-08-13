@@ -21,6 +21,14 @@ const mapScreen = readFileSync(
   join(__dirname, '../screens/MapScreen.tsx'),
   'utf8',
 );
+const pushIndex = readFileSync(
+  join(__dirname, '../../../../supabase/functions/send-push/index.ts'),
+  'utf8',
+);
+const pushRecipients = readFileSync(
+  join(__dirname, '../../../../supabase/functions/send-push/recipients.ts'),
+  'utf8',
+);
 
 describe('durable location refresh contract (#191)', () => {
   it('keeps a per-recipient versioned ledger behind explicit RPCs', () => {
@@ -34,6 +42,15 @@ describe('durable location refresh contract (#191)', () => {
     expect(migration).toContain('and public.anonymous_access_is_active(m.user_id)');
     expect(migration).toContain('and requested_at = p_requested_at');
     expect(migration).toContain('and extensions.is_member(p_group_id)');
+  });
+
+  it('shares the SQL expiry-aware recipient set with Edge and the initiator', () => {
+    expect(migration).toContain('v_recipient_ids uuid[]');
+    expect(migration).toContain("'recipient_ids', to_jsonb(v_recipient_ids)");
+    expect(pushIndex).toContain('locationRefreshRecipientIds(payload)');
+    expect(pushRecipients).toContain('payload.recipient_ids');
+    expect(mapScreen).toContain('const expectedUserIds = result.recipientIds');
+    expect(mapScreen).not.toContain('expectedLocationRefreshRecipientIds');
   });
 
   it('uploads one fix for all pending groups and ACKs only accepted request versions', () => {
