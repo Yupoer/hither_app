@@ -60,4 +60,13 @@ describe('keyboard surface + inline rename (#172)', () => {
     expect(map).toMatch(/setAddPlaceTourTargetRect\(starRect\)/);
     expect(map).not.toMatch(/setAddPlaceTourStep\(0\)[\s\S]{0,80}centerRect/);
   });
+
+  it('add-place tour start waits for confirm-card settle before measuring star', () => {
+    expect(addPlaceTour).toContain('ADD_PLACE_TOUR_SETTLE_MS');
+    expect(map).toContain('ADD_PLACE_TOUR_SETTLE_MS');
+    const startIdx = map.indexOf('areAddPlaceTourTargetsReady');
+    expect(startIdx).toBeGreaterThan(-1);
+    const startBlock = map.slice(Math.max(0, startIdx - 600), startIdx);
+    expect(startBlock).toContain('ADD_PLACE_TOUR_SETTLE_MS');
+  });
 });

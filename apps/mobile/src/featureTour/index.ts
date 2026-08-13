@@ -42,6 +42,10 @@ export {
   holeRadius,
   holeKindForTarget,
   clipRectToWindow,
+  expectedSheetChromeTop,
+  snapTourRectY,
+  isSheetTourTarget,
+  SHEET_PANE_TAB_WRAP_MARGIN_TOP,
 } from './overlayLayout';
 export { pickTourDestinationId, tourDestinationIndex } from './tourDestination';
 export { GroupFeatureTourOverlay } from './GroupFeatureTourOverlay';
@@ -49,6 +53,7 @@ export { useGroupFeatureTour } from './useGroupFeatureTour';
 export {
   ADD_PLACE_TOUR_STORAGE_KEY,
   ADD_PLACE_TOUR_ACCOUNT_SYNC_PENDING_KEY,
+  ADD_PLACE_TOUR_SETTLE_MS,
   ADD_PLACE_TOUR_STEPS,
   addPlaceTourAccountSyncPendingKey,
   addPlaceTourStorageKey,
