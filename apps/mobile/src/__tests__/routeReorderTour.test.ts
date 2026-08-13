@@ -1,12 +1,17 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import React from 'react';
 import {
   ROUTE_REORDER_TOUR_STEPS,
   clearRouteReorderTour,
   completeRouteReorderTour,
+  parseRouteReorderTourAccountSyncPending,
   readRouteReorderTourCompletedLocal,
+  readRouteReorderTourAccountSyncPending,
   routeReorderTourAccountSyncPendingKey,
   routeReorderTourStorageKey,
+  retryPendingRouteReorderTourAccountSync,
   shouldStartRouteReorderTour,
+  useRouteReorderTour,
 } from '../featureTour/routeReorderTour';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -19,6 +24,18 @@ const updateProfile = jest.fn();
 jest.mock('../api/services/ProfileService', () => ({
   updateProfile: (...args: unknown[]) => updateProfile(...args),
 }));
+
+const { act, create } = require('react-test-renderer') as {
+  act: (callback: () => void | Promise<void>) => Promise<void>;
+  create: (element: React.ReactElement) => { unmount: () => void };
+};
+
+function flushRouteTour(): Promise<void> {
+  return act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
 
 describe('route reorder tour (#189)', () => {
   beforeEach(async () => {
@@ -80,6 +97,112 @@ describe('route reorder tour (#189)', () => {
     expect(updateProfile).toHaveBeenLastCalledWith({
       preferences: expect.objectContaining({ routeReorderTourCompleted: false }),
     });
+  });
+
+  it('parses only account-scoped pending sync markers', async () => {
+    expect(parseRouteReorderTourAccountSyncPending(null)).toBeNull();
+    expect(parseRouteReorderTourAccountSyncPending('not-json')).toBeNull();
+    expect(parseRouteReorderTourAccountSyncPending('{"accountId":"","completed":true}')).toBeNull();
+    expect(parseRouteReorderTourAccountSyncPending('{"accountId":"user-a","completed":true}'))
+      .toEqual({ accountId: 'user-a', completed: true });
+
+    await AsyncStorage.setItem(
+      routeReorderTourAccountSyncPendingKey('user-a'),
+      JSON.stringify({ accountId: 'user-a', completed: false }),
+    );
+    await expect(readRouteReorderTourAccountSyncPending('user-a')).resolves.toEqual({
+      accountId: 'user-a',
+      completed: false,
+    });
+    await expect(readRouteReorderTourAccountSyncPending('user-b')).resolves.toBeNull();
+    await expect(readRouteReorderTourAccountSyncPending(null)).resolves.toBeNull();
+  });
+
+  it('retries a pending account write and keeps it when the retry fails', async () => {
+    await AsyncStorage.setItem(
+      routeReorderTourAccountSyncPendingKey('user-a'),
+      JSON.stringify({ accountId: 'user-a', completed: true }),
+    );
+    updateProfile.mockRejectedValueOnce(new Error('offline'));
+    await expect(
+      retryPendingRouteReorderTourAccountSync({ accountId: 'user-a' }),
+    ).resolves.toBe(false);
+    expect(await readRouteReorderTourAccountSyncPending('user-a')).toEqual({
+      accountId: 'user-a',
+      completed: true,
+    });
+
+    updateProfile.mockResolvedValueOnce(undefined);
+    await expect(
+      retryPendingRouteReorderTourAccountSync({
+        accountId: 'user-a',
+        existingPreferences: { routeReorderTourCompleted: false },
+      }),
+    ).resolves.toBe(true);
+    expect(await readRouteReorderTourAccountSyncPending('user-a')).toBeNull();
+  });
+
+  it('retains completion or reset intent locally when account sync fails', async () => {
+    updateProfile.mockRejectedValueOnce(new Error('offline'));
+    await completeRouteReorderTour({ accountId: 'user-a' });
+    expect(await readRouteReorderTourCompletedLocal('user-a')).toBe(true);
+    expect(await readRouteReorderTourAccountSyncPending('user-a')).toEqual({
+      accountId: 'user-a',
+      completed: true,
+    });
+
+    updateProfile.mockRejectedValueOnce(new Error('offline'));
+    await clearRouteReorderTour({ accountId: 'user-a' });
+    expect(await readRouteReorderTourCompletedLocal('user-a')).toBe(false);
+    expect(await readRouteReorderTourAccountSyncPending('user-a')).toEqual({
+      accountId: 'user-a',
+      completed: false,
+    });
+  });
+
+  it('measures all six targets atomically and completes only after the last step', async () => {
+    const measureTarget = jest.fn(async () => ({ x: 8, y: 12, width: 120, height: 36 }));
+    const scrollToTarget = jest.fn();
+    let latest: ReturnType<typeof useRouteReorderTour> | undefined;
+    function Probe() {
+      latest = useRouteReorderTour({
+        routeOverlayOpenComplete: true,
+        isLeader: true,
+        canEditItinerary: true,
+        gatheringPointCount: 1,
+        accountId: 'user-a',
+        accountPreferences: { routeReorderTourCompleted: false },
+        measureTarget,
+        scrollToTarget,
+      });
+      return null;
+    }
+
+    const root = create(React.createElement(Probe));
+    for (let i = 0; i < 5 && !latest?.tourActive; i += 1) await flushRouteTour();
+    expect(latest?.tourActive).toBe(true);
+    expect(latest?.step?.id).toBe('routeMode');
+    expect(latest?.targetRect).toEqual({ x: 8, y: 12, width: 120, height: 36 });
+    expect(measureTarget).toHaveBeenCalledTimes(6);
+
+    await act(async () => latest?.onNext());
+    await flushRouteTour();
+    expect(latest?.step?.id).toBe('routeDate');
+    expect(scrollToTarget).toHaveBeenCalledWith('routeDate');
+
+    await act(async () => latest?.onPrev());
+    await flushRouteTour();
+    expect(latest?.step?.id).toBe('routeMode');
+
+    for (let i = 0; i < ROUTE_REORDER_TOUR_STEPS.length; i += 1) {
+      await act(async () => latest?.onNext());
+      await flushRouteTour();
+    }
+    expect(latest?.tourActive).toBe(false);
+    expect(updateProfile).toHaveBeenCalledWith({
+      preferences: expect.objectContaining({ routeReorderTourCompleted: true }),
+    });
+    root.unmount();
   });
 
   it('wires the tour to route-sheet completion and target refs without invoking route actions', () => {
