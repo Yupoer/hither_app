@@ -126,16 +126,12 @@ describe('featureTour barrel public seams', () => {
 });
 
 describe('holeRadius compact vs card', () => {
-  it('compact chips are circular; card corners stay ≤ 16', () => {
+  it('every highlight kind is a sharp rectangle (radius 0)', () => {
     const chip = paddedHole({ x: 20, y: 80, width: 52, height: 52 });
-    const compactR = holeRadius(chip, 'compact');
-    expect(compactR).toBe(Math.min(chip.w, chip.h) / 2);
-    expect(compactR).toBeGreaterThan(16);
+    expect(holeRadius(chip, 'compact')).toBe(0);
 
     const card = paddedHole({ x: 8, y: 80, width: 360, height: 240 });
-    const cardR = holeRadius(card, 'card');
-    expect(cardR).toBeLessThanOrEqual(16);
-    expect(cardR).toBe(16);
+    expect(holeRadius(card, 'card')).toBe(0);
 
     expect(holeKindForTarget('externalMaps')).toBe('compact');
     expect(holeKindForTarget('avatar')).toBe('compact');
@@ -158,9 +154,8 @@ describe('holeRadius compact vs card', () => {
 });
 
 describe('overlay cutout r matches ring r', () => {
-  it('passes the same radius to corners and ring', async () => {
+  it('draws a rectangular ring with no corner patches', async () => {
     const targetRect = { x: 20, y: 80, width: 52, height: 52 };
-    const expected = holeRadius(paddedHole(targetRect), 'compact');
     let tree: ReturnType<typeof create>;
     await act(async () => {
       tree = create(
@@ -177,14 +172,27 @@ describe('overlay cutout r matches ring r', () => {
       );
     });
     const ring = tree!.root.findAll((n) => n.props.testID === 'tour-hole-ring')[0];
-    expect(flattenStyle(ring.props.style).borderRadius).toBe(expected);
+    expect(flattenStyle(ring.props.style).borderRadius).toBe(0);
     const corners = tree!.root.findAll((n) => n.props.testID === 'tour-hole-corner');
-    expect(corners.length).toBe(4);
-    for (const corner of corners) {
-      const st = flattenStyle(corner.props.style);
-      expect(st.width).toBe(expected);
-      expect(st.height).toBe(expected);
-    }
+    expect(corners).toHaveLength(0);
+  });
+});
+
+describe('overlay chrome fades together', () => {
+  it('fades dim/ring/card on one opacity and never snaps to 0 on step change', () => {
+    const { readFileSync } = require('node:fs') as typeof import('node:fs');
+    const { join } = require('node:path') as typeof import('node:path');
+    const overlaySrc = readFileSync(
+      join(__dirname, '../featureTour/GroupFeatureTourOverlay.tsx'),
+      'utf8',
+    );
+    expect(overlaySrc).toContain('FADE_OUT_MS = 150');
+    expect(overlaySrc).toContain('FADE_IN_MS = 180');
+    expect(overlaySrc).toContain('CTA_RESERVE_PX');
+    expect(overlaySrc).toContain('setTransitioning(true)');
+    expect(overlaySrc).not.toMatch(
+      /if \(!visible\) \{\s*opacity\.setValue\(0\);\s*return;\s*\}\s*if \(reduceMotion\) \{\s*opacity\.setValue\(1\);\s*return;\s*\}\s*opacity\.setValue\(0\);/,
+    );
   });
 });
 
@@ -310,10 +318,26 @@ describe('placeTourCard huge hole stays in the safe viewport', () => {
     });
     const topSafe = 47 + 12;
     const bottomSafe = 844 - 34 - 12;
+    expect(placed.placeAbove).toBe(false);
     expect(placed.cardTop).toBeGreaterThanOrEqual(topSafe);
     expect(placed.cardTop).toBeLessThan(bottomSafe);
     expect(placed.maxCardHeight).toBeGreaterThanOrEqual(140);
     expect(placed.cardTop + Math.min(160, placed.maxCardHeight)).toBeLessThanOrEqual(bottomSafe);
+  });
+
+  it('places the tooltip below an expanded gather card near the top', () => {
+    const placed = placeTourCard({
+      hole: { x: 8, y: 80, w: 374, h: 420 },
+      windowWidth: 390,
+      windowHeight: 844,
+      insets: { top: 47, bottom: 34 },
+      cardHeight: 160,
+    });
+    expect(placed.placeAbove).toBe(false);
+    expect(placed.cardTop).toBeGreaterThanOrEqual(80 + 420);
+    const bottomSafe = 844 - 34 - 12;
+    expect(placed.cardTop + Math.min(160, placed.maxCardHeight)).toBeLessThanOrEqual(bottomSafe);
+    expect(placed.maxCardHeight).toBeGreaterThanOrEqual(140);
   });
 });
 
@@ -403,14 +427,16 @@ describe('hook onPrev + canGoPrev', () => {
 });
 
 describe('MapScreen wires prev + members highlight', () => {
-  it('passes onPrev/canGoPrev and keeps paneMembers on status+list', () => {
+  it('passes onPrev/canGoPrev and highlights the members tab', () => {
     const { readFileSync } = require('node:fs') as typeof import('node:fs');
     const { join } = require('node:path') as typeof import('node:path');
     const map = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
     expect(map).toContain('onPrev={onTourPrev}');
     expect(map).toContain('canGoPrev={tourCanGoPrev}');
     expect(map).toContain('targetKind={holeKindForTarget(tourStep?.target)}');
-    expect(map).toContain('tour-members-content');
-    expect(map).toContain("setTourTargetRef('paneMembers'");
+    expect(map).not.toContain('tour-members-content');
+    expect(map).toContain("'paneMembers'");
+    expect(map).toContain("setTourTargetRef('search'");
+    expect(map).toContain('clearAddPlaceTour');
   });
 });

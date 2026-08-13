@@ -17,6 +17,7 @@ export type TourTargetId =
   | 'stageTwoPlacement'
   | 'avatar'
   | 'settings'
+  | 'search'
   | 'addPlaceFavoriteStar'
   | 'addPlaceCenter';
 
@@ -35,6 +36,7 @@ export type TourStepId =
   | 'paneStore'
   | 'avatar'
   | 'settings'
+  | 'search'
   | 'getStarted';
 
 export interface TourStepDef {
@@ -187,6 +189,12 @@ export const TOUR_STEPS: readonly TourStepDef[] = [
     target: 'settings',
     titleKey: 'tour.settings.title',
     bodyKey: 'tour.settings.body',
+  },
+  {
+    id: 'search',
+    target: 'search',
+    titleKey: 'tour.search.title',
+    bodyKey: 'tour.search.body',
   },
   {
     id: 'getStarted',

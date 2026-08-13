@@ -458,6 +458,8 @@ describe('R3: reset replay with stale account prefs', () => {
     expect(map).toContain('groupFeatureTourCompleted: false');
     expect(map).toContain('updateProfile');
     expect(map).toContain('clearGroupFeatureTour');
+    expect(map).toContain('clearAddPlaceTour');
+    expect(map).toContain('addPlaceTourCompleted: false');
     expect(map).toContain('markOnboardingReplayForHome');
   });
 

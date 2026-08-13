@@ -39,9 +39,12 @@ describe('group feature tour step order', () => {
     expect(ids).toContain('paneStore');
     expect(ids).toContain('avatar');
     expect(ids).toContain('settings');
+    expect(ids).toContain('search');
+    expect(ids.indexOf('search')).toBeGreaterThan(ids.indexOf('settings'));
+    expect(ids.indexOf('search')).toBeLessThan(ids.indexOf('getStarted'));
     expect(ids[ids.length - 1]).toBe('getStarted');
     expect(stepCount()).toBe(TOUR_STEPS.length);
-    expect(stepCount()).toBeGreaterThanOrEqual(15);
+    expect(stepCount()).toBeGreaterThanOrEqual(16);
   });
 
   it('omits nav and personal-arrive when those controls are unavailable', () => {

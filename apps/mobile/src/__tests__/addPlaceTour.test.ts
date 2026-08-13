@@ -5,8 +5,10 @@ import {
   addPlaceTourAccountSyncPendingKey,
   addPlaceTourStorageKey,
   areAddPlaceTourTargetsReady,
+  clearAddPlaceTour,
   completeAddPlaceTour,
   isAddPlaceTourCompletedFromSources,
+  readAddPlaceTourCompletedLocal,
   isMeasuredTourRect,
   parseAddPlaceTourAccountSyncPending,
   readAddPlaceTourAccountSyncPending,
@@ -36,6 +38,31 @@ describe('Add Place tour (#162)', () => {
     expect(ADD_PLACE_TOUR_STEPS[1].targetTestId).toBe('add-place-center-btn');
     expect(ADD_PLACE_TOUR_STEPS[0].target).toBe('addPlaceFavoriteStar');
     expect(ADD_PLACE_TOUR_STEPS[1].target).toBe('addPlaceCenter');
+  });
+
+  it('clearAddPlaceTour resets local and account so the tour can start again', async () => {
+    await completeAddPlaceTour({
+      accountId: 'user-a',
+      existingPreferences: { addPlaceTourCompleted: true },
+    });
+    expect(await readAddPlaceTourCompletedLocal('user-a')).toBe(true);
+    updateProfile.mockClear();
+    await clearAddPlaceTour({
+      accountId: 'user-a',
+      existingPreferences: { addPlaceTourCompleted: true },
+    });
+    expect(await readAddPlaceTourCompletedLocal('user-a')).toBe(false);
+    expect(updateProfile).toHaveBeenCalledWith({
+      preferences: expect.objectContaining({ addPlaceTourCompleted: false }),
+    });
+    expect(
+      shouldStartAddPlaceTour({
+        pendingPlaceVisible: true,
+        targetsReady: true,
+        localCompleted: false,
+        accountPreferences: { addPlaceTourCompleted: false },
+      }),
+    ).toBe(true);
   });
 
   it('does not share group tour completion flag', () => {

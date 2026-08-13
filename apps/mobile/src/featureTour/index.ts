@@ -53,6 +53,7 @@ export {
   addPlaceTourAccountSyncPendingKey,
   addPlaceTourStorageKey,
   areAddPlaceTourTargetsReady,
+  clearAddPlaceTour,
   completeAddPlaceTour,
   isAddPlaceTourCompletedFromSources,
   isMeasuredTourRect,

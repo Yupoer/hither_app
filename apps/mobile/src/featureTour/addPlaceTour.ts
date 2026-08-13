@@ -257,6 +257,36 @@ export async function retryPendingAddPlaceTourAccountSync(opts: {
   }
 }
 
+/**
+ * Reset prefs: clear local + account completion so the next confirm card
+ * replays star → center. Pending record is the desired false until the
+ * profile write succeeds.
+ */
+export async function clearAddPlaceTour(opts: {
+  accountId?: string | null;
+  existingPreferences?: AccountPreferences | null;
+}): Promise<void> {
+  await writeAddPlaceTourCompletedLocal(false, opts.accountId);
+  if (!opts.accountId) return;
+  const next: AccountPreferences = {
+    ...(opts.existingPreferences ?? {}),
+    addPlaceTourCompleted: false,
+  };
+  try {
+    await updatePreferencesOnAccount(next);
+    await writeAddPlacePendingRecord(opts.accountId, null);
+  } catch {
+    try {
+      await writeAddPlacePendingRecord(opts.accountId, {
+        accountId: opts.accountId,
+        completed: false,
+      });
+    } catch {
+      // Pending marker is best-effort.
+    }
+  }
+}
+
 export function shouldStartAddPlaceTour(input: {
   pendingPlaceVisible: boolean;
   targetsReady: boolean;

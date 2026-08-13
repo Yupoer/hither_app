@@ -46,14 +46,12 @@ export function paddedHole(rect: {
   };
 }
 
-/** Shared radius for the dim cutout corners and the white ring. */
+/** Highlight cutout and ring are axis-aligned rectangles — never rounded. */
 export function holeRadius(
-  padded: { w: number; h: number },
-  kind: OverlayHoleKind,
+  _padded: { w: number; h: number },
+  _kind: OverlayHoleKind,
 ): number {
-  const halfMin = Math.min(padded.w, padded.h) / 2;
-  if (kind === 'compact') return halfMin;
-  return Math.min(HOLE_RADIUS, halfMin);
+  return 0;
 }
 
 /** Intersect a measured rect with the window. Zero/negative size → null. */
@@ -117,26 +115,27 @@ export function placeTourCard(input: PlaceTourCardInput): PlaceTourCardResult {
     };
   }
 
-  const placeAbove = input.hole.y + input.hole.h > input.windowHeight * 0.55;
   const spaceAbove = input.hole.y - gap - topSafe;
   const spaceBelow = bottomSafe - (input.hole.y + input.hole.h + gap);
 
-  // Huge hole: no usable band above or below — ignore the hole and pin
-  // the card into the safe viewport (prefer bottom; top if bottom is worse).
+  // Huge hole: both bands too small — pin to the bottom safe edge so the
+  // CTA stays tappable instead of clipping into the sliver above the card.
   const PIN_MIN = 140;
   if (spaceAbove < PIN_MIN && spaceBelow < PIN_MIN) {
     const maxH = Math.max(PIN_MIN, usable);
     const usedH = Math.min(cardH, maxH);
-    const pinToTop = spaceBelow < spaceAbove;
-    const top = pinToTop ? topSafe : Math.max(topSafe, bottomSafe - usedH);
+    const top = Math.max(topSafe, bottomSafe - usedH);
     return {
       cardTop: Math.min(top, Math.max(topSafe, bottomSafe - Math.min(usedH, usable))),
       maxCardHeight: maxH,
-      placeAbove: pinToTop,
+      placeAbove: false,
     };
   }
 
-  if (placeAbove) {
+  // Prefer the band below the hole. The 55%-from-top rule used to force
+  // expanded gather cards into a ~100px strip above the card and hide the CTA.
+  const preferBelow = spaceBelow >= spaceAbove || spaceBelow >= PIN_MIN;
+  if (!preferBelow) {
     const maxH = Math.max(100, spaceAbove);
     const usedH = Math.min(cardH, maxH);
     const top = Math.max(topSafe, input.hole.y - gap - usedH);
@@ -144,12 +143,10 @@ export function placeTourCard(input: PlaceTourCardInput): PlaceTourCardResult {
   }
 
   const maxH = Math.max(100, spaceBelow);
-  const top = Math.min(
-    input.hole.y + input.hole.h + gap,
-    bottomSafe - Math.min(cardH, maxH),
-  );
+  const top = input.hole.y + input.hole.h + gap;
+  const usedH = Math.min(cardH, maxH);
   return {
-    cardTop: Math.max(topSafe, top),
+    cardTop: Math.max(topSafe, Math.min(top, bottomSafe - usedH)),
     maxCardHeight: maxH,
     placeAbove: false,
   };
