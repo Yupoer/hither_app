@@ -8,6 +8,7 @@ const { act, create } = require('react-test-renderer') as {
     root: {
       findAllByProps: (props: Record<string, unknown>) => Array<{ props: Record<string, any> }>;
     };
+    update: (element: React.ReactElement) => void;
   };
 };
 
