@@ -231,4 +231,49 @@ describe('LiveActivityLifecycleReconciler (#146)', () => {
     expect(reconciler.currentHandle).toBeNull();
     expect(api.startGroupActivity).toHaveBeenCalledTimes(1);
   });
+
+  it('starts locally when no PTS handle exists and ends on dispose', async () => {
+    const api = {
+      endGroupActivity: jest.fn(async () => undefined),
+      endAllGroupActivities: jest.fn(async () => undefined),
+      startGroupActivity: jest.fn(async () => ({
+        activityId: 'local-1',
+        pushToken: 'tok-1',
+      })),
+      deleteSession: jest.fn(async () => undefined),
+      deleteAllSessions: jest.fn(async () => undefined),
+      listGroupActivities: jest.fn(async () => []),
+    };
+    const reconciler = new LiveActivityLifecycleReconciler(api);
+    await reconciler.request({ kind: 'start', destinationId: 'd1' });
+    expect(reconciler.currentHandle).toBe('local-1');
+    expect(reconciler.isCurrent(reconciler['generation'])).toBe(true);
+
+    await reconciler.request({ kind: 'start', destinationId: 'd2' });
+    expect(api.endGroupActivity).toHaveBeenCalledWith('local-1');
+    expect(reconciler.currentDestinationId).toBe('d2');
+
+    await reconciler.request({ kind: 'stop', clearSessions: true });
+    expect(api.deleteAllSessions).toHaveBeenCalled();
+    expect(reconciler.currentHandle).toBeNull();
+
+    await reconciler.dispose();
+    expect(api.endAllGroupActivities).toHaveBeenCalled();
+  });
+
+  it('skips start when permission is denied', async () => {
+    const api = {
+      endGroupActivity: jest.fn(async () => undefined),
+      endAllGroupActivities: jest.fn(async () => undefined),
+      startGroupActivity: jest.fn(async () => ({ activityId: 'x' })),
+      deleteSession: jest.fn(async () => undefined),
+      deleteAllSessions: jest.fn(async () => undefined),
+      listGroupActivities: jest.fn(async () => []),
+      ensureStartPermission: jest.fn(async () => false),
+    };
+    const reconciler = new LiveActivityLifecycleReconciler(api);
+    await reconciler.request({ kind: 'start', destinationId: 'd1' });
+    expect(api.startGroupActivity).not.toHaveBeenCalled();
+    expect(reconciler.currentHandle).toBeNull();
+  });
 });

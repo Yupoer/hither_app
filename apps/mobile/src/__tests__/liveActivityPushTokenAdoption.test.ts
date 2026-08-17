@@ -20,6 +20,7 @@ let pushTokenListener:
       navigationSessionId?: string;
     }) => void)
   | null = null;
+let pushToStartListener: ((event: { token: string | null }) => void) | null = null;
 
 jest.mock('../api/services/LiveActivityService', () => ({
   upsertLiveActivitySession: (...args: unknown[]) =>
@@ -47,13 +48,14 @@ jest.mock('../state/diagnostics', () => ({
 jest.mock('../utils/liveActivityTokenGate', () => ({
   getSharedLiveActivityTokenGate: () => ({
     ready: async () => undefined,
-    shouldRegister: () => ({ action: 'skip' }),
+    shouldRegister: () => ({ action: 'register' }),
     recordResult: jest.fn(),
   }),
 }));
 
+const platform = { OS: 'ios' };
 jest.mock('react-native', () => ({
-  Platform: { OS: 'ios' },
+  Platform: platform,
 }));
 
 jest.mock('../native', () => ({
@@ -68,7 +70,10 @@ jest.mock('../native', () => ({
       pushTokenListener = cb;
       return { remove: jest.fn() };
     },
-    addPushToStartTokenListener: jest.fn(() => ({ remove: jest.fn() })),
+    addPushToStartTokenListener: jest.fn((cb: (event: { token: string | null }) => void) => {
+      pushToStartListener = cb;
+      return { remove: jest.fn() };
+    }),
     startPushToStartTokenObservation: jest.fn().mockResolvedValue(undefined),
     endAllGroupActivities: jest.fn().mockResolvedValue(undefined),
     endGroupActivity: jest.fn().mockResolvedValue(undefined),
@@ -77,6 +82,7 @@ jest.mock('../native', () => ({
       pushToken: 'tok-start',
     }),
     observeExistingActivities: jest.fn().mockResolvedValue(undefined),
+    listGroupActivities: jest.fn().mockResolvedValue([]),
     updateGroupActivity: jest.fn().mockResolvedValue(undefined),
     updateAllGroupActivities: jest.fn().mockResolvedValue(undefined),
   },
@@ -88,7 +94,10 @@ jest.mock('../native', () => ({
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { act, create } = require('react-test-renderer') as {
   act: (callback: () => void | Promise<void>) => void | Promise<void>;
-  create: (element: React.ReactElement) => { unmount: () => void };
+  create: (element: React.ReactElement) => {
+    update: (nextElement: React.ReactElement) => void;
+    unmount: () => void;
+  };
 };
 
 describe('decidePushTokenAdoption (#146 Sol)', () => {
@@ -313,6 +322,175 @@ describe('useLiveActivity push-token production seam (#146 Sol r3)', () => {
       }),
     );
 
+    await act(async () => {
+      tree.unmount();
+    });
+  });
+
+  it('starts one activity when active and entitled, then clears on unmount', async () => {
+    const { useLiveActivity, clearLiveActivities } = require('../state/useLiveActivity') as typeof import('../state/useLiveActivity');
+    const { liveActivity } = require('../native') as {
+      liveActivity: { startGroupActivity: jest.Mock; listGroupActivities: jest.Mock };
+    };
+    const session = {
+      groupId: 'g1',
+      navigationSessionId: 'nav-1',
+      destinationId: 'd1',
+      initialDistanceM: 1000,
+      travelMode: 'walk' as const,
+    };
+    const state = {
+      groupName: 'Team',
+      gatheringTitle: 'Station',
+      distanceMeters: 980,
+      etaSeconds: 720,
+      progress: 0.02,
+    };
+    let tree: { unmount: () => void };
+    await act(async () => {
+      tree = create(
+        React.createElement(function Harness() {
+          useLiveActivity(true, state as never, session, true);
+          return null;
+        }),
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(liveActivity.listGroupActivities).toHaveBeenCalled();
+    expect(liveActivity.startGroupActivity).toHaveBeenCalled();
+    expect(mockUpsertLiveActivitySession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        progress: 0.02,
+        currentDistanceM: 980,
+      }),
+    );
+    await act(async () => {
+      tree.unmount();
+    });
+    await expect(clearLiveActivities()).resolves.toBeUndefined();
+    await expect(clearLiveActivities({ groupIds: ['g1'] })).resolves.toBeUndefined();
+  });
+
+  it('updates the live handle and stops when the journey ends', async () => {
+    const { useLiveActivity } = require('../state/useLiveActivity') as typeof import('../state/useLiveActivity');
+    const session = {
+      groupId: 'g1',
+      navigationSessionId: 'nav-1',
+      destinationId: 'd1',
+      initialDistanceM: 1000,
+      travelMode: 'walk' as const,
+    };
+    let active = true;
+    let state = {
+      groupName: 'Team',
+      gatheringTitle: 'Station',
+      distanceMeters: 900,
+      etaSeconds: 600,
+      progress: 0.1,
+      memberEmojis: ['🐑'],
+      memberArrived: [false],
+    };
+    let setProps: (next: { active?: boolean; state?: typeof state }) => void = () => undefined;
+    function Harness() {
+      const [cur, setCur] = React.useState({ active, state });
+      setProps = (next) => setCur((prev) => ({ ...prev, ...next }));
+      useLiveActivity(cur.active, cur.state as never, session, true);
+      return null;
+    }
+    let tree: { unmount: () => void };
+    await act(async () => {
+      tree = create(React.createElement(Harness));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      pushToStartListener?.({ token: 'pts-token' });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      setProps({
+        state: { ...state, distanceMeters: 700, progress: 0.3, etaSeconds: 400 },
+      });
+      await Promise.resolve();
+    });
+    await act(async () => {
+      setProps({ active: false });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      tree.unmount();
+    });
+    expect(mockDeleteMyLiveActivitySessions).toHaveBeenCalled();
+  });
+
+  it('records token register outcomes and skips persist without a live distance', async () => {
+    const { useLiveActivity } = require('../state/useLiveActivity') as typeof import('../state/useLiveActivity');
+    mockUpsertDeviceActivityToken
+      .mockResolvedValueOnce('reclaimed_own_token')
+      .mockRejectedValueOnce(new Error('net'))
+      .mockResolvedValueOnce('foreign_token_conflict');
+    const session = {
+      groupId: 'g1',
+      destinationId: 'd1',
+      initialDistanceM: 1000,
+      travelMode: 'walk' as const,
+    };
+    await act(async () => {
+      create(
+        React.createElement(function Harness() {
+          useLiveActivity(true, { groupName: 'T' } as never, session, true);
+          return null;
+        }),
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      pushToStartListener?.({ token: 'pts-a' });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(mockUpsertLiveActivitySession).not.toHaveBeenCalled();
+  });
+
+  it('leaves a hydrating journey alone and stops when destination is lost', async () => {
+    const { useLiveActivity } = require('../state/useLiveActivity') as typeof import('../state/useLiveActivity');
+    let dest: string | undefined = 'd1';
+    function Harness({ hasSession, destinationId }: { hasSession: boolean; destinationId?: string }) {
+      useLiveActivity(
+        true,
+        { groupName: 'T', distanceMeters: 10 } as never,
+        hasSession
+          ? {
+              groupId: 'g1',
+              destinationId: destinationId as string,
+              initialDistanceM: 10,
+              travelMode: 'walk',
+            }
+          : undefined,
+        true,
+      );
+      return null;
+    }
+    let tree: { update: (el: React.ReactElement) => void; unmount: () => void } = {
+      update: () => undefined,
+      unmount: () => undefined,
+    };
+    await act(async () => {
+      tree = create(React.createElement(Harness, { hasSession: false }));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      tree.update(React.createElement(Harness, { hasSession: true, destinationId: dest }));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      tree.update(React.createElement(Harness, { hasSession: true, destinationId: undefined }));
+      await Promise.resolve();
+    });
     await act(async () => {
       tree.unmount();
     });

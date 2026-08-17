@@ -30,6 +30,14 @@ export type LiveActivityStopIntent = {
 
 export type LiveActivityIntent = LiveActivityStartIntent | LiveActivityStopIntent;
 
+async function settle(task: Promise<unknown>): Promise<void> {
+  try {
+    await task;
+  } catch {
+    // Native / session cleanup is best-effort.
+  }
+}
+
 export class LiveActivityLifecycleReconciler {
   private generation = 0;
   private queue: Promise<void> = Promise.resolve();
@@ -94,16 +102,22 @@ export class LiveActivityLifecycleReconciler {
     return generation === this.generation;
   }
 
+  private async listExisting(): Promise<{ activityId: string; pushToken?: string }[]> {
+    try {
+      return (await this.api.listGroupActivities?.()) ?? [];
+    } catch {
+      return [];
+    }
+  }
+
   /**
    * Enqueue intent. Concurrent requests serialize; only the latest generation
    * may mutate handle / call end-all after awaits.
    */
   request(intent: LiveActivityIntent): Promise<void> {
     const generation = this.nextGeneration();
-    const run = this.queue
-      .catch(() => undefined)
-      .then(() => this.execute(generation, intent));
-    this.queue = run.catch(() => undefined);
+    const run = settle(this.queue).then(() => this.execute(generation, intent));
+    this.queue = settle(run);
     return run;
   }
 
@@ -133,7 +147,7 @@ export class LiveActivityLifecycleReconciler {
     }
 
     const existing = this.api.listGroupActivities
-      ? await this.api.listGroupActivities().catch(() => [])
+      ? await this.listExisting()
       : [];
     if (!this.isCurrent(generation)) return;
     if (existing.length > 0 && !this.handle) {
@@ -142,8 +156,8 @@ export class LiveActivityLifecycleReconciler {
       this.pushToken = primary.pushToken;
       this.destinationId = intent.destinationId;
       for (const orphan of orphans) {
-        await this.api.endGroupActivity(orphan.activityId).catch(() => undefined);
-        await this.api.deleteSession(orphan.activityId).catch(() => undefined);
+        await settle(this.api.endGroupActivity(orphan.activityId));
+        await settle(this.api.deleteSession(orphan.activityId));
       }
       return;
     }
@@ -155,12 +169,12 @@ export class LiveActivityLifecycleReconciler {
     this.destinationId = intent.destinationId;
 
     if (previousId) {
-      await this.api.endGroupActivity(previousId).catch(() => undefined);
-      await this.api.deleteSession(previousId).catch(() => undefined);
+      await settle(this.api.endGroupActivity(previousId));
+      await settle(this.api.deleteSession(previousId));
       if (!this.isCurrent(generation)) return;
     }
 
-    await this.api.endAllGroupActivities().catch(() => undefined);
+    await settle(this.api.endAllGroupActivities());
     if (!this.isCurrent(generation)) return;
 
     let result: { activityId: string; pushToken?: string } | null = null;
@@ -176,8 +190,8 @@ export class LiveActivityLifecycleReconciler {
     if (!this.isCurrent(generation)) {
       // Newer intent owns lifecycle — do not end-all (would kill the new one).
       if (result?.activityId) {
-        await this.api.endGroupActivity(result.activityId).catch(() => undefined);
-        await this.api.deleteSession(result.activityId).catch(() => undefined);
+        await settle(this.api.endGroupActivity(result.activityId));
+        await settle(this.api.deleteSession(result.activityId));
       }
       return;
     }
@@ -199,16 +213,16 @@ export class LiveActivityLifecycleReconciler {
     this.pushToken = undefined;
 
     if (activityId) {
-      await this.api.endGroupActivity(activityId).catch(() => undefined);
-      await this.api.deleteSession(activityId).catch(() => undefined);
+      await settle(this.api.endGroupActivity(activityId));
+      await settle(this.api.deleteSession(activityId));
       if (!this.isCurrent(generation)) return;
     }
 
-    await this.api.endAllGroupActivities().catch(() => undefined);
+    await settle(this.api.endAllGroupActivities());
     if (!this.isCurrent(generation)) return;
 
     if (clearSessions) {
-      await this.api.deleteAllSessions().catch(() => undefined);
+      await settle(this.api.deleteAllSessions());
     }
   }
 
