@@ -246,6 +246,48 @@
       "acceptance": "A7 zh/en catalogs include the new account.delete* keys with identical key sets.",
       "testFile": "accountDeletionContract.test.ts",
       "testNamePattern": "adds matching zh/en account.delete* keys"
+    },
+    {
+      "parent": 199,
+      "child": 201,
+      "acceptance": "A1 Login (pre-login sign-up methods) shows LanguagePicker and switching updates copy immediately.",
+      "testFile": "languagePickerContract.test.ts",
+      "testNamePattern": "shows LanguagePicker on Login without hiding it behind a session"
+    },
+    {
+      "parent": 199,
+      "child": 201,
+      "acceptance": "A2 RoleSelect shows LanguagePicker even when user is null.",
+      "testFile": "languagePickerContract.test.ts",
+      "testNamePattern": "shows LanguagePicker on RoleSelect even when user is null"
+    },
+    {
+      "parent": 199,
+      "child": 201,
+      "acceptance": "A3 Auth leader and Auth follower both show LanguagePicker.",
+      "testFile": "languagePickerContract.test.ts",
+      "testNamePattern": "shows LanguagePicker on Auth for both leader and follower"
+    },
+    {
+      "parent": 199,
+      "child": 201,
+      "acceptance": "A4 Picker writes existing setLanguage / pref.language. No restart path.",
+      "testFile": "languagePicker.test.ts",
+      "testNamePattern": "calls setLanguage for zh and en without a restart path"
+    },
+    {
+      "parent": 199,
+      "child": 201,
+      "acceptance": "A5 Settings overlay still uses its Segmented language control; no new locale.",
+      "testFile": "languagePickerContract.test.ts",
+      "testNamePattern": "keeps Settings overlay on Segmented language control"
+    },
+    {
+      "parent": 199,
+      "child": 201,
+      "acceptance": "A6 zh/en key sets stay identical (new a11y keys if added).",
+      "testFile": "languagePickerContract.test.ts",
+      "testNamePattern": "keeps zh/en catalogs key-identical after picker keys"
     }
   ]
 }

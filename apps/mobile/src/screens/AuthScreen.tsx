@@ -26,6 +26,7 @@ import { logEvent, logError } from '../utils/activityLog';
 import { runUiAction, type UiActionToken } from '../utils/uiAction';
 import { confirmDeleteAccount } from '../utils/deleteAccount';
 import SafePressable from '../components/SafePressable';
+import LanguagePicker from '../components/LanguagePicker';
 import { mediumTap } from '../utils/haptics';
 import { classifyAnonymousAccessError } from '../anonymousAccess';
 
@@ -153,16 +154,21 @@ export default function AuthScreen({ navigation, route }: Props) {
             {/* Only render Back when there is somewhere to go — after an
                 end-group/sign-out reset this screen can be the stack root, and an
                 unconditional goBack() throws "GO_BACK was not handled". */}
-            {navigation.canGoBack() && (
-              <Pressable
-                onPress={() => navigation.goBack()}
-                accessibilityRole="button"
-                accessibilityLabel="Back"
-                style={styles.back}
-              >
-                <Ionicons name="chevron-back" size={22} color="rgba(255,255,255,0.7)" />
-              </Pressable>
-            )}
+            <View style={styles.topChrome}>
+              {navigation.canGoBack() ? (
+                <Pressable
+                  onPress={() => navigation.goBack()}
+                  accessibilityRole="button"
+                  accessibilityLabel="Back"
+                  style={styles.back}
+                >
+                  <Ionicons name="chevron-back" size={22} color="rgba(255,255,255,0.7)" />
+                </Pressable>
+              ) : (
+                <View style={styles.backSpacer} />
+              )}
+              <LanguagePicker />
+            </View>
 
             <Text style={styles.kicker}>
               {isLeader ? t('auth.leaderKicker') : t('auth.followerKicker')}
@@ -360,6 +366,12 @@ const makeStyles = (accent: string) =>
   StyleSheet.create({
     fill: { flex: 1 },
     content: { flex: 1, paddingHorizontal: 24 },
+    topChrome: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    backSpacer: { width: 44, height: 44 },
     back: {
       width: 44,
       height: 44,

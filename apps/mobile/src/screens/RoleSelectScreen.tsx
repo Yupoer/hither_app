@@ -20,6 +20,7 @@ import { logEvent } from '../utils/activityLog';
 import { runUiAction } from '../utils/uiAction';
 import { confirmDeleteAccount } from '../utils/deleteAccount';
 import CrookIcon from '../components/CrookIcon';
+import LanguagePicker from '../components/LanguagePicker';
 import { useSession } from '../state/SessionContext';
 import {
   getCachedMyJoinedGroups,
@@ -96,6 +97,9 @@ export default function RoleSelectScreen({ navigation }: Props) {
       locations={[0, 0.52, 1]}
       style={styles.fill}
     >
+      <View style={[styles.langChrome, { top: insets.top + 16 }]}>
+        <LanguagePicker />
+      </View>
       {navigation.canGoBack() && (
         <Pressable
           onPress={() => navigation.goBack()}
@@ -244,6 +248,13 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     // elevation:0 — translucent rounded chrome must not cast Android shadow frames
     elevation: 0,
+    zIndex: 10,
+  },
+  langChrome: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
     zIndex: 10,
   },
   logout: {
