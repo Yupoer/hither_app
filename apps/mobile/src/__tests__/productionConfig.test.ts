@@ -137,6 +137,7 @@ describe('production mobile configuration', () => {
       'hither-live-activity/ios/HitherLiveActivity.podspec',
       'hither-maps/ios/HitherMaps.podspec',
       'hither-notifications/ios/HitherNotifications.podspec',
+      'hither-menu/ios/HitherMenu.podspec',
     ];
     for (const path of podspecs) {
       expect(readFileSync(join(__dirname, '../../modules', path), 'utf8'))

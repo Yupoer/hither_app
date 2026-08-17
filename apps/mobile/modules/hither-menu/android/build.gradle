@@ -1,0 +1,14 @@
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+apply plugin: 'expo-module-gradle-plugin'
+
+group = 'expo.modules.hithermenu'
+version = '0.1.0'
+
+android {
+  namespace 'expo.modules.hithermenu'
+  defaultConfig {
+    minSdkVersion 24
+    versionName '0.1.0'
+  }
+}

@@ -10,6 +10,17 @@ const auth = src('screens/AuthScreen.tsx');
 const picker = src('components/LanguagePicker.tsx');
 const helper = src('utils/showLanguageChoice.ts');
 const settings = src('screens/MapScreen/components/SettingsOverlay.tsx');
+const iosMenu = readFileSync(
+  join(__dirname, '../../modules/hither-menu/ios/HitherMenuModule.swift'),
+  'utf8',
+);
+const androidMenu = readFileSync(
+  join(
+    __dirname,
+    '../../modules/hither-menu/android/src/main/java/expo/modules/hithermenu/HitherMenuModule.kt',
+  ),
+  'utf8',
+);
 
 describe('language picker placement contract', () => {
   it('shows LanguagePicker on Login without hiding it behind a session', () => {
@@ -56,8 +67,9 @@ describe('language picker placement contract', () => {
     expect(picker).toContain("variant = 'segmented'");
     expect(picker).toContain("variant === 'menu'");
     expect(picker).toContain('chevron-down');
-    expect(picker).toContain('showLanguageChoice');
+    expect(picker).toContain('NativeMenuHost');
     expect(picker).toContain('lightTap');
+    expect(picker).not.toContain('showLanguageChoice(');
     expect(helper).toContain("key: 'zh'");
     expect(helper).toContain("key: 'en'");
     expect(helper).toContain("'中文'");
@@ -68,15 +80,21 @@ describe('language picker placement contract', () => {
     expect(picker).not.toContain('切換語言');
   });
 
-  it('opens language choice through the native helper', () => {
-    expect(helper).toContain('ActionSheetIOS.showActionSheetWithOptions');
-    expect(helper).toContain("userInterfaceStyle: 'dark'");
-    expect(helper).toContain('cancelButtonIndex: 0');
-    expect(helper).toContain('Alert.alert');
-    expect(helper).toContain("'中文'");
-    expect(helper).toContain("'English'");
-    expect(helper).toMatch(/key === current/);
-    expect(helper).not.toMatch(/@react-native-menu|UIMenu/);
+  it('opens the RoleSelect menu only through hither-menu UIMenu', () => {
+    const menu = src('native/menu.ts');
+    expect(menu).toContain("requireOptionalNativeModule('HitherMenu')");
+    expect(menu).toContain('requireNativeViewManager');
+    expect(menu).toContain('isNativeMenuAvailable');
+    expect(picker).toContain('NativeMenuHost');
+    expect(picker).not.toContain('ActionSheetIOS');
+    expect(picker).not.toContain('Alert.alert');
+    expect(picker).not.toContain('showLanguageChoice(');
+    expect(roleSelect).not.toContain('ActionSheetIOS');
+    expect(iosMenu).toContain('showsMenuAsPrimaryAction');
+    expect(iosMenu).toContain('UIMenu');
+    expect(androidMenu).toContain('PopupMenu');
+    expect(androidMenu).not.toContain('Dialog');
+    expect(androidMenu).not.toContain('BottomSheet');
   });
 
   it('keeps Settings language as a NavRow that pushes a right-slide child', () => {

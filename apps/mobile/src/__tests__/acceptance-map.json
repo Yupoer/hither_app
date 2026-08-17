@@ -729,6 +729,55 @@
       "acceptance": "A4 Settings is not an OverlaySheet and not Segmented",
       "testFile": "languagePickerContract.test.ts",
       "testNamePattern": "keeps Settings language as a NavRow that pushes a right-slide child"
+    },
+    {
+      "parent": 206,
+      "child": 218,
+      "acceptance": "A1 RoleSelect language uses an attached iOS UIMenu",
+      "testFile": "languagePickerContract.test.ts",
+      "testNamePattern": "opens the RoleSelect menu only through hither-menu UIMenu"
+    },
+    {
+      "parent": 206,
+      "child": 218,
+      "acceptance": "A2 Not Alert, ActionSheetIOS, or a JS floating popup",
+      "testFile": "languagePickerContract.test.ts",
+      "testNamePattern": "opens the RoleSelect menu only through hither-menu UIMenu"
+    },
+    {
+      "parent": 206,
+      "child": 218,
+      "acceptance": "A3 Menu stays attached to the button via showsMenuAsPrimaryAction",
+      "testFile": "languagePickerContract.test.ts",
+      "testNamePattern": "opens the RoleSelect menu only through hither-menu UIMenu"
+    },
+    {
+      "parent": 206,
+      "child": 218,
+      "acceptance": "A4 Selecting zh/en writes setLanguage without reload",
+      "testFile": "languagePicker.test.ts",
+      "testNamePattern": "opens the native language choice and calls setLanguage for the other language"
+    },
+    {
+      "parent": 206,
+      "child": 218,
+      "acceptance": "A5 Login stays segmented",
+      "testFile": "languagePickerContract.test.ts",
+      "testNamePattern": "shows LanguagePicker on Login without hiding it behind a session"
+    },
+    {
+      "parent": 206,
+      "child": 218,
+      "acceptance": "A6 Expo Go keeps the button and does not use ActionSheet",
+      "testFile": "languagePicker.test.ts",
+      "testNamePattern": "opens the native language choice and calls setLanguage for the other language"
+    },
+    {
+      "parent": 206,
+      "child": 218,
+      "acceptance": "A7 Contracts flipped and green",
+      "testFile": "languagePickerContract.test.ts",
+      "testNamePattern": "opens the RoleSelect menu only through hither-menu UIMenu"
     }
   ]
 }
