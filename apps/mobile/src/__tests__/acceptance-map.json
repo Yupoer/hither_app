@@ -596,6 +596,41 @@
       "acceptance": "A7 English still uses compactDuration",
       "testFile": "liveActivityContract.test.ts",
       "testNamePattern": "matches the approved black capsule information hierarchy"
+    },
+    {
+      "parent": 206,
+      "child": 214,
+      "acceptance": "A1 Members receive title 開始前往",
+      "testFile": "navigationPushContract.test.ts",
+      "testNamePattern": "falls back to normal alert only for users without a usable start token"
+    },
+    {
+      "parent": 206,
+      "child": 214,
+      "acceptance": "A2 Body is 隊長開始行程，前往（destination）",
+      "testFile": "navigationPushContract.test.ts",
+      "testNamePattern": "falls back to normal alert only for users without a usable start token"
+    },
+    {
+      "parent": 206,
+      "child": 214,
+      "acceptance": "A3 Leader only sees local 已開始行程",
+      "testFile": "notificationDeliveryPolicy.test.ts",
+      "testNamePattern": "start_journey → operator local confirm for sender once"
+    },
+    {
+      "parent": 206,
+      "child": 214,
+      "acceptance": "A4 Leader is excluded from the member start push",
+      "testFile": "navigationPushContract.test.ts",
+      "testNamePattern": "falls back to normal alert only for users without a usable start token"
+    },
+    {
+      "parent": 206,
+      "child": 214,
+      "acceptance": "A5 send-push is deployed",
+      "testFile": "navigationPushContract.test.ts",
+      "testNamePattern": "falls back to normal alert only for users without a usable start token"
     }
   ]
 }

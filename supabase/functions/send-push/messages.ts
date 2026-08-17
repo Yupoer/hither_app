@@ -157,8 +157,8 @@ export function buildMessage(p: PushPayload): { title: string; body: string } {
     case "navigation_session":
       return p.status === "active"
         ? {
-          title: "開始集合導航",
-          body: `${nameOr(p.sender_name, "隊長")} 已開始前往${placeOr(p.title)}`,
+          title: "開始前往",
+          body: `隊長開始行程，前往（${p.title?.trim() || "集合點"}）`,
         }
         : { title: "集合導航已結束", body: "這次集合導航已結束" };
     case "location_refresh":
