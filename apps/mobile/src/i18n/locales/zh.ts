@@ -842,6 +842,7 @@ export const zh = {
   'paywall.price': '價格以 App Store 本地化標價為準',
   'paywall.cta': '訂閱 Premium',
   'paywall.restore': '恢復購買',
+  'paywall.redeemAction': '啟用兌換碼',
   'paywall.unavailable': '內購需要正式版 App（目前為開發版本）',
   'paywall.triggerDestinations': '免費版集合點暫時無上限',
   'paywall.triggerStraggler': '自訂脫隊距離為 Premium 功能',

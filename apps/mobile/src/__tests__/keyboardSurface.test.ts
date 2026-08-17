@@ -46,10 +46,15 @@ describe('keyboard surface + inline rename (#172)', () => {
     expect(map).not.toContain('openRenameModal');
   });
 
-  it('AccountSheet redeem uses keyboard gap and scroll restore', () => {
-    expect(account).toContain('keyboardScrollPaddingBottom');
-    expect(account).toContain('KEYBOARD_SURFACE_GAP_PT');
-    expect(account).toContain('testID="account-redeem-input"');
+  it('paywall redeem uses a centered Modal input, not the account sheet', () => {
+    const premium = readFileSync(join(__dirname, '../components/PremiumPresentation.tsx'), 'utf8');
+    expect(account).not.toContain('testID="account-redeem-input"');
+    expect(account).not.toContain("'account.redeem'");
+    expect(premium).toContain('testID="paywall-redeem-input"');
+    expect(premium).toContain('<Modal');
+    expect(premium).toContain("t('paywall.redeemAction')");
+    expect(premium).not.toContain('ActionSheetIOS');
+    expect(premium).not.toContain('OverlaySheet');
   });
 
   it('add-place tour step 0 targets star only (not Add / center)', () => {

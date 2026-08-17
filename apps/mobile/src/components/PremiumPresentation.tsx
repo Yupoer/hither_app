@@ -4,7 +4,18 @@
  * `showRestore` is true for Settings Paywall and false for the Store pane.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { redeemPromoCode } from '../api/client';
+import { runUiAction } from '../utils/uiAction';
 import { useTranslation, type TranslationKey } from '../i18n';
 import { useTheme } from '../state/PreferencesContext';
 import { useSession } from '../state/SessionContext';
@@ -69,7 +80,9 @@ export default React.memo(function PremiumPresentation({
     refreshProfile,
   } = useSession();
   const accent = colors.accent;
-  const [busy, setBusy] = useState<'purchase' | 'restore' | null>(null);
+  const [busy, setBusy] = useState<'purchase' | 'restore' | 'redeem' | null>(null);
+  const [redeemOpen, setRedeemOpen] = useState(false);
+  const [promoCode, setPromoCode] = useState('');
   const [selectedPlan, setSelectedPlan] = useState<PremiumPlan>('monthly');
   const [products, setProducts] = useState<PremiumStoreProduct[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
@@ -185,6 +198,67 @@ export default React.memo(function PremiumPresentation({
     }
   }, [user, groupId, t, refreshEntitlement, refreshProfile, onRestoreSuccess]);
 
+  const redeemErrorMessage = useCallback((code: string): string => {
+    switch (code) {
+      case 'already_used':
+        return t('paywall.redeem.alreadyUsed');
+      case 'expired':
+        return t('paywall.redeem.expired');
+      case 'invalid':
+        return t('paywall.redeem.invalid');
+      case 'not_applicable':
+        return t('paywall.redeem.notApplicable');
+      case 'duplicate':
+        return t('paywall.redeem.duplicate');
+      case 'not_authenticated':
+        return t('paywall.redeem.notAuthenticated');
+      default:
+        return t('paywall.redeem.failed');
+    }
+  }, [t]);
+
+  const handleRedeem = useCallback(async () => {
+    const code = promoCode.trim();
+    if (!code) return;
+    await runUiAction(
+      'paywall.redeem',
+      async (token) => {
+        try {
+          const result = await redeemPromoCode(code, membership?.group.id ?? null);
+          if (!token.isCurrent()) return;
+          await refreshProfile();
+          if (!token.isCurrent()) return;
+          await refreshEntitlement(membership?.group.id);
+          if (!token.isCurrent()) return;
+          Alert.alert(t('paywall.redeem.successTitle'), t('paywall.redeem.successBody', { plan: result.plan_name }));
+          setPromoCode('');
+          setRedeemOpen(false);
+        } catch (e: unknown) {
+          if (token.isCurrent()) {
+            const codeKey =
+              e && typeof e === 'object' && 'code' in e && typeof (e as { code?: string }).code === 'string'
+                ? (e as { code: string }).code
+                : e instanceof Error
+                  ? e.message
+                  : 'unknown';
+            Alert.alert(t('paywall.redeem.failedTitle'), redeemErrorMessage(codeKey));
+          }
+          throw e;
+        }
+      },
+      {
+        screen: 'Paywall',
+        suppressBanner: true,
+        onBusyChange: (next) => setBusy(next ? 'redeem' : null),
+        onError: (kind) => {
+          if (kind === 'timeout') {
+            Alert.alert(t('paywall.redeem.failedTitle'), t('interaction.timeout'));
+          }
+        },
+      },
+    );
+  }, [promoCode, membership?.group.id, refreshProfile, refreshEntitlement, redeemErrorMessage, t]);
+
   return (
     <View style={styles.body} testID={testID} accessibilityRole="summary">
       {trigger ? <Text style={styles.trigger}>{t(trigger)}</Text> : null}
@@ -263,19 +337,66 @@ export default React.memo(function PremiumPresentation({
       </Pressable>
 
       {showRestore ? (
-        <Pressable
-          style={styles.restore}
-          onPress={handleRestore}
-          disabled={busy !== null}
-          accessibilityRole="button"
-          testID={`${testID}-restore`}
-        >
-          {busy === 'restore' ? (
-            <ActivityIndicator color={accent} />
-          ) : (
-            <Text style={[styles.restoreText, { color: accent }]}>{t('paywall.restore')}</Text>
-          )}
-        </Pressable>
+        <>
+          <Pressable
+            style={styles.restore}
+            onPress={handleRestore}
+            disabled={busy !== null}
+            accessibilityRole="button"
+            testID={`${testID}-restore`}
+          >
+            {busy === 'restore' ? (
+              <ActivityIndicator color={accent} />
+            ) : (
+              <Text style={[styles.restoreText, { color: accent }]}>{t('paywall.restore')}</Text>
+            )}
+          </Pressable>
+          <Pressable
+            style={styles.restore}
+            onPress={() => setRedeemOpen(true)}
+            disabled={busy !== null}
+            accessibilityRole="button"
+            testID={`${testID}-redeem`}
+          >
+            <Text style={[styles.restoreText, { color: accent }]}>{t('paywall.redeemAction')}</Text>
+          </Pressable>
+          <Modal
+            visible={redeemOpen}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setRedeemOpen(false)}
+          >
+            <View style={styles.redeemModalRoot}>
+              <Pressable style={styles.redeemBackdrop} onPress={() => setRedeemOpen(false)} />
+              <View style={styles.redeemCard} testID="paywall-redeem-modal">
+                <Text style={styles.redeemTitle}>{t('paywall.redeemAction')}</Text>
+                <TextInput
+                  style={styles.redeemInput}
+                  placeholder={t('account.redeemPlaceholder')}
+                  placeholderTextColor={glass.textTertiary}
+                  keyboardAppearance="dark"
+                  value={promoCode}
+                  onChangeText={setPromoCode}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  testID="paywall-redeem-input"
+                />
+                <Pressable
+                  style={[styles.redeemSubmit, { backgroundColor: accentMix(accent, 30) }]}
+                  onPress={() => { void handleRedeem(); }}
+                  disabled={busy === 'redeem' || !promoCode.trim()}
+                  testID="paywall-redeem-submit"
+                >
+                  {busy === 'redeem' ? (
+                    <ActivityIndicator color={accent} size="small" />
+                  ) : (
+                    <Text style={[styles.restoreText, { color: accent }]}>{t('account.redeemCta')}</Text>
+                  )}
+                </Pressable>
+              </View>
+            </View>
+          </Modal>
+        </>
       ) : null}
     </View>
   );
@@ -328,4 +449,40 @@ const styles = StyleSheet.create({
   ctaText: { fontSize: 16, fontWeight: '700', color: '#fff' },
   restore: { alignItems: 'center', justifyContent: 'center', paddingVertical: 6 },
   restoreText: { fontSize: 14, fontWeight: '600' },
+  redeemModalRoot: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 28,
+  },
+  redeemBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  redeemCard: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: 18,
+    padding: 20,
+    gap: 12,
+    backgroundColor: '#1A1F2B',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: glass.hairline,
+  },
+  redeemTitle: { color: '#fff', fontSize: 16, fontWeight: '700', textAlign: 'center' },
+  redeemInput: {
+    minHeight: 44,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    color: '#fff',
+    backgroundColor: glass.fill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: glass.hairline,
+  },
+  redeemSubmit: {
+    minHeight: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

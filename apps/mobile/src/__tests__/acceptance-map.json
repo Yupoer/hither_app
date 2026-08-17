@@ -666,6 +666,41 @@
       "acceptance": "A5 Leaders still use the button + overlay editor",
       "testFile": "mapUiContracts.test.ts",
       "testNamePattern": "keeps history on the route pane; reorder overlay wires import CTA"
+    },
+    {
+      "parent": 206,
+      "child": 216,
+      "acceptance": "A1 AccountSheet has no redeem block",
+      "testFile": "keyboardSurface.test.ts",
+      "testNamePattern": "paywall redeem uses a centered Modal input, not the account sheet"
+    },
+    {
+      "parent": 206,
+      "child": 216,
+      "acceptance": "A2 Paywall restore has 啟用兌換碼 below it with the same shape",
+      "testFile": "keyboardSurface.test.ts",
+      "testNamePattern": "paywall redeem uses a centered Modal input, not the account sheet"
+    },
+    {
+      "parent": 206,
+      "child": 216,
+      "acceptance": "A3 Tap opens a centered Modal for code entry",
+      "testFile": "keyboardSurface.test.ts",
+      "testNamePattern": "paywall redeem uses a centered Modal input, not the account sheet"
+    },
+    {
+      "parent": 206,
+      "child": 216,
+      "acceptance": "A4 Success/failure reuse redeemPromoCode and existing copy",
+      "testFile": "buttonInventoryContract.test.ts",
+      "testNamePattern": "wires Login, account upgrade/redeem, and feedback submit through runUiAction"
+    },
+    {
+      "parent": 206,
+      "child": 216,
+      "acceptance": "A5 Not an ActionSheet or bottom sheet",
+      "testFile": "keyboardSurface.test.ts",
+      "testNamePattern": "paywall redeem uses a centered Modal input, not the account sheet"
     }
   ]
 }

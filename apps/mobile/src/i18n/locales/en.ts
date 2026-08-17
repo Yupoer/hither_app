@@ -831,6 +831,7 @@ export const en: Record<keyof ZhDict, string> = {
   'paywall.price': 'Price is localized by the App Store',
   'paywall.cta': 'Subscribe to Premium',
   'paywall.restore': 'Restore purchases',
+  'paywall.redeemAction': 'Activate code',
   'paywall.unavailable': 'Purchases require the production app (this is a development build)',
   'paywall.triggerDestinations': 'Free plan gathering points are unlimited for now',
   'paywall.triggerStraggler': 'Custom straggler distance is a Premium feature',
