@@ -72,7 +72,9 @@ describe('map UI placement contracts', () => {
     const toolsPane = mapScreen.indexOf('// ─── 工具', routePane);
     const routeBlock = mapScreen.slice(routePane, toolsPane > 0 ? toolsPane : routePane + 2500);
 
-    expect(routeBlock).toContain("t('map.stopsReorder'");
+    expect(routeBlock).toContain('canEditItinerary ?');
+    expect(routeBlock).toContain('canReorder={false}');
+    expect(routeBlock).toContain("t('map.nextTag')");
     expect(routeBlock).toContain("t('arrival.manage')");
     // Import CTA lives only on the reorder overlay — not the route sheet list.
     expect(routeBlock).not.toContain("t('kml.entry')");

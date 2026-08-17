@@ -631,6 +631,41 @@
       "acceptance": "A5 send-push is deployed",
       "testFile": "navigationPushContract.test.ts",
       "testNamePattern": "falls back to normal alert only for users without a usable start token"
+    },
+    {
+      "parent": 206,
+      "child": 215,
+      "acceptance": "A1 Members still have the next-stop card",
+      "testFile": "mapUiContracts.test.ts",
+      "testNamePattern": "keeps history on the route pane; reorder overlay wires import CTA"
+    },
+    {
+      "parent": 206,
+      "child": 215,
+      "acceptance": "A2 Members do not see the reorder button on the route pane",
+      "testFile": "mapUiContracts.test.ts",
+      "testNamePattern": "keeps history on the route pane; reorder overlay wires import CTA"
+    },
+    {
+      "parent": 206,
+      "child": 215,
+      "acceptance": "A3 Members see the full stop order inline",
+      "testFile": "mapUiContracts.test.ts",
+      "testNamePattern": "keeps history on the route pane; reorder overlay wires import CTA"
+    },
+    {
+      "parent": 206,
+      "child": 215,
+      "acceptance": "A4 Members cannot reorder or delete",
+      "testFile": "mapUiContracts.test.ts",
+      "testNamePattern": "keeps history on the route pane; reorder overlay wires import CTA"
+    },
+    {
+      "parent": 206,
+      "child": 215,
+      "acceptance": "A5 Leaders still use the button + overlay editor",
+      "testFile": "mapUiContracts.test.ts",
+      "testNamePattern": "keeps history on the route pane; reorder overlay wires import CTA"
     }
   ]
 }

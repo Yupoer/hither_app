@@ -5688,29 +5688,51 @@ export default function MapScreen({ route, navigation }: Props) {
           ) : null}
         </View>
       ) : null}
-      {/* Standalone reorder action — whole row is one press target (ticket 06). */}
-      <View style={styles.reorderActionCard} testID="map-reorder-action-card">
-        <AmicroButton
-          icon="pencil-outline"
-          activeIcon="checkmark"
-          active={editButtonActive}
-          activeOnPress
-          resetAfterComplete={false}
-          color={accent}
-          activeColor={accent}
-          size={48}
-          label={t('map.stopsReorder', { count: openForRouteEditor.length })}
-          labelColor="#fff"
-          accessibilityLabel={t('map.stopsReorder', { count: openForRouteEditor.length })}
-          testID="map-edit-itinerary"
-          style={styles.reorderActionPressable}
-          onPress={() => {
-            lightTap();
-            setEditButtonActive(true);
-          }}
-          onAnimationComplete={() => setOverlay('route')}
+      {canEditItinerary ? (
+        <View style={styles.reorderActionCard} testID="map-reorder-action-card">
+          <AmicroButton
+            icon="pencil-outline"
+            activeIcon="checkmark"
+            active={editButtonActive}
+            activeOnPress
+            resetAfterComplete={false}
+            color={accent}
+            activeColor={accent}
+            size={48}
+            label={t('map.stopsReorder', { count: openForRouteEditor.length })}
+            labelColor="#fff"
+            accessibilityLabel={t('map.stopsReorder', { count: openForRouteEditor.length })}
+            testID="map-edit-itinerary"
+            style={styles.reorderActionPressable}
+            onPress={() => {
+              lightTap();
+              setEditButtonActive(true);
+            }}
+            onAnimationComplete={() => setOverlay('route')}
+          />
+        </View>
+      ) : (
+        <DestinationReorderList
+          groupId={groupId ?? undefined}
+          destinations={openForRouteEditor}
+          canReorder={false}
+          tripDays={optimisticTripDays ?? group?.tripDays}
+          departureDate={optimisticDepartureDate ?? group?.departureDate}
+          colors={dark}
+          emptyLabel={t('settings.noDestinations')}
+          dailyByDate={Object.fromEntries(
+            dailyAccommodations.map((d) => [
+              d.stayDate,
+              {
+                id: d.id,
+                stayDate: d.stayDate,
+                title: d.title,
+                coordinates: d.coordinates,
+              },
+            ]),
+          )}
         />
-      </View>
+      )}
       {/* 導航入口 = 普通 List Row，無圖示色塊 */}
       <View style={styles.listGroup}>
         {isLeader && destinations.length > 0 ? (
@@ -5751,7 +5773,9 @@ export default function MapScreen({ route, navigation }: Props) {
     </>
   ), [
     t, styles, nextStopTitle, nextStopDistLabel, destinations.length,
-    openHistoryOverlay, isLeader, opsOpenCount, editButtonActive, extraPointCredits, accent,
+    openHistoryOverlay, isLeader, canEditItinerary, openForRouteEditor,
+    groupId, optimisticTripDays, optimisticDepartureDate, group, dailyAccommodations,
+    opsOpenCount, editButtonActive, extraPointCredits, accent,
     sortedGatherRequests, sortedGatherRequestIds, selectedGatherRequestId,
     gatherRequestPageW, resolvingGatherRequestId, members, subgroups,
     handleGatherPointRequest,
