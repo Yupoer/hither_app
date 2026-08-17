@@ -193,6 +193,7 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
   it('projects history as own-or-leader and completes stops for the whole team', () => {
     expect(migrations).toContain('visited_waypoints: select own or leader');
     expect(migrations).toContain('complete_gathering_stop');
+    expect(migrations).toContain('insert into public.visited_waypoints');
     expect(client).toContain('completeGatheringStop');
     expect(mapScreen).toContain('projectHistoryForViewer');
     expect(mapScreen).toContain('completeGatheringStop');

@@ -25,6 +25,7 @@ import {
   createArrivalState,
   reduceArrival,
 } from '../utils/navigationArrival';
+import { personalDisplayProgress } from '../utils/journeyProgress';
 import {
   BACKGROUND_JOURNEY_TASK,
   BACKGROUND_JOURNEY_KEY,
@@ -143,14 +144,31 @@ if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
         );
         // Local Live Activity always updates from device GPS — works offline and
         // when cloud sharing is off. Upload is gated separately below.
+        const movedFromStartM = config.startCoords
+          ? distanceMeters(config.startCoords, coords)
+          : undefined;
+        const displayProgress = personalDisplayProgress({
+          initialM: config.initialDistanceM,
+          currentM: distanceM,
+          movedFromStartM,
+          hasDepartedStart: config.hasDepartedStart,
+          previousMax: config.previousProgressMax,
+          arrived: arrival.status === 'arrived',
+        });
         await timeBackgroundStage(stages, 'live_activity_update', () =>
           liveActivity.updateAllGroupActivities({
-            groupName: '',
+            groupName: config.groupName ?? '',
+            gatheringTitle: config.gatheringTitle ?? config.groupName,
             navigationSessionId: config.navigationSessionId ?? undefined,
             status: 'active',
             distanceMeters: distanceM,
-            progress: arrival.progress,
+            etaSeconds: config.etaSeconds,
+            progress: displayProgress,
             travelMode: config.travelMode,
+            memberEmojis: config.memberEmojis,
+            memberArrived: config.memberArrived,
+            gatheredCount: config.memberArrived?.filter(Boolean).length,
+            memberCount: config.memberEmojis?.length,
           }),
         );
         if (arrival.status !== previousArrival.status) {

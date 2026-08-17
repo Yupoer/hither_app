@@ -81,6 +81,7 @@ export function useLiveActivity(
       endGroupActivity: (activityId) => liveActivity.endGroupActivity(activityId),
       endAllGroupActivities: () => liveActivity.endAllGroupActivities(),
       startGroupActivity: () => liveActivity.startGroupActivity(stateRef.current),
+      listGroupActivities: () => liveActivity.listGroupActivities(),
       deleteSession: (activityId) =>
         deleteLiveActivitySession(activityId).catch(() => undefined),
       deleteAllSessions: () =>
@@ -121,6 +122,7 @@ export function useLiveActivity(
       pushToken: reconcilerRef.current?.currentPushToken,
       currentDistanceM: currentState.distanceMeters,
       etaSeconds: currentState.etaSeconds,
+      progress: currentState.progress,
     });
   };
 

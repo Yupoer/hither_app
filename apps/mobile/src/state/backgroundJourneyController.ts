@@ -22,7 +22,16 @@ export interface BackgroundJourneyConfig {
   sequence: number;
   travelMode: TravelMode;
   sharingEnabled: boolean;
+  hasMembership?: boolean;
   arrivalState?: ArrivalState;
+  gatheringTitle?: string;
+  groupName?: string;
+  memberEmojis?: string[];
+  memberArrived?: boolean[];
+  startCoords?: Coordinates;
+  hasDepartedStart?: boolean;
+  previousProgressMax?: number;
+  etaSeconds?: number;
   /**
    * Only meaningful for `powerMode: 'journey'`.
    * All-day presence always uses the Low-accuracy budget profile.
@@ -72,6 +81,7 @@ export function resolveBackgroundTrackingMode(
     config.appState != null;
   return resolveTrackingMode({
     sharingEnabled: config.sharingEnabled ?? true,
+    hasMembership: config.hasMembership ?? true,
     teamNavigationActive: config.teamNavigationActive ?? false,
     // The legacy all-day profile intentionally ignores the high-accuracy
     // preference; navigation is the only background mode that can opt in.
@@ -148,7 +158,7 @@ export function backgroundLocationOptions(
     // Passive presence has only a declared heartbeat; do not let Core Location
     // pause it indefinitely after a stationary interval. Journey modes may use
     // the OS pause policy to conserve power while still actively navigating.
-    pausesUpdatesAutomatically: mode !== 'passiveBackground',
+    pausesUpdatesAutomatically: false,
     showsBackgroundLocationIndicator: mode !== 'passiveBackground',
     foregroundService: {
       notificationTitle:

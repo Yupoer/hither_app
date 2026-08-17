@@ -171,8 +171,8 @@ describe('Realtime notification semantics', () => {
       },
     });
     expect(mockSchedule).toHaveBeenLastCalledWith(expect.objectContaining({
-      title: 'straggler.notifyTitle',
-      body: expect.stringContaining('Kai'),
+      title: 'Kai',
+      body: expect.stringContaining('120 m'),
     }));
 
     mockSession.membership.role = 'follower';

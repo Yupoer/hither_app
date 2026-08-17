@@ -41,7 +41,7 @@ describe('locationPolicy', () => {
     expect(p.timeInterval).toBe(30_000);
     expect(p.uploadMinDistanceM).toBe(50);
     expect(p.uploadHeartbeatMs).toBe(90_000);
-    expect(p.uploadHeartbeatStationaryMs).toBe(180_000);
+    expect(p.uploadHeartbeatStationaryMs).toBe(120_000);
     expect(p.stationaryAfterMs).toBe(45_000);
     expect(p.uploadHeartbeatStationaryMs).toBeGreaterThan(p.uploadHeartbeatMs);
     expect(p.routeCoordDecimals).toBe(4);
@@ -65,8 +65,8 @@ describe('locationPolicy', () => {
     const p = locationPolicy(true, 'allDay');
     expect(p.accuracy).toBe('low');
     expect(p.distanceInterval).toBe(150);
-    expect(p.uploadHeartbeatMs).toBe(240_000);
-    expect(p.uploadHeartbeatStationaryMs).toBe(360_000);
+    expect(p.uploadHeartbeatMs).toBe(120_000);
+    expect(p.uploadHeartbeatStationaryMs).toBe(120_000);
     expect(p.uploadMinDistanceM).toBe(150);
     expect(POWER_BUDGET_NOTE.allDay8hTargetPct).toBe(20);
   });
@@ -81,7 +81,7 @@ describe('locationPolicy', () => {
     expect(backgroundLocationOptions('journey', false, 'teamNavigation')).toMatchObject({
       accuracy: 4,
       activityType: 3,
-      pausesUpdatesAutomatically: true,
+      pausesUpdatesAutomatically: false,
       deferredUpdatesDistance: 30,
       deferredUpdatesInterval: 30_000,
     });
@@ -91,7 +91,7 @@ describe('locationPolicy', () => {
     expect(backgroundLocationOptions('journey', true, 'navigationMax')).toMatchObject({
       accuracy: 5,
       activityType: 3,
-      pausesUpdatesAutomatically: true,
+      pausesUpdatesAutomatically: false,
     });
   });
 
@@ -221,6 +221,34 @@ describe('shouldWatchLocation / shouldRunBackgroundLocation', () => {
     expect(shouldRunBackgroundLocation('group-1', 'background')).toBe(true);
     expect(shouldRunBackgroundLocation('group-1', 'active')).toBe(false);
     expect(shouldRunBackgroundLocation(null, 'background')).toBe(false);
+  });
+
+  it('stops GPS when sharing is off or the account has no memberships (#196 D4)', () => {
+    expect(shouldWatchLocation('group-1', 'active', false, true)).toBe(false);
+    expect(shouldWatchLocation('group-1', 'active', true, false)).toBe(false);
+    expect(shouldRunBackgroundLocation('group-1', 'background', false, true)).toBe(false);
+    expect(shouldRunBackgroundLocation('group-1', 'background', true, false)).toBe(false);
+  });
+
+  it('journey uploads at least every 30s moving / 60s stationary (#196 D1)', () => {
+    const p = locationPolicy(false, 'journey');
+    expect(p.uploadHeartbeatMs).toBe(30_000);
+    expect(p.uploadHeartbeatStationaryMs).toBe(60_000);
+  });
+
+  it('non-journey sharing refreshes liveness at most every 2 minutes (#196 D2)', () => {
+    const allDay = locationPolicy(false, 'allDay');
+    const fg = locationPolicy(false, 'foreground');
+    expect(allDay.uploadHeartbeatMs).toBeLessThanOrEqual(120_000);
+    expect(allDay.uploadHeartbeatStationaryMs).toBeLessThanOrEqual(120_000);
+    expect(fg.uploadHeartbeatStationaryMs).toBeLessThanOrEqual(120_000);
+  });
+
+  it('same-coord heartbeat still uploads so updated_at moves', () => {
+    const policy = locationPolicy(false, 'allDay');
+    expect(
+      shouldUploadSample(origin, 1_000 + policy.uploadHeartbeatMs, atOrigin(1_000), policy),
+    ).toBe(true);
   });
 });
 

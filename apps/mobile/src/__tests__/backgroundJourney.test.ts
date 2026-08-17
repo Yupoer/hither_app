@@ -69,7 +69,7 @@ describe('background journey controller', () => {
     expect(opts).toMatchObject({
       accuracy: 4,
       activityType: 3,
-      pausesUpdatesAutomatically: true,
+      pausesUpdatesAutomatically: false,
       deferredUpdatesDistance: 30,
       deferredUpdatesInterval: 30_000,
     });
@@ -104,7 +104,7 @@ describe('background journey controller', () => {
     expect(opts).toMatchObject({
       accuracy: 5,
       activityType: 3,
-      pausesUpdatesAutomatically: true,
+      pausesUpdatesAutomatically: false,
     });
   });
 
@@ -134,9 +134,9 @@ describe('background journey controller', () => {
       accuracy: number;
       pausesUpdatesAutomatically: boolean;
     };
-    // Default journey (highAccuracy unset) uses Balanced + OS pause when stationary.
+    // Default journey (highAccuracy unset) uses Balanced and never pauses while sharing.
     expect(opts.accuracy).toBe(3);
-    expect(opts.pausesUpdatesAutomatically).toBe(true);
+    expect(opts.pausesUpdatesAutomatically).toBe(false);
   });
 
   it('uses Highest accuracy options when highAccuracy is enabled on journey', async () => {

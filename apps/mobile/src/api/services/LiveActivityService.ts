@@ -1,6 +1,7 @@
 import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 import type { TravelMode } from '../../utils/geo';
+import { personalDisplayProgress, progressBucket20 } from '../../utils/journeyProgress';
 import { supabase } from '../supabase';
 import { orThrow, requireUserId } from './_helpers';
 
@@ -171,16 +172,28 @@ export interface LiveActivitySessionInput {
   currentDistanceM: number;
   etaSeconds?: number;
   travelMode: TravelMode;
+  /** Gated personal remaining (0–1). Preferred over recomputing from distances. */
+  progress?: number | null;
+  movedFromStartM?: number;
+  hasDepartedStart?: boolean;
+  previousProgressMax?: number | null;
+  arrived?: boolean;
 }
 
 export async function upsertLiveActivitySession(
   input: LiveActivitySessionInput,
 ): Promise<void> {
   const uid = await requireUserId();
-  const progress = Math.min(
-    1,
-    Math.max(0, 1 - input.currentDistanceM / input.initialDistanceM),
-  );
+  const progress = input.progress != null && Number.isFinite(input.progress)
+    ? Math.min(1, Math.max(0, input.progress))
+    : personalDisplayProgress({
+        initialM: input.initialDistanceM,
+        currentM: input.currentDistanceM,
+        movedFromStartM: input.movedFromStartM,
+        hasDepartedStart: input.hasDepartedStart,
+        previousMax: input.previousProgressMax,
+        arrived: input.arrived,
+      });
   const { error } = await supabase.from('live_activity_sessions').upsert(
     {
       user_id: uid,
@@ -192,7 +205,7 @@ export async function upsertLiveActivitySession(
       current_distance_m: Math.max(0, input.currentDistanceM),
       eta_seconds: input.etaSeconds == null ? null : Math.max(0, Math.round(input.etaSeconds)),
       travel_mode: input.travelMode,
-      last_progress_bucket: Math.round(progress * 20),
+      last_progress_bucket: progressBucket20(progress),
       updated_at: new Date().toISOString(),
     },
     { onConflict: 'user_id,group_id' },

@@ -91,6 +91,17 @@ public class HitherLiveActivityModule: Module {
       }
     }
 
+    AsyncFunction("listGroupActivities") { () -> [[String: String]] in
+      guard #available(iOS 16.2, *) else { return [] }
+      return Activity<HitherGroupAttributes>.activities.map { activity in
+        var row = ["activityId": activity.id]
+        if let token = activity.pushToken {
+          row["pushToken"] = token.hexString
+        }
+        return row
+      }
+    }
+
     Function("isSupported") { () -> Bool in
       if #available(iOS 16.2, *) {
         return ActivityAuthorizationInfo().areActivitiesEnabled
@@ -102,6 +113,14 @@ public class HitherLiveActivityModule: Module {
       guard #available(iOS 16.2, *),
             ActivityAuthorizationInfo().areActivitiesEnabled else {
         return nil
+      }
+      if let existing = Activity<HitherGroupAttributes>.activities.first {
+        self.observePushToken(for: existing)
+        var adopted = ["activityId": existing.id]
+        if let pushToken = existing.pushToken {
+          adopted["pushToken"] = pushToken.hexString
+        }
+        return adopted
       }
       let attributes = HitherGroupAttributes(
         groupName: state["groupName"] as? String ?? ""

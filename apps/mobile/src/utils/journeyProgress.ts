@@ -150,3 +150,45 @@ export function monotonicProgress(
   if (previousMax == null || !Number.isFinite(previousMax)) return raw;
   return Math.max(previousMax, raw);
 }
+
+export interface PersonalDisplayProgressInput {
+  initialM: number;
+  currentM: number;
+  movedFromStartM?: number;
+  hasDepartedStart?: boolean;
+  previousMax?: number | null;
+  arrived?: boolean;
+  /** When destination id changes, sticky max is ignored. */
+  destinationId?: string | null;
+  previousDestinationId?: string | null;
+}
+
+/**
+ * One personal remaining bar for Live Activity, session bucket, and
+ * background updates. Never ungated `1 - current/initial`.
+ */
+export function personalDisplayProgress(input: PersonalDisplayProgressInput): number {
+  if (input.arrived) return 1;
+  const destChanged =
+    input.destinationId != null
+    && input.previousDestinationId != null
+    && input.destinationId !== input.previousDestinationId;
+  const stickyMax = destChanged ? 0 : input.previousMax;
+  const movedFromStartM = input.movedFromStartM;
+  const gated = movedFromStartM != null || input.hasDepartedStart
+    ? gatedJourneyProgress({
+        initialM: input.initialM,
+        currentM: input.currentM,
+        movedFromStartM: movedFromStartM ?? 0,
+        hasDepartedStart: input.hasDepartedStart,
+      }).progress
+    : 0;
+  const capped = capPreArrivalProgress(gated);
+  return capPreArrivalProgress(monotonicProgress(capped, stickyMax) ?? capped);
+}
+
+/** Persist Live Activity buckets from the same personal-progress model. */
+export function progressBucket20(progress: number): number {
+  if (!Number.isFinite(progress)) return 0;
+  return Math.round(Math.min(1, Math.max(0, progress)) * 20);
+}

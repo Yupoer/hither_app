@@ -41,6 +41,7 @@ type HitherLiveActivityModule = {
   ) => EventSubscription;
   startPushToStartTokenObservation?: () => Promise<void>;
   observeExistingActivities?: () => Promise<void>;
+  listGroupActivities?: () => Promise<{ activityId: string; pushToken?: string }[]>;
   startGroupActivity?: (state: GroupActivityState) => Promise<ActivityStartResult | null>;
   updateGroupActivity?: (
     handle: ActivityHandle,
@@ -132,6 +133,12 @@ export async function startPushToStartTokenObservation(): Promise<void> {
 
 export async function observeExistingActivities(): Promise<void> {
   await HitherLiveActivity?.observeExistingActivities?.();
+}
+
+export async function listGroupActivities(): Promise<
+  { activityId: string; pushToken?: string }[]
+> {
+  return (await HitherLiveActivity?.listGroupActivities?.()) ?? [];
 }
 
 /** Update every Hither activity from a headless background location callback. */

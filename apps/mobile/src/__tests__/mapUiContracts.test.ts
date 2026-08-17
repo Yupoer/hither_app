@@ -166,15 +166,14 @@ describe('map UI placement contracts', () => {
     const commands = toolsBlock.indexOf("t('map.cmdTitle')");
 
     expect(passive).toBeGreaterThanOrEqual(0);
-    expect(sharing).toBeGreaterThan(passive);
-    expect(arrival).toBeGreaterThan(sharing);
+    expect(sharing).toBe(-1);
+    expect(arrival).toBeGreaterThan(passive);
     expect(commands).toBeGreaterThan(arrival);
 
     expect(toolsBlock).toContain('setPassiveCompanionMode');
     expect(toolsBlock).toContain('testID="tools-enter-passive"');
-    expect(toolsBlock).toContain('handleSharingEnabledChange');
+    expect(toolsBlock).not.toContain('handleSharingEnabledChange');
     expect(toolsBlock).toContain('PrefSlider');
-    expect(toolsBlock).toContain('AmicroButton');
     // Preference clutter moved out of Tools (Live Activity toggle stays in Settings).
     // Tools may show a locked entitlement deep-link using settings.liveActivity label.
     expect(toolsBlock).not.toContain("t('settings.obliqueLocate')");
@@ -272,7 +271,7 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain('registerCardActivity(dest.id)');
     expect(mapScreen).not.toContain('pendingExpandId');
     expect(mapScreen).not.toContain("index === 0 ? t('map.nextTag')");
-    expect(mapScreen).toContain('cardExpanded && (');
+    expect(mapScreen).toContain('cardExpanded ? (');
     expect(mapScreen).toContain('styles.cardCollapsedMetrics');
   });
 
@@ -417,6 +416,13 @@ describe('map UI placement contracts', () => {
     // (Start splits 「已抵達」; End swallows it back into Start).
     expect(mapScreen).toContain('canMarkArrival');
     expect(mapScreen).toContain('expanded={!showArrivalControl}');
+    expect(mapScreen).toContain('arrivalControlJustSplit');
+    expect(mapScreen).toContain('cardExpanded || showArrivalControl');
+    expect(mapScreen).toContain('testID="members-location-sharing"');
+    expect(mapScreen).toContain('showsUserLocation={sharingEnabled && members.length > 0}');
+    expect(mapScreen).not.toMatch(
+      /toolsPaneBody[\s\S]*settings\.locationSharing[\s\S]*AmicroButton/,
+    );
     expect(mapScreen).not.toMatch(
       /showArrivalControl\s*=\s*[\s\S]{0,200}sharedTargetId === dest\.id/,
     );
@@ -487,7 +493,7 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain('navigationSessionState.refresh()');
     const completeFn = mapScreen.slice(
       mapScreen.indexOf('runCompleteGatheringStop = useCallback'),
-      mapScreen.indexOf('runCompleteGatheringStop = useCallback') + 1200,
+      mapScreen.indexOf('runCompleteGatheringStop = useCallback') + 2800,
     );
     expect(completeFn).toContain('completeGatheringStop(groupId, destination.id)');
     expect(completeFn).not.toContain('stopNavigation()');

@@ -40,11 +40,12 @@ export interface TrackingModeInput {
   teamNavigationActive: boolean;
   manualHighAccuracy: boolean;
   appState: 'active' | 'background' | 'inactive';
+  hasMembership?: boolean;
 }
 
 /** Resolve one authoritative mode before configuring any location consumer. */
 export function resolveTrackingMode(input: TrackingModeInput): TrackingMode {
-  if (!input.sharingEnabled) return 'hidden';
+  if (!input.sharingEnabled || input.hasMembership === false) return 'hidden';
   if (input.teamNavigationActive && input.manualHighAccuracy) {
     return 'navigationMax';
   }
@@ -111,9 +112,9 @@ export function locationPolicy(
       uiMinIntervalMs: 40_000,
       uploadMinDistanceM: 150,
       uploadMinIntervalMs: 150_000,
-      // Moving: ~every 4 min; stationary rest: 6 min liveness.
-      uploadHeartbeatMs: 240_000,
-      uploadHeartbeatStationaryMs: 360_000,
+      // Non-journey: at most 2 min liveness even if coords are unchanged.
+      uploadHeartbeatMs: 120_000,
+      uploadHeartbeatStationaryMs: 120_000,
       stationaryAfterMs: 90_000,
       routeMinDistanceM: 100,
       routeMinIntervalMs: 75_000,
@@ -132,7 +133,7 @@ export function locationPolicy(
           uiMinIntervalMs: 2_000,
           uploadMinDistanceM: 25,
           uploadMinIntervalMs: 15_000,
-          uploadHeartbeatMs: 25_000,
+          uploadHeartbeatMs: 30_000,
           uploadHeartbeatStationaryMs: 60_000,
           stationaryAfterMs: 45_000,
           routeMinDistanceM: 20,
@@ -148,8 +149,8 @@ export function locationPolicy(
           uiMinIntervalMs: 10_000,
           uploadMinDistanceM: 70,
           uploadMinIntervalMs: 60_000,
-          uploadHeartbeatMs: 90_000,
-          uploadHeartbeatStationaryMs: 180_000,
+          uploadHeartbeatMs: 30_000,
+          uploadHeartbeatStationaryMs: 60_000,
           stationaryAfterMs: 45_000,
           routeMinDistanceM: 60,
           routeMinIntervalMs: 50_000,
@@ -186,9 +187,9 @@ export function locationPolicy(
         uiMinIntervalMs: 8_000,
         uploadMinDistanceM: 50,
         uploadMinIntervalMs: 40_000,
-        // Walking: ~every 90s if GPS quiet; resting: ~3 min liveness.
+        // Non-journey foreground: at most 2 min liveness when stationary.
         uploadHeartbeatMs: 90_000,
-        uploadHeartbeatStationaryMs: 180_000,
+        uploadHeartbeatStationaryMs: 120_000,
         stationaryAfterMs: 45_000,
         routeMinDistanceM: 50,
         routeMinIntervalMs: 40_000,
@@ -197,16 +198,33 @@ export function locationPolicy(
       };
 }
 
-export function shouldWatchLocation(groupId: string | null, appState: string): boolean {
-  return Boolean(groupId) && appState === 'active';
+export function shouldWatchLocation(
+  groupId: string | null,
+  appState: string,
+  sharingEnabled = true,
+  hasMembership = Boolean(groupId),
+): boolean {
+  return (
+    Boolean(groupId)
+    && appState === 'active'
+    && sharingEnabled
+    && hasMembership
+  );
 }
 
 /** Background task should run only when the app is not active (single GPS owner). */
 export function shouldRunBackgroundLocation(
   groupId: string | null,
   appState: string,
+  sharingEnabled = true,
+  hasMembership = Boolean(groupId),
 ): boolean {
-  return Boolean(groupId) && appState !== 'active';
+  return (
+    Boolean(groupId)
+    && appState !== 'active'
+    && sharingEnabled
+    && hasMembership
+  );
 }
 
 export interface LocationGateState {
