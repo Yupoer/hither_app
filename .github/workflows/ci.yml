@@ -118,7 +118,9 @@ jobs:
         run: npx --yes expo install --check
 
       - name: Expo doctor
-        run: npx --yes expo-doctor
+        # Pin: expo-doctor 1.20+ fails SDK 56 on a new Hermes V1 advisory
+        # (upgrade-to-57 only). Stay on the last 20-check doctor until SDK 57.
+        run: npx --yes expo-doctor@1.19.0
 
       - uses: supabase/setup-cli@v1
         with:
