@@ -39,6 +39,7 @@ describe('platformized MapView boundary', () => {
 
     expect(props.provider).toBeUndefined();
     expect(props.showsPointsOfInterests).toBe(true);
+    expect(props.pointsOfInterestFilter).toContain('publicTransport');
     expect(props.compassOffset).toEqual(chrome.compassOffset);
     expect(props.appleLogoInsets).toEqual(chrome.appleLogoInsets);
     expect(props.onMapLoaded).toBeUndefined();

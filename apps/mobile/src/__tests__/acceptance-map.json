@@ -386,6 +386,41 @@
       "acceptance": "A7 members-location-sharing testID remains on the members pane",
       "testFile": "diagnosticsUiContract.test.ts",
       "testNamePattern": "shows a location-sharing switch with an explicit local-navigation warning in Tools"
+    },
+    {
+      "parent": 206,
+      "child": 208,
+      "acceptance": "A1 iOS default MapView uses a transit-oriented POI filter including publicTransport",
+      "testFile": "transitMapDefaults.test.ts",
+      "testNamePattern": "uses an exclusive Apple transit POI filter including publicTransport"
+    },
+    {
+      "parent": 206,
+      "child": 208,
+      "acceptance": "A2 iOS is not the stock standard all-POI default",
+      "testFile": "mapNativeBoundaryBehavior.test.ts",
+      "testNamePattern": "provides MapKit chrome and location ownership on iOS only"
+    },
+    {
+      "parent": 206,
+      "child": 208,
+      "acceptance": "A3 Android still showsTransit true",
+      "testFile": "transitMapDefaults.test.ts",
+      "testNamePattern": "puts platform transit selection in the native maps boundary"
+    },
+    {
+      "parent": 206,
+      "child": 208,
+      "acceptance": "A4 Does not switch to Google Maps or a custom overlay",
+      "testFile": "transitMapDefaults.test.ts",
+      "testNamePattern": "does not introduce a third-party transit dataset or custom rail overlay"
+    },
+    {
+      "parent": 206,
+      "child": 208,
+      "acceptance": "A5 transitMapDefaults inverted and green",
+      "testFile": "transitMapDefaults.test.ts",
+      "testNamePattern": "uses an exclusive Apple transit POI filter including publicTransport"
     }
   ]
 }

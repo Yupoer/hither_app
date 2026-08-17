@@ -15,7 +15,8 @@ describe('transit-oriented map defaults', () => {
     expect(mapsBoundary).toContain('export function defaultMapTransitProps');
     expect(mapsBoundary).toContain("Platform.OS === 'android'");
     expect(mapsBoundary).toContain('showsTransit: true');
-    expect(mapsBoundary).toContain('showsPointsOfInterests: true');
+    expect(mapsBoundary).toContain('APPLE_TRANSIT_POI_FILTER');
+    expect(mapsBoundary).toContain('pointsOfInterestFilter: APPLE_TRANSIT_POI_FILTER');
     // UI consumes the boundary helper — no new Platform.OS transit branch in GroupMap.
     expect(groupMap).toContain('platformizedMapViewProps');
     expect(mapsBoundary).toContain('platformizedMapViewProps');
@@ -41,12 +42,17 @@ describe('transit-oriented map defaults', () => {
     expect(patch).toContain('RNMapsSpecs/Props.cpp');
   });
 
-  it('uses Apple standard POIs including public transport (not exclusive filter)', () => {
-    expect(mapsBoundary).toContain('showsPointsOfInterests: true');
-    expect(mapsBoundary).not.toContain('APPLE_TRANSIT_POI_FILTER');
-    expect(mapsBoundary).not.toContain('pointsOfInterestFilter:');
+  it('uses an exclusive Apple transit POI filter including publicTransport', () => {
+    expect(mapsBoundary).toContain('APPLE_TRANSIT_POI_FILTER');
+    expect(mapsBoundary).toContain("'publicTransport'");
+    expect(mapsBoundary).toContain("'airport'");
+    expect(mapsBoundary).toContain("'parking'");
+    expect(mapsBoundary).toContain('pointsOfInterestFilter: APPLE_TRANSIT_POI_FILTER');
+    expect(mapsBoundary).not.toContain('filterIncludingAllCategories');
     expect(groupMap).toContain('platformizedMapViewProps');
     expect(groupMap).not.toContain('defaultMapTransitProps');
+    expect(groupMap).not.toContain("provider={'google'}");
+    expect(groupMap).not.toContain('PROVIDER_GOOGLE');
   });
 
   it('keeps MapKit transit as a directions transport type', () => {
