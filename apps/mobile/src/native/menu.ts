@@ -47,27 +47,27 @@ export function NativeMenuHost({
   accessibilityLabel?: string;
 }): React.ReactElement {
   if (!NativeMenuView) {
-    return (
-      <View
-        style={style}
-        accessibilityRole="button"
-        accessibilityLabel={accessibilityLabel}
-        accessibilityState={{ disabled: true }}
-      >
-        {children}
-      </View>
+    return React.createElement(
+      View,
+      {
+        style,
+        accessibilityRole: 'button',
+        accessibilityLabel,
+        accessibilityState: { disabled: true },
+      },
+      children,
     );
   }
-  return (
-    <NativeMenuView
-      items={items}
-      onSelect={(event) => {
+  return React.createElement(
+    NativeMenuView,
+    {
+      items,
+      onSelect: (event: { nativeEvent?: { id?: string } }) => {
         const id = event?.nativeEvent?.id;
         if (id) onSelect(id);
-      }}
-      style={style}
-    >
-      {children}
-    </NativeMenuView>
+      },
+      style,
+    },
+    children,
   );
 }

@@ -456,7 +456,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 28,
   },
   redeemBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.55)',
   },
   redeemCard: {

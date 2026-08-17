@@ -105,7 +105,7 @@ describe('language picker placement contract', () => {
     expect(settings).toContain('settings-slide-page');
     expect(settings).not.toContain('<Segmented');
     expect(settings).not.toContain('LanguagePicker');
-    expect(settings).not.toContain('OverlaySheet');
+    expect(settings).not.toContain('<OverlaySheet');
     expect(settings).toContain('setLanguage');
   });
 

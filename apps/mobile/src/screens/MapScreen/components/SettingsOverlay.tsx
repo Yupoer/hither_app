@@ -280,6 +280,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
         { transform: [{ translateX }] },
       ]}
       testID="settings-slide-page"
+      // opaque full-screen slide (replaces OverlaySheet opaque)
     >
       <View style={[settingsSlideStyles.header, { paddingTop: insets.top + 6 }]}>
         <Pressable
@@ -600,7 +601,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
 
 const settingsSlideStyles = StyleSheet.create({
   page: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: '#0E1320',
     zIndex: 40,
   },
