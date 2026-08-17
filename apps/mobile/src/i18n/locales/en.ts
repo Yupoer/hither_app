@@ -998,6 +998,12 @@ export const en: Record<keyof ZhDict, string> = {
     'Enter a code to unlock the same server entitlements as a purchase (Premium or small-trip Pass). Anonymous accounts must register first.',
   'account.redeemPlaceholder': 'Enter code',
   'account.redeemCta': 'Redeem',
+  'account.delete': 'Delete account',
+  'account.deleteTitle': 'Delete account',
+  'account.deleteMsg':
+    'This permanently deletes your account, profile, and team memberships. This cannot be undone. If you have an Apple or Google subscription, billing continues until you cancel it in the App Store or Google Play.',
+  'account.deleteConfirm': 'Delete account',
+  'account.deleteFailed': 'Could not delete the account. Please try again.',
 
   // Trip day / reorder
   'trip.setDaysAndDate': 'Set days & date',

@@ -116,6 +116,8 @@ interface SessionContextValue {
     nickname: string;
   }) => Promise<User>;
   signOut: () => Promise<void>;
+  /** Permanently delete the signed-in account (anonymous or registered). */
+  deleteAccount: () => Promise<void>;
   /**
    * Upgrade the signed-in anonymous account to an email + password account.
    * Uses `auth.updateUser`, which attaches email/password to the *same*
@@ -302,6 +304,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     signInWithEmail,
     signUpWithEmail,
     signOut,
+    deleteAccount,
     upgradeToEmailAccount,
     updateNickname,
     updateProfile,
@@ -321,6 +324,14 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setTripEntitlement(null);
     setPremiumProjection(EMPTY_PREMIUM_PROJECTION);
   }, [signOut]);
+
+  const deleteAccountWithJourneyCleanup = useCallback(async () => {
+    await deleteAccount();
+    await stopBackgroundJourney().catch(() => undefined);
+    await clearLiveActivities();
+    setTripEntitlement(null);
+    setPremiumProjection(EMPTY_PREMIUM_PROJECTION);
+  }, [deleteAccount]);
 
   const leaveGroupWithJourneyCleanup = useCallback(() => {
     void stopBackgroundJourney();
@@ -518,6 +529,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       signInWithEmail,
       signUpWithEmail,
       signOut: signOutWithJourneyCleanup,
+      deleteAccount: deleteAccountWithJourneyCleanup,
       upgradeToEmailAccount,
       updateNickname,
       updateProfile,
@@ -547,6 +559,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       signInWithEmail,
       signUpWithEmail,
       signOutWithJourneyCleanup,
+      deleteAccountWithJourneyCleanup,
       upgradeToEmailAccount,
       updateNickname,
       updateProfile,

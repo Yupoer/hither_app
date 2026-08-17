@@ -197,6 +197,97 @@
       "acceptance": "D6 Toggling off drops the location indicator without killing the process.",
       "testFile": "locationPolicy.test.ts",
       "testNamePattern": "stops GPS when sharing is off"
+    },
+    {
+      "parent": 199,
+      "child": 200,
+      "acceptance": "A1 Registered authenticated caller permanently removes their auth.users row; RPC no longer raises the anon-only error.",
+      "testFile": "anonymousSignOut.test.ts",
+      "testNamePattern": "keeps the RPC permanently deleting auth.users and allows registered self-delete"
+    },
+    {
+      "parent": 199,
+      "child": 200,
+      "acceptance": "A2 Anonymous caller still permanently removes their auth.users row (existing logout contract).",
+      "testFile": "deleteAccountFlow.test.ts",
+      "testNamePattern": "anonymous signOut still permanently deletes via the same RPC"
+    },
+    {
+      "parent": 199,
+      "child": 200,
+      "acceptance": "A3 navigation_sessions.started_by RESTRICT and leftover memberships/commands do not block self-delete.",
+      "testFile": "anonymousSignOut.test.ts",
+      "testNamePattern": "keeps the RPC permanently deleting auth.users and allows registered self-delete"
+    },
+    {
+      "parent": 199,
+      "child": 200,
+      "acceptance": "A4 RoleSelect, Auth, and AccountSheet expose delete behind user via confirmAction and the listed runUiAction ids.",
+      "testFile": "accountDeletionContract.test.ts",
+      "testNamePattern": "exposes confirmAction delete on RoleSelect, Auth, and AccountSheet behind user"
+    },
+    {
+      "parent": 199,
+      "child": 200,
+      "acceptance": "A5 Settings root and Login do not gain a delete button. Registered signOut still only ends the session.",
+      "testFile": "deleteAccountFlow.test.ts",
+      "testNamePattern": "registered signOut only ends the session"
+    },
+    {
+      "parent": 199,
+      "child": 200,
+      "acceptance": "A6 After success the stack resets to Login. RPC failure shows account.deleteFailed and keeps the session.",
+      "testFile": "deleteAccountConfirm.test.ts",
+      "testNamePattern": "surfaces account.deleteFailed and keeps the session when RPC throws"
+    },
+    {
+      "parent": 199,
+      "child": 200,
+      "acceptance": "A7 zh/en catalogs include the new account.delete* keys with identical key sets.",
+      "testFile": "accountDeletionContract.test.ts",
+      "testNamePattern": "adds matching zh/en account.delete catalog keys"
+    },
+    {
+      "parent": 199,
+      "child": 201,
+      "acceptance": "A1 Login (pre-login sign-up methods) shows LanguagePicker and switching updates copy immediately.",
+      "testFile": "languagePickerContract.test.ts",
+      "testNamePattern": "shows LanguagePicker on Login without hiding it behind a session"
+    },
+    {
+      "parent": 199,
+      "child": 201,
+      "acceptance": "A2 RoleSelect shows LanguagePicker even when user is null.",
+      "testFile": "languagePickerContract.test.ts",
+      "testNamePattern": "shows LanguagePicker on RoleSelect even when user is null"
+    },
+    {
+      "parent": 199,
+      "child": 201,
+      "acceptance": "A3 Auth leader and Auth follower both show LanguagePicker.",
+      "testFile": "languagePickerContract.test.ts",
+      "testNamePattern": "shows LanguagePicker on Auth for both leader and follower"
+    },
+    {
+      "parent": 199,
+      "child": 201,
+      "acceptance": "A4 Picker writes existing setLanguage / pref.language. No restart path.",
+      "testFile": "languagePicker.test.ts",
+      "testNamePattern": "calls setLanguage for zh and en without a restart path"
+    },
+    {
+      "parent": 199,
+      "child": 201,
+      "acceptance": "A5 Settings overlay still uses its Segmented language control; no new locale.",
+      "testFile": "languagePickerContract.test.ts",
+      "testNamePattern": "keeps Settings overlay on Segmented language control"
+    },
+    {
+      "parent": 199,
+      "child": 201,
+      "acceptance": "A6 zh/en key sets stay identical (new a11y keys if added).",
+      "testFile": "languagePickerContract.test.ts",
+      "testNamePattern": "keeps zh/en catalogs key-identical after picker keys"
     }
   ]
 }

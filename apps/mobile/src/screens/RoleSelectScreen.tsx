@@ -18,7 +18,9 @@ import { useTranslation } from '../i18n';
 import { lightTap } from '../utils/haptics';
 import { logEvent } from '../utils/activityLog';
 import { runUiAction } from '../utils/uiAction';
+import { confirmDeleteAccount } from '../utils/deleteAccount';
 import CrookIcon from '../components/CrookIcon';
+import LanguagePicker from '../components/LanguagePicker';
 import { useSession } from '../state/SessionContext';
 import {
   getCachedMyJoinedGroups,
@@ -46,7 +48,7 @@ export default function RoleSelectScreen({ navigation }: Props) {
   const { colors } = useTheme();
   const { t } = useTranslation();
   const accent = colors.accent;
-  const { user, signOut } = useSession();
+  const { user, signOut, deleteAccount } = useSession();
 
   // Paint from in-memory cache immediately; refresh in background without
   // waiting for the full (profiles) path.
@@ -95,6 +97,9 @@ export default function RoleSelectScreen({ navigation }: Props) {
       locations={[0, 0.52, 1]}
       style={styles.fill}
     >
+      <View style={[styles.langChrome, { top: insets.top + 16 }]}>
+        <LanguagePicker />
+      </View>
       {navigation.canGoBack() && (
         <Pressable
           onPress={() => navigation.goBack()}
@@ -199,6 +204,27 @@ export default function RoleSelectScreen({ navigation }: Props) {
           <Animated.View entering={FadeIn.duration(600).delay(300)}>
             <Text style={[styles.footer, { marginTop: 16 }]}>{t('role.footer')}</Text>
           </Animated.View>
+
+          {user ? (
+            <Pressable
+              onPress={() =>
+                confirmDeleteAccount({
+                  t,
+                  actionId: 'role_select.delete_account',
+                  screen: 'RoleSelect',
+                  deleteAccount,
+                  onDeleted: () => {
+                    navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+                  },
+                })
+              }
+              accessibilityRole="button"
+              accessibilityLabel={t('account.delete')}
+              style={styles.deleteAccount}
+            >
+              <Text style={styles.deleteAccountText}>{t('account.delete')}</Text>
+            </Pressable>
+          ) : null}
         </View>
 
         {/* Leftover height stays below actions — keeps create/join ↔ my-teams distance fixed. */}
@@ -222,6 +248,13 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     // elevation:0 — translucent rounded chrome must not cast Android shadow frames
     elevation: 0,
+    zIndex: 10,
+  },
+  langChrome: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
     zIndex: 10,
   },
   logout: {
@@ -318,6 +351,18 @@ const styles = StyleSheet.create({
   footer: {
     fontSize: 13,
     color: 'rgba(235,235,245,0.4)',
+  },
+  deleteAccount: {
+    marginTop: 20,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  deleteAccountText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(255,107,107,0.9)',
   },
   bottomFlex: { flex: 1 },
 });

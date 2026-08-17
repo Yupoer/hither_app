@@ -25,6 +25,7 @@ import { useTranslation } from '../i18n';
 import { accentMix } from '../glass';
 import { runUiAction } from '../utils/uiAction';
 import SafePressable from '../components/SafePressable';
+import LanguagePicker from '../components/LanguagePicker';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 type Mode = 'signin' | 'signup';
@@ -171,6 +172,9 @@ export default function LoginScreen({ navigation }: Props) {
       locations={[0, 0.52, 1]}
       style={styles.fill}
     >
+      <View style={[styles.langChrome, { top: insets.top + 12 }]}>
+        <LanguagePicker />
+      </View>
       <KeyboardAvoidingView
         style={styles.fill}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -381,6 +385,11 @@ export default function LoginScreen({ navigation }: Props) {
 const makeStyles = (accent: string) =>
   StyleSheet.create({
     fill: { flex: 1 },
+    langChrome: {
+      position: 'absolute',
+      right: 20,
+      zIndex: 10,
+    },
     content: { flexGrow: 1, paddingHorizontal: 24 },
     header: { alignItems: 'center', marginBottom: 28 },
     title: {

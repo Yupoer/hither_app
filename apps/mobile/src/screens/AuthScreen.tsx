@@ -24,7 +24,9 @@ import { useTranslation } from '../i18n';
 import { accentMix, glass } from '../glass';
 import { logEvent, logError } from '../utils/activityLog';
 import { runUiAction, type UiActionToken } from '../utils/uiAction';
+import { confirmDeleteAccount } from '../utils/deleteAccount';
 import SafePressable from '../components/SafePressable';
+import LanguagePicker from '../components/LanguagePicker';
 import { mediumTap } from '../utils/haptics';
 import { classifyAnonymousAccessError } from '../anonymousAccess';
 
@@ -44,7 +46,7 @@ const DISPLAY_FONT = 'Fredoka_600SemiBold';
 export default function AuthScreen({ navigation, route }: Props) {
   const role = route.params?.role ?? 'leader';
   const isLeader = role === 'leader';
-  const { signIn, user, updateNickname, setMembership, refreshProfile } = useSession();
+  const { signIn, user, updateNickname, setMembership, refreshProfile, deleteAccount } = useSession();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const { t } = useTranslation();
@@ -152,16 +154,21 @@ export default function AuthScreen({ navigation, route }: Props) {
             {/* Only render Back when there is somewhere to go — after an
                 end-group/sign-out reset this screen can be the stack root, and an
                 unconditional goBack() throws "GO_BACK was not handled". */}
-            {navigation.canGoBack() && (
-              <Pressable
-                onPress={() => navigation.goBack()}
-                accessibilityRole="button"
-                accessibilityLabel="Back"
-                style={styles.back}
-              >
-                <Ionicons name="chevron-back" size={22} color="rgba(255,255,255,0.7)" />
-              </Pressable>
-            )}
+            <View style={styles.topChrome}>
+              {navigation.canGoBack() ? (
+                <Pressable
+                  onPress={() => navigation.goBack()}
+                  accessibilityRole="button"
+                  accessibilityLabel="Back"
+                  style={styles.back}
+                >
+                  <Ionicons name="chevron-back" size={22} color="rgba(255,255,255,0.7)" />
+                </Pressable>
+              ) : (
+                <View style={styles.backSpacer} />
+              )}
+              <LanguagePicker />
+            </View>
 
             <Text style={styles.kicker}>
               {isLeader ? t('auth.leaderKicker') : t('auth.followerKicker')}
@@ -328,6 +335,27 @@ export default function AuthScreen({ navigation, route }: Props) {
             <Text style={styles.footer}>
               {isLeader ? t('auth.leaderFoot') : t('auth.followerFoot')}
             </Text>
+
+            {user ? (
+              <Pressable
+                onPress={() =>
+                  confirmDeleteAccount({
+                    t,
+                    actionId: 'auth.delete_account',
+                    screen: 'Auth',
+                    deleteAccount,
+                    onDeleted: () => {
+                      navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+                    },
+                  })
+                }
+                accessibilityRole="button"
+                accessibilityLabel={t('account.delete')}
+                style={styles.deleteAccount}
+              >
+                <Text style={styles.deleteAccountText}>{t('account.delete')}</Text>
+              </Pressable>
+            ) : null}
           </View>
       </LinearGradient>
     </TouchableWithoutFeedback>
@@ -338,6 +366,12 @@ const makeStyles = (accent: string) =>
   StyleSheet.create({
     fill: { flex: 1 },
     content: { flex: 1, paddingHorizontal: 24 },
+    topChrome: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    backSpacer: { width: 44, height: 44 },
     back: {
       width: 44,
       height: 44,
@@ -417,5 +451,16 @@ const makeStyles = (accent: string) =>
       fontSize: 13,
       color: 'rgba(235,235,245,0.4)',
       marginTop: 14,
+    },
+    deleteAccount: {
+      marginTop: 16,
+      minHeight: 44,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    deleteAccountText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: 'rgba(255,107,107,0.9)',
     },
   });

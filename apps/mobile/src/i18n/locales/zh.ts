@@ -1009,6 +1009,12 @@ export const zh = {
     '輸入序號可解鎖與購買相同的 server 權益（Premium 或小團 Pass）。匿名帳號請先註冊。',
   'account.redeemPlaceholder': '請輸入序號',
   'account.redeemCta': '兌換',
+  'account.delete': '刪除帳號',
+  'account.deleteTitle': '刪除帳號',
+  'account.deleteMsg':
+    '這會永久刪除你的帳號、個人資料與所有隊伍成員身分，無法復原。若你有 Apple 或 Google 訂閱，費用會持續扣到你在 App Store 或 Google Play 取消為止。',
+  'account.deleteConfirm': '刪除帳號',
+  'account.deleteFailed': '無法刪除帳號，請稍後再試。',
 
   // Trip day / reorder
   'trip.setDaysAndDate': '設定天數與日期',

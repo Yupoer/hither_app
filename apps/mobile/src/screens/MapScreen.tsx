@@ -7745,6 +7745,9 @@ export default function MapScreen({ route, navigation }: Props) {
         visible={overlay === 'account'}
         onClose={() => setOverlay('settings')}
         accent={accent}
+        onAccountDeleted={() => {
+          navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+        }}
       />
 
       <ProfileOverlay
