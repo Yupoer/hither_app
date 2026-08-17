@@ -48,6 +48,7 @@ import {
   routeViewportFromRegion,
   type RouteViewport,
 } from '../utils/routeLod';
+import { advanceRouteToCoordinate } from '../utils/advanceRouteToCoordinate';
 import { mapKitChromeLayout } from '../utils/mapChromeLayout';
 import {
   pulsePeakScale,
@@ -128,6 +129,8 @@ export interface GroupMapProps {
   /** First available user location, used before a gathering point exists. */
   initialCenter?: Coordinates;
   routePoints?: Coordinates[];
+  /** Latest self GPS sample used to trim the planned polyline locally. */
+  selfCoordinates?: Coordinates | null;
   routeColor?: string;
   /** Active navigation / team target — receives 5s pulse only. */
   activeDestinationId?: string | null;
@@ -510,6 +513,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     currentUserId,
     initialCenter,
     routePoints,
+    selfCoordinates = null,
     routeColor,
     activeDestinationId = null,
     completedDestinationIds = null,
@@ -591,8 +595,13 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     }),
   );
   const displayRoute = useMemo(
-    () => displayRoutePoints(routePoints ?? [], settledRouteViewport),
-    [routePoints, settledRouteViewport],
+    () => displayRoutePoints(
+      selfCoordinates
+        ? advanceRouteToCoordinate(routePoints ?? [], selfCoordinates)
+        : (routePoints ?? []),
+      settledRouteViewport,
+    ),
+    [routePoints, selfCoordinates, settledRouteViewport],
   );
   const mapChrome = useMemo(
     () => mapKitChromeLayout({ safeArea: insets, topChrome: topOverlap }),
@@ -894,7 +903,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
         ));
       }}
     >
-      {routePoints && routePoints.length > 1 ? (
+      {displayRoute.length > 1 ? (
         <Polyline
           coordinates={displayRoute}
           strokeColor={routeColor ?? colors.accent}

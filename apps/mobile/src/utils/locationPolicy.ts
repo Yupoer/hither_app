@@ -175,7 +175,7 @@ export function locationPolicy(
         uploadHeartbeatStationaryMs: 60_000,
         stationaryAfterMs: 45_000,
         routeMinDistanceM: 15,
-        routeMinIntervalMs: 8_000,
+        routeMinIntervalMs: 3_000,
         routeCoordDecimals: 5,
         realtimeLocationDebounceMs: 1_500,
       }
@@ -191,8 +191,8 @@ export function locationPolicy(
         uploadHeartbeatMs: 90_000,
         uploadHeartbeatStationaryMs: 120_000,
         stationaryAfterMs: 45_000,
-        routeMinDistanceM: 50,
-        routeMinIntervalMs: 40_000,
+        routeMinDistanceM: 18,
+        routeMinIntervalMs: 3_000,
         routeCoordDecimals: 4,
         realtimeLocationDebounceMs: 4_000,
       };

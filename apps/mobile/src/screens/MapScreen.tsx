@@ -6062,6 +6062,7 @@ export default function MapScreen({ route, navigation }: Props) {
           // broadcast or local follower plan). When paused, keep a light path
           // to the selected card so ETA still makes sense.
           routePoints={selfRoute?.points}
+          selfCoordinates={fromCoords}
           routeColor={accent}
           // Settled detent only (not heightSV) so we don't re-render the map
           // mid-drag; top tracks measured carousel card height.

@@ -421,6 +421,41 @@
       "acceptance": "A5 transitMapDefaults inverted and green",
       "testFile": "transitMapDefaults.test.ts",
       "testNamePattern": "uses an exclusive Apple transit POI filter including publicTransport"
+    },
+    {
+      "parent": 206,
+      "child": 209,
+      "acceptance": "A1 Self GPS movement splices the polyline immediately without waiting for network",
+      "testFile": "advanceRouteToCoordinate.test.ts",
+      "testNamePattern": "splices the current GPS onto the remaining polyline without waiting for network"
+    },
+    {
+      "parent": 206,
+      "child": 209,
+      "acceptance": "A2 Network recompute is correction only at about 15–20m or 3s in foreground",
+      "testFile": "locationPolicy.test.ts",
+      "testNamePattern": "defaults to the motion-aware foreground balanced profile"
+    },
+    {
+      "parent": 206,
+      "child": 209,
+      "acceptance": "A3 Background / allDay route cadence is unchanged",
+      "testFile": "locationPolicy.test.ts",
+      "testNamePattern": "allDay ignores highAccuracy and uses Low GPS for the 8h budget"
+    },
+    {
+      "parent": 206,
+      "child": 209,
+      "acceptance": "A4 Switching walk / transit / drive immediately clears the line",
+      "testFile": "mapKitRoutes.test.ts",
+      "testNamePattern": "does not call getDirections for local GPS trim and clears on travel mode change"
+    },
+    {
+      "parent": 206,
+      "child": 209,
+      "acceptance": "A5 No new native module for route trim",
+      "testFile": "advanceRouteToCoordinate.test.ts",
+      "testNamePattern": "trims on the map surface before LOD and does not add a native module"
     }
   ]
 }
