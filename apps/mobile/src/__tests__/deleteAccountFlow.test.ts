@@ -73,6 +73,8 @@ function invokingSetUser() {
 }
 
 function makeFlow(overrides: Partial<Parameters<typeof useAuthFlow>[0]> = {}) {
+  // This test invokes the hook-shaped service factory without rendering React.
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   return useAuthFlow({
     user: overrides.user ?? { id: 'u1', name: 'Ada', email: 'ada@example.test' },
     isAnonymous: overrides.isAnonymous ?? false,
