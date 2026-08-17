@@ -97,19 +97,19 @@ export default function RoleSelectScreen({ navigation }: Props) {
       locations={[0, 0.52, 1]}
       style={styles.fill}
     >
-      <View style={[styles.langChrome, { top: insets.top + 16 }]}>
-        <LanguagePicker />
+      <View style={[styles.leftChrome, { top: insets.top + 12 }]}>
+        {navigation.canGoBack() ? (
+          <Pressable
+            onPress={() => navigation.goBack()}
+            accessibilityRole="button"
+            android_ripple={IS_ANDROID ? { color: 'transparent' } : undefined}
+            style={[styles.back, { backgroundColor: CHROME_FILL, borderColor: CHROME_BORDER }]}
+          >
+            <Ionicons name="chevron-back" size={22} color="rgba(255,255,255,0.7)" />
+          </Pressable>
+        ) : null}
+        <LanguagePicker variant="menu" />
       </View>
-      {navigation.canGoBack() && (
-        <Pressable
-          onPress={() => navigation.goBack()}
-          accessibilityRole="button"
-          android_ripple={IS_ANDROID ? { color: 'transparent' } : undefined}
-          style={[styles.back, { top: insets.top + 12, backgroundColor: CHROME_FILL, borderColor: CHROME_BORDER }]}
-        >
-          <Ionicons name="chevron-back" size={22} color="rgba(255,255,255,0.7)" />
-        </Pressable>
-      )}
       <Pressable
         onPress={() => Alert.alert(
           t('settings.signOutTitle'),
@@ -236,9 +236,15 @@ export default function RoleSelectScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
-  back: {
+  leftChrome: {
     position: 'absolute',
     left: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    zIndex: 10,
+  },
+  back: {
     width: 44,
     height: 44,
     borderRadius: 22,
@@ -248,14 +254,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     // elevation:0 — translucent rounded chrome must not cast Android shadow frames
     elevation: 0,
-    zIndex: 10,
-  },
-  langChrome: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    zIndex: 10,
   },
   logout: {
     position: 'absolute',
