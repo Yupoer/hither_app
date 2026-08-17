@@ -124,6 +124,9 @@ select lives_ok(
   'registered caller can permanently delete self'
 );
 
+-- Assertions need table owners; authenticated cannot SELECT auth.users.
+reset role;
+
 select is(
   (select count(*)::int from auth.users where id = 'a1111111-1111-4111-8111-111111111111'),
   0,
@@ -169,7 +172,9 @@ select is(
   'daily_accommodations created_by is nulled'
 );
 
+set local role authenticated;
 select set_config('request.jwt.claim.sub', 'a3333333-3333-4333-8333-333333333333', true);
+select set_config('request.jwt.claim.role', 'authenticated', true);
 select set_config(
   'request.jwt.claims',
   '{"sub":"a3333333-3333-4333-8333-333333333333","role":"authenticated","is_anonymous":false}',
@@ -181,11 +186,14 @@ select lives_ok(
   'sole member can delete self'
 );
 
+reset role;
+
 select ok(
   not exists(select 1 from public.groups where id = 'a6bbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),
   'empty-only group is removed by existing trigger'
 );
 
+set local role authenticated;
 select set_config('request.jwt.claim.sub', 'a4444444-4444-4444-8444-444444444444', true);
 select set_config(
   'request.jwt.claims',
@@ -197,6 +205,8 @@ select lives_ok(
   $$select public.delete_anonymous_account()$$,
   'anonymous caller still permanently deletes self'
 );
+
+reset role;
 
 select is(
   (select count(*)::int from auth.users where id = 'a4444444-4444-4444-8444-444444444444'),
