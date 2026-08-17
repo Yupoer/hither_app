@@ -547,6 +547,55 @@
       "acceptance": "A4 mapUiContracts flipped and green",
       "testFile": "mapUiContracts.test.ts",
       "testNamePattern": "keeps arrival beside navigation controls and auto-applies current time"
+    },
+    {
+      "parent": 206,
+      "child": 213,
+      "acceptance": "A1 zh duration matches 90m / 26h / 45m / <1m examples",
+      "testFile": "liveActivityContract.test.ts",
+      "testNamePattern": "matches the approved black capsule information hierarchy"
+    },
+    {
+      "parent": 206,
+      "child": 213,
+      "acceptance": "A2 At most two duration units",
+      "testFile": "liveActivityContract.test.ts",
+      "testNamePattern": "matches the approved black capsule information hierarchy"
+    },
+    {
+      "parent": 206,
+      "child": 213,
+      "acceptance": "A3 Lock and island show 正在前往, not 前往集合點",
+      "testFile": "liveActivityContract.test.ts",
+      "testNamePattern": "matches the approved black capsule information hierarchy"
+    },
+    {
+      "parent": 206,
+      "child": 213,
+      "acceptance": "A4 Dest over 10 CJK / 16 Latin uses marquee",
+      "testFile": "liveActivityContract.test.ts",
+      "testNamePattern": "matches the approved black capsule information hierarchy"
+    },
+    {
+      "parent": 206,
+      "child": 213,
+      "acceptance": "A5 Dest and ETA do not overlap",
+      "testFile": "liveActivityContract.test.ts",
+      "testNamePattern": "matches the approved black capsule information hierarchy"
+    },
+    {
+      "parent": 206,
+      "child": 213,
+      "acceptance": "A6 language is passed on start/update",
+      "testFile": "liveActivityContract.test.ts",
+      "testNamePattern": "matches the approved black capsule information hierarchy"
+    },
+    {
+      "parent": 206,
+      "child": 213,
+      "acceptance": "A7 English still uses compactDuration",
+      "testFile": "liveActivityContract.test.ts",
+      "testNamePattern": "matches the approved black capsule information hierarchy"
     }
   ]
 }

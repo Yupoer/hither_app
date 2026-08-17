@@ -2870,6 +2870,7 @@ export default function MapScreen({ route, navigation }: Props) {
     // Ticket 07: destination emoji when set (native may no-op without a glyph slot).
     // Flag color is day-scoped in map/list chrome; LA keeps theme accent.
     destinationEmoji: navTarget?.emoji ?? undefined,
+    language,
   }, groupId && navTarget && liveActivityBaselineM != null ? {
     groupId,
     navigationSessionId: navigationSessionState.session?.id,

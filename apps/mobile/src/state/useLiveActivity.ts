@@ -315,5 +315,6 @@ export function useLiveActivity(
     arrivalSignature,
     emojiSignature,
     destinationEmojiSig,
+    state.language,
   ]);
 }

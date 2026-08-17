@@ -5,8 +5,8 @@ import WidgetKit
 // Live Activity UI: the lock-screen banner + Dynamic Island presentations for
 // the group "heading to gathering point" journey. Styled after the Hither
 // "Gather Card" redesign — a dark glass surface, the shepherd-crook brand mark,
-// the transit glyph, "前往集合點" + ETA, a flock progress bar and member-emoji
-// avatars. The accent follows the app's active theme (passed as `accentHex` in
+// the transit glyph, "正在前往" + ETA, a flock progress bar and member-emoji
+// avatars. The accent follows the app's active theme (passed as `accentHex` in)
 // the state); everything else reads from the same live stop as the in-app
 // gather card. Data comes from `HitherGroupAttributes` (started / updated by
 // the app's HitherLiveActivity module); this target only draws it.
@@ -108,16 +108,17 @@ struct HitherLiveActivityWidget: Widget {
         }
         DynamicIslandExpandedRegion(.center) {
           VStack(alignment: .leading, spacing: 2) {
-            // No duplicate transport icon before「前往集合點」— mode is leading only.
-            Text("前往集合點")
+            // No duplicate transport icon before「正在前往」— mode is leading only.
+            Text("正在前往")
               .font(.system(size: 11, weight: .bold))
               .tracking(0.6)
               .foregroundStyle(accent)
-            // Gathering point title when present; team name is fallback only.
-            Text(context.state.displayTitle(fallbackGroupName: context.attributes.groupName))
+            DestinationTitle(
+              text: context.state.displayTitle(fallbackGroupName: context.attributes.groupName)
+            )
               .font(.system(size: 16, weight: .semibold))
               .foregroundStyle(Brand.textPrimary)
-              .lineLimit(1)
+              .layoutPriority(0)
           }
           .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -159,6 +160,29 @@ struct HitherLiveActivityWidget: Widget {
   }
 }
 
+private struct DestinationTitle: View {
+  let text: String
+
+  var body: some View {
+    let needsMarquee = HitherGroupAttributes.ContentState.destinationNeedsMarquee(text)
+    Group {
+      if needsMarquee {
+        TimelineView(.periodic(from: .now, by: 0.1)) { context in
+          let cycle = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 7)
+          Text(text)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+            .offset(x: -CGFloat(cycle / 7) * 120)
+        }
+      } else {
+        Text(text).lineLimit(1)
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .clipped()
+  }
+}
+
 // MARK: - Lock screen
 
 private struct LockScreenView: View {
@@ -172,28 +196,36 @@ private struct LockScreenView: View {
         TravelModeBadge(symbol: context.state.modeSymbol, accent: accent, size: 44)
           .accessibilityLabel(context.state.modeAccessibilityLabel)
         VStack(alignment: .leading, spacing: 3) {
-          // No second transport glyph before「前往集合點」.
-          Text("前往集合點")
+          // No second transport glyph before「正在前往」.
+          Text("正在前往")
             .font(.system(size: 10.5, weight: .bold))
             .tracking(0.45)
             .foregroundStyle(accent)
-          Text(context.state.displayTitle(fallbackGroupName: context.attributes.groupName))
+          DestinationTitle(
+            text: context.state.displayTitle(fallbackGroupName: context.attributes.groupName)
+          )
             .font(.system(size: 17, weight: .semibold))
             .foregroundStyle(Brand.textPrimary)
-            .lineLimit(1)
+            .layoutPriority(0)
         }
+        .layoutPriority(0)
+        .frame(maxWidth: .infinity, alignment: .leading)
         Spacer(minLength: 6)
         if let eta = context.state.etaText {
           VStack(alignment: .trailing, spacing: 1) {
             Text(eta.unit.isEmpty ? eta.value : "\(eta.value) \(eta.unit)")
               .font(.system(size: 22, weight: .bold))
               .foregroundStyle(Brand.textPrimary)
+              .lineLimit(1)
             if let distance = context.state.formattedDistance {
               Text(distance)
                 .font(.system(size: 12))
                 .foregroundStyle(Brand.textSecondary)
             }
           }
+          .frame(minWidth: 88, alignment: .trailing)
+          .fixedSize(horizontal: true, vertical: false)
+          .layoutPriority(1)
         }
       }
 
@@ -366,21 +398,32 @@ private extension HitherGroupAttributes.ContentState {
     return (0..<count).map { arrived.indices.contains($0) && arrived[$0] }
   }
 
-  /// Compact ETA for the narrow Dynamic Island regions ("4 min", "now", "1d12hr").
+  /// Compact ETA for the narrow Dynamic Island regions.
   var shortEta: String? {
     guard let s = etaSeconds else { return nil }
-    return HitherGroupAttributes.ContentState.compactDuration(fromSeconds: s)
+    return HitherGroupAttributes.ContentState.formattedDuration(
+      fromSeconds: s,
+      language: language
+    )
   }
 
-  /// Hero ETA block: under 1h keeps value+unit ("12" / "min"); longer is a
-  /// single compact string in value with empty unit ("1hr30", "1d12hr").
+  /// Hero ETA block. en keeps value+unit under 1h; zh is a single localized string.
   var etaText: (value: String, unit: String)? {
     guard let s = etaSeconds else { return nil }
-    let m = Int((s / 60).rounded())
-    if m < 1 { return (value: "<1", unit: "min") }
-    if m < 60 { return (value: "\(m)", unit: "min") }
+    if HitherGroupAttributes.ContentState.usesEnglish(language) {
+      let m = Int((s / 60).rounded())
+      if m < 1 { return (value: "<1", unit: "min") }
+      if m < 60 { return (value: "\(m)", unit: "min") }
+      return (
+        value: HitherGroupAttributes.ContentState.compactDuration(fromMinutes: m),
+        unit: ""
+      )
+    }
     return (
-      value: HitherGroupAttributes.ContentState.compactDuration(fromMinutes: m),
+      value: HitherGroupAttributes.ContentState.formattedDuration(
+        fromSeconds: s,
+        language: language
+      ),
       unit: ""
     )
   }

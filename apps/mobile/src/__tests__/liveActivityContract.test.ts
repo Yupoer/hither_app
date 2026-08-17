@@ -68,6 +68,7 @@ describe('ActivityKit remote push contract', () => {
     expect(contentStateShape(appAttributes)).toBe(contentStateShape(widgetAttributes));
     expect(contentStateShape(appAttributes)).toContain('memberArrived: [Bool]?');
     expect(contentStateShape(appAttributes)).toContain('destinationEmoji: String?');
+    expect(contentStateShape(appAttributes)).toContain('language: String?');
   });
 
   it('decodes and renders destinationEmoji on native Live Activity', () => {
@@ -182,14 +183,26 @@ describe('ActivityKit remote push contract', () => {
 
   it('matches the approved black capsule information hierarchy', () => {
     expect(widget).toContain('static let card = Color.black');
-    expect(widget).toContain('前往集合點');
+    expect(widget).toContain('正在前往');
+    expect(widget).not.toContain('前往集合點');
     expect(widget).not.toContain('GATHERING AT');
     expect(widget).toContain('已抵達');
     expect(widget).toContain('ProgressBar');
     expect(widget).toContain('formattedDistance');
     expect(widget).toContain('etaText');
     expect(widget).toContain('compactDuration');
+    expect(widget).toContain('DestinationTitle');
+    expect(widget).toContain('destinationNeedsMarquee');
+    expect(widget).toContain('layoutPriority(0)');
+    expect(widget).toContain('minWidth: 88');
     expect(widgetAttributes).toContain('1d12hr');
+    expect(widgetAttributes).toContain('不到1分鐘');
+    expect(widgetAttributes).toContain('1小時30分鐘');
+    expect(widgetAttributes).toContain('zhDuration');
+    expect(appAttributes).toContain('public var language: String?');
+    expect(jsBridge).toContain('language?:');
+    expect(mapScreen).toContain('language,');
+    expect(liveHook).toContain('state.language');
   });
 
   it('uses travel-mode leading identity and gathering-title precedence', () => {

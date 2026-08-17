@@ -778,6 +778,7 @@ async function sendLiveActivities(
           (member) => avatarByUser.get(member.user_id) ?? "🙂",
         ),
         memberArrived: visibleMembers.map((member) => member.status === "arrived"),
+        language: "zh",
       };
 
       return sendLiveActivityApns(cfg, jwt, session.push_token, {
