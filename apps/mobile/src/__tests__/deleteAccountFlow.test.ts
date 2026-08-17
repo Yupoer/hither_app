@@ -7,6 +7,10 @@ const mockUpdateUser = jest.fn();
 const mockGetUser = jest.fn();
 const mockSignInWithOAuth = jest.fn();
 const mockLinkIdentity = jest.fn();
+const mockSetSession = jest.fn();
+const mockOpenAuth = jest.fn();
+const mockGetQueryParams = jest.fn();
+const mockAppleSignIn = jest.fn();
 const mockUpsert = jest.fn();
 const mockMaybeSingle = jest.fn();
 const mockUpdateNickname = jest.fn();
@@ -14,17 +18,19 @@ const mockUpdateProfile = jest.fn();
 
 jest.mock('react', () => ({ useCallback: (fn: unknown) => fn }));
 jest.mock('expo-web-browser', () => ({
-  openAuthSessionAsync: jest.fn(),
+  openAuthSessionAsync: (...args: unknown[]) => mockOpenAuth(...args),
 }));
 jest.mock('expo-auth-session', () => ({ makeRedirectUri: jest.fn(() => 'hither://auth/callback') }));
-jest.mock('expo-auth-session/build/QueryParams', () => ({ getQueryParams: jest.fn() }));
+jest.mock('expo-auth-session/build/QueryParams', () => ({
+  getQueryParams: (...args: unknown[]) => mockGetQueryParams(...args),
+}));
 jest.mock('expo-crypto', () => ({
   randomUUID: () => 'raw-nonce',
   digestStringAsync: jest.fn().mockResolvedValue('hashed-nonce'),
   CryptoDigestAlgorithm: { SHA256: 'SHA-256' },
 }));
 jest.mock('expo-apple-authentication', () => ({
-  signInAsync: jest.fn(),
+  signInAsync: (...args: unknown[]) => mockAppleSignIn(...args),
   AppleAuthenticationScope: { FULL_NAME: 0, EMAIL: 1 },
 }));
 jest.mock('../api/client', () => ({
@@ -44,7 +50,7 @@ jest.mock('../api/supabase', () => ({
       signInWithOAuth: (...args: unknown[]) => mockSignInWithOAuth(...args),
       linkIdentity: (...args: unknown[]) => mockLinkIdentity(...args),
       signInWithIdToken: jest.fn(),
-      setSession: jest.fn(),
+      setSession: (...args: unknown[]) => mockSetSession(...args),
       exchangeCodeForSession: jest.fn(),
     },
     from: () => ({
@@ -56,11 +62,21 @@ jest.mock('../api/supabase', () => ({
 
 import { useAuthFlow } from '../state/useAuthFlow';
 
+function invokingSetUser() {
+  const seed = { id: 'u1', name: 'Ada', email: 'ada@example.test', provider: 'anonymous' as const };
+  return jest.fn((next: unknown) => {
+    if (typeof next === 'function') {
+      return (next as (prev: typeof seed) => unknown)(seed);
+    }
+    return next;
+  });
+}
+
 function makeFlow(overrides: Partial<Parameters<typeof useAuthFlow>[0]> = {}) {
   return useAuthFlow({
     user: overrides.user ?? { id: 'u1', name: 'Ada', email: 'ada@example.test' },
     isAnonymous: overrides.isAnonymous ?? false,
-    setUser: overrides.setUser ?? jest.fn(),
+    setUser: overrides.setUser ?? invokingSetUser(),
     setIsAnonymous: overrides.setIsAnonymous ?? jest.fn(),
     setIsPro: overrides.setIsPro ?? jest.fn(),
     setMembershipState: overrides.setMembershipState ?? jest.fn(),
@@ -154,5 +170,44 @@ describe('useAuthFlow deleteAccount and signOut', () => {
     await flow.updateNickname('Ada');
     await flow.updateProfile({ nickname: 'Ada' });
     await flow.upgradeToEmailAccount('ada@example.test', 'secret1');
+  });
+
+  it('links Google/Apple and applies profile updaters on success and RPC reject', async () => {
+    mockLinkIdentity.mockResolvedValue({ data: { url: 'https://auth.example/google' }, error: null });
+    mockOpenAuth.mockResolvedValue({ type: 'success', url: 'hither://cb' });
+    mockGetQueryParams.mockReturnValue({
+      params: { access_token: 'tok', refresh_token: 'ref' },
+      errorCode: null,
+    });
+    mockSetSession.mockResolvedValue({
+      data: { user: { email: 'g@example.test' } },
+      error: null,
+    });
+    mockAppleSignIn.mockResolvedValue({
+      identityToken: 'apple.jwt',
+      email: 'a@example.test',
+    });
+
+    const googleFlow = makeFlow();
+    await expect(googleFlow.linkWithGoogle()).resolves.toMatchObject({
+      email: 'g@example.test',
+      provider: 'google',
+    });
+
+    mockRpc.mockRejectedValueOnce(new Error('already cleared'));
+    mockLinkIdentity.mockResolvedValue({
+      data: { user: { email: 'a@example.test' } },
+      error: null,
+    });
+    const appleFlow = makeFlow();
+    await expect(appleFlow.linkWithApple()).resolves.toMatchObject({
+      email: 'a@example.test',
+      provider: 'apple',
+    });
+
+    mockRpc.mockRejectedValueOnce(new Error('already cleared'));
+    const upgradeFlow = makeFlow();
+    await upgradeFlow.upgradeToEmailAccount('ada@example.test', 'secret1');
+    await upgradeFlow.updateProfile({ nickname: 'Ada', avatar: 'fox' });
   });
 });
