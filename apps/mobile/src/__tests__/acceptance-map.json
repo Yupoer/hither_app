@@ -701,6 +701,34 @@
       "acceptance": "A5 Not an ActionSheet or bottom sheet",
       "testFile": "keyboardSurface.test.ts",
       "testNamePattern": "paywall redeem uses a centered Modal input, not the account sheet"
+    },
+    {
+      "parent": 206,
+      "child": 217,
+      "acceptance": "A1 Settings gear opens a right-slide page with a back chevron",
+      "testFile": "languagePickerContract.test.ts",
+      "testNamePattern": "keeps Settings language as a NavRow that pushes a right-slide child"
+    },
+    {
+      "parent": 206,
+      "child": 217,
+      "acceptance": "A2 Language and theme are NavRows like Account",
+      "testFile": "languagePickerContract.test.ts",
+      "testNamePattern": "keeps Settings language as a NavRow that pushes a right-slide child"
+    },
+    {
+      "parent": 206,
+      "child": 217,
+      "acceptance": "A3 Language and theme rows push child pages with existing choices",
+      "testFile": "languagePickerContract.test.ts",
+      "testNamePattern": "keeps Settings language as a NavRow that pushes a right-slide child"
+    },
+    {
+      "parent": 206,
+      "child": 217,
+      "acceptance": "A4 Settings is not an OverlaySheet and not Segmented",
+      "testFile": "languagePickerContract.test.ts",
+      "testNamePattern": "keeps Settings language as a NavRow that pushes a right-slide child"
     }
   ]
 }

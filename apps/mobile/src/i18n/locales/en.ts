@@ -3,6 +3,7 @@ import type { ZhDict } from './zh';
 /** English (en) catalog. Must share the same key set as zh. */
 export const en: Record<keyof ZhDict, string> = {
   'common.cancel': 'Cancel',
+  'common.back': 'Back',
   'common.confirm': 'Confirm',
   'common.next': 'Next',
   'common.delete': 'Delete',

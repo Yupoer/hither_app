@@ -79,11 +79,16 @@ describe('language picker placement contract', () => {
     expect(helper).not.toMatch(/@react-native-menu|UIMenu/);
   });
 
-  it('keeps Settings overlay on Segmented language control', () => {
+  it('keeps Settings language as a NavRow that pushes a right-slide child', () => {
     expect(settings).toContain("t('settings.language')");
-    expect(settings).toContain('<Segmented');
-    expect(settings).toContain('setLanguage');
+    expect(settings).toContain('setPage(\'language\')');
+    expect(settings).toContain('setPage(\'theme\')');
+    expect(settings).toContain('chevron-back');
+    expect(settings).toContain('settings-slide-page');
+    expect(settings).not.toContain('<Segmented');
     expect(settings).not.toContain('LanguagePicker');
+    expect(settings).not.toContain('OverlaySheet');
+    expect(settings).toContain('setLanguage');
   });
 
   it('keeps zh/en catalogs key-identical after picker keys', () => {

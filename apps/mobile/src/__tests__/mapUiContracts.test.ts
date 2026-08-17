@@ -401,7 +401,8 @@ describe('map UI placement contracts', () => {
     expect(sheetBlock).not.toContain('viewportCount={3}');
     expect(sheetBlock).not.toContain('PaneCoverFlow');
     // Shared Settings segmented controls stay non-glass icon-tab-free.
-    expect(settingsOverlay).toContain('<Segmented');
+    expect(settingsOverlay).toContain('setPage(\'language\')');
+    expect(settingsOverlay).not.toContain('<Segmented');
     expect(settingsOverlay).not.toContain('unstyledTrack');
     expect(settingsOverlay).not.toContain('liquidGlass');
     expect(settingsOverlay).not.toContain('SheetPaneTabs');

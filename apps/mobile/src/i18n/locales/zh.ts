@@ -6,6 +6,7 @@ export const zh = {
   'arrival.timeAutomatic': '與隊長時間同步',
   // Common
   'common.cancel': '取消',
+  'common.back': '返回',
   'common.confirm': '確認',
   'common.next': '下一步',
   'common.delete': '刪除',
