@@ -393,6 +393,16 @@ export function useAuthFlow({
     setMembershipState(null);
   }, [isAnonymous, setUser, setIsAnonymous, setIsPro, setMembershipState]);
 
+  const deleteAccount = useCallback(async () => {
+    const { error } = await supabase.rpc('delete_anonymous_account');
+    if (error) throw new Error(error.message);
+    await supabase.auth.signOut({ scope: 'local' });
+    setUser(null);
+    setIsAnonymous(false);
+    setIsPro(false);
+    setMembershipState(null);
+  }, [setUser, setIsAnonymous, setIsPro, setMembershipState]);
+
   const upgradeToEmailAccount = useCallback(
     async (email: string, password: string) => {
       if (!user) throw new Error('No active account to upgrade');
@@ -479,6 +489,7 @@ export function useAuthFlow({
     signInWithEmail,
     signUpWithEmail,
     signOut,
+    deleteAccount,
     upgradeToEmailAccount,
     updateNickname,
     updateProfile,

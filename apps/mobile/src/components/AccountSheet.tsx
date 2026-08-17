@@ -21,6 +21,7 @@ import { redeemPromoCode } from '../api/client';
 import { glass, accentMix } from '../glass';
 import { useTranslation, type TranslationKey } from '../i18n';
 import { runUiAction } from '../utils/uiAction';
+import { confirmDeleteAccount } from '../utils/deleteAccount';
 import { isAnonymousAccessExpired } from '../anonymousAccess';
 import {
   KEYBOARD_SURFACE_GAP_PT,
@@ -31,10 +32,12 @@ export default function AccountSheet({
   visible,
   onClose,
   accent,
+  onAccountDeleted,
 }: {
   visible: boolean;
   onClose: () => void;
   accent: string;
+  onAccountDeleted?: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const {
@@ -48,6 +51,7 @@ export default function AccountSheet({
     upgradeToEmailAccount,
     linkWithGoogle,
     linkWithApple,
+    deleteAccount,
   } = useSession();
   const { t } = useTranslation();
   const scrollRef = useRef<ScrollView>(null);
@@ -508,6 +512,31 @@ export default function AccountSheet({
               </Pressable>
             </View>
           </View>
+
+          {user ? (
+            <>
+              <Text style={styles.sectionLabel}>{t('account.delete')}</Text>
+              <Pressable
+                style={({ pressed }) => [styles.deleteButton, pressed && styles.pressed]}
+                onPress={() =>
+                  confirmDeleteAccount({
+                    t,
+                    actionId: 'account.delete',
+                    screen: 'Account',
+                    deleteAccount,
+                    onDeleted: () => {
+                      onClose();
+                      onAccountDeleted?.();
+                    },
+                  })
+                }
+                accessibilityRole="button"
+                accessibilityLabel={t('account.delete')}
+              >
+                <Text style={styles.deleteButtonText}>{t('account.delete')}</Text>
+              </Pressable>
+            </>
+          ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
     </OverlaySheet>
@@ -615,6 +644,21 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: '600',
+  },
+  deleteButton: {
+    minHeight: 48,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,69,58,0.16)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,69,58,0.4)',
+    marginBottom: 12,
+  },
+  deleteButtonText: {
+    color: '#ff6b6b',
+    fontSize: 16,
+    fontWeight: '700',
   },
   redeemButton: {
     marginLeft: 12,

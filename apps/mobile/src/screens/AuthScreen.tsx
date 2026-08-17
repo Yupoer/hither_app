@@ -24,6 +24,7 @@ import { useTranslation } from '../i18n';
 import { accentMix, glass } from '../glass';
 import { logEvent, logError } from '../utils/activityLog';
 import { runUiAction, type UiActionToken } from '../utils/uiAction';
+import { confirmDeleteAccount } from '../utils/deleteAccount';
 import SafePressable from '../components/SafePressable';
 import { mediumTap } from '../utils/haptics';
 import { classifyAnonymousAccessError } from '../anonymousAccess';
@@ -44,7 +45,7 @@ const DISPLAY_FONT = 'Fredoka_600SemiBold';
 export default function AuthScreen({ navigation, route }: Props) {
   const role = route.params?.role ?? 'leader';
   const isLeader = role === 'leader';
-  const { signIn, user, updateNickname, setMembership, refreshProfile } = useSession();
+  const { signIn, user, updateNickname, setMembership, refreshProfile, deleteAccount } = useSession();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const { t } = useTranslation();
@@ -328,6 +329,27 @@ export default function AuthScreen({ navigation, route }: Props) {
             <Text style={styles.footer}>
               {isLeader ? t('auth.leaderFoot') : t('auth.followerFoot')}
             </Text>
+
+            {user ? (
+              <Pressable
+                onPress={() =>
+                  confirmDeleteAccount({
+                    t,
+                    actionId: 'auth.delete_account',
+                    screen: 'Auth',
+                    deleteAccount,
+                    onDeleted: () => {
+                      navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+                    },
+                  })
+                }
+                accessibilityRole="button"
+                accessibilityLabel={t('account.delete')}
+                style={styles.deleteAccount}
+              >
+                <Text style={styles.deleteAccountText}>{t('account.delete')}</Text>
+              </Pressable>
+            ) : null}
           </View>
       </LinearGradient>
     </TouchableWithoutFeedback>
@@ -417,5 +439,16 @@ const makeStyles = (accent: string) =>
       fontSize: 13,
       color: 'rgba(235,235,245,0.4)',
       marginTop: 14,
+    },
+    deleteAccount: {
+      marginTop: 16,
+      minHeight: 44,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    deleteAccountText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: 'rgba(255,107,107,0.9)',
     },
   });
