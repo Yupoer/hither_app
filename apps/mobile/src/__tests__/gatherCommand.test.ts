@@ -1,8 +1,11 @@
 import {
+  applyLocalClosedAt,
+  arrivalControlJustSplit,
   deriveCardNavFlags,
   deriveScopedArrivalCounts,
   LEADER_COMPLETED_NOTICE,
   mergeAvatarProfiles,
+  planCompleteGatheringApply,
   projectHistoryForViewer,
   resolveCompletePrompt,
   resolveNavCommand,
@@ -248,7 +251,7 @@ describe('resolveCompletePrompt', () => {
       arrivedCount: 2,
       totalCount: 2,
     });
-    expect(r.kind).toBe('none');
+    expect(r.kind).toBe('already_complete');
   });
 
   it('never auto-completes empty roster (MapScreen totalCount=0 shape)', () => {
@@ -430,5 +433,69 @@ describe('history projection + avatar merge', () => {
 
   it('exports leader completed notice copy', () => {
     expect(LEADER_COMPLETED_NOTICE).toContain('隊長已完成');
+  });
+});
+
+describe('planCompleteGatheringApply (#195)', () => {
+  it('always applies local closedAt, card exit, and history even when RPC is debounced', () => {
+    expect(
+      planCompleteGatheringApply({
+        alreadyClosed: false,
+        rpcInFlight: false,
+        remoteAutoCompleted: false,
+      }),
+    ).toMatchObject({
+      callRpc: true,
+      applyLocalClosedAt: true,
+      startCardExit: true,
+      refreshHistory: true,
+      reason: 'rpc',
+    });
+    expect(
+      planCompleteGatheringApply({
+        alreadyClosed: true,
+        rpcInFlight: false,
+        remoteAutoCompleted: true,
+      }),
+    ).toMatchObject({
+      callRpc: false,
+      applyLocalClosedAt: true,
+      startCardExit: true,
+      refreshHistory: true,
+      reason: 'already_closed',
+    });
+    expect(
+      planCompleteGatheringApply({
+        alreadyClosed: false,
+        rpcInFlight: false,
+        remoteAutoCompleted: true,
+      }),
+    ).toMatchObject({
+      callRpc: false,
+      applyLocalClosedAt: true,
+      startCardExit: true,
+      refreshHistory: true,
+      reason: 'rpc_debounced',
+    });
+  });
+
+  it('stamps closedAt locally so a second 完成 is not a dead tap', () => {
+    const next = applyLocalClosedAt(
+      [{ id: 'd1', closedAt: null as string | null }, { id: 'd2' }],
+      'd1',
+      '2026-08-17T00:00:00.000Z',
+    );
+    expect(next[0].closedAt).toBe('2026-08-17T00:00:00.000Z');
+    expect(next[1].closedAt).toBeUndefined();
+  });
+});
+
+describe('arrivalControlJustSplit (#195 B1/B2)', () => {
+  it('animates only the first Start→Arrived split, not expand remounts', () => {
+    const seen = new Set<string>();
+    expect(arrivalControlJustSplit('d1', true, seen)).toBe(true);
+    expect(arrivalControlJustSplit('d1', true, seen)).toBe(false);
+    expect(arrivalControlJustSplit('d1', false, seen)).toBe(false);
+    expect(arrivalControlJustSplit('d1', true, seen)).toBe(true);
   });
 });

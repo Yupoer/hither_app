@@ -212,12 +212,14 @@ export interface CompletePromptInput {
 
 /**
  * - auto_complete: leader, everyone arrived → run complete-stop, no confirm UI
+ * - already_complete: leader, stop already closed → still apply local close
  * - leader_missing_members: manual confirm with arrived (x/x) copy
  * - member_leader_already_done: member notice when leader already closed
  * - none: no prompt
  */
 export type CompletePromptKind =
   | 'auto_complete'
+  | 'already_complete'
   | 'leader_missing_members'
   | 'member_leader_already_done'
   | 'none';
@@ -285,9 +287,9 @@ export function shouldAutoCompleteStop(input: {
  */
 export function resolveCompletePrompt(input: CompletePromptInput): CompletePromptResult {
   if (input.isLeader) {
-    // Already closed — never re-prompt or double-fire complete.
+    // Already closed — still apply locally so a visible card is not a dead tap.
     if (input.stopAlreadyComplete) {
-      return { kind: 'none', ...EMPTY_PROMPT };
+      return { kind: 'already_complete', ...EMPTY_PROMPT };
     }
 
     const missing = input.missingMemberNames;
@@ -355,6 +357,78 @@ export function resolveCompletePrompt(input: CompletePromptInput): CompletePromp
   }
 
   return { kind: 'none', ...EMPTY_PROMPT };
+}
+
+export type CompleteApplyReason = 'rpc' | 'already_closed' | 'rpc_debounced';
+
+export interface CompleteApplyPlan {
+  callRpc: boolean;
+  applyLocalClosedAt: boolean;
+  startCardExit: boolean;
+  refreshHistory: boolean;
+  reason: CompleteApplyReason;
+}
+
+/**
+ * One apply path for last-arriver auto-complete and 完成.
+ * Debounce may skip a second RPC; local close + #149 exit always run.
+ */
+export function planCompleteGatheringApply(input: {
+  alreadyClosed: boolean;
+  rpcInFlight: boolean;
+  remoteAutoCompleted: boolean;
+}): CompleteApplyPlan {
+  if (input.alreadyClosed) {
+    return {
+      callRpc: false,
+      applyLocalClosedAt: true,
+      startCardExit: true,
+      refreshHistory: true,
+      reason: 'already_closed',
+    };
+  }
+  if (input.rpcInFlight || input.remoteAutoCompleted) {
+    return {
+      callRpc: false,
+      applyLocalClosedAt: true,
+      startCardExit: true,
+      refreshHistory: true,
+      reason: 'rpc_debounced',
+    };
+  }
+  return {
+    callRpc: true,
+    applyLocalClosedAt: true,
+    startCardExit: true,
+    refreshHistory: true,
+    reason: 'rpc',
+  };
+}
+
+export function applyLocalClosedAt<T extends { id: string; closedAt?: string | null }>(
+  destinations: readonly T[],
+  destinationId: string,
+  closedAt: string,
+): T[] {
+  return destinations.map((dest) =>
+    dest.id === destinationId
+      ? { ...dest, closedAt: dest.closedAt ?? closedAt }
+      : dest,
+  );
+}
+
+export function arrivalControlJustSplit(
+  destId: string,
+  showArrivalControl: boolean,
+  seenDestIds: Set<string>,
+): boolean {
+  if (!showArrivalControl) {
+    seenDestIds.delete(destId);
+    return false;
+  }
+  if (seenDestIds.has(destId)) return false;
+  seenDestIds.add(destId);
+  return true;
 }
 
 /** Non-arrived member notice when leader force-completes the stop. */
