@@ -6820,7 +6820,7 @@ export default function MapScreen({ route, navigation }: Props) {
                         Order (#148): [Start/End | Arrived] [Countdown] [Transport]
                         Outside expand Pressable so Start never toggles the card.
                         Density tracks narrow + Dynamic Type. */}
-                    {(cardExpanded || showArrivalControl) && (
+                    {cardExpanded && (
                     <View style={styles.commandRow} pointerEvents="box-none">
                       {cardExpanded && navCmd.kind !== 'hidden' ? (
                         <Pressable

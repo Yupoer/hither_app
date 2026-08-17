@@ -435,7 +435,9 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain('canMarkArrival');
     expect(mapScreen).toContain('expanded={!showArrivalControl}');
     expect(mapScreen).toContain('arrivalControlJustSplit');
-    expect(mapScreen).toContain('cardExpanded || showArrivalControl');
+    expect(mapScreen).not.toContain('cardExpanded || showArrivalControl');
+    expect(mapScreen).toContain('{cardExpanded && (');
+    expect(mapScreen).toContain('{showArrivalControl ? (');
     expect(mapScreen).toContain('testID="members-location-sharing"');
     expect(mapScreen).toContain('color={glass.danger}');
     expect(mapScreen).toContain('locationSharingConfirmCopy');
