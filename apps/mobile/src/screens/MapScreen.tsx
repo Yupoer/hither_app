@@ -5009,11 +5009,10 @@ export default function MapScreen({ route, navigation }: Props) {
     windowHeight - detents[0] - CAPSULE_CLEARANCE - (insets.top + 8) - 8,
   );
 
-  // Camera insets: midpoint of the strip between gathering-point cards (top)
-  // and the settled sheet (bottom). Used by locate-me / fit-all so pins land
-  // in the unobstructed band rather than geometric screen center.
-  const sheetH = detents[detent] ?? detents[0];
-  const bottomPad = sheetH + sheetBottomOffset(sheetH, detents, insets.bottom);
+  // Camera insets stay peek-only. Live detent must not move the map.
+  const peekSheetH = detents[0];
+  const halfPeek = peekSheetH / 2;
+  const bottomPad = peekSheetH + sheetBottomOffset(peekSheetH, detents, insets.bottom);
   const carouselFallback = fontLayout.s(160, 140);
   const topPad =
     destinations.length > 0
@@ -6068,6 +6067,7 @@ export default function MapScreen({ route, navigation }: Props) {
           // mid-drag; top tracks measured carousel card height.
           topOverlap={topPad}
           bottomOverlap={bottomPad}
+          halfPeek={halfPeek}
           onUserLocationSample={
             Platform.OS === 'ios' ? consumeForegroundSample : undefined
           }

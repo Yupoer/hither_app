@@ -50,6 +50,7 @@ import {
 } from '../utils/routeLod';
 import { advanceRouteToCoordinate } from '../utils/advanceRouteToCoordinate';
 import { mapKitChromeLayout } from '../utils/mapChromeLayout';
+import { oversizedMapStyle } from '../utils/mapPeekLock';
 import {
   pulsePeakScale,
   reduceMotionEmphasisScale,
@@ -138,9 +139,10 @@ export interface GroupMapProps {
   completedDestinationIds?: ReadonlySet<string> | ReadonlyArray<string> | null;
   /** Top chrome overlapping the map (safe area + gathering-point carousel). */
   topOverlap?: number;
-  /** Sheet height overlapping the map — with topOverlap, shifts the camera
-   *  center into the exposed strip between carousel and sheet. */
+  /** Peek-only sheet height overlapping the map. Never a live detent. */
   bottomOverlap?: number;
+  /** Half peek height: MapView translates +X/+Y and oversizes by this amount. */
+  halfPeek?: number;
   /**
    * MapKit user-location samples for the single foreground owner path.
    * Does not redraw the self marker — native blue dot stays system-owned.
@@ -519,6 +521,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     completedDestinationIds = null,
     topOverlap = 0,
     bottomOverlap = 0,
+    halfPeek = 0,
     onUserLocationSample,
     onLongPressCoordinate,
     onRequestGoHome,
@@ -791,7 +794,8 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       mapRef.current.animateToRegion(initialRegionFor(fallbackCenter, latOffset), 600);
       centeredModeRef.current = 'fallback';
     }
-  }, [fallbackCenter, gathering, latOffset]);
+    // Sheet stage / detent must never re-run this effect.
+  }, [fallbackCenter, gathering]);
 
   const handleMapSubtreeError = useCallback(() => {
     // Parent-owned: survives ordinary re-renders; not cleared by children identity.
@@ -856,6 +860,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       onError={handleMapSubtreeError}
       fallback={mapFallback}
     >
+    <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]} pointerEvents="box-none">
     <MapView
       // Remount when the theme's light/dark changes so Apple Maps picks up the
       // new `userInterfaceStyle` from a fresh mount (the prop alone is not
@@ -863,7 +868,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       // surfaceKey allows a single user-driven remount after map subtree failure.
       key={`${mapInterfaceStyle}-${surfaceKey}`}
       ref={mapRef}
-      style={StyleSheet.absoluteFill}
+      style={oversizedMapStyle(windowWidth, windowHeight, halfPeek)}
       // Provider, transit defaults, MapKit chrome, lifecycle callbacks and
       // platform-owned location callbacks come from the native boundary.
       {...(mapViewProps as Record<string, unknown>)}
@@ -1001,6 +1006,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
         );
       })}
     </MapView>
+    </View>
     </MapSubtreeBoundary>
   );
 });

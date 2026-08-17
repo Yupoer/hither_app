@@ -456,6 +456,41 @@
       "acceptance": "A5 No new native module for route trim",
       "testFile": "advanceRouteToCoordinate.test.ts",
       "testNamePattern": "trims on the map surface before LOD and does not add a native module"
+    },
+    {
+      "parent": 206,
+      "child": 210,
+      "acceptance": "A1 Map shifts down and right by detents[0]/2",
+      "testFile": "mapPeekLock.test.ts",
+      "testNamePattern": "shifts the map down and right by half the peek height"
+    },
+    {
+      "parent": 206,
+      "child": 210,
+      "acceptance": "A2 Oversized map fills the corner after the shift",
+      "testFile": "mapPeekLock.test.ts",
+      "testNamePattern": "shifts the map down and right by half the peek height"
+    },
+    {
+      "parent": 206,
+      "child": 210,
+      "acceptance": "A3 Peek to stage1/stage2 does not move or recenter the map",
+      "testFile": "mapRouteUiContract.test.ts",
+      "testNamePattern": "anchors iOS map chrome without moving Android controls"
+    },
+    {
+      "parent": 206,
+      "child": 210,
+      "acceptance": "A4 Overlay/pane switches do not push the map",
+      "testFile": "mapRouteUiContract.test.ts",
+      "testNamePattern": "anchors iOS map chrome without moving Android controls"
+    },
+    {
+      "parent": 206,
+      "child": 210,
+      "acceptance": "A5 Locate/fit use peek-only insets",
+      "testFile": "mapRouteUiContract.test.ts",
+      "testNamePattern": "anchors iOS map chrome without moving Android controls"
     }
   ]
 }
