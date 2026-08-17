@@ -12,6 +12,7 @@ jest.mock('../state/energyObservability', () => ({
 }));
 
 import { platformizedMapViewProps } from '../native/maps';
+import { defaultMapTransitProps } from '../native/mapTransitDefaults';
 
 const chrome = {
   compassOffset: { x: 72, y: 88 },
@@ -38,8 +39,9 @@ describe('platformized MapView boundary', () => {
     });
 
     expect(props.provider).toBeUndefined();
-    expect(props.showsPointsOfInterests).toBe(true);
-    expect(props.pointsOfInterestFilter).toContain('publicTransport');
+    expect({ ...props, ...defaultMapTransitProps() }.pointsOfInterestFilter).toContain(
+      'publicTransport',
+    );
     expect(props.compassOffset).toEqual(chrome.compassOffset);
     expect(props.appleLogoInsets).toEqual(chrome.appleLogoInsets);
     expect(props.onMapLoaded).toBeUndefined();

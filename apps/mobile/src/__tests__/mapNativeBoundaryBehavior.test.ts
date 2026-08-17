@@ -22,7 +22,10 @@ function loadBoundary(platform: PlatformName): MapsBoundary {
     proxySearchPlaces: jest.fn(),
   }));
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  return require('../native/maps') as MapsBoundary;
+  return {
+    ...require('../native/maps'),
+    ...require('../native/mapTransitDefaults'),
+  } as MapsBoundary;
 }
 
 afterEach(() => {
@@ -39,13 +42,16 @@ describe('platformized MapView boundary', () => {
     const androidReady = jest.fn();
     const loaded = jest.fn();
     const location = jest.fn();
-    const props = maps.platformizedMapViewProps({
-      chrome,
-      onMapReady: ready,
-      onAndroidMapReady: androidReady,
-      onAndroidMapLoaded: loaded,
-      onUserLocationSample: location,
-    });
+    const props = {
+      ...maps.platformizedMapViewProps({
+        chrome,
+        onMapReady: ready,
+        onAndroidMapReady: androidReady,
+        onAndroidMapLoaded: loaded,
+        onUserLocationSample: location,
+      }),
+      ...maps.defaultMapTransitProps(),
+    };
 
     expect(props.provider).toBeUndefined();
     expect(props.showsPointsOfInterests).toBe(true);

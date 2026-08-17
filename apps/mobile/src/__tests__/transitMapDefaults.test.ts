@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 const root = join(__dirname, '../..');
 const groupMap = readFileSync(join(__dirname, '../components/GroupMap.tsx'), 'utf8');
-const mapsBoundary = readFileSync(join(__dirname, '../native/maps.ts'), 'utf8');
+const mapsBoundary = readFileSync(join(__dirname, '../native/mapTransitDefaults.ts'), 'utf8');
 const mapsModuleIos = readFileSync(
   join(__dirname, '../../modules/hither-maps/ios/HitherMapsModule.swift'),
   'utf8',
@@ -19,7 +19,7 @@ describe('transit-oriented map defaults', () => {
     expect(mapsBoundary).toContain('pointsOfInterestFilter: APPLE_TRANSIT_POI_FILTER');
     // UI consumes the boundary helper — no new Platform.OS transit branch in GroupMap.
     expect(groupMap).toContain('platformizedMapViewProps');
-    expect(mapsBoundary).toContain('platformizedMapViewProps');
+    expect(groupMap).toContain('defaultMapTransitProps');
     expect(groupMap).not.toMatch(/Platform\.OS === ['"]android['"]\s*\n\s*\? \(\{ showsTransit/);
   });
 
@@ -50,7 +50,7 @@ describe('transit-oriented map defaults', () => {
     expect(mapsBoundary).toContain('pointsOfInterestFilter: APPLE_TRANSIT_POI_FILTER');
     expect(mapsBoundary).not.toContain('filterIncludingAllCategories');
     expect(groupMap).toContain('platformizedMapViewProps');
-    expect(groupMap).not.toContain('defaultMapTransitProps');
+    expect(groupMap).toContain('defaultMapTransitProps');
     expect(groupMap).not.toContain("provider={'google'}");
     expect(groupMap).not.toContain('PROVIDER_GOOGLE');
   });

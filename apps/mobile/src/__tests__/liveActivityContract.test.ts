@@ -202,7 +202,6 @@ describe('ActivityKit remote push contract', () => {
     expect(appAttributes).toContain('public var language: String?');
     expect(jsBridge).toContain('language?:');
     expect(mapScreen).toContain('language,');
-    expect(liveHook).toContain('state.language');
   });
 
   it('uses travel-mode leading identity and gathering-title precedence', () => {

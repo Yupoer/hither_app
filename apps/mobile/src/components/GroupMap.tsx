@@ -42,6 +42,7 @@ import {
   platformizedMapLifecycle,
   platformizedMapViewProps,
 } from '../native/maps';
+import { defaultMapTransitProps } from '../native/mapTransitDefaults';
 import { energyObservability } from '../state/energyObservability';
 import {
   displayRoutePoints,
@@ -684,9 +685,12 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     // The callbacks are stored by the boundary and invoked only by MapView
     // events; they are not executed while this render-time builder runs.
     // eslint-disable-next-line react-hooks/refs
-    () => platformizedMapViewProps({
-      chrome: mapChrome,
-      ...mapBoundaryCallbacks,
+    () => ({
+      ...platformizedMapViewProps({
+        chrome: mapChrome,
+        ...mapBoundaryCallbacks,
+      }),
+      ...defaultMapTransitProps(),
     }),
     [mapChrome, mapBoundaryCallbacks],
   );
