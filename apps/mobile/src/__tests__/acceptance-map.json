@@ -280,7 +280,7 @@
       "child": 201,
       "acceptance": "A5 Settings overlay still uses its Segmented language control; no new locale.",
       "testFile": "languagePickerContract.test.ts",
-      "testNamePattern": "keeps Settings overlay on Segmented language control"
+      "testNamePattern": "keeps Settings language as a NavRow that pushes a right-slide child"
     },
     {
       "parent": 199,

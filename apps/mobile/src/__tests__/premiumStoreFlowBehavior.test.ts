@@ -49,10 +49,21 @@ jest.mock('react-native', () => ({
   StyleSheet: {
     create: (styles: unknown) => styles,
     hairlineWidth: 1,
+    absoluteFill: {},
   },
   Text: 'Text',
   View: 'View',
   ScrollView: 'ScrollView',
+  Modal: 'Modal',
+  TextInput: 'TextInput',
+}));
+
+jest.mock('../api/client', () => ({
+  redeemPromoCode: jest.fn(),
+}));
+
+jest.mock('../utils/uiAction', () => ({
+  runUiAction: jest.fn(),
 }));
 
 jest.mock('../i18n', () => ({
