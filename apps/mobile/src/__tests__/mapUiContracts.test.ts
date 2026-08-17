@@ -26,6 +26,10 @@ const i18n = [
 ].join('\n');
 const overflowMarquee = readFileSync(join(__dirname, '../components/OverflowMarquee.tsx'), 'utf8');
 const useGroupState = readFileSync(join(__dirname, '../state/useGroupState.ts'), 'utf8');
+const destinationSearch = readFileSync(
+  join(__dirname, '../components/DestinationSearch.tsx'),
+  'utf8',
+);
 
 describe('map UI placement contracts', () => {
   it('coalesces full group-state reloads at a single-flight root', () => {
@@ -85,6 +89,11 @@ describe('map UI placement contracts', () => {
     expect(overlayBlock).toContain('DestinationReorderList');
     expect(overlayBlock).toContain('onImport={() => setKmlVisible(true)}');
     expect(overlayBlock).not.toContain("t('map.addStop')");
+    expect(overlayBlock).toContain('edgeToEdge');
+    const meetEditor = mapScreen.indexOf("visible={!!meetTimeEditor}");
+    expect(meetEditor).toBeGreaterThan(-1);
+    expect(mapScreen.slice(meetEditor, meetEditor + 350)).toContain('edgeToEdge');
+    expect(destinationSearch).toContain('edgeToEdge');
   });
 
   it('groups high accuracy with the refreshed member controls', () => {

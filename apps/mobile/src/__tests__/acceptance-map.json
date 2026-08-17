@@ -491,6 +491,62 @@
       "acceptance": "A5 Locate/fit use peek-only insets",
       "testFile": "mapRouteUiContract.test.ts",
       "testNamePattern": "anchors iOS map chrome without moving Android controls"
+    },
+    {
+      "parent": 206,
+      "child": 211,
+      "acceptance": "A1 Route overlay (edit gathering points) is edge-to-edge",
+      "testFile": "mapUiContracts.test.ts",
+      "testNamePattern": "keeps history on the route pane; reorder overlay wires import CTA"
+    },
+    {
+      "parent": 206,
+      "child": 211,
+      "acceptance": "A2 Meet editor is edge-to-edge",
+      "testFile": "mapUiContracts.test.ts",
+      "testNamePattern": "keeps history on the route pane; reorder overlay wires import CTA"
+    },
+    {
+      "parent": 206,
+      "child": 211,
+      "acceptance": "A3 DestinationReorderList itself is not restyled",
+      "testFile": "mapUiContracts.test.ts",
+      "testNamePattern": "keeps history on the route pane; reorder overlay wires import CTA"
+    },
+    {
+      "parent": 206,
+      "child": 211,
+      "acceptance": "A4 DestinationSearch stays edge-to-edge",
+      "testFile": "mapUiContracts.test.ts",
+      "testNamePattern": "keeps history on the route pane; reorder overlay wires import CTA"
+    },
+    {
+      "parent": 206,
+      "child": 212,
+      "acceptance": "A1 Started + collapsed card hides Arrived",
+      "testFile": "mapUiContracts.test.ts",
+      "testNamePattern": "keeps arrival beside navigation controls and auto-applies current time"
+    },
+    {
+      "parent": 206,
+      "child": 212,
+      "acceptance": "A2 Started + expanded card shows Arrived when other conditions hold",
+      "testFile": "mapUiContracts.test.ts",
+      "testNamePattern": "keeps arrival beside navigation controls and auto-applies current time"
+    },
+    {
+      "parent": 206,
+      "child": 212,
+      "acceptance": "A3 Start/end remain expanded-only",
+      "testFile": "mapUiContracts.test.ts",
+      "testNamePattern": "keeps arrival beside navigation controls and auto-applies current time"
+    },
+    {
+      "parent": 206,
+      "child": 212,
+      "acceptance": "A4 mapUiContracts flipped and green",
+      "testFile": "mapUiContracts.test.ts",
+      "testNamePattern": "keeps arrival beside navigation controls and auto-applies current time"
     }
   ]
 }

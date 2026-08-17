@@ -7115,6 +7115,7 @@ export default function MapScreen({ route, navigation }: Props) {
         title={t('map.gatheringPoints')}
         accent={accent}
         doneLabel={t('map.done')}
+        edgeToEdge
         headerLeft={
           canEditItinerary ? (
             routeSelectedIds.length > 0 ? (
@@ -8073,6 +8074,7 @@ export default function MapScreen({ route, navigation }: Props) {
         title={t('meetTime.set')}
         accent={accent}
         doneLabel={t('common.cancel')}
+        edgeToEdge
       >
         {meetTimeEditor && (
           <View style={styles.meetEditorBody}>
