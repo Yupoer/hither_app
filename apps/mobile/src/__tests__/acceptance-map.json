@@ -222,9 +222,9 @@
     {
       "parent": 199,
       "child": 200,
-      "acceptance": "A4 RoleSelect, Auth, and AccountSheet expose delete behind user via confirmAction and the listed runUiAction ids.",
+      "acceptance": "A4 RoleSelect and AccountSheet expose delete behind user via confirmAction and the listed runUiAction ids. Auth no longer hosts delete (overridden by #203).",
       "testFile": "accountDeletionContract.test.ts",
-      "testNamePattern": "exposes confirmAction delete on RoleSelect, Auth, and AccountSheet behind user"
+      "testNamePattern": "exposes confirmAction delete on RoleSelect and AccountSheet behind user"
     },
     {
       "parent": 199,
@@ -264,9 +264,9 @@
     {
       "parent": 199,
       "child": 201,
-      "acceptance": "A3 Auth leader and Auth follower both show LanguagePicker.",
+      "acceptance": "A3 Auth leader and Auth follower do not show LanguagePicker (overridden by #203).",
       "testFile": "languagePickerContract.test.ts",
-      "testNamePattern": "shows LanguagePicker on Auth for both leader and follower"
+      "testNamePattern": "does not show LanguagePicker on Auth for leader or follower"
     },
     {
       "parent": 199,
@@ -286,6 +286,55 @@
       "parent": 199,
       "child": 201,
       "acceptance": "A6 zh/en key sets stay identical (new a11y keys if added).",
+      "testFile": "languagePickerContract.test.ts",
+      "testNamePattern": "keeps zh/en catalogs key-identical after picker keys"
+    },
+    {
+      "parent": 203,
+      "child": 204,
+      "acceptance": "A1 RoleSelect top-left menu trigger shows the current language plus a chevron. When canGoBack(), left cluster is [Back][menu] on one row; when stack root, menu occupies the left inset. Sign-out stays top-right.",
+      "testFile": "languagePickerContract.test.ts",
+      "testNamePattern": "places RoleSelect language menu on the left cluster next to Back"
+    },
+    {
+      "parent": 203,
+      "child": 204,
+      "acceptance": "A2 Guest RoleSelect still renders the language menu. RoleSelect delete stays user-gated and is not moved/removed.",
+      "testFile": "languagePickerContract.test.ts",
+      "testNamePattern": "shows LanguagePicker on RoleSelect even when user is null"
+    },
+    {
+      "parent": 203,
+      "child": 204,
+      "acceptance": "A3 Opening the menu uses the helper (iOS ActionSheetIOS, Android Alert) with cancel + 中文 + English. Selecting the other language calls setLanguage. Selecting the current language is a no-op. No restart path. No new native module.",
+      "testFile": "languagePicker.test.ts",
+      "testNamePattern": "opens the native language choice and calls setLanguage for the other language"
+    },
+    {
+      "parent": 203,
+      "child": 204,
+      "acceptance": "A4 Login keeps default segmented LanguagePicker at top-right. Settings overlay stays on Segmented and does not import LanguagePicker.",
+      "testFile": "languagePickerContract.test.ts",
+      "testNamePattern": "shows LanguagePicker on Login without hiding it behind a session"
+    },
+    {
+      "parent": 203,
+      "child": 204,
+      "acceptance": "A5 Auth leader and Auth follower do not import/render LanguagePicker and do not contain confirmDeleteAccount.",
+      "testFile": "languagePickerContract.test.ts",
+      "testNamePattern": "does not show LanguagePicker on Auth for leader or follower"
+    },
+    {
+      "parent": 203,
+      "child": 204,
+      "acceptance": "A6 AccountSheet delete remains user-gated. Login and Settings root still have no delete. Unused auth.delete_account is removed from HIGH_RISK / inventory.",
+      "testFile": "accountDeletionContract.test.ts",
+      "testNamePattern": "drops unused auth.delete_account from HIGH_RISK inventory"
+    },
+    {
+      "parent": 203,
+      "child": 204,
+      "acceptance": "A7 zh/en catalog key sets stay identical. No new locale.",
       "testFile": "languagePickerContract.test.ts",
       "testNamePattern": "keeps zh/en catalogs key-identical after picker keys"
     }

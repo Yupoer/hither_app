@@ -21,14 +21,13 @@ const DELETE_KEYS = [
 ] as const;
 
 describe('account deletion placement contract', () => {
-  it('exposes confirmAction delete on RoleSelect, Auth, and AccountSheet behind user', () => {
+  it('exposes confirmAction delete on RoleSelect and AccountSheet behind user', () => {
     expect(roleSelect).toContain('confirmDeleteAccount');
     expect(roleSelect).toContain("'role_select.delete_account'");
     expect(roleSelect).toMatch(/user\s*\?[\s\S]*confirmDeleteAccount/);
 
-    expect(authScreen).toContain('confirmDeleteAccount');
-    expect(authScreen).toContain("'auth.delete_account'");
-    expect(authScreen).toMatch(/user\s*\?[\s\S]*confirmDeleteAccount/);
+    expect(authScreen).not.toContain('confirmDeleteAccount');
+    expect(authScreen).not.toContain("'auth.delete_account'");
 
     expect(accountSheet).toContain('confirmDeleteAccount');
     expect(accountSheet).toContain("'account.delete'");
@@ -47,10 +46,10 @@ describe('account deletion placement contract', () => {
     expect(settingsOverlay).toContain("t('settings.signOut')");
   });
 
-  it('registers the three high-risk delete actionIds', () => {
+  it('drops unused auth.delete_account from HIGH_RISK inventory', () => {
     expect(inventory).toContain("'account.delete'");
     expect(inventory).toContain("'role_select.delete_account'");
-    expect(inventory).toContain("'auth.delete_account'");
+    expect(inventory).not.toContain("'auth.delete_account'");
   });
 
   it('adds matching zh/en account.delete catalog keys', () => {

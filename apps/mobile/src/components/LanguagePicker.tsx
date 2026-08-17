@@ -1,20 +1,44 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { usePreferences, type Language } from '../state/PreferencesContext';
+import { Ionicons } from '@expo/vector-icons';
+import { usePreferences } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
+import { lightTap } from '../utils/haptics';
+import { LANGUAGE_CHOICES, showLanguageChoice } from '../utils/showLanguageChoice';
 
-const OPTIONS: { key: Language; label: string }[] = [
-  { key: 'zh', label: '中文' },
-  { key: 'en', label: 'English' },
-];
-
-export default function LanguagePicker() {
+export default function LanguagePicker({
+  variant = 'segmented',
+}: {
+  variant?: 'segmented' | 'menu';
+}) {
   const { language, setLanguage } = usePreferences();
   const { t } = useTranslation();
+  const current = LANGUAGE_CHOICES.find((choice) => choice.key === language) ?? LANGUAGE_CHOICES[0];
+
+  if (variant === 'menu') {
+    return (
+      <Pressable
+        onPress={() => {
+          lightTap();
+          showLanguageChoice({
+            current: language,
+            onSelect: setLanguage,
+            cancelLabel: t('common.cancel'),
+          });
+        }}
+        accessibilityRole="button"
+        accessibilityLabel={current.label}
+        style={styles.menu}
+      >
+        <Text style={styles.menuLabel}>{current.label}</Text>
+        <Ionicons name="chevron-down" size={14} color="rgba(235,235,245,0.7)" />
+      </Pressable>
+    );
+  }
 
   return (
     <View style={styles.row} accessibilityLabel={t('settings.language')}>
-      {OPTIONS.map((option) => {
+      {LANGUAGE_CHOICES.map((option) => {
         const selected = language === option.key;
         return (
           <Pressable
@@ -59,6 +83,22 @@ const styles = StyleSheet.create({
     color: 'rgba(235,235,245,0.7)',
   },
   labelSelected: {
+    color: '#fff',
+  },
+  menu: {
+    minHeight: 44,
+    paddingHorizontal: 12,
+    borderRadius: 22,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  menuLabel: {
+    fontSize: 13,
+    fontWeight: '600',
     color: '#fff',
   },
 });
