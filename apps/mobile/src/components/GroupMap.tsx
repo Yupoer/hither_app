@@ -154,6 +154,11 @@ export interface GroupMapProps {
    * Parent should run the go-home reset action; this component never leaves groups.
    */
   onRequestGoHome?: () => void;
+  /**
+   * MapKit / Google Maps user location. Off when sharing is disabled or the
+   * account has no memberships so Control Center does not list Hither.
+   */
+  showsUserLocation?: boolean;
 }
 
 /**
@@ -513,6 +518,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     onUserLocationSample,
     onLongPressCoordinate,
     onRequestGoHome,
+    showsUserLocation = true,
   },
   ref,
 ) {
@@ -857,7 +863,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       mapPadding={{ top: 42, left: 32, right: 32, bottom: 42 }}
       // Continuous local blue-dot from device GPS (offline). Self is not drawn
       // as a flock emoji pin — that would lag on cloud upload cadence.
-      showsUserLocation
+      showsUserLocation={showsUserLocation}
       showsMyLocationButton={false}
       showsCompass
       pitchEnabled

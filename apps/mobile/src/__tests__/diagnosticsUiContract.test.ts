@@ -22,6 +22,7 @@ describe('location privacy and diagnostics UI contract', () => {
     expect(map).toContain('handleSharingEnabledChange');
     expect(map).toContain("t('settings.locationSharing')");
     expect(map).toContain("t('settings.locationSharingHint')");
+    expect(map).toContain('testID="members-location-sharing"');
     expect(settings).not.toContain("t('settings.locationSharing')");
   });
 

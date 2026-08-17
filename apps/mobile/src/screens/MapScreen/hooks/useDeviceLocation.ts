@@ -32,6 +32,8 @@ interface UseDeviceLocationParams {
    * `watchPositionAsync` owner and consume MapKit samples instead.
    */
   nativeMapLocationEnabled?: boolean;
+  sharingEnabled?: boolean;
+  hasMembership?: boolean;
 }
 
 /** Coalesce passive outbox flushes; force-sync bypasses this delay. */
@@ -44,6 +46,8 @@ export function useDeviceLocation({
   groupId,
   highAccuracy,
   nativeMapLocationEnabled = false,
+  sharingEnabled = true,
+  hasMembership,
 }: UseDeviceLocationParams) {
   const [deviceCoords, setDeviceCoords] = useState<Coordinates | null>(null);
   const [deviceAccuracyM, setDeviceAccuracyM] = useState<number | null>(null);
@@ -65,6 +69,18 @@ export function useDeviceLocation({
   deviceAccuracyRef.current = deviceAccuracyM;
   const nativeMapLocationEnabledRef = useRef(nativeMapLocationEnabled);
   nativeMapLocationEnabledRef.current = nativeMapLocationEnabled;
+  const sharingEnabledRef = useRef(sharingEnabled);
+  sharingEnabledRef.current = sharingEnabled;
+  const hasMembershipResolved = hasMembership ?? Boolean(groupId);
+  const hasMembershipRef = useRef(hasMembershipResolved);
+  hasMembershipRef.current = hasMembershipResolved;
+  const watchAllowed = (state: string = appState) =>
+    shouldWatchLocation(
+      groupId ?? null,
+      state,
+      sharingEnabledRef.current,
+      hasMembershipRef.current,
+    );
 
   const scheduleOutboxFlush = useCallback(() => {
     if (outboxFlushTimerRef.current) return;
@@ -139,6 +155,8 @@ export function useDeviceLocation({
 
       if (
         groupIdRef.current &&
+        sharingEnabledRef.current &&
+        hasMembershipRef.current &&
         shouldUploadSample(
           coords,
           now,
@@ -177,7 +195,7 @@ export function useDeviceLocation({
       now,
       locationPolicy(highAccuracyRef.current),
     );
-    if (groupIdRef.current) {
+    if (groupIdRef.current && sharingEnabledRef.current && hasMembershipRef.current) {
       if (options?.requireUpload) {
         await enqueueUpload(fix, now, { immediate: true });
       } else {
@@ -201,7 +219,7 @@ export function useDeviceLocation({
 
   // Foreground force-sync: open app / return from background → upload now.
   useEffect(() => {
-    if (!groupId || appState !== 'active') return;
+    if (!groupId || appState !== 'active' || !sharingEnabled || !hasMembershipResolved) return;
     if (forceSyncInFlightRef.current) return;
     forceSyncInFlightRef.current = true;
     void refreshDeviceLocation()
@@ -209,17 +227,17 @@ export function useDeviceLocation({
       .finally(() => {
         forceSyncInFlightRef.current = false;
       });
-  }, [appState, groupId, refreshDeviceLocation]);
+  }, [appState, groupId, refreshDeviceLocation, sharingEnabled, hasMembershipResolved]);
 
   useEffect(() => {
-    if (groupId && appState === 'active') {
+    if (groupId && appState === 'active' && sharingEnabled && hasMembershipResolved) {
       void flushLocationOutbox().catch(() => undefined);
     }
-  }, [appState, groupId]);
+  }, [appState, groupId, sharingEnabled, hasMembershipResolved]);
 
   // Independent heartbeat timer — does not rely on iOS watch callbacks while still.
   useEffect(() => {
-    if (!shouldWatchLocation(groupId ?? null, appState)) return;
+    if (!watchAllowed(appState)) return;
 
     const tick = () => {
       const gid = groupIdRef.current;
@@ -301,12 +319,12 @@ export function useDeviceLocation({
 
     const timer = setInterval(tick, HEARTBEAT_TICK_MS);
     return () => clearInterval(timer);
-  }, [appState, groupId, applySampleToUi, enqueueUpload]);
+  }, [appState, groupId, applySampleToUi, enqueueUpload, sharingEnabled, hasMembershipResolved]);
 
   // DEV debug route: always feed samples into UI, even when MapKit owns real GPS.
   // Debug samples stay local — they must not enter the team location outbox.
   useEffect(() => {
-    if (!shouldWatchLocation(groupId ?? null, appState)) return;
+    if (!watchAllowed(appState)) return;
     return subscribeDebugLocation((sample: LocationSample) => {
       if (!isDebugRouteActive()) return;
       const now = Date.now();
@@ -319,12 +337,12 @@ export function useDeviceLocation({
       );
       applySampleToUi(sample, now);
     });
-  }, [appState, groupId, applySampleToUi]);
+  }, [appState, groupId, applySampleToUi, sharingEnabled, hasMembershipResolved]);
 
   // Expo watch is fallback only when MapKit is not the foreground owner.
   useEffect(() => {
     if (nativeMapLocationEnabled) return;
-    if (!shouldWatchLocation(groupId ?? null, appState)) return;
+    if (!watchAllowed(appState)) return;
     let cancelled = false;
     let stop = () => {};
     void location
@@ -343,7 +361,7 @@ export function useDeviceLocation({
       }
       stop();
     };
-  }, [appState, groupId, highAccuracy, nativeMapLocationEnabled, consumeForegroundSample]);
+  }, [appState, groupId, highAccuracy, nativeMapLocationEnabled, consumeForegroundSample, sharingEnabled, hasMembershipResolved]);
 
   return {
     deviceCoords,

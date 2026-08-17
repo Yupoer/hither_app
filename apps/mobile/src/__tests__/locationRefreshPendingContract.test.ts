@@ -69,6 +69,6 @@ describe('durable location refresh contract (#191)', () => {
     expect(controller).toContain('config.permissionsPrepared === false && config.appState != null');
     expect(mapScreen).toContain('prepareBackgroundJourneyPermissions');
     expect(mapScreen).toContain('permissionsPrepared: backgroundPermissionsPreparedFor === groupId');
-    expect(controller).toContain("pausesUpdatesAutomatically: mode !== 'passiveBackground'");
+    expect(controller).toContain('pausesUpdatesAutomatically: false');
   });
 });
