@@ -13,6 +13,8 @@ export type LiveActivityLifecycleApi = {
   deleteAllSessions: () => Promise<void>;
   /** Optional Android permission gate; return false to abort start. */
   ensureStartPermission?: () => Promise<boolean>;
+  /** Observed / PTS activities already on device. Adopt before local start. */
+  listGroupActivities?: () => Promise<{ activityId: string; pushToken?: string }[]>;
 };
 
 export type LiveActivityStartIntent = {
@@ -128,6 +130,22 @@ export class LiveActivityLifecycleReconciler {
       const ok = await this.api.ensureStartPermission();
       if (!this.isCurrent(generation)) return;
       if (!ok) return;
+    }
+
+    const existing = this.api.listGroupActivities
+      ? await this.api.listGroupActivities().catch(() => [])
+      : [];
+    if (!this.isCurrent(generation)) return;
+    if (existing.length > 0 && !this.handle) {
+      const [primary, ...orphans] = existing;
+      this.handle = primary.activityId;
+      this.pushToken = primary.pushToken;
+      this.destinationId = intent.destinationId;
+      for (const orphan of orphans) {
+        await this.api.endGroupActivity(orphan.activityId).catch(() => undefined);
+        await this.api.deleteSession(orphan.activityId).catch(() => undefined);
+      }
+      return;
     }
 
     // Tear down previous destination / stale handle before start.

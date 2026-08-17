@@ -190,4 +190,45 @@ describe('LiveActivityLifecycleReconciler (#146)', () => {
     expect(reconciler.currentPushToken).toBe('tok-obs');
     expect(reconciler.currentDestinationId).toBe('d1');
   });
+
+  it('adopts an observed PTS handle and ends orphan siblings instead of dual start (#194 A1)', async () => {
+    const ended: string[] = [];
+    const api = {
+      endGroupActivity: jest.fn(async (id: string) => {
+        ended.push(id);
+      }),
+      endAllGroupActivities: jest.fn(async () => undefined),
+      startGroupActivity: jest.fn(async () => ({
+        activityId: 'local-new',
+        pushToken: 'tok-local',
+      })),
+      deleteSession: jest.fn(async () => undefined),
+      deleteAllSessions: jest.fn(async () => undefined),
+      listGroupActivities: jest.fn(async () => [
+        { activityId: 'pts-primary', pushToken: 'tok-pts' },
+        { activityId: 'pts-orphan', pushToken: 'tok-orphan' },
+      ]),
+    };
+    const reconciler = new LiveActivityLifecycleReconciler(api);
+    await reconciler.request({ kind: 'start', destinationId: 'd1' });
+    expect(reconciler.currentHandle).toBe('pts-primary');
+    expect(reconciler.currentPushToken).toBe('tok-pts');
+    expect(api.startGroupActivity).not.toHaveBeenCalled();
+    expect(ended).toEqual(['pts-orphan']);
+  });
+
+  it('does not start when not entitled (start returns null, no teaser) (#194 A5)', async () => {
+    const api = {
+      endGroupActivity: jest.fn(async () => undefined),
+      endAllGroupActivities: jest.fn(async () => undefined),
+      startGroupActivity: jest.fn(async () => null),
+      deleteSession: jest.fn(async () => undefined),
+      deleteAllSessions: jest.fn(async () => undefined),
+      listGroupActivities: jest.fn(async () => []),
+    };
+    const reconciler = new LiveActivityLifecycleReconciler(api);
+    await reconciler.request({ kind: 'start', destinationId: 'd1' });
+    expect(reconciler.currentHandle).toBeNull();
+    expect(api.startGroupActivity).toHaveBeenCalledTimes(1);
+  });
 });

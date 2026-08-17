@@ -49,6 +49,15 @@ describe('navigation ActivityKit push orchestration', () => {
     expect(handler).toContain('attributesType: "HitherGroupAttributes"');
   });
 
+  it('excludes starter / existing handles from PTS and sends full ContentState (#194 A1/A2/A6)', () => {
+    expect(handler).toContain('usersWithHandle');
+    expect(handler).toContain('row.user_id !== payload.sender_id');
+    expect(handler).toContain('memberEmojis');
+    expect(handler).toContain('memberArrived');
+    expect(handler).toContain('last_progress_bucket');
+    expect(handler).not.toContain('1 - session.current_distance_m / session.initial_distance_m');
+  });
+
   it('fans out device alerts through APNs and FCM by platform', () => {
     expect(existsSync(fcmPath)).toBe(true);
     expect(fcm).toContain('buildFcmMessage');

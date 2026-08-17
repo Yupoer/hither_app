@@ -59,6 +59,9 @@ class HitherLiveActivityModule : Module() {
     // iOS-only push-to-start / observe — no-ops on Android.
     AsyncFunction("startPushToStartTokenObservation") { }
     AsyncFunction("observeExistingActivities") { }
+    AsyncFunction("listGroupActivities") {
+      emptyList<Map<String, String>>()
+    }
   }
 
   private fun toLiveState(

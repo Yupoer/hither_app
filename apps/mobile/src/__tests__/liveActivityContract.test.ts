@@ -129,6 +129,7 @@ describe('ActivityKit remote push contract', () => {
       'endAllGroupActivities',
       'startPushToStartTokenObservation',
       'observeExistingActivities',
+      'listGroupActivities',
     ]) {
       expect(androidModule).toContain(name);
     }
@@ -136,6 +137,7 @@ describe('ActivityKit remote push contract', () => {
     expect(androidModule).toContain('HitherLiveUpdateService');
     expect(jsBridge).toMatch(/startPushToStartTokenObservation\?\./);
     expect(jsBridge).toMatch(/observeExistingActivities\?\./);
+    expect(jsBridge).toMatch(/listGroupActivities\?\./);
   });
 
   it('clears Live Activities on leave, sign-out, and MyTeams leave', () => {
@@ -147,6 +149,17 @@ describe('ActivityKit remote push contract', () => {
     expect(myTeams).toContain('clearLiveActivities');
     expect(mapScreen).toContain('clearLiveActivities');
     expect(mapScreen).toContain('leaveGroups');
+  });
+
+  it('does not wipe title/avatars on background updateAll (#194 A6)', () => {
+    const background = readFileSync(
+      join(__dirname, '../state/backgroundJourney.ts'),
+      'utf8',
+    );
+    expect(background).toContain('gatheringTitle: config.gatheringTitle');
+    expect(background).toContain('memberEmojis: config.memberEmojis');
+    expect(background).toContain('personalDisplayProgress');
+    expect(background).not.toContain("groupName: ''");
   });
 
   it('uses personal initial distance and persisted member status in MapScreen', () => {

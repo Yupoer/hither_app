@@ -26,6 +26,7 @@ import {
 } from "./fcm.ts";
 import {
   buildMessage,
+  shouldSendAlert,
   prefColumn,
   type PushPayload,
 } from "./messages.ts";
@@ -53,6 +54,7 @@ interface LiveSessionRow {
   current_distance_m: number;
   eta_seconds: number | null;
   travel_mode: "walk" | "transit" | "drive";
+  last_progress_bucket?: number | null;
 }
 
 interface DeviceLiveActivityTokenRow {
@@ -193,6 +195,7 @@ async function sendAlerts(
   payload: PushPayload,
 ): Promise<PushResult[]> {
   if (tokenRows.length === 0) return [];
+  if (!shouldSendAlert(payload)) return [];
   const { ios, android } = splitByPlatform(tokenRows);
   const { title, body } = buildMessage(payload);
   const data = alertData(payload);
@@ -514,7 +517,20 @@ async function handleNavigationSession(
     if (groupResponse.error) throw groupResponse.error;
     if (destinationResponse.error) throw destinationResponse.error;
 
-    const startRows = (tokenResponse.data ?? []) as DeviceLiveActivityTokenRow[];
+    const startRowsRaw = (tokenResponse.data ?? []) as DeviceLiveActivityTokenRow[];
+    const { data: handleRows, error: handleError } = await supabase
+      .from("live_activity_sessions")
+      .select("user_id")
+      .eq("group_id", payload.group_id)
+      .not("push_token", "is", null);
+    if (handleError) throw handleError;
+    const usersWithHandle = new Set(
+      ((handleRows ?? []) as { user_id: string }[]).map((row) => row.user_id),
+    );
+    // Starter starts locally; devices that already have a handle must not PTS.
+    const startRows = startRowsRaw.filter(
+      (row) => row.user_id !== payload.sender_id && !usersWithHandle.has(row.user_id),
+    );
     const usersWithStartToken = new Set(startRows.map((row) => row.user_id));
     const fallbackUserIds = eligibleUserIds.filter(
       (userId) => !usersWithStartToken.has(userId),
@@ -531,6 +547,19 @@ async function handleNavigationSession(
       const groupName = (groupResponse.data?.name as string | undefined) ?? "Hither";
       const gatheringTitle =
         (destinationResponse.data?.title as string | undefined) ?? "集合點";
+      const userIds = members.filter((member) => !member.solo).map((member) => member.user_id);
+      const { data: startProfiles, error: startProfileError } = userIds.length > 0
+        ? await supabase.from("profiles").select("id, avatar").in("id", userIds)
+        : { data: [], error: null };
+      if (startProfileError) throw startProfileError;
+      const avatarByUser = new Map(
+        (startProfiles ?? []).map((row) => [row.id as string, (row.avatar as string | null) ?? "🙂"]),
+      );
+      const visibleMembers = members.filter((member) => !member.solo);
+      const memberEmojis = visibleMembers.map(
+        (member) => avatarByUser.get(member.user_id) ?? "🙂",
+      );
+      const memberArrived = visibleMembers.map((member) => member.status === "arrived");
       startResults = await Promise.all(
         startRows.map((row) =>
           sendLiveActivityStartApns(cfg, jwt, row.push_to_start_token, {
@@ -542,6 +571,13 @@ async function handleNavigationSession(
               status: "starting",
               gatheringTitle,
               progress: 0,
+              distanceMeters: 0,
+              etaSeconds: 0,
+              gatheredCount: memberArrived.filter(Boolean).length,
+              memberCount: visibleMembers.length,
+              accentHex: "#58D68D",
+              memberEmojis,
+              memberArrived,
             },
           })),
       );
@@ -649,7 +685,7 @@ async function loadLiveSessions(
   let query = supabase
     .from("live_activity_sessions")
     .select(
-      "user_id, group_id, destination_id, push_token, initial_distance_m, current_distance_m, eta_seconds, travel_mode",
+      "user_id, group_id, destination_id, push_token, initial_distance_m, current_distance_m, eta_seconds, travel_mode, last_progress_bucket",
     )
     .eq("group_id", payload.group_id)
     .not("push_token", "is", null);
@@ -730,7 +766,9 @@ async function sendLiveActivities(
         distanceMeters: Math.max(0, Math.round(session.current_distance_m)),
         etaSeconds: Math.max(0, session.eta_seconds ?? 0),
         progress: clampProgress(
-          1 - session.current_distance_m / session.initial_distance_m,
+          session.last_progress_bucket != null
+            ? session.last_progress_bucket / 20
+            : 0,
         ),
         gatheredCount: visibleMembers.filter((member) => member.status === "arrived").length,
         memberCount: visibleMembers.length,

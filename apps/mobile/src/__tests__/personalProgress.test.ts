@@ -1,3 +1,4 @@
+import { personalDisplayProgress } from '../utils/journeyProgress';
 import { derivePersonalProgress } from '../utils/personalProgress';
 
 const origin = { latitude: 25.033, longitude: 121.565 };
@@ -382,5 +383,66 @@ describe('personal progress surface contracts', () => {
     expect(map).toContain('completedDestinationIds={teamCompletedDestinationIds}');
     // Target pulse only while journey is active with a nav target.
     expect(map).toContain('journeyActive && navTarget?.id ? navTarget.id : null');
+  });
+});
+
+describe('personalDisplayProgress (#194 A3/A4)', () => {
+  it('uses gated walking remaining, not ungated 1-current/initial', () => {
+    const ungated = 1 - 870 / 1000;
+    expect(ungated).toBeCloseTo(0.13);
+    expect(
+      personalDisplayProgress({
+        initialM: 1000,
+        currentM: 870,
+        movedFromStartM: 5,
+      }),
+    ).toBe(0);
+    expect(
+      personalDisplayProgress({
+        initialM: 1000,
+        currentM: 870,
+        movedFromStartM: 40,
+      }),
+    ).toBeCloseTo(0.13);
+  });
+
+  it('resets sticky max when the destination id changes', () => {
+    const walking = personalDisplayProgress({
+      initialM: 1000,
+      currentM: 400,
+      movedFromStartM: 80,
+      previousMax: 0.2,
+    });
+    expect(walking).toBeCloseTo(0.6);
+    expect(
+      personalDisplayProgress({
+        initialM: 2000,
+        currentM: 1980,
+        movedFromStartM: 5,
+        previousMax: 0,
+        destinationId: 'dest-b',
+        previousDestinationId: 'dest-a',
+      }),
+    ).toBe(0);
+  });
+
+  it('caps pre-arrival progress at 95% until arrived', () => {
+    expect(
+      personalDisplayProgress({
+        initialM: 1000,
+        currentM: 10,
+        movedFromStartM: 200,
+        hasDepartedStart: true,
+      }),
+    ).toBe(0.95);
+    expect(
+      personalDisplayProgress({
+        initialM: 1000,
+        currentM: 10,
+        movedFromStartM: 200,
+        hasDepartedStart: true,
+        arrived: true,
+      }),
+    ).toBe(1);
   });
 });
