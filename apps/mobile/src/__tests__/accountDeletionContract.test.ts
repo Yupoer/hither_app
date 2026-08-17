@@ -53,7 +53,7 @@ describe('account deletion placement contract', () => {
     expect(inventory).toContain("'auth.delete_account'");
   });
 
-  it('adds matching zh/en account.delete* keys', () => {
+  it('adds matching zh/en account.delete catalog keys', () => {
     const zh = translationKeys('zh');
     const en = translationKeys('en');
     for (const key of DELETE_KEYS) {

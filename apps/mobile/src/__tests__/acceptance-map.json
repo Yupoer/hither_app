@@ -245,7 +245,7 @@
       "child": 200,
       "acceptance": "A7 zh/en catalogs include the new account.delete* keys with identical key sets.",
       "testFile": "accountDeletionContract.test.ts",
-      "testNamePattern": "adds matching zh/en account.delete* keys"
+      "testNamePattern": "adds matching zh/en account.delete catalog keys"
     },
     {
       "parent": 199,
