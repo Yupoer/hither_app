@@ -19,6 +19,16 @@ const quickCommands = readFileSync(
 );
 
 describe('notification nickname and destination contract (#190)', () => {
+  it('uses dest-required arrival and distance straggler copy (#197 C4/C5)', () => {
+    expect(messages).toContain('已抵達（${dest}）');
+    expect(messages).toContain('已脫隊（${distance}）');
+    expect(messages).toContain('shouldSendAlert');
+    expect(messages).toContain('p.category === "arrival"');
+    expect(sendPush).toContain('shouldSendAlert(payload)');
+    expect(realtime).toContain("if (!destTitle) return");
+    expect(realtime).toContain("tRef.current('notif.memberStragglerBody'");
+  });
+
   it('uses sender nickname as title and command message as body in send-push', () => {
     expect(messages).toMatch(/title:\s*nameOr\(p\.sender_name/);
     expect(messages).toContain('body: p.message?.trim() || label');

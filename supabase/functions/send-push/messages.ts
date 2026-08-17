@@ -100,6 +100,20 @@ function placeOr(raw: string | null | undefined): string {
   return value && value.length > 0 ? `「${value}」` : "集合點";
 }
 
+export function formatPushDistance(distanceM: number | null | undefined): string | null {
+  if (distanceM == null || !Number.isFinite(distanceM) || distanceM < 0) return null;
+  if (distanceM < 1000) return `${Math.round(distanceM)} m`;
+  return `${(distanceM / 1000).toFixed(1)} km`;
+}
+
+/** Arrival without a destination title must not send. */
+export function shouldSendAlert(p: PushPayload): boolean {
+  if (p.category === "arrival") {
+    return Boolean(p.title?.trim());
+  }
+  return true;
+}
+
 /** Build the alert title/body for a push payload. */
 export function buildMessage(p: PushPayload): { title: string; body: string } {
   switch (p.category) {
@@ -125,14 +139,17 @@ export function buildMessage(p: PushPayload): { title: string; body: string } {
           : { title: "暫停", body: `${sender} 已暫停前往${place}` };
       }
     case "arrival": {
+      const dest = p.title?.trim();
+      if (!dest) return { title: "", body: "" };
       const member = nameOr(p.member_name ?? p.sender_name, "隊友");
-      return { title: `${member} 已抵達`, body: `${member} 已抵達${placeOr(p.title)}` };
+      return { title: member, body: `已抵達（${dest}）` };
     }
     case "straggler": {
-      const name = p.member_name?.trim();
+      const name = nameOr(p.member_name ?? p.sender_name, "隊友");
+      const distance = formatPushDistance(p.distance_m);
       return {
-        title: "隊友已脫隊",
-        body: name ? `${name} 已脫隊` : "一位隊友已離開主隊伍",
+        title: name,
+        body: distance ? `已脫隊（${distance}）` : "已脫隊",
       };
     }
     case "live_activity":

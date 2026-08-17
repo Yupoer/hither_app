@@ -148,4 +148,18 @@ describe('production push and live activity migration', () => {
     expect(pushMessages).toContain('member_name');
     expect(pushMessages).toContain('已脫隊');
   });
+
+  it('removes dest-less memberships arrival and writes complete-stop history (#197 C4 / #195 B6)', () => {
+    const later = readFileSync(
+      join(
+        __dirname,
+        '../../../../supabase/migrations/20260817100000_complete_stop_history_and_presence.sql',
+      ),
+      'utf8',
+    );
+    expect(later).toContain('insert into public.visited_waypoints');
+    expect(later).toContain("category', 'straggler'");
+    expect(later).not.toMatch(/v_category := 'arrival'/);
+    expect(later).toContain('destination_arrivals insert only');
+  });
 });

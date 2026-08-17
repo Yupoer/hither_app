@@ -4,6 +4,7 @@ import { getNotificationPreferences } from '../api/client';
 import { notifications } from '../native';
 import { useSession } from './SessionContext';
 import { useTranslation } from '../i18n';
+import { formatDistance } from '../utils/geo';
 import { isLeaderCommand, type CommandType, type NotificationCategory } from '../types';
 import {
   buildAlignedNotificationEventId,
@@ -321,12 +322,14 @@ export function useGroupNotifications(): void {
           if (row.kind !== 'straggler') return;
           const name = row.member_name?.trim() || tRef.current('group.travelerFallback');
           const distance = typeof row.distance_m === 'number'
-            ? `${Math.round(row.distance_m)} m`
+            ? formatDistance(row.distance_m)
             : '';
           void fire({
             category: 'journey',
-            title: tRef.current('straggler.notifyTitle'),
-            body: tRef.current('straggler.banner', { name, distance }),
+            title: name,
+            body: distance
+              ? tRef.current('notif.memberStragglerBody', { distance })
+              : tRef.current('notif.memberStragglerBodyUnknown'),
             eventKind: 'straggler',
             // Dual-path: same sender segment as send-push payload.sender_id.
             senderId: row.sender_id ?? 'unknown',
@@ -406,12 +409,12 @@ export function useGroupNotifications(): void {
             ]);
             const name = (memberProfile as { nickname?: string } | null)?.nickname?.trim()
               || tRef.current('group.travelerFallback');
-            const title = (destination as { title?: string } | null)?.title?.trim()
-              || tRef.current('map.gatheringPoints');
+            const destTitle = (destination as { title?: string } | null)?.title?.trim();
+            if (!destTitle) return;
             await fire({
               category: 'journey',
-              title: tRef.current('notif.memberArrivalTitle', { name }),
-              body: tRef.current('notif.memberArrivalBody', { name, title }),
+              title: name,
+              body: tRef.current('notif.memberArrivalBody', { title: destTitle }),
               eventKind: 'member_arrival',
               senderId: arriverId,
               // Keep destination_id as the event identity segment, matching push.

@@ -89,12 +89,28 @@ assert.deepEqual(
   { title: '隊長：自訂指令', body: '入口集合' },
 );
 assert.deepEqual(
-  buildMessage({ category: 'arrival', group_id: 'g1', sender_id: 'u1' }),
-  { title: '隊友已抵達', body: '一位隊友已抵達集合點' },
+  buildMessage({
+    category: 'arrival',
+    group_id: 'g1',
+    sender_id: 'u1',
+    member_name: '小明',
+    title: '台北車站',
+  }),
+  { title: '小明', body: '已抵達（台北車站）' },
 );
 assert.deepEqual(
-  buildMessage({ category: 'straggler', group_id: 'g1', sender_id: 'u1' }),
-  { title: '隊友已脫隊', body: '一位隊友已離開主隊伍' },
+  buildMessage({ category: 'arrival', group_id: 'g1', sender_id: 'u1' }),
+  { title: '', body: '' },
+);
+assert.deepEqual(
+  buildMessage({
+    category: 'straggler',
+    group_id: 'g1',
+    sender_id: 'u1',
+    member_name: '小華',
+    distance_m: 320,
+  }),
+  { title: '小華', body: '已脫隊（320 m）' },
 );
 assert.equal(prefColumn('arrival'), 'journey');
 assert.equal(prefColumn('straggler'), 'journey');
