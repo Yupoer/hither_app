@@ -120,6 +120,8 @@ export const en: Record<keyof ZhDict, string> = {
   'settings.sectionSupport': 'Support',
   'settings.locationSharing': 'Share my location',
   'settings.locationSharingHint': 'Turning this off stops team position updates; on-device map navigation remains available.',
+  'settings.locationSharingStopTitle': 'Stop sharing location',
+  'settings.locationSharingStopHint': 'Teammates will no longer see your live location.',
   'settings.locationSharingSyncFailed': 'Could not sync location sharing. Sharing remains off to protect your privacy.',
   'settings.diagnosticUpload': 'Upload debug and performance logs',
   'settings.diagnosticUploadHint': 'Records and uploads diagnostic data in batches only while enabled',

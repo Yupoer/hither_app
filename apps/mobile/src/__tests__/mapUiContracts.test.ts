@@ -100,6 +100,15 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain("t('settings.preciseLocation')");
     expect(mapScreen).toContain("t('settings.preciseLocationHint')");
     expect(mapScreen).toContain('styles.refreshLocationsButton');
+    const statusBarBlock = mapScreen.slice(statusBar, refresh);
+    expect(statusBarBlock).toContain('styles.myStatusCluster');
+    expect(statusBarBlock).toContain('statusIconForKind(myStatusKind)');
+    expect(statusBarBlock).not.toContain("t('solo.statusCurrent'");
+    expect(statusBarBlock).not.toContain('chevron-down');
+    expect(mapScreen).toContain('marginLeft: \'auto\'');
+    expect(mapScreen).toContain('gap: STATUS_SHARE_CLUSTER_GAP');
+    expect(mapScreen).toMatch(/myStatusBar:[\s\S]{0,180}flexDirection:\s*'row'/);
+    expect(mapScreen).not.toMatch(/myStatusBar:[\s\S]{0,180}justifyContent:\s*'space-between'/);
   });
 
   it('keeps account and Hither Pro as the first settings rows', () => {
@@ -419,6 +428,9 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain('arrivalControlJustSplit');
     expect(mapScreen).toContain('cardExpanded || showArrivalControl');
     expect(mapScreen).toContain('testID="members-location-sharing"');
+    expect(mapScreen).toContain('color={glass.danger}');
+    expect(mapScreen).toContain('locationSharingConfirmCopy');
+    expect(mapScreen).toContain('confirmAction({');
     expect(mapScreen).toContain('showsUserLocation={sharingEnabled && members.length > 0}');
     expect(mapScreen).not.toMatch(
       /toolsPaneBody[\s\S]*settings\.locationSharing[\s\S]*AmicroButton/,

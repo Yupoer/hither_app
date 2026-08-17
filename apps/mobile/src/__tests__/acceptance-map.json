@@ -337,6 +337,55 @@
       "acceptance": "A7 zh/en catalog key sets stay identical. No new locale.",
       "testFile": "languagePickerContract.test.ts",
       "testNamePattern": "keeps zh/en catalogs key-identical after picker keys"
+    },
+    {
+      "parent": 206,
+      "child": 207,
+      "acceptance": "A1 Status icon and share sit flush left with a 6–8pt gap",
+      "testFile": "memberStatusSharing.test.ts",
+      "testNamePattern": "maps follow/solo/away to the same picker icons"
+    },
+    {
+      "parent": 206,
+      "child": 207,
+      "acceptance": "A2 Status button is icon-only with follow/solo/away glyphs and no chevron",
+      "testFile": "mapUiContracts.test.ts",
+      "testNamePattern": "groups high accuracy with the refreshed member controls"
+    },
+    {
+      "parent": 206,
+      "child": 207,
+      "acceptance": "A3 Status press still opens the existing myStatus OverlaySheet",
+      "testFile": "mapUiContracts.test.ts",
+      "testNamePattern": "groups high accuracy with the refreshed member controls"
+    },
+    {
+      "parent": 206,
+      "child": 207,
+      "acceptance": "A4 Turning sharing on first confirms with settings.locationSharing copy; cancel stays off",
+      "testFile": "memberStatusSharing.test.ts",
+      "testNamePattern": "confirms turning sharing on with the existing settings copy"
+    },
+    {
+      "parent": 206,
+      "child": 207,
+      "acceptance": "A5 Turning sharing off first confirms with stop-sharing copy; cancel stays on",
+      "testFile": "memberStatusSharing.test.ts",
+      "testNamePattern": "confirms turning sharing off with stop-sharing copy"
+    },
+    {
+      "parent": 206,
+      "child": 207,
+      "acceptance": "A6 Off sharing icon is danger red; on stays accent",
+      "testFile": "memberStatusSharing.test.ts",
+      "testNamePattern": "keeps the members share button red when off and confirms before toggle"
+    },
+    {
+      "parent": 206,
+      "child": 207,
+      "acceptance": "A7 members-location-sharing testID remains on the members pane",
+      "testFile": "diagnosticsUiContract.test.ts",
+      "testNamePattern": "shows a location-sharing switch with an explicit local-navigation warning in Tools"
     }
   ]
 }
