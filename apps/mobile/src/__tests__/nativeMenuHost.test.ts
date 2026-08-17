@@ -39,8 +39,8 @@ describe('native menu host', () => {
             items: [{ id: 'zh', title: '中文' }],
             onSelect,
             accessibilityLabel: '中文',
+            children: React.createElement('Text', null, '中文'),
           },
-          React.createElement('Text', null, '中文'),
         ),
       );
     });

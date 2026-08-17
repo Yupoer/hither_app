@@ -55,7 +55,7 @@ describe('platformized MapView boundary', () => {
 
     expect(props.provider).toBeUndefined();
     expect(props.showsPointsOfInterests).toBe(true);
-    expect(props.pointsOfInterestFilter).toEqual([
+    expect((props as { pointsOfInterestFilter?: string[] }).pointsOfInterestFilter).toEqual([
       'publicTransport',
       'airport',
       'parking',
