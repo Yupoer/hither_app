@@ -29,6 +29,174 @@
       "acceptance": "Per-recipient pending refresh survives missed delivery and uses exact versioned ACKs with lifecycle guards.",
       "testFile": "locationRefreshPendingContract.test.ts",
       "testNamePattern": "keeps a per-recipient versioned ledger"
+    },
+    {
+      "parent": 193,
+      "child": 194,
+      "acceptance": "A1 Starting a journey never leaves two Live Activities on the starter or a teammate device that already had a handle.",
+      "testFile": "liveActivityLifecycle.test.ts",
+      "testNamePattern": "adopts an observed PTS handle"
+    },
+    {
+      "parent": 193,
+      "child": 194,
+      "acceptance": "A2 Visible activity always includes destination title, avatars, progress, ETA (when known). No team-name-only teaser.",
+      "testFile": "navigationPushContract.test.ts",
+      "testNamePattern": "excludes starter / existing handles from PTS"
+    },
+    {
+      "parent": 193,
+      "child": 194,
+      "acceptance": "A3 Progress matches gated walking remaining, not ungated 1 - current/initial.",
+      "testFile": "personalProgress.test.ts",
+      "testNamePattern": "uses gated walking remaining"
+    },
+    {
+      "parent": 193,
+      "child": 194,
+      "acceptance": "A4 Destination change resets sticky max.",
+      "testFile": "personalProgress.test.ts",
+      "testNamePattern": "resets sticky max when the destination id changes"
+    },
+    {
+      "parent": 193,
+      "child": 194,
+      "acceptance": "A5 Not entitled — no activity (not a reduced one).",
+      "testFile": "liveActivityLifecycle.test.ts",
+      "testNamePattern": "does not start when not entitled"
+    },
+    {
+      "parent": 193,
+      "child": 194,
+      "acceptance": "A6 Remote / background updates do not wipe title or avatars.",
+      "testFile": "liveActivityContract.test.ts",
+      "testNamePattern": "does not wipe title/avatars on background updateAll"
+    },
+    {
+      "parent": 193,
+      "child": 195,
+      "acceptance": "B1 Expanding / collapsing a card does not replay Arrived enter animation.",
+      "testFile": "gatherCommand.test.ts",
+      "testNamePattern": "animates only the first Start"
+    },
+    {
+      "parent": 193,
+      "child": 195,
+      "acceptance": "B2 Arrived enter animation runs only on the first Start→Arrived split.",
+      "testFile": "gatherCommand.test.ts",
+      "testNamePattern": "animates only the first Start"
+    },
+    {
+      "parent": 193,
+      "child": 195,
+      "acceptance": "B3 All-arrived 完成 immediately closes the stop (card exit + history), even if auto-complete already ran.",
+      "testFile": "gatherCommand.test.ts",
+      "testNamePattern": "always applies local closedAt"
+    },
+    {
+      "parent": 193,
+      "child": 195,
+      "acceptance": "B4 Missing members: 取消 leaves the card; 完成 force-closes with card exit + history.",
+      "testFile": "gatherCommand.test.ts",
+      "testNamePattern": "confirms with arrived x/x counts when members are missing"
+    },
+    {
+      "parent": 193,
+      "child": 195,
+      "acceptance": "B5 Already-closed / idempotent RPC still applies local closedAt, #149 exit, and history refresh.",
+      "testFile": "gatherCommand.test.ts",
+      "testNamePattern": "stamps closedAt locally"
+    },
+    {
+      "parent": 193,
+      "child": 195,
+      "acceptance": "B6 complete_gathering_stop keeps closed_at and writes history rows.",
+      "testFile": "gatheringWorkflowContract.test.ts",
+      "testNamePattern": "projects history as own-or-leader"
+    },
+    {
+      "parent": 193,
+      "child": 197,
+      "acceptance": "C1 Remaining first crosses ≤ total/5 → one local notify.",
+      "testFile": "approachNotify.test.ts",
+      "testNamePattern": "fires when remaining first crosses"
+    },
+    {
+      "parent": 193,
+      "child": 197,
+      "acceptance": "C2 Already arrived, or arrivalRadiusM > total/5, or already fired → no notify.",
+      "testFile": "approachNotify.test.ts",
+      "testNamePattern": "skips when already arrived"
+    },
+    {
+      "parent": 193,
+      "child": 197,
+      "acceptance": "C3 Approach never fans out to teammates.",
+      "testFile": "approachNotify.test.ts",
+      "testNamePattern": "is local-only copy"
+    },
+    {
+      "parent": 193,
+      "child": 197,
+      "acceptance": "C4 Arrival notify is title=nickname, body=已抵達（destination）. No dest → none.",
+      "testFile": "notificationSemanticsContract.test.ts",
+      "testNamePattern": "uses dest-required arrival"
+    },
+    {
+      "parent": 193,
+      "child": 197,
+      "acceptance": "C5 Straggler notify is title=nickname, body=已脫隊（distance） or 已脫隊.",
+      "testFile": "notificationSemanticsContract.test.ts",
+      "testNamePattern": "uses dest-required arrival"
+    },
+    {
+      "parent": 193,
+      "child": 197,
+      "acceptance": "C6 APNs + Realtime for the same arrival event produce one banner.",
+      "testFile": "notificationSemanticsContract.test.ts",
+      "testNamePattern": "keeps Realtime fallback copy"
+    },
+    {
+      "parent": 193,
+      "child": 196,
+      "acceptance": "D1 Journey sharing uploads at least every 30s moving / 60s stationary.",
+      "testFile": "locationPolicy.test.ts",
+      "testNamePattern": "journey uploads at least every 30s"
+    },
+    {
+      "parent": 193,
+      "child": 196,
+      "acceptance": "D2 Non-journey sharing refreshes liveness at most every 2 minutes.",
+      "testFile": "locationPolicy.test.ts",
+      "testNamePattern": "non-journey sharing refreshes liveness"
+    },
+    {
+      "parent": 193,
+      "child": 196,
+      "acceptance": "D3 pausesUpdatesAutomatically is false while sharing.",
+      "testFile": "locationPolicy.test.ts",
+      "testNamePattern": "uses fitness High accuracy"
+    },
+    {
+      "parent": 193,
+      "child": 196,
+      "acceptance": "D4 No memberships, or sharing off — Expo watch, background task, outbox, and MapKit user location stop.",
+      "testFile": "locationPolicy.test.ts",
+      "testNamePattern": "stops GPS when sharing is off"
+    },
+    {
+      "parent": 193,
+      "child": 196,
+      "acceptance": "D5 Sharing toggle is in 成員, immediately right of 目前狀態.",
+      "testFile": "mapUiContracts.test.ts",
+      "testNamePattern": "keeps arrival beside navigation"
+    },
+    {
+      "parent": 193,
+      "child": 196,
+      "acceptance": "D6 Toggling off drops the location indicator without killing the process.",
+      "testFile": "locationPolicy.test.ts",
+      "testNamePattern": "stops GPS when sharing is off"
     }
   ]
 }

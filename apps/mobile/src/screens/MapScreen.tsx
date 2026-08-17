@@ -96,12 +96,21 @@ import { AmicroButton } from '../components/AmicroButton';
 import { HitherText } from '../components/HitherText';
 import OverflowMarquee from '../components/OverflowMarquee';
 import {
+  applyLocalClosedAt,
+  arrivalControlJustSplit,
   deriveCardNavFlags,
   deriveScopedArrivalCounts,
+  planCompleteGatheringApply,
   projectHistoryForViewer,
   resolveCompletePrompt,
   resolveNavCommand,
 } from '../utils/gatherCommand';
+import {
+  APPROACH_FIRED_STORAGE_KEY,
+  approachNotifyCopy,
+  approachNotifyKey,
+  shouldFireApproachNotify,
+} from '../utils/approachNotify';
 import {
   ARRIVED_FADE_MS,
   ARRIVED_SPLIT_MS,
@@ -1654,6 +1663,8 @@ export default function MapScreen({ route, navigation }: Props) {
     groupId,
     highAccuracy,
     nativeMapLocationEnabled: Platform.OS === 'ios',
+    sharingEnabled,
+    hasMembership: members.length > 0,
   });
 
   // --- Carousel selection ---------------------------------------------------
@@ -1911,6 +1922,19 @@ export default function MapScreen({ route, navigation }: Props) {
    * prevents effect re-fire storms. Cleared on failure so retry is possible.
    */
   const remoteAutoCompleteDestIdsRef = useRef<Set<string>>(new Set());
+  const arrivalSplitSeenRef = useRef<Set<string>>(new Set());
+  const approachFiredRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    void AsyncStorage.getItem(APPROACH_FIRED_STORAGE_KEY)
+      .then((raw) => {
+        if (!raw) return;
+        const keys = JSON.parse(raw) as string[];
+        if (Array.isArray(keys)) {
+          for (const key of keys) approachFiredRef.current.add(key);
+        }
+      })
+      .catch(() => undefined);
+  }, []);
   const [autoArrivedDestId, setAutoArrivedDestId] = useState<string | null>(null);
   const [arrivalCelebrateDestId, setArrivalCelebrateDestId] = useState<string | null>(null);
   const [requestingStartDestId, setRequestingStartDestId] = useState<string | null>(null);
@@ -2353,6 +2377,15 @@ export default function MapScreen({ route, navigation }: Props) {
       highAccuracy,
       powerMode,
       sharingEnabled,
+      hasMembership: members.length > 0,
+      gatheringTitle: navTarget?.title ?? membership?.group.name,
+      groupName: membership?.group.name ?? '',
+      memberEmojis: members.map((m) => m.avatar ?? ''),
+      memberArrived: members.map((m) => m.status === 'arrived'),
+      startCoords: journeyStartCoords ?? undefined,
+      hasDepartedStart: progressDepartedStart,
+      previousProgressMax: progressMaxSticky ?? undefined,
+      etaSeconds: selfRoute?.expectedTravelTimeSeconds,
       teamNavigationActive: hasNavigationSession || Boolean(journeyActive && navTarget),
       appState: appState === 'background' ? 'background' : 'inactive',
       permissionsPrepared: backgroundPermissionsPreparedFor === groupId,
@@ -2378,6 +2411,12 @@ export default function MapScreen({ route, navigation }: Props) {
     sharingEnabled,
     showLocationPermissionAlert,
     travelMode,
+    members,
+    membership?.group.name,
+    journeyStartCoords,
+    progressDepartedStart,
+    progressMaxSticky,
+    selfRoute?.expectedTravelTimeSeconds,
   ]);
 
   useEffect(() => () => void stopBackgroundJourney(), []);
@@ -2611,6 +2650,45 @@ export default function MapScreen({ route, navigation }: Props) {
     fallbackProgress: liveProgress ?? null,
   });
   const { personalProgress } = progressSurfaces;
+
+  useEffect(() => {
+    if (!journeyActive || !navTarget || personalProgress.arrived) return;
+    const remaining = personalProgress.distanceMeters;
+    const total = initialDistanceM;
+    if (remaining == null || total == null) return;
+    const key = approachNotifyKey(navigationSessionState.session?.id, navTarget.id);
+    if (approachFiredRef.current.has(key)) return;
+    if (!shouldFireApproachNotify({
+      remainingM: remaining,
+      totalM: total,
+      arrivalRadiusM: localArrivalRadiusM,
+      arrived: personalProgress.arrived || localNavigationArrived,
+      alreadyFired: false,
+    })) return;
+    approachFiredRef.current.add(key);
+    const copy = approachNotifyCopy(navTarget.title);
+    void notifications.scheduleLocalNotification({
+      title: copy.title,
+      body: copy.body,
+      data: { kind: 'approach', destinationId: navTarget.id },
+    }).catch(() => undefined);
+    void AsyncStorage.getItem(APPROACH_FIRED_STORAGE_KEY)
+      .then((raw) => {
+        const prev = raw ? (JSON.parse(raw) as string[]) : [];
+        const next = Array.from(new Set([...prev, key]));
+        return AsyncStorage.setItem(APPROACH_FIRED_STORAGE_KEY, JSON.stringify(next));
+      })
+      .catch(() => undefined);
+  }, [
+    journeyActive,
+    navTarget,
+    personalProgress.arrived,
+    personalProgress.distanceMeters,
+    initialDistanceM,
+    localArrivalRadiusM,
+    localNavigationArrived,
+    navigationSessionState.session?.id,
+  ]);
 
   // Stick presentation: monotonic progress max + last-valid distance/ETA (#145).
   useEffect(() => {
@@ -3368,38 +3446,71 @@ export default function MapScreen({ route, navigation }: Props) {
     // (closed_at → leaves carousel → history). End only pauses flock travel.
     // Server complete_gathering_stop also cancels any active nav for this stop.
     if (!groupId) return false;
-    // Client-side in-flight guard: rapid re-taps before closedAt rebinds.
-    if (completingDestIdsRef.current.has(destination.id)) return false;
-    completingDestIdsRef.current.add(destination.id);
-    try {
-      await completeGatheringStop(groupId, destination.id);
+    const alreadyClosed = !!destination.closedAt
+      || allScopedDestinations.find((d) => d.id === destination.id)?.closedAt != null;
+    const plan = planCompleteGatheringApply({
+      alreadyClosed,
+      rpcInFlight: completingDestIdsRef.current.has(destination.id),
+      remoteAutoCompleted: remoteAutoCompleteDestIdsRef.current.has(destination.id),
+    });
+    const closedAt = destination.closedAt ?? new Date().toISOString();
+    if (plan.applyLocalClosedAt) {
+      setOptimisticDestinations((prev) =>
+        applyLocalClosedAt(prev ?? allScopedDestinations, destination.id, closedAt),
+      );
+    }
+    if (plan.startCardExit) {
+      const priorIdx = resolveExitIndexAtStart(
+        prevVisibleDestOrderRef.current,
+        destination.id,
+        prevVisibleDestOrderRef.current.length,
+      );
+      startArrivalCardExit({ ...destination, closedAt }, priorIdx);
+    }
+    if (plan.callRpc) {
+      completingDestIdsRef.current.add(destination.id);
+      try {
+        await completeGatheringStop(groupId, destination.id);
+      } catch (error) {
+        logError('complete_gathering_failed', error, { groupId, destId: destination.id });
+        Alert.alert(
+          t('map.setFailedTitle'),
+          error instanceof Error ? error.message : t('map.setFailedMsg'),
+        );
+        completingDestIdsRef.current.delete(destination.id);
+        return false;
+      }
+      completingDestIdsRef.current.delete(destination.id);
+    }
+    if (plan.refreshHistory) {
       await navigationSessionState.refresh().catch(() => undefined);
       await refresh().catch(() => undefined);
       await loadGatheringWorkflow().catch(() => undefined);
-      return true;
-    } catch (error) {
-      logError('complete_gathering_failed', error, { groupId, destId: destination.id });
-      Alert.alert(
-        t('map.setFailedTitle'),
-        error instanceof Error ? error.message : t('map.setFailedMsg'),
-      );
-      return false;
-    } finally {
-      completingDestIdsRef.current.delete(destination.id);
+      await loadHistory().catch(() => undefined);
     }
-  }, [groupId, loadGatheringWorkflow, navigationSessionState, refresh, t]);
+    return true;
+  }, [
+    allScopedDestinations,
+    groupId,
+    loadGatheringWorkflow,
+    loadHistory,
+    navigationSessionState,
+    refresh,
+    startArrivalCardExit,
+    t,
+  ]);
 
 
   /** Shared auto-complete: guard + complete RPC + this-device notify (native boundary). */
   const executeAutoCompleteStop = useCallback(async (destination: Destination) => {
-    if (remoteAutoCompleteDestIdsRef.current.has(destination.id)) return;
-    if (completingDestIdsRef.current.has(destination.id)) return;
+    const alreadyTracked = remoteAutoCompleteDestIdsRef.current.has(destination.id);
     remoteAutoCompleteDestIdsRef.current.add(destination.id);
     const ok = await runCompleteGatheringStop(destination);
     if (!ok) {
       remoteAutoCompleteDestIdsRef.current.delete(destination.id);
       return;
     }
+    if (alreadyTracked) return;
     // Platform path lives in native/notifications (not MapScreen Platform.OS).
     void notifications.notifyThisDeviceAutoComplete({
       title: t('gathering.autoCompleteTitle'),
@@ -3441,7 +3552,8 @@ export default function MapScreen({ route, navigation }: Props) {
     if (prompt.kind === 'none') return;
 
     // All arrived → auto-complete + this-device notification. No confirm dialog.
-    if (prompt.kind === 'auto_complete') {
+    // Already-closed is the same apply path (never a silent no-op).
+    if (prompt.kind === 'auto_complete' || prompt.kind === 'already_complete') {
       void executeAutoCompleteStop(destination);
       return;
     }
@@ -5280,6 +5392,22 @@ export default function MapScreen({ route, navigation }: Props) {
           </Text>
           <Ionicons name="chevron-down" size={14} color={glass.textSecondary} />
         </Pressable>
+        <AmicroButton
+          icon="eye-off-outline"
+          activeIcon="eye-outline"
+          active={sharingEnabled}
+          activeOnPress={!sharingEnabled}
+          resetAfterComplete={false}
+          disabled={sharingApplying}
+          color={accent}
+          activeColor={accent}
+          style={styles.locationSharingButton}
+          accessibilityLabel={t('settings.locationSharing')}
+          accessibilityHint={t('settings.locationSharingHint')}
+          testID="members-location-sharing"
+          onPress={mediumTap}
+          onAnimationComplete={() => { void handleSharingEnabledChangeAnimated(); }}
+        />
         <RefreshLocationsButton
           refreshing={refreshingLocations}
           cooldownUntil={refreshCooldownUntil}
@@ -5384,6 +5512,7 @@ export default function MapScreen({ route, navigation }: Props) {
     setHighAccuracy, pendingInvites, fontBucket, handleAcceptInvite, handleDeclineInvite,
     subgroups, topFlockMemo, renderFlockRow, flock, mySubgroupId, sentInvites,
     openMyStatusPicker, myStatusLabel,
+    sharingEnabled, handleSharingEnabledChangeAnimated, sharingApplying,
   ]);
 
   // ─── 路線：集合點、排序、Google Maps 匯入、歷史 ───────────────────────
@@ -5661,27 +5790,6 @@ export default function MapScreen({ route, navigation }: Props) {
         <Ionicons name="chevron-forward" size={16} color="#111" />
       </Pressable>
 
-      <View style={styles.accuracyRow}>
-        <View style={styles.accuracyCopy}>
-          <Text style={styles.accuracyLabel}>{t('settings.locationSharing')}</Text>
-          <Text style={styles.accuracySubhint}>{t('settings.locationSharingHint')}</Text>
-        </View>
-        <AmicroButton
-          icon="eye-off-outline"
-          activeIcon="eye-outline"
-          active={sharingEnabled}
-          activeOnPress={!sharingEnabled}
-          resetAfterComplete={false}
-          disabled={sharingApplying}
-          color={accent}
-          activeColor={accent}
-          style={styles.locationSharingButton}
-          accessibilityLabel={t('settings.locationSharing')}
-          onPress={mediumTap}
-          onAnimationComplete={() => { void handleSharingEnabledChangeAnimated(); }}
-        />
-      </View>
-
       <Text style={styles.sheetHeading}>{t('arrival.radiusSection')}</Text>
       <View style={styles.accuracyRow}>
         <View style={styles.accuracyCopy}>
@@ -5719,7 +5827,6 @@ export default function MapScreen({ route, navigation }: Props) {
   ), [
     styles, t, groupId, isLeader, dark, openCustomQuickCommand, accent,
     arrivalRadiusM, setArrivalRadiusM, setPassiveCompanionMode,
-    sharingEnabled, handleSharingEnabledChangeAnimated, sharingApplying,
     liveActivityUnlocked, openStoreForLiveActivity,
   ]);
 
@@ -5907,6 +6014,7 @@ export default function MapScreen({ route, navigation }: Props) {
         <GroupMap
           ref={mapRef}
           members={members}
+          showsUserLocation={sharingEnabled && members.length > 0}
           gathering={activePoint}
           destinations={destinations}
           dailyAccommodations={(() => {
@@ -6379,6 +6487,11 @@ export default function MapScreen({ route, navigation }: Props) {
                 && canMarkArrival
                 && !dest.closedAt
                 && flockNavigatingThis;
+              const arrivalJustSplit = arrivalControlJustSplit(
+                dest.id,
+                showArrivalControl,
+                arrivalSplitSeenRef.current,
+              );
               // #176: icon-only Start only when Arrived is also present under tight
               // density. When Arrived is absent, Start fills that slot (not square).
               const navIconOnly = chromeTight && showArrivalControl;
@@ -6695,9 +6808,9 @@ export default function MapScreen({ route, navigation }: Props) {
                         Order (#148): [Start/End | Arrived] [Countdown] [Transport]
                         Outside expand Pressable so Start never toggles the card.
                         Density tracks narrow + Dynamic Type. */}
-                    {cardExpanded && (
+                    {(cardExpanded || showArrivalControl) && (
                     <View style={styles.commandRow} pointerEvents="box-none">
-                      {navCmd.kind !== 'hidden' ? (
+                      {cardExpanded && navCmd.kind !== 'hidden' ? (
                         <Pressable
                           ref={active ? (n) => setTourTargetRef('navCommand', n) : undefined}
                           collapsable={false}
@@ -6808,9 +6921,11 @@ export default function MapScreen({ route, navigation }: Props) {
                       {showArrivalControl ? (
                         <Animated.View
                           entering={
-                            tourReduceMotion
-                              ? FadeIn.duration(ARRIVED_FADE_MS)
-                              : FadeInRight.duration(ARRIVED_SPLIT_MS)
+                            arrivalJustSplit
+                              ? (tourReduceMotion
+                                ? FadeIn.duration(ARRIVED_FADE_MS)
+                                : FadeInRight.duration(ARRIVED_SPLIT_MS))
+                              : undefined
                           }
                           exiting={
                             tourReduceMotion
@@ -6869,6 +6984,8 @@ export default function MapScreen({ route, navigation }: Props) {
                       ) : null}
 
                       {/* Transport before meet countdown (product: swap order). */}
+                      {cardExpanded ? (
+                      <>
                       <Pressable
                         ref={active ? (n) => setTourTargetRef('transport', n) : undefined}
                         collapsable={false}
@@ -6920,6 +7037,8 @@ export default function MapScreen({ route, navigation }: Props) {
                         captionDue={t('map.meetTimeCaption')}
                       />
                       </View>
+                      </>
+                      ) : null}
                     </View>
                     )}
                     </View>
