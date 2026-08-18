@@ -36,6 +36,11 @@ describe('navigation ActivityKit push orchestration', () => {
     expect(handler).toContain('fallbackUserIds');
     expect(handler).toContain('usersWithStartToken');
     expect(handler).toContain('filterNotificationPreferences');
+    expect(handler).toContain('userId !== payload.sender_id');
+    expect(messages).toContain('title: "開始前往"');
+    expect(messages).toContain('隊長開始行程，前往（');
+    expect(messages).not.toContain('開始集合導航');
+    expect(messages).not.toContain('已開始前往${placeOr(p.title)}');
   });
 
   it('prunes only the exact dead push-to-start or update token', () => {

@@ -22,7 +22,10 @@ function loadBoundary(platform: PlatformName): MapsBoundary {
     proxySearchPlaces: jest.fn(),
   }));
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  return require('../native/maps') as MapsBoundary;
+  return {
+    ...require('../native/maps'),
+    ...require('../native/mapTransitDefaults'),
+  } as MapsBoundary;
 }
 
 afterEach(() => {
@@ -39,16 +42,25 @@ describe('platformized MapView boundary', () => {
     const androidReady = jest.fn();
     const loaded = jest.fn();
     const location = jest.fn();
-    const props = maps.platformizedMapViewProps({
-      chrome,
-      onMapReady: ready,
-      onAndroidMapReady: androidReady,
-      onAndroidMapLoaded: loaded,
-      onUserLocationSample: location,
-    });
+    const props = {
+      ...maps.platformizedMapViewProps({
+        chrome,
+        onMapReady: ready,
+        onAndroidMapReady: androidReady,
+        onAndroidMapLoaded: loaded,
+        onUserLocationSample: location,
+      }),
+      ...maps.defaultMapTransitProps(),
+    };
 
     expect(props.provider).toBeUndefined();
     expect(props.showsPointsOfInterests).toBe(true);
+    expect((props as { pointsOfInterestFilter?: string[] }).pointsOfInterestFilter).toEqual([
+      'publicTransport',
+      'airport',
+      'parking',
+      'marina',
+    ]);
     expect(props.showsTransit).toBeUndefined();
     expect(props.compassOffset).toEqual(chrome.compassOffset);
     expect(props.appleLogoInsets).toEqual(chrome.appleLogoInsets);

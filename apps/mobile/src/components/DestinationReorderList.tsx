@@ -83,8 +83,8 @@ interface Props {
   canReorder: boolean;
   tripDays?: number;
   departureDate?: string;
-  onUpdateTripDetails: (days: number, date: string) => void;
-  onReorder: (
+  onUpdateTripDetails?: (days: number, date: string) => void;
+  onReorder?: (
     updates: { id: string; position: number; day: number; stayAnchor?: boolean }[],
   ) => void;
   onDelete?: (id: string) => void;
@@ -377,7 +377,7 @@ export default function DestinationReorderList({
         if (state?.completed && state.answers.days) {
            const dDays = state.answers.days;
            const dDate = state.answers.departureDate ?? new Date().toISOString();
-           onUpdateTripDetails(dDays, dDate);
+           onUpdateTripDetails?.(dDays, dDate);
            setEditDays(dDays);
            setEditDate(new Date(dDate));
         }
@@ -652,7 +652,7 @@ export default function DestinationReorderList({
 
       if (changed) {
         lightTap();
-        onReorder(updates);
+        onReorder?.(updates);
       }
     } finally {
       // Unlock parent ScrollView even if update computation throws.
@@ -1284,7 +1284,7 @@ export default function DestinationReorderList({
                       const toSave = unchangedPast
                         ? existing
                         : clampDateNotBeforeToday(editDate);
-                      onUpdateTripDetails(editDays, toSave.toISOString());
+                      onUpdateTripDetails?.(editDays, toSave.toISOString());
                   }} style={[styles.modalActionBtn, { backgroundColor: colors.accent }]}>
                      <Text style={[styles.modalActionText, { color: '#fff' }]}>{t('trip.save')}</Text>
                   </Pressable>

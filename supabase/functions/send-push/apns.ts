@@ -91,6 +91,7 @@ export interface LiveActivityContentState {
   travelMode: string;
   memberEmojis: string[];
   memberArrived: boolean[];
+  language?: string;
 }
 
 export interface LiveActivityPayload {

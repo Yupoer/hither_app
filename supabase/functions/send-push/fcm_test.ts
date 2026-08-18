@@ -53,6 +53,31 @@ Deno.test("builds data-only location_refresh with high priority", () => {
   );
 });
 
+Deno.test("navigation start alert excludes the old gathering-nav copy", () => {
+  assertEquals(
+    buildMessage({
+      category: "navigation_session",
+      group_id: "g1",
+      sender_id: "leader",
+      status: "active",
+      title: "台北車站",
+    }),
+    {
+      title: "開始前往",
+      body: "隊長開始行程，前往（台北車站）",
+    },
+  );
+  assertEquals(
+    buildMessage({
+      category: "navigation_session",
+      group_id: "g1",
+      sender_id: "leader",
+      status: "active",
+    }).body,
+    "隊長開始行程，前往（集合點）",
+  );
+});
+
 Deno.test("builds the follower request_start message", () => {
   assertEquals(
     buildMessage({

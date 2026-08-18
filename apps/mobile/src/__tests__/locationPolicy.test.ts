@@ -46,6 +46,8 @@ describe('locationPolicy', () => {
     expect(p.uploadHeartbeatStationaryMs).toBeGreaterThan(p.uploadHeartbeatMs);
     expect(p.routeCoordDecimals).toBe(4);
     expect(p.realtimeLocationDebounceMs).toBe(4_000);
+    expect(p.routeMinDistanceM).toBe(18);
+    expect(p.routeMinIntervalMs).toBe(3_000);
   });
 
   it('uses the faster high-accuracy profile only when enabled in foreground', () => {
@@ -59,6 +61,8 @@ describe('locationPolicy', () => {
     expect(p.uploadHeartbeatStationaryMs).toBe(60_000);
     expect(p.routeCoordDecimals).toBe(5);
     expect(p.realtimeLocationDebounceMs).toBe(1_500);
+    expect(p.routeMinDistanceM).toBe(15);
+    expect(p.routeMinIntervalMs).toBe(3_000);
   });
 
   it('allDay ignores highAccuracy and uses Low GPS for the 8h budget', () => {
@@ -68,6 +72,8 @@ describe('locationPolicy', () => {
     expect(p.uploadHeartbeatMs).toBe(120_000);
     expect(p.uploadHeartbeatStationaryMs).toBe(120_000);
     expect(p.uploadMinDistanceM).toBe(150);
+    expect(p.routeMinDistanceM).toBe(100);
+    expect(p.routeMinIntervalMs).toBe(75_000);
     expect(POWER_BUDGET_NOTE.allDay8hTargetPct).toBe(20);
   });
 

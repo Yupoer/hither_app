@@ -42,13 +42,16 @@ import {
   platformizedMapLifecycle,
   platformizedMapViewProps,
 } from '../native/maps';
+import { defaultMapTransitProps } from '../native/mapTransitDefaults';
 import { energyObservability } from '../state/energyObservability';
 import {
   displayRoutePoints,
   routeViewportFromRegion,
   type RouteViewport,
 } from '../utils/routeLod';
+import { advanceRouteToCoordinate } from '../utils/advanceRouteToCoordinate';
 import { mapKitChromeLayout } from '../utils/mapChromeLayout';
+import { oversizedMapStyle } from '../utils/mapPeekLock';
 import {
   pulsePeakScale,
   reduceMotionEmphasisScale,
@@ -128,6 +131,8 @@ export interface GroupMapProps {
   /** First available user location, used before a gathering point exists. */
   initialCenter?: Coordinates;
   routePoints?: Coordinates[];
+  /** Latest self GPS sample used to trim the planned polyline locally. */
+  selfCoordinates?: Coordinates | null;
   routeColor?: string;
   /** Active navigation / team target — receives 5s pulse only. */
   activeDestinationId?: string | null;
@@ -135,9 +140,10 @@ export interface GroupMapProps {
   completedDestinationIds?: ReadonlySet<string> | ReadonlyArray<string> | null;
   /** Top chrome overlapping the map (safe area + gathering-point carousel). */
   topOverlap?: number;
-  /** Sheet height overlapping the map — with topOverlap, shifts the camera
-   *  center into the exposed strip between carousel and sheet. */
+  /** Peek-only sheet height overlapping the map. Never a live detent. */
   bottomOverlap?: number;
+  /** Half peek height: MapView translates +X/+Y and oversizes by this amount. */
+  halfPeek?: number;
   /**
    * MapKit user-location samples for the single foreground owner path.
    * Does not redraw the self marker — native blue dot stays system-owned.
@@ -510,11 +516,13 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     currentUserId,
     initialCenter,
     routePoints,
+    selfCoordinates = null,
     routeColor,
     activeDestinationId = null,
     completedDestinationIds = null,
     topOverlap = 0,
     bottomOverlap = 0,
+    halfPeek = 0,
     onUserLocationSample,
     onLongPressCoordinate,
     onRequestGoHome,
@@ -591,8 +599,13 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     }),
   );
   const displayRoute = useMemo(
-    () => displayRoutePoints(routePoints ?? [], settledRouteViewport),
-    [routePoints, settledRouteViewport],
+    () => displayRoutePoints(
+      selfCoordinates
+        ? advanceRouteToCoordinate(routePoints ?? [], selfCoordinates)
+        : (routePoints ?? []),
+      settledRouteViewport,
+    ),
+    [routePoints, selfCoordinates, settledRouteViewport],
   );
   const mapChrome = useMemo(
     () => mapKitChromeLayout({ safeArea: insets, topChrome: topOverlap }),
@@ -672,9 +685,12 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     // The callbacks are stored by the boundary and invoked only by MapView
     // events; they are not executed while this render-time builder runs.
     // eslint-disable-next-line react-hooks/refs
-    () => platformizedMapViewProps({
-      chrome: mapChrome,
-      ...mapBoundaryCallbacks,
+    () => ({
+      ...platformizedMapViewProps({
+        chrome: mapChrome,
+        ...mapBoundaryCallbacks,
+      }),
+      ...defaultMapTransitProps(),
     }),
     [mapChrome, mapBoundaryCallbacks],
   );
@@ -782,7 +798,8 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       mapRef.current.animateToRegion(initialRegionFor(fallbackCenter, latOffset), 600);
       centeredModeRef.current = 'fallback';
     }
-  }, [fallbackCenter, gathering, latOffset]);
+    // Sheet stage / detent must never re-run this effect.
+  }, [fallbackCenter, gathering]);
 
   const handleMapSubtreeError = useCallback(() => {
     // Parent-owned: survives ordinary re-renders; not cleared by children identity.
@@ -847,6 +864,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       onError={handleMapSubtreeError}
       fallback={mapFallback}
     >
+    <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]} pointerEvents="box-none">
     <MapView
       // Remount when the theme's light/dark changes so Apple Maps picks up the
       // new `userInterfaceStyle` from a fresh mount (the prop alone is not
@@ -854,7 +872,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       // surfaceKey allows a single user-driven remount after map subtree failure.
       key={`${mapInterfaceStyle}-${surfaceKey}`}
       ref={mapRef}
-      style={StyleSheet.absoluteFill}
+      style={oversizedMapStyle(windowWidth, windowHeight, halfPeek)}
       // Provider, transit defaults, MapKit chrome, lifecycle callbacks and
       // platform-owned location callbacks come from the native boundary.
       {...(mapViewProps as Record<string, unknown>)}
@@ -894,7 +912,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
         ));
       }}
     >
-      {routePoints && routePoints.length > 1 ? (
+      {displayRoute.length > 1 ? (
         <Polyline
           coordinates={displayRoute}
           strokeColor={routeColor ?? colors.accent}
@@ -992,6 +1010,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
         );
       })}
     </MapView>
+    </View>
     </MapSubtreeBoundary>
   );
 });

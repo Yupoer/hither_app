@@ -88,6 +88,8 @@ export interface GroupActivityState {
    * and rendered next to the gathering title (fallback when missing).
    */
   destinationEmoji?: string;
+  /** App language so native duration copy can format zh/en. Missing → zh. */
+  language?: 'zh' | 'en';
 }
 
 /** Opaque id for an in-flight activity (native only). */

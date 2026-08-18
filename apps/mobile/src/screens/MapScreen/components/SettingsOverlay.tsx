@@ -1,29 +1,31 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
+  Pressable,
   ScrollView,
+  StyleSheet,
   Text,
+  useWindowDimensions,
   View,
   TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import * as Updates from 'expo-updates';
-import OverlaySheet from '../../../components/OverlaySheet';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import NativeSwitch from '../../../components/NativeSwitch';
 import PrefSlider from '../../../components/PrefSlider';
-import { Segmented } from './Segmented';
 import NotificationPreferencesCard from '../../../components/NotificationPreferencesCard';
 import { useSession } from '../../../state/SessionContext';
 import {
   usePreferences,
   useTheme,
-  type Language,
   type TextScalePref,
 } from '../../../state/PreferencesContext';
 import { useTranslation } from '../../../i18n';
-import { THEME_ORDER, type ThemeName, themes } from '../../../theme';
+import { THEME_ORDER, themes } from '../../../theme';
 import { glass } from '../../../glass';
 import { applyOtaUpdate } from '../../../utils/otaUpdates';
 
@@ -136,6 +138,32 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
   } = usePreferences();
   const { colors } = useTheme();
   const accent = colors.accent;
+  const { width: windowWidth } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const [page, setPage] = useState<'root' | 'language' | 'theme'>('root');
+  const [mounted, setMounted] = useState(visible);
+  const translateX = useRef(new Animated.Value(windowWidth)).current;
+
+  useEffect(() => {
+    if (visible) {
+      setMounted(true);
+      setPage('root');
+      Animated.timing(translateX, {
+        toValue: 0,
+        duration: 280,
+        useNativeDriver: true,
+      }).start();
+      return;
+    }
+    if (!mounted) return;
+    Animated.timing(translateX, {
+      toValue: windowWidth,
+      duration: 220,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) setMounted(false);
+    });
+  }, [mounted, translateX, visible, windowWidth]);
 
   const onDiagnosticSwitchChange = React.useCallback((next: boolean) => {
     if (!next) {
@@ -230,16 +258,93 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
     return t('settings.otaUpdate', { id: shortId });
   }, [t]);
 
+  if (!mounted) return null;
+
+  const pageTitle = page === 'language'
+    ? t('settings.language')
+    : page === 'theme'
+      ? t('settings.theme')
+      : t('map.overlaySettings');
+  const handleBack = () => {
+    if (page !== 'root') {
+      setPage('root');
+      return;
+    }
+    onClose();
+  };
+
   return (
-    <OverlaySheet
-      visible={visible}
-      onClose={onClose}
-      title={t('map.overlaySettings')}
-      accent={accent}
-      doneLabel={t('map.done')}
-      opaque
-      edgeToEdge
+    <Animated.View
+      style={[
+        settingsSlideStyles.page,
+        { transform: [{ translateX }] },
+      ]}
+      testID="settings-slide-page"
+      // opaque full-screen slide (replaces OverlaySheet opaque)
     >
+      <View style={[settingsSlideStyles.header, { paddingTop: insets.top + 6 }]}>
+        <Pressable
+          onPress={handleBack}
+          accessibilityRole="button"
+          accessibilityLabel={t('common.back')}
+          hitSlop={10}
+          style={settingsSlideStyles.back}
+        >
+          <Ionicons name="chevron-back" size={24} color="#fff" />
+        </Pressable>
+        <Text style={settingsSlideStyles.headerTitle} numberOfLines={1}>{pageTitle}</Text>
+        <View style={settingsSlideStyles.headerSpacer} />
+      </View>
+      {page === 'language' ? (
+        <ScrollView contentContainerStyle={styles.overlayBody}>
+          {[
+            { key: 'zh' as const, label: '中文' },
+            { key: 'en' as const, label: 'English' },
+          ].map((option) => (
+            <Pressable
+              key={option.key}
+              style={styles.settingsTopRow}
+              onPress={() => setLanguage(option.key)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: language === option.key }}
+            >
+              <Text style={styles.settingsTopTitle}>{option.label}</Text>
+              {language === option.key ? (
+                <Ionicons name="checkmark" size={18} color={accent} />
+              ) : null}
+            </Pressable>
+          ))}
+        </ScrollView>
+      ) : null}
+      {page === 'theme' ? (
+        <ScrollView contentContainerStyle={styles.overlayBody}>
+          {THEME_ORDER.map((n) => (
+            <Pressable
+              key={n}
+              style={styles.settingsTopRow}
+              onPress={() => setThemeName(n)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: themeName === n }}
+            >
+              <Text style={styles.settingsTopTitle}>
+                {t(
+                  n === 'night'
+                    ? 'settings.themeNight'
+                    : n === 'day'
+                      ? 'settings.themeDay'
+                      : n === 'dusk'
+                        ? 'settings.themeDusk'
+                        : 'settings.themeForest',
+                )}
+              </Text>
+              {themeName === n ? (
+                <Ionicons name="checkmark" size={18} color={accent} />
+              ) : null}
+            </Pressable>
+          ))}
+        </ScrollView>
+      ) : null}
+      {page === 'root' ? (
       <ScrollView contentContainerStyle={styles.overlayBody}>
         {/* ── 個人設定 ─────────────────────────────────────────── */}
         <SectionLabel label={t('settings.sectionPersonal')} styles={styles} />
@@ -277,34 +382,18 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
         </View>
 
         <SectionLabel label={t('settings.sectionLanguageAppearance')} styles={styles} />
-        <Text style={[styles.settingsInlineLabel, { marginTop: 4 }]}>{t('settings.language')}</Text>
-        <Segmented
-          accent={accent}
-          options={[
-            { key: 'zh', label: '中文' },
-            { key: 'en', label: 'English' },
-          ]}
-          value={language}
-          onChange={(v) => setLanguage(v as Language)}
-        />
-        <Text style={styles.settingsInlineLabel}>{t('settings.theme')}</Text>
-        <Segmented
-          accent={accent}
-          options={THEME_ORDER.map((n) => ({
-            key: n,
-            label: t(
-              n === 'night'
-                ? 'settings.themeNight'
-                : n === 'day'
-                  ? 'settings.themeDay'
-                  : n === 'dusk'
-                    ? 'settings.themeDusk'
-                    : 'settings.themeForest',
-            ),
-          }))}
-          value={themeName}
-          onChange={(v) => setThemeName(v as ThemeName)}
-        />
+        <View style={styles.settingsTopGroup}>
+          <NavRow
+            title={t('settings.language')}
+            onPress={() => setPage('language')}
+            styles={styles}
+          />
+          <NavRow
+            title={t('settings.theme')}
+            onPress={() => setPage('theme')}
+            styles={styles}
+          />
+        </View>
         <Text style={styles.settingsInlineLabel}>{t('settings.textSize')}</Text>
         <View testID="settings-text-scale-slider">
           <PrefSlider
@@ -505,6 +594,36 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
           />
         </View>
       </ScrollView>
-    </OverlaySheet>
+      ) : null}
+    </Animated.View>
   );
+});
+
+const settingsSlideStyles = StyleSheet.create({
+  page: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: '#0E1320',
+    zIndex: 40,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingBottom: 10,
+    minHeight: 44,
+  },
+  back: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: {
+    flex: 1,
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  headerSpacer: { width: 44, height: 44 },
 });

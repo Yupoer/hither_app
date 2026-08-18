@@ -280,7 +280,7 @@
       "child": 201,
       "acceptance": "A5 Settings overlay still uses its Segmented language control; no new locale.",
       "testFile": "languagePickerContract.test.ts",
-      "testNamePattern": "keeps Settings overlay on Segmented language control"
+      "testNamePattern": "keeps Settings language as a NavRow that pushes a right-slide child"
     },
     {
       "parent": 199,
@@ -337,6 +337,447 @@
       "acceptance": "A7 zh/en catalog key sets stay identical. No new locale.",
       "testFile": "languagePickerContract.test.ts",
       "testNamePattern": "keeps zh/en catalogs key-identical after picker keys"
+    },
+    {
+      "parent": 206,
+      "child": 207,
+      "acceptance": "A1 Status icon and share sit flush left with a 6–8pt gap",
+      "testFile": "memberStatusSharing.test.ts",
+      "testNamePattern": "maps follow/solo/away to the same picker icons"
+    },
+    {
+      "parent": 206,
+      "child": 207,
+      "acceptance": "A2 Status button is icon-only with follow/solo/away glyphs and no chevron",
+      "testFile": "mapUiContracts.test.ts",
+      "testNamePattern": "groups high accuracy with the refreshed member controls"
+    },
+    {
+      "parent": 206,
+      "child": 207,
+      "acceptance": "A3 Status press still opens the existing myStatus OverlaySheet",
+      "testFile": "mapUiContracts.test.ts",
+      "testNamePattern": "groups high accuracy with the refreshed member controls"
+    },
+    {
+      "parent": 206,
+      "child": 207,
+      "acceptance": "A4 Turning sharing on first confirms with settings.locationSharing copy; cancel stays off",
+      "testFile": "memberStatusSharing.test.ts",
+      "testNamePattern": "confirms turning sharing on with the existing settings copy"
+    },
+    {
+      "parent": 206,
+      "child": 207,
+      "acceptance": "A5 Turning sharing off first confirms with stop-sharing copy; cancel stays on",
+      "testFile": "memberStatusSharing.test.ts",
+      "testNamePattern": "confirms turning sharing off with stop-sharing copy"
+    },
+    {
+      "parent": 206,
+      "child": 207,
+      "acceptance": "A6 Off sharing icon is danger red; on stays accent",
+      "testFile": "memberStatusSharing.test.ts",
+      "testNamePattern": "keeps the members share button red when off and confirms before toggle"
+    },
+    {
+      "parent": 206,
+      "child": 207,
+      "acceptance": "A7 members-location-sharing testID remains on the members pane",
+      "testFile": "diagnosticsUiContract.test.ts",
+      "testNamePattern": "shows a location-sharing switch with an explicit local-navigation warning in Tools"
+    },
+    {
+      "parent": 206,
+      "child": 208,
+      "acceptance": "A1 iOS default MapView uses a transit-oriented POI filter including publicTransport",
+      "testFile": "transitMapDefaults.test.ts",
+      "testNamePattern": "uses an exclusive Apple transit POI filter including publicTransport"
+    },
+    {
+      "parent": 206,
+      "child": 208,
+      "acceptance": "A2 iOS is not the stock standard all-POI default",
+      "testFile": "mapNativeBoundaryBehavior.test.ts",
+      "testNamePattern": "provides MapKit chrome and location ownership on iOS only"
+    },
+    {
+      "parent": 206,
+      "child": 208,
+      "acceptance": "A3 Android still showsTransit true",
+      "testFile": "transitMapDefaults.test.ts",
+      "testNamePattern": "puts platform transit selection in the native maps boundary"
+    },
+    {
+      "parent": 206,
+      "child": 208,
+      "acceptance": "A4 Does not switch to Google Maps or a custom overlay",
+      "testFile": "transitMapDefaults.test.ts",
+      "testNamePattern": "does not introduce a third-party transit dataset or custom rail overlay"
+    },
+    {
+      "parent": 206,
+      "child": 208,
+      "acceptance": "A5 transitMapDefaults inverted and green",
+      "testFile": "transitMapDefaults.test.ts",
+      "testNamePattern": "uses an exclusive Apple transit POI filter including publicTransport"
+    },
+    {
+      "parent": 206,
+      "child": 209,
+      "acceptance": "A1 Self GPS movement splices the polyline immediately without waiting for network",
+      "testFile": "advanceRouteToCoordinate.test.ts",
+      "testNamePattern": "splices the current GPS onto the remaining polyline without waiting for network"
+    },
+    {
+      "parent": 206,
+      "child": 209,
+      "acceptance": "A2 Network recompute is correction only at about 15–20m or 3s in foreground",
+      "testFile": "locationPolicy.test.ts",
+      "testNamePattern": "defaults to the motion-aware foreground balanced profile"
+    },
+    {
+      "parent": 206,
+      "child": 209,
+      "acceptance": "A3 Background / allDay route cadence is unchanged",
+      "testFile": "locationPolicy.test.ts",
+      "testNamePattern": "allDay ignores highAccuracy and uses Low GPS for the 8h budget"
+    },
+    {
+      "parent": 206,
+      "child": 209,
+      "acceptance": "A4 Switching walk / transit / drive immediately clears the line",
+      "testFile": "mapKitRoutes.test.ts",
+      "testNamePattern": "does not call getDirections for local GPS trim and clears on travel mode change"
+    },
+    {
+      "parent": 206,
+      "child": 209,
+      "acceptance": "A5 No new native module for route trim",
+      "testFile": "advanceRouteToCoordinate.test.ts",
+      "testNamePattern": "trims on the map surface before LOD and does not add a native module"
+    },
+    {
+      "parent": 206,
+      "child": 210,
+      "acceptance": "A1 Map shifts down and right by detents[0]/2",
+      "testFile": "mapPeekLock.test.ts",
+      "testNamePattern": "shifts the map down and right by half the peek height"
+    },
+    {
+      "parent": 206,
+      "child": 210,
+      "acceptance": "A2 Oversized map fills the corner after the shift",
+      "testFile": "mapPeekLock.test.ts",
+      "testNamePattern": "shifts the map down and right by half the peek height"
+    },
+    {
+      "parent": 206,
+      "child": 210,
+      "acceptance": "A3 Peek to stage1/stage2 does not move or recenter the map",
+      "testFile": "mapRouteUiContract.test.ts",
+      "testNamePattern": "anchors iOS map chrome without moving Android controls"
+    },
+    {
+      "parent": 206,
+      "child": 210,
+      "acceptance": "A4 Overlay/pane switches do not push the map",
+      "testFile": "mapRouteUiContract.test.ts",
+      "testNamePattern": "anchors iOS map chrome without moving Android controls"
+    },
+    {
+      "parent": 206,
+      "child": 210,
+      "acceptance": "A5 Locate/fit use peek-only insets",
+      "testFile": "mapRouteUiContract.test.ts",
+      "testNamePattern": "anchors iOS map chrome without moving Android controls"
+    },
+    {
+      "parent": 206,
+      "child": 211,
+      "acceptance": "A1 Route overlay (edit gathering points) is edge-to-edge",
+      "testFile": "mapUiContracts.test.ts",
+      "testNamePattern": "keeps history on the route pane; reorder overlay wires import CTA"
+    },
+    {
+      "parent": 206,
+      "child": 211,
+      "acceptance": "A2 Meet editor is edge-to-edge",
+      "testFile": "mapUiContracts.test.ts",
+      "testNamePattern": "keeps history on the route pane; reorder overlay wires import CTA"
+    },
+    {
+      "parent": 206,
+      "child": 211,
+      "acceptance": "A3 DestinationReorderList itself is not restyled",
+      "testFile": "mapUiContracts.test.ts",
+      "testNamePattern": "keeps history on the route pane; reorder overlay wires import CTA"
+    },
+    {
+      "parent": 206,
+      "child": 211,
+      "acceptance": "A4 DestinationSearch stays edge-to-edge",
+      "testFile": "mapUiContracts.test.ts",
+      "testNamePattern": "keeps history on the route pane; reorder overlay wires import CTA"
+    },
+    {
+      "parent": 206,
+      "child": 212,
+      "acceptance": "A1 Started + collapsed card hides Arrived",
+      "testFile": "mapUiContracts.test.ts",
+      "testNamePattern": "keeps arrival beside navigation controls and auto-applies current time"
+    },
+    {
+      "parent": 206,
+      "child": 212,
+      "acceptance": "A2 Started + expanded card shows Arrived when other conditions hold",
+      "testFile": "mapUiContracts.test.ts",
+      "testNamePattern": "keeps arrival beside navigation controls and auto-applies current time"
+    },
+    {
+      "parent": 206,
+      "child": 212,
+      "acceptance": "A3 Start/end remain expanded-only",
+      "testFile": "mapUiContracts.test.ts",
+      "testNamePattern": "keeps arrival beside navigation controls and auto-applies current time"
+    },
+    {
+      "parent": 206,
+      "child": 212,
+      "acceptance": "A4 mapUiContracts flipped and green",
+      "testFile": "mapUiContracts.test.ts",
+      "testNamePattern": "keeps arrival beside navigation controls and auto-applies current time"
+    },
+    {
+      "parent": 206,
+      "child": 213,
+      "acceptance": "A1 zh duration matches 90m / 26h / 45m / <1m examples",
+      "testFile": "liveActivityContract.test.ts",
+      "testNamePattern": "matches the approved black capsule information hierarchy"
+    },
+    {
+      "parent": 206,
+      "child": 213,
+      "acceptance": "A2 At most two duration units",
+      "testFile": "liveActivityContract.test.ts",
+      "testNamePattern": "matches the approved black capsule information hierarchy"
+    },
+    {
+      "parent": 206,
+      "child": 213,
+      "acceptance": "A3 Lock and island show 正在前往, not 前往集合點",
+      "testFile": "liveActivityContract.test.ts",
+      "testNamePattern": "matches the approved black capsule information hierarchy"
+    },
+    {
+      "parent": 206,
+      "child": 213,
+      "acceptance": "A4 Dest over 10 CJK / 16 Latin uses marquee",
+      "testFile": "liveActivityContract.test.ts",
+      "testNamePattern": "matches the approved black capsule information hierarchy"
+    },
+    {
+      "parent": 206,
+      "child": 213,
+      "acceptance": "A5 Dest and ETA do not overlap",
+      "testFile": "liveActivityContract.test.ts",
+      "testNamePattern": "matches the approved black capsule information hierarchy"
+    },
+    {
+      "parent": 206,
+      "child": 213,
+      "acceptance": "A6 language is passed on start/update",
+      "testFile": "liveActivityContract.test.ts",
+      "testNamePattern": "matches the approved black capsule information hierarchy"
+    },
+    {
+      "parent": 206,
+      "child": 213,
+      "acceptance": "A7 English still uses compactDuration",
+      "testFile": "liveActivityContract.test.ts",
+      "testNamePattern": "matches the approved black capsule information hierarchy"
+    },
+    {
+      "parent": 206,
+      "child": 214,
+      "acceptance": "A1 Members receive title 開始前往",
+      "testFile": "navigationPushContract.test.ts",
+      "testNamePattern": "falls back to normal alert only for users without a usable start token"
+    },
+    {
+      "parent": 206,
+      "child": 214,
+      "acceptance": "A2 Body is 隊長開始行程，前往（destination）",
+      "testFile": "navigationPushContract.test.ts",
+      "testNamePattern": "falls back to normal alert only for users without a usable start token"
+    },
+    {
+      "parent": 206,
+      "child": 214,
+      "acceptance": "A3 Leader only sees local 已開始行程",
+      "testFile": "notificationDeliveryPolicy.test.ts",
+      "testNamePattern": "start_journey → operator local confirm for sender once"
+    },
+    {
+      "parent": 206,
+      "child": 214,
+      "acceptance": "A4 Leader is excluded from the member start push",
+      "testFile": "navigationPushContract.test.ts",
+      "testNamePattern": "falls back to normal alert only for users without a usable start token"
+    },
+    {
+      "parent": 206,
+      "child": 214,
+      "acceptance": "A5 send-push is deployed",
+      "testFile": "navigationPushContract.test.ts",
+      "testNamePattern": "falls back to normal alert only for users without a usable start token"
+    },
+    {
+      "parent": 206,
+      "child": 215,
+      "acceptance": "A1 Members still have the next-stop card",
+      "testFile": "mapUiContracts.test.ts",
+      "testNamePattern": "keeps history on the route pane; reorder overlay wires import CTA"
+    },
+    {
+      "parent": 206,
+      "child": 215,
+      "acceptance": "A2 Members do not see the reorder button on the route pane",
+      "testFile": "mapUiContracts.test.ts",
+      "testNamePattern": "keeps history on the route pane; reorder overlay wires import CTA"
+    },
+    {
+      "parent": 206,
+      "child": 215,
+      "acceptance": "A3 Members see the full stop order inline",
+      "testFile": "mapUiContracts.test.ts",
+      "testNamePattern": "keeps history on the route pane; reorder overlay wires import CTA"
+    },
+    {
+      "parent": 206,
+      "child": 215,
+      "acceptance": "A4 Members cannot reorder or delete",
+      "testFile": "mapUiContracts.test.ts",
+      "testNamePattern": "keeps history on the route pane; reorder overlay wires import CTA"
+    },
+    {
+      "parent": 206,
+      "child": 215,
+      "acceptance": "A5 Leaders still use the button + overlay editor",
+      "testFile": "mapUiContracts.test.ts",
+      "testNamePattern": "keeps history on the route pane; reorder overlay wires import CTA"
+    },
+    {
+      "parent": 206,
+      "child": 216,
+      "acceptance": "A1 AccountSheet has no redeem block",
+      "testFile": "keyboardSurface.test.ts",
+      "testNamePattern": "paywall redeem uses a centered Modal input, not the account sheet"
+    },
+    {
+      "parent": 206,
+      "child": 216,
+      "acceptance": "A2 Paywall restore has 啟用兌換碼 below it with the same shape",
+      "testFile": "keyboardSurface.test.ts",
+      "testNamePattern": "paywall redeem uses a centered Modal input, not the account sheet"
+    },
+    {
+      "parent": 206,
+      "child": 216,
+      "acceptance": "A3 Tap opens a centered Modal for code entry",
+      "testFile": "keyboardSurface.test.ts",
+      "testNamePattern": "paywall redeem uses a centered Modal input, not the account sheet"
+    },
+    {
+      "parent": 206,
+      "child": 216,
+      "acceptance": "A4 Success/failure reuse redeemPromoCode and existing copy",
+      "testFile": "buttonInventoryContract.test.ts",
+      "testNamePattern": "wires Login, account upgrade/redeem, and feedback submit through runUiAction"
+    },
+    {
+      "parent": 206,
+      "child": 216,
+      "acceptance": "A5 Not an ActionSheet or bottom sheet",
+      "testFile": "keyboardSurface.test.ts",
+      "testNamePattern": "paywall redeem uses a centered Modal input, not the account sheet"
+    },
+    {
+      "parent": 206,
+      "child": 217,
+      "acceptance": "A1 Settings gear opens a right-slide page with a back chevron",
+      "testFile": "languagePickerContract.test.ts",
+      "testNamePattern": "keeps Settings language as a NavRow that pushes a right-slide child"
+    },
+    {
+      "parent": 206,
+      "child": 217,
+      "acceptance": "A2 Language and theme are NavRows like Account",
+      "testFile": "languagePickerContract.test.ts",
+      "testNamePattern": "keeps Settings language as a NavRow that pushes a right-slide child"
+    },
+    {
+      "parent": 206,
+      "child": 217,
+      "acceptance": "A3 Language and theme rows push child pages with existing choices",
+      "testFile": "languagePickerContract.test.ts",
+      "testNamePattern": "keeps Settings language as a NavRow that pushes a right-slide child"
+    },
+    {
+      "parent": 206,
+      "child": 217,
+      "acceptance": "A4 Settings is not an OverlaySheet and not Segmented",
+      "testFile": "languagePickerContract.test.ts",
+      "testNamePattern": "keeps Settings language as a NavRow that pushes a right-slide child"
+    },
+    {
+      "parent": 206,
+      "child": 218,
+      "acceptance": "A1 RoleSelect language uses an attached iOS UIMenu",
+      "testFile": "languagePickerContract.test.ts",
+      "testNamePattern": "opens the RoleSelect menu only through hither-menu UIMenu"
+    },
+    {
+      "parent": 206,
+      "child": 218,
+      "acceptance": "A2 Not Alert, ActionSheetIOS, or a JS floating popup",
+      "testFile": "languagePickerContract.test.ts",
+      "testNamePattern": "opens the RoleSelect menu only through hither-menu UIMenu"
+    },
+    {
+      "parent": 206,
+      "child": 218,
+      "acceptance": "A3 Menu stays attached to the button via showsMenuAsPrimaryAction",
+      "testFile": "languagePickerContract.test.ts",
+      "testNamePattern": "opens the RoleSelect menu only through hither-menu UIMenu"
+    },
+    {
+      "parent": 206,
+      "child": 218,
+      "acceptance": "A4 Selecting zh/en writes setLanguage without reload",
+      "testFile": "languagePicker.test.ts",
+      "testNamePattern": "opens the native language choice and calls setLanguage for the other language"
+    },
+    {
+      "parent": 206,
+      "child": 218,
+      "acceptance": "A5 Login stays segmented",
+      "testFile": "languagePickerContract.test.ts",
+      "testNamePattern": "shows LanguagePicker on Login without hiding it behind a session"
+    },
+    {
+      "parent": 206,
+      "child": 218,
+      "acceptance": "A6 Expo Go keeps the button and does not use ActionSheet",
+      "testFile": "languagePicker.test.ts",
+      "testNamePattern": "opens the native language choice and calls setLanguage for the other language"
+    },
+    {
+      "parent": 206,
+      "child": 218,
+      "acceptance": "A7 Contracts flipped and green",
+      "testFile": "languagePickerContract.test.ts",
+      "testNamePattern": "opens the RoleSelect menu only through hither-menu UIMenu"
     }
   ]
 }

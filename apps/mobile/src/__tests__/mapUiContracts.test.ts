@@ -26,6 +26,10 @@ const i18n = [
 ].join('\n');
 const overflowMarquee = readFileSync(join(__dirname, '../components/OverflowMarquee.tsx'), 'utf8');
 const useGroupState = readFileSync(join(__dirname, '../state/useGroupState.ts'), 'utf8');
+const destinationSearch = readFileSync(
+  join(__dirname, '../components/DestinationSearch.tsx'),
+  'utf8',
+);
 
 describe('map UI placement contracts', () => {
   it('coalesces full group-state reloads at a single-flight root', () => {
@@ -68,7 +72,9 @@ describe('map UI placement contracts', () => {
     const toolsPane = mapScreen.indexOf('// ─── 工具', routePane);
     const routeBlock = mapScreen.slice(routePane, toolsPane > 0 ? toolsPane : routePane + 2500);
 
-    expect(routeBlock).toContain("t('map.stopsReorder'");
+    expect(routeBlock).toContain('canEditItinerary ?');
+    expect(routeBlock).toContain('canReorder={false}');
+    expect(routeBlock).toContain("t('map.nextTag')");
     expect(routeBlock).toContain("t('arrival.manage')");
     // Import CTA lives only on the reorder overlay — not the route sheet list.
     expect(routeBlock).not.toContain("t('kml.entry')");
@@ -85,6 +91,11 @@ describe('map UI placement contracts', () => {
     expect(overlayBlock).toContain('DestinationReorderList');
     expect(overlayBlock).toContain('onImport={() => setKmlVisible(true)}');
     expect(overlayBlock).not.toContain("t('map.addStop')");
+    expect(overlayBlock).toContain('edgeToEdge');
+    const meetEditor = mapScreen.indexOf("visible={!!meetTimeEditor}");
+    expect(meetEditor).toBeGreaterThan(-1);
+    expect(mapScreen.slice(meetEditor, meetEditor + 350)).toContain('edgeToEdge');
+    expect(destinationSearch).toContain('edgeToEdge');
   });
 
   it('groups high accuracy with the refreshed member controls', () => {
@@ -100,6 +111,15 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain("t('settings.preciseLocation')");
     expect(mapScreen).toContain("t('settings.preciseLocationHint')");
     expect(mapScreen).toContain('styles.refreshLocationsButton');
+    const statusBarBlock = mapScreen.slice(statusBar, refresh);
+    expect(statusBarBlock).toContain('styles.myStatusCluster');
+    expect(statusBarBlock).toContain('statusIconForKind(myStatusKind)');
+    expect(statusBarBlock).not.toContain("t('solo.statusCurrent'");
+    expect(statusBarBlock).not.toContain('chevron-down');
+    expect(mapScreen).toContain('marginLeft: \'auto\'');
+    expect(mapScreen).toContain('gap: STATUS_SHARE_CLUSTER_GAP');
+    expect(mapScreen).toMatch(/myStatusBar:[\s\S]{0,180}flexDirection:\s*'row'/);
+    expect(mapScreen).not.toMatch(/myStatusBar:[\s\S]{0,180}justifyContent:\s*'space-between'/);
   });
 
   it('keeps account and Hither Pro as the first settings rows', () => {
@@ -381,7 +401,8 @@ describe('map UI placement contracts', () => {
     expect(sheetBlock).not.toContain('viewportCount={3}');
     expect(sheetBlock).not.toContain('PaneCoverFlow');
     // Shared Settings segmented controls stay non-glass icon-tab-free.
-    expect(settingsOverlay).toContain('<Segmented');
+    expect(settingsOverlay).toContain('setPage(\'language\')');
+    expect(settingsOverlay).not.toContain('<Segmented');
     expect(settingsOverlay).not.toContain('unstyledTrack');
     expect(settingsOverlay).not.toContain('liquidGlass');
     expect(settingsOverlay).not.toContain('SheetPaneTabs');
@@ -417,8 +438,13 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain('canMarkArrival');
     expect(mapScreen).toContain('expanded={!showArrivalControl}');
     expect(mapScreen).toContain('arrivalControlJustSplit');
-    expect(mapScreen).toContain('cardExpanded || showArrivalControl');
+    expect(mapScreen).not.toContain('cardExpanded || showArrivalControl');
+    expect(mapScreen).toContain('{cardExpanded && (');
+    expect(mapScreen).toContain('{showArrivalControl ? (');
     expect(mapScreen).toContain('testID="members-location-sharing"');
+    expect(mapScreen).toContain('color={glass.danger}');
+    expect(mapScreen).toContain('locationSharingConfirmCopy');
+    expect(mapScreen).toContain('confirmAction({');
     expect(mapScreen).toContain('showsUserLocation={sharingEnabled && members.length > 0}');
     expect(mapScreen).not.toMatch(
       /toolsPaneBody[\s\S]*settings\.locationSharing[\s\S]*AmicroButton/,

@@ -48,6 +48,32 @@ jest.mock('../utils/haptics', () => ({
   lightTap: jest.fn(),
 }));
 
+const mockOnSelect = { current: null as null | ((id: string) => void) };
+jest.mock('../native/menu', () => {
+  const React = require('react');
+  return {
+    isNativeMenuAvailable: () => true,
+    NativeMenuHost: ({
+      items,
+      onSelect,
+      children,
+      accessibilityLabel,
+    }: {
+      items: Array<{ id: string; title: string }>;
+      onSelect: (id: string) => void;
+      children: React.ReactNode;
+      accessibilityLabel?: string;
+    }) => {
+      mockOnSelect.current = onSelect;
+      return React.createElement(
+        'View',
+        { accessibilityRole: 'button', accessibilityLabel, items },
+        children,
+      );
+    },
+  };
+});
+
 jest.mock('@expo/vector-icons', () => ({
   Ionicons: 'Ionicons',
 }));
@@ -118,19 +144,11 @@ describe('LanguagePicker', () => {
       renderer = create(React.createElement(LanguagePicker, { variant: 'menu' }));
     });
 
-    act(() => renderer!.root.findAllByProps({ accessibilityRole: 'button' })[0].props.onPress());
+    expect(ActionSheetIOS.showActionSheetWithOptions).not.toHaveBeenCalled();
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(mockOnSelect.current).toEqual(expect.any(Function));
+    act(() => mockOnSelect.current?.('en'));
     expect(lightTap).toHaveBeenCalled();
-    expect(ActionSheetIOS.showActionSheetWithOptions).toHaveBeenCalledWith(
-      {
-        options: ['common.cancel', '中文', 'English'],
-        cancelButtonIndex: 0,
-        userInterfaceStyle: 'dark',
-      },
-      expect.any(Function),
-    );
-
-    const cb = (ActionSheetIOS.showActionSheetWithOptions as jest.Mock).mock.calls[0][1];
-    act(() => cb(2));
     expect(mockSetLanguage).toHaveBeenCalledWith('en');
     expect(mockSetLanguage).not.toHaveBeenCalledWith(expect.stringMatching(/restart/i));
   });
@@ -141,10 +159,7 @@ describe('LanguagePicker', () => {
       renderer = create(React.createElement(LanguagePicker, { variant: 'menu' }));
     });
 
-    act(() => renderer!.root.findAllByProps({ accessibilityRole: 'button' })[0].props.onPress());
-    const cb = (ActionSheetIOS.showActionSheetWithOptions as jest.Mock).mock.calls[0][1];
-    act(() => cb(1));
-    act(() => cb(0));
+    act(() => mockOnSelect.current?.('zh'));
     expect(mockSetLanguage).not.toHaveBeenCalled();
   });
 });

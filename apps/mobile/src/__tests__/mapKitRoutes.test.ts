@@ -256,4 +256,56 @@ describe('useMapKitRoutes + MapScreen progress surfaces (#145 Sol r4)', () => {
     });
   });
 
+  it('does not call getDirections for local GPS trim and clears on travel mode change', async () => {
+    mockGetDirections.mockResolvedValue({
+      distanceMeters: 1000,
+      expectedTravelTimeSeconds: 600,
+      points: [me, gathering.coordinates],
+    });
+
+    let routes: ReturnType<typeof useMapKitRoutes> | undefined;
+    function Harness(props: {
+      self: { latitude: number; longitude: number };
+      travelMode: 'walk' | 'drive' | 'transit';
+    }) {
+      routes = useMapKitRoutes({
+        selfCoordinates: props.self,
+        members: [],
+        gathering,
+        travelMode: props.travelMode,
+      });
+      return null;
+    }
+
+    let tree: ReturnType<typeof create>;
+    await act(async () => {
+      tree = create(React.createElement(Harness, { self: me, travelMode: 'walk' }));
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(mockGetDirections).toHaveBeenCalledTimes(1);
+    expect(routes?.selfRoute?.points[0]).toEqual(me);
+
+    const midGps = { latitude: 25.0295, longitude: 121.56 };
+    await act(async () => {
+      tree.update(React.createElement(Harness, { self: midGps, travelMode: 'walk' }));
+    });
+    expect(mockGetDirections).toHaveBeenCalledTimes(1);
+    expect(routes?.selfRouteGeneration).toBe(1);
+
+    mockGetDirections.mockClear();
+    mockGetDirections.mockImplementation(() => new Promise(() => undefined));
+    await act(async () => {
+      tree.update(React.createElement(Harness, { self: midGps, travelMode: 'transit' }));
+    });
+    expect(routes?.selfRoute).toBeNull();
+    expect(mockGetDirections).toHaveBeenCalledWith(me, gathering.coordinates, 'transit');
+
+    await act(async () => {
+      tree.unmount();
+    });
+  });
+
 });

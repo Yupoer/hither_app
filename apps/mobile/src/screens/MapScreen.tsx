@@ -325,6 +325,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { markOnboardingReplayForHome } from '../onboarding/sync';
 import { isDemoGroup } from '../api/demo';
 import { confirmAction } from '../utils/confirm';
+import {
+  locationSharingConfirmCopy,
+  STATUS_SHARE_CLUSTER_GAP,
+  statusIconForKind,
+} from './MapScreen/memberStatusSharing';
 import { logEvent, logError } from '../utils/activityLog';
 import { lightTap, mediumTap, rigidTap, selectionTick, alertBuzz } from '../utils/haptics';
 import { AVATAR_EMOJI, AVATAR_COLORS } from '../constants/avatars';
@@ -1867,15 +1872,25 @@ export default function MapScreen({ route, navigation }: Props) {
       Alert.alert(t('settings.locationSharingSyncFailed'));
     }
   }, [setSharingEnabled, navigationSessionState, sharingEnabled, t]);
-  const handleSharingEnabledChangeAnimated = useCallback(async () => {
+  const handleSharingEnabledChangeAnimated = useCallback(() => {
     if (sharingApplying) return;
-    setSharingApplying(true);
-    try {
-      await handleSharingEnabledChange(!sharingEnabled);
-    } finally {
-      setSharingApplying(false);
-    }
-  }, [handleSharingEnabledChange, sharingApplying, sharingEnabled]);
+    const nextEnabled = !sharingEnabled;
+    const copy = locationSharingConfirmCopy(nextEnabled);
+    confirmAction({
+      title: t(copy.titleKey),
+      message: t(copy.bodyKey),
+      destructive: copy.destructive,
+    }, () => {
+      void (async () => {
+        setSharingApplying(true);
+        try {
+          await handleSharingEnabledChange(nextEnabled);
+        } finally {
+          setSharingApplying(false);
+        }
+      })();
+    });
+  }, [handleSharingEnabledChange, sharingApplying, sharingEnabled, t]);
 
   useEffect(() => {
     if (isLeader || !navigationSessionState.session) {
@@ -2855,6 +2870,7 @@ export default function MapScreen({ route, navigation }: Props) {
     // Ticket 07: destination emoji when set (native may no-op without a glyph slot).
     // Flag color is day-scoped in map/list chrome; LA keeps theme accent.
     destinationEmoji: navTarget?.emoji ?? undefined,
+    language,
   }, groupId && navTarget && liveActivityBaselineM != null ? {
     groupId,
     navigationSessionId: navigationSessionState.session?.id,
@@ -4807,13 +4823,6 @@ export default function MapScreen({ route, navigation }: Props) {
       ? 'away'
       : 'follow';
 
-  const myStatusLabel =
-    myStatusKind === 'solo'
-      ? t('solo.switch')
-      : myStatusKind === 'away'
-        ? t('solo.tempLeave')
-        : t('solo.followTeam');
-
   const openMyStatusPicker = useCallback(() => {
     lightTap();
     setDraftMyStatus(myStatusKind);
@@ -5001,11 +5010,10 @@ export default function MapScreen({ route, navigation }: Props) {
     windowHeight - detents[0] - CAPSULE_CLEARANCE - (insets.top + 8) - 8,
   );
 
-  // Camera insets: midpoint of the strip between gathering-point cards (top)
-  // and the settled sheet (bottom). Used by locate-me / fit-all so pins land
-  // in the unobstructed band rather than geometric screen center.
-  const sheetH = detents[detent] ?? detents[0];
-  const bottomPad = sheetH + sheetBottomOffset(sheetH, detents, insets.bottom);
+  // Camera insets stay peek-only. Live detent must not move the map.
+  const peekSheetH = detents[0];
+  const halfPeek = peekSheetH / 2;
+  const bottomPad = peekSheetH + sheetBottomOffset(peekSheetH, detents, insets.bottom);
   const carouselFallback = fontLayout.s(160, 140);
   const topPad =
     destinations.length > 0
@@ -5381,33 +5389,36 @@ export default function MapScreen({ route, navigation }: Props) {
     <>
       {/* My status + refresh on one row (stage 1+ body) */}
       <View style={styles.myStatusBar}>
-        <Pressable
-          style={styles.myStatusRow}
-          onPress={openMyStatusPicker}
-          accessibilityRole="button"
-          accessibilityLabel={t('solo.statusTitle')}
-        >
-          <Text style={styles.myStatusText} numberOfLines={1}>
-            {t('solo.statusCurrent', { status: myStatusLabel })}
-          </Text>
-          <Ionicons name="chevron-down" size={14} color={glass.textSecondary} />
-        </Pressable>
-        <AmicroButton
-          icon="eye-off-outline"
-          activeIcon="eye-outline"
-          active={sharingEnabled}
-          activeOnPress={!sharingEnabled}
-          resetAfterComplete={false}
-          disabled={sharingApplying}
-          color={accent}
-          activeColor={accent}
-          style={styles.locationSharingButton}
-          accessibilityLabel={t('settings.locationSharing')}
-          accessibilityHint={t('settings.locationSharingHint')}
-          testID="members-location-sharing"
-          onPress={mediumTap}
-          onAnimationComplete={() => { void handleSharingEnabledChangeAnimated(); }}
-        />
+        <View style={styles.myStatusCluster}>
+          <Pressable
+            style={styles.myStatusIconButton}
+            onPress={openMyStatusPicker}
+            accessibilityRole="button"
+            accessibilityLabel={t('solo.statusTitle')}
+          >
+            <Ionicons
+              name={statusIconForKind(myStatusKind)}
+              size={20}
+              color={glass.textSecondary}
+            />
+          </Pressable>
+          <AmicroButton
+            icon="eye-off-outline"
+            activeIcon="eye-outline"
+            active={sharingEnabled}
+            activeOnPress={!sharingEnabled}
+            resetAfterComplete={false}
+            disabled={sharingApplying}
+            color={glass.danger}
+            activeColor={accent}
+            style={styles.locationSharingButton}
+            accessibilityLabel={t('settings.locationSharing')}
+            accessibilityHint={t('settings.locationSharingHint')}
+            testID="members-location-sharing"
+            onPress={mediumTap}
+            onAnimationComplete={handleSharingEnabledChangeAnimated}
+          />
+        </View>
         <RefreshLocationsButton
           refreshing={refreshingLocations}
           cooldownUntil={refreshCooldownUntil}
@@ -5511,7 +5522,7 @@ export default function MapScreen({ route, navigation }: Props) {
     t, styles, refreshingLocations, refreshAllLocations, refreshCooldownUntil, accent, highAccuracy,
     setHighAccuracy, pendingInvites, fontBucket, handleAcceptInvite, handleDeclineInvite,
     subgroups, topFlockMemo, renderFlockRow, flock, mySubgroupId, sentInvites,
-    openMyStatusPicker, myStatusLabel,
+    openMyStatusPicker, myStatusKind,
     sharingEnabled, handleSharingEnabledChangeAnimated, sharingApplying,
   ]);
 
@@ -5677,29 +5688,51 @@ export default function MapScreen({ route, navigation }: Props) {
           ) : null}
         </View>
       ) : null}
-      {/* Standalone reorder action — whole row is one press target (ticket 06). */}
-      <View style={styles.reorderActionCard} testID="map-reorder-action-card">
-        <AmicroButton
-          icon="pencil-outline"
-          activeIcon="checkmark"
-          active={editButtonActive}
-          activeOnPress
-          resetAfterComplete={false}
-          color={accent}
-          activeColor={accent}
-          size={48}
-          label={t('map.stopsReorder', { count: openForRouteEditor.length })}
-          labelColor="#fff"
-          accessibilityLabel={t('map.stopsReorder', { count: openForRouteEditor.length })}
-          testID="map-edit-itinerary"
-          style={styles.reorderActionPressable}
-          onPress={() => {
-            lightTap();
-            setEditButtonActive(true);
-          }}
-          onAnimationComplete={() => setOverlay('route')}
+      {canEditItinerary ? (
+        <View style={styles.reorderActionCard} testID="map-reorder-action-card">
+          <AmicroButton
+            icon="pencil-outline"
+            activeIcon="checkmark"
+            active={editButtonActive}
+            activeOnPress
+            resetAfterComplete={false}
+            color={accent}
+            activeColor={accent}
+            size={48}
+            label={t('map.stopsReorder', { count: openForRouteEditor.length })}
+            labelColor="#fff"
+            accessibilityLabel={t('map.stopsReorder', { count: openForRouteEditor.length })}
+            testID="map-edit-itinerary"
+            style={styles.reorderActionPressable}
+            onPress={() => {
+              lightTap();
+              setEditButtonActive(true);
+            }}
+            onAnimationComplete={() => setOverlay('route')}
+          />
+        </View>
+      ) : (
+        <DestinationReorderList
+          groupId={groupId ?? undefined}
+          destinations={openForRouteEditor}
+          canReorder={false}
+          tripDays={optimisticTripDays ?? group?.tripDays}
+          departureDate={optimisticDepartureDate ?? group?.departureDate}
+          colors={dark}
+          emptyLabel={t('settings.noDestinations')}
+          dailyByDate={Object.fromEntries(
+            dailyAccommodations.map((d) => [
+              d.stayDate,
+              {
+                id: d.id,
+                stayDate: d.stayDate,
+                title: d.title,
+                coordinates: d.coordinates,
+              },
+            ]),
+          )}
         />
-      </View>
+      )}
       {/* 導航入口 = 普通 List Row，無圖示色塊 */}
       <View style={styles.listGroup}>
         {isLeader && destinations.length > 0 ? (
@@ -5740,7 +5773,9 @@ export default function MapScreen({ route, navigation }: Props) {
     </>
   ), [
     t, styles, nextStopTitle, nextStopDistLabel, destinations.length,
-    openHistoryOverlay, isLeader, opsOpenCount, editButtonActive, extraPointCredits, accent,
+    openHistoryOverlay, isLeader, canEditItinerary, openForRouteEditor,
+    groupId, optimisticTripDays, optimisticDepartureDate, group, dailyAccommodations,
+    opsOpenCount, editButtonActive, extraPointCredits, accent,
     sortedGatherRequests, sortedGatherRequestIds, selectedGatherRequestId,
     gatherRequestPageW, resolvingGatherRequestId, members, subgroups,
     handleGatherPointRequest,
@@ -6051,11 +6086,13 @@ export default function MapScreen({ route, navigation }: Props) {
           // broadcast or local follower plan). When paused, keep a light path
           // to the selected card so ETA still makes sense.
           routePoints={selfRoute?.points}
+          selfCoordinates={fromCoords}
           routeColor={accent}
           // Settled detent only (not heightSV) so we don't re-render the map
           // mid-drag; top tracks measured carousel card height.
           topOverlap={topPad}
           bottomOverlap={bottomPad}
+          halfPeek={halfPeek}
           onUserLocationSample={
             Platform.OS === 'ios' ? consumeForegroundSample : undefined
           }
@@ -6808,7 +6845,7 @@ export default function MapScreen({ route, navigation }: Props) {
                         Order (#148): [Start/End | Arrived] [Countdown] [Transport]
                         Outside expand Pressable so Start never toggles the card.
                         Density tracks narrow + Dynamic Type. */}
-                    {(cardExpanded || showArrivalControl) && (
+                    {cardExpanded && (
                     <View style={styles.commandRow} pointerEvents="box-none">
                       {cardExpanded && navCmd.kind !== 'hidden' ? (
                         <Pressable
@@ -7103,6 +7140,7 @@ export default function MapScreen({ route, navigation }: Props) {
         title={t('map.gatheringPoints')}
         accent={accent}
         doneLabel={t('map.done')}
+        edgeToEdge
         headerLeft={
           canEditItinerary ? (
             routeSelectedIds.length > 0 ? (
@@ -8061,6 +8099,7 @@ export default function MapScreen({ route, navigation }: Props) {
         title={t('meetTime.set')}
         accent={accent}
         doneLabel={t('common.cancel')}
+        edgeToEdge
       >
         {meetTimeEditor && (
           <View style={styles.meetEditorBody}>
@@ -9566,33 +9605,25 @@ const makeStyles = (
     myStatusBar: {
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'space-between',
-      gap: 8,
       marginTop: 4,
       marginBottom: 8,
       minWidth: 0,
     },
-    myStatusRow: {
-      // Hug content — no flex:1 stretch (was leaving empty space on the right).
-      flexGrow: 0,
-      flexShrink: 1,
+    myStatusCluster: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 4,
-      minHeight: 44,
-      paddingVertical: 10,
-      paddingHorizontal: 14,
-      borderRadius: 999,
-      backgroundColor: 'rgba(255,255,255,0.07)',
+      gap: STATUS_SHARE_CLUSTER_GAP,
+    },
+    myStatusIconButton: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+      backgroundColor: glass.fill,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairline,
-      maxWidth: '78%',
-    },
-    myStatusText: {
-      fontSize: 12,
-      fontWeight: '600',
-      color: glass.textSecondary,
-      flexShrink: 1,
     },
     statusOption: {
       flexDirection: 'row',
@@ -10079,6 +10110,7 @@ const makeStyles = (
       alignItems: 'center',
       justifyContent: 'center',
       marginTop: 0,
+      marginLeft: 'auto',
     },
     splitBar: {
       borderRadius: 16,

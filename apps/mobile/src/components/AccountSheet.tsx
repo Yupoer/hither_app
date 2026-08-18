@@ -17,7 +17,6 @@ import { Ionicons } from '@expo/vector-icons';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import OverlaySheet from './OverlaySheet';
 import { useSession } from '../state/SessionContext';
-import { redeemPromoCode } from '../api/client';
 import { glass, accentMix } from '../glass';
 import { useTranslation, type TranslationKey } from '../i18n';
 import { runUiAction } from '../utils/uiAction';
@@ -55,7 +54,6 @@ export default function AccountSheet({
   } = useSession();
   const { t } = useTranslation();
   const scrollRef = useRef<ScrollView>(null);
-  const redeemOffsetY = useRef(0);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   useEffect(() => {
@@ -101,8 +99,6 @@ export default function AccountSheet({
     return t('account.premiumRemainingDays', { days });
   })();
   
-  const [promoCode, setPromoCode] = useState('');
-  const [redeeming, setRedeeming] = useState(false);
   const [upgradeEmail, setUpgradeEmail] = useState('');
   const [upgradePassword, setUpgradePassword] = useState('');
   const [upgradeBusy, setUpgradeBusy] = useState(false);
@@ -129,67 +125,6 @@ export default function AccountSheet({
   if (user?.provider === 'google') providerText = t('account.providerGoogle');
   if (user?.provider === 'anonymous') providerText = t('account.providerAnonymous');
   if (user?.provider === 'apple') providerText = t('account.providerApple');
-
-  function redeemErrorMessage(code: string): string {
-    switch (code) {
-      case 'already_used':
-        return t('paywall.redeem.alreadyUsed');
-      case 'expired':
-        return t('paywall.redeem.expired');
-      case 'invalid':
-        return t('paywall.redeem.invalid');
-      case 'not_applicable':
-        return t('paywall.redeem.notApplicable');
-      case 'duplicate':
-        return t('paywall.redeem.duplicate');
-      case 'not_authenticated':
-        return t('paywall.redeem.notAuthenticated');
-      default:
-        return t('paywall.redeem.failed');
-    }
-  }
-
-  async function handleRedeem() {
-    const code = promoCode.trim();
-    if (!code) return;
-    await runUiAction(
-      'account.redeem',
-      async (token) => {
-        try {
-          // Same server entitlement model — no separate Early Access state.
-          const result = await redeemPromoCode(code, membership?.group.id ?? null);
-          if (!token.isCurrent()) return;
-          await refreshProfile();
-          if (!token.isCurrent()) return;
-          await refreshEntitlement(membership?.group.id);
-          if (!token.isCurrent()) return;
-          Alert.alert(t('paywall.redeem.successTitle'), t('paywall.redeem.successBody', { plan: result.plan_name }));
-          setPromoCode('');
-        } catch (e: unknown) {
-          if (token.isCurrent()) {
-            const codeKey =
-              e && typeof e === 'object' && 'code' in e && typeof (e as { code?: string }).code === 'string'
-                ? (e as { code: string }).code
-                : e instanceof Error
-                  ? e.message
-                  : 'unknown';
-            Alert.alert(t('paywall.redeem.failedTitle'), redeemErrorMessage(codeKey));
-          }
-          throw e;
-        }
-      },
-      {
-        screen: 'Account',
-        suppressBanner: true,
-        onBusyChange: setRedeeming,
-        onError: (kind) => {
-          if (kind === 'timeout') {
-            Alert.alert(t('paywall.redeem.failedTitle'), t('interaction.timeout'));
-          }
-        },
-      },
-    );
-  }
 
   async function handleUpgrade() {
     if (!/\S+@\S+\.\S+/.test(upgradeEmail.trim()) || upgradePassword.length < 6 || upgradeBusy) return;
@@ -461,56 +396,6 @@ export default function AccountSheet({
                 </View>
               </>
             )}
-          </View>
-
-          {/* Promo Code — same server entitlement model (no Early Access state) */}
-          <Text style={styles.sectionLabel}>{t('account.redeemSection')}</Text>
-          <View
-            style={styles.card}
-            onLayout={(e) => {
-              redeemOffsetY.current = e.nativeEvent.layout.y;
-            }}
-            testID="account-redeem-section"
-          >
-            <Text style={styles.promoHint}>
-              {t('account.redeemHint')}
-            </Text>
-            <View style={styles.inputRow}>
-              <TextInput
-                style={styles.input}
-                placeholder={t('account.redeemPlaceholder')}
-                placeholderTextColor={glass.textTertiary}
-                keyboardAppearance="dark"
-                value={promoCode}
-                onChangeText={setPromoCode}
-                autoCapitalize="characters"
-                autoCorrect={false}
-                testID="account-redeem-input"
-                onFocus={() => {
-                  // Keep redeem row above keyboard with 12pt gap.
-                  requestAnimationFrame(() => {
-                    scrollRef.current?.scrollTo({
-                      y: Math.max(0, redeemOffsetY.current - KEYBOARD_SURFACE_GAP_PT),
-                      animated: true,
-                    });
-                  });
-                }}
-              />
-              <Pressable
-                style={({ pressed }) => [
-                  styles.redeemButton,
-                  { backgroundColor: accentMix(accent, pressed ? 20 : 30) },
-                ]}
-                onPress={handleRedeem}
-                disabled={redeeming || !promoCode.trim()}
-              >
-                {redeeming ? (
-                  <ActivityIndicator color={accent} size="small" />
-                ) : (
-                  <Text style={[styles.redeemText, { color: accent }]}>{t('account.redeemCta')}</Text>
-                )}
-              </Pressable>
-            </View>
           </View>
 
           {user ? (

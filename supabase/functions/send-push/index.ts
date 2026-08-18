@@ -533,7 +533,7 @@ async function handleNavigationSession(
     );
     const usersWithStartToken = new Set(startRows.map((row) => row.user_id));
     const fallbackUserIds = eligibleUserIds.filter(
-      (userId) => !usersWithStartToken.has(userId),
+      (userId) => !usersWithStartToken.has(userId) && userId !== payload.sender_id,
     );
     const fallbackTokenRows = await loadTokenRows(fallbackUserIds);
 
@@ -594,7 +594,8 @@ async function handleNavigationSession(
         .in("push_to_start_token", deadStartTokens);
       const deadStartUsers = startRows
         .filter((row) => deadStartTokens.includes(row.push_to_start_token))
-        .map((row) => row.user_id);
+        .map((row) => row.user_id)
+        .filter((userId) => userId !== payload.sender_id);
       const deadStartFallbackRows = await loadTokenRows(deadStartUsers);
       fallbackResults = [
         ...fallbackResults,
@@ -778,6 +779,7 @@ async function sendLiveActivities(
           (member) => avatarByUser.get(member.user_id) ?? "🙂",
         ),
         memberArrived: visibleMembers.map((member) => member.status === "arrived"),
+        language: "zh",
       };
 
       return sendLiveActivityApns(cfg, jwt, session.push_token, {

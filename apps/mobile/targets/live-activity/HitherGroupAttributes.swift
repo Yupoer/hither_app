@@ -34,6 +34,11 @@ public struct HitherGroupAttributes: ActivityAttributes {
     public var memberArrived: [Bool]?
     /// Active gathering-point emoji (Ticket 07); optional chrome next to title.
     public var destinationEmoji: String?
+    /// App language ("zh" | "en"). Missing language formats as zh.
+    public var language: String?
+
+    public static let destCJKCap = 10
+    public static let destLatinCap = 16
 
     public init(
       navigationSessionId: String? = nil,
@@ -48,7 +53,8 @@ public struct HitherGroupAttributes: ActivityAttributes {
       travelMode: String? = nil,
       memberEmojis: [String]? = nil,
       memberArrived: [Bool]? = nil,
-      destinationEmoji: String? = nil
+      destinationEmoji: String? = nil,
+      language: String? = nil
     ) {
       self.navigationSessionId = navigationSessionId
       self.status = status
@@ -63,6 +69,7 @@ public struct HitherGroupAttributes: ActivityAttributes {
       self.memberEmojis = memberEmojis
       self.memberArrived = memberArrived
       self.destinationEmoji = destinationEmoji
+      self.language = language
     }
 
     public init(from state: [String: Any]) {
@@ -79,6 +86,7 @@ public struct HitherGroupAttributes: ActivityAttributes {
       self.memberEmojis = state["memberEmojis"] as? [String]
       self.memberArrived = state["memberArrived"] as? [Bool]
       self.destinationEmoji = state["destinationEmoji"] as? String
+      self.language = state["language"] as? String
     }
 
     public var formattedDistance: String? {
@@ -87,10 +95,21 @@ public struct HitherGroupAttributes: ActivityAttributes {
       return String(format: "%.1f km", d / 1000)
     }
 
-    /// Compact ETA: "now" / "12 min" / "1hr30" / "1d12hr" — matches in-app formatShortEta.
+    /// Compact ETA: zh uses 天/小時/分鐘 (max two units); en keeps compactDuration.
     public var formattedEta: String? {
       guard let s = etaSeconds else { return nil }
-      return Self.compactDuration(fromSeconds: s)
+      return Self.formattedDuration(fromSeconds: s, language: language)
+    }
+
+    public static func usesEnglish(_ language: String?) -> Bool {
+      (language ?? "").lowercased().hasPrefix("en")
+    }
+
+    public static func formattedDuration(fromSeconds seconds: Double, language: String?) -> String {
+      if usesEnglish(language) {
+        return compactDuration(fromSeconds: seconds)
+      }
+      return zhDuration(fromMinutes: Int((seconds / 60).rounded()))
     }
 
     /// Shared compact duration used by the widget presentation helpers too.
@@ -113,6 +132,34 @@ public struct HitherGroupAttributes: ActivityAttributes {
       let d = h / 24
       let rh = h % 24
       return rh == 0 ? "\(d)d" : "\(d)d\(rh)hr"
+    }
+
+    /// zh: 90m→1小時30分鐘, 26h→1天2小時, 45m→45分鐘, <1m→不到1分鐘. Max two units.
+    public static func zhDuration(fromMinutes minutes: Int) -> String {
+      if minutes < 1 { return "不到1分鐘" }
+      let days = minutes / (24 * 60)
+      let hours = (minutes % (24 * 60)) / 60
+      let mins = minutes % 60
+      if days > 0 {
+        return hours > 0 ? "\(days)天\(hours)小時" : "\(days)天"
+      }
+      if hours > 0 {
+        return mins > 0 ? "\(hours)小時\(mins)分鐘" : "\(hours)小時"
+      }
+      return "\(mins)分鐘"
+    }
+
+    public static func destinationUsesCJK(_ text: String) -> Bool {
+      text.unicodeScalars.contains { scalar in
+        (0x4E00...0x9FFF).contains(scalar.value)
+          || (0x3400...0x4DBF).contains(scalar.value)
+          || (0x20000...0x2A6DF).contains(scalar.value)
+      }
+    }
+
+    public static func destinationNeedsMarquee(_ text: String) -> Bool {
+      let cap = destinationUsesCJK(text) ? destCJKCap : destLatinCap
+      return text.count > cap
     }
   }
 

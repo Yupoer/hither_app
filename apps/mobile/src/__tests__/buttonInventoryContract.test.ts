@@ -11,6 +11,10 @@ const roleSelect = readFileSync(join(__dirname, '../screens/RoleSelectScreen.tsx
 const myTeams = readFileSync(join(__dirname, '../screens/MyTeamsScreen.tsx'), 'utf8');
 const loginScreen = readFileSync(join(__dirname, '../screens/LoginScreen.tsx'), 'utf8');
 const accountSheet = readFileSync(join(__dirname, '../components/AccountSheet.tsx'), 'utf8');
+const premiumPresentation = readFileSync(
+  join(__dirname, '../components/PremiumPresentation.tsx'),
+  'utf8',
+);
 const feedbackSheet = readFileSync(join(__dirname, '../components/FeedbackSheet.tsx'), 'utf8');
 const uiAction = readFileSync(join(__dirname, '../utils/uiAction.ts'), 'utf8');
 const safePressable = readFileSync(join(__dirname, '../components/SafePressable.tsx'), 'utf8');
@@ -52,7 +56,7 @@ const HIGH_RISK_ACTION_IDS = [
   'login.sign_up',
   'login.google',
   'login.apple',
-  'account.redeem',
+  'paywall.redeem',
   'account.upgrade_email',
   'account.link_google',
   'account.link_apple',
@@ -133,7 +137,7 @@ describe('button inventory / high-risk action contract', () => {
     expect(loginScreen).toContain("'login.sign_up'");
     expect(loginScreen).toContain("'login.google'");
     expect(loginScreen).toContain("'login.apple'");
-    expect(accountSheet).toContain("'account.redeem'");
+    expect(premiumPresentation).toContain("'paywall.redeem'");
     expect(accountSheet).toContain("'account.upgrade_email'");
     expect(accountSheet).toContain("'account.link_google'");
     expect(accountSheet).toContain("'account.link_apple'");
@@ -164,6 +168,7 @@ describe('button inventory / high-risk action contract', () => {
       myTeams,
       loginScreen,
       accountSheet,
+      premiumPresentation,
       feedbackSheet,
     ].join('\n');
     for (const actionId of HIGH_RISK_ACTION_IDS) {

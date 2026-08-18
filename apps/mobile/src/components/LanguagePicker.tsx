@@ -4,7 +4,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { usePreferences } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
 import { lightTap } from '../utils/haptics';
-import { LANGUAGE_CHOICES, showLanguageChoice } from '../utils/showLanguageChoice';
+import { LANGUAGE_CHOICES } from '../utils/showLanguageChoice';
+import { NativeMenuHost } from '../native/menu';
 
 export default function LanguagePicker({
   variant = 'segmented',
@@ -17,22 +18,22 @@ export default function LanguagePicker({
 
   if (variant === 'menu') {
     return (
-      <Pressable
-        onPress={() => {
-          lightTap();
-          showLanguageChoice({
-            current: language,
-            onSelect: setLanguage,
-            cancelLabel: t('common.cancel'),
-          });
-        }}
-        accessibilityRole="button"
+      <NativeMenuHost
         accessibilityLabel={current.label}
         style={styles.menu}
+        items={LANGUAGE_CHOICES.map((choice) => ({
+          id: choice.key,
+          title: choice.label,
+        }))}
+        onSelect={(id) => {
+          lightTap();
+          if (id === language) return;
+          setLanguage(id as typeof language);
+        }}
       >
         <Text style={styles.menuLabel}>{current.label}</Text>
         <Ionicons name="chevron-down" size={14} color="rgba(235,235,245,0.7)" />
-      </Pressable>
+      </NativeMenuHost>
     );
   }
 

@@ -3,6 +3,7 @@ import type { ZhDict } from './zh';
 /** English (en) catalog. Must share the same key set as zh. */
 export const en: Record<keyof ZhDict, string> = {
   'common.cancel': 'Cancel',
+  'common.back': 'Back',
   'common.confirm': 'Confirm',
   'common.next': 'Next',
   'common.delete': 'Delete',
@@ -120,6 +121,8 @@ export const en: Record<keyof ZhDict, string> = {
   'settings.sectionSupport': 'Support',
   'settings.locationSharing': 'Share my location',
   'settings.locationSharingHint': 'Turning this off stops team position updates; on-device map navigation remains available.',
+  'settings.locationSharingStopTitle': 'Stop sharing location',
+  'settings.locationSharingStopHint': 'Teammates will no longer see your live location.',
   'settings.locationSharingSyncFailed': 'Could not sync location sharing. Sharing remains off to protect your privacy.',
   'settings.diagnosticUpload': 'Upload debug and performance logs',
   'settings.diagnosticUploadHint': 'Records and uploads diagnostic data in batches only while enabled',
@@ -829,6 +832,7 @@ export const en: Record<keyof ZhDict, string> = {
   'paywall.price': 'Price is localized by the App Store',
   'paywall.cta': 'Subscribe to Premium',
   'paywall.restore': 'Restore purchases',
+  'paywall.redeemAction': 'Activate code',
   'paywall.unavailable': 'Purchases require the production app (this is a development build)',
   'paywall.triggerDestinations': 'Free plan gathering points are unlimited for now',
   'paywall.triggerStraggler': 'Custom straggler distance is a Premium feature',
