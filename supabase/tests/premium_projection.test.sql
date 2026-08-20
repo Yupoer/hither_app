@@ -81,7 +81,7 @@ select is(
   (public.apply_personal_premium_projection(
     '11111111-1111-4111-8111-111111111111', 'active', 'premium.monthly',
     now() + interval '30 days', 'app_store', 'storekit-active-v1',
-    'apple:transaction:active-1', null, now()
+    'apple:transaction:active-1', null, now() - interval '3 hours'
   )->>'ok'),
   'true',
   'active StoreKit entitlement is durable'
@@ -122,7 +122,7 @@ select is(
   (public.apply_personal_premium_projection(
     '11111111-1111-4111-8111-111111111111', 'expired', 'premium.monthly',
     now() - interval '1 day', 'app_store', 'storekit-expired-v1',
-    'apple:transaction:expired-1', null, now() + interval '1 hour'
+    'apple:transaction:expired-1', null, now() - interval '2 hours'
   )->>'ok'),
   'true',
   'expired StoreKit lifecycle is durable'
@@ -163,7 +163,7 @@ select is(
   (public.apply_personal_premium_projection(
     '11111111-1111-4111-8111-111111111111', 'grace_period', 'premium.monthly',
     now() + interval '3 days', 'app_store', 'storekit-grace-v1',
-    'apple:transaction:grace-1', null, now()
+    'apple:transaction:grace-1', null, now() - interval '1 hour'
   )->>'ok'),
   'true',
   'grace_period grant is durable'
