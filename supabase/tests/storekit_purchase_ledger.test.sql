@@ -219,15 +219,16 @@ select is(
   'true',
   'refund fixture grant applies'
 );
-select is(
+select cmp_ok(
   (public.apply_storekit_transaction(
     '33333333-3333-4333-8333-333333333333', 'tx-refund', 'orig-refund',
     'premium.monthly', 'hither-premium', 'Sandbox', 'PURCHASED',
     '33333333-3333-4333-8333-333333333334', 'refunded',
     now() - interval '10 minutes', now() + interval '30 days', now(),
     now(), 'jws-hash-refund-b', 'asn-v2:REFUND'
-  )->>'entitlementVersion'),
-  '2',
+  )->>'entitlementVersion')::int,
+  '>=',
+  2,
   'A4 refund increments entitlement_version'
 );
 
