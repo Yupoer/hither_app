@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, StyleSheet, Switch, Text, View } from 'react-native';
+import { Alert, StyleSheet, Text, View } from 'react-native';
+import NativeSwitch from './NativeSwitch';
 import {
   getNotificationPreferences,
   setNotificationPreferences,
@@ -79,11 +80,10 @@ export default function NotificationPreferencesCard({
           style={[styles.row, index === ROWS.length - 1 && styles.rowLast]}
         >
           <Text style={styles.label}>{t(label)}</Text>
-          <Switch
+          <NativeSwitch
             value={prefs[key]}
             onValueChange={(v) => toggle(key, v)}
-            trackColor={{ true: colors.accent, false: colors.border }}
-            thumbColor="#fff"
+            accent={colors.accent}
             accessibilityLabel={t(label)}
           />
         </View>
