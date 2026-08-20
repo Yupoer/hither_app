@@ -10,8 +10,8 @@ import {
   applyVerifiedSubscription,
   getPremiumAppAccountToken,
   getPremiumProjection,
-  syncAppStoreSubscription,
 } from '../api/client';
+import { syncAppStoreSubscription } from '../api/services/EntitlementService';
 import {
   fetchPremiumProducts,
   finishPremiumPurchase,

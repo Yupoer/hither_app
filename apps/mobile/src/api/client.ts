@@ -71,7 +71,6 @@ export {
   getPremiumProjection,
   getPremiumAppAccountToken,
   applyVerifiedSubscription,
-  syncAppStoreSubscription,
 } from './services/EntitlementService';
 
 export type { ItineraryRow } from './services/DestinationService';
