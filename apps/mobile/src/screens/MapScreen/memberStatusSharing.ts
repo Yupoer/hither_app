@@ -1,14 +1,16 @@
-export type MyStatusKind = 'follow' | 'solo' | 'away';
+import type { PresenceMacroKind } from '../../utils/presenceMacros';
+
+export type MyStatusKind = PresenceMacroKind;
 
 export const STATUS_SHARE_CLUSTER_GAP = 8;
 
-const STATUS_ICONS: Record<MyStatusKind, 'people' | 'walk' | 'exit-outline'> = {
+const STATUS_ICONS: Record<MyStatusKind, 'people' | 'walk' | 'eye-off-outline'> = {
   follow: 'people',
   solo: 'walk',
-  away: 'exit-outline',
+  stealth: 'eye-off-outline',
 };
 
-export function statusIconForKind(kind: MyStatusKind): 'people' | 'walk' | 'exit-outline' {
+export function statusIconForKind(kind: MyStatusKind): 'people' | 'walk' | 'eye-off-outline' {
   return STATUS_ICONS[kind];
 }
 

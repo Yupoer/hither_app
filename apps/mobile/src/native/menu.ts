@@ -10,12 +10,25 @@ import { requireNativeViewManager, requireOptionalNativeModule } from 'expo-modu
 export type NativeMenuItem = {
   id: string;
   title: string;
+  subtitle?: string;
+  selected?: boolean;
 };
+
+export function serializeNativeMenuItems(
+  items: NativeMenuItem[],
+): Array<Record<string, string>> {
+  return items.map((item) => {
+    const row: Record<string, string> = { id: item.id, title: item.title };
+    if (item.subtitle) row.subtitle = item.subtitle;
+    if (item.selected) row.selected = 'true';
+    return row;
+  });
+}
 
 const HitherMenu = requireOptionalNativeModule('HitherMenu');
 
 let NativeMenuView: React.ComponentType<{
-  items: NativeMenuItem[];
+  items: Array<Record<string, string>>;
   onSelect?: (event: { nativeEvent?: { id?: string } }) => void;
   style?: StyleProp<ViewStyle>;
   children?: React.ReactNode;
@@ -61,7 +74,7 @@ export function NativeMenuHost({
   return React.createElement(
     NativeMenuView,
     {
-      items,
+      items: serializeNativeMenuItems(items),
       onSelect: (event: { nativeEvent?: { id?: string } }) => {
         const id = event?.nativeEvent?.id;
         if (id) onSelect(id);

@@ -12,7 +12,7 @@ jest.mock('expo-modules-core', () => ({
   },
 }));
 
-import { NativeMenuHost, isNativeMenuAvailable } from '../native/menu';
+import { NativeMenuHost, isNativeMenuAvailable, serializeNativeMenuItems } from '../native/menu';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -49,5 +49,20 @@ describe('native menu host', () => {
     expect(buttons[0].props.accessibilityState).toEqual({ disabled: true });
     expect(onSelect).not.toHaveBeenCalled();
     act(() => tree.unmount());
+  });
+
+  it('serializes subtitle and selected for the native UIAction payload', () => {
+    expect(serializeNativeMenuItems([
+      { id: 'solo', title: '獨自行動', subtitle: '不接收群組通知與指令', selected: true },
+      { id: 'follow', title: '跟隨隊伍' },
+    ])).toEqual([
+      {
+        id: 'solo',
+        title: '獨自行動',
+        subtitle: '不接收群組通知與指令',
+        selected: 'true',
+      },
+      { id: 'follow', title: '跟隨隊伍' },
+    ]);
   });
 });
