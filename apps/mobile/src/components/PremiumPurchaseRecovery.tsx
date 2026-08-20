@@ -1,7 +1,14 @@
 import { useEffect } from 'react';
 import { AppState } from 'react-native';
 import { useSession } from '../state/SessionContext';
-import { reconcileUnfinishedPremiumPurchases } from '../services/premiumPurchaseFlow';
+import {
+  reconcileUnfinishedPremiumPurchases,
+  refreshPremiumProjection,
+} from '../services/premiumPurchaseFlow';
+import {
+  needsBackgroundPremiumRefresh,
+  readPremiumProjectionCache,
+} from '../services/premiumProjectionCache';
 
 /**
  * Mount once inside SessionProvider. StoreKit replays unfinished transactions
@@ -18,12 +25,23 @@ export default function PremiumPurchaseRecovery() {
 
     const reconcile = () => {
       if (running) return running;
-      running = reconcileUnfinishedPremiumPurchases()
-        .then(async (result) => {
-          if (!cancelled && result.settled > 0) {
-            await refreshEntitlement(membership?.group.id ?? null);
-          }
-        })
+      running = (async () => {
+        const result = await reconcileUnfinishedPremiumPurchases(user.id);
+        if (cancelled) return;
+        if (result.settled > 0) {
+          await refreshEntitlement(membership?.group.id ?? null);
+          return;
+        }
+        const cached = await readPremiumProjectionCache(user.id);
+        if (needsBackgroundPremiumRefresh(cached)) {
+          await refreshPremiumProjection({
+            groupId: membership?.group.id ?? null,
+            userId: user.id,
+            syncStoreKitIfMissing: true,
+          });
+          if (!cancelled) await refreshEntitlement(membership?.group.id ?? null);
+        }
+      })()
         .catch(() => undefined)
         .finally(() => {
           running = null;

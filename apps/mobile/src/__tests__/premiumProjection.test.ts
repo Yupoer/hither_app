@@ -4,15 +4,24 @@ import {
   EMPTY_PREMIUM_PROJECTION,
   mapPremiumProjectionRow,
 } from '../entitlements';
-import { getPremiumProjection } from '../api/services/EntitlementService';
+import {
+  applyVerifiedSubscription,
+  getPremiumProjection,
+  syncAppStoreSubscription,
+} from '../api/services/EntitlementService';
 import { supabase } from '../api/supabase';
 
 jest.mock('../api/supabase', () => ({
-  supabase: { rpc: jest.fn(), auth: { getSession: jest.fn() } },
+  supabase: {
+    rpc: jest.fn(),
+    auth: { getSession: jest.fn() },
+    functions: { invoke: jest.fn() },
+  },
 }));
 
 const mockedRpc = supabase.rpc as unknown as jest.Mock;
 const mockedAuth = supabase.auth as unknown as { getSession: jest.Mock };
+const mockedInvoke = supabase.functions.invoke as unknown as jest.Mock;
 const migration = readFileSync(
   join(__dirname, '../../../../supabase/migrations/20260804000000_personal_premium_projection.sql'),
   'utf8',
@@ -44,6 +53,10 @@ describe('PremiumProjection', () => {
       productId: 'premium.monthly',
       expiresAt: '2026-09-01T00:00:00Z',
       sourceVersion: 'v2',
+      entitlementVersion: null,
+      lastSyncedAt: null,
+      ok: true,
+      error: null,
     });
   });
 
@@ -65,6 +78,47 @@ describe('PremiumProjection', () => {
       productId: 'premium.yearly',
     });
     expect(mockedRpc).toHaveBeenCalledWith('get_premium_projection', { p_group_id: 'group-1' });
+  });
+
+  it('maps durable Edge apply fields from the database not client flags', async () => {
+    mockedInvoke.mockResolvedValue({
+      data: {
+        ok: true,
+        durable: true,
+        status: 'active',
+        productId: 'premium.monthly',
+        transactionId: 'txn-1',
+        entitlementVersion: 4,
+        personalPremiumActive: true,
+      },
+      error: null,
+    });
+    await expect(applyVerifiedSubscription({
+      signedTransaction: 'jws',
+      transactionId: 'txn-1',
+      productId: 'premium.monthly',
+    })).resolves.toMatchObject({
+      ok: true,
+      durable: true,
+      entitlementVersion: 4,
+      personalPremiumActive: true,
+    });
+  });
+
+  it('invokes App Store Server API sync only through the compensation Edge function', async () => {
+    mockedInvoke.mockResolvedValue({
+      data: { ok: true, durable: true, personalPremiumActive: true, entitlementVersion: 2 },
+      error: null,
+    });
+    await expect(syncAppStoreSubscription({ signedTransaction: 'jws-miss' })).resolves.toMatchObject({
+      ok: true,
+      durable: true,
+      personalPremiumActive: true,
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      'sync-app-store-subscription',
+      expect.objectContaining({ body: expect.objectContaining({ signed_transaction: 'jws-miss' }) }),
+    );
   });
 });
 

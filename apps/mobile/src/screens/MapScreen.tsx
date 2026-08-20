@@ -490,6 +490,7 @@ export default function MapScreen({ route, navigation }: Props) {
     isAnonymous,
     isPro,
     upgradeToEmailAccount,
+    ensurePremiumAccess,
   } = useSession();
   const {
     highAccuracy,
@@ -1377,10 +1378,13 @@ export default function MapScreen({ route, navigation }: Props) {
   const [paywallVisible, setPaywallVisible] = useState(false);
   const [paywallShowRestore, setPaywallShowRestore] = useState(true);
   const openPaywall = useCallback((trigger?: TranslationKey, opts?: { showRestore?: boolean }) => {
-    setPaywallTrigger(trigger);
-    setPaywallShowRestore(opts?.showRestore ?? true);
-    setPaywallVisible(true);
-  }, []);
+    void ensurePremiumAccess().then((allowed) => {
+      if (allowed) return;
+      setPaywallTrigger(trigger);
+      setPaywallShowRestore(opts?.showRestore ?? true);
+      setPaywallVisible(true);
+    });
+  }, [ensurePremiumAccess]);
 
   // --- Meet-time countdown + editor (date + time; red threshold shared via DB)
   const [meetTimeEditor, setMeetTimeEditor] = useState<{

@@ -4,6 +4,7 @@ import React, {
   useEffect,
   useMemo,
   useCallback,
+  useRef,
   useState,
 } from 'react';
 import * as WebBrowser from 'expo-web-browser';
@@ -40,6 +41,14 @@ import { flushQueuedEvents } from '../utils/activityLog';
 import { useAuthFlow } from './useAuthFlow';
 import { stopBackgroundJourney } from './backgroundJourney';
 import { clearLiveActivities } from './useLiveActivity';
+import {
+  cacheBlobToProjection,
+  clearPremiumProjectionCache,
+  isPremiumCacheStale,
+  readPremiumProjectionCache,
+  writePremiumProjectionCache,
+} from '../services/premiumProjectionCache';
+import { ensurePersonalPremiumAccess } from '../services/premiumPurchaseFlow';
 
 // Dismisses a leftover auth browser tab if one is still open on launch.
 WebBrowser.maybeCompleteAuthSession();
@@ -159,6 +168,11 @@ interface SessionContextValue {
    * given) group and update the local cache. Invalid/expired responses clear premium.
    */
   refreshEntitlement: (groupId?: string | null) => Promise<TripEntitlement | null>;
+  /**
+   * Premium-tap gate: missing/stale cache triggers one server refresh first.
+   * Returns true when the live personal grant is entitled.
+   */
+  ensurePremiumAccess: () => Promise<boolean>;
 }
 
 const SessionContext = createContext<SessionContextValue | undefined>(undefined);
@@ -172,6 +186,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [premiumProjection, setPremiumProjection] = useState<PremiumProjection>(
     EMPTY_PREMIUM_PROJECTION,
   );
+  const premiumUserIdRef = useRef<string | null>(null);
   // Premium UI access is derived only from the server projection. Legacy
   // profile Pro and trip-pass snapshots remain display/compatibility data and
   // cannot become an authorization signal through a local setter.
@@ -190,6 +205,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
     async function hydrate(authUser: { id: string; is_anonymous?: boolean; email?: string; app_metadata?: { provider?: string } } | undefined) {
       if (!authUser) {
+        const previousId = premiumUserIdRef.current;
+        premiumUserIdRef.current = null;
+        if (previousId) void clearPremiumProjectionCache(previousId);
         if (active) {
           setUser(null);
           setIsAnonymous(false);
@@ -219,9 +237,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           }
         | null;
       if (active) {
-        // Never carry an entitlement projection across accounts while the new
-        // account is being reconciled with the server.
-        setPremiumProjection(EMPTY_PREMIUM_PROJECTION);
+        const previousId = premiumUserIdRef.current;
+        if (previousId && previousId !== authUser.id) {
+          void clearPremiumProjectionCache(previousId);
+        }
+        premiumUserIdRef.current = authUser.id;
+        const cached = await readPremiumProjectionCache(authUser.id);
+        setPremiumProjection(cached ? cacheBlobToProjection(cached) : EMPTY_PREMIUM_PROJECTION);
         setTripEntitlement(null);
         setUser({
           id: authUser.id,
@@ -269,6 +291,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session) {
+        const previousId = premiumUserIdRef.current;
+        premiumUserIdRef.current = null;
+        if (previousId) void clearPremiumProjectionCache(previousId);
         if (active) {
           setUser(null);
           setIsAnonymous(false);
@@ -318,20 +343,26 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   });
 
   const signOutWithJourneyCleanup = useCallback(async () => {
+    const previousId = premiumUserIdRef.current ?? user?.id ?? null;
     await stopBackgroundJourney().catch(() => undefined);
     await clearLiveActivities();
     await signOut();
+    if (previousId) await clearPremiumProjectionCache(previousId);
+    premiumUserIdRef.current = null;
     setTripEntitlement(null);
     setPremiumProjection(EMPTY_PREMIUM_PROJECTION);
-  }, [signOut]);
+  }, [signOut, user?.id]);
 
   const deleteAccountWithJourneyCleanup = useCallback(async () => {
+    const previousId = premiumUserIdRef.current ?? user?.id ?? null;
     await deleteAccount();
     await stopBackgroundJourney().catch(() => undefined);
     await clearLiveActivities();
+    if (previousId) await clearPremiumProjectionCache(previousId);
+    premiumUserIdRef.current = null;
     setTripEntitlement(null);
     setPremiumProjection(EMPTY_PREMIUM_PROJECTION);
-  }, [deleteAccount]);
+  }, [deleteAccount, user?.id]);
 
   const leaveGroupWithJourneyCleanup = useCallback(() => {
     void stopBackgroundJourney();
@@ -361,7 +392,18 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           setTripEntitlement(trip);
           try {
             const projection = await getPremiumProjection(gid);
-            setPremiumProjection(projection);
+            if (projection.error === 'subscription_required' && !projection.personalPremiumActive) {
+              const uid = premiumUserIdRef.current;
+              if (uid) await clearPremiumProjectionCache(uid);
+              setPremiumProjection({
+                ...projection,
+                personalPremiumActive: false,
+              });
+            } else {
+              const uid = premiumUserIdRef.current;
+              if (uid) await writePremiumProjectionCache(uid, projection);
+              setPremiumProjection(projection);
+            }
           } catch {
             // Keep the last server projection; legacy trip state never unlocks
             // the new Premium surface when projection refresh fails.
@@ -378,7 +420,19 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         setTripEntitlement(null);
         try {
           const projection = await getPremiumProjection(null);
-          setPremiumProjection(projection);
+          if (projection.error === 'subscription_required' && !projection.personalPremiumActive) {
+            const uid = premiumUserIdRef.current;
+            if (uid) await clearPremiumProjectionCache(uid);
+            setPremiumProjection({
+              ...projection,
+              personalPremiumActive: false,
+              teamPremiumActive: false,
+            });
+          } else {
+            const uid = premiumUserIdRef.current;
+            if (uid) await writePremiumProjectionCache(uid, projection);
+            setPremiumProjection(projection);
+          }
         } catch {
           // Fail closed when there is no authoritative projection.
         }
@@ -390,6 +444,30 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     },
     [membership?.group.id, tripEntitlement],
   );
+
+  const ensurePremiumAccess = useCallback(async (): Promise<boolean> => {
+    const uid = premiumUserIdRef.current ?? user?.id;
+    if (!uid) return false;
+    const cached = await readPremiumProjectionCache(uid);
+    const result = await ensurePersonalPremiumAccess({
+      userId: uid,
+      groupId: membership?.group.id ?? null,
+      cacheStale: isPremiumCacheStale(cached),
+      cachedLive: cached?.isPremium === true,
+    });
+    if (result.allowed) {
+      if (result.projection.personalPremiumActive) {
+        setPremiumProjection(result.projection);
+      }
+      return true;
+    }
+    await clearPremiumProjectionCache(uid);
+    setPremiumProjection({
+      ...result.projection,
+      personalPremiumActive: false,
+    });
+    return false;
+  }, [user?.id, membership?.group.id]);
 
   const setMembership = useCallback(
     (next: Membership) => {
@@ -404,7 +482,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         .then((trip) => {
           setTripEntitlement(trip);
           return getPremiumProjection(next.group.id)
-            .then((projection) => {
+            .then(async (projection) => {
+              const uid = premiumUserIdRef.current;
+              if (projection.error === 'subscription_required' && !projection.personalPremiumActive) {
+                if (uid) await clearPremiumProjectionCache(uid);
+              } else if (uid) {
+                await writePremiumProjectionCache(uid, projection);
+              }
               setPremiumProjection(projection);
             })
             .catch(() => {
@@ -542,6 +626,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       setProStatusLocal: () => undefined,
       refreshProfile,
       refreshEntitlement,
+      ensurePremiumAccess,
     }),
     [
       user,
@@ -570,6 +655,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       leaveGroupWithJourneyCleanup,
       refreshProfile,
       refreshEntitlement,
+      ensurePremiumAccess,
     ],
   );
 
