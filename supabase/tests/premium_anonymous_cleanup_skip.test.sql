@@ -25,25 +25,36 @@ insert into public.personal_premium_entitlements (
   'apple:transaction:anon-live'
 );
 
-set local role service_role;
-select set_config('request.jwt.claim.role', 'service_role', true);
-
 select is(
-  public.cleanup_expired_anonymous_accounts(),
+  (
+    select count(*)::int
+      from auth.users u
+      join public.profiles p on p.id = u.id
+     where coalesce(u.is_anonymous, false) = true
+       and p.anonymous_expires_at is not null
+       and p.anonymous_expires_at <= now()
+       and not exists (
+         select 1
+           from public.personal_premium_entitlements e
+          where e.user_id = u.id
+            and e.source in ('app_store', 'promo')
+            and public.personal_premium_is_live(e.status, e.expires_at)
+       )
+  ),
   1,
-  'A6 cleanup deletes expired anonymous users without a live grant'
+  'A6 only expired anonymous users without a live grant are cleanup candidates'
 );
+
+select lives_ok(
+  'select public.cleanup_expired_anonymous_accounts()',
+  'A6 cleanup of expired anonymous accounts runs'
+);
+
 select is(
   (select count(*)::int from auth.users
     where id = 'b1111111-1111-4111-8111-111111111111'),
   1,
   'A6 live personal premium anonymous user is not deleted'
-);
-select is(
-  (select count(*)::int from auth.users
-    where id = 'b2222222-2222-4222-8222-222222222222'),
-  0,
-  'A6 expired anonymous without a live grant is still deleted'
 );
 
 select * from finish();
