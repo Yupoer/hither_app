@@ -27,6 +27,7 @@ type SessionShape = {
   user: { id: string } | null;
   membership: { group: { id: string } } | null;
   isPro: boolean;
+  isAnonymous?: boolean;
   premiumProjection: {
     personalPremiumActive: boolean;
     teamPremiumActive: boolean;
@@ -333,6 +334,7 @@ describe('#156 behavioral: PremiumPresentation Store + Paywall', () => {
 
     expect(mockPurchase).toHaveBeenCalledWith('monthly', expect.objectContaining({
       onNativePurchased: expect.any(Function),
+      userId: 'user-1',
     }));
     expect(mockRefreshProfile).toHaveBeenCalled();
     expect(mockRefreshEntitlement).toHaveBeenCalledWith('group-1');
@@ -403,7 +405,7 @@ describe('#156 behavioral: PremiumPresentation Store + Paywall', () => {
     await press(tree.root, 'paywall-premium-presentation-restore');
     await flush();
 
-    expect(mockRestore).toHaveBeenCalledWith('group-1');
+    expect(mockRestore).toHaveBeenCalledWith('group-1', expect.objectContaining({ userId: 'user-1' }));
     expect(mockRefreshProfile).toHaveBeenCalled();
     expect(mockRefreshEntitlement).toHaveBeenCalledWith('group-1');
     expect(onRestoreSuccess).toHaveBeenCalled();
@@ -433,6 +435,28 @@ describe('#156 behavioral: PremiumPresentation Store + Paywall', () => {
 
     expect(mockRefreshEntitlement).toHaveBeenCalledWith('group-1');
     expect(mockAlert).toHaveBeenCalledWith('paywall.title', 'paywall.restoreNone');
+    tree.unmount();
+  });
+
+  it('anonymous purchase and restore require in-place upgrade first', async () => {
+    sessionState = defaultSession({ isAnonymous: true });
+    let tree!: ReturnType<typeof create>;
+    await act(async () => {
+      tree = create(
+        React.createElement(PremiumPresentation, {
+          showRestore: true,
+          testID: 'paywall-premium-presentation',
+        }),
+      );
+    });
+    await flush();
+    await press(tree.root, 'paywall-premium-presentation-purchase');
+    await flush();
+    expect(mockPurchase).not.toHaveBeenCalled();
+    expect(mockAlert).toHaveBeenCalledWith('paywall.title', 'paywall.upgradeRequired');
+    await press(tree.root, 'paywall-premium-presentation-restore');
+    await flush();
+    expect(mockRestore).not.toHaveBeenCalled();
     tree.unmount();
   });
 });

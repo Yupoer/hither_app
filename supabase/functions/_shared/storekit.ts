@@ -33,9 +33,13 @@ export type StoreKitJwsHeader = {
   [key: string]: unknown;
 };
 
+export type StoreKitEnvironment = 'Production' | 'Sandbox' | 'Xcode';
+
 export type StoreKitVerificationConfig = {
   bundleId: string;
-  environment: 'Production' | 'Sandbox' | 'Xcode';
+  environment: StoreKitEnvironment;
+  /** Deployed functions allow Production and Sandbox together; Xcode is rejected. */
+  allowedEnvironments: readonly StoreKitEnvironment[];
   productIds: readonly string[];
   subscriptionGroupId: string;
   appAccountToken: string;
@@ -48,7 +52,7 @@ export type ValidatedStoreKitTransaction = {
   originalTransactionId: string;
   productId: string;
   subscriptionGroupId: string;
-  environment: 'Production' | 'Sandbox' | 'Xcode';
+  environment: StoreKitEnvironment;
   ownershipType: 'PURCHASED';
   appAccountToken: string;
   status: 'active' | 'expired' | 'revoked';
@@ -156,14 +160,40 @@ function dateFromMilliseconds(value: unknown): string | null {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
+export function allowedStoreKitEnvironments(
+  config: Pick<StoreKitVerificationConfig, 'environment'> & {
+    allowedEnvironments?: readonly StoreKitEnvironment[];
+  },
+): readonly StoreKitEnvironment[] {
+  if (config.allowedEnvironments && config.allowedEnvironments.length > 0) {
+    return config.allowedEnvironments;
+  }
+  return [config.environment];
+}
+
 export function validateStoreKitTransaction(
   payload: StoreKitTransactionPayload,
-  config: Omit<StoreKitVerificationConfig, 'appleRootCertSha256'>,
+  config: Omit<StoreKitVerificationConfig, 'appleRootCertSha256'> | (
+    Omit<StoreKitVerificationConfig, 'appleRootCertSha256' | 'allowedEnvironments'> & {
+      allowedEnvironments?: readonly StoreKitEnvironment[];
+    }
+  ),
   nowMs = Date.now(),
   jwsSha256 = '',
 ): { ok: true; transaction: ValidatedStoreKitTransaction } | { ok: false; error: string } {
   if (payload.bundleId !== config.bundleId) return { ok: false, error: 'bundle_mismatch' };
-  if (payload.environment !== config.environment) return { ok: false, error: 'environment_mismatch' };
+  const allowed = allowedStoreKitEnvironments(config);
+  if (
+    payload.environment !== 'Production'
+    && payload.environment !== 'Sandbox'
+    && payload.environment !== 'Xcode'
+  ) {
+    return { ok: false, error: 'environment_mismatch' };
+  }
+  if (!allowed.includes(payload.environment)) return { ok: false, error: 'environment_mismatch' };
+  if (payload.environment === 'Xcode' && !allowed.includes('Xcode')) {
+    return { ok: false, error: 'environment_mismatch' };
+  }
   if (!payload.productId || !config.productIds.includes(payload.productId)) {
     return { ok: false, error: 'product_mismatch' };
   }
@@ -261,9 +291,14 @@ export function storeKitConfigFromEnv(
     || !subscriptionGroupId
     || !appleRootCertSha256
   ) return null;
+  const configured = environment as StoreKitEnvironment;
+  const allowedEnvironments: readonly StoreKitEnvironment[] = configured === 'Xcode'
+    ? ['Xcode']
+    : ['Production', 'Sandbox'];
   return {
     bundleId,
-    environment: environment as StoreKitVerificationConfig['environment'],
+    environment: configured,
+    allowedEnvironments,
     productIds,
     subscriptionGroupId,
     appAccountToken: '',

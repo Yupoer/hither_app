@@ -2,9 +2,11 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import {
+  allowedStoreKitEnvironments,
   storeKitConfigFromEnv,
   validateStoreKitTransaction,
   verifyStoreKitJws,
+  type StoreKitEnvironment,
 } from '../_shared/storekit.ts';
 
 declare const Deno: {
@@ -79,28 +81,40 @@ function dateFromMilliseconds(value: unknown): string | null {
 // the server boundary. The signed transaction remains the source of dates and
 // product identity; these sets only classify the notification that delivered
 // that already-verified transaction.
-const ACTIVE_NOTIFICATION_TYPES = new Set([
+const ENTITLED_UNTIL_EXPIRY_TYPES = new Set([
   'SUBSCRIBED',
   'DID_RENEW',
   'DID_CHANGE_RENEWAL_STATUS',
   'DID_CHANGE_RENEWAL_PREF',
-  'DID_FAIL_TO_RENEW',
-  'GRACE_PERIOD',
 ]);
 
 const EXPIRED_NOTIFICATION_TYPES = new Set(['EXPIRED']);
 
 const TERMINAL_NOTIFICATION_TYPES = new Set(['REFUND', 'REVOKE']);
 
+export type NotificationLifecycleStatus =
+  | 'active'
+  | 'expired'
+  | 'refunded'
+  | 'revoked'
+  | 'billing_retry'
+  | 'grace_period';
+
 function lifecycleStatus(
   notificationType: string,
   transactionStatus: 'active' | 'expired' | 'revoked',
-): 'active' | 'expired' | 'refunded' | 'revoked' {
+): NotificationLifecycleStatus {
   if (TERMINAL_NOTIFICATION_TYPES.has(notificationType)) {
     return notificationType === 'REFUND' ? 'refunded' : 'revoked';
   }
   if (EXPIRED_NOTIFICATION_TYPES.has(notificationType)) return 'expired';
-  if (ACTIVE_NOTIFICATION_TYPES.has(notificationType)) return transactionStatus;
+  if (notificationType === 'DID_FAIL_TO_RENEW') {
+    return transactionStatus === 'expired' ? 'expired' : 'billing_retry';
+  }
+  if (notificationType === 'GRACE_PERIOD') {
+    return transactionStatus === 'expired' ? 'expired' : 'grace_period';
+  }
+  if (ENTITLED_UNTIL_EXPIRY_TYPES.has(notificationType)) return transactionStatus;
   // Unknown signed event types stay transaction-derived rather than being
   // guessed as active. This keeps new Apple event types fail-safe.
   return transactionStatus;
@@ -161,7 +175,8 @@ function createNotificationHandler(
     if (!environment || !signedTransactionInfo || !outerSignedAt) {
       return json(422, { ok: false, error: 'notification_data_invalid' });
     }
-    if (environment !== baseConfig.environment) {
+    const allowed = allowedStoreKitEnvironments(baseConfig);
+    if (!allowed.includes(environment as StoreKitEnvironment)) {
       logOutcome('environment_mismatch');
       return json(422, { ok: false, error: 'environment_mismatch' });
     }
@@ -268,6 +283,11 @@ function createNotificationHandler(
     });
     const appliedLedger = applied as JsonRecord | null;
     if (applyError || appliedLedger?.ok !== true || appliedLedger.durable !== true) {
+      const ledgerError = typeof appliedLedger?.error === 'string' ? appliedLedger.error : '';
+      if (ledgerError === 'transaction_binding_mismatch' || ledgerError === 'account_token_mismatch') {
+        logOutcome(ledgerError);
+        return json(422, { ok: false, error: ledgerError });
+      }
       // Do not acknowledge a valid notification until the transaction and its
       // projection are durable. The same notification remains retryable.
       logOutcome('transaction_ledger_failed');

@@ -37,7 +37,14 @@ export const SMALL_TRIP_PASS = {
  * trip or a leader; `teamPremiumActive` is a separate server projection for
  * the currently selected group.
  */
-export type PremiumProjectionStatus = 'active' | 'expired' | 'refunded' | 'revoked' | 'none';
+export type PremiumProjectionStatus =
+  | 'active'
+  | 'expired'
+  | 'refunded'
+  | 'revoked'
+  | 'none'
+  | 'billing_retry'
+  | 'grace_period';
 
 export type PremiumProjection = {
   personalPremiumActive: boolean;
@@ -46,6 +53,10 @@ export type PremiumProjection = {
   productId: string | null;
   expiresAt: string | null;
   sourceVersion: string | null;
+  entitlementVersion: number | null;
+  lastSyncedAt: string | null;
+  ok?: boolean;
+  error?: string | null;
 };
 
 export const EMPTY_PREMIUM_PROJECTION: PremiumProjection = {
@@ -55,6 +66,10 @@ export const EMPTY_PREMIUM_PROJECTION: PremiumProjection = {
   productId: null,
   expiresAt: null,
   sourceVersion: null,
+  entitlementVersion: null,
+  lastSyncedAt: null,
+  ok: false,
+  error: 'subscription_required',
 };
 
 function projectionStatus(value: unknown): PremiumProjectionStatus {
@@ -62,8 +77,16 @@ function projectionStatus(value: unknown): PremiumProjectionStatus {
     || value === 'expired'
     || value === 'refunded'
     || value === 'revoked'
+    || value === 'billing_retry'
+    || value === 'grace_period'
     ? value
     : 'none';
+}
+
+function projectionVersion(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() && Number.isFinite(Number(value))) return Number(value);
+  return null;
 }
 
 /** Map the RPC's stable snake_case transport into the app's fixed interface. */
@@ -72,8 +95,11 @@ export function mapPremiumProjectionRow(
 ): PremiumProjection {
   if (!raw) return { ...EMPTY_PREMIUM_PROJECTION };
   const status = projectionStatus(raw.status);
+  const personalPremiumActive = raw.personalPremiumActive === true
+    || raw.personal_premium_active === true;
+  const error = typeof raw.error === 'string' ? raw.error : null;
   return {
-    personalPremiumActive: raw.personalPremiumActive === true || raw.personal_premium_active === true,
+    personalPremiumActive,
     teamPremiumActive: raw.teamPremiumActive === true || raw.team_premium_active === true,
     status,
     productId: typeof raw.productId === 'string'
@@ -91,6 +117,14 @@ export function mapPremiumProjectionRow(
       : typeof raw.source_version === 'string'
         ? raw.source_version
         : null,
+    entitlementVersion: projectionVersion(raw.entitlementVersion ?? raw.entitlement_version),
+    lastSyncedAt: typeof raw.lastSyncedAt === 'string'
+      ? raw.lastSyncedAt
+      : typeof raw.last_synced_at === 'string'
+        ? raw.last_synced_at
+        : null,
+    ok: raw.ok === true || (personalPremiumActive && error !== 'subscription_required'),
+    error,
   };
 }
 
@@ -149,6 +183,11 @@ export interface EntitlementMutationResult {
   expiresAt?: string | null;
   entitlementId?: string | null;
   isPremium?: boolean;
+  durable?: boolean;
+  entitlementVersion?: number | null;
+  personalPremiumActive?: boolean;
+  productId?: string | null;
+  transactionId?: string | null;
   message?: string;
 }
 
