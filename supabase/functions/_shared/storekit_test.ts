@@ -107,7 +107,7 @@ Deno.test('validated StoreKit subscriptions always carry a non-null expiry', () 
 
 Deno.test('StoreKit validation maps expiry and revocation to terminal states', () => {
   const expired = validateStoreKitTransaction(
-    payload({ expiresDate: 1_700_000_000_000 }),
+    payload({ expiresDate: 1_800_000_005_000 }),
     config,
     1_800_000_010_000,
   );
@@ -159,7 +159,7 @@ Deno.test('deployed configuration accepts Production and Sandbox and rejects Xco
   const configured = storeKitConfigFromEnv((name) => ({
     APPLE_BUNDLE_ID: 'app.hither.mobile',
     APPLE_STORE_ENVIRONMENT: 'Production',
-    PREMIUM_PRODUCT_IDS: 'monthly,annual',
+    PREMIUM_PRODUCT_IDS: 'app.hither.premium.monthly,app.hither.premium.annual',
     PREMIUM_SUBSCRIPTION_GROUP_ID: 'hither-premium',
     APPLE_ROOT_CERT_SHA256: 'abc',
   }[name]));
