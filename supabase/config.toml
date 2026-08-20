@@ -390,6 +390,18 @@ verify_jwt = true
 [functions.admob-reward-callback]
 verify_jwt = false
 
+# StoreKit purchase verifier: user JWT required; client never grants itself.
+[functions.verify-and-apply-purchase]
+verify_jwt = true
+
+# App Store Server Notifications V2: Apple signedPayload, no user JWT.
+[functions.apple-server-notifications]
+verify_jwt = false
+
+# App Store Server API compensation: user JWT or service_role, checked in-handler.
+[functions.sync-app-store-subscription]
+verify_jwt = false
+
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 

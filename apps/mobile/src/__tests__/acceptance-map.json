@@ -1163,6 +1163,251 @@
       "acceptance": "A9. Restore 只在 Settings 訂閱頁",
       "testFile": "storeKitSubscriptionContract.test.ts",
       "testNamePattern": "Settings → Premium Paywall keeps restore; Store hides restore CTA"
+    },
+    {
+      "parent": 223,
+      "child": 230,
+      "acceptance": "A1 personal_premium_entitlements has version, original/latest ids, environment, retry/grace, unique user",
+      "testFile": "premiumLedgerContract.test.ts",
+      "testNamePattern": "A1 personal_premium_entitlements has version"
+    },
+    {
+      "parent": 223,
+      "child": 230,
+      "acceptance": "A2 applying a JWS whose originalTransactionId is bound to another user is rejected with a security event",
+      "testFile": "premiumLedgerContract.test.ts",
+      "testNamePattern": "A2 applying a JWS whose originalTransactionId"
+    },
+    {
+      "parent": 223,
+      "child": 230,
+      "acceptance": "A3 after the owning user is deleted the same original id still cannot bind",
+      "testFile": "premiumLedgerContract.test.ts",
+      "testNamePattern": "A3 after the owning user is deleted"
+    },
+    {
+      "parent": 223,
+      "child": 230,
+      "acceptance": "A4 get_premium_projection returns entitlementVersion or subscription_required",
+      "testFile": "premiumLedgerContract.test.ts",
+      "testNamePattern": "A4 get_premium_projection returns entitlementVersion"
+    },
+    {
+      "parent": 223,
+      "child": 230,
+      "acceptance": "A5 grace_period and billing_retry with future expiry are entitled; expired/refunded/revoked are not",
+      "testFile": "premiumLedgerContract.test.ts",
+      "testNamePattern": "A5 grace_period and billing_retry"
+    },
+    {
+      "parent": 223,
+      "child": 230,
+      "acceptance": "A6 anonymous cleanup does not delete a user who still has a live personal grant",
+      "testFile": "premiumLedgerContract.test.ts",
+      "testNamePattern": "A6 anonymous cleanup does not delete"
+    },
+    {
+      "parent": 223,
+      "child": 230,
+      "acceptance": "A7 Sandbox and Production original ids are isolated",
+      "testFile": "premiumLedgerContract.test.ts",
+      "testNamePattern": "A7 Sandbox and Production original ids"
+    },
+    {
+      "parent": 223,
+      "child": 232,
+      "acceptance": "A1 Verified purchase JWS durable grant then finish (UC2)",
+      "testFile": "premiumPurchaseFlowBehavior.test.ts",
+      "testNamePattern": "UC2 verified purchase unlocks from durable grant then finishes"
+    },
+    {
+      "parent": 223,
+      "child": 232,
+      "acceptance": "A2 apply/network fail does not finish and retries (UC9)",
+      "testFile": "premiumPurchaseFlowBehavior.test.ts",
+      "testNamePattern": "UC9 apply/network failure leaves the transaction unfinished"
+    },
+    {
+      "parent": 223,
+      "child": 232,
+      "acceptance": "A3 Anonymous users cannot obtain appAccountToken or start StoreKit purchase/restore",
+      "testFile": "premiumPurchaseFlowBehavior.test.ts",
+      "testNamePattern": "anonymous users cannot obtain a token or start StoreKit purchase"
+    },
+    {
+      "parent": 223,
+      "child": 232,
+      "acceptance": "A4 Production and Sandbox JWS both verify; Xcode is rejected",
+      "testFile": "premiumLedgerContract.test.ts",
+      "testNamePattern": "A4 Production and Sandbox JWS both verify"
+    },
+    {
+      "parent": 223,
+      "child": 232,
+      "acceptance": "A5 Cross-user originalTransactionId or appAccountToken mismatch returns 409/422 without grant",
+      "testFile": "premiumLedgerContract.test.ts",
+      "testNamePattern": "A5 cross-user originalTransactionId or appAccountToken mismatch"
+    },
+    {
+      "parent": 223,
+      "child": 232,
+      "acceptance": "A6 Response includes entitlementVersion and personalPremiumActive from DB",
+      "testFile": "premiumLedgerContract.test.ts",
+      "testNamePattern": "A6 response includes entitlementVersion and personalPremiumActive"
+    },
+    {
+      "parent": 223,
+      "child": 232,
+      "acceptance": "A7 Duplicate apply of the same durable JWS returns durable true",
+      "testFile": "premiumLedgerContract.test.ts",
+      "testNamePattern": "A7 duplicate apply of the same durable JWS"
+    },
+    {
+      "parent": 223,
+      "child": 233,
+      "acceptance": "A1 Free user taps Premium with no cache then subscription_required paywall (UC1)",
+      "testFile": "premiumEntitlementCache.test.ts",
+      "testNamePattern": "UC1 free tap with no cache refreshes to subscription_required"
+    },
+    {
+      "parent": 223,
+      "child": 233,
+      "acceptance": "A2 Stale cache with DB still live refreshes without StoreKit (UC3)",
+      "testFile": "premiumEntitlementCache.test.ts",
+      "testNamePattern": "UC3 stale cache with DB still live"
+    },
+    {
+      "parent": 223,
+      "child": 233,
+      "acceptance": "A3 Other device currentEntitlements JWS plus refresh grants when token matches (UC4)",
+      "testFile": "premiumEntitlementCache.test.ts",
+      "testNamePattern": "UC4 other device currentEntitlements JWS plus refresh"
+    },
+    {
+      "parent": 223,
+      "child": 233,
+      "acceptance": "A4 Reinstall empty Keychain login refresh returns DB grant (UC5)",
+      "testFile": "premiumEntitlementCache.test.ts",
+      "testNamePattern": "UC5 reinstall empty Keychain login refresh"
+    },
+    {
+      "parent": 223,
+      "child": 233,
+      "acceptance": "A5 Restore Purchases uploads verified currentEntitlements or none found (UC6)",
+      "testFile": "premiumEntitlementCache.test.ts",
+      "testNamePattern": "UC6 Restore Purchases uploads verified currentEntitlements"
+    },
+    {
+      "parent": 223,
+      "child": 233,
+      "acceptance": "A6 Launch hydrates UI from cache then background-refreshes when lastSyncedAt > 6h",
+      "testFile": "premiumEntitlementCache.test.ts",
+      "testNamePattern": "A6 launch hydrates UI from cache then background-refreshes"
+    },
+    {
+      "parent": 223,
+      "child": 233,
+      "acceptance": "A7 Logout or account switch deletes the previous userId premium cache",
+      "testFile": "premiumEntitlementCache.test.ts",
+      "testNamePattern": "A7 logout or account switch deletes the previous userId premium cache"
+    },
+    {
+      "parent": 223,
+      "child": 234,
+      "acceptance": "A1 DID_FAIL_TO_RENEW stores billing_retry (UC7)",
+      "testFile": "premiumLedgerContract.test.ts",
+      "testNamePattern": "A1 DID_FAIL_TO_RENEW stores billing_retry"
+    },
+    {
+      "parent": 223,
+      "child": 234,
+      "acceptance": "A2 GRACE_PERIOD stores grace_period (UC7)",
+      "testFile": "premiumLedgerContract.test.ts",
+      "testNamePattern": "A2 GRACE_PERIOD stores grace_period"
+    },
+    {
+      "parent": 223,
+      "child": 234,
+      "acceptance": "A3 EXPIRED stores expired and increments entitlement_version (UC7)",
+      "testFile": "premiumLedgerContract.test.ts",
+      "testNamePattern": "A3 EXPIRED stores expired"
+    },
+    {
+      "parent": 223,
+      "child": 234,
+      "acceptance": "A4 REFUND/REVOKE close the grant and increment version (UC8)",
+      "testFile": "premiumLedgerContract.test.ts",
+      "testNamePattern": "A4 REFUND/REVOKE close the grant"
+    },
+    {
+      "parent": 223,
+      "child": 234,
+      "acceptance": "A5 duplicate notificationUUID does not re-apply",
+      "testFile": "premiumLedgerContract.test.ts",
+      "testNamePattern": "A5 duplicate notificationUUID does not re-apply"
+    },
+    {
+      "parent": 223,
+      "child": 234,
+      "acceptance": "A6 unbound appAccountToken returns 503 and does not mark accepted",
+      "testFile": "premiumLedgerContract.test.ts",
+      "testNamePattern": "A6 unbound appAccountToken returns 503"
+    },
+    {
+      "parent": 223,
+      "child": 234,
+      "acceptance": "A7 auto-renew OFF stays entitled until expiresAt",
+      "testFile": "premiumLedgerContract.test.ts",
+      "testNamePattern": "A7 auto-renew OFF stays entitled until expiresAt"
+    },
+    {
+      "parent": 223,
+      "child": 235,
+      "acceptance": "A1 user restore/refresh with verified device JWS the ledger lacks grants via sync",
+      "testFile": "premiumLedgerContract.test.ts",
+      "testNamePattern": "A1 user restore/refresh with a verified device JWS"
+    },
+    {
+      "parent": 223,
+      "child": 235,
+      "acceptance": "A2 service_role and already-bound originalTransactionId fetches Apple status",
+      "testFile": "premiumLedgerContract.test.ts",
+      "testNamePattern": "A2 service_role and already-bound originalTransactionId"
+    },
+    {
+      "parent": 223,
+      "child": 235,
+      "acceptance": "A3 user JWT cannot sync an originalTransactionId bound to a different user",
+      "testFile": "premiumLedgerContract.test.ts",
+      "testNamePattern": "A3 user JWT cannot sync an originalTransactionId"
+    },
+    {
+      "parent": 223,
+      "child": 235,
+      "acceptance": "A4 missing Connect API secrets fail closed without logging P8 or JWS",
+      "testFile": "premiumLedgerContract.test.ts",
+      "testNamePattern": "A4 missing Connect API secrets fail closed"
+    },
+    {
+      "parent": 223,
+      "child": 235,
+      "acceptance": "A5 Production and Sandbox responses persist their own environment",
+      "testFile": "premiumLedgerContract.test.ts",
+      "testNamePattern": "A5 Production and Sandbox responses persist"
+    },
+    {
+      "parent": 223,
+      "child": 235,
+      "acceptance": "A6 webhook remaining 503/unbound can later succeed through this compensation",
+      "testFile": "premiumLedgerContract.test.ts",
+      "testNamePattern": "A6 webhook remaining 503/unbound"
+    },
+    {
+      "parent": 223,
+      "child": 235,
+      "acceptance": "A7 no Play Developer API and no new custom HTTP server outside Supabase Edge",
+      "testFile": "premiumLedgerContract.test.ts",
+      "testNamePattern": "A7 no Play Developer API and no new custom HTTP server"
     }
   ]
 }
