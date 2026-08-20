@@ -54,8 +54,8 @@ select is(
 );
 select is(
   public.get_premium_projection('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')->>'teamPremiumActive',
-  'false',
-  'legacy member does not activate team subscription projection'
+  'true',
+  'trip-pass compatibility still unlocks team Premium for a legacy personal member'
 );
 
 set local role service_role;
@@ -138,8 +138,8 @@ select is(
 );
 select is(
   public.get_premium_projection('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')->>'teamPremiumActive',
-  'false',
-  'expired StoreKit entitlement removes team Premium'
+  'true',
+  'expired StoreKit does not drop trip-pass team compatibility'
 );
 select is(
   public.group_has_active_premium('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'),
