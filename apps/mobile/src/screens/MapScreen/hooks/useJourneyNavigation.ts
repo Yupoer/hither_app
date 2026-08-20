@@ -5,6 +5,10 @@ import { isNetworkRequestError } from '../../../api/services/_helpers';
 import { distanceMeters } from '../../../utils/geo';
 import { resolveGatheringOutboxAfterSessionStart } from '../../../utils/gatheringSessionOutbox';
 import { promoteDestinationWithinDay } from '../../../utils/tripDay';
+import {
+  carouselScrollX,
+  followCarouselIndexAfterPromote,
+} from '../../../utils/journeyStartCarouselIdentity';
 import type { Coordinates, Destination, GroupState, JourneyStatus } from '../../../types';
 import type { NavigationSession } from '../../../types/navigation';
 import type { GroupMapHandle } from '../../../components/GroupMap';
@@ -331,7 +335,7 @@ export function useJourneyNavigation({
         const pageW = Dimensions.get('window').width;
         requestAnimationFrame(() => {
           carouselRef.current?.scrollTo({
-            x: nextIndex * pageW,
+            x: carouselScrollX(nextIndex, pageW),
             animated: true,
           });
         });
@@ -499,7 +503,11 @@ export function useJourneyNavigation({
       lastFollowerCenterKeyRef.current = null;
       return;
     }
-    const index = destinations.findIndex((destination) => destination.id === sharedTargetId);
+    const index = followCarouselIndexAfterPromote({
+      destinations,
+      sharedTargetId,
+    });
+    if (index == null) return;
     const destination = destinations[index];
     if (!destination) return;
     const orderKey = destinations.map((d) => d.id).join(',');
