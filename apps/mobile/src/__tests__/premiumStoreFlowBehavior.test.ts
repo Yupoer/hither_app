@@ -56,10 +56,19 @@ jest.mock('react-native', () => ({
   ScrollView: 'ScrollView',
   Modal: 'Modal',
   TextInput: 'TextInput',
+  useWindowDimensions: () => ({ width: 390, height: 844 }),
 }));
 
 jest.mock('../api/client', () => ({
   redeemPromoCode: jest.fn(),
+  getPremiumProjection: jest.fn(async () => ({
+    personalPremiumActive: true,
+    teamPremiumActive: false,
+    status: 'active',
+    productId: 'premium.monthly',
+    expiresAt: null,
+    sourceVersion: '1',
+  })),
 }));
 
 jest.mock('../utils/uiAction', () => ({
@@ -322,7 +331,9 @@ describe('#156 behavioral: PremiumPresentation Store + Paywall', () => {
     await press(tree.root, 'store-premium-presentation-purchase');
     await flush();
 
-    expect(mockPurchase).toHaveBeenCalledWith('monthly');
+    expect(mockPurchase).toHaveBeenCalledWith('monthly', expect.objectContaining({
+      onNativePurchased: expect.any(Function),
+    }));
     expect(mockRefreshProfile).toHaveBeenCalled();
     expect(mockRefreshEntitlement).toHaveBeenCalledWith('group-1');
     expect(onPurchaseSuccess).toHaveBeenCalled();

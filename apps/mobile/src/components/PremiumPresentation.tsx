@@ -9,12 +9,15 @@ import {
   Alert,
   Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
-import { redeemPromoCode } from '../api/client';
+import { getPremiumProjection, redeemPromoCode } from '../api/client';
+import { waitUntilPremiumProjectionActive } from '../utils/waitUntilPremiumProjection';
 import { runUiAction } from '../utils/uiAction';
 import { useTranslation, type TranslationKey } from '../i18n';
 import { useTheme } from '../state/PreferencesContext';
@@ -32,6 +35,14 @@ import {
 } from '../native/purchases';
 
 /** Free vs account-owned auto-renewable Premium comparison rows. */
+export const PAYWALL_INTRO_SLIDES: { key: string; title: TranslationKey; body: TranslationKey }[] = [
+  { key: 'members', title: 'paywall.introMembers', body: 'paywall.rowMembersPro' },
+  { key: 'destinations', title: 'paywall.introDestinations', body: 'paywall.rowDestinationsPro' },
+  { key: 'kml', title: 'paywall.introKml', body: 'paywall.rowKmlPro' },
+  { key: 'history', title: 'paywall.introHistory', body: 'paywall.rowHistoryPro' },
+  { key: 'themes', title: 'paywall.introThemes', body: 'paywall.rowThemesPro' },
+];
+
 export const PREMIUM_COMPARE_ROWS: { free: TranslationKey; pro: TranslationKey }[] = [
   { free: 'paywall.rowMembersFree', pro: 'paywall.rowMembersPro' },
   { free: 'paywall.rowDestinationsFree', pro: 'paywall.rowDestinationsPro' },
@@ -60,6 +71,8 @@ export type PremiumPresentationProps = {
   onRestoreSuccess?: () => void;
   /** Optional testID prefix (default premium-presentation). */
   testID?: string;
+  showIntroPager?: boolean;
+  onUnlockingChange?: (unlocking: boolean) => void;
 };
 
 export default React.memo(function PremiumPresentation({
@@ -68,6 +81,8 @@ export default React.memo(function PremiumPresentation({
   onPurchaseSuccess,
   onRestoreSuccess,
   testID = 'premium-presentation',
+  showIntroPager = false,
+  onUnlockingChange,
 }: PremiumPresentationProps) {
   const { t } = useTranslation();
   const { colors } = useTheme();
@@ -80,6 +95,8 @@ export default React.memo(function PremiumPresentation({
     refreshProfile,
   } = useSession();
   const accent = colors.accent;
+  const { width: pagerWidth } = useWindowDimensions();
+  const slideWidth = Math.max(280, pagerWidth - 48);
   const [busy, setBusy] = useState<'purchase' | 'restore' | 'redeem' | null>(null);
   const [redeemOpen, setRedeemOpen] = useState(false);
   const [promoCode, setPromoCode] = useState('');
@@ -138,13 +155,29 @@ export default React.memo(function PremiumPresentation({
     }
     setBusy('purchase');
     try {
-      const result = await purchasePremiumSubscription(selectedPlan);
+      const result = await purchasePremiumSubscription(selectedPlan, {
+        onNativePurchased: () => onUnlockingChange?.(true),
+      });
       if (!result.ok) {
+        onUnlockingChange?.(false);
         if (result.error === 'cancelled') return;
         if (result.error === 'pending') {
           Alert.alert(t('paywall.title'), t('paywall.pending'));
           return;
         }
+        Alert.alert(t('paywall.title'), t('paywall.purchaseFailed'));
+        return;
+      }
+      onUnlockingChange?.(true);
+      await refreshProfile();
+      await refreshEntitlement(groupId);
+      const ready = await waitUntilPremiumProjectionActive({
+        groupId,
+        getPremiumProjection,
+        alreadyActive:
+          premiumProjection.personalPremiumActive || premiumProjection.teamPremiumActive,
+      });
+      if (!ready) {
         Alert.alert(t('paywall.title'), t('paywall.purchaseFailed'));
         return;
       }
@@ -155,6 +188,7 @@ export default React.memo(function PremiumPresentation({
     } catch {
       Alert.alert(t('paywall.title'), t('paywall.purchaseFailed'));
     } finally {
+      onUnlockingChange?.(false);
       setBusy(null);
     }
   }, [
@@ -166,6 +200,9 @@ export default React.memo(function PremiumPresentation({
     refreshEntitlement,
     refreshProfile,
     onPurchaseSuccess,
+    onUnlockingChange,
+    premiumProjection.personalPremiumActive,
+    premiumProjection.teamPremiumActive,
   ]);
 
   const handleRestore = useCallback(async () => {
@@ -263,20 +300,36 @@ export default React.memo(function PremiumPresentation({
     <View style={styles.body} testID={testID} accessibilityRole="summary">
       {trigger ? <Text style={styles.trigger}>{t(trigger)}</Text> : null}
 
-      {/* Free/Premium prose removed — comparison table below is the source of truth. */}
       <Text style={[styles.statusLine, { color: accent }]}>{statusLine}</Text>
 
-      <View style={styles.table}>
-        {PREMIUM_COMPARE_ROWS.map((row, i) => (
-          <View
-            key={row.free}
-            style={[styles.row, i === PREMIUM_COMPARE_ROWS.length - 1 && styles.rowLast]}
-          >
-            <Text style={styles.rowFree}>{t(row.free)}</Text>
-            <Text style={[styles.rowPro, { color: accent }]}>{t(row.pro)}</Text>
-          </View>
-        ))}
-      </View>
+      {showIntroPager ? (
+        <ScrollView
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          testID={`${testID}-intro-pager`}
+          style={styles.introPager}
+        >
+          {PAYWALL_INTRO_SLIDES.map((slide) => (
+            <View key={slide.key} style={[styles.introSlide, { width: slideWidth }]}>
+              <Text style={styles.introTitle}>{t(slide.title)}</Text>
+              <Text style={styles.introBody}>{t(slide.body)}</Text>
+            </View>
+          ))}
+        </ScrollView>
+      ) : (
+        <View style={styles.table}>
+          {PREMIUM_COMPARE_ROWS.map((row, i) => (
+            <View
+              key={row.free}
+              style={[styles.row, i === PREMIUM_COMPARE_ROWS.length - 1 && styles.rowLast]}
+            >
+              <Text style={styles.rowFree}>{t(row.free)}</Text>
+              <Text style={[styles.rowPro, { color: accent }]}>{t(row.pro)}</Text>
+            </View>
+          ))}
+        </View>
+      )}
 
       <View style={styles.planChoices} accessibilityRole="radiogroup">
         {(['monthly', 'annual'] as const).map((plan) => {
@@ -406,6 +459,20 @@ const styles = StyleSheet.create({
   body: { paddingHorizontal: 0, paddingBottom: 8, gap: 10 },
   trigger: { fontSize: 14, color: glass.textSecondary, lineHeight: 20 },
   statusLine: { fontSize: 13, fontWeight: '600', marginBottom: 4 },
+  introPager: { marginBottom: 8 },
+  introSlide: {
+    paddingVertical: 18,
+    paddingHorizontal: 16,
+    marginRight: 10,
+    borderRadius: 18,
+    backgroundColor: glass.fill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: glass.hairlineStrong,
+    minHeight: 140,
+    justifyContent: 'center',
+  },
+  introTitle: { color: '#fff', fontSize: 20, fontWeight: '800', marginBottom: 8 },
+  introBody: { color: glass.textSecondary, fontSize: 15, lineHeight: 22 },
   table: {
     backgroundColor: glass.fill,
     borderRadius: 14,

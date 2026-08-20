@@ -52,7 +52,7 @@ import {
   truncateDiagText,
 } from '../../../state/diagnostics';
 import Constants from 'expo-constants';
-import PremiumPresentation from '../../../components/PremiumPresentation';
+
 
 /** Soft poll while SSV is pending; then idle CTA + slower background late-SSV poll. */
 const VERIFY_POLL_TICKS = 20;
@@ -172,6 +172,7 @@ export interface StorePaneProps {
   onHighlightConsumed?: () => void;
   onRequireRegistration?: () => void;
   onEntitlementChanged?: () => void;
+  onOpenSubscribe?: () => void;
 }
 
 function adCtaLabel(
@@ -237,6 +238,7 @@ export const StorePane = React.memo(function StorePane({
   onHighlightConsumed,
   onRequireRegistration,
   onEntitlementChanged,
+  onOpenSubscribe,
 }: StorePaneProps) {
   const { scale, boldText } = useFontLayout();
   const styles = useMemo(() => makeStyles(scale, boldText), [scale, boldText]);
@@ -1014,15 +1016,19 @@ export const StorePane = React.memo(function StorePane({
     >
       <Text style={[styles.heading, styles.headingFirst]}>{t('store.title')}</Text>
 
-      {/* Premium first (shared with Paywall); restore only via Settings paywall. */}
+      {/* Premium first; full-screen paywall sheet (restore stays on Settings). */}
       <View style={styles.premiumBlock} testID="store-premium-section">
-        <PremiumPresentation
-          showRestore={false}
-          onPurchaseSuccess={() => {
-            onEntitlementChanged?.();
-          }}
-          testID="store-premium-presentation"
-        />
+        <Pressable
+          onPress={onOpenSubscribe}
+          accessibilityRole="button"
+          accessibilityLabel={t('paywall.cta')}
+          testID="store-open-subscribe"
+          style={styles.shellCard}
+        >
+          <Text style={styles.heading}>{t('paywall.title')}</Text>
+          <Text style={styles.shellHint}>{t('settings.subscribeBannerHint')}</Text>
+          <Text style={[styles.heading, { color: accent }]}>{t('paywall.cta')}</Text>
+        </Pressable>
       </View>
 
       {/* Divider between Premium and the ad / economy block. */}

@@ -59,9 +59,9 @@ describe('four-pane store navigation contracts', () => {
   it('Store orders Premium then balance then ad and hides restore', () => {
     const premium = read('components/PremiumPresentation.tsx');
     const paywall = read('components/PaywallSheet.tsx');
-    expect(storePane).toContain('PremiumPresentation');
+    expect(storePane).toContain('onOpenSubscribe');
     expect(storePane).toContain('store-premium-section');
-    expect(storePane).toContain('showRestore={false}');
+    expect(storePane).toContain('store-open-subscribe');
     expect(storePane).toContain('store-ad-cta');
     expect(storePane).toContain('store-premium-ad-divider');
     // Layout order: Premium → divider → balance → ad.

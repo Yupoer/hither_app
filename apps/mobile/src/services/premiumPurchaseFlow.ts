@@ -107,6 +107,7 @@ async function settlePurchase(
 
 export async function purchasePremiumSubscription(
   plan: PremiumPlan,
+  options?: { onNativePurchased?: () => void },
 ): Promise<PremiumPurchaseFlowResult> {
   const product = premiumProductForPlan(plan);
   if (!product) return { ok: false, error: 'subscription_catalog_not_ready' };
@@ -120,6 +121,7 @@ export async function purchasePremiumSubscription(
 
   const nativeResult = await requestPremiumSubscription(product.productId, appAccountToken);
   if (!isVerifiedPurchase(nativeResult)) return failedFromNative(nativeResult);
+  options?.onNativePurchased?.();
   return settlePurchase(nativeResult, 'purchase');
 }
 
