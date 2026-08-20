@@ -24,10 +24,11 @@ describe('MapKit route UI contract', () => {
     expect(groupMap).not.toContain('onRegionChange={');
     expect(groupMap).toContain('settledRouteViewport');
     expect(groupMap).not.toContain('bottom: Math.max(24, bottomOverlap + 8)');
-    expect(groupMap).toContain('oversizedMapStyle');
-    expect(groupMap).toContain('halfPeek');
+    expect(groupMap).toContain('StyleSheet.absoluteFill');
+    expect(groupMap).not.toContain('mapPadding=');
+    expect(groupMap).not.toContain('oversizedMapStyle');
     expect(mapScreen).toContain('const peekSheetH = detents[0]');
-    expect(mapScreen).toContain('const halfPeek = peekSheetH / 2');
+    expect(mapScreen).not.toContain('const halfPeek = peekSheetH / 2');
     expect(mapScreen).not.toContain('detents[detent] ?? detents[0]');
     expect(groupMap).toContain('// Sheet stage / detent must never re-run this effect.');
     expect(groupMap).toContain('}, [fallbackCenter, gathering]);');

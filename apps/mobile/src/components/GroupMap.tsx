@@ -50,8 +50,7 @@ import {
   type RouteViewport,
 } from '../utils/routeLod';
 import { advanceRouteToCoordinate } from '../utils/advanceRouteToCoordinate';
-import { mapKitChromeLayout } from '../utils/mapChromeLayout';
-import { oversizedMapStyle } from '../utils/mapPeekLock';
+import { gatherCardHorizontalInset, mapKitChromeLayout } from '../utils/mapChromeLayout';
 import {
   pulsePeakScale,
   reduceMotionEmphasisScale,
@@ -142,7 +141,10 @@ export interface GroupMapProps {
   topOverlap?: number;
   /** Peek-only sheet height overlapping the map. Never a live detent. */
   bottomOverlap?: number;
-  /** Half peek height: MapView translates +X/+Y and oversizes by this amount. */
+  /**
+   * @deprecated MapView is edge-to-edge; peek translate/oversize is removed.
+   * Kept so callers can pass 0 without a type break.
+   */
   halfPeek?: number;
   /**
    * MapKit user-location samples for the single foreground owner path.
@@ -522,7 +524,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     completedDestinationIds = null,
     topOverlap = 0,
     bottomOverlap = 0,
-    halfPeek = 0,
+    halfPeek: _halfPeek = 0,
     onUserLocationSample,
     onLongPressCoordinate,
     onRequestGoHome,
@@ -608,8 +610,12 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     [routePoints, selfCoordinates, settledRouteViewport],
   );
   const mapChrome = useMemo(
-    () => mapKitChromeLayout({ safeArea: insets, topChrome: topOverlap }),
-    [insets, topOverlap],
+    () => mapKitChromeLayout({
+      safeArea: insets,
+      topChrome: topOverlap,
+      horizontalInset: gatherCardHorizontalInset(windowWidth),
+    }),
+    [insets, topOverlap, windowWidth],
   );
 
   useEffect(() => platformizedMapLifecycle({
@@ -872,13 +878,12 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       // surfaceKey allows a single user-driven remount after map subtree failure.
       key={`${mapInterfaceStyle}-${surfaceKey}`}
       ref={mapRef}
-      style={oversizedMapStyle(windowWidth, windowHeight, halfPeek)}
+      style={StyleSheet.absoluteFill}
       // Provider, transit defaults, MapKit chrome, lifecycle callbacks and
       // platform-owned location callbacks come from the native boundary.
       {...(mapViewProps as Record<string, unknown>)}
       initialRegion={mapInitialRegion}
       userInterfaceStyle={mapInterfaceStyle}
-      mapPadding={{ top: 42, left: 32, right: 32, bottom: 42 }}
       // Continuous local blue-dot from device GPS (offline). Self is not drawn
       // as a flock emoji pin — that would lag on cloud upload cadence.
       showsUserLocation={showsUserLocation}
