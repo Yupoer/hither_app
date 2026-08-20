@@ -9,7 +9,7 @@ describe('sheet more-button settings contract', () => {
     expect(openIdx).toBeGreaterThanOrEqual(0);
     const openBlock = source.slice(openIdx, openIdx + 500);
     expect(openBlock).toContain("'map.open_settings'");
-    expect(openBlock).toContain("setOverlay('settings')");
+    expect(openBlock).toContain('setSettingsOpen(true)');
     expect(openBlock).not.toContain('ActionSheetIOS');
     expect(openBlock).not.toContain('Alert.alert');
     expect(source).not.toContain('const openGroupMenu');
