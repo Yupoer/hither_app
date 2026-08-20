@@ -54,6 +54,8 @@ select cmp_ok(
   'A6 cleanup actually runs and deletes expired anonymous accounts without a live grant'
 );
 
+set local role postgres;
+
 select ok(
   exists(
     select 1 from auth.users
