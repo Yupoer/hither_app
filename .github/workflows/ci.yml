@@ -136,6 +136,9 @@ jobs:
           supabase db start
           supabase test db --local supabase/tests/kick_group_member.test.sql
           supabase test db --local supabase/tests/delete_account.test.sql
+          supabase test db --local supabase/tests/storekit_purchase_ledger.test.sql
+          supabase test db --local supabase/tests/premium_projection.test.sql
+          supabase test db --local supabase/tests/premium_anonymous_cleanup_skip.test.sql
 
   # Turn a red build on the default branch into an actionable, deduped issue.
   open-issue:
