@@ -12,6 +12,7 @@ const mockFetchPremiumProducts = jest.fn();
 const mockRequestPremiumSubscription = jest.fn();
 const mockRestorePremiumPurchases = jest.fn();
 const mockFinishPremiumPurchase = jest.fn();
+const mockGetUnfinishedPremiumPurchases = jest.fn();
 const mockApplyVerifiedSubscription = jest.fn();
 const mockGetPremiumAppAccountToken = jest.fn();
 const mockGetPremiumProjection = jest.fn();
@@ -23,15 +24,22 @@ jest.mock('../native/purchases', () => ({
   requestPremiumSubscription: (...args: unknown[]) => mockRequestPremiumSubscription(...args),
   restorePremiumPurchases: (...args: unknown[]) => mockRestorePremiumPurchases(...args),
   finishPremiumPurchase: (...args: unknown[]) => mockFinishPremiumPurchase(...args),
-  getUnfinishedPremiumPurchases: jest.fn().mockResolvedValue([]),
+  getUnfinishedPremiumPurchases: (...args: unknown[]) => mockGetUnfinishedPremiumPurchases(...args),
   isVerifiedPurchase: (result: { status?: string }) =>
     result?.status === 'purchased' || result?.status === 'restored',
+}));
+
+jest.mock('expo-secure-store', () => ({
+  getItemAsync: jest.fn().mockResolvedValue(null),
+  setItemAsync: jest.fn().mockResolvedValue(undefined),
+  deleteItemAsync: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('../api/client', () => ({
   applyVerifiedSubscription: (...args: unknown[]) => mockApplyVerifiedSubscription(...args),
   getPremiumAppAccountToken: (...args: unknown[]) => mockGetPremiumAppAccountToken(...args),
   getPremiumProjection: (...args: unknown[]) => mockGetPremiumProjection(...args),
+  syncAppStoreSubscription: jest.fn().mockResolvedValue({ ok: false, error: 'subscription_required' }),
 }));
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -77,9 +85,14 @@ describe('#156 behavioral: premiumPurchaseFlow coordinator', () => {
     mockGetPremiumAppAccountToken.mockResolvedValue('account-token');
     mockApplyVerifiedSubscription.mockResolvedValue({
       ok: true,
+      durable: true,
+      personalPremiumActive: true,
+      entitlementVersion: 1,
+      status: 'active',
       projection: { ...EMPTY_PROJECTION, personalPremiumActive: true, status: 'active' },
     });
     mockFinishPremiumPurchase.mockResolvedValue(undefined);
+    mockGetUnfinishedPremiumPurchases.mockResolvedValue([]);
     mockGetPremiumProjection.mockResolvedValue({
       ...EMPTY_PROJECTION,
       personalPremiumActive: true,
@@ -187,5 +200,65 @@ describe('#156 behavioral: premiumPurchaseFlow coordinator', () => {
     const result = await flow.purchasePremiumSubscription('monthly');
     expect(result.ok).toBe(false);
     expect(mockFinishPremiumPurchase).not.toHaveBeenCalled();
+  });
+
+  it('UC2 verified purchase unlocks from durable grant then finishes', async () => {
+    mockRequestPremiumSubscription.mockResolvedValue({
+      status: 'purchased',
+      transactionId: 'txn-uc2',
+      productId: 'premium.monthly',
+      purchaseToken: 'jws-uc2',
+      purchase: { id: 'txn-uc2' },
+      appAccountToken: 'account-token',
+    });
+    const result = await flow.purchasePremiumSubscription('monthly', { userId: 'user-1' });
+    expect(result.ok).toBe(true);
+    expect(mockApplyVerifiedSubscription).toHaveBeenCalled();
+    expect(mockFinishPremiumPurchase).toHaveBeenCalled();
+    expect(result.ok && 'projection' in result && result.projection?.personalPremiumActive).toBe(true);
+  });
+
+  it('UC9 apply/network failure leaves the transaction unfinished for retry', async () => {
+    mockRequestPremiumSubscription.mockResolvedValue({
+      status: 'purchased',
+      transactionId: 'txn-uc9',
+      productId: 'premium.monthly',
+      purchaseToken: 'jws-uc9',
+      purchase: { id: 'txn-uc9' },
+      appAccountToken: 'account-token',
+    });
+    mockApplyVerifiedSubscription
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValueOnce({
+        ok: true,
+        durable: true,
+        personalPremiumActive: true,
+        entitlementVersion: 1,
+        status: 'active',
+      });
+    const first = await flow.purchasePremiumSubscription('monthly');
+    expect(first.ok).toBe(false);
+    expect(mockFinishPremiumPurchase).not.toHaveBeenCalled();
+
+    mockGetUnfinishedPremiumPurchases.mockResolvedValueOnce([
+      {
+        status: 'purchased',
+        transactionId: 'txn-uc9',
+        productId: 'premium.monthly',
+        purchaseToken: 'jws-uc9',
+        purchase: { id: 'txn-uc9' },
+        appAccountToken: 'account-token',
+      },
+    ]);
+    const retry = await flow.reconcileUnfinishedPremiumPurchases('user-1');
+    expect(retry.settled).toBe(1);
+    expect(mockFinishPremiumPurchase).toHaveBeenCalled();
+  });
+
+  it('anonymous users cannot obtain a token or start StoreKit purchase', async () => {
+    const blocked = await flow.purchasePremiumSubscription('monthly', { isAnonymous: true });
+    expect(blocked).toEqual(expect.objectContaining({ ok: false, error: 'anonymous_upgrade_required' }));
+    expect(mockGetPremiumAppAccountToken).not.toHaveBeenCalled();
+    expect(mockRequestPremiumSubscription).not.toHaveBeenCalled();
   });
 });

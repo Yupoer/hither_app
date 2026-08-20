@@ -830,6 +830,7 @@ export const en: Record<keyof ZhDict, string> = {
   'paywall.catalogUnavailable': 'Subscription products are not configured or unavailable',
   'paywall.choosePlan': 'Choose a subscription',
   'paywall.signInRequired': 'Sign in to a Hither account first',
+  'paywall.upgradeRequired': 'Register this account before buying or restoring Premium',
   'paywall.pending': 'The App Store transaction is pending; it will retry automatically.',
   'paywall.price': 'Price is localized by the App Store',
   'paywall.cta': 'Subscribe to Premium',

@@ -29,6 +29,7 @@ import {
 
 /** Edge Function name for the StoreKit server verification boundary. */
 export const VERIFY_AND_APPLY_PURCHASE_FN = 'verify-and-apply-purchase';
+export const SYNC_APP_STORE_SUBSCRIPTION_FN = 'sync-app-store-subscription';
 
 function asRecord(data: unknown): Record<string, unknown> | null {
   if (data && typeof data === 'object') return data as Record<string, unknown>;
@@ -48,18 +49,46 @@ function mapApplyPayload(row: Record<string, unknown> | null): EntitlementMutati
       startedAt: (row.started_at as string | null | undefined) ?? null,
       expiresAt: (row.expires_at as string | null | undefined) ?? null,
       message: typeof row.message === 'string' ? row.message : undefined,
+      durable: row.durable === true,
+      entitlementVersion: typeof row.entitlementVersion === 'number'
+        ? row.entitlementVersion
+        : typeof row.entitlement_version === 'number'
+          ? row.entitlement_version
+          : null,
+      personalPremiumActive: row.personalPremiumActive === true
+        || row.personal_premium_active === true,
     };
   }
-  if (row.ok === true || row.success === true || row.is_premium === true) {
+  if (row.ok === true || row.success === true) {
+    const personalPremiumActive = row.personalPremiumActive === true
+      || row.personal_premium_active === true
+      || row.is_premium === true;
     return {
       ok: true,
       success: true,
+      durable: row.durable === true || personalPremiumActive,
       status: String(row.status ?? 'active'),
       planCode: String(row.plan_code ?? row.productId ?? row.product_id ?? 'premium_subscription'),
       startedAt: (row.started_at as string | null | undefined) ?? null,
       expiresAt: (row.expires_at as string | null | undefined) ?? null,
       entitlementId: (row.entitlement_id as string | null | undefined) ?? null,
-      isPremium: true,
+      isPremium: personalPremiumActive,
+      personalPremiumActive,
+      productId: typeof row.productId === 'string'
+        ? row.productId
+        : typeof row.product_id === 'string'
+          ? row.product_id
+          : null,
+      transactionId: typeof row.transactionId === 'string'
+        ? row.transactionId
+        : typeof row.transaction_id === 'string'
+          ? row.transaction_id
+          : null,
+      entitlementVersion: typeof row.entitlementVersion === 'number'
+        ? row.entitlementVersion
+        : typeof row.entitlement_version === 'number'
+          ? row.entitlement_version
+          : null,
     };
   }
   return { ok: false, error: 'invalid' };
@@ -145,6 +174,29 @@ export async function applyVerifiedSubscription(input: {
       error: 'verification_service_unavailable',
       message: 'StoreKit verification could not be reached',
     };
+  }
+}
+
+/** Compensation path when StoreKit has a JWS the ledger lacks. */
+export async function syncAppStoreSubscription(input: {
+  signedTransaction?: string;
+  originalTransactionId?: string;
+} = {}): Promise<EntitlementMutationResult> {
+  await requireUserId();
+  const functionsApi = (supabase as { functions?: { invoke?: Function } }).functions;
+  if (typeof functionsApi?.invoke !== 'function') {
+    return { ok: false, error: 'verification_service_unavailable' };
+  }
+  try {
+    const { data } = await functionsApi.invoke(SYNC_APP_STORE_SUBSCRIPTION_FN, {
+      body: {
+        signed_transaction: input.signedTransaction,
+        original_transaction_id: input.originalTransactionId,
+      },
+    });
+    return mapApplyPayload(asRecord(data));
+  } catch {
+    return { ok: false, error: 'verification_service_unavailable' };
   }
 }
 

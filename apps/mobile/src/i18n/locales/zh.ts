@@ -841,6 +841,7 @@ export const zh = {
   'paywall.catalogUnavailable': '訂閱商品尚未配置或目前無法取得',
   'paywall.choosePlan': '選擇訂閱方案',
   'paywall.signInRequired': '請先登入 Hither 帳號',
+  'paywall.upgradeRequired': '請先把這個帳號升級為正式帳號，才能購買或恢復 Premium',
   'paywall.pending': '交易等待 App Store 完成，稍後會自動重試。',
   'paywall.price': '價格以 App Store 本地化標價為準',
   'paywall.cta': '訂閱 Premium',

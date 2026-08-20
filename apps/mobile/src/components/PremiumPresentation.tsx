@@ -88,6 +88,7 @@ export default React.memo(function PremiumPresentation({
   const { colors } = useTheme();
   const {
     user,
+    isAnonymous,
     membership,
     isPro,
     premiumProjection,
@@ -140,13 +141,18 @@ export default React.memo(function PremiumPresentation({
     }
     if (hasPremium) return t('paywall.active');
     if (!user) return t('paywall.signInRequired');
+    if (isAnonymous) return t('paywall.upgradeRequired');
     if (!PREMIUM_CATALOG.ready) return t('paywall.catalogUnavailable');
     return t('paywall.choosePlan');
-  }, [hasPremium, premiumProjection.expiresAt, user, t]);
+  }, [hasPremium, premiumProjection.expiresAt, user, isAnonymous, t]);
 
   const handlePurchase = useCallback(async () => {
     if (!user) {
       Alert.alert(t('paywall.title'), t('paywall.signInRequired'));
+      return;
+    }
+    if (isAnonymous) {
+      Alert.alert(t('paywall.title'), t('paywall.upgradeRequired'));
       return;
     }
     if (!catalogReady) {
@@ -157,6 +163,8 @@ export default React.memo(function PremiumPresentation({
     try {
       const result = await purchasePremiumSubscription(selectedPlan, {
         onNativePurchased: () => onUnlockingChange?.(true),
+        userId: user.id,
+        isAnonymous,
       });
       if (!result.ok) {
         onUnlockingChange?.(false);
@@ -193,6 +201,7 @@ export default React.memo(function PremiumPresentation({
     }
   }, [
     user,
+    isAnonymous,
     catalogReady,
     selectedPlan,
     groupId,
@@ -210,9 +219,16 @@ export default React.memo(function PremiumPresentation({
       Alert.alert(t('paywall.title'), t('paywall.signInRequired'));
       return;
     }
+    if (isAnonymous) {
+      Alert.alert(t('paywall.title'), t('paywall.upgradeRequired'));
+      return;
+    }
     setBusy('restore');
     try {
-      const restored = await restorePremiumSubscription(groupId);
+      const restored = await restorePremiumSubscription(groupId, {
+        userId: user.id,
+        isAnonymous,
+      });
       await refreshProfile();
       await refreshEntitlement(groupId);
       if (restored.projection.personalPremiumActive || restored.projection.teamPremiumActive) {
@@ -233,7 +249,7 @@ export default React.memo(function PremiumPresentation({
     } finally {
       setBusy(null);
     }
-  }, [user, groupId, t, refreshEntitlement, refreshProfile, onRestoreSuccess]);
+  }, [user, isAnonymous, groupId, t, refreshEntitlement, refreshProfile, onRestoreSuccess]);
 
   const redeemErrorMessage = useCallback((code: string): string => {
     switch (code) {

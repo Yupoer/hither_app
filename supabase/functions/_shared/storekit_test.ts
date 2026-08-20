@@ -154,3 +154,37 @@ Deno.test('server configuration fails closed without root pin or exact two produ
   }[name]));
   if (!configured) throw new Error('complete configuration was rejected');
 });
+
+Deno.test('deployed configuration accepts Production and Sandbox and rejects Xcode', () => {
+  const configured = storeKitConfigFromEnv((name) => ({
+    APPLE_BUNDLE_ID: 'app.hither.mobile',
+    APPLE_STORE_ENVIRONMENT: 'Production',
+    PREMIUM_PRODUCT_IDS: 'monthly,annual',
+    PREMIUM_SUBSCRIPTION_GROUP_ID: 'hither-premium',
+    APPLE_ROOT_CERT_SHA256: 'abc',
+  }[name]));
+  if (!configured) throw new Error('complete configuration was rejected');
+  const sandbox = validateStoreKitTransaction(
+    payload({ environment: 'Sandbox' }),
+    { ...configured, appAccountToken: config.appAccountToken },
+    1_800_000_010_000,
+    'hash',
+  );
+  if (!sandbox.ok) throw new Error(`Sandbox JWS rejected: ${sandbox.error}`);
+  const production = validateStoreKitTransaction(
+    payload({ environment: 'Production' }),
+    { ...configured, appAccountToken: config.appAccountToken },
+    1_800_000_010_000,
+    'hash',
+  );
+  if (!production.ok) throw new Error(`Production JWS rejected: ${production.error}`);
+  const xcode = validateStoreKitTransaction(
+    payload({ environment: 'Xcode' }),
+    { ...configured, appAccountToken: config.appAccountToken },
+    1_800_000_010_000,
+    'hash',
+  );
+  if (xcode.ok || xcode.error !== 'environment_mismatch') {
+    throw new Error('Xcode must be rejected on deployed functions');
+  }
+});
