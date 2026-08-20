@@ -31,8 +31,10 @@ import {
 import type { PremiumPlan } from '../premiumCatalog';
 import { premiumProductForPlan } from '../premiumCatalog';
 import {
-  writePremiumProjectionCache,
+  cacheBlobToProjection,
   emptyPersonalProjection,
+  readPremiumProjectionCache,
+  writePremiumProjectionCache,
 } from './premiumProjectionCache';
 
 export type PremiumPurchaseFlowResult =
@@ -294,7 +296,10 @@ export async function ensurePersonalPremiumAccess(options: {
   cachedLive: boolean;
 }): Promise<{ allowed: boolean; projection: PremiumProjection; reason?: string }> {
   if (!options.cacheStale && options.cachedLive) {
-    return { allowed: true, projection: emptyPersonalProjection() };
+    const cached = await readPremiumProjectionCache(options.userId);
+    if (cached?.isPremium) {
+      return { allowed: true, projection: cacheBlobToProjection(cached) };
+    }
   }
   const projection = await refreshPremiumProjection({
     groupId: options.groupId,

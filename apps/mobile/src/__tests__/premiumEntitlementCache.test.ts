@@ -146,6 +146,20 @@ describe('#223 cache / restore use cases', () => {
     expect(result.projection.teamPremiumActive).toBe(true);
   });
 
+  it('fresh live cache returns the cached projection instead of an empty one', async () => {
+    await writePremiumProjectionCache('user-1', LIVE);
+    const result = await ensurePersonalPremiumAccess({
+      userId: 'user-1',
+      cacheStale: false,
+      cachedLive: true,
+    });
+    expect(result.allowed).toBe(true);
+    expect(result.projection.personalPremiumActive).toBe(true);
+    expect(result.projection.entitlementVersion).toBe(3);
+    expect(result.projection.productId).toBe('premium.monthly');
+    expect(mockGetPremiumProjection).not.toHaveBeenCalled();
+  });
+
   it('UC3 stale cache with DB still live refreshes a new projection without StoreKit', async () => {
     mockGetPremiumProjection.mockResolvedValue(LIVE);
     const result = await ensurePersonalPremiumAccess({

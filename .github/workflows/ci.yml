@@ -122,6 +122,19 @@ jobs:
         # (upgrade-to-57 only). Stay on the last 20-check doctor until SDK 57.
         run: npx --yes expo-doctor@1.19.0
 
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Deno Edge fixture tests
+        working-directory: ${{ github.workspace }}
+        run: |
+          deno test --allow-env --allow-net --allow-read --allow-import \
+            supabase/functions/_shared/storekit_test.ts \
+            supabase/functions/verify-and-apply-purchase/index_test.ts \
+            supabase/functions/apple-server-notifications/index_test.ts \
+            supabase/functions/sync-app-store-subscription/index_test.ts
+
       - uses: supabase/setup-cli@v1
         with:
           version: 2.109.1

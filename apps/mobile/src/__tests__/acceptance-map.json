@@ -1203,8 +1203,8 @@
       "parent": 223,
       "child": 230,
       "acceptance": "A6 anonymous cleanup does not delete a user who still has a live personal grant",
-      "testFile": "premiumLedgerContract.test.ts",
-      "testNamePattern": "A6 anonymous cleanup does not delete"
+      "testFile": "supabase/tests/premium_anonymous_cleanup_skip.test.sql",
+      "testNamePattern": "A6 anonymous cleanup does not delete a user who still has a live personal grant"
     },
     {
       "parent": 223,
@@ -1371,8 +1371,8 @@
       "parent": 223,
       "child": 235,
       "acceptance": "A2 service_role and already-bound originalTransactionId fetches Apple status",
-      "testFile": "premiumLedgerContract.test.ts",
-      "testNamePattern": "A2 service_role and already-bound originalTransactionId"
+      "testFile": "supabase/functions/sync-app-store-subscription/index_test.ts",
+      "testNamePattern": "forged unsigned service_role JWT is rejected with 401"
     },
     {
       "parent": 223,

@@ -59,7 +59,6 @@ export type SyncHandlerDependencies = {
   createAdmin?: (url: string, key: string) => AdminClient;
   createUser?: (url: string, anonKey: string, authorization: string) => UserClient;
   fetchImpl?: AppleFetch;
-  decodeJwtRole?: (token: string) => string | null;
   connectJwt?: string;
 };
 
@@ -106,15 +105,70 @@ function requiredString(body: JsonRecord, ...names: string[]): string | null {
   return null;
 }
 
-function jwtRole(token: string): string | null {
+function timingSafeEqual(left: string, right: string): boolean {
+  if (left.length !== right.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < left.length; i += 1) {
+    mismatch |= left.charCodeAt(i) ^ right.charCodeAt(i);
+  }
+  return mismatch === 0;
+}
+
+function base64UrlToBytes(part: string): Uint8Array {
+  const padded = part.replace(/-/g, '+').replace(/_/g, '/');
+  const pad = padded.length % 4 === 0 ? '' : '='.repeat(4 - (padded.length % 4));
+  const binary = atob(padded + pad);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+async function verifiedHs256Role(token: string, secret: string): Promise<string | null> {
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  const [headerPart, payloadPart, signaturePart] = parts;
+  let header: { alg?: string };
   try {
-    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))) as {
+    header = JSON.parse(new TextDecoder().decode(base64UrlToBytes(headerPart))) as { alg?: string };
+  } catch {
+    return null;
+  }
+  if (header.alg !== 'HS256') return null;
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const expected = new Uint8Array(
+    await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${headerPart}.${payloadPart}`)),
+  );
+  const actual = base64UrlToBytes(signaturePart);
+  if (expected.length !== actual.length) return null;
+  let mismatch = 0;
+  for (let i = 0; i < expected.length; i += 1) mismatch |= expected[i] ^ actual[i];
+  if (mismatch !== 0) return null;
+  try {
+    const payload = JSON.parse(new TextDecoder().decode(base64UrlToBytes(payloadPart))) as {
       role?: string;
     };
     return typeof payload.role === 'string' ? payload.role : null;
   } catch {
     return null;
   }
+}
+
+async function isVerifiedServiceRole(
+  bearer: string,
+  env: (name: string) => string | undefined,
+): Promise<boolean> {
+  const serviceKey = env('SUPABASE_SERVICE_ROLE_KEY');
+  if (serviceKey && timingSafeEqual(bearer, serviceKey)) return true;
+  const jwtSecret = env('SUPABASE_JWT_SECRET') ?? env('JWT_SECRET');
+  if (!jwtSecret) return false;
+  const role = await verifiedHs256Role(bearer, jwtSecret);
+  return role === 'service_role';
 }
 
 function applyStatus(error: string): number {
@@ -195,7 +249,6 @@ export function createSyncHandler(
   const verifyJws = dependencies.verifyJws ?? verifyStoreKitJws;
   const createAdmin = dependencies.createAdmin ?? defaultAdminClient;
   const createUser = dependencies.createUser ?? defaultUserClient;
-  const decodeRole = dependencies.decodeJwtRole ?? jwtRole;
 
   return async function handler(req: Request): Promise<Response> {
     if (req.method === 'OPTIONS') return new Response(null, { status: 204 });
@@ -235,8 +288,7 @@ export function createSyncHandler(
     }
 
     const admin = createAdmin(supabaseUrl, adminKey(env));
-    const role = decodeRole(bearer);
-    const isService = role === 'service_role';
+    const isService = await isVerifiedServiceRole(bearer, env);
 
     if (isService) {
       const originalTransactionId = requiredString(body, 'originalTransactionId', 'original_transaction_id');

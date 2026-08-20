@@ -348,6 +348,45 @@ begin
     return json_build_object('ok', false, 'error', 'invalid');
   end if;
 
+  select * into v_row
+    from public.personal_premium_entitlements
+   where user_id = p_user_id
+   for update;
+
+  if v_row.user_id is not null
+     and v_row.source_signed_at is not null
+     and p_source_signed_at is not null
+     and v_row.source_signed_at >= p_source_signed_at then
+    return json_build_object(
+      'ok', true,
+      'duplicate', true,
+      'entitlement_id', v_row.id,
+      'user_id', v_row.user_id,
+      'status', v_row.status,
+      'product_id', v_row.product_id,
+      'expires_at', v_row.expires_at,
+      'source_version', v_row.source_version,
+      'entitlement_version', v_row.entitlement_version
+    );
+  end if;
+
+  if v_row.user_id is not null
+     and v_row.status in ('refunded', 'revoked')
+     and v_row.source_signed_at is not null
+     and (p_source_signed_at is null or v_row.source_signed_at >= p_source_signed_at) then
+    return json_build_object(
+      'ok', true,
+      'duplicate', true,
+      'entitlement_id', v_row.id,
+      'user_id', v_row.user_id,
+      'status', v_row.status,
+      'product_id', v_row.product_id,
+      'expires_at', v_row.expires_at,
+      'source_version', v_row.source_version,
+      'entitlement_version', v_row.entitlement_version
+    );
+  end if;
+
   insert into public.personal_premium_entitlements (
     user_id, status, product_id, source, source_version, expires_at,
     external_key, app_account_token, source_signed_at, granted_at, updated_at
@@ -429,6 +468,7 @@ declare
   v_original text := nullif(trim(p_original_transaction_id), '');
   v_bind public.premium_transaction_bindings%rowtype;
   v_grant_row public.personal_premium_entitlements%rowtype;
+  v_grant_duplicate boolean := false;
 begin
   if coalesce(current_setting('request.jwt.claim.role', true), '') <> 'service_role'
      and current_user not in ('service_role', 'postgres') then
@@ -594,13 +634,20 @@ begin
       v_row.app_account_token,
       v_row.signed_at
     );
-    update public.personal_premium_entitlements
-       set original_transaction_id = coalesce(v_original, original_transaction_id),
-           latest_transaction_id = v_row.transaction_id,
-           environment = p_environment,
-           updated_at = now()
-     where user_id = p_user_id
-     returning * into v_grant_row;
+    v_grant_duplicate := coalesce((v_grant->>'duplicate')::boolean, false);
+    if not v_grant_duplicate then
+      update public.personal_premium_entitlements
+         set original_transaction_id = coalesce(v_original, original_transaction_id),
+             latest_transaction_id = v_row.transaction_id,
+             environment = p_environment,
+             updated_at = now()
+       where user_id = p_user_id
+       returning * into v_grant_row;
+    else
+      select * into v_grant_row
+        from public.personal_premium_entitlements
+       where user_id = p_user_id;
+    end if;
   else
     select * into v_grant_row
       from public.personal_premium_entitlements
@@ -608,8 +655,10 @@ begin
   end if;
 
   return json_build_object(
-    'ok', true, 'duplicate', false, 'durable', true,
-    'status', v_row.status,
+    'ok', true,
+    'duplicate', v_grant_duplicate,
+    'durable', true,
+    'status', coalesce(v_grant_row.status, v_row.status),
     'transactionId', v_row.transaction_id,
     'entitlement', v_grant,
     'entitlementVersion', coalesce(v_grant_row.entitlement_version, 1),

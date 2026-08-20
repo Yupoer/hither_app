@@ -251,9 +251,12 @@ function checkL1() {
     }
     if (!ent.testFile) continue;
 
-    const testPath = path.join(testsRoot, ent.testFile);
-    if (!fs.existsSync(testPath)) {
-      // also allow path relative to src/__tests__ with subdirs already in testFile
+    const testPath = [
+      path.join(testsRoot, ent.testFile),
+      path.join(repoRoot, ent.testFile),
+      path.join(appRoot, ent.testFile),
+    ].find((candidate) => fs.existsSync(candidate));
+    if (!testPath) {
       findings.push({
         level: 'L1',
         file: 'src/__tests__/acceptance-map.json',

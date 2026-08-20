@@ -3,7 +3,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, auth;
-select plan(26);
+select plan(29);
 
 insert into auth.users (id, email) values
   ('33333333-3333-4333-8333-333333333333', 'storekit-ledger@example.test');
@@ -261,6 +261,44 @@ select is(
   )->>'error'),
   'transaction_binding_mismatch',
   'A3 tombstoned original id cannot bind to a new user'
+);
+
+insert into auth.users (id, email) values
+  ('55555555-5555-4555-8555-555555555555', 'storekit-order-grant@example.test');
+insert into public.premium_app_account_tokens (user_id, app_account_token) values (
+  '55555555-5555-4555-8555-555555555555',
+  '55555555-5555-4555-8555-555555555556'
+);
+
+select is(
+  (public.apply_storekit_transaction(
+    '55555555-5555-4555-8555-555555555555', 'tx-grant-refund', 'orig-grant-order',
+    'premium.monthly', 'hither-premium', 'Sandbox', 'PURCHASED',
+    '55555555-5555-4555-8555-555555555556', 'refunded',
+    now() - interval '10 minutes', now() + interval '30 days', now(),
+    now() - interval '1 minute', 'jws-hash-grant-refund', 'asn-v2:REFUND'
+  )->>'status'),
+  'refunded',
+  'A5 refund on tx-grant-refund closes the grant'
+);
+
+select is(
+  (public.apply_storekit_transaction(
+    '55555555-5555-4555-8555-555555555555', 'tx-grant-old-renew', 'orig-grant-order',
+    'premium.monthly', 'hither-premium', 'Sandbox', 'PURCHASED',
+    '55555555-5555-4555-8555-555555555556', 'active',
+    now() - interval '1 hour', now() + interval '30 days', null,
+    now() - interval '5 minutes', 'jws-hash-grant-old-renew', 'asn-v2:DID_RENEW'
+  )->>'status'),
+  'refunded',
+  'A5 older signed_at on a different transaction_id does not overwrite a newer refunded grant'
+);
+
+select is(
+  (select status from public.personal_premium_entitlements
+    where user_id = '55555555-5555-4555-8555-555555555555'),
+  'refunded',
+  'A5 grant stays refunded when an older DID_RENEW arrives on a new transaction id'
 );
 
 select * from finish();

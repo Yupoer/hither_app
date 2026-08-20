@@ -94,7 +94,8 @@ describe('#230 ledger contract', () => {
 
   it('A6 anonymous cleanup does not delete a user who still has a live personal grant', () => {
     expect(migration).toContain('personal_premium_is_live(e.status, e.expires_at)');
-    expect(cleanupTest).toContain('A6 cleanup excludes live personal Premium from anonymous expiry');
+    expect(cleanupTest).toContain('A6 anonymous cleanup does not delete a user who still has a live personal grant');
+    expect(cleanupTest).toContain('cleanup_expired_anonymous_accounts()');
   });
 
   it('A7 Sandbox and Production original ids are isolated', () => {
@@ -171,7 +172,9 @@ describe('#235 App Store Server API contract', () => {
 
   it('A2 service_role and already-bound originalTransactionId fetches Apple status', () => {
     expect(syncFn).toContain("role === 'service_role'");
+    expect(syncFn).toContain('isVerifiedServiceRole');
     expect(syncFn).toContain('fetchSubscriptionStatuses');
+    expect(syncFn).not.toContain('decodeJwtRole');
   });
 
   it('A3 user JWT cannot sync an originalTransactionId bound to a different user', () => {

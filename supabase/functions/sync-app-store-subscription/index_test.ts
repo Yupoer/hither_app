@@ -34,13 +34,25 @@ const transactionPayload = {
   signedDate: 1_800_000_001_000,
 };
 
-function request(body: Record<string, unknown>, role: 'authenticated' | 'service_role' = 'authenticated'): Request {
-  const payload = btoa(JSON.stringify({ role, sub: USER_ID }));
+function request(
+  body: Record<string, unknown>,
+  kind: 'authenticated' | 'service_role' | 'forged_service' = 'authenticated',
+): Request {
+  let authorization: string;
+  if (kind === 'service_role') {
+    authorization = `Bearer ${envValues.SUPABASE_SERVICE_ROLE_KEY}`;
+  } else if (kind === 'forged_service') {
+    const payload = btoa(JSON.stringify({ role: 'service_role', sub: USER_ID }));
+    authorization = `Bearer header.${payload}.sig`;
+  } else {
+    const payload = btoa(JSON.stringify({ role: 'authenticated', sub: USER_ID }));
+    authorization = `Bearer header.${payload}.sig`;
+  }
   return new Request('https://example.test/sync-app-store-subscription', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer header.${payload}.sig`,
+      Authorization: authorization,
     },
     body: JSON.stringify(body),
   });
@@ -65,7 +77,6 @@ Deno.test('user JWT + missing ledger JWS applies durably without ASN V2', async 
     const handler = createSyncHandler({
       env: (name) => envValues[name],
       now: () => 1_800_000_010_000,
-      decodeJwtRole: () => 'authenticated',
       verifyJws: () => Promise.resolve({
         ok: true as const,
         header: { alg: 'ES256' },
@@ -119,7 +130,6 @@ Deno.test('service_role bound originalTransactionId apply is idempotent', async 
   const handler = createSyncHandler({
     env: (name) => envValues[name],
     now: () => 1_800_000_010_000,
-    decodeJwtRole: () => 'service_role',
     verifyJws: () => Promise.resolve({
       ok: true as const,
       header: { alg: 'ES256' },
@@ -186,7 +196,6 @@ Deno.test('user JWT cannot sync another user originalTransactionId', async () =>
   const handler = createSyncHandler({
     env: (name) => envValues[name],
     now: () => 1_800_000_010_000,
-    decodeJwtRole: () => 'authenticated',
     createUser: () => ({
       auth: {
         getUser: async () => ({ data: { user: { id: USER_ID, is_anonymous: false } }, error: null }),
@@ -222,7 +231,6 @@ Deno.test('missing Connect API secrets fail closed without logging P8', async ()
     const handler = createSyncHandler({
       env: (name) => (name === 'APPLE_PRIVATE_KEY' || name === 'APPLE_P8' ? undefined : envValues[name]),
       now: () => 1_800_000_010_000,
-      decodeJwtRole: () => 'service_role',
       createAdmin: () => ({
         rpc: async () => ({ data: { ok: true }, error: null }),
         from: () => ({
@@ -257,7 +265,6 @@ Deno.test('unbound service_role originalTransactionId stays 503 for later retry'
   const handler = createSyncHandler({
     env: (name) => envValues[name],
     now: () => 1_800_000_010_000,
-    decodeJwtRole: () => 'service_role',
     createAdmin: () => ({
       rpc: async () => ({ data: { ok: true }, error: null }),
       from: () => ({
@@ -278,5 +285,60 @@ Deno.test('unbound service_role originalTransactionId stays 503 for later retry'
   const result = await read(response);
   if (response.status !== 503 || result.error !== 'account_not_bound') {
     throw new Error(`expected unbound 503, got ${response.status} ${result.error}`);
+  }
+});
+
+Deno.test('forged unsigned service_role JWT is rejected with 401', async () => {
+  let appleCalls = 0;
+  let applyCalls = 0;
+  const handler = createSyncHandler({
+    env: (name) => envValues[name],
+    now: () => 1_800_000_010_000,
+    fetchImpl: async () => {
+      appleCalls += 1;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ data: [] }),
+      };
+    },
+    createUser: () => ({
+      auth: {
+        getUser: async () => ({ data: { user: null }, error: new Error('invalid jwt') }),
+      },
+    }),
+    createAdmin: () => ({
+      rpc: async (name: string) => {
+        if (name === 'apply_storekit_transaction') applyCalls += 1;
+        return { data: { ok: true, durable: true }, error: null };
+      },
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: { user_id: USER_ID, app_account_token: ACCOUNT_TOKEN, environment: 'Sandbox' },
+                error: null,
+              }),
+            }),
+            maybeSingle: async () => ({
+              data: { user_id: USER_ID, app_account_token: ACCOUNT_TOKEN, environment: 'Sandbox' },
+              error: null,
+            }),
+          }),
+        }),
+      }),
+    }),
+  });
+  const response = await handler(request(
+    { originalTransactionId: ORIGINAL, environment: 'Sandbox' },
+    'forged_service',
+  ));
+  const result = await read(response);
+  if (response.status !== 401 || result.error !== 'not_authenticated') {
+    throw new Error(`expected 401 for forged service_role JWT, got ${response.status} ${result.error}`);
+  }
+  if (appleCalls !== 0 || applyCalls !== 0) {
+    throw new Error('forged JWT must not call App Store Server API or apply_storekit_transaction');
   }
 });
