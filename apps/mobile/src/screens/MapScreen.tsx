@@ -335,6 +335,7 @@ import {
 } from './MapScreen/memberStatusSharing';
 import { NativeMenuHost } from '../native/menu';
 import {
+  applyPresenceMacroWrites,
   derivePresenceMacro,
   presenceMacroWrites,
   type PresenceMacroKind,
@@ -4890,39 +4891,33 @@ export default function MapScreen({ route, navigation }: Props) {
     async (next: PresenceMacroKind): Promise<boolean> => {
       if (statusApplying) return false;
       lightTap();
-      const writes = presenceMacroWrites(next, {
+      const current = {
         solo: mySoloActive,
         locationSharing: sharingEnabled,
         notifications: notifPrefs,
-      });
+      };
+      const writes = presenceMacroWrites(next, current);
       setStatusApplying(true);
       try {
-        if (writes.solo !== undefined) {
-          if (!(await toggleSolo(writes.solo))) return false;
-        }
-        if (writes.notifications) {
-          const merged = { ...notifPrefs, ...writes.notifications };
-          setNotifPrefs(merged);
-          try {
-            await setNotificationPreferences(merged);
-          } catch {
-            setNotifPrefs(notifPrefs);
-            return false;
-          }
-        }
-        if (writes.locationSharing === false) {
-          const ok = await new Promise<boolean>((resolve) => {
-            const copy = locationSharingConfirmCopy(false);
-            confirmAction({
-              title: t(copy.titleKey),
-              message: t(copy.bodyKey),
-              destructive: copy.destructive,
-            }, () => {
-              void handleSharingEnabledChange(false).then((result) => resolve(result !== false));
-            }, () => resolve(true));
-          });
-          if (!ok) return false;
-        }
+        const ok = await applyPresenceMacroWrites(writes, current, {
+          setSolo: toggleSolo,
+          applyNotifications: async (nextPrefs) => {
+            setNotifPrefs(nextPrefs);
+            await setNotificationPreferences(nextPrefs);
+          },
+          disableLocationSharing: () =>
+            new Promise<boolean>((resolve) => {
+              const copy = locationSharingConfirmCopy(false);
+              confirmAction({
+                title: t(copy.titleKey),
+                message: t(copy.bodyKey),
+                destructive: copy.destructive,
+              }, () => {
+                void handleSharingEnabledChange(false).then((result) => resolve(result !== false));
+              }, () => resolve(false));
+            }),
+        });
+        if (!ok) return false;
         setAppliedMacro(next);
         return true;
       } catch {
@@ -4946,7 +4941,7 @@ export default function MapScreen({ route, navigation }: Props) {
     lightTap();
     Alert.alert(
       t('solo.statusTitle'),
-      undefined,
+      statusMenuItems.map((item) => `${item.title}\n${item.subtitle}`).join('\n\n'),
       [
         ...statusMenuItems.map((item) => ({
           text: item.selected ? `${item.title} ✓` : item.title,
@@ -7558,6 +7553,10 @@ export default function MapScreen({ route, navigation }: Props) {
         styles={styles}
       />
 
+      <View
+        pointerEvents="box-none"
+        style={[StyleSheet.absoluteFill, styles.settingsChildLayer]}
+      >
       <DiagnosticsOverlay
         visible={overlay === 'diagnostics'}
         onClose={closeOverlay}
@@ -7580,6 +7579,7 @@ export default function MapScreen({ route, navigation }: Props) {
         destinations={destinations}
         activeDestinationId={navTargetId ?? selectedDestination?.id ?? null}
       />
+      </View>
 
       {/* 邀請成員 — independent share sheet (code / share / copy). */}
       <OverlaySheet
@@ -7812,6 +7812,10 @@ export default function MapScreen({ route, navigation }: Props) {
         </ScrollView>
       </OverlaySheet>
 
+      <View
+        pointerEvents="box-none"
+        style={[StyleSheet.absoluteFill, styles.settingsChildLayer]}
+      >
       <AccountSheet
         visible={overlay === 'account'}
         onClose={() => setOverlay(null)}
@@ -7820,6 +7824,7 @@ export default function MapScreen({ route, navigation }: Props) {
           navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
         }}
       />
+      </View>
 
       <ProfileOverlay
         visible={overlay === 'profile'}
@@ -8028,11 +8033,16 @@ export default function MapScreen({ route, navigation }: Props) {
       </OverlaySheet>
 
       {/* Report-a-problem stacks over settings; dismissing it reveals settings. */}
+      <View
+        pointerEvents="box-none"
+        style={[StyleSheet.absoluteFill, styles.settingsChildLayer]}
+      >
       <FeedbackSheet
         visible={overlay === 'feedback'}
         onClose={() => setOverlay(null)}
         screenshotUri={feedbackShot}
       />
+      </View>
 
       <CustomQuickCommandSheet
         visible={overlay === 'custom'}
@@ -8095,6 +8105,10 @@ export default function MapScreen({ route, navigation }: Props) {
         onPick={handleSearchPick}
       />
 
+      <View
+        pointerEvents="box-none"
+        style={[StyleSheet.absoluteFill, styles.settingsChildLayer]}
+      >
       <PaywallSheet
         visible={paywallVisible}
         onClose={() => setPaywallVisible(false)}
@@ -8102,6 +8116,7 @@ export default function MapScreen({ route, navigation }: Props) {
         showRestore={paywallShowRestore}
         onUnlockingChange={setPurchaseUnlocking}
       />
+      </View>
       {purchaseUnlocking ? (
         <View
           style={[styles.loading, StyleSheet.absoluteFill, { zIndex: 200 }]}
@@ -9018,6 +9033,11 @@ const makeStyles = (
     // Parent of BottomSheet — zIndex on this sibling beats carousel 58.
     sheetLayer: {
       zIndex: 70,
+    },
+    // Settings root is 80. Child OverlaySheets have no wrapper z-index of
+    // their own, so this sibling stacking context must beat settings.
+    settingsChildLayer: {
+      zIndex: 90,
     },
     // Gathering-point card shell — radius + overflow only.
     // Padding lives on cardInner so celebrate dim can absolute-fill the full

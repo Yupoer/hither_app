@@ -1,5 +1,6 @@
 import { DEFAULT_NOTIFICATION_PREFERENCES } from '../types';
 import {
+  applyPresenceMacroWrites,
   derivePresenceMacro,
   presenceMacroWrites,
 } from '../utils/presenceMacros';
@@ -99,5 +100,92 @@ describe('presence macros', () => {
       locationSharing: true,
       notifications: allOn,
     })).toBe('follow');
+  });
+
+  it('rolls back notification writes when stealth location confirm is cancelled', async () => {
+    const applied: Array<typeof allOn> = [];
+    const setSolo = jest.fn(async () => true);
+    const applyNotifications = jest.fn(async (next: typeof allOn) => {
+      applied.push({ ...next });
+    });
+    const disableLocationSharing = jest.fn(async () => false);
+    const current = { solo: false, locationSharing: true, notifications: allOn };
+    const ok = await applyPresenceMacroWrites(
+      presenceMacroWrites('stealth', current),
+      current,
+      { setSolo, applyNotifications, disableLocationSharing },
+    );
+    expect(ok).toBe(false);
+    expect(disableLocationSharing).toHaveBeenCalledTimes(1);
+    expect(applied).toEqual([allOff, allOn]);
+    expect(setSolo).not.toHaveBeenCalled();
+  });
+
+  it('rolls back notification writes when stealth location sync fails', async () => {
+    const applyNotifications = jest.fn(async () => undefined);
+    const setSolo = jest.fn(async () => true);
+    const disableLocationSharing = jest.fn(async () => false);
+    const current = { solo: true, locationSharing: true, notifications: allOn };
+    const ok = await applyPresenceMacroWrites(
+      presenceMacroWrites('stealth', current),
+      current,
+      { setSolo, applyNotifications, disableLocationSharing },
+    );
+    expect(ok).toBe(false);
+    expect(applyNotifications).toHaveBeenNthCalledWith(1, allOff);
+    expect(applyNotifications).toHaveBeenNthCalledWith(2, allOn);
+    expect(setSolo).not.toHaveBeenCalled();
+  });
+
+  it('rolls back solo and notifications when stealth location confirm is cancelled after a prior solo write', async () => {
+    const setSolo = jest.fn(async () => true);
+    const applyNotifications = jest.fn(async () => undefined);
+    const disableLocationSharing = jest.fn(async () => false);
+    const current = { solo: false, locationSharing: true, notifications: allOn };
+    const ok = await applyPresenceMacroWrites(
+      { solo: true, locationSharing: false, notifications: allOff },
+      current,
+      { setSolo, applyNotifications, disableLocationSharing },
+    );
+    expect(ok).toBe(false);
+    expect(setSolo).toHaveBeenNthCalledWith(1, true);
+    expect(setSolo).toHaveBeenNthCalledWith(2, false);
+    expect(applyNotifications).toHaveBeenNthCalledWith(1, allOff);
+    expect(applyNotifications).toHaveBeenNthCalledWith(2, allOn);
+  });
+
+  it('does not commit stealth when notification apply fails', async () => {
+    const setSolo = jest.fn(async () => true);
+    const applyNotifications = jest.fn(async () => {
+      throw new Error('notif sync failed');
+    });
+    const disableLocationSharing = jest.fn(async () => true);
+    const current = { solo: false, locationSharing: true, notifications: allOn };
+    const ok = await applyPresenceMacroWrites(
+      presenceMacroWrites('stealth', current),
+      current,
+      { setSolo, applyNotifications, disableLocationSharing },
+    );
+    expect(ok).toBe(false);
+    expect(disableLocationSharing).not.toHaveBeenCalled();
+    expect(applyNotifications).toHaveBeenNthCalledWith(1, allOff);
+    expect(applyNotifications).toHaveBeenNthCalledWith(2, allOn);
+  });
+
+  it('commits stealth after location sharing is disabled', async () => {
+    const applyNotifications = jest.fn(async () => undefined);
+    const setSolo = jest.fn(async () => true);
+    const disableLocationSharing = jest.fn(async () => true);
+    const current = { solo: false, locationSharing: true, notifications: allOn };
+    const ok = await applyPresenceMacroWrites(
+      presenceMacroWrites('stealth', current),
+      current,
+      { setSolo, applyNotifications, disableLocationSharing },
+    );
+    expect(ok).toBe(true);
+    expect(applyNotifications).toHaveBeenCalledTimes(1);
+    expect(applyNotifications).toHaveBeenCalledWith(allOff);
+    expect(disableLocationSharing).toHaveBeenCalledTimes(1);
+    expect(setSolo).not.toHaveBeenCalled();
   });
 });

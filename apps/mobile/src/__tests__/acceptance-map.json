@@ -980,7 +980,14 @@
       "child": 226,
       "acceptance": "A8. Android 為 ActionSheet／Alert 等價，不要求 UIMenu",
       "testFile": "mapStatusSettingsPaywall.test.ts",
-      "testNamePattern": "serializes menu subtitle and selected for iOS UIAction checkmarks"
+      "testNamePattern": "lists Android status titles with subtitle descriptions"
+    },
+    {
+      "parent": 220,
+      "child": 226,
+      "acceptance": "A9. 隱身 confirm-cancel／sync-fail 不 commit 巨集，並 rollback 已寫入的通知／solo",
+      "testFile": "presenceMacros.test.ts",
+      "testNamePattern": "rolls back notification writes when stealth location confirm is cancelled"
     },
     {
       "parent": 220,
@@ -1071,7 +1078,7 @@
       "child": 229,
       "acceptance": "A3. 子頁從下蓋在設定上；關子頁後設定仍在且不閃爍重載",
       "testFile": "mapStatusSettingsPaywall.test.ts",
-      "testNamePattern": "keeps settings mounted under child overlays"
+      "testNamePattern": "stacks settings above sheetLayer and sibling child hosts above settings"
     },
     {
       "parent": 220,

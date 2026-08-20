@@ -70,6 +70,49 @@ describe('#220 map / status / settings / paywall contracts', () => {
     expect(settings.indexOf('<NativeSwitch')).toBeGreaterThan(settings.indexOf("setPage('mapJourney')"));
   });
 
+  it('stacks settings above sheetLayer and sibling child hosts above settings', () => {
+    const sheet = /sheetLayer:\s*\{[\s\S]*?zIndex:\s*(\d+)/.exec(mapScreen);
+    const settingsRoot = /page:\s*\{[\s\S]*?zIndex:\s*(\d+)/.exec(settings);
+    const child = /settingsChildLayer:\s*\{[\s\S]*?zIndex:\s*(\d+)/.exec(mapScreen);
+    expect(sheet?.[1]).toBeTruthy();
+    expect(settingsRoot?.[1]).toBeTruthy();
+    expect(child?.[1]).toBeTruthy();
+    const sheetZ = Number(sheet?.[1]);
+    const settingsZ = Number(settingsRoot?.[1]);
+    const childZ = Number(child?.[1]);
+    expect(settingsZ).toBeGreaterThan(sheetZ);
+    expect(childZ).toBeGreaterThan(settingsZ);
+    expect(mapScreen).toContain('styles.settingsChildLayer');
+    for (const host of ['<AccountSheet', '<PaywallSheet', '<FeedbackSheet', '<DiagnosticsOverlay'] as const) {
+      const idx = mapScreen.indexOf(host);
+      expect(idx).toBeGreaterThan(0);
+      const wrapIdx = mapScreen.lastIndexOf('styles.settingsChildLayer', idx);
+      expect(wrapIdx).toBeGreaterThan(0);
+      expect(idx - wrapIdx).toBeLessThan(280);
+    }
+  });
+
+  it('fails stealth when location confirm cancels and rolls back prior writes', () => {
+    expect(mapScreen).toContain('applyPresenceMacroWrites');
+    expect(mapScreen).toContain('() => resolve(false)');
+    const applyStart = mapScreen.indexOf('const applyPresenceMacroKind');
+    const applyEnd = mapScreen.indexOf('const openAndroidStatusSheet', applyStart);
+    const applyBlock = mapScreen.slice(applyStart, applyEnd);
+    expect(applyBlock).toContain('setAppliedMacro(next)');
+    expect(applyBlock).toContain('if (!ok) return false');
+    expect(applyBlock).not.toContain('() => resolve(true)');
+  });
+
+  it('lists Android status titles with subtitle descriptions in the Alert message', () => {
+    const start = mapScreen.indexOf('const openAndroidStatusSheet');
+    const end = mapScreen.indexOf('const openSettingsFromSheet', start);
+    const block = mapScreen.slice(start, end);
+    expect(block).toContain('Alert.alert');
+    expect(block).toContain('item.subtitle');
+    expect(block).toContain('item.title');
+    expect(block).not.toContain('undefined');
+  });
+
   it('opens a full-screen paywall pager from Store and waits for projection before unlock', () => {
     expect(storePane).toContain('onOpenSubscribe');
     expect(storePane).not.toContain('<PremiumPresentation');

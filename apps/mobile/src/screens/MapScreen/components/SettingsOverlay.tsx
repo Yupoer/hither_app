@@ -699,7 +699,9 @@ const settingsSlideStyles = StyleSheet.create({
   page: {
     ...StyleSheet.absoluteFill,
     backgroundColor: '#0E1320',
-    zIndex: 40,
+    // Above MapScreen sheetLayer (70). Sibling account/paywall/feedback/
+    // diagnostics hosts use settingsChildLayer (90) so they overlay this page.
+    zIndex: 80,
   },
   header: {
     flexDirection: 'row',

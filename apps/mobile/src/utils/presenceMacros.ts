@@ -84,3 +84,68 @@ export function presenceMacroWrites(
   }
   return writes;
 }
+
+export type PresenceMacroIo = {
+  setSolo: (next: boolean) => Promise<boolean>;
+  applyNotifications: (next: NotificationPreferences) => Promise<void>;
+  disableLocationSharing: () => Promise<boolean>;
+};
+
+/**
+ * Apply macro writes in order (solo → notifications → location). Cancel or
+ * failure after an earlier write rolls those writes back and returns false so
+ * the caller does not commit the collapsed status label.
+ */
+export async function applyPresenceMacroWrites(
+  writes: PresenceMacroWrites,
+  current: PresenceMacroState,
+  io: PresenceMacroIo,
+): Promise<boolean> {
+  const previousSolo = current.solo;
+  const previousNotifs = current.notifications;
+  let soloChanged = false;
+  let notifsChanged = false;
+
+  const rollback = async () => {
+    if (notifsChanged) {
+      try {
+        await io.applyNotifications(previousNotifs);
+      } catch {
+        // Still fail the macro if restore throws.
+      }
+    }
+    if (soloChanged) {
+      try {
+        await io.setSolo(previousSolo);
+      } catch {
+        // Still fail the macro if restore throws.
+      }
+    }
+  };
+
+  try {
+    if (writes.solo !== undefined) {
+      if (!(await io.setSolo(writes.solo))) return false;
+      soloChanged = true;
+    }
+    if (writes.notifications) {
+      const merged: NotificationPreferences = {
+        ...current.notifications,
+        ...writes.notifications,
+      };
+      notifsChanged = true;
+      await io.applyNotifications(merged);
+    }
+    if (writes.locationSharing === false) {
+      const ok = await io.disableLocationSharing();
+      if (!ok) {
+        await rollback();
+        return false;
+      }
+    }
+    return true;
+  } catch {
+    await rollback();
+    return false;
+  }
+}
