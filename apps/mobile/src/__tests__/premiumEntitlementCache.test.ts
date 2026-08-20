@@ -42,6 +42,9 @@ jest.mock('../api/client', () => ({
   getPremiumProjection: (...args: unknown[]) => mockGetPremiumProjection(...args),
   applyVerifiedSubscription: (...args: unknown[]) => mockApplyVerifiedSubscription(...args),
   getPremiumAppAccountToken: jest.fn(),
+}));
+
+jest.mock('../api/services/EntitlementService', () => ({
   syncAppStoreSubscription: (...args: unknown[]) => mockSyncAppStoreSubscription(...args),
 }));
 

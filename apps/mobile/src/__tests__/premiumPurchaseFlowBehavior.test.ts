@@ -39,6 +39,9 @@ jest.mock('../api/client', () => ({
   applyVerifiedSubscription: (...args: unknown[]) => mockApplyVerifiedSubscription(...args),
   getPremiumAppAccountToken: (...args: unknown[]) => mockGetPremiumAppAccountToken(...args),
   getPremiumProjection: (...args: unknown[]) => mockGetPremiumProjection(...args),
+}));
+
+jest.mock('../api/services/EntitlementService', () => ({
   syncAppStoreSubscription: jest.fn().mockResolvedValue({ ok: false, error: 'subscription_required' }),
 }));
 
