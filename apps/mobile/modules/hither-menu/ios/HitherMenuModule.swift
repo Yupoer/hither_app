@@ -32,9 +32,17 @@ final class HitherMenuView: ExpoView {
   private func rebuildMenu() {
     let actions = items.compactMap { item -> UIAction? in
       guard let id = item["id"], let title = item["title"] else { return nil }
-      return UIAction(title: title, identifier: UIAction.Identifier(id)) { [weak self] _ in
+      let subtitle = item["subtitle"]
+      let selected = item["selected"] == "true"
+      let action = UIAction(
+        title: title,
+        subtitle: subtitle,
+        identifier: UIAction.Identifier(id),
+        state: selected ? .on : .off
+      ) { [weak self] _ in
         self?.onSelect(["id": id])
       }
+      return action
     }
     button.menu = UIMenu(title: "", options: [], children: actions)
   }

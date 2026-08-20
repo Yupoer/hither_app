@@ -90,7 +90,7 @@ describe('#156 store-flow product-load / purchase-entry / restore seams', () => 
     expect(premiumPresentation).toContain('loadPremiumStoreProducts');
     // Presentation must not open a second native product lifecycle.
     expect(premiumPresentation).not.toContain('fetchPremiumProducts');
-    expect(storePane).toContain('PremiumPresentation');
+    expect(storePane).toContain('onOpenSubscribe');
     expect(paywall).toContain('PremiumPresentation');
   });
 
@@ -113,7 +113,7 @@ describe('#156 store-flow product-load / purchase-entry / restore seams', () => 
     expect(paywall).toContain('showRestore');
     expect(paywall).not.toContain('showRestore={false}');
     expect(paywall).toContain('onRestoreSuccess');
-    expect(storePane).toContain('showRestore={false}');
+    expect(mapScreen).toContain('showRestore: false');
     expect(storePane).not.toContain('restorePremiumSubscription');
     expect(premiumPresentation).toContain('restorePremiumSubscription');
     expect(adapter).toContain('export async function restorePremiumPurchases');

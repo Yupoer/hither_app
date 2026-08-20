@@ -99,13 +99,13 @@ describe('language picker placement contract', () => {
 
   it('keeps Settings language as a NavRow that pushes a right-slide child', () => {
     expect(settings).toContain("t('settings.language')");
-    expect(settings).toContain('setPage(\'language\')');
-    expect(settings).toContain('setPage(\'theme\')');
+    expect(settings).toContain("setPage('language')");
+    expect(settings).toContain("setPage('theme')");
     expect(settings).toContain('chevron-back');
     expect(settings).toContain('settings-slide-page');
     expect(settings).not.toContain('<Segmented');
     expect(settings).not.toContain('LanguagePicker');
-    expect(settings).not.toContain('<OverlaySheet');
+    expect(settings).toContain('<OverlaySheet');
     expect(settings).toContain('setLanguage');
   });
 

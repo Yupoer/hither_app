@@ -558,7 +558,8 @@ describe('map UI placement contracts', () => {
   });
 
   it('returns from account details to settings and keeps the reorder sheet under KML', () => {
-    expect(mapScreen).toContain("onClose={() => setOverlay('settings')}");
+    expect(mapScreen).toContain('visible={settingsOpen}');
+    expect(mapScreen).toContain("onClose={() => setOverlay(null)}");
     expect(mapScreen).toContain("setKmlVisible(true)");
     expect(settingsOverlay).not.toContain("t('account.section')");
     // Feedback lives under 支援 as a nav row (not a standalone report button).
@@ -576,7 +577,7 @@ describe('map UI placement contracts', () => {
     const openEnd = mapScreen.indexOf('useEffect(() => {\n    void refreshSentInvites', openStart);
     const openBlock = mapScreen.slice(openStart, openEnd > 0 ? openEnd : openStart + 600);
     expect(openBlock).toContain("'map.open_settings'");
-    expect(openBlock).toContain("setOverlay('settings')");
+    expect(openBlock).toContain('setSettingsOpen(true)');
     expect(openBlock).not.toContain('ActionSheetIOS');
     expect(openBlock).not.toContain('Alert.alert');
     expect(mapScreen).not.toContain('const openGroupMenu');
@@ -693,8 +694,9 @@ describe('map UI placement contracts', () => {
 
   it('returns the report sheet to settings after cancel or submit', () => {
     expect(mapScreen).toMatch(
-      /<FeedbackSheet[\s\S]*?onClose=\{\(\) => setOverlay\('settings'\)\}/,
+      /<FeedbackSheet[\s\S]*?onClose=\{\(\) => setOverlay\(null\)\}/,
     );
+    expect(mapScreen).toContain('visible={settingsOpen}');
   });
 
   it('sends the custom command message while keeping the label UI-only', () => {

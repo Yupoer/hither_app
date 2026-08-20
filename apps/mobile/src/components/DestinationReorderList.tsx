@@ -50,11 +50,12 @@ import {
 } from '../utils/destinationEmojiColor';
 import { getColorForDay, STAY_MARKER_EMOJI } from '../utils/destinationMarkerChrome';
 
+const REORDER_VISUAL_SCALE = 1.3;
 const ROW_HEIGHT = DEFAULT_REORDER_LAYOUT.rowHeight;
 const REORDER_LAYOUT = DEFAULT_REORDER_LAYOUT;
-const REVEAL_WIDTH = 76;
+const REVEAL_WIDTH = Math.round(76 * REORDER_VISUAL_SCALE);
 /** Fixed right-column width so day ≡ and stop ≡ share one vertical line. */
-const HANDLE_SLOT = 28;
+const HANDLE_SLOT = Math.round(28 * REORDER_VISUAL_SCALE);
 /** Low-sat terracotta for stay emoji badge (works on dark glass; not Day1 #E5575C). */
 const STAY_BADGE_BG = '#8B6F6A';
 /** Auto-scroll parent when finger is within this distance of screen edges. */
@@ -683,7 +684,7 @@ export default function DestinationReorderList({
             setEditDate(departureDate ? new Date(departureDate) : new Date());
             setShowSettings(true);
           }}>
-            <Ionicons name="calendar-outline" size={16} color={colors.accent} style={{ marginRight: 6 }} />
+            <Ionicons name="calendar-outline" size={Math.round(16 * REORDER_VISUAL_SCALE)} color={colors.accent} style={{ marginRight: 6 }} />
             <Text style={styles.setDaysText}>{t('trip.setDaysAndDate')}</Text>
           </Pressable>}
           {canReorder && onPickFavorite ? (
@@ -697,7 +698,7 @@ export default function DestinationReorderList({
               accessibilityRole="button"
               accessibilityLabel={t('stay.favorites')}
             >
-              <Ionicons name="star-outline" size={16} color={colors.accent} style={{ marginRight: 6 }} />
+              <Ionicons name="star-outline" size={Math.round(16 * REORDER_VISUAL_SCALE)} color={colors.accent} style={{ marginRight: 6 }} />
               <Text style={styles.setDaysText}>{t('stay.favorites')}</Text>
             </Pressable>
           ) : null}
@@ -711,7 +712,7 @@ export default function DestinationReorderList({
             accessibilityRole="button"
             accessibilityLabel={t('kml.entry')}
           >
-            <Ionicons name="cloud-upload-outline" size={16} color={colors.accent} style={{ marginRight: 6 }} />
+            <Ionicons name="cloud-upload-outline" size={Math.round(16 * REORDER_VISUAL_SCALE)} color={colors.accent} style={{ marginRight: 6 }} />
             <Text style={styles.setDaysText}>{t('kml.entry')}</Text>
           </Pressable>}
           {syncFailed && onSync && <Pressable
@@ -2148,12 +2149,12 @@ const makeStyles = (colors: Palette) =>
     },
     headerTitle: {
       color: colors.textPrimary,
-      fontSize: 15,
+      fontSize: Math.round(15 * REORDER_VISUAL_SCALE),
       fontWeight: '700',
     },
     headerDate: {
       color: colors.textSecondary,
-      fontSize: 14,
+      fontSize: Math.round(14 * REORDER_VISUAL_SCALE),
     },
     inlineTrash: {
       paddingHorizontal: spacing.xs,
@@ -2181,14 +2182,14 @@ const makeStyles = (colors: Palette) =>
     },
     rowIndex: {
       color: colors.accent,
-      fontSize: 15,
+      fontSize: Math.round(15 * REORDER_VISUAL_SCALE),
       fontWeight: '700',
-      width: 20,
+      width: Math.round(20 * REORDER_VISUAL_SCALE),
       textAlign: 'center',
     },
     rowBody: { flex: 1 },
-    rowTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: '600' },
-    rowAddress: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
+    rowTitle: { color: colors.textPrimary, fontSize: Math.round(16 * REORDER_VISUAL_SCALE), fontWeight: '600' },
+    rowAddress: { color: colors.textSecondary, fontSize: Math.round(13 * REORDER_VISUAL_SCALE), marginTop: 2 },
     emojiBadge: {
       width: 32,
       height: 32,
@@ -2356,7 +2357,7 @@ const makeStyles = (colors: Palette) =>
     },
     handle: {
       color: colors.textSecondary,
-      fontSize: 22,
+      fontSize: Math.round(22 * REORDER_VISUAL_SCALE),
       textAlign: 'center',
       width: HANDLE_SLOT,
     },
@@ -2375,15 +2376,15 @@ const makeStyles = (colors: Palette) =>
     setDaysBtn: {
       flexDirection: 'row',
       alignItems: 'center',
-      paddingVertical: 8,
-      paddingHorizontal: 12,
+      paddingVertical: Math.round(8 * REORDER_VISUAL_SCALE),
+      paddingHorizontal: Math.round(12 * REORDER_VISUAL_SCALE),
       backgroundColor: colors.glass,
-      borderRadius: 16,
+      borderRadius: Math.round(16 * REORDER_VISUAL_SCALE),
     },
     setDaysText: {
       color: colors.accent,
       fontWeight: '600',
-      fontSize: 13,
+      fontSize: Math.round(13 * REORDER_VISUAL_SCALE),
     },
     modalOverlay: {
       flex: 1,

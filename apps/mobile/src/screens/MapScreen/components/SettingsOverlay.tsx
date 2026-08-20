@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import NativeSwitch from '../../../components/NativeSwitch';
 import PrefSlider from '../../../components/PrefSlider';
 import NotificationPreferencesCard from '../../../components/NotificationPreferencesCard';
+import OverlaySheet from '../../../components/OverlaySheet';
 import { useSession } from '../../../state/SessionContext';
 import {
   usePreferences,
@@ -140,7 +141,15 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
   const accent = colors.accent;
   const { width: windowWidth } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const [page, setPage] = useState<'root' | 'language' | 'theme'>('root');
+  type SettingsChild =
+    | 'root'
+    | 'language'
+    | 'theme'
+    | 'textSize'
+    | 'notifications'
+    | 'mapJourney'
+    | 'support';
+  const [page, setPage] = useState<SettingsChild>('root');
   const [mounted, setMounted] = useState(visible);
   const translateX = useRef(new Animated.Value(windowWidth)).current;
 
@@ -260,18 +269,11 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
 
   if (!mounted) return null;
 
-  const pageTitle = page === 'language'
-    ? t('settings.language')
-    : page === 'theme'
-      ? t('settings.theme')
-      : t('map.overlaySettings');
+  const pageTitle = t('map.overlaySettings');
   const handleBack = () => {
-    if (page !== 'root') {
-      setPage('root');
-      return;
-    }
     onClose();
   };
+  const closeChild = () => setPage('root');
 
   return (
     <Animated.View
@@ -295,57 +297,19 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
         <Text style={settingsSlideStyles.headerTitle} numberOfLines={1}>{pageTitle}</Text>
         <View style={settingsSlideStyles.headerSpacer} />
       </View>
-      {page === 'language' ? (
-        <ScrollView contentContainerStyle={styles.overlayBody}>
-          {[
-            { key: 'zh' as const, label: '中文' },
-            { key: 'en' as const, label: 'English' },
-          ].map((option) => (
-            <Pressable
-              key={option.key}
-              style={styles.settingsTopRow}
-              onPress={() => setLanguage(option.key)}
-              accessibilityRole="button"
-              accessibilityState={{ selected: language === option.key }}
-            >
-              <Text style={styles.settingsTopTitle}>{option.label}</Text>
-              {language === option.key ? (
-                <Ionicons name="checkmark" size={18} color={accent} />
-              ) : null}
-            </Pressable>
-          ))}
-        </ScrollView>
-      ) : null}
-      {page === 'theme' ? (
-        <ScrollView contentContainerStyle={styles.overlayBody}>
-          {THEME_ORDER.map((n) => (
-            <Pressable
-              key={n}
-              style={styles.settingsTopRow}
-              onPress={() => setThemeName(n)}
-              accessibilityRole="button"
-              accessibilityState={{ selected: themeName === n }}
-            >
-              <Text style={styles.settingsTopTitle}>
-                {t(
-                  n === 'night'
-                    ? 'settings.themeNight'
-                    : n === 'day'
-                      ? 'settings.themeDay'
-                      : n === 'dusk'
-                        ? 'settings.themeDusk'
-                        : 'settings.themeForest',
-                )}
-              </Text>
-              {themeName === n ? (
-                <Ionicons name="checkmark" size={18} color={accent} />
-              ) : null}
-            </Pressable>
-          ))}
-        </ScrollView>
-      ) : null}
-      {page === 'root' ? (
       <ScrollView contentContainerStyle={styles.overlayBody}>
+        {!isPro ? (
+          <Pressable
+            testID="settings-subscribe-banner"
+            onPress={onOpenPaywall}
+            accessibilityRole="button"
+            accessibilityLabel={t('settings.subscribeBanner')}
+            style={settingsSlideStyles.subscribeBanner}
+          >
+            <Text style={settingsSlideStyles.subscribeTitle}>{t('settings.subscribeBanner')}</Text>
+            <Text style={settingsSlideStyles.subscribeHint}>{t('settings.subscribeBannerHint')}</Text>
+          </Pressable>
+        ) : null}
         {/* ── 個人設定 ─────────────────────────────────────────── */}
         <SectionLabel label={t('settings.sectionPersonal')} styles={styles} />
         <View style={styles.settingsTopGroup}>
@@ -393,158 +357,38 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             onPress={() => setPage('theme')}
             styles={styles}
           />
-        </View>
-        <Text style={styles.settingsInlineLabel}>{t('settings.textSize')}</Text>
-        <View testID="settings-text-scale-slider">
-          <PrefSlider
-            accent={accent}
-            values={[0.8, 0.9, 1.0, 1.1, 1.2]}
-            value={textScale}
-            onChange={(v) => setTextScale(v as TextScalePref)}
-            accessibilityLabel={t('settings.textSize')}
+          <NavRow
+            title={t('settings.textSize')}
+            onPress={() => setPage('textSize')}
+            styles={styles}
           />
-          <Text style={[styles.settingsInlineLabel, { marginTop: 4, opacity: 0.8 }]}>
-            {textScale === 0.8
-              ? t('settings.textSizeXs')
-              : textScale === 0.9
-                ? t('settings.textSizeSm')
-                : textScale === 1.1
-                  ? t('settings.textSizeLg')
-                  : textScale === 1.2
-                    ? t('settings.textSizeXl')
-                    : t('settings.textSizeMd')}
-          </Text>
         </View>
 
         <SectionLabel label={t('settings.notifSection')} styles={styles} />
-        <NotificationPreferencesCard colors={{ ...themes.night, accent }} />
+        <View style={styles.settingsTopGroup}>
+          <NavRow
+            title={t('settings.notifSection')}
+            onPress={() => setPage('notifications')}
+            styles={styles}
+          />
+        </View>
 
         <SectionLabel label={t('settings.sectionMapJourney')} styles={styles} />
-        <View style={styles.accuracyRow}>
-          <View style={styles.accuracyCopy}>
-            <Text style={styles.accuracyLabel}>{t('settings.obliqueLocate')}</Text>
-            <Text style={styles.accuracySubhint}>{t('settings.obliqueLocateHint')}</Text>
-          </View>
-          <NativeSwitch
-            style={styles.accuracySwitch}
-            accent={accent}
-            value={obliqueLocate}
-            onValueChange={setObliqueLocate}
-            accessibilityLabel={t('settings.obliqueLocate')}
-          />
-        </View>
-        <View style={styles.accuracyRow}>
-          <View style={styles.accuracyCopy}>
-            <Text style={styles.accuracyLabel}>{t('settings.liveActivity')}</Text>
-            <Text style={styles.accuracySubhint}>{t('settings.liveActivityHint')}</Text>
-          </View>
-          <NativeSwitch
-            style={styles.accuracySwitch}
-            accent={accent}
-            value={liveActivityEnabled}
-            onValueChange={setLiveActivityEnabled}
-            accessibilityLabel={t('settings.liveActivity')}
-          />
-        </View>
-        <View style={styles.accuracyRow}>
-          <View style={styles.accuracyCopy}>
-            <Text style={styles.accuracyLabel}>{t('settings.gatherCardDefaultExpanded')}</Text>
-            <Text style={styles.accuracySubhint}>{t('settings.gatherCardDefaultExpandedHint')}</Text>
-          </View>
-          <NativeSwitch
-            style={styles.accuracySwitch}
-            accent={accent}
-            value={gatherCardDefaultExpanded}
-            onValueChange={setGatherCardDefaultExpanded}
-            accessibilityLabel={t('settings.gatherCardDefaultExpanded')}
-          />
-        </View>
-        <View style={styles.accuracyRow} pointerEvents="box-none">
-          <View style={styles.accuracyCopy} pointerEvents="none">
-            <Text style={styles.accuracyLabel}>{t('settings.gatherCardTitleMarquee')}</Text>
-            <Text style={styles.accuracySubhint}>{t('settings.gatherCardTitleMarqueeHint')}</Text>
-          </View>
-          <NativeSwitch
-            style={styles.accuracySwitch}
-            accent={accent}
-            value={Boolean(gatherCardTitleMarquee)}
-            onValueChange={(v) => setGatherCardTitleMarquee(Boolean(v))}
-            accessibilityLabel={t('settings.gatherCardTitleMarquee')}
-            accessibilityRole="switch"
-            accessibilityState={{ checked: Boolean(gatherCardTitleMarquee) }}
-          />
-        </View>
-        {Boolean(gatherCardTitleMarquee) ? (
-          <View style={styles.marqueeSpeedBlock} pointerEvents="box-none">
-            <View style={styles.marqueeSpeedLabels} pointerEvents="none">
-              <Text style={styles.accuracyLabel}>{t('settings.gatherCardMarqueeSpeed')}</Text>
-              <View style={styles.marqueeSpeedEnds}>
-                <Text style={styles.accuracySubhint}>{t('settings.gatherCardMarqueeSpeedSlow')}</Text>
-                <Text style={styles.accuracySubhint}>{t('settings.gatherCardMarqueeSpeedFast')}</Text>
-              </View>
-            </View>
-            <PrefSlider
-              value={gatherCardMarqueeSpeed}
-              min={MARQUEE_SPEED_MIN}
-              max={MARQUEE_SPEED_MAX}
-              onChange={setGatherCardMarqueeSpeed}
-              accent={accent}
-              accessibilityLabel={t('settings.gatherCardMarqueeSpeed')}
-            />
-          </View>
-        ) : null}
-
-        {/* Custom quick commands: only via full command sheet long-press — not Settings. */}
-
-        {/* ── 支援 ─────────────────────────────────────────────── */}
-        <SectionLabel label={t('settings.sectionSupport')} styles={styles} />
-        <View style={styles.accuracyRow}>
-          <View style={styles.accuracyCopy}>
-            <Text style={styles.accuracyLabel}>{t('settings.diagnosticUpload')}</Text>
-            <Text style={styles.accuracySubhint}>{t('settings.diagnosticUploadHint')}</Text>
-          </View>
-          <NativeSwitch
-            style={styles.accuracySwitch}
-            accent={accent}
-            value={diagnosticUploadEnabled}
-            onValueChange={onDiagnosticSwitchChange}
-            accessibilityRole="switch"
-            accessibilityState={{ checked: diagnosticUploadEnabled }}
-            accessibilityLabel={t('settings.diagnosticUpload')}
-          />
-        </View>
-        {showOtaApply ? (
-          <TouchableOpacity
-            style={[
-              styles.accountBtn,
-              {
-                backgroundColor: accent,
-                borderColor: accent,
-                opacity: applyingOta ? 0.7 : 1,
-                marginBottom: 8,
-              },
-            ]}
-            onPress={handleApplyOta}
-            disabled={applyingOta}
-            accessibilityRole="button"
-            accessibilityLabel={t('settings.applyOta')}
-            activeOpacity={0.85}
-          >
-            {applyingOta ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <ActivityIndicator color="#fff" />
-                <Text style={[styles.accountBtnText, { color: '#fff' }]}>
-                  {t('settings.applyingOta')}
-                </Text>
-              </View>
-            ) : (
-              <Text style={[styles.accountBtnText, { color: '#fff' }]}>
-                {t('settings.applyOta')}
-              </Text>
-            )}
-          </TouchableOpacity>
-        ) : null}
         <View style={styles.settingsTopGroup}>
+          <NavRow
+            title={t('settings.sectionMapJourney')}
+            onPress={() => setPage('mapJourney')}
+            styles={styles}
+          />
+        </View>
+
+        <SectionLabel label={t('settings.sectionSupport')} styles={styles} />
+        <View style={styles.settingsTopGroup}>
+          <NavRow
+            title={t('settings.sectionSupport')}
+            onPress={() => setPage('support')}
+            styles={styles}
+          />
           <NavRow
             title={t('feedback.title')}
             onPress={onOpenFeedback}
@@ -559,17 +403,6 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
               styles={styles}
             />
           ) : null}
-          <View style={styles.settingsTopRow}>
-            <View style={styles.settingsTopCopy}>
-              <Text style={styles.settingsTopTitle}>{t('settings.aboutHither')}</Text>
-              <Text style={styles.settingsTopDescription}>
-                {t('settings.version', { version: appVersion })}
-              </Text>
-              <Text style={styles.settingsTopDescription}>
-                {t('settings.otaLabel', { detail: otaSummary })}
-              </Text>
-            </View>
-          </View>
         </View>
 
         {__DEV__ ? (
@@ -594,7 +427,270 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
           />
         </View>
       </ScrollView>
-      ) : null}
+
+      <OverlaySheet
+        visible={page === 'language'}
+        onClose={closeChild}
+        title={t('settings.language')}
+        accent={accent}
+        doneLabel={t('common.back')}
+        opaque
+      >
+        <ScrollView contentContainerStyle={styles.overlayBody}>
+          {[
+            { key: 'zh' as const, label: '中文' },
+            { key: 'en' as const, label: 'English' },
+          ].map((option) => (
+            <Pressable
+              key={option.key}
+              style={styles.settingsTopRow}
+              onPress={() => setLanguage(option.key)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: language === option.key }}
+            >
+              <Text style={styles.settingsTopTitle}>{option.label}</Text>
+              {language === option.key ? (
+                <Ionicons name="checkmark" size={18} color={accent} />
+              ) : null}
+            </Pressable>
+          ))}
+        </ScrollView>
+      </OverlaySheet>
+
+      <OverlaySheet
+        visible={page === 'theme'}
+        onClose={closeChild}
+        title={t('settings.theme')}
+        accent={accent}
+        doneLabel={t('common.back')}
+        opaque
+      >
+        <ScrollView contentContainerStyle={styles.overlayBody}>
+          {THEME_ORDER.map((n) => (
+            <Pressable
+              key={n}
+              style={styles.settingsTopRow}
+              onPress={() => setThemeName(n)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: themeName === n }}
+            >
+              <Text style={styles.settingsTopTitle}>
+                {t(
+                  n === 'night'
+                    ? 'settings.themeNight'
+                    : n === 'day'
+                      ? 'settings.themeDay'
+                      : n === 'dusk'
+                        ? 'settings.themeDusk'
+                        : 'settings.themeForest',
+                )}
+              </Text>
+              {themeName === n ? (
+                <Ionicons name="checkmark" size={18} color={accent} />
+              ) : null}
+            </Pressable>
+          ))}
+        </ScrollView>
+      </OverlaySheet>
+
+      <OverlaySheet
+        visible={page === 'textSize'}
+        onClose={closeChild}
+        title={t('settings.textSize')}
+        accent={accent}
+        doneLabel={t('common.back')}
+        opaque
+      >
+        <ScrollView contentContainerStyle={styles.overlayBody}>
+          <View testID="settings-text-scale-slider">
+            <PrefSlider
+              accent={accent}
+              values={[0.8, 0.9, 1.0, 1.1, 1.2]}
+              value={textScale}
+              onChange={(v) => setTextScale(v as TextScalePref)}
+              accessibilityLabel={t('settings.textSize')}
+            />
+            <Text style={[styles.settingsInlineLabel, { marginTop: 4, opacity: 0.8 }]}>
+              {textScale === 0.8
+                ? t('settings.textSizeXs')
+                : textScale === 0.9
+                  ? t('settings.textSizeSm')
+                  : textScale === 1.1
+                    ? t('settings.textSizeLg')
+                    : textScale === 1.2
+                      ? t('settings.textSizeXl')
+                      : t('settings.textSizeMd')}
+            </Text>
+          </View>
+        </ScrollView>
+      </OverlaySheet>
+
+      <OverlaySheet
+        visible={page === 'notifications'}
+        onClose={closeChild}
+        title={t('settings.notifSection')}
+        accent={accent}
+        doneLabel={t('common.back')}
+        opaque
+      >
+        <ScrollView contentContainerStyle={styles.overlayBody}>
+          <NotificationPreferencesCard colors={{ ...themes.night, accent }} />
+        </ScrollView>
+      </OverlaySheet>
+
+      <OverlaySheet
+        visible={page === 'mapJourney'}
+        onClose={closeChild}
+        title={t('settings.sectionMapJourney')}
+        accent={accent}
+        doneLabel={t('common.back')}
+        opaque
+      >
+        <ScrollView contentContainerStyle={styles.overlayBody}>
+          <View style={styles.accuracyRow}>
+            <View style={styles.accuracyCopy}>
+              <Text style={styles.accuracyLabel}>{t('settings.obliqueLocate')}</Text>
+              <Text style={styles.accuracySubhint}>{t('settings.obliqueLocateHint')}</Text>
+            </View>
+            <NativeSwitch
+              style={styles.accuracySwitch}
+              accent={accent}
+              value={obliqueLocate}
+              onValueChange={setObliqueLocate}
+              accessibilityLabel={t('settings.obliqueLocate')}
+            />
+          </View>
+          <View style={styles.accuracyRow}>
+            <View style={styles.accuracyCopy}>
+              <Text style={styles.accuracyLabel}>{t('settings.liveActivity')}</Text>
+              <Text style={styles.accuracySubhint}>{t('settings.liveActivityHint')}</Text>
+            </View>
+            <NativeSwitch
+              style={styles.accuracySwitch}
+              accent={accent}
+              value={liveActivityEnabled}
+              onValueChange={setLiveActivityEnabled}
+              accessibilityLabel={t('settings.liveActivity')}
+            />
+          </View>
+          <View style={styles.accuracyRow}>
+            <View style={styles.accuracyCopy}>
+              <Text style={styles.accuracyLabel}>{t('settings.gatherCardDefaultExpanded')}</Text>
+              <Text style={styles.accuracySubhint}>{t('settings.gatherCardDefaultExpandedHint')}</Text>
+            </View>
+            <NativeSwitch
+              style={styles.accuracySwitch}
+              accent={accent}
+              value={gatherCardDefaultExpanded}
+              onValueChange={setGatherCardDefaultExpanded}
+              accessibilityLabel={t('settings.gatherCardDefaultExpanded')}
+            />
+          </View>
+          <View style={styles.accuracyRow} pointerEvents="box-none">
+            <View style={styles.accuracyCopy} pointerEvents="none">
+              <Text style={styles.accuracyLabel}>{t('settings.gatherCardTitleMarquee')}</Text>
+              <Text style={styles.accuracySubhint}>{t('settings.gatherCardTitleMarqueeHint')}</Text>
+            </View>
+            <NativeSwitch
+              style={styles.accuracySwitch}
+              accent={accent}
+              value={Boolean(gatherCardTitleMarquee)}
+              onValueChange={(v) => setGatherCardTitleMarquee(Boolean(v))}
+              accessibilityLabel={t('settings.gatherCardTitleMarquee')}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: Boolean(gatherCardTitleMarquee) }}
+            />
+          </View>
+          {Boolean(gatherCardTitleMarquee) ? (
+            <View style={styles.marqueeSpeedBlock} pointerEvents="box-none">
+              <View style={styles.marqueeSpeedLabels} pointerEvents="none">
+                <Text style={styles.accuracyLabel}>{t('settings.gatherCardMarqueeSpeed')}</Text>
+                <View style={styles.marqueeSpeedEnds}>
+                  <Text style={styles.accuracySubhint}>{t('settings.gatherCardMarqueeSpeedSlow')}</Text>
+                  <Text style={styles.accuracySubhint}>{t('settings.gatherCardMarqueeSpeedFast')}</Text>
+                </View>
+              </View>
+              <PrefSlider
+                value={gatherCardMarqueeSpeed}
+                min={MARQUEE_SPEED_MIN}
+                max={MARQUEE_SPEED_MAX}
+                onChange={setGatherCardMarqueeSpeed}
+                accent={accent}
+                accessibilityLabel={t('settings.gatherCardMarqueeSpeed')}
+              />
+            </View>
+          ) : null}
+        </ScrollView>
+      </OverlaySheet>
+
+      <OverlaySheet
+        visible={page === 'support'}
+        onClose={closeChild}
+        title={t('settings.sectionSupport')}
+        accent={accent}
+        doneLabel={t('common.back')}
+        opaque
+      >
+        <ScrollView contentContainerStyle={styles.overlayBody}>
+          <View style={styles.accuracyRow}>
+            <View style={styles.accuracyCopy}>
+              <Text style={styles.accuracyLabel}>{t('settings.diagnosticUpload')}</Text>
+              <Text style={styles.accuracySubhint}>{t('settings.diagnosticUploadHint')}</Text>
+            </View>
+            <NativeSwitch
+              style={styles.accuracySwitch}
+              accent={accent}
+              value={diagnosticUploadEnabled}
+              onValueChange={onDiagnosticSwitchChange}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: diagnosticUploadEnabled }}
+              accessibilityLabel={t('settings.diagnosticUpload')}
+            />
+          </View>
+          {showOtaApply ? (
+            <TouchableOpacity
+              style={[
+                styles.accountBtn,
+                {
+                  backgroundColor: accent,
+                  borderColor: accent,
+                  opacity: applyingOta ? 0.7 : 1,
+                  marginBottom: 8,
+                },
+              ]}
+              onPress={handleApplyOta}
+              disabled={applyingOta}
+              accessibilityRole="button"
+              accessibilityLabel={t('settings.applyOta')}
+              activeOpacity={0.85}
+            >
+              {applyingOta ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <ActivityIndicator color="#fff" />
+                  <Text style={[styles.accountBtnText, { color: '#fff' }]}>
+                    {t('settings.applyingOta')}
+                  </Text>
+                </View>
+              ) : (
+                <Text style={[styles.accountBtnText, { color: '#fff' }]}>
+                  {t('settings.applyOta')}
+                </Text>
+              )}
+            </TouchableOpacity>
+          ) : null}
+          <View style={styles.settingsTopRow}>
+            <View style={styles.settingsTopCopy}>
+              <Text style={styles.settingsTopTitle}>{t('settings.aboutHither')}</Text>
+              <Text style={styles.settingsTopDescription}>
+                {t('settings.version', { version: appVersion })}
+              </Text>
+              <Text style={styles.settingsTopDescription}>
+                {t('settings.otaLabel', { detail: otaSummary })}
+              </Text>
+            </View>
+          </View>
+        </ScrollView>
+      </OverlaySheet>
     </Animated.View>
   );
 });
@@ -603,7 +699,9 @@ const settingsSlideStyles = StyleSheet.create({
   page: {
     ...StyleSheet.absoluteFill,
     backgroundColor: '#0E1320',
-    zIndex: 40,
+    // Above MapScreen sheetLayer (70). Sibling account/paywall/feedback/
+    // diagnostics hosts use settingsChildLayer (90) so they overlay this page.
+    zIndex: 80,
   },
   header: {
     flexDirection: 'row',
@@ -626,4 +724,24 @@ const settingsSlideStyles = StyleSheet.create({
     textAlign: 'center',
   },
   headerSpacer: { width: 44, height: 44 },
+  subscribeBanner: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 22,
+    paddingVertical: 22,
+    paddingHorizontal: 20,
+    marginBottom: 22,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.14)',
+  },
+  subscribeTitle: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: '800',
+    marginBottom: 6,
+  },
+  subscribeHint: {
+    color: 'rgba(255,255,255,0.65)',
+    fontSize: 14,
+    lineHeight: 20,
+  },
 });

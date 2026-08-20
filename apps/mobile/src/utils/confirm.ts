@@ -25,6 +25,7 @@ export interface ConfirmOptions {
 export function confirmAction(
   options: ConfirmOptions,
   onConfirm: () => void,
+  onCancel?: () => void,
 ): void {
   // Defaults resolve from the active catalog so zh never leaks English Cancel.
   const language = getActiveLanguage();
@@ -48,6 +49,8 @@ export function confirmAction(
           : true;
       if (confirmed) {
         onConfirm();
+      } else if (onCancel) {
+        onCancel();
       } else {
         // Some sandboxes silently return false for window.confirm. If __DEV__ is true
         // and we suspect it's a sandbox, we might force confirm, but for now we just
@@ -67,7 +70,7 @@ export function confirmAction(
   }
 
   Alert.alert(title, message, [
-    { text: cancelLabel, style: 'cancel' },
+    { text: cancelLabel, style: 'cancel', onPress: onCancel },
     {
       text: confirmLabel,
       style: destructive ? 'destructive' : 'default',

@@ -397,7 +397,7 @@ describe('legalDragIndicesForList (cross-day)', () => {
       header(3),
     ];
     // Past mid of A (+ day gap) should aim at day2 header index 2.
-    const toDay2 = dragTargetIndexFromOffset(order, 1, 40, DEFAULT_REORDER_LAYOUT);
+    const toDay2 = dragTargetIndexFromOffset(order, 1, 52, DEFAULT_REORDER_LAYOUT);
     expect(toDay2).toBeGreaterThanOrEqual(2);
     const legal = legalDragIndicesForList(order, 'A');
     const snapped = snapToLegalDragIndex(legal, toDay2, 1);
@@ -421,7 +421,7 @@ describe('legalDragIndicesForList (cross-day)', () => {
     ];
     const start = order.findIndex((e) => e.type === 'dest' && e.id === 'S');
     // Large enough dy to clear day1 tail + gap into day2 header.
-    const raw = dragTargetIndexFromOffset(order, start, 120, DEFAULT_REORDER_LAYOUT);
+    const raw = dragTargetIndexFromOffset(order, start, 156, DEFAULT_REORDER_LAYOUT);
     const legal = legalDragIndicesForList(order, 'S');
     const target = snapToLegalDragIndex(legal, raw, 1);
     const proposed = orderAfterDragMove(order, start, target);
@@ -432,6 +432,16 @@ describe('legalDragIndicesForList (cross-day)', () => {
       else if (e.type === 'dest' && e.id === 'S') assigned = day;
     }
     expect(assigned).toBe(2);
+  });
+});
+
+describe('DEFAULT_REORDER_LAYOUT scale', () => {
+  it('is 1.3× the previous 72/60/56 defaults', () => {
+    expect(DEFAULT_REORDER_LAYOUT).toEqual({
+      headerHeight: 72 * 1.3,
+      rowHeight: 60 * 1.3,
+      dayGapHeight: 56 * 1.3,
+    });
   });
 });
 

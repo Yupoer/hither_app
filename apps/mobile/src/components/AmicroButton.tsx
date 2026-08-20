@@ -50,6 +50,11 @@ export interface AmicroButtonProps {
   accessibilityHint?: string;
   testID?: string;
   style?: StyleProp<ViewStyle>;
+  /**
+   * Bump to force progress back to `active` after a cancelled morph
+   * (`resetAfterComplete={false}` otherwise leaves the complete frame).
+   */
+  revertEpoch?: number;
   onPress?: () => void;
   /**
    * Called when the press animation reaches the complete frame.
@@ -81,19 +86,22 @@ export function AmicroButton({
   accessibilityHint,
   testID,
   style,
+  revertEpoch = 0,
   onPress,
   onAnimationComplete,
 }: AmicroButtonProps) {
   const reducedMotion = useReducedMotion();
   const progress = useSharedValue(active ? 1 : 0);
   const busyRef = useRef(false);
+  const activeRef = useRef(active);
+  activeRef.current = active;
 
   const releaseBusyAndMaybeReset = useCallback(() => {
     busyRef.current = false;
     if (resetAfterComplete) {
-      progress.value = withTiming(active ? 1 : 0, { duration: reducedMotion ? 0 : 100 });
+      progress.value = withTiming(activeRef.current ? 1 : 0, { duration: reducedMotion ? 0 : 100 });
     }
-  }, [active, progress, reducedMotion, resetAfterComplete]);
+  }, [progress, reducedMotion, resetAfterComplete]);
 
   const finish = useCallback(() => {
     // Keep busy until external Promise settles so double-tap cannot re-open.
@@ -117,7 +125,7 @@ export function AmicroButton({
   useEffect(() => {
     if (busyRef.current) return;
     progress.value = withTiming(active ? 1 : 0, { duration: reducedMotion ? 0 : 100 });
-  }, [active, progress, reducedMotion]);
+  }, [active, revertEpoch, progress, reducedMotion]);
 
   const handlePress = useCallback(() => {
     if (disabled || busyRef.current) return;

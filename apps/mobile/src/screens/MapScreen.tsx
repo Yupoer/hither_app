@@ -219,6 +219,7 @@ import {
   getLocationSharingEnabled,
   setLocationSharingEnabled,
 } from '../api/services/NavigationService';
+import { requestPermission as requestLocationPermission } from '../native/location';
 import {
   consumePendingLocationPermission,
   recoverPendingLocationRefreshes,
@@ -318,6 +319,8 @@ import {
   submitGatherPointRequest,
   updateGroupTripDetails,
   updateDestinationEmojiColor,
+  getNotificationPreferences,
+  setNotificationPreferences,
 } from '../api/client';
 import { supabase } from '../api/supabase';
 import { captureScreen } from 'react-native-view-shot';
@@ -330,6 +333,14 @@ import {
   STATUS_SHARE_CLUSTER_GAP,
   statusIconForKind,
 } from './MapScreen/memberStatusSharing';
+import { NativeMenuHost } from '../native/menu';
+import {
+  applyPresenceMacroWrites,
+  derivePresenceMacro,
+  presenceMacroWrites,
+  type PresenceMacroKind,
+} from '../utils/presenceMacros';
+import { DEFAULT_NOTIFICATION_PREFERENCES, type NotificationPreferences } from '../types';
 import { logEvent, logError } from '../utils/activityLog';
 import { lightTap, mediumTap, rigidTap, selectionTick, alertBuzz } from '../utils/haptics';
 import { AVATAR_EMOJI, AVATAR_COLORS } from '../constants/avatars';
@@ -1013,6 +1024,8 @@ export default function MapScreen({ route, navigation }: Props) {
   const [liveActivityEffective, setLiveActivityEffective] = useState(false);
   /** Team extra gathering-point credits remaining (route UI when > 0). */
   const [extraPointCredits, setExtraPointCredits] = useState(0);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [purchaseUnlocking, setPurchaseUnlocking] = useState(false);
   const [overlay, setOverlay] = useState<
     null
     | 'route'
@@ -1024,7 +1037,6 @@ export default function MapScreen({ route, navigation }: Props) {
     | 'custom'
     | 'invite'
     | 'commands'
-    | 'myStatus'
     | 'arrivalManage'
     | 'arrival'
     | 'ops'
@@ -1032,9 +1044,11 @@ export default function MapScreen({ route, navigation }: Props) {
   >(null);
   const [editButtonActive, setEditButtonActive] = useState(false);
   const [arrivalDestination, setArrivalDestination] = useState<Destination | null>(null);
-  /** Draft selection in the my-status sheet; committed only via Done. */
-  const [draftMyStatus, setDraftMyStatus] = useState<'follow' | 'solo' | 'away' | null>(null);
   const [statusApplying, setStatusApplying] = useState(false);
+  const [notifPrefs, setNotifPrefs] = useState<NotificationPreferences>(
+    DEFAULT_NOTIFICATION_PREFERENCES,
+  );
+  const [appliedMacro, setAppliedMacro] = useState<PresenceMacroKind | null>(null);
   /** Which custom quick-command slot the editor is targeting. */
   const [customSlot, setCustomSlot] = useState(0);
   // Screenshot captured the instant the feedback entry is tapped (before the
@@ -1361,8 +1375,10 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const [paywallTrigger, setPaywallTrigger] = useState<TranslationKey | undefined>(undefined);
   const [paywallVisible, setPaywallVisible] = useState(false);
-  const openPaywall = useCallback((trigger?: TranslationKey) => {
+  const [paywallShowRestore, setPaywallShowRestore] = useState(true);
+  const openPaywall = useCallback((trigger?: TranslationKey, opts?: { showRestore?: boolean }) => {
     setPaywallTrigger(trigger);
+    setPaywallShowRestore(opts?.showRestore ?? true);
     setPaywallVisible(true);
   }, []);
 
@@ -1847,8 +1863,19 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [preferencesReady, setSharingEnabled, sharingEnabled, user?.id]);
 
   const [sharingApplying, setSharingApplying] = useState(false);
+  const [sharingIconEpoch, setSharingIconEpoch] = useState(0);
+  const revertSharingIcon = useCallback(() => {
+    setSharingIconEpoch((n) => n + 1);
+  }, []);
   const handleSharingEnabledChange = useCallback(async (enabled: boolean) => {
     const previous = sharingEnabled;
+    if (enabled) {
+      const granted = await requestLocationPermission();
+      if (!granted) {
+        revertSharingIcon();
+        return false;
+      }
+    }
     setSharingEnabled(enabled);
     if (!enabled) {
       await stopBackgroundJourney().catch(() => undefined);
@@ -1861,6 +1888,7 @@ export default function MapScreen({ route, navigation }: Props) {
     }
     try {
       await setLocationSharingEnabled(enabled);
+      return true;
     } catch {
       await diagnostics.write({
         event: 'diagnostic_error',
@@ -1869,9 +1897,11 @@ export default function MapScreen({ route, navigation }: Props) {
       }).catch(() => undefined);
       // Keep the local preference aligned with the server when the sync fails.
       setSharingEnabled(previous);
+      revertSharingIcon();
       Alert.alert(t('settings.locationSharingSyncFailed'));
+      return false;
     }
-  }, [setSharingEnabled, navigationSessionState, sharingEnabled, t]);
+  }, [setSharingEnabled, navigationSessionState, sharingEnabled, t, revertSharingIcon]);
   const handleSharingEnabledChangeAnimated = useCallback(() => {
     if (sharingApplying) return;
     const nextEnabled = !sharingEnabled;
@@ -1884,13 +1914,14 @@ export default function MapScreen({ route, navigation }: Props) {
       void (async () => {
         setSharingApplying(true);
         try {
-          await handleSharingEnabledChange(nextEnabled);
+          const ok = await handleSharingEnabledChange(nextEnabled);
+          if (!ok) revertSharingIcon();
         } finally {
           setSharingApplying(false);
         }
       })();
-    });
-  }, [handleSharingEnabledChange, sharingApplying, sharingEnabled, t]);
+    }, revertSharingIcon);
+  }, [handleSharingEnabledChange, sharingApplying, sharingEnabled, t, revertSharingIcon]);
 
   useEffect(() => {
     if (isLeader || !navigationSessionState.session) {
@@ -4775,7 +4806,11 @@ export default function MapScreen({ route, navigation }: Props) {
           // "—" for my own row (distance to myself is meaningless); everyone
           // else shows how far they are from me.
           eta: displayedEta != null ? shortEta(displayedEta) : '',
-          dist: displayedDistance != null ? formatDistance(displayedDistance) : isSelf ? t('flock.you') : '',
+          dist: isSelf
+            ? ''
+            : displayedDistance != null
+              ? formatDistance(displayedDistance)
+              : '',
         };
       }),
     [
@@ -4809,91 +4844,122 @@ export default function MapScreen({ route, navigation }: Props) {
     return !!members.find((m) => m.userId === user?.id)?.solo;
   }, [soloOverride, members, user?.id]);
 
-  /**
-   * My presence relative to the flock (UI + API mapping):
-   * - follow: solo=false and on main group itinerary
-   * - solo:   solo=true — still in structure, mute group pushes
-   * - away:   in a personal/subgroup split — main gather cards hidden
-   * Priority when both solo + subgroup: show solo (notifications muted is primary).
-   */
-  type MyStatusKind = 'follow' | 'solo' | 'away';
-  const myStatusKind: MyStatusKind = mySoloActive
-    ? 'solo'
-    : mySubgroupId
-      ? 'away'
-      : 'follow';
+  useEffect(() => {
+    let alive = true;
+    void getNotificationPreferences()
+      .then((prefs) => {
+        if (alive) setNotifPrefs(prefs);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [user?.id]);
 
-  const openMyStatusPicker = useCallback(() => {
-    lightTap();
-    setDraftMyStatus(myStatusKind);
-    setOverlay('myStatus');
-  }, [myStatusKind]);
+  const derivedMacro = derivePresenceMacro({
+    solo: mySoloActive,
+    locationSharing: sharingEnabled,
+    notifications: notifPrefs,
+  });
+  const myStatusKind: PresenceMacroKind = appliedMacro ?? derivedMacro;
 
-  const closeMyStatusPicker = useCallback(() => {
-    setOverlay(null);
-    setDraftMyStatus(null);
-    setStatusApplying(false);
-  }, []);
-
-  /**
-   * Commit a status change. Returns true if the sheet may close (no-op or success).
-   * Returns false if the user cancelled a confirm dialog or an RPC failed — keep
-   * the draft sheet open.
-   */
-  const applyMyStatus = useCallback(
-    async (next: MyStatusKind): Promise<boolean> => {
-      if (next === myStatusKind) return true;
-      lightTap();
-      try {
-        if (next === 'follow') {
-          // Full participation: clear solo, return to main itinerary if split away.
-          if (mySoloActive) {
-            if (!(await toggleSolo(false))) return false;
-          }
-          if (mySubgroupId) {
-            if (!(await doSelfMerge())) return false;
-          }
-        } else if (next === 'solo') {
-          // Soft step-away: stay where you are, mute group commands/pushes.
-          if (!mySoloActive) {
-            if (!(await toggleSolo(true))) return false;
-          }
-        } else {
-          // 暫時離隊: leave main itinerary (self-split). Clear solo so status reads as "away".
-          if (mySoloActive) {
-            if (!(await toggleSolo(false))) return false;
-          }
-          if (!mySubgroupId) {
-            if (!(await doSelfSplit())) return false;
-          }
-        }
-        return true;
-      } catch {
-        // Errors already alerted inside toggle / split / merge helpers.
-        return false;
-      }
-    },
-    [myStatusKind, mySoloActive, mySubgroupId, toggleSolo, doSelfMerge, doSelfSplit],
+  const statusMenuItems = useMemo(
+    () => [
+      {
+        id: 'follow' as const,
+        title: t('solo.followTeam'),
+        subtitle: t('solo.followTeamHint'),
+        selected: myStatusKind === 'follow',
+      },
+      {
+        id: 'solo' as const,
+        title: t('solo.switch'),
+        subtitle: t('solo.soloHint'),
+        selected: myStatusKind === 'solo',
+      },
+      {
+        id: 'stealth' as const,
+        title: t('solo.stealth'),
+        subtitle: t('solo.stealthHint'),
+        selected: myStatusKind === 'stealth',
+      },
+    ],
+    [myStatusKind, t],
   );
 
-  const commitMyStatus = useCallback(async () => {
-    if (statusApplying) return;
-    const next = draftMyStatus ?? myStatusKind;
-    setStatusApplying(true);
-    try {
-      const ok = await applyMyStatus(next);
-      if (ok) closeMyStatusPicker();
-    } finally {
-      setStatusApplying(false);
-    }
-  }, [statusApplying, draftMyStatus, myStatusKind, applyMyStatus, closeMyStatusPicker]);
+  const applyPresenceMacroKind = useCallback(
+    async (next: PresenceMacroKind): Promise<boolean> => {
+      if (statusApplying) return false;
+      lightTap();
+      const current = {
+        solo: mySoloActive,
+        locationSharing: sharingEnabled,
+        notifications: notifPrefs,
+      };
+      const writes = presenceMacroWrites(next, current);
+      setStatusApplying(true);
+      try {
+        const ok = await applyPresenceMacroWrites(writes, current, {
+          setSolo: toggleSolo,
+          applyNotifications: async (nextPrefs) => {
+            setNotifPrefs(nextPrefs);
+            await setNotificationPreferences(nextPrefs);
+          },
+          disableLocationSharing: () =>
+            new Promise<boolean>((resolve) => {
+              const copy = locationSharingConfirmCopy(false);
+              confirmAction({
+                title: t(copy.titleKey),
+                message: t(copy.bodyKey),
+                destructive: copy.destructive,
+              }, () => {
+                void handleSharingEnabledChange(false).then((result) => resolve(result !== false));
+              }, () => resolve(false));
+            }),
+        });
+        if (!ok) return false;
+        setAppliedMacro(next);
+        return true;
+      } catch {
+        return false;
+      } finally {
+        setStatusApplying(false);
+      }
+    },
+    [
+      statusApplying,
+      mySoloActive,
+      sharingEnabled,
+      notifPrefs,
+      toggleSolo,
+      handleSharingEnabledChange,
+      t,
+    ],
+  );
+
+  const openAndroidStatusSheet = useCallback(() => {
+    lightTap();
+    Alert.alert(
+      t('solo.statusTitle'),
+      statusMenuItems.map((item) => `${item.title}\n${item.subtitle}`).join('\n\n'),
+      [
+        ...statusMenuItems.map((item) => ({
+          text: item.selected ? `${item.title} ✓` : item.title,
+          onPress: () => {
+            void applyPresenceMacroKind(item.id);
+          },
+        })),
+        { text: t('common.cancel'), style: 'cancel' as const },
+      ],
+    );
+  }, [applyPresenceMacroKind, statusMenuItems, t]);
 
   // ⋯ next to avatar: open Settings directly (home / leave live in Settings personal).
   const openSettingsFromSheet = useCallback(() => {
     void runUiAction(
       'map.open_settings',
       () => {
-        setOverlay('settings');
+        setSettingsOpen(true);
       },
       { screen: 'Map' },
     );
@@ -5012,7 +5078,6 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // Camera insets stay peek-only. Live detent must not move the map.
   const peekSheetH = detents[0];
-  const halfPeek = peekSheetH / 2;
   const bottomPad = peekSheetH + sheetBottomOffset(peekSheetH, detents, insets.bottom);
   const carouselFallback = fontLayout.s(160, 140);
   const topPad =
@@ -5153,6 +5218,9 @@ export default function MapScreen({ route, navigation }: Props) {
   const closeOverlay = useCallback(() => {
     // Pure UI dismiss — minimal safe handler (no IO / navigation).
     setOverlay(null);
+  }, []);
+  const closeSettings = useCallback(() => {
+    setSettingsOpen(false);
   }, []);
   const openHistoryOverlay = useCallback(() => setOverlay('history'), []);
   const openAccountOverlay = useCallback(() => setOverlay('account'), []);
@@ -5390,24 +5458,60 @@ export default function MapScreen({ route, navigation }: Props) {
       {/* My status + refresh on one row (stage 1+ body) */}
       <View style={styles.myStatusBar}>
         <View style={styles.myStatusCluster}>
-          <Pressable
-            style={styles.myStatusIconButton}
-            onPress={openMyStatusPicker}
-            accessibilityRole="button"
-            accessibilityLabel={t('solo.statusTitle')}
-          >
-            <Ionicons
-              name={statusIconForKind(myStatusKind)}
-              size={20}
-              color={glass.textSecondary}
-            />
-          </Pressable>
+          {Platform.OS === 'ios' ? (
+            <NativeMenuHost
+              items={statusMenuItems}
+              onSelect={(id) => {
+                if (id === 'follow' || id === 'solo' || id === 'stealth') {
+                  void applyPresenceMacroKind(id);
+                }
+              }}
+              accessibilityLabel={t('solo.statusTitle')}
+              style={styles.myStatusTrigger}
+            >
+              <View style={styles.myStatusTriggerInner} pointerEvents="none">
+                <Ionicons
+                  name={statusIconForKind(myStatusKind)}
+                  size={20}
+                  color={glass.textSecondary}
+                />
+                <Text style={styles.myStatusName} numberOfLines={1}>
+                  {myStatusKind === 'stealth'
+                    ? t('solo.stealth')
+                    : myStatusKind === 'solo'
+                      ? t('solo.switch')
+                      : t('solo.followTeam')}
+                </Text>
+              </View>
+            </NativeMenuHost>
+          ) : (
+            <Pressable
+              style={styles.myStatusTrigger}
+              onPress={openAndroidStatusSheet}
+              accessibilityRole="button"
+              accessibilityLabel={t('solo.statusTitle')}
+            >
+              <Ionicons
+                name={statusIconForKind(myStatusKind)}
+                size={20}
+                color={glass.textSecondary}
+              />
+              <Text style={styles.myStatusName} numberOfLines={1}>
+                {myStatusKind === 'stealth'
+                  ? t('solo.stealth')
+                  : myStatusKind === 'solo'
+                    ? t('solo.switch')
+                    : t('solo.followTeam')}
+              </Text>
+            </Pressable>
+          )}
           <AmicroButton
             icon="eye-off-outline"
             activeIcon="eye-outline"
             active={sharingEnabled}
             activeOnPress={!sharingEnabled}
             resetAfterComplete={false}
+            revertEpoch={sharingIconEpoch}
             disabled={sharingApplying}
             color={glass.danger}
             activeColor={accent}
@@ -5522,8 +5626,8 @@ export default function MapScreen({ route, navigation }: Props) {
     t, styles, refreshingLocations, refreshAllLocations, refreshCooldownUntil, accent, highAccuracy,
     setHighAccuracy, pendingInvites, fontBucket, handleAcceptInvite, handleDeclineInvite,
     subgroups, topFlockMemo, renderFlockRow, flock, mySubgroupId, sentInvites,
-    openMyStatusPicker, myStatusKind,
-    sharingEnabled, handleSharingEnabledChangeAnimated, sharingApplying,
+    applyPresenceMacroKind, openAndroidStatusSheet, myStatusKind, statusMenuItems,
+    sharingEnabled, handleSharingEnabledChangeAnimated, sharingApplying, sharingIconEpoch,
   ]);
 
   // ─── 路線：集合點、排序、Google Maps 匯入、歷史 ───────────────────────
@@ -5881,10 +5985,11 @@ export default function MapScreen({ route, navigation }: Props) {
       onEntitlementChanged={() => {
         void refreshStoreEntitlements();
       }}
+      onOpenSubscribe={() => openPaywall(undefined, { showRestore: false })}
     />
   ), [
     groupId, membership?.group.name, isAnonymous, accent, t,
-    storeHighlightProduct, refreshStoreEntitlements,
+    storeHighlightProduct, refreshStoreEntitlements, openPaywall,
   ]);
 
   const sheetPaneOptions = useMemo<SheetPaneTabOption[]>(
@@ -6092,7 +6197,6 @@ export default function MapScreen({ route, navigation }: Props) {
           // mid-drag; top tracks measured carousel card height.
           topOverlap={topPad}
           bottomOverlap={bottomPad}
-          halfPeek={halfPeek}
           onUserLocationSample={
             Platform.OS === 'ios' ? consumeForegroundSample : undefined
           }
@@ -7432,8 +7536,8 @@ export default function MapScreen({ route, navigation }: Props) {
       </OverlaySheet>
 
       <SettingsOverlay
-        visible={overlay === 'settings'}
-        onClose={closeOverlay}
+        visible={settingsOpen}
+        onClose={closeSettings}
         onArchiveAllForTest={archiveAllForTest}
         onOpenFeedback={openFeedback}
         onConfirmResetPrefs={confirmResetPrefs}
@@ -7443,12 +7547,16 @@ export default function MapScreen({ route, navigation }: Props) {
         onOpenAccount={openAccountOverlay}
         onOpenDiagnostics={() => setOverlay('diagnostics')}
         onGoHome={() => {
-          setOverlay(null);
+          setSettingsOpen(false);
           goHomeCreateOrJoin();
         }}
         styles={styles}
       />
 
+      <View
+        pointerEvents="box-none"
+        style={[StyleSheet.absoluteFill, styles.settingsChildLayer]}
+      >
       <DiagnosticsOverlay
         visible={overlay === 'diagnostics'}
         onClose={closeOverlay}
@@ -7471,6 +7579,7 @@ export default function MapScreen({ route, navigation }: Props) {
         destinations={destinations}
         activeDestinationId={navTargetId ?? selectedDestination?.id ?? null}
       />
+      </View>
 
       {/* 邀請成員 — independent share sheet (code / share / copy). */}
       <OverlaySheet
@@ -7558,82 +7667,6 @@ export default function MapScreen({ route, navigation }: Props) {
               />
             </View>
           )}
-        </ScrollView>
-      </OverlaySheet>
-
-      {/* 我的狀態 — 跟隨 / 獨自 / 暫時離隊；選取為草稿，完成才提交 */}
-      <OverlaySheet
-        visible={overlay === 'myStatus'}
-        onClose={closeMyStatusPicker}
-        onDone={() => { void commitMyStatus(); }}
-        title={t('solo.statusTitle')}
-        accent={accent}
-        doneLabel={t('map.done')}
-      >
-        <ScrollView contentContainerStyle={styles.overlayBody}>
-          <Text style={styles.overlayHint}>{t('solo.pickHint')}</Text>
-          {(
-            [
-              {
-                key: 'follow' as const,
-                title: t('solo.followTeam'),
-                hint: t('solo.followTeamHint'),
-                icon: 'people' as const,
-              },
-              {
-                key: 'solo' as const,
-                title: t('solo.switch'),
-                hint: t('solo.soloHint'),
-                icon: 'walk' as const,
-              },
-              {
-                key: 'away' as const,
-                title: t('solo.tempLeave'),
-                hint: t('solo.tempLeaveHint'),
-                icon: 'exit-outline' as const,
-              },
-            ] as const
-          ).map((opt) => {
-            const selected = (draftMyStatus ?? myStatusKind) === opt.key;
-            return (
-              <Pressable
-                key={opt.key}
-                style={[
-                  styles.statusOption,
-                  selected && { borderColor: accentMix(accent, 55), backgroundColor: accentMix(accent, 14) },
-                  statusApplying && { opacity: 0.6 },
-                ]}
-                onPress={() => {
-                  if (statusApplying) return;
-                  selectionTick();
-                  setDraftMyStatus(opt.key);
-                }}
-                disabled={statusApplying}
-                accessibilityRole="radio"
-                accessibilityState={{ selected, disabled: statusApplying }}
-                accessibilityLabel={`${opt.title}. ${opt.hint}`}
-              >
-                <View style={[styles.statusOptionIcon, selected && { backgroundColor: accentMix(accent, 28) }]}>
-                  <Ionicons
-                    name={opt.icon}
-                    size={22}
-                    color={selected ? accent : glass.textSecondary}
-                  />
-                </View>
-                <View style={styles.grow}>
-                  <Text style={styles.statusOptionTitle}>{opt.title}</Text>
-                  <Text style={styles.statusOptionHint}>{opt.hint}</Text>
-                </View>
-                {selected ? (
-                  <View style={[styles.statusOptionCheck, { backgroundColor: accent }]}>
-                    <Ionicons name="checkmark" size={14} color="#1a0a00" />
-                  </View>
-                ) : (
-                  <View style={styles.statusOptionRadio} />
-                )}
-              </Pressable>
-            );
-          })}
         </ScrollView>
       </OverlaySheet>
 
@@ -7779,14 +7812,19 @@ export default function MapScreen({ route, navigation }: Props) {
         </ScrollView>
       </OverlaySheet>
 
+      <View
+        pointerEvents="box-none"
+        style={[StyleSheet.absoluteFill, styles.settingsChildLayer]}
+      >
       <AccountSheet
         visible={overlay === 'account'}
-        onClose={() => setOverlay('settings')}
+        onClose={() => setOverlay(null)}
         accent={accent}
         onAccountDeleted={() => {
           navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
         }}
       />
+      </View>
 
       <ProfileOverlay
         visible={overlay === 'profile'}
@@ -7994,13 +8032,17 @@ export default function MapScreen({ route, navigation }: Props) {
         </ScrollView>
       </OverlaySheet>
 
-      {/* Report-a-problem — a top-level overlay sharing the `overlay` state, so
-          it fully replaces (never stacks over) the settings sheet. */}
+      {/* Report-a-problem stacks over settings; dismissing it reveals settings. */}
+      <View
+        pointerEvents="box-none"
+        style={[StyleSheet.absoluteFill, styles.settingsChildLayer]}
+      >
       <FeedbackSheet
         visible={overlay === 'feedback'}
-        onClose={() => setOverlay('settings')}
+        onClose={() => setOverlay(null)}
         screenshotUri={feedbackShot}
       />
+      </View>
 
       <CustomQuickCommandSheet
         visible={overlay === 'custom'}
@@ -8063,11 +8105,28 @@ export default function MapScreen({ route, navigation }: Props) {
         onPick={handleSearchPick}
       />
 
+      <View
+        pointerEvents="box-none"
+        style={[StyleSheet.absoluteFill, styles.settingsChildLayer]}
+      >
       <PaywallSheet
         visible={paywallVisible}
         onClose={() => setPaywallVisible(false)}
         trigger={paywallTrigger}
+        showRestore={paywallShowRestore}
+        onUnlockingChange={setPurchaseUnlocking}
       />
+      </View>
+      {purchaseUnlocking ? (
+        <View
+          style={[styles.loading, StyleSheet.absoluteFill, { zIndex: 200 }]}
+          pointerEvents="auto"
+          testID="purchase-unlock-loading"
+        >
+          <ActivityIndicator color={accent} size="large" />
+          <Text style={styles.loadingText}>{t('map.loading')}</Text>
+        </View>
+      ) : null}
 
       <KmlImportSheet
         visible={kmlVisible}
@@ -8684,16 +8743,16 @@ const FlockRow = React.memo(function FlockRow({
           )}
         </View>
         <View style={styles.grow}>
-          <Text style={styles.flockName}>{name}{isMe ? ` · ${t('flock.you')}` : ''}</Text>
+          <Text style={styles.flockName}>{isMe ? t('flock.you') : name}</Text>
           <Text style={styles.flockStatus} numberOfLines={2}>
             <Text style={styles.flockMetaRole}>{role}</Text>
-            {distOrStatus ? (
+            {!isMe && distOrStatus ? (
               <Text style={styles.flockMetaDist}>{` · ${distOrStatus}`}</Text>
             ) : null}
             {freshnessText ? (
               <Text style={styles.flockMetaFresh}>{` · ${freshnessText}`}</Text>
             ) : null}
-            {solo ? (
+            {!isMe && solo ? (
               <Text style={styles.flockMetaWarn}>{` · ${t('solo.badge')}`}</Text>
             ) : null}
           </Text>
@@ -8974,6 +9033,11 @@ const makeStyles = (
     // Parent of BottomSheet — zIndex on this sibling beats carousel 58.
     sheetLayer: {
       zIndex: 70,
+    },
+    // Settings root is 80. Child OverlaySheets have no wrapper z-index of
+    // their own, so this sibling stacking context must beat settings.
+    settingsChildLayer: {
+      zIndex: 90,
     },
     // Gathering-point card shell — radius + overflow only.
     // Padding lives on cardInner so celebrate dim can absolute-fill the full
@@ -9614,16 +9678,28 @@ const makeStyles = (
       alignItems: 'center',
       gap: STATUS_SHARE_CLUSTER_GAP,
     },
-    myStatusIconButton: {
-      width: 44,
-      height: 44,
-      borderRadius: 22,
+    myStatusTrigger: {
+      flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'center',
-      flexShrink: 0,
+      gap: 8,
+      minHeight: 44,
+      paddingHorizontal: 12,
+      borderRadius: 22,
+      flexShrink: 1,
       backgroundColor: glass.fill,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairline,
+    },
+    myStatusTriggerInner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    myStatusName: {
+      color: glass.textSecondary,
+      fontSize: 14,
+      fontWeight: '600',
+      maxWidth: 120,
     },
     statusOption: {
       flexDirection: 'row',

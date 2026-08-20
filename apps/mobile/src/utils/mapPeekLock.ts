@@ -1,6 +1,6 @@
 /**
- * Peek-locked map surface: shift the whole MapView down+right by half the
- * peek sheet height and oversize it so the extra pixels fill the corner.
+ * Peek-locked map surface used to oversize+translate MapView. Full-screen maps
+ * pass halfPeek=0 so the surface is edge-to-edge with no letterbox.
  */
 export function halfPeekOffset(peekHeight: number): number {
   return Math.max(0, peekHeight) / 2;
@@ -12,11 +12,24 @@ export function oversizedMapStyle(
   halfPeek: number,
 ): {
   position: 'absolute';
-  width: number;
-  height: number;
-  transform: [{ translateX: number }, { translateY: number }];
+  top?: number;
+  left?: number;
+  right?: number;
+  bottom?: number;
+  width?: number;
+  height?: number;
+  transform?: [{ translateX: number }, { translateY: number }];
 } {
   const shift = Math.max(0, halfPeek);
+  if (shift === 0) {
+    return {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+    };
+  }
   return {
     position: 'absolute',
     width: windowWidth + shift,

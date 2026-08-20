@@ -1,7 +1,6 @@
 /**
- * Settings / contextual Premium paywall sheet.
- * Presentation is shared with the Store inline block via PremiumPresentation;
- * restore remains available only in this sheet context.
+ * Settings / Store Premium paywall sheet.
+ * Restore remains available only when opened from Settings.
  */
 import React from 'react';
 import { ScrollView, StyleSheet } from 'react-native';
@@ -15,10 +14,14 @@ export default React.memo(function PaywallSheet({
   visible,
   onClose,
   trigger,
+  showRestore = true,
+  onUnlockingChange,
 }: {
   visible: boolean;
   onClose: () => void;
   trigger?: TranslationKey;
+  showRestore?: boolean;
+  onUnlockingChange?: (unlocking: boolean) => void;
 }) {
   const { t } = useTranslation();
   const { colors } = useTheme();
@@ -35,10 +38,12 @@ export default React.memo(function PaywallSheet({
       <ScrollView contentContainerStyle={styles.scroll}>
         {visible ? (
           <PremiumPresentation
-            showRestore
+            showRestore={showRestore}
+            showIntroPager
             trigger={trigger}
             onPurchaseSuccess={onClose}
             onRestoreSuccess={onClose}
+            onUnlockingChange={onUnlockingChange}
             testID="paywall-premium-presentation"
           />
         ) : null}

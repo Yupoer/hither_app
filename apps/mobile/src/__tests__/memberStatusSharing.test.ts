@@ -20,7 +20,7 @@ describe('member status + location sharing seam', () => {
   it('maps follow/solo/away to the same picker icons', () => {
     expect(statusIconForKind('follow')).toBe('people');
     expect(statusIconForKind('solo')).toBe('walk');
-    expect(statusIconForKind('away')).toBe('exit-outline');
+    expect(statusIconForKind('stealth')).toBe('eye-off-outline');
     expect(STATUS_SHARE_CLUSTER_GAP).toBe(8);
   });
 
@@ -63,7 +63,8 @@ describe('member status + location sharing seam', () => {
       style?: string;
       onPress?: () => void;
     }>;
-    expect(buttons.find((b) => b.style === 'cancel')?.onPress).toBeUndefined();
+    expect(onConfirm).not.toHaveBeenCalled();
+    buttons.find((b) => b.style === 'cancel')?.onPress?.();
     expect(onConfirm).not.toHaveBeenCalled();
     buttons.find((b) => b.style === 'destructive')?.onPress?.();
     expect(onConfirm).toHaveBeenCalledTimes(1);
@@ -76,11 +77,14 @@ describe('member status + location sharing seam', () => {
     expect(bar).toContain('testID="members-location-sharing"');
     expect(bar).toContain('color={glass.danger}');
     expect(bar).toContain('activeColor={accent}');
-    expect(bar).toContain('openMyStatusPicker');
+    expect(bar).toContain('NativeMenuHost');
     const handlerStart = mapScreen.indexOf('const handleSharingEnabledChangeAnimated');
     const handler = mapScreen.slice(handlerStart, handlerStart + 700);
     expect(handler).toContain('confirmAction');
     expect(handler).toContain('locationSharingConfirmCopy');
+    expect(handler).toContain('revertSharingIcon');
     expect(handler.indexOf('confirmAction')).toBeLessThan(handler.indexOf('handleSharingEnabledChange(nextEnabled)'));
+    expect(bar).toContain('revertEpoch={sharingIconEpoch}');
+    expect(mapScreen).toContain('requestLocationPermission');
   });
 });
