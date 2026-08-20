@@ -107,6 +107,7 @@ select is(
   'true',
   'accepted duplicate is visible to the receiver'
 );
+set local role postgres;
 select is(
   (select count(*)::int from public.personal_premium_entitlements
     where user_id = '33333333-3333-4333-8333-333333333333'

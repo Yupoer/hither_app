@@ -1066,3 +1066,12 @@ $$;
 
 revoke all on function public.redeem_promo_code(text, uuid) from public, anon;
 grant execute on function public.redeem_promo_code(text, uuid) to authenticated;
+
+grant select, insert, update, delete on table public.personal_premium_entitlements
+  to service_role;
+grant select, insert, update, delete on table public.premium_transaction_bindings
+  to service_role;
+grant select, insert, update, delete on table public.premium_security_events
+  to service_role;
+grant select, insert, update, delete on table public.premium_store_transactions
+  to service_role;
