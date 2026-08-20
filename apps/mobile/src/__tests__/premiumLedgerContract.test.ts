@@ -94,7 +94,7 @@ describe('#230 ledger contract', () => {
 
   it('A6 anonymous cleanup does not delete a user who still has a live personal grant', () => {
     expect(migration).toContain('personal_premium_is_live(e.status, e.expires_at)');
-    expect(cleanupTest).toContain('A6 live personal premium anonymous user is not deleted');
+    expect(cleanupTest).toContain('A6 cleanup excludes live personal Premium from anonymous expiry');
   });
 
   it('A7 Sandbox and Production original ids are isolated', () => {
