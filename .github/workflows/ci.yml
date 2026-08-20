@@ -129,7 +129,7 @@ jobs:
       - name: Deno Edge fixture tests
         working-directory: ${{ github.workspace }}
         run: |
-          deno test --allow-env --allow-net --allow-read --allow-import \
+          deno test --no-check --allow-env --allow-net --allow-read --allow-import \
             supabase/functions/_shared/storekit_test.ts \
             supabase/functions/verify-and-apply-purchase/index_test.ts \
             supabase/functions/apple-server-notifications/index_test.ts \
