@@ -160,7 +160,9 @@ const { act, create } = require('react-test-renderer') as {
   .IS_REACT_ACT_ENVIRONMENT = true;
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const PremiumPresentation = require('../components/PremiumPresentation').default as typeof import('../components/PremiumPresentation').default;
+const premiumPresentationModule = require('../components/PremiumPresentation') as typeof import('../components/PremiumPresentation');
+const PremiumPresentation = premiumPresentationModule.default;
+const { annualSavingsPercent, annualMonthlyPrice } = premiumPresentationModule;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const PaywallSheet = require('../components/PaywallSheet').default as typeof import('../components/PaywallSheet').default;
 
@@ -169,7 +171,8 @@ const SAMPLE_PRODUCTS = [
     id: 'premium.monthly',
     type: 'subs' as const,
     displayName: 'Monthly',
-    displayPrice: 'NT$60',
+    displayPrice: 'NT$90',
+    price: 90,
     description: 'Premium monthly',
     currency: 'TWD',
     introductoryPriceIOS: 'Free for 7 days',
@@ -180,12 +183,22 @@ const SAMPLE_PRODUCTS = [
     id: 'premium.annual',
     type: 'subs' as const,
     displayName: 'Annual',
-    displayPrice: 'NT$480',
+    displayPrice: 'NT$600',
+    price: 600,
     description: 'Premium annual',
     currency: 'TWD',
     introductoryPriceIOS: null,
     introductoryOfferEligibleIOS: false,
     subscriptionGroupIdIOS: 'hither-premium',
+  },
+  {
+    id: 'hither.small_trip_pass',
+    type: 'in-app' as const,
+    displayName: 'Small Trip Pass',
+    displayPrice: 'NT$60',
+    price: 60,
+    description: 'Ten-day team pass',
+    currency: 'TWD',
   },
 ];
 
@@ -284,9 +297,16 @@ describe('#156 behavioral: PremiumPresentation Store + Paywall', () => {
 
     expect(mockLoadProducts).toHaveBeenCalledTimes(1);
     expect(findByTestId(tree.root, 'store-premium-presentation').length).toBe(1);
-    expect(findByTestId(tree.root, 'store-premium-presentation-purchase').length).toBe(1);
+    const purchase = findByTestId(tree.root, 'store-premium-presentation-purchase');
+    expect(purchase.length).toBe(1);
+    expect(purchase[0].props.disabled).toBe(false);
     expect(findByTestId(tree.root, 'store-premium-presentation-restore').length).toBe(0);
     tree.unmount();
+  });
+
+  it('derives annual price math from numeric StoreKit amounts', () => {
+    expect(annualSavingsPercent(90, 600)).toBe(44);
+    expect(annualMonthlyPrice(600)).toBe(50);
   });
 
   it('Paywall context shows restore CTA and loads products once per mount', async () => {

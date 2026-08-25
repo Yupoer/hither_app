@@ -3,6 +3,14 @@ import { join } from 'node:path';
 
 const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
 const bottomSheet = readFileSync(join(__dirname, '../components/BottomSheet.tsx'), 'utf8');
+const settingsChildSheet = readFileSync(
+  join(__dirname, '../screens/MapScreen/components/SettingsChildSheet.tsx'),
+  'utf8',
+);
+const reorderList = readFileSync(
+  join(__dirname, '../components/DestinationReorderList.tsx'),
+  'utf8',
+);
 const segmented = readFileSync(
   join(__dirname, '../screens/MapScreen/components/Segmented.tsx'),
   'utf8',
@@ -32,6 +40,28 @@ const destinationSearch = readFileSync(
 );
 
 describe('map UI placement contracts', () => {
+  it('keeps settings on the shared two-detent sheet with downward dismissal', () => {
+    expect(settingsChildSheet).toContain("import BottomSheet from '../../../components/BottomSheet'");
+    expect(settingsChildSheet).toContain('STAGE_ONE_RATIO = 0.52');
+    expect(settingsChildSheet).toContain('STAGE_TWO_RATIO = 0.8');
+    expect(settingsChildSheet).toContain('dismissOnDownFromIndex={0}');
+    expect(settingsChildSheet).toContain('edgeToEdgeAtLast={false}');
+    expect(settingsChildSheet).not.toContain('PanResponder');
+  });
+
+  it('keeps shared BottomSheet detents and edge treatment configurable', () => {
+    expect(bottomSheet).toContain('dismissOnDownFromIndex');
+    expect(bottomSheet).toContain('edgeToEdgeAtLast');
+    expect(bottomSheet).toContain('const detentsKey = detents.join');
+    expect(bottomSheet).toContain('detents.map');
+  });
+
+  it('keeps reorder actions on one row with readable text', () => {
+    expect(reorderList).toContain('flexWrap: \'nowrap\'');
+    expect(reorderList).toContain('fontSize: 14');
+    expect((reorderList.match(/numberOfLines=\{1\}/g) ?? []).length).toBeGreaterThanOrEqual(3);
+  });
+
   it('coalesces full group-state reloads at a single-flight root', () => {
     expect(useGroupState).toContain('loadInFlightRef');
     expect(useGroupState).toContain('if (loadInFlightRef.current) {');
@@ -372,9 +402,10 @@ describe('map UI placement contracts', () => {
   });
 
   it('keeps peek/mid sheet width stable so tab Segmented does not scale between stages', () => {
-    // detents may be read via SharedValue alias `d` (stable pan) but side insets stay [10,10,0].
-    expect(bottomSheet).toMatch(/interpolate\(h, \w+, \[10, 10, 0\]/);
-    expect(bottomSheet).not.toMatch(/interpolate\(h, \w+, \[20, 10, 0\]/);
+    // The shared sheet keeps non-edge stages inset and lets settings opt out of
+    // the final edge-to-edge morph.
+    expect(bottomSheet).toContain('d.map((_, i) => (edgeToEdgeAtLastSV.value && i === last ? 0 : 10))');
+    expect(settingsChildSheet).toContain('edgeToEdgeAtLast={false}');
   });
 
   it('snaps Segmented pill when track width appears (tools pane reveal)', () => {
@@ -391,7 +422,7 @@ describe('map UI placement contracts', () => {
     );
     // Tab shell is solid fill (no GlassView) so liquid-glass white rims never appear.
     expect(sheetBlock).toContain('SheetPaneTabs');
-    expect(sheetBlock).toContain('sheetPaneToggleGlass');
+    expect(sheetBlock).toContain('sheetPaneToggleWrap');
     expect(sheetBlock).not.toContain('liquidGlass.GlassView');
     expect(sheetBlock).toContain("key: 'members'");
     expect(sheetBlock).toContain("key: 'route'");

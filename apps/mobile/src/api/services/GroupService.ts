@@ -6,7 +6,13 @@
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../supabase';
-import { avatarForGroup, displayMemberAvatar } from '../../constants/avatars';
+import {
+  AVATAR_COLORS,
+  AVATAR_EMOJI,
+  avatarColorForGroup,
+  avatarForGroup,
+  displayMemberAvatar,
+} from '../../constants/avatars';
 import { memberColor } from '../../glass';
 import { mergeAvatarProfiles } from '../../utils/gatherCommand';
 import {
@@ -49,6 +55,8 @@ export interface GroupRow {
   id: string;
   name: string;
   invite_code: string;
+  avatar?: string | null;
+  avatar_color?: string | null;
   created_by: string | null;
   created_at: string | null;
   journey_status: JourneyStatus | null;
@@ -104,10 +112,8 @@ export interface LocationRow {
 // ── Pure mappers ───────────────────────────────────────────────────────────
 
 export function mapGroup(row: GroupRow): Group {
-  const storedAvatar = 'avatar' in row ? (row as GroupRow & { avatar?: string | null }).avatar : null;
-  const storedColor = 'avatar_color' in row
-    ? (row as GroupRow & { avatar_color?: string | null }).avatar_color
-    : null;
+  const storedAvatar = row.avatar;
+  const storedColor = row.avatar_color;
   return {
     id: row.id,
     name: row.name,
@@ -122,8 +128,12 @@ export function mapGroup(row: GroupRow): Group {
     tripDays: row.trip_days ?? undefined,
     departureDate: row.departure_date ?? undefined,
     accommodationAutoAdd: row.accommodation_auto_add ?? true,
-    avatar: storedAvatar && storedAvatar.trim().length > 0 ? storedAvatar : avatarForGroup(row.id),
-    avatarColor: storedColor ?? undefined,
+    avatar: storedAvatar && (AVATAR_EMOJI as readonly string[]).includes(storedAvatar.trim())
+      ? storedAvatar.trim()
+      : avatarForGroup(row.id),
+    avatarColor: storedColor && (AVATAR_COLORS as readonly string[]).includes(storedColor.trim())
+      ? storedColor.trim()
+      : avatarColorForGroup(row.id),
   };
 }
 
@@ -179,7 +189,11 @@ export function mapSubgroupInvite(row: SubgroupInviteRow): SubgroupInvite {
  * Avoids orphan groups (group row without leader membership) that cannot be
  * deleted under RLS "groups: delete if leader" after a failed membership insert.
  */
-export async function createGroup(name: string): Promise<Group> {
+export async function createGroup(
+  name: string,
+  avatar?: string,
+  avatarColor?: string,
+): Promise<Group> {
   await requireUserId();
   const { data, error } = await supabase.rpc('create_group', {
     p_name: name.trim(),
@@ -195,6 +209,37 @@ export async function createGroup(name: string): Promise<Group> {
     }
     throw new Error(error.message);
   }
+  const group = mapGroup(data as GroupRow);
+  if (avatar || avatarColor) {
+    return updateGroupAvatar(
+      group.id,
+      avatar ?? group.avatar ?? avatarForGroup(group.id),
+      avatarColor,
+    );
+  }
+  return group;
+}
+
+export async function updateGroupAvatar(
+  groupId: string,
+  avatar: string,
+  avatarColor?: string,
+): Promise<Group> {
+  await requireUserId();
+  const safeAvatar = (AVATAR_EMOJI as readonly string[]).includes(avatar)
+    ? avatar
+    : avatarForGroup(groupId);
+  const safeColor = avatarColor && (AVATAR_COLORS as readonly string[]).includes(avatarColor)
+    ? avatarColor
+    : avatarColorForGroup(groupId);
+  const { data, error } = await supabase
+    .from('groups')
+    .update({ avatar: safeAvatar, avatar_color: safeColor })
+    .eq('id', groupId)
+    .select('id, name, invite_code, avatar, avatar_color, created_by, created_at, journey_status, active_destination_id, journey_started_at, straggler_alerts, straggler_threshold_m, trip_days, departure_date, accommodation_auto_add')
+    .single();
+  orThrow(error);
+  invalidateMyJoinedGroupsCache();
   return mapGroup(data as GroupRow);
 }
 
@@ -246,7 +291,7 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
     supabase
       .from('groups')
       .select(
-        'id, name, invite_code, created_by, created_at, journey_status, active_destination_id, journey_started_at, straggler_alerts, straggler_threshold_m, trip_days, departure_date, accommodation_auto_add',
+        'id, name, invite_code, avatar, avatar_color, created_by, created_at, journey_status, active_destination_id, journey_started_at, straggler_alerts, straggler_threshold_m, trip_days, departure_date, accommodation_auto_add',
       )
       .eq('id', groupId)
       .single(),
@@ -397,7 +442,7 @@ export interface JoinedGroupInfo {
   group: Group;
   memberCount: number;
   role: MemberRole;
-  memberProfiles: { avatar?: string; avatarColor?: string }[];
+  memberProfiles: { userId?: string; avatar?: string; avatarColor?: string }[];
 }
 
 export type GetMyJoinedGroupsOptions = {
@@ -417,7 +462,7 @@ export function joinedGroupAvatarsKey(userId: string): string {
   return `@hither/joined-group-avatars:${userId}`;
 }
 
-type AvatarDiskCache = Record<string, { avatar?: string; avatarColor?: string }[]>;
+type AvatarDiskCache = Record<string, { userId?: string; avatar?: string; avatarColor?: string }[]>;
 
 async function readAvatarDiskCache(userId: string): Promise<AvatarDiskCache> {
   try {
@@ -487,7 +532,7 @@ export async function getMyJoinedGroups(
   const [groupsRes, membersRes] = await Promise.all([
     supabase
       .from('groups')
-      .select('id, name, invite_code, created_by, created_at, journey_status, active_destination_id, journey_started_at, straggler_alerts, straggler_threshold_m, trip_days, departure_date')
+      .select('id, name, invite_code, avatar, avatar_color, created_by, created_at, journey_status, active_destination_id, journey_started_at, straggler_alerts, straggler_threshold_m, trip_days, departure_date')
       .in('id', groupIds),
     supabase
       .from('memberships')
@@ -506,7 +551,7 @@ export async function getMyJoinedGroups(
     memberCounts.set(m.group_id, (memberCounts.get(m.group_id) ?? 0) + 1);
   }
 
-  const membersByGroup = new Map<string, { avatar?: string; avatarColor?: string }[]>();
+  const membersByGroup = new Map<string, { userId: string; avatar?: string; avatarColor?: string }[]>();
   const diskAvatars = await readAvatarDiskCache(uid);
 
   // RoleSelect skips profiles (one less round-trip); MyTeams keeps avatars.
@@ -522,6 +567,7 @@ export async function getMyJoinedGroups(
       if (!membersByGroup.has(m.group_id)) membersByGroup.set(m.group_id, []);
       const p = profileById.get(m.user_id);
       membersByGroup.get(m.group_id)!.push({
+        userId: m.user_id,
         avatar: displayMemberAvatar(p?.avatar, m.user_id, p?.avatar_color).emoji,
         avatarColor: displayMemberAvatar(p?.avatar, m.user_id, p?.avatar_color).color || memberColor(m.user_id),
       });

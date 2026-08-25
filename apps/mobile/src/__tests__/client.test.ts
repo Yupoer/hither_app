@@ -9,7 +9,8 @@ jest.mock('expo-secure-store', () => ({
   setItemAsync: jest.fn(async () => undefined),
 }));
 
-import { avatarForGroup, displayMemberAvatar } from '../constants/avatars';
+import { avatarColorForGroup, avatarForGroup, displayMemberAvatar } from '../constants/avatars';
+import { memberColor } from '../glass';
 import {
   addDestination,
   createGroup,
@@ -89,7 +90,7 @@ describe('pure mappers (snake_case row -> camelCase type)', () => {
       departureDate: undefined,
       accommodationAutoAdd: true,
       avatar: avatarForGroup('g1'),
-      avatarColor: undefined,
+      avatarColor: avatarColorForGroup('g1'),
     });
   });
 
@@ -135,7 +136,7 @@ describe('pure mappers (snake_case row -> camelCase type)', () => {
       role: 'leader',
       status: 'arrived',
       avatar: displayMemberAvatar(undefined, 'u1').emoji,
-      avatarColor: undefined,
+      avatarColor: memberColor('u1'),
       solo: false,
       subgroupId: undefined,
       coordinates: { latitude: 25, longitude: 121 },

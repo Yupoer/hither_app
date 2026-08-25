@@ -25,9 +25,7 @@ export const SMALL_TRIP_PASS = {
   minMembers: 2,
   maxMembers: 5,
   /** Duration after activation. */
-  durationDays: 7,
-  /** Display price (store price is authoritative when IAP is live). */
-  priceLabel: 'NT$30',
+  durationDays: 10,
   /** App Store / Play SKU — must match store console + server allow-list. */
   productId: 'hither.small_trip_pass',
 } as const;
@@ -186,6 +184,7 @@ export interface EntitlementMutationResult {
   durable?: boolean;
   entitlementVersion?: number | null;
   personalPremiumActive?: boolean;
+  teamPremiumActive?: boolean;
   productId?: string | null;
   transactionId?: string | null;
   message?: string;

@@ -149,7 +149,7 @@ import {
 } from '../state/PreferencesContext';
 import PrefSlider from '../components/PrefSlider';
 import SystemToggle from '../components/SystemToggle';
-import { displayMemberAvatar } from '../constants/avatars';
+import { avatarColorForGroup, avatarForGroup, displayMemberAvatar } from '../constants/avatars';
 import { canMarkDestinationArrival } from '../utils/arrivalMarking';
 import { hasArrived } from '../utils/journeyProgress';
 import { buildPassiveCompanionModel } from '../utils/passiveCompanion';
@@ -319,6 +319,7 @@ import {
   type FavoritePlace,
   submitGatherPointRequest,
   updateGroupTripDetails,
+  updateGroupAvatar,
   updateDestinationEmojiColor,
   getNotificationPreferences,
   setNotificationPreferences,
@@ -4788,6 +4789,7 @@ export default function MapScreen({ route, navigation }: Props) {
           // BUG-08: prefer session profile for self so a just-saved avatar
           // shows in the flock before realtime memberships refresh.
           avatar: (isSelf && user?.avatar) || m.avatar,
+          avatarColor: (isSelf && user?.avatarColor) || m.avatarColor || memberColor(m.userId),
           solo,
           subgroupId: m.subgroupId,
           // Prefer the member's chosen avatar background colour; fall back to the
@@ -5158,16 +5160,22 @@ export default function MapScreen({ route, navigation }: Props) {
         <Pressable
           ref={(n) => setTourTargetRef('avatar', n)}
           collapsable={false}
-          style={[styles.headerAvatar, { backgroundColor: user?.avatarColor ?? accent }]}
+          style={[styles.headerAvatar, {
+            backgroundColor: user
+              ? (displayMemberAvatar(user.avatar, user.id, user.avatarColor).color ?? accent)
+              : accent,
+          }]}
           onPress={openProfile}
           accessibilityRole="button"
           accessibilityLabel={t('profile.title')}
         >
-          {user?.avatar ? (
-            <HitherText typeRole="emoji" style={styles.headerAvatarEmoji}>{user.avatar}</HitherText>
+          {user ? (
+            <HitherText typeRole="emoji" style={styles.headerAvatarEmoji}>
+              {displayMemberAvatar(user.avatar, user.id, user.avatarColor).emoji}
+            </HitherText>
           ) : (
             <Text style={styles.headerAvatarText}>
-              {(user?.name ?? '?').slice(0, 1).toUpperCase()}
+              {'?'}
             </Text>
           )}
         </Pressable>
@@ -5445,15 +5453,10 @@ export default function MapScreen({ route, navigation }: Props) {
     void refreshStoreEntitlements();
   }, [groupId, refreshStoreEntitlements, isPro]);
 
-  const openStoreForLiveActivity = useCallback(() => {
+  const openPaywallForLiveActivity = useCallback(() => {
     lightTap();
-    setStoreHighlightProduct('personal_live_activity_lifetime');
-    setSheetPane('store');
-    // Raise to mid sheet at most — forcing full (Peak) sets atFull and
-    // pointerEvents=none on gathering cards, which broke Stage-1 interaction.
-    const midIndex = Math.min(1, Math.max(0, detents.length - 1));
-    setDetent((prev) => (prev < midIndex ? midIndex : prev));
-  }, [detents.length]);
+    openPaywall();
+  }, [openPaywall]);
 
   // ─── 成員：位置、狀態、個別操作、小隊（無「成員」標題） ────────────────
   const membersPaneBody = useMemo(() => (
@@ -5617,7 +5620,6 @@ export default function MapScreen({ route, navigation }: Props) {
           <Text style={styles.accuracyBattery}>{t('settings.preciseLocationHint')}</Text>
         </View>
         <SystemToggle
-          accent={accent}
           value={highAccuracy}
           onValueChange={setHighAccuracy}
           accessibilityLabel={t('settings.preciseLocation')}
@@ -5895,7 +5897,7 @@ export default function MapScreen({ route, navigation }: Props) {
       {!liveActivityUnlocked ? (
         <Pressable
           style={styles.liveActivityLockedRow}
-          onPress={openStoreForLiveActivity}
+          onPress={openPaywallForLiveActivity}
           accessibilityRole="button"
           accessibilityState={{ disabled: false }}
           accessibilityLabel={t('store.liveActivityLocked')}
@@ -5968,7 +5970,7 @@ export default function MapScreen({ route, navigation }: Props) {
   ), [
     styles, t, groupId, isLeader, dark, openCustomQuickCommand, accent,
     arrivalRadiusM, setArrivalRadiusM, setPassiveCompanionMode,
-    liveActivityUnlocked, openStoreForLiveActivity,
+    liveActivityUnlocked, openPaywallForLiveActivity,
   ]);
 
   const storePaneBody = useMemo(() => (
@@ -6013,25 +6015,22 @@ export default function MapScreen({ route, navigation }: Props) {
         collapsable={false}
         testID="tour-stage-two-placement"
       >
-        <View style={styles.sheetPaneToggleGlass} collapsable={false}>
-          <SheetPaneTabs
-            accent={accent}
-            options={sheetPaneOptions}
-            value={sheetPane}
-            onChange={selectSheetPane}
-            onTabNode={(key, node) => {
-              const targetId =
-                key === 'members'
-                  ? 'paneMembers'
-                  : key === 'route'
-                    ? 'paneRoute'
-                    : key === 'tools'
-                      ? 'paneTools'
-                      : 'paneStore';
-              setTourTargetRef(targetId, node);
-            }}
-          />
-        </View>
+        <SheetPaneTabs
+          options={sheetPaneOptions}
+          value={sheetPane}
+          onChange={selectSheetPane}
+          onTabNode={(key, node) => {
+            const targetId =
+              key === 'members'
+                ? 'paneMembers'
+                : key === 'route'
+                  ? 'paneRoute'
+                  : key === 'tools'
+                    ? 'paneTools'
+                    : 'paneStore';
+            setTourTargetRef(targetId, node);
+          }}
+        />
       </View>
 
       <View testID="sheet-pane-content-area">
@@ -6245,6 +6244,18 @@ export default function MapScreen({ route, navigation }: Props) {
               style={styles.groupPill}
             >
               <View style={styles.pillAvatars}>
+                <View
+                  style={[
+                    styles.pillAvatar,
+                    {
+                      backgroundColor: group?.avatarColor ?? (group ? avatarColorForGroup(group.id) : accent),
+                    },
+                  ]}
+                >
+                  <HitherText typeRole="emoji" style={styles.pillEmoji}>
+                    {group?.avatar ?? (group ? avatarForGroup(group.id) : '👥')}
+                  </HitherText>
+                </View>
                 {(() => {
                   const visibleMembers = viewingScope === 'main' || !myScopeId ? flock : flock.filter(f => f.subgroupId === myScopeId);
                   return visibleMembers.slice(0, 3).map((f, i) => (
@@ -6252,9 +6263,9 @@ export default function MapScreen({ route, navigation }: Props) {
                       key={f.userId}
                       style={[styles.pillAvatar, { backgroundColor: f.color, marginLeft: i ? -10 : 0 }]}
                     >
-                      {f.avatar ? (
-                        <HitherText typeRole="emoji" style={styles.pillEmoji}>{f.avatar}</HitherText>
-                      ) : null}
+                      <HitherText typeRole="emoji" style={styles.pillEmoji}>
+                        {displayMemberAvatar(f.avatar, f.userId, f.avatarColor).emoji}
+                      </HitherText>
                     </View>
                   ));
                 })()}
@@ -7546,8 +7557,16 @@ export default function MapScreen({ route, navigation }: Props) {
         onConfirmLeave={confirmLeave}
         onConfirmSignOut={confirmSignOut}
         onOpenPaywall={openPaywallCb}
+        liveActivityUnlocked={liveActivityUnlocked}
         onOpenAccount={openAccountOverlay}
         onOpenDiagnostics={() => setOverlay('diagnostics')}
+        group={group}
+        isLeader={isLeader}
+        onUpdateGroupAvatar={async (avatar, avatarColor) => {
+          if (!groupId) return;
+          await updateGroupAvatar(groupId, avatar, avatarColor);
+          await refresh();
+        }}
         onGoHome={() => {
           setSettingsOpen(false);
           goHomeCreateOrJoin();
@@ -9832,14 +9851,6 @@ const makeStyles = (
       marginTop: 10,
       marginBottom: 4,
     },
-    sheetPaneToggleGlass: {
-      borderRadius: 14,
-      overflow: 'hidden',
-      // Flat dark fill — avoid Liquid Glass white specular rim on the tab shell.
-      backgroundColor: glass.fill,
-      borderWidth: 0,
-      borderColor: 'transparent',
-    },
     accuracyRowLast: {
       marginTop: 12,
       borderBottomWidth: 0,
@@ -10134,7 +10145,7 @@ const makeStyles = (
       borderBottomColor: 'rgba(255,255,255,0.08)',
     },
     accuracyCopy: { flex: 1, minWidth: 0 },
-    accuracySwitch: { flexShrink: 0, transform: [{ translateY: 2 }] },
+    accuracySwitch: { flexShrink: 0, alignSelf: 'center' },
     locationSharingButton: {
       width: 44,
       height: 44,

@@ -227,7 +227,7 @@ export interface MemberLocation {
   role: MemberRole;
   /** Server-authoritative presence for the active gathering point. */
   status: MembershipStatus;
-  /** Emoji avatar; falls back to the name's initial when unset. */
+  /** Emoji avatar; falls back deterministically from userId when unset. */
   avatar?: string;
   /** Avatar background colour hex (persisted in `profiles.avatar_color`). */
   avatarColor?: string;

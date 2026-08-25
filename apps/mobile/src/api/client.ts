@@ -27,6 +27,7 @@ export {
   mapSubgroup,
   mapSubgroupInvite,
   createGroup,
+  updateGroupAvatar,
   joinGroup,
   getGroupState,
   getGroupRecoverySnapshot,
@@ -71,6 +72,7 @@ export {
   getPremiumProjection,
   getPremiumAppAccountToken,
   applyVerifiedSubscription,
+  applyVerifiedTripPass,
 } from './services/EntitlementService';
 
 export type { ItineraryRow } from './services/DestinationService';

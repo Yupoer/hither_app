@@ -8,7 +8,6 @@ const read = (rel: string) =>
 const groupMap = read('components/GroupMap.tsx');
 const mapScreen = read('screens/MapScreen.tsx');
 const settings = read('screens/MapScreen/components/SettingsOverlay.tsx');
-const nativeSwitch = read('components/NativeSwitch.tsx');
 const notifCard = read('components/NotificationPreferencesCard.tsx');
 const tabs = read('screens/MapScreen/components/SheetPaneTabs.tsx');
 const storePane = read('screens/MapScreen/components/StorePane.tsx');
@@ -44,7 +43,8 @@ describe('#220 map / status / settings / paywall contracts', () => {
     expect(tabs).toContain('testID="sheet-pane-tabs"');
     expect(tabs).toContain('@expo/ui/community/segmented-control');
     expect(tabs).not.toContain('NativeSwitch');
-    expect(tabs).not.toContain('bag-handle');
+    expect(tabs).toContain('bag-handle');
+    expect(tabs).toContain('people-outline');
   });
 
   it('renders self flock copy as 你 plus role and freshness', () => {
@@ -53,7 +53,10 @@ describe('#220 map / status / settings / paywall contracts', () => {
     expect(mapScreen).toContain('{!isMe && distOrStatus');
     expect(mapScreen).toContain('dist: isSelf');
     expect(translations.zh['trip.setDaysAndDate']).toBe('天數與日期');
+    expect(reorder).toContain('const ROW_HEIGHT = 52;');
     expect(reorder).toContain('REORDER_VISUAL_SCALE = 1');
+    expect(reorder).toContain('fontSize: 14');
+    expect(reorder).toContain('flexWrap: \'nowrap\'');
   });
 
   it('keeps settings mounted under child overlays and hides the subscribe banner when pro', () => {
@@ -62,6 +65,7 @@ describe('#220 map / status / settings / paywall contracts', () => {
     expect(settings).toContain('testID="settings-subscribe-banner"');
     expect(settings).toContain('{!isPro ?');
     expect(settings).toContain('<SettingsChildSheet');
+    expect(settings).toContain('onBack={closeChild}');
     expect(settings).toContain("setPage('textSize')");
     expect(settings).toContain("setPage('notifications')");
     expect(settings).toContain("setPage('mapJourney')");

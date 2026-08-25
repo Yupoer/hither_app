@@ -83,7 +83,6 @@ export default function NotificationPreferencesCard({
           <SystemToggle
             value={prefs[key]}
             onValueChange={(v) => toggle(key, v)}
-            accent={colors.accent}
             accessibilityLabel={t(label)}
           />
         </View>

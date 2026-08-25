@@ -4,6 +4,7 @@ import type { GroupMapHandle, GroupMapProps } from './GroupMap';
 import { usePreferences, useTheme } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
 import { radius, spacing, DAY_COLORS, type Palette } from '../theme';
+import { displayMemberAvatar } from '../constants/avatars';
 
 /**
  * Web fallback for the native map. `react-native-maps` has no web support, so
@@ -74,7 +75,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
               { borderColor: m.role === 'leader' ? colors.leader : colors.follower },
             ]}
           >
-            <Text style={styles.pinText}>{m.name.slice(0, 1)}</Text>
+            <Text style={styles.pinText}>{displayMemberAvatar(m.avatar, m.userId, m.avatarColor).emoji}</Text>
           </View>
           <View style={styles.rowText}>
             <Text style={styles.title}>

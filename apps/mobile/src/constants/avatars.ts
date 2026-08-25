@@ -5,6 +5,7 @@
  * URL). Both the profile picker (MapScreen) and the login flow (SessionContext)
  * pull from this one list so they never drift apart.
  */
+import { memberColor } from '../glass';
 
 /** Selectable avatars — 30 emoji, rendered as a 5-column × 6-row grid. */
 export const AVATAR_EMOJI = [
@@ -47,6 +48,11 @@ export function avatarForGroup(groupId: string): string {
   return AVATAR_EMOJI[hashId(`group:${groupId}`) % AVATAR_EMOJI.length];
 }
 
+/** Stable group colour when an older row has no persisted selection. */
+export function avatarColorForGroup(groupId: string): string {
+  return AVATAR_COLORS[hashId(`group-color:${groupId}`) % AVATAR_COLORS.length];
+}
+
 export type DisplayAvatar = {
   emoji: string;
   color: string | undefined;
@@ -63,8 +69,11 @@ export function displayMemberAvatar(
 ): DisplayAvatar {
   const trimmed = typeof stored === 'string' ? stored.trim() : '';
   const known = (AVATAR_EMOJI as readonly string[]).includes(trimmed);
+  const color = typeof storedColor === 'string' ? storedColor.trim() : '';
   return {
     emoji: known ? trimmed : avatarForUser(userId),
-    color: storedColor && storedColor.trim().length > 0 ? storedColor : undefined,
+    color: (AVATAR_COLORS as readonly string[]).includes(color)
+      ? color
+      : memberColor(userId),
   };
 }

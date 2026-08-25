@@ -41,6 +41,8 @@ export type PremiumStoreProduct = Pick<
   ProductSubscription,
   'id' | 'displayName' | 'displayPrice' | 'description' | 'currency' | 'type'
 > & {
+  /** Numeric StoreKit/Play amount; UI derives comparisons from this value. */
+  price: number | null;
   introductoryPriceIOS?: string | null;
   introductoryPriceNumberOfPeriodsIOS?: string | null;
   introductoryPricePaymentModeIOS?: string | null;
@@ -222,6 +224,9 @@ function mapStoreProduct(product: ProductSubscription): Omit<PremiumStoreProduct
     description: product.description,
     currency: product.currency,
     type: product.type,
+    price: typeof product.price === 'number' && Number.isFinite(product.price)
+      ? product.price
+      : null,
     introductoryPriceIOS:
       'introductoryPriceIOS' in product ? product.introductoryPriceIOS : null,
     introductoryPriceNumberOfPeriodsIOS:
@@ -334,7 +339,9 @@ export async function requestPremiumSubscription(
   }
 }
 
-export async function getUnfinishedPremiumPurchases(): Promise<StorePurchase[]> {
+export async function getUnfinishedPremiumPurchases(
+  options: { includeConsumables?: boolean } = {},
+): Promise<StorePurchase[]> {
   const iap = await ensureConnection();
   if (!iap) return [];
   const purchases: Purchase[] = [];
@@ -354,13 +361,15 @@ export async function getUnfinishedPremiumPurchases(): Promise<StorePurchase[]> 
   }
 
   const byTransaction = new Map<string, StorePurchase>();
+  const includePurchase = (productId: string) => options.includeConsumables !== false
+    || PREMIUM_CATALOG.products.some((item) => item.productId === productId && item.storeType === 'subs');
   for (const purchase of purchases) {
-    if (!PREMIUM_CATALOG.products.some((item) => item.productId === purchase.productId)) continue;
+    if (!PREMIUM_CATALOG.products.some((item) => item.productId === purchase.productId) || !includePurchase(purchase.productId)) continue;
     const mapped = mapPurchase(purchase, 'restored');
     if (mapped) byTransaction.set(mapped.transactionId, mapped);
   }
   for (const purchase of unclaimed.values()) {
-    if (PREMIUM_CATALOG.products.some((item) => item.productId === purchase.productId)) {
+    if (PREMIUM_CATALOG.products.some((item) => item.productId === purchase.productId) && includePurchase(purchase.productId)) {
       byTransaction.set(purchase.transactionId, purchase);
     }
   }
@@ -376,14 +385,17 @@ export async function restorePremiumPurchases(): Promise<StorePurchase[]> {
   } catch {
     // The subsequent available-purchases query remains the source of truth.
   }
-  return getUnfinishedPremiumPurchases();
+  return getUnfinishedPremiumPurchases({ includeConsumables: false });
 }
 
 /** Finish only after the server confirms a durable ledger/grant write. */
-export async function finishPremiumPurchase(purchase: StorePurchase): Promise<void> {
+export async function finishPremiumPurchase(
+  purchase: StorePurchase,
+  options: { isConsumable: boolean },
+): Promise<void> {
   const iap = await ensureConnection();
   if (!iap) throw new Error('native_iap_not_linked');
-  await iap.finishTransaction({ purchase: purchase.purchase, isConsumable: false });
+  await iap.finishTransaction({ purchase: purchase.purchase, isConsumable: options.isConsumable });
 }
 
 /** Compatibility boundary for old callers; no product is guessed or unlocked. */

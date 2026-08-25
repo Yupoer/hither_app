@@ -62,6 +62,38 @@ export function productForPlan(
   return config ? products.find((product) => product.id === config.productId) ?? null : null;
 }
 
+export function annualSavingsPercent(
+  monthlyPrice: number | null | undefined,
+  annualPrice: number | null | undefined,
+): number | null {
+  if (!Number.isFinite(monthlyPrice) || !Number.isFinite(annualPrice) || monthlyPrice == null || annualPrice == null || monthlyPrice <= 0) {
+    return null;
+  }
+  const savings = Math.round((1 - annualPrice / (monthlyPrice * 12)) * 100);
+  return savings > 0 ? savings : null;
+}
+
+export function annualMonthlyPrice(
+  annualPrice: number | null | undefined,
+): number | null {
+  return Number.isFinite(annualPrice) && annualPrice != null && annualPrice >= 0
+    ? annualPrice / 12
+    : null;
+}
+
+function formatProductPrice(product: PremiumStoreProduct | null, amount: number | null): string {
+  if (!product || amount == null) return '—';
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: product.currency,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    return `${product.currency} ${amount.toFixed(2)}`;
+  }
+}
+
 export type PremiumPresentationProps = {
   /** Settings Paywall keeps restore; Store inline mode hides it. */
   showRestore: boolean;
@@ -165,6 +197,7 @@ export default React.memo(function PremiumPresentation({
         onNativePurchased: () => onUnlockingChange?.(true),
         userId: user.id,
         isAnonymous,
+        groupId,
       });
       if (!result.ok) {
         onUnlockingChange?.(false);
@@ -353,6 +386,7 @@ export default React.memo(function PremiumPresentation({
           const selected = selectedPlan === plan;
           const annualProduct = productForPlan(products, 'annual');
           const monthlyProduct = productForPlan(products, 'monthly');
+          const savings = annualSavingsPercent(monthlyProduct?.price, annualProduct?.price);
           return (
             <Pressable
               key={plan}
@@ -378,15 +412,17 @@ export default React.memo(function PremiumPresentation({
                           ? t('paywall.monthlyPlan')
                           : t('paywall.tripPlan')}
                     </Text>
-                    {plan === 'annual' ? (
+                    {plan === 'annual' && savings != null ? (
                       <View style={styles.saveTag}>
-                        <Text style={styles.saveTagText}>{t('paywall.savePercent', { percent: 64 })}</Text>
+                        <Text style={styles.saveTagText}>{t('paywall.savePercent', { percent: savings })}</Text>
                       </View>
                     ) : null}
                   </View>
                   <Text style={styles.planChoiceSub}>
                     {plan === 'annual'
-                      ? t('paywall.perMonth', { price: annualProduct?.displayPrice ?? monthlyProduct?.displayPrice ?? '—' })
+                      ? t('paywall.perMonth', {
+                        price: formatProductPrice(annualProduct, annualMonthlyPrice(annualProduct?.price)),
+                      })
                       : plan === 'trip'
                         ? t('paywall.tripHint')
                         : t('paywall.billedMonthly')}
@@ -423,7 +459,7 @@ export default React.memo(function PremiumPresentation({
 
       <Pressable
         onPress={handlePurchase}
-        disabled={busy !== null || hasPremium || !catalogReady}
+        disabled={busy !== null || hasPremium}
         accessibilityRole="button"
         testID={`${testID}-purchase`}
       >
@@ -433,7 +469,7 @@ export default React.memo(function PremiumPresentation({
           end={{ x: 1, y: 1 }}
           style={[
             styles.cta,
-            (busy !== null || hasPremium || !catalogReady) && styles.ctaDisabled,
+            (busy !== null || hasPremium) && styles.ctaDisabled,
           ]}
         >
           {busy === 'purchase' ? (

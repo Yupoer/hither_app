@@ -61,6 +61,13 @@ const migration = readFileSync(
   ),
   'utf8',
 ).replace(/\r\n/g, '\n');
+const tripStoreKitMigration = readFileSync(
+  join(
+    __dirname,
+    '../../../../supabase/migrations/20260825000000_apply_verified_trip_storekit_purchase.sql',
+  ),
+  'utf8',
+).replace(/\r\n/g, '\n');
 
 describe('FREE_LIMITS / Small Trip Pass constants', () => {
   it('Free Plan caps members and open gathering points at 5', () => {
@@ -69,10 +76,10 @@ describe('FREE_LIMITS / Small Trip Pass constants', () => {
     expect(FREE_LIMITS.kmlImportPoints).toBe(5);
   });
 
-  it('Small Trip Pass is 2–5 people, 7 days, trip-scoped product', () => {
+  it('Small Trip Pass is 2–5 people, 10 days, trip-scoped product', () => {
     expect(SMALL_TRIP_PASS.minMembers).toBe(2);
     expect(SMALL_TRIP_PASS.maxMembers).toBe(5);
-    expect(SMALL_TRIP_PASS.durationDays).toBe(7);
+    expect(SMALL_TRIP_PASS.durationDays).toBe(10);
     expect(SMALL_TRIP_PASS.planCode).toBe('small_trip_pass');
   });
 });
@@ -551,10 +558,11 @@ describe('paid entitlement migration contract', () => {
     expect(migration).toContain('is_auth_user_anonymous');
   });
 
-  it('binds Small Trip Pass to a trip for 7 days', () => {
+  it('binds StoreKit Small Trip Pass to a trip for 10 days', () => {
     expect(migration).toContain("'small_trip_pass'");
-    expect(migration).toContain("interval '7 days'");
+    expect(tripStoreKitMigration).toContain("interval '10 days'");
     expect(migration).toContain('trip_entitlements_one_active_pass_per_group');
+    expect(tripStoreKitMigration).toContain('apply_verified_trip_storekit_purchase');
   });
 
   it('keeps Small Trip Pass trip-scoped (no profiles.pro fallback for expiring denorm)', () => {
@@ -574,8 +582,17 @@ describe('paid entitlement migration contract', () => {
   });
 
   it('requires 2–5 members for Small Trip Pass grant', () => {
-    expect(migration).toContain('v_count < 2 or v_count > 5');
+    expect(tripStoreKitMigration).toContain('v_count < 2 or v_count > 5');
     expect(migration).toContain('v_member_count between 2 and 5');
+  });
+
+  it('keeps StoreKit trip grants service-role-only, leader-bound, replay-safe, and group-scoped', () => {
+    expect(tripStoreKitMigration).toContain('request.jwt.claim.role');
+    expect(tripStoreKitMigration).toContain('leader_required');
+    expect(tripStoreKitMigration).toContain('transaction_binding_mismatch');
+    expect(tripStoreKitMigration).toContain('p_purchase_date + interval \'10 days\'');
+    expect(tripStoreKitMigration).toContain('profiles.pro');
+    expect(tripStoreKitMigration).toContain('revoke all on function public.apply_verified_trip_storekit_purchase');
   });
 
   it('serializes join and itinerary inserts with FOR UPDATE', () => {

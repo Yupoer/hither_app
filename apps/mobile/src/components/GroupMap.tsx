@@ -400,13 +400,15 @@ const PendingPlaceMarker = React.memo(function PendingPlaceMarker({ pendingPlace
 const MemberMarker = React.memo(function MemberMarker({ member, accent, styles }: any) {
   const isLeader = member.role === 'leader';
   const ringColor = isLeader ? accent : '#FFFFFF';
-  const bgColor = memberColor(member.userId);
+  const displayAvatar = displayMemberAvatar(member.avatar, member.userId, member.avatarColor);
+  const bgColor = displayAvatar.color ?? memberColor(member.userId);
   const lat = member.coordinates?.latitude;
   const lng = member.coordinates?.longitude;
 
   const tracksViewChanges = useTracksViewChanges([
     member.name,
     member.avatar,
+    member.avatarColor,
     isLeader,
     ringColor,
     bgColor,
@@ -491,7 +493,7 @@ const MemberMarker = React.memo(function MemberMarker({ member, accent, styles }
           ]}
         >
           <HitherText typeRole="emoji" style={styles.memberEmoji}>
-            {displayMemberAvatar(member.avatar, member.userId).emoji}
+            {displayAvatar.emoji}
           </HitherText>
         </View>
       </View>

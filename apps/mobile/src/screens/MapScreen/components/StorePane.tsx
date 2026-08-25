@@ -16,8 +16,7 @@ import {
   View,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import { FontAwesome6, Ionicons } from '@expo/vector-icons';
 import { glass } from '../../../glass';
 import { GLOBAL_FONT_SCALE_CAP } from '../../../theme/typeScale';
 import { useFontLayout } from '../../../a11y/useFontScaleBucket';
@@ -53,6 +52,7 @@ import {
   truncateDiagText,
 } from '../../../state/diagnostics';
 import Constants from 'expo-constants';
+import PremiumBanner from '../../../components/PremiumBanner';
 
 
 /** Soft poll while SSV is pending; then idle CTA + slower background late-SSV poll. */
@@ -1019,30 +1019,7 @@ export const StorePane = React.memo(function StorePane({
 
       {/* Premium first; full-screen paywall sheet (restore stays on Settings). */}
       <View style={styles.premiumBlock} testID="store-premium-section">
-        <Pressable
-          onPress={onOpenSubscribe}
-          accessibilityRole="button"
-          accessibilityLabel={t('paywall.cta')}
-          testID="store-open-subscribe"
-          style={styles.premiumBanner}
-        >
-          <LinearGradient
-            colors={['#183c66', '#296096']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={StyleSheet.absoluteFill}
-          />
-          <View style={styles.premiumBannerCopy}>
-            <View style={styles.premiumTag}>
-              <Text style={styles.premiumTagText}>PREMIUM</Text>
-            </View>
-            <Text style={styles.premiumBannerTitle}>{t('paywall.title')}</Text>
-            <Text style={styles.premiumBannerHint}>{t('settings.subscribeBannerHint')}</Text>
-          </View>
-          <View style={styles.premiumBannerArrow}>
-            <Text style={styles.premiumBannerArrowText}>→</Text>
-          </View>
-        </Pressable>
+        <PremiumBanner onPress={() => onOpenSubscribe?.()} testID="store-open-subscribe" />
       </View>
 
       {/* Divider between Premium and the ad / economy block. */}
@@ -1073,7 +1050,7 @@ export const StorePane = React.memo(function StorePane({
           {/* Premium → divider → balance → ad (#store layout). */}
           <View style={styles.balanceAdRow}>
             <View style={styles.balanceInline} testID="store-balance">
-              <Ionicons name="star" size={16} color="#FFD60A" />
+              <FontAwesome6 name="coins" size={21} color="#FFD60A" />
               <Text
                 style={styles.balanceInlineValue}
                 accessibilityRole="text"
@@ -1288,59 +1265,30 @@ const makeStyles = (scale: number, boldText: boolean) => {
     premiumBlock: {
       marginBottom: s(12, 10),
     },
-    premiumBanner: {
-      borderRadius: 18,
-      borderWidth: 1,
-      borderColor: 'rgba(55,182,255,0.3)',
-      padding: 14,
-      overflow: 'hidden',
-      flexDirection: 'row',
-      alignItems: 'center',
-      minHeight: 86,
-    },
-    premiumBannerCopy: { flex: 1, gap: 4 },
-    premiumTag: {
-      alignSelf: 'flex-start',
-      backgroundColor: '#37B6FF',
-      borderRadius: 999,
-      paddingHorizontal: 8,
-      paddingVertical: 2,
-    },
-    premiumTagText: { fontSize: 10, fontWeight: '800', color: '#071526' },
-    premiumBannerTitle: { fontSize: 15, fontWeight: '800', color: '#FFFFFF' },
-    premiumBannerHint: { fontSize: 11.5, color: 'rgba(255,255,255,0.8)' },
-    premiumBannerArrow: {
-      width: 34,
-      height: 34,
-      borderRadius: 17,
-      backgroundColor: 'rgba(255,255,255,0.16)',
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginLeft: 10,
-    },
-    premiumBannerArrowText: { color: '#fff', fontSize: 16, fontWeight: '800' },
     balanceAdRow: {
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
       backgroundColor: 'rgba(255,255,255,0.05)',
       borderRadius: 12,
-      paddingVertical: 8,
+      minHeight: 58,
+      paddingVertical: 10,
       paddingHorizontal: 12,
       marginBottom: s(10, 8),
     },
-    balanceInline: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-    balanceInlineValue: { fontSize: 13, fontWeight: '800', color: '#FFD60A' },
+    balanceInline: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44 },
+    balanceInlineValue: { fontSize: 17, fontWeight: '800', color: '#FFD60A' },
     adChip: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 4,
       backgroundColor: 'rgba(255,214,10,0.16)',
       borderRadius: 999,
-      paddingHorizontal: 10,
-      paddingVertical: 6,
+      minHeight: 44,
+      paddingHorizontal: 14,
+      paddingVertical: 9,
     },
-    adChipText: { color: '#FFD60A', fontSize: 11, fontWeight: '800' },
+    adChipText: { color: '#FFD60A', fontSize: 12, fontWeight: '800' },
     productGrid: {
       flexDirection: 'row',
       flexWrap: 'wrap',
@@ -1466,13 +1414,14 @@ const makeStyles = (scale: number, boldText: boolean) => {
     },
     redeemBtn: {
       borderRadius: 999,
-      height: 28,
+      minHeight: 44,
+      paddingHorizontal: 14,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: 'rgba(255,255,255,0.1)',
     },
     redeemText: {
-      fontSize: 11,
+      fontSize: 12,
       fontWeight: '700',
       color: '#fff',
     },

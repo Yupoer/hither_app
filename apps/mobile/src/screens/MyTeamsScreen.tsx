@@ -13,7 +13,7 @@ import { getMyJoinedGroups, JoinedGroupInfo, leaveGroups } from '../api/client';
 import { GlassView } from '../native/liquidGlass';
 import { clearLiveActivities } from '../state/useLiveActivity';
 import { HitherText } from '../components/HitherText';
-import { avatarForGroup } from '../constants/avatars';
+import { avatarColorForGroup, avatarForGroup, displayMemberAvatar } from '../constants/avatars';
 import { runUiAction } from '../utils/uiAction';
 import { useTranslation } from '../i18n';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
@@ -199,7 +199,7 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
               >
                 
                 <View style={styles.teamCardHeader}>
-                  <View style={[styles.groupAvatar, { backgroundColor: info.group.avatarColor || '#333' }]}>
+                  <View style={[styles.groupAvatar, { backgroundColor: info.group.avatarColor || avatarColorForGroup(info.group.id) }]}>
                     <HitherText typeRole="emoji" style={styles.groupAvatarEmoji}>
                       {info.group.avatar || avatarForGroup(info.group.id)}
                     </HitherText>
@@ -216,12 +216,22 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
                   <View style={styles.teamCardRight}>
                     <View style={styles.avatarStack}>
                       {displayAvatars.map((p, i) => (
-                        <View key={i} style={[styles.avatarBubble, { backgroundColor: p.avatarColor || '#333', zIndex: 10 - i }]}>
+                        <View
+                          key={i}
+                          style={[
+                            styles.avatarBubble,
+                            {
+                              backgroundColor: p.avatarColor
+                                || (p.userId ? displayMemberAvatar(p.avatar, p.userId).color : 'rgba(255,255,255,0.05)'),
+                              zIndex: 10 - i,
+                            },
+                          ]}
+                        >
                           {p.isPlaceholder ? (
                             <Ionicons name="person" size={14} color="rgba(255,255,255,0.2)" />
                           ) : (
                             <HitherText typeRole="emoji" style={styles.avatarEmoji}>
-                              {p.avatar || '😎'}
+                              {displayMemberAvatar(p.avatar, p.userId ?? `${info.group.id}:${i}`).emoji}
                             </HitherText>
                           )}
                         </View>
@@ -246,12 +256,21 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
                     <View style={styles.detailAvatars}>
                       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.detailAvatarsScroll}>
                         {detailAvatars.map((p, i) => (
-                          <View key={i} style={[styles.detailAvatarBig, { backgroundColor: p.avatarColor || '#333' }]}>
+                          <View
+                            key={i}
+                            style={[
+                              styles.detailAvatarBig,
+                              {
+                                backgroundColor: p.avatarColor
+                                  || (p.userId ? displayMemberAvatar(p.avatar, p.userId).color : 'rgba(255,255,255,0.05)'),
+                              },
+                            ]}
+                          >
                             {p.isPlaceholder ? (
                               <Ionicons name="person" size={20} color="rgba(255,255,255,0.2)" />
                             ) : (
                               <HitherText typeRole="emoji" style={styles.detailEmojiBig}>
-                                {p.avatar || '😎'}
+                                {displayMemberAvatar(p.avatar, p.userId ?? `${info.group.id}:${i}`).emoji}
                               </HitherText>
                             )}
                           </View>

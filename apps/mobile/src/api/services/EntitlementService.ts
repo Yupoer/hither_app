@@ -61,8 +61,7 @@ function mapApplyPayload(row: Record<string, unknown> | null): EntitlementMutati
   }
   if (row.ok === true || row.success === true) {
     const personalPremiumActive = row.personalPremiumActive === true
-      || row.personal_premium_active === true
-      || row.is_premium === true;
+      || row.personal_premium_active === true;
     return {
       ok: true,
       success: true,
@@ -72,7 +71,8 @@ function mapApplyPayload(row: Record<string, unknown> | null): EntitlementMutati
       startedAt: (row.started_at as string | null | undefined) ?? null,
       expiresAt: (row.expires_at as string | null | undefined) ?? null,
       entitlementId: (row.entitlement_id as string | null | undefined) ?? null,
-      isPremium: personalPremiumActive,
+      isPremium: row.is_premium === true || personalPremiumActive,
+      teamPremiumActive: row.teamPremiumActive === true || row.team_premium_active === true || row.is_premium === true,
       personalPremiumActive,
       productId: typeof row.productId === 'string'
         ? row.productId
@@ -174,6 +174,39 @@ export async function applyVerifiedSubscription(input: {
       error: 'verification_service_unavailable',
       message: 'StoreKit verification could not be reached',
     };
+  }
+}
+
+/** Verify a StoreKit consumable and bind its durable ten-day grant to a group. */
+export async function applyVerifiedTripPass(input: {
+  signedTransaction: string;
+  transactionId: string;
+  productId: string;
+  groupId: string;
+}): Promise<EntitlementMutationResult> {
+  await requireUserId();
+  if (!input.groupId.trim() || !input.transactionId.trim() || !input.productId.trim()) {
+    return { ok: false, error: 'invalid', message: 'trip purchase binding is incomplete' };
+  }
+  const functionsApi = (supabase as { functions?: { invoke?: Function } }).functions;
+  if (typeof functionsApi?.invoke !== 'function') {
+    return { ok: false, error: 'verification_service_unavailable' };
+  }
+  try {
+    const { data } = await functionsApi.invoke(VERIFY_AND_APPLY_PURCHASE_FN, {
+      body: {
+        signed_transaction: input.signedTransaction,
+        transaction_id: input.transactionId,
+        product_id: input.productId,
+        group_id: input.groupId,
+      },
+    });
+    const row = asRecord(data);
+    return row
+      ? mapApplyPayload(row)
+      : { ok: false, error: 'verification_service_unavailable' };
+  } catch {
+    return { ok: false, error: 'verification_service_unavailable' };
   }
 }
 
