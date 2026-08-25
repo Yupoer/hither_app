@@ -210,6 +210,9 @@ export interface Group {
    * accommodation itinerary cards. Default true. Toggle never backfills cards.
    */
   accommodationAutoAdd?: boolean;
+  /** Group emoji (LINE-style). Independent of any member avatar. */
+  avatar?: string;
+  avatarColor?: string;
 }
 
 /** Role within a group. */
@@ -224,7 +227,7 @@ export interface MemberLocation {
   role: MemberRole;
   /** Server-authoritative presence for the active gathering point. */
   status: MembershipStatus;
-  /** Emoji avatar; falls back to the name's initial when unset. */
+  /** Emoji avatar; falls back deterministically from userId when unset. */
   avatar?: string;
   /** Avatar background colour hex (persisted in `profiles.avatar_color`). */
   avatarColor?: string;

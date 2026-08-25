@@ -43,19 +43,18 @@ import {
   DESTINATION_EMOJI_CATEGORIES,
   DESTINATION_EMOJI_FALLBACK,
   DESTINATION_EMOJI_PRESETS,
-  destinationEmojiDisplay,
   presetsForCategory,
   resolveDestinationEmoji,
   type DestinationEmojiCategory,
 } from '../utils/destinationEmojiColor';
-import { getColorForDay, STAY_MARKER_EMOJI } from '../utils/destinationMarkerChrome';
+import { getColorForDay } from '../utils/destinationMarkerChrome';
 
-const REORDER_VISUAL_SCALE = 1.3;
-const ROW_HEIGHT = DEFAULT_REORDER_LAYOUT.rowHeight;
+const ROW_HEIGHT = 52;
+const HEADER_HEIGHT = 54;
 const REORDER_LAYOUT = DEFAULT_REORDER_LAYOUT;
-const REVEAL_WIDTH = Math.round(76 * REORDER_VISUAL_SCALE);
-/** Fixed right-column width so day ≡ and stop ≡ share one vertical line. */
-const HANDLE_SLOT = Math.round(28 * REORDER_VISUAL_SCALE);
+const REVEAL_WIDTH = 76;
+/** Fixed right-column width so day and stop handles share one vertical line. */
+const HANDLE_SLOT = 44;
 /** Low-sat terracotta for stay emoji badge (works on dark glass; not Day1 #E5575C). */
 const STAY_BADGE_BG = '#8B6F6A';
 /** Auto-scroll parent when finger is within this distance of screen edges. */
@@ -124,7 +123,7 @@ interface Props {
   accountId?: string;
   /**
    * Stop-row interaction chrome (does not control day-header drag).
-   * Default drag keeps ≡ handles visible.
+   * Default drag keeps vector handles visible.
    */
   interactionMode?: RouteInteractionMode;
   /** Multi-select ids when interactionMode === 'select'. */
@@ -677,20 +676,20 @@ export default function DestinationReorderList({
         <View style={styles.topActions}>
           {canReorder && <Pressable
             ref={(node) => onTourTargetRef?.('routeTripDetails', node)}
-            style={styles.setDaysBtn}
+            style={[styles.setDaysBtn, { flex: 1.2 }]}
             onPress={() => {
             lightTap();
             setEditDays(tripDays ?? 1);
             setEditDate(departureDate ? new Date(departureDate) : new Date());
             setShowSettings(true);
           }}>
-            <Ionicons name="calendar-outline" size={Math.round(16 * REORDER_VISUAL_SCALE)} color={colors.accent} style={{ marginRight: 6 }} />
+            <Ionicons name="calendar-outline" size={16} color={colors.accent} style={{ marginRight: 6 }} />
             <Text style={styles.setDaysText}>{t('trip.setDaysAndDate')}</Text>
           </Pressable>}
           {canReorder && onPickFavorite ? (
             <Pressable
               ref={(node) => onTourTargetRef?.('routeFavorites', node)}
-              style={styles.setDaysBtn}
+              style={[styles.setDaysBtn, { flex: 1.1 }]}
               onPress={() => {
                 lightTap();
                 setFavoritesOpen(true);
@@ -698,13 +697,13 @@ export default function DestinationReorderList({
               accessibilityRole="button"
               accessibilityLabel={t('stay.favorites')}
             >
-              <Ionicons name="star-outline" size={Math.round(16 * REORDER_VISUAL_SCALE)} color={colors.accent} style={{ marginRight: 6 }} />
+              <Ionicons name="star-outline" size={16} color={colors.accent} style={{ marginRight: 6 }} />
               <Text style={styles.setDaysText}>{t('stay.favorites')}</Text>
             </Pressable>
           ) : null}
           {onImport && <Pressable
             ref={(node) => onTourTargetRef?.('routeImport', node)}
-            style={styles.setDaysBtn}
+            style={[styles.setDaysBtn, { flex: 0.9 }]}
             onPress={() => {
               lightTap();
               onImport();
@@ -712,7 +711,7 @@ export default function DestinationReorderList({
             accessibilityRole="button"
             accessibilityLabel={t('kml.entry')}
           >
-            <Ionicons name="cloud-upload-outline" size={Math.round(16 * REORDER_VISUAL_SCALE)} color={colors.accent} style={{ marginRight: 6 }} />
+            <Ionicons name="cloud-upload-outline" size={16} color={colors.accent} style={{ marginRight: 6 }} />
             <Text style={styles.setDaysText}>{t('kml.entry')}</Text>
           </Pressable>}
           {syncFailed && onSync && <Pressable
@@ -1539,7 +1538,7 @@ const HeaderRow = memo(function HeaderRow({
   const headerAxisRef = useRef<null | 'h' | 'v'>(null);
   const dragResponder = useRef(
     PanResponder.create({
-      // Only claim from the ≡ handle itself (vertical drag).
+      // Only claim from the vector handle itself (vertical drag).
       onStartShouldSetPanResponder: () => Boolean(canDragHeaderRef.current),
       onMoveShouldSetPanResponder: (_e, g) =>
         Boolean(canDragHeaderRef.current)
@@ -1657,6 +1656,11 @@ const HeaderRow = memo(function HeaderRow({
                 accessibilityState={{ selected: !!setStayActive }}
                 accessibilityLabel={setStayLabel}
               >
+                <Ionicons
+                  name="bed-outline"
+                  size={14}
+                  color={setStayActive ? '#111' : accent}
+                />
                 <Text
                   style={[
                     styles.headerSetStayText,
@@ -1672,7 +1676,12 @@ const HeaderRow = memo(function HeaderRow({
           <View style={styles.headerRight}>
             <Text style={styles.headerDate}>{item.dateStr}</Text>
             {onToggleCollapse ? (
-              <Pressable onPress={onToggleCollapse} accessibilityRole="button" hitSlop={8}>
+              <Pressable
+                onPress={onToggleCollapse}
+                accessibilityRole="button"
+                hitSlop={8}
+                style={{ marginLeft: 'auto' }}
+              >
                 <Ionicons name={collapsed ? 'chevron-down' : 'chevron-up'} size={16} color="#999" />
               </Pressable>
             ) : null}
@@ -1682,7 +1691,7 @@ const HeaderRow = memo(function HeaderRow({
                 {...dragResponder.panHandlers}
                 hitSlop={12}
               >
-                <Text style={styles.handle}>≡</Text>
+                <Ionicons name="menu" size={22} color="rgba(235,235,245,0.6)" />
               </View>
             ) : null}
           </View>
@@ -1939,11 +1948,11 @@ const Row = memo(function Row({
             { backgroundColor: isAccommodation ? STAY_BADGE_BG : dayColor },
           ]}
         >
-          <Text style={styles.emojiBadgeGlyph}>
-            {isAccommodation
-              ? STAY_MARKER_EMOJI
-              : destinationEmojiDisplay(item.emoji, DESTINATION_EMOJI_FALLBACK)}
-          </Text>
+          <Ionicons
+            name={isAccommodation ? 'bed-outline' : 'location-outline'}
+            size={16}
+            color="#fff"
+          />
         </Pressable>
         <Pressable
           style={styles.rowBody}
@@ -1957,11 +1966,6 @@ const Row = memo(function Row({
           <Text style={styles.rowTitle} numberOfLines={1}>
             {item.title}
           </Text>
-          {item.address ? (
-            <Text style={styles.rowAddress} numberOfLines={1}>
-              {item.address}
-            </Text>
-          ) : null}
         </Pressable>
         {boundaryLocked && onDelete && !multiSelect ? (
           <Pressable
@@ -1975,7 +1979,7 @@ const Row = memo(function Row({
           </Pressable>
         ) : canDrag ? (
           <View style={styles.handleSlot}>
-            <Text style={styles.handle}>≡</Text>
+            <Ionicons name="menu" size={22} color="rgba(235,235,245,0.6)" />
           </View>
         ) : multiSelect ? (
           <View style={styles.handleSlot} />
@@ -1993,10 +1997,11 @@ const makeStyles = (colors: Palette) =>
   StyleSheet.create({
     topActions: {
       flexDirection: 'row',
-      justifyContent: 'flex-end',
-      gap: spacing.sm,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      gap: 6,
       marginBottom: spacing.sm,
-      flexWrap: 'wrap',
+      flexWrap: 'nowrap',
     },
     dayBlock: {
       borderBottomWidth: StyleSheet.hairlineWidth,
@@ -2022,14 +2027,17 @@ const makeStyles = (colors: Palette) =>
     },
     dashedBtnText: { fontSize: 13, fontWeight: '600' },
     headerSetStayBtn: {
-      borderWidth: 1.5,
-      borderColor: colors.accent,
-      borderRadius: radius.md,
-      paddingHorizontal: 14,
-      paddingVertical: 8,
-      minHeight: 34,
+      borderWidth: 1,
+      borderColor: 'rgba(255,107,53,0.55)',
+      borderRadius: 7,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      minHeight: 28,
       maxWidth: 200,
       justifyContent: 'center',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
     },
     headerSetStayText: { fontSize: 14, fontWeight: '700' },
     dropLine: {
@@ -2101,8 +2109,8 @@ const makeStyles = (colors: Palette) =>
       backgroundColor: colors.surface,
       overflow: 'hidden',
     },
-    headerRow: {
-      minHeight: ROW_HEIGHT,
+        headerRow: {
+          minHeight: HEADER_HEIGHT,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
@@ -2120,7 +2128,7 @@ const makeStyles = (colors: Palette) =>
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      // Match stop rows: no extra right inset so ≡ columns share one edge.
+      // Match stop rows: no extra right inset so handle columns share one edge.
       paddingRight: 0,
     },
     headerLeft: {
@@ -2149,12 +2157,12 @@ const makeStyles = (colors: Palette) =>
     },
     headerTitle: {
       color: colors.textPrimary,
-      fontSize: Math.round(15 * REORDER_VISUAL_SCALE),
-      fontWeight: '700',
+      fontSize: 15,
+      fontWeight: '600',
     },
     headerDate: {
       color: colors.textSecondary,
-      fontSize: Math.round(14 * REORDER_VISUAL_SCALE),
+      fontSize: 14,
     },
     inlineTrash: {
       paddingHorizontal: spacing.xs,
@@ -2182,18 +2190,18 @@ const makeStyles = (colors: Palette) =>
     },
     rowIndex: {
       color: colors.accent,
-      fontSize: Math.round(15 * REORDER_VISUAL_SCALE),
+      fontSize: 15,
       fontWeight: '700',
-      width: Math.round(20 * REORDER_VISUAL_SCALE),
+      width: 20,
       textAlign: 'center',
     },
     rowBody: { flex: 1 },
-    rowTitle: { color: colors.textPrimary, fontSize: Math.round(16 * REORDER_VISUAL_SCALE), fontWeight: '600' },
-    rowAddress: { color: colors.textSecondary, fontSize: Math.round(13 * REORDER_VISUAL_SCALE), marginTop: 2 },
+    rowTitle: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' },
+    rowAddress: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
     emojiBadge: {
-      width: 32,
-      height: 32,
-      borderRadius: 16,
+      width: 26,
+      height: 26,
+      borderRadius: 13,
       alignItems: 'center',
       justifyContent: 'center',
       marginRight: 8,
@@ -2352,12 +2360,13 @@ const makeStyles = (colors: Palette) =>
     },
     handleSlot: {
       width: HANDLE_SLOT,
+      height: 44,
       alignItems: 'center',
       justifyContent: 'center',
     },
     handle: {
       color: colors.textSecondary,
-      fontSize: Math.round(22 * REORDER_VISUAL_SCALE),
+      fontSize: 22,
       textAlign: 'center',
       width: HANDLE_SLOT,
     },
@@ -2376,15 +2385,21 @@ const makeStyles = (colors: Palette) =>
     setDaysBtn: {
       flexDirection: 'row',
       alignItems: 'center',
-      paddingVertical: Math.round(8 * REORDER_VISUAL_SCALE),
-      paddingHorizontal: Math.round(12 * REORDER_VISUAL_SCALE),
-      backgroundColor: colors.glass,
-      borderRadius: Math.round(16 * REORDER_VISUAL_SCALE),
+      justifyContent: 'center',
+      minHeight: 36,
+      paddingVertical: 8,
+      paddingHorizontal: 8,
+      backgroundColor: 'rgba(255,255,255,0.06)',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'rgba(255,255,255,0.1)',
+      borderRadius: 9,
+      minWidth: 0,
     },
     setDaysText: {
       color: colors.accent,
       fontWeight: '600',
-      fontSize: Math.round(13 * REORDER_VISUAL_SCALE),
+      fontSize: 12,
+      flexShrink: 1,
     },
     modalOverlay: {
       flex: 1,

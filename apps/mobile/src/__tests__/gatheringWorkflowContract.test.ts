@@ -112,8 +112,8 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(reorderList).toContain('REVEAL_WIDTH');
   });
 
-  it('locks stay cards to bed emoji and allows them as set-stay radio sources', () => {
-    expect(reorderList).toContain('STAY_MARKER_EMOJI');
+  it('locks stay cards to a bed icon and allows them as set-stay radio sources', () => {
+    expect(reorderList).toContain("name={isAccommodation ? 'bed-outline' : 'location-outline'}");
     expect(reorderList).toContain('STAY_BADGE_BG');
     // Bed badge for kind=accommodation; highlight is match-only.
     expect(reorderList).toContain('isAccommodation={isStayCard}');

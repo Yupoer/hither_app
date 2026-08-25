@@ -436,11 +436,11 @@ describe('legalDragIndicesForList (cross-day)', () => {
 });
 
 describe('DEFAULT_REORDER_LAYOUT scale', () => {
-  it('is 1.3× the previous 72/60/56 defaults', () => {
+  it('uses token-scale 54px header and 52px row defaults', () => {
     expect(DEFAULT_REORDER_LAYOUT).toEqual({
-      headerHeight: 72 * 1.3,
-      rowHeight: 60 * 1.3,
-      dayGapHeight: 56 * 1.3,
+      headerHeight: 54,
+      rowHeight: 52,
+      dayGapHeight: 56,
     });
   });
 });

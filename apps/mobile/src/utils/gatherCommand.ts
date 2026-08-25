@@ -457,13 +457,13 @@ export function projectHistoryForViewer<T extends { userId?: string }>(
  * (e.g. RoleSelect lite fetch). Live non-empty profiles win.
  */
 export function mergeAvatarProfiles(
-  live: { avatar?: string; avatarColor?: string }[],
-  cached: { avatar?: string; avatarColor?: string }[] | undefined | null,
-): { avatar?: string; avatarColor?: string }[] {
+  live: { userId?: string; avatar?: string; avatarColor?: string }[],
+  cached: { userId?: string; avatar?: string; avatarColor?: string }[] | undefined | null,
+): { userId?: string; avatar?: string; avatarColor?: string }[] {
   if (!cached || cached.length === 0) return live;
   if (live.length === 0) return cached.slice();
   const max = Math.max(live.length, cached.length);
-  const out: { avatar?: string; avatarColor?: string }[] = [];
+  const out: { userId?: string; avatar?: string; avatarColor?: string }[] = [];
   for (let i = 0; i < max; i++) {
     const l = live[i];
     const c = cached[i];
@@ -472,6 +472,7 @@ export function mergeAvatarProfiles(
       continue;
     }
     out.push({
+      userId: l.userId || c?.userId,
       avatar: l.avatar || c?.avatar,
       avatarColor: l.avatarColor || c?.avatarColor,
     });

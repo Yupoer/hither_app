@@ -13,6 +13,7 @@ function product(id: string, groupId?: string) {
     type: 'subs' as const,
     displayName: id,
     displayPrice: 'NT$60',
+    price: 60,
     description: 'Premium',
     currency: 'TWD',
     introductoryPriceIOS: 'Free for 7 days',

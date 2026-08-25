@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
-import NativeSwitch from './NativeSwitch';
+import SystemToggle from './SystemToggle';
 import {
   getNotificationPreferences,
   setNotificationPreferences,
@@ -80,10 +80,9 @@ export default function NotificationPreferencesCard({
           style={[styles.row, index === ROWS.length - 1 && styles.rowLast]}
         >
           <Text style={styles.label}>{t(label)}</Text>
-          <NativeSwitch
+          <SystemToggle
             value={prefs[key]}
             onValueChange={(v) => toggle(key, v)}
-            accent={colors.accent}
             accessibilityLabel={t(label)}
           />
         </View>

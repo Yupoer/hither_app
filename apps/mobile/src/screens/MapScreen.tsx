@@ -148,7 +148,8 @@ import {
   type Language,
 } from '../state/PreferencesContext';
 import PrefSlider from '../components/PrefSlider';
-import NativeSwitch from '../components/NativeSwitch';
+import SystemToggle from '../components/SystemToggle';
+import { avatarColorForGroup, avatarForGroup, displayMemberAvatar } from '../constants/avatars';
 import { canMarkDestinationArrival } from '../utils/arrivalMarking';
 import { hasArrived } from '../utils/journeyProgress';
 import { buildPassiveCompanionModel } from '../utils/passiveCompanion';
@@ -318,6 +319,7 @@ import {
   type FavoritePlace,
   submitGatherPointRequest,
   updateGroupTripDetails,
+  updateGroupAvatar,
   updateDestinationEmojiColor,
   getNotificationPreferences,
   setNotificationPreferences,
@@ -4787,6 +4789,7 @@ export default function MapScreen({ route, navigation }: Props) {
           // BUG-08: prefer session profile for self so a just-saved avatar
           // shows in the flock before realtime memberships refresh.
           avatar: (isSelf && user?.avatar) || m.avatar,
+          avatarColor: (isSelf && user?.avatarColor) || m.avatarColor || memberColor(m.userId),
           solo,
           subgroupId: m.subgroupId,
           // Prefer the member's chosen avatar background colour; fall back to the
@@ -5157,16 +5160,22 @@ export default function MapScreen({ route, navigation }: Props) {
         <Pressable
           ref={(n) => setTourTargetRef('avatar', n)}
           collapsable={false}
-          style={[styles.headerAvatar, { backgroundColor: user?.avatarColor ?? accent }]}
+          style={[styles.headerAvatar, {
+            backgroundColor: user
+              ? (displayMemberAvatar(user.avatar, user.id, user.avatarColor).color ?? accent)
+              : accent,
+          }]}
           onPress={openProfile}
           accessibilityRole="button"
           accessibilityLabel={t('profile.title')}
         >
-          {user?.avatar ? (
-            <HitherText typeRole="emoji" style={styles.headerAvatarEmoji}>{user.avatar}</HitherText>
+          {user ? (
+            <HitherText typeRole="emoji" style={styles.headerAvatarEmoji}>
+              {displayMemberAvatar(user.avatar, user.id, user.avatarColor).emoji}
+            </HitherText>
           ) : (
             <Text style={styles.headerAvatarText}>
-              {(user?.name ?? '?').slice(0, 1).toUpperCase()}
+              {'?'}
             </Text>
           )}
         </Pressable>
@@ -5198,11 +5207,9 @@ export default function MapScreen({ route, navigation }: Props) {
                   },
                 ]}
               >
-                {f.avatar ? (
-                  <HitherText typeRole="emoji" style={styles.peekStackEmoji}>{f.avatar}</HitherText>
-                ) : (
-                  <Text style={styles.peekStackInitial}>{f.name.slice(0, 1).toUpperCase()}</Text>
-                )}
+                <HitherText typeRole="emoji" style={styles.peekStackEmoji}>
+                  {displayMemberAvatar(f.avatar, f.userId).emoji}
+                </HitherText>
               </View>
             ))}
             {others.length > 6 ? (
@@ -5617,9 +5624,7 @@ export default function MapScreen({ route, navigation }: Props) {
           </Text>
           <Text style={styles.accuracyBattery}>{t('settings.preciseLocationHint')}</Text>
         </View>
-        <NativeSwitch
-          style={styles.accuracySwitch}
-          accent={accent}
+          <SystemToggle
           value={highAccuracy}
           onValueChange={setHighAccuracy}
           accessibilityLabel={t('settings.preciseLocation')}
@@ -6017,7 +6022,6 @@ export default function MapScreen({ route, navigation }: Props) {
       >
         <View style={styles.sheetPaneToggleGlass} collapsable={false}>
           <SheetPaneTabs
-            accent={accent}
             options={sheetPaneOptions}
             value={sheetPane}
             onChange={selectSheetPane}
@@ -6247,6 +6251,18 @@ export default function MapScreen({ route, navigation }: Props) {
               style={styles.groupPill}
             >
               <View style={styles.pillAvatars}>
+                <View
+                  style={[
+                    styles.pillAvatar,
+                    {
+                      backgroundColor: group?.avatarColor ?? (group ? avatarColorForGroup(group.id) : accent),
+                    },
+                  ]}
+                >
+                  <HitherText typeRole="emoji" style={styles.pillEmoji}>
+                    {group?.avatar ?? (group ? avatarForGroup(group.id) : '👥')}
+                  </HitherText>
+                </View>
                 {(() => {
                   const visibleMembers = viewingScope === 'main' || !myScopeId ? flock : flock.filter(f => f.subgroupId === myScopeId);
                   return visibleMembers.slice(0, 3).map((f, i) => (
@@ -6254,9 +6270,9 @@ export default function MapScreen({ route, navigation }: Props) {
                       key={f.userId}
                       style={[styles.pillAvatar, { backgroundColor: f.color, marginLeft: i ? -10 : 0 }]}
                     >
-                      {f.avatar ? (
-                        <HitherText typeRole="emoji" style={styles.pillEmoji}>{f.avatar}</HitherText>
-                      ) : null}
+                      <HitherText typeRole="emoji" style={styles.pillEmoji}>
+                        {displayMemberAvatar(f.avatar, f.userId, f.avatarColor).emoji}
+                      </HitherText>
                     </View>
                   ));
                 })()}
@@ -7264,7 +7280,7 @@ export default function MapScreen({ route, navigation }: Props) {
                 style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
               >
                 <Ionicons name="trash-outline" size={18} color="#FF5A5F" />
-                <Text style={{ color: '#FF5A5F', fontSize: 14, fontWeight: '700' }}>
+                <Text style={{ color: '#FF453A', fontSize: 14, fontWeight: '800' }}>
                   {t('route.deleteSelected', { count: routeSelectedIds.length })}
                 </Text>
               </Pressable>
@@ -7550,6 +7566,13 @@ export default function MapScreen({ route, navigation }: Props) {
         onOpenPaywall={openPaywallCb}
         onOpenAccount={openAccountOverlay}
         onOpenDiagnostics={() => setOverlay('diagnostics')}
+        group={group}
+        isLeader={isLeader}
+        onUpdateGroupAvatar={async (avatar, avatarColor) => {
+          if (!groupId) return;
+          await updateGroupAvatar(groupId, avatar, avatarColor);
+          await refresh();
+        }}
         onGoHome={() => {
           setSettingsOpen(false);
           goHomeCreateOrJoin();
@@ -8075,11 +8098,9 @@ export default function MapScreen({ route, navigation }: Props) {
                 >
                   <View style={styles.flockRowMain}>
                     <View style={[styles.flockAvatar, { backgroundColor: f.color, borderColor: 'transparent' }]}>
-                      {f.avatar ? (
-                        <HitherText typeRole="emoji" style={styles.flockEmoji}>{f.avatar}</HitherText>
-                      ) : (
-                        <Text style={styles.flockInitial}>{f.name.slice(0, 1).toUpperCase()}</Text>
-                      )}
+                      <HitherText typeRole="emoji" style={styles.flockEmoji}>
+                        {displayMemberAvatar(f.avatar, f.userId).emoji}
+                      </HitherText>
                     </View>
                     <View style={styles.grow}>
                       <Text style={styles.flockName}>{f.name}</Text>
@@ -8661,6 +8682,7 @@ const RefreshLocationsButton = React.memo(function RefreshLocationsButton({
  * parent MapScreen tree is not on a location-age interval.
  */
 const FlockRow = React.memo(function FlockRow({
+  userId,
   name,
   avatar,
   color,
@@ -8740,11 +8762,9 @@ const FlockRow = React.memo(function FlockRow({
             },
           ]}
         >
-          {avatar ? (
-            <HitherText typeRole="emoji" style={styles.flockEmoji}>{avatar}</HitherText>
-          ) : (
-            <Text style={styles.flockInitial}>{name.slice(0, 1).toUpperCase()}</Text>
-          )}
+          <HitherText typeRole="emoji" style={styles.flockEmoji}>
+            {displayMemberAvatar(avatar, userId).emoji}
+          </HitherText>
         </View>
         <View style={styles.grow}>
           <Text style={styles.flockName}>{isMe ? t('flock.you') : name}</Text>

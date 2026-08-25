@@ -12,6 +12,7 @@ import {
   allowedStoreKitEnvironments,
   storeKitConfigFromEnv,
   validateStoreKitTransaction,
+  validateStoreKitTripTransaction,
   verifyStoreKitJws,
 } from '../_shared/storekit.ts';
 
@@ -104,6 +105,7 @@ function applyHttpStatus(error: unknown): number {
   if (error === 'account_token_mismatch' || error === 'transaction_binding_mismatch') return 422;
   if (error === 'anonymous_upgrade_required') return 403;
   if (error === 'not_authenticated') return 401;
+  if (error === 'leader_required' || error === 'group_required' || error === 'not_applicable') return 422;
   return 503;
 }
 
@@ -181,6 +183,72 @@ export function createPurchaseHandler(
       return json(422, { ok: false, error: verified.error });
     }
 
+    const clientTransactionId = requiredString(body, 'transaction_id', 'transactionId');
+    if (clientTransactionId && clientTransactionId !== verified.payload.transactionId) {
+      outcomeLog('transaction_id_mismatch');
+      return json(422, { ok: false, error: 'transaction_id_mismatch' });
+    }
+    const clientProductId = requiredString(body, 'product_id', 'productId');
+    if (clientProductId && clientProductId !== verified.payload.productId) {
+      outcomeLog('product_id_mismatch');
+      return json(422, { ok: false, error: 'product_id_mismatch' });
+    }
+
+    if (baseConfig.tripProductId === verified.payload.productId) {
+      const groupId = requiredString(body, 'group_id', 'groupId');
+      if (!groupId) return json(400, { ok: false, error: 'group_required' });
+      const tripTransaction = validateStoreKitTripTransaction(
+        verified.payload,
+        { ...baseConfig, appAccountToken: tokenRow.app_account_token },
+        now(),
+        verified.jwsSha256,
+      );
+      if (!tripTransaction.ok) {
+        outcomeLog(tripTransaction.error);
+        return json(422, { ok: false, error: tripTransaction.error });
+      }
+      const item = tripTransaction.transaction;
+      if (item.status !== 'active') {
+        outcomeLog('transaction_revoked');
+        return json(422, { ok: false, error: 'transaction_revoked' });
+      }
+      const { data: applied, error: applyError } = await admin.rpc('apply_verified_trip_storekit_purchase', {
+        p_user_id: userData.user.id,
+        p_group_id: groupId,
+        p_transaction_id: item.transactionId,
+        p_original_transaction_id: item.originalTransactionId,
+        p_product_id: item.productId,
+        p_environment: item.environment,
+        p_ownership_type: item.ownershipType,
+        p_app_account_token: item.appAccountToken,
+        p_purchase_date: item.purchaseDate,
+        p_signed_at: item.signedAt,
+        p_jws_sha256: item.jwsSha256,
+      });
+      const appliedTrip = (applied ?? null) as JsonRecord | null;
+      if (applyError || !appliedTrip || appliedTrip.ok !== true || appliedTrip.durable !== true) {
+        const tripError = typeof appliedTrip?.error === 'string' ? appliedTrip.error : 'entitlement_persistence_failed';
+        outcomeLog(tripError);
+        return json(applyHttpStatus(tripError), { ok: false, error: tripError });
+      }
+      outcomeLog(appliedTrip.duplicate === true ? 'duplicate_durable' : 'durable_trip_grant');
+      return json(200, {
+        ok: true,
+        durable: true,
+        duplicate: appliedTrip.duplicate === true,
+        status: typeof appliedTrip.status === 'string' ? appliedTrip.status : 'active',
+        planCode: typeof appliedTrip.plan_code === 'string' ? appliedTrip.plan_code : 'small_trip_pass',
+        productId: item.productId,
+        transactionId: item.transactionId,
+        startedAt: appliedTrip.started_at ?? item.purchaseDate,
+        expiresAt: appliedTrip.expires_at ?? null,
+        teamPremiumActive: appliedTrip.teamPremiumActive === true
+          || appliedTrip.team_premium_active === true
+          || appliedTrip.is_premium === true,
+        personalPremiumActive: false,
+      });
+    }
+
     const transaction = validateStoreKitTransaction(
       verified.payload,
       config,
@@ -196,17 +264,6 @@ export function createPurchaseHandler(
     if (!allowedStoreKitEnvironments(baseConfig).includes(item.environment)) {
       outcomeLog('environment_mismatch');
       return json(422, { ok: false, error: 'environment_mismatch' });
-    }
-
-    const clientTransactionId = requiredString(body, 'transaction_id', 'transactionId');
-    if (clientTransactionId && clientTransactionId !== item.transactionId) {
-      outcomeLog('transaction_id_mismatch');
-      return json(422, { ok: false, error: 'transaction_id_mismatch' });
-    }
-    const clientProductId = requiredString(body, 'product_id', 'productId');
-    if (clientProductId && clientProductId !== item.productId) {
-      outcomeLog('product_id_mismatch');
-      return json(422, { ok: false, error: 'product_id_mismatch' });
     }
 
     const { data: applied, error: applyError } = await admin.rpc('apply_storekit_transaction', {

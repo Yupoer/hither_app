@@ -415,16 +415,10 @@ export type ReorderLayoutHeights = {
   dayGapHeight: number;
 };
 
-/**
- * Defaults biased slightly tall so unmeasured first paint undershoots less
- * than the old 48/56 (headers with stay row + quick-add strip are taller).
- */
-const REORDER_LAYOUT_SCALE = 1.3;
-
 export const DEFAULT_REORDER_LAYOUT: ReorderLayoutHeights = {
-  headerHeight: 72 * REORDER_LAYOUT_SCALE,
-  rowHeight: 60 * REORDER_LAYOUT_SCALE,
-  dayGapHeight: 56 * REORDER_LAYOUT_SCALE,
+  headerHeight: 54,
+  rowHeight: 52,
+  dayGapHeight: 56,
 };
 
 /** Optional onLayout measurements keyed by list entry id / trip day. */

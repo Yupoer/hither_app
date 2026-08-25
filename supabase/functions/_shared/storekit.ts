@@ -42,6 +42,8 @@ export type StoreKitVerificationConfig = {
   allowedEnvironments: readonly StoreKitEnvironment[];
   productIds: readonly string[];
   subscriptionGroupId: string;
+  /** Optional consumable SKU; kept outside the two subscription ids. */
+  tripProductId?: string | null;
   appAccountToken: string;
   appleRootCertSha256: string;
 };
@@ -58,6 +60,21 @@ export type ValidatedStoreKitTransaction = {
   status: 'active' | 'expired' | 'revoked';
   purchaseDate: string;
   expiresAt: string;
+  revocationDate: string | null;
+  signedAt: string;
+  jwsSha256: string;
+};
+
+export type ValidatedStoreKitTripTransaction = {
+  payload: StoreKitTransactionPayload;
+  transactionId: string;
+  originalTransactionId: string;
+  productId: string;
+  environment: StoreKitEnvironment;
+  ownershipType: 'PURCHASED';
+  appAccountToken: string;
+  status: 'active' | 'revoked';
+  purchaseDate: string;
   revocationDate: string | null;
   signedAt: string;
   jwsSha256: string;
@@ -272,6 +289,81 @@ export function validateStoreKitTransaction(
   };
 }
 
+/** Validate the separate one-time team pass; it has no subscription expiry. */
+export function validateStoreKitTripTransaction(
+  payload: StoreKitTransactionPayload,
+  config: Pick<StoreKitVerificationConfig, 'bundleId' | 'environment' | 'appAccountToken'> & {
+    allowedEnvironments?: readonly StoreKitEnvironment[];
+    tripProductId?: string | null;
+  },
+  _nowMs = Date.now(),
+  jwsSha256 = '',
+): { ok: true; transaction: ValidatedStoreKitTripTransaction } | { ok: false; error: string } {
+  if (payload.bundleId !== config.bundleId) return { ok: false, error: 'bundle_mismatch' };
+  const allowed = allowedStoreKitEnvironments(config);
+  if (
+    payload.environment !== 'Production'
+    && payload.environment !== 'Sandbox'
+    && payload.environment !== 'Xcode'
+  ) {
+    return { ok: false, error: 'environment_mismatch' };
+  }
+  if (!allowed.includes(payload.environment)) return { ok: false, error: 'environment_mismatch' };
+  if (!config.tripProductId) return { ok: false, error: 'trip_product_not_configured' };
+  if (payload.productId !== config.tripProductId) return { ok: false, error: 'product_mismatch' };
+  if (payload.type !== 'Consumable') return { ok: false, error: 'transaction_type_mismatch' };
+  if (payload.inAppOwnershipType !== 'PURCHASED') return { ok: false, error: 'ownership_mismatch' };
+  if (
+    typeof payload.appAccountToken !== 'string'
+    || payload.appAccountToken.toLowerCase() !== config.appAccountToken.toLowerCase()
+  ) {
+    return { ok: false, error: 'account_token_mismatch' };
+  }
+  if (
+    typeof payload.transactionId !== 'string'
+    || typeof payload.originalTransactionId !== 'string'
+    || !payload.transactionId
+    || !payload.originalTransactionId
+    || !payload.signedDate
+  ) {
+    return { ok: false, error: 'transaction_identity_missing' };
+  }
+  const signedAt = dateFromMilliseconds(payload.signedDate);
+  const purchaseDate = dateFromMilliseconds(payload.purchaseDate);
+  if (!signedAt || !purchaseDate) return { ok: false, error: 'transaction_date_invalid' };
+
+  const hasRevocationDate = Object.prototype.hasOwnProperty.call(payload, 'revocationDate');
+  const revocationDate = hasRevocationDate
+    ? dateFromMilliseconds(payload.revocationDate)
+    : null;
+  if (
+    hasRevocationDate
+    && (
+      !revocationDate
+      || Date.parse(revocationDate) < Date.parse(purchaseDate)
+    )
+  ) {
+    return { ok: false, error: 'transaction_revocation_date_invalid' };
+  }
+  return {
+    ok: true,
+    transaction: {
+      payload,
+      transactionId: payload.transactionId,
+      originalTransactionId: payload.originalTransactionId,
+      productId: payload.productId,
+      environment: payload.environment,
+      ownershipType: 'PURCHASED',
+      appAccountToken: payload.appAccountToken,
+      status: revocationDate ? 'revoked' : 'active',
+      purchaseDate,
+      revocationDate,
+      signedAt,
+      jwsSha256,
+    },
+  };
+}
+
 export function storeKitConfigFromEnv(
   env: (name: string) => string | undefined,
 ): StoreKitVerificationConfig | null {
@@ -282,6 +374,7 @@ export function storeKitConfigFromEnv(
     .map((item) => item.trim())
     .filter(Boolean);
   const subscriptionGroupId = env('PREMIUM_SUBSCRIPTION_GROUP_ID')?.trim() ?? '';
+  const tripProductId = env('PREMIUM_TRIP_PRODUCT_ID')?.trim() ?? '';
   const appleRootCertSha256 = env('APPLE_ROOT_CERT_SHA256')?.trim() ?? '';
   if (
     !bundleId
@@ -302,6 +395,7 @@ export function storeKitConfigFromEnv(
     productIds,
     subscriptionGroupId,
     appAccountToken: '',
+    tripProductId: tripProductId || null,
     appleRootCertSha256,
   };
 }

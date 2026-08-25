@@ -14,6 +14,7 @@ const mockRestorePremiumPurchases = jest.fn();
 const mockFinishPremiumPurchase = jest.fn();
 const mockGetUnfinishedPremiumPurchases = jest.fn();
 const mockApplyVerifiedSubscription = jest.fn();
+const mockApplyVerifiedTripPass = jest.fn();
 const mockGetPremiumAppAccountToken = jest.fn();
 const mockGetPremiumProjection = jest.fn();
 
@@ -37,6 +38,7 @@ jest.mock('expo-secure-store', () => ({
 
 jest.mock('../api/client', () => ({
   applyVerifiedSubscription: (...args: unknown[]) => mockApplyVerifiedSubscription(...args),
+  applyVerifiedTripPass: (...args: unknown[]) => mockApplyVerifiedTripPass(...args),
   getPremiumAppAccountToken: (...args: unknown[]) => mockGetPremiumAppAccountToken(...args),
   getPremiumProjection: (...args: unknown[]) => mockGetPremiumProjection(...args),
 }));
@@ -53,7 +55,8 @@ const SAMPLE_PRODUCTS = [
     id: 'premium.monthly',
     type: 'subs' as const,
     displayName: 'Monthly',
-    displayPrice: 'NT$60',
+    displayPrice: 'NT$90',
+    price: 90,
     description: 'Premium monthly',
     currency: 'TWD',
   },
@@ -61,8 +64,18 @@ const SAMPLE_PRODUCTS = [
     id: 'premium.annual',
     type: 'subs' as const,
     displayName: 'Annual',
-    displayPrice: 'NT$480',
+    displayPrice: 'NT$600',
+    price: 600,
     description: 'Premium annual',
+    currency: 'TWD',
+  },
+  {
+    id: 'hither.small_trip_pass',
+    type: 'in-app' as const,
+    displayName: 'Small Trip Pass',
+    displayPrice: 'NT$60',
+    price: 60,
+    description: 'Ten-day team pass',
     currency: 'TWD',
   },
 ];
@@ -93,6 +106,16 @@ describe('#156 behavioral: premiumPurchaseFlow coordinator', () => {
       entitlementVersion: 1,
       status: 'active',
       projection: { ...EMPTY_PROJECTION, personalPremiumActive: true, status: 'active' },
+    });
+    mockApplyVerifiedTripPass.mockResolvedValue({
+      ok: true,
+      durable: true,
+      personalPremiumActive: false,
+      teamPremiumActive: true,
+      entitlementVersion: 1,
+      status: 'active',
+      planCode: 'small_trip_pass',
+      productId: 'hither.small_trip_pass',
     });
     mockFinishPremiumPurchase.mockResolvedValue(undefined);
     mockGetUnfinishedPremiumPurchases.mockResolvedValue([]);
@@ -144,7 +167,41 @@ describe('#156 behavioral: premiumPurchaseFlow coordinator', () => {
         source: 'purchase',
       }),
     );
-    expect(mockFinishPremiumPurchase).toHaveBeenCalled();
+    expect(mockFinishPremiumPurchase).toHaveBeenCalledWith(expect.anything(), { isConsumable: false });
+  });
+
+  it('binds a one-time trip pass to the current group and finishes it as consumable', async () => {
+    mockRequestPremiumSubscription.mockResolvedValue({
+      status: 'purchased',
+      transactionId: 'trip-txn-1',
+      productId: 'hither.small_trip_pass',
+      purchaseToken: 'trip-jws-1',
+      purchase: { id: 'trip-txn-1' },
+      appAccountToken: 'account-token',
+    });
+
+    const result = await flow.purchasePremiumSubscription('trip', {
+      userId: 'user-1',
+      groupId: 'group-1',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(mockApplyVerifiedTripPass).toHaveBeenCalledWith({
+      signedTransaction: 'trip-jws-1',
+      transactionId: 'trip-txn-1',
+      productId: 'hither.small_trip_pass',
+      groupId: 'group-1',
+    });
+    expect(mockApplyVerifiedSubscription).not.toHaveBeenCalled();
+    expect(mockFinishPremiumPurchase).toHaveBeenCalledWith(expect.anything(), { isConsumable: true });
+    expect(result.ok && 'projection' in result ? result.projection : undefined).toBeUndefined();
+  });
+
+  it('requires the current group before starting a one-time trip purchase', async () => {
+    const result = await flow.purchasePremiumSubscription('trip', { userId: 'user-1' });
+    expect(result).toEqual({ ok: false, error: 'group_required_for_trip_pass' });
+    expect(mockGetPremiumAppAccountToken).not.toHaveBeenCalled();
+    expect(mockRequestPremiumSubscription).not.toHaveBeenCalled();
   });
 
   it('purchase cancelled does not apply or finish', async () => {
@@ -253,7 +310,7 @@ describe('#156 behavioral: premiumPurchaseFlow coordinator', () => {
         appAccountToken: 'account-token',
       },
     ]);
-    const retry = await flow.reconcileUnfinishedPremiumPurchases('user-1');
+    const retry = await flow.reconcileUnfinishedPremiumPurchases({ userId: 'user-1', groupId: 'group-1' });
     expect(retry.settled).toBe(1);
     expect(mockFinishPremiumPurchase).toHaveBeenCalled();
   });

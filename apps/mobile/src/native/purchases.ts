@@ -41,6 +41,8 @@ export type PremiumStoreProduct = Pick<
   ProductSubscription,
   'id' | 'displayName' | 'displayPrice' | 'description' | 'currency' | 'type'
 > & {
+  /** Numeric StoreKit/Play amount; UI derives comparisons from this value. */
+  price: number | null;
   introductoryPriceIOS?: string | null;
   introductoryPriceNumberOfPeriodsIOS?: string | null;
   introductoryPricePaymentModeIOS?: string | null;
@@ -214,43 +216,66 @@ function addWaiter(productId: string, timeoutMs = 120_000): Promise<PurchaseResu
   });
 }
 
+function mapStoreProduct(product: ProductSubscription): Omit<PremiumStoreProduct, 'introductoryOfferEligibleIOS'> {
+  return {
+    id: product.id,
+    displayName: product.displayName,
+    displayPrice: product.displayPrice,
+    description: product.description,
+    currency: product.currency,
+    type: product.type,
+    price: typeof product.price === 'number' && Number.isFinite(product.price)
+      ? product.price
+      : null,
+    introductoryPriceIOS:
+      'introductoryPriceIOS' in product ? product.introductoryPriceIOS : null,
+    introductoryPriceNumberOfPeriodsIOS:
+      'introductoryPriceNumberOfPeriodsIOS' in product
+        ? product.introductoryPriceNumberOfPeriodsIOS
+        : null,
+    introductoryPricePaymentModeIOS:
+      'introductoryPricePaymentModeIOS' in product
+        ? product.introductoryPricePaymentModeIOS
+        : null,
+    subscriptionGroupIdIOS:
+      'subscriptionGroupIdIOS' in product ? product.subscriptionGroupIdIOS : null,
+    subscriptionPeriodUnitIOS:
+      'subscriptionPeriodUnitIOS' in product ? product.subscriptionPeriodUnitIOS : null,
+    subscriptionPeriodNumberIOS:
+      'subscriptionPeriodNumberIOS' in product ? product.subscriptionPeriodNumberIOS : null,
+  };
+}
+
 export async function fetchPremiumProducts(): Promise<PremiumStoreProduct[]> {
   if (!PREMIUM_CATALOG.ready) return [];
   const iap = await ensureConnection();
   if (!iap) return [];
   try {
-    const products = await iap.fetchProducts({
-      skus: PREMIUM_CATALOG.products.map((product) => product.productId),
-      type: 'subs',
-    });
+    const subSkus = PREMIUM_CATALOG.products
+      .filter((product) => product.storeType === 'subs')
+      .map((product) => product.productId);
+    const inAppSkus = PREMIUM_CATALOG.products
+      .filter((product) => product.storeType === 'in-app')
+      .map((product) => product.productId);
+    const [subs, inApps] = await Promise.all([
+      subSkus.length > 0
+        ? iap.fetchProducts({ skus: subSkus, type: 'subs' })
+        : Promise.resolve([]),
+      inAppSkus.length > 0
+        ? iap.fetchProducts({ skus: inAppSkus, type: 'in-app' }).catch(() =>
+          iap.fetchProducts({ skus: inAppSkus, type: 'subs' }),
+        )
+        : Promise.resolve([]),
+    ]);
+    const products = [...(subs ?? []), ...(inApps ?? [])];
     const mappedProducts = (products ?? [])
-      .filter((product): product is ProductSubscription => product.type === 'subs')
+      .filter((product): product is ProductSubscription =>
+        product.type === 'subs' || product.type === 'in-app',
+      )
+      .filter((product, index, list) => list.findIndex((item) => item.id === product.id) === index)
       .map((product) => ({
-        id: product.id,
-        displayName: product.displayName,
-        displayPrice: product.displayPrice,
-        description: product.description,
-        currency: product.currency,
-        type: product.type,
-        introductoryPriceIOS:
-          'introductoryPriceIOS' in product ? product.introductoryPriceIOS : null,
-        introductoryPriceNumberOfPeriodsIOS:
-          'introductoryPriceNumberOfPeriodsIOS' in product
-            ? product.introductoryPriceNumberOfPeriodsIOS
-            : null,
-        introductoryPricePaymentModeIOS:
-          'introductoryPricePaymentModeIOS' in product
-            ? product.introductoryPricePaymentModeIOS
-            : null,
+        ...mapStoreProduct(product),
         introductoryOfferEligibleIOS: false,
-        subscriptionGroupIdIOS:
-          'subscriptionGroupIdIOS' in product ? product.subscriptionGroupIdIOS : null,
-        subscriptionPeriodUnitIOS:
-          'subscriptionPeriodUnitIOS' in product ? product.subscriptionPeriodUnitIOS : null,
-        subscriptionPeriodNumberIOS:
-          'subscriptionPeriodNumberIOS' in product
-            ? product.subscriptionPeriodNumberIOS
-            : null,
       }));
 
     const groupIds = [...new Set(
@@ -291,9 +316,11 @@ export async function requestPremiumSubscription(
   if (!iap) return { status: 'unavailable', reason: 'native_iap_not_linked' };
 
   const pending = addWaiter(productId);
+  const storeType =
+    PREMIUM_CATALOG.products.find((item) => item.productId === productId)?.storeType ?? 'subs';
   try {
     await iap.requestPurchase({
-      type: 'subs',
+      type: storeType,
       request: {
         apple: { sku: productId, appAccountToken },
         google: { skus: [productId], obfuscatedAccountId: appAccountToken },
@@ -312,7 +339,9 @@ export async function requestPremiumSubscription(
   }
 }
 
-export async function getUnfinishedPremiumPurchases(): Promise<StorePurchase[]> {
+export async function getUnfinishedPremiumPurchases(
+  options: { includeConsumables?: boolean } = {},
+): Promise<StorePurchase[]> {
   const iap = await ensureConnection();
   if (!iap) return [];
   const purchases: Purchase[] = [];
@@ -332,13 +361,15 @@ export async function getUnfinishedPremiumPurchases(): Promise<StorePurchase[]> 
   }
 
   const byTransaction = new Map<string, StorePurchase>();
+  const includePurchase = (productId: string) => options.includeConsumables !== false
+    || PREMIUM_CATALOG.products.some((item) => item.productId === productId && item.storeType === 'subs');
   for (const purchase of purchases) {
-    if (!PREMIUM_CATALOG.products.some((item) => item.productId === purchase.productId)) continue;
+    if (!PREMIUM_CATALOG.products.some((item) => item.productId === purchase.productId) || !includePurchase(purchase.productId)) continue;
     const mapped = mapPurchase(purchase, 'restored');
     if (mapped) byTransaction.set(mapped.transactionId, mapped);
   }
   for (const purchase of unclaimed.values()) {
-    if (PREMIUM_CATALOG.products.some((item) => item.productId === purchase.productId)) {
+    if (PREMIUM_CATALOG.products.some((item) => item.productId === purchase.productId) && includePurchase(purchase.productId)) {
       byTransaction.set(purchase.transactionId, purchase);
     }
   }
@@ -354,14 +385,17 @@ export async function restorePremiumPurchases(): Promise<StorePurchase[]> {
   } catch {
     // The subsequent available-purchases query remains the source of truth.
   }
-  return getUnfinishedPremiumPurchases();
+  return getUnfinishedPremiumPurchases({ includeConsumables: false });
 }
 
 /** Finish only after the server confirms a durable ledger/grant write. */
-export async function finishPremiumPurchase(purchase: StorePurchase): Promise<void> {
+export async function finishPremiumPurchase(
+  purchase: StorePurchase,
+  options: { isConsumable: boolean },
+): Promise<void> {
   const iap = await ensureConnection();
   if (!iap) throw new Error('native_iap_not_linked');
-  await iap.finishTransaction({ purchase: purchase.purchase, isConsumable: false });
+  await iap.finishTransaction({ purchase: purchase.purchase, isConsumable: options.isConsumable });
 }
 
 /** Compatibility boundary for old callers; no product is guessed or unlocked. */

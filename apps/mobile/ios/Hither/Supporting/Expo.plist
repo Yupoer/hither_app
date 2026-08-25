@@ -11,11 +11,8 @@
     <key>EXUpdatesURL</key>
     <string>https://u.expo.dev/0f62ed14-1f2e-4d7b-b5b6-4eda273f2e35</string>
     <key>EXUpdatesRuntimeVersion</key>
-    <string>0.1.5</string>
-    <key>EXUpdatesRequestHeaders</key>
-    <dict>
-      <key>expo-channel-name</key>
-      <string>production</string>
-    </dict>
+    <string>0.1.6</string>
+    <key>EXUpdatesEnableBsdiffPatchSupport</key>
+    <true/>
   </dict>
 </plist>

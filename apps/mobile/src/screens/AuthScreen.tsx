@@ -5,6 +5,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -27,6 +28,7 @@ import { runUiAction, type UiActionToken } from '../utils/uiAction';
 import SafePressable from '../components/SafePressable';
 import { mediumTap } from '../utils/haptics';
 import { classifyAnonymousAccessError } from '../anonymousAccess';
+import { AVATAR_COLORS, AVATAR_EMOJI } from '../constants/avatars';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Auth'>;
 
@@ -53,6 +55,8 @@ export default function AuthScreen({ navigation, route }: Props) {
 
   const [name, setName] = useState(user?.name ?? '');
   const [groupName, setGroupName] = useState('');
+  const [groupAvatar, setGroupAvatar] = useState<string>(AVATAR_EMOJI[0]);
+  const [groupAvatarColor, setGroupAvatarColor] = useState<string>(AVATAR_COLORS[0]);
   const [code, setCode] = useState('');
   const [codeError, setCodeError] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -118,7 +122,7 @@ export default function AuthScreen({ navigation, route }: Props) {
       }
       mediumTap();
       const group = isLeader
-        ? await createGroup(groupName.trim())
+        ? await createGroup(groupName.trim(), groupAvatar, groupAvatarColor)
         : await joinGroup(code.trim());
       // Late results must not update membership or navigation.
       if (!token.isCurrent()) return;
@@ -229,6 +233,44 @@ export default function AuthScreen({ navigation, route }: Props) {
                     }}
                     accessibilityLabel={t('group.nameLabel')}
                   />
+                </View>
+                <Text style={styles.label}>{t('settings.groupAvatar')}</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.avatarChoices}
+                  accessibilityLabel={t('settings.groupAvatar')}
+                >
+                  {AVATAR_EMOJI.map((emoji) => (
+                    <Pressable
+                      key={emoji}
+                      onPress={() => setGroupAvatar(emoji)}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: groupAvatar === emoji }}
+                      style={[
+                        styles.avatarChoice,
+                        { backgroundColor: groupAvatarColor },
+                        groupAvatar === emoji && styles.avatarChoiceSelected,
+                      ]}
+                    >
+                      <Text style={styles.avatarChoiceText}>{emoji}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+                <View style={styles.avatarColorChoices}>
+                  {AVATAR_COLORS.map((color) => (
+                    <Pressable
+                      key={color}
+                      onPress={() => setGroupAvatarColor(color)}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: groupAvatarColor === color }}
+                      style={[
+                        styles.avatarColorChoice,
+                        { backgroundColor: color },
+                        groupAvatarColor === color && styles.avatarColorChoiceSelected,
+                      ]}
+                    />
+                  ))}
                 </View>
               </>
             )}
@@ -393,6 +435,21 @@ const makeStyles = (accent: string) =>
       borderColor: 'rgba(255,255,255,0.2)',
     },
     input: { fontSize: 19, color: '#fff' },
+    avatarChoices: { gap: 8, paddingHorizontal: 4 },
+    avatarChoice: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 2,
+      borderColor: 'transparent',
+    },
+    avatarChoiceSelected: { borderColor: '#fff' },
+    avatarChoiceText: { fontSize: 24 },
+    avatarColorChoices: { flexDirection: 'row', gap: 10, marginTop: 10, paddingHorizontal: 4 },
+    avatarColorChoice: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: 'transparent' },
+    avatarColorChoiceSelected: { borderColor: '#fff' },
     codeBoxes: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     codeCell: {
       flex: 1,

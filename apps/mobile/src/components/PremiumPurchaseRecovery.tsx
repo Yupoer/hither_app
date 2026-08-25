@@ -26,7 +26,10 @@ export default function PremiumPurchaseRecovery() {
     const reconcile = () => {
       if (running) return running;
       running = (async () => {
-        const result = await reconcileUnfinishedPremiumPurchases(user.id);
+        const result = await reconcileUnfinishedPremiumPurchases({
+          userId: user.id,
+          groupId: membership?.group.id ?? null,
+        });
         if (cancelled) return;
         if (result.settled > 0) {
           await refreshEntitlement(membership?.group.id ?? null);

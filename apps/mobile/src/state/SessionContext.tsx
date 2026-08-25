@@ -35,7 +35,7 @@ import {
   type PremiumProjection,
   type TripEntitlement,
 } from '../entitlements';
-import { avatarForUser } from '../constants/avatars';
+import { displayMemberAvatar } from '../constants/avatars';
 import { syncOnboardingIfNeeded } from '../onboarding/sync';
 import { flushQueuedEvents } from '../utils/activityLog';
 import { useAuthFlow } from './useAuthFlow';
@@ -249,7 +249,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           id: authUser.id,
           name: row?.nickname ?? '',
           email: authUser.email ?? '',
-          avatar: row?.avatar ?? undefined,
+          avatar: displayMemberAvatar(row?.avatar, authUser.id, row?.avatar_color).emoji,
           avatarColor: row?.avatar_color ?? undefined,
           createdAt: row?.created_at,
           provider: authUser.app_metadata?.provider ?? (authUser.is_anonymous ? 'anonymous' : 'email'),

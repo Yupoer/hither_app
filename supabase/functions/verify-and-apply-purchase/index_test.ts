@@ -8,6 +8,7 @@ const envValues: Record<string, string> = {
   APPLE_BUNDLE_ID: 'app.hither.mobile',
   APPLE_STORE_ENVIRONMENT: 'Sandbox',
   PREMIUM_PRODUCT_IDS: 'app.hither.premium.monthly,app.hither.premium.annual',
+  PREMIUM_TRIP_PRODUCT_ID: 'hither.small_trip_pass',
   PREMIUM_SUBSCRIPTION_GROUP_ID: 'hither-premium',
   APPLE_ROOT_CERT_SHA256: 'test-root',
   SUPABASE_URL: 'https://example.supabase.co',
@@ -55,8 +56,18 @@ function handlerFor(options: {
   apply?: Record<string, unknown> | null;
   applyError?: unknown;
   environment?: string;
+  trip?: boolean;
 }) {
-  const payload = { ...transactionPayload, environment: options.environment ?? 'Sandbox' };
+  const payload = options.trip
+    ? {
+      ...transactionPayload,
+      environment: options.environment ?? 'Sandbox',
+      productId: 'hither.small_trip_pass',
+      type: 'Consumable',
+      subscriptionGroupIdentifier: undefined,
+      expiresDate: undefined,
+    }
+    : { ...transactionPayload, environment: options.environment ?? 'Sandbox' };
   return createPurchaseHandler({
     env: (name) => envValues[name],
     now: () => 1_800_000_010_000,
@@ -159,4 +170,39 @@ Deno.test('Xcode JWS is rejected on deployed functions', async () => {
   if (response.status !== 422 || result.error !== 'environment_mismatch') {
     throw new Error(`Xcode must be rejected, got ${response.status} ${result.error}`);
   }
+});
+
+Deno.test('trip consumable requires an explicit group binding', async () => {
+  const response = await handlerFor({ trip: true })(request({
+    product_id: 'hither.small_trip_pass',
+  }));
+  const result = await body(response);
+  if (response.status !== 400 || result.error !== 'group_required') {
+    throw new Error(`trip group binding must be required, got ${response.status}`);
+  }
+});
+
+Deno.test('trip consumable returns team durable state without personal Premium', async () => {
+  const response = await handlerFor({
+    trip: true,
+    apply: {
+      ok: true,
+      durable: true,
+      duplicate: false,
+      status: 'active',
+      plan_code: 'small_trip_pass',
+      is_premium: true,
+      team_premium_active: true,
+      started_at: '2026-08-25T00:00:00.000Z',
+      expires_at: '2026-09-04T00:00:00.000Z',
+    },
+  })(request({
+    product_id: 'hither.small_trip_pass',
+    group_id: 'group-1',
+  }));
+  const result = await body(response);
+  if (response.status !== 200 || result.durable !== true || result.teamPremiumActive !== true) {
+    throw new Error(`trip durable state failed: ${response.status}`);
+  }
+  if (result.personalPremiumActive === true) throw new Error('trip pass leaked into personal Premium');
 });

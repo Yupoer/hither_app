@@ -8,6 +8,7 @@
 
 import {
   applyVerifiedSubscription,
+  applyVerifiedTripPass,
   getPremiumAppAccountToken,
   getPremiumProjection,
 } from '../api/client';
@@ -29,7 +30,7 @@ import {
   type EntitlementMutationResult,
 } from '../entitlements';
 import type { PremiumPlan } from '../premiumCatalog';
-import { premiumProductForPlan } from '../premiumCatalog';
+import { premiumPlanForProduct, premiumProductForPlan } from '../premiumCatalog';
 import {
   cacheBlobToProjection,
   emptyPersonalProjection,
@@ -84,7 +85,7 @@ function projectionFromApply(
   applied: EntitlementMutationResult,
   previous?: PremiumProjection,
 ): PremiumProjection {
-  const live = applied.personalPremiumActive === true || applied.isPremium === true;
+  const live = applied.personalPremiumActive === true;
   return {
     ...EMPTY_PREMIUM_PROJECTION,
     ...previous,
@@ -113,19 +114,32 @@ async function settlePurchase(
   purchase: StorePurchase,
   source: 'purchase' | 'restore' | 'recovery',
   userId?: string | null,
+  groupId?: string | null,
 ): Promise<PremiumPurchaseFlowResult> {
   const existing = inFlight.get(purchase.transactionId);
   if (existing) return existing;
 
   const work = (async (): Promise<PremiumPurchaseFlowResult> => {
+    const plan = premiumPlanForProduct(purchase.productId);
+    const isConsumable = plan === 'trip';
+    if (isConsumable && !groupId) {
+      return { ok: false, error: 'group_required_for_trip_pass' };
+    }
     let applied: EntitlementMutationResult;
     try {
-      applied = await applyVerifiedSubscription({
-        signedTransaction: purchase.purchaseToken,
-        transactionId: purchase.transactionId,
-        productId: purchase.productId,
-        source,
-      });
+      applied = isConsumable
+        ? await applyVerifiedTripPass({
+          signedTransaction: purchase.purchaseToken,
+          transactionId: purchase.transactionId,
+          productId: purchase.productId,
+          groupId: groupId!,
+        })
+        : await applyVerifiedSubscription({
+          signedTransaction: purchase.purchaseToken,
+          transactionId: purchase.transactionId,
+          productId: purchase.productId,
+          source,
+        });
     } catch {
       return { ok: false, error: 'verification_service_unavailable' };
     }
@@ -133,15 +147,15 @@ async function settlePurchase(
       return { ok: false, error: String(applied.error ?? 'verification_failed'), applied };
     }
 
-    const projection = projectionFromApply(applied);
-    if (userId) await persistProjection(userId, projection);
+    const projection = isConsumable ? undefined : projectionFromApply(applied);
+    if (userId && projection) await persistProjection(userId, projection);
 
     try {
-      await finishPremiumPurchase(purchase);
+      await finishPremiumPurchase(purchase, { isConsumable });
     } catch {
       return { ok: false, error: 'finish_transaction_failed', applied };
     }
-    return { ok: true, purchase, projection };
+    return { ok: true, purchase, ...(projection ? { projection } : {}) };
   })();
   inFlight.set(purchase.transactionId, work);
   try {
@@ -156,12 +170,16 @@ export async function purchasePremiumSubscription(
   options: {
     userId?: string | null;
     isAnonymous?: boolean;
+    groupId?: string | null;
     onNativePurchased?: () => void;
   } = {},
 ): Promise<PremiumPurchaseFlowResult> {
   if (options.isAnonymous) return { ok: false, error: 'anonymous_upgrade_required' };
   const product = premiumProductForPlan(plan);
   if (!product) return { ok: false, error: 'subscription_catalog_not_ready' };
+  if (plan === 'trip' && !options.groupId) {
+    return { ok: false, error: 'group_required_for_trip_pass' };
+  }
 
   let appAccountToken: string;
   try {
@@ -175,7 +193,7 @@ export async function purchasePremiumSubscription(
   const nativeResult = await requestPremiumSubscription(product.productId, appAccountToken);
   if (!isVerifiedPurchase(nativeResult)) return failedFromNative(nativeResult);
   options.onNativePurchased?.();
-  return settlePurchase(nativeResult, 'purchase', options.userId);
+  return settlePurchase(nativeResult, 'purchase', options.userId, options.groupId);
 }
 
 export async function restorePremiumSubscription(
@@ -200,7 +218,7 @@ export async function restorePremiumSubscription(
   let restored = 0;
   let lastProjection: PremiumProjection | undefined;
   for (const purchase of nativePurchases) {
-    const result = await settlePurchase(purchase, 'restore', options.userId);
+    const result = await settlePurchase(purchase, 'restore', options.userId, groupId);
     if (result.ok) {
       restored += 1;
       lastProjection = result.projection;
@@ -232,7 +250,7 @@ export async function restorePremiumSubscription(
 
 /** Cold-start/foreground recovery for unfinished StoreKit transactions. */
 export async function reconcileUnfinishedPremiumPurchases(
-  userId?: string | null,
+  options: { userId?: string | null; groupId?: string | null },
 ): Promise<{
   attempted: number;
   settled: number;
@@ -242,7 +260,7 @@ export async function reconcileUnfinishedPremiumPurchases(
   let settled = 0;
   let failed = 0;
   for (const purchase of nativePurchases) {
-    const result = await settlePurchase(purchase, 'recovery', userId);
+    const result = await settlePurchase(purchase, 'recovery', options.userId, options.groupId);
     if (result.ok) settled += 1;
     else failed += 1;
   }
@@ -262,7 +280,7 @@ export async function refreshPremiumProjection(options: {
       && projection.error === 'subscription_required'
       && !projection.personalPremiumActive
     ) {
-      const unfinished = await getUnfinishedPremiumPurchases();
+      const unfinished = await getUnfinishedPremiumPurchases({ includeConsumables: false });
       if (unfinished.length > 0) {
         const synced = await syncAppStoreSubscription({
           signedTransaction: unfinished[0].purchaseToken,

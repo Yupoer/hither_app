@@ -61,7 +61,7 @@ describe('REVIEW_FIX: Stage Two per-tab targets', () => {
   it('SheetPaneTabs exposes onTabNode for individual tab measurement', () => {
     const tabs = read('screens/MapScreen/components/SheetPaneTabs.tsx');
     expect(tabs).toContain('onTabNode');
-    expect(tabs).toContain('ref={(n) => onTabNode?.(opt.key, n)}');
+    expect(tabs).toContain('onTabNode?.(opt.key, node)');
   });
 
   it('MapScreen maps each pane key to a distinct tour target id', () => {

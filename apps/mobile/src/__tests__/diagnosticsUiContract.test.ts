@@ -48,7 +48,7 @@ describe('location privacy and diagnostics UI contract', () => {
     expect(settings).toContain('diagnosticsEnabled');
     // Always-on for production + members (not env-gated / not leader-only).
     expect(settings).toMatch(/const diagnosticsEnabled\s*=\s*true/);
-    expect(settings).toContain('opaque');
+    expect(settings).toContain('SettingsChildSheet');
     expect(diagnostics).toContain('buildNumber');
     expect(diagnostics).toContain('navigationSessionId');
     expect(diagnostics).toContain('trackingMode');
@@ -64,9 +64,9 @@ describe('location privacy and diagnostics UI contract', () => {
     expect(preferences).toContain('diagnosticUploadEnabled');
     expect(preferences).toContain('setDiagnosticUploadEnabled');
     expect(settings).toContain("t('settings.diagnosticUploadWarningBody')");
-    expect(settings).toContain('accessibilityRole="switch"');
-    expect(settings).toContain('accessibilityState={{ checked: diagnosticUploadEnabled }}');
+    expect(settings).toContain('<SystemToggle');
     expect(settings).toContain('onDiagnosticSwitchChange');
+    expect(read('components/SystemToggle.tsx')).toContain('accessibilityRole="switch"');
   });
 
   it('exposes DEV-only debug route controls with start/stop and warning', () => {

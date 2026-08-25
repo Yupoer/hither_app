@@ -1,6 +1,7 @@
 import {
   storeKitConfigFromEnv,
   validateStoreKitTransaction,
+  validateStoreKitTripTransaction,
 } from './storekit.ts';
 
 const config = {
@@ -9,6 +10,7 @@ const config = {
   productIds: ['app.hither.premium.monthly', 'app.hither.premium.annual'],
   subscriptionGroupId: 'hither-premium',
   appAccountToken: '11111111-1111-1111-1111-111111111111',
+  tripProductId: 'hither.small_trip_pass',
 };
 
 function payload(overrides: Record<string, unknown> = {}) {
@@ -25,6 +27,22 @@ function payload(overrides: Record<string, unknown> = {}) {
     purchaseDate: 1_800_000_000_000,
     signedDate: 1_800_000_001_000,
     expiresDate: 1_800_100_000_000,
+    ...overrides,
+  };
+}
+
+function tripPayload(overrides: Record<string, unknown> = {}) {
+  return {
+    bundleId: config.bundleId,
+    environment: config.environment,
+    productId: config.tripProductId,
+    type: 'Consumable',
+    inAppOwnershipType: 'PURCHASED',
+    appAccountToken: config.appAccountToken,
+    transactionId: '200000000000001',
+    originalTransactionId: '200000000000001',
+    purchaseDate: 1_800_000_000_000,
+    signedDate: 1_800_000_001_000,
     ...overrides,
   };
 }
@@ -187,4 +205,44 @@ Deno.test('deployed configuration accepts Production and Sandbox and rejects Xco
   if (xcode.ok || xcode.error !== 'environment_mismatch') {
     throw new Error('Xcode must be rejected on deployed functions');
   }
+});
+
+Deno.test('consumable trip validation accepts a bound purchase without subscription expiry', () => {
+  const result = validateStoreKitTripTransaction(tripPayload(), config, 1_800_000_010_000, 'hash-trip');
+  if (!result.ok) throw new Error(result.error);
+  if (result.transaction.status !== 'active') throw new Error('expected active trip pass');
+  if (result.transaction.purchaseDate !== new Date(1_800_000_000_000).toISOString()) {
+    throw new Error('purchase date was not preserved');
+  }
+});
+
+Deno.test('consumable trip validation rejects trust-boundary fields', () => {
+  for (const [field, value] of [
+    ['bundleId', 'other.bundle'],
+    ['environment', 'Production'],
+    ['productId', 'other.product'],
+    ['type', 'Auto-Renewable Subscription'],
+    ['inAppOwnershipType', 'FAMILY_SHARED'],
+    ['appAccountToken', '22222222-2222-2222-2222-222222222222'],
+  ] as const) {
+    const result = validateStoreKitTripTransaction(tripPayload({ [field]: value }), config);
+    if (result.ok) throw new Error(`accepted forged trip ${field}`);
+  }
+});
+
+Deno.test('consumable trip validation requires signed and purchase dates and checks revocation', () => {
+  for (const overrides of [
+    { purchaseDate: undefined },
+    { signedDate: undefined },
+    { revocationDate: undefined },
+    { revocationDate: 1_799_999_999_999 },
+  ]) {
+    const result = validateStoreKitTripTransaction(tripPayload(overrides), config);
+    if (result.ok) throw new Error('accepted invalid trip dates');
+  }
+  const revoked = validateStoreKitTripTransaction(
+    tripPayload({ revocationDate: 1_800_000_002_000 }),
+    config,
+  );
+  if (!revoked.ok || revoked.transaction.status !== 'revoked') throw new Error('expected revoked trip');
 });

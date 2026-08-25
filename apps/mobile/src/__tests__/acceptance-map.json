@@ -280,7 +280,7 @@
       "child": 201,
       "acceptance": "A5 Settings overlay still uses its Segmented language control; no new locale.",
       "testFile": "languagePickerContract.test.ts",
-      "testNamePattern": "keeps Settings language as a NavRow that pushes a right-slide child"
+      "testNamePattern": "keeps Settings language as a NavRow that opens a child sheet"
     },
     {
       "parent": 199,
@@ -707,28 +707,28 @@
       "child": 217,
       "acceptance": "A1 Settings gear opens a right-slide page with a back chevron",
       "testFile": "languagePickerContract.test.ts",
-      "testNamePattern": "keeps Settings language as a NavRow that pushes a right-slide child"
+      "testNamePattern": "keeps Settings language as a NavRow that opens a child sheet"
     },
     {
       "parent": 206,
       "child": 217,
       "acceptance": "A2 Language and theme are NavRows like Account",
       "testFile": "languagePickerContract.test.ts",
-      "testNamePattern": "keeps Settings language as a NavRow that pushes a right-slide child"
+      "testNamePattern": "keeps Settings language as a NavRow that opens a child sheet"
     },
     {
       "parent": 206,
       "child": 217,
       "acceptance": "A3 Language and theme rows push child pages with existing choices",
       "testFile": "languagePickerContract.test.ts",
-      "testNamePattern": "keeps Settings language as a NavRow that pushes a right-slide child"
+      "testNamePattern": "keeps Settings language as a NavRow that opens a child sheet"
     },
     {
       "parent": 206,
       "child": 217,
       "acceptance": "A4 Settings is not an OverlaySheet and not Segmented",
       "testFile": "languagePickerContract.test.ts",
-      "testNamePattern": "keeps Settings language as a NavRow that pushes a right-slide child"
+      "testNamePattern": "keeps Settings language as a NavRow that opens a child sheet"
     },
     {
       "parent": 206,
@@ -894,37 +894,37 @@
     {
       "parent": 220,
       "child": 225,
-      "acceptance": "A1. NativeSwitch 在 iOS 不把 trackColor／thumbColor／ios_backgroundColor 傳進 Switch",
+      "acceptance": "A1. SystemToggle 在 iOS 不把 trackColor／thumbColor／ios_backgroundColor 傳進 Switch",
       "testFile": "nativeSwitchContract.test.ts",
-      "testNamePattern": "omits trackColor, thumbColor, and ios_backgroundColor on iOS"
+      "testNamePattern": "renders @expo/ui Switch inside Host and is not RN Switch"
     },
     {
       "parent": 220,
       "child": 225,
-      "acceptance": "A2. NotificationPreferencesCard iOS 使用 NativeSwitch 且無自訂 track 色",
+      "acceptance": "A2. NotificationPreferencesCard iOS 使用 SystemToggle 且無自訂 track 色",
       "testFile": "mapStatusSettingsPaywall.test.ts",
-      "testNamePattern": "omits iOS switch chrome paint and keeps icon tabs"
+      "testNamePattern": "omits iOS switch chrome paint and uses native segmented tabs"
     },
     {
       "parent": 220,
       "child": 225,
-      "acceptance": "A3. 成員／路線／工具／商店的布林開關走 NativeSwitch",
+      "acceptance": "A3. 成員／路線／工具／商店的布林開關走 SystemToggle",
       "testFile": "mapStatusSettingsPaywall.test.ts",
-      "testNamePattern": "omits iOS switch chrome paint and keeps icon tabs"
+      "testNamePattern": "omits iOS switch chrome paint and uses native segmented tabs"
     },
     {
       "parent": 220,
       "child": 225,
       "acceptance": "A4. SheetPaneTabs 仍是四個 icon tabs",
       "testFile": "mapStatusSettingsPaywall.test.ts",
-      "testNamePattern": "omits iOS switch chrome paint and keeps icon tabs"
+      "testNamePattern": "omits iOS switch chrome paint and uses native segmented tabs"
     },
     {
       "parent": 220,
       "child": 225,
-      "acceptance": "A5. Android 路徑仍可畫 accent track",
+      "acceptance": "A5. Android 路徑沿用 SystemToggle，不暴露 accent prop",
       "testFile": "nativeSwitchContract.test.ts",
-      "testNamePattern": "still paints an accent track on Android"
+      "testNamePattern": "screens use SystemToggle instead of NativeSwitch / RN Switch"
     },
     {
       "parent": 220,
@@ -992,21 +992,21 @@
     {
       "parent": 220,
       "child": 227,
-      "acceptance": "A1. DEFAULT_REORDER_LAYOUT 三值均為原值 ×1.3",
+      "acceptance": "A1. DEFAULT_REORDER_LAYOUT 維持 token 尺度與 52/54px 行高基準",
       "testFile": "accommodationSemantics.test.ts",
-      "testNamePattern": "is 1.3× the previous 72/60/56 defaults"
+      "testNamePattern": "uses token-scale 54px header and 52px row defaults"
     },
     {
       "parent": 220,
       "child": 227,
-      "acceptance": "A2. 列／header／handle／字／列內鈕視覺隨 heights 放大",
+      "acceptance": "A2. 停靠點列使用 token 尺度、向量圖示且不渲染行內 emoji",
       "testFile": "mapStatusSettingsPaywall.test.ts",
       "testNamePattern": "renders self flock copy as"
     },
     {
       "parent": 220,
       "child": 227,
-      "acceptance": "A3. 頂三鈕（天數與日期／收藏／匯入）×1.3",
+      "acceptance": "A3. 路線工具列維持 token 尺度與不折行布局",
       "testFile": "mapStatusSettingsPaywall.test.ts",
       "testNamePattern": "renders self flock copy as"
     },
@@ -1097,7 +1097,7 @@
     {
       "parent": 220,
       "child": 229,
-      "acceptance": "A6. 子頁布林列 iOS 為 NativeSwitch",
+      "acceptance": "A6. 子頁布林列 iOS 為 SystemToggle",
       "testFile": "mapStatusSettingsPaywall.test.ts",
       "testNamePattern": "keeps settings mounted under child overlays"
     },
