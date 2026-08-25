@@ -135,7 +135,7 @@ describe('Sheet icon tabs (replaces CoverFlow ticket 08)', () => {
     expect(tabs).toContain('@expo/ui/community/segmented-control');
     expect(tabs).toContain('selectionTick');
     expect(tabs).toContain('SheetPaneKey');
-    expect(tabs).not.toContain('bag-handle');
+    expect(tabs).toContain('bag-handle');
   });
 
   it('BottomSheet keeps vertical ownership for sheet drag', () => {

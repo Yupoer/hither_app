@@ -13,6 +13,8 @@ const segmented = read('screens/MapScreen/components/Segmented.tsx');
 const storePane = read('screens/MapScreen/components/StorePane.tsx');
 const rewardedAds = read('native/rewardedAds.ts');
 const i18n = [read('i18n/locales/zh.ts'), read('i18n/locales/en.ts')].join('\n');
+const settingsOverlay = read('screens/MapScreen/components/SettingsOverlay.tsx');
+const premiumBanner = read('components/PremiumBanner.tsx');
 
 describe('four-pane store navigation contracts', () => {
   it('declares members route tools store options with icon tabs (all 4 visible)', () => {
@@ -35,7 +37,7 @@ describe('four-pane store navigation contracts', () => {
     expect(tabs).toContain('testID="sheet-pane-tabs"');
     expect(tabs).toContain('@expo/ui/community/segmented-control');
     expect(tabs).toContain('selectionTick');
-    expect(tabs).not.toContain('bag-handle');
+    expect(tabs).toContain('bag-handle');
     expect(tabs).not.toContain('pagination');
     expect(segmented).toContain('viewportCount');
     expect(segmented).toContain('accessibilityState={{ selected: active, disabled: locked }}');
@@ -53,6 +55,16 @@ describe('four-pane store navigation contracts', () => {
     // Client never credits wallet from ad callback.
     expect(storePane).not.toContain('balance + 1');
     expect(storePane).not.toContain('balance +1');
+  });
+
+  it('uses the shared Premium banner and 44px store hit targets', () => {
+    expect(storePane).toContain("import PremiumBanner from '../../../components/PremiumBanner'");
+    expect(settingsOverlay).toContain("import PremiumBanner from '../../../components/PremiumBanner'");
+    expect(storePane).toContain('<PremiumBanner');
+    expect(settingsOverlay).toContain('<PremiumBanner');
+    expect(storePane).toContain('name="coins"');
+    expect(storePane).toContain('minHeight: 44');
+    expect(premiumBanner).toContain("t('settings.subscribeBannerHint')");
   });
 
   it('Store orders Premium then balance then ad and hides restore', () => {
@@ -173,20 +185,15 @@ describe('four-pane store navigation contracts', () => {
     expect(i18n).toContain("'store.extraCreditsRemaining'");
   });
 
-  it('tools pane locks Live Activity without entitlement and deep-links store', () => {
+  it('tools pane locks Live Activity without entitlement and opens paywall', () => {
     expect(mapScreen).toContain('tools-live-activity-locked');
-    expect(mapScreen).toContain('personal_live_activity_lifetime');
     expect(mapScreen).toContain('liveActivityAllowed');
     expect(mapScreen).toContain('liveActivityEffective');
-    expect(mapScreen).toContain('openStoreForLiveActivity');
+    expect(mapScreen).toContain('openPaywallForLiveActivity');
     // Premium session (isPro) must also unlock the tools LA row.
     expect(mapScreen).toContain('liveActivityUnlocked');
     expect(mapScreen).toContain('liveActivityEffective || isPro');
-    // Do not force full sheet (kills Stage-1 gather-card hit testing).
-    expect(mapScreen).toMatch(/openStoreForLiveActivity[\s\S]*?midIndex/);
-    expect(mapScreen).not.toMatch(
-      /openStoreForLiveActivity[\s\S]*?setDetent\(Math\.max\(0, detents\.length - 1\)\)/,
-    );
+    expect(mapScreen).toMatch(/onPress=\{openPaywallForLiveActivity\}/);
   });
 
   it('route pane shows extra credits only when > 0', () => {

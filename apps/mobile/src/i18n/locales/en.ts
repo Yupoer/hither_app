@@ -854,7 +854,7 @@ export const en: Record<keyof ZhDict, string> = {
   'paywall.introHistory': 'Keep the full trip history',
   'paywall.introThemes': 'Unlock more map themes',
   'settings.subscribeBanner': 'Go Premium',
-  'settings.subscribeBannerHint': 'Unlock members, gathering points, KML, history, and themes',
+  'settings.subscribeBannerHint': 'Unlock members, gathering points, bulk place imports, history, and themes',
   'paywall.restore': 'Restore purchases',
   'paywall.redeemAction': 'Activate code',
   'paywall.unavailable': 'Purchases require the production app (this is a development build)',

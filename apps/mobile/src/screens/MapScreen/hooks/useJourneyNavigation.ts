@@ -113,6 +113,7 @@ export function useJourneyNavigation({
   const desiredTeamIntentRef = useRef<TeamCommandIntent | null>(null);
   const teamCommandRunnerRef = useRef<Promise<void> | null>(null);
   const teamCommandSequenceRef = useRef(0);
+  const pendingCarouselTargetIdRef = useRef<string | null>(null);
   const gatheringStateRef = useRef<ActiveGatheringState | null>(null);
   const serverOrStartedSessionRef = useRef(Boolean(authoritativeSharedTargetId));
   const startPromiseRef = useRef<Promise<void> | null>(null);
@@ -321,26 +322,16 @@ export function useJourneyNavigation({
       // #174: selection identity is destination id; index is only a projection.
       const startedDestId = dest.id;
       if (reorderForNavigation) {
+        pendingCarouselTargetIdRef.current = startedDestId;
         const updates = promoteDestinationWithinDay(destinations, startedDestId);
-        if (!(await reorderForNavigation(updates))) throw new Error('destination_reorder_failed');
-        // Prefer navigationDestinations order after same-day promotion.
-        const promotedIds = updates.map((u) => u.id);
-        const navIds = navigationDestinations.map((d) => d.id);
-        const carouselOrder = promotedIds.filter(
-          (id) => id === startedDestId || navIds.includes(id),
-        );
-        const nextIndex = Math.max(0, carouselOrder.indexOf(startedDestId));
-        setSelectedIndex(nextIndex);
-        // Explicit scrollTo via carousel ref (not only numeric index effect).
-        const pageW = Dimensions.get('window').width;
-        requestAnimationFrame(() => {
-          carouselRef.current?.scrollTo({
-            x: carouselScrollX(nextIndex, pageW),
-            animated: true,
-          });
-        });
+        if (!(await reorderForNavigation(updates))) {
+          pendingCarouselTargetIdRef.current = null;
+          throw new Error('destination_reorder_failed');
+        }
       } else {
-        setSelectedIndex(index);
+        pendingCarouselTargetIdRef.current = null;
+        const currentIndex = navigationDestinations.findIndex((item) => item.id === startedDestId);
+        setSelectedIndex(currentIndex >= 0 ? currentIndex : index);
       }
 
       if (!requestRef.current || requestRef.current.destinationId !== dest.id) {
@@ -497,6 +488,25 @@ export function useJourneyNavigation({
     }
     setLocalTargetId(null);
   }, [isLeader, navTarget, selectedDestination, destinations, requestTeamEnd]);
+
+  // Reorder is asynchronous. Project the selected page only after the latest
+  // visible carousel order contains the clicked id; never derive it from the
+  // stale pre-promote array (which caused every later point to land on page 2).
+  useEffect(() => {
+    const targetId = pendingCarouselTargetIdRef.current;
+    if (!targetId) return;
+    const index = navigationDestinations.findIndex((item) => item.id === targetId);
+    if (index < 0) return;
+    pendingCarouselTargetIdRef.current = null;
+    setSelectedIndex(index);
+    const pageW = Dimensions.get('window').width;
+    requestAnimationFrame(() => {
+      carouselRef.current?.scrollTo({
+        x: carouselScrollX(index, pageW),
+        animated: true,
+      });
+    });
+  }, [carouselRef, navigationDestinations, setSelectedIndex]);
 
   useEffect(() => {
     if (!sharedTargetId) {

@@ -33,9 +33,8 @@ const styles = StyleSheet.create({
   wrap: {
     width: 51,
     height: 31,
+    alignItems: 'center',
     justifyContent: 'center',
-    // Optical alignment with glass-row text.
-    transform: [{ translateY: 1 }],
   },
   host: {
     width: 51,

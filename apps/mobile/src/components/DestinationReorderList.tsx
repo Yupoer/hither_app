@@ -684,7 +684,7 @@ export default function DestinationReorderList({
             setShowSettings(true);
           }}>
             <Ionicons name="calendar-outline" size={16} color={colors.accent} style={{ marginRight: 6 }} />
-            <Text style={styles.setDaysText}>{t('trip.setDaysAndDate')}</Text>
+            <Text style={styles.setDaysText} numberOfLines={1}>{t('trip.setDaysAndDate')}</Text>
           </Pressable>}
           {canReorder && onPickFavorite ? (
             <Pressable
@@ -698,7 +698,7 @@ export default function DestinationReorderList({
               accessibilityLabel={t('stay.favorites')}
             >
               <Ionicons name="star-outline" size={16} color={colors.accent} style={{ marginRight: 6 }} />
-              <Text style={styles.setDaysText}>{t('stay.favorites')}</Text>
+              <Text style={styles.setDaysText} numberOfLines={1}>{t('stay.favorites')}</Text>
             </Pressable>
           ) : null}
           {onImport && <Pressable
@@ -712,7 +712,7 @@ export default function DestinationReorderList({
             accessibilityLabel={t('kml.entry')}
           >
             <Ionicons name="cloud-upload-outline" size={16} color={colors.accent} style={{ marginRight: 6 }} />
-            <Text style={styles.setDaysText}>{t('kml.entry')}</Text>
+            <Text style={styles.setDaysText} numberOfLines={1}>{t('kml.entry')}</Text>
           </Pressable>}
           {syncFailed && onSync && <Pressable
             style={[styles.setDaysBtn, syncing && { opacity: 0.5 }]}
@@ -722,7 +722,7 @@ export default function DestinationReorderList({
             accessibilityLabel={t('map.syncDbA11y')}
           >
             <Ionicons name="refresh-outline" size={16} color={colors.accent} style={{ marginRight: 6 }} />
-            <Text style={styles.setDaysText}>
+            <Text style={styles.setDaysText} numberOfLines={1}>
               {syncing ? t('map.syncDbSyncing') : t('map.syncDbRetry')}
             </Text>
           </Pressable>}
@@ -2398,7 +2398,7 @@ const makeStyles = (colors: Palette) =>
     setDaysText: {
       color: colors.accent,
       fontWeight: '600',
-      fontSize: 12,
+      fontSize: 14,
       flexShrink: 1,
     },
     modalOverlay: {

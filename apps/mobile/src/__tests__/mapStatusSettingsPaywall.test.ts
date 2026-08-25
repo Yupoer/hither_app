@@ -43,7 +43,8 @@ describe('#220 map / status / settings / paywall contracts', () => {
     expect(tabs).toContain('testID="sheet-pane-tabs"');
     expect(tabs).toContain('@expo/ui/community/segmented-control');
     expect(tabs).not.toContain('NativeSwitch');
-    expect(tabs).not.toContain('bag-handle');
+    expect(tabs).toContain('bag-handle');
+    expect(tabs).toContain('people-outline');
   });
 
   it('renders self flock copy as 你 plus role and freshness', () => {

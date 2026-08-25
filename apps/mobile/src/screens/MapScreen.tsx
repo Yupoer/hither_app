@@ -5453,15 +5453,10 @@ export default function MapScreen({ route, navigation }: Props) {
     void refreshStoreEntitlements();
   }, [groupId, refreshStoreEntitlements, isPro]);
 
-  const openStoreForLiveActivity = useCallback(() => {
+  const openPaywallForLiveActivity = useCallback(() => {
     lightTap();
-    setStoreHighlightProduct('personal_live_activity_lifetime');
-    setSheetPane('store');
-    // Raise to mid sheet at most — forcing full (Peak) sets atFull and
-    // pointerEvents=none on gathering cards, which broke Stage-1 interaction.
-    const midIndex = Math.min(1, Math.max(0, detents.length - 1));
-    setDetent((prev) => (prev < midIndex ? midIndex : prev));
-  }, [detents.length]);
+    openPaywall();
+  }, [openPaywall]);
 
   // ─── 成員：位置、狀態、個別操作、小隊（無「成員」標題） ────────────────
   const membersPaneBody = useMemo(() => (
@@ -5902,7 +5897,7 @@ export default function MapScreen({ route, navigation }: Props) {
       {!liveActivityUnlocked ? (
         <Pressable
           style={styles.liveActivityLockedRow}
-          onPress={openStoreForLiveActivity}
+          onPress={openPaywallForLiveActivity}
           accessibilityRole="button"
           accessibilityState={{ disabled: false }}
           accessibilityLabel={t('store.liveActivityLocked')}
@@ -5975,7 +5970,7 @@ export default function MapScreen({ route, navigation }: Props) {
   ), [
     styles, t, groupId, isLeader, dark, openCustomQuickCommand, accent,
     arrivalRadiusM, setArrivalRadiusM, setPassiveCompanionMode,
-    liveActivityUnlocked, openStoreForLiveActivity,
+    liveActivityUnlocked, openPaywallForLiveActivity,
   ]);
 
   const storePaneBody = useMemo(() => (
@@ -6020,24 +6015,22 @@ export default function MapScreen({ route, navigation }: Props) {
         collapsable={false}
         testID="tour-stage-two-placement"
       >
-        <View style={styles.sheetPaneToggleGlass} collapsable={false}>
-          <SheetPaneTabs
-            options={sheetPaneOptions}
-            value={sheetPane}
-            onChange={selectSheetPane}
-            onTabNode={(key, node) => {
-              const targetId =
-                key === 'members'
-                  ? 'paneMembers'
-                  : key === 'route'
-                    ? 'paneRoute'
-                    : key === 'tools'
-                      ? 'paneTools'
-                      : 'paneStore';
-              setTourTargetRef(targetId, node);
-            }}
-          />
-        </View>
+        <SheetPaneTabs
+          options={sheetPaneOptions}
+          value={sheetPane}
+          onChange={selectSheetPane}
+          onTabNode={(key, node) => {
+            const targetId =
+              key === 'members'
+                ? 'paneMembers'
+                : key === 'route'
+                  ? 'paneRoute'
+                  : key === 'tools'
+                    ? 'paneTools'
+                    : 'paneStore';
+            setTourTargetRef(targetId, node);
+          }}
+        />
       </View>
 
       <View testID="sheet-pane-content-area">
@@ -7564,6 +7557,7 @@ export default function MapScreen({ route, navigation }: Props) {
         onConfirmLeave={confirmLeave}
         onConfirmSignOut={confirmSignOut}
         onOpenPaywall={openPaywallCb}
+        liveActivityUnlocked={liveActivityUnlocked}
         onOpenAccount={openAccountOverlay}
         onOpenDiagnostics={() => setOverlay('diagnostics')}
         group={group}
@@ -9857,14 +9851,6 @@ const makeStyles = (
       marginTop: 10,
       marginBottom: 4,
     },
-    sheetPaneToggleGlass: {
-      borderRadius: 14,
-      overflow: 'hidden',
-      // Flat dark fill — avoid Liquid Glass white specular rim on the tab shell.
-      backgroundColor: glass.fill,
-      borderWidth: 0,
-      borderColor: 'transparent',
-    },
     accuracyRowLast: {
       marginTop: 12,
       borderBottomWidth: 0,
@@ -10159,7 +10145,7 @@ const makeStyles = (
       borderBottomColor: 'rgba(255,255,255,0.08)',
     },
     accuracyCopy: { flex: 1, minWidth: 0 },
-    accuracySwitch: { flexShrink: 0, transform: [{ translateY: 2 }] },
+    accuracySwitch: { flexShrink: 0, alignSelf: 'center' },
     locationSharingButton: {
       width: 44,
       height: 44,

@@ -30,4 +30,13 @@ describe('SystemToggle iOS/Android chrome', () => {
     expect(mapScreen).not.toContain('<NativeSwitch');
     expect(nativeSwitch).toContain("from './SystemToggle'");
   });
+
+  it('centers every native toggle and routes locked Live Activity to paywall', () => {
+    expect(systemToggle).toContain("alignItems: 'center'");
+    expect(systemToggle).not.toContain('translateY');
+    expect(settings).toContain('handleLiveActivityChange');
+    expect(settings).toContain('liveActivityUnlocked');
+    expect(settings).toContain('onOpenPaywall();');
+    expect(settings).toContain('setLiveActivityEnabled(false)');
+  });
 });

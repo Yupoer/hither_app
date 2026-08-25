@@ -65,6 +65,12 @@ describe('Start same-day promote + carousel identity (#222)', () => {
     expect(journey).not.toMatch(/carouselRef:\s*_carouselRef/);
   });
 
+  it('projects the clicked destination only after the reordered id appears', () => {
+    expect(journey).toContain('pendingCarouselTargetIdRef');
+    expect(journey).toContain('navigationDestinations.findIndex((item) => item.id === targetId)');
+    expect(journey).toContain('if (index < 0) return');
+  });
+
   it('cold-starts the carousel at sorted index 0 and does not restore a swipe', () => {
     expect(carousel).toContain('useState(0)');
     expect(carousel).not.toMatch(/AsyncStorage|lastIndex|restoreIndex|persistedIndex/);

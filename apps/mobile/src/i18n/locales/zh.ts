@@ -865,7 +865,7 @@ export const zh = {
   'paywall.introHistory': '完整歷史旅程隨時回看',
   'paywall.introThemes': '解鎖更多地圖主題',
   'settings.subscribeBanner': '升級 Premium',
-  'settings.subscribeBannerHint': '解鎖完整成員、集合點、KML、歷史與主題',
+  'settings.subscribeBannerHint': '解鎖完整成員、集合點、一次匯入大量景點、歷史與主題',
   'paywall.restore': '恢復購買',
   'paywall.redeemAction': '啟用兌換碼',
   'paywall.unavailable': '內購需要正式版 App（目前為開發版本）',

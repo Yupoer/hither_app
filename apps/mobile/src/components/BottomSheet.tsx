@@ -33,6 +33,8 @@ const TOP_EPS = 0.5;
 // Vertical finger travel (px) before the sheet-vs-scroll mode locks for the
 // whole gesture — small taps and horizontal moves never start a resize.
 const DECIDE_PX = 3;
+const DISMISS_TRAVEL = 90;
+const DISMISS_VELOCITY = 700;
 
 // SwiftUI .spring(response: 0.35, dampingFraction: 0.8) translated:
 // stiffness = (2π/0.35)² ≈ 322, damping = 2·0.8·√stiffness ≈ 29.
@@ -49,7 +51,7 @@ const MODE_SHEET = 1; // finger resizes the sheet (content pinned)
 const MODE_SCROLL = 2; // finger scrolls the content (sheet frozen)
 
 /**
- * Apple-Maps-style pull-up glass sheet with three detents (peek / mid / full).
+ * Apple-Maps-style pull-up glass sheet with two or more detents.
  *
  * Controlled: the parent owns `height` (a reanimated SharedValue) so it can
  * position floating chrome — the gathering-point carousel and the recenter
@@ -76,11 +78,14 @@ export default React.memo(function BottomSheet({
   bottomInset,
   header,
   onHeaderHeight,
+  onDismiss,
+  dismissOnDownFromIndex,
+  edgeToEdgeAtLast = true,
   children,
 }: {
   /** Live sheet height, owned by the parent (drives sheet + floating chrome). */
   height: SharedValue<number>;
-  /** Ascending detent heights [peek, mid, full]. */
+  /** Ascending detent heights, e.g. [peek, mid, full] or [stage1, stage2]. */
   detents: number[];
   index: number;
   onIndexChange: (index: number) => void;
@@ -89,6 +94,12 @@ export default React.memo(function BottomSheet({
   header?: React.ReactNode;
   /** Measured height of the pinned block (grabber + header) — size peek with it. */
   onHeaderHeight?: (h: number) => void;
+  /** Close the sheet after a committed downward fling from this detent or above. */
+  onDismiss?: () => void;
+  /** Detent index at which a downward drag may dismiss instead of snapping. */
+  dismissOnDownFromIndex?: number;
+  /** Keep the last detent flush with the screen edges (map sheet default). */
+  edgeToEdgeAtLast?: boolean;
   children: React.ReactNode;
 }) {
   const scrollRef = useAnimatedRef<RNScrollView>();
@@ -103,8 +114,12 @@ export default React.memo(function BottomSheet({
   // current detents & inset without rebuilding Gesture.Pan() every render.
   const detentsSV = useSharedValue(detents);
   const bottomInsetSV = useSharedValue(bottomInset);
+  const dismissIndexSV = useSharedValue(dismissOnDownFromIndex ?? -1);
+  const edgeToEdgeAtLastSV = useSharedValue(edgeToEdgeAtLast ? 1 : 0);
   detentsSV.value = detents;
   bottomInsetSV.value = bottomInset;
+  dismissIndexSV.value = dismissOnDownFromIndex ?? -1;
+  edgeToEdgeAtLastSV.value = edgeToEdgeAtLast ? 1 : 0;
 
   // Per-gesture state (worklet-owned; reset each onBegin, read through onEnd).
   const gStartH = useSharedValue(detents[index]);
@@ -123,6 +138,9 @@ export default React.memo(function BottomSheet({
   detentsRef.current = detents;
   const onIndexChangeRef = useRef(onIndexChange);
   onIndexChangeRef.current = onIndexChange;
+  const onDismissRef = useRef(onDismiss);
+  onDismissRef.current = onDismiss;
+  const dismiss = useCallback(() => onDismissRef.current?.(), []);
 
   // Settle a released sheet-drag on the JS thread — reuses the unit-tested pure
   // helpers, then springs the shared height (carrying the fling velocity) and
@@ -141,10 +159,12 @@ export default React.memo(function BottomSheet({
   // Snap when detent *values* change (rotation / header re-measure).
   // Gesture-driven index changes settle via `settle` (not listed as a dep).
   // Use zero restart velocity so a mid-flight remeasure doesn't "kick back".
+  const detentsKey = detents.join(',');
   useEffect(() => {
-    height.value = withSpring(detents[index], { ...SPRING, velocity: 0 });
+    const nextIndex = Math.max(0, Math.min(index, detents.length - 1));
+    height.value = withSpring(detents[nextIndex], { ...SPRING, velocity: 0 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detents[0], detents[1], detents[2]]);
+  }, [detentsKey, index]);
 
   // Build pan once: worklets read detentsSV / height / gesture shared values.
   // Do NOT depend on detents array identity — that would recreate every render.
@@ -198,13 +218,37 @@ export default React.memo(function BottomSheet({
         .onEnd((e) => {
           'worklet';
           if (gMode.value === MODE_SHEET) {
-            runOnJS(settle)(height.value, e.velocityY);
+            const d = detentsSV.value;
+            const dismissIndex = dismissIndexSV.value;
+            const canDismiss = dismissIndex >= 0
+              && dismissIndex < d.length
+              && gStartH.value >= d[dismissIndex] - EPS
+              && (e.translationY > DISMISS_TRAVEL || e.velocityY > DISMISS_VELOCITY);
+            if (canDismiss) {
+              height.value = withSpring(0, SPRING, (finished) => {
+                'worklet';
+                if (finished) runOnJS(dismiss)();
+              });
+            } else {
+              runOnJS(settle)(height.value, e.velocityY);
+            }
           }
           gMode.value = MODE_NONE;
         }),
     // Stable shared values + settle + height + scrollRef only — not detents[].
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [height, settle, scrollRef, detentsSV, gStartH, gMode, gStartScroll, scrollOffset],
+    [
+      height,
+      settle,
+      scrollRef,
+      detentsSV,
+      dismissIndexSV,
+      gStartH,
+      gMode,
+      gStartScroll,
+      scrollOffset,
+      dismiss,
+    ],
   );
 
   // Apple-Maps stage morphing, all on the UI thread: peek floats far off every
@@ -215,19 +259,22 @@ export default React.memo(function BottomSheet({
   const sheetStyle = useAnimatedStyle(() => {
     const h = height.value;
     const d = detentsSV.value;
+    const last = d.length - 1;
     // peek/mid share the same horizontal inset so sheet chrome (e.g. 成員/路線/工具
     // Segmented) does not appear to scale when moving between stage 1 and 2.
     // Full still goes edge-to-edge.
-    const side = interpolate(h, d, [10, 10, 0], Extrapolation.CLAMP);
+    const side = interpolate(
+      h,
+      d,
+      d.map((_, i) => (edgeToEdgeAtLastSV.value && i === last ? 0 : 10)),
+      Extrapolation.CLAMP,
+    );
     const topRadius = SCREEN_CORNER_RADIUS;
     // Stage 2 and full are edge-filled surfaces: only the floating peek stage
     // keeps bottom rounding, otherwise the map can show through at both corners.
-    const bottomRadius = interpolate(
-      h,
-      d,
-      [SCREEN_CORNER_RADIUS, 0, 0],
-      Extrapolation.CLAMP,
-    );
+    const bottomRadius = interpolate(h, d, d.map((_, i) => (
+      edgeToEdgeAtLastSV.value && i === last ? 0 : SCREEN_CORNER_RADIUS
+    )), Extrapolation.CLAMP);
     return {
       height: h,
       bottom: sheetBottomOffset(h, d, bottomInsetSV.value),
@@ -310,7 +357,7 @@ export function sheetBottomOffset(
   return interpolate(
     h,
     detents,
-    [bottomInset + 19, 0, 0],
+    detents.map((_, index) => (index === 0 ? bottomInset + 19 : 0)),
     Extrapolation.CLAMP,
   );
 }
