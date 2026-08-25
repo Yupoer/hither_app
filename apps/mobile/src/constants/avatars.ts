@@ -30,10 +30,41 @@ export const AVATAR_COLORS = [
  * user always gets the same emoji, so we can default one at login without
  * persisting it or re-rolling on every sign-in.
  */
-export function avatarForUser(id: string): string {
+function hashId(id: string): number {
   let h = 0;
   for (let i = 0; i < id.length; i++) {
     h = (h * 31 + id.charCodeAt(i)) >>> 0;
   }
-  return AVATAR_EMOJI[h % AVATAR_EMOJI.length];
+  return h;
+}
+
+export function avatarForUser(id: string): string {
+  return AVATAR_EMOJI[hashId(id) % AVATAR_EMOJI.length];
+}
+
+/** Stable group emoji from the same catalogue. Never use the leader's face. */
+export function avatarForGroup(groupId: string): string {
+  return AVATAR_EMOJI[hashId(`group:${groupId}`) % AVATAR_EMOJI.length];
+}
+
+export type DisplayAvatar = {
+  emoji: string;
+  color: string | undefined;
+};
+
+/**
+ * Single member-avatar resolver. Known userIds never fall back to initials.
+ * Empty / unknown stored emoji uses the deterministic catalogue pick.
+ */
+export function displayMemberAvatar(
+  stored: string | null | undefined,
+  userId: string,
+  storedColor?: string | null,
+): DisplayAvatar {
+  const trimmed = typeof stored === 'string' ? stored.trim() : '';
+  const known = (AVATAR_EMOJI as readonly string[]).includes(trimmed);
+  return {
+    emoji: known ? trimmed : avatarForUser(userId),
+    color: storedColor && storedColor.trim().length > 0 ? storedColor : undefined,
+  };
 }

@@ -37,16 +37,14 @@ describe('#220 map / status / settings / paywall contracts', () => {
     expect(mapScreen).toContain('subgroup.createTeam');
   });
 
-  it('omits iOS switch chrome paint and keeps icon tabs', () => {
-    expect(nativeSwitch).toContain('trackColor: _trackColor');
-    expect(nativeSwitch).toContain('thumbColor: _thumbColor');
-    expect(nativeSwitch).toContain('ios_backgroundColor: _iosBackgroundColor');
-    expect(notifCard).toContain('<NativeSwitch');
+  it('omits iOS switch chrome paint and uses native segmented tabs', () => {
+    expect(notifCard).toContain('<SystemToggle');
     expect(notifCard).not.toContain('trackColor={{');
-    expect(mapScreen).toContain('<NativeSwitch');
+    expect(mapScreen).toContain('<SystemToggle');
     expect(tabs).toContain('testID="sheet-pane-tabs"');
+    expect(tabs).toContain('@expo/ui/community/segmented-control');
     expect(tabs).not.toContain('NativeSwitch');
-    expect(tabs).not.toContain('<Switch');
+    expect(tabs).not.toContain('bag-handle');
   });
 
   it('renders self flock copy as 你 plus role and freshness', () => {
@@ -55,7 +53,7 @@ describe('#220 map / status / settings / paywall contracts', () => {
     expect(mapScreen).toContain('{!isMe && distOrStatus');
     expect(mapScreen).toContain('dist: isSelf');
     expect(translations.zh['trip.setDaysAndDate']).toBe('天數與日期');
-    expect(reorder).toContain('REORDER_VISUAL_SCALE = 1.3');
+    expect(reorder).toContain('REORDER_VISUAL_SCALE = 1');
   });
 
   it('keeps settings mounted under child overlays and hides the subscribe banner when pro', () => {
@@ -63,11 +61,11 @@ describe('#220 map / status / settings / paywall contracts', () => {
     expect(mapScreen).toContain('visible={settingsOpen}');
     expect(settings).toContain('testID="settings-subscribe-banner"');
     expect(settings).toContain('{!isPro ?');
-    expect(settings).toContain('<OverlaySheet');
+    expect(settings).toContain('<SettingsChildSheet');
     expect(settings).toContain("setPage('textSize')");
     expect(settings).toContain("setPage('notifications')");
     expect(settings).toContain("setPage('mapJourney')");
-    expect(settings.indexOf('<NativeSwitch')).toBeGreaterThan(settings.indexOf("setPage('mapJourney')"));
+    expect(settings.indexOf('<SystemToggle')).toBeGreaterThan(settings.indexOf("setPage('mapJourney')"));
   });
 
   it('stacks settings above sheetLayer and sibling child hosts above settings', () => {

@@ -12,6 +12,11 @@
  */
 import React from 'react';
 
+jest.mock('expo-linear-gradient', () => {
+  const RN = require('react-native');
+  return { LinearGradient: RN.View };
+});
+
 process.env.EXPO_PUBLIC_PREMIUM_MONTHLY_PRODUCT_ID = 'premium.monthly';
 process.env.EXPO_PUBLIC_PREMIUM_ANNUAL_PRODUCT_ID = 'premium.annual';
 process.env.EXPO_PUBLIC_PREMIUM_SUBSCRIPTION_GROUP_ID = 'hither-premium';
@@ -106,6 +111,10 @@ jest.mock('../native/purchases', () => ({
     product.introductoryOfferEligibleIOS === true
     && typeof product.introductoryPriceIOS === 'string'
     && product.introductoryPriceIOS.trim().length > 0,
+}));
+
+jest.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => ({ top: 47, bottom: 34, left: 0, right: 0 }),
 }));
 
 jest.mock('../components/OverlaySheet', () => {
@@ -332,7 +341,7 @@ describe('#156 behavioral: PremiumPresentation Store + Paywall', () => {
     await press(tree.root, 'store-premium-presentation-purchase');
     await flush();
 
-    expect(mockPurchase).toHaveBeenCalledWith('monthly', expect.objectContaining({
+    expect(mockPurchase).toHaveBeenCalledWith('annual', expect.objectContaining({
       onNativePurchased: expect.any(Function),
       userId: 'user-1',
     }));

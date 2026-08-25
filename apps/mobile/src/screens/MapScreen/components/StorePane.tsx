@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { glass } from '../../../glass';
 import { GLOBAL_FONT_SCALE_CAP } from '../../../theme/typeScale';
 import { useFontLayout } from '../../../a11y/useFontScaleBucket';
@@ -1023,11 +1024,24 @@ export const StorePane = React.memo(function StorePane({
           accessibilityRole="button"
           accessibilityLabel={t('paywall.cta')}
           testID="store-open-subscribe"
-          style={styles.shellCard}
+          style={styles.premiumBanner}
         >
-          <Text style={styles.heading}>{t('paywall.title')}</Text>
-          <Text style={styles.shellHint}>{t('settings.subscribeBannerHint')}</Text>
-          <Text style={[styles.heading, { color: accent }]}>{t('paywall.cta')}</Text>
+          <LinearGradient
+            colors={['#183c66', '#296096']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={styles.premiumBannerCopy}>
+            <View style={styles.premiumTag}>
+              <Text style={styles.premiumTagText}>PREMIUM</Text>
+            </View>
+            <Text style={styles.premiumBannerTitle}>{t('paywall.title')}</Text>
+            <Text style={styles.premiumBannerHint}>{t('settings.subscribeBannerHint')}</Text>
+          </View>
+          <View style={styles.premiumBannerArrow}>
+            <Text style={styles.premiumBannerArrowText}>→</Text>
+          </View>
         </Pressable>
       </View>
 
@@ -1057,48 +1071,40 @@ export const StorePane = React.memo(function StorePane({
       ) : (
         <>
           {/* Premium → divider → balance → ad (#store layout). */}
-          <View style={styles.balanceCard} testID="store-balance">
-            <Text style={styles.balanceLabel}>{t('store.balance')}</Text>
-            <Text
-              style={styles.balanceValue}
-              accessibilityRole="text"
-              accessibilityLabel={t('store.balanceA11y', { count: balance })}
-              maxFontSizeMultiplier={GLOBAL_FONT_SCALE_CAP}
+          <View style={styles.balanceAdRow}>
+            <View style={styles.balanceInline} testID="store-balance">
+              <Ionicons name="star" size={16} color="#FFD60A" />
+              <Text
+                style={styles.balanceInlineValue}
+                accessibilityRole="text"
+                accessibilityLabel={t('store.balanceA11y', { count: balance })}
+                maxFontSizeMultiplier={GLOBAL_FONT_SCALE_CAP}
+              >
+                {balance}
+              </Text>
+            </View>
+            <Pressable
+              style={styles.adChip}
+              onPress={() => { void onWatchAd(); }}
+              disabled={adDisabled}
+              accessibilityRole="button"
+              accessibilityState={{
+                disabled: adDisabled,
+                busy: adState === 'loading' || adState === 'showing' || adState === 'verifying',
+              }}
+              accessibilityLabel={
+                offline
+                  ? t('store.offlineTitle')
+                  : adCtaLabel(adState, t, { fillChecking })
+              }
+              testID="store-ad-cta"
             >
-              {balance}
-            </Text>
-            <Text style={styles.shellHint}>
-              {fromCacheOnly ? t('store.offlineCachedHint') : t('store.balanceHint')}
-            </Text>
+              <Ionicons name="play" size={12} color="#FFD60A" />
+              <Text style={styles.adChipText}>
+                {offline ? t('store.offlineCta') : t('store.watchAdPlus10')}
+              </Text>
+            </Pressable>
           </View>
-
-          <Pressable
-            style={[styles.cta, { backgroundColor: adDisabled ? glass.fill : accent }]}
-            onPress={() => { void onWatchAd(); }}
-            disabled={adDisabled}
-            accessibilityRole="button"
-            accessibilityState={{
-              disabled: adDisabled,
-              busy: adState === 'loading' || adState === 'showing' || adState === 'verifying',
-            }}
-            accessibilityLabel={
-              offline
-                ? t('store.offlineTitle')
-                : adCtaLabel(adState, t, { fillChecking })
-            }
-            testID="store-ad-cta"
-          >
-            <Ionicons
-              name="play-circle-outline"
-              size={20}
-              color={adDisabled ? glass.textSecondary : '#111'}
-            />
-            <Text style={[styles.ctaText, adDisabled && styles.ctaTextMuted]}>
-              {offline
-                ? t('store.offlineCta')
-                : adCtaLabel(adState, t, { fillChecking })}
-            </Text>
-          </Pressable>
           <Text style={styles.shellHint}>{t('store.adRewardHint')}</Text>
           {adDebugLine ? (
             <Text
@@ -1142,20 +1148,22 @@ export const StorePane = React.memo(function StorePane({
           <Text style={styles.shellHint}>{t('store.emptyCatalog')}</Text>
         </View>
       ) : (
-        teamList.map((p) => (
-          <ProductCard
-            key={p.code}
-            product={p}
-            balance={balance}
-            accent={accent}
-            styles={styles}
-            t={t}
-            highlighted={false}
-            redeeming={redeeming === p.code}
-            disabled={isAnonymous || offline || !!redeeming}
-            onRedeem={() => confirmRedeem(p)}
-          />
-        ))
+        <View style={styles.productGrid}>
+          {teamList.map((p) => (
+            <ProductCard
+              key={p.code}
+              product={p}
+              balance={balance}
+              accent={accent}
+              styles={styles}
+              t={t}
+              highlighted={false}
+              redeeming={redeeming === p.code}
+              disabled={isAnonymous || offline || !!redeeming}
+              onRedeem={() => confirmRedeem(p)}
+            />
+          ))}
+        </View>
       )}
 
       <Text style={styles.heading}>{t('store.personalProducts')}</Text>
@@ -1164,20 +1172,22 @@ export const StorePane = React.memo(function StorePane({
           <Text style={styles.shellHint}>{t('store.emptyCatalog')}</Text>
         </View>
       ) : (
-        personalList.map((p) => (
-          <ProductCard
-            key={p.code}
-            product={p}
-            balance={balance}
-            accent={accent}
-            styles={styles}
-            t={t}
-            highlighted={false}
-            redeeming={redeeming === p.code}
-            disabled={isAnonymous || offline || !!redeeming}
-            onRedeem={() => confirmRedeem(p)}
-          />
-        ))
+        <View style={styles.productGrid}>
+          {personalList.map((p) => (
+            <ProductCard
+              key={p.code}
+              product={p}
+              balance={balance}
+              accent={accent}
+              styles={styles}
+              t={t}
+              highlighted={false}
+              redeeming={redeeming === p.code}
+              disabled={isAnonymous || offline || !!redeeming}
+              onRedeem={() => confirmRedeem(p)}
+            />
+          ))}
+        </View>
       )}
 
       {credits > 0 ? (
@@ -1221,11 +1231,20 @@ function ProductCard({
       accessibilityState={{ selected: highlighted }}
     >
       <View style={styles.productTop}>
-        <Text style={styles.productTitle} numberOfLines={2}>{product.displayName}</Text>
-        <Text style={styles.productPrice}>{t('store.priceTokens', { count: product.priceTokens })}</Text>
+        <View style={styles.productIconBox}>
+          <Ionicons
+            name={product.scope === 'team' ? 'people-outline' : 'sparkles-outline'}
+            size={16}
+            color="#37B6FF"
+          />
+        </View>
+        <Text style={styles.productScopeTag}>
+          {product.scope === 'team' ? t('store.scopeTeam') : t('store.scopePersonal')}
+        </Text>
       </View>
-      <Text style={styles.productScope}>
-        {product.scope === 'team' ? t('store.scopeTeam') : t('store.scopePersonal')}
+      <Text style={styles.productTitle} numberOfLines={1}>{product.displayName}</Text>
+      <Text style={styles.productDesc} numberOfLines={2}>
+        {t('store.priceTokens', { count: product.priceTokens })}
       </Text>
       {!canAfford ? (
         <Text style={styles.shortfall}>
@@ -1268,6 +1287,64 @@ const makeStyles = (scale: number, boldText: boolean) => {
     headingFirst: { marginTop: 0 },
     premiumBlock: {
       marginBottom: s(12, 10),
+    },
+    premiumBanner: {
+      borderRadius: 18,
+      borderWidth: 1,
+      borderColor: 'rgba(55,182,255,0.3)',
+      padding: 14,
+      overflow: 'hidden',
+      flexDirection: 'row',
+      alignItems: 'center',
+      minHeight: 86,
+    },
+    premiumBannerCopy: { flex: 1, gap: 4 },
+    premiumTag: {
+      alignSelf: 'flex-start',
+      backgroundColor: '#37B6FF',
+      borderRadius: 999,
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+    },
+    premiumTagText: { fontSize: 10, fontWeight: '800', color: '#071526' },
+    premiumBannerTitle: { fontSize: 15, fontWeight: '800', color: '#FFFFFF' },
+    premiumBannerHint: { fontSize: 11.5, color: 'rgba(255,255,255,0.8)' },
+    premiumBannerArrow: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      backgroundColor: 'rgba(255,255,255,0.16)',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginLeft: 10,
+    },
+    premiumBannerArrowText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+    balanceAdRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      backgroundColor: 'rgba(255,255,255,0.05)',
+      borderRadius: 12,
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      marginBottom: s(10, 8),
+    },
+    balanceInline: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    balanceInlineValue: { fontSize: 13, fontWeight: '800', color: '#FFD60A' },
+    adChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      backgroundColor: 'rgba(255,214,10,0.16)',
+      borderRadius: 999,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+    },
+    adChipText: { color: '#FFD60A', fontSize: 11, fontWeight: '800' },
+    productGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
     },
     sectionDivider: {
       height: StyleSheet.hairlineWidth,
@@ -1333,21 +1410,43 @@ const makeStyles = (scale: number, boldText: boolean) => {
     ctaTextMuted: { color: glass.textSecondary },
     productCard: {
       backgroundColor: glass.fill,
-      borderRadius: s(14, 12),
+      borderRadius: 8,
       padding: s(12, 10),
-      marginBottom: s(8, 6),
+      width: '48%',
+      flexGrow: 1,
     },
     productTop: {
       flexDirection: 'row',
       justifyContent: 'space-between',
       gap: 8,
-      alignItems: 'flex-start',
+      alignItems: 'center',
+      marginBottom: 8,
+    },
+    productIconBox: {
+      width: 28,
+      height: 28,
+      borderRadius: 8,
+      backgroundColor: 'rgba(255,255,255,0.08)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    productScopeTag: {
+      fontSize: 9.5,
+      fontWeight: '800',
+      color: glass.textSecondary,
     },
     productTitle: {
-      flex: 1,
-      fontSize: s(15, 13),
+      fontSize: 13,
       fontWeight: '700',
       color: '#fff',
+    },
+    productDesc: {
+      fontSize: 10.5,
+      color: 'rgba(235,235,245,0.48)',
+      lineHeight: 14,
+      minHeight: 28,
+      marginTop: 4,
+      marginBottom: 8,
     },
     productPrice: {
       fontSize: s(14, 12),
@@ -1366,14 +1465,16 @@ const makeStyles = (scale: number, boldText: boolean) => {
       marginBottom: 8,
     },
     redeemBtn: {
-      borderRadius: s(12, 10),
-      paddingVertical: s(10, 8),
+      borderRadius: 999,
+      height: 28,
       alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(255,255,255,0.1)',
     },
     redeemText: {
-      fontSize: s(14, 12),
+      fontSize: 11,
       fontWeight: '700',
-      color: '#111',
+      color: '#fff',
     },
   });
 };

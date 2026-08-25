@@ -6,7 +6,7 @@
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../supabase';
-import { avatarForUser } from '../../constants/avatars';
+import { avatarForGroup, displayMemberAvatar } from '../../constants/avatars';
 import { memberColor } from '../../glass';
 import { mergeAvatarProfiles } from '../../utils/gatherCommand';
 import {
@@ -104,6 +104,10 @@ export interface LocationRow {
 // ── Pure mappers ───────────────────────────────────────────────────────────
 
 export function mapGroup(row: GroupRow): Group {
+  const storedAvatar = 'avatar' in row ? (row as GroupRow & { avatar?: string | null }).avatar : null;
+  const storedColor = 'avatar_color' in row
+    ? (row as GroupRow & { avatar_color?: string | null }).avatar_color
+    : null;
   return {
     id: row.id,
     name: row.name,
@@ -118,6 +122,8 @@ export function mapGroup(row: GroupRow): Group {
     tripDays: row.trip_days ?? undefined,
     departureDate: row.departure_date ?? undefined,
     accommodationAutoAdd: row.accommodation_auto_add ?? true,
+    avatar: storedAvatar && storedAvatar.trim().length > 0 ? storedAvatar : avatarForGroup(row.id),
+    avatarColor: storedColor ?? undefined,
   };
 }
 
@@ -135,8 +141,8 @@ export function mapMember(
     name: profile?.nickname ?? '',
     role: membership.role,
     status: membership.status ?? 'active',
-    avatar: profile?.avatar ?? undefined,
-    avatarColor: profile?.avatar_color ?? undefined,
+    avatar: displayMemberAvatar(profile?.avatar, membership.user_id, profile?.avatar_color).emoji,
+    avatarColor: displayMemberAvatar(profile?.avatar, membership.user_id, profile?.avatar_color).color,
     solo: membership.solo ?? false,
     subgroupId: membership.subgroup_id ?? undefined,
     coordinates,
@@ -516,8 +522,8 @@ export async function getMyJoinedGroups(
       if (!membersByGroup.has(m.group_id)) membersByGroup.set(m.group_id, []);
       const p = profileById.get(m.user_id);
       membersByGroup.get(m.group_id)!.push({
-        avatar: p?.avatar || avatarForUser(m.user_id),
-        avatarColor: p?.avatar_color || memberColor(m.user_id),
+        avatar: displayMemberAvatar(p?.avatar, m.user_id, p?.avatar_color).emoji,
+        avatarColor: displayMemberAvatar(p?.avatar, m.user_id, p?.avatar_color).color || memberColor(m.user_id),
       });
     }
     // Persist full avatars for next cold start / lite RoleSelect paint.

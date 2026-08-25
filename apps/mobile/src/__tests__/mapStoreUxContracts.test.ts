@@ -129,16 +129,13 @@ describe('Sheet icon tabs (replaces CoverFlow ticket 08)', () => {
     expect(mapScreen).not.toContain('PaneCoverFlow');
   });
 
-  it('SheetPaneTabs exposes equal-width icon tabs with testIDs', () => {
+  it('SheetPaneTabs exposes a native segmented control', () => {
     const tabs = read('screens/MapScreen/components/SheetPaneTabs.tsx');
     expect(tabs).toContain('testID="sheet-pane-tabs"');
-    expect(tabs).toContain('sheet-pane-tab-');
-    expect(tabs).toContain('people');
-    expect(tabs).toContain('location');
-    expect(tabs).toContain('build');
-    expect(tabs).toContain('bag-handle');
+    expect(tabs).toContain('@expo/ui/community/segmented-control');
     expect(tabs).toContain('selectionTick');
     expect(tabs).toContain('SheetPaneKey');
+    expect(tabs).not.toContain('bag-handle');
   });
 
   it('BottomSheet keeps vertical ownership for sheet drag', () => {

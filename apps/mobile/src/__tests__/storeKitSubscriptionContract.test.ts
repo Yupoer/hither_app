@@ -97,7 +97,8 @@ describe('#156 store-flow product-load / purchase-entry / restore seams', () => 
   it('purchase-entry wires iOS StoreKit and Android Play request shapes', () => {
     expect(adapter).toContain("type: 'subs'");
     expect(adapter).toContain('fetchProducts');
-    expect(adapter).toContain('skus: PREMIUM_CATALOG.products.map');
+    expect(adapter).toContain("type: 'subs'");
+    expect(adapter).toContain("type: 'in-app'");
     // expo-iap dual-platform requestPurchase payload (tiered iOS + Android entry).
     expect(adapter).toContain('apple: { sku: productId, appAccountToken }');
     expect(adapter).toContain(

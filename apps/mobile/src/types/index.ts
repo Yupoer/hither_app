@@ -210,6 +210,9 @@ export interface Group {
    * accommodation itinerary cards. Default true. Toggle never backfills cards.
    */
   accommodationAutoAdd?: boolean;
+  /** Group emoji (LINE-style). Independent of any member avatar. */
+  avatar?: string;
+  avatarColor?: string;
 }
 
 /** Role within a group. */

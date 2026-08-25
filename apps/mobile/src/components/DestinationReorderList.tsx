@@ -50,12 +50,12 @@ import {
 } from '../utils/destinationEmojiColor';
 import { getColorForDay, STAY_MARKER_EMOJI } from '../utils/destinationMarkerChrome';
 
-const REORDER_VISUAL_SCALE = 1.3;
-const ROW_HEIGHT = DEFAULT_REORDER_LAYOUT.rowHeight;
+const REORDER_VISUAL_SCALE = 1;
+const ROW_HEIGHT = 52;
 const REORDER_LAYOUT = DEFAULT_REORDER_LAYOUT;
 const REVEAL_WIDTH = Math.round(76 * REORDER_VISUAL_SCALE);
 /** Fixed right-column width so day ≡ and stop ≡ share one vertical line. */
-const HANDLE_SLOT = Math.round(28 * REORDER_VISUAL_SCALE);
+const HANDLE_SLOT = 44;
 /** Low-sat terracotta for stay emoji badge (works on dark glass; not Day1 #E5575C). */
 const STAY_BADGE_BG = '#8B6F6A';
 /** Auto-scroll parent when finger is within this distance of screen edges. */
@@ -677,7 +677,7 @@ export default function DestinationReorderList({
         <View style={styles.topActions}>
           {canReorder && <Pressable
             ref={(node) => onTourTargetRef?.('routeTripDetails', node)}
-            style={styles.setDaysBtn}
+            style={[styles.setDaysBtn, { flex: 1.2 }]}
             onPress={() => {
             lightTap();
             setEditDays(tripDays ?? 1);
@@ -690,7 +690,7 @@ export default function DestinationReorderList({
           {canReorder && onPickFavorite ? (
             <Pressable
               ref={(node) => onTourTargetRef?.('routeFavorites', node)}
-              style={styles.setDaysBtn}
+              style={[styles.setDaysBtn, { flex: 1.1 }]}
               onPress={() => {
                 lightTap();
                 setFavoritesOpen(true);
@@ -704,7 +704,7 @@ export default function DestinationReorderList({
           ) : null}
           {onImport && <Pressable
             ref={(node) => onTourTargetRef?.('routeImport', node)}
-            style={styles.setDaysBtn}
+            style={[styles.setDaysBtn, { flex: 0.9 }]}
             onPress={() => {
               lightTap();
               onImport();
@@ -1657,6 +1657,11 @@ const HeaderRow = memo(function HeaderRow({
                 accessibilityState={{ selected: !!setStayActive }}
                 accessibilityLabel={setStayLabel}
               >
+                <Ionicons
+                  name="bed-outline"
+                  size={14}
+                  color={setStayActive ? '#111' : accent}
+                />
                 <Text
                   style={[
                     styles.headerSetStayText,
@@ -1672,7 +1677,12 @@ const HeaderRow = memo(function HeaderRow({
           <View style={styles.headerRight}>
             <Text style={styles.headerDate}>{item.dateStr}</Text>
             {onToggleCollapse ? (
-              <Pressable onPress={onToggleCollapse} accessibilityRole="button" hitSlop={8}>
+              <Pressable
+                onPress={onToggleCollapse}
+                accessibilityRole="button"
+                hitSlop={8}
+                style={{ marginLeft: 'auto' }}
+              >
                 <Ionicons name={collapsed ? 'chevron-down' : 'chevron-up'} size={16} color="#999" />
               </Pressable>
             ) : null}
@@ -1957,11 +1967,6 @@ const Row = memo(function Row({
           <Text style={styles.rowTitle} numberOfLines={1}>
             {item.title}
           </Text>
-          {item.address ? (
-            <Text style={styles.rowAddress} numberOfLines={1}>
-              {item.address}
-            </Text>
-          ) : null}
         </Pressable>
         {boundaryLocked && onDelete && !multiSelect ? (
           <Pressable
@@ -1993,10 +1998,11 @@ const makeStyles = (colors: Palette) =>
   StyleSheet.create({
     topActions: {
       flexDirection: 'row',
-      justifyContent: 'flex-end',
-      gap: spacing.sm,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      gap: 6,
       marginBottom: spacing.sm,
-      flexWrap: 'wrap',
+      flexWrap: 'nowrap',
     },
     dayBlock: {
       borderBottomWidth: StyleSheet.hairlineWidth,
@@ -2022,14 +2028,17 @@ const makeStyles = (colors: Palette) =>
     },
     dashedBtnText: { fontSize: 13, fontWeight: '600' },
     headerSetStayBtn: {
-      borderWidth: 1.5,
-      borderColor: colors.accent,
-      borderRadius: radius.md,
-      paddingHorizontal: 14,
-      paddingVertical: 8,
-      minHeight: 34,
+      borderWidth: 1,
+      borderColor: 'rgba(255,107,53,0.55)',
+      borderRadius: 7,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      minHeight: 28,
       maxWidth: 200,
       justifyContent: 'center',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
     },
     headerSetStayText: { fontSize: 14, fontWeight: '700' },
     dropLine: {
@@ -2149,8 +2158,8 @@ const makeStyles = (colors: Palette) =>
     },
     headerTitle: {
       color: colors.textPrimary,
-      fontSize: Math.round(15 * REORDER_VISUAL_SCALE),
-      fontWeight: '700',
+      fontSize: 15,
+      fontWeight: '600',
     },
     headerDate: {
       color: colors.textSecondary,
@@ -2188,12 +2197,12 @@ const makeStyles = (colors: Palette) =>
       textAlign: 'center',
     },
     rowBody: { flex: 1 },
-    rowTitle: { color: colors.textPrimary, fontSize: Math.round(16 * REORDER_VISUAL_SCALE), fontWeight: '600' },
+    rowTitle: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' },
     rowAddress: { color: colors.textSecondary, fontSize: Math.round(13 * REORDER_VISUAL_SCALE), marginTop: 2 },
     emojiBadge: {
-      width: 32,
-      height: 32,
-      borderRadius: 16,
+      width: 26,
+      height: 26,
+      borderRadius: 13,
       alignItems: 'center',
       justifyContent: 'center',
       marginRight: 8,
@@ -2352,6 +2361,7 @@ const makeStyles = (colors: Palette) =>
     },
     handleSlot: {
       width: HANDLE_SLOT,
+      height: 44,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -2376,15 +2386,21 @@ const makeStyles = (colors: Palette) =>
     setDaysBtn: {
       flexDirection: 'row',
       alignItems: 'center',
-      paddingVertical: Math.round(8 * REORDER_VISUAL_SCALE),
-      paddingHorizontal: Math.round(12 * REORDER_VISUAL_SCALE),
-      backgroundColor: colors.glass,
-      borderRadius: Math.round(16 * REORDER_VISUAL_SCALE),
+      justifyContent: 'center',
+      minHeight: 36,
+      paddingVertical: 8,
+      paddingHorizontal: 8,
+      backgroundColor: 'rgba(255,255,255,0.06)',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'rgba(255,255,255,0.1)',
+      borderRadius: 9,
+      minWidth: 0,
     },
     setDaysText: {
       color: colors.accent,
       fontWeight: '600',
-      fontSize: Math.round(13 * REORDER_VISUAL_SCALE),
+      fontSize: 12,
+      flexShrink: 1,
     },
     modalOverlay: {
       flex: 1,

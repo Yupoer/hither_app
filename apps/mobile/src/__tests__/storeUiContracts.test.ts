@@ -19,6 +19,7 @@ describe('four-pane store navigation contracts', () => {
     expect(mapScreen).toContain("key: 'store'");
     expect(mapScreen).toContain("t('map.tabStore')");
     expect(mapScreen).toContain('SheetPaneTabs');
+    expect(read('screens/MapScreen/components/SheetPaneTabs.tsx')).toContain('@expo/ui/community/segmented-control');
     expect(mapScreen).not.toContain('PaneCoverFlow');
     expect(mapScreen).toContain('sheetPane === \'store\'');
     expect(mapScreen).toContain('StorePane');
@@ -29,15 +30,13 @@ describe('four-pane store navigation contracts', () => {
     expect(mapScreen).not.toContain('viewportCount={3}');
   });
 
-  it('SheetPaneTabs is tap icon bar with tab a11y', () => {
+  it('SheetPaneTabs is a native segmented control', () => {
     const tabs = read('screens/MapScreen/components/SheetPaneTabs.tsx');
     expect(tabs).toContain('testID="sheet-pane-tabs"');
-    expect(tabs).toContain('accessibilityRole="tab"');
+    expect(tabs).toContain('@expo/ui/community/segmented-control');
     expect(tabs).toContain('selectionTick');
-    expect(tabs).toContain('bag-handle');
-    expect(tabs).not.toContain('arrow');
+    expect(tabs).not.toContain('bag-handle');
     expect(tabs).not.toContain('pagination');
-    // Settings still use Segmented (non-glass).
     expect(segmented).toContain('viewportCount');
     expect(segmented).toContain('accessibilityState={{ selected: active, disabled: locked }}');
   });

@@ -1,24 +1,21 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Animated,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  useWindowDimensions,
   View,
   TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import * as Updates from 'expo-updates';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import NativeSwitch from '../../../components/NativeSwitch';
+import SystemToggle from '../../../components/SystemToggle';
 import PrefSlider from '../../../components/PrefSlider';
 import NotificationPreferencesCard from '../../../components/NotificationPreferencesCard';
-import OverlaySheet from '../../../components/OverlaySheet';
+import SettingsChildSheet from './SettingsChildSheet';
 import { useSession } from '../../../state/SessionContext';
 import {
   usePreferences,
@@ -139,8 +136,6 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
   } = usePreferences();
   const { colors } = useTheme();
   const accent = colors.accent;
-  const { width: windowWidth } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
   type SettingsChild =
     | 'root'
     | 'language'
@@ -151,28 +146,15 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
     | 'support';
   const [page, setPage] = useState<SettingsChild>('root');
   const [mounted, setMounted] = useState(visible);
-  const translateX = useRef(new Animated.Value(windowWidth)).current;
 
   useEffect(() => {
     if (visible) {
       setMounted(true);
       setPage('root');
-      Animated.timing(translateX, {
-        toValue: 0,
-        duration: 280,
-        useNativeDriver: true,
-      }).start();
       return;
     }
-    if (!mounted) return;
-    Animated.timing(translateX, {
-      toValue: windowWidth,
-      duration: 220,
-      useNativeDriver: true,
-    }).start(({ finished }) => {
-      if (finished) setMounted(false);
-    });
-  }, [mounted, translateX, visible, windowWidth]);
+    setMounted(false);
+  }, [visible]);
 
   const onDiagnosticSwitchChange = React.useCallback((next: boolean) => {
     if (!next) {
@@ -270,33 +252,20 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
   if (!mounted) return null;
 
   const pageTitle = t('map.overlaySettings');
-  const handleBack = () => {
-    onClose();
-  };
   const closeChild = () => setPage('root');
 
   return (
-    <Animated.View
-      style={[
-        settingsSlideStyles.page,
-        { transform: [{ translateX }] },
-      ]}
+    <View
+      style={settingsSlideStyles.page}
       testID="settings-slide-page"
-      // opaque full-screen slide (replaces OverlaySheet opaque)
+      pointerEvents="box-none"
     >
-      <View style={[settingsSlideStyles.header, { paddingTop: insets.top + 6 }]}>
-        <Pressable
-          onPress={handleBack}
-          accessibilityRole="button"
-          accessibilityLabel={t('common.back')}
-          hitSlop={10}
-          style={settingsSlideStyles.back}
-        >
-          <Ionicons name="chevron-back" size={24} color="#fff" />
-        </Pressable>
-        <Text style={settingsSlideStyles.headerTitle} numberOfLines={1}>{pageTitle}</Text>
-        <View style={settingsSlideStyles.headerSpacer} />
-      </View>
+      <SettingsChildSheet
+        visible={visible}
+        onClose={onClose}
+        title={pageTitle}
+        zIndex={80}
+      >
       <ScrollView contentContainerStyle={styles.overlayBody}>
         {!isPro ? (
           <Pressable
@@ -427,14 +396,13 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
           />
         </View>
       </ScrollView>
+      </SettingsChildSheet>
 
-      <OverlaySheet
+      <SettingsChildSheet
         visible={page === 'language'}
         onClose={closeChild}
         title={t('settings.language')}
-        accent={accent}
-        doneLabel={t('common.back')}
-        opaque
+
       >
         <ScrollView contentContainerStyle={styles.overlayBody}>
           {[
@@ -455,15 +423,13 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             </Pressable>
           ))}
         </ScrollView>
-      </OverlaySheet>
+      </SettingsChildSheet>
 
-      <OverlaySheet
+      <SettingsChildSheet
         visible={page === 'theme'}
         onClose={closeChild}
         title={t('settings.theme')}
-        accent={accent}
-        doneLabel={t('common.back')}
-        opaque
+
       >
         <ScrollView contentContainerStyle={styles.overlayBody}>
           {THEME_ORDER.map((n) => (
@@ -491,15 +457,13 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             </Pressable>
           ))}
         </ScrollView>
-      </OverlaySheet>
+      </SettingsChildSheet>
 
-      <OverlaySheet
+      <SettingsChildSheet
         visible={page === 'textSize'}
         onClose={closeChild}
         title={t('settings.textSize')}
-        accent={accent}
-        doneLabel={t('common.back')}
-        opaque
+
       >
         <ScrollView contentContainerStyle={styles.overlayBody}>
           <View testID="settings-text-scale-slider">
@@ -523,28 +487,24 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             </Text>
           </View>
         </ScrollView>
-      </OverlaySheet>
+      </SettingsChildSheet>
 
-      <OverlaySheet
+      <SettingsChildSheet
         visible={page === 'notifications'}
         onClose={closeChild}
         title={t('settings.notifSection')}
-        accent={accent}
-        doneLabel={t('common.back')}
-        opaque
+
       >
         <ScrollView contentContainerStyle={styles.overlayBody}>
           <NotificationPreferencesCard colors={{ ...themes.night, accent }} />
         </ScrollView>
-      </OverlaySheet>
+      </SettingsChildSheet>
 
-      <OverlaySheet
+      <SettingsChildSheet
         visible={page === 'mapJourney'}
         onClose={closeChild}
         title={t('settings.sectionMapJourney')}
-        accent={accent}
-        doneLabel={t('common.back')}
-        opaque
+
       >
         <ScrollView contentContainerStyle={styles.overlayBody}>
           <View style={styles.accuracyRow}>
@@ -552,8 +512,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
               <Text style={styles.accuracyLabel}>{t('settings.obliqueLocate')}</Text>
               <Text style={styles.accuracySubhint}>{t('settings.obliqueLocateHint')}</Text>
             </View>
-            <NativeSwitch
-              style={styles.accuracySwitch}
+            <SystemToggle
               accent={accent}
               value={obliqueLocate}
               onValueChange={setObliqueLocate}
@@ -565,8 +524,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
               <Text style={styles.accuracyLabel}>{t('settings.liveActivity')}</Text>
               <Text style={styles.accuracySubhint}>{t('settings.liveActivityHint')}</Text>
             </View>
-            <NativeSwitch
-              style={styles.accuracySwitch}
+            <SystemToggle
               accent={accent}
               value={liveActivityEnabled}
               onValueChange={setLiveActivityEnabled}
@@ -578,8 +536,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
               <Text style={styles.accuracyLabel}>{t('settings.gatherCardDefaultExpanded')}</Text>
               <Text style={styles.accuracySubhint}>{t('settings.gatherCardDefaultExpandedHint')}</Text>
             </View>
-            <NativeSwitch
-              style={styles.accuracySwitch}
+            <SystemToggle
               accent={accent}
               value={gatherCardDefaultExpanded}
               onValueChange={setGatherCardDefaultExpanded}
@@ -591,14 +548,11 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
               <Text style={styles.accuracyLabel}>{t('settings.gatherCardTitleMarquee')}</Text>
               <Text style={styles.accuracySubhint}>{t('settings.gatherCardTitleMarqueeHint')}</Text>
             </View>
-            <NativeSwitch
-              style={styles.accuracySwitch}
+            <SystemToggle
               accent={accent}
               value={Boolean(gatherCardTitleMarquee)}
               onValueChange={(v) => setGatherCardTitleMarquee(Boolean(v))}
               accessibilityLabel={t('settings.gatherCardTitleMarquee')}
-              accessibilityRole="switch"
-              accessibilityState={{ checked: Boolean(gatherCardTitleMarquee) }}
             />
           </View>
           {Boolean(gatherCardTitleMarquee) ? (
@@ -621,15 +575,13 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             </View>
           ) : null}
         </ScrollView>
-      </OverlaySheet>
+      </SettingsChildSheet>
 
-      <OverlaySheet
+      <SettingsChildSheet
         visible={page === 'support'}
         onClose={closeChild}
         title={t('settings.sectionSupport')}
-        accent={accent}
-        doneLabel={t('common.back')}
-        opaque
+
       >
         <ScrollView contentContainerStyle={styles.overlayBody}>
           <View style={styles.accuracyRow}>
@@ -637,13 +589,10 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
               <Text style={styles.accuracyLabel}>{t('settings.diagnosticUpload')}</Text>
               <Text style={styles.accuracySubhint}>{t('settings.diagnosticUploadHint')}</Text>
             </View>
-            <NativeSwitch
-              style={styles.accuracySwitch}
+            <SystemToggle
               accent={accent}
               value={diagnosticUploadEnabled}
               onValueChange={onDiagnosticSwitchChange}
-              accessibilityRole="switch"
-              accessibilityState={{ checked: diagnosticUploadEnabled }}
               accessibilityLabel={t('settings.diagnosticUpload')}
             />
           </View>
@@ -690,15 +639,14 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             </View>
           </View>
         </ScrollView>
-      </OverlaySheet>
-    </Animated.View>
+      </SettingsChildSheet>
+    </View>
   );
 });
 
 const settingsSlideStyles = StyleSheet.create({
   page: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: '#0E1320',
     // Above MapScreen sheetLayer (70). Sibling account/paywall/feedback/
     // diagnostics hosts use settingsChildLayer (90) so they overlay this page.
     zIndex: 80,

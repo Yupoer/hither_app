@@ -24,6 +24,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { AnimatedRegion, Marker, MarkerAnimated, Polyline } from 'react-native-maps';
 import type { Coordinates, Destination, MemberLocation } from '../types';
+import { displayMemberAvatar } from '../constants/avatars';
 import { usePreferences, useTheme } from '../state/PreferencesContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { memberColor } from '../glass';
@@ -489,15 +490,9 @@ const MemberMarker = React.memo(function MemberMarker({ member, accent, styles }
             isLeader && styles.memberPinLeader,
           ]}
         >
-          {member.avatar ? (
-            <HitherText typeRole="emoji" style={styles.memberEmoji}>
-              {member.avatar}
-            </HitherText>
-          ) : (
-            <Text style={styles.memberInitial} allowFontScaling={false}>
-              {member.name.slice(0, 1).toUpperCase()}
-            </Text>
-          )}
+          <HitherText typeRole="emoji" style={styles.memberEmoji}>
+            {displayMemberAvatar(member.avatar, member.userId).emoji}
+          </HitherText>
         </View>
       </View>
     </MarkerAnimated>

@@ -15,7 +15,7 @@ import {
   type User,
 } from '../types';
 import type { Membership } from './SessionContext';
-import { avatarForUser } from '../constants/avatars';
+import { displayMemberAvatar } from '../constants/avatars';
 
 export interface UseAuthFlowParams {
   user: User | null;
@@ -115,7 +115,7 @@ export function useAuthFlow({
         id: authUser.id,
         name,
         email: authUser.email ?? '',
-        avatar: existingRow?.avatar ?? avatarForUser(authUser.id),
+        avatar: displayMemberAvatar(existingRow?.avatar, authUser.id).emoji,
         preferences: normalizeAccountPreferences(existingRow?.preferences),
       };
       setUser(nextUser);
@@ -193,7 +193,7 @@ export function useAuthFlow({
         id: authUser.id,
         name,
         email: authUser.email ?? credential.email ?? '',
-        avatar: existingRow?.avatar ?? avatarForUser(authUser.id),
+        avatar: displayMemberAvatar(existingRow?.avatar, authUser.id).emoji,
         preferences: normalizeAccountPreferences(existingRow?.preferences),
       };
       setUser(nextUser);
@@ -339,7 +339,7 @@ export function useAuthFlow({
         id: userId,
         name: row?.nickname ?? '',
         email: data.user.email ?? '',
-        avatar: row?.avatar ?? undefined,
+        avatar: displayMemberAvatar(row?.avatar, userId).emoji,
         preferences: normalizeAccountPreferences(row?.preferences),
       };
       setUser(nextUser);
