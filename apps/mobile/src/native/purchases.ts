@@ -214,43 +214,63 @@ function addWaiter(productId: string, timeoutMs = 120_000): Promise<PurchaseResu
   });
 }
 
+function mapStoreProduct(product: ProductSubscription): Omit<PremiumStoreProduct, 'introductoryOfferEligibleIOS'> {
+  return {
+    id: product.id,
+    displayName: product.displayName,
+    displayPrice: product.displayPrice,
+    description: product.description,
+    currency: product.currency,
+    type: product.type,
+    introductoryPriceIOS:
+      'introductoryPriceIOS' in product ? product.introductoryPriceIOS : null,
+    introductoryPriceNumberOfPeriodsIOS:
+      'introductoryPriceNumberOfPeriodsIOS' in product
+        ? product.introductoryPriceNumberOfPeriodsIOS
+        : null,
+    introductoryPricePaymentModeIOS:
+      'introductoryPricePaymentModeIOS' in product
+        ? product.introductoryPricePaymentModeIOS
+        : null,
+    subscriptionGroupIdIOS:
+      'subscriptionGroupIdIOS' in product ? product.subscriptionGroupIdIOS : null,
+    subscriptionPeriodUnitIOS:
+      'subscriptionPeriodUnitIOS' in product ? product.subscriptionPeriodUnitIOS : null,
+    subscriptionPeriodNumberIOS:
+      'subscriptionPeriodNumberIOS' in product ? product.subscriptionPeriodNumberIOS : null,
+  };
+}
+
 export async function fetchPremiumProducts(): Promise<PremiumStoreProduct[]> {
   if (!PREMIUM_CATALOG.ready) return [];
   const iap = await ensureConnection();
   if (!iap) return [];
   try {
-    const products = await iap.fetchProducts({
-      skus: PREMIUM_CATALOG.products.map((product) => product.productId),
-      type: 'subs',
-    });
+    const subSkus = PREMIUM_CATALOG.products
+      .filter((product) => product.storeType === 'subs')
+      .map((product) => product.productId);
+    const inAppSkus = PREMIUM_CATALOG.products
+      .filter((product) => product.storeType === 'in-app')
+      .map((product) => product.productId);
+    const [subs, inApps] = await Promise.all([
+      subSkus.length > 0
+        ? iap.fetchProducts({ skus: subSkus, type: 'subs' })
+        : Promise.resolve([]),
+      inAppSkus.length > 0
+        ? iap.fetchProducts({ skus: inAppSkus, type: 'in-app' }).catch(() =>
+          iap.fetchProducts({ skus: inAppSkus, type: 'subs' }),
+        )
+        : Promise.resolve([]),
+    ]);
+    const products = [...(subs ?? []), ...(inApps ?? [])];
     const mappedProducts = (products ?? [])
-      .filter((product): product is ProductSubscription => product.type === 'subs')
+      .filter((product): product is ProductSubscription =>
+        product.type === 'subs' || product.type === 'in-app',
+      )
+      .filter((product, index, list) => list.findIndex((item) => item.id === product.id) === index)
       .map((product) => ({
-        id: product.id,
-        displayName: product.displayName,
-        displayPrice: product.displayPrice,
-        description: product.description,
-        currency: product.currency,
-        type: product.type,
-        introductoryPriceIOS:
-          'introductoryPriceIOS' in product ? product.introductoryPriceIOS : null,
-        introductoryPriceNumberOfPeriodsIOS:
-          'introductoryPriceNumberOfPeriodsIOS' in product
-            ? product.introductoryPriceNumberOfPeriodsIOS
-            : null,
-        introductoryPricePaymentModeIOS:
-          'introductoryPricePaymentModeIOS' in product
-            ? product.introductoryPricePaymentModeIOS
-            : null,
+        ...mapStoreProduct(product),
         introductoryOfferEligibleIOS: false,
-        subscriptionGroupIdIOS:
-          'subscriptionGroupIdIOS' in product ? product.subscriptionGroupIdIOS : null,
-        subscriptionPeriodUnitIOS:
-          'subscriptionPeriodUnitIOS' in product ? product.subscriptionPeriodUnitIOS : null,
-        subscriptionPeriodNumberIOS:
-          'subscriptionPeriodNumberIOS' in product
-            ? product.subscriptionPeriodNumberIOS
-            : null,
       }));
 
     const groupIds = [...new Set(
@@ -291,9 +311,11 @@ export async function requestPremiumSubscription(
   if (!iap) return { status: 'unavailable', reason: 'native_iap_not_linked' };
 
   const pending = addWaiter(productId);
+  const storeType =
+    PREMIUM_CATALOG.products.find((item) => item.productId === productId)?.storeType ?? 'subs';
   try {
     await iap.requestPurchase({
-      type: 'subs',
+      type: storeType,
       request: {
         apple: { sku: productId, appAccountToken },
         google: { skus: [productId], obfuscatedAccountId: appAccountToken },

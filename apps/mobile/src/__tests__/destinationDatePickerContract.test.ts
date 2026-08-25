@@ -16,7 +16,7 @@ describe('Android itinerary date editing', () => {
 
 describe('route list handle column + favorites', () => {
   it('aligns day and stop drag handles via fixed HANDLE_SLOT', () => {
-    expect(source).toContain('const HANDLE_SLOT = Math.round(28 * REORDER_VISUAL_SCALE)');
+    expect(source).toContain('const HANDLE_SLOT = 44');
     expect(source).toContain('styles.handleSlot');
   });
 

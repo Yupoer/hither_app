@@ -382,7 +382,7 @@ describe('map UI placement contracts', () => {
     expect(segmented).toContain('prevSegWRef');
   });
 
-  it('renders Members/Route/Tools/Store as compact icon tabs without Liquid Glass rim', () => {
+  it('renders Members/Route/Tools/Store as native segmented control without Liquid Glass rim', () => {
     const optionsStart = mapScreen.indexOf('const sheetPaneOptions = useMemo');
     const sheetChildrenEnd = mapScreen.indexOf('if (loading && !state)', optionsStart);
     const sheetBlock = mapScreen.slice(

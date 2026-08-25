@@ -148,7 +148,8 @@ import {
   type Language,
 } from '../state/PreferencesContext';
 import PrefSlider from '../components/PrefSlider';
-import NativeSwitch from '../components/NativeSwitch';
+import SystemToggle from '../components/SystemToggle';
+import { displayMemberAvatar } from '../constants/avatars';
 import { canMarkDestinationArrival } from '../utils/arrivalMarking';
 import { hasArrived } from '../utils/journeyProgress';
 import { buildPassiveCompanionModel } from '../utils/passiveCompanion';
@@ -5198,11 +5199,9 @@ export default function MapScreen({ route, navigation }: Props) {
                   },
                 ]}
               >
-                {f.avatar ? (
-                  <HitherText typeRole="emoji" style={styles.peekStackEmoji}>{f.avatar}</HitherText>
-                ) : (
-                  <Text style={styles.peekStackInitial}>{f.name.slice(0, 1).toUpperCase()}</Text>
-                )}
+                <HitherText typeRole="emoji" style={styles.peekStackEmoji}>
+                  {displayMemberAvatar(f.avatar, f.userId).emoji}
+                </HitherText>
               </View>
             ))}
             {others.length > 6 ? (
@@ -5617,8 +5616,7 @@ export default function MapScreen({ route, navigation }: Props) {
           </Text>
           <Text style={styles.accuracyBattery}>{t('settings.preciseLocationHint')}</Text>
         </View>
-        <NativeSwitch
-          style={styles.accuracySwitch}
+        <SystemToggle
           accent={accent}
           value={highAccuracy}
           onValueChange={setHighAccuracy}
@@ -7264,7 +7262,7 @@ export default function MapScreen({ route, navigation }: Props) {
                 style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
               >
                 <Ionicons name="trash-outline" size={18} color="#FF5A5F" />
-                <Text style={{ color: '#FF5A5F', fontSize: 14, fontWeight: '700' }}>
+                <Text style={{ color: '#FF453A', fontSize: 14, fontWeight: '800' }}>
                   {t('route.deleteSelected', { count: routeSelectedIds.length })}
                 </Text>
               </Pressable>
@@ -8075,11 +8073,9 @@ export default function MapScreen({ route, navigation }: Props) {
                 >
                   <View style={styles.flockRowMain}>
                     <View style={[styles.flockAvatar, { backgroundColor: f.color, borderColor: 'transparent' }]}>
-                      {f.avatar ? (
-                        <HitherText typeRole="emoji" style={styles.flockEmoji}>{f.avatar}</HitherText>
-                      ) : (
-                        <Text style={styles.flockInitial}>{f.name.slice(0, 1).toUpperCase()}</Text>
-                      )}
+                      <HitherText typeRole="emoji" style={styles.flockEmoji}>
+                        {displayMemberAvatar(f.avatar, f.userId).emoji}
+                      </HitherText>
                     </View>
                     <View style={styles.grow}>
                       <Text style={styles.flockName}>{f.name}</Text>
@@ -8661,6 +8657,7 @@ const RefreshLocationsButton = React.memo(function RefreshLocationsButton({
  * parent MapScreen tree is not on a location-age interval.
  */
 const FlockRow = React.memo(function FlockRow({
+  userId,
   name,
   avatar,
   color,
@@ -8740,11 +8737,9 @@ const FlockRow = React.memo(function FlockRow({
             },
           ]}
         >
-          {avatar ? (
-            <HitherText typeRole="emoji" style={styles.flockEmoji}>{avatar}</HitherText>
-          ) : (
-            <Text style={styles.flockInitial}>{name.slice(0, 1).toUpperCase()}</Text>
-          )}
+          <HitherText typeRole="emoji" style={styles.flockEmoji}>
+            {displayMemberAvatar(avatar, userId).emoji}
+          </HitherText>
         </View>
         <View style={styles.grow}>
           <Text style={styles.flockName}>{isMe ? t('flock.you') : name}</Text>

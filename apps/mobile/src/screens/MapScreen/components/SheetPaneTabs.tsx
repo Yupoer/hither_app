@@ -1,13 +1,10 @@
 /**
- * Members / Route / Tools / Store icon tab bar (sheet chrome).
- * Compact equal-width tabs; active accent underline sits on the bottom edge.
+ * Members / Route / Tools / Store — native segmented control.
+ * iOS: SwiftUI Picker segmented. Android: Compose segmented buttons.
  */
 import React, { useMemo } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { glass } from '../../../glass';
-import { GLOBAL_FONT_SCALE_CAP } from '../../../theme/typeScale';
-import { useFontLayout } from '../../../a11y/useFontScaleBucket';
+import { StyleSheet, View } from 'react-native';
+import SegmentedControl from '@expo/ui/community/segmented-control';
 import type { SheetPaneKey } from '../../../store/types';
 import { selectionTick } from '../../../utils/haptics';
 
@@ -21,130 +18,46 @@ interface SheetPaneTabsProps {
   value: SheetPaneKey;
   onChange: (key: SheetPaneKey) => void;
   accent: string;
-  /** Optional per-tab node capture for tour highlight measurement. */
   onTabNode?: (key: SheetPaneKey, node: View | null) => void;
 }
-
-const TAB_ICONS: Record<
-  SheetPaneKey,
-  { active: keyof typeof Ionicons.glyphMap; inactive: keyof typeof Ionicons.glyphMap }
-> = {
-  members: { active: 'people', inactive: 'people-outline' },
-  route: { active: 'location', inactive: 'location-outline' },
-  tools: { active: 'build', inactive: 'build-outline' },
-  store: { active: 'bag-handle', inactive: 'bag-handle-outline' },
-};
 
 export const SheetPaneTabs = React.memo(function SheetPaneTabs({
   options,
   value,
   onChange,
-  accent,
   onTabNode,
 }: SheetPaneTabsProps) {
-  const { scale, boldText } = useFontLayout();
-  const styles = useMemo(() => makeStyles(scale, boldText), [scale, boldText]);
+  const labels = useMemo(() => options.map((opt) => opt.label), [options]);
+  const selectedIndex = Math.max(0, options.findIndex((opt) => opt.key === value));
 
   return (
-    <View style={styles.track} testID="sheet-pane-tabs" accessibilityRole="tablist">
-      {options.map((opt, i) => {
-        const active = opt.key === value;
-        const icons = TAB_ICONS[opt.key] ?? TAB_ICONS.members;
-        const color = active ? accent : glass.textSecondary;
-        return (
-          <React.Fragment key={opt.key}>
-            {i > 0 ? <View style={styles.divider} /> : null}
-            <Pressable
-              ref={(n) => onTabNode?.(opt.key, n)}
-              collapsable={false}
-              style={({ pressed }) => [
-                styles.tab,
-                pressed && { opacity: 0.65 },
-              ]}
-              onPress={() => {
-                if (opt.key === value) return;
-                selectionTick();
-                onChange(opt.key);
-              }}
-              accessibilityRole="tab"
-              accessibilityLabel={opt.label}
-              accessibilityState={{ selected: active }}
-              testID={`sheet-pane-tab-${opt.key}`}
-            >
-              <Ionicons
-                name={active ? icons.active : icons.inactive}
-                size={styles.iconSize}
-                color={color}
-              />
-              <Text
-                style={[styles.label, { color }]}
-                numberOfLines={1}
-                adjustsFontSizeToFit
-                minimumFontScale={0.75}
-                maxFontSizeMultiplier={GLOBAL_FONT_SCALE_CAP}
-              >
-                {opt.label}
-              </Text>
-              <View
-                pointerEvents="none"
-                style={[
-                  styles.underline,
-                  active && { backgroundColor: accent },
-                ]}
-              />
-            </Pressable>
-          </React.Fragment>
-        );
-      })}
+    <View
+      style={styles.track}
+      testID="sheet-pane-tabs"
+      accessibilityRole="tablist"
+      ref={(node) => {
+        options.forEach((opt) => onTabNode?.(opt.key, node));
+      }}
+    >
+      <SegmentedControl
+        values={labels}
+        selectedIndex={selectedIndex}
+        onChange={(event) => {
+          const index = event.nativeEvent.selectedSegmentIndex;
+          const next = options[index];
+          if (!next || next.key === value) return;
+          selectionTick();
+          onChange(next.key);
+        }}
+      />
     </View>
   );
 });
 
-const makeStyles = (scale: number, boldText: boolean) => {
-  const s = (n: number, min = 0) => Math.max(min, Math.round(n * scale));
-  // Lean tall chrome: caption+1px, bold label, long bottom rail.
-  const iconSize = s(20, 18);
-  return {
-    iconSize,
-    ...StyleSheet.create({
-      track: {
-        width: '100%',
-        flexDirection: 'row',
-        alignItems: 'stretch',
-        minHeight: s(50, 46),
-      },
-      tab: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingTop: s(6, 5),
-        // Underline hugs bottom edge — no floating gap.
-        paddingBottom: s(5, 4),
-        gap: s(2, 1),
-      },
-      label: {
-        // One step under body (+1px vs prior 11).
-        fontSize: s(boldText ? 12 : 12, 11),
-        fontWeight: '700',
-        textAlign: 'center',
-        lineHeight: s(14, 13),
-      },
-      underline: {
-        position: 'absolute',
-        // Longer rail — almost full tab width.
-        left: '8%',
-        right: '8%',
-        bottom: 0,
-        height: 2,
-        borderRadius: 1,
-        backgroundColor: 'transparent',
-      },
-      divider: {
-        width: StyleSheet.hairlineWidth,
-        alignSelf: 'center',
-        height: '45%',
-        backgroundColor: glass.hairlineSoft,
-      },
-    }),
-  };
-};
+const styles = StyleSheet.create({
+  track: {
+    width: '100%',
+    minHeight: 36,
+    justifyContent: 'center',
+  },
+});

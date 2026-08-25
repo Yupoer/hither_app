@@ -7,6 +7,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   Modal,
   Pressable,
   ScrollView,
@@ -16,6 +17,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { getPremiumProjection, redeemPromoCode } from '../api/client';
 import { waitUntilPremiumProjectionActive } from '../utils/waitUntilPremiumProjection';
 import { runUiAction } from '../utils/uiAction';
@@ -101,7 +103,7 @@ export default React.memo(function PremiumPresentation({
   const [busy, setBusy] = useState<'purchase' | 'restore' | 'redeem' | null>(null);
   const [redeemOpen, setRedeemOpen] = useState(false);
   const [promoCode, setPromoCode] = useState('');
-  const [selectedPlan, setSelectedPlan] = useState<PremiumPlan>('monthly');
+  const [selectedPlan, setSelectedPlan] = useState<PremiumPlan>('annual');
   const [products, setProducts] = useState<PremiumStoreProduct[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
 
@@ -124,9 +126,7 @@ export default React.memo(function PremiumPresentation({
     () => productForPlan(products, selectedPlan),
     [products, selectedPlan],
   );
-  const catalogReady = PREMIUM_CATALOG.ready
-    && productForPlan(products, 'monthly') !== null
-    && productForPlan(products, 'annual') !== null;
+  const catalogReady = PREMIUM_CATALOG.ready;
   const hasPremium =
     isPro
     || premiumProjection.personalPremiumActive
@@ -348,9 +348,11 @@ export default React.memo(function PremiumPresentation({
       )}
 
       <View style={styles.planChoices} accessibilityRole="radiogroup">
-        {(['monthly', 'annual'] as const).map((plan) => {
+        {(['annual', 'monthly', 'trip'] as const).map((plan) => {
           const product = productForPlan(products, plan);
           const selected = selectedPlan === plan;
+          const annualProduct = productForPlan(products, 'annual');
+          const monthlyProduct = productForPlan(products, 'monthly');
           return (
             <Pressable
               key={plan}
@@ -363,17 +365,51 @@ export default React.memo(function PremiumPresentation({
               accessibilityRole="radio"
               accessibilityState={{ selected }}
             >
-              <Text style={styles.planChoiceTitle}>
-                {plan === 'monthly' ? t('paywall.monthly') : t('paywall.annual')}
-              </Text>
-              <Text style={[styles.planChoicePrice, { color: accent }]}>
-                {product?.displayPrice ?? '—'}
-              </Text>
-              {product && hasEligibleIntroductoryOffer(product) ? (
-                <Text style={styles.introOffer}>
-                  {t('paywall.introOffer', { price: product.introductoryPriceIOS ?? '' })}
+              <View style={styles.planChoiceLeft}>
+                <View style={[styles.radio, selected && { borderColor: accent }]}>
+                  {selected ? <View style={[styles.radioDot, { backgroundColor: accent }]} /> : null}
+                </View>
+                <View style={styles.planChoiceCopy}>
+                  <View style={styles.planTitleRow}>
+                    <Text style={styles.planChoiceTitle}>
+                      {plan === 'annual'
+                        ? t('paywall.annualPlan')
+                        : plan === 'monthly'
+                          ? t('paywall.monthlyPlan')
+                          : t('paywall.tripPlan')}
+                    </Text>
+                    {plan === 'annual' ? (
+                      <View style={styles.saveTag}>
+                        <Text style={styles.saveTagText}>{t('paywall.savePercent', { percent: 64 })}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  <Text style={styles.planChoiceSub}>
+                    {plan === 'annual'
+                      ? t('paywall.perMonth', { price: annualProduct?.displayPrice ?? monthlyProduct?.displayPrice ?? '—' })
+                      : plan === 'trip'
+                        ? t('paywall.tripHint')
+                        : t('paywall.billedMonthly')}
+                  </Text>
+                  {product && hasEligibleIntroductoryOffer(product) ? (
+                    <Text style={styles.introOffer}>
+                      {t('paywall.introOffer', { price: product.introductoryPriceIOS ?? '' })}
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+              <View style={styles.planChoiceRight}>
+                <Text style={[styles.planChoicePrice, { color: accent }]}>
+                  {catalogLoading ? '…' : product?.displayPrice ?? '—'}
                 </Text>
-              ) : null}
+                <Text style={styles.planChoiceRenew}>
+                  {plan === 'annual'
+                    ? t('paywall.billedAnnually')
+                    : plan === 'monthly'
+                      ? t('paywall.billedMonthly')
+                      : t('paywall.tripHint')}
+                </Text>
+              </View>
             </Pressable>
           );
         })}
@@ -382,27 +418,36 @@ export default React.memo(function PremiumPresentation({
       <Text style={styles.price}>
         {catalogLoading
           ? t('paywall.loadingPrice')
-          : selectedProduct?.displayPrice ?? t('paywall.catalogUnavailable')}
+          : selectedProduct?.displayPrice ?? t('paywall.price')}
       </Text>
 
       <Pressable
-        style={[
-          styles.cta,
-          { backgroundColor: accentMix(accent, 90), borderColor: accentMix(accent, 50) },
-          (busy !== null || hasPremium || !catalogReady) && styles.ctaDisabled,
-        ]}
         onPress={handlePurchase}
         disabled={busy !== null || hasPremium || !catalogReady}
         accessibilityRole="button"
         testID={`${testID}-purchase`}
       >
-        {busy === 'purchase' ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.ctaText}>
-            {hasPremium ? t('paywall.active') : t('paywall.cta')}
-          </Text>
-        )}
+        <LinearGradient
+          colors={['#37B6FF', '#1B6FB8']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[
+            styles.cta,
+            (busy !== null || hasPremium || !catalogReady) && styles.ctaDisabled,
+          ]}
+        >
+          {busy === 'purchase' ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.ctaText}>
+              {hasPremium
+                ? t('paywall.active')
+                : selectedProduct && hasEligibleIntroductoryOffer(selectedProduct)
+                  ? t('paywall.startTrial')
+                  : t('paywall.cta')}
+            </Text>
+          )}
+        </LinearGradient>
       </Pressable>
 
       {showRestore ? (
@@ -467,6 +512,20 @@ export default React.memo(function PremiumPresentation({
           </Modal>
         </>
       ) : null}
+      <View style={styles.legalRow}>
+        <Pressable onPress={() => void Linking.openURL('https://www.apple.com/legal/privacy/')}>
+          <Text style={styles.legalText}>{t('paywall.privacy')}</Text>
+        </Pressable>
+        <Text style={styles.legalDot}>·</Text>
+        <Pressable onPress={() => void Linking.openURL('https://www.apple.com/legal/internet-services/itunes/dev/stdeula/')}>
+          <Text style={styles.legalText}>{t('paywall.terms')}</Text>
+        </Pressable>
+        {showRestore ? (
+          <Pressable onPress={handleRestore} disabled={busy !== null}>
+            <Text style={styles.legalText}>{t('paywall.restore')}</Text>
+          </Pressable>
+        ) : null}
+      </View>
     </View>
   );
 });
@@ -487,7 +546,7 @@ const styles = StyleSheet.create({
     minHeight: 140,
     justifyContent: 'center',
   },
-  introTitle: { color: '#fff', fontSize: 20, fontWeight: '800', marginBottom: 8 },
+  introTitle: { color: '#fff', fontSize: 25, fontWeight: '800', marginBottom: 8, lineHeight: 31 },
   introBody: { color: glass.textSecondary, fontSize: 15, lineHeight: 22 },
   table: {
     backgroundColor: glass.fill,
@@ -508,26 +567,59 @@ const styles = StyleSheet.create({
   rowLast: { borderBottomWidth: 0 },
   rowFree: { fontSize: 14, color: glass.textSecondary, flexShrink: 1 },
   rowPro: { fontSize: 14, fontWeight: '700', flexShrink: 1, textAlign: 'right' },
-  planChoices: { flexDirection: 'row', gap: 8 },
+  planChoices: { gap: 8 },
   planChoice: {
-    flex: 1,
-    minHeight: 76,
-    borderRadius: 12,
-    borderWidth: 1,
-    padding: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
+    minHeight: 76,
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
   },
-  planChoiceTitle: { color: '#fff', fontSize: 14, fontWeight: '700' },
-  planChoicePrice: { fontSize: 16, fontWeight: '700' },
-  introOffer: { color: glass.textTertiary, fontSize: 11 },
-  price: { fontSize: 13, color: glass.textTertiary, textAlign: 'center' },
-  cta: {
-    height: 50,
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
+  planChoiceLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, gap: 10 },
+  planChoiceCopy: { flex: 1 },
+  planTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
+  radio: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.35)',
     alignItems: 'center',
     justifyContent: 'center',
   },
+  radioDot: { width: 10, height: 10, borderRadius: 5 },
+  planChoiceTitle: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  planChoiceSub: { color: 'rgba(255,255,255,0.55)', fontSize: 12, marginTop: 2 },
+  planChoiceRight: { alignItems: 'flex-end', marginLeft: 8 },
+  planChoicePrice: { fontSize: 16, fontWeight: '700' },
+  planChoiceRenew: { color: 'rgba(255,255,255,0.45)', fontSize: 11, marginTop: 2 },
+  saveTag: {
+    backgroundColor: '#256bb0',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  saveTagText: { color: '#fff', fontSize: 10, fontWeight: '800' },
+  introOffer: { color: glass.textTertiary, fontSize: 11 },
+  price: { fontSize: 13, color: glass.textTertiary, textAlign: 'center' },
+  cta: {
+    height: 48,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  legalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingTop: 4,
+  },
+  legalText: { color: 'rgba(255,255,255,0.55)', fontSize: 12, fontWeight: '600' },
+  legalDot: { color: 'rgba(255,255,255,0.35)', fontSize: 12 },
   ctaDisabled: { opacity: 0.55 },
   ctaText: { fontSize: 16, fontWeight: '700', color: '#fff' },
   restore: { alignItems: 'center', justifyContent: 'center', paddingVertical: 6 },

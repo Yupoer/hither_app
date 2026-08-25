@@ -13,6 +13,7 @@ import { getMyJoinedGroups, JoinedGroupInfo, leaveGroups } from '../api/client';
 import { GlassView } from '../native/liquidGlass';
 import { clearLiveActivities } from '../state/useLiveActivity';
 import { HitherText } from '../components/HitherText';
+import { avatarForGroup } from '../constants/avatars';
 import { runUiAction } from '../utils/uiAction';
 import { useTranslation } from '../i18n';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
@@ -198,6 +199,11 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
               >
                 
                 <View style={styles.teamCardHeader}>
+                  <View style={[styles.groupAvatar, { backgroundColor: info.group.avatarColor || '#333' }]}>
+                    <HitherText typeRole="emoji" style={styles.groupAvatarEmoji}>
+                      {info.group.avatar || avatarForGroup(info.group.id)}
+                    </HitherText>
+                  </View>
                   <View style={styles.teamCardLeft}>
                     <Text style={styles.teamCardName} numberOfLines={1}>{info.group.name}</Text>
                     <Text style={styles.teamCardSubtitle}>
@@ -336,6 +342,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  groupAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  groupAvatarEmoji: { fontSize: 24 },
   teamCardLeft: {
     flex: 1,
     marginRight: 12,

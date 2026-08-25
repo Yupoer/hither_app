@@ -1,73 +1,8 @@
-# CLAUDE.md — Hither
-
-任何 AI 助手（不限 Claude）在此 repo 工作時都適用。
-
-## 現況（2026-07-02）
-
-- **App**：React Native（Expo SDK 54）+ TypeScript，位於 `apps/mobile/`。
-- **後端**：Supabase（project `htqrucnjafhhvxdqslbv`），全表開 RLS，匿名登入。無自建 API server（Vapor 已退役）。
-- **原生層**：`ios_native/` 已退役僅剩參考文件。原生能力唯一入口是 `apps/mobile/src/native/`（location / maps / notifications / liveActivity / liquidGlass），用 `requireOptionalNativeModule` 偵測，Expo Go 下必須優雅降級走 JS fallback。UI 元件禁止直接判斷 `Platform.OS`。
-- **文件**：長期文件在 `docs/`（見 `docs/README.md`）。產品決策看 `docs/product-decision-log.md`；程式現況看 `docs/current-app-functional-architecture.md`。**任務／Spec／ticket 一律 GitHub Issues／PRs**，不要再寫入 `docs/Tasks`。
-
-## 工作規則
-
-1. **每完成一個 phase 就 commit 一次**，只 stage 該 phase 的檔案。
-2. **單人開發**：驗證通過後直接 merge 回 master 並**立即 push**，不留分支、不必問。不要讓 master 領先 origin 累積超過一個工作階段。
-3. **「完成」的定義**：`npm test` + `npm run typecheck` 通過，**且該 flow 在 Expo Go 實機跑過**。跑不了的部分（需 Dev Build，如 Live Activity / 原生模組）要明說「未實機驗證」，不可寫「已完成」。「tsc 通過」不等於功能可用。
-4. **Expo Go 相容性先行**：動地圖 / 定位 / 通知 / Live Activity 前，先確認 Expo Go 的 JS fallback 路徑存在且不會把原生 UI 元素（如動態島鏡射）漏渲染到 App 畫面上。
-5. **使用者要指令時直接給指令**，不要先做一輪環境檢查。
-6. **工具或 MCP 呼叫卡住/失敗一次就換替代路徑**（例如 fallback 到 Grep/Read），不要停在原地等人工 retry。
-7. **UI baseline**：以「Hither MVP v1 design」為準，未經使用者同意不可大改畫面結構。
-8. 架構決策已定（RN 核心、Supabase 後端、匿名登入、Firebase 切斷），**不要重問**。
-
-## Debug 與求解策略
-
-1. **先查 log 再猜**：app 每個操作＋結果都寫進自架的 activity log（Supabase 表，見 `21e64ab feat: self-hosted activity logs`）。debug 時直接去資料庫查 log，比重跑複現快。
-2. **回溯 commit 是合法捷徑**：要達到某個目的時，`git log`／`git diff`／checkout 舊版本對照或直接還原，往往比從頭重推更快，別只想著往前改。
-3. **與其修正不如打掉重作——但要先算帳**：某段程式碼愈修愈亂時，重寫是選項；但動手前必須衡量重寫是否**真的**更省 token、更省時、更穩定，確認划算才做，不要為重寫而重寫。
-
-## 程式碼探索：何時用 codebase-memory MCP
-
-滿足**任一**條件才優先用 cbm（`search_graph` / `trace_path` / `get_code_snippet`）：
-
-- 預計動 **≥3 個檔案**，或說不出會動到哪些檔案
-- 改**共用層**（`src/api/client.ts`、`src/state/`、`src/native/`、共用 hooks）——有多個 caller，需要 `trace_path` 確認影響面
-- **重構 / 搬移 / 刪除**既有函式（需要知道誰在呼叫）
-
-反之（單檔 UI 調整、樣式、文案、設定值、找某段文字）直接 Grep/Glob/Read，比較省 token。
-
-**Token 效率判準**：真正的變數不是改動大小，而是「查詢型態」與「grep→Read 迭代輪數」。grep 爆 token 的點不是 grep 本身，是它逼出的多輪 Read（grep 定義→Read body→再 grep callee→再 Read，每輪拉進大段無關檔案）。
-
-- **文字/定位型**（找字串、設定值、單一定義、單檔改）→ grep 省，1-2 次就完。
-- **關係型**（誰呼叫、呼叫鏈、依賴、改簽名影響面）→ cbm 省，一次 `trace_path` 取代多輪迭代。改動再小，只要要「全部 caller」就屬此類。
-- **常見函式名高命中需逐檔消歧** → cbm 省，圖用 node type/qualified name 消歧。
-- **經驗法則**：預期 grep→Read→再 grep **≥2~3 輪**，或高命中需逐檔 Read 消歧 → 用 cbm；否則 grep。
-
-## 多模型調度（固定流程：5.6 Sol + 5.6 Luna）
-
-本專案所有需要規劃、實作或審查的工作固定採雙角色流程：
-
-- **規劃與審查角色：`5.6Sol-Effort-Medium`**
-  - 負責架構分析、需求拆解、plan、技術取捨、驗收條件與 Code Review。
-  - 必須以實際 diff、測試結果與驗收證據進行審查。
-  - 不負責多檔案機械修改或大量重複勞動。
-- **執行角色：`Subagent 5.6 Luna-Effort-Max`**
-  - 負責依核准的 plan 實作、修改多檔案、套用既有 pattern、格式化、執行測試與整理結果。
-  - 不自行改變架構方向；遇到 plan 不足或技術取捨時，回報給 Sol 決策。
-
-固定回圈：
-1. Sol 先閱讀需求與程式碼，產出可執行的 plan、範圍、驗收條件與風險。
-2. Luna 依 plan 逐項執行，完成實作、測試與結果紀錄。
-3. Sol 審查 Luna 的實際 diff、測試與邊界條件，列出問題與修改要求。
-4. Luna 修正所有 review 問題並重新驗證；必要時回到第 3 步，直到 Sol 通過。
-5. Sol 做最終驗收，確認沒有未處理的 review 項目與必要測試缺口。
-
-不得因任務看似簡單而跳過角色分工。若執行環境無法啟動指定角色，必須明確回報限制，不得默默把大量實作工作移回 Sol。此流程只規範模型分工，不改變本檔案其他章節既有的工作規則（每 phase commit、單人直接 merge push 等）。
-
-## 驗證指令
-
-```bash
-cd apps/mobile && npm test && npm run typecheck
-```
-
-pre-push hook 會自動跑上面兩項（`.git/hooks/pre-push`，clone 後需重建，見根目錄 SETUP_NEW_MACHINE.md）。
+以闡明意圖為榮，以干涉步驟為恥。
+以實測取證為榮，以口頭宣稱為恥。
+以請示報批為榮，以擅自越權為恥。
+以遇疑反問為榮，以盲目臆測為恥。
+以獨立複核為榮，以自我粉飾為恥。
+以按需調度為榮，以盲目鋪張為恥。
+以築牢邊界為榮，以密鑰裸奔為恥。
+以固化落檔為榮，以屢教不改為恥。
