@@ -31,12 +31,12 @@ describe('SystemToggle iOS/Android chrome', () => {
     expect(nativeSwitch).toContain("from './SystemToggle'");
   });
 
-  it('centers every native toggle and routes locked Live Activity to paywall', () => {
+  it('centers every native toggle and routes locked Tools Live Activity to paywall', () => {
     expect(systemToggle).toContain("alignItems: 'center'");
     expect(systemToggle).not.toContain('translateY');
-    expect(settings).toContain('handleLiveActivityChange');
-    expect(settings).toContain('liveActivityUnlocked');
-    expect(settings).toContain('onOpenPaywall();');
-    expect(settings).toContain('setLiveActivityEnabled(false)');
+    expect(settings).not.toContain('handleLiveActivityChange');
+    expect(mapScreen).toContain('handleToolsLiveActivityChange');
+    expect(mapScreen).toContain('openPaywallForLiveActivity();');
+    expect(mapScreen).toContain('setLiveActivityEnabled(false)');
   });
 });

@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
+  Modal,
   Platform,
   Pressable,
   StyleSheet,
@@ -55,6 +57,7 @@ export default function RoleSelectScreen({ navigation }: Props) {
   const cached = user ? getCachedMyJoinedGroups(user.id) : null;
   const [joinedGroups, setJoinedGroups] = useState<JoinedGroupInfo[]>(cached ?? []);
   const [groupsLoading, setGroupsLoading] = useState(!!user && !cached);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -213,6 +216,7 @@ export default function RoleSelectScreen({ navigation }: Props) {
                   actionId: 'role_select.delete_account',
                   screen: 'RoleSelect',
                   deleteAccount,
+                  onBusyChange: setDeleting,
                   onDeleted: () => {
                     navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
                   },
@@ -230,12 +234,28 @@ export default function RoleSelectScreen({ navigation }: Props) {
         {/* Leftover height stays below actions — keeps create/join ↔ my-teams distance fixed. */}
         <View style={styles.bottomFlex} />
       </View>
+      <Modal
+        visible={deleting}
+        transparent
+        animationType="none"
+        onRequestClose={() => undefined}
+      >
+        <View style={styles.deleteLoadingScrim} testID="account-delete-loading" accessibilityRole="progressbar">
+          <ActivityIndicator size="large" color={accent} />
+        </View>
+      </Modal>
     </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
+  deleteLoadingScrim: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.58)',
+  },
   leftChrome: {
     position: 'absolute',
     left: 20,

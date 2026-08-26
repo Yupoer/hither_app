@@ -105,6 +105,7 @@ const makeStyles = (colors: Palette) =>
       justifyContent: 'space-between',
       alignItems: 'center',
       paddingVertical: spacing.md,
+      paddingRight: spacing.md,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: colors.border,
     },

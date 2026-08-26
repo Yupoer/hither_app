@@ -10,10 +10,12 @@ export default function SystemToggle({
   value,
   onValueChange,
   accessibilityLabel,
+  testID,
 }: {
   value: boolean;
   onValueChange: (next: boolean) => void;
   accessibilityLabel?: string;
+  testID?: string;
 }) {
   return (
     <View
@@ -21,6 +23,7 @@ export default function SystemToggle({
       accessibilityRole="switch"
       accessibilityLabel={accessibilityLabel}
       accessibilityState={{ checked: value }}
+      testID={testID}
     >
       <Host matchContents style={styles.host}>
         <Switch value={value} onValueChange={onValueChange} />

@@ -8,10 +8,12 @@ import Animated, {
   runOnJS,
   scrollTo,
   useAnimatedRef,
+  useAnimatedReaction,
   useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
+  withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
 import { liquidGlass } from '../native';
@@ -79,8 +81,15 @@ export default React.memo(function BottomSheet({
   header,
   onHeaderHeight,
   onDismiss,
+  onDismissComplete,
+  dismissRequested,
+  dismissTranslateY,
+  dismissDistance,
   dismissOnDownFromIndex,
   edgeToEdgeAtLast = true,
+  contentTopPadding = 0,
+  compactGrabberSpacing = false,
+  hideHeaderOnScroll = false,
   children,
 }: {
   /** Live sheet height, owned by the parent (drives sheet + floating chrome). */
@@ -96,10 +105,24 @@ export default React.memo(function BottomSheet({
   onHeaderHeight?: (h: number) => void;
   /** Close the sheet after a committed downward fling from this detent or above. */
   onDismiss?: () => void;
+  /** Called after a translateY-based exit is fully off-screen. */
+  onDismissComplete?: () => void;
+  /** Controlled visibility for translateY-based sheets. */
+  dismissRequested?: boolean;
+  /** Shared translateY used by fixed-size sheets during dismissal. */
+  dismissTranslateY?: SharedValue<number>;
+  /** Distance to move a fixed-size sheet below the viewport. */
+  dismissDistance?: number;
   /** Detent index at which a downward drag may dismiss instead of snapping. */
   dismissOnDownFromIndex?: number;
   /** Keep the last detent flush with the screen edges (map sheet default). */
   edgeToEdgeAtLast?: boolean;
+  /** Extra space between the pinned header and scroll content. */
+  contentTopPadding?: number;
+  /** Tighten only the map sheet's grabber spacing without changing other sheets. */
+  compactGrabberSpacing?: boolean;
+  /** Hide the pinned header controls once full-detent content leaves the top. */
+  hideHeaderOnScroll?: boolean;
   children: React.ReactNode;
 }) {
   const scrollRef = useAnimatedRef<RNScrollView>();
@@ -109,6 +132,18 @@ export default React.memo(function BottomSheet({
   const scrollHandler = useAnimatedScrollHandler((e) => {
     scrollOffset.value = e.contentOffset.y;
   });
+  const canHideHeader = hideHeaderOnScroll && index === detents.length - 1;
+  const [headerHidden, setHeaderHidden] = useState(false);
+  useAnimatedReaction(
+    () => canHideHeader && scrollOffset.value > TOP_EPS,
+    (next, previous) => {
+      if (next !== previous) runOnJS(setHeaderHidden)(next);
+    },
+    [canHideHeader],
+  );
+  const headerVisibilityStyle = useAnimatedStyle(() => ({
+    opacity: canHideHeader && scrollOffset.value > TOP_EPS ? 0 : 1,
+  }), [canHideHeader]);
 
   // Mirror props into SharedValues so pan / sheetStyle worklets always read
   // current detents & inset without rebuilding Gesture.Pan() every render.
@@ -116,10 +151,21 @@ export default React.memo(function BottomSheet({
   const bottomInsetSV = useSharedValue(bottomInset);
   const dismissIndexSV = useSharedValue(dismissOnDownFromIndex ?? -1);
   const edgeToEdgeAtLastSV = useSharedValue(edgeToEdgeAtLast ? 1 : 0);
-  detentsSV.value = detents;
-  bottomInsetSV.value = bottomInset;
-  dismissIndexSV.value = dismissOnDownFromIndex ?? -1;
-  edgeToEdgeAtLastSV.value = edgeToEdgeAtLast ? 1 : 0;
+  useEffect(() => {
+    detentsSV.value = detents;
+    bottomInsetSV.value = bottomInset;
+    dismissIndexSV.value = dismissOnDownFromIndex ?? -1;
+    edgeToEdgeAtLastSV.value = edgeToEdgeAtLast ? 1 : 0;
+  }, [
+    bottomInset,
+    dismissOnDownFromIndex,
+    detents,
+    detentsSV,
+    edgeToEdgeAtLast,
+    edgeToEdgeAtLastSV,
+    bottomInsetSV,
+    dismissIndexSV,
+  ]);
 
   // Per-gesture state (worklet-owned; reset each onBegin, read through onEnd).
   const gStartH = useSharedValue(detents[index]);
@@ -140,7 +186,42 @@ export default React.memo(function BottomSheet({
   onIndexChangeRef.current = onIndexChange;
   const onDismissRef = useRef(onDismiss);
   onDismissRef.current = onDismiss;
+  const onDismissCompleteRef = useRef(onDismissComplete);
+  onDismissCompleteRef.current = onDismissComplete;
   const dismiss = useCallback(() => onDismissRef.current?.(), []);
+  const dismissComplete = useCallback(() => onDismissCompleteRef.current?.(), []);
+  const dismissTranslateYInternal = useSharedValue(0);
+  const dismissY = dismissTranslateY ?? dismissTranslateYInternal;
+  const dismissDistanceSV = useSharedValue(dismissDistance ?? 1000);
+  useEffect(() => {
+    dismissDistanceSV.value = dismissDistance ?? 1000;
+  }, [dismissDistance, dismissDistanceSV]);
+
+  const startTranslateDismiss = useCallback((notifyDismiss: boolean) => {
+    cancelAnimation(dismissY);
+    dismissY.value = withTiming(
+      dismissDistanceSV.value,
+      { duration: 220 },
+      (finished) => {
+        'worklet';
+        if (!finished) return;
+        if (notifyDismiss) runOnJS(dismiss)();
+        runOnJS(dismissComplete)();
+      },
+    );
+  }, [dismissComplete, dismissDistanceSV, dismiss, dismissY]);
+
+  // Controlled close (X / scrim / parent visibility) uses the same fixed-size
+  // translateY exit as the gesture path, but must not notify onDismiss twice.
+  useEffect(() => {
+    if (dismissTranslateY == null || dismissRequested == null) return;
+    if (dismissRequested) {
+      cancelAnimation(dismissY);
+      dismissY.value = 0;
+      return;
+    }
+    startTranslateDismiss(false);
+  }, [dismissRequested, dismissTranslateY, dismissY, startTranslateDismiss]);
 
   // Settle a released sheet-drag on the JS thread — reuses the unit-tested pure
   // helpers, then springs the shared height (carrying the fling velocity) and
@@ -179,6 +260,10 @@ export default React.memo(function BottomSheet({
         .onBegin(() => {
           'worklet';
           cancelAnimation(height);
+          if (dismissTranslateY != null) {
+            cancelAnimation(dismissY);
+            dismissY.value = 0;
+          }
           gStartH.value = height.value;
           gMode.value = MODE_NONE;
         })
@@ -202,6 +287,22 @@ export default React.memo(function BottomSheet({
             gStartScroll.value = scrollOffset.value;
           }
           if (gMode.value === MODE_SHEET) {
+            // Fixed-size sheets leave the detent height untouched while a
+            // downward dismissal is being decided. Moving the whole panel
+            // prevents the old height rubber-band from flashing a larger
+            // sheet before it disappears.
+            const dismissIndex = dismissIndexSV.value;
+            const fixedDismissDrag = dismissTranslateY != null
+              && dismissIndex >= 0
+              && gStartH.value >= d[dismissIndex] - EPS
+              && e.translationY > 0;
+            if (fixedDismissDrag) {
+              height.value = gStartH.value;
+              dismissY.value = Math.min(dismissDistanceSV.value, e.translationY);
+              scrollTo(scrollRef, 0, gStartScroll.value, false);
+              return;
+            }
+            if (dismissTranslateY != null) dismissY.value = 0;
             // Position-based: the sheet tracks the finger across the whole detent
             // range (rubber-banding only past the outer ends), so a long drag can
             // jump straight from peek to full instead of stopping one stage on.
@@ -225,12 +326,32 @@ export default React.memo(function BottomSheet({
               && gStartH.value >= d[dismissIndex] - EPS
               && (e.translationY > DISMISS_TRAVEL || e.velocityY > DISMISS_VELOCITY);
             if (canDismiss) {
-              height.value = withSpring(0, SPRING, (finished) => {
-                'worklet';
-                if (finished) runOnJS(dismiss)();
-              });
+              if (dismissTranslateY != null) {
+                cancelAnimation(dismissY);
+                dismissY.value = withTiming(
+                  dismissDistanceSV.value,
+                  { duration: 220 },
+                  (finished) => {
+                    'worklet';
+                    if (finished) {
+                      runOnJS(dismiss)();
+                      runOnJS(dismissComplete)();
+                    }
+                  },
+                );
+              } else {
+                height.value = withSpring(0, SPRING, (finished) => {
+                  'worklet';
+                  if (finished) runOnJS(dismiss)();
+                });
+              }
             } else {
-              runOnJS(settle)(height.value, e.velocityY);
+              if (dismissTranslateY != null) {
+                dismissY.value = withSpring(0, SPRING);
+                runOnJS(settle)(gStartH.value - e.translationY, e.velocityY);
+              } else {
+                runOnJS(settle)(height.value, e.velocityY);
+              }
             }
           }
           gMode.value = MODE_NONE;
@@ -248,6 +369,10 @@ export default React.memo(function BottomSheet({
       gStartScroll,
       scrollOffset,
       dismiss,
+      dismissComplete,
+      dismissDistanceSV,
+      dismissTranslateY,
+      dismissY,
     ],
   );
 
@@ -284,6 +409,7 @@ export default React.memo(function BottomSheet({
       borderTopRightRadius: topRadius,
       borderBottomLeftRadius: bottomRadius,
       borderBottomRightRadius: bottomRadius,
+      transform: [{ translateY: dismissY.value }],
     };
   });
 
@@ -291,7 +417,10 @@ export default React.memo(function BottomSheet({
     <GestureDetector gesture={pan}>
       <Animated.View style={[styles.sheet, sheetStyle]}>
         <liquidGlass.GlassView
-          tintColor={Platform.OS === 'android' ? glass.sheetOpaque : glass.sheet}
+          // iOS uses the system material without an artificial opaque tint so
+          // the map remains visible at Peek and the same surface survives
+          // Stage 1/2. Android keeps its solid fallback.
+          tintColor={Platform.OS === 'android' ? glass.sheetOpaque : undefined}
           style={StyleSheet.absoluteFill}
         />
         <AnimatedScrollView
@@ -313,14 +442,13 @@ export default React.memo(function BottomSheet({
           contentContainerStyle={{
             paddingHorizontal: 16,
             paddingBottom: 40,
-            paddingTop: headerH,
+            paddingTop: headerH + contentTopPadding,
           }}
         >
           {children}
         </AnimatedScrollView>
-        {/* Grabber + header float over the content on their own thin frosted
-            veil, so scrolled content visibly blurs as it slides beneath them
-            (and never pokes out above — the veil covers the grab zone too). */}
+        {/* Header stays transparent so the sheet uses one native material
+            surface instead of stacking a second blur over the map. */}
         <View
           style={styles.headerBlock}
           onLayout={(e) => {
@@ -331,11 +459,15 @@ export default React.memo(function BottomSheet({
             onHeaderHeightRef.current?.(h);
           }}
         >
-          <liquidGlass.GlassView tintColor={glass.headerVeil} style={StyleSheet.absoluteFill} />
-          <View style={styles.grabZone}>
+          <View style={compactGrabberSpacing ? styles.grabZoneCompact : styles.grabZone}>
             <View style={styles.grabber} />
           </View>
-          {header}
+          <Animated.View
+            style={headerVisibilityStyle}
+            pointerEvents={canHideHeader && headerHidden ? 'none' : 'auto'}
+          >
+            {header}
+          </Animated.View>
         </View>
       </Animated.View>
     </GestureDetector>
@@ -374,6 +506,7 @@ const styles = StyleSheet.create({
   headerBlock: { position: 'absolute', top: 0, left: 0, right: 0 },
   // Tighter top so peek chrome sits closer to the sheet edge.
   grabZone: { paddingTop: 6, paddingBottom: 4, alignItems: 'center' },
+  grabZoneCompact: { paddingTop: 3, paddingBottom: 2, alignItems: 'center' },
   grabber: {
     width: 36,
     height: 4,

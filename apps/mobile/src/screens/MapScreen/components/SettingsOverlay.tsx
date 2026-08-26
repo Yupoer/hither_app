@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -15,6 +16,7 @@ import SystemToggle from '../../../components/SystemToggle';
 import PrefSlider from '../../../components/PrefSlider';
 import NotificationPreferencesCard from '../../../components/NotificationPreferencesCard';
 import PremiumBanner from '../../../components/PremiumBanner';
+import { AccountSheetContent } from '../../../components/AccountSheet';
 import SettingsChildSheet from './SettingsChildSheet';
 import { AVATAR_COLORS, AVATAR_EMOJI, avatarColorForGroup, avatarForGroup } from '../../../constants/avatars';
 import type { Group } from '../../../types';
@@ -48,8 +50,7 @@ interface SettingsOverlayProps {
   /** Sign out — list row only; red style only on confirm dialog. */
   onConfirmSignOut: () => void;
   onOpenPaywall: () => void;
-  liveActivityUnlocked?: boolean;
-  onOpenAccount: () => void;
+  onAccountDeleted: () => void;
   onOpenDiagnostics: () => void;
   group?: Group | null;
   isLeader?: boolean;
@@ -113,8 +114,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
   onConfirmLeave,
   onConfirmSignOut,
   onOpenPaywall,
-  liveActivityUnlocked = false,
-  onOpenAccount,
+  onAccountDeleted,
   onOpenDiagnostics,
   group,
   isLeader = false,
@@ -130,7 +130,6 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
     textScale,
     diagnosticUploadEnabled,
     obliqueLocate,
-    liveActivityEnabled,
     gatherCardDefaultExpanded,
     gatherCardTitleMarquee,
     gatherCardMarqueeSpeed,
@@ -139,7 +138,6 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
     setTextScale,
     setDiagnosticUploadEnabled,
     setObliqueLocate,
-    setLiveActivityEnabled,
     setGatherCardDefaultExpanded,
     setGatherCardTitleMarquee,
     setGatherCardMarqueeSpeed,
@@ -148,6 +146,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
   const accent = colors.accent;
   type SettingsChild =
     | 'root'
+    | 'account'
     | 'language'
     | 'theme'
     | 'textSize'
@@ -156,20 +155,18 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
     | 'mapJourney'
     | 'support';
   const [page, setPage] = useState<SettingsChild>('root');
-  const [mounted, setMounted] = useState(visible);
   const [groupAvatar, setGroupAvatar] = useState(group?.avatar ?? (group ? avatarForGroup(group.id) : AVATAR_EMOJI[0]));
   const [groupAvatarColor, setGroupAvatarColor] = useState(group?.avatarColor ?? (group ? avatarColorForGroup(group.id) : AVATAR_COLORS[0]));
   const [savingGroupAvatar, setSavingGroupAvatar] = useState(false);
 
   useEffect(() => {
     if (visible) {
-      setMounted(true);
       setPage('root');
       setGroupAvatar(group?.avatar ?? (group ? avatarForGroup(group.id) : AVATAR_EMOJI[0]));
       setGroupAvatarColor(group?.avatarColor ?? (group ? avatarColorForGroup(group.id) : AVATAR_COLORS[0]));
       return;
     }
-    setMounted(false);
+    setPage('root');
   }, [visible, group, group?.id, group?.avatar, group?.avatarColor]);
 
   const saveGroupAvatar = useCallback(async () => {
@@ -278,21 +275,6 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
     return t('settings.otaUpdate', { id: shortId });
   }, [t]);
 
-  const handleLiveActivityChange = useCallback((next: boolean) => {
-    if (!next) {
-      void setLiveActivityEnabled(false);
-      return;
-    }
-    if (!liveActivityUnlocked) {
-      void setLiveActivityEnabled(false);
-      onOpenPaywall();
-      return;
-    }
-    void setLiveActivityEnabled(true);
-  }, [liveActivityUnlocked, onOpenPaywall, setLiveActivityEnabled]);
-
-  if (!mounted) return null;
-
   const pageTitle = t('map.overlaySettings');
   const closeChild = () => setPage('root');
 
@@ -307,6 +289,9 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
         onClose={onClose}
         title={pageTitle}
         zIndex={80}
+        initialStage={1}
+        stageTwoRatio={0.9}
+        edgeToEdgeAtLast
       >
       <View style={styles.overlayBody}>
         {!isPro ? (
@@ -320,7 +305,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
           <NavRow
             title={t('settings.account')}
             description={t('settings.accountDescription')}
-            onPress={onOpenAccount}
+            onPress={() => setPage('account')}
             styles={styles}
           />
           <NavRow
@@ -439,13 +424,30 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
           />
         </View>
       </View>
+
+      <SettingsChildSheet
+        visible={page === 'account'}
+        onClose={closeChild}
+        title={t('settings.account')}
+        initialStage={1}
+        stageTwoRatio={0.9}
+        wrapContentInScrollView={false}
+      >
+        <AccountSheetContent
+          visible={page === 'account'}
+          onClose={closeChild}
+          accent={accent}
+          contentTopPadding={12}
+          onAccountDeleted={onAccountDeleted}
+        />
       </SettingsChildSheet>
 
       <SettingsChildSheet
         visible={page === 'groupAvatar'}
         onClose={closeChild}
-        onBack={closeChild}
         title={t('settings.groupAvatar')}
+        initialStage={1}
+        stageTwoRatio={0.8}
       >
         <View style={styles.overlayBody}>
           <Text style={styles.settingsInlineLabel}>{t('settings.groupAvatarHint')}</Text>
@@ -466,7 +468,12 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
               </Pressable>
             ))}
           </View>
-          <View style={settingsSlideStyles.groupAvatarColors}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={settingsSlideStyles.groupAvatarColors}
+            contentContainerStyle={settingsSlideStyles.groupAvatarColorsContent}
+          >
             {AVATAR_COLORS.map((color) => (
               <Pressable
                 key={color}
@@ -480,7 +487,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
                 ]}
               />
             ))}
-          </View>
+          </ScrollView>
           <TouchableOpacity
             onPress={() => { void saveGroupAvatar(); }}
             disabled={savingGroupAvatar}
@@ -495,7 +502,6 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
       <SettingsChildSheet
         visible={page === 'language'}
         onClose={closeChild}
-        onBack={closeChild}
         title={t('settings.language')}
 
       >
@@ -523,7 +529,6 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
       <SettingsChildSheet
         visible={page === 'theme'}
         onClose={closeChild}
-        onBack={closeChild}
         title={t('settings.theme')}
 
       >
@@ -558,7 +563,6 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
       <SettingsChildSheet
         visible={page === 'textSize'}
         onClose={closeChild}
-        onBack={closeChild}
         title={t('settings.textSize')}
 
       >
@@ -589,7 +593,6 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
       <SettingsChildSheet
         visible={page === 'notifications'}
         onClose={closeChild}
-        onBack={closeChild}
         title={t('settings.notifSection')}
 
       >
@@ -601,7 +604,6 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
       <SettingsChildSheet
         visible={page === 'mapJourney'}
         onClose={closeChild}
-        onBack={closeChild}
         title={t('settings.sectionMapJourney')}
 
       >
@@ -615,17 +617,6 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
               value={obliqueLocate}
               onValueChange={setObliqueLocate}
               accessibilityLabel={t('settings.obliqueLocate')}
-            />
-          </View>
-          <View style={styles.accuracyRow}>
-            <View style={styles.accuracyCopy}>
-              <Text style={styles.accuracyLabel}>{t('settings.liveActivity')}</Text>
-              <Text style={styles.accuracySubhint}>{t('settings.liveActivityHint')}</Text>
-            </View>
-            <SystemToggle
-              value={liveActivityEnabled}
-              onValueChange={handleLiveActivityChange}
-              accessibilityLabel={t('settings.liveActivity')}
             />
           </View>
           <View style={styles.accuracyRow}>
@@ -675,7 +666,6 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
       <SettingsChildSheet
         visible={page === 'support'}
         onClose={closeChild}
-        onBack={closeChild}
         title={t('settings.sectionSupport')}
 
       >
@@ -735,6 +725,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
           </View>
         </View>
       </SettingsChildSheet>
+      </SettingsChildSheet>
     </View>
   );
 });
@@ -768,6 +759,8 @@ const settingsSlideStyles = StyleSheet.create({
   },
   headerSpacer: { width: 44, height: 44 },
   groupAvatarGrid: {
+    width: 300,
+    alignSelf: 'center',
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
@@ -784,7 +777,12 @@ const settingsSlideStyles = StyleSheet.create({
   },
   groupAvatarChoiceSelected: { borderColor: '#fff' },
   groupAvatarEmoji: { fontSize: 26 },
-  groupAvatarColors: { flexDirection: 'row', gap: 10, paddingBottom: 18 },
+  groupAvatarColors: {
+    width: 300,
+    alignSelf: 'center',
+    paddingBottom: 18,
+  },
+  groupAvatarColorsContent: { flexDirection: 'row', gap: 10 },
   groupAvatarColor: { width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: 'transparent' },
   groupAvatarColorSelected: { borderColor: '#fff' },
 });

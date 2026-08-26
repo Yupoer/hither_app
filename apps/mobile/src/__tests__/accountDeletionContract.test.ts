@@ -32,6 +32,10 @@ describe('account deletion placement contract', () => {
     expect(accountSheet).toContain('confirmDeleteAccount');
     expect(accountSheet).toContain("'account.delete'");
     expect(accountSheet).toContain('onAccountDeleted');
+    expect(accountSheet).toContain('account-delete-loading');
+    expect(accountSheet).toContain('onBusyChange: setDeleting');
+    expect(roleSelect).toContain('account-delete-loading');
+    expect(roleSelect).toContain('onBusyChange: setDeleting');
     expect(accountSheet).toMatch(/user\s*\?[\s\S]*confirmDeleteAccount/);
     expect(mapScreen).toContain('onAccountDeleted');
     expect(mapScreen).toContain("name: 'Login'");

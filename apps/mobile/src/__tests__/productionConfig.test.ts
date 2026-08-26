@@ -105,7 +105,8 @@ describe('production mobile configuration', () => {
     expect(nativeInfoPlist).toContain(
       appConfig.expo.ios.infoPlist.NSLocationAlwaysAndWhenInUseUsageDescription,
     );
-    expect(nativeInfoPlist).toContain('<string>Dark</string>');
+    expect(appConfig.expo.userInterfaceStyle).toBe('automatic');
+    expect(nativeInfoPlist).toContain('<string>Automatic</string>');
     expect(nativeInfoPlist).toContain('<string>UIInterfaceOrientationPortrait</string>');
   });
 
@@ -138,6 +139,7 @@ describe('production mobile configuration', () => {
       'hither-maps/ios/HitherMaps.podspec',
       'hither-notifications/ios/HitherNotifications.podspec',
       'hither-menu/ios/HitherMenu.podspec',
+      'hither-sheet-pane-tabs/ios/HitherSheetPaneTabs.podspec',
     ];
     for (const path of podspecs) {
       expect(readFileSync(join(__dirname, '../../modules', path), 'utf8'))

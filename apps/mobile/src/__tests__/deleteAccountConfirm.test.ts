@@ -28,11 +28,14 @@ describe('confirmDeleteAccount', () => {
     mockConfirmAction.mockImplementation((_opts, onConfirm) => {
       onConfirm();
     });
-    mockRunUiAction.mockImplementation(async (_id, body) => {
+    mockRunUiAction.mockImplementation(async (_id, body, options) => {
+      options?.onBusyChange?.(true);
       try {
         await body({ isCurrent: () => true });
       } catch {
         // production runUiAction records ui_action_error and does not rethrow
+      } finally {
+        options?.onBusyChange?.(false);
       }
     });
   });
@@ -40,6 +43,7 @@ describe('confirmDeleteAccount', () => {
   it('asks once then runs the high-risk action and resets on success', async () => {
     const deleteAccount = jest.fn().mockResolvedValue(undefined);
     const onDeleted = jest.fn();
+    const onBusyChange = jest.fn();
 
     confirmDeleteAccount({
       t,
@@ -47,6 +51,7 @@ describe('confirmDeleteAccount', () => {
       screen: 'Account',
       deleteAccount,
       onDeleted,
+      onBusyChange,
     });
 
     expect(mockConfirmAction).toHaveBeenCalledWith(
@@ -69,6 +74,7 @@ describe('confirmDeleteAccount', () => {
     expect(deleteAccount).toHaveBeenCalled();
     expect(mockLogEvent).toHaveBeenCalledWith('account_deleted');
     expect(onDeleted).toHaveBeenCalled();
+    expect(onBusyChange.mock.calls).toEqual([[true], [false]]);
     expect(mockAlert).not.toHaveBeenCalled();
   });
 

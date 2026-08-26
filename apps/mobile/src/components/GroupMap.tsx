@@ -86,6 +86,8 @@ const MAP_LOADED_TIMEOUT_MS = 10_000;
 export type CenterOnOptions = {
   zoom?: number;
   altitude?: number;
+  /** Start navigation can snap to a newly selected point without camera travel. */
+  animated?: boolean;
 };
 
 /** Imperative handle so the screen can drive the map camera. */
@@ -557,6 +559,14 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
   const insets = useSafeAreaInsets();
   const { colors, themeName } = useTheme();
   const { dayColors } = usePreferences();
+  const mergedMarkers = useMemo(
+    () => mergeMapMarkers({
+      destinations: destinations ?? [],
+      dailyAccommodations: dailyAccommodations ?? undefined,
+      dailyAccommodation: dailyAccommodation ?? null,
+    }),
+    [dailyAccommodation, dailyAccommodations, destinations],
+  );
 
   useEffect(() => {
     void AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
@@ -589,7 +599,10 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
   const mapInterfaceStyle: 'light' | 'dark' = themeName === 'day' ? 'light' : 'dark';
   const memberCenter = members.find((member) => member.coordinates)?.coordinates;
   const fallbackCenter = initialCenter ?? memberCenter;
-  const mapInitialRegion = initialRegionFor(gathering?.coordinates ?? fallbackCenter, latOffset);
+  const mapInitialRegion = useMemo(
+    () => initialRegionFor(gathering?.coordinates ?? fallbackCenter, latOffset),
+    [fallbackCenter, gathering?.coordinates, latOffset],
+  );
   const [settledRouteViewport, setSettledRouteViewport] = useState<RouteViewport>(() =>
     routeViewportFromRegion({
       latitude: mapInitialRegion.latitude,
@@ -691,11 +704,12 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     () => ({
       ...platformizedMapViewProps({
         chrome: mapChrome,
+        headingEnabled: showsUserLocation && appActive,
         ...mapBoundaryCallbacks,
       }),
       ...defaultMapTransitProps(),
     }),
-    [mapChrome, mapBoundaryCallbacks],
+    [appActive, mapChrome, mapBoundaryCallbacks, showsUserLocation],
   );
   const mapViewProps = mapPlatformProps;
 
@@ -713,19 +727,21 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
         // Flat top-down: animateCamera with pitch 0 so we leave any prior
         // 45° oblique view cleanly (animateToRegion alone can leave pitch).
         // Place picks pass wider zoom/altitude; locate keeps street-level defaults.
-        mapRef.current?.animateCamera(
-          {
-            center: {
-              latitude: coordinates.latitude - latOffset,
-              longitude: coordinates.longitude,
-            },
-            pitch: 0,
-            heading: 0,
-            zoom: options?.zoom ?? LOCATE_ZOOM,
-            altitude: options?.altitude ?? LOCATE_ALTITUDE,
+        const camera = {
+          center: {
+            latitude: coordinates.latitude - latOffset,
+            longitude: coordinates.longitude,
           },
-          { duration: 280 },
-        );
+          pitch: 0,
+          heading: 0,
+          zoom: options?.zoom ?? LOCATE_ZOOM,
+          altitude: options?.altitude ?? LOCATE_ALTITUDE,
+        };
+        if (options?.animated === false) {
+          mapRef.current?.setCamera(camera);
+        } else {
+          mapRef.current?.animateCamera(camera, { duration: 280 });
+        }
       },
       focusOblique: (coordinates) => {
         centeredModeRef.current = 'user';
@@ -924,11 +940,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
         />
       ) : null}
 
-      {mergeMapMarkers({
-        destinations: destinations ?? [],
-        dailyAccommodations: dailyAccommodations ?? undefined,
-        dailyAccommodation: dailyAccommodation ?? null,
-      }).map((marker) => {
+      {mergedMarkers.map((marker) => {
         const stayLabel = stayCalloutLabel ?? 'Stay';
         if (marker.kind === 'daily_accommodation') {
           const dayNum = marker.day || 1;

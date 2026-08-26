@@ -45,7 +45,10 @@ describe('map UI placement contracts', () => {
     expect(settingsChildSheet).toContain('STAGE_ONE_RATIO = 0.52');
     expect(settingsChildSheet).toContain('STAGE_TWO_RATIO = 0.8');
     expect(settingsChildSheet).toContain('dismissOnDownFromIndex={0}');
-    expect(settingsChildSheet).toContain('edgeToEdgeAtLast={false}');
+    expect(settingsChildSheet).toContain('edgeToEdgeAtLast={edgeToEdgeAtLast}');
+    expect(settingsChildSheet).toContain('initialStage = 0');
+    expect(settingsOverlay).toContain('initialStage={1}');
+    expect(settingsOverlay).toContain('stageTwoRatio={0.9}');
     expect(settingsChildSheet).not.toContain('PanResponder');
   });
 
@@ -224,17 +227,17 @@ describe('map UI placement contracts', () => {
     expect(toolsBlock).toContain('testID="tools-enter-passive"');
     expect(toolsBlock).not.toContain('handleSharingEnabledChange');
     expect(toolsBlock).toContain('PrefSlider');
-    // Preference clutter moved out of Tools (Live Activity toggle stays in Settings).
-    // Tools may show a locked entitlement deep-link using settings.liveActivity label.
+    // Preference clutter stays out of Tools, while Live Activity is the one
+    // native switch directly below Passive Mode.
     expect(toolsBlock).not.toContain("t('settings.obliqueLocate')");
     expect(toolsBlock).not.toContain("t('settings.gatherCardDefaultExpanded')");
     expect(toolsBlock).not.toContain("t('settings.gatherCardTitleMarquee')");
-    expect(toolsBlock).toContain('tools-live-activity-locked');
-    expect(toolsBlock).not.toContain('setLiveActivityEnabled');
+    expect(toolsBlock).toContain('tools-live-activity-toggle');
+    expect(toolsBlock).toContain('setLiveActivityEnabled');
 
     expect(settingsOverlay).toContain("t('settings.sectionMapJourney')");
     expect(settingsOverlay).toContain("t('settings.obliqueLocate')");
-    expect(settingsOverlay).toContain("t('settings.liveActivity')");
+    expect(settingsOverlay).not.toContain("t('settings.liveActivity')");
     expect(settingsOverlay).toContain("t('settings.gatherCardDefaultExpanded')");
     expect(settingsOverlay).toContain("t('settings.gatherCardTitleMarquee')");
     expect(settingsOverlay).not.toContain("t('settings.passiveCompanionMode')");
@@ -363,13 +366,40 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).not.toContain('layout={LinearTransition.springify()');
     expect(mapScreen).toContain('function CarouselDots');
     expect(mapScreen).toContain('indicatorRowGeometry');
-    expect(mapScreen).toContain('withTiming(item.active ? 18 : 6');
+    expect(mapScreen).toContain('withTiming(active ? 18 : 6');
     expect(mapScreen).not.toContain('pillSlot');
     const carouselStart = mapScreen.indexOf('function CarouselDots');
     const carouselEnd = mapScreen.indexOf('function GatheringCardPressable', carouselStart);
     const carouselBlock = mapScreen.slice(carouselStart, carouselEnd);
     expect(carouselBlock).not.toMatch(/position:\s*['"]absolute['"]/);
     expect(carouselBlock).not.toContain('RnAnimated');
+  });
+
+  it('swaps the status and pane-tab presentations', () => {
+    const tabs = readFileSync(
+      join(__dirname, '../screens/MapScreen/components/SheetPaneTabs.ios.tsx'),
+      'utf8',
+    );
+    expect(tabs).toContain('requireNativeView');
+    expect(tabs).toContain('HitherSheetPaneTabs');
+    expect(tabs).toContain('onSelectionChange={handleSelectionChange}');
+    expect(tabs).toContain('const selectedIndex =');
+    expect(tabs).toContain('const labels = useMemo');
+    expect(tabs).not.toContain('<Pressable');
+    const statusTriggerStart = mapScreen.indexOf('myStatusTriggerInner:');
+    const statusTriggerBlock = mapScreen.slice(statusTriggerStart, statusTriggerStart + 180);
+    expect(statusTriggerStart).toBeGreaterThanOrEqual(0);
+    expect(statusTriggerBlock).toContain("flexDirection: 'row'");
+    expect(statusTriggerBlock).not.toContain("flexDirection: 'column'");
+  });
+
+  it('keeps settings content padded and exits fixed-size sheets by translation', () => {
+    expect(settingsChildSheet).toContain('dismissTranslateY={sheetTranslateY}');
+    expect(settingsChildSheet).toContain('dismissRequested={visible}');
+    expect(settingsChildSheet).toContain('contentTopPadding={12}');
+    expect(settingsChildSheet).not.toContain('sheetHeight.value = withSpring(0');
+    expect(bottomSheet).toContain('contentTopPadding = 0');
+    expect(bottomSheet).toContain('transform: [{ translateY: dismissY.value }]');
   });
 
   it('uses gathering-card press without scale bounce on expand or collapse', () => {
@@ -405,7 +435,7 @@ describe('map UI placement contracts', () => {
     // The shared sheet keeps non-edge stages inset and lets settings opt out of
     // the final edge-to-edge morph.
     expect(bottomSheet).toContain('d.map((_, i) => (edgeToEdgeAtLastSV.value && i === last ? 0 : 10))');
-    expect(settingsChildSheet).toContain('edgeToEdgeAtLast={false}');
+    expect(settingsChildSheet).toContain('edgeToEdgeAtLast={edgeToEdgeAtLast}');
   });
 
   it('snaps Segmented pill when track width appears (tools pane reveal)', () => {
@@ -413,14 +443,14 @@ describe('map UI placement contracts', () => {
     expect(segmented).toContain('prevSegWRef');
   });
 
-  it('renders Members/Route/Tools/Store as native segmented control without Liquid Glass rim', () => {
+  it('renders Members/Route/Tools/Store through the native selector without a JS glass shell', () => {
     const optionsStart = mapScreen.indexOf('const sheetPaneOptions = useMemo');
     const sheetChildrenEnd = mapScreen.indexOf('if (loading && !state)', optionsStart);
     const sheetBlock = mapScreen.slice(
       optionsStart,
       sheetChildrenEnd > 0 ? sheetChildrenEnd : optionsStart + 3000,
     );
-    // Tab shell is solid fill (no GlassView) so liquid-glass white rims never appear.
+    // Tab shell is the native selector; the map sheet owns the single surface.
     expect(sheetBlock).toContain('SheetPaneTabs');
     expect(sheetBlock).toContain('sheetPaneToggleWrap');
     expect(sheetBlock).not.toContain('liquidGlass.GlassView');
@@ -438,6 +468,46 @@ describe('map UI placement contracts', () => {
     expect(settingsOverlay).not.toContain('liquidGlass');
     expect(settingsOverlay).not.toContain('SheetPaneTabs');
     expect(settingsOverlay).not.toContain('PaneCoverFlow');
+  });
+
+  it('keeps the selector out of Peek and compacts only the map chrome', () => {
+    expect(mapScreen).toContain('const [sheetHeaderH, setSheetHeaderH] = useState(68);');
+    expect(mapScreen).not.toContain('sheetBodyVisibilityStyle');
+    expect(mapScreen).toContain("sheetBodyHidden: { display: 'none' }");
+    expect(mapScreen).not.toContain('[detents[0], detents[0] + 16]');
+    expect(mapScreen).toContain("pointerEvents={detent === 0 ? 'none' : 'auto'}");
+    expect(mapScreen).toContain('accessibilityElementsHidden={detent === 0}');
+    expect(mapScreen).toContain("importantForAccessibility={detent === 0 ? 'no-hide-descendants' : 'auto'}");
+    expect(mapScreen).toContain('compactGrabberSpacing');
+    expect(mapScreen).toContain('paddingTop: 2');
+    expect(mapScreen).toContain('paddingBottom: 11');
+    expect(bottomSheet).toContain('compactGrabberSpacing = false');
+    expect(bottomSheet).toContain('grabZoneCompact');
+    expect(bottomSheet).toContain('paddingTop: 3');
+    expect(bottomSheet).toContain('paddingBottom: 2');
+  });
+
+  it('hides the Stage 2 header controls as one group while scrolling', () => {
+    expect(bottomSheet).toContain('hideHeaderOnScroll?: boolean');
+    expect(bottomSheet).toContain('const canHideHeader = hideHeaderOnScroll && index === detents.length - 1;');
+    expect(bottomSheet).toContain('useAnimatedReaction');
+    expect(bottomSheet).toContain('scrollOffset.value > TOP_EPS');
+    expect(bottomSheet).toContain("pointerEvents={canHideHeader && headerHidden ? 'none' : 'auto'}");
+    expect(mapScreen).toContain('hideHeaderOnScroll');
+  });
+
+  it('keeps persistent Liquid Glass surfaces out of detent opacity ancestors', () => {
+    expect(mapScreen).not.toContain('chromeOpacityStyle');
+    expect(mapScreen).not.toContain('sheetHidden: { opacity: 0 }');
+    expect(mapScreen).toContain("sheetHidden: { display: 'none' }");
+    expect(mapScreen).toContain('showDenseChrome && !confirmCardReady && !atFull');
+    expect(bottomSheet).not.toContain('opacity: interpolate');
+  });
+
+  it('uses one fixed top corner radius across all sheet detents', () => {
+    expect(bottomSheet).toContain('const topRadius = SCREEN_CORNER_RADIUS;');
+    expect(bottomSheet).toContain('borderTopLeftRadius: topRadius');
+    expect(bottomSheet).toContain('borderTopRightRadius: topRadius');
   });
 
   it('keeps arrival beside navigation controls and auto-applies current time', () => {

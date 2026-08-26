@@ -1,14 +1,11 @@
 import * as Crypto from 'expo-crypto';
 import { useState, useMemo, useEffect, useCallback, useRef, RefObject } from 'react';
-import { Dimensions, type ScrollView } from 'react-native';
+import type { ScrollView } from 'react-native';
 import { isNetworkRequestError } from '../../../api/services/_helpers';
 import { distanceMeters } from '../../../utils/geo';
 import { resolveGatheringOutboxAfterSessionStart } from '../../../utils/gatheringSessionOutbox';
 import { promoteDestinationWithinDay } from '../../../utils/tripDay';
-import {
-  carouselScrollX,
-  followCarouselIndexAfterPromote,
-} from '../../../utils/journeyStartCarouselIdentity';
+import { followCarouselIndexAfterPromote } from '../../../utils/journeyStartCarouselIdentity';
 import type { Coordinates, Destination, GroupState, JourneyStatus } from '../../../types';
 import type { NavigationSession } from '../../../types/navigation';
 import type { GroupMapHandle } from '../../../components/GroupMap';
@@ -80,7 +77,6 @@ export function useJourneyNavigation({
   refresh: _refresh,
   t,
   mapRef,
-  carouselRef,
   setSelectedIndex,
   navigationSession,
   startSession,
@@ -216,7 +212,7 @@ export function useJourneyNavigation({
     (dest: Destination, index: number) => {
       setLocalTargetId(dest.id);
       setSelectedIndex(index);
-      mapRef.current?.centerOn(dest.coordinates);
+      mapRef.current?.centerOn(dest.coordinates, { animated: false });
     },
     [mapRef, setSelectedIndex],
   );
@@ -283,7 +279,9 @@ export function useJourneyNavigation({
     setPendingLeaderTargetId(dest.id);
     setOptimisticTeamTargetId(dest.id);
     serverOrStartedSessionRef.current = false;
-    mapRef.current?.centerOn(dest.coordinates);
+    // Starting a point is a direct target change, not a user map pan. Avoid
+    // animating from the previous point while the carousel is being reordered.
+    mapRef.current?.centerOn(dest.coordinates, { animated: false });
 
     let enqueued: {
       local: ActiveGatheringState;
@@ -412,7 +410,6 @@ export function useJourneyNavigation({
     destinations,
     navigationDestinations,
     setSelectedIndex,
-    carouselRef,
     createRequestId,
     runTeamEnd,
     restorePendingStart,
@@ -490,23 +487,19 @@ export function useJourneyNavigation({
   }, [isLeader, navTarget, selectedDestination, destinations, requestTeamEnd]);
 
   // Reorder is asynchronous. Project the selected page only after the latest
-  // visible carousel order contains the clicked id; never derive it from the
-  // stale pre-promote array (which caused every later point to land on page 2).
+  // visible carousel order exactly matches the ID-based promote result; a
+  // stale array still contains the target but must not clear the pending ID.
   useEffect(() => {
     const targetId = pendingCarouselTargetIdRef.current;
     if (!targetId) return;
-    const index = navigationDestinations.findIndex((item) => item.id === targetId);
-    if (index < 0) return;
+    const index = followCarouselIndexAfterPromote({
+      destinations: navigationDestinations,
+      sharedTargetId: targetId,
+    });
+    if (index == null) return;
     pendingCarouselTargetIdRef.current = null;
     setSelectedIndex(index);
-    const pageW = Dimensions.get('window').width;
-    requestAnimationFrame(() => {
-      carouselRef.current?.scrollTo({
-        x: carouselScrollX(index, pageW),
-        animated: true,
-      });
-    });
-  }, [carouselRef, navigationDestinations, setSelectedIndex]);
+  }, [navigationDestinations, setSelectedIndex]);
 
   useEffect(() => {
     if (!sharedTargetId) {
@@ -525,7 +518,9 @@ export function useJourneyNavigation({
     if (lastFollowerCenterKeyRef.current === centerKey) return;
     lastFollowerCenterKeyRef.current = centerKey;
     setSelectedIndex(index);
-    mapRef.current?.centerOn(destination.coordinates);
+    // Target changes from Start/follow are direct selections; only a manual
+    // carousel swipe should animate the camera between points.
+    mapRef.current?.centerOn(destination.coordinates, { animated: false });
   }, [destinations, mapRef, navigationSession?.id, setSelectedIndex, sharedTargetId]);
 
   return {

@@ -166,6 +166,7 @@ export interface StorePaneProps {
   groupId: string | null | undefined;
   groupName: string | null | undefined;
   isAnonymous: boolean;
+  personalPremiumActive: boolean;
   accent: string;
   t: TFn;
   /** When set, surface this product near the top and highlight it. */
@@ -233,6 +234,7 @@ export const StorePane = React.memo(function StorePane({
   groupId,
   groupName,
   isAnonymous,
+  personalPremiumActive,
   accent,
   t,
   highlightProductCode,
@@ -1017,13 +1019,17 @@ export const StorePane = React.memo(function StorePane({
     >
       <Text style={[styles.heading, styles.headingFirst]}>{t('store.title')}</Text>
 
-      {/* Premium first; full-screen paywall sheet (restore stays on Settings). */}
-      <View style={styles.premiumBlock} testID="store-premium-section">
-        <PremiumBanner onPress={() => onOpenSubscribe?.()} testID="store-open-subscribe" />
-      </View>
+      {!personalPremiumActive ? (
+        <>
+          {/* Premium first; full-screen paywall sheet (restore stays on Settings). */}
+          <View style={styles.premiumBlock} testID="store-premium-section">
+            <PremiumBanner onPress={() => onOpenSubscribe?.()} testID="store-open-subscribe" />
+          </View>
 
-      {/* Divider between Premium and the ad / economy block. */}
-      <View style={styles.sectionDivider} testID="store-premium-ad-divider" />
+          {/* Divider between Premium and the ad / economy block. */}
+          <View style={styles.sectionDivider} testID="store-premium-ad-divider" />
+        </>
+      ) : null}
 
       {loading && !snapshot ? (
         <View style={styles.shellCard} testID="store-loading">
@@ -1384,7 +1390,7 @@ const makeStyles = (scale: number, boldText: boolean) => {
       color: glass.textSecondary,
     },
     productTitle: {
-      fontSize: 13,
+      fontSize: s(16, 14),
       fontWeight: '700',
       color: '#fff',
     },

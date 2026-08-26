@@ -197,6 +197,7 @@ export default function AuthScreen({ navigation, route }: Props) {
                   isLeader ? groupNameRef.current?.focus() : codeRef.current?.focus()
                 }
                 accessibilityLabel={t('auth.nameLabel')}
+                testID="auth-name"
               />
             </View>
 
@@ -232,6 +233,7 @@ export default function AuthScreen({ navigation, route }: Props) {
                       );
                     }}
                     accessibilityLabel={t('group.nameLabel')}
+                    testID="auth-group-name"
                   />
                 </View>
                 <Text style={styles.label}>{t('settings.groupAvatar')}</Text>
@@ -302,6 +304,7 @@ export default function AuthScreen({ navigation, route }: Props) {
                   <TextInput
                     ref={codeRef}
                     style={styles.codeHidden}
+                    testID="auth-code"
                     value={code}
                     onChangeText={(v) => {
                       setCodeError(false);
@@ -352,6 +355,7 @@ export default function AuthScreen({ navigation, route }: Props) {
                 }
               }}
               disabled={!canSubmit}
+              testID={isLeader ? 'auth-create-group' : 'auth-join-group'}
               accessibilityRole="button"
               style={({ pressed }) => [
                 styles.cta,

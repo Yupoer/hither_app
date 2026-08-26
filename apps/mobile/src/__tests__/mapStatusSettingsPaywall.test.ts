@@ -43,8 +43,8 @@ describe('#220 map / status / settings / paywall contracts', () => {
     expect(tabs).toContain('testID="sheet-pane-tabs"');
     expect(tabs).toContain('@expo/ui/community/segmented-control');
     expect(tabs).not.toContain('NativeSwitch');
-    expect(tabs).toContain('bag-handle');
-    expect(tabs).toContain('people-outline');
+    expect(tabs).toContain('const labels = useMemo(() => options.map((option) => option.label), [options])');
+    expect(tabs).not.toContain('<Pressable');
   });
 
   it('renders self flock copy as 你 plus role and freshness', () => {
@@ -65,7 +65,7 @@ describe('#220 map / status / settings / paywall contracts', () => {
     expect(settings).toContain('testID="settings-subscribe-banner"');
     expect(settings).toContain('{!isPro ?');
     expect(settings).toContain('<SettingsChildSheet');
-    expect(settings).toContain('onBack={closeChild}');
+    expect(settings).not.toContain('onBack={closeChild}');
     expect(settings).toContain("setPage('textSize')");
     expect(settings).toContain("setPage('notifications')");
     expect(settings).toContain("setPage('mapJourney')");

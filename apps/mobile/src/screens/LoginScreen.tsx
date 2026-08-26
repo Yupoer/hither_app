@@ -60,7 +60,7 @@ export default function LoginScreen({ navigation }: Props) {
 
   const isSignUp = mode === 'signup';
   const emailOk = /\S+@\S+\.\S+/.test(email.trim());
-  const passwordOk = password.length >= MIN_PASSWORD;
+  const passwordOk = password.replace(/\s/g, '').length >= MIN_PASSWORD;
   const nicknameOk = !isSignUp || nickname.trim().length >= 1;
   const canSubmit = emailOk && passwordOk && nicknameOk && !busy;
 
@@ -80,11 +80,13 @@ export default function LoginScreen({ navigation }: Props) {
   /** Body for SafePressable / runUiAction — token already provided by runner. */
   async function submitEmail(token: { isCurrent: () => boolean }) {
     if (!canSubmit && !busy) return;
+    const normalizedEmail = email.trim();
+    const normalizedNickname = nickname.trim();
     try {
       if (isSignUp) {
-        await signUpWithEmail({ email, password, nickname });
+        await signUpWithEmail({ email: normalizedEmail, password, nickname: normalizedNickname });
       } else {
-        await signInWithEmail({ email, password });
+        await signInWithEmail({ email: normalizedEmail, password });
       }
       if (!token.isCurrent()) return;
       goToApp();
@@ -199,6 +201,7 @@ export default function LoginScreen({ navigation }: Props) {
                 key={m}
                 onPress={() => setMode(m)}
                 accessibilityRole="button"
+                testID={`login-tab-${m}`}
                 style={[styles.tab, mode === m && styles.tabActive]}
               >
                 <Text style={[styles.tabText, mode === m && styles.tabTextActive]}>
@@ -222,6 +225,7 @@ export default function LoginScreen({ navigation }: Props) {
               keyboardType="email-address"
               textContentType="emailAddress"
               accessibilityLabel={t('login.email')}
+              testID="login-email"
             />
           </View>
 
@@ -238,6 +242,7 @@ export default function LoginScreen({ navigation }: Props) {
               secureTextEntry
               textContentType={isSignUp ? 'newPassword' : 'password'}
               accessibilityLabel={t('login.password')}
+              testID="login-password"
             />
           </View>
 
@@ -254,6 +259,7 @@ export default function LoginScreen({ navigation }: Props) {
                   keyboardAppearance="dark"
                   autoCapitalize="none"
                   accessibilityLabel={t('login.nickname')}
+                  testID="login-nickname"
                 />
               </View>
             </>
@@ -274,6 +280,7 @@ export default function LoginScreen({ navigation }: Props) {
               }
             }}
             disabled={!canSubmit}
+            testID="login-submit"
             accessibilityRole="button"
             style={({ pressed }) => [
               styles.cta,
@@ -458,7 +465,7 @@ const makeStyles = (accent: string) =>
       justifyContent: 'center',
       gap: 8,
       marginTop: 24,
-      backgroundColor: accentMix(accent, 24),
+      backgroundColor: accent,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: accentMix(accent, 55),
     },

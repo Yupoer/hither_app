@@ -4,6 +4,7 @@ import {
   NativeScrollEvent,
   NativeSyntheticEvent,
   PanResponder,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -38,6 +39,7 @@ export default function OverlaySheet({
   doneLabel = 'Done',
   headerLeft,
   opaque = false,
+  material = 'default',
   edgeToEdge = false,
   children,
 }: {
@@ -53,6 +55,8 @@ export default function OverlaySheet({
   headerLeft?: React.ReactNode;
   /** 100% opaque panel (no map bleed-through). Used by Settings. */
   opaque?: boolean;
+  /** Use the same untinted native regular glass as the map Stage 2 sheet. */
+  material?: 'default' | 'mapSheet';
   /** Flush left/right (no 8px inset). Used by Settings full-bleed sheet. */
   edgeToEdge?: boolean;
   children: React.ReactNode;
@@ -194,7 +198,14 @@ export default function OverlaySheet({
         ]}
       >
         <liquidGlass.GlassView
-          tintColor={opaque ? glass.overlayOpaque : glass.overlay}
+          glassStyle="regular"
+          tintColor={
+            material === 'mapSheet' && Platform.OS === 'ios'
+              ? undefined
+              : opaque
+                ? glass.overlayOpaque
+                : glass.overlay
+          }
           style={StyleSheet.absoluteFill}
         />
         <View {...grabberPan.panHandlers}>

@@ -7,11 +7,9 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   Extrapolation,
   interpolate,
-  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
@@ -30,6 +28,10 @@ export default function SettingsChildSheet({
   title,
   children,
   zIndex = 90,
+  initialStage = 0,
+  stageTwoRatio = STAGE_TWO_RATIO,
+  edgeToEdgeAtLast = true,
+  wrapContentInScrollView = true,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -37,18 +39,26 @@ export default function SettingsChildSheet({
   title: string;
   children: React.ReactNode;
   zIndex?: number;
+  /** Root settings opens at Stage 2; child pages keep Stage 1. */
+  initialStage?: 0 | 1;
+  stageTwoRatio?: number;
+  edgeToEdgeAtLast?: boolean;
+  wrapContentInScrollView?: boolean;
 }) {
+  const sheetChildren = React.Children.toArray(children);
+  const rootContent = sheetChildren[0] ?? <View />;
+  const nestedSheets = sheetChildren.slice(1);
   const { height } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
   const detents = useMemo(
     () => [
       Math.round(height * STAGE_ONE_RATIO),
-      Math.round(height * STAGE_TWO_RATIO),
+      Math.round(height * stageTwoRatio),
     ],
-    [height],
+    [height, stageTwoRatio],
   );
-  const sheetHeight = useSharedValue(detents[0]);
-  const [index, setIndex] = useState(0);
+  const sheetHeight = useSharedValue(0);
+  const sheetTranslateY = useSharedValue(0);
+  const [index, setIndex] = useState<number>(initialStage);
   const [mounted, setMounted] = useState(visible);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -57,29 +67,35 @@ export default function SettingsChildSheet({
   useEffect(() => {
     if (visible) {
       setMounted(true);
-      setIndex(0);
-      sheetHeight.value = withSpring(detents[0], SPRING);
+      setIndex(initialStage);
+      sheetTranslateY.value = 0;
+      // A zero-height mounted sheet gives every open path the same bottom-up
+      // entrance, including the first render after a parent toggles visible.
+      sheetHeight.value = withSpring(detents[initialStage], SPRING);
       return;
     }
+    // BottomSheet owns the fixed-size translateY exit while this wrapper keeps
+    // the content mounted until the panel is fully below the viewport.
     if (!mounted) return;
-    sheetHeight.value = withSpring(0, SPRING, (finished) => {
-      'worklet';
-      if (finished) runOnJS(runUnmount)();
-    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, detents[0], detents[1]]);
+  }, [visible, detents, initialStage, sheetHeight, sheetTranslateY, runUnmount]);
 
   const handleDismiss = useCallback(() => onCloseRef.current(), []);
   const scrimStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(sheetHeight.value, [0, detents[0]], [0, 1], Extrapolation.CLAMP),
+    opacity:
+      interpolate(sheetHeight.value, [0, detents[0]], [0, 1], Extrapolation.CLAMP)
+      * interpolate(
+        sheetTranslateY.value,
+        [0, height + 40],
+        [1, 0],
+        Extrapolation.CLAMP,
+      ),
   }));
 
   if (!mounted && !visible) return null;
 
   const header = (
-    <View
-      style={[styles.header, { paddingTop: Math.max(4, insets.top) }]}
-    >
+    <View style={styles.header}>
       {onBack ? (
         <Pressable
           onPress={onBack}
@@ -119,12 +135,22 @@ export default function SettingsChildSheet({
         onIndexChange={setIndex}
         bottomInset={0}
         onDismiss={handleDismiss}
+        onDismissComplete={runUnmount}
+        dismissRequested={visible}
+        dismissTranslateY={sheetTranslateY}
+        dismissDistance={height + 40}
         dismissOnDownFromIndex={0}
-        edgeToEdgeAtLast={false}
+        edgeToEdgeAtLast={edgeToEdgeAtLast}
+        contentTopPadding={12}
         header={header}
       >
-        {children}
+        {wrapContentInScrollView ? (initialStage === 1 ? rootContent : children) : children}
       </BottomSheet>
+      {initialStage === 1 && nestedSheets.length > 0 ? (
+        <View pointerEvents="box-none" style={styles.nestedLayer}>
+          {nestedSheets}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -137,12 +163,13 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingBottom: 10,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 0,
   },
   headerSide: {
-    width: 44,
-    height: 44,
+    width: 48,
+    height: 48,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -152,5 +179,9 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '700',
     textAlign: 'center',
+  },
+  nestedLayer: {
+    ...StyleSheet.absoluteFill,
+    zIndex: 1,
   },
 });

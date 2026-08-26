@@ -49,6 +49,7 @@ import {
   type DestinationEmojiCategory,
 } from '../utils/destinationEmojiColor';
 import { getColorForDay, STAY_MARKER_EMOJI } from '../utils/destinationMarkerChrome';
+import { liquidGlass } from '../native';
 
 const REORDER_VISUAL_SCALE = 1;
 const ROW_HEIGHT = 52;
@@ -1255,7 +1256,7 @@ export default function DestinationReorderList({
                </View>
                <View style={styles.modalRow}>
                   <Text style={styles.modalLabel}>{t('trip.totalDays')}</Text>
-                  <View style={styles.daysControls}>
+                  <liquidGlass.GlassView glassStyle="regular" style={styles.daysControls}>
                      <Pressable onPress={() => setEditDays(Math.max(1, editDays - 1))} style={styles.daysBtn}>
                         <Text style={styles.daysBtnText}>-</Text>
                      </Pressable>
@@ -1263,7 +1264,7 @@ export default function DestinationReorderList({
                      <Pressable onPress={() => setEditDays(editDays + 1)} style={styles.daysBtn}>
                         <Text style={styles.daysBtnText}>+</Text>
                      </Pressable>
-                  </View>
+                  </liquidGlass.GlassView>
                </View>
                <View style={styles.modalActions}>
                   <Pressable onPress={() => setShowSettings(false)} style={styles.modalActionBtn}>
@@ -2446,7 +2447,6 @@ const makeStyles = (colors: Palette) =>
     daysControls: {
       flexDirection: 'row',
       alignItems: 'center',
-      backgroundColor: colors.glass,
       borderRadius: radius.md,
       overflow: 'hidden',
     },

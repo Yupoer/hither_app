@@ -8,7 +8,9 @@ export interface RouteViewport {
 }
 
 /** Maximum display error measured in pixels at the settled viewport. */
-export const DEFAULT_ROUTE_TARGET_PIXEL_ERROR = 1.5;
+// A slightly wider display error keeps far-zoom routes visually smooth while
+// still converging continuously to provider geometry as the map is enlarged.
+export const DEFAULT_ROUTE_TARGET_PIXEL_ERROR = 2.5;
 
 const METERS_PER_DEGREE_LATITUDE = 110_540;
 const METERS_PER_DEGREE_LONGITUDE = 111_320;

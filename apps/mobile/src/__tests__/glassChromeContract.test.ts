@@ -8,34 +8,35 @@ const appJson = readFileSync(join(__dirname, '../../app.json'), 'utf8');
 const infoPlist = readFileSync(join(__dirname, '../../ios/Hither/Info.plist'), 'utf8');
 
 /**
- * Glass chrome is always dark (Apple Maps-style) — independent of OS light
- * mode and of the map day/night theme. These contracts stop regressions that
- * reintroduce white card edges or washed search-sheet materials.
+ * Native Liquid Glass follows the device appearance/accessibility settings;
+ * the legacy blur fallback remains available for older runtimes.
  */
-describe('glass chrome always-dark contract', () => {
-  it('documents always-dark glass tokens', () => {
-    expect(glassTokens).toMatch(/ALWAYS a dark/i);
+describe('glass chrome native material contract', () => {
+  it('keeps stable fallback glass tokens for older runtimes', () => {
+    expect(glassTokens).toMatch(/dark fallback/i);
   });
 
-  it('forces Expo GlassView colorScheme to dark (not auto/OS)', () => {
-    expect(liquidGlass).toContain('colorScheme="dark"');
+  it('does not force Expo GlassView color scheme or add an artificial underlay', () => {
+    expect(liquidGlass).not.toContain('colorScheme="dark"');
+    expect(liquidGlass).not.toContain('underlayForTint');
+    expect(liquidGlass).toContain('expoIsLiquidGlassAvailable');
     expect(liquidGlass).not.toMatch(/colorScheme=["']auto["']/);
   });
 
-  it('uses dark blur tint regardless of map theme or OS appearance', () => {
+  it('keeps the legacy fallback blur stable without affecting native glass', () => {
     expect(liquidGlass).toContain('tint="dark"');
     // Must not reintroduce day-theme light blur (washes sheet in light OS).
     expect(liquidGlass).not.toContain("themeName === 'day' ? 'light'");
     expect(liquidGlass).not.toMatch(/blurTint\s*=\s*themeName/);
   });
 
-  it('aligns Expo config and native Info.plist to forced dark UI', () => {
-    expect(appJson).toContain('"userInterfaceStyle": "dark"');
+  it('lets Expo and native iOS follow the device appearance', () => {
+    expect(appJson).toContain('"userInterfaceStyle": "automatic"');
     expect(infoPlist).toMatch(
-      /<key>UIUserInterfaceStyle<\/key>\s*<string>Dark<\/string>/,
+      /<key>UIUserInterfaceStyle<\/key>\s*<string>Automatic<\/string>/,
     );
     expect(infoPlist).not.toMatch(
-      /<key>UIUserInterfaceStyle<\/key>\s*<string>Automatic<\/string>/,
+      /<key>UIUserInterfaceStyle<\/key>\s*<string>Dark<\/string>/,
     );
   });
 });

@@ -20,6 +20,11 @@ const mapScreen = readFileSync(
 );
 const app = readFileSync(join(__dirname, '../../App.tsx'), 'utf8');
 const performance = readFileSync(join(__dirname, '../state/performance.ts'), 'utf8');
+const nativeMapKit = readFileSync(
+  join(__dirname, '../../node_modules/react-native-maps/ios/AirMaps/AIRMap.mm'),
+  'utf8',
+);
+const locationBoundary = readFileSync(join(__dirname, '../native/location.ts'), 'utf8');
 
 describe('measured performance regressions', () => {
   it('keeps the translator stable so effects do not resubscribe on every render', () => {
@@ -67,6 +72,18 @@ describe('measured performance regressions', () => {
     expect(mapScreen).toContain('initialCenter={mapInitialCenter ?? undefined}');
     expect(mapScreen).not.toContain('initialCenter={fromCoords}');
     expect(mapScreen).toContain('setMapInitialCenter((current) => current ?? fromCoords)');
+  });
+
+  it('keeps heading native and avoids rebuilding map stay markers in JSX', () => {
+    expect(nativeMapKit).toContain('headingFilter = 5.0');
+    expect(nativeMapKit).toContain('UIApplicationDidEnterBackgroundNotification');
+    expect(nativeMapKit).toContain('newHeading.trueHeading >= 0');
+    expect(locationBoundary).not.toContain('Location.watchHeadingAsync');
+    expect(mapScreen).toContain('dailyAccommodations={mapDailyAccommodations}');
+    expect(mapScreen).not.toContain('dailyAccommodations={(() => {');
+    expect(groupMap).toContain('const mergedMarkers = useMemo');
+    expect(groupMap).not.toContain('selfHeading?: number | null');
+    expect(groupMap).not.toContain('function HeadingMarker');
   });
 
   it('coalesces location outbox uploads instead of flushing after every sample', () => {

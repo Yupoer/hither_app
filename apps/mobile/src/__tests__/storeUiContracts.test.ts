@@ -11,6 +11,7 @@ const read = (rel: string) =>
 const mapScreen = read('screens/MapScreen.tsx');
 const segmented = read('screens/MapScreen/components/Segmented.tsx');
 const storePane = read('screens/MapScreen/components/StorePane.tsx');
+const reorderList = read('components/DestinationReorderList.tsx');
 const rewardedAds = read('native/rewardedAds.ts');
 const i18n = [read('i18n/locales/zh.ts'), read('i18n/locales/en.ts')].join('\n');
 const settingsOverlay = read('screens/MapScreen/components/SettingsOverlay.tsx');
@@ -23,7 +24,7 @@ describe('four-pane store navigation contracts', () => {
     expect(mapScreen).toContain('SheetPaneTabs');
     expect(read('screens/MapScreen/components/SheetPaneTabs.tsx')).toContain('@expo/ui/community/segmented-control');
     expect(mapScreen).not.toContain('PaneCoverFlow');
-    expect(mapScreen).toContain('sheetPane === \'store\'');
+    expect(mapScreen).toContain('selectedSection === \'store\'');
     expect(mapScreen).toContain('StorePane');
     expect(mapScreen).toContain('sheet-pane-content-area');
     expect(mapScreen).toContain('editButtonActive');
@@ -32,12 +33,12 @@ describe('four-pane store navigation contracts', () => {
     expect(mapScreen).not.toContain('viewportCount={3}');
   });
 
-  it('SheetPaneTabs is a native segmented control', () => {
+  it('SheetPaneTabs keeps the Android segmented fallback', () => {
     const tabs = read('screens/MapScreen/components/SheetPaneTabs.tsx');
     expect(tabs).toContain('testID="sheet-pane-tabs"');
     expect(tabs).toContain('@expo/ui/community/segmented-control');
     expect(tabs).toContain('selectionTick');
-    expect(tabs).toContain('bag-handle');
+    expect(tabs).toContain('const labels = useMemo(() => options.map((option) => option.label), [options])');
     expect(tabs).not.toContain('pagination');
     expect(segmented).toContain('viewportCount');
     expect(segmented).toContain('accessibilityState={{ selected: active, disabled: locked }}');
@@ -65,6 +66,22 @@ describe('four-pane store navigation contracts', () => {
     expect(storePane).toContain('name="coins"');
     expect(storePane).toContain('minHeight: 44');
     expect(premiumBanner).toContain("t('settings.subscribeBannerHint')");
+  });
+
+  it('hides only the personal-subscription banner and keeps the shared glass days control', () => {
+    expect(storePane).toContain('personalPremiumActive: boolean');
+    expect(storePane).toContain('{!personalPremiumActive ? (');
+    expect(mapScreen).toContain('personalPremiumActive={premiumProjection.personalPremiumActive}');
+    expect(reorderList).toContain('liquidGlass.GlassView glassStyle="regular" style={styles.daysControls}');
+    expect(reorderList).not.toMatch(/daysControls:\s*\{[\s\S]*?backgroundColor:\s*colors\.glass/);
+  });
+
+  it('uses the requested ad CTA copy and larger product names', () => {
+    expect(i18n).not.toContain('看廣告領取 +10');
+    expect(i18n).not.toContain('Watch ad for +10');
+    expect(i18n).toContain("'store.watchAdPlus10': '領取金幣'");
+    expect(i18n).toContain("'store.watchAdPlus10': 'Claim coins'");
+    expect(storePane).toContain('fontSize: s(16, 14)');
   });
 
   it('Store orders Premium then balance then ad and hides restore', () => {
@@ -186,14 +203,14 @@ describe('four-pane store navigation contracts', () => {
   });
 
   it('tools pane locks Live Activity without entitlement and opens paywall', () => {
-    expect(mapScreen).toContain('tools-live-activity-locked');
+    expect(mapScreen).toContain('tools-live-activity-toggle');
     expect(mapScreen).toContain('liveActivityAllowed');
     expect(mapScreen).toContain('liveActivityEffective');
     expect(mapScreen).toContain('openPaywallForLiveActivity');
     // Premium session (isPro) must also unlock the tools LA row.
     expect(mapScreen).toContain('liveActivityUnlocked');
     expect(mapScreen).toContain('liveActivityEffective || isPro');
-    expect(mapScreen).toMatch(/onPress=\{openPaywallForLiveActivity\}/);
+    expect(mapScreen).toContain('openPaywallForLiveActivity();');
   });
 
   it('route pane shows extra credits only when > 0', () => {

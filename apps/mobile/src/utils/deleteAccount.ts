@@ -10,12 +10,14 @@ export function confirmDeleteAccount({
   screen,
   deleteAccount,
   onDeleted,
+  onBusyChange,
 }: {
   t: Translator['t'];
   actionId: string;
   screen: string;
   deleteAccount: () => Promise<void>;
   onDeleted: () => void;
+  onBusyChange?: (busy: boolean) => void;
 }): void {
   confirmAction(
     {
@@ -41,7 +43,7 @@ export function confirmDeleteAccount({
             throw error;
           }
         },
-        { screen },
+        { screen, onBusyChange },
       );
     },
   );

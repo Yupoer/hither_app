@@ -39,7 +39,7 @@ export const zh = {
   'auth.googleCta': '使用 Google 帳號註冊',
 
   // Login gate
-  'login.welcomeTitle': '歡迎使用 Hither',
+  'login.welcomeTitle': 'hither',
   'login.welcomeSub': '登入以同步你的群組，或以訪客身分快速開始。',
   'login.tabSignIn': '登入',
   'login.tabSignUp': '註冊',
@@ -312,7 +312,7 @@ export const zh = {
   'store.balance': '金幣餘額',
   'store.balanceA11y': '目前 {count} 枚金幣',
   'store.balanceHint': '餘額由伺服器同步，可跨裝置使用',
-  'store.watchAdPlus10': '看廣告領取 +10',
+  'store.watchAdPlus10': '領取金幣',
   'store.adWatch': '觀看廣告取得 1 金幣',
   'store.adLoading': '廣告載入中…',
   'store.adReady': '開始觀看',
@@ -865,7 +865,7 @@ export const zh = {
   'paywall.introHistory': '完整歷史旅程隨時回看',
   'paywall.introThemes': '解鎖更多地圖主題',
   'settings.subscribeBanner': '升級 Premium',
-  'settings.subscribeBannerHint': '解鎖完整成員、集合點、一次匯入大量景點、歷史與主題',
+  'settings.subscribeBannerHint': '解鎖完整成員、集合點、匯入大量景點\n查看歷史行程、自訂主題',
   'paywall.restore': '恢復購買',
   'paywall.redeemAction': '啟用兌換碼',
   'paywall.unavailable': '內購需要正式版 App（目前為開發版本）',

@@ -491,6 +491,7 @@ export default function MapScreen({ route, navigation }: Props) {
     signOut,
     isAnonymous,
     isPro,
+    premiumProjection,
     upgradeToEmailAccount,
     ensurePremiumAccess,
   } = useSession();
@@ -509,6 +510,7 @@ export default function MapScreen({ route, navigation }: Props) {
     setMeetRedMin,
     setHighAccuracy,
     setSharingEnabled,
+    setLiveActivityEnabled,
     setArrivalRadiusM,
     setPassiveCompanionMode,
   } = usePreferences();
@@ -739,6 +741,25 @@ export default function MapScreen({ route, navigation }: Props) {
   const workflowReloadRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [optimisticTripDays, setOptimisticTripDays] = useState<number | null>(null);
   const [optimisticDepartureDate, setOptimisticDepartureDate] = useState<string | null>(null);
+  const mapDailyAccommodations = useMemo(() => {
+    const departure = optimisticDepartureDate ?? group?.departureDate;
+    const tripDays = optimisticTripDays ?? group?.tripDays ?? 1;
+    const dayForStayDate = (stayDate: string): number => {
+      if (!departure) return 1;
+      for (let d = 1; d <= Math.max(1, tripDays); d++) {
+        const date = dateForTripDay(departure, d);
+        if (date && localDayKey(date) === stayDate) return d;
+      }
+      return 1;
+    };
+    return dailyAccommodations.map((daily) => ({
+      id: daily.id,
+      title: daily.title,
+      coordinates: daily.coordinates,
+      sourceDestinationId: daily.sourceDestinationId,
+      day: dayForStayDate(daily.stayDate),
+    }));
+  }, [dailyAccommodations, group?.departureDate, group?.tripDays, optimisticDepartureDate, optimisticTripDays]);
   /** Personal arrival rows (check-in) — not team stop completion. */
   const myCompletedDestinationIds = useMemo(
     () => new Set(
@@ -801,6 +822,7 @@ export default function MapScreen({ route, navigation }: Props) {
       ),
     [openDestinations, arrivalExitSnapshots, arrivalExitRecords],
   );
+  const destinationIds = useMemo(() => destinations.map((dest) => dest.id), [destinations]);
   /**
    * Full open itinerary for the route editor (all open days + stay cards).
    * Must not use day-gated `destinations` — that under-counts past-day stops
@@ -1006,7 +1028,7 @@ export default function MapScreen({ route, navigation }: Props) {
   // --- Sheet / overlay / island UI state -----------------------------------
   // Measured height of the sheet's pinned header (grabber + search row) —
   // peek shows exactly that block, floating high off the screen edges.
-  const [sheetHeaderH, setSheetHeaderH] = useState(78);
+  const [sheetHeaderH, setSheetHeaderH] = useState(68);
   // Measured height of the gathering-point carousel card strip (for camera
   // centering into the visible band between carousel and sheet).
   const [carouselHeight, setCarouselHeight] = useState(0);
@@ -1020,7 +1042,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const heightSV = useSharedValue(detents[0]);
   const [detent, setDetent] = useState(0);
   /** Mid/Full sheet body: 成員 · 路線 · 工具 · 商店. */
-  const [sheetPane, setSheetPane] = useState<SheetPaneKey>('members');
+  const [selectedSection, setSelectedSection] = useState<SheetPaneKey>('members');
   /** Store deep-link product highlight (e.g. locked Live Activity → store). */
   const [storeHighlightProduct, setStoreHighlightProduct] = useState<string | null>(null);
   /** Server-effective Live Activity entitlement (personal OR team Premium). */
@@ -1165,8 +1187,10 @@ export default function MapScreen({ route, navigation }: Props) {
     }
   }, [pendingPlace, confirmCardAnim]);
   const confirmCardStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(confirmCardAnim.value, [0, 0.4], [0, 1], Extrapolation.CLAMP),
-    transform: [{ translateY: interpolate(confirmCardAnim.value, [0, 1], [120, 0], Extrapolation.CLAMP) }],
+    transform: [
+      { translateY: interpolate(confirmCardAnim.value, [0, 1], [120, 0], Extrapolation.CLAMP) },
+      { scale: interpolate(confirmCardAnim.value, [0, 1], [0.96, 1], Extrapolation.CLAMP) },
+    ],
   }));
 
   // Keyboard inset for absolute confirm card (12pt gap; restore on dismiss).
@@ -1701,6 +1725,7 @@ export default function MapScreen({ route, navigation }: Props) {
     travelMode,
     setTravelMode,
     selectedDestination,
+    handleScrollBeginDrag,
     handleMomentumEnd,
   } = useCarouselSelection({
     destinations,
@@ -5063,14 +5088,10 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // Floating chrome rides just above the sheet's live top edge; its baseline
   // follows the sheet's animated gap to the screen bottom. At full the map
-  // chrome (group pill, role chip, recenter) fades away and stops catching
-  // touches; leaving full brings it back.
-  const chromeOpacityStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(heightSV.value, [detents[1], detents[2]], [1, 0], Extrapolation.CLAMP),
-  }));
+  // chrome is omitted so no Liquid Glass surface sits in an animated opacity
+  // ancestor; leaving full mounts it again.
   const recenterStyle = useAnimatedStyle(() => ({
     bottom: heightSV.value + sheetBottomOffset(heightSV.value, detents, insets.bottom) + 12,
-    opacity: interpolate(heightSV.value, [detents[1], detents[2]], [1, 0], Extrapolation.CLAMP),
   }));
   const atFull = detent === detents.length - 1;
   // Peek (stage 1): cards may grow into the capsule band (cards paint above
@@ -5234,7 +5255,6 @@ export default function MapScreen({ route, navigation }: Props) {
     setSettingsOpen(false);
   }, []);
   const openHistoryOverlay = useCallback(() => setOverlay('history'), []);
-  const openAccountOverlay = useCallback(() => setOverlay('account'), []);
   const openCustomQuickCommand = useCallback((slot = 0) => {
     setCustomSlot(typeof slot === 'number' ? slot : 0);
     setOverlay('custom');
@@ -5242,10 +5262,9 @@ export default function MapScreen({ route, navigation }: Props) {
   const openPaywallCb = useCallback(() => openPaywall(), [openPaywall]);
 
   const selectSheetPane = useCallback((key: SheetPaneKey) => {
-    if (key === sheetPane) return;
-    // Pill slide is handled by Segmented (same as 脫隊示警); no LayoutAnimation.
-    setSheetPane(key);
-  }, [sheetPane]);
+    if (key === selectedSection) return;
+    setSelectedSection(key);
+  }, [selectedSection]);
 
   // Reanimated sheet height never enters Yoga. measureInWindow on tab nodes
   // still reports peek layout (Y near the bottom). Snap Stage Two targets to
@@ -5497,18 +5516,20 @@ export default function MapScreen({ route, navigation }: Props) {
               accessibilityRole="button"
               accessibilityLabel={t('solo.statusTitle')}
             >
-              <Ionicons
-                name={statusIconForKind(myStatusKind)}
-                size={20}
-                color={glass.textSecondary}
-              />
-              <Text style={styles.myStatusName} numberOfLines={1}>
-                {myStatusKind === 'stealth'
-                  ? t('solo.stealth')
-                  : myStatusKind === 'solo'
-                    ? t('solo.switch')
-                    : t('solo.followTeam')}
-              </Text>
+              <View style={styles.myStatusTriggerInner} pointerEvents="none">
+                <Ionicons
+                  name={statusIconForKind(myStatusKind)}
+                  size={20}
+                  color={glass.textSecondary}
+                />
+                <Text style={styles.myStatusName} numberOfLines={1}>
+                  {myStatusKind === 'stealth'
+                    ? t('solo.stealth')
+                    : myStatusKind === 'solo'
+                      ? t('solo.switch')
+                      : t('solo.followTeam')}
+                </Text>
+              </View>
             </Pressable>
           )}
           <AmicroButton
@@ -5892,27 +5913,20 @@ export default function MapScreen({ route, navigation }: Props) {
   // ─── 工具：同行者模式入口 → 定位分享 → 抵達距離 → 快捷指令 ─────────
   // Premium (isPro) or store LA entitlement both hide the locked deep-link.
   const liveActivityUnlocked = liveActivityEffective || isPro;
+  const handleToolsLiveActivityChange = useCallback((next: boolean) => {
+    if (!next) {
+      void setLiveActivityEnabled(false);
+      return;
+    }
+    if (!liveActivityUnlocked) {
+      void setLiveActivityEnabled(false);
+      openPaywallForLiveActivity();
+      return;
+    }
+    void setLiveActivityEnabled(true);
+  }, [liveActivityUnlocked, openPaywallForLiveActivity, setLiveActivityEnabled]);
   const toolsPaneBody = useMemo(() => (
     <>
-      {!liveActivityUnlocked ? (
-        <Pressable
-          style={styles.liveActivityLockedRow}
-          onPress={openPaywallForLiveActivity}
-          accessibilityRole="button"
-          accessibilityState={{ disabled: false }}
-          accessibilityLabel={t('store.liveActivityLocked')}
-          testID="tools-live-activity-locked"
-        >
-          <Ionicons name="lock-closed-outline" size={16} color={glass.textSecondary} />
-          <View style={styles.passiveEnterCopy}>
-            <Text style={styles.listRowTitle}>{t('settings.liveActivity')}</Text>
-            <Text style={styles.accuracySubhint} numberOfLines={2}>
-              {t('store.liveActivityLockedHint')}
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
-        </Pressable>
-      ) : null}
       <Pressable
         style={[styles.passiveEnterBtn, { backgroundColor: accent }]}
         onPress={() => {
@@ -5932,6 +5946,19 @@ export default function MapScreen({ route, navigation }: Props) {
         </View>
         <Ionicons name="chevron-forward" size={16} color="#111" />
       </Pressable>
+
+      <View style={styles.accuracyRow} testID="tools-live-activity-row">
+        <View style={styles.accuracyCopy}>
+          <Text style={styles.accuracyLabel}>{t('settings.liveActivity')}</Text>
+          <Text style={styles.accuracySubhint}>{t('settings.liveActivityHint')}</Text>
+        </View>
+        <SystemToggle
+          value={liveActivityUnlocked && liveActivityEnabled}
+          onValueChange={handleToolsLiveActivityChange}
+          accessibilityLabel={t('settings.liveActivity')}
+          testID="tools-live-activity-toggle"
+        />
+      </View>
 
       <Text style={styles.sheetHeading}>{t('arrival.radiusSection')}</Text>
       <View style={styles.accuracyRow}>
@@ -5970,7 +5997,7 @@ export default function MapScreen({ route, navigation }: Props) {
   ), [
     styles, t, groupId, isLeader, dark, openCustomQuickCommand, accent,
     arrivalRadiusM, setArrivalRadiusM, setPassiveCompanionMode,
-    liveActivityUnlocked, openPaywallForLiveActivity,
+    liveActivityEnabled, liveActivityUnlocked, handleToolsLiveActivityChange,
   ]);
 
   const storePaneBody = useMemo(() => (
@@ -5978,6 +6005,7 @@ export default function MapScreen({ route, navigation }: Props) {
       groupId={groupId}
       groupName={membership?.group.name ?? null}
       isAnonymous={!!isAnonymous}
+      personalPremiumActive={premiumProjection.personalPremiumActive}
       accent={accent}
       t={t}
       highlightProductCode={storeHighlightProduct}
@@ -5992,7 +6020,7 @@ export default function MapScreen({ route, navigation }: Props) {
       onOpenSubscribe={() => openPaywall(undefined, { showRestore: false })}
     />
   ), [
-    groupId, membership?.group.name, isAnonymous, accent, t,
+    groupId, membership?.group.name, isAnonymous, premiumProjection.personalPremiumActive, accent, t,
     storeHighlightProduct, refreshStoreEntitlements, openPaywall,
   ]);
 
@@ -6008,7 +6036,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const sheetChildren = useMemo(() => (
     <>
-      {/* Icon tabs: solid fill only — no Liquid Glass edge halo / white rim. */}
+      {/* Native iOS Liquid Glass selector; Android keeps its system fallback. */}
       <View
         style={styles.sheetPaneToggleWrap}
         ref={(n) => setTourTargetRef('stageTwoPlacement', n)}
@@ -6017,7 +6045,7 @@ export default function MapScreen({ route, navigation }: Props) {
       >
         <SheetPaneTabs
           options={sheetPaneOptions}
-          value={sheetPane}
+          selectedSection={selectedSection}
           onChange={selectSheetPane}
           onTabNode={(key, node) => {
             const targetId =
@@ -6035,29 +6063,29 @@ export default function MapScreen({ route, navigation }: Props) {
 
       <View testID="sheet-pane-content-area">
         <View
-          style={sheetPane === 'members' ? undefined : styles.sheetPaneHidden}
-          pointerEvents={sheetPane === 'members' ? 'auto' : 'none'}
+          style={selectedSection === 'members' ? undefined : styles.sheetPaneHidden}
+          pointerEvents={selectedSection === 'members' ? 'auto' : 'none'}
           collapsable={false}
         >
           {membersPaneBody}
         </View>
         <View
-          style={sheetPane === 'route' ? undefined : styles.sheetPaneHidden}
-          pointerEvents={sheetPane === 'route' ? 'auto' : 'none'}
+          style={selectedSection === 'route' ? undefined : styles.sheetPaneHidden}
+          pointerEvents={selectedSection === 'route' ? 'auto' : 'none'}
           collapsable={false}
         >
           {routePaneBody}
         </View>
         <View
-          style={sheetPane === 'tools' ? undefined : styles.sheetPaneHidden}
-          pointerEvents={sheetPane === 'tools' ? 'auto' : 'none'}
+          style={selectedSection === 'tools' ? undefined : styles.sheetPaneHidden}
+          pointerEvents={selectedSection === 'tools' ? 'auto' : 'none'}
           collapsable={false}
         >
           {toolsPaneBody}
         </View>
         <View
-          style={sheetPane === 'store' ? undefined : styles.sheetPaneHidden}
-          pointerEvents={sheetPane === 'store' ? 'auto' : 'none'}
+          style={selectedSection === 'store' ? undefined : styles.sheetPaneHidden}
+          pointerEvents={selectedSection === 'store' ? 'auto' : 'none'}
           collapsable={false}
         >
           {storePaneBody}
@@ -6065,7 +6093,7 @@ export default function MapScreen({ route, navigation }: Props) {
       </View>
     </>
   ), [
-    styles, accent, sheetPane, sheetPaneOptions, selectSheetPane,
+    styles, accent, selectedSection, sheetPaneOptions, selectSheetPane,
     membersPaneBody, routePaneBody, toolsPaneBody, storePaneBody,
   ]);
 
@@ -6158,26 +6186,7 @@ export default function MapScreen({ route, navigation }: Props) {
           showsUserLocation={sharingEnabled && members.length > 0}
           gathering={activePoint}
           destinations={destinations}
-          dailyAccommodations={(() => {
-            const departure = optimisticDepartureDate ?? group?.departureDate;
-            const tripDays = optimisticTripDays ?? group?.tripDays ?? 1;
-            const dayForStayDate = (stayDate: string): number => {
-              if (!departure) return 1;
-              for (let d = 1; d <= Math.max(1, tripDays); d++) {
-                const date = dateForTripDay(departure, d);
-                if (date && localDayKey(date) === stayDate) return d;
-              }
-              return 1;
-            };
-            // Every trip-day stay — not only today (bed markers for all days).
-            return dailyAccommodations.map((daily) => ({
-              id: daily.id,
-              title: daily.title,
-              coordinates: daily.coordinates,
-              sourceDestinationId: daily.sourceDestinationId,
-              day: dayForStayDate(daily.stayDate),
-            }));
-          })()}
+          dailyAccommodations={mapDailyAccommodations}
           stayCalloutLabel={t('stay.defaultTitle')}
           pendingPlace={pendingPlace}
           currentUserId={user?.id}
@@ -6224,7 +6233,7 @@ export default function MapScreen({ route, navigation }: Props) {
       ) : null}
 
       {/* Group pill — moved to bottom left, tracking sheet like recenter capsule. */}
-      {showDenseChrome && !confirmCardReady && (
+      {showDenseChrome && !confirmCardReady && !atFull && (
       <Animated.View
         style={[styles.teamCapsuleWrap, recenterStyle]}
         pointerEvents={atFull ? 'none' : 'box-none'}
@@ -6240,45 +6249,27 @@ export default function MapScreen({ route, navigation }: Props) {
             }}
           >
             <liquidGlass.GlassView
-              tintColor={glass.pill}
+              // Match the Peek sheet's native material while retaining the
+              // system-controlled Liquid Glass surface.
+              glassStyle="regular"
               style={styles.groupPill}
             >
-              <View style={styles.pillAvatars}>
-                <View
-                  style={[
-                    styles.pillAvatar,
-                    {
-                      backgroundColor: group?.avatarColor ?? (group ? avatarColorForGroup(group.id) : accent),
-                    },
-                  ]}
-                >
-                  <HitherText typeRole="emoji" style={styles.pillEmoji}>
-                    {group?.avatar ?? (group ? avatarForGroup(group.id) : '👥')}
-                  </HitherText>
-                </View>
-                {(() => {
-                  const visibleMembers = viewingScope === 'main' || !myScopeId ? flock : flock.filter(f => f.subgroupId === myScopeId);
-                  return visibleMembers.slice(0, 3).map((f, i) => (
-                    <View
-                      key={f.userId}
-                      style={[styles.pillAvatar, { backgroundColor: f.color, marginLeft: i ? -10 : 0 }]}
-                    >
-                      <HitherText typeRole="emoji" style={styles.pillEmoji}>
-                        {displayMemberAvatar(f.avatar, f.userId, f.avatarColor).emoji}
-                      </HitherText>
-                    </View>
-                  ));
-                })()}
+              <View
+                style={[
+                  styles.pillAvatar,
+                  {
+                    backgroundColor: group?.avatarColor ?? (group ? avatarColorForGroup(group.id) : accent),
+                  },
+                ]}
+              >
+                <HitherText typeRole="emoji" style={styles.pillEmoji}>
+                  {group?.avatar ?? (group ? avatarForGroup(group.id) : '👥')}
+                </HitherText>
               </View>
-              <Text style={styles.pillName} numberOfLines={1}>
-                {myScopeId
-                  ? (viewingScope === 'main' ? (group?.name ?? 'Hither') : t('map.subgroupLabel'))
-                  : (group?.name ?? 'Hither')}
+              <Text style={[styles.pillName, { color: colors.textPrimary }]} numberOfLines={1}>
+                {group?.name ?? 'Hither'}
               </Text>
-              {/* large+: drop secondary count so the name can ellipsis cleanly */}
-              {fontBucket === 'regular' ? (
-                <Text style={styles.pillCount}>· {viewingScope === 'main' || !myScopeId ? members.length : flock.filter(f => f.subgroupId === myScopeId).length}</Text>
-              ) : null}
+              <Text style={[styles.pillCount, { color: colors.textSecondary }]}>· {members.length}</Text>
             </liquidGlass.GlassView>
           </Pressable>
         </View>
@@ -6287,14 +6278,15 @@ export default function MapScreen({ route, navigation }: Props) {
 
 
       {/* Recenter capsule — fit-all (top) + locate-me (bottom), always both. */}
-      {showDenseChrome && !confirmCardReady && (
+      {showDenseChrome && !confirmCardReady && !atFull && (
       <Animated.View
         style={[styles.recenter, recenterStyle]}
         pointerEvents={atFull ? 'none' : 'auto'}
       >
         <View style={styles.recenterCapsule}>
           <liquidGlass.GlassView
-            tintColor={glass.pill}
+            // Keep the recenter capsule on the same native material as Peek.
+            glassStyle="regular"
             style={StyleSheet.absoluteFill}
             pointerEvents="none"
           />
@@ -6304,7 +6296,7 @@ export default function MapScreen({ route, navigation }: Props) {
             accessibilityRole="button"
             accessibilityLabel={t('map.fitAllA11y')}
           >
-            <Ionicons name="expand-outline" size={19} color="#fff" />
+            <Ionicons name="expand-outline" size={19} color={colors.textPrimary} />
           </Pressable>
           <View style={styles.recenterDivider} />
           <Pressable
@@ -6313,7 +6305,7 @@ export default function MapScreen({ route, navigation }: Props) {
             accessibilityRole="button"
             accessibilityLabel={t('map.locateA11y')}
           >
-            <Ionicons name="navigate" size={19} color="#fff" />
+            <Ionicons name="navigate" size={19} color={colors.textPrimary} />
           </Pressable>
         </View>
       </Animated.View>
@@ -6529,13 +6521,12 @@ export default function MapScreen({ route, navigation }: Props) {
 
       {/* Gathering-point carousel — above locate/group capsules; sheet wrapper
           zIndex is higher so the sheet covers cards on overlap. */}
-      {showDenseChrome && destinations.length > 0 && (
+      {showDenseChrome && destinations.length > 0 && !atFull && (
         <Animated.View
           // a11y-layout:carouselCapsuleClearance
           style={[
             styles.carouselWrap,
             { top: insets.top + 8, maxHeight: carouselMaxHeight },
-            chromeOpacityStyle,
           ]}
           pointerEvents={atFull ? 'none' : 'box-none'}
           onLayout={(e) => {
@@ -6548,6 +6539,7 @@ export default function MapScreen({ route, navigation }: Props) {
             horizontal
             pagingEnabled
             showsHorizontalScrollIndicator={false}
+            onScrollBeginDrag={handleScrollBeginDrag}
             onMomentumScrollEnd={handleMomentumEnd}
             scrollEventThrottle={16}
           >
@@ -6689,7 +6681,8 @@ export default function MapScreen({ route, navigation }: Props) {
                   >
                   <ArrivalCardExitShell exiting={exitPhase === 'exit'}>
                   <liquidGlass.GlassView
-                    tintColor={active ? glass.cardActive : glass.card}
+                    glassStyle="regular"
+                    tintColor={Platform.OS === 'android' ? (active ? glass.cardActive : glass.card) : undefined}
                     style={[
                       styles.card,
                       // Active state uses fill only — no theme-color rim
@@ -6775,7 +6768,7 @@ export default function MapScreen({ route, navigation }: Props) {
                               total={destinations.length}
                               active={selectedIndex}
                               maxVisible={DOTS_MAX_VISIBLE}
-                              destinationIds={destinations.map((d) => d.id)}
+                              destinationIds={destinationIds}
                               styles={styles}
                               reduceMotion={tourReduceMotion}
                             />
@@ -7227,13 +7220,22 @@ export default function MapScreen({ route, navigation }: Props) {
         index={detent}
         onIndexChange={setDetent}
         bottomInset={insets.bottom}
+        compactGrabberSpacing
+        hideHeaderOnScroll
         onHeaderHeight={(h) => {
           // Ignore 1–2px jitter so detents don't thrash and reverse mid-spring.
           setSheetHeaderH((prev) => (Math.abs(prev - h) > 2 ? h : prev));
         }}
         header={sheetHeader}
       >
-        {sheetChildren}
+        <Animated.View
+          style={detent === 0 ? styles.sheetBodyHidden : undefined}
+          pointerEvents={detent === 0 ? 'none' : 'auto'}
+          accessibilityElementsHidden={detent === 0}
+          importantForAccessibility={detent === 0 ? 'no-hide-descendants' : 'auto'}
+        >
+          {sheetChildren}
+        </Animated.View>
       </BottomSheet>
       </Animated.View>
 
@@ -7257,6 +7259,7 @@ export default function MapScreen({ route, navigation }: Props) {
         title={t('map.gatheringPoints')}
         accent={accent}
         doneLabel={t('map.done')}
+        material="mapSheet"
         edgeToEdge
         headerLeft={
           canEditItinerary ? (
@@ -7557,8 +7560,9 @@ export default function MapScreen({ route, navigation }: Props) {
         onConfirmLeave={confirmLeave}
         onConfirmSignOut={confirmSignOut}
         onOpenPaywall={openPaywallCb}
-        liveActivityUnlocked={liveActivityUnlocked}
-        onOpenAccount={openAccountOverlay}
+        onAccountDeleted={() => {
+          navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+        }}
         onOpenDiagnostics={() => setOverlay('diagnostics')}
         group={group}
         isLeader={isLeader}
@@ -8569,20 +8573,41 @@ function CarouselDots({
   return (
     <View style={[styles.dots, { flexShrink: 0 }]}>
       {row.items.map((item) => (
-        <Animated.View
+        <CarouselDot
           key={`dot-${destinationIds[item.index] ?? item.index}`}
-          style={[
-            styles.dot,
-            item.active ? styles.dotActive : null,
-            {
-              width: withTiming(item.active ? 18 : 6, {
-                duration: reduceMotion ? 0 : 200,
-              }),
-            },
-          ]}
+          active={item.active}
+          reduceMotion={reduceMotion}
+          styles={styles}
         />
       ))}
     </View>
+  );
+}
+
+function CarouselDot({
+  active,
+  reduceMotion,
+  styles,
+}: {
+  active: boolean;
+  reduceMotion: boolean;
+  styles: {
+    dot: object;
+    dotActive: object;
+  };
+}) {
+  const animatedStyle = useAnimatedStyle(() => ({
+    width: withTiming(active ? 18 : 6, {
+      duration: reduceMotion ? 0 : 200,
+    }),
+  }), [active, reduceMotion]);
+
+  return (
+    <Animated.View
+      style={[styles.dot, active ? styles.dotActive : null, animatedStyle]}
+      accessibilityElementsHidden
+      importantForAccessibility="no"
+    />
   );
 }
 
@@ -8993,7 +9018,6 @@ const makeStyles = (
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairlineSoft,
     },
-    pillAvatars: { flexDirection: 'row' },
     pillAvatar: {
       width: 26,
       height: 26,
@@ -9502,8 +9526,10 @@ const makeStyles = (
       paddingBottom: 16,
       gap: 6,
     },
-    // Hide the bottom sheet while the confirm card is up.
-    sheetHidden: { opacity: 0 },
+    // Hide the bottom sheet while the confirm card is up without animating an
+    // ancestor of its Liquid Glass surface.
+    sheetHidden: { display: 'none' },
+    sheetBodyHidden: { display: 'none' },
     confirmTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
     confirmTextCol: { flex: 1, gap: 2 },
     confirmKicker: { fontSize: 16, fontWeight: '600', color: '#fff', marginLeft: 2 },
@@ -9648,13 +9674,13 @@ const makeStyles = (
     dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.35)' },
     dotActive: { width: 18, backgroundColor: accent },
 
-    // Peek chrome: bottom pad = top pad + BottomSheet grabZone height so the
-    // grabber (paddingTop 6 + bar 4 + paddingBottom 4 ≈ 14) is included in the
-    // visual balance — equal pads leave the action row looking low.
+    // Peek chrome: compact grabZone (paddingTop 3 + bar 4 + paddingBottom 2 = 9)
+    // plus 2pt/11pt header padding keeps the 46pt action row centered with
+    // approximately 11pt from each Peek edge.
     sheetHeaderBlock: {
       paddingHorizontal: 12,
-      paddingTop: 8,
-      paddingBottom: 8 + 14,
+      paddingTop: 2,
+      paddingBottom: 11,
     },
     sheetTitleRow: {
       flexDirection: 'row',
@@ -9697,12 +9723,13 @@ const makeStyles = (
       gap: STATUS_SHARE_CLUSTER_GAP,
     },
     myStatusTrigger: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
+      minWidth: 112,
       minHeight: 44,
+      alignItems: 'flex-start',
+      justifyContent: 'center',
+      paddingVertical: 8,
       paddingHorizontal: 12,
-      borderRadius: 22,
+      borderRadius: 16,
       flexShrink: 1,
       backgroundColor: glass.fill,
       borderWidth: StyleSheet.hairlineWidth,
@@ -9711,13 +9738,16 @@ const makeStyles = (
     myStatusTriggerInner: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 8,
+      justifyContent: 'center',
+      gap: 6,
     },
     myStatusName: {
       color: glass.textSecondary,
       fontSize: 14,
+      lineHeight: 16,
       fontWeight: '600',
-      maxWidth: 120,
+      maxWidth: 128,
+      textAlign: 'left',
     },
     statusOption: {
       flexDirection: 'row',
@@ -9848,7 +9878,7 @@ const makeStyles = (
       color: glass.textTertiary,
     },
     sheetPaneToggleWrap: {
-      marginTop: 10,
+      marginTop: 0,
       marginBottom: 4,
     },
     accuracyRowLast: {
@@ -9861,16 +9891,6 @@ const makeStyles = (
       fontWeight: '600',
       color: glass.textSecondary,
       marginBottom: 8,
-    },
-    liveActivityLockedRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 10,
-      backgroundColor: glass.fill,
-      borderRadius: 14,
-      paddingVertical: 12,
-      paddingHorizontal: 12,
-      marginBottom: 10,
     },
     sheetPaneHidden: {
       display: 'none',
@@ -10140,6 +10160,7 @@ const makeStyles = (
       gap: 12,
       paddingVertical: 10,
       paddingHorizontal: 4,
+      paddingRight: 16,
       marginBottom: 4,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: 'rgba(255,255,255,0.08)',

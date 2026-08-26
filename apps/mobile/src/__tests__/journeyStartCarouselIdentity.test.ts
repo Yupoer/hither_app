@@ -55,20 +55,21 @@ describe('Start same-day promote + carousel identity (#222)', () => {
     expect(carouselScrollX(2, 390)).toBe(780);
   });
 
-  it('scrolls with index * windowWidth after order settles', () => {
+  it('keeps carousel scrolling in the shared selection hook after order settles', () => {
     expect(carouselScrollX(1, 390)).toBe(390);
     expect(journey).toContain('followCarouselIndexAfterPromote');
-    expect(journey).toContain('carouselScrollX');
+    expect(carousel).toContain('programmaticTargetRef');
     expect(journey).toContain('promoteDestinationWithinDay');
     expect(journey).toContain('startedDestId');
-    expect(journey).toContain('carouselRef.current?.scrollTo');
+    expect(carousel).toContain('handleScrollBeginDrag');
+    expect(journey).not.toContain('carouselRef.current?.scrollTo');
     expect(journey).not.toMatch(/carouselRef:\s*_carouselRef/);
   });
 
   it('projects the clicked destination only after the reordered id appears', () => {
     expect(journey).toContain('pendingCarouselTargetIdRef');
-    expect(journey).toContain('navigationDestinations.findIndex((item) => item.id === targetId)');
-    expect(journey).toContain('if (index < 0) return');
+    expect(journey).toContain('followCarouselIndexAfterPromote');
+    expect(journey).toContain('if (index == null) return');
   });
 
   it('cold-starts the carousel at sorted index 0 and does not restore a swipe', () => {

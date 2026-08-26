@@ -4,6 +4,7 @@ import {
   Alert,
   Keyboard,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -27,16 +28,18 @@ import {
   keyboardScrollPaddingBottom,
 } from '../utils/keyboardSurface';
 
-export default function AccountSheet({
+export function AccountSheetContent({
   visible,
   onClose,
   accent,
   onAccountDeleted,
+  contentTopPadding = 12,
 }: {
   visible: boolean;
   onClose: () => void;
   accent: string;
   onAccountDeleted?: () => void;
+  contentTopPadding?: number;
 }) {
   const insets = useSafeAreaInsets();
   const {
@@ -55,6 +58,7 @@ export default function AccountSheet({
   const { t } = useTranslation();
   const scrollRef = useRef<ScrollView>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!visible) {
@@ -201,14 +205,7 @@ export default function AccountSheet({
   }
 
   return (
-    <OverlaySheet
-      visible={visible}
-      onClose={onClose}
-      title={t('settings.account')}
-      accent={accent}
-      doneLabel={t('map.done')}
-      edgeToEdge
-    >
+    <>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={KEYBOARD_SURFACE_GAP_PT}
@@ -216,7 +213,7 @@ export default function AccountSheet({
       >
         <ScrollView
           ref={scrollRef}
-          contentContainerStyle={[styles.scrollContent, { paddingBottom: scrollPaddingBottom }]}
+          contentContainerStyle={[styles.scrollContent, { paddingTop: contentTopPadding, paddingBottom: scrollPaddingBottom }]}
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
         >
@@ -409,6 +406,7 @@ export default function AccountSheet({
                     actionId: 'account.delete',
                     screen: 'Account',
                     deleteAccount,
+                    onBusyChange: setDeleting,
                     onDeleted: () => {
                       onClose();
                       onAccountDeleted?.();
@@ -424,6 +422,47 @@ export default function AccountSheet({
           ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
+    <Modal
+      visible={deleting}
+      transparent
+      animationType="none"
+      onRequestClose={() => undefined}
+    >
+      <View style={styles.deleteLoadingScrim} testID="account-delete-loading" accessibilityRole="progressbar">
+        <ActivityIndicator size="large" color={accent} />
+      </View>
+    </Modal>
+    </>
+  );
+}
+
+export default function AccountSheet({
+  visible,
+  onClose,
+  accent,
+  onAccountDeleted,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  accent: string;
+  onAccountDeleted?: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <OverlaySheet
+      visible={visible}
+      onClose={onClose}
+      title={t('settings.account')}
+      accent={accent}
+      doneLabel={t('map.done')}
+      edgeToEdge
+    >
+      <AccountSheetContent
+        visible={visible}
+        onClose={onClose}
+        accent={accent}
+        onAccountDeleted={onAccountDeleted}
+      />
     </OverlaySheet>
   );
 }
@@ -432,6 +471,12 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingTop: 12,
     paddingHorizontal: 16,
+  },
+  deleteLoadingScrim: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.58)',
   },
   sectionLabel: {
     fontSize: 14,

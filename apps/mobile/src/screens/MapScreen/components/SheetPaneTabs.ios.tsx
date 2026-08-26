@@ -1,10 +1,6 @@
-/**
- * Members / Route / Tools / Store — Android native segmented fallback.
- * iOS uses the HitherSheetPaneTabs SwiftUI native module.
- */
-import React, { useMemo } from 'react';
-import { StyleSheet, View } from 'react-native';
-import { SegmentedControl } from '@expo/ui/community/segmented-control';
+import React, { useCallback, useMemo } from 'react';
+import { StyleSheet, View, type ViewProps } from 'react-native';
+import { requireNativeView } from 'expo';
 import type { SheetPaneKey } from '../../../store/types';
 import { selectionTick } from '../../../utils/haptics';
 
@@ -12,6 +8,20 @@ export interface SheetPaneTabOption {
   key: SheetPaneKey;
   label: string;
 }
+
+type NativeSelectionEvent = {
+  nativeEvent?: {
+    index?: number;
+  };
+};
+
+type NativeSheetPaneTabsProps = ViewProps & {
+  labels: string[];
+  selectedIndex: number;
+  onSelectionChange?: (event: NativeSelectionEvent) => void;
+};
+
+const NativeSheetPaneTabs = requireNativeView<NativeSheetPaneTabsProps>('HitherSheetPaneTabs');
 
 interface SheetPaneTabsProps {
   options: SheetPaneTabOption[];
@@ -27,7 +37,14 @@ export const SheetPaneTabs = React.memo(function SheetPaneTabs({
   onTabNode,
 }: SheetPaneTabsProps) {
   const labels = useMemo(() => options.map((option) => option.label), [options]);
-  const selectedIndex = Math.max(0, options.findIndex((opt) => opt.key === selectedSection));
+  const selectedIndex = Math.max(0, options.findIndex((option) => option.key === selectedSection));
+  const handleSelectionChange = useCallback((event: NativeSelectionEvent) => {
+    const index = event.nativeEvent?.index;
+    const next = typeof index === 'number' ? options[index] : undefined;
+    if (!next || next.key === selectedSection) return;
+    selectionTick();
+    onChange(next.key);
+  }, [onChange, options, selectedSection]);
 
   return (
     <View
@@ -35,16 +52,11 @@ export const SheetPaneTabs = React.memo(function SheetPaneTabs({
       testID="sheet-pane-tabs"
       accessibilityRole="tablist"
     >
-      <SegmentedControl
-        values={labels}
+      <NativeSheetPaneTabs
+        labels={labels}
         selectedIndex={selectedIndex}
-        onChange={(event) => {
-          const index = event.nativeEvent.selectedSegmentIndex;
-          const next = options[index];
-          if (!next || next.key === selectedSection) return;
-          selectionTick();
-          onChange(next.key);
-        }}
+        onSelectionChange={handleSelectionChange}
+        style={styles.nativeSelector}
       />
       <View pointerEvents="none" style={styles.measurementLayer}>
         {options.map((option) => (
@@ -63,8 +75,12 @@ export const SheetPaneTabs = React.memo(function SheetPaneTabs({
 const styles = StyleSheet.create({
   track: {
     width: '100%',
-    minHeight: 84,
+    minHeight: 54,
     justifyContent: 'center',
+  },
+  nativeSelector: {
+    width: '100%',
+    height: 54,
   },
   measurementLayer: {
     ...StyleSheet.absoluteFill,

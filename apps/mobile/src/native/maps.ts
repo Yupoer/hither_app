@@ -240,6 +240,8 @@ export type MapUserLocationChangeEvent = {
 };
 
 export type PlatformizedMapViewProps = MapTransitDefaultProps & {
+  /** iOS MapKit owns the compass cone; Android ignores this prop. */
+  showsUserHeadingIndicator?: boolean;
   provider?: 'google';
   compassOffset?: MapChromeLayout['compassOffset'];
   appleLogoInsets?: MapChromeLayout['appleLogoInsets'];
@@ -249,6 +251,8 @@ export type PlatformizedMapViewProps = MapTransitDefaultProps & {
 };
 
 export type PlatformizedMapViewOptions = {
+  /** Enable the native iOS heading indicator only while the map is foregrounded. */
+  headingEnabled?: boolean;
   chrome?: MapChromeLayout;
   onMapReady?: () => void;
   onAndroidMapReady?: () => void;
@@ -297,6 +301,7 @@ export function platformizedMapViewProps(
     ...defaultMapTransitProps(),
   };
 
+  if (isIOS) props.showsUserHeadingIndicator = options.headingEnabled === true;
   if (isAndroid) props.provider = 'google';
   if (isIOS && options.chrome) {
     props.compassOffset = options.chrome.compassOffset;

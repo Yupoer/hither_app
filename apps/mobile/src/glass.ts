@@ -1,11 +1,10 @@
 /**
- * Dark "Liquid Glass" chrome tokens for the new Hither iOS Flow design.
+ * Liquid Glass chrome fallback tokens for the Hither iOS Flow design.
  *
- * The map underneath is themeable (night / dusk / day — see theme.ts), but the
- * glass chrome that floats over it (the pull-up sheet, Dynamic Island, group
- * pill, gathering-point carousel and the stacked overlays) is ALWAYS a dark,
- * translucent material, exactly like Apple Maps. These constants capture that
- * material so every surface reads the same values.
+ * The map underneath is themeable (night / dusk / day — see theme.ts). Native
+ * Liquid Glass owns the supported iOS material and follows the device look;
+ * these constants are the stable dark fallback used on older runtimes and
+ * Android so layouts remain readable without the native material.
  *
  * The amber accent is NOT baked in here — it comes from the active theme's
  * `colors.accent` so the Settings "map theme" picker still tints the UI (night
