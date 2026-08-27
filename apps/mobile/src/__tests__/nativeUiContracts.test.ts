@@ -11,6 +11,9 @@ const settingsIos = readFileSync(join(root, 'screens/MapScreen/components/Settin
 const settings = readFileSync(join(root, 'screens/MapScreen/components/SettingsOverlay.tsx'), 'utf8');
 const bottomSheet = readFileSync(join(root, 'components/BottomSheet.tsx'), 'utf8');
 const overlaySheet = readFileSync(join(root, 'components/OverlaySheet.tsx'), 'utf8');
+const nativeGlassButtonIos = readFileSync(join(root, 'components/NativeGlassButton.ios.tsx'), 'utf8');
+const paywallSheet = readFileSync(join(root, 'components/PaywallSheet.tsx'), 'utf8');
+const premiumBanner = readFileSync(join(root, 'components/PremiumBanner.tsx'), 'utf8');
 const mapScreen = readFileSync(join(root, 'screens/MapScreen.tsx'), 'utf8');
 
 describe('iOS native UI contracts', () => {
@@ -99,17 +102,33 @@ describe('iOS native UI contracts', () => {
   });
 
   it('leaves map glass to one native material surface', () => {
-    expect(bottomSheet).toContain("tintColor={Platform.OS === 'android' ? glass.sheetOpaque : undefined}");
+    expect(bottomSheet).toContain("glass.sheetOpaque : glass.sheet");
     expect(bottomSheet).not.toContain('tintColor="transparent"');
   });
 
   it('uses the Stage 2 native material for the gathering-point reorder overlay only', () => {
     expect(overlaySheet).toContain("material?: 'default' | 'mapSheet'");
-    expect(overlaySheet).toContain("material === 'mapSheet' && Platform.OS === 'ios'");
+    expect(overlaySheet).toContain("material === 'mapSheet'");
+    expect(overlaySheet).toContain('glass.sheet');
     const routeOverlay = mapScreen.slice(
       mapScreen.indexOf("visible={overlay === 'route'}"),
       mapScreen.indexOf('<GroupFeatureTourOverlay', mapScreen.indexOf("visible={overlay === 'route'}")),
     );
     expect(routeOverlay).toContain('material="mapSheet"');
+  });
+
+  it('keeps native close controls circular and icon-only', () => {
+    expect(nativeGlassButtonIos).toContain('buttonBorderShape(shape)');
+    expect(nativeGlassButtonIos).toContain("labelStyle('iconOnly' as const)");
+    expect(overlaySheet).toContain('doneSystemImage');
+    expect(paywallSheet).toContain('systemImage="xmark"');
+    expect(mapScreen).toContain('doneSystemImage="xmark"');
+  });
+
+  it('uses native glass controls for map chrome and limits haptics to Premium', () => {
+    expect(mapScreen).toContain('systemImage="person.3.fill"');
+    expect(mapScreen).toContain('testID="members-location-sharing"');
+    expect(premiumBanner).toContain('lightTap();');
+    expect(settings).not.toMatch(/(?:lightTap|mediumTap|selectionTick|rigidTap|alertBuzz)\s*\(/);
   });
 });

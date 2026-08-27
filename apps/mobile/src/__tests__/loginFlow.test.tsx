@@ -136,7 +136,7 @@ describe('LoginScreen email flows', () => {
 
   it('keeps the page on short input and sign-in failure', async () => {
     const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
-    const { getByTestId } = render(<LoginScreen navigation={navigation as never} route={{} as never} />);
+    const { getByTestId, getByText } = render(<LoginScreen navigation={navigation as never} route={{} as never} />);
     fireEvent.changeText(getByTestId('login-email'), 'test@example.com');
     fireEvent.changeText(getByTestId('login-password'), 'short');
     expect(getByTestId('login-submit').props.accessibilityState?.disabled).toBe(true);
@@ -150,6 +150,7 @@ describe('LoginScreen email flows', () => {
 
     expect(navigation.replace).not.toHaveBeenCalled();
     expect(alertSpy).toHaveBeenCalled();
+    expect(getByText('login.credentialsInvalid')).toBeTruthy();
     alertSpy.mockRestore();
   });
 

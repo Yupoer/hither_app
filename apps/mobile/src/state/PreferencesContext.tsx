@@ -104,7 +104,7 @@ interface PreferencesValue {
   highAccuracy: boolean;
   /** Master switch for uploading and retaining this device's location. */
   sharingEnabled: boolean;
-  /** When true, locate-me tilts the camera to a 45° oblique view. */
+  /** When true, locate-me tilts the camera to a 30° oblique view. */
   obliqueLocate: boolean;
   /** When true, start iOS Live Activity during an active journey. Default on. */
   liveActivityEnabled: boolean;
@@ -176,7 +176,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [textScale, setTextScaleState] = useState<TextScalePref>(DEFAULT_TEXT_SCALE);
   const [highAccuracy, setHighAccuracyState] = useState(false);
   const [sharingEnabled, setSharingEnabledState] = useState(true);
-  // Default on: locate-me tilts to 45° unless the user opts out in Settings.
+  // Default on: locate-me tilts to 30° unless the user opts out in Settings.
   const [obliqueLocate, setObliqueLocateState] = useState(true);
   // Default on: Live Activity during journey unless the user opts out.
   const [liveActivityEnabled, setLiveActivityEnabledState] = useState(true);

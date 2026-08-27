@@ -146,6 +146,7 @@ export default React.memo(function PremiumPresentation({
       .then((next) => {
         if (active) setProducts(next);
       })
+      .catch(() => undefined)
       .finally(() => {
         if (active) setCatalogLoading(false);
       });

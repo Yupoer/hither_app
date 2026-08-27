@@ -3,10 +3,11 @@
  * from Settings. Prices come from StoreKit — never hardcoded.
  */
 import React from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import PremiumPresentation from './PremiumPresentation';
 import { useTranslation, type TranslationKey } from '../i18n';
+import NativeGlassButton from './NativeGlassButton';
 
 export default React.memo(function PaywallSheet({
   visible,
@@ -33,17 +34,16 @@ export default React.memo(function PaywallSheet({
     >
       <View style={[styles.root, { paddingTop: insets.top }]}>
         <View style={styles.header}>
-          <Pressable
-            onPress={onClose}
-            accessibilityRole="button"
-            accessibilityLabel={t('common.cancel')}
-            hitSlop={8}
-            style={styles.close}
-          >
-            <Text style={styles.closeGlyph}>×</Text>
-          </Pressable>
+          <View style={styles.closeSlot} />
           <Text style={styles.headerTitle}>{t('paywall.title')}</Text>
-          <View style={styles.close} />
+          <NativeGlassButton
+            systemImage="xmark"
+            onPress={onClose}
+            accessibilityLabel={t('common.cancel')}
+            shape="circle"
+            layout="square"
+            style={styles.close}
+          />
         </View>
         <ScrollView contentContainerStyle={styles.scroll}>
           {visible ? (
@@ -70,15 +70,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 8,
     paddingBottom: 8,
-    minHeight: 44,
+    minHeight: 52,
   },
   close: {
-    width: 44,
-    height: 44,
+    width: 52,
+    height: 52,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  closeGlyph: { color: '#fff', fontSize: 28, lineHeight: 32, fontWeight: '300' },
+  closeSlot: { width: 52, height: 52 },
   headerTitle: {
     flex: 1,
     color: '#fff',

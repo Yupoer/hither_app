@@ -12,6 +12,10 @@ export interface MapCameraAdapter {
     options?: { zoom?: number; altitude?: number },
   ) => void;
   fitRoute: (coordinates: Coordinates[]) => void;
+  focusOblique?: (
+    coordinates: Coordinates,
+    options?: { zoom?: number; altitude?: number },
+  ) => void;
 }
 
 export function isValidMapCoordinate(c: Coordinates | null | undefined): c is Coordinates {
@@ -38,9 +42,11 @@ export function neighborhoodCameraOptions(): { zoom: number; altitude: number } 
 export function cameraOnLongPress(
   map: MapCameraAdapter | null | undefined,
   coordinates: Coordinates,
+  oblique = false,
 ): boolean {
   if (!map || !isValidMapCoordinate(coordinates)) return false;
-  map.centerOn(coordinates, neighborhoodCameraOptions());
+  if (oblique && map.focusOblique) map.focusOblique(coordinates, neighborhoodCameraOptions());
+  else map.centerOn(coordinates, neighborhoodCameraOptions());
   return true;
 }
 
@@ -52,13 +58,15 @@ export function cameraAfterSuccessfulAdd(
   map: MapCameraAdapter | null | undefined,
   destination: Coordinates,
   self: Coordinates | null | undefined,
+  oblique = false,
 ): 'fit_self_and_dest' | 'center_dest' | 'none' {
   if (!map || !isValidMapCoordinate(destination)) return 'none';
   if (isValidMapCoordinate(self)) {
     map.fitRoute([self, destination]);
     return 'fit_self_and_dest';
   }
-  map.centerOn(destination, neighborhoodCameraOptions());
+  if (oblique && map.focusOblique) map.focusOblique(destination, neighborhoodCameraOptions());
+  else map.centerOn(destination, neighborhoodCameraOptions());
   return 'center_dest';
 }
 
@@ -66,6 +74,7 @@ export function cameraAfterSuccessfulAdd(
 export function cameraOnSearchPick(
   map: MapCameraAdapter | null | undefined,
   coordinates: Coordinates,
+  oblique = false,
 ): boolean {
-  return cameraOnLongPress(map, coordinates);
+  return cameraOnLongPress(map, coordinates, oblique);
 }

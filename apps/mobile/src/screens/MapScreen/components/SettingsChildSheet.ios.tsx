@@ -20,12 +20,14 @@ import {
 import {
   accessibilityLabel,
   buttonStyle,
+  buttonBorderShape,
   frame,
   font,
   padding,
   presentationDetents,
   presentationDragIndicator,
 } from '@expo/ui/swift-ui/modifiers';
+import { liquidGlass } from '../../../native';
 
 const STAGE_ONE_RATIO = 0.52;
 const STAGE_TWO_RATIO = 0.8;
@@ -34,6 +36,7 @@ const STAGE_TWO_RATIO = 0.8;
 export default function SettingsChildSheet({
   visible,
   onClose,
+  onDismissComplete,
   title,
   children,
   initialStage = 0,
@@ -42,6 +45,7 @@ export default function SettingsChildSheet({
 }: {
   visible: boolean;
   onClose: () => void;
+  onDismissComplete?: () => void;
   onBack?: () => void;
   title: string;
   children: React.ReactNode;
@@ -59,8 +63,14 @@ export default function SettingsChildSheet({
     [initialStage, stageTwoRatio],
   );
   const closeStartedRef = useRef(false);
+  const dismissCompleteRef = useRef(false);
+  const onDismissCompleteRef = useRef(onDismissComplete);
+  onDismissCompleteRef.current = onDismissComplete;
   useEffect(() => {
-    if (visible) closeStartedRef.current = false;
+    if (visible) {
+      closeStartedRef.current = false;
+      dismissCompleteRef.current = false;
+    }
   }, [visible]);
   const closeOnce = useCallback(() => {
     if (closeStartedRef.current) return;
@@ -75,6 +85,9 @@ export default function SettingsChildSheet({
   }, [closeOnce, visible]);
   const handleDismiss = useCallback(() => {
     if (visible) closeOnce();
+    if (dismissCompleteRef.current) return;
+    dismissCompleteRef.current = true;
+    onDismissCompleteRef.current?.();
   }, [closeOnce, visible]);
 
   return (
@@ -84,10 +97,10 @@ export default function SettingsChildSheet({
       // hidden full-screen Host must not become a touch shield over the map.
       pointerEvents={visible ? 'auto' : 'none'}
     >
-        <BottomSheet
-          isPresented={visible}
-          onIsPresentedChange={handlePresentedChange}
-          onDismiss={handleDismiss}
+      <BottomSheet
+        isPresented={visible}
+        onIsPresentedChange={handlePresentedChange}
+        onDismiss={handleDismiss}
       >
         <Group
           modifiers={[
@@ -123,7 +136,8 @@ export default function SettingsChildSheet({
                 role="cancel"
                 onPress={closeOnce}
                 modifiers={[
-                  buttonStyle('plain'),
+                  buttonStyle(liquidGlass.isLiquidGlassAvailable() ? 'glass' : 'bordered'),
+                  buttonBorderShape('circle'),
                   frame({ width: 44, height: 44 }),
                   accessibilityLabel('close'),
                 ]}

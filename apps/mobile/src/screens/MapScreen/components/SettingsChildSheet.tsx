@@ -24,6 +24,7 @@ const SPRING = { stiffness: 320, damping: 29, mass: 1 } as const;
 export default function SettingsChildSheet({
   visible,
   onClose,
+  onDismissComplete,
   onBack,
   title,
   children,
@@ -35,6 +36,7 @@ export default function SettingsChildSheet({
 }: {
   visible: boolean;
   onClose: () => void;
+  onDismissComplete?: () => void;
   onBack?: () => void;
   title: string;
   children: React.ReactNode;
@@ -62,7 +64,12 @@ export default function SettingsChildSheet({
   const [mounted, setMounted] = useState(visible);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
-  const runUnmount = useCallback(() => setMounted(false), []);
+  const onDismissCompleteRef = useRef(onDismissComplete);
+  onDismissCompleteRef.current = onDismissComplete;
+  const runUnmount = useCallback(() => {
+    setMounted(false);
+    onDismissCompleteRef.current?.();
+  }, []);
 
   useEffect(() => {
     if (visible) {

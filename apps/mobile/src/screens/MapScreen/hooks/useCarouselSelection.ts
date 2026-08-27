@@ -10,6 +10,8 @@ interface UseCarouselSelectionParams {
   windowWidth: number;
   carouselRef: RefObject<ScrollView | null>;
   mapRef: RefObject<GroupMapHandle | null>;
+  /** Whether card selection should frame its destination with a 30° pitch. */
+  obliqueLocate?: boolean;
 }
 
 export function useCarouselSelection({
@@ -17,6 +19,7 @@ export function useCarouselSelection({
   windowWidth,
   carouselRef,
   mapRef,
+  obliqueLocate = true,
 }: UseCarouselSelectionParams) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [travelMode, setTravelMode] = useState<TravelMode>('walk');
@@ -76,10 +79,14 @@ export function useCarouselSelection({
       if (clamped !== selectedIndex) {
         setSelectedIndex(clamped);
         logEvent('carousel_swipe', { index: clamped });
-        mapRef.current?.centerOn(destinations[clamped].coordinates);
+        if (obliqueLocate && mapRef.current?.focusOblique) {
+          mapRef.current?.focusOblique(destinations[clamped].coordinates);
+        } else {
+          mapRef.current?.centerOn(destinations[clamped].coordinates);
+        }
       }
     },
-    [destinations, windowWidth, selectedIndex, mapRef],
+    [destinations, windowWidth, selectedIndex, mapRef, obliqueLocate],
   );
 
   return {

@@ -9,10 +9,10 @@ const journeyNavigation = readFileSync(
 );
 
 describe('MapKit route UI contract', () => {
-  it('draws a route polyline and exposes a 45-degree camera command', () => {
+  it('draws a route polyline and exposes a 30-degree camera command', () => {
     expect(groupMap).toContain('<Polyline');
-    expect(groupMap).toContain('focusOblique: (coordinates: Coordinates) => void');
-    expect(groupMap).toContain('pitch: 45');
+    expect(groupMap).toContain('focusOblique: (coordinates: Coordinates, options?: CenterOnOptions) => void');
+    expect(groupMap).toContain('pitch: 30');
   });
 
   it('anchors iOS map chrome without moving Android controls', () => {

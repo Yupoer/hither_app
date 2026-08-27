@@ -11,7 +11,7 @@ import {
   type NotificationCategory,
   type NotificationPreferences,
 } from '../types';
-import { radius, spacing, type Palette } from '../theme';
+import { spacing, type Palette } from '../theme';
 
 /**
  * Per-category notification toggles in Settings. Each of the four categories
@@ -94,18 +94,14 @@ export default function NotificationPreferencesCard({
 const makeStyles = (colors: Palette) =>
   StyleSheet.create({
     card: {
-      backgroundColor: colors.surface,
-      borderRadius: radius.md,
-      borderWidth: 1,
-      borderColor: colors.border,
-      paddingHorizontal: spacing.lg,
+      backgroundColor: 'transparent',
     },
     row: {
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
       paddingVertical: spacing.md,
-      paddingRight: spacing.md,
+      paddingHorizontal: 0,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: colors.border,
     },

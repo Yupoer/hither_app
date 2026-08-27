@@ -160,6 +160,7 @@ export default function FeedbackSheet({
       title={t('feedback.title')}
       accent={accent}
       doneLabel={t('common.cancel')}
+      doneSystemImage="xmark"
     >
       <ScrollView contentContainerStyle={styles.body}>
         <Text style={styles.categoryLabel}>{t('feedback.categoryLabel')}</Text>

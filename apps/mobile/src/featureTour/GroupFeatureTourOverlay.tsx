@@ -5,10 +5,7 @@ import {
   BackHandler,
   findNodeHandle,
   Platform,
-  Pressable,
-  ScrollView,
   StyleSheet,
-  Text,
   View,
   useWindowDimensions,
   type LayoutChangeEvent,
@@ -22,6 +19,9 @@ import {
   placeTourCard,
   type OverlayHoleKind,
 } from './overlayLayout';
+import TourCard from './TourCard';
+
+/** TourCard owns the platform-specific ScrollView and maxFontSizeMultiplier copy handling. */
 
 export interface GroupFeatureTourOverlayProps {
   visible: boolean;
@@ -47,7 +47,6 @@ const FADE_OUT_MS = 150;
 const FADE_IN_MS = 180;
 /** Title/body may scroll; keep Prev/Next outside the clipped region. */
 const CTA_RESERVE_PX = 56;
-
 type DisplayedTourSnapshot = {
   key: string;
   title: string;
@@ -293,6 +292,7 @@ export function GroupFeatureTourOverlay({
       </Animated.View>
 
       <Animated.View
+        ref={ctaRef}
         onLayout={onCardLayout}
         style={[
           styles.card,
@@ -307,51 +307,20 @@ export function GroupFeatureTourOverlay({
         accessibilityRole="summary"
         accessibilityLabel={a11yLabel}
       >
-        <ScrollView
-          bounces={false}
-          nestedScrollEnabled
-          style={{ maxHeight: Math.max(80, placement.maxCardHeight - CTA_RESERVE_PX) }}
-          contentContainerStyle={styles.cardScrollContent}
-        >
-          {shown.title.trim().length > 0 ? (
-            <Text style={styles.title} maxFontSizeMultiplier={1.6}>{shown.title}</Text>
-          ) : null}
-          <Text style={styles.body} maxFontSizeMultiplier={1.6}>{shown.body}</Text>
-        </ScrollView>
-        <View style={[styles.ctaRow, canGoPrev && onPrev ? styles.ctaRowWithPrev : null]}>
-          {canGoPrev && onPrev ? (
-            <Pressable
-              testID="tour-prev"
-              onPress={onPrev}
-              disabled={ctaBlocked}
-              style={({ pressed }) => [styles.prevCta, pressed && styles.ctaPressed]}
-              accessibilityRole="button"
-              accessibilityLabel={t('tour.prev')}
-            >
-              <Text style={styles.prevCtaText} maxFontSizeMultiplier={1.4}>
-                {t('tour.prev')}
-              </Text>
-            </Pressable>
-          ) : null}
-          <Pressable
-            ref={ctaRef}
-            testID="tour-next"
-            onPress={onNext}
-            disabled={ctaBlocked}
-            style={({ pressed }) => [
-              styles.cta,
-              pressed && styles.ctaPressed,
-              ctaBlocked && styles.ctaDisabled,
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel={shown.ctaLabel || t('tour.next')}
-            accessibilityState={{ disabled: ctaBlocked }}
-          >
-            <Text style={styles.ctaText} maxFontSizeMultiplier={1.4}>
-              {shown.ctaLabel || t('tour.next')}
-            </Text>
-          </Pressable>
-        </View>
+        <TourCard
+          title={shown.title}
+          body={shown.body}
+          ctaLabel={shown.ctaLabel || t('tour.next')}
+          prevLabel={t('tour.prev')}
+          canGoPrev={canGoPrev}
+          ctaDisabled={ctaBlocked}
+          onPrev={onPrev}
+          onNext={onNext}
+          accessibilityLabel={a11yLabel}
+          maxCardHeight={placement.maxCardHeight}
+          ctaReservePx={CTA_RESERVE_PX}
+          minCardHeight={!shown.targetRect ? Math.min(220, placement.maxCardHeight) : undefined}
+        />
       </Animated.View>
     </View>
   );
@@ -373,66 +342,9 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.55)',
     borderRadius: 0,
   },
-  ctaRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    paddingHorizontal: 18,
-    paddingBottom: 18,
-  },
-  ctaRowWithPrev: {
-    justifyContent: 'space-between',
-  },
-  prevCta: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.28)',
-  },
-  prevCtaText: {
-    color: 'rgba(245,247,251,0.9)',
-    fontSize: 16,
-    fontWeight: '600',
-  },
   card: {
     position: 'absolute',
-    backgroundColor: '#1a2233',
-    borderRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.12)',
     overflow: 'hidden',
-  },
-  cardScrollContent: {
-    paddingHorizontal: 18,
-    paddingTop: 18,
-    paddingBottom: 8,
-  },
-  title: {
-    color: '#F5F7FB',
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  body: {
-    color: 'rgba(245,247,251,0.82)',
-    fontSize: 15,
-    lineHeight: 22,
-    marginBottom: 16,
-  },
-  cta: {
-    alignSelf: 'flex-end',
-    backgroundColor: '#4C8DFF',
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 12,
-  },
-  ctaPressed: { opacity: 0.85 },
-  ctaDisabled: { opacity: 0.55 },
-  ctaText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
   },
 });
 

@@ -14,6 +14,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { liquidGlass } from '../native';
 import { glass } from '../glass';
+import NativeGlassButton from './NativeGlassButton';
 
 // Drag the handle/header down past this many px (or fling it) to dismiss —
 // matches the iOS sheet feel so "Done" is never the only way out.
@@ -37,6 +38,7 @@ export default function OverlaySheet({
   title,
   accent,
   doneLabel = 'Done',
+  doneSystemImage,
   headerLeft,
   opaque = false,
   material = 'default',
@@ -51,6 +53,8 @@ export default function OverlaySheet({
   title: string;
   accent: string;
   doneLabel?: string;
+  /** Optional native icon-only close control for cancel-only sheets. */
+  doneSystemImage?: string;
   /** Optional control on the left of the title (e.g. route list mode toggle). */
   headerLeft?: React.ReactNode;
   /** 100% opaque panel (no map bleed-through). Used by Settings. */
@@ -200,8 +204,8 @@ export default function OverlaySheet({
         <liquidGlass.GlassView
           glassStyle="regular"
           tintColor={
-            material === 'mapSheet' && Platform.OS === 'ios'
-              ? undefined
+            material === 'mapSheet'
+              ? Platform.OS === 'ios' ? glass.sheet : glass.sheetOpaque
               : opaque
                 ? glass.overlayOpaque
                 : glass.overlay
@@ -219,14 +223,26 @@ export default function OverlaySheet({
             <Text style={styles.title} numberOfLines={1}>
               {title}
             </Text>
-            <Pressable
-              onPress={handleDone}
-              accessibilityRole="button"
-              style={styles.headerSide}
-              hitSlop={8}
-            >
-              <Text style={[styles.done, { color: accent }]}>{doneLabel}</Text>
-            </Pressable>
+            {doneSystemImage ? (
+              <NativeGlassButton
+                systemImage={doneSystemImage}
+                onPress={handleDone}
+                accessibilityLabel={doneLabel}
+                shape="circle"
+                layout="square"
+                tintColor={accent}
+                style={styles.headerClose}
+              />
+            ) : (
+              <Pressable
+                onPress={handleDone}
+                accessibilityRole="button"
+                style={styles.headerSide}
+                hitSlop={8}
+              >
+                <Text style={[styles.done, { color: accent }]}>{doneLabel}</Text>
+              </Pressable>
+            )}
           </View>
         </View>
         <View style={styles.body} {...bodyPan.panHandlers}>
@@ -275,6 +291,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   headerSideLeft: { alignItems: 'flex-start' },
+  headerClose: { width: 52, height: 52, alignSelf: 'center' },
   title: {
     flex: 1,
     fontSize: 19,

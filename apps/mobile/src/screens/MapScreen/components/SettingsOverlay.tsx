@@ -30,6 +30,7 @@ import { useTranslation } from '../../../i18n';
 import { THEME_ORDER, themes } from '../../../theme';
 import { glass } from '../../../glass';
 import { applyOtaUpdate } from '../../../utils/otaUpdates';
+import { premiumPlanForProduct } from '../../../premiumCatalog';
 
 const MARQUEE_SPEED_MIN = 20;
 const MARQUEE_SPEED_MAX = 80;
@@ -50,6 +51,7 @@ interface SettingsOverlayProps {
   /** Sign out — list row only; red style only on confirm dialog. */
   onConfirmSignOut: () => void;
   onOpenPaywall: () => void;
+  onDismissComplete?: () => void;
   onAccountDeleted: () => void;
   onOpenDiagnostics: () => void;
   group?: Group | null;
@@ -114,6 +116,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
   onConfirmLeave,
   onConfirmSignOut,
   onOpenPaywall,
+  onDismissComplete,
   onAccountDeleted,
   onOpenDiagnostics,
   group,
@@ -123,7 +126,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
   styles,
 }: SettingsOverlayProps) {
   const { t } = useTranslation();
-  const { isPro } = useSession();
+  const { isPro, premiumProjection } = useSession();
   const {
     language,
     themeName,
@@ -277,6 +280,23 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
 
   const pageTitle = t('map.overlaySettings');
   const closeChild = () => setPage('root');
+  const handlePremiumPress = () => {
+    if (!isPro) {
+      onOpenPaywall();
+      return;
+    }
+    const plan = premiumPlanForProduct(premiumProjection.productId ?? '');
+    const planLabel = plan === 'monthly'
+      ? t('settings.premiumMonthly')
+      : plan === 'annual'
+        ? t('settings.premiumAnnual')
+        : t('settings.premiumEnabled');
+    Alert.alert(
+      t('paywall.title'),
+      t('settings.premiumCurrentPlan', { plan: planLabel }),
+      [{ text: t('common.ok') }],
+    );
+  };
 
   return (
     <View
@@ -287,6 +307,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
       <SettingsChildSheet
         visible={visible}
         onClose={onClose}
+        onDismissComplete={onDismissComplete}
         title={pageTitle}
         zIndex={80}
         initialStage={1}
@@ -296,7 +317,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
       <View style={styles.overlayBody}>
         {!isPro ? (
           <View testID="settings-subscribe-banner-hit-area">
-            <PremiumBanner onPress={onOpenPaywall} testID="settings-subscribe-banner" />
+            <PremiumBanner onPress={handlePremiumPress} testID="settings-subscribe-banner" />
           </View>
         ) : null}
         {/* ── 個人設定 ─────────────────────────────────────────── */}
@@ -311,7 +332,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
           <NavRow
             title={t('paywall.title')}
             description={isPro ? t('paywall.active') : t('paywall.upgrade')}
-            onPress={onOpenPaywall}
+            onPress={handlePremiumPress}
             styles={styles}
           />
           {isLeader && onUpdateGroupAvatar && group ? (

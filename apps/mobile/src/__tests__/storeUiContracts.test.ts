@@ -63,7 +63,8 @@ describe('four-pane store navigation contracts', () => {
     expect(settingsOverlay).toContain("import PremiumBanner from '../../../components/PremiumBanner'");
     expect(storePane).toContain('<PremiumBanner');
     expect(settingsOverlay).toContain('<PremiumBanner');
-    expect(storePane).toContain('name="coins"');
+    expect(storePane).toContain('🪙');
+    expect(storePane).not.toContain('name="coins"');
     expect(storePane).toContain('minHeight: 44');
     expect(premiumBanner).toContain("t('settings.subscribeBannerHint')");
   });

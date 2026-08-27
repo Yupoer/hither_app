@@ -98,7 +98,7 @@ export interface GroupMapHandle {
   centerOn: (coordinates: Coordinates, options?: CenterOnOptions) => void;
   /** Zoom/pan so every member with a known location is visible at once. */
   fitToMembers: () => void;
-  focusOblique: (coordinates: Coordinates) => void;
+  focusOblique: (coordinates: Coordinates, options?: CenterOnOptions) => void;
   fitRoute: (coordinates: Coordinates[]) => void;
 }
 
@@ -725,7 +725,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
         // User-driven framing — suppress subsequent auto first-gathering animate.
         centeredModeRef.current = 'user';
         // Flat top-down: animateCamera with pitch 0 so we leave any prior
-        // 45° oblique view cleanly (animateToRegion alone can leave pitch).
+        // oblique view cleanly (animateToRegion alone can leave pitch).
         // Place picks pass wider zoom/altitude; locate keeps street-level defaults.
         const camera = {
           center: {
@@ -743,10 +743,10 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
           mapRef.current?.animateCamera(camera, { duration: 280 });
         }
       },
-      focusOblique: (coordinates) => {
+      focusOblique: (coordinates, options) => {
         centeredModeRef.current = 'user';
         // Same visible-band lat shift as centerOn so the pin sits in the
-        // strip between carousel and sheet while pitched to 45°.
+        // strip between carousel and sheet while pitched to 30°.
         // Set zoom (Android) + altitude (iOS); pitch needs pitchEnabled on MapView.
         mapRef.current?.animateCamera(
           {
@@ -754,10 +754,10 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
               latitude: coordinates.latitude - latOffset,
               longitude: coordinates.longitude,
             },
-            pitch: 45,
+            pitch: 30,
             heading: 0,
-            zoom: LOCATE_ZOOM,
-            altitude: LOCATE_ALTITUDE,
+            zoom: options?.zoom ?? LOCATE_ZOOM,
+            altitude: options?.altitude ?? LOCATE_ALTITUDE,
           },
           { duration: 320 },
         );

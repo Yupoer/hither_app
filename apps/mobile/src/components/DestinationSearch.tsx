@@ -115,6 +115,8 @@ export default React.memo(function DestinationSearch({
       title={t('search.sheetTitle')}
       accent={colors.accent}
       doneLabel={t('common.cancel')}
+      doneSystemImage="xmark"
+      material="mapSheet"
       edgeToEdge
     >
       <View style={styles.body}>

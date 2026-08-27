@@ -21,7 +21,7 @@ import type { RootStackParamList } from '../navigation/RootNavigator';
 import CrookIcon from '../components/CrookIcon';
 import { useSession } from '../state/SessionContext';
 import { useTheme } from '../state/PreferencesContext';
-import { useTranslation } from '../i18n';
+import { useTranslation, type TranslationKey } from '../i18n';
 import { accentMix } from '../glass';
 import { runUiAction } from '../utils/uiAction';
 import SafePressable from '../components/SafePressable';
@@ -31,6 +31,26 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 type Mode = 'signin' | 'signup';
 
 const MIN_PASSWORD = 6;
+
+type AuthErrorField = 'email' | 'password' | 'nickname' | 'form';
+type AuthError = { field: AuthErrorField; key: TranslationKey };
+
+function mapAuthError(error: unknown): AuthError {
+  const message = error instanceof Error ? error.message.toLowerCase() : '';
+  if (/invalid login credentials|invalid credentials|email or password|authentication failed/.test(message)) {
+    return { field: 'password', key: 'login.credentialsInvalid' };
+  }
+  if (/already registered|already been registered|user already exists|email.*taken/.test(message)) {
+    return { field: 'email', key: 'login.emailAlreadyRegistered' };
+  }
+  if (/invalid email|email.*valid|email_address_invalid/.test(message)) {
+    return { field: 'email', key: 'login.emailFormatHint' };
+  }
+  if (/weak password|weak_password|password.*(character|length|short|weak)/.test(message)) {
+    return { field: 'password', key: 'login.passwordFormatHint' };
+  }
+  return { field: 'form', key: 'login.authUnavailable' };
+}
 
 /**
  * Login gate shown when there is no session. Offers email + password
@@ -51,6 +71,8 @@ export default function LoginScreen({ navigation }: Props) {
   const [password, setPassword] = useState('');
   const [nickname, setNickname] = useState('');
   const [busy, setBusy] = useState(false);
+  const [touched, setTouched] = useState({ email: false, password: false, nickname: false });
+  const [serverError, setServerError] = useState<AuthError | null>(null);
   const [guestConfirmVisible, setGuestConfirmVisible] = useState(false);
   const [appleAvailable, setAppleAvailable] = useState(false);
 
@@ -59,10 +81,38 @@ export default function LoginScreen({ navigation }: Props) {
   }, []);
 
   const isSignUp = mode === 'signup';
+  useEffect(() => {
+    setTouched({ email: false, password: false, nickname: false });
+    setServerError(null);
+  }, [mode]);
   const emailOk = /\S+@\S+\.\S+/.test(email.trim());
   const passwordOk = password.replace(/\s/g, '').length >= MIN_PASSWORD;
   const nicknameOk = !isSignUp || nickname.trim().length >= 1;
   const canSubmit = emailOk && passwordOk && nicknameOk && !busy;
+
+  const clearServerError = (field: AuthErrorField) => {
+    if (serverError && (serverError.field === field || serverError.field === 'form')) {
+      setServerError(null);
+    }
+  };
+  const emailError = touched.email
+    ? !email.trim()
+      ? t('login.emailRequired')
+      : !emailOk
+        ? t('login.emailFormatHint')
+        : null
+    : null;
+  const passwordError = touched.password
+    ? password.length === 0
+      ? t('login.passwordRequired')
+      : !passwordOk
+        ? t('login.passwordFormatHint')
+        : null
+    : null;
+  const nicknameError = isSignUp && touched.nickname && !nickname.trim()
+    ? t('login.nicknameRequired')
+    : null;
+  const serverErrorText = serverError ? t(serverError.key) : null;
 
   function goToApp() {
     navigation.replace('RoleSelect');
@@ -92,10 +142,12 @@ export default function LoginScreen({ navigation }: Props) {
       goToApp();
     } catch (e) {
       if (token.isCurrent()) {
+        const mapped = mapAuthError(e);
+        setServerError(mapped);
         const fallback = isSignUp ? t('login.signUpFailed') : t('login.signInFailed');
         Alert.alert(
           isSignUp ? t('login.tabSignUp') : t('login.tabSignIn'),
-          e instanceof Error ? e.message : fallback,
+          t(mapped.key) || fallback,
         );
       }
       throw e;
@@ -216,7 +268,8 @@ export default function LoginScreen({ navigation }: Props) {
             <TextInput
               style={styles.input}
               value={email}
-              onChangeText={setEmail}
+              onChangeText={(value) => { setEmail(value); clearServerError('email'); }}
+              onBlur={() => setTouched((prev) => ({ ...prev, email: true }))}
               placeholder={t('login.emailPlaceholder')}
               placeholderTextColor="rgba(235,235,245,0.4)"
               keyboardAppearance="dark"
@@ -228,13 +281,17 @@ export default function LoginScreen({ navigation }: Props) {
               testID="login-email"
             />
           </View>
+          {emailError || serverError?.field === 'email' ? (
+            <Text style={styles.fieldError}>{emailError ?? serverErrorText}</Text>
+          ) : null}
 
           <Text style={styles.label}>{t('login.password')}</Text>
           <View style={styles.field}>
             <TextInput
               style={styles.input}
               value={password}
-              onChangeText={setPassword}
+              onChangeText={(value) => { setPassword(value); clearServerError('password'); }}
+              onBlur={() => setTouched((prev) => ({ ...prev, password: true }))}
               placeholder={t('login.passwordPlaceholder')}
               placeholderTextColor="rgba(235,235,245,0.4)"
               keyboardAppearance="dark"
@@ -245,6 +302,9 @@ export default function LoginScreen({ navigation }: Props) {
               testID="login-password"
             />
           </View>
+          {passwordError || serverError?.field === 'password' ? (
+            <Text style={styles.fieldError}>{passwordError ?? serverErrorText}</Text>
+          ) : null}
 
           {isSignUp && (
             <>
@@ -253,7 +313,8 @@ export default function LoginScreen({ navigation }: Props) {
                 <TextInput
                   style={styles.input}
                   value={nickname}
-                  onChangeText={setNickname}
+                  onChangeText={(value) => { setNickname(value); clearServerError('nickname'); }}
+                  onBlur={() => setTouched((prev) => ({ ...prev, nickname: true }))}
                   placeholder={t('login.nicknamePlaceholder')}
                   placeholderTextColor="rgba(235,235,245,0.4)"
                   keyboardAppearance="dark"
@@ -262,8 +323,15 @@ export default function LoginScreen({ navigation }: Props) {
                   testID="login-nickname"
                 />
               </View>
+              {nicknameError || serverError?.field === 'nickname' ? (
+                <Text style={styles.fieldError}>{nicknameError ?? serverErrorText}</Text>
+              ) : null}
             </>
           )}
+
+          {serverError?.field === 'form' ? (
+            <Text style={styles.formError}>{serverErrorText}</Text>
+          ) : null}
 
           <SafePressable
             actionId={isSignUp ? 'login.sign_up' : 'login.sign_in'}
@@ -457,6 +525,21 @@ const makeStyles = (accent: string) =>
       borderColor: 'rgba(255,255,255,0.2)',
     },
     input: { fontSize: 18, color: '#fff' },
+    fieldError: {
+      marginTop: 6,
+      marginLeft: 4,
+      color: '#ff6b6b',
+      fontSize: 13,
+      lineHeight: 18,
+    },
+    formError: {
+      marginTop: 10,
+      marginBottom: 2,
+      color: '#ff6b6b',
+      fontSize: 13,
+      lineHeight: 18,
+      textAlign: 'center',
+    },
     cta: {
       height: 56,
       borderRadius: 18,

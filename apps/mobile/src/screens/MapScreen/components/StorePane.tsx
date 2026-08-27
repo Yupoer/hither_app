@@ -16,7 +16,7 @@ import {
   View,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { FontAwesome6, Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { glass } from '../../../glass';
 import { GLOBAL_FONT_SCALE_CAP } from '../../../theme/typeScale';
 import { useFontLayout } from '../../../a11y/useFontScaleBucket';
@@ -1056,7 +1056,7 @@ export const StorePane = React.memo(function StorePane({
           {/* Premium → divider → balance → ad (#store layout). */}
           <View style={styles.balanceAdRow}>
             <View style={styles.balanceInline} testID="store-balance">
-              <FontAwesome6 name="coins" size={21} color="#FFD60A" />
+              <Text style={styles.coinGlyph} accessibilityLabel="coin">🪙</Text>
               <Text
                 style={styles.balanceInlineValue}
                 accessibilityRole="text"
@@ -1082,7 +1082,6 @@ export const StorePane = React.memo(function StorePane({
               }
               testID="store-ad-cta"
             >
-              <Ionicons name="play" size={12} color="#FFD60A" />
               <Text style={styles.adChipText}>
                 {offline ? t('store.offlineCta') : t('store.watchAdPlus10')}
               </Text>
@@ -1283,6 +1282,7 @@ const makeStyles = (scale: number, boldText: boolean) => {
       marginBottom: s(10, 8),
     },
     balanceInline: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44 },
+    coinGlyph: { fontSize: 21, lineHeight: 25 },
     balanceInlineValue: { fontSize: 17, fontWeight: '800', color: '#FFD60A' },
     adChip: {
       flexDirection: 'row',
@@ -1385,6 +1385,10 @@ const makeStyles = (scale: number, boldText: boolean) => {
       justifyContent: 'center',
     },
     productScopeTag: {
+      backgroundColor: glass.fillStrong,
+      borderRadius: 999,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
       fontSize: 9.5,
       fontWeight: '800',
       color: glass.textSecondary,

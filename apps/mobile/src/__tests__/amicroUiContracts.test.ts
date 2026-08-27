@@ -21,10 +21,11 @@ describe('Amicro native animation contracts', () => {
     for (const icon of [
       'link-outline', 'send-outline', 'settings-outline', 'copy-outline', 'checkmark',
       'search', 'close', 'pencil-outline', 'expand-outline', 'contract-outline',
-      'refresh', 'eye-off-outline', 'eye-outline',
+      'refresh',
     ]) {
       expect(map + passive).toMatch(new RegExp(`(?:icon|activeIcon)="${icon}"`));
     }
+    expect(map).toContain("systemImage={sharingEnabled ? 'eye' : 'eye.slash'}");
     expect(map).not.toContain('activeIcon="pause"');
     expect(map).toContain('style={styles.headerIconBtn}');
     // Search holds complete frame until OverlaySheet onOpenComplete (not rAF×2).

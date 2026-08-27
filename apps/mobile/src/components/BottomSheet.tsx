@@ -417,10 +417,9 @@ export default React.memo(function BottomSheet({
     <GestureDetector gesture={pan}>
       <Animated.View style={[styles.sheet, sheetStyle]}>
         <liquidGlass.GlassView
-          // iOS uses the system material without an artificial opaque tint so
-          // the map remains visible at Peek and the same surface survives
-          // Stage 1/2. Android keeps its solid fallback.
-          tintColor={Platform.OS === 'android' ? glass.sheetOpaque : undefined}
+          // Keep the lighter sheet token consistent across native glass and
+          // the Android/older-iOS fallback without changing its alpha.
+          tintColor={Platform.OS === 'android' ? glass.sheetOpaque : glass.sheet}
           style={StyleSheet.absoluteFill}
         />
         <AnimatedScrollView

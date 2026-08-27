@@ -10,6 +10,7 @@ import { PLACE_ALTITUDE, PLACE_ZOOM } from '../components/mapCameraMath';
 function mockMap() {
   return {
     centerOn: jest.fn(),
+    focusOblique: jest.fn(),
     fitRoute: jest.fn(),
   };
 }
@@ -32,6 +33,14 @@ describe('mapCameraFlow', () => {
       altitude: PLACE_ALTITUDE,
     });
     expect(map.fitRoute).not.toHaveBeenCalled();
+  });
+
+  it('uses the oblique camera when long-press locating is enabled', () => {
+    const map = mockMap();
+    const coords = { latitude: 25.03, longitude: 121.56 };
+    expect(cameraOnLongPress(map, coords, true)).toBe(true);
+    expect(map.focusOblique).toHaveBeenCalledWith(coords, neighborhoodCameraOptions());
+    expect(map.centerOn).not.toHaveBeenCalled();
   });
 
   it('ignores invalid long-press coords', () => {
@@ -63,6 +72,14 @@ describe('mapCameraFlow', () => {
     const coords = { latitude: 25.03, longitude: 121.56 };
     expect(cameraOnSearchPick(map, coords)).toBe(true);
     expect(map.centerOn).toHaveBeenCalledWith(coords, neighborhoodCameraOptions());
+  });
+
+  it('search pick can use the flat camera when oblique locating is disabled', () => {
+    const map = mockMap();
+    const coords = { latitude: 25.03, longitude: 121.56 };
+    expect(cameraOnSearchPick(map, coords, false)).toBe(true);
+    expect(map.centerOn).toHaveBeenCalledWith(coords, neighborhoodCameraOptions());
+    expect(map.focusOblique).not.toHaveBeenCalled();
   });
 
   it('validates coordinates', () => {

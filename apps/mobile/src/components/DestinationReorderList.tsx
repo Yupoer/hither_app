@@ -15,6 +15,7 @@ import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/d
 import type { Destination } from '../types';
 import type { TourTargetId } from '../featureTour/constants';
 import { radius, spacing, DAY_COLORS, type Palette } from '../theme';
+import { glass } from '../glass';
 import { readOnboardingState } from '../onboarding/sync';
 import { usePreferences } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
@@ -2108,7 +2109,7 @@ const makeStyles = (colors: Palette) =>
       borderRadius: radius.md,
       borderWidth: 1,
       borderColor: colors.border,
-      backgroundColor: colors.surface,
+      backgroundColor: glass.fillStrong,
       overflow: 'hidden',
     },
     headerRow: {
@@ -2176,11 +2177,11 @@ const makeStyles = (colors: Palette) =>
       alignItems: 'center',
       paddingHorizontal: spacing.lg,
       borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: colors.border,
-      backgroundColor: colors.surface,
+      borderBottomColor: glass.hairline,
+      backgroundColor: glass.fill,
     },
     rowActive: {
-      backgroundColor: colors.glass,
+      backgroundColor: glass.fillStrong,
       borderRadius: radius.md,
       shadowColor: '#000',
       shadowOpacity: 0.25,

@@ -155,6 +155,7 @@ export default React.memo(function KmlImportSheet({
       title={t('kml.entry')}
       accent={accent}
       doneLabel={t('common.cancel')}
+      doneSystemImage="xmark"
     >
       <ScrollView contentContainerStyle={styles.body}>
         {step.kind === 'intro' && (

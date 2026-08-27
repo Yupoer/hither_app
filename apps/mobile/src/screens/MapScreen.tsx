@@ -95,6 +95,7 @@ import CrookIcon from '../components/CrookIcon';
 import { AmicroButton } from '../components/AmicroButton';
 import { HitherText } from '../components/HitherText';
 import OverflowMarquee from '../components/OverflowMarquee';
+import NativeGlassButton from '../components/NativeGlassButton';
 import {
   applyLocalClosedAt,
   arrivalControlJustSplit,
@@ -493,7 +494,6 @@ export default function MapScreen({ route, navigation }: Props) {
     isPro,
     premiumProjection,
     upgradeToEmailAccount,
-    ensurePremiumAccess,
   } = useSession();
   const {
     highAccuracy,
@@ -1050,6 +1050,7 @@ export default function MapScreen({ route, navigation }: Props) {
   /** Team extra gathering-point credits remaining (route UI when > 0). */
   const [extraPointCredits, setExtraPointCredits] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [paywallPendingAfterSettings, setPaywallPendingAfterSettings] = useState(false);
   const [purchaseUnlocking, setPurchaseUnlocking] = useState(false);
   const [overlay, setOverlay] = useState<
     null
@@ -1404,13 +1405,10 @@ export default function MapScreen({ route, navigation }: Props) {
   const [paywallVisible, setPaywallVisible] = useState(false);
   const [paywallShowRestore, setPaywallShowRestore] = useState(true);
   const openPaywall = useCallback((trigger?: TranslationKey, opts?: { showRestore?: boolean }) => {
-    void ensurePremiumAccess().then((allowed) => {
-      if (allowed) return;
-      setPaywallTrigger(trigger);
-      setPaywallShowRestore(opts?.showRestore ?? true);
-      setPaywallVisible(true);
-    });
-  }, [ensurePremiumAccess]);
+    setPaywallTrigger(trigger);
+    setPaywallShowRestore(opts?.showRestore ?? true);
+    setPaywallVisible(true);
+  }, []);
 
   // --- Meet-time countdown + editor (date + time; red threshold shared via DB)
   const [meetTimeEditor, setMeetTimeEditor] = useState<{
@@ -1732,6 +1730,7 @@ export default function MapScreen({ route, navigation }: Props) {
     windowWidth,
     carouselRef,
     mapRef,
+    obliqueLocate,
   });
 
   const reference = useMemo<MemberLocation | undefined>(
@@ -1894,18 +1893,11 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [preferencesReady, setSharingEnabled, sharingEnabled, user?.id]);
 
   const [sharingApplying, setSharingApplying] = useState(false);
-  const [sharingIconEpoch, setSharingIconEpoch] = useState(0);
-  const revertSharingIcon = useCallback(() => {
-    setSharingIconEpoch((n) => n + 1);
-  }, []);
   const handleSharingEnabledChange = useCallback(async (enabled: boolean) => {
     const previous = sharingEnabled;
     if (enabled) {
       const granted = await requestLocationPermission();
-      if (!granted) {
-        revertSharingIcon();
-        return false;
-      }
+      if (!granted) return false;
     }
     setSharingEnabled(enabled);
     if (!enabled) {
@@ -1928,11 +1920,10 @@ export default function MapScreen({ route, navigation }: Props) {
       }).catch(() => undefined);
       // Keep the local preference aligned with the server when the sync fails.
       setSharingEnabled(previous);
-      revertSharingIcon();
       Alert.alert(t('settings.locationSharingSyncFailed'));
       return false;
     }
-  }, [setSharingEnabled, navigationSessionState, sharingEnabled, t, revertSharingIcon]);
+  }, [setSharingEnabled, navigationSessionState, sharingEnabled, t]);
   const handleSharingEnabledChangeAnimated = useCallback(() => {
     if (sharingApplying) return;
     const nextEnabled = !sharingEnabled;
@@ -1945,14 +1936,13 @@ export default function MapScreen({ route, navigation }: Props) {
       void (async () => {
         setSharingApplying(true);
         try {
-          const ok = await handleSharingEnabledChange(nextEnabled);
-          if (!ok) revertSharingIcon();
+          await handleSharingEnabledChange(nextEnabled);
         } finally {
           setSharingApplying(false);
         }
       })();
-    }, revertSharingIcon);
-  }, [handleSharingEnabledChange, sharingApplying, sharingEnabled, t, revertSharingIcon]);
+    });
+  }, [handleSharingEnabledChange, sharingApplying, sharingEnabled, t]);
 
   useEffect(() => {
     if (isLeader || !navigationSessionState.session) {
@@ -2949,7 +2939,7 @@ export default function MapScreen({ route, navigation }: Props) {
       async (token) => {
         lightTap();
         const go = (coords: NonNullable<typeof deviceCoords>) => {
-          // Settings toggle: flat top-down vs 45° oblique (Apple-Maps-style).
+          // Settings toggle: flat top-down vs 30° oblique (Apple-Maps-style).
           if (obliqueLocate) mapRef.current?.focusOblique(coords);
           else mapRef.current?.centerOn(coords);
         };
@@ -3212,9 +3202,9 @@ export default function MapScreen({ route, navigation }: Props) {
       setPendingPlace(place);
       setPendingPlaceTitle(place.name);
       // Search-pick camera: neighborhood zoom (must not regress with long-press fix).
-      cameraOnSearchPick(mapRef.current, place.coordinates);
+      cameraOnSearchPick(mapRef.current, place.coordinates, obliqueLocate);
     },
-    [canEditItinerary, notifyLeaderPlace, tripDayForAdd],
+    [canEditItinerary, notifyLeaderPlace, tripDayForAdd, obliqueLocate],
   );
 
   const handlePickDestination = useCallback(async (place: PlaceResult): Promise<boolean> => {
@@ -3264,12 +3254,20 @@ export default function MapScreen({ route, navigation }: Props) {
               mapRef.current,
               place.coordinates,
               deviceCoords ?? null,
+              obliqueLocate,
             );
           } else {
-            mapRef.current?.centerOn(place.coordinates, {
-              zoom: PLACE_ZOOM,
-              altitude: PLACE_ALTITUDE,
-            });
+            if (obliqueLocate) {
+              mapRef.current?.focusOblique(place.coordinates, {
+                zoom: PLACE_ZOOM,
+                altitude: PLACE_ALTITUDE,
+              });
+            } else {
+              mapRef.current?.centerOn(place.coordinates, {
+                zoom: PLACE_ZOOM,
+                altitude: PLACE_ALTITUDE,
+              });
+            }
           }
           // Only treat as complete success when refresh confirms projection.
           // refresh() false keeps the confirm card / temp flag (Ticket 05).
@@ -3300,6 +3298,7 @@ export default function MapScreen({ route, navigation }: Props) {
     notifyLeaderPlace,
     isPro,
     destinations.length,
+    obliqueLocate,
     allScopedDestinations,
     extraPointCredits,
     myScopeId,
@@ -3351,7 +3350,7 @@ export default function MapScreen({ route, navigation }: Props) {
       // Same confirm card for leaders and members: editable name, then Add.
       // Members only notify the leader when they tap Add (handlePickDestination).
       // One neighborhood zoom (same scale as search pick) so the pin is confirmable.
-      cameraOnLongPress(mapRef.current, coordinates);
+      cameraOnLongPress(mapRef.current, coordinates, obliqueLocate);
       const defaultName = t('map.droppedPin');
       const place: PlaceResult = {
         id: `drop-${coordinates.latitude.toFixed(5)}-${coordinates.longitude.toFixed(5)}-${Date.now()}`,
@@ -3362,7 +3361,7 @@ export default function MapScreen({ route, navigation }: Props) {
       setPendingPlace(place);
       setPendingPlaceTitle(defaultName);
     },
-    [t],
+    [t, obliqueLocate],
   );
 
   const handleCoordinateDestination = useCallback(
@@ -3406,10 +3405,17 @@ export default function MapScreen({ route, navigation }: Props) {
             if (!token.isCurrent()) return false;
             logEvent('destination_add', { source: 'coordinates', day: addDay });
             setSelectedIndex(destinations.length);
-            mapRef.current?.centerOn(input.coordinates, {
-              zoom: PLACE_ZOOM,
-              altitude: PLACE_ALTITUDE,
-            });
+            if (obliqueLocate) {
+              mapRef.current?.focusOblique(input.coordinates, {
+                zoom: PLACE_ZOOM,
+                altitude: PLACE_ALTITUDE,
+              });
+            } else {
+              mapRef.current?.centerOn(input.coordinates, {
+                zoom: PLACE_ZOOM,
+                altitude: PLACE_ALTITUDE,
+              });
+            }
             await refresh();
             return true;
           } catch (e) {
@@ -3443,6 +3449,7 @@ export default function MapScreen({ route, navigation }: Props) {
       allScopedDestinations,
       extraPointCredits,
       destinations.length,
+      obliqueLocate,
       myScopeId,
       refresh,
       openPaywall,
@@ -5259,7 +5266,16 @@ export default function MapScreen({ route, navigation }: Props) {
     setCustomSlot(typeof slot === 'number' ? slot : 0);
     setOverlay('custom');
   }, []);
-  const openPaywallCb = useCallback(() => openPaywall(), [openPaywall]);
+  const openPaywallCb = useCallback(() => {
+    // SwiftUI's sheet must finish dismissing before RN presents its Modal.
+    setPaywallPendingAfterSettings(true);
+    setSettingsOpen(false);
+  }, []);
+  const handleSettingsDismissComplete = useCallback(() => {
+    if (!paywallPendingAfterSettings) return;
+    setPaywallPendingAfterSettings(false);
+    openPaywall();
+  }, [openPaywall, paywallPendingAfterSettings]);
 
   const selectSheetPane = useCallback((key: SheetPaneKey) => {
     if (key === selectedSection) return;
@@ -5532,22 +5548,18 @@ export default function MapScreen({ route, navigation }: Props) {
               </View>
             </Pressable>
           )}
-          <AmicroButton
-            icon="eye-off-outline"
-            activeIcon="eye-outline"
-            active={sharingEnabled}
-            activeOnPress={!sharingEnabled}
-            resetAfterComplete={false}
-            revertEpoch={sharingIconEpoch}
+          <NativeGlassButton
+            systemImage={sharingEnabled ? 'eye' : 'eye.slash'}
             disabled={sharingApplying}
-            color={glass.danger}
-            activeColor={accent}
+            tintColor={sharingEnabled ? accent : glass.danger}
             style={styles.locationSharingButton}
             accessibilityLabel={t('settings.locationSharing')}
             accessibilityHint={t('settings.locationSharingHint')}
             testID="members-location-sharing"
-            onPress={mediumTap}
-            onAnimationComplete={handleSharingEnabledChangeAnimated}
+            onPress={() => {
+              mediumTap();
+              handleSharingEnabledChangeAnimated();
+            }}
           />
         </View>
         <RefreshLocationsButton
@@ -5652,7 +5664,7 @@ export default function MapScreen({ route, navigation }: Props) {
     setHighAccuracy, pendingInvites, fontBucket, handleAcceptInvite, handleDeclineInvite,
     subgroups, topFlockMemo, renderFlockRow, flock, mySubgroupId, sentInvites,
     applyPresenceMacroKind, openAndroidStatusSheet, myStatusKind, statusMenuItems,
-    sharingEnabled, handleSharingEnabledChangeAnimated, sharingApplying, sharingIconEpoch,
+    sharingEnabled, handleSharingEnabledChangeAnimated, sharingApplying,
   ]);
 
   // ─── 路線：集合點、排序、Google Maps 匯入、歷史 ───────────────────────
@@ -6239,39 +6251,20 @@ export default function MapScreen({ route, navigation }: Props) {
         pointerEvents={atFull ? 'none' : 'box-none'}
       >
         <View style={{ alignItems: 'flex-start' }}>
-          <Pressable
-            style={{ zIndex: 2 }}
+          <NativeGlassButton
+            systemImage="person.3.fill"
+            label={`${group?.name ?? 'Hither'} · ${members.length}`}
+            accessibilityLabel={`${group?.name ?? 'Hither'} · ${members.length}`}
+            tintColor={glass.pill}
+            shape="capsule"
+            style={styles.groupPill}
             onPress={() => {
               if (myScopeId) {
                 LayoutAnimation.configureNext(LayoutAnimation.Presets.spring);
                 setViewingScope(prev => prev === 'sub' ? 'main' : 'sub');
               }
             }}
-          >
-            <liquidGlass.GlassView
-              // Match the Peek sheet's native material while retaining the
-              // system-controlled Liquid Glass surface.
-              glassStyle="regular"
-              style={styles.groupPill}
-            >
-              <View
-                style={[
-                  styles.pillAvatar,
-                  {
-                    backgroundColor: group?.avatarColor ?? (group ? avatarColorForGroup(group.id) : accent),
-                  },
-                ]}
-              >
-                <HitherText typeRole="emoji" style={styles.pillEmoji}>
-                  {group?.avatar ?? (group ? avatarForGroup(group.id) : '👥')}
-                </HitherText>
-              </View>
-              <Text style={[styles.pillName, { color: colors.textPrimary }]} numberOfLines={1}>
-                {group?.name ?? 'Hither'}
-              </Text>
-              <Text style={[styles.pillCount, { color: colors.textSecondary }]}>· {members.length}</Text>
-            </liquidGlass.GlassView>
-          </Pressable>
+          />
         </View>
       </Animated.View>
       )}
@@ -6287,26 +6280,27 @@ export default function MapScreen({ route, navigation }: Props) {
           <liquidGlass.GlassView
             // Keep the recenter capsule on the same native material as Peek.
             glassStyle="regular"
+            tintColor={glass.pill}
             style={StyleSheet.absoluteFill}
             pointerEvents="none"
           />
-          <Pressable
+          <NativeGlassButton
             style={styles.recenterHit}
-            onPress={fitAllMembers}
-            accessibilityRole="button"
+            systemImage="arrow.up.left.and.arrow.down.right"
             accessibilityLabel={t('map.fitAllA11y')}
-          >
-            <Ionicons name="expand-outline" size={19} color={colors.textPrimary} />
-          </Pressable>
+            tintColor={colors.textPrimary}
+            shape="capsule"
+            onPress={fitAllMembers}
+          />
           <View style={styles.recenterDivider} />
-          <Pressable
+          <NativeGlassButton
             style={styles.recenterHit}
-            onPress={locateMe}
-            accessibilityRole="button"
+            systemImage="location.fill"
             accessibilityLabel={t('map.locateA11y')}
-          >
-            <Ionicons name="navigate" size={19} color={colors.textPrimary} />
-          </Pressable>
+            tintColor={colors.textPrimary}
+            shape="capsule"
+            onPress={locateMe}
+          />
         </View>
       </Animated.View>
       )}
@@ -6330,7 +6324,11 @@ export default function MapScreen({ route, navigation }: Props) {
             style={[styles.confirmCard, { bottom: confirmBottom }, confirmCardStyle]}
             pointerEvents="box-none"
           >
-            <liquidGlass.GlassView tintColor={glass.cardActive} style={styles.confirmCardInner}>
+            <liquidGlass.GlassView
+              glassStyle="regular"
+              tintColor={glass.cardActive}
+              style={styles.confirmCardInner}
+            >
               <View style={styles.confirmTopRow}>
                 <View style={styles.confirmTextCol}>
                   <Text style={styles.confirmKicker} numberOfLines={1}>
@@ -6368,70 +6366,77 @@ export default function MapScreen({ route, navigation }: Props) {
                   </View>
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Pressable
-                    testID="add-place-favorite-star"
+                  <View
                     ref={(node) => setTourTargetRef('addPlaceFavoriteStar', node as View | null)}
-                    style={({ pressed }) => [
-                      styles.confirmArrow,
-                      { backgroundColor: accentMix(accent, 18) },
-                      pressed && { opacity: 0.8 },
-                    ]}
-                    onPress={() => {
-                      // Tour is explanation-only: block real action while active.
-                      if (addPlaceTourStep != null) return;
-                      void togglePendingFavorite();
-                    }}
-                    disabled={favoriteBusy || !user?.id}
-                    accessibilityRole="button"
-                    accessibilityLabel={
-                      pendingIsFavorite
-                        ? t('stay.unfavoriteA11y')
-                        : t('stay.favoriteA11y')
-                    }
-                    accessibilityState={{ selected: pendingIsFavorite, busy: favoriteBusy }}
+                    style={styles.confirmArrow}
                   >
-                    <Ionicons
-                      name={pendingIsFavorite ? 'star' : 'star-outline'}
-                      size={26}
-                      color={accent}
+                    <NativeGlassButton
+                      testID="add-place-favorite-star"
+                      systemImage={pendingIsFavorite ? 'star.fill' : 'star'}
+                      onPress={() => {
+                        // Tour is explanation-only: block real action while active.
+                        if (addPlaceTourStep != null) return;
+                        void togglePendingFavorite();
+                      }}
+                      disabled={favoriteBusy || !user?.id}
+                      accessibilityLabel={
+                        pendingIsFavorite
+                          ? t('stay.unfavoriteA11y')
+                          : t('stay.favoriteA11y')
+                      }
+                      selected={pendingIsFavorite}
+                      busy={favoriteBusy}
+                      style={StyleSheet.absoluteFill}
+                      tintColor={accent}
+                      layout="square"
+                      shape="circle"
                     />
-                  </Pressable>
-                  <Pressable
-                    testID="add-place-center-btn"
+                  </View>
+                  <View
                     ref={(node) => setTourTargetRef('addPlaceCenter', node as View | null)}
-                    style={({ pressed }) => [
-                      styles.confirmArrow,
-                      { backgroundColor: accentMix(accent, 18) },
-                      pressed && { opacity: 0.8 }
-                    ]}
-                    onPress={() => {
-                      if (addPlaceTourStep != null) return;
-                      mapRef.current?.focusOblique(pendingPlace.coordinates);
-                    }}
-                    accessibilityRole="button"
-                    accessibilityLabel={t('stay.centerPlaceA11y')}
+                    style={styles.confirmArrow}
                   >
-                    <Ionicons name="navigate" size={28} color={accent} />
-                  </Pressable>
+                    <NativeGlassButton
+                      testID="add-place-center-btn"
+                      systemImage="location.fill"
+                      onPress={() => {
+                        if (addPlaceTourStep != null) return;
+                        if (obliqueLocate) {
+                          mapRef.current?.focusOblique(pendingPlace.coordinates);
+                        } else {
+                          mapRef.current?.centerOn(pendingPlace.coordinates);
+                        }
+                      }}
+                      accessibilityLabel={t('stay.centerPlaceA11y')}
+                      style={StyleSheet.absoluteFill}
+                      tintColor={accent}
+                      layout="square"
+                      shape="circle"
+                    />
+                  </View>
                 </View>
               </View>
               <View style={styles.confirmBtnRow}>
-                <Pressable
-                  style={({ pressed }) => [styles.confirmCancel, pressed && { opacity: 0.85 }]}
+                <NativeGlassButton
+                  style={styles.confirmCancel}
+                  variant="glass"
+                  role="cancel"
+                  label={t('common.cancel')}
+                  accessibilityLabel={t('common.cancel')}
+                  layout="fill"
+                  shape="capsule"
                   onPress={() => {
                     selectionTick();
                     dismissConfirmCard();
                   }}
-                  accessibilityRole="button"
-                >
-                  <Text style={styles.confirmCancelText}>{t('common.cancel')}</Text>
-                </Pressable>
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.confirmAdd,
-                    { backgroundColor: accent },
-                    pressed && { opacity: 0.9 },
-                  ]}
+                />
+                <NativeGlassButton
+                  style={[styles.confirmAdd, Platform.OS === 'ios' ? null : { backgroundColor: accent }]}
+                  variant="glassProminent"
+                  label={t('confirmGather.add')}
+                  accessibilityLabel={t('confirmGather.add')}
+                  layout="fill"
+                  shape="capsule"
                   onPress={() => {
                     const place = {
                       ...pendingPlace,
@@ -6447,10 +6452,7 @@ export default function MapScreen({ route, navigation }: Props) {
                       { screen: 'Map' },
                     );
                   }}
-                  accessibilityRole="button"
-                >
-                  <Text style={styles.confirmAddText}>{t('confirmGather.add')}</Text>
-                </Pressable>
+                />
               </View>
             </liquidGlass.GlassView>
           </Animated.View>
@@ -6682,7 +6684,7 @@ export default function MapScreen({ route, navigation }: Props) {
                   <ArrivalCardExitShell exiting={exitPhase === 'exit'}>
                   <liquidGlass.GlassView
                     glassStyle="regular"
-                    tintColor={Platform.OS === 'android' ? (active ? glass.cardActive : glass.card) : undefined}
+                    tintColor={active ? glass.cardActive : glass.card}
                     style={[
                       styles.card,
                       // Active state uses fill only — no theme-color rim
@@ -7560,6 +7562,7 @@ export default function MapScreen({ route, navigation }: Props) {
         onConfirmLeave={confirmLeave}
         onConfirmSignOut={confirmSignOut}
         onOpenPaywall={openPaywallCb}
+        onDismissComplete={handleSettingsDismissComplete}
         onAccountDeleted={() => {
           navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
         }}
@@ -7667,7 +7670,6 @@ export default function MapScreen({ route, navigation }: Props) {
                 accessibilityLabel={t('map.shareInviteLink')}
                 onPress={lightTap}
                 onAnimationComplete={async () => {
-                  // Hold complete frame until system share settles (ok or cancel).
                   try {
                     await shareCode();
                   } catch {
@@ -7702,6 +7704,7 @@ export default function MapScreen({ route, navigation }: Props) {
         title={t('map.opsCenter')}
         accent={accent}
         doneLabel={t('map.done')}
+        material="mapSheet"
         edgeToEdge
       >
         <ScrollView contentContainerStyle={styles.overlayBody}>
@@ -7865,6 +7868,9 @@ export default function MapScreen({ route, navigation }: Props) {
         title={t('arrival.manage')}
         accent={accent}
         doneLabel={t('map.done')}
+        doneSystemImage="xmark"
+        material="mapSheet"
+        edgeToEdge
       >
         <ScrollView contentContainerStyle={styles.overlayBody}>
           {(state?.destinations ?? []).length === 0 ? (
@@ -7919,7 +7925,7 @@ export default function MapScreen({ route, navigation }: Props) {
                         >
                           <Ionicons
                             name={arrived ? 'checkmark-circle' : 'checkmark-circle-outline'}
-                            size={26}
+                            size={52}
                             color={arrived ? glass.ok : glass.textTertiary}
                           />
                         </Pressable>
@@ -7943,6 +7949,9 @@ export default function MapScreen({ route, navigation }: Props) {
         title={arrivalDestination?.title ?? t('map.arrivalProgress')}
         accent={accent}
         doneLabel={t('map.done')}
+        doneSystemImage="xmark"
+        material="mapSheet"
+        edgeToEdge
       >
         <ScrollView contentContainerStyle={styles.overlayBody}>
           {arrivalDestination ? members
@@ -7971,7 +7980,7 @@ export default function MapScreen({ route, navigation }: Props) {
                   >
                     <Ionicons
                       name={arrived ? 'checkmark-circle' : 'checkmark-circle-outline'}
-                      size={26}
+                      size={52}
                       color={arrived ? glass.ok : glass.textTertiary}
                     />
                   </Pressable>
@@ -7988,6 +7997,7 @@ export default function MapScreen({ route, navigation }: Props) {
         title={t('history.title')}
         accent={accent}
         doneLabel={t('map.done')}
+        material="mapSheet"
       >
         <ScrollView contentContainerStyle={styles.overlayBody}>
           {historyGroups.length === 0 ? (
@@ -8181,6 +8191,7 @@ export default function MapScreen({ route, navigation }: Props) {
         title={t('meetTime.set')}
         accent={accent}
         doneLabel={t('common.cancel')}
+        doneSystemImage="xmark"
         edgeToEdge
       >
         {meetTimeEditor && (
@@ -9012,6 +9023,7 @@ const makeStyles = (
       paddingVertical: s(6, 4),
       borderRadius: s(22, 18),
       overflow: 'hidden',
+      backgroundColor: glass.pill,
       flexDirection: 'row',
       alignItems: 'center',
       gap: s(9, 6),
@@ -9054,7 +9066,7 @@ const makeStyles = (
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairlineSoft,
     },
-    recenterHit: { height: 48, alignItems: 'center', justifyContent: 'center' },
+    recenterHit: { width: 50, height: 48, alignItems: 'center', justifyContent: 'center' },
     recenterDivider: { height: StyleSheet.hairlineWidth, backgroundColor: glass.hairlineStrong },
 
     teamCapsuleWrap: {
@@ -9561,16 +9573,22 @@ const makeStyles = (
     },
     confirmMin: { fontFamily: DISPLAY_FONT, fontSize: 36, includeFontPadding: false },
     confirmDist: { fontSize: 16, color: glass.textSecondary },
-    confirmBtnRow: { flexDirection: 'row', gap: 12, marginTop: 12 },
+    confirmBtnRow: {
+      width: '100%',
+      alignSelf: 'stretch',
+      flexDirection: 'row',
+      gap: 12,
+      marginTop: 12,
+    },
     confirmCancel: {
       flex: 1,
       minHeight: 52,
       borderRadius: 26,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: 'rgba(255,69,58,0.16)',
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: 'rgba(255,69,58,0.5)',
+      backgroundColor: Platform.OS === 'ios' ? 'transparent' : 'rgba(255,69,58,0.16)',
+      borderWidth: Platform.OS === 'ios' ? 0 : StyleSheet.hairlineWidth,
+      borderColor: Platform.OS === 'ios' ? 'transparent' : 'rgba(255,69,58,0.5)',
       paddingVertical: 12,
       paddingHorizontal: 8,
     },
@@ -10396,8 +10414,8 @@ const makeStyles = (
       gap: 12,
     },
     arrivalToggleBtn: {
-      width: 40,
-      height: 40,
+      width: 60,
+      height: 60,
       alignItems: 'center',
       justifyContent: 'center',
       flexShrink: 0,

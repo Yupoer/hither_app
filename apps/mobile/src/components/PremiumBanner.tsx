@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTranslation } from '../i18n';
+import { lightTap } from '../utils/haptics';
 
 export default React.memo(function PremiumBanner({
   onPress,
@@ -13,7 +14,10 @@ export default React.memo(function PremiumBanner({
   const { t } = useTranslation();
   return (
     <Pressable
-      onPress={onPress}
+      onPress={() => {
+        lightTap();
+        onPress();
+      }}
       accessibilityRole="button"
       accessibilityLabel={t('paywall.cta')}
       testID={testID}
@@ -26,9 +30,6 @@ export default React.memo(function PremiumBanner({
         style={StyleSheet.absoluteFill}
       />
       <View style={styles.copy}>
-        <View style={styles.tag}>
-          <Text style={styles.tagText}>PREMIUM</Text>
-        </View>
         <Text style={styles.title}>{t('paywall.title')}</Text>
         <Text style={styles.hint}>{t('settings.subscribeBannerHint')}</Text>
       </View>
@@ -51,14 +52,6 @@ const styles = StyleSheet.create({
     minHeight: 86,
   },
   copy: { flex: 1, gap: 4 },
-  tag: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#37B6FF',
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  },
-  tagText: { fontSize: 10, fontWeight: '800', color: '#071526' },
   title: { fontSize: 15, fontWeight: '800', color: '#FFFFFF' },
   hint: { fontSize: 11.5, color: 'rgba(255,255,255,0.8)' },
   arrow: {

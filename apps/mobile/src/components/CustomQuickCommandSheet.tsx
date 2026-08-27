@@ -63,6 +63,7 @@ export default function CustomQuickCommandSheet({
       title={title}
       accent={colors.accent}
       doneLabel={t('common.cancel')}
+      doneSystemImage="xmark"
     >
       <ScrollView contentContainerStyle={styles.body}>
         <Text style={styles.title}>{title}</Text>

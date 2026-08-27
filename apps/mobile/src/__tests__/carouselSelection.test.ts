@@ -81,4 +81,58 @@ describe('useCarouselSelection', () => {
     expect(selection?.selectedIndex).toBe(1);
     expect(centerOn).toHaveBeenCalledWith(destinations[1].coordinates);
   });
+
+  it('uses the 30-degree camera seam when oblique locating is enabled', () => {
+    const focusOblique = jest.fn();
+    let selection: ReturnType<typeof useCarouselSelection> | undefined;
+
+    function Harness() {
+      selection = useCarouselSelection({
+        destinations,
+        windowWidth: 390,
+        carouselRef: { current: null },
+        mapRef: { current: { centerOn: jest.fn(), focusOblique } } as never,
+        obliqueLocate: true,
+      });
+      return null;
+    }
+
+    act(() => { create(React.createElement(Harness)); });
+    act(() => {
+      selection?.handleScrollBeginDrag();
+      selection?.handleMomentumEnd({
+        nativeEvent: { contentOffset: { x: 390 } },
+      } as never);
+    });
+
+    expect(focusOblique).toHaveBeenCalledWith(destinations[1].coordinates);
+  });
+
+  it('keeps a flat center when oblique locating is disabled', () => {
+    const centerOn = jest.fn();
+    const focusOblique = jest.fn();
+    let selection: ReturnType<typeof useCarouselSelection> | undefined;
+
+    function Harness() {
+      selection = useCarouselSelection({
+        destinations,
+        windowWidth: 390,
+        carouselRef: { current: null },
+        mapRef: { current: { centerOn, focusOblique } } as never,
+        obliqueLocate: false,
+      });
+      return null;
+    }
+
+    act(() => { create(React.createElement(Harness)); });
+    act(() => {
+      selection?.handleScrollBeginDrag();
+      selection?.handleMomentumEnd({
+        nativeEvent: { contentOffset: { x: 390 } },
+      } as never);
+    });
+
+    expect(centerOn).toHaveBeenCalledWith(destinations[1].coordinates);
+    expect(focusOblique).not.toHaveBeenCalled();
+  });
 });
