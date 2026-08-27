@@ -157,6 +157,16 @@ describe('route editor + KML contracts (#151)', () => {
     expect(kmlSheet).not.toMatch(/catch \{\s*setStep\(\{ kind: 'error', code: 'unknown' \}\)/);
   });
 
+  it('uses native child-sheet boundaries and neutral route-row surfaces', () => {
+    expect(reorder).toContain("from '../screens/MapScreen/components/SettingsChildSheet'");
+    expect((reorder.match(/<SettingsChildSheet/g) ?? [])).toHaveLength(3);
+    expect(reorder).toContain('action="commit"');
+    expect(reorder).not.toContain('rowStayMatch');
+    expect(reorder).toContain('rowAccommodation: { backgroundColor: accentMix(colors.accent, 18) }');
+    expect(reorder).toContain('backgroundColor: glass.fill');
+    expect(kmlSheet).toContain('<SettingsChildSheet');
+  });
+
   it('migration is security invoker with leader auth, subgroup ownership, revoke public/anon', () => {
     expect(migration).toContain('security invoker');
     expect(migration).toContain('leader membership required');

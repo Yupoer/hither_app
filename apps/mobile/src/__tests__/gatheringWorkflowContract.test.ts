@@ -115,10 +115,11 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
   it('locks stay cards to bed emoji and allows them as set-stay radio sources', () => {
     expect(reorderList).toContain('STAY_MARKER_EMOJI');
     expect(reorderList).toContain('STAY_BADGE_BG');
-    // Bed badge for kind=accommodation; highlight is match-only.
+    // Accommodation is the only themed row; ordinary rows share one surface.
     expect(reorderList).toContain('isAccommodation={isStayCard}');
-    expect(reorderList).toContain('stayHighlight');
-    expect(reorderList).toContain('placeExactMatchKey');
+    expect(reorderList).toContain('rowAccommodation');
+    expect(reorderList).not.toContain('stayHighlight');
+    expect(reorderList).not.toContain('placeExactMatchKey');
     // No emoji picker for accommodation kind.
     expect(reorderList).toMatch(
       /onEmojiPress=\{\s*[\s\S]*?!isStayCard/,
@@ -132,9 +133,8 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(reorderList).not.toMatch(
       /if \(pick && pick\.item\.kind !== 'accommodation'\)/,
     );
-    // Soft stay row tint (muted low sat/brightness).
-    expect(reorderList).toContain('rowStayMatch');
-    expect(reorderList).toMatch(/rgba\(100,\s*90,\s*86/);
+    expect(reorderList).toContain('accentMix(colors.accent, 18)');
+    expect(reorderList).toContain('backgroundColor: glass.fill');
   });
 
   it('reconciles group state periodically even when Realtime misses an event', () => {

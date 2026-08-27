@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const read = (path: string) => readFileSync(join(__dirname, '..', path), 'utf8');
@@ -42,38 +42,19 @@ describe('location privacy and diagnostics UI contract', () => {
     expect(navigationService).toContain('local_navigation_enabled: true');
   });
 
-  it('keeps diagnostics gated and exports a redacted JSON support bundle', () => {
-    const diagnostics = read('screens/MapScreen/components/DiagnosticsOverlay.tsx');
-
-    expect(settings).toContain('diagnosticsEnabled');
-    // Always-on for production + members (not env-gated / not leader-only).
-    expect(settings).toMatch(/const diagnosticsEnabled\s*=\s*true/);
-    expect(settings).toContain('SettingsChildSheet');
-    expect(diagnostics).toContain('buildNumber');
-    expect(diagnostics).toContain('navigationSessionId');
-    expect(diagnostics).toContain('trackingMode');
-    expect(diagnostics).toContain('callbackCount');
-    expect(diagnostics).toContain('uploadCount');
-    expect(diagnostics).toContain('errorCount');
-    expect(diagnostics).toContain('liveActivityStatus');
-    expect(diagnostics).toContain('diagnostics.exportJson()');
-    expect(diagnostics).toContain('Sharing.share({ message: json })');
+  it('removes diagnostics UI while keeping the underlying store', () => {
+    expect(settings).not.toContain('diagnosticsEnabled');
+    expect(settings).not.toContain("t('diagnostics.title')");
+    expect(settings).not.toContain("t('settings.diagnosticUpload')");
+    expect(map).not.toContain('<DiagnosticsOverlay');
+    expect(existsSync(join(__dirname, '..', 'screens/MapScreen/components/DiagnosticsOverlay.tsx'))).toBe(false);
+    expect(read('state/diagnostics.ts')).toContain('export const diagnostics');
   });
 
-  it('exposes opt-in diagnostic upload Switch with warning Alert and default-off preference', () => {
+  it('keeps diagnostic consent persistence without exposing settings UI', () => {
     expect(preferences).toContain('diagnosticUploadEnabled');
     expect(preferences).toContain('setDiagnosticUploadEnabled');
-    expect(settings).toContain("t('settings.diagnosticUploadWarningBody')");
-    expect(settings).toContain('<SystemToggle');
-    expect(settings).toContain('onDiagnosticSwitchChange');
+    expect(settings).not.toContain('onDiagnosticSwitchChange');
     expect(read('components/SystemToggle.tsx')).toContain('accessibilityRole="switch"');
-  });
-
-  it('exposes DEV-only debug route controls with start/stop and warning', () => {
-    const diagnostics = read('screens/MapScreen/components/DiagnosticsOverlay.tsx');
-    expect(diagnostics).toContain('__DEV__');
-    expect(diagnostics).toContain('startDebugRoute');
-    expect(diagnostics).toContain('stopDebugRoute');
-    expect(diagnostics).toContain('debugLocation.warning');
   });
 });

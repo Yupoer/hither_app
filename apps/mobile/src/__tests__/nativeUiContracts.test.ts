@@ -78,9 +78,10 @@ describe('iOS native UI contracts', () => {
     expect(settingsIos).not.toContain('chevron-back');
     expect(settingsIos).toContain('paddingTop: 12');
     expect(settingsIos).not.toContain('glassEffect({ glass: { variant: \'clear\' }');
-    expect(settingsIos).toContain('frame({ width: 44, height: 44 })');
-    expect(settingsIos).toContain('frame({ width: 36, height: 36 })');
-    expect(settingsIos).toContain('size={22}');
+    expect(settingsIos).toContain("buttonBorderShape('circle')");
+    expect(settingsIos).toContain("controlSize('large')");
+    expect(settingsIos).toContain('frame({ width: 52, height: 52 })');
+    expect(settingsIos).toContain("action === 'commit' ? 'checkmark' : 'xmark'");
     expect(settingsIos).toContain('<VStack');
     expect(settingsIos.indexOf('</HStack>')).toBeLessThan(settingsIos.indexOf('<RNHostView'));
     expect(settingsIos).toContain('wrapContentInScrollView');
@@ -102,7 +103,7 @@ describe('iOS native UI contracts', () => {
   });
 
   it('leaves map glass to one native material surface', () => {
-    expect(bottomSheet).toContain("glass.sheetOpaque : glass.sheet");
+    expect(bottomSheet).toContain("glass.sheetOpaque : undefined");
     expect(bottomSheet).not.toContain('tintColor="transparent"');
   });
 
@@ -123,10 +124,12 @@ describe('iOS native UI contracts', () => {
     expect(overlaySheet).toContain('doneSystemImage');
     expect(paywallSheet).toContain('systemImage="xmark"');
     expect(mapScreen).toContain('doneSystemImage="xmark"');
+    expect(overlaySheet).toContain("onDone ? 'checkmark' : 'xmark'");
   });
 
   it('uses native glass controls for map chrome and limits haptics to Premium', () => {
-    expect(mapScreen).toContain('systemImage="person.3.fill"');
+    expect(mapScreen).toContain('group?.avatar');
+    expect(mapScreen).toContain('<MapRecenterControl');
     expect(mapScreen).toContain('testID="members-location-sharing"');
     expect(premiumBanner).toContain('lightTap();');
     expect(settings).not.toMatch(/(?:lightTap|mediumTap|selectionTick|rigidTap|alertBuzz)\s*\(/);

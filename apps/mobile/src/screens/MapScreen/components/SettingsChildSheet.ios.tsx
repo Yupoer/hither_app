@@ -10,19 +10,19 @@ import {
   Group,
   HStack,
   Host,
-  Image,
   RNHostView,
   Spacer,
   Text as SwiftText,
   VStack,
-  ZStack,
 } from '@expo/ui/swift-ui';
 import {
   accessibilityLabel,
   buttonStyle,
   buttonBorderShape,
+  controlSize,
   frame,
   font,
+  labelStyle,
   padding,
   presentationDetents,
   presentationDragIndicator,
@@ -37,6 +37,8 @@ export default function SettingsChildSheet({
   visible,
   onClose,
   onDismissComplete,
+  action = 'close',
+  onCommit,
   title,
   children,
   initialStage = 0,
@@ -46,6 +48,8 @@ export default function SettingsChildSheet({
   visible: boolean;
   onClose: () => void;
   onDismissComplete?: () => void;
+  action?: 'close' | 'commit';
+  onCommit?: () => void;
   onBack?: () => void;
   title: string;
   children: React.ReactNode;
@@ -120,10 +124,10 @@ export default function SettingsChildSheet({
               alignment="center"
               modifiers={[
                 padding({ top: 16, leading: 16, trailing: 16 }),
-                frame({ minWidth: 0, maxWidth: 10000, minHeight: 64, maxHeight: 64 }),
+                frame({ minWidth: 0, maxWidth: 10000, minHeight: 76, maxHeight: 76 }),
               ]}
             >
-              <Spacer modifiers={[frame({ width: 44, height: 44 })]} />
+              <Spacer modifiers={[frame({ width: 52, height: 52 })]} />
               <SwiftText
                 modifiers={[
                   frame({ minWidth: 0, maxWidth: Infinity, minHeight: 48, maxHeight: 48, alignment: 'center' }),
@@ -133,19 +137,19 @@ export default function SettingsChildSheet({
                 {title}
               </SwiftText>
               <Button
-                role="cancel"
-                onPress={closeOnce}
+                label={action === 'commit' ? 'Done' : 'Close'}
+                systemImage={action === 'commit' ? 'checkmark' : 'xmark'}
+                role={action === 'commit' ? 'default' : 'cancel'}
+                onPress={action === 'commit' ? onCommit : closeOnce}
                 modifiers={[
                   buttonStyle(liquidGlass.isLiquidGlassAvailable() ? 'glass' : 'bordered'),
                   buttonBorderShape('circle'),
-                  frame({ width: 44, height: 44 }),
-                  accessibilityLabel('close'),
+                  controlSize('large'),
+                  labelStyle('iconOnly'),
+                  frame({ width: 52, height: 52 }),
+                  accessibilityLabel(action),
                 ]}
-              >
-                <ZStack modifiers={[frame({ width: 36, height: 36 })]}>
-                  <Image systemName="xmark" size={22} />
-                </ZStack>
-              </Button>
+              />
             </HStack>
             <RNHostView matchContents={false}>
               <View style={styles.sheetBody}>

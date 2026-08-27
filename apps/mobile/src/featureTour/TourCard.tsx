@@ -39,7 +39,7 @@ export default function TourCard({
         nestedScrollEnabled
         style={[
           styles.copyScroll,
-          { maxHeight: Math.max(96, maxCardHeight - Math.max(ctaReservePx, 70)) },
+          { maxHeight: Math.max(48, maxCardHeight - Math.max(ctaReservePx, 70)) },
         ]}
         contentContainerStyle={styles.copy}
       >

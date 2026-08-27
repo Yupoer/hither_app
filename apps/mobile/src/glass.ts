@@ -13,9 +13,9 @@
 
 export const glass = {
   /** Bottom sheet body — translucent so the map reads through (Apple Maps feel). */
-  sheet: 'rgba(58, 64, 76, 0.9)',
+  sheet: 'rgba(40, 44, 52, 0.9)',
   /** Android bottom-sheet fallback: no map bleed-through behind stage 1/2. */
-  sheetOpaque: 'rgb(58, 64, 76)',
+  sheetOpaque: 'rgb(40, 44, 52)',
   /** Stacked overlay sheet (search / route / settings) — more opaque. */
   overlay: 'rgba(22, 26, 34, 0.9)',
   /** Fully opaque overlay (settings) — no map bleed-through. */
@@ -25,11 +25,11 @@ export const glass = {
   /** Floating pills (group pill, role chip, recenter, FABs). */
   // ≥0.85 so liquidGlass underlayForTint uses full tint (not half-alpha wash).
   // BUG-24: near-opaque so light system map / sky doesn't show through.
-  pill: 'rgba(62, 70, 84, 0.9)',
+  pill: 'rgba(40, 44, 52, 0.9)',
   /** Carousel card, inactive. Near-opaque so the card reads over any map. */
-  card: 'rgba(50, 58, 72, 0.9)',
+  card: 'rgba(28, 32, 40, 0.9)',
   /** Carousel card, active (selected stop). */
-  cardActive: 'rgba(62, 70, 84, 0.94)',
+  cardActive: 'rgba(38, 44, 54, 0.94)',
   /** Inset list / button fill. */
   fill: 'rgba(255, 255, 255, 0.07)',
   /** Stronger inset fill (secondary buttons). */

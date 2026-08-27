@@ -15,7 +15,7 @@ import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/d
 import type { Destination } from '../types';
 import type { TourTargetId } from '../featureTour/constants';
 import { radius, spacing, DAY_COLORS, type Palette } from '../theme';
-import { glass } from '../glass';
+import { accentMix, glass } from '../glass';
 import { readOnboardingState } from '../onboarding/sync';
 import { usePreferences } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
@@ -37,7 +37,6 @@ import {
   type ReorderListEntry,
 } from '../utils/accommodationSemantics';
 import { eligibleFavoriteDateOptions } from '../utils/favoriteDates';
-import { placeExactMatchKey } from '../utils/placeIdentity';
 import { lightTap, mediumTap, selectionTick } from '../utils/haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
@@ -51,6 +50,7 @@ import {
 } from '../utils/destinationEmojiColor';
 import { getColorForDay, STAY_MARKER_EMOJI } from '../utils/destinationMarkerChrome';
 import { liquidGlass } from '../native';
+import SettingsChildSheet from '../screens/MapScreen/components/SettingsChildSheet';
 
 const REORDER_VISUAL_SCALE = 1;
 const ROW_HEIGHT = 52;
@@ -309,6 +309,21 @@ export default function DestinationReorderList({
       },
     });
   }, [editDate]);
+
+  const saveTripSettings = useCallback(() => {
+    setShowSettings(false);
+    const min = startOfTodayLocal();
+    const existing = departureDate ? new Date(departureDate) : null;
+    const unchangedPast =
+      existing
+      && !Number.isNaN(existing.getTime())
+      && editDate.getFullYear() === existing.getFullYear()
+      && editDate.getMonth() === existing.getMonth()
+      && editDate.getDate() === existing.getDate()
+      && editDate.getTime() < min.getTime();
+    const toSave = unchangedPast ? existing : clampDateNotBeforeToday(editDate);
+    onUpdateTripDetails?.(editDays, toSave.toISOString());
+  }, [departureDate, editDate, editDays, onUpdateTripDetails]);
 
   // Local collapse prefs: account + group + calendar date (first open = expanded).
   useEffect(() => {
@@ -788,20 +803,9 @@ export default function DestinationReorderList({
               const locked = false;
               void lockedIds;
               const inSetMode = setStayModeDay === visualDay;
-              const stayDateKey = stayDateForDay(visualDay);
-              const dailyForDay = stayDateKey && dailyByDate
-                ? dailyByDate[stayDateKey]
-                : undefined;
-              // Bed badge for accommodation cards (quick-add / copies).
-              // Background highlight only when name+coords match the day's daily stay.
+              // Only accommodation rows receive a themed background. Ordinary
+              // stops remain on the same neutral translucent surface.
               const isStayCard = item.item.kind === 'accommodation';
-              const stayHighlight = Boolean(
-                dailyForDay
-                && item.item.coordinates
-                && dailyForDay.coordinates
-                && placeExactMatchKey(item.item.title, item.item.coordinates)
-                  === placeExactMatchKey(dailyForDay.title, dailyForDay.coordinates),
-              );
               const multiSelectMode =
                 canReorder && interactionMode === 'select' && !inSetMode;
               const canDragStop =
@@ -821,7 +825,6 @@ export default function DestinationReorderList({
                   onRelease={onRelease}
                   onDelete={onDelete}
                   isAccommodation={isStayCard}
-                  stayHighlight={stayHighlight}
                   boundaryLocked={locked}
                   // Stops and accommodation cards are both valid set-stay sources.
                   showSelect={inSetMode}
@@ -1116,26 +1119,14 @@ export default function DestinationReorderList({
         </View>
       )}
 
-      <Modal
+      <SettingsChildSheet
         visible={favoritesOpen && !favoritePending}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setFavoritesOpen(false)}
+        onClose={() => setFavoritesOpen(false)}
+        title={t('stay.favorites')}
+        initialStage={1}
+        stageTwoRatio={0.9}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalTitleRow}>
-              <Text style={[styles.modalTitle, styles.modalTitleGrow]}>{t('stay.favorites')}</Text>
-              <Pressable
-                onPress={() => setFavoritesOpen(false)}
-                accessibilityRole="button"
-                accessibilityLabel={t('common.cancel')}
-                hitSlop={8}
-                style={styles.modalTitleCancel}
-              >
-                <Text style={styles.modalActionText}>{t('common.cancel')}</Text>
-              </Pressable>
-            </View>
+        <View style={styles.childSheetBody}>
             {(favoritePlaces ?? []).length === 0 ? (
               <Text style={styles.empty}>{t('stay.noFavorites')}</Text>
             ) : (
@@ -1169,25 +1160,21 @@ export default function DestinationReorderList({
                 </View>
               ))
             )}
-          </View>
         </View>
-      </Modal>
+      </SettingsChildSheet>
 
-      <Modal
+      <SettingsChildSheet
         visible={favoritePending != null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => {
+        onClose={() => {
           // Cancel: write nothing.
           setFavoritePending(null);
           setFavoritesOpen(false);
         }}
+        title={favoritePending?.title ?? t('stay.favorites')}
+        initialStage={1}
+        stageTwoRatio={0.9}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>
-              {favoritePending?.title ?? t('stay.favorites')}
-            </Text>
+        <View style={styles.childSheetBody}>
             <Text style={styles.modalLabel}>{t('stay.pickDate')}</Text>
             {eligibleFavoriteDateOptions({
               departureDate,
@@ -1215,25 +1202,19 @@ export default function DestinationReorderList({
             {eligibleFavoriteDateOptions({ departureDate, tripDays }).length === 0 ? (
               <Text style={styles.empty}>{t('stay.noEligibleDates')}</Text>
             ) : null}
-            <Pressable
-              onPress={() => {
-                // Cancel / ended-trip path: write nothing.
-                setFavoritePending(null);
-                setFavoritesOpen(false);
-              }}
-              style={styles.modalActionBtn}
-              accessibilityRole="button"
-            >
-              <Text style={styles.modalActionText}>{t('common.cancel')}</Text>
-            </Pressable>
-          </View>
         </View>
-      </Modal>
+      </SettingsChildSheet>
 
-      <Modal visible={showSettings} transparent animationType="fade">
-         <View style={styles.modalOverlay}>
-            <View style={styles.modalCard}>
-               <Text style={styles.modalTitle}>{t('trip.setDaysTitle')}</Text>
+      <SettingsChildSheet
+        visible={showSettings}
+        onClose={() => setShowSettings(false)}
+        title={t('trip.setDaysTitle')}
+        initialStage={1}
+        stageTwoRatio={0.9}
+        action="commit"
+        onCommit={saveTripSettings}
+      >
+            <View style={styles.childSheetBody}>
                <View style={styles.modalRow}>
                   <Text style={styles.modalLabel}>{t('trip.departureDate')}</Text>
                   {Platform.OS === 'android' ? (
@@ -1267,38 +1248,17 @@ export default function DestinationReorderList({
                      </Pressable>
                   </liquidGlass.GlassView>
                </View>
-               <View style={styles.modalActions}>
-                  <Pressable onPress={() => setShowSettings(false)} style={styles.modalActionBtn}>
-                     <Text style={styles.modalActionText}>{t('common.cancel')}</Text>
-                  </Pressable>
-                  <Pressable onPress={() => {
-                      setShowSettings(false);
-                      // New picks are clamped to ≥ today; an already-past trip
-                      // start is kept if the user never changed the date.
-                      const min = startOfTodayLocal();
-                      const existing = departureDate ? new Date(departureDate) : null;
-                      const unchangedPast =
-                        existing &&
-                        !Number.isNaN(existing.getTime()) &&
-                        editDate.getFullYear() === existing.getFullYear() &&
-                        editDate.getMonth() === existing.getMonth() &&
-                        editDate.getDate() === existing.getDate() &&
-                        editDate.getTime() < min.getTime();
-                      const toSave = unchangedPast
-                        ? existing
-                        : clampDateNotBeforeToday(editDate);
-                      onUpdateTripDetails?.(editDays, toSave.toISOString());
-                  }} style={[styles.modalActionBtn, { backgroundColor: colors.accent }]}>
-                     <Text style={[styles.modalActionText, { color: '#fff' }]}>{t('trip.save')}</Text>
-                  </Pressable>
-               </View>
             </View>
-         </View>
-      </Modal>
+      </SettingsChildSheet>
 
       <Modal visible={colorPickerDay !== null} transparent animationType="fade">
          <Pressable style={styles.modalOverlay} onPress={() => setColorPickerDay(null)}>
             <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
+               <liquidGlass.GlassView
+                  glassStyle="regular"
+                  style={StyleSheet.absoluteFill}
+                  pointerEvents="none"
+               />
                <Text style={styles.modalTitle}>{t('trip.dayFlagColor', { day: colorPickerDay ?? 1 })}</Text>
                <View style={styles.colorPickerContainer}>
                   {DAY_COLORS.map(c => (
@@ -1737,7 +1697,6 @@ const Row = memo(function Row({
   onDelete,
   onEmojiPress,
   isAccommodation,
-  stayHighlight,
   boundaryLocked,
   showSelect,
   selectSelected,
@@ -1763,8 +1722,6 @@ const Row = memo(function Row({
   onDelete?: (id: string) => void;
   onEmojiPress?: (id: string) => void;
   isAccommodation?: boolean;
-  /** Same name+coords as daily stay — distinct row background. */
-  stayHighlight?: boolean;
   /** Head/tail stay card: always-visible trash, no swipe-to-delete. */
   boundaryLocked?: boolean;
   showSelect?: boolean;
@@ -1893,7 +1850,6 @@ const Row = memo(function Row({
         style={[
           styles.row,
           isAccommodation && styles.rowAccommodation,
-          stayHighlight && styles.rowStayMatch,
           active && styles.rowActive,
           multiSelected && styles.rowMultiSelected,
           {
@@ -2063,10 +2019,8 @@ const makeStyles = (colors: Palette) =>
     },
     stayBadgeText: { color: '#fff', fontSize: 12, flexShrink: 1 },
     removeStayText: { color: colors.accent, fontSize: 12, fontWeight: '600' },
-    /** Accommodation card row: very soft low-sat wash (not a match highlight). */
-    rowAccommodation: { backgroundColor: 'rgba(100, 90, 86, 0.10)' },
-    /** Name+coords match the day's daily stay — muted low sat/brightness tint. */
-    rowStayMatch: { backgroundColor: 'rgba(100, 90, 86, 0.16)' },
+    /** Only accommodation rows use the current theme colour. */
+    rowAccommodation: { backgroundColor: accentMix(colors.accent, 18) },
     // Stay cards share left alignment with gathering-point rows.
     rowTitleStay: { textAlign: 'left' },
     selectRadio: { marginRight: 8 },
@@ -2087,14 +2041,6 @@ const makeStyles = (colors: Palette) =>
       paddingVertical: 4,
     },
     favTitle: { color: colors.textPrimary, fontSize: 15, flex: 1 },
-    modalTitleRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: spacing.sm,
-      gap: 8,
-    },
-    modalTitleGrow: { flex: 1, marginBottom: 0 },
-    modalTitleCancel: { flexShrink: 0 },
     hint: {
       color: colors.textSecondary,
       fontSize: 12,
@@ -2109,7 +2055,7 @@ const makeStyles = (colors: Palette) =>
       borderRadius: radius.md,
       borderWidth: 1,
       borderColor: colors.border,
-      backgroundColor: glass.fillStrong,
+      backgroundColor: 'transparent',
       overflow: 'hidden',
     },
     headerRow: {
@@ -2118,7 +2064,7 @@ const makeStyles = (colors: Palette) =>
       alignItems: 'center',
       justifyContent: 'space-between',
       paddingHorizontal: spacing.lg,
-      backgroundColor: colors.glass,
+      backgroundColor: glass.fill,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: colors.border,
     },
@@ -2153,7 +2099,7 @@ const makeStyles = (colors: Palette) =>
       paddingHorizontal: spacing.lg,
       paddingBottom: 10,
       paddingTop: 2,
-      backgroundColor: colors.glass,
+      backgroundColor: glass.fill,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: colors.border,
       gap: 8,
@@ -2181,15 +2127,18 @@ const makeStyles = (colors: Palette) =>
       backgroundColor: glass.fill,
     },
     rowActive: {
-      backgroundColor: glass.fillStrong,
       borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: colors.accent,
       shadowColor: '#000',
       shadowOpacity: 0.25,
       shadowRadius: 8,
       shadowOffset: { width: 0, height: 3 },
     },
     rowMultiSelected: {
-      backgroundColor: 'rgba(255,255,255,0.06)',
+      borderWidth: 1,
+      borderColor: colors.accent,
+      borderRadius: radius.md,
     },
     rowIndex: {
       color: colors.accent,
@@ -2411,10 +2360,16 @@ const makeStyles = (colors: Palette) =>
       alignItems: 'center',
     },
     modalCard: {
-      backgroundColor: colors.surface,
+      backgroundColor: 'transparent',
       borderRadius: radius.lg,
+      overflow: 'hidden',
       padding: spacing.xl,
       width: '80%',
+    },
+    childSheetBody: {
+      paddingHorizontal: spacing.xl,
+      paddingBottom: spacing.xl,
+      gap: spacing.md,
     },
     modalTitle: {
       fontSize: 18,
@@ -2439,7 +2394,7 @@ const makeStyles = (colors: Palette) =>
           paddingHorizontal: spacing.sm,
           paddingVertical: spacing.xs,
           borderRadius: radius.md,
-          backgroundColor: colors.glass,
+      backgroundColor: glass.fill,
         },
         datePickerText: {
           color: colors.textPrimary,
@@ -2466,22 +2421,6 @@ const makeStyles = (colors: Palette) =>
       fontWeight: 'bold',
       color: colors.textPrimary,
       paddingHorizontal: 16,
-    },
-    modalActions: {
-      flexDirection: 'row',
-      justifyContent: 'flex-end',
-      marginTop: spacing.md,
-    },
-    modalActionBtn: {
-      paddingHorizontal: spacing.lg,
-      paddingVertical: spacing.sm,
-      borderRadius: radius.md,
-      marginLeft: spacing.sm,
-    },
-    modalActionText: {
-      fontSize: 16,
-      fontWeight: '600',
-      color: colors.textSecondary,
     },
     colorDot: {
       width: 16,

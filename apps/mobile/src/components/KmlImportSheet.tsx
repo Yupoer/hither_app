@@ -1,7 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
-import OverlaySheet from './OverlaySheet';
+import SettingsChildSheet from '../screens/MapScreen/components/SettingsChildSheet';
 import { useTranslation, type TranslationKey } from '../i18n';
 import { useTheme } from '../state/PreferencesContext';
 import { glass, accentMix } from '../glass';
@@ -149,13 +149,13 @@ export default React.memo(function KmlImportSheet({
   };
 
   return (
-    <OverlaySheet
+    <SettingsChildSheet
       visible={visible}
       onClose={handleClose}
       title={t('kml.entry')}
-      accent={accent}
-      doneLabel={t('common.cancel')}
-      doneSystemImage="xmark"
+      initialStage={1}
+      stageTwoRatio={0.9}
+      wrapContentInScrollView={false}
     >
       <ScrollView contentContainerStyle={styles.body}>
         {step.kind === 'intro' && (
@@ -244,7 +244,7 @@ export default React.memo(function KmlImportSheet({
 
         {step.kind === 'done' && <Text style={styles.stepText}>{t('kml.done')}</Text>}
       </ScrollView>
-    </OverlaySheet>
+    </SettingsChildSheet>
   );
 });
 

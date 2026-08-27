@@ -46,7 +46,7 @@ const DIM = 'rgba(0,0,0,0.62)';
 const FADE_OUT_MS = 150;
 const FADE_IN_MS = 180;
 /** Title/body may scroll; keep Prev/Next outside the clipped region. */
-const CTA_RESERVE_PX = 56;
+const CTA_RESERVE_PX = 78;
 type DisplayedTourSnapshot = {
   key: string;
   title: string;
@@ -216,6 +216,12 @@ export function GroupFeatureTourOverlay({
 
   const a11yLabel = [shown.title, shown.body].filter((part) => part.trim().length > 0).join('. ');
   const ctaBlocked = ctaDisabled;
+  // Give the card a real bounded height so native Host layout cannot measure
+  // an intrinsic body taller than the safe viewport. Copy then scrolls inside
+  // this fixed shell while the CTA row stays reachable at the bottom.
+  const minimumCardHeight = !shown.targetRect ? Math.min(220, placement.maxCardHeight) : 0;
+  const naturalCardHeight = Math.max(160, minimumCardHeight, cardHeight ?? 0);
+  const boundedCardHeight = Math.min(placement.maxCardHeight, naturalCardHeight);
 
   const onCardLayout = (e: LayoutChangeEvent) => {
     const h = e.nativeEvent.layout.height;
@@ -300,6 +306,7 @@ export function GroupFeatureTourOverlay({
             top: placement.cardTop,
             left: 20,
             right: 20,
+            height: boundedCardHeight,
             opacity,
             maxHeight: placement.maxCardHeight,
           },
@@ -319,7 +326,7 @@ export function GroupFeatureTourOverlay({
           accessibilityLabel={a11yLabel}
           maxCardHeight={placement.maxCardHeight}
           ctaReservePx={CTA_RESERVE_PX}
-          minCardHeight={!shown.targetRect ? Math.min(220, placement.maxCardHeight) : undefined}
+          minCardHeight={minimumCardHeight || undefined}
         />
       </Animated.View>
     </View>

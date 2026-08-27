@@ -1,4 +1,5 @@
 import React from 'react';
+import type { ViewStyle } from 'react-native';
 import { Host, Button } from '@expo/ui/swift-ui';
 import {
   accessibilityLabel as accessibilityLabelModifier,
@@ -7,6 +8,7 @@ import {
   buttonBorderShape,
   disabled as disabledModifier,
   frame,
+  foregroundColor as foregroundColorModifier,
   labelStyle,
   tint,
 } from '@expo/ui/swift-ui/modifiers';
@@ -28,7 +30,12 @@ export default function NativeGlassButton({
   tintColor,
   layout,
   shape = label ? 'capsule' : 'circle',
+  size,
+  width,
+  height,
+  foregroundColor,
 }: NativeGlassButtonProps) {
+  const fixedWidth = width ?? size;
   const styleName = liquidGlass.isLiquidGlassAvailable()
     ? variant
     : variant === 'glassProminent'
@@ -41,15 +48,29 @@ export default function NativeGlassButton({
     ...(accessibilityHint ? [accessibilityHintModifier(accessibilityHint)] : []),
     ...(systemImage && !label ? [labelStyle('iconOnly' as const)] : []),
     ...(tintColor ? [tint(tintColor)] : []),
+    ...(foregroundColor ? [foregroundColorModifier(foregroundColor)] : []),
     ...(disabled ? [disabledModifier(true)] : []),
-    ...(layout === 'square'
-      ? [frame({ width: 52, height: 52 })]
-      : layout === 'fill'
-        ? [frame({ minWidth: 0, maxWidth: Infinity, minHeight: 52, maxHeight: 52 })]
-        : []),
+    ...(fixedWidth
+      ? [frame({ width: fixedWidth, height: size ?? height })]
+      : layout === 'square'
+        ? [frame({ width: 52, height: 52 })]
+        : layout === 'fill'
+          ? [frame({ minWidth: 0, maxWidth: Infinity, height: height ?? 52 })]
+          : height
+            ? [frame({ minWidth: 0, maxWidth: Infinity, height })]
+            : []),
   ];
+  const hostSizing: ViewStyle | null = fixedWidth
+    ? { width: fixedWidth, height: size ?? height }
+    : layout === 'square'
+      ? { width: 52, height: 52 }
+      : layout === 'fill'
+        ? { width: '100%', height: height ?? 52 }
+        : height
+          ? { width: '100%', height }
+        : null;
   return (
-    <Host matchContents style={style}>
+    <Host matchContents={!(fixedWidth || height || layout)} style={[hostSizing, style]}>
       <Button
         label={label ?? accessibilityLabel}
         systemImage={systemImage as never}

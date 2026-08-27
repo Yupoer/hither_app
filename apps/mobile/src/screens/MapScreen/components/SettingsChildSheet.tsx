@@ -26,6 +26,8 @@ export default function SettingsChildSheet({
   onClose,
   onDismissComplete,
   onBack,
+  action = 'close',
+  onCommit,
   title,
   children,
   zIndex = 90,
@@ -38,6 +40,8 @@ export default function SettingsChildSheet({
   onClose: () => void;
   onDismissComplete?: () => void;
   onBack?: () => void;
+  action?: 'close' | 'commit';
+  onCommit?: () => void;
   title: string;
   children: React.ReactNode;
   zIndex?: number;
@@ -116,13 +120,13 @@ export default function SettingsChildSheet({
       ) : <View style={styles.headerSide} />}
       <Text style={styles.title} numberOfLines={1}>{title}</Text>
       <Pressable
-        onPress={onClose}
+        onPress={action === 'commit' ? onCommit : onClose}
         accessibilityRole="button"
-        accessibilityLabel="close"
+        accessibilityLabel={action}
         hitSlop={8}
         style={styles.headerSide}
       >
-        <Ionicons name="close" size={22} color="#fff" />
+        <Ionicons name={action === 'commit' ? 'checkmark' : 'close'} size={22} color="#fff" />
       </Pressable>
     </View>
   );

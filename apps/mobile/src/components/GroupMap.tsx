@@ -51,7 +51,11 @@ import {
   type RouteViewport,
 } from '../utils/routeLod';
 import { advanceRouteToCoordinate } from '../utils/advanceRouteToCoordinate';
-import { gatherCardHorizontalInset, mapKitChromeLayout } from '../utils/mapChromeLayout';
+import {
+  gatherCardHorizontalInset,
+  mapKitChromeLayout,
+  type MapChromeStage,
+} from '../utils/mapChromeLayout';
 import {
   pulsePeakScale,
   reduceMotionEmphasisScale,
@@ -144,6 +148,10 @@ export interface GroupMapProps {
   topOverlap?: number;
   /** Peek-only sheet height overlapping the map. Never a live detent. */
   bottomOverlap?: number;
+  /** Settled sheet stage used to place/hide native compass chrome. */
+  chromeStage?: MapChromeStage;
+  /** Bottom offset of the floating recenter capsule for compass placement. */
+  chromeBottomOffset?: number;
   /**
    * @deprecated MapView is edge-to-edge; peek translate/oversize is removed.
    * Kept so callers can pass 0 without a type break.
@@ -523,6 +531,8 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     completedDestinationIds = null,
     topOverlap = 0,
     bottomOverlap = 0,
+    chromeStage = 'peek',
+    chromeBottomOffset = 0,
     halfPeek: _halfPeek = 0,
     onUserLocationSample,
     onLongPressCoordinate,
@@ -624,8 +634,11 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       safeArea: insets,
       topChrome: topOverlap,
       horizontalInset: gatherCardHorizontalInset(windowWidth),
+      windowHeight,
+      bottomChrome: chromeBottomOffset,
+      stage: chromeStage,
     }),
-    [insets, topOverlap, windowWidth],
+    [chromeBottomOffset, chromeStage, insets, topOverlap, windowHeight, windowWidth],
   );
 
   useEffect(() => platformizedMapLifecycle({
@@ -901,7 +914,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       // as a flock emoji pin — that would lag on cloud upload cadence.
       showsUserLocation={showsUserLocation}
       showsMyLocationButton={false}
-      showsCompass
+      showsCompass={mapChrome.compassVisible ?? true}
       pitchEnabled
       rotateEnabled
       // iOS MapKit + Android Google Maps share this path. Callers stage the

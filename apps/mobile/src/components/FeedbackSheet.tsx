@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import Constants from 'expo-constants';
-import OverlaySheet from './OverlaySheet';
+import SettingsChildSheet from '../screens/MapScreen/components/SettingsChildSheet';
 import { useTranslation, type TranslationKey } from '../i18n';
 import { useTheme } from '../state/PreferencesContext';
 import { glass, accentMix } from '../glass';
@@ -154,13 +154,13 @@ export default function FeedbackSheet({
   }
 
   return (
-    <OverlaySheet
+    <SettingsChildSheet
       visible={visible}
       onClose={handleClose}
       title={t('feedback.title')}
-      accent={accent}
-      doneLabel={t('common.cancel')}
-      doneSystemImage="xmark"
+      initialStage={1}
+      stageTwoRatio={0.9}
+      wrapContentInScrollView={false}
     >
       <ScrollView contentContainerStyle={styles.body}>
         <Text style={styles.categoryLabel}>{t('feedback.categoryLabel')}</Text>
@@ -218,7 +218,7 @@ export default function FeedbackSheet({
           )}
         </Pressable>
       </ScrollView>
-    </OverlaySheet>
+    </SettingsChildSheet>
   );
 }
 

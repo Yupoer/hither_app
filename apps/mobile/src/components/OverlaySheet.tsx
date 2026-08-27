@@ -36,12 +36,11 @@ export default function OverlaySheet({
   onOpenComplete,
   onDone,
   title,
-  accent,
   doneLabel = 'Done',
   doneSystemImage,
   headerLeft,
   opaque = false,
-  material = 'default',
+  material = 'mapSheet',
   edgeToEdge = false,
   children,
 }: {
@@ -82,6 +81,7 @@ export default function OverlaySheet({
   const onOpenCompleteRef = useRef(onOpenComplete);
   onOpenCompleteRef.current = onOpenComplete;
   const handleDone = onDone ?? onClose;
+  const headerSystemImage = doneSystemImage ?? (onDone ? 'checkmark' : 'xmark');
   // Keep heavy children mounted through the close animation; drop them only
   // after t has fully settled at 0 while still hidden.
   const [contentMounted, setContentMounted] = useState(visible);
@@ -205,7 +205,7 @@ export default function OverlaySheet({
           glassStyle="regular"
           tintColor={
             material === 'mapSheet'
-              ? Platform.OS === 'ios' ? glass.sheet : glass.sheetOpaque
+              ? Platform.OS === 'ios' ? undefined : glass.sheetOpaque
               : opaque
                 ? glass.overlayOpaque
                 : glass.overlay
@@ -223,26 +223,14 @@ export default function OverlaySheet({
             <Text style={styles.title} numberOfLines={1}>
               {title}
             </Text>
-            {doneSystemImage ? (
-              <NativeGlassButton
-                systemImage={doneSystemImage}
-                onPress={handleDone}
-                accessibilityLabel={doneLabel}
-                shape="circle"
-                layout="square"
-                tintColor={accent}
-                style={styles.headerClose}
-              />
-            ) : (
-              <Pressable
-                onPress={handleDone}
-                accessibilityRole="button"
-                style={styles.headerSide}
-                hitSlop={8}
-              >
-                <Text style={[styles.done, { color: accent }]}>{doneLabel}</Text>
-              </Pressable>
-            )}
+            <NativeGlassButton
+              systemImage={headerSystemImage}
+              onPress={handleDone}
+              accessibilityLabel={doneLabel}
+              shape="circle"
+              size={52}
+              style={styles.headerClose}
+            />
           </View>
         </View>
         <View style={styles.body} {...bodyPan.panHandlers}>
@@ -280,8 +268,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 18,
-    paddingTop: 8,
+    paddingHorizontal: 16,
+    paddingTop: 7,
     paddingBottom: 18,
   },
   headerSide: {
@@ -291,7 +279,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   headerSideLeft: { alignItems: 'flex-start' },
-  headerClose: { width: 52, height: 52, alignSelf: 'center' },
+  headerClose: { width: 52, height: 52, alignSelf: 'center', flexShrink: 0 },
   title: {
     flex: 1,
     fontSize: 19,
@@ -300,6 +288,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: 4,
   },
-  done: { fontSize: 16, fontWeight: '600', textAlign: 'right' },
   body: { flex: 1 },
 });

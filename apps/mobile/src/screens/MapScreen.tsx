@@ -96,6 +96,7 @@ import { AmicroButton } from '../components/AmicroButton';
 import { HitherText } from '../components/HitherText';
 import OverflowMarquee from '../components/OverflowMarquee';
 import NativeGlassButton from '../components/NativeGlassButton';
+import MapRecenterControl from '../components/MapRecenterControl';
 import {
   applyLocalClosedAt,
   arrivalControlJustSplit,
@@ -193,7 +194,6 @@ import {
 } from '../featureTour';
 import { useCoordinationRequests } from './MapScreen/hooks/useCoordinationRequests';
 import { SettingsOverlay } from './MapScreen/components/SettingsOverlay';
-import { DiagnosticsOverlay } from './MapScreen/components/DiagnosticsOverlay';
 import { ProfileOverlay } from './MapScreen/components/ProfileOverlay';
 import { SubgroupSection } from './MapScreen/components/SubgroupSection';
 import { Segmented } from './MapScreen/components/Segmented';
@@ -1066,7 +1066,6 @@ export default function MapScreen({ route, navigation }: Props) {
     | 'arrivalManage'
     | 'arrival'
     | 'ops'
-    | 'diagnostics'
   >(null);
   const [editButtonActive, setEditButtonActive] = useState(false);
   const [arrivalDestination, setArrivalDestination] = useState<Destination | null>(null);
@@ -5114,6 +5113,12 @@ export default function MapScreen({ route, navigation }: Props) {
   // Camera insets stay peek-only. Live detent must not move the map.
   const peekSheetH = detents[0];
   const bottomPad = peekSheetH + sheetBottomOffset(peekSheetH, detents, insets.bottom);
+  const chromeStage = atFull ? 'full' : detent === 0 ? 'peek' : 'stage1';
+  const chromeBottomOffset = atFull
+    ? 0
+    : (detent === 0
+      ? bottomPad
+      : detents[1] + sheetBottomOffset(detents[1], detents, insets.bottom)) + 12;
   const carouselFallback = fontLayout.s(160, 140);
   const topPad =
     destinations.length > 0
@@ -5553,6 +5558,8 @@ export default function MapScreen({ route, navigation }: Props) {
             disabled={sharingApplying}
             tintColor={sharingEnabled ? accent : glass.danger}
             style={styles.locationSharingButton}
+            shape="circle"
+            size={44}
             accessibilityLabel={t('settings.locationSharing')}
             accessibilityHint={t('settings.locationSharingHint')}
             testID="members-location-sharing"
@@ -5939,25 +5946,24 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [liveActivityUnlocked, openPaywallForLiveActivity, setLiveActivityEnabled]);
   const toolsPaneBody = useMemo(() => (
     <>
-      <Pressable
-        style={[styles.passiveEnterBtn, { backgroundColor: accent }]}
+      <View style={styles.passiveEnterBlock}>
+      <NativeGlassButton
+        label={t('passive.enter')}
+        systemImage="leaf"
+        layout="fill"
+        height={64}
+        shape="capsule"
+        foregroundColor={glass.textPrimary}
         onPress={() => {
           mediumTap();
           setPassiveCompanionMode(true);
         }}
-        accessibilityRole="button"
         accessibilityLabel={t('passive.enter')}
+        accessibilityHint={t('passive.enterHint')}
         testID="tools-enter-passive"
-      >
-        <Ionicons name="leaf-outline" size={18} color="#111" />
-        <View style={styles.passiveEnterCopy}>
-          <Text style={styles.passiveEnterTitle}>{t('passive.enter')}</Text>
-          <Text style={styles.passiveEnterHint} numberOfLines={1}>
-            {t('passive.enterHint')}
-          </Text>
-        </View>
-        <Ionicons name="chevron-forward" size={16} color="#111" />
-      </Pressable>
+      />
+      <Text style={styles.passiveEnterHint}>{t('passive.enterHint')}</Text>
+      </View>
 
       <View style={styles.accuracyRow} testID="tools-live-activity-row">
         <View style={styles.accuracyCopy}>
@@ -6219,6 +6225,8 @@ export default function MapScreen({ route, navigation }: Props) {
           // mid-drag; top tracks measured carousel card height.
           topOverlap={topPad}
           bottomOverlap={bottomPad}
+          chromeStage={chromeStage}
+          chromeBottomOffset={chromeBottomOffset}
           onUserLocationSample={
             Platform.OS === 'ios' ? consumeForegroundSample : undefined
           }
@@ -6252,10 +6260,9 @@ export default function MapScreen({ route, navigation }: Props) {
       >
         <View style={{ alignItems: 'flex-start' }}>
           <NativeGlassButton
-            systemImage="person.3.fill"
-            label={`${group?.name ?? 'Hither'} · ${members.length}`}
+            label={`${group?.avatar ?? '👥'} ${group?.name ?? 'Hither'} · ${members.length}`}
             accessibilityLabel={`${group?.name ?? 'Hither'} · ${members.length}`}
-            tintColor={glass.pill}
+            foregroundColor={colors.textPrimary}
             shape="capsule"
             style={styles.groupPill}
             onPress={() => {
@@ -6276,32 +6283,13 @@ export default function MapScreen({ route, navigation }: Props) {
         style={[styles.recenter, recenterStyle]}
         pointerEvents={atFull ? 'none' : 'auto'}
       >
-        <View style={styles.recenterCapsule}>
-          <liquidGlass.GlassView
-            // Keep the recenter capsule on the same native material as Peek.
-            glassStyle="regular"
-            tintColor={glass.pill}
-            style={StyleSheet.absoluteFill}
-            pointerEvents="none"
-          />
-          <NativeGlassButton
-            style={styles.recenterHit}
-            systemImage="arrow.up.left.and.arrow.down.right"
-            accessibilityLabel={t('map.fitAllA11y')}
-            tintColor={colors.textPrimary}
-            shape="capsule"
-            onPress={fitAllMembers}
-          />
-          <View style={styles.recenterDivider} />
-          <NativeGlassButton
-            style={styles.recenterHit}
-            systemImage="location.fill"
-            accessibilityLabel={t('map.locateA11y')}
-            tintColor={colors.textPrimary}
-            shape="capsule"
-            onPress={locateMe}
-          />
-        </View>
+        <MapRecenterControl
+          onFitAll={fitAllMembers}
+          onLocate={locateMe}
+          fitAllLabel={t('map.fitAllA11y')}
+          locateLabel={t('map.locateA11y')}
+          style={styles.recenterCapsule}
+        />
       </Animated.View>
       )}
 
@@ -6326,7 +6314,7 @@ export default function MapScreen({ route, navigation }: Props) {
           >
             <liquidGlass.GlassView
               glassStyle="regular"
-              tintColor={glass.cardActive}
+              tintColor={Platform.OS === 'android' ? glass.cardActive : undefined}
               style={styles.confirmCardInner}
             >
               <View style={styles.confirmTopRow}>
@@ -6389,6 +6377,7 @@ export default function MapScreen({ route, navigation }: Props) {
                       style={StyleSheet.absoluteFill}
                       tintColor={accent}
                       layout="square"
+                      size={80}
                       shape="circle"
                     />
                   </View>
@@ -6411,6 +6400,7 @@ export default function MapScreen({ route, navigation }: Props) {
                       style={StyleSheet.absoluteFill}
                       tintColor={accent}
                       layout="square"
+                      size={80}
                       shape="circle"
                     />
                   </View>
@@ -6424,6 +6414,7 @@ export default function MapScreen({ route, navigation }: Props) {
                   label={t('common.cancel')}
                   accessibilityLabel={t('common.cancel')}
                   layout="fill"
+                  height={96}
                   shape="capsule"
                   onPress={() => {
                     selectionTick();
@@ -6436,6 +6427,7 @@ export default function MapScreen({ route, navigation }: Props) {
                   label={t('confirmGather.add')}
                   accessibilityLabel={t('confirmGather.add')}
                   layout="fill"
+                  height={96}
                   shape="capsule"
                   onPress={() => {
                     const place = {
@@ -6684,7 +6676,9 @@ export default function MapScreen({ route, navigation }: Props) {
                   <ArrivalCardExitShell exiting={exitPhase === 'exit'}>
                   <liquidGlass.GlassView
                     glassStyle="regular"
-                    tintColor={active ? glass.cardActive : glass.card}
+                    tintColor={Platform.OS === 'android'
+                      ? active ? glass.cardActive : glass.card
+                      : undefined}
                     style={[
                       styles.card,
                       // Active state uses fill only — no theme-color rim
@@ -7566,7 +7560,6 @@ export default function MapScreen({ route, navigation }: Props) {
         onAccountDeleted={() => {
           navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
         }}
-        onOpenDiagnostics={() => setOverlay('diagnostics')}
         group={group}
         isLeader={isLeader}
         onUpdateGroupAvatar={async (avatar, avatarColor) => {
@@ -7580,34 +7573,6 @@ export default function MapScreen({ route, navigation }: Props) {
         }}
         styles={styles}
       />
-
-      <View
-        pointerEvents="box-none"
-        style={[StyleSheet.absoluteFill, styles.settingsChildLayer]}
-      >
-      <DiagnosticsOverlay
-        visible={overlay === 'diagnostics'}
-        onClose={closeOverlay}
-        accent={accent}
-        navigationSessionId={navigationSessionState.session?.id ?? null}
-        trackingMode={
-          !sharingEnabled
-            ? 'hidden'
-            : navigationSessionState.session
-              ? 'teamNavigation'
-              : journeyActive
-                ? 'navigationMax'
-                : appState === 'active'
-                  ? 'foreground'
-                  : 'passiveBackground'
-        }
-        liveActivityStatus={
-          journeyActive && liveActivityAllowed ? 'active/requested' : 'inactive'
-        }
-        destinations={destinations}
-        activeDestinationId={navTargetId ?? selectedDestination?.id ?? null}
-      />
-      </View>
 
       {/* 邀請成員 — independent share sheet (code / share / copy). */}
       <OverlaySheet
@@ -7925,7 +7890,7 @@ export default function MapScreen({ route, navigation }: Props) {
                         >
                           <Ionicons
                             name={arrived ? 'checkmark-circle' : 'checkmark-circle-outline'}
-                            size={52}
+                            size={36}
                             color={arrived ? glass.ok : glass.textTertiary}
                           />
                         </Pressable>
@@ -7980,7 +7945,7 @@ export default function MapScreen({ route, navigation }: Props) {
                   >
                     <Ionicons
                       name={arrived ? 'checkmark-circle' : 'checkmark-circle-outline'}
-                      size={52}
+                      size={36}
                       color={arrived ? glass.ok : glass.textTertiary}
                     />
                   </Pressable>
@@ -7998,6 +7963,7 @@ export default function MapScreen({ route, navigation }: Props) {
         accent={accent}
         doneLabel={t('map.done')}
         material="mapSheet"
+        edgeToEdge
       >
         <ScrollView contentContainerStyle={styles.overlayBody}>
           {historyGroups.length === 0 ? (
@@ -9023,12 +8989,9 @@ const makeStyles = (
       paddingVertical: s(6, 4),
       borderRadius: s(22, 18),
       overflow: 'hidden',
-      backgroundColor: glass.pill,
       flexDirection: 'row',
       alignItems: 'center',
       gap: s(9, 6),
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: glass.hairlineSoft,
     },
     pillAvatar: {
       width: 26,
@@ -9562,9 +9525,9 @@ const makeStyles = (
     },
     confirmEtaRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
     confirmArrow: {
-      width: 52,
-      height: 52,
-      borderRadius: 26,
+      width: 80,
+      height: 80,
+      borderRadius: 40,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -9582,8 +9545,8 @@ const makeStyles = (
     },
     confirmCancel: {
       flex: 1,
-      minHeight: 52,
-      borderRadius: 26,
+      minHeight: 96,
+      borderRadius: 48,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: Platform.OS === 'ios' ? 'transparent' : 'rgba(255,69,58,0.16)',
@@ -9595,8 +9558,8 @@ const makeStyles = (
     confirmCancelText: { fontSize: 16, fontWeight: '700', color: '#FF453A', textAlign: 'center' },
     confirmAdd: {
       flex: 1,
-      minHeight: 52,
-      borderRadius: 26,
+      minHeight: 96,
+      borderRadius: 48,
       alignItems: 'center',
       justifyContent: 'center',
       paddingVertical: 12,
@@ -9913,32 +9876,17 @@ const makeStyles = (
     sheetPaneHidden: {
       display: 'none',
     },
-    passiveEnterBtn: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 10,
-      borderRadius: 16,
-      paddingHorizontal: 14,
-      paddingVertical: 14,
+    passiveEnterBlock: {
       marginTop: 8,
       marginBottom: 10,
     },
-    passiveEnterCopy: {
-      flex: 1,
-      minWidth: 0,
-      gap: 2,
-    },
-    // Match list-row title weight/size (follow App text settings; no special bold).
-    passiveEnterTitle: {
-      color: '#111',
-      fontSize: 15,
-      fontWeight: '600',
-    },
     passiveEnterHint: {
-      color: 'rgba(17,17,17,0.72)',
+      color: glass.textSecondary,
       fontSize: 13,
       lineHeight: 18,
       fontWeight: '400',
+      marginTop: 6,
+      paddingHorizontal: 14,
     },
     sheetHeadingFirst: {
       marginTop: 4,
@@ -10188,11 +10136,7 @@ const makeStyles = (
     locationSharingButton: {
       width: 44,
       height: 44,
-      borderRadius: 22,
       flexShrink: 0,
-      backgroundColor: glass.fill,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: glass.hairline,
     },
     accuracyTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7, flexWrap: 'wrap' },
     accuracyLabel: { color: '#fff', fontSize: 15, fontWeight: '600', lineHeight: 22, flexShrink: 1 },

@@ -55,8 +55,8 @@ export default function TourCard({
 
   return (
     <Host
-      matchContents
-      style={{ flex: 1 }}
+      style={{ flex: 1, width: '100%', height: '100%', maxHeight: maxCardHeight }}
+      matchContents={false}
       modifiers={[dynamicTypeSize({ max: 'accessibility3' })]}
     >
       <VStack
@@ -70,7 +70,7 @@ export default function TourCard({
             minWidth: 0,
             maxWidth: Infinity,
             minHeight: 0,
-            maxHeight: Math.max(96, maxCardHeight - Math.max(ctaReservePx, 70)),
+            maxHeight: Math.max(48, maxCardHeight - Math.max(ctaReservePx, 78)),
           })]}
         >
           <VStack

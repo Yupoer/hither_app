@@ -36,10 +36,6 @@ const MARQUEE_SPEED_MIN = 20;
 const MARQUEE_SPEED_MAX = 80;
 
 const OTA_UPDATES_USABLE = !__DEV__ && Updates.isEnabled;
-// Always available (leader + member, production included) so support can
-// export redacted runtime records without a special diagnostic build.
-const diagnosticsEnabled = true;
-
 interface SettingsOverlayProps {
   visible: boolean;
   onClose: () => void;
@@ -53,7 +49,6 @@ interface SettingsOverlayProps {
   onOpenPaywall: () => void;
   onDismissComplete?: () => void;
   onAccountDeleted: () => void;
-  onOpenDiagnostics: () => void;
   group?: Group | null;
   isLeader?: boolean;
   onUpdateGroupAvatar?: (avatar: string, avatarColor: string) => Promise<void>;
@@ -118,7 +113,6 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
   onOpenPaywall,
   onDismissComplete,
   onAccountDeleted,
-  onOpenDiagnostics,
   group,
   isLeader = false,
   onUpdateGroupAvatar,
@@ -131,7 +125,6 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
     language,
     themeName,
     textScale,
-    diagnosticUploadEnabled,
     obliqueLocate,
     gatherCardDefaultExpanded,
     gatherCardTitleMarquee,
@@ -139,7 +132,6 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
     setLanguage,
     setThemeName,
     setTextScale,
-    setDiagnosticUploadEnabled,
     setObliqueLocate,
     setGatherCardDefaultExpanded,
     setGatherCardTitleMarquee,
@@ -184,26 +176,6 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
       setSavingGroupAvatar(false);
     }
   }, [group?.id, onUpdateGroupAvatar, savingGroupAvatar, groupAvatar, groupAvatarColor, t]);
-
-  const onDiagnosticSwitchChange = React.useCallback((next: boolean) => {
-    if (!next) {
-      void setDiagnosticUploadEnabled(false);
-      return;
-    }
-    Alert.alert(
-      t('settings.diagnosticUploadWarningTitle'),
-      t('settings.diagnosticUploadWarningBody'),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('settings.diagnosticUploadEnable'),
-          onPress: () => {
-            void setDiagnosticUploadEnabled(true);
-          },
-        },
-      ],
-    );
-  }, [setDiagnosticUploadEnabled, t]);
 
   const appVersion =
     Constants.expoConfig?.version ??
@@ -413,14 +385,6 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             styles={styles}
             accessibilityLabel={t('feedback.title')}
           />
-          {diagnosticsEnabled ? (
-            <NavRow
-              title={t('diagnostics.title')}
-              description={t('diagnostics.settingsHint')}
-              onPress={onOpenDiagnostics}
-              styles={styles}
-            />
-          ) : null}
         </View>
 
         {__DEV__ ? (
@@ -691,17 +655,6 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
 
       >
         <View style={styles.overlayBody}>
-          <View style={styles.accuracyRow}>
-            <View style={styles.accuracyCopy}>
-              <Text style={styles.accuracyLabel}>{t('settings.diagnosticUpload')}</Text>
-              <Text style={styles.accuracySubhint}>{t('settings.diagnosticUploadHint')}</Text>
-            </View>
-            <SystemToggle
-              value={diagnosticUploadEnabled}
-              onValueChange={onDiagnosticSwitchChange}
-              accessibilityLabel={t('settings.diagnosticUpload')}
-            />
-          </View>
           {showOtaApply ? (
             <TouchableOpacity
               style={[

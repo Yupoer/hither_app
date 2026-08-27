@@ -1,5 +1,6 @@
 import {
   COMPASS_BELOW_TOP_CHROME,
+  COMPASS_HORIZONTAL_CENTER_ADJUSTMENT,
   gatherCardHorizontalInset,
   mapKitChromeLayout,
 } from '../utils/mapChromeLayout';
@@ -16,7 +17,7 @@ describe('MapKit chrome layout', () => {
       topChrome,
       horizontalInset: inset,
     });
-    expect(layout.compassOffset.x).toBe(inset);
+    expect(layout.compassOffset.x).toBe(inset + COMPASS_HORIZONTAL_CENTER_ADJUSTMENT);
     expect(layout.compassOffset.y).toBe(topChrome + COMPASS_BELOW_TOP_CHROME);
     expect(layout.appleLogoInsets.left).toBe(inset);
     expect(layout.appleLogoInsets.bottom).toBe(safeArea.bottom);
@@ -46,5 +47,27 @@ describe('MapKit chrome layout', () => {
       horizontalInset: 10,
     });
     expect(layout.compassOffset.y).toBeGreaterThanOrEqual(140 + COMPASS_BELOW_TOP_CHROME);
+  });
+
+  it('places compass above the recenter capsule and hides it at stage two/full', () => {
+    const peek = mapKitChromeLayout({
+      safeArea: { top: 59, right: 0, bottom: 34, left: 0 },
+      topChrome: 140,
+      horizontalInset: 14,
+      windowHeight: 844,
+      bottomChrome: 210,
+      stage: 'peek',
+    });
+    expect(peek.compassVisible).toBe(true);
+    expect(peek.compassOffset.y).toBe(844 - 210 - 96 - 8 - 32);
+    expect(peek.compassOffset.x).toBe(14 + COMPASS_HORIZONTAL_CENTER_ADJUSTMENT);
+    expect(mapKitChromeLayout({
+      safeArea: { top: 59, right: 0, bottom: 34, left: 0 },
+      topChrome: 140,
+      horizontalInset: 14,
+      windowHeight: 844,
+      bottomChrome: 210,
+      stage: 'full',
+    }).compassVisible).toBe(false);
   });
 });

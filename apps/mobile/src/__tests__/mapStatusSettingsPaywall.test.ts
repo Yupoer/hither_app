@@ -85,7 +85,7 @@ describe('#220 map / status / settings / paywall contracts', () => {
     expect(settingsZ).toBeGreaterThan(sheetZ);
     expect(childZ).toBeGreaterThan(settingsZ);
     expect(mapScreen).toContain('styles.settingsChildLayer');
-    for (const host of ['<AccountSheet', '<PaywallSheet', '<FeedbackSheet', '<DiagnosticsOverlay'] as const) {
+    for (const host of ['<AccountSheet', '<PaywallSheet', '<FeedbackSheet'] as const) {
       const idx = mapScreen.indexOf(host);
       expect(idx).toBeGreaterThan(0);
       const wrapIdx = mapScreen.lastIndexOf('styles.settingsChildLayer', idx);

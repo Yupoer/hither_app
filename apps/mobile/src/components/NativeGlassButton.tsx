@@ -23,8 +23,15 @@ export type NativeGlassButtonProps = {
   selected?: boolean;
   busy?: boolean;
   tintColor?: string;
+  foregroundColor?: string;
   layout?: 'square' | 'fill';
   shape?: 'circle' | 'capsule';
+  /** Fixed square size for icon-only controls (defaults to 52pt). */
+  size?: number;
+  /** Explicit width for controls whose height is independent (e.g. fill rows). */
+  width?: number;
+  /** Fixed height for full-width controls (defaults to 52pt). */
+  height?: number;
 };
 
 type FallbackIconProps = { name: string; size: number; color: string };
@@ -53,6 +60,8 @@ const FALLBACK_ICON: Record<string, string> = {
   'square.and.arrow.up': 'share-outline',
   'arrow.up.left.and.arrow.down.right': 'expand-outline',
   'person.3.fill': 'people-outline',
+  leaf: 'leaf-outline',
+  checkmark: 'checkmark',
   eye: 'eye-outline',
   'eye.slash': 'eye-off-outline',
 };
@@ -71,6 +80,10 @@ export default function NativeGlassButton({
   busy = false,
   layout,
   shape = label ? 'capsule' : 'circle',
+  size,
+  width,
+  height,
+  foregroundColor = '#fff',
 }: NativeGlassButtonProps) {
   const icon = systemImage ? FALLBACK_ICON[systemImage] ?? 'ellipse-outline' : null;
   const Icon = icon ? getFallbackIcon() : null;
@@ -80,6 +93,8 @@ export default function NativeGlassButton({
         styles.fallback,
         shape === 'circle' ? styles.circle : styles.capsule,
         layout === 'square' && styles.square,
+        (size || width) ? { width: width ?? size, height: size ?? height, borderRadius: shape === 'circle' && size ? size / 2 : 26 } : null,
+        height ? { height } : null,
         style,
         pressed && styles.pressed,
       ]}
@@ -91,8 +106,8 @@ export default function NativeGlassButton({
       accessibilityState={{ disabled, selected, busy }}
       testID={testID}
     >
-      {Icon ? <Icon name={icon ?? 'ellipse-outline'} size={26} color="#fff" /> : icon ? <Text style={styles.icon}>{icon}</Text> : null}
-      {label ? <Text style={styles.label}>{label}</Text> : null}
+      {Icon ? <Icon name={icon ?? 'ellipse-outline'} size={26} color={foregroundColor} /> : icon ? <Text style={[styles.icon, { color: foregroundColor }]}>{icon}</Text> : null}
+      {label ? <Text style={[styles.label, { color: foregroundColor }]}>{label}</Text> : null}
     </Pressable>
   );
 }
