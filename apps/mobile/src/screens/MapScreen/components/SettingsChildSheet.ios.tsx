@@ -10,6 +10,7 @@ import {
   Group,
   HStack,
   Host,
+  Image,
   RNHostView,
   Spacer,
   Text as SwiftText,
@@ -124,32 +125,34 @@ export default function SettingsChildSheet({
               alignment="center"
               modifiers={[
                 padding({ top: 16, leading: 16, trailing: 16 }),
-                frame({ minWidth: 0, maxWidth: 10000, minHeight: 76, maxHeight: 76 }),
+                frame({ minWidth: 0, maxWidth: 10000 }),
               ]}
             >
-              <Spacer modifiers={[frame({ width: 52, height: 52 })]} />
+              <Spacer modifiers={[frame({ width: 78, height: 78 })]} />
               <SwiftText
                 modifiers={[
-                  frame({ minWidth: 0, maxWidth: Infinity, minHeight: 48, maxHeight: 48, alignment: 'center' }),
+                  frame({ minWidth: 0, maxWidth: Infinity, minHeight: 78, maxHeight: 78, alignment: 'center' }),
                   font({ size: 17, weight: 'bold' }),
                 ]}
               >
                 {title}
               </SwiftText>
               <Button
-                label={action === 'commit' ? 'Done' : 'Close'}
-                systemImage={action === 'commit' ? 'checkmark' : 'xmark'}
                 role={action === 'commit' ? 'default' : 'cancel'}
                 onPress={action === 'commit' ? onCommit : closeOnce}
                 modifiers={[
                   buttonStyle(liquidGlass.isLiquidGlassAvailable() ? 'glass' : 'bordered'),
                   buttonBorderShape('circle'),
-                  controlSize('large'),
+                  controlSize('extraLarge'),
                   labelStyle('iconOnly'),
-                  frame({ width: 52, height: 52 }),
                   accessibilityLabel(action),
                 ]}
-              />
+              >
+                <Image
+                  systemName={action === 'commit' ? 'checkmark' : 'xmark'}
+                  modifiers={[frame({ width: 78, height: 78 })]}
+                />
+              </Button>
             </HStack>
             <RNHostView matchContents={false}>
               <View style={styles.sheetBody}>

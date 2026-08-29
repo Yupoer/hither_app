@@ -21,8 +21,6 @@ import {
 } from './overlayLayout';
 import TourCard from './TourCard';
 
-/** TourCard owns the platform-specific ScrollView and maxFontSizeMultiplier copy handling. */
-
 export interface GroupFeatureTourOverlayProps {
   visible: boolean;
   title: string;
@@ -45,8 +43,8 @@ export interface GroupFeatureTourOverlayProps {
 const DIM = 'rgba(0,0,0,0.62)';
 const FADE_OUT_MS = 150;
 const FADE_IN_MS = 180;
-/** Title/body may scroll; keep Prev/Next outside the clipped region. */
-const CTA_RESERVE_PX = 78;
+/** Initial estimate only; onLayout replaces it with the natural card height. */
+const ESTIMATED_CARD_HEIGHT = 244;
 type DisplayedTourSnapshot = {
   key: string;
   title: string;
@@ -210,18 +208,15 @@ export function GroupFeatureTourOverlay({
         windowHeight: winH,
         insets: { top: insets.top, bottom: insets.bottom },
         cardHeight,
+        estimatedCardHeight: ESTIMATED_CARD_HEIGHT,
       }),
     [placementHole, winW, winH, insets.top, insets.bottom, cardHeight],
   );
 
   const a11yLabel = [shown.title, shown.body].filter((part) => part.trim().length > 0).join('. ');
   const ctaBlocked = ctaDisabled;
-  // Give the card a real bounded height so native Host layout cannot measure
-  // an intrinsic body taller than the safe viewport. Copy then scrolls inside
-  // this fixed shell while the CTA row stays reachable at the bottom.
-  const minimumCardHeight = !shown.targetRect ? Math.min(220, placement.maxCardHeight) : 0;
-  const naturalCardHeight = Math.max(160, minimumCardHeight, cardHeight ?? 0);
-  const boundedCardHeight = Math.min(placement.maxCardHeight, naturalCardHeight);
+  // Let the card measure its complete copy and CTA row. The measured height is
+  // fed back into placement so the whole card stays inside the safe viewport.
 
   const onCardLayout = (e: LayoutChangeEvent) => {
     const h = e.nativeEvent.layout.height;
@@ -306,9 +301,7 @@ export function GroupFeatureTourOverlay({
             top: placement.cardTop,
             left: 20,
             right: 20,
-            height: boundedCardHeight,
             opacity,
-            maxHeight: placement.maxCardHeight,
           },
         ]}
         accessibilityRole="summary"
@@ -324,9 +317,6 @@ export function GroupFeatureTourOverlay({
           onPrev={onPrev}
           onNext={onNext}
           accessibilityLabel={a11yLabel}
-          maxCardHeight={placement.maxCardHeight}
-          ctaReservePx={CTA_RESERVE_PX}
-          minCardHeight={minimumCardHeight || undefined}
         />
       </Animated.View>
     </View>

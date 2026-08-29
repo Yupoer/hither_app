@@ -79,8 +79,10 @@ describe('iOS native UI contracts', () => {
     expect(settingsIos).toContain('paddingTop: 12');
     expect(settingsIos).not.toContain('glassEffect({ glass: { variant: \'clear\' }');
     expect(settingsIos).toContain("buttonBorderShape('circle')");
-    expect(settingsIos).toContain("controlSize('large')");
-    expect(settingsIos).toContain('frame({ width: 52, height: 52 })');
+    expect(settingsIos).toContain("controlSize('extraLarge')");
+    expect(settingsIos).toContain('<Image');
+    expect(settingsIos).toContain('frame({ width: 78, height: 78 })');
+    expect(settingsIos).not.toContain('frame({ width: 52, height: 52 })');
     expect(settingsIos).toContain("action === 'commit' ? 'checkmark' : 'xmark'");
     expect(settingsIos).toContain('<VStack');
     expect(settingsIos.indexOf('</HStack>')).toBeLessThan(settingsIos.indexOf('<RNHostView'));
@@ -120,8 +122,12 @@ describe('iOS native UI contracts', () => {
 
   it('keeps native close controls circular and icon-only', () => {
     expect(nativeGlassButtonIos).toContain('buttonBorderShape(shape)');
+    expect(nativeGlassButtonIos).toContain('controlSize(controlSizeValue)');
+    expect(nativeGlassButtonIos).toContain('<Image');
     expect(nativeGlassButtonIos).toContain("labelStyle('iconOnly' as const)");
     expect(overlaySheet).toContain('doneSystemImage');
+    expect(overlaySheet).toContain('size={78}');
+    expect(overlaySheet).toContain('headerClose: { width: 78, height: 78');
     expect(paywallSheet).toContain('systemImage="xmark"');
     expect(mapScreen).toContain('doneSystemImage="xmark"');
     expect(overlaySheet).toContain("onDone ? 'checkmark' : 'xmark'");
@@ -133,5 +139,16 @@ describe('iOS native UI contracts', () => {
     expect(mapScreen).toContain('testID="members-location-sharing"');
     expect(premiumBanner).toContain('lightTap();');
     expect(settings).not.toMatch(/(?:lightTap|mediumTap|selectionTick|rigidTap|alertBuzz)\s*\(/);
+  });
+
+  it('keeps tools and add-place controls at their requested dimensions', () => {
+    expect(mapScreen).toContain('testID="tools-enter-passive"');
+    expect(mapScreen).toContain('height={54}');
+    expect(mapScreen).toContain('marginHorizontal: 8');
+    expect(mapScreen).toContain('size={80}');
+    expect(mapScreen).toContain('height={96}');
+    expect(mapScreen).toContain('paddingTop: 12');
+    expect(mapScreen).toContain('paddingBottom: 12');
+    expect(mapScreen).toContain('marginTop: 6');
   });
 });

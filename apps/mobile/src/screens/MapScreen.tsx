@@ -5951,7 +5951,7 @@ export default function MapScreen({ route, navigation }: Props) {
         label={t('passive.enter')}
         systemImage="leaf"
         layout="fill"
-        height={64}
+        height={54}
         shape="capsule"
         foregroundColor={glass.textPrimary}
         onPress={() => {
@@ -6374,7 +6374,6 @@ export default function MapScreen({ route, navigation }: Props) {
                       }
                       selected={pendingIsFavorite}
                       busy={favoriteBusy}
-                      style={StyleSheet.absoluteFill}
                       tintColor={accent}
                       layout="square"
                       size={80}
@@ -6397,7 +6396,6 @@ export default function MapScreen({ route, navigation }: Props) {
                         }
                       }}
                       accessibilityLabel={t('stay.centerPlaceA11y')}
-                      style={StyleSheet.absoluteFill}
                       tintColor={accent}
                       layout="square"
                       size={80}
@@ -9497,9 +9495,9 @@ const makeStyles = (
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairlineStrong,
       paddingHorizontal: 20,
-      paddingTop: 16,
-      paddingBottom: 16,
-      gap: 6,
+      paddingTop: 12,
+      paddingBottom: 12,
+      gap: 4,
     },
     // Hide the bottom sheet while the confirm card is up without animating an
     // ancestor of its Liquid Glass surface.
@@ -9541,7 +9539,7 @@ const makeStyles = (
       alignSelf: 'stretch',
       flexDirection: 'row',
       gap: 12,
-      marginTop: 12,
+      marginTop: 6,
     },
     confirmCancel: {
       flex: 1,
@@ -9879,6 +9877,7 @@ const makeStyles = (
     passiveEnterBlock: {
       marginTop: 8,
       marginBottom: 10,
+      marginHorizontal: 8,
     },
     passiveEnterHint: {
       color: glass.textSecondary,

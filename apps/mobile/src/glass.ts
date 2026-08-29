@@ -30,6 +30,8 @@ export const glass = {
   card: 'rgba(28, 32, 40, 0.9)',
   /** Carousel card, active (selected stop). */
   cardActive: 'rgba(38, 44, 54, 0.94)',
+  /** Brighter fallback for the onboarding copy card. */
+  tourCard: 'rgba(52, 59, 72, 0.96)',
   /** Inset list / button fill. */
   fill: 'rgba(255, 255, 255, 0.07)',
   /** Stronger inset fill (secondary buttons). */
@@ -89,8 +91,13 @@ export function accentMix(accent: string, pct: number): string {
  * fills + elevation composite as a dark rectangular “black frame”.
  */
 export function accentOver(fg: string, bg: string, pct: number): string {
-  const parse = (hex: string) => {
-    const h = hex.replace('#', '');
+  const parse = (value: string) => {
+    const rgb = value.match(/^rgba?\(([^)]+)\)$/i);
+    if (rgb) {
+      const [r, g, b] = rgb[1].split(',').map((channel) => Number.parseFloat(channel.trim()));
+      return { r, g, b };
+    }
+    const h = value.replace('#', '');
     const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
     return {
       r: parseInt(full.slice(0, 2), 16),

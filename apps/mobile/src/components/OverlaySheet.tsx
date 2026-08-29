@@ -228,7 +228,8 @@ export default function OverlaySheet({
               onPress={handleDone}
               accessibilityLabel={doneLabel}
               shape="circle"
-              size={52}
+              size={78}
+              controlSize="extraLarge"
               style={styles.headerClose}
             />
           </View>
@@ -273,13 +274,13 @@ const styles = StyleSheet.create({
     paddingBottom: 18,
   },
   headerSide: {
-    minWidth: 60,
+    minWidth: 78,
     maxWidth: 110,
     flexShrink: 1,
     justifyContent: 'center',
   },
   headerSideLeft: { alignItems: 'flex-start' },
-  headerClose: { width: 52, height: 52, alignSelf: 'center', flexShrink: 0 },
+  headerClose: { width: 78, height: 78, alignSelf: 'center', flexShrink: 0 },
   title: {
     flex: 1,
     fontSize: 19,

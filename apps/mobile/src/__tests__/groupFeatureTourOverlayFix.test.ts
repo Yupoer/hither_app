@@ -203,7 +203,8 @@ describe('overlay chrome fades together', () => {
     );
     expect(overlaySrc).toContain('FADE_OUT_MS = 150');
     expect(overlaySrc).toContain('FADE_IN_MS = 180');
-    expect(overlaySrc).toContain('CTA_RESERVE_PX');
+    expect(overlaySrc).toContain('ESTIMATED_CARD_HEIGHT');
+    expect(overlaySrc).toContain('onLayout={onCardLayout}');
     expect(overlaySrc).toContain('stepKey');
     expect(overlaySrc).not.toContain('setTransitioning');
     expect(overlaySrc).not.toMatch(/rectKey\(targetRect\)/);

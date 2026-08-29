@@ -32,6 +32,8 @@ export type NativeGlassButtonProps = {
   width?: number;
   /** Fixed height for full-width controls (defaults to 52pt). */
   height?: number;
+  /** Native SwiftUI control size; used for icon-only fallbacks too. */
+  controlSize?: 'regular' | 'large' | 'extraLarge';
 };
 
 type FallbackIconProps = { name: string; size: number; color: string };
@@ -83,17 +85,22 @@ export default function NativeGlassButton({
   size,
   width,
   height,
+  controlSize = 'regular',
   foregroundColor = '#fff',
 }: NativeGlassButtonProps) {
   const icon = systemImage ? FALLBACK_ICON[systemImage] ?? 'ellipse-outline' : null;
   const Icon = icon ? getFallbackIcon() : null;
+  const defaultControlSize = controlSize === 'extraLarge' ? 78 : controlSize === 'large' ? 64 : 52;
+  const iconOnly = Boolean(systemImage && !label);
+  const fixedSize = size ?? (layout === 'square' || iconOnly ? defaultControlSize : undefined);
+  const iconSize = Math.max(26, Math.min(34, Math.round((fixedSize ?? 52) * 0.36)));
   return (
     <Pressable
       style={({ pressed }) => [
         styles.fallback,
         shape === 'circle' ? styles.circle : styles.capsule,
         layout === 'square' && styles.square,
-        (size || width) ? { width: width ?? size, height: size ?? height, borderRadius: shape === 'circle' && size ? size / 2 : 26 } : null,
+        (fixedSize || width) ? { width: width ?? fixedSize, height: fixedSize ?? height, borderRadius: shape === 'circle' && fixedSize ? fixedSize / 2 : 26 } : null,
         height ? { height } : null,
         style,
         pressed && styles.pressed,
@@ -106,7 +113,7 @@ export default function NativeGlassButton({
       accessibilityState={{ disabled, selected, busy }}
       testID={testID}
     >
-      {Icon ? <Icon name={icon ?? 'ellipse-outline'} size={26} color={foregroundColor} /> : icon ? <Text style={[styles.icon, { color: foregroundColor }]}>{icon}</Text> : null}
+      {Icon ? <Icon name={icon ?? 'ellipse-outline'} size={iconSize} color={foregroundColor} /> : icon ? <Text style={[styles.icon, { color: foregroundColor, fontSize: iconSize }]}>{icon}</Text> : null}
       {label ? <Text style={[styles.label, { color: foregroundColor }]}>{label}</Text> : null}
     </Pressable>
   );
