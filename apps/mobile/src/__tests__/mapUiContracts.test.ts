@@ -7,6 +7,10 @@ const settingsChildSheet = readFileSync(
   join(__dirname, '../screens/MapScreen/components/SettingsChildSheet.tsx'),
   'utf8',
 );
+const settingsPanel = readFileSync(
+  join(__dirname, '../screens/MapScreen/components/SettingsSheetPanel.tsx'),
+  'utf8',
+);
 const settingsChildSheetIos = readFileSync(
   join(__dirname, '../screens/MapScreen/components/SettingsChildSheet.ios.tsx'),
   'utf8',
@@ -44,16 +48,21 @@ const destinationSearch = readFileSync(
 );
 
 describe('map UI placement contracts', () => {
-  it('keeps settings on the shared two-detent sheet with downward dismissal', () => {
-    expect(settingsChildSheet).toContain("import BottomSheet from '../../../components/BottomSheet'");
-    expect(settingsChildSheet).toContain('STAGE_ONE_RATIO = 0.52');
-    expect(settingsChildSheet).toContain('STAGE_TWO_RATIO = 0.8');
-    expect(settingsChildSheet).toContain('dismissOnDownFromIndex={0}');
-    expect(settingsChildSheet).toContain('edgeToEdgeAtLast={edgeToEdgeAtLast}');
-    expect(settingsChildSheet).toContain('initialStage = 0');
+  it('opens the main settings page at one full-width 90% stage', () => {
+    expect(settingsChildSheet).toContain('SettingsSheetPanel');
+    expect(settingsPanel).toContain("import BottomSheet from '../../../components/BottomSheet'");
+    expect(settingsPanel).toContain('STAGE_ONE_RATIO = 0.52');
+    expect(settingsPanel).toContain('STAGE_TWO_RATIO = 0.8');
+    expect(settingsPanel).toContain('singleStage');
+    expect(settingsPanel).toContain('[Math.round(height * stageTwoRatio)]');
+    expect(settingsPanel).toContain('dismissOnDownFromIndex={0}');
+    expect(settingsPanel).toContain('edgeToEdgeAtLast={edgeToEdgeAtLast}');
+    expect(settingsPanel).toContain('initialStage = 0');
     expect(settingsOverlay).toContain('initialStage={1}');
     expect(settingsOverlay).toContain('stageTwoRatio={0.9}');
     expect(settingsOverlay).toContain('edgeToEdgeAtLast');
+    expect(settingsOverlay).toContain('singleStage');
+    expect(settingsChildSheetIos).toContain('if (props.singleStage) return <SettingsSheetPanel {...props} />');
     expect(settingsChildSheetIos).toContain('[stageOneDetent, stageTwoDetent]');
     expect(settingsChildSheetIos).toContain(
       'selection: initialStage === 1 ? stageTwoDetent : stageOneDetent',
@@ -62,7 +71,7 @@ describe('map UI placement contracts', () => {
     expect(settingsChildSheetIos).toContain('maxWidth: Infinity');
     expect(settingsChildSheetIos).toContain('RNHostView');
     expect(settingsChildSheetIos).toContain("width: '100%'");
-    expect(settingsChildSheet).not.toContain('PanResponder');
+    expect(settingsPanel).not.toContain('PanResponder');
   });
 
   it('keeps shared BottomSheet detents and edge treatment configurable', () => {
@@ -70,6 +79,17 @@ describe('map UI placement contracts', () => {
     expect(bottomSheet).toContain('edgeToEdgeAtLast');
     expect(bottomSheet).toContain('const detentsKey = detents.join');
     expect(bottomSheet).toContain('detents.map');
+  });
+
+  it('keeps add-place secondary controls bright, transparent, and evenly spaced', () => {
+    expect(mapScreen).toContain('confirmControlRow: { flexDirection: \'row\', alignItems: \'center\', gap: 12 }');
+    expect(mapScreen).toContain('confirmBtnRow: {');
+    expect(mapScreen).toContain('gap: 12');
+    expect(mapScreen).toContain('paddingHorizontal: 20');
+    expect(mapScreen).toContain('backgroundColor: glass.fillStrong');
+    expect(mapScreen).toContain('confirmArrow: {');
+    expect(mapScreen).toContain('width: 60');
+    expect(mapScreen).toContain('height: 60');
   });
 
   it('keeps reorder actions on one row with readable text', () => {
@@ -407,10 +427,10 @@ describe('map UI placement contracts', () => {
   });
 
   it('keeps settings content padded and exits fixed-size sheets by translation', () => {
-    expect(settingsChildSheet).toContain('dismissTranslateY={sheetTranslateY}');
-    expect(settingsChildSheet).toContain('dismissRequested={visible}');
-    expect(settingsChildSheet).toContain('contentTopPadding={12}');
-    expect(settingsChildSheet).not.toContain('sheetHeight.value = withSpring(0');
+    expect(settingsPanel).toContain('dismissTranslateY={sheetTranslateY}');
+    expect(settingsPanel).toContain('dismissRequested={visible}');
+    expect(settingsPanel).toContain('contentTopPadding={12}');
+    expect(settingsPanel).not.toContain('sheetHeight.value = withSpring(0');
     expect(bottomSheet).toContain('contentTopPadding = 0');
     expect(bottomSheet).toContain('transform: [{ translateY: dismissY.value }]');
   });
@@ -448,7 +468,7 @@ describe('map UI placement contracts', () => {
     // The shared sheet keeps non-edge stages inset and lets settings opt out of
     // the final edge-to-edge morph.
     expect(bottomSheet).toContain('d.map((_, i) => (edgeToEdgeAtLastSV.value && i === last ? 0 : 10))');
-    expect(settingsChildSheet).toContain('edgeToEdgeAtLast={edgeToEdgeAtLast}');
+    expect(settingsPanel).toContain('edgeToEdgeAtLast={edgeToEdgeAtLast}');
   });
 
   it('snaps Segmented pill when track width appears (tools pane reveal)', () => {

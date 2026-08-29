@@ -8,6 +8,7 @@ const tabsNative = readFileSync(
   'utf8',
 );
 const settingsIos = readFileSync(join(root, 'screens/MapScreen/components/SettingsChildSheet.ios.tsx'), 'utf8');
+const settingsPanel = readFileSync(join(root, 'screens/MapScreen/components/SettingsSheetPanel.tsx'), 'utf8');
 const settings = readFileSync(join(root, 'screens/MapScreen/components/SettingsOverlay.tsx'), 'utf8');
 const bottomSheet = readFileSync(join(root, 'components/BottomSheet.tsx'), 'utf8');
 const overlaySheet = readFileSync(join(root, 'components/OverlaySheet.tsx'), 'utf8');
@@ -71,7 +72,15 @@ describe('iOS native UI contracts', () => {
 
   it('uses native detents and one guarded close path for settings sheets', () => {
     expect(settingsIos).toContain("from '@expo/ui/swift-ui'");
-    expect(settingsIos).toContain('BottomSheet');
+    expect(settingsIos).toContain('SettingsSheetPanel');
+    expect(settingsIos).toContain('if (props.singleStage) return <SettingsSheetPanel {...props} />');
+    expect(settingsPanel).toContain('singleStage');
+    expect(settingsPanel).toContain('[Math.round(height * stageTwoRatio)]');
+    expect(settingsPanel).toContain('SETTINGS_CLOSE_SIZE = 60');
+    expect(settingsPanel).toContain('dismissOnDownFromIndex={0}');
+    expect(settingsPanel).toContain('edgeToEdgeAtLast={edgeToEdgeAtLast}');
+    expect(settingsPanel).toContain('dismissTranslateY={sheetTranslateY}');
+    expect(settingsPanel).toContain('dismissRequested={visible}');
     expect(settingsIos).toContain('fraction: STAGE_ONE_RATIO');
     expect(settingsIos).toContain('fraction: stageTwoRatio');
     expect(settingsIos).toContain('presentationDetents(');
@@ -82,12 +91,12 @@ describe('iOS native UI contracts', () => {
     expect(settingsIos).toContain('if (!presented && visible)');
     expect(settingsIos).not.toContain('chevron-back');
     expect(settingsIos).toContain('paddingTop: 12');
-    expect(settingsIos).not.toContain('glassEffect({ glass: { variant: \'clear\' }');
     expect(settingsIos).toContain("buttonBorderShape('circle')");
-    expect(settingsIos).toContain("controlSize('extraLarge')");
+    expect(settingsIos).not.toContain("controlSize('extraLarge')");
     expect(settingsIos).toContain('<Image');
-    expect(settingsIos).toContain('frame({ width: 78, height: 78 })');
-    expect(settingsIos).not.toContain('frame({ width: 52, height: 52 })');
+    expect(settingsIos).toContain('frame({ width: 60, height: 60 })');
+    expect(settingsIos).toContain('frame({ width: 28, height: 28 })');
+    expect(settingsIos).not.toContain('frame({ width: 78, height: 78 })');
     expect(settingsIos).toContain("action === 'commit' ? 'checkmark' : 'xmark'");
     expect(settingsIos).toContain('<VStack');
     expect(settingsIos.indexOf('</HStack>')).toBeLessThan(settingsIos.indexOf('<RNHostView'));
@@ -98,6 +107,7 @@ describe('iOS native UI contracts', () => {
     expect(settings).toContain("page === 'account'");
     expect(settings).toContain('<AccountSheetContent');
     expect(settings).toContain('wrapContentInScrollView={false}');
+    expect(settings).toContain('singleStage');
     expect(settings).toContain('stageTwoRatio={0.9}');
     expect(settings).toContain('stageTwoRatio={0.8}');
   });
@@ -111,6 +121,7 @@ describe('iOS native UI contracts', () => {
 
   it('leaves map glass to one native material surface', () => {
     expect(bottomSheet).toContain("glass.sheetOpaque : undefined");
+    expect(bottomSheet).toContain('surfaceOpacity={surfaceOpacity}');
     expect(bottomSheet).not.toContain('tintColor="transparent"');
   });
 
@@ -152,8 +163,8 @@ describe('iOS native UI contracts', () => {
 
   it('keeps tools and add-place controls at their requested dimensions', () => {
     expect(mapScreen).toContain('testID="tools-enter-passive"');
-    expect(mapScreen).toContain('height={54}');
-    expect(mapScreen).toContain('marginHorizontal: 8');
+    expect(mapScreen).toContain('height: 162');
+    expect(mapScreen).toContain("width: '100%'");
     expect(mapScreen).toContain('styles.confirmControl');
     expect(mapScreen).toContain('width: 60');
     expect(mapScreen).toContain('height: 60');

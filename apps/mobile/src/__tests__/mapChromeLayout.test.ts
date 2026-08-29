@@ -4,6 +4,10 @@ import {
   gatherCardHorizontalInset,
   mapKitChromeLayout,
 } from '../utils/mapChromeLayout';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
 
 describe('MapKit chrome layout', () => {
   it.each([
@@ -69,5 +73,28 @@ describe('MapKit chrome layout', () => {
       bottomChrome: 210,
       stage: 'full',
     }).compassVisible).toBe(false);
+  });
+
+  it.each([
+    ['portrait', 844, 210, 59],
+    ['landscape', 390, 160, 0],
+    ['dynamic type', 932, 260, 59],
+  ])('reserves an 8pt card gap above the compass in %s', (_name, height, bottomChrome, top) => {
+    const layout = mapKitChromeLayout({
+      safeArea: { top, right: 0, bottom: 34, left: 0 },
+      topChrome: 0,
+      horizontalInset: 14,
+      windowHeight: height,
+      bottomChrome,
+      stage: 'peek',
+    });
+    const carouselTop = top + 8;
+    expect(layout.compassOffset.y - carouselTop - 8).toBeGreaterThanOrEqual(0);
+  });
+
+  it('derives carousel height from the same compass coordinate', () => {
+    expect(mapScreen).toContain('const compassTop = mapKitChromeLayout({');
+    expect(mapScreen).toContain('compassTop - (insets.top + 8) - 8');
+    expect(mapScreen).toContain('maxHeight: carouselMaxHeight');
   });
 });

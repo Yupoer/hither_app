@@ -20,21 +20,30 @@ import {
   accessibilityLabel,
   buttonStyle,
   buttonBorderShape,
-  controlSize,
   frame,
   font,
+  glassEffect,
   labelStyle,
   padding,
   presentationDetents,
   presentationDragIndicator,
 } from '@expo/ui/swift-ui/modifiers';
 import { liquidGlass } from '../../../native';
+import SettingsSheetPanel, { type SettingsSheetPanelProps } from './SettingsSheetPanel';
 
 const STAGE_ONE_RATIO = 0.52;
 const STAGE_TWO_RATIO = 0.8;
 
-/** iOS settings sheets are system SwiftUI sheets; Android keeps the JS fallback. */
-export default function SettingsChildSheet({
+type SettingsChildSheetProps = SettingsSheetPanelProps;
+
+/** Main settings uses RN for exact edge-to-edge geometry; child pages stay native. */
+export default function SettingsChildSheet(props: SettingsChildSheetProps) {
+  if (props.singleStage) return <SettingsSheetPanel {...props} />;
+  return <NativeSettingsChildSheet {...props} />;
+}
+
+/** iOS child settings sheets remain system SwiftUI sheets. */
+function NativeSettingsChildSheet({
   visible,
   onClose,
   onDismissComplete,
@@ -45,21 +54,7 @@ export default function SettingsChildSheet({
   initialStage = 0,
   stageTwoRatio = STAGE_TWO_RATIO,
   wrapContentInScrollView = true,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  onDismissComplete?: () => void;
-  action?: 'close' | 'commit';
-  onCommit?: () => void;
-  onBack?: () => void;
-  title: string;
-  children: React.ReactNode;
-  zIndex?: number;
-  initialStage?: 0 | 1;
-  stageTwoRatio?: number;
-  edgeToEdgeAtLast?: boolean;
-  wrapContentInScrollView?: boolean;
-}) {
+}: SettingsChildSheetProps) {
   const nativeChildren = React.Children.toArray(children);
   const rootContent = nativeChildren[0] ?? <View />;
   const nestedSheets = nativeChildren.slice(1);
@@ -130,10 +125,10 @@ export default function SettingsChildSheet({
                 frame({ minWidth: 0, maxWidth: 10000 }),
               ]}
             >
-              <Spacer modifiers={[frame({ width: 78, height: 78 })]} />
+              <Spacer modifiers={[frame({ width: 60, height: 60 })]} />
               <SwiftText
                 modifiers={[
-                  frame({ minWidth: 0, maxWidth: Infinity, minHeight: 78, maxHeight: 78, alignment: 'center' }),
+                  frame({ minWidth: 0, maxWidth: Infinity, minHeight: 60, maxHeight: 60, alignment: 'center' }),
                   font({ size: 17, weight: 'bold' }),
                 ]}
               >
@@ -143,16 +138,19 @@ export default function SettingsChildSheet({
                 role={action === 'commit' ? 'default' : 'cancel'}
                 onPress={action === 'commit' ? onCommit : closeOnce}
                 modifiers={[
-                  buttonStyle(liquidGlass.isLiquidGlassAvailable() ? 'glass' : 'bordered'),
+                  buttonStyle(liquidGlass.isLiquidGlassAvailable() ? 'plain' : 'bordered'),
                   buttonBorderShape('circle'),
-                  controlSize('extraLarge'),
+                  frame({ width: 60, height: 60 }),
+                  ...(liquidGlass.isLiquidGlassAvailable()
+                    ? [glassEffect({ glass: { variant: 'regular', interactive: true }, shape: 'circle' })]
+                    : []),
                   labelStyle('iconOnly'),
                   accessibilityLabel(action),
                 ]}
               >
                 <Image
                   systemName={action === 'commit' ? 'checkmark' : 'xmark'}
-                  modifiers={[frame({ width: 78, height: 78 })]}
+                  modifiers={[frame({ width: 28, height: 28 })]}
                 />
               </Button>
             </HStack>

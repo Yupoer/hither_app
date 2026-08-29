@@ -95,7 +95,6 @@ import CrookIcon from '../components/CrookIcon';
 import { AmicroButton } from '../components/AmicroButton';
 import { HitherText } from '../components/HitherText';
 import OverflowMarquee from '../components/OverflowMarquee';
-import NativeGlassButton from '../components/NativeGlassButton';
 import MapRecenterControl from '../components/MapRecenterControl';
 import {
   applyLocalClosedAt,
@@ -366,7 +365,8 @@ import {
   shouldBlockNewDestination,
 } from '../entitlements';
 import { radius, themes, THEME_ORDER, type ThemeName } from '../theme';
-import { glass, accentMix, memberColor } from '../glass';
+import { glass, accentMix, memberColor, MAP_SURFACE_OPACITY } from '../glass';
+import { gatherCardHorizontalInset, mapKitChromeLayout } from '../utils/mapChromeLayout';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Map'>;
 
@@ -5100,25 +5100,32 @@ export default function MapScreen({ route, navigation }: Props) {
     bottom: heightSV.value + sheetBottomOffset(heightSV.value, detents, insets.bottom) + 12,
   }));
   const atFull = detent === detents.length - 1;
-  // Peek (stage 1): cards may grow into the capsule band (cards paint above
-  // capsules; sheet still paints above cards). Cap height so cards don't
-  // swallow the whole map between safe top and the peek sheet.
-  // a11y-layout:carouselCapsuleClearance
-  const CAPSULE_CLEARANCE = fontLayout.s(24, 16);
-  const carouselMaxHeight = Math.max(
-    fontLayout.s(140, 120),
-    windowHeight - detents[0] - CAPSULE_CLEARANCE - (insets.top + 8) - 8,
-  );
-
   // Camera insets stay peek-only. Live detent must not move the map.
   const peekSheetH = detents[0];
   const bottomPad = peekSheetH + sheetBottomOffset(peekSheetH, detents, insets.bottom);
   const chromeStage = atFull ? 'full' : detent === 0 ? 'peek' : 'stage1';
   const chromeBottomOffset = atFull
     ? 0
-    : (detent === 0
-      ? bottomPad
-      : detents[1] + sheetBottomOffset(detents[1], detents, insets.bottom)) + 12;
+      : (detent === 0
+        ? bottomPad
+        : detents[1] + sheetBottomOffset(detents[1], detents, insets.bottom)) + 12;
+  // MapKit's compass lives below RN siblings, so reserve its band explicitly
+  // in the carousel geometry. This keeps the card from painting over the
+  // compass while the sheet moves between Peek and Stage 1.
+  const compassTop = mapKitChromeLayout({
+    safeArea: insets,
+    topChrome: 0,
+    horizontalInset: gatherCardHorizontalInset(windowWidth),
+    windowHeight,
+    bottomChrome: chromeBottomOffset,
+    stage: chromeStage,
+  }).compassOffset.y;
+  const CAPSULE_CLEARANCE = 8;
+  // The 8pt card reserve is equivalent to compassTop - (insets.top + 8) - 8.
+  const carouselMaxHeight = Math.max(
+    1,
+    compassTop - (insets.top + 8) - CAPSULE_CLEARANCE,
+  );
   const carouselFallback = fontLayout.s(160, 140);
   const topPad =
     destinations.length > 0
@@ -5515,11 +5522,6 @@ export default function MapScreen({ route, navigation }: Props) {
               accessibilityLabel={t('solo.statusTitle')}
               style={styles.myStatusTrigger}
             >
-              <liquidGlass.GlassView
-                glassStyle="regular"
-                style={StyleSheet.absoluteFill}
-                pointerEvents="none"
-              />
               <View style={styles.myStatusTriggerInner} pointerEvents="none">
                 <Ionicons
                   name={statusIconForKind(myStatusKind)}
@@ -5542,12 +5544,6 @@ export default function MapScreen({ route, navigation }: Props) {
               accessibilityRole="button"
               accessibilityLabel={t('solo.statusTitle')}
             >
-              <liquidGlass.GlassView
-                glassStyle="regular"
-                tintColor={Platform.OS === 'android' ? glass.fill : undefined}
-                style={StyleSheet.absoluteFill}
-                pointerEvents="none"
-              />
               <View style={styles.myStatusTriggerInner} pointerEvents="none">
                 <Ionicons
                   name={statusIconForKind(myStatusKind)}
@@ -5579,13 +5575,7 @@ export default function MapScreen({ route, navigation }: Props) {
               mediumTap();
               handleSharingEnabledChangeAnimated();
             }}
-          >
-            <liquidGlass.GlassView
-              glassStyle="regular"
-              tintColor={Platform.OS === 'android' ? glass.fill : undefined}
-              style={StyleSheet.absoluteFill}
-              pointerEvents="none"
-            />
+            >
             {sharingApplying ? (
               <ActivityIndicator size="small" color={sharingEnabled ? accent : glass.danger} />
             ) : (
@@ -5975,21 +5965,25 @@ export default function MapScreen({ route, navigation }: Props) {
   const toolsPaneBody = useMemo(() => (
     <>
       <View style={styles.passiveEnterBlock}>
-      <NativeGlassButton
-        label={t('passive.enter')}
-        systemImage="leaf"
-        layout="fill"
-        height={54}
-        shape="capsule"
-        foregroundColor={glass.textPrimary}
+      <Pressable
+        style={({ pressed }) => [
+          styles.passiveEnterButton,
+          pressed && styles.passiveEnterButtonPressed,
+        ]}
         onPress={() => {
           mediumTap();
           setPassiveCompanionMode(true);
         }}
         accessibilityLabel={t('passive.enter')}
         accessibilityHint={t('passive.enterHint')}
+        accessibilityRole="button"
         testID="tools-enter-passive"
-      />
+      >
+        <View style={styles.passiveEnterContent} pointerEvents="none">
+          <Ionicons name="leaf-outline" size={28} color={glass.textPrimary} />
+          <Text style={styles.passiveEnterLabel}>{t('passive.enter')}</Text>
+        </View>
+      </Pressable>
       <Text style={styles.passiveEnterHint}>{t('passive.enterHint')}</Text>
       </View>
 
@@ -6287,19 +6281,26 @@ export default function MapScreen({ route, navigation }: Props) {
         pointerEvents={atFull ? 'none' : 'box-none'}
       >
         <View style={{ alignItems: 'flex-start' }}>
-          <NativeGlassButton
-            label={`${group?.avatar ?? '👥'} ${group?.name ?? 'Hither'} · ${members.length}`}
+          <Pressable
+            style={({ pressed }) => [styles.groupPill, pressed && styles.groupPillPressed]}
             accessibilityLabel={`${group?.name ?? 'Hither'} · ${members.length}`}
-            foregroundColor={colors.textPrimary}
-            shape="capsule"
-            style={styles.groupPill}
             onPress={() => {
               if (myScopeId) {
                 LayoutAnimation.configureNext(LayoutAnimation.Presets.spring);
                 setViewingScope(prev => prev === 'sub' ? 'main' : 'sub');
               }
             }}
-          />
+          >
+            <liquidGlass.GlassView
+              glassStyle="regular"
+              surfaceOpacity={MAP_SURFACE_OPACITY}
+              style={StyleSheet.absoluteFill}
+              pointerEvents="none"
+            />
+            <Text style={styles.groupPillText} numberOfLines={1}>
+              {`${group?.avatar ?? '👥'} ${group?.name ?? 'Hither'} · ${members.length}`}
+            </Text>
+          </Pressable>
         </View>
       </Animated.View>
       )}
@@ -6381,7 +6382,7 @@ export default function MapScreen({ route, navigation }: Props) {
                     ) : null}
                   </View>
                 </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View style={styles.confirmControlRow}>
                   <View
                     ref={(node) => setTourTargetRef('addPlaceFavoriteStar', node as View | null)}
                     style={styles.confirmArrow}
@@ -6410,12 +6411,6 @@ export default function MapScreen({ route, navigation }: Props) {
                         busy: favoriteBusy,
                       }}
                     >
-                      <liquidGlass.GlassView
-                        glassStyle="regular"
-                        tintColor={Platform.OS === 'android' ? glass.fill : undefined}
-                        style={StyleSheet.absoluteFill}
-                        pointerEvents="none"
-                      />
                       {favoriteBusy ? (
                         <ActivityIndicator size="small" color={accent} />
                       ) : (
@@ -6448,12 +6443,6 @@ export default function MapScreen({ route, navigation }: Props) {
                       accessibilityRole="button"
                       accessibilityLabel={t('stay.centerPlaceA11y')}
                     >
-                      <liquidGlass.GlassView
-                        glassStyle="regular"
-                        tintColor={Platform.OS === 'android' ? glass.fill : undefined}
-                        style={StyleSheet.absoluteFill}
-                        pointerEvents="none"
-                      />
                       <Ionicons name="navigate" size={28} color={accent} />
                     </Pressable>
                   </View>
@@ -6469,12 +6458,6 @@ export default function MapScreen({ route, navigation }: Props) {
                     dismissConfirmCard();
                   }}
                 >
-                  <liquidGlass.GlassView
-                    glassStyle="regular"
-                    tintColor={Platform.OS === 'android' ? glass.fill : undefined}
-                    style={StyleSheet.absoluteFill}
-                    pointerEvents="none"
-                  />
                   <Text style={styles.confirmCancelText}>{t('common.cancel')}</Text>
                 </Pressable>
                 <Pressable
@@ -6733,6 +6716,7 @@ export default function MapScreen({ route, navigation }: Props) {
                     tintColor={Platform.OS === 'android'
                       ? active ? glass.cardActive : glass.card
                       : undefined}
+                    surfaceOpacity={MAP_SURFACE_OPACITY}
                     style={[
                       styles.card,
                       // Active state uses fill only — no theme-color rim
@@ -7270,6 +7254,7 @@ export default function MapScreen({ route, navigation }: Props) {
         index={detent}
         onIndexChange={setDetent}
         bottomInset={insets.bottom}
+        surfaceOpacity={MAP_SURFACE_OPACITY}
         compactGrabberSpacing
         hideHeaderOnScroll
         onHeaderHeight={(h) => {
@@ -9037,6 +9022,7 @@ const makeStyles = (
     },
     groupPill: {
       flexShrink: 1,
+      minWidth: 112,
       minHeight: s(44, 40),
       paddingLeft: s(8, 6),
       paddingRight: s(14, 10),
@@ -9046,6 +9032,15 @@ const makeStyles = (
       flexDirection: 'row',
       alignItems: 'center',
       gap: s(9, 6),
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
+    },
+    groupPillPressed: { opacity: 0.82 },
+    groupPillText: {
+      color: '#fff',
+      fontSize: 15,
+      fontWeight: '600',
+      flexShrink: 1,
     },
     pillAvatar: {
       width: 26,
@@ -9560,6 +9555,7 @@ const makeStyles = (
     sheetHidden: { display: 'none' },
     sheetBodyHidden: { display: 'none' },
     confirmTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
+    confirmControlRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
     confirmTextCol: { flex: 1, gap: 2 },
     confirmKicker: { fontSize: 16, fontWeight: '600', color: '#fff', marginLeft: 2 },
     confirmTitleInput: {
@@ -9579,9 +9575,9 @@ const makeStyles = (
     },
     confirmEtaRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
     confirmArrow: {
-      width: 80,
-      height: 80,
-      borderRadius: 40,
+      width: 60,
+      height: 60,
+      borderRadius: 30,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -9592,6 +9588,7 @@ const makeStyles = (
       overflow: 'hidden',
       alignItems: 'center',
       justifyContent: 'center',
+      backgroundColor: glass.fillStrong,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairline,
     },
@@ -9615,6 +9612,7 @@ const makeStyles = (
       overflow: 'hidden',
       alignItems: 'center',
       justifyContent: 'center',
+      backgroundColor: glass.fillStrong,
       paddingHorizontal: 8,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairline,
@@ -9759,7 +9757,7 @@ const makeStyles = (
     myStatusBar: {
       flexDirection: 'row',
       alignItems: 'center',
-      marginTop: 8,
+      marginTop: 4,
       marginBottom: 8,
       minWidth: 0,
     },
@@ -9777,7 +9775,7 @@ const makeStyles = (
       paddingHorizontal: 12,
       borderRadius: 16,
       flexShrink: 1,
-      overflow: 'hidden',
+      backgroundColor: glass.fill,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairline,
     },
@@ -9944,7 +9942,30 @@ const makeStyles = (
     passiveEnterBlock: {
       marginTop: 8,
       marginBottom: 10,
-      marginHorizontal: 8,
+      width: '100%',
+    },
+    passiveEnterButton: {
+      width: '100%',
+      height: 162,
+      borderRadius: 16,
+      overflow: 'hidden',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: glass.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
+    },
+    passiveEnterButtonPressed: { opacity: 0.82 },
+    passiveEnterContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+    },
+    passiveEnterLabel: {
+      color: glass.textPrimary,
+      fontSize: 18,
+      fontWeight: '700',
     },
     passiveEnterHint: {
       color: glass.textSecondary,
@@ -10206,6 +10227,7 @@ const makeStyles = (
       overflow: 'hidden',
       alignItems: 'center',
       justifyContent: 'center',
+      backgroundColor: glass.fill,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairline,
       flexShrink: 0,

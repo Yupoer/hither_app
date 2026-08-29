@@ -4,6 +4,9 @@ import { join } from 'node:path';
 const root = join(__dirname, '..');
 const liquidGlass = readFileSync(join(root, 'native/liquidGlass.tsx'), 'utf8');
 const glassTokens = readFileSync(join(root, 'glass.ts'), 'utf8');
+const mapScreen = readFileSync(join(root, 'screens/MapScreen.tsx'), 'utf8');
+const bottomSheet = readFileSync(join(root, 'components/BottomSheet.tsx'), 'utf8');
+const recenterIos = readFileSync(join(root, 'components/MapRecenterControl.ios.tsx'), 'utf8');
 const appJson = readFileSync(join(__dirname, '../../app.json'), 'utf8');
 const infoPlist = readFileSync(join(__dirname, '../../ios/Hither/Info.plist'), 'utf8');
 
@@ -38,5 +41,16 @@ describe('glass chrome native material contract', () => {
     expect(infoPlist).not.toMatch(
       /<key>UIUserInterfaceStyle<\/key>\s*<string>Dark<\/string>/,
     );
+  });
+
+  it('applies map opacity to material layers only', () => {
+    expect(glassTokens).toContain('MAP_SURFACE_OPACITY = 0.8');
+    expect(liquidGlass).toContain('surfaceOpacity?: number');
+    expect(liquidGlass).toMatch(/opacity: surfaceOpacity/);
+    expect(bottomSheet).toContain('surfaceOpacity={surfaceOpacity}');
+    expect(mapScreen).toContain('surfaceOpacity={MAP_SURFACE_OPACITY}');
+    expect(recenterIos).toContain('opacity: MAP_SURFACE_OPACITY');
+    // Foreground controls stay outside the opacity wrapper.
+    expect(recenterIos.indexOf('</Host>')).toBeLessThan(recenterIos.indexOf('<Pressable'));
   });
 });

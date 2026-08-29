@@ -49,7 +49,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     flexDirection: 'row',
     alignItems: 'center',
-    minHeight: 86,
+    minHeight: 108,
   },
   copy: { flex: 1, gap: 4 },
   title: { fontSize: 15, fontWeight: '800', color: '#FFFFFF' },

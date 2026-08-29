@@ -285,6 +285,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
         initialStage={1}
         stageTwoRatio={0.9}
         edgeToEdgeAtLast
+        singleStage
       >
       <View style={styles.overlayBody}>
         {!isPro ? (
