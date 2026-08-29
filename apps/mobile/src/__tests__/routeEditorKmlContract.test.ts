@@ -118,6 +118,13 @@ describe('route editor + KML contracts (#151)', () => {
     expect(mapScreen).toContain("t('route.deleteSelected'");
   });
 
+  it('uses the checkbox alone for multi-select and keeps day blocks seam-free', () => {
+    expect(reorder).toContain('multiSelected');
+    expect(reorder).not.toContain('rowMultiSelected');
+    expect(reorder).not.toContain('dayBlockSpaced');
+    expect(reorder).not.toMatch(/dayBlock:\s*\{[\s\S]*?border(?:Top|Bottom)Width/);
+  });
+
   it('quick-add CTA requires day stops; stay commit waits for finish', () => {
     expect(reorder).toContain('dayStopCount > 0');
     expect(reorder).toContain('pendingStayDestId');

@@ -5515,6 +5515,11 @@ export default function MapScreen({ route, navigation }: Props) {
               accessibilityLabel={t('solo.statusTitle')}
               style={styles.myStatusTrigger}
             >
+              <liquidGlass.GlassView
+                glassStyle="regular"
+                style={StyleSheet.absoluteFill}
+                pointerEvents="none"
+              />
               <View style={styles.myStatusTriggerInner} pointerEvents="none">
                 <Ionicons
                   name={statusIconForKind(myStatusKind)}
@@ -5537,6 +5542,12 @@ export default function MapScreen({ route, navigation }: Props) {
               accessibilityRole="button"
               accessibilityLabel={t('solo.statusTitle')}
             >
+              <liquidGlass.GlassView
+                glassStyle="regular"
+                tintColor={Platform.OS === 'android' ? glass.fill : undefined}
+                style={StyleSheet.absoluteFill}
+                pointerEvents="none"
+              />
               <View style={styles.myStatusTriggerInner} pointerEvents="none">
                 <Ionicons
                   name={statusIconForKind(myStatusKind)}
@@ -5553,21 +5564,38 @@ export default function MapScreen({ route, navigation }: Props) {
               </View>
             </Pressable>
           )}
-          <NativeGlassButton
-            systemImage={sharingEnabled ? 'eye' : 'eye.slash'}
+          <Pressable
+            style={({ pressed }) => [
+              styles.locationSharingButton,
+              pressed && styles.locationSharingButtonPressed,
+            ]}
             disabled={sharingApplying}
-            tintColor={sharingEnabled ? accent : glass.danger}
-            style={styles.locationSharingButton}
-            shape="circle"
-            size={44}
+            accessibilityRole="button"
             accessibilityLabel={t('settings.locationSharing')}
             accessibilityHint={t('settings.locationSharingHint')}
+            accessibilityState={{ disabled: sharingApplying, busy: sharingApplying }}
             testID="members-location-sharing"
             onPress={() => {
               mediumTap();
               handleSharingEnabledChangeAnimated();
             }}
-          />
+          >
+            <liquidGlass.GlassView
+              glassStyle="regular"
+              tintColor={Platform.OS === 'android' ? glass.fill : undefined}
+              style={StyleSheet.absoluteFill}
+              pointerEvents="none"
+            />
+            {sharingApplying ? (
+              <ActivityIndicator size="small" color={sharingEnabled ? accent : glass.danger} />
+            ) : (
+              <Ionicons
+                name={sharingEnabled ? 'eye-outline' : 'eye-off-outline'}
+                size={22}
+                color={sharingEnabled ? accent : glass.danger}
+              />
+            )}
+          </Pressable>
         </View>
         <RefreshLocationsButton
           refreshing={refreshingLocations}
@@ -6358,35 +6386,57 @@ export default function MapScreen({ route, navigation }: Props) {
                     ref={(node) => setTourTargetRef('addPlaceFavoriteStar', node as View | null)}
                     style={styles.confirmArrow}
                   >
-                    <NativeGlassButton
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.confirmControl,
+                        pressed && styles.confirmControlPressed,
+                      ]}
                       testID="add-place-favorite-star"
-                      systemImage={pendingIsFavorite ? 'star.fill' : 'star'}
                       onPress={() => {
                         // Tour is explanation-only: block real action while active.
                         if (addPlaceTourStep != null) return;
                         void togglePendingFavorite();
                       }}
                       disabled={favoriteBusy || !user?.id}
+                      accessibilityRole="button"
                       accessibilityLabel={
                         pendingIsFavorite
                           ? t('stay.unfavoriteA11y')
                           : t('stay.favoriteA11y')
                       }
-                      selected={pendingIsFavorite}
-                      busy={favoriteBusy}
-                      tintColor={accent}
-                      layout="square"
-                      size={80}
-                      shape="circle"
-                    />
+                      accessibilityState={{
+                        disabled: favoriteBusy || !user?.id,
+                        selected: pendingIsFavorite,
+                        busy: favoriteBusy,
+                      }}
+                    >
+                      <liquidGlass.GlassView
+                        glassStyle="regular"
+                        tintColor={Platform.OS === 'android' ? glass.fill : undefined}
+                        style={StyleSheet.absoluteFill}
+                        pointerEvents="none"
+                      />
+                      {favoriteBusy ? (
+                        <ActivityIndicator size="small" color={accent} />
+                      ) : (
+                        <Ionicons
+                          name={pendingIsFavorite ? 'star' : 'star-outline'}
+                          size={28}
+                          color={accent}
+                        />
+                      )}
+                    </Pressable>
                   </View>
                   <View
                     ref={(node) => setTourTargetRef('addPlaceCenter', node as View | null)}
                     style={styles.confirmArrow}
                   >
-                    <NativeGlassButton
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.confirmControl,
+                        pressed && styles.confirmControlPressed,
+                      ]}
                       testID="add-place-center-btn"
-                      systemImage="location.fill"
                       onPress={() => {
                         if (addPlaceTourStep != null) return;
                         if (obliqueLocate) {
@@ -6395,38 +6445,42 @@ export default function MapScreen({ route, navigation }: Props) {
                           mapRef.current?.centerOn(pendingPlace.coordinates);
                         }
                       }}
+                      accessibilityRole="button"
                       accessibilityLabel={t('stay.centerPlaceA11y')}
-                      tintColor={accent}
-                      layout="square"
-                      size={80}
-                      shape="circle"
-                    />
+                    >
+                      <liquidGlass.GlassView
+                        glassStyle="regular"
+                        tintColor={Platform.OS === 'android' ? glass.fill : undefined}
+                        style={StyleSheet.absoluteFill}
+                        pointerEvents="none"
+                      />
+                      <Ionicons name="navigate" size={28} color={accent} />
+                    </Pressable>
                   </View>
                 </View>
               </View>
               <View style={styles.confirmBtnRow}>
-                <NativeGlassButton
-                  style={styles.confirmCancel}
-                  variant="glass"
-                  role="cancel"
-                  label={t('common.cancel')}
+                <Pressable
+                  style={({ pressed }) => [styles.confirmCancel, pressed && styles.confirmControlPressed]}
                   accessibilityLabel={t('common.cancel')}
-                  layout="fill"
-                  height={96}
-                  shape="capsule"
+                  accessibilityRole="button"
                   onPress={() => {
                     selectionTick();
                     dismissConfirmCard();
                   }}
-                />
-                <NativeGlassButton
-                  style={[styles.confirmAdd, Platform.OS === 'ios' ? null : { backgroundColor: accent }]}
-                  variant="glassProminent"
-                  label={t('confirmGather.add')}
+                >
+                  <liquidGlass.GlassView
+                    glassStyle="regular"
+                    tintColor={Platform.OS === 'android' ? glass.fill : undefined}
+                    style={StyleSheet.absoluteFill}
+                    pointerEvents="none"
+                  />
+                  <Text style={styles.confirmCancelText}>{t('common.cancel')}</Text>
+                </Pressable>
+                <Pressable
+                  style={({ pressed }) => [styles.confirmAdd, pressed && styles.confirmControlPressed]}
                   accessibilityLabel={t('confirmGather.add')}
-                  layout="fill"
-                  height={96}
-                  shape="capsule"
+                  accessibilityRole="button"
                   onPress={() => {
                     const place = {
                       ...pendingPlace,
@@ -6442,7 +6496,9 @@ export default function MapScreen({ route, navigation }: Props) {
                       { screen: 'Map' },
                     );
                   }}
-                />
+                >
+                  <Text style={styles.confirmAddText}>{t('confirmGather.add')}</Text>
+                </Pressable>
               </View>
             </liquidGlass.GlassView>
           </Animated.View>
@@ -9495,8 +9551,8 @@ const makeStyles = (
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairlineStrong,
       paddingHorizontal: 20,
-      paddingTop: 12,
-      paddingBottom: 12,
+      paddingTop: 10,
+      paddingBottom: 10,
       gap: 4,
     },
     // Hide the bottom sheet while the confirm card is up without animating an
@@ -9529,6 +9585,17 @@ const makeStyles = (
       alignItems: 'center',
       justifyContent: 'center',
     },
+    confirmControl: {
+      width: 60,
+      height: 60,
+      borderRadius: 30,
+      overflow: 'hidden',
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
+    },
+    confirmControlPressed: { opacity: 0.82 },
     arrivalCmdSquare: {
       borderWidth: StyleSheet.hairlineWidth,
     },
@@ -9543,27 +9610,27 @@ const makeStyles = (
     },
     confirmCancel: {
       flex: 1,
-      minHeight: 96,
-      borderRadius: 48,
+      height: 60,
+      borderRadius: 30,
+      overflow: 'hidden',
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: Platform.OS === 'ios' ? 'transparent' : 'rgba(255,69,58,0.16)',
-      borderWidth: Platform.OS === 'ios' ? 0 : StyleSheet.hairlineWidth,
-      borderColor: Platform.OS === 'ios' ? 'transparent' : 'rgba(255,69,58,0.5)',
-      paddingVertical: 12,
       paddingHorizontal: 8,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
     },
     confirmCancelText: { fontSize: 16, fontWeight: '700', color: '#FF453A', textAlign: 'center' },
     confirmAdd: {
       flex: 1,
-      minHeight: 96,
-      borderRadius: 48,
+      height: 60,
+      borderRadius: 30,
+      overflow: 'hidden',
       alignItems: 'center',
       justifyContent: 'center',
-      paddingVertical: 12,
       paddingHorizontal: 8,
+      backgroundColor: Platform.OS === 'ios' ? '#0A84FF' : accent,
     },
-    confirmAddText: { fontSize: 16, fontWeight: '700', color: '#0c1a12', textAlign: 'center' },
+    confirmAddText: { fontSize: 16, fontWeight: '700', color: '#fff', textAlign: 'center' },
     // Meet-time editor sheet: roomy, full-width controls (not the old cramped
     // left-aligned chips).
     meetEditorBody: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 40, gap: 14 },
@@ -9692,7 +9759,7 @@ const makeStyles = (
     myStatusBar: {
       flexDirection: 'row',
       alignItems: 'center',
-      marginTop: 4,
+      marginTop: 8,
       marginBottom: 8,
       minWidth: 0,
     },
@@ -9710,7 +9777,7 @@ const makeStyles = (
       paddingHorizontal: 12,
       borderRadius: 16,
       flexShrink: 1,
-      backgroundColor: glass.fill,
+      overflow: 'hidden',
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairline,
     },
@@ -10135,8 +10202,15 @@ const makeStyles = (
     locationSharingButton: {
       width: 44,
       height: 44,
+      borderRadius: 22,
+      overflow: 'hidden',
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairline,
       flexShrink: 0,
     },
+    locationSharingButtonPressed: { opacity: 0.82 },
     accuracyTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7, flexWrap: 'wrap' },
     accuracyLabel: { color: '#fff', fontSize: 15, fontWeight: '600', lineHeight: 22, flexShrink: 1 },
     // Hint is secondary gray — not orange (orange reserved for primary / on).

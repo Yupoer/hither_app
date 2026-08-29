@@ -20,14 +20,20 @@ describe('map chrome native surface contract', () => {
     const map = read('screens/MapScreen.tsx');
     expect(map).toContain("Platform.OS === 'android'");
     expect(map).toContain('tintColor={Platform.OS === \'android\'');
-    expect(map).toContain('shape="circle"');
-    expect(map).toContain('size={44}');
+    expect(map).toContain('styles.locationSharingButton');
+    expect(map).toContain('name={sharingEnabled ? \'eye-outline\' : \'eye-off-outline\'}');
+    expect(map).toContain('width: 44');
+    expect(map).toContain('height: 44');
   });
 
   it('uses the approved add-place and arrival control sizes', () => {
     const map = read('screens/MapScreen.tsx');
-    expect((map.match(/size=\{80\}/g) ?? [])).toHaveLength(2);
-    expect((map.match(/height=\{96\}/g) ?? [])).toHaveLength(2);
+    expect(map).toContain('confirmArrow: {');
+    expect(map).toContain('confirmControl: {');
+    expect(map).toContain('width: 60');
+    expect(map).toContain('height: 60');
+    expect(map).not.toContain('size={80}');
+    expect(map).not.toContain('height={96}');
     expect((map.match(/size=\{36\}/g) ?? [])).toHaveLength(2);
   });
 });

@@ -25,7 +25,9 @@ describe('Amicro native animation contracts', () => {
     ]) {
       expect(map + passive).toMatch(new RegExp(`(?:icon|activeIcon)="${icon}"`));
     }
-    expect(map).toContain("systemImage={sharingEnabled ? 'eye' : 'eye.slash'}");
+    expect(map).toContain("name={sharingEnabled ? 'eye-outline' : 'eye-off-outline'}");
+    expect(map).toContain('width: 44');
+    expect(map).toContain('height: 44');
     expect(map).not.toContain('activeIcon="pause"');
     expect(map).toContain('style={styles.headerIconBtn}');
     // Search holds complete frame until OverlaySheet onOpenComplete (not rAF×2).

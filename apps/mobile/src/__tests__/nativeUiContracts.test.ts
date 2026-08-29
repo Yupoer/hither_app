@@ -72,7 +72,12 @@ describe('iOS native UI contracts', () => {
   it('uses native detents and one guarded close path for settings sheets', () => {
     expect(settingsIos).toContain("from '@expo/ui/swift-ui'");
     expect(settingsIos).toContain('BottomSheet');
-    expect(settingsIos).toContain('fraction: initialStage === 1 ? stageTwoRatio : STAGE_ONE_RATIO');
+    expect(settingsIos).toContain('fraction: STAGE_ONE_RATIO');
+    expect(settingsIos).toContain('fraction: stageTwoRatio');
+    expect(settingsIos).toContain('presentationDetents(');
+    expect(settingsIos).toContain('[stageOneDetent, stageTwoDetent]');
+    expect(settingsIos).toContain('selection: initialStage === 1 ? stageTwoDetent : stageOneDetent');
+    expect(settingsIos).not.toContain('presentationDetents([detent]');
     expect(settingsIos).toContain('closeStartedRef');
     expect(settingsIos).toContain('if (!presented && visible)');
     expect(settingsIos).not.toContain('chevron-back');
@@ -126,8 +131,12 @@ describe('iOS native UI contracts', () => {
     expect(nativeGlassButtonIos).toContain('<Image');
     expect(nativeGlassButtonIos).toContain("labelStyle('iconOnly' as const)");
     expect(overlaySheet).toContain('doneSystemImage');
-    expect(overlaySheet).toContain('size={78}');
-    expect(overlaySheet).toContain('headerClose: { width: 78, height: 78');
+    expect(overlaySheet).not.toContain('NativeGlassButton');
+    expect(overlaySheet).toContain('<Pressable');
+    expect(overlaySheet).toContain('<Ionicons name={headerIcon} size={28}');
+    expect(overlaySheet).toContain('width: 60');
+    expect(overlaySheet).toContain('height: 60');
+    expect(overlaySheet).toContain('minWidth: 60');
     expect(paywallSheet).toContain('systemImage="xmark"');
     expect(mapScreen).toContain('doneSystemImage="xmark"');
     expect(overlaySheet).toContain("onDone ? 'checkmark' : 'xmark'");
@@ -145,10 +154,12 @@ describe('iOS native UI contracts', () => {
     expect(mapScreen).toContain('testID="tools-enter-passive"');
     expect(mapScreen).toContain('height={54}');
     expect(mapScreen).toContain('marginHorizontal: 8');
-    expect(mapScreen).toContain('size={80}');
-    expect(mapScreen).toContain('height={96}');
-    expect(mapScreen).toContain('paddingTop: 12');
-    expect(mapScreen).toContain('paddingBottom: 12');
+    expect(mapScreen).toContain('styles.confirmControl');
+    expect(mapScreen).toContain('width: 60');
+    expect(mapScreen).toContain('height: 60');
+    expect(mapScreen).toContain('paddingTop: 10');
+    expect(mapScreen).toContain('paddingBottom: 10');
+    expect(mapScreen).not.toContain('height={96}');
     expect(mapScreen).toContain('marginTop: 6');
   });
 });

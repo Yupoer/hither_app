@@ -7,6 +7,10 @@ const settingsChildSheet = readFileSync(
   join(__dirname, '../screens/MapScreen/components/SettingsChildSheet.tsx'),
   'utf8',
 );
+const settingsChildSheetIos = readFileSync(
+  join(__dirname, '../screens/MapScreen/components/SettingsChildSheet.ios.tsx'),
+  'utf8',
+);
 const reorderList = readFileSync(
   join(__dirname, '../components/DestinationReorderList.tsx'),
   'utf8',
@@ -49,6 +53,15 @@ describe('map UI placement contracts', () => {
     expect(settingsChildSheet).toContain('initialStage = 0');
     expect(settingsOverlay).toContain('initialStage={1}');
     expect(settingsOverlay).toContain('stageTwoRatio={0.9}');
+    expect(settingsOverlay).toContain('edgeToEdgeAtLast');
+    expect(settingsChildSheetIos).toContain('[stageOneDetent, stageTwoDetent]');
+    expect(settingsChildSheetIos).toContain(
+      'selection: initialStage === 1 ? stageTwoDetent : stageOneDetent',
+    );
+    expect(settingsChildSheetIos).not.toContain('presentationDetents([detent]');
+    expect(settingsChildSheetIos).toContain('maxWidth: Infinity');
+    expect(settingsChildSheetIos).toContain('RNHostView');
+    expect(settingsChildSheetIos).toContain("width: '100%'");
     expect(settingsChildSheet).not.toContain('PanResponder');
   });
 

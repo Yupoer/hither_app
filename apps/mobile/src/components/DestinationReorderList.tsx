@@ -996,10 +996,6 @@ export default function DestinationReorderList({
               return (
                 <View
                   key={item.id}
-                  style={[
-                    styles.dayBlock,
-                    blockIndex > 0 ? styles.dayBlockSpaced : null,
-                  ]}
                   testID={`day-block-${item.day}`}
                 >
                   <HeaderRow
@@ -1891,7 +1887,6 @@ const Row = memo(function Row({
             isAccommodation && styles.rowAccommodation,
             !isAccommodation && stayDuplicate && styles.rowStayDuplicate,
             active && styles.rowActive,
-            multiSelected && styles.rowMultiSelected,
             { transform: [{ translateY: active ? pan : 0 }] },
           ]}
           {...(canDrag ? responder.panHandlers : {})}
@@ -1997,14 +1992,6 @@ const makeStyles = (colors: Palette) =>
       flexWrap: 'nowrap',
       gap: 6,
       marginBottom: spacing.sm,
-    },
-    dayBlock: {
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: colors.border,
-    },
-    dayBlockSpaced: {
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: colors.border,
     },
     dayActions: {
       gap: 8,
@@ -2195,11 +2182,6 @@ const makeStyles = (colors: Palette) =>
       shadowOpacity: 0.25,
       shadowRadius: 8,
       shadowOffset: { width: 0, height: 3 },
-    },
-    rowMultiSelected: {
-      borderWidth: 1,
-      borderColor: colors.accent,
-      borderRadius: radius.md,
     },
     rowIndex: {
       color: colors.accent,

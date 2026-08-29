@@ -11,10 +11,10 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { liquidGlass } from '../native';
 import { glass } from '../glass';
-import NativeGlassButton from './NativeGlassButton';
 
 // Drag the handle/header down past this many px (or fling it) to dismiss —
 // matches the iOS sheet feel so "Done" is never the only way out.
@@ -82,6 +82,7 @@ export default function OverlaySheet({
   onOpenCompleteRef.current = onOpenComplete;
   const handleDone = onDone ?? onClose;
   const headerSystemImage = doneSystemImage ?? (onDone ? 'checkmark' : 'xmark');
+  const headerIcon = headerSystemImage === 'checkmark' ? 'checkmark' : 'close';
   // Keep heavy children mounted through the close animation; drop them only
   // after t has fully settled at 0 while still hidden.
   const [contentMounted, setContentMounted] = useState(visible);
@@ -223,15 +224,20 @@ export default function OverlaySheet({
             <Text style={styles.title} numberOfLines={1}>
               {title}
             </Text>
-            <NativeGlassButton
-              systemImage={headerSystemImage}
+            <Pressable
+              style={({ pressed }) => [styles.headerClose, pressed && styles.headerClosePressed]}
               onPress={handleDone}
+              accessibilityRole="button"
               accessibilityLabel={doneLabel}
-              shape="circle"
-              size={78}
-              controlSize="extraLarge"
-              style={styles.headerClose}
-            />
+            >
+              <liquidGlass.GlassView
+                glassStyle="regular"
+                tintColor={Platform.OS === 'android' ? glass.fill : undefined}
+                style={StyleSheet.absoluteFill}
+                pointerEvents="none"
+              />
+              <Ionicons name={headerIcon} size={28} color={glass.textPrimary} />
+            </Pressable>
           </View>
         </View>
         <View style={styles.body} {...bodyPan.panHandlers}>
@@ -274,13 +280,25 @@ const styles = StyleSheet.create({
     paddingBottom: 18,
   },
   headerSide: {
-    minWidth: 78,
+    minWidth: 60,
     maxWidth: 110,
     flexShrink: 1,
     justifyContent: 'center',
   },
   headerSideLeft: { alignItems: 'flex-start' },
-  headerClose: { width: 78, height: 78, alignSelf: 'center', flexShrink: 0 },
+  headerClose: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: glass.hairline,
+    alignSelf: 'center',
+    flexShrink: 0,
+  },
+  headerClosePressed: { opacity: 0.82 },
   title: {
     flex: 1,
     fontSize: 19,

@@ -63,10 +63,8 @@ export default function SettingsChildSheet({
   const nativeChildren = React.Children.toArray(children);
   const rootContent = nativeChildren[0] ?? <View />;
   const nestedSheets = nativeChildren.slice(1);
-  const detent = useMemo(
-    () => ({ fraction: initialStage === 1 ? stageTwoRatio : STAGE_ONE_RATIO }),
-    [initialStage, stageTwoRatio],
-  );
+  const stageOneDetent = useMemo(() => ({ fraction: STAGE_ONE_RATIO }), []);
+  const stageTwoDetent = useMemo(() => ({ fraction: stageTwoRatio }), [stageTwoRatio]);
   const closeStartedRef = useRef(false);
   const dismissCompleteRef = useRef(false);
   const onDismissCompleteRef = useRef(onDismissComplete);
@@ -108,8 +106,12 @@ export default function SettingsChildSheet({
         onDismiss={handleDismiss}
       >
         <Group
+          key={visible ? `settings-presented-${initialStage}` : 'settings-hidden'}
           modifiers={[
-            presentationDetents([detent], { selection: detent }),
+            presentationDetents(
+              [stageOneDetent, stageTwoDetent],
+              { selection: initialStage === 1 ? stageTwoDetent : stageOneDetent },
+            ),
             presentationDragIndicator('visible'),
             frame({ minWidth: 0, maxWidth: Infinity, minHeight: 0, maxHeight: Infinity }),
             padding({ bottom: 0 }),
