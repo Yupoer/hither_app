@@ -12,10 +12,13 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
+import ReanimatedSwipeable, {
+  type SwipeableMethods,
+} from 'react-native-gesture-handler/ReanimatedSwipeable';
 import type { Destination } from '../types';
 import type { TourTargetId } from '../featureTour/constants';
 import { radius, spacing, DAY_COLORS, type Palette } from '../theme';
-import { accentMix, glass } from '../glass';
+import { accentMix, accentOver, glass, shade } from '../glass';
 import { readOnboardingState } from '../onboarding/sync';
 import { usePreferences } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
@@ -32,6 +35,7 @@ import {
   orderAfterDragMove,
   reorderRowCenterY,
   snapToLegalDragIndex,
+  shouldHighlightStayDuplicate,
   type AccommodationListItem,
   type MeasuredReorderGeometry,
   type ReorderListEntry,
@@ -175,6 +179,20 @@ export default function DestinationReorderList({
   const { t } = useTranslation();
   const { dayColors, setDayColor } = usePreferences();
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const openSwipeableRef = useRef<SwipeableMethods | null>(null);
+  const closeOpenSwipeable = useCallback(() => {
+    openSwipeableRef.current?.close();
+    openSwipeableRef.current = null;
+  }, []);
+  const handleSwipeableOpen = useCallback((swipeable: SwipeableMethods) => {
+    if (openSwipeableRef.current && openSwipeableRef.current !== swipeable) {
+      openSwipeableRef.current.close();
+    }
+    openSwipeableRef.current = swipeable;
+  }, []);
+  const handleSwipeableClose = useCallback((swipeable: SwipeableMethods) => {
+    if (openSwipeableRef.current === swipeable) openSwipeableRef.current = null;
+  }, []);
   const toggleSelectedId = useCallback(
     (id: string) => {
       if (!onSelectedIdsChange) return;
@@ -278,6 +296,12 @@ export default function DestinationReorderList({
   const [favoritesOpen, setFavoritesOpen] = useState(false);
   /** Favorite selected; date must be confirmed before write. */
   const [favoritePending, setFavoritePending] = useState<FavoritePlaceView | null>(null);
+
+  useEffect(() => {
+    if (activeId || interactionMode !== 'drag' || setStayModeDay != null || !canReorder) {
+      closeOpenSwipeable();
+    }
+  }, [activeId, canReorder, closeOpenSwipeable, interactionMode, setStayModeDay]);
 
   const endDragSession = useCallback(() => {
     draggingRef.current = false;
@@ -404,6 +428,7 @@ export default function DestinationReorderList({
   }, [tripDays, canReorder, onUpdateTripDetails]);
 
   useEffect(() => {
+    closeOpenSwipeable();
     if (!draggingRef.current) {
       const nextOrder: ListItem[] = [];
       const days = Math.max(1, tripDays || 1);
@@ -448,7 +473,7 @@ export default function DestinationReorderList({
 
       setOrder(nextOrder);
     }
-  }, [destinations, tripDays, departureDate, t]);
+  }, [closeOpenSwipeable, destinations, tripDays, departureDate, t]);
 
   const toReorderEntries = useCallback((list: ListItem[]): ReorderListEntry[] => {
     return list.map((entry) => {
@@ -504,7 +529,7 @@ export default function DestinationReorderList({
       const startIndex = startIndexRef.current;
       // Ghost drag: row stays in DOM place; only pan follows the finger.
       // Do NOT setOrder mid-move — that re-parented rows under new day headers
-      // and left deleteBg + pan offsets broken (red bar / freeze screenshot).
+      // and left the row's action layer offset from the list (freeze screenshot).
 
       // Edge auto-scroll so other day blocks off-screen stay reachable.
       // Proximity scales step so the further into the edge band, the faster.
@@ -803,9 +828,24 @@ export default function DestinationReorderList({
               const locked = false;
               void lockedIds;
               const inSetMode = setStayModeDay === visualDay;
-              // Only accommodation rows receive a themed background. Ordinary
-              // stops remain on the same neutral translucent surface.
               const isStayCard = item.item.kind === 'accommodation';
+              const stayDate = stayDateForDay(visualDay);
+              const dailyAccommodation = stayDate && dailyByDate
+                ? dailyByDate[stayDate]
+                : undefined;
+              const stayDuplicate = shouldHighlightStayDuplicate(
+                {
+                  kind: isStayCard ? 'accommodation' : 'stop',
+                  title: item.item.title,
+                  coordinates: item.item.coordinates,
+                },
+                dailyAccommodation
+                  ? {
+                      title: dailyAccommodation.title,
+                      coordinates: dailyAccommodation.coordinates,
+                    }
+                  : undefined,
+              );
               const multiSelectMode =
                 canReorder && interactionMode === 'select' && !inSetMode;
               const canDragStop =
@@ -816,7 +856,7 @@ export default function DestinationReorderList({
                   item={item.item}
                   active={activeId === item.id}
                   canDrag={canDragStop}
-                  canSwipeDelete={canReorder && !!onDelete && !locked}
+                  canSwipeDelete={canReorder && !!onDelete && !locked && !inSetMode}
                   pan={pan}
                   styles={styles}
                   dayColor={dayColor}
@@ -825,6 +865,7 @@ export default function DestinationReorderList({
                   onRelease={onRelease}
                   onDelete={onDelete}
                   isAccommodation={isStayCard}
+                  stayDuplicate={stayDuplicate}
                   boundaryLocked={locked}
                   // Stops and accommodation cards are both valid set-stay sources.
                   showSelect={inSetMode}
@@ -841,6 +882,8 @@ export default function DestinationReorderList({
                   }
                   multiSelect={multiSelectMode}
                   multiSelected={selectedIdSet.has(item.item.id)}
+                  onSwipeableOpen={handleSwipeableOpen}
+                  onSwipeableClose={handleSwipeableClose}
                   onToggleMultiSelect={
                     multiSelectMode
                       ? () => {
@@ -1697,6 +1740,7 @@ const Row = memo(function Row({
   onDelete,
   onEmojiPress,
   isAccommodation,
+  stayDuplicate,
   boundaryLocked,
   showSelect,
   selectSelected,
@@ -1706,6 +1750,8 @@ const Row = memo(function Row({
   onToggleMultiSelect,
   onLayoutHeight,
   tourTargetRef,
+  onSwipeableOpen,
+  onSwipeableClose,
 }: {
   item: Destination;
   active: boolean;
@@ -1722,6 +1768,7 @@ const Row = memo(function Row({
   onDelete?: (id: string) => void;
   onEmojiPress?: (id: string) => void;
   isAccommodation?: boolean;
+  stayDuplicate?: boolean;
   /** Head/tail stay card: always-visible trash, no swipe-to-delete. */
   boundaryLocked?: boolean;
   showSelect?: boolean;
@@ -1733,16 +1780,15 @@ const Row = memo(function Row({
   onToggleMultiSelect?: () => void;
   onLayoutHeight?: (height: number) => void;
   tourTargetRef?: (node: View | null) => void;
+  onSwipeableOpen?: (swipeable: SwipeableMethods) => void;
+  onSwipeableClose?: (swipeable: SwipeableMethods) => void;
 }) {
-  const translateX = useRef(new Animated.Value(0)).current;
-  const axisRef = useRef<null | 'h' | 'v'>(null);
-  const openRef = useRef(false);
   // Boundary-locked stays use a permanent trash control — no horizontal swipe.
   const canSwipe = canSwipeDelete && !!onDelete && !boundaryLocked && !multiSelect;
-  const canSwipeRef = useRef(canSwipe);
-  canSwipeRef.current = canSwipe;
   const canDragRef = useRef(canDrag);
   canDragRef.current = canDrag;
+  const handleTouchRef = useRef(false);
+  const swipeableRef = useRef<SwipeableMethods | null>(null);
   const itemIdRef = useRef(item.id);
   itemIdRef.current = item.id;
   const onGrantRef = useRef(onGrant);
@@ -1751,69 +1797,73 @@ const Row = memo(function Row({
   onMoveRef.current = onMove;
   const onReleaseRef = useRef(onRelease);
   onReleaseRef.current = onRelease;
+  const { t } = useTranslation();
 
-  const snap = useCallback(
-    (open: boolean) => {
-      openRef.current = open;
-      Animated.spring(translateX, {
-        toValue: open ? -REVEAL_WIDTH : 0,
-        useNativeDriver: false,
-        bounciness: 0,
-      }).start();
-    },
-    [translateX],
-  );
-  const snapRef = useRef(snap);
-  snapRef.current = snap;
+  const handleSwipeableOpen = useCallback(() => {
+    if (swipeableRef.current) onSwipeableOpen?.(swipeableRef.current);
+  }, [onSwipeableOpen]);
+  const handleSwipeableClose = useCallback(() => {
+    if (swipeableRef.current) onSwipeableClose?.(swipeableRef.current);
+  }, [onSwipeableClose]);
 
   const responder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: (evt) => {
-        if (!canDragRef.current) return false;
+        if (!canDragRef.current) {
+          handleTouchRef.current = false;
+          return false;
+        }
         const screenWidth = Dimensions.get('window').width;
-        if (evt.nativeEvent.pageX > screenWidth - 60) return true;
-        return false;
+        handleTouchRef.current = evt.nativeEvent.pageX > screenWidth - 60;
+        return handleTouchRef.current;
       },
       onMoveShouldSetPanResponder: (_evt, g) =>
-        canSwipeRef.current && Math.abs(g.dx) > 6 && Math.abs(g.dx) > Math.abs(g.dy),
+        handleTouchRef.current
+        && canDragRef.current
+        && Math.abs(g.dy) > 6
+        && Math.abs(g.dy) > Math.abs(g.dx),
       onPanResponderTerminationRequest: () => false,
       onPanResponderGrant: (evt) => {
-        axisRef.current = null;
         const screenWidth = Dimensions.get('window').width;
         if (canDragRef.current && evt.nativeEvent.pageX > screenWidth - 60) {
-           axisRef.current = 'v';
-           onGrantRef.current(itemIdRef.current);
+          onGrantRef.current(itemIdRef.current);
         }
       },
       onPanResponderMove: (_evt, g) => {
-        if (axisRef.current === null && canSwipeRef.current && Math.abs(g.dx) > 6) {
-          axisRef.current = 'h';
-        }
-        if (axisRef.current === 'h' && canSwipeRef.current) {
-          const base = openRef.current ? -REVEAL_WIDTH : 0;
-          const next = Math.max(-REVEAL_WIDTH, Math.min(0, base + g.dx));
-          translateX.setValue(next);
-        } else if (axisRef.current === 'v') {
-          onMoveRef.current(itemIdRef.current, g.dy, g.moveY);
-        }
+        if (canDragRef.current) onMoveRef.current(itemIdRef.current, g.dy, g.moveY);
       },
-      onPanResponderRelease: (_evt, g) => {
-        if (axisRef.current === 'h' && canSwipeRef.current) {
-          const base = openRef.current ? -REVEAL_WIDTH : 0;
-          const next = base + g.dx;
-          snapRef.current(next < -REVEAL_WIDTH / 2);
-        } else if (axisRef.current === 'v') {
-          onReleaseRef.current();
-        }
-        axisRef.current = null;
+      onPanResponderRelease: () => {
+        onReleaseRef.current();
+        handleTouchRef.current = false;
       },
       onPanResponderTerminate: () => {
-        if (axisRef.current === 'v') onReleaseRef.current();
-        else if (axisRef.current === 'h') snapRef.current(openRef.current);
-        axisRef.current = null;
+        onReleaseRef.current();
+        handleTouchRef.current = false;
       },
     }),
   ).current;
+
+  const renderRightActions = useCallback(
+    (_progress: unknown, _translation: unknown, methods: SwipeableMethods) => (
+      <View style={styles.deleteAction}>
+        <Pressable
+          testID={`delete-${item.id}`}
+          onPress={() => {
+            lightTap();
+            methods.close();
+            onDelete?.(item.id);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={`${t('common.delete')} ${item.title}`}
+          style={styles.deleteActionButton}
+        >
+          <Ionicons name="trash" size={20} color="#FFFFFF" />
+          <Text style={styles.deleteActionText}>{t('common.delete')}</Text>
+        </Pressable>
+      </View>
+    ),
+    [item.id, item.title, onDelete, styles, t],
+  );
 
   return (
     <View
@@ -1821,46 +1871,31 @@ const Row = memo(function Row({
       style={active && { zIndex: 10, elevation: 6 }}
       onLayout={(e) => onLayoutHeight?.(e.nativeEvent.layout.height)}
     >
-      {/* Hide delete strip while vertically dragging — otherwise red full-width
-          bar stays in the original slot while the row floats (screenshot bug). */}
-      {canSwipe && !active ? (
-        <View style={styles.deleteBg}>
-          <Animated.View
-            style={{ opacity: translateX.interpolate({
-              inputRange: [-REVEAL_WIDTH, -8, 0],
-              outputRange: [1, 0, 0],
-            }) }}
-          >
-            <Pressable
-              onPress={() => {
-                lightTap();
-                snap(false);
-                onDelete?.(item.id);
-              }}
-              hitSlop={8}
-              accessibilityRole="button"
-              style={styles.deleteHit}
-            >
-              <Ionicons name="trash" size={20} color="#FFFFFF" />
-            </Pressable>
-          </Animated.View>
-        </View>
-      ) : null}
-      <Animated.View
-        style={[
-          styles.row,
-          isAccommodation && styles.rowAccommodation,
-          active && styles.rowActive,
-          multiSelected && styles.rowMultiSelected,
-          {
-            transform: [
-              { translateX: canSwipe ? translateX : 0 },
-              { translateY: active ? pan : 0 },
-            ],
-          },
-        ]}
-        {...(canDrag || canSwipe ? responder.panHandlers : {})}
+      <ReanimatedSwipeable
+        ref={swipeableRef}
+        enabled={canSwipe && !active}
+        friction={1}
+        rightThreshold={38}
+        dragOffsetFromRightEdge={10}
+        overshootRight={false}
+        enableTrackpadTwoFingerGesture
+        renderRightActions={renderRightActions}
+        onSwipeableOpen={handleSwipeableOpen}
+        onSwipeableClose={handleSwipeableClose}
+        containerStyle={styles.swipeableContainer}
+        childrenContainerStyle={styles.swipeableChildren}
       >
+        <Animated.View
+          style={[
+            styles.row,
+            isAccommodation && styles.rowAccommodation,
+            !isAccommodation && stayDuplicate && styles.rowStayDuplicate,
+            active && styles.rowActive,
+            multiSelected && styles.rowMultiSelected,
+            { transform: [{ translateY: active ? pan : 0 }] },
+          ]}
+          {...(canDrag ? responder.panHandlers : {})}
+        >
         {showSelect ? (
           <Pressable
             onPress={onSelectAsStay}
@@ -1943,7 +1978,8 @@ const Row = memo(function Row({
         ) : multiSelect ? (
           <View style={styles.handleSlot} />
         ) : null}
-      </Animated.View>
+        </Animated.View>
+      </ReanimatedSwipeable>
     </View>
   );
 });
@@ -2019,8 +2055,12 @@ const makeStyles = (colors: Palette) =>
     },
     stayBadgeText: { color: '#fff', fontSize: 12, flexShrink: 1 },
     removeStayText: { color: colors.accent, fontSize: 12, fontWeight: '600' },
-    /** Only accommodation rows use the current theme colour. */
+    /** Accommodation rows use the current theme colour. */
     rowAccommodation: { backgroundColor: accentMix(colors.accent, 18) },
+    /** Stay duplicate warning: muted theme accent over a darkened surface. */
+    rowStayDuplicate: {
+      backgroundColor: accentOver(colors.accent, shade(colors.surface, -0.20), 28),
+    },
     // Stay cards share left alignment with gathering-point rows.
     rowTitleStay: { textAlign: 'left' },
     selectRadio: { marginRight: 8 },
@@ -2125,6 +2165,27 @@ const makeStyles = (colors: Palette) =>
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: glass.hairline,
       backgroundColor: glass.fill,
+    },
+    swipeableContainer: { overflow: 'hidden' },
+    swipeableChildren: { flex: 1 },
+    deleteAction: {
+      width: REVEAL_WIDTH,
+      height: '100%',
+      backgroundColor: '#FF3B30',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    deleteActionButton: {
+      width: REVEAL_WIDTH,
+      height: '100%',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 2,
+    },
+    deleteActionText: {
+      color: '#FFFFFF',
+      fontSize: 12,
+      fontWeight: '600',
     },
     rowActive: {
       borderRadius: radius.md,
@@ -2321,18 +2382,6 @@ const makeStyles = (colors: Palette) =>
       fontSize: Math.round(22 * REORDER_VISUAL_SCALE),
       textAlign: 'center',
       width: HANDLE_SLOT,
-    },
-    deleteBg: {
-      ...StyleSheet.absoluteFill,
-      backgroundColor: colors.danger,
-      alignItems: 'flex-end',
-      justifyContent: 'center',
-    },
-    deleteHit: {
-      width: REVEAL_WIDTH,
-      height: ROW_HEIGHT,
-      alignItems: 'center',
-      justifyContent: 'center',
     },
     setDaysBtn: {
       flexDirection: 'row',

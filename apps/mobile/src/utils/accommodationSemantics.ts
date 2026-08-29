@@ -1,3 +1,6 @@
+import type { Coordinates } from '../types';
+import { placeExactMatchKey } from './placeIdentity';
+
 /**
  * Pure accommodation itinerary semantics: auto-add transitions,
  * boundary locks from pure index + stay_anchor, and reorder constraints.
@@ -19,6 +22,31 @@ export interface AccommodationListItem {
 }
 
 export type DailyAccomPresence = 'none' | 'some';
+
+export type StayDuplicatePlace = {
+  kind?: DestinationKind;
+  title: string;
+  coordinates?: Coordinates;
+};
+
+/** A stop is highlighted only when it exactly matches that day's accommodation. */
+export function shouldHighlightStayDuplicate(
+  item: StayDuplicatePlace,
+  dailyAccommodation?: StayDuplicatePlace,
+): boolean {
+  if (
+    item.kind !== 'stop'
+    || !dailyAccommodation
+    || !item.coordinates
+    || !dailyAccommodation.coordinates
+  ) {
+    return false;
+  }
+  return (
+    placeExactMatchKey(item.title, item.coordinates)
+    === placeExactMatchKey(dailyAccommodation.title, dailyAccommodation.coordinates)
+  );
+}
 
 /**
  * Auto-add fires only on none→some while the team switch is currently on.

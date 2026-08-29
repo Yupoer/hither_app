@@ -130,7 +130,7 @@ export interface PlaceTourCardInput {
 
 export interface PlaceTourCardResult {
   cardTop: number;
-  /** Max height the card may occupy (for ScrollView constraint). */
+  /** Available safe-area height, retained for placement and diagnostics. */
   maxCardHeight: number;
   placeAbove: boolean;
 }

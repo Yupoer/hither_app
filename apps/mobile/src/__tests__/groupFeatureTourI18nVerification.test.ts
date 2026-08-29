@@ -17,6 +17,10 @@ const overlaySrc = readFileSync(
   join(__dirname, '../featureTour/GroupFeatureTourOverlay.tsx'),
   'utf8',
 );
+const tourCardSrc = readFileSync(
+  join(__dirname, '../featureTour/TourCard.tsx'),
+  'utf8',
+);
 
 describe('integrated tour + i18n verification', () => {
   it('zh/en catalogs stay key-identical (contract)', () => {
@@ -94,7 +98,7 @@ describe('integrated tour + i18n verification', () => {
   it('a11y/reduceMotion/dynamic-type overlay contracts are implemented', () => {
     expect(overlaySrc).toContain('accessibilityViewIsModal');
     expect(overlaySrc).toContain('AccessibilityInfo.setAccessibilityFocus');
-    expect(overlaySrc).toContain('maxFontSizeMultiplier');
+    expect(tourCardSrc).toContain('maxFontSizeMultiplier');
     expect(overlaySrc).toContain('reduceMotion');
     expect(overlaySrc).toContain('Animated.timing');
     expect(overlaySrc).not.toContain('reduceMotion ? 1 : 1');
@@ -132,7 +136,8 @@ describe('integrated tour + i18n verification', () => {
       expect(v.length).toBeGreaterThan(10);
     }
     expect(overlaySrc).toContain('placeTourCard');
-    expect(overlaySrc).toContain('maxHeight');
-    expect(overlaySrc).toContain('ScrollView');
+    expect(overlaySrc).toContain('estimatedCardHeight: ESTIMATED_CARD_HEIGHT');
+    expect(overlaySrc).toContain('onLayout={onCardLayout}');
+    expect(tourCardSrc).not.toContain('<ScrollView');
   });
 });

@@ -157,11 +157,25 @@ describe('route editor + KML contracts (#151)', () => {
     expect(kmlSheet).not.toMatch(/catch \{\s*setStep\(\{ kind: 'error', code: 'unknown' \}\)/);
   });
 
-  it('uses native child-sheet boundaries and neutral route-row surfaces', () => {
+  it('uses native child-sheet boundaries and scoped route-row surfaces', () => {
     expect(reorder).toContain("from '../screens/MapScreen/components/SettingsChildSheet'");
     expect((reorder.match(/<SettingsChildSheet/g) ?? [])).toHaveLength(3);
     expect(reorder).toContain('action="commit"');
+    expect(reorder).toContain('shouldHighlightStayDuplicate');
+    expect(reorder).toContain('rowStayDuplicate');
+    expect(reorder).toContain("from 'react-native-gesture-handler/ReanimatedSwipeable'");
+    expect(reorder).toContain('renderRightActions');
+    expect(reorder).toContain('overshootRight={false}');
     expect(reorder).not.toContain('rowStayMatch');
+    const rowStart = reorder.indexOf('const Row = memo(function Row');
+    const rowBlock = reorder.slice(rowStart, reorder.indexOf('/** Dim checkbox', rowStart));
+    expect(rowBlock).not.toContain('translateX');
+    expect(rowBlock).not.toContain('deleteBg');
+    expect(rowBlock).toContain('methods.close()');
+    expect(rowBlock).toContain('onDelete?.(item.id)');
+    expect(rowBlock).toContain('enabled={canSwipe && !active}');
+    expect(rowBlock).toContain('onPanResponderMove');
+    expect(rowBlock).toContain('onPanResponderRelease');
     expect(reorder).toContain('rowAccommodation: { backgroundColor: accentMix(colors.accent, 18) }');
     expect(reorder).toContain('backgroundColor: glass.fill');
     expect(kmlSheet).toContain('<SettingsChildSheet');

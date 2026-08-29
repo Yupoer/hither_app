@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { glass } from '../glass';
 
 export type TourCardProps = {
@@ -12,9 +12,6 @@ export type TourCardProps = {
   onPrev?: () => void;
   onNext: () => void;
   accessibilityLabel: string;
-  maxCardHeight?: number;
-  ctaReservePx?: number;
-  minCardHeight?: number;
 };
 
 /** Android/older-runtime tour card. iOS resolves TourCard.ios.tsx instead. */
@@ -28,26 +25,15 @@ export default function TourCard({
   onPrev,
   onNext,
   accessibilityLabel,
-  maxCardHeight = 320,
-  ctaReservePx = 56,
-  minCardHeight = 0,
 }: TourCardProps) {
   return (
-    <View style={[styles.card, minCardHeight > 0 && { minHeight: minCardHeight }]} accessibilityRole="summary" accessibilityLabel={accessibilityLabel}>
-      <ScrollView
-        bounces={false}
-        nestedScrollEnabled
-        style={[
-          styles.copyScroll,
-          { maxHeight: Math.max(48, maxCardHeight - Math.max(ctaReservePx, 70)) },
-        ]}
-        contentContainerStyle={styles.copy}
-      >
+    <View style={styles.card} accessibilityRole="summary" accessibilityLabel={accessibilityLabel}>
+      <View style={styles.copy}>
         {title.trim().length > 0 ? (
           <Text style={styles.title} maxFontSizeMultiplier={1.6}>{title}</Text>
         ) : null}
         <Text style={styles.body} maxFontSizeMultiplier={1.6}>{body}</Text>
-      </ScrollView>
+      </View>
       <View style={styles.ctaRow}>
         <View style={styles.prevSlot}>
           {canGoPrev && onPrev ? (
@@ -85,14 +71,12 @@ export default function TourCard({
 
 const styles = StyleSheet.create({
   card: {
-    flex: 1,
-    backgroundColor: glass.card,
+    backgroundColor: glass.tourCard,
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: glass.hairlineSoft,
     overflow: 'hidden',
   },
-  copyScroll: { flexGrow: 1, flexShrink: 1 },
   copy: { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 8 },
   title: { color: glass.textPrimary, fontSize: 18, fontWeight: '700', marginBottom: 8 },
   body: { color: glass.textSecondary, fontSize: 15, lineHeight: 22, marginBottom: 16 },
@@ -102,19 +86,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 18,
     paddingBottom: 18,
-    minHeight: 70,
+    minHeight: 104,
   },
   prevSlot: { flex: 1, minWidth: 0, alignItems: 'flex-start' },
   prevCta: {
-    minHeight: 52,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 12,
+    minHeight: 104,
+    paddingHorizontal: 28,
+    paddingVertical: 20,
+    borderRadius: 52,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255,255,255,0.28)',
   },
   prevCtaText: { color: glass.textPrimary, fontSize: 16, fontWeight: '600' },
-  cta: { backgroundColor: '#4C8DFF', minHeight: 52, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 26 },
+  cta: { backgroundColor: '#4C8DFF', minHeight: 104, paddingHorizontal: 28, paddingVertical: 20, borderRadius: 52 },
   ctaPressed: { opacity: 0.85 },
   ctaDisabled: { opacity: 0.55 },
   ctaText: { color: '#fff', fontSize: 16, fontWeight: '600' },
