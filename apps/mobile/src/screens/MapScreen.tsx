@@ -96,6 +96,7 @@ import { AmicroButton } from '../components/AmicroButton';
 import { HitherText } from '../components/HitherText';
 import OverflowMarquee from '../components/OverflowMarquee';
 import MapRecenterControl from '../components/MapRecenterControl';
+import SwiftUIGlassSurface from '../components/SwiftUIGlassSurface';
 import {
   applyLocalClosedAt,
   arrivalControlJustSplit,
@@ -194,6 +195,7 @@ import {
 import { useCoordinationRequests } from './MapScreen/hooks/useCoordinationRequests';
 import { SettingsOverlay } from './MapScreen/components/SettingsOverlay';
 import { ProfileOverlay } from './MapScreen/components/ProfileOverlay';
+import InviteMembersSheet from './MapScreen/components/InviteMembersSheet';
 import { SubgroupSection } from './MapScreen/components/SubgroupSection';
 import { Segmented } from './MapScreen/components/Segmented';
 import { SheetPaneTabs } from './MapScreen/components/SheetPaneTabs';
@@ -365,7 +367,7 @@ import {
   shouldBlockNewDestination,
 } from '../entitlements';
 import { radius, themes, THEME_ORDER, type ThemeName } from '../theme';
-import { glass, accentMix, memberColor, MAP_SURFACE_OPACITY } from '../glass';
+import { glass, accentMix, memberColor } from '../glass';
 import { gatherCardHorizontalInset, mapKitChromeLayout } from '../utils/mapChromeLayout';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Map'>;
@@ -375,6 +377,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Map'>;
 const AUTO_ADVANCE_RADIUS_M = 50;
 // Cap on gathering-point pagination dots shown at once (see utils/pagination.ts).
 const DOTS_MAX_VISIBLE = 5;
+const PASSIVE_ENTER_HEIGHT = 65; // round(162 * 0.4)
 
 /** The design's display face — Fredoka (loaded in App.tsx). Used for
  * gathering-point titles, ETA numerals and the set-gather-time. */
@@ -553,6 +556,7 @@ export default function MapScreen({ route, navigation }: Props) {
   // ≤390 ≈ iPhone 15 / mini / SE; slightly denser chrome so fixed command
   // controls don't clip past the card edge on small physical widths.
   const narrowScreen = windowWidth < 400;
+  const gatherCardRadius = narrowScreen ? fontLayout.s(22, 16) : fontLayout.s(26, 20);
   const styles = useMemo(
     () =>
       makeStyles(
@@ -6291,11 +6295,10 @@ export default function MapScreen({ route, navigation }: Props) {
               }
             }}
           >
-            <liquidGlass.GlassView
-              glassStyle="regular"
-              surfaceOpacity={MAP_SURFACE_OPACITY}
+            <SwiftUIGlassSurface
+              shape="capsule"
               style={StyleSheet.absoluteFill}
-              pointerEvents="none"
+              fallbackTintColor={Platform.OS === 'android' ? glass.pill : undefined}
             />
             <Text style={styles.groupPillText} numberOfLines={1}>
               {`${group?.avatar ?? '👥'} ${group?.name ?? 'Hither'} · ${members.length}`}
@@ -6711,12 +6714,12 @@ export default function MapScreen({ route, navigation }: Props) {
                     collapsable={false}
                   >
                   <ArrivalCardExitShell exiting={exitPhase === 'exit'}>
-                  <liquidGlass.GlassView
-                    glassStyle="regular"
-                    tintColor={Platform.OS === 'android'
+                  <SwiftUIGlassSurface
+                    shape="roundedRectangle"
+                    cornerRadius={gatherCardRadius}
+                    fallbackTintColor={Platform.OS === 'android'
                       ? active ? glass.cardActive : glass.card
                       : undefined}
-                    surfaceOpacity={MAP_SURFACE_OPACITY}
                     style={[
                       styles.card,
                       // Active state uses fill only — no theme-color rim
@@ -7223,7 +7226,7 @@ export default function MapScreen({ route, navigation }: Props) {
                     </View>
                     )}
                     </View>
-                  </liquidGlass.GlassView>
+                  </SwiftUIGlassSurface>
                   </ArrivalCardExitShell>
                   </View>
                 </View>
@@ -7254,7 +7257,7 @@ export default function MapScreen({ route, navigation }: Props) {
         index={detent}
         onIndexChange={setDetent}
         bottomInset={insets.bottom}
-        surfaceOpacity={MAP_SURFACE_OPACITY}
+        useSwiftUIGlassSurface
         compactGrabberSpacing
         hideHeaderOnScroll
         onHeaderHeight={(h) => {
@@ -7614,13 +7617,12 @@ export default function MapScreen({ route, navigation }: Props) {
       />
 
       {/* 邀請成員 — independent share sheet (code / share / copy). */}
-      <OverlaySheet
+      <InviteMembersSheet
         visible={overlay === 'invite'}
         onClose={() => setOverlay(null)}
         title={t('map.inviteMembers')}
         accent={accent}
         doneLabel={t('map.done')}
-        edgeToEdge
       >
         <ScrollView contentContainerStyle={styles.overlayBody}>
           <Text style={styles.overlayHint}>
@@ -7699,7 +7701,7 @@ export default function MapScreen({ route, navigation }: Props) {
             </View>
           )}
         </ScrollView>
-      </OverlaySheet>
+      </InviteMembersSheet>
 
       {/* Exceptions + coordination — single full-bleed ops center. */}
       <OverlaySheet
@@ -9946,8 +9948,8 @@ const makeStyles = (
     },
     passiveEnterButton: {
       width: '100%',
-      height: 162,
-      borderRadius: 16,
+      height: PASSIVE_ENTER_HEIGHT,
+      borderRadius: PASSIVE_ENTER_HEIGHT / 2,
       overflow: 'hidden',
       alignItems: 'center',
       justifyContent: 'center',

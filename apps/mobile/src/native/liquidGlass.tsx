@@ -55,8 +55,6 @@ export interface GlassViewProps extends ViewProps {
   glassStyle?: GlassStyle;
   /** Optional tint over the glass. Omit for the neutral system material. */
   tintColor?: string;
-  /** Opacity applied to the material layer only; children remain fully opaque. */
-  surfaceOpacity?: number;
 }
 
 /**
@@ -66,7 +64,6 @@ export interface GlassViewProps extends ViewProps {
 function GlassViewCore({
   glassStyle = 'regular',
   tintColor,
-  surfaceOpacity = 1,
   fallbackGlass,
   style,
   children,
@@ -78,14 +75,12 @@ function GlassViewCore({
   if (isLiquidGlassAvailable()) {
     return (
       <View style={style} {...rest}>
-        <View style={[StyleSheet.absoluteFill, { opacity: surfaceOpacity }]} pointerEvents="none">
-          <ExpoGlassView
-            glassEffectStyle={glassStyle}
-            tintColor={tintColor}
-            style={StyleSheet.absoluteFill}
-            pointerEvents="none"
-          />
-        </View>
+        <ExpoGlassView
+          glassEffectStyle={glassStyle}
+          tintColor={tintColor}
+          style={StyleSheet.absoluteFill}
+          pointerEvents="none"
+        />
         {children}
       </View>
     );
@@ -97,24 +92,22 @@ function GlassViewCore({
     tintColor ?? (fallbackGlass != null ? thinTint(fallbackGlass) : 'rgba(22, 26, 34, 0.28)');
   return (
     <View style={[{ overflow: 'hidden' }, style]} {...rest}>
-      <View style={[StyleSheet.absoluteFill, { opacity: surfaceOpacity }]} pointerEvents="none">
-        <BlurView
-          tint="dark"
-          intensity={28}
-          style={StyleSheet.absoluteFill}
-          pointerEvents="none"
-        />
-        <View
-          style={[
-            StyleSheet.absoluteFill,
-            // An explicit tintColor is used verbatim (caller controls darkness /
-            // alpha — e.g. the map banners pass a dark veil); only the default
-            // theme glass gets thinned so the blur shows through.
-            { backgroundColor: fill },
-          ]}
-          pointerEvents="none"
-        />
-      </View>
+      <BlurView
+        tint="dark"
+        intensity={28}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+      <View
+        style={[
+          StyleSheet.absoluteFill,
+          // An explicit tintColor is used verbatim (caller controls darkness /
+          // alpha — e.g. the map banners pass a dark veil); only the default
+          // theme glass gets thinned so the blur shows through.
+          { backgroundColor: fill },
+        ]}
+        pointerEvents="none"
+      />
       {children}
     </View>
   );

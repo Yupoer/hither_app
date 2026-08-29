@@ -95,4 +95,11 @@ describe('member status + location sharing seam', () => {
     expect(handler.indexOf('confirmAction')).toBeLessThan(handler.indexOf('handleSharingEnabledChange(nextEnabled)'));
     expect(mapScreen).toContain('requestLocationPermission');
   });
+
+  it('keeps passive mode full width with a 65pt capsule', () => {
+    expect(mapScreen).toContain('PASSIVE_ENTER_HEIGHT = 65');
+    expect(mapScreen).toContain('height: PASSIVE_ENTER_HEIGHT');
+    expect(mapScreen).toContain('borderRadius: PASSIVE_ENTER_HEIGHT / 2');
+    expect(mapScreen).toContain("width: '100%'");
+  });
 });

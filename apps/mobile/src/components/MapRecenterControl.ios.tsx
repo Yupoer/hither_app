@@ -1,16 +1,9 @@
 import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import { Host, Spacer, VStack } from '@expo/ui/swift-ui';
-import {
-  background,
-  cornerRadius,
-  frame,
-  glassEffect,
-} from '@expo/ui/swift-ui/modifiers';
 import { Ionicons } from '@expo/vector-icons';
-import { liquidGlass } from '../native';
-import { glass, MAP_SURFACE_OPACITY } from '../glass';
+import { glass } from '../glass';
 import type { MapRecenterControlProps } from './MapRecenterControl';
+import SwiftUIGlassSurface from './SwiftUIGlassSurface';
 
 /** Native Liquid Glass capsule background with ordinary accessible RN controls. */
 export default function MapRecenterControl({
@@ -20,20 +13,9 @@ export default function MapRecenterControl({
   locateLabel,
   style,
 }: MapRecenterControlProps) {
-  const available = liquidGlass.isLiquidGlassAvailable();
-  const surface = available
-    ? [glassEffect({ glass: { variant: 'regular', interactive: false }, shape: 'capsule' })]
-    : [background('rgba(40, 44, 52, 0.9)'), cornerRadius(25)];
-
   return (
     <View style={[styles.root, style]}>
-      <Host matchContents={false} style={[StyleSheet.absoluteFill, { opacity: MAP_SURFACE_OPACITY }]}>
-        <VStack spacing={0} modifiers={[frame({ width: 50, height: 96 }), ...surface]}>
-          <Spacer modifiers={[frame({ width: 50, height: 47 })]} />
-          <Spacer modifiers={[frame({ width: 50, height: 1 })]} />
-          <Spacer modifiers={[frame({ width: 50, height: 47 })]} />
-        </VStack>
-      </Host>
+      <SwiftUIGlassSurface shape="capsule" style={StyleSheet.absoluteFill} />
       <Pressable
         style={styles.button}
         onPress={onFitAll}

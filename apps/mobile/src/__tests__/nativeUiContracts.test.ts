@@ -16,6 +16,9 @@ const nativeGlassButtonIos = readFileSync(join(root, 'components/NativeGlassButt
 const paywallSheet = readFileSync(join(root, 'components/PaywallSheet.tsx'), 'utf8');
 const premiumBanner = readFileSync(join(root, 'components/PremiumBanner.tsx'), 'utf8');
 const mapScreen = readFileSync(join(root, 'screens/MapScreen.tsx'), 'utf8');
+const inviteSheetIos = readFileSync(join(root, 'screens/MapScreen/components/InviteMembersSheet.ios.tsx'), 'utf8');
+const inviteSheet = readFileSync(join(root, 'screens/MapScreen/components/InviteMembersSheet.tsx'), 'utf8');
+const mapSheetChrome = readFileSync(join(root, 'components/mapSheetChrome.ts'), 'utf8');
 
 describe('iOS native UI contracts', () => {
   it('uses the minimum native bridge for the iOS Liquid Glass selector', () => {
@@ -76,7 +79,8 @@ describe('iOS native UI contracts', () => {
     expect(settingsIos).toContain('if (props.singleStage) return <SettingsSheetPanel {...props} />');
     expect(settingsPanel).toContain('singleStage');
     expect(settingsPanel).toContain('[Math.round(height * stageTwoRatio)]');
-    expect(settingsPanel).toContain('SETTINGS_CLOSE_SIZE = 60');
+    expect(settingsPanel).toContain('SETTINGS_COMMIT_SIZE = 60');
+    expect(settingsPanel).toContain('MAP_SHEET_CLOSE_VISUAL_SIZE');
     expect(settingsPanel).toContain('dismissOnDownFromIndex={0}');
     expect(settingsPanel).toContain('edgeToEdgeAtLast={edgeToEdgeAtLast}');
     expect(settingsPanel).toContain('dismissTranslateY={sheetTranslateY}');
@@ -95,7 +99,10 @@ describe('iOS native UI contracts', () => {
     expect(settingsIos).not.toContain("controlSize('extraLarge')");
     expect(settingsIos).toContain('<Image');
     expect(settingsIos).toContain('frame({ width: 60, height: 60 })');
-    expect(settingsIos).toContain('frame({ width: 28, height: 28 })');
+    expect(settingsIos).toMatch(/width: isCloseAction \? MAP_SHEET_CLOSE_ICON_SIZE : 28/);
+    expect(settingsIos).toContain('MAP_SHEET_CLOSE_VISUAL_SIZE');
+    expect(settingsIos).toContain('MAP_SHEET_CLOSE_HIT_SIZE');
+    expect(settingsIos).toContain('MAP_SHEET_CLOSE_ICON_SIZE');
     expect(settingsIos).not.toContain('frame({ width: 78, height: 78 })');
     expect(settingsIos).toContain("action === 'commit' ? 'checkmark' : 'xmark'");
     expect(settingsIos).toContain('<VStack');
@@ -121,7 +128,8 @@ describe('iOS native UI contracts', () => {
 
   it('leaves map glass to one native material surface', () => {
     expect(bottomSheet).toContain("glass.sheetOpaque : undefined");
-    expect(bottomSheet).toContain('surfaceOpacity={surfaceOpacity}');
+    expect(bottomSheet).toContain('useSwiftUIGlassSurface');
+    expect(bottomSheet).not.toContain('surfaceOpacity');
     expect(bottomSheet).not.toContain('tintColor="transparent"');
   });
 
@@ -144,13 +152,28 @@ describe('iOS native UI contracts', () => {
     expect(overlaySheet).toContain('doneSystemImage');
     expect(overlaySheet).not.toContain('NativeGlassButton');
     expect(overlaySheet).toContain('<Pressable');
-    expect(overlaySheet).toContain('<Ionicons name={headerIcon} size={28}');
-    expect(overlaySheet).toContain('width: 60');
-    expect(overlaySheet).toContain('height: 60');
-    expect(overlaySheet).toContain('minWidth: 60');
+    expect(overlaySheet).toContain('MAP_SHEET_CLOSE_VISUAL_SIZE');
+    expect(overlaySheet).toContain('MAP_SHEET_CLOSE_HIT_SIZE');
+    expect(overlaySheet).toContain('MAP_SHEET_CLOSE_ICON_SIZE');
+    expect(overlaySheet).toContain('top: MAP_SHEET_EDGE_INSET');
+    expect(overlaySheet).toContain('right: MAP_SHEET_EDGE_INSET');
+    expect(settingsPanel).toContain('width: MAP_SHEET_CLOSE_HIT_SIZE');
+    expect(settingsPanel).toContain('width: MAP_SHEET_CLOSE_VISUAL_SIZE');
+    expect(mapSheetChrome).toContain('MAP_SHEET_CLOSE_VISUAL_SIZE = 35');
+    expect(mapSheetChrome).toContain('MAP_SHEET_CLOSE_HIT_SIZE = 44');
+    expect(mapSheetChrome).toContain('MAP_SHEET_CLOSE_ICON_SIZE = 18');
     expect(paywallSheet).toContain('systemImage="xmark"');
     expect(mapScreen).toContain('doneSystemImage="xmark"');
     expect(overlaySheet).toContain("onDone ? 'checkmark' : 'xmark'");
+  });
+
+  it('opens the iOS invite sheet at Stage 1 while preserving Android fallback', () => {
+    expect(mapScreen).toContain('<InviteMembersSheet');
+    expect(inviteSheetIos).toContain('<SettingsChildSheet');
+    expect(inviteSheetIos).toContain('initialStage={0}');
+    expect(inviteSheetIos).toContain('stageTwoRatio={0.8}');
+    expect(inviteSheetIos).toContain('wrapContentInScrollView={false}');
+    expect(inviteSheet).toContain('<OverlaySheet');
   });
 
   it('uses native glass controls for map chrome and limits haptics to Premium', () => {
@@ -163,7 +186,9 @@ describe('iOS native UI contracts', () => {
 
   it('keeps tools and add-place controls at their requested dimensions', () => {
     expect(mapScreen).toContain('testID="tools-enter-passive"');
-    expect(mapScreen).toContain('height: 162');
+    expect(mapScreen).toContain('PASSIVE_ENTER_HEIGHT = 65');
+    expect(mapScreen).toContain('height: PASSIVE_ENTER_HEIGHT');
+    expect(mapScreen).toContain('borderRadius: PASSIVE_ENTER_HEIGHT / 2');
     expect(mapScreen).toContain("width: '100%'");
     expect(mapScreen).toContain('styles.confirmControl');
     expect(mapScreen).toContain('width: 60');

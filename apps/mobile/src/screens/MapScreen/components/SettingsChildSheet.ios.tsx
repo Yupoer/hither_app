@@ -29,6 +29,11 @@ import {
   presentationDragIndicator,
 } from '@expo/ui/swift-ui/modifiers';
 import { liquidGlass } from '../../../native';
+import {
+  MAP_SHEET_CLOSE_HIT_SIZE,
+  MAP_SHEET_CLOSE_ICON_SIZE,
+  MAP_SHEET_CLOSE_VISUAL_SIZE,
+} from '../../../components/mapSheetChrome';
 import SettingsSheetPanel, { type SettingsSheetPanelProps } from './SettingsSheetPanel';
 
 const STAGE_ONE_RATIO = 0.52;
@@ -48,6 +53,7 @@ function NativeSettingsChildSheet({
   onClose,
   onDismissComplete,
   action = 'close',
+  doneLabel = action === 'close' ? 'close' : 'commit',
   onCommit,
   title,
   children,
@@ -60,6 +66,8 @@ function NativeSettingsChildSheet({
   const nestedSheets = nativeChildren.slice(1);
   const stageOneDetent = useMemo(() => ({ fraction: STAGE_ONE_RATIO }), []);
   const stageTwoDetent = useMemo(() => ({ fraction: stageTwoRatio }), [stageTwoRatio]);
+  const isCloseAction = action === 'close';
+  const actionSlotSize = isCloseAction ? MAP_SHEET_CLOSE_HIT_SIZE : 60;
   const closeStartedRef = useRef(false);
   const dismissCompleteRef = useRef(false);
   const onDismissCompleteRef = useRef(onDismissComplete);
@@ -125,10 +133,10 @@ function NativeSettingsChildSheet({
                 frame({ minWidth: 0, maxWidth: 10000 }),
               ]}
             >
-              <Spacer modifiers={[frame({ width: 60, height: 60 })]} />
+              <Spacer modifiers={[frame({ width: actionSlotSize, height: actionSlotSize })]} />
               <SwiftText
                 modifiers={[
-                  frame({ minWidth: 0, maxWidth: Infinity, minHeight: 60, maxHeight: 60, alignment: 'center' }),
+                  frame({ minWidth: 0, maxWidth: Infinity, minHeight: actionSlotSize, maxHeight: actionSlotSize, alignment: 'center' }),
                   font({ size: 17, weight: 'bold' }),
                 ]}
               >
@@ -140,17 +148,30 @@ function NativeSettingsChildSheet({
                 modifiers={[
                   buttonStyle(liquidGlass.isLiquidGlassAvailable() ? 'plain' : 'bordered'),
                   buttonBorderShape('circle'),
-                  frame({ width: 60, height: 60 }),
-                  ...(liquidGlass.isLiquidGlassAvailable()
-                    ? [glassEffect({ glass: { variant: 'regular', interactive: true }, shape: 'circle' })]
-                    : []),
+                  ...(isCloseAction
+                    ? [
+                      frame({ width: MAP_SHEET_CLOSE_VISUAL_SIZE, height: MAP_SHEET_CLOSE_VISUAL_SIZE }),
+                      ...(liquidGlass.isLiquidGlassAvailable()
+                        ? [glassEffect({ glass: { variant: 'regular', interactive: true }, shape: 'circle' })]
+                        : []),
+                      frame({ width: MAP_SHEET_CLOSE_HIT_SIZE, height: MAP_SHEET_CLOSE_HIT_SIZE }),
+                    ]
+                    : [
+                      frame({ width: 60, height: 60 }),
+                      ...(liquidGlass.isLiquidGlassAvailable()
+                        ? [glassEffect({ glass: { variant: 'regular', interactive: true }, shape: 'circle' })]
+                        : []),
+                    ]),
                   labelStyle('iconOnly'),
-                  accessibilityLabel(action),
+                  accessibilityLabel(doneLabel),
                 ]}
               >
                 <Image
                   systemName={action === 'commit' ? 'checkmark' : 'xmark'}
-                  modifiers={[frame({ width: 28, height: 28 })]}
+                  modifiers={[frame({
+                    width: isCloseAction ? MAP_SHEET_CLOSE_ICON_SIZE : 28,
+                    height: isCloseAction ? MAP_SHEET_CLOSE_ICON_SIZE : 28,
+                  })]}
                 />
               </Button>
             </HStack>

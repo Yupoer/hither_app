@@ -8,11 +8,14 @@ describe('map chrome native surface contract', () => {
   it('uses one vertical glass surface with plain inner controls', () => {
     const map = read('screens/MapScreen.tsx');
     const native = read('components/MapRecenterControl.ios.tsx');
+    const surface = read('components/SwiftUIGlassSurface.ios.tsx');
     expect(map).toContain('<MapRecenterControl');
     expect(map).toContain('chromeStage={chromeStage}');
     expect(map).toContain('chromeBottomOffset={chromeBottomOffset}');
-    expect(native).toContain('glassEffect({ glass: { variant: \'regular\'');
-    expect(native).toContain('opacity: MAP_SURFACE_OPACITY');
+    expect(native).toContain('<SwiftUIGlassSurface shape="capsule"');
+    expect(surface).toContain('glassEffect({');
+    expect(surface).toContain("variant: 'regular'");
+    expect(surface).not.toContain('opacity:');
     expect(native).toContain('<View style={styles.divider} />');
     expect(native).toContain('<Pressable');
   });
@@ -25,7 +28,8 @@ describe('map chrome native surface contract', () => {
     expect(map).toContain('name={sharingEnabled ? \'eye-outline\' : \'eye-off-outline\'}');
     expect(map).toContain('width: 44');
     expect(map).toContain('height: 44');
-    expect(map).toContain('surfaceOpacity={MAP_SURFACE_OPACITY}');
+    expect(map).toContain('<SwiftUIGlassSurface');
+    expect(map).toContain('useSwiftUIGlassSurface');
   });
 
   it('uses the approved add-place and arrival control sizes', () => {

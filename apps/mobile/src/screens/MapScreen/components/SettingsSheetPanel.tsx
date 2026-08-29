@@ -16,10 +16,17 @@ import Animated, {
 } from 'react-native-reanimated';
 import BottomSheet from '../../../components/BottomSheet';
 import { liquidGlass } from '../../../native';
+import SwiftUIGlassSurface from '../../../components/SwiftUIGlassSurface';
+import {
+  MAP_SHEET_CLOSE_HIT_SIZE,
+  MAP_SHEET_CLOSE_ICON_SIZE,
+  MAP_SHEET_CLOSE_VISUAL_SIZE,
+  MAP_SHEET_EDGE_INSET,
+} from '../../../components/mapSheetChrome';
 
 const STAGE_ONE_RATIO = 0.52;
 const STAGE_TWO_RATIO = 0.8;
-const SETTINGS_CLOSE_SIZE = 60;
+const SETTINGS_COMMIT_SIZE = 60;
 const SPRING = { stiffness: 320, damping: 29, mass: 1 } as const;
 
 export type SettingsSheetPanelProps = {
@@ -28,6 +35,7 @@ export type SettingsSheetPanelProps = {
   onDismissComplete?: () => void;
   onBack?: () => void;
   action?: 'close' | 'commit';
+  doneLabel?: string;
   onCommit?: () => void;
   title: string;
   children: React.ReactNode;
@@ -47,6 +55,7 @@ export default function SettingsSheetPanel({
   onDismissComplete,
   onBack,
   action = 'close',
+  doneLabel = action === 'close' ? 'close' : 'commit',
   onCommit,
   title,
   children,
@@ -120,29 +129,39 @@ export default function SettingsSheetPanel({
           accessibilityRole="button"
           accessibilityLabel="back"
           hitSlop={8}
-          style={styles.headerSide}
+          style={action === 'close' ? styles.headerCloseHit : styles.headerCommit}
         >
           <Ionicons name="chevron-back" size={22} color="#fff" />
         </Pressable>
-      ) : <View style={styles.headerSide} />}
+      ) : <View style={action === 'close' ? styles.headerCloseHit : styles.headerCommit} />}
       <Text style={styles.title} numberOfLines={1}>{title}</Text>
       <Pressable
         onPress={action === 'commit' ? onCommit : onClose}
         accessibilityRole="button"
-        accessibilityLabel={action}
+        accessibilityLabel={doneLabel}
         accessibilityState={{ disabled: action === 'commit' && !onCommit }}
-        style={({ pressed }) => [styles.headerSide, pressed && styles.headerPressed]}
+        style={({ pressed }) => [
+          action === 'close' ? styles.headerCloseHit : styles.headerCommit,
+          pressed && styles.headerPressed,
+        ]}
       >
-        <liquidGlass.GlassView
-          glassStyle="regular"
-          style={StyleSheet.absoluteFill}
-          pointerEvents="none"
-        />
-        <Ionicons
-          name={action === 'commit' ? 'checkmark' : 'close'}
-          size={28}
-          color="#fff"
-        />
+        {action === 'close' ? (
+          <SwiftUIGlassSurface
+            shape="circle"
+            style={styles.closeVisual}
+          >
+            <Ionicons name="close" size={MAP_SHEET_CLOSE_ICON_SIZE} color="#fff" />
+          </SwiftUIGlassSurface>
+        ) : (
+          <>
+            <liquidGlass.GlassView
+              glassStyle="regular"
+              style={StyleSheet.absoluteFill}
+              pointerEvents="none"
+            />
+            <Ionicons name="checkmark" size={28} color="#fff" />
+          </>
+        )}
       </Pressable>
     </View>
   );
@@ -192,17 +211,27 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingHorizontal: MAP_SHEET_EDGE_INSET,
+    paddingTop: MAP_SHEET_EDGE_INSET,
     paddingBottom: 0,
   },
-  headerSide: {
-    width: SETTINGS_CLOSE_SIZE,
-    height: SETTINGS_CLOSE_SIZE,
+  headerCloseHit: {
+    width: MAP_SHEET_CLOSE_HIT_SIZE,
+    height: MAP_SHEET_CLOSE_HIT_SIZE,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: SETTINGS_CLOSE_SIZE / 2,
+  },
+  closeVisual: {
+    width: MAP_SHEET_CLOSE_VISUAL_SIZE,
+    height: MAP_SHEET_CLOSE_VISUAL_SIZE,
+    borderRadius: MAP_SHEET_CLOSE_VISUAL_SIZE / 2,
     overflow: 'hidden',
+  },
+  headerCommit: {
+    width: SETTINGS_COMMIT_SIZE,
+    height: SETTINGS_COMMIT_SIZE,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerPressed: { opacity: 0.82 },
   title: {
