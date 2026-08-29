@@ -336,6 +336,8 @@ const styles = StyleSheet.create({
   headerCommit: {
     width: 60,
     height: 60,
+    borderRadius: 30,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: StyleSheet.hairlineWidth,

@@ -230,6 +230,8 @@ const styles = StyleSheet.create({
   headerCommit: {
     width: SETTINGS_COMMIT_SIZE,
     height: SETTINGS_COMMIT_SIZE,
+    borderRadius: SETTINGS_COMMIT_SIZE / 2,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
   },
