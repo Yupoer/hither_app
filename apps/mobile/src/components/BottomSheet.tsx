@@ -90,6 +90,7 @@ export default React.memo(function BottomSheet({
   contentTopPadding = 0,
   compactGrabberSpacing = false,
   hideHeaderOnScroll = false,
+  surfaceOpacity = 1,
   children,
 }: {
   /** Live sheet height, owned by the parent (drives sheet + floating chrome). */
@@ -123,6 +124,8 @@ export default React.memo(function BottomSheet({
   compactGrabberSpacing?: boolean;
   /** Hide the pinned header controls once full-detent content leaves the top. */
   hideHeaderOnScroll?: boolean;
+  /** Opacity applied to this sheet's material surface only. */
+  surfaceOpacity?: number;
   children: React.ReactNode;
 }) {
   const scrollRef = useAnimatedRef<RNScrollView>();
@@ -388,18 +391,22 @@ export default React.memo(function BottomSheet({
     // peek/mid share the same horizontal inset so sheet chrome (e.g. 成員/路線/工具
     // Segmented) does not appear to scale when moving between stage 1 and 2.
     // Full still goes edge-to-edge.
-    const side = interpolate(
-      h,
-      d,
-      d.map((_, i) => (edgeToEdgeAtLastSV.value && i === last ? 0 : 10)),
-      Extrapolation.CLAMP,
-    );
+    const side = d.length <= 1
+      ? (edgeToEdgeAtLastSV.value ? 0 : 10)
+      : interpolate(
+        h,
+        d,
+        d.map((_, i) => (edgeToEdgeAtLastSV.value && i === last ? 0 : 10)),
+        Extrapolation.CLAMP,
+      );
     const topRadius = SCREEN_CORNER_RADIUS;
     // Stage 2 and full are edge-filled surfaces: only the floating peek stage
     // keeps bottom rounding, otherwise the map can show through at both corners.
-    const bottomRadius = interpolate(h, d, d.map((_, i) => (
-      edgeToEdgeAtLastSV.value && i === last ? 0 : SCREEN_CORNER_RADIUS
-    )), Extrapolation.CLAMP);
+    const bottomRadius = d.length <= 1
+      ? (edgeToEdgeAtLastSV.value ? 0 : SCREEN_CORNER_RADIUS)
+      : interpolate(h, d, d.map((_, i) => (
+        edgeToEdgeAtLastSV.value && i === last ? 0 : SCREEN_CORNER_RADIUS
+      )), Extrapolation.CLAMP);
     return {
       height: h,
       bottom: sheetBottomOffset(h, d, bottomInsetSV.value),
@@ -420,6 +427,7 @@ export default React.memo(function BottomSheet({
           // iOS uses the untinted system surface; Android keeps the opaque
           // fallback so map content never leaks through the sheet chrome.
           tintColor={Platform.OS === 'android' ? glass.sheetOpaque : undefined}
+          surfaceOpacity={surfaceOpacity}
           style={StyleSheet.absoluteFill}
         />
         <AnimatedScrollView
@@ -485,6 +493,7 @@ export function sheetBottomOffset(
   bottomInset: number,
 ): number {
   'worklet';
+  if (detents.length <= 1) return 0;
   return interpolate(
     h,
     detents,

@@ -1,21 +1,18 @@
 import React from 'react';
-import { Host, Button, Divider, VStack } from '@expo/ui/swift-ui';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Host, Spacer, VStack } from '@expo/ui/swift-ui';
 import {
-  accessibilityLabel,
   background,
-  buttonBorderShape,
-  buttonStyle,
   cornerRadius,
   frame,
-  foregroundColor,
   glassEffect,
-  labelStyle,
 } from '@expo/ui/swift-ui/modifiers';
+import { Ionicons } from '@expo/vector-icons';
 import { liquidGlass } from '../native';
-import { glass } from '../glass';
+import { glass, MAP_SURFACE_OPACITY } from '../glass';
 import type { MapRecenterControlProps } from './MapRecenterControl';
 
-/** One native Liquid Glass capsule containing two plain SwiftUI buttons. */
+/** Native Liquid Glass capsule background with ordinary accessible RN controls. */
 export default function MapRecenterControl({
   onFitAll,
   onLocate,
@@ -27,32 +24,46 @@ export default function MapRecenterControl({
   const surface = available
     ? [glassEffect({ glass: { variant: 'regular', interactive: false }, shape: 'capsule' })]
     : [background('rgba(40, 44, 52, 0.9)'), cornerRadius(25)];
-  const plainButton = (label: string) => [
-    buttonStyle('plain'),
-    buttonBorderShape('circle'),
-    labelStyle('iconOnly' as const),
-    frame({ width: 50, height: 47 }),
-    foregroundColor(glass.textPrimary),
-    accessibilityLabel(label),
-  ];
 
   return (
-    <Host matchContents={false} style={[{ width: 50, height: 96 }, style]}>
-      <VStack spacing={0} modifiers={[frame({ width: 50, height: 96 }), ...surface]}>
-        <Button
-          label={fitAllLabel}
-          systemImage="arrow.up.left.and.arrow.down.right"
-          onPress={onFitAll}
-          modifiers={plainButton(fitAllLabel)}
-        />
-        <Divider />
-        <Button
-          label={locateLabel}
-          systemImage="location.fill"
-          onPress={onLocate}
-          modifiers={plainButton(locateLabel)}
-        />
-      </VStack>
-    </Host>
+    <View style={[styles.root, style]}>
+      <Host matchContents={false} style={[StyleSheet.absoluteFill, { opacity: MAP_SURFACE_OPACITY }]}>
+        <VStack spacing={0} modifiers={[frame({ width: 50, height: 96 }), ...surface]}>
+          <Spacer modifiers={[frame({ width: 50, height: 47 })]} />
+          <Spacer modifiers={[frame({ width: 50, height: 1 })]} />
+          <Spacer modifiers={[frame({ width: 50, height: 47 })]} />
+        </VStack>
+      </Host>
+      <Pressable
+        style={styles.button}
+        onPress={onFitAll}
+        accessibilityRole="button"
+        accessibilityLabel={fitAllLabel}
+      >
+        <Ionicons name="expand-outline" size={20} color={glass.textPrimary} />
+      </Pressable>
+      <View style={styles.divider} />
+      <Pressable
+        style={styles.button}
+        onPress={onLocate}
+        accessibilityRole="button"
+        accessibilityLabel={locateLabel}
+      >
+        <Ionicons name="navigate" size={20} color={glass.textPrimary} />
+      </Pressable>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  root: {
+    width: 50,
+    height: 96,
+    borderRadius: 25,
+    overflow: 'hidden',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: glass.hairlineSoft,
+  },
+  button: { width: 50, height: 47, alignItems: 'center', justifyContent: 'center' },
+  divider: { height: StyleSheet.hairlineWidth, backgroundColor: glass.hairlineStrong },
+});

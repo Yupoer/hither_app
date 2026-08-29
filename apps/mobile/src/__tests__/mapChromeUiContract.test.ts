@@ -11,9 +11,10 @@ describe('map chrome native surface contract', () => {
     expect(map).toContain('<MapRecenterControl');
     expect(map).toContain('chromeStage={chromeStage}');
     expect(map).toContain('chromeBottomOffset={chromeBottomOffset}');
-    expect(native).toContain("buttonStyle('plain')");
     expect(native).toContain('glassEffect({ glass: { variant: \'regular\'');
-    expect(native).toContain('<Divider />');
+    expect(native).toContain('opacity: MAP_SURFACE_OPACITY');
+    expect(native).toContain('<View style={styles.divider} />');
+    expect(native).toContain('<Pressable');
   });
 
   it('keeps iOS map cards neutral and Android fallbacks tokenized', () => {
@@ -24,6 +25,7 @@ describe('map chrome native surface contract', () => {
     expect(map).toContain('name={sharingEnabled ? \'eye-outline\' : \'eye-off-outline\'}');
     expect(map).toContain('width: 44');
     expect(map).toContain('height: 44');
+    expect(map).toContain('surfaceOpacity={MAP_SURFACE_OPACITY}');
   });
 
   it('uses the approved add-place and arrival control sizes', () => {

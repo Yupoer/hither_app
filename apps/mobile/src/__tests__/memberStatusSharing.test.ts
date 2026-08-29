@@ -75,14 +75,17 @@ describe('member status + location sharing seam', () => {
     const barEnd = mapScreen.indexOf('RefreshLocationsButton', barStart);
     const bar = mapScreen.slice(barStart, barEnd);
     expect(bar).toContain('testID="members-location-sharing"');
-    expect(bar).toContain('<liquidGlass.GlassView');
+    // Follow and share controls each own one surface; no nested GlassView
+    // should darken the row or create a second hit target.
+    expect(bar).not.toContain('<liquidGlass.GlassView');
     expect(bar).toContain("name={sharingEnabled ? 'eye-outline' : 'eye-off-outline'}");
     expect(bar).toContain('color={sharingEnabled ? accent : glass.danger}');
     expect(bar).toContain('locationSharingButton');
     expect(bar).toContain('NativeMenuHost');
+    expect(mapScreen).toContain('backgroundColor: glass.fill');
     expect(mapScreen).toContain('width: 44');
     expect(mapScreen).toContain('height: 44');
-    expect(mapScreen).toContain('marginTop: 8');
+    expect(mapScreen).toContain('marginTop: 4');
     expect(mapScreen).toContain('marginBottom: 8');
     expect(mapScreen).toContain('gap: STATUS_SHARE_CLUSTER_GAP');
     const handlerStart = mapScreen.indexOf('const handleSharingEnabledChangeAnimated');

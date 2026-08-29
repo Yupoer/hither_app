@@ -63,6 +63,9 @@ export const glass = {
   warn: '#FF9F6B',
 } as const;
 
+/** Shared map-chrome material opacity; foreground content stays fully opaque. */
+export const MAP_SURFACE_OPACITY = 0.8;
+
 /** Deterministic member-pin / avatar colours from the design. */
 export const MEMBER_COLORS = ['#2a3450', '#34507a', '#4a3a6a', '#6a4a3a'] as const;
 
