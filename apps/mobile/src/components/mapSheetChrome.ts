@@ -1,0 +1,4 @@
+export const MAP_SHEET_CLOSE_VISUAL_SIZE = 35;
+export const MAP_SHEET_CLOSE_HIT_SIZE = 44;
+export const MAP_SHEET_CLOSE_ICON_SIZE = 18;
+export const MAP_SHEET_EDGE_INSET = 16;

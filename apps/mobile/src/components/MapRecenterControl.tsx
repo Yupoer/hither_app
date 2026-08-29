@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { liquidGlass } from '../native';
-import { glass, MAP_SURFACE_OPACITY } from '../glass';
+import { glass } from '../glass';
 import { Ionicons } from '@expo/vector-icons';
 
 export type MapRecenterControlProps = {
@@ -25,7 +25,6 @@ export default function MapRecenterControl({
       <liquidGlass.GlassView
         glassStyle="regular"
         tintColor={glass.pill}
-        surfaceOpacity={MAP_SURFACE_OPACITY}
         style={StyleSheet.absoluteFill}
       />
       <Pressable

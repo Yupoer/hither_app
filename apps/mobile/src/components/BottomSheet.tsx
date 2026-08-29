@@ -18,6 +18,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { liquidGlass } from '../native';
 import { glass } from '../glass';
+import SwiftUIGlassSurface from './SwiftUIGlassSurface';
 import { settleTarget } from './sheetMath';
 import { SHEET_ACTIVE_OFFSET_Y, SHEET_FAIL_OFFSET_X } from '../store/sheetPane';
 
@@ -90,7 +91,7 @@ export default React.memo(function BottomSheet({
   contentTopPadding = 0,
   compactGrabberSpacing = false,
   hideHeaderOnScroll = false,
-  surfaceOpacity = 1,
+  useSwiftUIGlassSurface = false,
   children,
 }: {
   /** Live sheet height, owned by the parent (drives sheet + floating chrome). */
@@ -124,8 +125,8 @@ export default React.memo(function BottomSheet({
   compactGrabberSpacing?: boolean;
   /** Hide the pinned header controls once full-detent content leaves the top. */
   hideHeaderOnScroll?: boolean;
-  /** Opacity applied to this sheet's material surface only. */
-  surfaceOpacity?: number;
+  /** Use the native SwiftUI Liquid Glass surface for this sheet only. */
+  useSwiftUIGlassSurface?: boolean;
   children: React.ReactNode;
 }) {
   const scrollRef = useAnimatedRef<RNScrollView>();
@@ -423,13 +424,21 @@ export default React.memo(function BottomSheet({
   return (
     <GestureDetector gesture={pan}>
       <Animated.View style={[styles.sheet, sheetStyle]}>
-        <liquidGlass.GlassView
-          // iOS uses the untinted system surface; Android keeps the opaque
-          // fallback so map content never leaks through the sheet chrome.
-          tintColor={Platform.OS === 'android' ? glass.sheetOpaque : undefined}
-          surfaceOpacity={surfaceOpacity}
-          style={StyleSheet.absoluteFill}
-        />
+        {useSwiftUIGlassSurface ? (
+          <SwiftUIGlassSurface
+            shape="roundedRectangle"
+            cornerRadius={SCREEN_CORNER_RADIUS}
+            fallbackTintColor={Platform.OS === 'android' ? glass.sheetOpaque : undefined}
+            style={StyleSheet.absoluteFill}
+          />
+        ) : (
+          <liquidGlass.GlassView
+            // iOS uses the untinted system surface; Android keeps the opaque
+            // fallback so map content never leaks through the sheet chrome.
+            tintColor={Platform.OS === 'android' ? glass.sheetOpaque : undefined}
+            style={StyleSheet.absoluteFill}
+          />
+        )}
         <AnimatedScrollView
           ref={scrollRef}
           // Only enabled once truly resting at the last detent. The Pan

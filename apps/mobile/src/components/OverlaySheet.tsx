@@ -15,6 +15,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { liquidGlass } from '../native';
 import { glass } from '../glass';
+import SwiftUIGlassSurface from './SwiftUIGlassSurface';
+import {
+  MAP_SHEET_CLOSE_HIT_SIZE,
+  MAP_SHEET_CLOSE_ICON_SIZE,
+  MAP_SHEET_CLOSE_VISUAL_SIZE,
+  MAP_SHEET_EDGE_INSET,
+} from './mapSheetChrome';
 
 // Drag the handle/header down past this many px (or fling it) to dismiss —
 // matches the iOS sheet feel so "Done" is never the only way out.
@@ -83,6 +90,7 @@ export default function OverlaySheet({
   const handleDone = onDone ?? onClose;
   const headerSystemImage = doneSystemImage ?? (onDone ? 'checkmark' : 'xmark');
   const headerIcon = headerSystemImage === 'checkmark' ? 'checkmark' : 'close';
+  const isCloseAction = headerIcon === 'close';
   // Keep heavy children mounted through the close animation; drop them only
   // after t has fully settled at 0 while still hidden.
   const [contentMounted, setContentMounted] = useState(visible);
@@ -213,7 +221,7 @@ export default function OverlaySheet({
           }
           style={StyleSheet.absoluteFill}
         />
-        <View {...grabberPan.panHandlers}>
+        <View {...grabberPan.panHandlers} style={styles.topChrome}>
           <View style={styles.grabZone}>
             <View style={styles.grabber} />
           </View>
@@ -224,21 +232,39 @@ export default function OverlaySheet({
             <Text style={styles.title} numberOfLines={1}>
               {title}
             </Text>
+            {isCloseAction ? <View style={styles.headerCloseSlot} /> : (
+              <Pressable
+                style={({ pressed }) => [styles.headerCommit, pressed && styles.headerClosePressed]}
+                onPress={handleDone}
+                accessibilityRole="button"
+                accessibilityLabel={doneLabel}
+              >
+                <liquidGlass.GlassView
+                  glassStyle="regular"
+                  tintColor={Platform.OS === 'android' ? glass.fill : undefined}
+                  style={StyleSheet.absoluteFill}
+                  pointerEvents="none"
+                />
+                <Ionicons name={headerIcon} size={28} color={glass.textPrimary} />
+              </Pressable>
+            )}
+          </View>
+          {isCloseAction ? (
             <Pressable
-              style={({ pressed }) => [styles.headerClose, pressed && styles.headerClosePressed]}
+              style={({ pressed }) => [styles.headerCloseHit, pressed && styles.headerClosePressed]}
               onPress={handleDone}
               accessibilityRole="button"
               accessibilityLabel={doneLabel}
             >
-              <liquidGlass.GlassView
-                glassStyle="regular"
-                tintColor={Platform.OS === 'android' ? glass.fill : undefined}
-                style={StyleSheet.absoluteFill}
-                pointerEvents="none"
-              />
-              <Ionicons name={headerIcon} size={28} color={glass.textPrimary} />
+              <SwiftUIGlassSurface
+                shape="circle"
+                fallbackTintColor={Platform.OS === 'android' ? glass.fill : undefined}
+                style={styles.headerCloseVisual}
+              >
+                <Ionicons name="close" size={MAP_SHEET_CLOSE_ICON_SIZE} color={glass.textPrimary} />
+              </SwiftUIGlassSurface>
             </Pressable>
-          </View>
+          ) : null}
         </View>
         <View style={styles.body} {...bodyPan.panHandlers}>
           {trackedChild}
@@ -268,6 +294,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
   },
+  topChrome: { position: 'relative' },
   // More breathing room so the title doesn't crowd the sheet's top edge.
   grabZone: { paddingTop: 14, paddingBottom: 6, alignItems: 'center' },
   grabber: { width: 40, height: 5, borderRadius: 3, backgroundColor: glass.grabber },
@@ -275,22 +302,40 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: MAP_SHEET_EDGE_INSET,
     paddingTop: 7,
     paddingBottom: 18,
   },
   headerSide: {
-    minWidth: 60,
+    minWidth: MAP_SHEET_CLOSE_HIT_SIZE,
     maxWidth: 110,
     flexShrink: 1,
     justifyContent: 'center',
   },
   headerSideLeft: { alignItems: 'flex-start' },
-  headerClose: {
+  headerCloseSlot: {
+    width: MAP_SHEET_CLOSE_HIT_SIZE,
+    height: MAP_SHEET_CLOSE_HIT_SIZE,
+  },
+  headerCloseHit: {
+    position: 'absolute',
+    top: MAP_SHEET_EDGE_INSET,
+    right: MAP_SHEET_EDGE_INSET,
+    width: MAP_SHEET_CLOSE_HIT_SIZE,
+    height: MAP_SHEET_CLOSE_HIT_SIZE,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+  },
+  headerCloseVisual: {
+    width: MAP_SHEET_CLOSE_VISUAL_SIZE,
+    height: MAP_SHEET_CLOSE_VISUAL_SIZE,
+    borderRadius: MAP_SHEET_CLOSE_VISUAL_SIZE / 2,
+    overflow: 'hidden',
+  },
+  headerCommit: {
     width: 60,
     height: 60,
-    borderRadius: 30,
-    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: StyleSheet.hairlineWidth,
