@@ -1672,7 +1672,7 @@ const HeaderRow = memo(function HeaderRow({
                   }}
                   style={[
                     styles.headerSetStayBtn,
-                    setStayActive && { backgroundColor: accent },
+                    setStayActive && { backgroundColor: accent, borderColor: 'transparent' },
                   ]}
                   onPress={onToggleSetStay}
                   accessibilityRole="button"
@@ -1832,6 +1832,7 @@ const Row = memo(function Row({
   const { t } = useTranslation();
 
   const handleSwipeableOpen = useCallback(() => {
+    selectionTick();
     if (swipeableRef.current) onSwipeableOpen?.(swipeableRef.current);
   }, [onSwipeableOpen]);
   const handleSwipeableClose = useCallback(() => {
@@ -1996,6 +1997,7 @@ const Row = memo(function Row({
             startPauseMs={1000}
             endPauseMs={1500}
             style={styles.rowTitle}
+            containerStyle={styles.rowTitleMarquee}
           />
         </Pressable>
         {boundaryLocked && onDelete && !multiSelect ? (
@@ -2046,6 +2048,7 @@ const makeStyles = (colors: Palette) =>
       borderStyle: 'dashed',
       borderColor: colors.accent,
       borderRadius: radius.md,
+      backgroundColor: glass.fill,
       paddingVertical: 10,
       alignItems: 'center',
     },
@@ -2129,9 +2132,7 @@ const makeStyles = (colors: Palette) =>
       paddingVertical: spacing.md,
     },
     list: {
-      borderRadius: radius.md,
-      borderTopLeftRadius: MAP_SHEET_CORNER_RADIUS,
-      borderTopRightRadius: MAP_SHEET_CORNER_RADIUS,
+      borderRadius: MAP_SHEET_CORNER_RADIUS,
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: 'transparent',
@@ -2242,8 +2243,14 @@ const makeStyles = (colors: Palette) =>
       width: Math.round(20 * REORDER_VISUAL_SCALE),
       textAlign: 'center',
     },
-    rowBody: { flex: 1 },
-    rowTitle: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' },
+    rowBody: {
+      flex: 1,
+      minWidth: 0,
+      height: '100%',
+      justifyContent: 'center',
+    },
+    rowTitleMarquee: { flex: 0, minWidth: 0, alignSelf: 'center' },
+    rowTitle: { color: '#FFFFFF', fontSize: 15, lineHeight: 18, fontWeight: '600' },
     rowAddress: { color: colors.textSecondary, fontSize: Math.round(13 * REORDER_VISUAL_SCALE), marginTop: 2 },
     emojiBadge: {
       width: 26,
