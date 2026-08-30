@@ -483,15 +483,22 @@ describe('map UI placement contracts', () => {
     expect(bottomSheet).toContain('i === 0 ? MAP_SHEET_CORNER_RADIUS : 0');
     expect(bottomSheet).toContain('MAP_SHEET_CORNER_RADIUS');
     expect(bottomSheet).toContain('detents.map((_, index) => (index === 0 ? bottomInset + 19 : 0))');
+    expect(bottomSheet).toContain('const nativeSurfaceStyle = useAnimatedStyle');
+    expect(bottomSheet).toContain('i === 0 ? 0 : MAP_SHEET_CORNER_RADIUS');
+    expect(bottomSheet).toContain('bottom: -surfaceBottomExtension');
   });
 
   it('shares Peek corner geometry with overlays and keeps node cards readable', () => {
     expect(overlaySheet).toContain('MAP_SHEET_CORNER_RADIUS');
     expect(reorderList).toContain('MAP_SHEET_CORNER_RADIUS');
-    expect(reorderList).toContain('borderTopLeftRadius: MAP_SHEET_CORNER_RADIUS');
-    expect(reorderList).toContain('borderTopRightRadius: MAP_SHEET_CORNER_RADIUS');
+    expect(reorderList).toContain('borderRadius: MAP_SHEET_CORNER_RADIUS');
     expect(reorderList).toContain('<OverflowMarquee');
     expect(reorderList).toContain('enabled={gatherCardTitleMarquee}');
+    expect(reorderList).toContain('containerStyle={styles.rowTitleMarquee}');
+    expect(reorderList).toContain("justifyContent: 'center'");
+    expect(reorderList).toContain('backgroundColor: glass.fill');
+    expect(reorderList).toContain("borderColor: 'transparent'");
+    expect(reorderList).toContain('selectionTick();');
   });
 
   it('snaps Segmented pill when track width appears (tools pane reveal)', () => {

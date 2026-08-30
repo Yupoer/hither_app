@@ -415,16 +415,38 @@ export default React.memo(function BottomSheet({
     };
   });
 
+  // The SwiftUI rounded rectangle owns its own shape and does not inherit the
+  // animated RN bottom-corner radius. Extend it below the expanded sheet so
+  // its 44pt lower arc is clipped below the physical screen edge.
+  const nativeSurfaceStyle = useAnimatedStyle(() => {
+    const h = height.value;
+    const d = detentsSV.value;
+    const surfaceBottomExtension = d.length <= 1
+      ? 0
+      : interpolate(
+        h,
+        d,
+        d.map((_, i) => (i === 0 ? 0 : MAP_SHEET_CORNER_RADIUS)),
+        Extrapolation.CLAMP,
+      );
+    return { bottom: -surfaceBottomExtension };
+  });
+
   return (
     <GestureDetector gesture={pan}>
       <Animated.View style={[styles.sheet, sheetStyle]}>
         {useSwiftUIGlassSurface ? (
-          <SwiftUIGlassSurface
-            shape="roundedRectangle"
-            cornerRadius={MAP_SHEET_CORNER_RADIUS}
-            fallbackTintColor={Platform.OS === 'android' ? glass.sheetOpaque : undefined}
-            style={StyleSheet.absoluteFill}
-          />
+          <Animated.View
+            pointerEvents="none"
+            style={[StyleSheet.absoluteFill, nativeSurfaceStyle]}
+          >
+            <SwiftUIGlassSurface
+              shape="roundedRectangle"
+              cornerRadius={MAP_SHEET_CORNER_RADIUS}
+              fallbackTintColor={Platform.OS === 'android' ? glass.sheetOpaque : undefined}
+              style={StyleSheet.absoluteFill}
+            />
+          </Animated.View>
         ) : (
           <liquidGlass.GlassView
             // iOS uses the untinted system surface; Android keeps the opaque
