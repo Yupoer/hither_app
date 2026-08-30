@@ -77,6 +77,7 @@ import { startOtaUpdateBootstrap } from './src/utils/otaUpdates';
 import OtaUpdateToast from './src/components/OtaUpdateToast';
 import InteractionRecoveryBanner from './src/components/InteractionRecoveryBanner';
 import PremiumPurchaseRecovery from './src/components/PremiumPurchaseRecovery';
+import PasswordRecoveryScreen from './src/screens/PasswordRecoveryScreen';
 import { initializeCoreDataLayer } from './src/state/coreDataSync';
 
 // Keep every RN-native presentation dark, regardless of the iOS system scheme.
@@ -105,7 +106,7 @@ function ThemedNavigation() {
 
   const { colors } = useTheme();
   const { ready, diagnosticUploadEnabled } = usePreferences();
-  const { initializing, user, membership } = useSession();
+  const { initializing, user, membership, isPasswordRecovery, passwordRecoverySuccess } = useSession();
   // Fredoka is the design's display face (gathering-point titles, ETA numerals,
   // Live Activity numbers). Held alongside the session/onboarding splash so the
   // first screen never flashes system font before Fredoka swaps in.
@@ -299,6 +300,15 @@ function ThemedNavigation() {
           <BouncingDots color={colors.accent} />
         </View>
       </View>
+    );
+  }
+
+  if (isPasswordRecovery || passwordRecoverySuccess) {
+    return (
+      <>
+        <PasswordRecoveryScreen />
+        <StatusBar style="light" />
+      </>
     );
   }
 

@@ -1,15 +1,19 @@
 import React from 'react';
-import { Alert, type PressableProps } from 'react-native';
-import { act, fireEvent, render } from '@testing-library/react-native';
+import { type PressableProps } from 'react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import LoginScreen from '../screens/LoginScreen';
 
 const mockSignInWithEmail = jest.fn();
 const mockSignUpWithEmail = jest.fn();
+const mockResendConfirmation = jest.fn();
+const mockRequestPasswordReset = jest.fn();
 
 jest.mock('../state/SessionContext', () => ({
   useSession: () => ({
     signInWithEmail: mockSignInWithEmail,
     signUpWithEmail: mockSignUpWithEmail,
+    resendSignupConfirmation: mockResendConfirmation,
+    requestPasswordReset: mockRequestPasswordReset,
     signInWithGoogle: jest.fn(),
     signInWithApple: jest.fn(),
   }),
@@ -22,6 +26,45 @@ jest.mock('../state/PreferencesContext', () => ({
 jest.mock('../i18n', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
+
+jest.mock('../components/AuthField', () => {
+  const ReactRuntime = require('react') as typeof React;
+  const { TextInput } = require('react-native') as typeof import('react-native');
+  return function TestAuthField(props: Record<string, unknown>) {
+    return ReactRuntime.createElement(TextInput, props);
+  };
+});
+
+jest.mock('../components/AuthModeSelector', () => {
+  const ReactRuntime = require('react') as typeof React;
+  const { Pressable, Text, View } = require('react-native') as typeof import('react-native');
+  return function TestAuthModeSelector({
+    mode,
+    onChange,
+    labels,
+    disabled,
+  }: {
+    mode: 'signin' | 'signup';
+    onChange: (next: 'signin' | 'signup') => void;
+    labels: { signin: string; signup: string };
+    disabled?: boolean;
+  }) {
+    return ReactRuntime.createElement(
+      View,
+      null,
+      (['signin', 'signup'] as const).map((next) => ReactRuntime.createElement(
+        Pressable,
+        {
+          key: next,
+          onPress: () => onChange(next),
+          disabled,
+          testID: `login-tab-${next}`,
+        },
+        ReactRuntime.createElement(Text, null, labels[next]),
+      )),
+    );
+  };
+});
 
 jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
@@ -93,6 +136,8 @@ describe('LoginScreen email flows', () => {
     jest.clearAllMocks();
     mockSignInWithEmail.mockResolvedValue(undefined);
     mockSignUpWithEmail.mockResolvedValue(undefined);
+    mockResendConfirmation.mockResolvedValue(undefined);
+    mockRequestPasswordReset.mockResolvedValue(undefined);
   });
 
   it('enables the login CTA after test credentials and reaches the app', async () => {
@@ -118,8 +163,10 @@ describe('LoginScreen email flows', () => {
   it('submits the registration flow after nickname and test credentials', async () => {
     const { getByTestId } = render(<LoginScreen navigation={navigation as never} route={{} as never} />);
     fireEvent.press(getByTestId('login-tab-signup'));
+    await waitFor(() => expect(getByTestId('login-nickname')).toBeTruthy());
     fireEvent.changeText(getByTestId('login-email'), ' new@example.com ');
     fireEvent.changeText(getByTestId('login-password'), 'test-password');
+    fireEvent.changeText(getByTestId('login-confirm-password'), 'test-password');
     fireEvent.changeText(getByTestId('login-nickname'), ' Test User ');
 
     await act(async () => {
@@ -135,7 +182,6 @@ describe('LoginScreen email flows', () => {
   });
 
   it('keeps the page on short input and sign-in failure', async () => {
-    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
     const { getByTestId, getByText } = render(<LoginScreen navigation={navigation as never} route={{} as never} />);
     fireEvent.changeText(getByTestId('login-email'), 'test@example.com');
     fireEvent.changeText(getByTestId('login-password'), 'short');
@@ -149,9 +195,7 @@ describe('LoginScreen email flows', () => {
     });
 
     expect(navigation.replace).not.toHaveBeenCalled();
-    expect(alertSpy).toHaveBeenCalled();
     expect(getByText('login.credentialsInvalid')).toBeTruthy();
-    alertSpy.mockRestore();
   });
 
   it('keeps the email CTA disabled for whitespace-only required values', () => {
@@ -162,5 +206,39 @@ describe('LoginScreen email flows', () => {
     expect(getByTestId('login-submit').props.accessibilityState?.disabled).toBe(true);
     fireEvent.press(getByTestId('login-submit'));
     expect(mockSignInWithEmail).not.toHaveBeenCalled();
+  });
+
+  it('shows verification pending and sends confirmation through the single-flight button', async () => {
+    mockSignUpWithEmail.mockResolvedValueOnce({
+      status: 'verification_required',
+      email: 'pending@example.com',
+    });
+    const { getByTestId, getByText } = render(<LoginScreen navigation={navigation as never} route={{} as never} />);
+    fireEvent.press(getByTestId('login-tab-signup'));
+    await waitFor(() => expect(getByTestId('login-nickname')).toBeTruthy());
+    fireEvent.changeText(getByTestId('login-email'), 'pending@example.com');
+    fireEvent.changeText(getByTestId('login-password'), 'test-password');
+    fireEvent.changeText(getByTestId('login-confirm-password'), 'test-password');
+    fireEvent.changeText(getByTestId('login-nickname'), 'Pending User');
+
+    await act(async () => {
+      fireEvent.press(getByTestId('login-submit'));
+    });
+
+    expect(getByText('login.verificationPending')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(getByTestId('login-resend-confirmation'));
+    });
+    expect(mockResendConfirmation).toHaveBeenCalledWith('pending@example.com');
+  });
+
+  it('shows the generic password-reset message', async () => {
+    const { getByTestId, getByText } = render(<LoginScreen navigation={navigation as never} route={{} as never} />);
+    fireEvent.changeText(getByTestId('login-email'), 'reset@example.com');
+    fireEvent.press(getByTestId('login-forgot-password'));
+    fireEvent.press(getByTestId('login-reset-submit'));
+
+    await waitFor(() => expect(getByText('login.resetSent')).toBeTruthy());
+    expect(mockRequestPasswordReset).toHaveBeenCalledWith('reset@example.com');
   });
 });

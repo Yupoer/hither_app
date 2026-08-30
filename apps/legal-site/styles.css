@@ -1,0 +1,27 @@
+:root {
+  color-scheme: dark;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #080b12;
+  color: #f4f5f7;
+}
+
+body {
+  margin: 0;
+  background: radial-gradient(circle at top, #1f3050, #080b12 55%);
+  min-height: 100vh;
+}
+
+main { width: min(760px, calc(100% - 40px)); margin: 0 auto; padding: 56px 0 72px; }
+header { display: flex; justify-content: space-between; gap: 20px; align-items: center; margin-bottom: 40px; }
+h1 { margin: 0; font-size: 32px; }
+h2 { margin-top: 36px; font-size: 22px; }
+p, li { color: #c7ccd6; line-height: 1.7; }
+a { color: #ffb52e; }
+.brand { color: #fff; text-decoration: none; font-weight: 700; }
+.lang button { border: 1px solid #53627a; border-radius: 999px; background: transparent; color: #fff; padding: 8px 12px; cursor: pointer; }
+.lang button[aria-pressed="true"] { background: #53627a; }
+.cards { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.card { display: block; padding: 22px; border: 1px solid #53627a; border-radius: 20px; background: rgba(255,255,255,.07); color: #fff; text-decoration: none; }
+.meta { color: #9ca7b8; font-size: 14px; }
+[hidden] { display: none !important; }
+

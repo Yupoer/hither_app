@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hither 服務條款</title>
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <main>
+      <header><a class="brand" href="../">hither</a><nav class="lang" aria-label="Language"><button type="button" data-lang="zh" aria-pressed="true">中文</button><button type="button" data-lang="en" aria-pressed="false">English</button></nav></header>
+      <article data-copy="zh">
+        <h1>服務條款</h1><p class="meta">最後更新：2026 年 8 月 31 日</p>
+        <p>使用 Hither 即表示你同意本條款與隱私權政策。若你不同意，請停止使用 App。</p>
+        <h2>服務用途</h2><p>Hither 提供群組旅行、成員位置分享、集合點與行程協作工具。地圖、距離、抵達與通知資訊可能因權限、網路、裝置或第三方服務而延遲或不完整；Hither 不是緊急通訊、醫療、保全或專業導航服務。</p>
+        <h2>帳號與訪客模式</h2><p>你應提供真實且可控制的登入信箱並保護帳號。訪客模式不保留歷史紀錄，也無法跨裝置同步；登出、刪除 App 或更換裝置後，資料可能無法復原。你對使用帳號進行的操作負責。</p>
+        <h2>使用者責任</h2><p>不得使用 Hither 儲存或分享違法、侵害他人權利、危害他人安全、惡意追蹤、冒充他人或干擾服務的內容。分享位置前請確認成員知道並同意；隊長與成員應自行確認集合點和行程安排。</p>
+        <h2>Premium、付款與退款</h2><p>Premium 功能、價格、方案週期與可用性以 App Store 顯示為準。付款、續訂、取消與退款依 Apple 的 App Store 條款與流程辦理；刪除 App 不一定會取消訂閱，請在 Apple 帳號設定管理訂閱。Premium 權益須經伺服器驗證，退款、撤銷、到期或無法驗證時可能被移除。</p>
+        <h2>停權與終止</h2><p>若你違反條款、濫用服務、造成安全風險或法律要求，Hither 可能限制或終止帳號與功能。你可以隨時刪除帳號。終止後，依法或為爭議處理必要的資料可能暫時保留。</p>
+        <h2>免責</h2><p>服務依現況提供。Hither 不保證服務持續可用、位置絕對精確、第三方服務不中斷或資料永不遺失。你應保留重要行程與聯絡方式的備份，不應僅依賴 Hither 作為安全或緊急用途。</p>
+        <h2>聯絡方式</h2><p>問題、回報或帳號要求請寄信至 <a href="mailto:__CONTACT_EMAIL__">__CONTACT_EMAIL__</a>。</p>
+      </article>
+      <article data-copy="en" hidden>
+        <h1>Terms of service</h1><p class="meta">Last updated: August 31, 2026</p>
+        <p>By using Hither, you agree to these terms and the privacy policy. If you do not agree, stop using the app.</p>
+        <h2>Service purpose</h2><p>Hither provides group travel, member location sharing, gathering-point, and itinerary collaboration tools. Map, distance, arrival, and notification information may be delayed or incomplete because of permissions, networks, devices, or third-party services. Hither is not an emergency, medical, security, or professional navigation service.</p>
+        <h2>Accounts and guest mode</h2><p>Provide an email address you control and protect your account. Guest mode does not keep history or sync across devices. Data may not be recoverable after sign-out, deleting the app, or changing devices. You are responsible for activity under your account.</p>
+        <h2>Your responsibilities</h2><p>Do not use Hither to store or share unlawful, rights-infringing, dangerous, abusive, impersonating, or service-disrupting content. Before sharing location, make sure members know and agree. Leaders and members must verify gathering points and itinerary arrangements for themselves.</p>
+        <h2>Premium, payment, and refunds</h2><p>Premium features, prices, billing periods, and availability are shown in the App Store. Payment, renewal, cancellation, and refunds follow Apple's App Store terms and processes; deleting the app may not cancel a subscription, so manage it in your Apple account settings. Premium access is server-validated and may be removed after a refund, revocation, expiry, or failed validation.</p>
+        <h2>Suspension and termination</h2><p>Hither may limit or terminate an account or feature when you breach these terms, abuse the service, create a security risk, or when required by law. You may delete your account at any time. Data may be retained when required by law or needed to resolve a dispute.</p>
+        <h2>Disclaimer</h2><p>The service is provided as is. Hither does not guarantee continuous availability, exact location accuracy, uninterrupted third-party services, or that data will never be lost. Keep backups of important itinerary and contact information and do not rely on Hither for safety or emergencies.</p>
+        <h2>Contact</h2><p>For questions, reports, or account requests, email <a href="mailto:__CONTACT_EMAIL__">__CONTACT_EMAIL__</a>.</p>
+      </article>
+    </main>
+    <script>
+      const buttons = [...document.querySelectorAll('[data-lang]')];
+      const copies = [...document.querySelectorAll('[data-copy]')];
+      function setLanguage(language) { document.documentElement.lang = language === 'zh' ? 'zh-Hant' : 'en'; buttons.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.lang === language))); copies.forEach((c) => { c.hidden = c.dataset.copy !== language; }); }
+      buttons.forEach((b) => b.addEventListener('click', () => setLanguage(b.dataset.lang)));
+    </script>
+  </body>
+</html>
+

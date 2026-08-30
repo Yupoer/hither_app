@@ -31,6 +31,7 @@ import {
 } from '../services/premiumPurchaseFlow';
 import { PREMIUM_CATALOG, premiumProductForPlan, type PremiumPlan } from '../premiumCatalog';
 import { glass, accentMix } from '../glass';
+import { getLegalUrl } from '../config/legal';
 import {
   hasEligibleIntroductoryOffer,
   type PremiumStoreProduct,
@@ -130,6 +131,8 @@ export default React.memo(function PremiumPresentation({
     refreshProfile,
   } = useSession();
   const accent = colors.accent;
+  const privacyUrl = getLegalUrl('privacy');
+  const termsUrl = getLegalUrl('terms');
   const { width: pagerWidth } = useWindowDimensions();
   const slideWidth = Math.max(280, pagerWidth - 48);
   const [busy, setBusy] = useState<'purchase' | 'restore' | 'redeem' | null>(null);
@@ -550,11 +553,11 @@ export default React.memo(function PremiumPresentation({
         </>
       ) : null}
       <View style={styles.legalRow}>
-        <Pressable onPress={() => void Linking.openURL('https://www.apple.com/legal/privacy/')}>
+        <Pressable onPress={() => privacyUrl && void Linking.openURL(privacyUrl)} disabled={!privacyUrl}>
           <Text style={styles.legalText}>{t('paywall.privacy')}</Text>
         </Pressable>
         <Text style={styles.legalDot}>·</Text>
-        <Pressable onPress={() => void Linking.openURL('https://www.apple.com/legal/internet-services/itunes/dev/stdeula/')}>
+        <Pressable onPress={() => termsUrl && void Linking.openURL(termsUrl)} disabled={!termsUrl}>
           <Text style={styles.legalText}>{t('paywall.terms')}</Text>
         </Pressable>
         {showRestore ? (

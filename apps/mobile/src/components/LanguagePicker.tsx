@@ -26,8 +26,8 @@ export default function LanguagePicker({
           title: choice.label,
         }))}
         onSelect={(id) => {
-          lightTap();
           if (id === language) return;
+          lightTap();
           setLanguage(id as typeof language);
         }}
       >
@@ -44,7 +44,11 @@ export default function LanguagePicker({
         return (
           <Pressable
             key={option.key}
-            onPress={() => setLanguage(option.key)}
+            onPress={() => {
+              if (selected) return;
+              lightTap();
+              setLanguage(option.key);
+            }}
             accessibilityRole="button"
             accessibilityLabel={option.label}
             accessibilityState={{ selected }}
