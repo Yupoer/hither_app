@@ -353,7 +353,9 @@ describe('map UI placement contracts', () => {
 
   it('uses tap expansion and keeps controls and arrival progress expanded-only', () => {
     expect(mapScreen).toContain('useGatherCardExpansion');
-    expect(mapScreen).toContain('toggleCard(dest.id)');
+    expect(mapScreen).toContain('toggleGatheringCard(dest.id)');
+    expect(mapScreen).toContain('setDetent(0)');
+    expect(mapScreen).toContain('runOnJS(finishGatheringCardExpand)(id)');
     expect(mapScreen).toContain('registerCardActivity(dest.id)');
     expect(mapScreen).not.toContain('pendingExpandId');
     expect(mapScreen).not.toContain("index === 0 ? t('map.nextTag')");
@@ -469,6 +471,11 @@ describe('map UI placement contracts', () => {
     // the final edge-to-edge morph.
     expect(bottomSheet).toContain('d.map((_, i) => (edgeToEdgeAtLastSV.value && i === last ? 0 : 10))');
     expect(settingsPanel).toContain('edgeToEdgeAtLast={edgeToEdgeAtLast}');
+  });
+
+  it('keeps expanded stages flush at the bottom while Peek remains floating', () => {
+    expect(bottomSheet).toContain('i === 0 ? SCREEN_CORNER_RADIUS : 0');
+    expect(bottomSheet).toContain('detents.map((_, index) => (index === 0 ? bottomInset + 19 : 0))');
   });
 
   it('snaps Segmented pill when track width appears (tools pane reveal)', () => {

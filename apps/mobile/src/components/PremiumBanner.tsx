@@ -51,7 +51,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     minHeight: 108,
   },
-  copy: { flex: 1, gap: 4 },
+  copy: { flex: 1, gap: 4, alignSelf: 'flex-start' },
   title: { fontSize: 15, fontWeight: '800', color: '#FFFFFF' },
   hint: { fontSize: 11.5, color: 'rgba(255,255,255,0.8)' },
   arrow: {

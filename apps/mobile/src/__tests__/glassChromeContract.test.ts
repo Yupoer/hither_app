@@ -8,11 +8,14 @@ const mapScreen = readFileSync(join(root, 'screens/MapScreen.tsx'), 'utf8');
 const bottomSheet = readFileSync(join(root, 'components/BottomSheet.tsx'), 'utf8');
 const recenterIos = readFileSync(join(root, 'components/MapRecenterControl.ios.tsx'), 'utf8');
 const swiftUiSurfaceIos = readFileSync(join(root, 'components/SwiftUIGlassSurface.ios.tsx'), 'utf8');
+const nativeGlassButtonIos = readFileSync(join(root, 'components/NativeGlassButton.ios.tsx'), 'utf8');
+const systemToggle = readFileSync(join(root, 'components/SystemToggle.tsx'), 'utf8');
+const app = readFileSync(join(__dirname, '../../App.tsx'), 'utf8');
 const appJson = readFileSync(join(__dirname, '../../app.json'), 'utf8');
 const infoPlist = readFileSync(join(__dirname, '../../ios/Hither/Info.plist'), 'utf8');
 
 /**
- * Native Liquid Glass follows the device appearance/accessibility settings;
+ * Native Liquid Glass is explicitly dark at runtime;
  * the legacy blur fallback remains available for older runtimes.
  */
 describe('glass chrome native material contract', () => {
@@ -34,7 +37,7 @@ describe('glass chrome native material contract', () => {
     expect(liquidGlass).not.toMatch(/blurTint\s*=\s*themeName/);
   });
 
-  it('lets Expo and native iOS follow the device appearance', () => {
+  it('keeps native config automatic while pinning the runtime scheme dark', () => {
     expect(appJson).toContain('"userInterfaceStyle": "automatic"');
     expect(infoPlist).toMatch(
       /<key>UIUserInterfaceStyle<\/key>\s*<string>Automatic<\/string>/,
@@ -42,6 +45,10 @@ describe('glass chrome native material contract', () => {
     expect(infoPlist).not.toMatch(
       /<key>UIUserInterfaceStyle<\/key>\s*<string>Dark<\/string>/,
     );
+    expect(app).toContain("Appearance.setColorScheme('dark')");
+    expect(swiftUiSurfaceIos).toContain('colorScheme="dark"');
+    expect(nativeGlassButtonIos).toContain('colorScheme="dark"');
+    expect(systemToggle).toContain('colorScheme="dark"');
   });
 
   it('uses full-opacity native SwiftUI surfaces with untouched RN foreground content', () => {

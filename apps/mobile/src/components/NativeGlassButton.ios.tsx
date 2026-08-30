@@ -100,7 +100,11 @@ export default function NativeGlassButton({
     />
   );
   return (
-    <Host matchContents={!(fixedWidth || height || layout)} style={[hostSizing, style]}>
+    <Host
+      matchContents={!(fixedWidth || height || layout)}
+      style={[hostSizing, style]}
+      colorScheme="dark"
+    >
       {button}
     </Host>
   );

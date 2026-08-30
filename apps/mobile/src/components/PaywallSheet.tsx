@@ -7,7 +7,8 @@ import { Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import PremiumPresentation from './PremiumPresentation';
 import { useTranslation, type TranslationKey } from '../i18n';
-import NativeGlassButton from './NativeGlassButton';
+import SheetHeaderAction from './SheetHeaderAction';
+import { MAP_SHEET_ACTION_HIT_SIZE, MAP_SHEET_EDGE_INSET } from './mapSheetChrome';
 
 export default React.memo(function PaywallSheet({
   visible,
@@ -36,13 +37,10 @@ export default React.memo(function PaywallSheet({
         <View style={styles.header}>
           <View style={styles.closeSlot} />
           <Text style={styles.headerTitle}>{t('paywall.title')}</Text>
-          <NativeGlassButton
-            systemImage="xmark"
+          <SheetHeaderAction
+            action="close"
             onPress={onClose}
             accessibilityLabel={t('common.cancel')}
-            shape="circle"
-            layout="square"
-            style={styles.close}
           />
         </View>
         <ScrollView contentContainerStyle={styles.scroll}>
@@ -68,17 +66,12 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
+    paddingHorizontal: MAP_SHEET_EDGE_INSET,
+    paddingTop: MAP_SHEET_EDGE_INSET,
     paddingBottom: 8,
-    minHeight: 52,
+    minHeight: MAP_SHEET_ACTION_HIT_SIZE,
   },
-  close: {
-    width: 52,
-    height: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  closeSlot: { width: 52, height: 52 },
+  closeSlot: { width: MAP_SHEET_ACTION_HIT_SIZE, height: MAP_SHEET_ACTION_HIT_SIZE },
   headerTitle: {
     flex: 1,
     color: '#fff',

@@ -30,9 +30,9 @@ import {
 } from '@expo/ui/swift-ui/modifiers';
 import { liquidGlass } from '../../../native';
 import {
-  MAP_SHEET_CLOSE_HIT_SIZE,
-  MAP_SHEET_CLOSE_ICON_SIZE,
-  MAP_SHEET_CLOSE_VISUAL_SIZE,
+  MAP_SHEET_ACTION_HIT_SIZE,
+  MAP_SHEET_ACTION_ICON_SIZE,
+  MAP_SHEET_ACTION_VISUAL_SIZE,
 } from '../../../components/mapSheetChrome';
 import SettingsSheetPanel, { type SettingsSheetPanelProps } from './SettingsSheetPanel';
 
@@ -66,8 +66,7 @@ function NativeSettingsChildSheet({
   const nestedSheets = nativeChildren.slice(1);
   const stageOneDetent = useMemo(() => ({ fraction: STAGE_ONE_RATIO }), []);
   const stageTwoDetent = useMemo(() => ({ fraction: stageTwoRatio }), [stageTwoRatio]);
-  const isCloseAction = action === 'close';
-  const actionSlotSize = isCloseAction ? MAP_SHEET_CLOSE_HIT_SIZE : 60;
+  const actionSlotSize = MAP_SHEET_ACTION_HIT_SIZE;
   const closeStartedRef = useRef(false);
   const dismissCompleteRef = useRef(false);
   const onDismissCompleteRef = useRef(onDismissComplete);
@@ -99,6 +98,7 @@ function NativeSettingsChildSheet({
   return (
     <Host
       style={styles.host}
+      colorScheme="dark"
       // Settings sheets stay mounted for native presentation transitions. A
       // hidden full-screen Host must not become a touch shield over the map.
       pointerEvents={visible ? 'auto' : 'none'}
@@ -148,20 +148,11 @@ function NativeSettingsChildSheet({
                 modifiers={[
                   buttonStyle(liquidGlass.isLiquidGlassAvailable() ? 'plain' : 'bordered'),
                   buttonBorderShape('circle'),
-                  ...(isCloseAction
-                    ? [
-                      frame({ width: MAP_SHEET_CLOSE_VISUAL_SIZE, height: MAP_SHEET_CLOSE_VISUAL_SIZE }),
-                      ...(liquidGlass.isLiquidGlassAvailable()
-                        ? [glassEffect({ glass: { variant: 'regular', interactive: true }, shape: 'circle' })]
-                        : []),
-                      frame({ width: MAP_SHEET_CLOSE_HIT_SIZE, height: MAP_SHEET_CLOSE_HIT_SIZE }),
-                    ]
-                    : [
-                      frame({ width: 60, height: 60 }),
-                      ...(liquidGlass.isLiquidGlassAvailable()
-                        ? [glassEffect({ glass: { variant: 'regular', interactive: true }, shape: 'circle' })]
-                        : []),
-                    ]),
+                  frame({ width: MAP_SHEET_ACTION_VISUAL_SIZE, height: MAP_SHEET_ACTION_VISUAL_SIZE }),
+                  ...(liquidGlass.isLiquidGlassAvailable()
+                    ? [glassEffect({ glass: { variant: 'regular', interactive: true }, shape: 'circle' })]
+                    : []),
+                  frame({ width: MAP_SHEET_ACTION_HIT_SIZE, height: MAP_SHEET_ACTION_HIT_SIZE }),
                   labelStyle('iconOnly'),
                   accessibilityLabel(doneLabel),
                 ]}
@@ -169,8 +160,8 @@ function NativeSettingsChildSheet({
                 <Image
                   systemName={action === 'commit' ? 'checkmark' : 'xmark'}
                   modifiers={[frame({
-                    width: isCloseAction ? MAP_SHEET_CLOSE_ICON_SIZE : 28,
-                    height: isCloseAction ? MAP_SHEET_CLOSE_ICON_SIZE : 28,
+                    width: MAP_SHEET_ACTION_ICON_SIZE,
+                    height: MAP_SHEET_ACTION_ICON_SIZE,
                   })]}
                 />
               </Button>

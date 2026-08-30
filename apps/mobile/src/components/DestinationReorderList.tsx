@@ -18,7 +18,7 @@ import ReanimatedSwipeable, {
 import type { Destination } from '../types';
 import type { TourTargetId } from '../featureTour/constants';
 import { radius, spacing, DAY_COLORS, type Palette } from '../theme';
-import { accentMix, accentOver, glass, shade } from '../glass';
+import { accentOver, glass, shade } from '../glass';
 import { readOnboardingState } from '../onboarding/sync';
 import { usePreferences } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
@@ -1063,6 +1063,18 @@ export default function DestinationReorderList({
                         : undefined
                     }
                     setStayActive={setStayModeDay === item.day}
+                    setStayCancelLabel={
+                      setStayModeDay === item.day ? t('common.cancel') : undefined
+                    }
+                    onCancelSetStay={
+                      setStayModeDay === item.day
+                        ? () => {
+                            lightTap();
+                            setPendingStayDestId(null);
+                            setSetStayModeDay(null);
+                          }
+                        : undefined
+                    }
                     onToggleSetStay={
                       canReorder
                       && !hasDaily
@@ -1484,6 +1496,8 @@ const HeaderRow = memo(function HeaderRow({
   headerPan,
   setStayLabel,
   setStayActive,
+  setStayCancelLabel,
+  onCancelSetStay,
   onToggleSetStay,
   accent,
   onLayoutHeight,
@@ -1514,6 +1528,8 @@ const HeaderRow = memo(function HeaderRow({
   /** Label for set-stay control placed after day title (not dashed). */
   setStayLabel?: string;
   setStayActive?: boolean;
+  setStayCancelLabel?: string;
+  onCancelSetStay?: () => void;
   onToggleSetStay?: () => void;
   accent: string;
   onLayoutHeight?: (height: number) => void;
@@ -1645,34 +1661,46 @@ const HeaderRow = memo(function HeaderRow({
             />
             <Text style={styles.headerTitle}>{item.title}</Text>
             {!hasStay && onToggleSetStay && setStayLabel ? (
-              <Pressable
-                ref={(node) => {
-                  if (!hasStay) accommodationTargetRef?.(node);
-                }}
-                style={[
-                  styles.headerSetStayBtn,
-                  setStayActive && { backgroundColor: accent },
-                ]}
-                onPress={onToggleSetStay}
-                accessibilityRole="button"
-                accessibilityState={{ selected: !!setStayActive }}
-                accessibilityLabel={setStayLabel}
-              >
-                <Ionicons
-                  name="bed-outline"
-                  size={14}
-                  color={setStayActive ? '#111' : accent}
-                />
-                <Text
+              <>
+                <Pressable
+                  ref={(node) => {
+                    if (!hasStay) accommodationTargetRef?.(node);
+                  }}
                   style={[
-                    styles.headerSetStayText,
-                    { color: setStayActive ? '#111' : accent },
+                    styles.headerSetStayBtn,
+                    setStayActive && { backgroundColor: accent },
                   ]}
-                  numberOfLines={1}
+                  onPress={onToggleSetStay}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: !!setStayActive }}
+                  accessibilityLabel={setStayLabel}
                 >
-                  {setStayLabel}
-                </Text>
-              </Pressable>
+                  <Ionicons
+                    name="bed-outline"
+                    size={14}
+                    color={setStayActive ? '#111' : accent}
+                  />
+                  <Text
+                    style={[
+                      styles.headerSetStayText,
+                      { color: setStayActive ? '#111' : accent },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {setStayLabel}
+                  </Text>
+                </Pressable>
+                {setStayActive && setStayCancelLabel && onCancelSetStay ? (
+                  <Pressable
+                    style={styles.headerCancelStayBtn}
+                    onPress={onCancelSetStay}
+                    accessibilityRole="button"
+                    accessibilityLabel={setStayCancelLabel}
+                  >
+                    <Text style={styles.headerCancelStayText}>{setStayCancelLabel}</Text>
+                  </Pressable>
+                ) : null}
+              </>
             ) : null}
           </View>
           <View style={styles.headerRight}>
@@ -1884,7 +1912,6 @@ const Row = memo(function Row({
         <Animated.View
           style={[
             styles.row,
-            isAccommodation && styles.rowAccommodation,
             !isAccommodation && stayDuplicate && styles.rowStayDuplicate,
             active && styles.rowActive,
             { transform: [{ translateY: active ? pan : 0 }] },
@@ -2042,8 +2069,16 @@ const makeStyles = (colors: Palette) =>
     },
     stayBadgeText: { color: '#fff', fontSize: 12, flexShrink: 1 },
     removeStayText: { color: colors.accent, fontSize: 12, fontWeight: '600' },
-    /** Accommodation rows use the current theme colour. */
-    rowAccommodation: { backgroundColor: accentMix(colors.accent, 18) },
+    headerCancelStayBtn: {
+      minHeight: 28,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 7,
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.28)',
+      justifyContent: 'center',
+    },
+    headerCancelStayText: { color: colors.textSecondary, fontSize: 14, fontWeight: '700' },
     /** Stay duplicate warning: muted theme accent over a darkened surface. */
     rowStayDuplicate: {
       backgroundColor: accentOver(colors.accent, shade(colors.surface, -0.20), 28),

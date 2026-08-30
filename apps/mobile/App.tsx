@@ -1,5 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, Platform, type AppStateStatus, Text, TextInput, View } from 'react-native';
+import {
+  AppState,
+  Appearance,
+  Platform,
+  type AppStateStatus,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import {
   DarkTheme,
   DefaultTheme,
@@ -70,6 +78,9 @@ import OtaUpdateToast from './src/components/OtaUpdateToast';
 import InteractionRecoveryBanner from './src/components/InteractionRecoveryBanner';
 import PremiumPurchaseRecovery from './src/components/PremiumPurchaseRecovery';
 import { initializeCoreDataLayer } from './src/state/coreDataSync';
+
+// Keep every RN-native presentation dark, regardless of the iOS system scheme.
+Appearance.setColorScheme('dark');
 
 // Dynamic Type: scale with the system up to GLOBAL_FONT_SCALE_CAP, then freeze.
 // Per-role caps (HitherText) may be tighter. Never reintroduce a hard 1.0 cap.

@@ -54,6 +54,7 @@ export default function TourCard({
     <Host
       style={{ width: '100%' }}
       matchContents
+      colorScheme="dark"
       modifiers={[dynamicTypeSize({ max: 'accessibility3' })]}
     >
       <VStack

@@ -69,9 +69,9 @@ function GlassViewCore({
   children,
   ...rest
 }: GlassViewProps & { fallbackGlass?: string }) {
-  // iOS 26+: let the system material respond to the device's Liquid Glass and
-  // accessibility preferences. Extra underlays and a forced color scheme
-  // override the native preferred appearance and make map chrome too heavy.
+  // iOS 26+: let the system material render its native Liquid Glass surface.
+  // The app pins the surrounding RN/SwiftUI scheme to dark at startup; no
+  // extra underlay or hand-tuned opacity is added here.
   if (isLiquidGlassAvailable()) {
     return (
       <View style={style} {...rest}>
@@ -87,7 +87,7 @@ function GlassViewCore({
   }
 
   // iOS 16–25 / Android: use the existing UIBlurEffect fallback. Native
-  // Liquid Glass handles the device's preferred look on supported iOS.
+  // Liquid Glass handles supported iOS; this path keeps older runtimes stable.
   const fill =
     tintColor ?? (fallbackGlass != null ? thinTint(fallbackGlass) : 'rgba(22, 26, 34, 0.28)');
   return (
