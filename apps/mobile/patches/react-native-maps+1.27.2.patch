@@ -609,7 +609,7 @@ index b4fd5c1..3a1abe7 100644
    /**
     * Sets the tint color of the map. (Changes the color of the position indicator)
     *
-@@ -1047,6 +1050,16 @@ export interface MapFabricNativeProps extends ViewProps {
+@@ -1047,7 +1050,17 @@ export interface MapFabricNativeProps extends ViewProps {
     */
    showsTraffic?: boolean;
  
@@ -626,4 +626,4 @@ index b4fd5c1..3a1abe7 100644
    /**
     * If `false` the user won't be able to double tap to zoom the map.
     * **Note:** But it will greatly decrease delay of tap gesture recognition.
- 
+    *
