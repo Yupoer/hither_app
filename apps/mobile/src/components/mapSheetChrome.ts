@@ -2,3 +2,4 @@ export const MAP_SHEET_ACTION_VISUAL_SIZE = 47;
 export const MAP_SHEET_ACTION_HIT_SIZE = 48;
 export const MAP_SHEET_ACTION_ICON_SIZE = 24;
 export const MAP_SHEET_EDGE_INSET = 16;
+export const MAP_SHEET_CORNER_RADIUS = 44;

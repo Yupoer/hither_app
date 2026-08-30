@@ -641,7 +641,6 @@ export const en: Record<keyof ZhDict, string> = {
   'passive.title': 'Passive mode',
   'passive.switchBack': 'Full interface',
   'passive.enter': 'Passive mode',
-  'passive.enterHint': 'Simplified view; quick commands match full mode.',
   'gathering.autoCompleteTitle': 'Gathering point completed',
   'gathering.autoCompleteBody': '“{title}” auto-completed (everyone arrived)',
   'gathering.completeMissingTitle': 'Complete gathering point',

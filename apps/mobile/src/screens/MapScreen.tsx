@@ -43,7 +43,6 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   interpolate,
-  runOnJS,
   Extrapolation,
   withSpring,
   withTiming,
@@ -521,6 +520,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const {
     isCardExpanded,
     toggleCard,
+    collapseCard,
     registerCardActivity,
     expandCard,
     pauseAutoCollapse,
@@ -5319,20 +5319,21 @@ export default function MapScreen({ route, navigation }: Props) {
     [measureTourTarget, detents, windowHeight, sheetHeaderH],
   );
 
+  const collapseActiveCardForExpandedSheet = useCallback(() => {
+    const activeDestination = destinations[selectedIndex];
+    if (activeDestination) collapseCard(activeDestination.id);
+  }, [collapseCard, destinations, selectedIndex]);
+
   const setSheetMid = useCallback(() => {
     // Stage Two = mid detent (index 1 when available).
     const midIndex = detents.length > 1 ? 1 : 0;
+    if (midIndex > 0) collapseActiveCardForExpandedSheet();
     setDetent(midIndex);
     heightSV.value = detents[midIndex] ?? detents[0];
-  }, [detents, heightSV]);
-
-  const finishGatheringCardExpand = useCallback((id: string) => {
-    setDetent(0);
-    toggleCard(id);
-  }, [toggleCard]);
+  }, [collapseActiveCardForExpandedSheet, detents, heightSV]);
 
   // Expanded cards must never render underneath an expanded sheet. Collapse
-  // to Peek first, then reveal the larger card after the spring has settled.
+  // to Peek and reveal the larger card in the same event.
   const toggleGatheringCard = useCallback((id: string) => {
     const expanded = isCardExpanded(id);
     if (expanded) {
@@ -5340,21 +5341,21 @@ export default function MapScreen({ route, navigation }: Props) {
       return;
     }
     if (detent === 0) {
-      toggleCard(id);
+      expandCard(id);
       return;
     }
+    setDetent(0);
+    expandCard(id);
     heightSV.value = withSpring(
       detents[0],
       { stiffness: 320, damping: 29, mass: 1 },
-      (finished) => {
-        'worklet';
-        // BottomSheet also springs when its controlled index changes. Keep
-        // that render-driven spring from cancelling this completion callback:
-        // commit the Peek index only after the height spring has settled.
-        if (finished) runOnJS(finishGatheringCardExpand)(id);
-      },
     );
-  }, [detent, detents, finishGatheringCardExpand, heightSV, isCardExpanded]);
+  }, [detent, detents, expandCard, heightSV, isCardExpanded]);
+
+  const handleSheetIndexChange = useCallback((nextIndex: number) => {
+    if (nextIndex > 0) collapseActiveCardForExpandedSheet();
+    setDetent(nextIndex);
+  }, [collapseActiveCardForExpandedSheet]);
 
   // Single tour destination: plan, expand, availability, and measured refs must match.
   // Prefer shared navigation target when it is on the carousel; else selected card.
@@ -6010,7 +6011,6 @@ export default function MapScreen({ route, navigation }: Props) {
           setPassiveCompanionMode(true);
         }}
         accessibilityLabel={t('passive.enter')}
-        accessibilityHint={t('passive.enterHint')}
         accessibilityRole="button"
         testID="tools-enter-passive"
       >
@@ -6019,7 +6019,6 @@ export default function MapScreen({ route, navigation }: Props) {
           <Text style={styles.passiveEnterLabel}>{t('passive.enter')}</Text>
         </View>
       </Pressable>
-      <Text style={styles.passiveEnterHint}>{t('passive.enterHint')}</Text>
       </View>
 
       <View style={styles.accuracyRow} testID="tools-live-activity-row">
@@ -7286,7 +7285,7 @@ export default function MapScreen({ route, navigation }: Props) {
         height={heightSV}
         detents={detents}
         index={detent}
-        onIndexChange={setDetent}
+        onIndexChange={handleSheetIndexChange}
         bottomInset={insets.bottom}
         useSwiftUIGlassSurface
         compactGrabberSpacing
@@ -10000,14 +9999,6 @@ const makeStyles = (
       color: glass.textPrimary,
       fontSize: 18,
       fontWeight: '700',
-    },
-    passiveEnterHint: {
-      color: glass.textSecondary,
-      fontSize: 13,
-      lineHeight: 18,
-      fontWeight: '400',
-      marginTop: 6,
-      paddingHorizontal: 14,
     },
     sheetHeadingFirst: {
       marginTop: 4,

@@ -88,6 +88,23 @@ describe('useGatherCardExpansion', () => {
     hook.unmount();
   });
 
+  it('collapses an expanded card explicitly without toggling it open again', () => {
+    const hook = renderExpansion(false);
+    act(() => hook.result.expandCard('a'));
+    expect(hook.result.isCardExpanded('a')).toBe(true);
+    act(() => hook.result.collapseCard('a'));
+    expect(hook.result.isCardExpanded('a')).toBe(false);
+    hook.unmount();
+  });
+
+  it('collapses only the requested card when the default is expanded', () => {
+    const hook = renderExpansion(true);
+    act(() => hook.result.collapseCard('a'));
+    expect(hook.result.isCardExpanded('a')).toBe(false);
+    expect(hook.result.isCardExpanded('b')).toBe(true);
+    hook.unmount();
+  });
+
   it('clears manual overrides when the preference changes', () => {
     const hook = renderExpansion(false);
     act(() => hook.result.toggleCard('a'));

@@ -147,14 +147,15 @@ describe('OTA-07 full/passive presentation contract', () => {
     expect(panel).not.toContain('confirmConsent');
   });
 
-  it('uses shortened passive mode title and one-line enter hint', () => {
+  it('uses the shortened passive mode title without a redundant visible hint', () => {
     expect(i18n).toContain("'passive.title': '被動模式'");
     expect(i18n).toContain("'passive.enter': '被動模式'");
     expect(i18n).toContain("'passive.enter': 'Passive mode'");
     expect(i18n).not.toContain("'passive.enter': '進入被動模式'");
     expect(i18n).not.toContain("'passive.enter': 'Enter passive mode'");
-    expect(i18n).toContain("'passive.enterHint'");
-    expect(mapScreen).toContain("t('passive.enterHint')");
+    expect(i18n).not.toContain("'passive.enterHint'");
+    expect(mapScreen).not.toContain("t('passive.enterHint')");
+    expect(mapScreen).not.toContain('passiveEnterHint');
     expect(mapScreen).toContain('numberOfLines={1}');
   });
 

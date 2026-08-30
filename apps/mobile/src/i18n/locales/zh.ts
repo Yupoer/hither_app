@@ -650,7 +650,6 @@ export const zh = {
   'passive.title': '被動模式',
   'passive.switchBack': '切回完整介面',
   'passive.enter': '被動模式',
-  'passive.enterHint': '簡化畫面，快捷指令與完整模式相同。',
   // Auto-complete local notification (this device only)
   'gathering.autoCompleteTitle': '集合點已完成',
   'gathering.autoCompleteBody': '「{title}」已自動完成（全員抵達）',
