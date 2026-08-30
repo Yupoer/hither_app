@@ -7,6 +7,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { Linking } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { makeRedirectUri } from 'expo-auth-session';
 import * as QueryParams from 'expo-auth-session/build/QueryParams';
@@ -49,18 +50,25 @@ import {
   writePremiumProjectionCache,
 } from '../services/premiumProjectionCache';
 import { ensurePersonalPremiumAccess } from '../services/premiumPurchaseFlow';
+import {
+  AuthFlowError,
+  type EmailSignUpResult,
+  toAuthFlowError,
+} from '../auth/types';
 
 // Dismisses a leftover auth browser tab if one is still open on launch.
 WebBrowser.maybeCompleteAuthSession();
+
+const AUTH_CALLBACK_URL = 'hither://auth/callback';
+const AUTH_RECOVERY_URL = 'hither://auth/recovery';
 
 /**
  * App-wide session state: who is signed in, and which group (and role)
  * they are currently in.
  *
- * Auth is Supabase **anonymous sign-in** (`signInAnonymously()`), matching the
- * MVP "anonymous nickname" model: there is no password/email step — the user
- * just picks a nickname. `User.id` is the Supabase `auth.uid()`, which RLS uses
- * to scope every row. The nickname is persisted to `public.profiles`.
+ * Auth supports email/password, Google, Apple, and Supabase anonymous sign-in.
+ * `User.id` is the Supabase `auth.uid()`, which RLS uses to scope every row.
+ * The nickname is persisted to `public.profiles`.
  *
  * The session itself is persisted by supabase-js via AsyncStorage, so a relaunch
  * restores the signed-in anonymous user. `setMembership` tracks the current
@@ -73,7 +81,7 @@ export interface Membership {
   role: MemberRole;
 }
 
-interface SessionContextValue {
+export interface SessionContextValue {
   user: User | null;
   membership: Membership | null;
   /** True while restoring a persisted session on launch. */
@@ -89,6 +97,10 @@ interface SessionContextValue {
   tripEntitlement: TripEntitlement | null;
   /** Account-owned Premium and server-computed current-team projection. */
   premiumProjection: PremiumProjection;
+  /** True only after a recovery deep link has established a recovery session. */
+  isPasswordRecovery: boolean;
+  /** Brief success state shown before returning to the signed-in navigator. */
+  passwordRecoverySuccess: boolean;
   /**
    * Anonymously sign in and record the chosen nickname. Resolves to the User
    * (with `id === auth.uid()`). `email` is accepted for API compatibility but
@@ -101,11 +113,10 @@ interface SessionContextValue {
    */
   signIn: (input: { name: string; email?: string }) => Promise<User>;
   /**
-   * Sign in / register with Google via the system browser (Supabase OAuth).
-   * Expo Go compatible: no native SDK — opens `signInWithOAuth`'s URL with
-   * `WebBrowser` and sets the returned session. `nickname` overrides the
-   * profile name; when blank the Google display name is kept/used. Resolves
-   * `null` if the user cancels the browser.
+   * Sign in / register with Google. iOS uses the native ID-token adapter;
+   * Android and environments without that adapter use the Supabase hosted
+   * OAuth browser flow. `nickname` overrides the profile name; when blank the
+   * Google display name is kept/used. Resolves `null` if the user cancels.
    */
   signInWithGoogle: (nickname?: string) => Promise<User | null>;
   signInWithApple: () => Promise<User | null>;
@@ -116,14 +127,18 @@ interface SessionContextValue {
   signInWithEmail: (input: { email: string; password: string }) => Promise<User>;
   /**
    * Register a new email + password account and record the nickname.
-   * Assumes Supabase "Confirm email" is OFF so `signUp` returns a session
-   * immediately; throws a clear error if no session comes back.
+   * Returns a verification-pending result when Supabase requires email
+   * confirmation before creating a session.
    */
   signUpWithEmail: (input: {
     email: string;
     password: string;
     nickname: string;
-  }) => Promise<User>;
+  }) => Promise<EmailSignUpResult>;
+  requestPasswordReset: (email: string) => Promise<void>;
+  completePasswordRecovery: (password: string) => Promise<void>;
+  resendSignupConfirmation: (email: string) => Promise<void>;
+  clearPasswordRecovery: () => void;
   signOut: () => Promise<void>;
   /** Permanently delete the signed-in account (anonymous or registered). */
   deleteAccount: () => Promise<void>;
@@ -182,6 +197,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [membership, setMembershipState] = useState<Membership | null>(null);
   const [initializing, setInitializing] = useState(true);
   const [isAnonymous, setIsAnonymous] = useState(false);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
+  const [passwordRecoverySuccess, setPasswordRecoverySuccess] = useState(false);
   const [tripEntitlement, setTripEntitlement] = useState<TripEntitlement | null>(null);
   const [premiumProjection, setPremiumProjection] = useState<PremiumProjection>(
     EMPTY_PREMIUM_PROJECTION,
@@ -203,7 +220,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let active = true;
 
-    async function hydrate(authUser: { id: string; is_anonymous?: boolean; email?: string; app_metadata?: { provider?: string } } | undefined) {
+    async function hydrate(authUser: {
+      id: string;
+      is_anonymous?: boolean;
+      email?: string;
+      app_metadata?: { provider?: string };
+      user_metadata?: Record<string, unknown>;
+    } | undefined) {
       if (!authUser) {
         const previousId = premiumUserIdRef.current;
         premiumUserIdRef.current = null;
@@ -211,6 +234,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         if (active) {
           setUser(null);
           setIsAnonymous(false);
+          setIsPasswordRecovery(false);
+          setPasswordRecoverySuccess(false);
           setTripEntitlement(null);
           setPremiumProjection(EMPTY_PREMIUM_PROJECTION);
         }
@@ -236,6 +261,15 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
             preferences?: unknown;
           }
         | null;
+      const metadataNickname =
+        typeof authUser.user_metadata?.nickname === 'string'
+          ? authUser.user_metadata.nickname.trim()
+          : '';
+      if (!row?.nickname && metadataNickname) {
+        await supabase
+          .from('profiles')
+          .upsert({ id: authUser.id, nickname: metadataNickname }, { onConflict: 'id' });
+      }
       if (active) {
         const previousId = premiumUserIdRef.current;
         if (previousId && previousId !== authUser.id) {
@@ -247,7 +281,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         setTripEntitlement(null);
         setUser({
           id: authUser.id,
-          name: row?.nickname ?? '',
+          name: row?.nickname ?? metadataNickname,
           email: authUser.email ?? '',
           avatar: displayMemberAvatar(row?.avatar, authUser.id, row?.avatar_color).emoji,
           avatarColor: row?.avatar_color ?? undefined,
@@ -272,6 +306,65 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       void clearLiveActivities();
     };
 
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY' && active) {
+        setIsPasswordRecovery(true);
+        setPasswordRecoverySuccess(false);
+      }
+      if (session && (event === 'SIGNED_IN' || event === 'PASSWORD_RECOVERY')) {
+        void hydrate(session.user);
+      }
+      if (!session) {
+        const previousId = premiumUserIdRef.current;
+        premiumUserIdRef.current = null;
+        if (previousId) void clearPremiumProjectionCache(previousId);
+        if (active) {
+          setUser(null);
+          setIsAnonymous(false);
+          setIsPasswordRecovery(false);
+          setPasswordRecoverySuccess(false);
+          setTripEntitlement(null);
+          setPremiumProjection(EMPTY_PREMIUM_PROJECTION);
+        }
+      }
+    });
+
+    const handleAuthUrl = async (url: string) => {
+      try {
+        const { params, errorCode } = QueryParams.getQueryParams(url);
+        if (errorCode) return;
+        let hasSession = false;
+        if (params.code) {
+          const result = await supabase.auth.exchangeCodeForSession(params.code);
+          if (result.error) throw result.error;
+          hasSession = Boolean(result.data.session);
+        } else if (params.access_token && params.refresh_token) {
+          const result = await supabase.auth.setSession({
+            access_token: params.access_token,
+            refresh_token: params.refresh_token,
+          });
+          if (result.error) throw result.error;
+          hasSession = Boolean(result.data.session);
+        }
+        if (active && params.type === 'recovery' && hasSession) {
+          // Auth-js emits PASSWORD_RECOVERY for this URL. Keep this local
+          // guard for React Native's explicit setSession path, which cannot
+          // pass auth-js its redirect type.
+          setIsPasswordRecovery(true);
+          setPasswordRecoverySuccess(false);
+        }
+      } catch (error) {
+        console.warn('[auth] deep-link session exchange failed', error);
+      }
+    };
+
+    const urlSub = Linking.addEventListener('url', ({ url }) => {
+      void handleAuthUrl(url);
+    });
+    void Linking.getInitialURL().then((url) => {
+      if (url) void handleAuthUrl(url);
+    });
+
     supabase.auth
       .getSession()
       .then(({ data }) => hydrate(data.session?.user))
@@ -289,23 +382,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       })
       .finally(finishInitialization);
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session) {
-        const previousId = premiumUserIdRef.current;
-        premiumUserIdRef.current = null;
-        if (previousId) void clearPremiumProjectionCache(previousId);
-        if (active) {
-          setUser(null);
-          setIsAnonymous(false);
-          setTripEntitlement(null);
-          setPremiumProjection(EMPTY_PREMIUM_PROJECTION);
-        }
-      }
-    });
-
     return () => {
       active = false;
       sub.subscription.unsubscribe();
+      urlSub.remove();
     };
   }, []);
 
@@ -342,6 +422,40 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setMembershipState,
   });
 
+  const requestPasswordReset = useCallback(async (email: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: AUTH_RECOVERY_URL,
+    });
+    if (error) throw toAuthFlowError(error, 'Password reset failed.');
+  }, []);
+
+  const completePasswordRecovery = useCallback(
+    async (password: string) => {
+      if (!isPasswordRecovery) {
+        throw new AuthFlowError('Password recovery is not active.', 'recovery_not_active');
+      }
+      const { error } = await supabase.auth.updateUser({ password });
+      if (error) throw toAuthFlowError(error, 'Password update failed.');
+      setIsPasswordRecovery(false);
+      setPasswordRecoverySuccess(true);
+    },
+    [isPasswordRecovery],
+  );
+
+  const resendSignupConfirmation = useCallback(async (email: string) => {
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email: email.trim(),
+      options: { emailRedirectTo: AUTH_CALLBACK_URL },
+    });
+    if (error) throw toAuthFlowError(error, 'Confirmation email could not be sent.');
+  }, []);
+
+  const clearPasswordRecovery = useCallback(() => {
+    setIsPasswordRecovery(false);
+    setPasswordRecoverySuccess(false);
+  }, []);
+
   const signOutWithJourneyCleanup = useCallback(async () => {
     const previousId = premiumUserIdRef.current ?? user?.id ?? null;
     await stopBackgroundJourney().catch(() => undefined);
@@ -351,6 +465,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     premiumUserIdRef.current = null;
     setTripEntitlement(null);
     setPremiumProjection(EMPTY_PREMIUM_PROJECTION);
+    setIsPasswordRecovery(false);
+    setPasswordRecoverySuccess(false);
   }, [signOut, user?.id]);
 
   const deleteAccountWithJourneyCleanup = useCallback(async () => {
@@ -362,6 +478,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     premiumUserIdRef.current = null;
     setTripEntitlement(null);
     setPremiumProjection(EMPTY_PREMIUM_PROJECTION);
+    setIsPasswordRecovery(false);
+    setPasswordRecoverySuccess(false);
   }, [deleteAccount, user?.id]);
 
   const leaveGroupWithJourneyCleanup = useCallback(() => {
@@ -605,6 +723,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       isPro,
       tripEntitlement,
       premiumProjection,
+      isPasswordRecovery,
+      passwordRecoverySuccess,
       signIn,
       signInWithGoogle,
       signInWithApple,
@@ -612,6 +732,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       linkWithApple,
       signInWithEmail,
       signUpWithEmail,
+      requestPasswordReset,
+      completePasswordRecovery,
+      resendSignupConfirmation,
+      clearPasswordRecovery,
       signOut: signOutWithJourneyCleanup,
       deleteAccount: deleteAccountWithJourneyCleanup,
       upgradeToEmailAccount,
@@ -636,6 +760,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       isPro,
       tripEntitlement,
       premiumProjection,
+      isPasswordRecovery,
+      passwordRecoverySuccess,
       signIn,
       signInWithGoogle,
       signInWithApple,
@@ -643,6 +769,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       linkWithApple,
       signInWithEmail,
       signUpWithEmail,
+      requestPasswordReset,
+      completePasswordRecovery,
+      resendSignupConfirmation,
+      clearPasswordRecovery,
       signOutWithJourneyCleanup,
       deleteAccountWithJourneyCleanup,
       upgradeToEmailAccount,

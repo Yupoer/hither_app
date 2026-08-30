@@ -14,8 +14,62 @@ import {
   type AccountPreferences,
   type User,
 } from '../types';
+import {
+  AuthFlowError,
+  type EmailSignUpResult,
+  toAuthFlowError,
+} from '../auth/types';
 import type { Membership } from './SessionContext';
 import { displayMemberAvatar } from '../constants/avatars';
+import { getGoogleIdToken } from './googleSignIn';
+
+const AUTH_CALLBACK_URL = 'hither://auth/callback';
+
+type SupabaseAuthUser = {
+  id: string;
+  email?: string | null;
+  is_anonymous?: boolean;
+  app_metadata?: { provider?: string };
+  user_metadata?: Record<string, unknown>;
+  identities?: unknown[] | null;
+};
+
+async function materializeUser(authUser: SupabaseAuthUser, nickname?: string): Promise<User> {
+  const meta = authUser.user_metadata ?? {};
+  const { data: existing } = await supabase
+    .from('profiles')
+    .select('nickname, avatar, preferences')
+    .eq('id', authUser.id)
+    .maybeSingle();
+  const existingRow = existing as {
+    nickname?: string;
+    avatar?: string | null;
+    preferences?: unknown;
+  } | null;
+  const metadataName =
+    (typeof meta.full_name === 'string' && meta.full_name) ||
+    (typeof meta.name === 'string' && meta.name) ||
+    (typeof meta.nickname === 'string' && meta.nickname) ||
+    '';
+  const name =
+    nickname?.trim() ||
+    existingRow?.nickname ||
+    metadataName ||
+    authUser.email?.split('@')[0] ||
+    '';
+  const { error: profileError } = await supabase
+    .from('profiles')
+    .upsert({ id: authUser.id, nickname: name }, { onConflict: 'id' });
+  if (profileError) throw toAuthFlowError(profileError, 'Unable to save your profile.');
+  return {
+    id: authUser.id,
+    name,
+    email: authUser.email ?? '',
+    avatar: displayMemberAvatar(existingRow?.avatar, authUser.id).emoji,
+    provider: authUser.app_metadata?.provider,
+    preferences: normalizeAccountPreferences(existingRow?.preferences),
+  };
+}
 
 export interface UseAuthFlowParams {
   user: User | null;
@@ -58,66 +112,58 @@ export function useAuthFlow({
 
   const signInWithGoogle = useCallback(
     async (nickname?: string): Promise<User | null> => {
-      const redirectTo = makeRedirectUri({
-        scheme: 'hither',
-        path: 'auth/callback',
-      });
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: { redirectTo, skipBrowserRedirect: true },
-      });
-      if (error || !data?.url) {
-        throw new Error(error?.message ?? 'Google 登入失敗');
+      let authUser: SupabaseAuthUser | null = null;
+      let useHostedFallback = false;
+      try {
+        const token = await getGoogleIdToken();
+        if (token) {
+          const { data, error } = await supabase.auth.signInWithIdToken({
+            provider: 'google',
+            token,
+          });
+          if (error || !data.user) {
+            throw toAuthFlowError(error, 'Google Sign-In failed.');
+          }
+          authUser = data.user;
+        }
+      } catch (error) {
+        if ((error as { code?: string }).code !== 'google_native_unavailable') {
+          throw toAuthFlowError(error, 'Google Sign-In failed.');
+        }
+        useHostedFallback = true;
       }
 
-      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
-      if (result.type !== 'success') return null;
+      if (useHostedFallback) {
+        const redirectTo = makeRedirectUri({
+          scheme: 'hither',
+          path: 'auth/callback',
+        });
+        const { data, error } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: { redirectTo, skipBrowserRedirect: true },
+        });
+        if (error || !data?.url) {
+          throw toAuthFlowError(error, 'Google Sign-In failed.');
+        }
+        const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+        if (result.type !== 'success') return null;
 
-      const { params, errorCode } = QueryParams.getQueryParams(result.url);
-      if (errorCode) throw new Error(errorCode);
-      const { access_token, refresh_token } = params;
-      if (!access_token) throw new Error('Google 登入未取得憑證');
-
-      const { data: sess, error: sessErr } = await supabase.auth.setSession({
-        access_token,
-        refresh_token,
-      });
-      if (sessErr || !sess.user) {
-        throw new Error(sessErr?.message ?? 'Google 登入失敗');
+        const { params, errorCode } = QueryParams.getQueryParams(result.url);
+        if (errorCode) throw new AuthFlowError(errorCode, errorCode);
+        const { access_token, refresh_token } = params;
+        if (!access_token) throw new AuthFlowError('Google Sign-In did not return credentials.', 'google_token_missing');
+        const session = await supabase.auth.setSession({
+          access_token,
+          refresh_token,
+        });
+        if (session.error || !session.data.user) {
+          throw toAuthFlowError(session.error, 'Google Sign-In failed.');
+        }
+        authUser = session.data.user;
       }
 
-      const authUser = sess.user;
-      const meta = authUser.user_metadata ?? {};
-      const { data: existing } = await supabase
-        .from('profiles')
-        .select('nickname, avatar, preferences')
-        .eq('id', authUser.id)
-        .maybeSingle();
-      const existingRow = existing as {
-        nickname?: string;
-        avatar?: string | null;
-        preferences?: unknown;
-      } | null;
-      const name =
-        nickname?.trim() ||
-        existingRow?.nickname ||
-        meta.full_name ||
-        meta.name ||
-        authUser.email?.split('@')[0] ||
-        '';
-
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .upsert({ id: authUser.id, nickname: name }, { onConflict: 'id' });
-      if (profileError) throw new Error(profileError.message);
-
-      const nextUser: User = {
-        id: authUser.id,
-        name,
-        email: authUser.email ?? '',
-        avatar: displayMemberAvatar(existingRow?.avatar, authUser.id).emoji,
-        preferences: normalizeAccountPreferences(existingRow?.preferences),
-      };
+      if (!authUser) return null;
+      const nextUser = await materializeUser(authUser, nickname);
       setUser(nextUser);
       setIsAnonymous(false);
       return nextUser;
@@ -140,7 +186,7 @@ export function useAuthFlow({
         ],
       });
       if (!credential.identityToken) {
-        throw new Error('Apple 未提供登入憑證');
+        throw new AuthFlowError('Apple did not return an identity token.', 'apple_token_missing');
       }
 
       const { data, error } = await supabase.auth.signInWithIdToken({
@@ -149,7 +195,7 @@ export function useAuthFlow({
         nonce: rawNonce,
       });
       if (error || !data.user) {
-        throw new Error(error?.message ?? 'Apple 登入失敗');
+        throw toAuthFlowError(error, 'Apple Sign-In failed.');
       }
 
       const authUser = data.user;
@@ -182,12 +228,12 @@ export function useAuthFlow({
             family_name: credential.fullName?.familyName,
           },
         });
-        if (metadataError) throw new Error(metadataError.message);
+        if (metadataError) throw toAuthFlowError(metadataError, 'Unable to save your profile.');
       }
       const { error: profileError } = await supabase
         .from('profiles')
         .upsert({ id: authUser.id, nickname: name }, { onConflict: 'id' });
-      if (profileError) throw new Error(profileError.message);
+      if (profileError) throw toAuthFlowError(profileError, 'Unable to save your profile.');
 
       const nextUser: User = {
         id: authUser.id,
@@ -208,45 +254,64 @@ export function useAuthFlow({
   const linkWithGoogle = useCallback(async (): Promise<User | null> => {
     if (!user) throw new Error('No active account to link');
 
-    const redirectTo = makeRedirectUri({
-      scheme: 'hither',
-      path: 'auth/callback',
-    });
-    const { data, error } = await supabase.auth.linkIdentity({
-      provider: 'google',
-      options: { redirectTo, skipBrowserRedirect: true },
-    });
-    if (error || !data?.url) {
-      throw new Error(error?.message ?? 'Google linking failed');
+    let authUser: SupabaseAuthUser | null = null;
+    try {
+      const token = await getGoogleIdToken();
+      if (token) {
+        const linked = await supabase.auth.linkIdentity({ provider: 'google', token });
+        if (linked.error || !linked.data.user) {
+          throw toAuthFlowError(linked.error, 'Google linking failed.');
+        }
+        authUser = linked.data.user;
+      } else {
+        return null;
+      }
+    } catch (error) {
+      if ((error as { code?: string }).code !== 'google_native_unavailable') {
+        throw toAuthFlowError(error, 'Google linking failed.');
+      }
     }
 
-    const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
-    if (result.type !== 'success') return null;
-
-    const { params, errorCode } = QueryParams.getQueryParams(result.url);
-    if (errorCode) throw new Error(errorCode);
-    let authUser;
-    if (params.code) {
-      const exchanged = await supabase.auth.exchangeCodeForSession(params.code);
-      if (exchanged.error || !exchanged.data.user) {
-        throw new Error(exchanged.error?.message ?? 'Google linking failed');
-      }
-      authUser = exchanged.data.user;
-    } else if (params.access_token) {
-      const session = await supabase.auth.setSession({
-        access_token: params.access_token,
-        refresh_token: params.refresh_token,
+    if (!authUser) {
+      const redirectTo = makeRedirectUri({
+        scheme: 'hither',
+        path: 'auth/callback',
       });
-      if (session.error || !session.data.user) {
-        throw new Error(session.error?.message ?? 'Google linking failed');
+      const { data, error } = await supabase.auth.linkIdentity({
+        provider: 'google',
+        options: { redirectTo, skipBrowserRedirect: true },
+      });
+      if (error || !data?.url) {
+        throw toAuthFlowError(error, 'Google linking failed.');
       }
-      authUser = session.data.user;
-    } else {
-      const current = await supabase.auth.getUser();
-      if (current.error || !current.data.user) {
-        throw new Error(current.error?.message ?? 'Google linking failed');
+
+      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+      if (result.type !== 'success') return null;
+
+      const { params, errorCode } = QueryParams.getQueryParams(result.url);
+      if (errorCode) throw new AuthFlowError(errorCode, errorCode);
+      if (params.code) {
+        const exchanged = await supabase.auth.exchangeCodeForSession(params.code);
+        if (exchanged.error || !exchanged.data.user) {
+          throw toAuthFlowError(exchanged.error, 'Google linking failed.');
+        }
+        authUser = exchanged.data.user;
+      } else if (params.access_token) {
+        const session = await supabase.auth.setSession({
+          access_token: params.access_token,
+          refresh_token: params.refresh_token,
+        });
+        if (session.error || !session.data.user) {
+          throw toAuthFlowError(session.error, 'Google linking failed.');
+        }
+        authUser = session.data.user;
+      } else {
+        const current = await supabase.auth.getUser();
+        if (current.error || !current.data.user) {
+          throw toAuthFlowError(current.error, 'Google linking failed.');
+        }
+        authUser = current.data.user;
       }
-      authUser = current.data.user;
     }
 
     // Preserve the same UID. Only the SECURITY DEFINER RPC may clear
@@ -316,13 +381,13 @@ export function useAuthFlow({
   }, [setIsAnonymous, setUser, user]);
 
   const signInWithEmail = useCallback(
-    async ({ email, password }: any): Promise<User> => {
+    async ({ email, password }: { email: string; password: string }): Promise<User> => {
       const { data, error } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
       });
       if (error || !data.user) {
-        throw new Error(error?.message ?? 'Email 登入失敗');
+        throw toAuthFlowError(error, 'Email sign-in failed.');
       }
       const userId = data.user.id;
       const { data: profile } = await supabase
@@ -337,7 +402,11 @@ export function useAuthFlow({
       } | null;
       const nextUser: User = {
         id: userId,
-        name: row?.nickname ?? '',
+        name:
+          row?.nickname ??
+          (typeof data.user.user_metadata?.nickname === 'string'
+            ? data.user.user_metadata.nickname
+            : ''),
         email: data.user.email ?? '',
         avatar: displayMemberAvatar(row?.avatar, userId).emoji,
         preferences: normalizeAccountPreferences(row?.preferences),
@@ -350,31 +419,35 @@ export function useAuthFlow({
   );
 
   const signUpWithEmail = useCallback(
-    async ({ email, password, nickname }: any): Promise<User> => {
+    async ({ email, password, nickname }: {
+      email: string;
+      password: string;
+      nickname: string;
+    }): Promise<EmailSignUpResult> => {
       const trimmed = nickname.trim();
+      const normalizedEmail = email.trim();
       const { data, error } = await supabase.auth.signUp({
-        email: email.trim(),
+        email: normalizedEmail,
         password,
+        options: {
+          data: { nickname: trimmed },
+          emailRedirectTo: AUTH_CALLBACK_URL,
+        },
       });
-      if (error) throw new Error(error.message);
-      if (!data.session || !data.user) {
-        throw new Error(
-          '註冊需要 Email 驗證。請在 Supabase 關閉 Confirm email，或改用驗證信流程。',
-        );
+      if (error) throw toAuthFlowError(error, 'Email sign-up failed.');
+      if (!data.user) {
+        throw new AuthFlowError('Email sign-up did not return a user.', 'auth_user_missing');
       }
-      const userId = data.user.id;
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .upsert({ id: userId, nickname: trimmed }, { onConflict: 'id' });
-      if (profileError) throw new Error(profileError.message);
-      const nextUser: User = {
-        id: userId,
-        name: trimmed,
-        email: data.user.email ?? '',
-      };
+      if (Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+        throw new AuthFlowError('This email is already registered.', 'user_already_exists');
+      }
+      if (!data.session) {
+        return { status: 'verification_required', email: normalizedEmail };
+      }
+      const nextUser = await materializeUser(data.user, trimmed);
       setUser(nextUser);
       setIsAnonymous(false);
-      return nextUser;
+      return { status: 'signed_in', user: nextUser };
     },
     [setUser, setIsAnonymous],
   );

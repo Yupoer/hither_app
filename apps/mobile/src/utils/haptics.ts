@@ -4,8 +4,8 @@ import * as Haptics from 'expo-haptics';
  * Thin haptics wrapper. `expo-haptics` throws/no-ops on web and unsupported
  * devices, so every call is swallowed here — callers never need a try/catch.
  *
- * Rule: only ever call these for positive interactions (a choice made, a
- * step advanced, a slider tick). Never on an error/failure path.
+ * Callers use the selection/impact helpers for positive interactions and the
+ * notification helpers for explicit success or error feedback.
  */
 
 export function lightTap(): void {
@@ -45,6 +45,22 @@ export function selectionTick(): void {
 export function alertBuzz(): void {
   try {
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  } catch {
+    // no-op: unsupported platform (e.g. web)
+  }
+}
+
+export function successTap(): void {
+  try {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  } catch {
+    // no-op: unsupported platform (e.g. web)
+  }
+}
+
+export function errorTap(): void {
+  try {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
   } catch {
     // no-op: unsupported platform (e.g. web)
   }

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hither</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <a class="brand" href="./">hither</a>
+        <nav class="lang" aria-label="Language">
+          <button type="button" data-lang="zh" aria-pressed="true">中文</button>
+          <button type="button" data-lang="en" aria-pressed="false">English</button>
+        </nav>
+      </header>
+      <section data-copy="zh">
+        <h1>Hither 文件</h1>
+        <p>群組旅行與集合點工具。</p>
+        <div class="cards">
+          <a class="card" href="./privacy/"><strong>隱私權政策</strong><br /><span class="meta">資料如何收集、使用與刪除</span></a>
+          <a class="card" href="./terms/"><strong>服務條款</strong><br /><span class="meta">使用方式、Premium 與責任</span></a>
+        </div>
+      </section>
+      <section data-copy="en" hidden>
+        <h1>Hither documents</h1>
+        <p>A tool for group travel and gathering points.</p>
+        <div class="cards">
+          <a class="card" href="./privacy/"><strong>Privacy policy</strong><br /><span class="meta">How data is collected, used, and deleted</span></a>
+          <a class="card" href="./terms/"><strong>Terms of service</strong><br /><span class="meta">Use, Premium, and responsibilities</span></a>
+        </div>
+      </section>
+    </main>
+    <script>
+      const buttons = [...document.querySelectorAll('[data-lang]')];
+      const copies = [...document.querySelectorAll('[data-copy]')];
+      function setLanguage(language) {
+        document.documentElement.lang = language === 'zh' ? 'zh-Hant' : 'en';
+        buttons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.lang === language)));
+        copies.forEach((copy) => { copy.hidden = copy.dataset.copy !== language; });
+      }
+      buttons.forEach((button) => button.addEventListener('click', () => setLanguage(button.dataset.lang)));
+    </script>
+  </body>
+</html>
+

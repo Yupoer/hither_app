@@ -321,7 +321,7 @@ describe('client 14-day copy and expiry wiring', () => {
   });
 
   it('login guest modal discloses the 14-day limit', () => {
-    expect(loginScreen).toContain('14-day');
+    expect(loginScreen).toContain("t('anon.expiryWarning')");
     expect(loginScreen).not.toContain('3-day data');
   });
 

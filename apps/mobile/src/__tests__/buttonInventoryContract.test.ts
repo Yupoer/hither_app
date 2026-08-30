@@ -180,7 +180,7 @@ describe('button inventory / high-risk action contract', () => {
     // These are intentionally local state setters — inventory only.
     expect(mapScreen).toContain('const closeOverlay = useCallback(() => {');
     expect(mapScreen).toContain('setOverlay(null)');
-    expect(loginScreen).toContain("onPress={() => setMode(m)}");
+    expect(loginScreen).toContain('onChange={setAuthMode}');
     expect(feedbackSheet).toContain('onPress={() => setCategory(c.key)}');
   });
 
