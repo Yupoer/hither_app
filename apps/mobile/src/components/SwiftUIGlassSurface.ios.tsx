@@ -49,7 +49,12 @@ export default function SwiftUIGlassSurface({
 
   return (
     <View style={style} pointerEvents="box-none">
-      <Host matchContents={false} style={StyleSheet.absoluteFill} pointerEvents="none">
+      <Host
+        matchContents={false}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+        colorScheme="dark"
+      >
         <VStack
           spacing={0}
           modifiers={[

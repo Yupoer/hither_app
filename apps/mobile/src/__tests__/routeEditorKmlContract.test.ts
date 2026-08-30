@@ -131,6 +131,9 @@ describe('route editor + KML contracts (#151)', () => {
     expect(reorder).toContain('stay.finishSet');
     // Checkbox must not call onSetDailyFromDestination immediately.
     expect(reorder).toMatch(/setPendingStayDestId\(item\.item\.id\)/);
+    expect(reorder).toContain('setStayCancelLabel');
+    expect(reorder).toContain('onCancelSetStay');
+    expect(reorder).toContain("t('common.cancel')");
   });
 
   it('ghost drag: no mid-move setOrder; deleteBg hidden while active; release commits', () => {
@@ -183,7 +186,7 @@ describe('route editor + KML contracts (#151)', () => {
     expect(rowBlock).toContain('enabled={canSwipe && !active}');
     expect(rowBlock).toContain('onPanResponderMove');
     expect(rowBlock).toContain('onPanResponderRelease');
-    expect(reorder).toContain('rowAccommodation: { backgroundColor: accentMix(colors.accent, 18) }');
+    expect(reorder).not.toContain('rowAccommodation');
     expect(reorder).toContain('backgroundColor: glass.fill');
     expect(kmlSheet).toContain('<SettingsChildSheet');
   });

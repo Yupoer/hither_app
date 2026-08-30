@@ -43,6 +43,7 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   interpolate,
+  runOnJS,
   Extrapolation,
   withSpring,
   withTiming,
@@ -5325,6 +5326,36 @@ export default function MapScreen({ route, navigation }: Props) {
     heightSV.value = detents[midIndex] ?? detents[0];
   }, [detents, heightSV]);
 
+  const finishGatheringCardExpand = useCallback((id: string) => {
+    setDetent(0);
+    toggleCard(id);
+  }, [toggleCard]);
+
+  // Expanded cards must never render underneath an expanded sheet. Collapse
+  // to Peek first, then reveal the larger card after the spring has settled.
+  const toggleGatheringCard = useCallback((id: string) => {
+    const expanded = isCardExpanded(id);
+    if (expanded) {
+      toggleCard(id);
+      return;
+    }
+    if (detent === 0) {
+      toggleCard(id);
+      return;
+    }
+    heightSV.value = withSpring(
+      detents[0],
+      { stiffness: 320, damping: 29, mass: 1 },
+      (finished) => {
+        'worklet';
+        // BottomSheet also springs when its controlled index changes. Keep
+        // that render-driven spring from cancelling this completion callback:
+        // commit the Peek index only after the height spring has settled.
+        if (finished) runOnJS(finishGatheringCardExpand)(id);
+      },
+    );
+  }, [detent, detents, finishGatheringCardExpand, heightSV, isCardExpanded]);
+
   // Single tour destination: plan, expand, availability, and measured refs must match.
   // Prefer shared navigation target when it is on the carousel; else selected card.
   const tourDestinationId = useMemo(() => {
@@ -6762,7 +6793,7 @@ export default function MapScreen({ route, navigation }: Props) {
                     ) : null}
                     <View style={styles.cardInner}>
                     <GatheringCardPressable
-                      onToggle={() => toggleCard(dest.id)}
+                      onToggle={() => toggleGatheringCard(dest.id)}
                       accessibilityLabel={dest.title}
                       accessibilityHint={
                         cardExpanded ? t('gather.cardCollapseHint') : t('gather.cardExpandHint')
@@ -7297,6 +7328,7 @@ export default function MapScreen({ route, navigation }: Props) {
         title={t('map.gatheringPoints')}
         accent={accent}
         doneLabel={t('map.done')}
+        doneSystemImage="checkmark"
         material="mapSheet"
         edgeToEdge
         headerLeft={
@@ -7874,7 +7906,7 @@ export default function MapScreen({ route, navigation }: Props) {
         title={t('arrival.manage')}
         accent={accent}
         doneLabel={t('map.done')}
-        doneSystemImage="xmark"
+        doneSystemImage="checkmark"
         material="mapSheet"
         edgeToEdge
       >
@@ -7955,7 +7987,7 @@ export default function MapScreen({ route, navigation }: Props) {
         title={arrivalDestination?.title ?? t('map.arrivalProgress')}
         accent={accent}
         doneLabel={t('map.done')}
-        doneSystemImage="xmark"
+        doneSystemImage="checkmark"
         material="mapSheet"
         edgeToEdge
       >

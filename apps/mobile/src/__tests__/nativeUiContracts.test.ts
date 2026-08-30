@@ -14,7 +14,9 @@ const bottomSheet = readFileSync(join(root, 'components/BottomSheet.tsx'), 'utf8
 const overlaySheet = readFileSync(join(root, 'components/OverlaySheet.tsx'), 'utf8');
 const nativeGlassButtonIos = readFileSync(join(root, 'components/NativeGlassButton.ios.tsx'), 'utf8');
 const paywallSheet = readFileSync(join(root, 'components/PaywallSheet.tsx'), 'utf8');
+const sheetHeaderAction = readFileSync(join(root, 'components/SheetHeaderAction.ios.tsx'), 'utf8');
 const premiumBanner = readFileSync(join(root, 'components/PremiumBanner.tsx'), 'utf8');
+const app = readFileSync(join(__dirname, '../../App.tsx'), 'utf8');
 const mapScreen = readFileSync(join(root, 'screens/MapScreen.tsx'), 'utf8');
 const inviteSheetIos = readFileSync(join(root, 'screens/MapScreen/components/InviteMembersSheet.ios.tsx'), 'utf8');
 const inviteSheet = readFileSync(join(root, 'screens/MapScreen/components/InviteMembersSheet.tsx'), 'utf8');
@@ -79,8 +81,8 @@ describe('iOS native UI contracts', () => {
     expect(settingsIos).toContain('if (props.singleStage) return <SettingsSheetPanel {...props} />');
     expect(settingsPanel).toContain('singleStage');
     expect(settingsPanel).toContain('[Math.round(height * stageTwoRatio)]');
-    expect(settingsPanel).toContain('SETTINGS_COMMIT_SIZE = 60');
-    expect(settingsPanel).toContain('MAP_SHEET_CLOSE_VISUAL_SIZE');
+    expect(settingsPanel).toContain('MAP_SHEET_ACTION_HIT_SIZE');
+    expect(settingsPanel).toContain('<SheetHeaderAction');
     expect(settingsPanel).toContain('dismissOnDownFromIndex={0}');
     expect(settingsPanel).toContain('edgeToEdgeAtLast={edgeToEdgeAtLast}');
     expect(settingsPanel).toContain('dismissTranslateY={sheetTranslateY}');
@@ -98,18 +100,16 @@ describe('iOS native UI contracts', () => {
     expect(settingsIos).toContain("buttonBorderShape('circle')");
     expect(settingsIos).not.toContain("controlSize('extraLarge')");
     expect(settingsIos).toContain('<Image');
-    expect(settingsIos).toContain('frame({ width: 60, height: 60 })');
-    expect(settingsIos).toMatch(/width: isCloseAction \? MAP_SHEET_CLOSE_ICON_SIZE : 28/);
-    expect(settingsIos).toContain('MAP_SHEET_CLOSE_VISUAL_SIZE');
-    expect(settingsIos).toContain('MAP_SHEET_CLOSE_HIT_SIZE');
-    expect(settingsIos).toContain('MAP_SHEET_CLOSE_ICON_SIZE');
+    expect(settingsIos).toContain('frame({ width: MAP_SHEET_ACTION_VISUAL_SIZE, height: MAP_SHEET_ACTION_VISUAL_SIZE })');
+    expect(settingsIos).toContain('frame({ width: MAP_SHEET_ACTION_HIT_SIZE, height: MAP_SHEET_ACTION_HIT_SIZE })');
+    expect(settingsIos).toContain('MAP_SHEET_ACTION_ICON_SIZE');
     expect(settingsIos).not.toContain('frame({ width: 78, height: 78 })');
     expect(settingsIos).toContain("action === 'commit' ? 'checkmark' : 'xmark'");
     expect(settingsIos).toContain('<VStack');
     expect(settingsIos.indexOf('</HStack>')).toBeLessThan(settingsIos.indexOf('<RNHostView'));
     expect(settingsIos).toContain('wrapContentInScrollView');
     expect(settingsIos).toContain('nestedLayer');
-    expect(settingsIos).not.toContain('colorScheme="dark"');
+    expect(settingsIos).toContain('colorScheme="dark"');
     expect(settingsIos).toContain("pointerEvents={visible ? 'auto' : 'none'}");
     expect(settings).toContain("page === 'account'");
     expect(settings).toContain('<AccountSheetContent');
@@ -152,18 +152,18 @@ describe('iOS native UI contracts', () => {
     expect(overlaySheet).toContain('doneSystemImage');
     expect(overlaySheet).not.toContain('NativeGlassButton');
     expect(overlaySheet).toContain('<Pressable');
-    expect(overlaySheet).toContain('MAP_SHEET_CLOSE_VISUAL_SIZE');
-    expect(overlaySheet).toContain('MAP_SHEET_CLOSE_HIT_SIZE');
-    expect(overlaySheet).toContain('MAP_SHEET_CLOSE_ICON_SIZE');
+    expect(overlaySheet).toContain('<SheetHeaderAction');
+    expect(sheetHeaderAction).toContain('MAP_SHEET_ACTION_VISUAL_SIZE');
+    expect(sheetHeaderAction).toContain('MAP_SHEET_ACTION_HIT_SIZE');
+    expect(sheetHeaderAction).toContain('MAP_SHEET_ACTION_ICON_SIZE');
     expect(overlaySheet).toContain('top: MAP_SHEET_EDGE_INSET');
     expect(overlaySheet).toContain('right: MAP_SHEET_EDGE_INSET');
-    expect(settingsPanel).toContain('width: MAP_SHEET_CLOSE_HIT_SIZE');
-    expect(settingsPanel).toContain('width: MAP_SHEET_CLOSE_VISUAL_SIZE');
-    expect(mapSheetChrome).toContain('MAP_SHEET_CLOSE_VISUAL_SIZE = 35');
-    expect(mapSheetChrome).toContain('MAP_SHEET_CLOSE_HIT_SIZE = 44');
-    expect(mapSheetChrome).toContain('MAP_SHEET_CLOSE_ICON_SIZE = 18');
-    expect(paywallSheet).toContain('systemImage="xmark"');
-    expect(mapScreen).toContain('doneSystemImage="xmark"');
+    expect(settingsPanel).toContain('width: MAP_SHEET_ACTION_HIT_SIZE');
+    expect(mapSheetChrome).toContain('MAP_SHEET_ACTION_VISUAL_SIZE = 47');
+    expect(mapSheetChrome).toContain('MAP_SHEET_ACTION_HIT_SIZE = 48');
+    expect(mapSheetChrome).toContain('MAP_SHEET_ACTION_ICON_SIZE = 24');
+    expect(paywallSheet).toContain('action="close"');
+    expect(mapScreen).toContain('doneSystemImage="checkmark"');
     expect(overlaySheet).toContain("onDone ? 'checkmark' : 'xmark'");
   });
 
@@ -197,5 +197,12 @@ describe('iOS native UI contracts', () => {
     expect(mapScreen).toContain('paddingBottom: 10');
     expect(mapScreen).not.toContain('height={96}');
     expect(mapScreen).toContain('marginTop: 6');
+  });
+
+  it('forces dark mode at the RN and SwiftUI boundaries', () => {
+    expect(app).toContain("Appearance.setColorScheme('dark')");
+    expect(settingsIos).toContain('colorScheme="dark"');
+    expect(nativeGlassButtonIos).toContain('colorScheme="dark"');
+    expect(sheetHeaderAction).toContain('SwiftUIGlassSurface');
   });
 });

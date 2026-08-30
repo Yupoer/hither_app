@@ -25,7 +25,7 @@ export default function SystemToggle({
       accessibilityState={{ checked: value }}
       testID={testID}
     >
-      <Host matchContents style={styles.host}>
+      <Host matchContents style={styles.host} colorScheme="dark">
         <Switch value={value} onValueChange={onValueChange} />
       </Host>
     </View>

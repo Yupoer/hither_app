@@ -15,18 +15,14 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 import BottomSheet from '../../../components/BottomSheet';
-import { liquidGlass } from '../../../native';
-import SwiftUIGlassSurface from '../../../components/SwiftUIGlassSurface';
 import {
-  MAP_SHEET_CLOSE_HIT_SIZE,
-  MAP_SHEET_CLOSE_ICON_SIZE,
-  MAP_SHEET_CLOSE_VISUAL_SIZE,
+  MAP_SHEET_ACTION_HIT_SIZE,
   MAP_SHEET_EDGE_INSET,
 } from '../../../components/mapSheetChrome';
+import SheetHeaderAction from '../../../components/SheetHeaderAction';
 
 const STAGE_ONE_RATIO = 0.52;
 const STAGE_TWO_RATIO = 0.8;
-const SETTINGS_COMMIT_SIZE = 60;
 const SPRING = { stiffness: 320, damping: 29, mass: 1 } as const;
 
 export type SettingsSheetPanelProps = {
@@ -129,40 +125,19 @@ export default function SettingsSheetPanel({
           accessibilityRole="button"
           accessibilityLabel="back"
           hitSlop={8}
-          style={action === 'close' ? styles.headerCloseHit : styles.headerCommit}
+          style={styles.headerActionSlot}
         >
           <Ionicons name="chevron-back" size={22} color="#fff" />
         </Pressable>
-      ) : <View style={action === 'close' ? styles.headerCloseHit : styles.headerCommit} />}
+      ) : <View style={styles.headerActionSlot} />}
       <Text style={styles.title} numberOfLines={1}>{title}</Text>
-      <Pressable
-        onPress={action === 'commit' ? onCommit : onClose}
-        accessibilityRole="button"
+      <SheetHeaderAction
+        action={action}
+        onPress={action === 'commit' ? () => onCommit?.() : onClose}
         accessibilityLabel={doneLabel}
-        accessibilityState={{ disabled: action === 'commit' && !onCommit }}
-        style={({ pressed }) => [
-          action === 'close' ? styles.headerCloseHit : styles.headerCommit,
-          pressed && styles.headerPressed,
-        ]}
-      >
-        {action === 'close' ? (
-          <SwiftUIGlassSurface
-            shape="circle"
-            style={styles.closeVisual}
-          >
-            <Ionicons name="close" size={MAP_SHEET_CLOSE_ICON_SIZE} color="#fff" />
-          </SwiftUIGlassSurface>
-        ) : (
-          <>
-            <liquidGlass.GlassView
-              glassStyle="regular"
-              style={StyleSheet.absoluteFill}
-              pointerEvents="none"
-            />
-            <Ionicons name="checkmark" size={28} color="#fff" />
-          </>
-        )}
-      </Pressable>
+        disabled={action === 'commit' && !onCommit}
+        style={styles.headerAction}
+      />
     </View>
   );
 
@@ -215,27 +190,18 @@ const styles = StyleSheet.create({
     paddingTop: MAP_SHEET_EDGE_INSET,
     paddingBottom: 0,
   },
-  headerCloseHit: {
-    width: MAP_SHEET_CLOSE_HIT_SIZE,
-    height: MAP_SHEET_CLOSE_HIT_SIZE,
+  headerActionSlot: {
+    width: MAP_SHEET_ACTION_HIT_SIZE,
+    height: MAP_SHEET_ACTION_HIT_SIZE,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  closeVisual: {
-    width: MAP_SHEET_CLOSE_VISUAL_SIZE,
-    height: MAP_SHEET_CLOSE_VISUAL_SIZE,
-    borderRadius: MAP_SHEET_CLOSE_VISUAL_SIZE / 2,
-    overflow: 'hidden',
-  },
-  headerCommit: {
-    width: SETTINGS_COMMIT_SIZE,
-    height: SETTINGS_COMMIT_SIZE,
-    borderRadius: SETTINGS_COMMIT_SIZE / 2,
-    overflow: 'hidden',
+  headerAction: {
+    width: MAP_SHEET_ACTION_HIT_SIZE,
+    height: MAP_SHEET_ACTION_HIT_SIZE,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerPressed: { opacity: 0.82 },
   title: {
     flex: 1,
     color: '#fff',

@@ -115,9 +115,10 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
   it('locks stay cards to bed emoji and allows them as set-stay radio sources', () => {
     expect(reorderList).toContain('STAY_MARKER_EMOJI');
     expect(reorderList).toContain('STAY_BADGE_BG');
-    // Accommodation rows are themed; only an exact daily-stay duplicate warns.
+    // Accommodation rows share the normal stop surface; only an exact
+    // daily-stay duplicate warns.
     expect(reorderList).toContain('isAccommodation={isStayCard}');
-    expect(reorderList).toContain('rowAccommodation');
+    expect(reorderList).not.toContain('rowAccommodation');
     expect(reorderList).toContain('shouldHighlightStayDuplicate');
     expect(reorderList).toContain('rowStayDuplicate');
     // No emoji picker for accommodation kind.
@@ -133,7 +134,7 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(reorderList).not.toMatch(
       /if \(pick && pick\.item\.kind !== 'accommodation'\)/,
     );
-    expect(reorderList).toContain('accentMix(colors.accent, 18)');
+    expect(reorderList).not.toContain('accentMix(colors.accent, 18)');
     expect(reorderList).toContain('accentOver(colors.accent, shade(colors.surface, -0.20), 28)');
     expect(reorderList).not.toContain('backgroundColor: colors.danger');
     expect(reorderList).toContain('backgroundColor: glass.fill');

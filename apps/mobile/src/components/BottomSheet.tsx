@@ -380,11 +380,10 @@ export default React.memo(function BottomSheet({
     ],
   );
 
-  // Apple-Maps stage morphing, all on the UI thread: peek floats far off every
-  // edge (small and dainty), mid hugs the edges at the search bar's gap, full
-  // fills the screen flush so all 4 corners coincide with the physical screen
-  // corners. Top corner radius stays constant; bottom corners become square at
-  // the full-height detent so the sheet fills the screen edge-to-edge.
+  // Apple-Maps stage morphing, all on the UI thread: peek floats above the
+  // bottom edge, while every expanded stage reaches the phone edge. Top
+  // corners stay rounded; expanded-stage bottom corners are square so no map
+  // strip can show through below the sheet.
   const sheetStyle = useAnimatedStyle(() => {
     const h = height.value;
     const d = detentsSV.value;
@@ -401,12 +400,12 @@ export default React.memo(function BottomSheet({
         Extrapolation.CLAMP,
       );
     const topRadius = SCREEN_CORNER_RADIUS;
-    // Stage 2 and full are edge-filled surfaces: only the floating peek stage
-    // keeps bottom rounding, otherwise the map can show through at both corners.
+    // Only Peek is floating. Stage 1 and Stage 2 must meet the physical bottom
+    // edge, so their bottom corners cannot expose the map through rounding.
     const bottomRadius = d.length <= 1
       ? (edgeToEdgeAtLastSV.value ? 0 : SCREEN_CORNER_RADIUS)
       : interpolate(h, d, d.map((_, i) => (
-        edgeToEdgeAtLastSV.value && i === last ? 0 : SCREEN_CORNER_RADIUS
+        i === 0 ? SCREEN_CORNER_RADIUS : 0
       )), Extrapolation.CLAMP);
     return {
       height: h,
