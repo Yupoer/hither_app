@@ -67,6 +67,9 @@ describe('four-pane store navigation contracts', () => {
     expect(storePane).not.toContain('name="coins"');
     expect(storePane).toContain('minHeight: 44');
     expect(premiumBanner).toContain("t('settings.subscribeBannerHint')");
+    expect(premiumBanner).toContain('fontSize: 17');
+    expect(premiumBanner).toContain('fontSize: 13');
+    expect(premiumBanner).toContain('justifyContent: \'center\'');
   });
 
   it('hides only the personal-subscription banner and keeps the shared glass days control', () => {

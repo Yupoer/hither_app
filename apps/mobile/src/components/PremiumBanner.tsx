@@ -51,9 +51,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     minHeight: 108,
   },
-  copy: { flex: 1, gap: 4, alignSelf: 'flex-start' },
-  title: { fontSize: 15, fontWeight: '800', color: '#FFFFFF' },
-  hint: { fontSize: 11.5, color: 'rgba(255,255,255,0.8)' },
+  copy: { flex: 1, gap: 5, justifyContent: 'center' },
+  title: { fontSize: 17, lineHeight: 21, fontWeight: '800', color: '#FFFFFF' },
+  hint: { fontSize: 13, lineHeight: 18, color: 'rgba(255,255,255,0.8)' },
   arrow: {
     width: 34,
     height: 34,

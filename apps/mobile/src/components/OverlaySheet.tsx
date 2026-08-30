@@ -16,6 +16,7 @@ import { liquidGlass } from '../native';
 import { glass } from '../glass';
 import {
   MAP_SHEET_ACTION_HIT_SIZE,
+  MAP_SHEET_CORNER_RADIUS,
   MAP_SHEET_EDGE_INSET,
 } from './mapSheetChrome';
 import SheetHeaderAction from './SheetHeaderAction';
@@ -253,8 +254,8 @@ const styles = StyleSheet.create({
     right: 8,
     bottom: 0,
     zIndex: 80,
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
+    borderTopLeftRadius: MAP_SHEET_CORNER_RADIUS,
+    borderTopRightRadius: MAP_SHEET_CORNER_RADIUS,
     overflow: 'hidden',
     borderTopWidth: StyleSheet.hairlineWidth,
     borderColor: glass.hairlineSoft,
@@ -262,8 +263,8 @@ const styles = StyleSheet.create({
   panelEdgeToEdge: {
     left: 0,
     right: 0,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderTopLeftRadius: MAP_SHEET_CORNER_RADIUS,
+    borderTopRightRadius: MAP_SHEET_CORNER_RADIUS,
   },
   topChrome: { position: 'relative' },
   // More breathing room so the title doesn't crowd the sheet's top edge.

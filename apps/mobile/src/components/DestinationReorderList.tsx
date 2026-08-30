@@ -55,6 +55,8 @@ import {
 import { getColorForDay, STAY_MARKER_EMOJI } from '../utils/destinationMarkerChrome';
 import { liquidGlass } from '../native';
 import SettingsChildSheet from '../screens/MapScreen/components/SettingsChildSheet';
+import OverflowMarquee from './OverflowMarquee';
+import { MAP_SHEET_CORNER_RADIUS } from './mapSheetChrome';
 
 const REORDER_VISUAL_SCALE = 1;
 const ROW_HEIGHT = 52;
@@ -177,7 +179,7 @@ export default function DestinationReorderList({
 }: Props) {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const { t } = useTranslation();
-  const { dayColors, setDayColor } = usePreferences();
+  const { dayColors, setDayColor, gatherCardTitleMarquee, gatherCardMarqueeSpeed } = usePreferences();
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const openSwipeableRef = useRef<SwipeableMethods | null>(null);
   const closeOpenSwipeable = useCallback(() => {
@@ -859,6 +861,8 @@ export default function DestinationReorderList({
                   canSwipeDelete={canReorder && !!onDelete && !locked && !inSetMode}
                   pan={pan}
                   styles={styles}
+                  gatherCardTitleMarquee={gatherCardTitleMarquee}
+                  gatherCardMarqueeSpeed={gatherCardMarqueeSpeed}
                   dayColor={dayColor}
                   onGrant={onGrant}
                   onMove={onMove}
@@ -1776,6 +1780,8 @@ const Row = memo(function Row({
   tourTargetRef,
   onSwipeableOpen,
   onSwipeableClose,
+  gatherCardTitleMarquee,
+  gatherCardMarqueeSpeed,
 }: {
   item: Destination;
   active: boolean;
@@ -1806,6 +1812,8 @@ const Row = memo(function Row({
   tourTargetRef?: (node: View | null) => void;
   onSwipeableOpen?: (swipeable: SwipeableMethods) => void;
   onSwipeableClose?: (swipeable: SwipeableMethods) => void;
+  gatherCardTitleMarquee: boolean;
+  gatherCardMarqueeSpeed: number;
 }) {
   // Boundary-locked stays use a permanent trash control — no horizontal swipe.
   const canSwipe = canSwipeDelete && !!onDelete && !boundaryLocked && !multiSelect;
@@ -1979,9 +1987,16 @@ const Row = memo(function Row({
           }
           disabled={!multiSelect}
         >
-          <Text style={styles.rowTitle} numberOfLines={1}>
-            {item.title}
-          </Text>
+          <OverflowMarquee
+            text={item.title}
+            enabled={gatherCardTitleMarquee}
+            active
+            activationDelayMs={1600}
+            pixelsPerSecond={gatherCardMarqueeSpeed}
+            startPauseMs={1000}
+            endPauseMs={1500}
+            style={styles.rowTitle}
+          />
         </Pressable>
         {boundaryLocked && onDelete && !multiSelect ? (
           <Pressable
@@ -2038,7 +2053,7 @@ const makeStyles = (colors: Palette) =>
     headerSetStayBtn: {
       borderWidth: 1,
       borderColor: 'rgba(255,107,53,0.55)',
-      borderRadius: 7,
+      borderRadius: 14,
       paddingHorizontal: 10,
       paddingVertical: 5,
       minHeight: 28,
@@ -2073,7 +2088,7 @@ const makeStyles = (colors: Palette) =>
       minHeight: 28,
       paddingHorizontal: 10,
       paddingVertical: 5,
-      borderRadius: 7,
+      borderRadius: 14,
       borderWidth: 1,
       borderColor: 'rgba(255,255,255,0.28)',
       justifyContent: 'center',
@@ -2115,6 +2130,8 @@ const makeStyles = (colors: Palette) =>
     },
     list: {
       borderRadius: radius.md,
+      borderTopLeftRadius: MAP_SHEET_CORNER_RADIUS,
+      borderTopRightRadius: MAP_SHEET_CORNER_RADIUS,
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: 'transparent',

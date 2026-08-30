@@ -53,6 +53,17 @@ export function useGatherCardExpansion(defaultExpanded: boolean) {
     scheduleCollapse(id);
   }, [clearTimer, defaultExpanded, replaceOverrides, scheduleCollapse]);
 
+  const collapseCard = useCallback((id: string) => {
+    clearTimer();
+    const expanded = overridesRef.current[id] ?? defaultExpanded;
+    if (!expanded) return;
+    if (defaultExpanded) {
+      replaceOverrides({ ...overridesRef.current, [id]: false });
+    } else {
+      replaceOverrides({});
+    }
+  }, [clearTimer, defaultExpanded, replaceOverrides]);
+
   /** Force a card open without starting auto-collapse (tour-friendly). */
   const expandCard = useCallback((id: string) => {
     clearTimer();
@@ -86,6 +97,7 @@ export function useGatherCardExpansion(defaultExpanded: boolean) {
   return {
     isCardExpanded,
     toggleCard,
+    collapseCard,
     registerCardActivity,
     expandCard,
     pauseAutoCollapse,

@@ -6,34 +6,25 @@ import {
 } from 'react-native';
 import {
   BottomSheet,
-  Button,
   Group,
   HStack,
   Host,
-  Image,
   RNHostView,
   Spacer,
   Text as SwiftText,
   VStack,
 } from '@expo/ui/swift-ui';
 import {
-  accessibilityLabel,
-  buttonStyle,
-  buttonBorderShape,
   frame,
   font,
-  glassEffect,
-  labelStyle,
   padding,
   presentationDetents,
   presentationDragIndicator,
 } from '@expo/ui/swift-ui/modifiers';
-import { liquidGlass } from '../../../native';
 import {
   MAP_SHEET_ACTION_HIT_SIZE,
-  MAP_SHEET_ACTION_ICON_SIZE,
-  MAP_SHEET_ACTION_VISUAL_SIZE,
 } from '../../../components/mapSheetChrome';
+import SheetHeaderActionContent from '../../../components/SheetHeaderActionContent.ios';
 import SettingsSheetPanel, { type SettingsSheetPanelProps } from './SettingsSheetPanel';
 
 const STAGE_ONE_RATIO = 0.52;
@@ -142,29 +133,11 @@ function NativeSettingsChildSheet({
               >
                 {title}
               </SwiftText>
-              <Button
-                role={action === 'commit' ? 'default' : 'cancel'}
-                onPress={action === 'commit' ? onCommit : closeOnce}
-                modifiers={[
-                  buttonStyle(liquidGlass.isLiquidGlassAvailable() ? 'plain' : 'bordered'),
-                  buttonBorderShape('circle'),
-                  frame({ width: MAP_SHEET_ACTION_VISUAL_SIZE, height: MAP_SHEET_ACTION_VISUAL_SIZE }),
-                  ...(liquidGlass.isLiquidGlassAvailable()
-                    ? [glassEffect({ glass: { variant: 'regular', interactive: true }, shape: 'circle' })]
-                    : []),
-                  frame({ width: MAP_SHEET_ACTION_HIT_SIZE, height: MAP_SHEET_ACTION_HIT_SIZE }),
-                  labelStyle('iconOnly'),
-                  accessibilityLabel(doneLabel),
-                ]}
-              >
-                <Image
-                  systemName={action === 'commit' ? 'checkmark' : 'xmark'}
-                  modifiers={[frame({
-                    width: MAP_SHEET_ACTION_ICON_SIZE,
-                    height: MAP_SHEET_ACTION_ICON_SIZE,
-                  })]}
-                />
-              </Button>
+              <SheetHeaderActionContent
+                action={action}
+                onPress={action === 'commit' ? () => onCommit?.() : closeOnce}
+                accessibilityLabel={doneLabel}
+              />
             </HStack>
             <RNHostView matchContents={false}>
               <View style={styles.sheetBody}>

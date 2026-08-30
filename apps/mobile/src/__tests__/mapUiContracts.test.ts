@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
 const bottomSheet = readFileSync(join(__dirname, '../components/BottomSheet.tsx'), 'utf8');
+const overlaySheet = readFileSync(join(__dirname, '../components/OverlaySheet.tsx'), 'utf8');
 const settingsChildSheet = readFileSync(
   join(__dirname, '../screens/MapScreen/components/SettingsChildSheet.tsx'),
   'utf8',
@@ -354,8 +355,13 @@ describe('map UI placement contracts', () => {
   it('uses tap expansion and keeps controls and arrival progress expanded-only', () => {
     expect(mapScreen).toContain('useGatherCardExpansion');
     expect(mapScreen).toContain('toggleGatheringCard(dest.id)');
+    expect(mapScreen).toContain('collapseActiveCardForExpandedSheet');
+    expect(mapScreen).toContain('collapseCard(activeDestination.id)');
+    expect(mapScreen).toContain('const handleSheetIndexChange');
+    expect(mapScreen).toContain('onIndexChange={handleSheetIndexChange}');
     expect(mapScreen).toContain('setDetent(0)');
-    expect(mapScreen).toContain('runOnJS(finishGatheringCardExpand)(id)');
+    expect(mapScreen).toContain('expandCard(id)');
+    expect(mapScreen).not.toContain('finishGatheringCardExpand');
     expect(mapScreen).toContain('registerCardActivity(dest.id)');
     expect(mapScreen).not.toContain('pendingExpandId');
     expect(mapScreen).not.toContain("index === 0 ? t('map.nextTag')");
@@ -474,8 +480,18 @@ describe('map UI placement contracts', () => {
   });
 
   it('keeps expanded stages flush at the bottom while Peek remains floating', () => {
-    expect(bottomSheet).toContain('i === 0 ? SCREEN_CORNER_RADIUS : 0');
+    expect(bottomSheet).toContain('i === 0 ? MAP_SHEET_CORNER_RADIUS : 0');
+    expect(bottomSheet).toContain('MAP_SHEET_CORNER_RADIUS');
     expect(bottomSheet).toContain('detents.map((_, index) => (index === 0 ? bottomInset + 19 : 0))');
+  });
+
+  it('shares Peek corner geometry with overlays and keeps node cards readable', () => {
+    expect(overlaySheet).toContain('MAP_SHEET_CORNER_RADIUS');
+    expect(reorderList).toContain('MAP_SHEET_CORNER_RADIUS');
+    expect(reorderList).toContain('borderTopLeftRadius: MAP_SHEET_CORNER_RADIUS');
+    expect(reorderList).toContain('borderTopRightRadius: MAP_SHEET_CORNER_RADIUS');
+    expect(reorderList).toContain('<OverflowMarquee');
+    expect(reorderList).toContain('enabled={gatherCardTitleMarquee}');
   });
 
   it('snaps Segmented pill when track width appears (tools pane reveal)', () => {
@@ -545,7 +561,7 @@ describe('map UI placement contracts', () => {
   });
 
   it('uses one fixed top corner radius across all sheet detents', () => {
-    expect(bottomSheet).toContain('const topRadius = SCREEN_CORNER_RADIUS;');
+    expect(bottomSheet).toContain('const topRadius = MAP_SHEET_CORNER_RADIUS;');
     expect(bottomSheet).toContain('borderTopLeftRadius: topRadius');
     expect(bottomSheet).toContain('borderTopRightRadius: topRadius');
   });

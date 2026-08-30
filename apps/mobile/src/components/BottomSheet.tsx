@@ -21,12 +21,7 @@ import { glass } from '../glass';
 import SwiftUIGlassSurface from './SwiftUIGlassSurface';
 import { settleTarget } from './sheetMath';
 import { SHEET_ACTIVE_OFFSET_Y, SHEET_FAIL_OFFSET_X } from '../store/sheetPane';
-
-// ponytail: no RN/Expo API exposes the device's actual screen corner radius;
-// this approximates modern iPhones' bezel curve so the full-detent sheet
-// (flush with all 4 screen edges) reads as continuous with the physical
-// screen corners instead of squaring them off.
-const SCREEN_CORNER_RADIUS = 44;
+import { MAP_SHEET_CORNER_RADIUS } from './mapSheetChrome';
 
 // Height tolerance for "the spring actually reached the full detent".
 const EPS = 1;
@@ -399,13 +394,13 @@ export default React.memo(function BottomSheet({
         d.map((_, i) => (edgeToEdgeAtLastSV.value && i === last ? 0 : 10)),
         Extrapolation.CLAMP,
       );
-    const topRadius = SCREEN_CORNER_RADIUS;
+    const topRadius = MAP_SHEET_CORNER_RADIUS;
     // Only Peek is floating. Stage 1 and Stage 2 must meet the physical bottom
     // edge, so their bottom corners cannot expose the map through rounding.
     const bottomRadius = d.length <= 1
-      ? (edgeToEdgeAtLastSV.value ? 0 : SCREEN_CORNER_RADIUS)
+      ? (edgeToEdgeAtLastSV.value ? 0 : MAP_SHEET_CORNER_RADIUS)
       : interpolate(h, d, d.map((_, i) => (
-        i === 0 ? SCREEN_CORNER_RADIUS : 0
+        i === 0 ? MAP_SHEET_CORNER_RADIUS : 0
       )), Extrapolation.CLAMP);
     return {
       height: h,
@@ -426,7 +421,7 @@ export default React.memo(function BottomSheet({
         {useSwiftUIGlassSurface ? (
           <SwiftUIGlassSurface
             shape="roundedRectangle"
-            cornerRadius={SCREEN_CORNER_RADIUS}
+            cornerRadius={MAP_SHEET_CORNER_RADIUS}
             fallbackTintColor={Platform.OS === 'android' ? glass.sheetOpaque : undefined}
             style={StyleSheet.absoluteFill}
           />
