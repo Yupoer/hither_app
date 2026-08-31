@@ -22,6 +22,7 @@ describe('Supabase Auth configuration script contract', () => {
       expect(script).toContain(`Require-EnvironmentValue '${name}'`);
     }
     expect(script).toContain("$smtpHost = Require-EnvironmentValue 'SMTP_HOST'");
+    expect(script).toContain("uri_allow_list = ($allowList -join ',')");
   });
 
   it('tests Brevo before the minimal Auth PATCH and preserves unrelated providers', () => {
