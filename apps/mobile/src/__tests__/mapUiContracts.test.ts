@@ -99,6 +99,29 @@ describe('map UI placement contracts', () => {
     expect((reorderList.match(/numberOfLines=\{1\}/g) ?? []).length).toBeGreaterThanOrEqual(3);
   });
 
+  it('keeps route scopes role-aware and uses equal horizontal/bottom insets', () => {
+    expect(mapScreen).toContain('const expanded = canEdit');
+    expect(mapScreen).toContain('styles.routeScopeContent');
+    expect(mapScreen).toContain('paddingHorizontal: 10');
+    expect(mapScreen).toContain('paddingBottom: 10');
+    expect(mapScreen).not.toContain('routeOverlayBody');
+    expect(mapScreen).toContain("await refresh('membership_change')");
+    expect(mapScreen).toContain('setOptimisticDestinations(null);');
+    expect(mapScreen).toContain('setKmlScopeId(myScopeId);');
+  });
+
+  it('haptics the add-place confirmation and omits root settings subtitles', () => {
+    const confirmStart = mapScreen.indexOf("accessibilityLabel={t('confirmGather.add')}");
+    const confirmBlock = mapScreen.slice(confirmStart, confirmStart + 420);
+    expect(confirmBlock).toContain('lightTap();');
+
+    const rootStart = settingsOverlay.indexOf('<View style={styles.settingsTopGroup}>');
+    const languageStart = settingsOverlay.indexOf("t('settings.sectionLanguageAppearance')", rootStart);
+    expect(rootStart).toBeGreaterThanOrEqual(0);
+    expect(languageStart).toBeGreaterThan(rootStart);
+    expect(settingsOverlay.slice(rootStart, languageStart)).not.toContain('description=');
+  });
+
   it('coalesces full group-state reloads at a single-flight root', () => {
     expect(useGroupState).toContain('loadInFlightRef');
     expect(useGroupState).toContain('if (loadInFlightRef.current) {');
@@ -216,7 +239,8 @@ describe('map UI placement contracts', () => {
 
   it('exposes return-to-home from settings without forcing leave/sign-out', () => {
     expect(settingsOverlay).toContain("t('map.backToHome')");
-    expect(settingsOverlay).toContain("t('settings.createOrJoinHint')");
+    expect(settingsOverlay).not.toContain("t('settings.createOrJoinHint')");
+    expect(settingsOverlay).toContain('showHint={false}');
     expect(settingsOverlay).toContain('onGoHome');
     expect(settingsOverlay).not.toContain("t('settings.createOrJoin')");
     expect(settingsOverlay).not.toContain("t('map.switchGroup')");

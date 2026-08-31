@@ -11,6 +11,7 @@ const modeSelector = read('apps/mobile/src/components/AuthModeSelector.tsx');
 const modeSelectorIos = read('apps/mobile/src/components/AuthModeSelector.ios.tsx');
 const googleIos = read('apps/mobile/src/state/googleSignIn.ios.ts');
 const googleFallback = read('apps/mobile/src/state/googleSignIn.ts');
+const zh = read('apps/mobile/src/i18n/locales/zh.ts');
 const packageConfig = JSON.parse(read('apps/mobile/package.json')) as {
   dependencies: Record<string, string>;
 };
@@ -33,11 +34,15 @@ describe('auth overhaul contract', () => {
     expect(session).toContain("recovery_not_active");
   });
 
-  it('uses hosted OAuth without entering the native Google crash path', () => {
+  it('uses native Google ID tokens on iOS and hosted OAuth only on the fallback platform', () => {
     expect(packageConfig.dependencies['@react-native-google-signin/google-signin']).toBeTruthy();
     expect(googleIos).toContain('GoogleSignin.configure');
     expect(googleIos).toContain('GoogleSignin.signIn');
-    expect(authFlow).not.toContain("from './googleSignIn'");
+    expect(authFlow).toContain("from './googleSignIn'");
+    expect(authFlow).toContain('getGoogleIdToken');
+    expect(authFlow).toMatch(/signInWithIdToken\(\{[\s\S]*?provider: 'google'/);
+    expect(authFlow).toContain("linkIdentity({ provider: 'google', token })");
+    expect(authFlow).toContain('!usesNativeGoogleSignIn');
     expect(googleFallback).toContain('hosted OAuth');
     expect(authFlow).toContain('signInWithOAuth');
     expect(authFlow).toContain("queryParams: { prompt: 'select_account' }");
@@ -57,9 +62,18 @@ describe('auth overhaul contract', () => {
     expect(login).toContain('minHeight: 58');
     expect(authFieldIos).toContain("from 'react-native'");
     expect(authFieldIos).toContain('<TextInput');
-    expect(modeSelector).toContain('minHeight: 48');
-    expect(modeSelectorIos).toContain('minHeight: 48');
+    expect(login).toContain("primaryAction: { width: '50%'");
+    expect(login).toContain("guestButton: { alignSelf: 'center', width: '50%'");
+    expect(login).toContain("resetAction: { width: '33.333%'");
+    expect(login).toContain('testID="login-signup-terms"');
+    expect(login).toContain('termsAccepted');
+    expect(modeSelector).toContain("width: '66.667%'");
+    expect(modeSelectorIos).toContain("width: '66.667%'");
+    expect(modeSelector).toContain('height: 32');
+    expect(modeSelectorIos).toContain('height: 32');
     expect(modeSelector).toContain('transitionDuration: reducedMotion ? 0 : 180');
     expect(modeSelectorIos).toContain('transitionDuration: reducedMotion ? 0 : 180');
+    expect(zh).toContain("'login.signupAgreementPrefix': '註冊即表示同意'");
+    expect(zh).not.toContain('註冊即表示你同意');
   });
 });

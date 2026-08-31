@@ -6,6 +6,7 @@ const mockSignUp = jest.fn();
 const mockUpdateUser = jest.fn();
 const mockGetUser = jest.fn();
 const mockSignInWithOAuth = jest.fn();
+const mockSignInWithIdToken = jest.fn();
 const mockLinkIdentity = jest.fn();
 const mockSetSession = jest.fn();
 const mockOpenAuth = jest.fn();
@@ -15,8 +16,10 @@ const mockUpsert = jest.fn();
 const mockMaybeSingle = jest.fn();
 const mockUpdateNickname = jest.fn();
 const mockUpdateProfile = jest.fn();
+const mockGetGoogleIdToken = jest.fn();
 
 jest.mock('react', () => ({ useCallback: (fn: unknown) => fn }));
+jest.mock('react-native', () => ({ Platform: { OS: 'ios' } }));
 jest.mock('expo-web-browser', () => ({
   openAuthSessionAsync: (...args: unknown[]) => mockOpenAuth(...args),
 }));
@@ -37,6 +40,10 @@ jest.mock('../api/client', () => ({
   updateNickname: (...args: unknown[]) => mockUpdateNickname(...args),
   updateProfile: (...args: unknown[]) => mockUpdateProfile(...args),
 }));
+jest.mock('../state/googleSignIn', () => ({
+  getGoogleIdToken: (...args: unknown[]) => mockGetGoogleIdToken(...args),
+  usesNativeGoogleSignIn: true,
+}));
 jest.mock('../api/supabase', () => ({
   supabase: {
     rpc: (...args: unknown[]) => mockRpc(...args),
@@ -49,7 +56,7 @@ jest.mock('../api/supabase', () => ({
       getUser: (...args: unknown[]) => mockGetUser(...args),
       signInWithOAuth: (...args: unknown[]) => mockSignInWithOAuth(...args),
       linkIdentity: (...args: unknown[]) => mockLinkIdentity(...args),
-      signInWithIdToken: jest.fn(),
+      signInWithIdToken: (...args: unknown[]) => mockSignInWithIdToken(...args),
       setSession: (...args: unknown[]) => mockSetSession(...args),
       exchangeCodeForSession: jest.fn(),
     },
@@ -94,6 +101,7 @@ describe('useAuthFlow deleteAccount and signOut', () => {
     mockUpsert.mockResolvedValue({ error: null });
     mockUpdateNickname.mockResolvedValue('Ada');
     mockUpdateProfile.mockResolvedValue(undefined);
+    mockGetGoogleIdToken.mockResolvedValue('google-id-token');
     mockGetUser.mockResolvedValue({ data: { user: { is_anonymous: false } } });
     mockUpdateUser.mockResolvedValue({ error: null });
   });
@@ -155,7 +163,7 @@ describe('useAuthFlow deleteAccount and signOut', () => {
       data: { session: {}, user: { id: 'u3', email: 'c@d.e' } },
       error: null,
     });
-    mockSignInWithOAuth.mockResolvedValue({ data: null, error: { message: 'oauth off' } });
+    mockSignInWithIdToken.mockResolvedValue({ data: null, error: { message: 'oauth off' } });
     mockLinkIdentity.mockResolvedValue({ data: null, error: { message: 'link off' } });
 
     const flow = makeFlow();
@@ -167,6 +175,10 @@ describe('useAuthFlow deleteAccount and signOut', () => {
       flow.signUpWithEmail({ email: 'c@d.e', password: 'secret1', nickname: 'Cee' }),
     ).resolves.toMatchObject({ status: 'signed_in', user: { id: 'u3' } });
     await expect(flow.signInWithGoogle()).rejects.toThrow('oauth off');
+    expect(mockSignInWithIdToken).toHaveBeenCalledWith({
+      provider: 'google',
+      token: 'google-id-token',
+    });
     await expect(flow.linkWithGoogle()).rejects.toThrow('link off');
     await expect(flow.linkWithApple()).rejects.toThrow();
     await flow.updateNickname('Ada');
@@ -175,14 +187,74 @@ describe('useAuthFlow deleteAccount and signOut', () => {
     expect(mockUpdateUser).toHaveBeenLastCalledWith({ password: 'secret1' });
   });
 
-  it('links Google/Apple and applies profile updaters on success and RPC reject', async () => {
-    mockLinkIdentity.mockResolvedValue({ data: { url: 'https://auth.example/google' }, error: null });
-    mockOpenAuth.mockResolvedValue({ type: 'success', url: 'hither://cb' });
-    mockGetQueryParams.mockReturnValue({
-      params: { access_token: 'tok', refresh_token: 'ref' },
-      errorCode: null,
+  it('completes Google sign-in with the native ID token and preserves the profile', async () => {
+    mockSignInWithIdToken.mockResolvedValue({
+      data: {
+        user: {
+          id: 'google-u1',
+          email: 'google@example.test',
+          app_metadata: { provider: 'google' },
+          user_metadata: { name: 'Google User' },
+        },
+      },
+      error: null,
     });
-    mockSetSession.mockResolvedValue({
+    const setUser = jest.fn();
+    const flow = makeFlow({ setUser });
+
+    await expect(flow.signInWithGoogle()).resolves.toMatchObject({
+      id: 'google-u1',
+      email: 'google@example.test',
+      provider: 'google',
+    });
+    expect(mockSignInWithIdToken).toHaveBeenCalledWith({
+      provider: 'google',
+      token: 'google-id-token',
+    });
+    expect(mockSignInWithOAuth).not.toHaveBeenCalled();
+    expect(setUser).toHaveBeenCalledWith(expect.objectContaining({ id: 'google-u1' }));
+  });
+
+  it('returns null when native Google account selection is cancelled', async () => {
+    mockGetGoogleIdToken.mockResolvedValueOnce(null);
+    await expect(makeFlow().signInWithGoogle()).resolves.toBeNull();
+    expect(mockSignInWithIdToken).not.toHaveBeenCalled();
+  });
+
+  it('does not fall back to the hosted project prompt on iOS native failure', async () => {
+    mockGetGoogleIdToken.mockRejectedValueOnce({
+      code: 'google_native_unavailable',
+      message: 'native module missing',
+    });
+    await expect(makeFlow().signInWithGoogle()).rejects.toMatchObject({
+      code: 'google_native_unavailable',
+    });
+    expect(mockSignInWithOAuth).not.toHaveBeenCalled();
+  });
+
+  it('links Google natively without replacing the existing account UID', async () => {
+    mockLinkIdentity.mockResolvedValueOnce({
+      data: { user: { id: 'linked-u1', email: 'linked@example.test' } },
+      error: null,
+    });
+    const setUser = jest.fn();
+    const flow = makeFlow({ setUser, user: { id: 'u1', name: 'Ada', email: '' } });
+
+    await expect(flow.linkWithGoogle()).resolves.toMatchObject({
+      id: 'u1',
+      email: 'linked@example.test',
+      provider: 'google',
+    });
+    expect(mockLinkIdentity).toHaveBeenCalledWith({
+      provider: 'google',
+      token: 'google-id-token',
+    });
+    expect(mockOpenAuth).not.toHaveBeenCalled();
+    expect(setUser).toHaveBeenCalledWith(expect.objectContaining({ id: 'u1' }));
+  });
+
+  it('links Google/Apple and applies profile updaters on success and RPC reject', async () => {
+    mockLinkIdentity.mockResolvedValue({
       data: { user: { email: 'g@example.test' } },
       error: null,
     });
@@ -196,6 +268,11 @@ describe('useAuthFlow deleteAccount and signOut', () => {
       email: 'g@example.test',
       provider: 'google',
     });
+    expect(mockLinkIdentity).toHaveBeenCalledWith({
+      provider: 'google',
+      token: 'google-id-token',
+    });
+    expect(mockOpenAuth).not.toHaveBeenCalled();
 
     mockRpc.mockRejectedValueOnce(new Error('already cleared'));
     mockLinkIdentity.mockResolvedValue({

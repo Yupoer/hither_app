@@ -291,6 +291,13 @@ export default function DestinationReorderList({
    */
   const [pendingStayDestId, setPendingStayDestId] = useState<string | null>(null);
   const [collapsedDays, setCollapsedDays] = useState<Record<number, boolean>>({});
+  /**
+   * Day2+ header chrome: default collapse; left-swipe toggles drag handle.
+   * Only one affordance shows at a time. Day1 is collapse-only (no swipe).
+   */
+  const [headerAffordanceByDay, setHeaderAffordanceByDay] = useState<
+    Record<number, 'collapse' | 'drag'>
+  >({});
   const [favoritesOpen, setFavoritesOpen] = useState(false);
   /** Favorite selected; date must be confirmed before write. */
   const [favoritePending, setFavoritePending] = useState<FavoritePlaceView | null>(null);
@@ -349,7 +356,7 @@ export default function DestinationReorderList({
 
   // Local collapse prefs: account + group + calendar date (first open = expanded).
   useEffect(() => {
-    if (canReorder || !accountId || !groupId || !departureDate || !tripDays) return;
+    if (!accountId || !groupId || !departureDate || !tripDays) return;
     let cancelled = false;
     (async () => {
       const next: Record<number, boolean> = {};
@@ -370,7 +377,7 @@ export default function DestinationReorderList({
     return () => {
       cancelled = true;
     };
-  }, [accountId, canReorder, groupId, departureDate, tripDays]);
+  }, [accountId, groupId, departureDate, tripDays]);
 
   const toggleDayCollapsed = useCallback(
     async (day: number) => {
@@ -809,7 +816,7 @@ export default function DestinationReorderList({
               blockDay?: number,
             ) => {
               const visualDay = blockDay ?? item.item.day ?? 1;
-              if (!canReorder && (collapsedDays[visualDay] || collapsedDays[item.item.day || 1])) return null;
+              if (collapsedDays[visualDay] || collapsedDays[item.item.day || 1]) return null;
               const dayColor = getColorForDay(visualDay, dayColors);
               const dayItems: AccommodationListItem[] = destinations
                 .filter((d) => (d.day || 1) === visualDay)
@@ -944,9 +951,7 @@ export default function DestinationReorderList({
               const bgColor = dayColors[item.day] || DAY_COLORS[(item.day - 1) % DAY_COLORS.length];
               const stayDate = stayDateForDay(item.day);
               const daily = stayDate && dailyByDate ? dailyByDate[stayDate] : undefined;
-              // Editors need the route visible while reordering. Read-only
-              // members retain collapse controls to save screen space.
-              const collapsed = !canReorder && Boolean(collapsedDays[item.day]);
+              const collapsed = Boolean(collapsedDays[item.day]);
               const dayStopCount = block.dests.length;
               const hasDaily = Boolean(daily);
               // Quick-add stay card only after daily accommodation is set
@@ -957,9 +962,13 @@ export default function DestinationReorderList({
                 && onQuickAddAccommodation != null
                 && dayStopCount > 0
                 && hasDaily;
-              const canSwipeToggle = false;
-              const showCollapseAffordance = !canReorder;
-              const showDragAffordance = canReorder && item.day > 1;
+              // Day1: collapse only. Day2+: left-swipe toggles collapse ↔ drag.
+              const headerAffordance = headerAffordanceByDay[item.day] ?? 'collapse';
+              const canSwipeToggle = canReorder && item.day > 1;
+              const showCollapseAffordance =
+                item.day <= 1 || headerAffordance === 'collapse';
+              const showDragAffordance =
+                canReorder && item.day > 1 && headerAffordance === 'drag';
               // Drop on a header index = first slot of that day → draw AFTER header,
               // never between previous day's quick-add and this header.
               const headerIndex = flatIndex;
@@ -1022,7 +1031,16 @@ export default function DestinationReorderList({
                     }
                     canDragHeader={showDragAffordance}
                     canSwipeToggleAffordance={canSwipeToggle}
-                    onSwipeToggleAffordance={undefined}
+                    onSwipeToggleAffordance={() => {
+                      mediumTap();
+                      setHeaderAffordanceByDay((prev) => {
+                        const cur = prev[item.day] ?? 'collapse';
+                        return {
+                          ...prev,
+                          [item.day]: cur === 'collapse' ? 'drag' : 'collapse',
+                        };
+                      });
+                    }}
                     onHeaderGrant={
                       showDragAffordance
                         ? () => onGrant(item.id)

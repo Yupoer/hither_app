@@ -100,6 +100,7 @@ export default function LoginScreen({ navigation }: Props) {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [nickname, setNickname] = useState('');
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [busyAction, setBusyAction] = useState<AuthBusyAction>(null);
   const [errors, setErrors] = useState<AuthFieldErrors>({});
@@ -125,7 +126,10 @@ export default function LoginScreen({ navigation }: Props) {
   const passwordOk = password.replace(/\s/g, '').length >= MIN_PASSWORD;
   const confirmPasswordOk = password.length > 0 && password === confirmPassword;
   const nicknameOk = !isSignUp || nickname.trim().length > 0;
-  const formCanSubmit = emailOk && passwordOk && nicknameOk && (!isSignUp || confirmPasswordOk);
+  const formCanSubmit = emailOk
+    && passwordOk
+    && nicknameOk
+    && (!isSignUp || (confirmPasswordOk && termsAccepted));
 
   useEffect(() => {
     void AppleAuthentication.isAvailableAsync().then(setAppleAvailable).catch(() => setAppleAvailable(false));
@@ -134,6 +138,7 @@ export default function LoginScreen({ navigation }: Props) {
   useEffect(() => {
     setTouched({ nickname: false, email: false, password: false, confirmPassword: false });
     setErrors({});
+    setTermsAccepted(false);
   }, [mode]);
 
   useEffect(() => {
@@ -364,7 +369,9 @@ export default function LoginScreen({ navigation }: Props) {
         ? t('login.confirmPasswordMismatch')
         : null;
     const panelNicknameError = !nickname.trim() ? t('login.nicknameRequired') : null;
-    const panelCanSubmit = emailOk && passwordOk && (!panelSignUp || (nicknameOk && confirmPasswordOk));
+    const panelCanSubmit = emailOk
+      && passwordOk
+      && (!panelSignUp || (nicknameOk && confirmPasswordOk && termsAccepted));
     const panelAction: AuthBusyAction = panelSignUp ? 'email_sign_up' : 'email_sign_in';
     return (
       <View pointerEvents={active ? 'auto' : 'none'} style={styles.form}>
@@ -483,25 +490,43 @@ export default function LoginScreen({ navigation }: Props) {
             {errorFor('confirmPassword', panelConfirmError) ? (
               <Text style={styles.fieldError}>{errorFor('confirmPassword', panelConfirmError)}</Text>
             ) : null}
-            <Text style={styles.signupAgreement}>
-              {t('login.signupAgreementPrefix')}
-              <Text
-                onPress={() => termsUrl && void Linking.openURL(termsUrl)}
-                accessibilityRole="link"
-                style={styles.legalText}
-              >
-                {t('login.terms')}
+            <Pressable
+              onPress={() => {
+                selectionTick();
+                setTermsAccepted((current) => !current);
+              }}
+              accessibilityRole="checkbox"
+              accessibilityLabel={t('login.signupAgreementA11y')}
+              accessibilityState={{ checked: termsAccepted }}
+              testID="login-signup-terms"
+              style={styles.signupAgreement}
+            >
+              <Ionicons
+                name={termsAccepted ? 'checkbox' : 'square-outline'}
+                size={22}
+                color={termsAccepted ? accent : 'rgba(235,235,245,0.65)'}
+                style={styles.signupAgreementIcon}
+              />
+              <Text style={styles.signupAgreementText}>
+                {t('login.signupAgreementPrefix')}
+                <Text
+                  onPress={() => termsUrl && void Linking.openURL(termsUrl)}
+                  accessibilityRole="link"
+                  style={styles.legalText}
+                >
+                  {t('login.terms')}
+                </Text>
+                {t('login.signupAgreementAnd')}
+                <Text
+                  onPress={() => privacyUrl && void Linking.openURL(privacyUrl)}
+                  accessibilityRole="link"
+                  style={styles.legalText}
+                >
+                  {t('login.privacy')}
+                </Text>
+                {t('login.signupAgreementSuffix')}
               </Text>
-              {t('login.signupAgreementAnd')}
-              <Text
-                onPress={() => privacyUrl && void Linking.openURL(privacyUrl)}
-                accessibilityRole="link"
-                style={styles.legalText}
-              >
-                {t('login.privacy')}
-              </Text>
-              {t('login.signupAgreementSuffix')}
-            </Text>
+            </Pressable>
           </>
         ) : (
           <Pressable
@@ -532,8 +557,7 @@ export default function LoginScreen({ navigation }: Props) {
           accessibilityRole="button"
           style={({ pressed }) => [
             styles.cta,
-            styles.compactAction,
-            panelSignUp && styles.signupCta,
+            styles.primaryAction,
             (!panelCanSubmit || busy) && styles.ctaDisabled,
             pressed && panelCanSubmit && styles.pressed,
           ]}
@@ -591,7 +615,7 @@ export default function LoginScreen({ navigation }: Props) {
           disabled={!emailOk || busy || resetCooldown > 0}
           testID="login-reset-submit"
           accessibilityRole="button"
-          style={[styles.cta, styles.compactAction, (!emailOk || busy || resetCooldown > 0) && styles.ctaDisabled]}
+          style={[styles.cta, styles.resetAction, (!emailOk || busy || resetCooldown > 0) && styles.ctaDisabled]}
         >
           {busyAction === 'password_reset' ? (
             <ActivityIndicator color="#fff" />
@@ -797,8 +821,8 @@ const makeStyles = (accent: string) =>
     fieldError: { marginTop: 6, marginLeft: 4, color: '#ff8f8f', fontSize: 13, lineHeight: 18 },
     formError: { marginTop: 10, marginBottom: 2, color: '#ff8f8f', fontSize: 13, lineHeight: 18, textAlign: 'center' },
     cta: { height: 52, borderRadius: 26, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 10, backgroundColor: accent, borderWidth: StyleSheet.hairlineWidth, borderColor: accentMix(accent, 55), width: '100%' },
-    compactAction: { width: '33.333%', alignSelf: 'center' },
-    signupCta: { marginTop: 18 },
+    primaryAction: { width: '50%', alignSelf: 'center', marginTop: 24 },
+    resetAction: { width: '33.333%', alignSelf: 'center' },
     ctaDisabled: { opacity: 0.4 },
     pressed: { opacity: 0.85 },
     ctaText: { fontSize: 17, fontWeight: '600', color: '#fff' },
@@ -811,7 +835,7 @@ const makeStyles = (accent: string) =>
     socialCaption: { textAlign: 'center', fontSize: 12, color: 'rgba(235,235,245,0.45)', marginTop: 8, maxWidth: 125 },
     socialRow: { minHeight: 64, marginTop: 10, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', gap: 16 },
     socialColumn: { alignItems: 'center' },
-    guestButton: { alignSelf: 'center', width: '33.333%', minHeight: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center', marginTop: 10, backgroundColor: 'rgba(255,255,255,0.1)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.22)', paddingHorizontal: 8 },
+    guestButton: { alignSelf: 'center', width: '50%', minHeight: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center', marginTop: 10, backgroundColor: 'rgba(255,255,255,0.1)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.22)', paddingHorizontal: 8 },
     legalRow: { minHeight: 36, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 4 },
     legalText: { fontSize: 12, color: 'rgba(235,235,245,0.6)', textDecorationLine: 'underline' },
     legalDot: { color: 'rgba(235,235,245,0.4)' },
@@ -823,7 +847,9 @@ const makeStyles = (accent: string) =>
     cooldownText: { fontSize: 12, color: 'rgba(235,235,245,0.55)', textAlign: 'center', marginTop: 6 },
     resetGoogle: { minHeight: 44, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 12, marginTop: 8 },
     resetGoogleText: { fontSize: 13, color: '#fff', textDecorationLine: 'underline' },
-    signupAgreement: { fontSize: 12, lineHeight: 18, color: 'rgba(235,235,245,0.58)', textAlign: 'center', marginTop: 14, paddingHorizontal: 8 },
+    signupAgreement: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 14, paddingHorizontal: 8 },
+    signupAgreementIcon: { width: 28, marginTop: -2 },
+    signupAgreementText: { flex: 1, fontSize: 12, lineHeight: 18, color: 'rgba(235,235,245,0.58)' },
     successText: { fontSize: 14, lineHeight: 20, color: '#9de7b5', marginTop: 14 },
     backLink: { alignSelf: 'center', minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, marginTop: 10 },
     backLinkText: { fontSize: 14, color: 'rgba(235,235,245,0.72)', textDecorationLine: 'underline' },

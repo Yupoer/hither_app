@@ -7,9 +7,11 @@ import { lightTap } from '../utils/haptics';
 export default React.memo(function PremiumBanner({
   onPress,
   testID,
+  showHint = true,
 }: {
   onPress: () => void;
   testID?: string;
+  showHint?: boolean;
 }) {
   const { t } = useTranslation();
   return (
@@ -31,7 +33,7 @@ export default React.memo(function PremiumBanner({
       />
       <View style={styles.copy}>
         <Text style={styles.title}>{t('paywall.title')}</Text>
-        <Text style={styles.hint}>{t('settings.subscribeBannerHint')}</Text>
+        {showHint ? <Text style={styles.hint}>{t('settings.subscribeBannerHint')}</Text> : null}
       </View>
       <View style={styles.arrow}>
         <Text style={styles.arrowText}>→</Text>

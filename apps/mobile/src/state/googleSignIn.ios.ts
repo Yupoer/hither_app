@@ -2,6 +2,7 @@ import Constants from 'expo-constants';
 import { AuthFlowError, toAuthFlowError } from '../auth/types';
 
 let configured = false;
+export const usesNativeGoogleSignIn = true;
 type GoogleSigninApi = {
   GoogleSignin: {
     configure: (options: { webClientId: string; iosClientId: string }) => void;

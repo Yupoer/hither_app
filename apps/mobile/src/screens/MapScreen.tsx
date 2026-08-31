@@ -761,6 +761,22 @@ export default function MapScreen({ route, navigation }: Props) {
   const workflowReloadRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [optimisticTripDays, setOptimisticTripDays] = useState<number | null>(null);
   const [optimisticDepartureDate, setOptimisticDepartureDate] = useState<string | null>(null);
+  // Membership changes switch the active itinerary scope. Clear every draft
+  // owned by the old scope before the new team's snapshot is painted.
+  useEffect(() => {
+    setOptimisticDestinations(null);
+    setDraftDailyAccommodations(null);
+    setOptimisticTripDays(null);
+    setOptimisticDepartureDate(null);
+    setPendingDestinationMutations([]);
+    setRouteEditorScopeId(myScopeId);
+    routeDraftDirtyRef.current = {
+      destinations: false,
+      daily: false,
+      trip: false,
+      deletedIds: [],
+    };
+  }, [myScopeId]);
   const mapDailyAccommodations = useMemo(() => {
     const departure = optimisticDepartureDate ?? group?.departureDate;
     const tripDays = optimisticTripDays ?? group?.tripDays ?? 1;
@@ -1109,6 +1125,9 @@ export default function MapScreen({ route, navigation }: Props) {
     | 'ops'
   >(null);
   const [editButtonActive, setEditButtonActive] = useState(false);
+  useEffect(() => {
+    setEditButtonActive(false);
+  }, [myScopeId]);
   const [arrivalDestination, setArrivalDestination] = useState<Destination | null>(null);
   const [statusApplying, setStatusApplying] = useState(false);
   const [notifPrefs, setNotifPrefs] = useState<NotificationPreferences>(
@@ -1209,6 +1228,9 @@ export default function MapScreen({ route, navigation }: Props) {
   const [confirmKeyboardHeight, setConfirmKeyboardHeight] = useState(0);
   const [kmlVisible, setKmlVisible] = useState(false);
   const [kmlScopeId, setKmlScopeId] = useState<string | undefined>(myScopeId);
+  useEffect(() => {
+    setKmlScopeId(myScopeId);
+  }, [myScopeId]);
   const [kmlRemainingQuota, setKmlRemainingQuota] = useState<number | undefined>();
   const kmlScopedDestinations = useMemo(
     () => (state?.destinations ?? []).filter((destination) => (
@@ -4142,7 +4164,7 @@ export default function MapScreen({ route, navigation }: Props) {
     try {
       await acceptInvite(inviteId);
       logEvent('invite_accept_ok', { inviteId });
-      refresh();
+      await refresh('membership_change');
     } catch (e) {
       logError('invite_accept_failed', e, { inviteId });
       Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
@@ -5915,7 +5937,8 @@ export default function MapScreen({ route, navigation }: Props) {
     canEdit: boolean;
     scopeId?: string;
   }) => {
-    const expanded = routeScopeExpanded[scopeKey] ?? (scopeKey === 'subgroup' || !myScopeId);
+    const expanded = canEdit
+      || (routeScopeExpanded[scopeKey] ?? (scopeKey === 'subgroup' || !myScopeId));
     const count = countOpenDestinations(scopeDestinations);
     return (
       <View
@@ -5925,17 +5948,20 @@ export default function MapScreen({ route, navigation }: Props) {
       >
         <Pressable
           style={styles.routeScopeHeader}
-          onPress={() => toggleRouteScope(scopeKey)}
-          accessibilityRole="button"
-          accessibilityState={{ expanded }}
+          onPress={canEdit ? undefined : () => toggleRouteScope(scopeKey)}
+          disabled={canEdit}
+          accessibilityRole={canEdit ? undefined : 'button'}
+          accessibilityState={{ expanded, disabled: canEdit }}
         >
           <Text style={styles.routeScopeTitle}>{title}</Text>
           <Text style={styles.routeScopeCount}>{count}</Text>
-          <Ionicons
-            name={expanded ? 'chevron-up' : 'chevron-down'}
-            size={18}
-            color={glass.textTertiary}
-          />
+          {!canEdit ? (
+            <Ionicons
+              name={expanded ? 'chevron-up' : 'chevron-down'}
+              size={18}
+              color={glass.textTertiary}
+            />
+          ) : null}
         </Pressable>
         {expanded ? (canEdit ? (
           <View style={styles.reorderActionCard}>
@@ -5966,33 +5992,35 @@ export default function MapScreen({ route, navigation }: Props) {
             />
           </View>
         ) : (
-          <DestinationReorderList
-            groupId={groupId ?? undefined}
-            destinations={openDestinationsForReorder(scopeDestinations)}
-            canReorder={false}
-            showTripDetails={false}
-            tripDays={optimisticTripDays ?? group?.tripDays}
-            departureDate={optimisticDepartureDate ?? group?.departureDate}
-            onImport={() => { void openKmlImportForScope(scopeId); }}
-            favoritePlaces={favoritePlaces}
-            onPickFavorite={(favorite, day) => {
-              void notifyLeaderPlace([{
-                title: favorite.title,
-                address: favorite.address,
-                coordinates: favorite.coordinates,
-                day,
-              }], 'search', scopeId);
-            }}
-            onDeleteFavorite={user?.id ? (favorite) => {
-              const snapshot = favoritePlaces;
-              setFavoritePlaces((prev) => prev.filter((item) => item.id !== favorite.id));
-              void unsaveFavoritePlace(favorite.id).catch(() => setFavoritePlaces(snapshot));
-            } : undefined}
-            colors={dark}
-            emptyLabel={t('settings.noDestinations')}
-            dailyByDate={routeDailyByDate}
-            accountId={user?.id}
-          />
+          <View style={styles.routeScopeContent}>
+            <DestinationReorderList
+              groupId={groupId ?? undefined}
+              destinations={openDestinationsForReorder(scopeDestinations)}
+              canReorder={false}
+              showTripDetails={false}
+              tripDays={optimisticTripDays ?? group?.tripDays}
+              departureDate={optimisticDepartureDate ?? group?.departureDate}
+              onImport={() => { void openKmlImportForScope(scopeId); }}
+              favoritePlaces={favoritePlaces}
+              onPickFavorite={(favorite, day) => {
+                void notifyLeaderPlace([{
+                  title: favorite.title,
+                  address: favorite.address,
+                  coordinates: favorite.coordinates,
+                  day,
+                }], 'search', scopeId);
+              }}
+              onDeleteFavorite={user?.id ? (favorite) => {
+                const snapshot = favoritePlaces;
+                setFavoritePlaces((prev) => prev.filter((item) => item.id !== favorite.id));
+                void unsaveFavoritePlace(favorite.id).catch(() => setFavoritePlaces(snapshot));
+              } : undefined}
+              colors={dark}
+              emptyLabel={t('settings.noDestinations')}
+              dailyByDate={routeDailyByDate}
+              accountId={user?.id}
+            />
+          </View>
         )) : null}
       </View>
     );
@@ -6756,6 +6784,7 @@ export default function MapScreen({ route, navigation }: Props) {
                   accessibilityLabel={t('confirmGather.add')}
                   accessibilityRole="button"
                   onPress={() => {
+                    lightTap();
                     const place = {
                       ...pendingPlace,
                       name: pendingPlaceTitle.trim() || pendingPlace.name,
@@ -7646,7 +7675,7 @@ export default function MapScreen({ route, navigation }: Props) {
       >
         <ScrollView
           ref={routeScrollRef}
-          contentContainerStyle={[styles.overlayBody, styles.routeOverlayBody]}
+          contentContainerStyle={styles.overlayBody}
           scrollEnabled={routeScrollEnabled}
           onLayout={(event) => {
             routeScrollViewportHeightRef.current = event.nativeEvent.layout.height;
@@ -10302,6 +10331,7 @@ const makeStyles = (
     /** Standalone framed reorder action (outside listGroup). */
     reorderActionCard: {
       marginBottom: 10,
+      marginHorizontal: 10,
       minHeight: 52,
       paddingVertical: 4,
       paddingHorizontal: 4,
@@ -10328,6 +10358,10 @@ const makeStyles = (
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairlineStrong,
       backgroundColor: glass.fill,
+    },
+    routeScopeContent: {
+      paddingHorizontal: 10,
+      paddingBottom: 10,
     },
     routeScopeHeader: {
       minHeight: 52,
@@ -10902,7 +10936,6 @@ const makeStyles = (
 
     // Overlays
     overlayBody: { paddingHorizontal: 16, paddingBottom: 40 },
-    routeOverlayBody: { paddingHorizontal: 40 },
     overlayHint: { fontSize: 12.5, color: glass.textSecondary, marginBottom: 12, marginHorizontal: 4 },
     addStop: {
       flexDirection: 'row',
