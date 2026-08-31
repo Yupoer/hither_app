@@ -16,6 +16,14 @@ describe('Supabase Auth configuration script contract', () => {
     expect(script).not.toContain('Write-Output $brevoApiKey');
   });
 
+  it('supports Gmail SMTP without requiring a Brevo API key', () => {
+    expect(script).toContain("[ValidateSet('brevo', 'gmail')]");
+    for (const name of ['SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASSWORD', 'SMTP_SENDER_EMAIL']) {
+      expect(script).toContain(`Require-EnvironmentValue '${name}'`);
+    }
+    expect(script).toContain("$smtpHost = Require-EnvironmentValue 'SMTP_HOST'");
+  });
+
   it('tests Brevo before the minimal Auth PATCH and preserves unrelated providers', () => {
     expect(script).toContain("https://api.brevo.com/v3/account");
     expect(script).toContain('smtp-relay.brevo.com');
