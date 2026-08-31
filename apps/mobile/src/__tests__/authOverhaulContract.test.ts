@@ -6,6 +6,9 @@ const read = (path: string) => readFileSync(join(root, path), 'utf8');
 const authFlow = read('apps/mobile/src/state/useAuthFlow.ts');
 const session = read('apps/mobile/src/state/SessionContext.tsx');
 const login = read('apps/mobile/src/screens/LoginScreen.tsx');
+const authFieldIos = read('apps/mobile/src/components/AuthField.ios.tsx');
+const modeSelector = read('apps/mobile/src/components/AuthModeSelector.tsx');
+const modeSelectorIos = read('apps/mobile/src/components/AuthModeSelector.ios.tsx');
 const googleIos = read('apps/mobile/src/state/googleSignIn.ios.ts');
 const googleFallback = read('apps/mobile/src/state/googleSignIn.ts');
 const packageConfig = JSON.parse(read('apps/mobile/package.json')) as {
@@ -40,13 +43,20 @@ describe('auth overhaul contract', () => {
     expect(authFlow).toContain('signInWithOAuth');
   });
 
-  it('keeps the login UI inline, animated, accessible, and haptic-aware', () => {
+  it('keeps the login UI single-mounted, stable, accessible, and haptic-aware', () => {
     expect(login).not.toContain('Alert.alert');
     expect(login).toContain('emailAlreadyRegistered');
-    expect(login).toContain('Animated.timing');
-    expect(login).toContain('reduceMotion ? 120 : 220');
+    expect(login).not.toContain('Animated.timing');
+    expect(login).toContain('formViewport');
+    expect(login).toContain('renderAuthPanel(mode, true)');
     expect(login).toContain('selectionTick');
     expect(login).toContain('login-resend-confirmation');
     expect(login).toContain('getLegalUrl');
+    expect(login).not.toContain('translateX');
+    expect(login).toContain('minHeight: 58');
+    expect(authFieldIos).toContain("from 'react-native'");
+    expect(authFieldIos).toContain('<TextInput');
+    expect(modeSelector).toContain('minHeight: 96');
+    expect(modeSelectorIos).toContain('minHeight: 96');
   });
 });

@@ -1,23 +1,44 @@
 import React from 'react';
-import { StyleSheet } from 'react-native';
-import { Host, Picker, Text } from '@expo/ui/swift-ui';
-import { frame, pickerStyle, tag } from '@expo/ui/swift-ui/modifiers';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { AuthModeSelectorProps } from './AuthModeSelector';
 
 export default function AuthModeSelector({ mode, onChange, labels, disabled }: AuthModeSelectorProps) {
   return (
-    <Host style={styles.host} colorScheme="dark" pointerEvents={disabled ? 'none' : 'auto'}>
-      <Picker
-        selection={mode}
-        onSelectionChange={(next) => onChange(next as 'signin' | 'signup')}
-        modifiers={[pickerStyle('segmented'), frame({ minWidth: 0, maxWidth: Infinity, height: 48 })]}
-      >
-        <Text modifiers={[tag('signin')]}>{labels.signin}</Text>
-        <Text modifiers={[tag('signup')]}>{labels.signup}</Text>
-      </Picker>
-    </Host>
+    <View style={styles.tabs} accessibilityRole="tablist">
+      {(['signin', 'signup'] as const).map((next) => (
+        <Pressable
+          key={next}
+          onPress={() => onChange(next)}
+          disabled={disabled}
+          accessibilityRole="tab"
+          accessibilityState={{ selected: mode === next, disabled }}
+          testID={`login-tab-${next}`}
+          style={[styles.tab, mode === next && styles.active]}
+        >
+          <Text style={[styles.text, mode === next && styles.activeText]}>{labels[next]}</Text>
+        </Pressable>
+      ))}
+    </View>
   );
 }
 
-const styles = StyleSheet.create({ host: { width: '100%', height: 48 } });
+const styles = StyleSheet.create({
+  tabs: {
+    width: '100%',
+    flexDirection: 'row',
+    borderRadius: 22,
+    padding: 4,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  tab: {
+    flex: 1,
+    minHeight: 96,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 18,
+  },
+  active: { backgroundColor: 'rgba(255,255,255,0.16)' },
+  text: { fontSize: 18, fontWeight: '600', color: 'rgba(235,235,245,0.6)' },
+  activeText: { color: '#fff' },
+});
 

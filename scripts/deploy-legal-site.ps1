@@ -14,9 +14,12 @@ $staging = Join-Path (Join-Path $PSScriptRoot '..\.tmp') 'legal-site-deploy'
 if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Recurse -Force }
 New-Item -ItemType Directory -Path $staging -Force | Out-Null
 Copy-Item -Path (Join-Path $source '*') -Destination $staging -Recurse -Force
-Get-ChildItem -LiteralPath $staging -Recurse -File | ForEach-Object {
-  $content = Get-Content -LiteralPath $_.FullName -Raw
-  Set-Content -LiteralPath $_.FullName -Value ($content.Replace('__CONTACT_EMAIL__', $contactEmail)) -Encoding utf8 -NoNewline
+$utf8 = New-Object System.Text.UTF8Encoding($false)
+Get-ChildItem -LiteralPath $staging -Recurse -File -Filter '*.html' | ForEach-Object {
+  # Windows PowerShell's default reader is not UTF-8. Decode and write HTML
+  # explicitly so Chinese copy is never rewritten as ANSI/mojibake.
+  $content = [System.IO.File]::ReadAllText($_.FullName, $utf8)
+  [System.IO.File]::WriteAllText($_.FullName, $content.Replace('__CONTACT_EMAIL__', $contactEmail), $utf8)
 }
 
 $listJson = (& npx.cmd --yes wrangler@latest pages project list --json | Out-String)
@@ -36,9 +39,28 @@ if ($urlMatches.Count -eq 0) {
   throw 'Wrangler did not return the deployed pages.dev URL; no URL was guessed.'
 }
 $baseUrl = $urlMatches[$urlMatches.Count - 1].Value.TrimEnd('/')
-foreach ($path in @('/privacy/', '/terms/', '/styles.css')) {
-  $status = (& curl.exe --fail --silent --show-error --output NUL --write-out '%{http_code}' ($baseUrl + $path) | Out-String).Trim()
-  if ($LASTEXITCODE -ne 0 -or $status -ne '200') { throw "Legal URL check failed: $path ($status)" }
+$readRemote = {
+  param([string]$path)
+  $temp = [System.IO.Path]::GetTempFileName()
+  try {
+    & curl.exe --fail --silent --show-error --location --output $temp ($baseUrl + $path)
+    if ($LASTEXITCODE -ne 0) { throw "Legal URL check failed: $path" }
+    return [System.IO.File]::ReadAllText($temp, $utf8)
+  } finally {
+    Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue
+  }
+}
+$privacyBody = & $readRemote '/privacy/'
+$termsBody = & $readRemote '/terms/'
+$stylesBody = & $readRemote '/styles.css'
+if ($privacyBody.Length -lt 200 -or $privacyBody -notmatch '隱私權政策|Privacy Policy' -or $privacyBody -notmatch '中文' -or $privacyBody -notmatch 'English') {
+  throw 'Privacy page content/encoding verification failed.'
+}
+if ($termsBody.Length -lt 200 -or $termsBody -notmatch '服務條款|Terms of Service' -or $termsBody -notmatch '中文' -or $termsBody -notmatch 'English') {
+  throw 'Terms page content/encoding verification failed.'
+}
+if ($stylesBody.Length -lt 100 -or $stylesBody -notmatch 'body') {
+  throw 'Legal stylesheet content verification failed.'
 }
 Write-Output "LEGAL_BASE_URL=$baseUrl"
 Write-Output "EXPO_PUBLIC_PRIVACY_URL=$baseUrl/privacy/"

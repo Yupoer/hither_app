@@ -31,6 +31,10 @@ describe('legal site contract', () => {
     }
     expect(deploy).toContain('__CONTACT_EMAIL__');
     expect(deploy).toContain('BREVO_SENDER_EMAIL');
+    expect(deploy).toContain('System.Text.UTF8Encoding');
+    expect(deploy).toContain("-Filter '*.html'");
+    expect(deploy).toContain('::ReadAllText');
+    expect(deploy).toContain('::WriteAllText');
     expect(appConfig).toContain('Production legal links require HTTPS');
   });
 

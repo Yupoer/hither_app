@@ -53,8 +53,8 @@ describe('Amicro native animation contracts', () => {
 
   it('places reorder as a standalone framed full-row action outside listGroup', () => {
     expect(map).toContain('styles.reorderActionCard');
-    expect(map).toContain('testID="map-reorder-action-card"');
-    expect(map).toContain('testID="map-edit-itinerary"');
+    expect(map).toContain("testID={scopeKey === 'main' ? 'map-reorder-action-card'");
+    expect(map).toContain("testID={scopeKey === 'main' ? 'map-edit-itinerary'");
     expect(map).toContain('styles.reorderActionPressable');
     expect(map).toContain('labelColor="#fff"');
     // Theme accent for pencil (not secondary grey).

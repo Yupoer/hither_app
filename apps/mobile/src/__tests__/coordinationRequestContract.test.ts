@@ -49,9 +49,13 @@ describe('OTA-09 coordination request lifecycle contracts', () => {
     expect(navigationService).toContain('local_status');
     expect(service).toContain('respondToCoordinationRequest');
     // Response table must not reuse navigation member columns.
-    expect(migrations).not.toMatch(
-      /create table if not exists public\.coordination_responses[\s\S]*local_status/,
+    const responseTableStart = migrations.indexOf(
+      'create table if not exists public.coordination_responses',
     );
+    const responseTableEnd = migrations.indexOf(';', responseTableStart);
+    expect(responseTableStart).toBeGreaterThanOrEqual(0);
+    expect(responseTableEnd).toBeGreaterThan(responseTableStart);
+    expect(migrations.slice(responseTableStart, responseTableEnd)).not.toContain('local_status');
   });
 
   it('keeps unanswered as absence of a row — never consent or rejection', () => {

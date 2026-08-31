@@ -92,6 +92,8 @@ interface Props {
   canReorder: boolean;
   tripDays?: number;
   departureDate?: string;
+  /** Subgroup leaders can reorder without editing shared trip dates. */
+  showTripDetails?: boolean;
   onUpdateTripDetails?: (days: number, date: string) => void;
   onReorder?: (
     updates: { id: string; position: number; day: number; stayAnchor?: boolean }[],
@@ -152,6 +154,7 @@ export default function DestinationReorderList({
   canReorder,
   tripDays,
   departureDate,
+  showTripDetails = true,
   onUpdateTripDetails,
   onReorder,
   onDelete,
@@ -719,7 +722,7 @@ export default function DestinationReorderList({
     <View>
       {(canReorder || onImport || (syncFailed && onSync)) && (
         <View style={styles.topActions}>
-          {canReorder && <Pressable
+          {canReorder && showTripDetails && <Pressable
             ref={(node) => onTourTargetRef?.('routeTripDetails', node)}
             style={[styles.setDaysBtn, { flex: 1.2 }]}
             onPress={() => {
@@ -731,7 +734,7 @@ export default function DestinationReorderList({
             <Ionicons name="calendar-outline" size={Math.round(16 * REORDER_VISUAL_SCALE)} color={colors.accent} style={{ marginRight: 6 }} />
             <Text style={styles.setDaysText} numberOfLines={1}>{t('trip.setDaysAndDate')}</Text>
           </Pressable>}
-          {canReorder && onPickFavorite ? (
+          {onPickFavorite ? (
             <Pressable
               ref={(node) => onTourTargetRef?.('routeFavorites', node)}
               style={[styles.setDaysBtn, { flex: 1.1 }]}
@@ -2249,7 +2252,7 @@ const makeStyles = (colors: Palette) =>
       height: '100%',
       justifyContent: 'center',
     },
-    rowTitleMarquee: { flex: 0, minWidth: 0, alignSelf: 'center' },
+    rowTitleMarquee: { flex: 0, minWidth: 0, alignSelf: 'stretch' },
     rowTitle: { color: '#FFFFFF', fontSize: 15, lineHeight: 18, fontWeight: '600' },
     rowAddress: { color: colors.textSecondary, fontSize: Math.round(13 * REORDER_VISUAL_SCALE), marginTop: 2 },
     emojiBadge: {
@@ -2258,7 +2261,7 @@ const makeStyles = (colors: Palette) =>
       borderRadius: 13,
       alignItems: 'center',
       justifyContent: 'center',
-      marginRight: 8,
+      marginRight: 4,
     },
     emojiBadgeGlyph: {
       fontSize: 16,

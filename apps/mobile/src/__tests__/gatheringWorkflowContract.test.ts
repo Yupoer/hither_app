@@ -93,9 +93,14 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
   });
 
   it('keeps itinerary editing and flag colours leader-only', () => {
-    expect(mapScreen).toContain('const canEditItinerary = !!isLeader');
+    expect(mapScreen).toContain('const canEditItinerary = Boolean(isLeader || isMySubgroupLeader)');
     expect(reorderList).toContain('canEditColors={canReorder}');
     expect(migrations).toContain('drop policy if exists "itinerary_items: insert if in that subgroup"');
+  });
+
+  it('filters the request inbox to the leader\'s active route scope', () => {
+    expect(mapScreen).toContain('requests.filter((request) => request.subgroupId === myScopeIdRef.current)');
+    expect(mapScreen).toContain('requests.filter((request) => request.subgroupId == null)');
   });
 
   it('gates quick-add stay CTA; day headers use left-swipe collapse↔drag mutex', () => {
@@ -166,7 +171,7 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(mapScreen).toContain('syncFromDatabase()');
     // Open-once silent sync + import CTA; retry only after failed open-sync (#154).
     expect(mapScreen).toContain('routeOpenSyncSessionRef');
-    expect(mapScreen).toContain('onImport={() => setKmlVisible(true)}');
+    expect(mapScreen).toContain('openKmlImportForScope');
     expect(mapScreen).toContain(
       'onSync={routeSyncFailed ? retryRouteSync : undefined}',
     );

@@ -21,7 +21,7 @@ describe('route list handle column + favorites', () => {
   });
 
   it('shows favorites entry without requiring non-empty list', () => {
-    expect(source).toContain('canReorder && onPickFavorite');
+    expect(source).toContain('onPickFavorite ?');
     expect(source).not.toMatch(
       /onPickFavorite && \(favoritePlaces\?\.length \?\? 0\) > 0/,
     );

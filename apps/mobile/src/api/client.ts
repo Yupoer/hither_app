@@ -61,6 +61,7 @@ export {
   mapDestination,
   addDestination,
   addDestinationsBatch,
+  getKmlImportQuota,
   deleteDestination,
   completeGatheringStop,
   reorderDestinations,

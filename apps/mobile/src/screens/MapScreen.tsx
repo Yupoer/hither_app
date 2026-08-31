@@ -323,6 +323,7 @@ import {
   updateGroupTripDetails,
   updateGroupAvatar,
   updateDestinationEmojiColor,
+  getKmlImportQuota,
   getNotificationPreferences,
   setNotificationPreferences,
 } from '../api/client';
@@ -496,6 +497,7 @@ export default function MapScreen({ route, navigation }: Props) {
     isAnonymous,
     isPro,
     premiumProjection,
+    refreshEntitlement,
     upgradeToEmailAccount,
   } = useSession();
   const {
@@ -627,6 +629,9 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const me = useMemo(() => members.find((m) => m.userId === user?.id), [members, user?.id]);
   const myScopeId = me?.subgroupId;
+  const [routeEditorScopeId, setRouteEditorScopeId] = useState<string | undefined>(myScopeId);
+  const routeEditorScopeIdRef = useRef<string | undefined>(routeEditorScopeId);
+  routeEditorScopeIdRef.current = routeEditorScopeId;
 
   // Kicked follower: recovery RPC raises not_member → clear session + RoleSelect.
   const kickedHandledRef = useRef(false);
@@ -695,6 +700,16 @@ export default function MapScreen({ route, navigation }: Props) {
   const allScopedDestinations = useMemo(
     () => applyDestinationMutationOverlay(baseScopedDestinations, pendingDestinationMutations),
     [baseScopedDestinations, pendingDestinationMutations],
+  );
+  const routeEditorServerDestinations = useMemo(() => {
+    const all = state?.destinations ?? [];
+    return routeEditorScopeId
+      ? all.filter((destination) => destination.subgroupId === routeEditorScopeId)
+      : all.filter((destination) => destination.subgroupId == null);
+  }, [routeEditorScopeId, state?.destinations]);
+  const routeEditorBaseDestinations = useMemo(
+    () => optimisticDestinations ?? routeEditorServerDestinations,
+    [optimisticDestinations, routeEditorServerDestinations],
   );
   useEffect(() => {
     setPendingDestinationMutations((pending) => {
@@ -834,10 +849,17 @@ export default function MapScreen({ route, navigation }: Props) {
    * and desyncs the「調整順序」label from the list body.
    */
   const openForRouteEditor = useMemo(
-    () => openDestinationsForReorder(optimisticDestinations ?? allScopedDestinations),
-    [optimisticDestinations, allScopedDestinations],
+    () => openDestinationsForReorder(routeEditorBaseDestinations),
+    [openDestinationsForReorder, routeEditorBaseDestinations],
   );
-  const canEditItinerary = !!isLeader;
+  const isMySubgroupLeader = Boolean(
+    myScopeId
+    && (isDemoGroup(groupId)
+      || (state?.subgroups ?? []).some(
+        (subgroup) => subgroup.id === myScopeId && subgroup.leaderId === user?.id,
+      )),
+  );
+  const canEditItinerary = Boolean(isLeader || isMySubgroupLeader);
 
   /** Pull destinations/group state only — used before arrival writes too. */
   const syncFromDatabase = useCallback(async () => {
@@ -917,8 +939,14 @@ export default function MapScreen({ route, navigation }: Props) {
   // gathering Realtime and hammered destination_arrivals (~5–6 SELECT/s).
   const tRef = useRef(t);
   tRef.current = t;
-  const isLeaderRef = useRef(isLeader);
-  isLeaderRef.current = isLeader;
+  const isMainLeaderRef = useRef(isLeader);
+  isMainLeaderRef.current = isLeader;
+  const isSubgroupLeaderRef = useRef(isMySubgroupLeader);
+  isSubgroupLeaderRef.current = isMySubgroupLeader;
+  const myScopeIdRef = useRef(myScopeId);
+  myScopeIdRef.current = myScopeId;
+  const isScopeLeaderRef = useRef(canEditItinerary);
+  isScopeLeaderRef.current = canEditItinerary;
   const userIdRef = useRef(user?.id);
   userIdRef.current = user?.id;
   const workflowInFlightRef = useRef<Promise<void> | null>(null);
@@ -942,12 +970,15 @@ export default function MapScreen({ route, navigation }: Props) {
       const run = (async () => {
         const [arrivals, requests] = await Promise.all([
           fetchDestinationArrivals(groupId),
-          isLeaderRef.current
+          isScopeLeaderRef.current
             ? fetchPendingGatherPointRequests(groupId)
             : Promise.resolve([]),
         ]);
         setDestinationArrivals(arrivals);
-        setGatherPointRequests(requests);
+        const scopedRequests = isSubgroupLeaderRef.current
+          ? requests.filter((request) => request.subgroupId === myScopeIdRef.current)
+          : requests.filter((request) => request.subgroupId == null);
+        setGatherPointRequests(scopedRequests);
         workflowLastLoadAtRef.current = Date.now();
       })();
       workflowInFlightRef.current = run.finally(() => {
@@ -1011,10 +1042,15 @@ export default function MapScreen({ route, navigation }: Props) {
         event: '*', schema: 'public', table: 'gather_point_requests', filter: `group_id=eq.${groupId}`,
       }, (payload) => {
         scheduleWorkflowReload();
+        const request = payload.new as { requester_id?: string; subgroup_id?: string | null } | null;
+        const isOwnScopeRequest = request?.subgroup_id == null
+          ? isMainLeaderRef.current
+          : isSubgroupLeaderRef.current && request.subgroup_id === myScopeIdRef.current;
         if (
-          isLeaderRef.current
+          isScopeLeaderRef.current
+          && isOwnScopeRequest
           && payload.eventType === 'INSERT'
-          && (payload.new as { requester_id?: string } | null)?.requester_id !== userIdRef.current
+          && request?.requester_id !== userIdRef.current
         ) {
           Alert.alert(
             tRef.current('gatherRequest.newTitle'),
@@ -1172,6 +1208,14 @@ export default function MapScreen({ route, navigation }: Props) {
   /** Keyboard height while confirm card is up — lifts card with 12pt gap. */
   const [confirmKeyboardHeight, setConfirmKeyboardHeight] = useState(0);
   const [kmlVisible, setKmlVisible] = useState(false);
+  const [kmlScopeId, setKmlScopeId] = useState<string | undefined>(myScopeId);
+  const [kmlRemainingQuota, setKmlRemainingQuota] = useState<number | undefined>();
+  const kmlScopedDestinations = useMemo(
+    () => (state?.destinations ?? []).filter((destination) => (
+      kmlScopeId ? destination.subgroupId === kmlScopeId : destination.subgroupId == null
+    )),
+    [kmlScopeId, state?.destinations],
+  );
   const [coordSheetVisible, setCoordSheetVisible] = useState(false);
   const [coordSheetInitial, setCoordSheetInitial] = useState<
     { latitude: number; longitude: number } | undefined
@@ -1197,6 +1241,23 @@ export default function MapScreen({ route, navigation }: Props) {
       { scale: interpolate(confirmCardAnim.value, [0, 1], [0.96, 1], Extrapolation.CLAMP) },
     ],
   }));
+
+  const refreshKmlQuota = useCallback(async () => {
+    if (!user?.id || isPro) {
+      setKmlRemainingQuota(undefined);
+      return;
+    }
+    try {
+      setKmlRemainingQuota(await getKmlImportQuota());
+    } catch {
+      // The server remains authoritative; leave the preview fallback visible.
+      setKmlRemainingQuota(undefined);
+    }
+  }, [isPro, user?.id]);
+
+  useEffect(() => {
+    void refreshKmlQuota();
+  }, [refreshKmlQuota]);
 
   // Keyboard inset for absolute confirm card (12pt gap; restore on dismiss).
   useEffect(() => {
@@ -3140,7 +3201,11 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // Followers submit durable, actionable requests instead of plain-text commands.
   const notifyLeaderPlace = useCallback(
-    async (items: GatherPointRequestItem[], source: 'search' | 'kml'): Promise<boolean> => {
+    async (
+      items: GatherPointRequestItem[],
+      source: 'search' | 'kml',
+      scopeId: string | undefined = myScopeId,
+    ): Promise<boolean> => {
       if (!groupId) return false;
       const label = items.length === 1
         ? items[0].title
@@ -3149,7 +3214,7 @@ export default function MapScreen({ route, navigation }: Props) {
         'map.destination_suggest',
         async (token) => {
           try {
-            await submitGatherPointRequest(groupId, myScopeId, items);
+            await submitGatherPointRequest(groupId, scopeId, items);
             if (!token.isCurrent()) return false;
             logEvent('destination_suggest', { source, label });
             Alert.alert(t('gatherRequest.sentTitle'), t('gatherRequest.sentBody'));
@@ -3316,13 +3381,15 @@ export default function MapScreen({ route, navigation }: Props) {
   const handleKmlImport = useCallback(async (items: KmlPlacemark[], onProgress: (done: number) => void) => {
     if (!groupId) return;
     const addDay = tripDayForAdd();
+    const importScopeId = kmlScopeId;
+    const canEditImportScope = importScopeId ? isMySubgroupLeader : isLeader;
     // BUG-15: non-editors notify captain with place names instead of writing itinerary.
-    if (!canEditItinerary) {
+    if (!canEditImportScope) {
       await notifyLeaderPlace(items.map((item) => ({
         title: item.name,
         coordinates: { latitude: item.latitude, longitude: item.longitude },
         day: addDay,
-      })), 'kml');
+      })), 'kml', importScopeId);
       onProgress(items.length);
       return;
     }
@@ -3332,7 +3399,7 @@ export default function MapScreen({ route, navigation }: Props) {
     try {
       await addDestinationsBatch(groupId, normalized, {
         day: addDay,
-        subgroupId: myScopeId,
+        subgroupId: importScopeId,
       });
       onProgress(normalized.length);
     } catch (e) {
@@ -3340,8 +3407,22 @@ export default function MapScreen({ route, navigation }: Props) {
       throw new KmlImportError('persistence', 'persistence', e instanceof Error ? e.message : String(e));
     }
     logEvent('kml_import', { count: normalized.length, day: addDay });
-    await refresh();
-  }, [groupId, canEditItinerary, notifyLeaderPlace, myScopeId, refresh, tripDayForAdd]);
+    // Clear any open route draft and pull the committed scope so the current
+    // sheet and the next open both render the same server projection.
+    await syncFromDatabase();
+    await refreshKmlQuota();
+  }, [
+    groupId,
+    canEditItinerary,
+    notifyLeaderPlace,
+    myScopeId,
+    kmlScopeId,
+    isMySubgroupLeader,
+    isLeader,
+    syncFromDatabase,
+    refreshKmlQuota,
+    tripDayForAdd,
+  ]);
 
   const openCoordinateSheet = useCallback((coords?: { latitude: number; longitude: number }) => {
     setCoordSheetInitial(coords);
@@ -3631,7 +3712,7 @@ export default function MapScreen({ route, navigation }: Props) {
     const stopAlreadyComplete = !!destination.closedAt
       || allScopedDestinations.find((d) => d.id === destination.id)?.closedAt != null;
     const prompt = resolveCompletePrompt({
-      isLeader,
+      isLeader: canEditItinerary,
       missingMemberNames: counts.missingMemberNames,
       allArrived: counts.allArrived,
       stopAlreadyComplete: !!stopAlreadyComplete,
@@ -3697,7 +3778,7 @@ export default function MapScreen({ route, navigation }: Props) {
     allScopedDestinations,
     destinationArrivals,
     executeAutoCompleteStop,
-    isLeader,
+    canEditItinerary,
     loadGatheringWorkflow,
     members,
     refresh,
@@ -3749,7 +3830,7 @@ export default function MapScreen({ route, navigation }: Props) {
     }
 
     // Celebrate-only path (write still in flight): plain arrive alert for members only.
-    if (!alreadyShown && !isLeader) {
+    if (!alreadyShown && !canEditItinerary) {
       const fallback =
         language === 'en'
           ? `You have arrived at "${destination.title}"`
@@ -3767,7 +3848,7 @@ export default function MapScreen({ route, navigation }: Props) {
   // Remote final arrival (Realtime / workflow reload): leader auto-completes when
   // every *scoped* member has an arrival row — no personal-arrive path required.
   useEffect(() => {
-    if (!isLeader || !groupId) return;
+    if (!canEditItinerary || !groupId) return;
     for (const destination of allScopedDestinations) {
       if (destination.closedAt) {
         remoteAutoCompleteDestIdsRef.current.delete(destination.id);
@@ -3797,7 +3878,7 @@ export default function MapScreen({ route, navigation }: Props) {
     destinationArrivals,
     executeAutoCompleteStop,
     groupId,
-    isLeader,
+    canEditItinerary,
     members,
     t,
   ]);
@@ -4013,7 +4094,7 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [groupId, t]);
 
 
-  // --- Subgroups (小隊：邀請制、無隊長) ---------------------------------------
+  // --- Subgroups (小隊：邀請制；依 leader_id 判斷小隊隊長) --------------------
   // Drop empty leftovers so the members list never shows "X 的小隊 · 0" after
   // leave; server also deletes empty rows, this is the client-side safety net.
   const subgroups = useMemo(() => {
@@ -4239,12 +4320,12 @@ export default function MapScreen({ route, navigation }: Props) {
     ): Promise<boolean> => {
       if (!groupId) return false;
       logEvent('destination_reorder_local', { count: updates.length });
-      const base = optimisticDestinationsRef.current ?? rawDestinations;
+      const base = optimisticDestinationsRef.current ?? routeEditorServerDestinations;
       setOptimisticDestinations(applyReorderToDestinations(base, updates));
       routeDraftDirtyRef.current.destinations = true;
       return true;
     },
-    [groupId, rawDestinations, applyReorderToDestinations],
+    [groupId, routeEditorServerDestinations, applyReorderToDestinations],
   );
 
   /**
@@ -4397,7 +4478,7 @@ export default function MapScreen({ route, navigation }: Props) {
                   day: dest.day || 1,
                   kind: dest.kind === 'accommodation' ? 'accommodation' : 'stop',
                 },
-                myScopeId,
+                routeEditorScopeIdRef.current,
               );
               if (!newId) {
                 throw new Error('draft_materialize_empty');
@@ -4428,7 +4509,7 @@ export default function MapScreen({ route, navigation }: Props) {
                   const dep = optimisticDepartureDate ?? group?.departureDate;
                   if (!dep) return undefined;
                   // Best-effort: match by stayDate via open dests day.
-                  const match = (draftDests ?? rawDestinations).find((d) => {
+                  const match = (draftDests ?? routeEditorServerDestinations).find((d) => {
                     const date = dateForTripDay(dep, d.day || 1);
                     return date ? localDayKey(date) === stayDate : false;
                   });
@@ -4450,7 +4531,7 @@ export default function MapScreen({ route, navigation }: Props) {
               const day = (() => {
                 const dep = optimisticDepartureDate ?? group?.departureDate;
                 if (!dep) return draftRow.sourceDestinationId ? undefined : undefined;
-                const match = (draftDests ?? rawDestinations).find((d) => {
+                const match = (draftDests ?? routeEditorServerDestinations).find((d) => {
                   if (draftRow.sourceDestinationId && d.id === draftRow.sourceDestinationId) {
                     return true;
                   }
@@ -4529,11 +4610,26 @@ export default function MapScreen({ route, navigation }: Props) {
     optimisticTripDays,
     optimisticDepartureDate,
     serverDailyAccommodations,
-    rawDestinations,
-    myScopeId,
+    routeEditorServerDestinations,
     refresh,
     t,
   ]);
+
+  const openKmlImport = useCallback(async () => {
+    // Persist any unsaved route ordering first; an import must never be
+    // followed by a stale optimistic draft overwriting the new server rows.
+    await flushRouteDraft();
+    const dirty = routeDraftDirtyRef.current;
+    if (dirty.destinations || dirty.daily || dirty.trip || dirty.deletedIds.length > 0) return;
+    await refreshKmlQuota();
+    setKmlVisible(true);
+  }, [flushRouteDraft, refreshKmlQuota]);
+
+  const openKmlImportForScope = useCallback(async (scopeId?: string) => {
+    setKmlScopeId(scopeId);
+    await openKmlImport();
+  }, [openKmlImport]);
+
   const handleDelete = useCallback(
     (id: string) => {
       if (!groupId || !canEditItinerary) return;
@@ -4549,7 +4645,7 @@ export default function MapScreen({ route, navigation }: Props) {
         () => {
           // Route editor: local draft only. Network on sheet flush.
           logEvent('destination_delete_local', { id });
-          const base = optimisticDestinationsRef.current ?? rawDestinations;
+          const base = optimisticDestinationsRef.current ?? routeEditorServerDestinations;
           setOptimisticDestinations(base.filter((d) => d.id !== id));
           if (!id.startsWith('draft-')) {
             routeDraftDirtyRef.current.deletedIds = [
@@ -4562,7 +4658,7 @@ export default function MapScreen({ route, navigation }: Props) {
         },
       );
     },
-    [canEditItinerary, groupId, destinations, rawDestinations, t],
+    [canEditItinerary, groupId, destinations, routeEditorServerDestinations, t],
   );
 
   /** Multi-select delete from route sheet — one confirm, local draft only. */
@@ -4579,7 +4675,7 @@ export default function MapScreen({ route, navigation }: Props) {
         () => {
           logEvent('destination_delete_many_local', { count: ids.length });
           const idSet = new Set(ids);
-          const base = optimisticDestinationsRef.current ?? rawDestinations;
+          const base = optimisticDestinationsRef.current ?? routeEditorServerDestinations;
           setOptimisticDestinations(base.filter((d) => !idSet.has(d.id)));
           const serverIds = ids.filter((id) => !id.startsWith('draft-'));
           routeDraftDirtyRef.current.deletedIds = [
@@ -4591,7 +4687,7 @@ export default function MapScreen({ route, navigation }: Props) {
         },
       );
     },
-    [canEditItinerary, groupId, rawDestinations, t],
+    [canEditItinerary, groupId, routeEditorServerDestinations, t],
   );
 
   const handleUpdateEmojiColor = useCallback(
@@ -4675,6 +4771,32 @@ export default function MapScreen({ route, navigation }: Props) {
       },
     );
   }, [t, groupId, isLeader, leaveGroup, navigation]);
+
+  function startMapSignOut(): void {
+    void runUiAction(
+      'map.sign_out',
+      async (token) => {
+        logEvent('sign_out');
+        await signOut();
+        if (!token.isCurrent()) return;
+        navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+      },
+      {
+        screen: 'Map',
+        suppressBanner: true,
+        onError: (kind) => {
+          const message = kind === 'timeout'
+            ? t('interaction.signOutTimeout')
+            : t('interaction.error');
+          Alert.alert(t('settings.signOutTitle'), message, [
+            { text: t('common.cancel'), style: 'cancel' },
+            { text: t('interaction.retry'), onPress: startMapSignOut },
+          ]);
+        },
+      },
+    );
+  }
+
   const confirmSignOut = useCallback(() => {
     confirmAction(
       {
@@ -4684,18 +4806,7 @@ export default function MapScreen({ route, navigation }: Props) {
         cancelLabel: t('common.cancel'),
         destructive: true,
       },
-      () => {
-        void runUiAction(
-          'map.sign_out',
-          async (token) => {
-            logEvent('sign_out');
-            await signOut();
-            if (!token.isCurrent()) return;
-            navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
-          },
-          { screen: 'Map' },
-        );
-      },
+      startMapSignOut,
     );
   }, [t, signOut, navigation]);
 
@@ -4778,7 +4889,7 @@ export default function MapScreen({ route, navigation }: Props) {
     setOptimisticDepartureDate(date);
     routeDraftDirtyRef.current.trip = true;
     // Align meet times in the local destination draft (if any).
-    const base = optimisticDestinationsRef.current ?? rawDestinations;
+    const base = optimisticDestinationsRef.current ?? routeEditorServerDestinations;
     const aligned = base.map((destination) => {
       if (!destination.meetAt) return destination;
       const alignedMeetAt = alignMeetTimeToTripDay(
@@ -4790,7 +4901,7 @@ export default function MapScreen({ route, navigation }: Props) {
     });
     setOptimisticDestinations(aligned);
     routeDraftDirtyRef.current.destinations = true;
-  }, [groupId, rawDestinations]);
+  }, [groupId, routeEditorServerDestinations]);
   // --- Derived view models --------------------------------------------------
   // Optimistic flip for the Solo switch — server round trip + realtime
   // refetch otherwise take long enough to read as the switch not responding,
@@ -5536,6 +5647,12 @@ export default function MapScreen({ route, navigation }: Props) {
     void refreshStoreEntitlements();
   }, [groupId, refreshStoreEntitlements, isPro]);
 
+  const handleEntitlementActivated = useCallback(async () => {
+    await refreshEntitlement(groupId);
+    await refreshStoreEntitlements();
+    await syncFromDatabase();
+  }, [groupId, refreshEntitlement, refreshStoreEntitlements, syncFromDatabase]);
+
   const openPaywallForLiveActivity = useCallback(() => {
     lightTap();
     openPaywall();
@@ -5731,6 +5848,175 @@ export default function MapScreen({ route, navigation }: Props) {
   // ─── 路線：集合點、排序、Google Maps 匯入、歷史 ───────────────────────
   const opsOpenCount = exceptionOpenCount + coordination.openCount;
   const gatherRequestPageW = Math.max(200, windowWidth - 32);
+  const routeMainDestinations = useMemo(
+    () => (state?.destinations ?? []).filter((destination) => destination.subgroupId == null),
+    [state?.destinations],
+  );
+  const routeSubgroupDestinations = useMemo(
+    () => myScopeId
+      ? (state?.destinations ?? []).filter((destination) => destination.subgroupId === myScopeId)
+      : [],
+    [myScopeId, state?.destinations],
+  );
+  const routeScopeStorageKey = user?.id && groupId
+    ? `hither.routeScopeCollapse.v1:${user.id}:${groupId}`
+    : null;
+  const [routeScopeExpanded, setRouteScopeExpanded] = useState<Record<string, boolean>>(
+    (): Record<string, boolean> => (myScopeId ? { main: false, subgroup: true } : { main: true }),
+  );
+  useEffect(() => {
+    let cancelled = false;
+    const defaults: Record<string, boolean> = myScopeId
+      ? { main: false, subgroup: true }
+      : { main: true };
+    if (!routeScopeStorageKey) {
+      setRouteScopeExpanded(defaults);
+      return () => { cancelled = true; };
+    }
+    void AsyncStorage.getItem(routeScopeStorageKey).then((stored) => {
+      if (cancelled) return;
+      try {
+        const parsed = stored ? JSON.parse(stored) as Record<string, boolean> : null;
+        setRouteScopeExpanded(parsed && typeof parsed === 'object' ? { ...defaults, ...parsed } : defaults);
+      } catch {
+        setRouteScopeExpanded(defaults);
+      }
+    }).catch(() => {
+      if (!cancelled) setRouteScopeExpanded(defaults);
+    });
+    return () => { cancelled = true; };
+  }, [myScopeId, routeScopeStorageKey]);
+  const toggleRouteScope = useCallback((scopeKey: string) => {
+    setRouteScopeExpanded((current) => {
+      const next = { ...current, [scopeKey]: !current[scopeKey] };
+      if (routeScopeStorageKey) void AsyncStorage.setItem(routeScopeStorageKey, JSON.stringify(next)).catch(() => undefined);
+      return next;
+    });
+  }, [routeScopeStorageKey]);
+  const routeDailyByDate = useMemo(
+    () => Object.fromEntries(
+      dailyAccommodations.map((d) => [
+        d.stayDate,
+        { id: d.id, stayDate: d.stayDate, title: d.title, coordinates: d.coordinates },
+      ]),
+    ),
+    [dailyAccommodations],
+  );
+  const renderRouteScope = useCallback(({
+    scopeKey,
+    title,
+    destinations: scopeDestinations,
+    canEdit,
+    scopeId,
+  }: {
+    scopeKey: 'main' | 'subgroup';
+    title: string;
+    destinations: Destination[];
+    canEdit: boolean;
+    scopeId?: string;
+  }) => {
+    const expanded = routeScopeExpanded[scopeKey] ?? (scopeKey === 'subgroup' || !myScopeId);
+    const count = countOpenDestinations(scopeDestinations);
+    return (
+      <View
+        key={scopeKey}
+        testID={scopeKey === 'main' ? 'map-reorder-action-card' : `route-scope-${scopeKey}`}
+        style={styles.routeScopeBlock}
+      >
+        <Pressable
+          style={styles.routeScopeHeader}
+          onPress={() => toggleRouteScope(scopeKey)}
+          accessibilityRole="button"
+          accessibilityState={{ expanded }}
+        >
+          <Text style={styles.routeScopeTitle}>{title}</Text>
+          <Text style={styles.routeScopeCount}>{count}</Text>
+          <Ionicons
+            name={expanded ? 'chevron-up' : 'chevron-down'}
+            size={18}
+            color={glass.textTertiary}
+          />
+        </Pressable>
+        {expanded ? (canEdit ? (
+          <View style={styles.reorderActionCard}>
+            <AmicroButton
+              icon="pencil-outline"
+              activeIcon="checkmark"
+              active={editButtonActive}
+              activeOnPress
+              resetAfterComplete={false}
+              color={accent}
+              activeColor={accent}
+              size={48}
+              label={t('map.stopsReorder', { count })}
+              labelColor="#fff"
+              accessibilityLabel={t('map.stopsReorder', { count })}
+              testID={scopeKey === 'main' ? 'map-edit-itinerary' : 'map-edit-itinerary-subgroup'}
+              style={styles.reorderActionPressable}
+              onPress={() => {
+                lightTap();
+                const dirty = routeDraftDirtyRef.current;
+                const hasDirtyDraft = dirty.destinations || dirty.daily || dirty.trip || dirty.deletedIds.length > 0;
+                if (hasDirtyDraft && routeEditorScopeIdRef.current !== scopeId) return;
+                setRouteEditorScopeId(scopeId);
+                if (!hasDirtyDraft) setOptimisticDestinations(scopeDestinations);
+                setEditButtonActive(true);
+              }}
+              onAnimationComplete={() => setOverlay('route')}
+            />
+          </View>
+        ) : (
+          <DestinationReorderList
+            groupId={groupId ?? undefined}
+            destinations={openDestinationsForReorder(scopeDestinations)}
+            canReorder={false}
+            showTripDetails={false}
+            tripDays={optimisticTripDays ?? group?.tripDays}
+            departureDate={optimisticDepartureDate ?? group?.departureDate}
+            onImport={() => { void openKmlImportForScope(scopeId); }}
+            favoritePlaces={favoritePlaces}
+            onPickFavorite={(favorite, day) => {
+              void notifyLeaderPlace([{
+                title: favorite.title,
+                address: favorite.address,
+                coordinates: favorite.coordinates,
+                day,
+              }], 'search', scopeId);
+            }}
+            onDeleteFavorite={user?.id ? (favorite) => {
+              const snapshot = favoritePlaces;
+              setFavoritePlaces((prev) => prev.filter((item) => item.id !== favorite.id));
+              void unsaveFavoritePlace(favorite.id).catch(() => setFavoritePlaces(snapshot));
+            } : undefined}
+            colors={dark}
+            emptyLabel={t('settings.noDestinations')}
+            dailyByDate={routeDailyByDate}
+            accountId={user?.id}
+          />
+        )) : null}
+      </View>
+    );
+  }, [
+    accent,
+    dark,
+    editButtonActive,
+    favoritePlaces,
+    groupId,
+    myScopeId,
+    notifyLeaderPlace,
+    openDestinationsForReorder,
+    openKmlImportForScope,
+    optimisticDepartureDate,
+    optimisticTripDays,
+    group?.departureDate,
+    group?.tripDays,
+    routeDailyByDate,
+    routeScopeExpanded,
+    styles,
+    t,
+    toggleRouteScope,
+    user?.id,
+  ]);
   useEffect(() => {
     const page = gatherRequestPageIndex(
       sortedGatherRequestIds,
@@ -5744,7 +6030,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const routePaneBody = useMemo(() => (
     <>
       {/* #173: leader pending gather requests — FIFO horizontal cards at Route top. */}
-      {isLeader && sortedGatherRequests.length > 0 ? (
+      {canEditItinerary && sortedGatherRequests.length > 0 ? (
         <View testID="route-gather-request-inbox" style={{ marginBottom: 12 }}>
           <Text style={[styles.sheetHeading, styles.sheetHeadingFirst]}>
             {t('gatherRequest.pending')}
@@ -5865,7 +6151,7 @@ export default function MapScreen({ route, navigation }: Props) {
       <Text
         style={[
           styles.sheetHeading,
-          !(isLeader && sortedGatherRequests.length > 0) && styles.sheetHeadingFirst,
+          !(canEditItinerary && sortedGatherRequests.length > 0) && styles.sheetHeadingFirst,
         ]}
       >
         {t('map.gatheringPoints')}
@@ -5890,54 +6176,25 @@ export default function MapScreen({ route, navigation }: Props) {
           ) : null}
         </View>
       ) : null}
-      {canEditItinerary ? (
-        <View style={styles.reorderActionCard} testID="map-reorder-action-card">
-          <AmicroButton
-            icon="pencil-outline"
-            activeIcon="checkmark"
-            active={editButtonActive}
-            activeOnPress
-            resetAfterComplete={false}
-            color={accent}
-            activeColor={accent}
-            size={48}
-            label={t('map.stopsReorder', { count: openForRouteEditor.length })}
-            labelColor="#fff"
-            accessibilityLabel={t('map.stopsReorder', { count: openForRouteEditor.length })}
-            testID="map-edit-itinerary"
-            style={styles.reorderActionPressable}
-            onPress={() => {
-              lightTap();
-              setEditButtonActive(true);
-            }}
-            onAnimationComplete={() => setOverlay('route')}
-          />
-        </View>
-      ) : (
-        <DestinationReorderList
-          groupId={groupId ?? undefined}
-          destinations={openForRouteEditor}
-          canReorder={false}
-          tripDays={optimisticTripDays ?? group?.tripDays}
-          departureDate={optimisticDepartureDate ?? group?.departureDate}
-          colors={dark}
-          emptyLabel={t('settings.noDestinations')}
-          dailyByDate={Object.fromEntries(
-            dailyAccommodations.map((d) => [
-              d.stayDate,
-              {
-                id: d.id,
-                stayDate: d.stayDate,
-                title: d.title,
-                coordinates: d.coordinates,
-              },
-            ]),
-          )}
-        />
-      )}
+      {renderRouteScope({
+        scopeKey: 'main',
+        title: t('map.mainTeamLabel'),
+        destinations: routeMainDestinations,
+        canEdit: isLeader,
+      })}
+      {myScopeId
+        ? renderRouteScope({
+            scopeKey: 'subgroup',
+            title: subgroups.find((subgroup) => subgroup.id === myScopeId)?.name
+              ?? t('map.subgroupLabel'),
+            destinations: routeSubgroupDestinations,
+            canEdit: isMySubgroupLeader,
+            scopeId: myScopeId,
+          })
+        : null}
       {/* 導航入口 = 普通 List Row，無圖示色塊 */}
       <View style={styles.listGroup}>
-        {isLeader && destinations.length > 0 ? (
+        {canEditItinerary && destinations.length > 0 ? (
           <Pressable
             style={styles.listRow}
             onPress={() => { lightTap(); setOverlay('arrivalManage'); }}
@@ -5980,7 +6237,8 @@ export default function MapScreen({ route, navigation }: Props) {
     opsOpenCount, editButtonActive, extraPointCredits, accent,
     sortedGatherRequests, sortedGatherRequestIds, selectedGatherRequestId,
     gatherRequestPageW, resolvingGatherRequestId, members, subgroups,
-    handleGatherPointRequest,
+    handleGatherPointRequest, renderRouteScope, routeMainDestinations,
+    routeSubgroupDestinations, myScopeId, isMySubgroupLeader,
   ]);
 
   // ─── 工具：同行者模式入口 → 定位分享 → 抵達距離 → 快捷指令 ─────────
@@ -7403,13 +7661,14 @@ export default function MapScreen({ route, navigation }: Props) {
             groupId={groupId ?? undefined}
             destinations={openForRouteEditor}
             canReorder={canEditItinerary}
+            showTripDetails={routeEditorScopeId == null}
             tripDays={optimisticTripDays ?? group?.tripDays}
             departureDate={optimisticDepartureDate ?? group?.departureDate}
             onUpdateTripDetails={handleUpdateTripDetails}
             onReorder={handleReorder}
             onDelete={canEditItinerary ? handleDelete : undefined}
             onUpdateEmojiColor={canEditItinerary ? handleUpdateEmojiColor : undefined}
-            onImport={() => setKmlVisible(true)}
+            onImport={() => { void openKmlImportForScope(routeEditorScopeId); }}
             onSync={routeSyncFailed ? retryRouteSync : undefined}
             syncFailed={routeSyncFailed}
             colors={dark}
@@ -7464,7 +7723,7 @@ export default function MapScreen({ route, navigation }: Props) {
             onSetDailyFromDestination={
               canEditItinerary && groupId
                 ? (destinationId, day) => {
-                    const baseDests = optimisticDestinationsRef.current ?? rawDestinations;
+                    const baseDests = optimisticDestinationsRef.current ?? routeEditorServerDestinations;
                     const dest =
                       baseDests.find((d) => d.id === destinationId)
                       ?? destinations.find((d) => d.id === destinationId);
@@ -7543,7 +7802,7 @@ export default function MapScreen({ route, navigation }: Props) {
                         latitude: 0,
                         longitude: 0,
                       };
-                    const base = optimisticDestinationsRef.current ?? rawDestinations;
+                    const base = optimisticDestinationsRef.current ?? routeEditorServerDestinations;
                     const sameDay = base.filter((d) => (d.day || 1) === day);
                     const insertOrder =
                       sameDay.length > 0
@@ -7559,7 +7818,7 @@ export default function MapScreen({ route, navigation }: Props) {
                       day,
                       kind: 'accommodation',
                       stayAnchor: false,
-                      subgroupId: myScopeId,
+                      subgroupId: routeEditorScopeId,
                     };
                     const shifted = base.map((d) => {
                       if ((d.day || 1) !== day) return d;
@@ -7582,7 +7841,7 @@ export default function MapScreen({ route, navigation }: Props) {
               canEditItinerary && groupId
                 ? (fav, day) => {
                     // Local draft stop from favorites — flush on dismiss.
-                    const base = optimisticDestinationsRef.current ?? rawDestinations;
+                    const base = optimisticDestinationsRef.current ?? routeEditorServerDestinations;
                     const sameDay = base.filter((d) => (d.day || 1) === day);
                     const insertOrder =
                       sameDay.length > 0
@@ -7597,7 +7856,7 @@ export default function MapScreen({ route, navigation }: Props) {
                       order: insertOrder,
                       day,
                       kind: 'stop',
-                      subgroupId: myScopeId,
+                      subgroupId: routeEditorScopeId,
                     };
                     const shifted = base.map((d) => {
                       if ((d.day || 1) !== day) return d;
@@ -7910,10 +8169,10 @@ export default function MapScreen({ route, navigation }: Props) {
         edgeToEdge
       >
         <ScrollView contentContainerStyle={styles.overlayBody}>
-          {(state?.destinations ?? []).length === 0 ? (
+          {allScopedDestinations.length === 0 ? (
             <Text style={styles.overlayHint}>{t('settings.noDestinations')}</Text>
           ) : (
-            (state?.destinations ?? []).map((destination) => {
+            allScopedDestinations.map((destination) => {
               const scopedMembers = members.filter(
                 (member) => member.subgroupId === destination.subgroupId,
               );
@@ -8186,6 +8445,7 @@ export default function MapScreen({ route, navigation }: Props) {
         trigger={paywallTrigger}
         showRestore={paywallShowRestore}
         onUnlockingChange={setPurchaseUnlocking}
+        onEntitlementActivated={handleEntitlementActivated}
       />
       </View>
       {purchaseUnlocking ? (
@@ -8202,7 +8462,9 @@ export default function MapScreen({ route, navigation }: Props) {
       <KmlImportSheet
         visible={kmlVisible}
         onClose={() => setKmlVisible(false)}
-        currentCount={countOpenDestinations(allScopedDestinations)}
+        currentCount={countOpenDestinations(kmlScopedDestinations)}
+        remainingQuota={kmlRemainingQuota}
+        canWrite={kmlScopeId ? isMySubgroupLeader : isLeader}
         extraCredits={extraPointCredits}
         isPro={isPro}
         onImport={handleKmlImport}
@@ -10058,6 +10320,34 @@ const makeStyles = (
       flexDirection: 'row-reverse',
       justifyContent: 'space-between',
       alignItems: 'center',
+    },
+    routeScopeBlock: {
+      marginBottom: 10,
+      borderRadius: 16,
+      overflow: 'hidden',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: glass.hairlineStrong,
+      backgroundColor: glass.fill,
+    },
+    routeScopeHeader: {
+      minHeight: 52,
+      paddingHorizontal: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    routeScopeTitle: {
+      flex: 1,
+      color: glass.textPrimary,
+      fontSize: 15,
+      fontWeight: '700',
+    },
+    routeScopeCount: {
+      minWidth: 24,
+      color: glass.textSecondary,
+      fontSize: 14,
+      fontWeight: '600',
+      textAlign: 'right',
     },
     renameModalOverlay: {
       flex: 1,

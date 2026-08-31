@@ -139,7 +139,8 @@ describe('map UI placement contracts', () => {
     const toolsPane = mapScreen.indexOf('// ─── 工具', routePane);
     const routeBlock = mapScreen.slice(routePane, toolsPane > 0 ? toolsPane : routePane + 2500);
 
-    expect(routeBlock).toContain('canEditItinerary ?');
+    expect(routeBlock).toContain('renderRouteScope({');
+    expect(routeBlock).toContain('canEdit: isLeader');
     expect(routeBlock).toContain('canReorder={false}');
     expect(routeBlock).toContain("t('map.nextTag')");
     expect(routeBlock).toContain("t('arrival.manage')");
@@ -156,7 +157,7 @@ describe('map UI placement contracts', () => {
       overlayRouteEnd > 0 ? overlayRouteEnd : overlayRoute + 3500,
     );
     expect(overlayBlock).toContain('DestinationReorderList');
-    expect(overlayBlock).toContain('onImport={() => setKmlVisible(true)}');
+    expect(overlayBlock).toContain('onImport={() => { void openKmlImportForScope(routeEditorScopeId); }}');
     expect(overlayBlock).not.toContain("t('map.addStop')");
     expect(overlayBlock).toContain('edgeToEdge');
     const meetEditor = mapScreen.indexOf("visible={!!meetTimeEditor}");
@@ -629,7 +630,7 @@ describe('map UI placement contracts', () => {
     }
     // Route editor count + list share openForRouteEditor (not day-gated carousel).
     expect(mapScreen).toContain('openForRouteEditor');
-    expect(mapScreen).toContain("t('map.stopsReorder', { count: openForRouteEditor.length })");
+    expect(mapScreen).toContain("t('map.stopsReorder', { count })");
     // Flush reorder must use full open list (not day-gated carousel filter).
     expect(mapScreen).toContain('openDestinationsForReorder');
     expect(mapScreen).toContain('buildOpenReorderPayload');

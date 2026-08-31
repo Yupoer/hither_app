@@ -24,14 +24,15 @@ type Step =
   | { kind: 'error'; code: KmlLoadErrorCode | string };
 
 /**
- * Google My Maps KML import: teaching screen → file picker → preview (locked
- * past the free-plan cap) → progress → done. Mirrors PaywallSheet/OverlaySheet
- * conventions used elsewhere on the map screen.
+ * Google My Maps KML import: teaching screen → file picker → preview → progress
+ * → done. Writers enforce the free-plan cap; read-only members submit requests.
  */
 export default React.memo(function KmlImportSheet({
   visible,
   onClose,
   currentCount,
+  remainingQuota,
+  canWrite = true,
   extraCredits = 0,
   isPro,
   onImport,
@@ -43,6 +44,10 @@ export default React.memo(function KmlImportSheet({
   currentCount: number;
   /** Team one-shot extra point credits remaining. */
   extraCredits?: number;
+  /** Account-wide free imports remaining; null keeps the loading fallback. */
+  remainingQuota?: number;
+  /** Read-only members submit a request; their account quota is not consumed. */
+  canWrite?: boolean;
   isPro: boolean;
   onImport: (items: KmlPlacemark[], onProgress: (done: number) => void) => Promise<void>;
   onUpgrade: () => void;
@@ -123,7 +128,7 @@ export default React.memo(function KmlImportSheet({
   }, [onImport, handleClose]);
 
   const allowedFor = (items: KmlPlacemark[]) => {
-    if (isPro) return items.length;
+    if (isPro || !canWrite) return items.length;
     const remaining = remainingDestinationSlots({
       isPro: false,
       openCount: currentCount,
@@ -132,7 +137,11 @@ export default React.memo(function KmlImportSheet({
     // Cap a single import batch by both remaining Free+credit slots and KML free batch size.
     const batchCap = Math.max(
       0,
-      Math.min(FREE_LIMITS.kmlImportPoints + Math.max(0, extraCredits), remaining),
+      Math.min(
+        FREE_LIMITS.kmlImportPoints + Math.max(0, extraCredits),
+        remaining,
+        (remainingQuota ?? FREE_LIMITS.kmlImportPoints) + Math.max(0, extraCredits),
+      ),
     );
     return Math.min(items.length, batchCap);
   };

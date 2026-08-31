@@ -4,7 +4,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, auth;
-select plan(10);
+select plan(15);
 
 insert into auth.users (id, email) values
   ('11111111-1111-4111-8111-111111111111', 'leader-a@example.test'),
@@ -13,12 +13,14 @@ insert into auth.users (id, email) values
 
 insert into public.groups (id, name, invite_code, created_by) values
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'Group A', 'IMPA01', '11111111-1111-4111-8111-111111111111'),
-  ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'Group B', 'IMPA02', '33333333-3333-4333-8333-333333333333');
+  ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'Group B', 'IMPA02', '33333333-3333-4333-8333-333333333333'),
+  ('dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'Group C', 'IMPA03', '11111111-1111-4111-8111-111111111111');
 
 insert into public.memberships (group_id, user_id, role) values
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '11111111-1111-4111-8111-111111111111', 'leader'),
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '22222222-2222-4222-8222-222222222222', 'follower'),
-  ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', '33333333-3333-4333-8333-333333333333', 'leader');
+  ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', '33333333-3333-4333-8333-333333333333', 'leader'),
+  ('dddddddd-dddd-4ddd-8ddd-dddddddddddd', '11111111-1111-4111-8111-111111111111', 'leader');
 
 insert into public.subgroups (id, group_id, name, mode) values
   ('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'B-sub', 'led');
@@ -50,7 +52,7 @@ select throws_ok(
     '[{"title":"X","latitude":1,"longitude":2}]'::jsonb
   ) $$,
   '42501',
-  'leader membership required',
+  'scope leader membership required',
   'non-leader rejected'
 );
 
@@ -133,7 +135,49 @@ select results_eq(
   'insert failure restores rows and positions'
 );
 
--- 6) add_itinerary_item also rejects cross-group subgroup.
+-- 6) Free usage is account-wide, survives failed batches, and rejects the
+-- sixth imported point instead of resetting when the sheet is opened again.
+select is(
+  public.get_kml_import_quota(),
+  3,
+  'failed batch does not consume the remaining account quota'
+);
+
+select is(
+  public.import_itinerary_batch(
+    'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+    null,
+    1,
+    '[{"title":"Stop C","latitude":25.2,"longitude":121.2},{"title":"Stop D","latitude":25.3,"longitude":121.3},{"title":"Stop E","latitude":25.4,"longitude":121.4}]'::jsonb
+  ),
+  3,
+  'second batch consumes the rest of the account quota'
+);
+
+select is(public.get_kml_import_quota(), 0, 'account quota reaches zero');
+
+select throws_ok(
+  $$ select public.import_itinerary_batch(
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    null,
+    1,
+    '[{"title":"Stop F","latitude":25.5,"longitude":121.5}]'::jsonb
+  ) $$,
+  'P0004',
+  'kml import quota exceeded',
+  'sixth free import is rejected'
+);
+
+select is(
+  (select count(*)::int from public.itinerary_items where group_id in (
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+  )),
+  5,
+  'quota rejection leaves all imported rows intact'
+);
+
+-- 7) add_itinerary_item also rejects cross-group subgroup.
 select throws_ok(
   $$ select public.add_itinerary_item(
     'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -149,7 +193,7 @@ select throws_ok(
   'add_itinerary_item rejects foreign subgroup'
 );
 
--- 7) Serialized add succeeds for leader.
+-- 8) Serialized add succeeds for leader.
 select lives_ok(
   $$ select public.add_itinerary_item(
     'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
