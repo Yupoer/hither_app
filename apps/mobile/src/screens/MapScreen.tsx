@@ -7646,7 +7646,7 @@ export default function MapScreen({ route, navigation }: Props) {
       >
         <ScrollView
           ref={routeScrollRef}
-          contentContainerStyle={styles.overlayBody}
+          contentContainerStyle={[styles.overlayBody, styles.routeOverlayBody]}
           scrollEnabled={routeScrollEnabled}
           onLayout={(event) => {
             routeScrollViewportHeightRef.current = event.nativeEvent.layout.height;
@@ -10814,9 +10814,9 @@ const makeStyles = (
       gap: 7,
       marginTop: 14,
       marginHorizontal: 8,
-      marginBottom: 4,
+      marginBottom: 8,
       paddingVertical: 13,
-      borderRadius: 16,
+      borderRadius: 999,
     },
     selfControlLabel: { fontSize: 13, color: glass.textSecondary },
 
@@ -10902,6 +10902,7 @@ const makeStyles = (
 
     // Overlays
     overlayBody: { paddingHorizontal: 16, paddingBottom: 40 },
+    routeOverlayBody: { paddingHorizontal: 40 },
     overlayHint: { fontSize: 12.5, color: glass.textSecondary, marginBottom: 12, marginHorizontal: 4 },
     addStop: {
       flexDirection: 'row',

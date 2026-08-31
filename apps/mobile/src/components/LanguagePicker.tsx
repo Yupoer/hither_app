@@ -1,6 +1,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import Animated, { useReducedMotion } from 'react-native-reanimated';
 import { usePreferences } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
 import { lightTap } from '../utils/haptics';
@@ -14,6 +15,7 @@ export default function LanguagePicker({
 }) {
   const { language, setLanguage } = usePreferences();
   const { t } = useTranslation();
+  const reducedMotion = useReducedMotion();
   const current = LANGUAGE_CHOICES.find((choice) => choice.key === language) ?? LANGUAGE_CHOICES[0];
 
   if (variant === 'menu') {
@@ -52,9 +54,21 @@ export default function LanguagePicker({
             accessibilityRole="button"
             accessibilityLabel={option.label}
             accessibilityState={{ selected }}
-            style={[styles.option, selected && styles.optionSelected]}
+            style={styles.option}
           >
-            <Text style={[styles.label, selected && styles.labelSelected]}>{option.label}</Text>
+            <Animated.View
+              style={[
+                styles.optionSurface,
+                selected && styles.optionSelected,
+                {
+                  transitionProperty: ['backgroundColor', 'transform'],
+                  transitionDuration: reducedMotion ? 0 : 180,
+                  transform: [{ scale: selected ? 1 : 0.97 }],
+                },
+              ]}
+            >
+              <Text style={[styles.label, selected && styles.labelSelected]}>{option.label}</Text>
+            </Animated.View>
           </Pressable>
         );
       })}
@@ -74,6 +88,9 @@ const styles = StyleSheet.create({
   },
   option: {
     minHeight: 32,
+  },
+  optionSurface: {
+    flex: 1,
     paddingHorizontal: 10,
     borderRadius: 15,
     alignItems: 'center',

@@ -30,6 +30,15 @@ jest.mock('react-native', () => {
   };
 });
 
+jest.mock('react-native-reanimated', () => {
+  const { View } = require('react-native');
+  return {
+    __esModule: true,
+    default: { View },
+    useReducedMotion: () => false,
+  };
+});
+
 jest.mock('../state/PreferencesContext', () => ({
   usePreferences: () => ({
     language: mockLanguage,

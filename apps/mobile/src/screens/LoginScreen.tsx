@@ -111,6 +111,7 @@ export default function LoginScreen({ navigation }: Props) {
   });
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
   const [resendCooldown, setResendCooldown] = useState(0);
+  const [resetCooldown, setResetCooldown] = useState(0);
   const [resetMode, setResetMode] = useState(false);
   const [resetSent, setResetSent] = useState(false);
   const [guestConfirmVisible, setGuestConfirmVisible] = useState(false);
@@ -140,6 +141,12 @@ export default function LoginScreen({ navigation }: Props) {
     const timer = setInterval(() => setResendCooldown((value) => Math.max(0, value - 1)), 1000);
     return () => clearInterval(timer);
   }, [resendCooldown]);
+
+  useEffect(() => {
+    if (resetCooldown <= 0) return;
+    const timer = setInterval(() => setResetCooldown((value) => Math.max(0, value - 1)), 1000);
+    return () => clearInterval(timer);
+  }, [resetCooldown]);
 
   useEffect(() => {
     if (user && pendingEmail) navigation.replace('RoleSelect');
@@ -264,6 +271,7 @@ export default function LoginScreen({ navigation }: Props) {
       if (!token.isCurrent()) return;
       successTap();
       setResetSent(true);
+      setResetCooldown(60);
     } catch (error) {
       if (token.isCurrent()) {
         setErrors((current) => ({ ...current, form: t('login.authUnavailable') }));
@@ -295,6 +303,7 @@ export default function LoginScreen({ navigation }: Props) {
     lightTap();
     setResetMode(true);
     setResetSent(false);
+    setResetCooldown(0);
     setErrors({});
     setTouched({ nickname: false, email: false, password: false, confirmPassword: false });
   }
@@ -305,6 +314,7 @@ export default function LoginScreen({ navigation }: Props) {
     setPendingEmail(null);
     setResetSent(false);
     setResendCooldown(0);
+    setResetCooldown(0);
     setMode('signin');
     setErrors({});
   }
@@ -473,6 +483,25 @@ export default function LoginScreen({ navigation }: Props) {
             {errorFor('confirmPassword', panelConfirmError) ? (
               <Text style={styles.fieldError}>{errorFor('confirmPassword', panelConfirmError)}</Text>
             ) : null}
+            <Text style={styles.signupAgreement}>
+              {t('login.signupAgreementPrefix')}
+              <Text
+                onPress={() => termsUrl && void Linking.openURL(termsUrl)}
+                accessibilityRole="link"
+                style={styles.legalText}
+              >
+                {t('login.terms')}
+              </Text>
+              {t('login.signupAgreementAnd')}
+              <Text
+                onPress={() => privacyUrl && void Linking.openURL(privacyUrl)}
+                accessibilityRole="link"
+                style={styles.legalText}
+              >
+                {t('login.privacy')}
+              </Text>
+              {t('login.signupAgreementSuffix')}
+            </Text>
           </>
         ) : (
           <Pressable
@@ -503,6 +532,8 @@ export default function LoginScreen({ navigation }: Props) {
           accessibilityRole="button"
           style={({ pressed }) => [
             styles.cta,
+            styles.compactAction,
+            panelSignUp && styles.signupCta,
             (!panelCanSubmit || busy) && styles.ctaDisabled,
             pressed && panelCanSubmit && styles.pressed,
           ]}
@@ -545,20 +576,46 @@ export default function LoginScreen({ navigation }: Props) {
           <Text style={styles.fieldError}>{email ? t('login.emailFormatHint') : t('login.emailRequired')}</Text>
         ) : null}
         {errors.form ? <Text style={styles.formError}>{errors.form}</Text> : null}
-        {resetSent ? <Text style={styles.successText}>{t('login.resetSent')}</Text> : null}
+        {resetSent ? (
+          <>
+            <Text style={styles.successText}>{t('login.resetSent')}</Text>
+            <Text style={styles.resetHelp}>{t('login.resetHelp')}</Text>
+          </>
+        ) : null}
         <SafePressable
           actionId="login.password_reset"
           screen="Login"
           onPressAction={submitReset}
           onBusyChange={(next) => setBusyAction(next ? 'password_reset' : null)}
           suppressBanner
-          disabled={!emailOk || busy || resetSent}
+          disabled={!emailOk || busy || resetCooldown > 0}
           testID="login-reset-submit"
           accessibilityRole="button"
-          style={[styles.cta, (!emailOk || busy || resetSent) && styles.ctaDisabled]}
+          style={[styles.cta, styles.compactAction, (!emailOk || busy || resetCooldown > 0) && styles.ctaDisabled]}
         >
-          {busyAction === 'password_reset' ? <ActivityIndicator color="#fff" /> : <Text style={styles.ctaText}>{t('login.resetSubmit')}</Text>}
+          {busyAction === 'password_reset' ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.ctaText} numberOfLines={2} adjustsFontSizeToFit>
+              {resetSent ? t('login.resetResend') : t('login.resetSubmit')}
+            </Text>
+          )}
         </SafePressable>
+        {resetCooldown > 0 ? (
+          <Text style={styles.cooldownText}>
+            {t('login.resendIn', { seconds: resetCooldown })}
+          </Text>
+        ) : null}
+        <Pressable
+          onPress={() => void runSocial('login.google', () => signInWithGoogle())}
+          disabled={busy}
+          accessibilityRole="button"
+          testID="login-reset-google"
+          style={({ pressed }) => [styles.resetGoogle, pressed && styles.pressed]}
+        >
+          <Ionicons name="logo-google" size={18} color="#fff" />
+          <Text style={styles.resetGoogleText}>{t('login.useGoogleInstead')}</Text>
+        </Pressable>
         <Pressable onPress={backToSignIn} accessibilityRole="button" style={styles.backLink}>
           <Text style={styles.backLinkText}>{t('login.backToSignIn')}</Text>
         </Pressable>
@@ -740,6 +797,8 @@ const makeStyles = (accent: string) =>
     fieldError: { marginTop: 6, marginLeft: 4, color: '#ff8f8f', fontSize: 13, lineHeight: 18 },
     formError: { marginTop: 10, marginBottom: 2, color: '#ff8f8f', fontSize: 13, lineHeight: 18, textAlign: 'center' },
     cta: { height: 52, borderRadius: 26, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 10, backgroundColor: accent, borderWidth: StyleSheet.hairlineWidth, borderColor: accentMix(accent, 55), width: '100%' },
+    compactAction: { width: '33.333%', alignSelf: 'center' },
+    signupCta: { marginTop: 18 },
     ctaDisabled: { opacity: 0.4 },
     pressed: { opacity: 0.85 },
     ctaText: { fontSize: 17, fontWeight: '600', color: '#fff' },
@@ -752,7 +811,7 @@ const makeStyles = (accent: string) =>
     socialCaption: { textAlign: 'center', fontSize: 12, color: 'rgba(235,235,245,0.45)', marginTop: 8, maxWidth: 125 },
     socialRow: { minHeight: 64, marginTop: 10, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', gap: 16 },
     socialColumn: { alignItems: 'center' },
-    guestButton: { alignSelf: 'center', width: '100%', minHeight: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center', marginTop: 10, backgroundColor: 'rgba(255,255,255,0.1)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.22)' },
+    guestButton: { alignSelf: 'center', width: '33.333%', minHeight: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center', marginTop: 10, backgroundColor: 'rgba(255,255,255,0.1)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.22)', paddingHorizontal: 8 },
     legalRow: { minHeight: 36, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 4 },
     legalText: { fontSize: 12, color: 'rgba(235,235,245,0.6)', textDecorationLine: 'underline' },
     legalDot: { color: 'rgba(235,235,245,0.4)' },
@@ -760,6 +819,11 @@ const makeStyles = (accent: string) =>
     resetCard: { minHeight: 0 },
     sectionTitle: { fontSize: 20, fontWeight: '700', color: '#fff', marginTop: 22 },
     resetHint: { fontSize: 14, lineHeight: 20, color: 'rgba(235,235,245,0.65)', marginTop: 10 },
+    resetHelp: { fontSize: 13, lineHeight: 19, color: 'rgba(235,235,245,0.65)', marginTop: 8 },
+    cooldownText: { fontSize: 12, color: 'rgba(235,235,245,0.55)', textAlign: 'center', marginTop: 6 },
+    resetGoogle: { minHeight: 44, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 12, marginTop: 8 },
+    resetGoogleText: { fontSize: 13, color: '#fff', textDecorationLine: 'underline' },
+    signupAgreement: { fontSize: 12, lineHeight: 18, color: 'rgba(235,235,245,0.58)', textAlign: 'center', marginTop: 14, paddingHorizontal: 8 },
     successText: { fontSize: 14, lineHeight: 20, color: '#9de7b5', marginTop: 14 },
     backLink: { alignSelf: 'center', minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, marginTop: 10 },
     backLinkText: { fontSize: 14, color: 'rgba(235,235,245,0.72)', textDecorationLine: 'underline' },
