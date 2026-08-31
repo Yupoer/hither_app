@@ -105,6 +105,7 @@ export function AccountSheetContent({
   
   const [upgradeEmail, setUpgradeEmail] = useState('');
   const [upgradePassword, setUpgradePassword] = useState('');
+  const [accountPasswordConfirm, setAccountPasswordConfirm] = useState('');
   const [upgradeBusy, setUpgradeBusy] = useState(false);
   const [appleAvailable, setAppleAvailable] = useState(false);
 
@@ -161,6 +162,26 @@ export function AccountSheetContent({
           }
         },
       },
+    );
+  }
+
+  async function handleAddPassword() {
+    if (!user?.email || upgradePassword.length < 6 || upgradePassword !== accountPasswordConfirm || upgradeBusy) return;
+    await runUiAction(
+      'account.add_password',
+      async (token) => {
+        try {
+          await upgradeToEmailAccount(user.email, upgradePassword);
+          if (!token.isCurrent()) return;
+          Alert.alert(t('account.section'), t('account.passwordAdded'));
+          setUpgradePassword('');
+          setAccountPasswordConfirm('');
+        } catch (error) {
+          if (token.isCurrent()) Alert.alert(t('account.section'), t('login.authUnavailable'));
+          throw error;
+        }
+      },
+      { screen: 'Account', suppressBanner: true, onBusyChange: setUpgradeBusy },
     );
   }
 
@@ -362,6 +383,57 @@ export function AccountSheetContent({
             </>
           )}
 
+          {!isAnonymous && (user?.provider === 'google' || user?.provider === 'apple') ? (
+            <>
+              <Text style={styles.sectionLabel}>{t('account.addPasswordTitle')}</Text>
+              <View style={styles.card}>
+                <Text style={styles.promoHint}>{t('account.addPasswordHint')}</Text>
+                <TextInput
+                  style={styles.accountInput}
+                  value={upgradePassword}
+                  onChangeText={setUpgradePassword}
+                  placeholder={t('login.newPasswordPlaceholder')}
+                  placeholderTextColor={glass.textTertiary}
+                  keyboardAppearance="dark"
+                  autoCapitalize="none"
+                  secureTextEntry
+                  textContentType="newPassword"
+                />
+                <TextInput
+                  style={[styles.accountInput, styles.accountPasswordInput]}
+                  value={accountPasswordConfirm}
+                  onChangeText={setAccountPasswordConfirm}
+                  placeholder={t('login.confirmPasswordPlaceholder')}
+                  placeholderTextColor={glass.textTertiary}
+                  keyboardAppearance="dark"
+                  autoCapitalize="none"
+                  secureTextEntry
+                  textContentType="newPassword"
+                />
+                {accountPasswordConfirm && upgradePassword !== accountPasswordConfirm ? (
+                  <Text style={styles.passwordError}>{t('login.confirmPasswordMismatch')}</Text>
+                ) : null}
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.upgradeButton,
+                    { backgroundColor: accentMix(accent, pressed ? 28 : 20) },
+                    (upgradePassword.length < 6 || upgradePassword !== accountPasswordConfirm || upgradeBusy) && styles.disabledButton,
+                  ]}
+                  onPress={() => void handleAddPassword()}
+                  disabled={upgradePassword.length < 6 || upgradePassword !== accountPasswordConfirm || upgradeBusy}
+                  accessibilityRole="button"
+                  testID="account-add-password"
+                >
+                  {upgradeBusy ? (
+                    <ActivityIndicator color={accent} />
+                  ) : (
+                    <Text style={[styles.redeemText, { color: accent }]}>{t('account.addPasswordAction')}</Text>
+                  )}
+                </Pressable>
+              </View>
+            </>
+          ) : null}
+
           {/* Subscription Info */}
           <Text style={styles.sectionLabel}>{t('account.subSection')}</Text>
           <View style={styles.card}>
@@ -546,6 +618,11 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   accountPasswordInput: { marginBottom: 14 },
+  passwordError: {
+    color: '#ff8f8f',
+    fontSize: 13,
+    marginBottom: 10,
+  },
   upgradeButton: {
     height: 48,
     borderRadius: 12,

@@ -33,14 +33,15 @@ describe('auth overhaul contract', () => {
     expect(session).toContain("recovery_not_active");
   });
 
-  it('uses the native iOS token path and hosted OAuth only as the fallback', () => {
+  it('uses hosted OAuth without entering the native Google crash path', () => {
     expect(packageConfig.dependencies['@react-native-google-signin/google-signin']).toBeTruthy();
     expect(googleIos).toContain('GoogleSignin.configure');
     expect(googleIos).toContain('GoogleSignin.signIn');
-    expect(authFlow).toMatch(/signInWithIdToken\(\{[\s\S]*?provider: 'google'/);
-    expect(authFlow).toContain("linkIdentity({ provider: 'google', token })");
+    expect(authFlow).not.toContain("from './googleSignIn'");
     expect(googleFallback).toContain('hosted OAuth');
     expect(authFlow).toContain('signInWithOAuth');
+    expect(authFlow).toContain("queryParams: { prompt: 'select_account' }");
+    expect(authFlow).toContain("provider: 'google'");
   });
 
   it('keeps the login UI single-mounted, stable, accessible, and haptic-aware', () => {
@@ -56,7 +57,9 @@ describe('auth overhaul contract', () => {
     expect(login).toContain('minHeight: 58');
     expect(authFieldIos).toContain("from 'react-native'");
     expect(authFieldIos).toContain('<TextInput');
-    expect(modeSelector).toContain('minHeight: 96');
-    expect(modeSelectorIos).toContain('minHeight: 96');
+    expect(modeSelector).toContain('minHeight: 48');
+    expect(modeSelectorIos).toContain('minHeight: 48');
+    expect(modeSelector).toContain('transitionDuration: reducedMotion ? 0 : 180');
+    expect(modeSelectorIos).toContain('transitionDuration: reducedMotion ? 0 : 180');
   });
 });

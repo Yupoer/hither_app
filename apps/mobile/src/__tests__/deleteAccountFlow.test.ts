@@ -172,6 +172,7 @@ describe('useAuthFlow deleteAccount and signOut', () => {
     await flow.updateNickname('Ada');
     await flow.updateProfile({ nickname: 'Ada' });
     await flow.upgradeToEmailAccount('ada@example.test', 'secret1');
+    expect(mockUpdateUser).toHaveBeenLastCalledWith({ password: 'secret1' });
   });
 
   it('links Google/Apple and applies profile updaters on success and RPC reject', async () => {
@@ -210,6 +211,7 @@ describe('useAuthFlow deleteAccount and signOut', () => {
     mockRpc.mockRejectedValueOnce(new Error('already cleared'));
     const upgradeFlow = makeFlow();
     await upgradeFlow.upgradeToEmailAccount('ada@example.test', 'secret1');
+    expect(mockUpdateUser).toHaveBeenLastCalledWith({ password: 'secret1' });
     await upgradeFlow.updateProfile({ nickname: 'Ada', avatar: 'fox' });
   });
 });

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import Animated, { useReducedMotion } from 'react-native-reanimated';
 
 export type AuthMode = 'signin' | 'signup';
 export type AuthModeSelectorProps = {
@@ -10,6 +11,7 @@ export type AuthModeSelectorProps = {
 };
 
 export default function AuthModeSelector({ mode, onChange, labels, disabled }: AuthModeSelectorProps) {
+  const reducedMotion = useReducedMotion();
   return (
     <View style={styles.tabs} accessibilityRole="tablist">
       {(['signin', 'signup'] as AuthMode[]).map((next) => (
@@ -20,11 +22,23 @@ export default function AuthModeSelector({ mode, onChange, labels, disabled }: A
           accessibilityRole="tab"
           accessibilityState={{ selected: mode === next, disabled }}
           testID={`login-tab-${next}`}
-          style={[styles.tab, mode === next && styles.active]}
+          style={styles.tab}
         >
-          <Text style={[styles.text, mode === next && styles.activeText]}>
-            {labels[next]}
-          </Text>
+          <Animated.View
+            style={[
+              styles.tabSurface,
+              mode === next && styles.active,
+              {
+                transitionProperty: ['backgroundColor', 'transform'],
+                transitionDuration: reducedMotion ? 0 : 180,
+                transform: [{ scale: mode === next ? 1 : 0.98 }],
+              },
+            ]}
+          >
+            <Text style={[styles.text, mode === next && styles.activeText]}>
+              {labels[next]}
+            </Text>
+          </Animated.View>
         </Pressable>
       ))}
     </View>
@@ -40,7 +54,10 @@ const styles = StyleSheet.create({
   },
   tab: {
     flex: 1,
-    minHeight: 96,
+    minHeight: 48,
+  },
+  tabSurface: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 14,

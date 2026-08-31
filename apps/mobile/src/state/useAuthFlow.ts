@@ -21,7 +21,6 @@ import {
 } from '../auth/types';
 import type { Membership } from './SessionContext';
 import { displayMemberAvatar } from '../constants/avatars';
-import { getGoogleIdToken } from './googleSignIn';
 
 const AUTH_CALLBACK_URL = 'hither://auth/callback';
 
@@ -112,58 +111,42 @@ export function useAuthFlow({
 
   const signInWithGoogle = useCallback(
     async (nickname?: string): Promise<User | null> => {
-      let authUser: SupabaseAuthUser | null = null;
-      let useHostedFallback = false;
-      try {
-        const token = await getGoogleIdToken();
-        if (token) {
-          const { data, error } = await supabase.auth.signInWithIdToken({
-            provider: 'google',
-            token,
-          });
-          if (error || !data.user) {
-            throw toAuthFlowError(error, 'Google Sign-In failed.');
-          }
-          authUser = data.user;
-        }
-      } catch (error) {
-        if ((error as { code?: string }).code !== 'google_native_unavailable') {
-          throw toAuthFlowError(error, 'Google Sign-In failed.');
-        }
-        useHostedFallback = true;
+      // Existing runtime 0.1.7 binaries do not contain a verified native
+      // Google URL-scheme setup. Hosted OAuth is binary-independent and keeps
+      // this path safe for OTA delivery.
+      const redirectTo = makeRedirectUri({
+        scheme: 'hither',
+        path: 'auth/callback',
+      });
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo,
+          skipBrowserRedirect: true,
+          queryParams: { prompt: 'select_account' },
+        },
+      });
+      if (error || !data?.url) {
+        throw toAuthFlowError(error, 'Google Sign-In failed.');
+      }
+      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+      if (result.type !== 'success') return null;
+
+      const { params, errorCode } = QueryParams.getQueryParams(result.url);
+      if (errorCode) throw new AuthFlowError(errorCode, errorCode);
+      const { access_token, refresh_token } = params;
+      if (!access_token) {
+        throw new AuthFlowError(
+          'Google Sign-In did not return credentials.',
+          'google_token_missing',
+        );
+      }
+      const session = await supabase.auth.setSession({ access_token, refresh_token });
+      if (session.error || !session.data.user) {
+        throw toAuthFlowError(session.error, 'Google Sign-In failed.');
       }
 
-      if (useHostedFallback) {
-        const redirectTo = makeRedirectUri({
-          scheme: 'hither',
-          path: 'auth/callback',
-        });
-        const { data, error } = await supabase.auth.signInWithOAuth({
-          provider: 'google',
-          options: { redirectTo, skipBrowserRedirect: true },
-        });
-        if (error || !data?.url) {
-          throw toAuthFlowError(error, 'Google Sign-In failed.');
-        }
-        const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
-        if (result.type !== 'success') return null;
-
-        const { params, errorCode } = QueryParams.getQueryParams(result.url);
-        if (errorCode) throw new AuthFlowError(errorCode, errorCode);
-        const { access_token, refresh_token } = params;
-        if (!access_token) throw new AuthFlowError('Google Sign-In did not return credentials.', 'google_token_missing');
-        const session = await supabase.auth.setSession({
-          access_token,
-          refresh_token,
-        });
-        if (session.error || !session.data.user) {
-          throw toAuthFlowError(session.error, 'Google Sign-In failed.');
-        }
-        authUser = session.data.user;
-      }
-
-      if (!authUser) return null;
-      const nextUser = await materializeUser(authUser, nickname);
+      const nextUser = await materializeUser(session.data.user, nickname);
       setUser(nextUser);
       setIsAnonymous(false);
       return nextUser;
@@ -254,64 +237,49 @@ export function useAuthFlow({
   const linkWithGoogle = useCallback(async (): Promise<User | null> => {
     if (!user) throw new Error('No active account to link');
 
-    let authUser: SupabaseAuthUser | null = null;
-    try {
-      const token = await getGoogleIdToken();
-      if (token) {
-        const linked = await supabase.auth.linkIdentity({ provider: 'google', token });
-        if (linked.error || !linked.data.user) {
-          throw toAuthFlowError(linked.error, 'Google linking failed.');
-        }
-        authUser = linked.data.user;
-      } else {
-        return null;
-      }
-    } catch (error) {
-      if ((error as { code?: string }).code !== 'google_native_unavailable') {
-        throw toAuthFlowError(error, 'Google linking failed.');
-      }
+    const redirectTo = makeRedirectUri({
+      scheme: 'hither',
+      path: 'auth/callback',
+    });
+    const { data, error } = await supabase.auth.linkIdentity({
+      provider: 'google',
+      options: {
+        redirectTo,
+        skipBrowserRedirect: true,
+        queryParams: { prompt: 'select_account' },
+      },
+    });
+    if (error || !data?.url) {
+      throw toAuthFlowError(error, 'Google linking failed.');
     }
 
-    if (!authUser) {
-      const redirectTo = makeRedirectUri({
-        scheme: 'hither',
-        path: 'auth/callback',
-      });
-      const { data, error } = await supabase.auth.linkIdentity({
-        provider: 'google',
-        options: { redirectTo, skipBrowserRedirect: true },
-      });
-      if (error || !data?.url) {
-        throw toAuthFlowError(error, 'Google linking failed.');
-      }
+    const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+    if (result.type !== 'success') return null;
 
-      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
-      if (result.type !== 'success') return null;
-
-      const { params, errorCode } = QueryParams.getQueryParams(result.url);
-      if (errorCode) throw new AuthFlowError(errorCode, errorCode);
-      if (params.code) {
-        const exchanged = await supabase.auth.exchangeCodeForSession(params.code);
-        if (exchanged.error || !exchanged.data.user) {
-          throw toAuthFlowError(exchanged.error, 'Google linking failed.');
-        }
-        authUser = exchanged.data.user;
-      } else if (params.access_token) {
-        const session = await supabase.auth.setSession({
-          access_token: params.access_token,
-          refresh_token: params.refresh_token,
-        });
-        if (session.error || !session.data.user) {
-          throw toAuthFlowError(session.error, 'Google linking failed.');
-        }
-        authUser = session.data.user;
-      } else {
-        const current = await supabase.auth.getUser();
-        if (current.error || !current.data.user) {
-          throw toAuthFlowError(current.error, 'Google linking failed.');
-        }
-        authUser = current.data.user;
+    const { params, errorCode } = QueryParams.getQueryParams(result.url);
+    if (errorCode) throw new AuthFlowError(errorCode, errorCode);
+    let authUser: SupabaseAuthUser;
+    if (params.code) {
+      const exchanged = await supabase.auth.exchangeCodeForSession(params.code);
+      if (exchanged.error || !exchanged.data.user) {
+        throw toAuthFlowError(exchanged.error, 'Google linking failed.');
       }
+      authUser = exchanged.data.user;
+    } else if (params.access_token) {
+      const session = await supabase.auth.setSession({
+        access_token: params.access_token,
+        refresh_token: params.refresh_token,
+      });
+      if (session.error || !session.data.user) {
+        throw toAuthFlowError(session.error, 'Google linking failed.');
+      }
+      authUser = session.data.user;
+    } else {
+      const current = await supabase.auth.getUser();
+      if (current.error || !current.data.user) {
+        throw toAuthFlowError(current.error, 'Google linking failed.');
+      }
+      authUser = current.data.user;
     }
 
     // Preserve the same UID. Only the SECURITY DEFINER RPC may clear
@@ -482,17 +450,19 @@ export function useAuthFlow({
       const uid = user.id;
       // updateUser attaches email/password to the *same* auth.uid() — profiles,
       // memberships, and trip rows keyed by uid are preserved.
-      const { error } = await supabase.auth.updateUser({
-        email: email.trim(),
-        password,
-      });
+      const normalizedEmail = email.trim();
+      const { error } = await supabase.auth.updateUser(
+        isAnonymous ? { email: normalizedEmail, password } : { password },
+      );
       if (error) throw new Error(error.message);
       // Never raw-update anonymous_expires_at from the client. The RPC only
       // clears the column when auth.users.is_anonymous is already false
       // (e.g. confirm-email already applied, or project has confirm off).
-      await supabase.rpc('clear_anonymous_expiry_if_registered', {
-        p_uid: uid,
-      }).then(() => undefined, () => undefined);
+      if (isAnonymous) {
+        await supabase.rpc('clear_anonymous_expiry_if_registered', {
+          p_uid: uid,
+        }).then(() => undefined, () => undefined);
+      }
 
       const { data: refreshed } = await supabase.auth.getUser();
       const stillAnon = !!refreshed.user?.is_anonymous;
@@ -500,7 +470,7 @@ export function useAuthFlow({
         prev
           ? {
               ...prev,
-              email: email.trim() || prev.email,
+              email: normalizedEmail || prev.email,
               // Keep server expiry until identity is actually non-anonymous.
               anonymousExpiresAt: stillAnon
                 ? prev.anonymousExpiresAt
@@ -516,7 +486,7 @@ export function useAuthFlow({
       // Do not invent registered state while confirm-email is still pending.
       setIsAnonymous(stillAnon);
     },
-    [setIsAnonymous, setUser, user],
+    [isAnonymous, setIsAnonymous, setUser, user],
   );
 
   const updateNickname = useCallback(

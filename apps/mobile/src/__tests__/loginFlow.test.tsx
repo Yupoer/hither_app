@@ -232,13 +232,28 @@ describe('LoginScreen email flows', () => {
     expect(mockResendConfirmation).toHaveBeenCalledWith('pending@example.com');
   });
 
-  it('shows the generic password-reset message', async () => {
+  it('shows reset guidance and enables resend after the cooldown', async () => {
+    jest.useFakeTimers();
     const { getByTestId, getByText } = render(<LoginScreen navigation={navigation as never} route={{} as never} />);
     fireEvent.changeText(getByTestId('login-email'), 'reset@example.com');
     fireEvent.press(getByTestId('login-forgot-password'));
-    fireEvent.press(getByTestId('login-reset-submit'));
+    await act(async () => {
+      fireEvent.press(getByTestId('login-reset-submit'));
+    });
 
-    await waitFor(() => expect(getByText('login.resetSent')).toBeTruthy());
+    expect(getByText('login.resetSent')).toBeTruthy();
+    expect(getByText('login.resetHelp')).toBeTruthy();
+    expect(getByTestId('login-reset-submit').props.accessibilityState?.disabled).toBe(true);
     expect(mockRequestPasswordReset).toHaveBeenCalledWith('reset@example.com');
+
+    act(() => {
+      jest.advanceTimersByTime(60_000);
+    });
+    expect(getByTestId('login-reset-submit').props.accessibilityState?.disabled).toBe(false);
+    await act(async () => {
+      fireEvent.press(getByTestId('login-reset-submit'));
+    });
+    expect(mockRequestPasswordReset).toHaveBeenCalledTimes(2);
+    jest.useRealTimers();
   });
 });
