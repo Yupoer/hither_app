@@ -290,7 +290,11 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
       <View style={styles.overlayBody}>
         {!isPro ? (
           <View testID="settings-subscribe-banner-hit-area">
-            <PremiumBanner onPress={handlePremiumPress} testID="settings-subscribe-banner" />
+            <PremiumBanner
+              onPress={handlePremiumPress}
+              testID="settings-subscribe-banner"
+              showHint={false}
+            />
           </View>
         ) : null}
         {/* ── 個人設定 ─────────────────────────────────────────── */}
@@ -298,20 +302,17 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
         <View style={styles.settingsTopGroup}>
           <NavRow
             title={t('settings.account')}
-            description={t('settings.accountDescription')}
             onPress={() => setPage('account')}
             styles={styles}
           />
           <NavRow
             title={t('paywall.title')}
-            description={isPro ? t('paywall.active') : t('paywall.upgrade')}
             onPress={handlePremiumPress}
             styles={styles}
           />
           {isLeader && onUpdateGroupAvatar && group ? (
             <NavRow
               title={t('settings.groupAvatar')}
-              description={group.name}
               onPress={() => setPage('groupAvatar')}
               styles={styles}
             />
@@ -319,7 +320,6 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
           {onGoHome ? (
             <NavRow
               title={t('map.backToHome')}
-              description={t('settings.createOrJoinHint')}
               onPress={onGoHome}
               styles={styles}
             />

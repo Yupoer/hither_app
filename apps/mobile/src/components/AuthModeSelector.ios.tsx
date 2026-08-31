@@ -38,21 +38,22 @@ export default function AuthModeSelector({ mode, onChange, labels, disabled }: A
 
 const styles = StyleSheet.create({
   tabs: {
-    width: '100%',
+    width: '66.667%',
+    alignSelf: 'center',
     flexDirection: 'row',
-    borderRadius: 22,
-    padding: 4,
+    borderRadius: 15,
+    padding: 3,
     backgroundColor: 'rgba(255,255,255,0.06)',
   },
   tab: {
     flex: 1,
-    minHeight: 48,
+    height: 32,
   },
   tabSurface: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 18,
+    borderRadius: 12,
   },
   active: { backgroundColor: 'rgba(255,255,255,0.16)' },
   text: { fontSize: 18, fontWeight: '600', color: 'rgba(235,235,245,0.6)' },

@@ -160,7 +160,7 @@ describe('LoginScreen email flows', () => {
     expect(navigation.replace).toHaveBeenCalledWith('RoleSelect');
   });
 
-  it('submits the registration flow after nickname and test credentials', async () => {
+  it('requires the terms checkbox before submitting registration', async () => {
     const { getByTestId } = render(<LoginScreen navigation={navigation as never} route={{} as never} />);
     fireEvent.press(getByTestId('login-tab-signup'));
     await waitFor(() => expect(getByTestId('login-nickname')).toBeTruthy());
@@ -168,6 +168,12 @@ describe('LoginScreen email flows', () => {
     fireEvent.changeText(getByTestId('login-password'), 'test-password');
     fireEvent.changeText(getByTestId('login-confirm-password'), 'test-password');
     fireEvent.changeText(getByTestId('login-nickname'), ' Test User ');
+
+    expect(getByTestId('login-signup-terms').props.accessibilityState?.checked).toBe(false);
+    expect(getByTestId('login-submit').props.accessibilityState?.disabled).toBe(true);
+    fireEvent.press(getByTestId('login-signup-terms'));
+    expect(getByTestId('login-signup-terms').props.accessibilityState?.checked).toBe(true);
+    expect(getByTestId('login-submit').props.accessibilityState?.disabled).toBe(false);
 
     await act(async () => {
       fireEvent.press(getByTestId('login-submit'));
@@ -220,6 +226,7 @@ describe('LoginScreen email flows', () => {
     fireEvent.changeText(getByTestId('login-password'), 'test-password');
     fireEvent.changeText(getByTestId('login-confirm-password'), 'test-password');
     fireEvent.changeText(getByTestId('login-nickname'), 'Pending User');
+    fireEvent.press(getByTestId('login-signup-terms'));
 
     await act(async () => {
       fireEvent.press(getByTestId('login-submit'));

@@ -33,7 +33,7 @@ describe('route editor + KML contracts (#151)', () => {
 
   it('route list is scope-filtered for leaders; day>1 whole-day blocks may drag', () => {
     expect(mapScreen).not.toMatch(/rawDestinations[\s\S]{0,200}if \(isLeader\) return all/);
-    // Stops drag only in interactionMode drag; Day1 header fixed; Day2+ drag moves whole block.
+    // Stops drag only in interactionMode drag; Day1 header fixed; Day2+ swipe-toggle drag moves whole block.
     expect(reorder).toContain('interactionMode === \'drag\'');
     expect(reorder).toContain('canDrag={canDragStop}');
     expect(reorder).toContain("type === 'header'");
@@ -41,8 +41,11 @@ describe('route editor + KML contracts (#151)', () => {
     expect(reorder).toContain('moveDayBlockBefore');
     expect(reorder).toContain('item.day > 1');
     expect(reorder).toContain('entry.day <= 1');
-    expect(reorder).toContain('const showCollapseAffordance = !canReorder');
-    expect(reorder).toContain('const showDragAffordance = canReorder && item.day > 1');
+    expect(reorder).toContain('headerAffordanceByDay');
+    expect(reorder).toContain('const canSwipeToggle = canReorder && item.day > 1');
+    expect(reorder).toContain('const showCollapseAffordance');
+    expect(reorder).toContain('const showDragAffordance');
+    expect(reorder).toContain('onSwipeToggleAffordance');
     expect(reorder).toContain('drop-after-header');
   });
   it('open-once sync + import CTA replace always-on sync button', () => {

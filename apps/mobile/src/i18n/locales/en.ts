@@ -77,6 +77,7 @@ export const en: Record<keyof ZhDict, string> = {
   'login.privacy': 'Privacy policy',
   'login.terms': 'Terms of service',
   'login.signupAgreementPrefix': 'By signing up, you agree to the ',
+  'login.signupAgreementA11y': 'Agree to the terms of service and privacy policy',
   'login.signupAgreementAnd': ' and confirm you have read the ',
   'login.signupAgreementSuffix': '.',
   'login.signInFailed': 'Sign-in failed. Check your email and password.',

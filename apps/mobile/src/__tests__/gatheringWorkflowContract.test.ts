@@ -103,15 +103,15 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(mapScreen).toContain('requests.filter((request) => request.subgroupId == null)');
   });
 
-  it('gates quick-add stay CTA; members collapse while editors always reorder', () => {
+  it('gates quick-add stay CTA; day headers use left-swipe collapse↔drag mutex', () => {
     // 「新增住宿點」only after stay is set (hasDaily).
     expect(reorderList).toMatch(/showQuickAdd[\s\S]{0,200}hasDaily/);
-    // Read-only members can collapse; leaders see the route and drag handles.
-    expect(reorderList).toContain('const collapsed = !canReorder');
+    // Default collapse; left-swipe toggles drag handle (not both at once).
+    expect(reorderList).toContain('headerAffordanceByDay');
     expect(reorderList).toContain('canSwipeToggleAffordance');
-    expect(reorderList).toContain('const canSwipeToggle = false');
-    expect(reorderList).toContain('const showCollapseAffordance = !canReorder');
-    expect(reorderList).toContain('const showDragAffordance = canReorder && item.day > 1');
+    expect(reorderList).toContain('onSwipeToggleAffordance');
+    expect(reorderList).toContain("headerAffordance === 'collapse'");
+    expect(reorderList).toContain("headerAffordance === 'drag'");
     // Whole-day block move (not bare header).
     expect(reorderList).toContain('moveDayBlockBefore');
     expect(reorderList).toContain('REVEAL_WIDTH');
