@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
   [switch]$DryRun
 )
@@ -49,12 +49,11 @@ if (-not $DryRun) {
     $smtp = [System.Net.Mail.SmtpClient]::new('smtp-relay.brevo.com', 587)
     $smtp.EnableSsl = $true
     $smtp.Credentials = [System.Net.NetworkCredential]::new($smtpUser, $smtpKey)
-    $message = [System.Net.Mail.MailMessage]::new(
-      $senderEmail,
-      $senderEmail,
-      'Hither SMTP test / Hither SMTP 測試',
-      'This is a one-time SMTP delivery test for Hither / 這是 Hither 的一次性 SMTP 寄信測試。'
-    )
+    $message = [System.Net.Mail.MailMessage]::new()
+    $message.From = $senderEmail
+    $message.To.Add($senderEmail)
+    $message.Subject = 'Hither SMTP test / Hither SMTP 測試'
+    $message.Body = 'This is a one-time SMTP delivery test for Hither / 這是 Hither 的一次性 SMTP 寄信測試。'
     try {
       $smtp.Send($message)
     } finally {
@@ -77,17 +76,17 @@ $allowList += 'hither://auth/callback'
 $allowList += 'hither://auth/recovery'
 $allowList = @($allowList | ForEach-Object { $_.Trim() } | Select-Object -Unique)
 
-$confirmationTemplate = @'
-<h2>Verify your Hither email / 驗證你的 Hither 電子信箱</h2>
-<p>Confirm your email address to finish creating your Hither account. / 請驗證電子信箱以完成 Hither 帳號建立。</p>
-<p><a href="{{ .ConfirmationURL }}">Verify email / 驗證電子信箱</a></p>
-'@
-$recoveryTemplate = @'
-<h2>Reset your Hither password / 重設 Hither 密碼</h2>
-<p>Use the link below to choose a new password. / 請使用下方連結設定新密碼。</p>
-<p><a href="{{ .ConfirmationURL }}">Reset password / 重設密碼</a></p>
-<p>If you did not request this, you can ignore this email. / 如果不是你提出的要求，可以忽略這封信。</p>
-'@
+$confirmationTemplate = @(
+  '<h2>Verify your Hither email / 驗證你的 Hither 電子信箱</h2>'
+  '<p>Confirm your email address to finish creating your Hither account. / 請驗證電子信箱以完成 Hither 帳號建立。</p>'
+  '<p><a href="{{ .ConfirmationURL }}">Verify email / 驗證電子信箱</a></p>'
+) -join "`n"
+$recoveryTemplate = @(
+  '<h2>Reset your Hither password / 重設 Hither 密碼</h2>'
+  '<p>Use the link below to choose a new password. / 請使用下方連結設定新密碼。</p>'
+  '<p><a href="{{ .ConfirmationURL }}">Reset password / 重設密碼</a></p>'
+  '<p>If you did not request this, you can ignore this email. / 如果不是你提出的要求，可以忽略這封信。</p>'
+) -join "`n"
 
 $patchBody = [ordered]@{
   external_email_enabled = $true
@@ -147,4 +146,3 @@ if (-not ([string]$verified.uri_allow_list -split "[`r`n,]+" | Where-Object { $_
 }
 
 Write-Output 'Supabase Auth configuration updated and verified.'
-
