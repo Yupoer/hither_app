@@ -21,7 +21,9 @@ Get-ChildItem -LiteralPath $staging -Recurse -File | ForEach-Object {
 
 $listJson = (& npx.cmd --yes wrangler@latest pages project list --json | Out-String)
 $projects = @($listJson | ConvertFrom-Json)
-$existing = $projects | Where-Object { $_.name -eq $ProjectName -or $_.project_name -eq $ProjectName } | Select-Object -First 1
+$existing = $projects | Where-Object {
+  $_.name -eq $ProjectName -or $_.project_name -eq $ProjectName -or $_.'Project Name' -eq $ProjectName
+} | Select-Object -First 1
 if (-not $existing) {
   $createdOutput = (& npx.cmd --yes wrangler@latest pages project create $ProjectName --production-branch master | Out-String)
   $createdName = [regex]::Match($createdOutput, '(?im)(?:project name|name)\s*[:=]\s*([A-Za-z0-9_-]+)').Groups[1].Value
@@ -35,8 +37,8 @@ if ($urlMatches.Count -eq 0) {
 }
 $baseUrl = $urlMatches[$urlMatches.Count - 1].Value.TrimEnd('/')
 foreach ($path in @('/privacy/', '/terms/', '/styles.css')) {
-  $response = Invoke-WebRequest -UseBasicParsing -Uri ($baseUrl + $path)
-  if ($response.StatusCode -ne 200) { throw "Legal URL check failed: $path ($($response.StatusCode))" }
+  $status = (& curl.exe --fail --silent --show-error --output NUL --write-out '%{http_code}' ($baseUrl + $path) | Out-String).Trim()
+  if ($LASTEXITCODE -ne 0 -or $status -ne '200') { throw "Legal URL check failed: $path ($status)" }
 }
 Write-Output "LEGAL_BASE_URL=$baseUrl"
 Write-Output "EXPO_PUBLIC_PRIVACY_URL=$baseUrl/privacy/"
