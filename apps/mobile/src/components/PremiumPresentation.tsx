@@ -31,6 +31,7 @@ import {
 } from '../services/premiumPurchaseFlow';
 import { PREMIUM_CATALOG, premiumProductForPlan, type PremiumPlan } from '../premiumCatalog';
 import { glass, accentMix } from '../glass';
+import { GlassView } from '../native/liquidGlass';
 import { getLegalUrl } from '../config/legal';
 import {
   hasEligibleIntroductoryOffer,
@@ -104,6 +105,8 @@ export type PremiumPresentationProps = {
   onPurchaseSuccess?: () => void;
   /** Called after a successful restore that unlocks premium. */
   onRestoreSuccess?: () => void;
+  /** Refresh all entitlement-dependent screens after server projection is live. */
+  onEntitlementActivated?: () => void | Promise<void>;
   /** Optional testID prefix (default premium-presentation). */
   testID?: string;
   showIntroPager?: boolean;
@@ -115,6 +118,7 @@ export default React.memo(function PremiumPresentation({
   trigger,
   onPurchaseSuccess,
   onRestoreSuccess,
+  onEntitlementActivated,
   testID = 'premium-presentation',
   showIntroPager = false,
   onUnlockingChange,
@@ -228,6 +232,7 @@ export default React.memo(function PremiumPresentation({
       }
       await refreshProfile();
       await refreshEntitlement(groupId);
+      await onEntitlementActivated?.();
       Alert.alert(t('paywall.title'), t('paywall.purchaseSuccess'));
       onPurchaseSuccess?.();
     } catch {
@@ -242,10 +247,12 @@ export default React.memo(function PremiumPresentation({
     catalogReady,
     selectedPlan,
     groupId,
+    getPremiumProjection,
     t,
     refreshEntitlement,
     refreshProfile,
     onPurchaseSuccess,
+    onEntitlementActivated,
     onUnlockingChange,
     premiumProjection.personalPremiumActive,
     premiumProjection.teamPremiumActive,
@@ -268,7 +275,16 @@ export default React.memo(function PremiumPresentation({
       });
       await refreshProfile();
       await refreshEntitlement(groupId);
-      if (restored.projection.personalPremiumActive || restored.projection.teamPremiumActive) {
+      const alreadyActive = restored.projection.personalPremiumActive || restored.projection.teamPremiumActive;
+      const ready = alreadyActive || (restored.restored > 0 && await waitUntilPremiumProjectionActive({
+        groupId,
+        getPremiumProjection,
+        alreadyActive,
+      }));
+      if (ready) {
+        await refreshProfile();
+        await refreshEntitlement(groupId);
+        await onEntitlementActivated?.();
         Alert.alert(t('paywall.title'), t('paywall.restoreSuccess'));
         onRestoreSuccess?.();
         return;
@@ -286,7 +302,7 @@ export default React.memo(function PremiumPresentation({
     } finally {
       setBusy(null);
     }
-  }, [user, isAnonymous, groupId, t, refreshEntitlement, refreshProfile, onRestoreSuccess]);
+  }, [user, isAnonymous, groupId, t, refreshEntitlement, refreshProfile, getPremiumProjection, onRestoreSuccess, onEntitlementActivated]);
 
   const redeemErrorMessage = useCallback((code: string): string => {
     switch (code) {
@@ -320,6 +336,19 @@ export default React.memo(function PremiumPresentation({
           if (!token.isCurrent()) return;
           await refreshEntitlement(membership?.group.id);
           if (!token.isCurrent()) return;
+          const ready = await waitUntilPremiumProjectionActive({
+            groupId: membership?.group.id ?? null,
+            getPremiumProjection,
+            alreadyActive:
+              premiumProjection.personalPremiumActive || premiumProjection.teamPremiumActive,
+          });
+          if (!ready) throw new Error('premium_projection_pending');
+          if (!token.isCurrent()) return;
+          await refreshProfile();
+          await refreshEntitlement(membership?.group.id);
+          if (!token.isCurrent()) return;
+          await onEntitlementActivated?.();
+          if (!token.isCurrent()) return;
           Alert.alert(t('paywall.redeem.successTitle'), t('paywall.redeem.successBody', { plan: result.plan_name }));
           setPromoCode('');
           setRedeemOpen(false);
@@ -347,7 +376,18 @@ export default React.memo(function PremiumPresentation({
         },
       },
     );
-  }, [promoCode, membership?.group.id, refreshProfile, refreshEntitlement, redeemErrorMessage, t]);
+  }, [
+    promoCode,
+    membership?.group.id,
+    getPremiumProjection,
+    refreshProfile,
+    refreshEntitlement,
+    redeemErrorMessage,
+    t,
+    onEntitlementActivated,
+    premiumProjection.personalPremiumActive,
+    premiumProjection.teamPremiumActive,
+  ]);
 
   return (
     <View style={styles.body} testID={testID} accessibilityRole="summary">
@@ -522,7 +562,11 @@ export default React.memo(function PremiumPresentation({
           >
             <View style={styles.redeemModalRoot}>
               <Pressable style={styles.redeemBackdrop} onPress={() => setRedeemOpen(false)} />
-              <View style={styles.redeemCard} testID="paywall-redeem-modal">
+              <GlassView
+                glassStyle="regular"
+                style={styles.redeemCard}
+                testID="paywall-redeem-modal"
+              >
                 <Text style={styles.redeemTitle}>{t('paywall.redeemAction')}</Text>
                 <TextInput
                   style={styles.redeemInput}
@@ -547,7 +591,7 @@ export default React.memo(function PremiumPresentation({
                     <Text style={[styles.restoreText, { color: accent }]}>{t('account.redeemCta')}</Text>
                   )}
                 </Pressable>
-              </View>
+              </GlassView>
             </View>
           </Modal>
         </>
@@ -680,7 +724,6 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     padding: 20,
     gap: 12,
-    backgroundColor: '#1A1F2B',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: glass.hairline,
   },

@@ -94,6 +94,31 @@ export default function RoleSelectScreen({ navigation }: Props) {
   // Keep the far gap reserved while loading so the CTA doesn't "pop" closer then jump away.
   const reserveMyTeamsSlot = !!user && (groupsLoading || showMyTeams);
 
+  function startSignOut(): void {
+    void runUiAction(
+      'role_select.sign_out',
+      async (token) => {
+        logEvent('sign_out');
+        await signOut();
+        if (!token.isCurrent()) return;
+        navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+      },
+      {
+        screen: 'RoleSelect',
+        suppressBanner: true,
+        onError: (kind) => {
+          const message = kind === 'timeout'
+            ? t('interaction.signOutTimeout')
+            : t('interaction.error');
+          Alert.alert(t('settings.signOutTitle'), message, [
+            { text: t('common.cancel'), style: 'cancel' },
+            { text: t('interaction.retry'), onPress: startSignOut },
+          ]);
+        },
+      },
+    );
+  }
+
   return (
     <LinearGradient
       colors={['#1f3050', '#0e1622', '#080b12']}
@@ -122,18 +147,7 @@ export default function RoleSelectScreen({ navigation }: Props) {
             {
               text: t('settings.signOut'),
               style: 'destructive',
-              onPress: () => {
-                void runUiAction(
-                  'role_select.sign_out',
-                  async (token) => {
-                    logEvent('sign_out');
-                    await signOut();
-                    if (!token.isCurrent()) return;
-                    navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
-                  },
-                  { screen: 'RoleSelect' },
-                );
-              },
+              onPress: startSignOut,
             },
           ],
         )}

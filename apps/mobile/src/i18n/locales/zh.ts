@@ -14,7 +14,8 @@ export const zh = {
   'common.or': '或',
 
   // Interaction recovery (shared action runner)
-  'interaction.timeout': '操作逾時，請再試一次',
+  'interaction.timeout': '連線逾時，請檢查 Wi‑Fi 或行動網路後再試。',
+  'interaction.signOutTimeout': '登出連線逾時，請檢查 Wi‑Fi 或行動網路後再試，目前仍保持登入。',
   'interaction.error': '操作失敗，請再試一次',
   'interaction.retry': '重試',
   'interaction.mapFailed': '地圖載入失敗',

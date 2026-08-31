@@ -16,12 +16,14 @@ export default React.memo(function PaywallSheet({
   trigger,
   showRestore = true,
   onUnlockingChange,
+  onEntitlementActivated,
 }: {
   visible: boolean;
   onClose: () => void;
   trigger?: TranslationKey;
   showRestore?: boolean;
   onUnlockingChange?: (unlocking: boolean) => void;
+  onEntitlementActivated?: () => void | Promise<void>;
 }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
@@ -51,6 +53,7 @@ export default React.memo(function PaywallSheet({
               trigger={trigger}
               onPurchaseSuccess={onClose}
               onRestoreSuccess={onClose}
+              onEntitlementActivated={onEntitlementActivated}
               onUnlockingChange={onUnlockingChange}
               testID="paywall-premium-presentation"
             />

@@ -1,13 +1,5 @@
-import React, { useEffect } from 'react';
-import { StyleSheet } from 'react-native';
-import { Host, SecureField, TextField, useNativeState } from '@expo/ui/swift-ui';
-import {
-  font,
-  foregroundStyle,
-  frame,
-  accessibilityLabel as accessibilityLabelModifier,
-  padding,
-} from '@expo/ui/swift-ui/modifiers';
+import React from 'react';
+import { StyleSheet, TextInput } from 'react-native';
 import type { AuthFieldProps } from './AuthField';
 
 export default function AuthField({
@@ -18,51 +10,37 @@ export default function AuthField({
   onBlur,
   onFocus,
   placeholder,
+  placeholderTextColor,
   autoFocus,
+  autoCapitalize,
+  autoCorrect,
+  keyboardAppearance,
+  keyboardType,
+  textContentType,
   testID,
 }: AuthFieldProps) {
-  const nativeText = useNativeState(value);
-
-  useEffect(() => {
-    if (nativeText.get() !== value) nativeText.set(value);
-  }, [nativeText, value]);
-
-  const modifiers = [
-      frame({ minWidth: 0, maxWidth: Infinity, height: 52 }),
-      padding({ horizontal: 18 }),
-      font({ size: 18 }),
-      foregroundStyle('#FFFFFF'),
-      accessibilityLabelModifier(accessibilityLabel),
-  ];
-  const field = secureTextEntry ? (
-    <SecureField
-      text={nativeText}
-      placeholder={placeholder}
-      autoFocus={autoFocus}
-      onTextChange={onChangeText}
-      onFocusChange={(focused) => (focused ? onFocus?.() : onBlur?.())}
-      modifiers={modifiers}
-    />
-  ) : (
-    <TextField
-      text={nativeText}
-      placeholder={placeholder}
-      autoFocus={autoFocus}
-      onTextChange={onChangeText}
-      onFocusChange={(focused) => (focused ? onFocus?.() : onBlur?.())}
-      modifiers={modifiers}
-    />
-  );
-
   return (
-    <Host
-      style={styles.host}
-      colorScheme="dark"
+    <TextInput
+      style={styles.input}
+      value={value}
+      onChangeText={onChangeText}
+      onBlur={onBlur}
+      onFocus={onFocus}
+      placeholder={placeholder}
+      placeholderTextColor={placeholderTextColor}
+      autoFocus={autoFocus}
+      autoCapitalize={autoCapitalize}
+      autoCorrect={autoCorrect}
+      keyboardAppearance={keyboardAppearance}
+      keyboardType={keyboardType}
+      secureTextEntry={secureTextEntry}
+      textContentType={textContentType}
+      accessibilityLabel={accessibilityLabel}
       testID={testID}
-    >
-      {field}
-    </Host>
+    />
   );
 }
 
-const styles = StyleSheet.create({ host: { flex: 1 } });
+const styles = StyleSheet.create({
+  input: { flex: 1, minHeight: 52, paddingHorizontal: 18, fontSize: 18, color: '#fff' },
+});

@@ -14,7 +14,7 @@ const destinationService = readFileSync(
 const migration = readFileSync(
   join(
     __dirname,
-    '../../../../supabase/migrations/20260810005000_import_itinerary_batch.sql',
+    '../../../../supabase/migrations/20260831010000_import_quota_and_scope_authority.sql',
   ),
   'utf8',
 );
@@ -46,16 +46,18 @@ describe('route editor + KML contracts (#151)', () => {
   });
   it('open-once sync + import CTA replace always-on sync button', () => {
     expect(mapScreen).toContain('routeOpenSyncSessionRef');
-    expect(mapScreen).toContain('onImport={() => setKmlVisible(true)}');
+    expect(mapScreen).toContain('openKmlImportForScope');
+    expect(mapScreen).toContain('onImport={() => { void openKmlImportForScope(routeEditorScopeId); }}');
+    expect(mapScreen).toContain('remainingQuota={kmlRemainingQuota}');
     expect(reorder).toContain('onImport');
     expect(reorder).toContain("t('kml.entry')");
   });
 
   it('route editor mutations use full open reorder list (exiting snapshots carousel-only)', () => {
     // DestinationReorderList must not receive merged exiting carousel rows.
-    const reorderStart = mapScreen.indexOf('<DestinationReorderList');
+    const reorderStart = mapScreen.indexOf('visible={overlay === \'route\'}');
     expect(reorderStart).toBeGreaterThan(-1);
-    const reorderBlock = mapScreen.slice(reorderStart, reorderStart + 600);
+    const reorderBlock = mapScreen.slice(reorderStart, reorderStart + 9000);
     // Full open list (all days) via openForRouteEditor — not day-gated carousel.
     expect(reorderBlock).toContain('destinations={openForRouteEditor}');
     expect(reorderBlock).not.toContain('destinations={destinations}');
@@ -191,14 +193,20 @@ describe('route editor + KML contracts (#151)', () => {
     expect(kmlSheet).toContain('<SettingsChildSheet');
   });
 
-  it('migration is security invoker with leader auth, subgroup ownership, revoke public/anon', () => {
-    expect(migration).toContain('security invoker');
-    expect(migration).toContain('leader membership required');
+  it('migration keeps the batch return contract, locks account quota, and revokes public/anon', () => {
+    expect(migration).toContain('security definer');
+    expect(migration).toContain('can_manage_itinerary_scope');
+    expect(migration).toContain('account_import_quotas');
+    expect(migration).toContain('select q.used_count into v_quota_used');
+    expect(migration).toContain('for update');
+    expect(migration).toContain('profile_has_lifetime_premium');
+    expect(migration).toContain('personal_premium_is_live');
+    expect(migration).toContain('drop policy if exists "itinerary_items: insert if in that subgroup"');
     expect(migration).toContain('subgroup does not belong to group');
     expect(migration).toContain('s.group_id = p_group_id');
     expect(migration).toContain('revoke all on function public.import_itinerary_batch');
     expect(migration).toContain('grant execute');
-    expect(migration).not.toMatch(/security definer/i);
+    expect(migration).toContain("raise exception 'kml import quota exceeded'");
   });
 
   it('position writers share locked server RPCs (add/reorder/import)', () => {

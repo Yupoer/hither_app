@@ -1,9 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  AccessibilityInfo,
   ActivityIndicator,
-  Animated,
-  Easing,
   KeyboardAvoidingView,
   Linking,
   Modal,
@@ -20,10 +17,8 @@ import { Ionicons } from '@expo/vector-icons';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
-import CrookIcon from '../components/CrookIcon';
 import AuthField from '../components/AuthField';
 import AuthModeSelector, { type AuthMode } from '../components/AuthModeSelector';
-import NativeGlassButton from '../components/NativeGlassButton';
 import { useSession } from '../state/SessionContext';
 import { useTheme } from '../state/PreferencesContext';
 import { useTranslation, type TranslationKey } from '../i18n';
@@ -45,7 +40,6 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 type Mode = AuthMode;
 type FieldName = 'nickname' | 'email' | 'password' | 'confirmPassword';
 type AuthError = { field: keyof AuthFieldErrors; key: TranslationKey };
-type Transition = { from: Mode; to: Mode };
 
 const MIN_PASSWORD = 6;
 
@@ -84,7 +78,7 @@ function mapAuthError(error: unknown): AuthError {
   return { field: 'form', key: 'login.authUnavailable' };
 }
 
-/** Login gate. Native iOS fields/selectors are selected by the platform files. */
+/** Login gate. Keep the form geometry stable across mode and language changes. */
 export default function LoginScreen({ navigation }: Props) {
   const {
     user,
@@ -97,7 +91,7 @@ export default function LoginScreen({ navigation }: Props) {
   } = useSession();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
-  const { language, t } = useTranslation();
+  const { t } = useTranslation();
   const accent = colors.accent;
   const styles = useMemo(() => makeStyles(accent), [accent]);
 
@@ -121,12 +115,6 @@ export default function LoginScreen({ navigation }: Props) {
   const [resetSent, setResetSent] = useState(false);
   const [guestConfirmVisible, setGuestConfirmVisible] = useState(false);
   const [appleAvailable, setAppleAvailable] = useState(false);
-  const [reduceMotion, setReduceMotion] = useState(false);
-  const [transition, setTransition] = useState<Transition | null>(null);
-  const transitionProgress = useRef(new Animated.Value(1)).current;
-  const previousMode = useRef<Mode>(mode);
-  const copyX = useRef(new Animated.Value(0)).current;
-  const previousLanguage = useRef(language);
 
   const privacyUrl = getLegalUrl('privacy');
   const termsUrl = getLegalUrl('terms');
@@ -139,47 +127,13 @@ export default function LoginScreen({ navigation }: Props) {
   const formCanSubmit = emailOk && passwordOk && nicknameOk && (!isSignUp || confirmPasswordOk);
 
   useEffect(() => {
-    void AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion).catch(() => undefined);
-    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion);
-    return () => subscription.remove();
-  }, []);
-
-  useEffect(() => {
     void AppleAuthentication.isAvailableAsync().then(setAppleAvailable).catch(() => setAppleAvailable(false));
   }, []);
 
   useEffect(() => {
-    if (previousMode.current === mode) return;
-    const from = previousMode.current;
-    previousMode.current = mode;
-    transitionProgress.stopAnimation();
-    transitionProgress.setValue(0);
-    setTransition({ from, to: mode });
-    Animated.timing(transitionProgress, {
-      toValue: 1,
-      duration: reduceMotion ? 120 : 220,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start(({ finished }) => {
-      if (finished) setTransition((current) => (current?.to === mode ? null : current));
-    });
     setTouched({ nickname: false, email: false, password: false, confirmPassword: false });
     setErrors({});
-  }, [mode, reduceMotion, transitionProgress]);
-
-  useEffect(() => {
-    if (previousLanguage.current === language) return;
-    previousLanguage.current = language;
-    copyX.stopAnimation((current) => {
-      copyX.setValue(Math.abs(current) < 1 ? (language === 'en' ? 16 : -16) : current);
-      Animated.timing(copyX, {
-        toValue: 0,
-        duration: reduceMotion ? 120 : 220,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }).start();
-    });
-  }, [copyX, language, reduceMotion]);
+  }, [mode]);
 
   useEffect(() => {
     if (resendCooldown <= 0) return;
@@ -565,21 +519,6 @@ export default function LoginScreen({ navigation }: Props) {
     );
   }
 
-  function panelStyle(panelMode: Mode): object {
-    if (!transition) return { opacity: 1, transform: [{ translateX: 0 }] };
-    const direction = transition.to === 'signup' ? 1 : -1;
-    if (panelMode === transition.to) {
-      return {
-        opacity: transitionProgress,
-        transform: [{ translateX: transitionProgress.interpolate({ inputRange: [0, 1], outputRange: [direction * 24, 0] }) }],
-      };
-    }
-    return {
-      opacity: transitionProgress.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
-      transform: [{ translateX: transitionProgress.interpolate({ inputRange: [0, 1], outputRange: [0, -direction * 24] }) }],
-    };
-  }
-
   function renderReset(): React.ReactNode {
     return (
       <View style={styles.resetCard}>
@@ -661,7 +600,6 @@ export default function LoginScreen({ navigation }: Props) {
     );
   }
 
-  const panelModes = transition ? [transition.from, transition.to] : [mode];
   const content = pendingEmail ? renderPending() : resetMode ? renderReset() : (
     <>
       <AuthModeSelector
@@ -670,33 +608,25 @@ export default function LoginScreen({ navigation }: Props) {
         labels={{ signin: t('login.tabSignIn'), signup: t('login.tabSignUp') }}
         disabled={busy}
       />
-      <View style={styles.formViewport}>
-        {panelModes.map((panelMode) => (
-          <Animated.View key={panelMode} style={[styles.formLayer, panelStyle(panelMode)]}>
-            {renderAuthPanel(panelMode, panelMode === mode)}
-          </Animated.View>
-        ))}
-      </View>
+      <View style={styles.formViewport}>{renderAuthPanel(mode, true)}</View>
       {errors.form ? <Text style={styles.formError}>{errors.form}</Text> : null}
     </>
   );
 
   return (
     <LinearGradient colors={['#1f3050', '#0e1622', '#080b12']} locations={[0, 0.52, 1]} style={styles.fill}>
-      <Animated.View style={[styles.langChrome, { top: insets.top + 12, transform: [{ translateX: copyX }] }]}>
+      <View style={[styles.langChrome, { top: insets.top + 12 }]}>
         <LanguagePicker />
-      </Animated.View>
+      </View>
       <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
-          contentContainerStyle={[styles.content, { paddingTop: insets.top + 40, paddingBottom: insets.bottom + 28 }]}
+          contentContainerStyle={[styles.content, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 16 }]}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
         >
-          <Animated.View style={{ transform: [{ translateX: copyX }] }}>
+          <View>
             <View style={styles.header}>
-              <CrookIcon size={64} color={accent} glow />
               <Text style={styles.title}>{t('login.welcomeTitle')}</Text>
-              <Text style={styles.sub}>{t('login.welcomeSub')}</Text>
             </View>
 
             {content}
@@ -736,17 +666,16 @@ export default function LoginScreen({ navigation }: Props) {
                     </View>
                   ) : null}
                 </View>
-                <NativeGlassButton
-                  label={t('login.guest')}
+                <Pressable
                   onPress={openGuestConfirm}
                   disabled={busy}
+                  accessibilityRole="button"
                   accessibilityLabel={t('login.guest')}
                   testID="login-guest"
-                  width={190}
-                  height={52}
-                  shape="capsule"
-                  style={styles.guestButton}
-                />
+                  style={({ pressed }) => [styles.guestButton, busy && styles.ctaDisabled, pressed && styles.pressed]}
+                >
+                  <Text style={styles.ctaText}>{t('login.guest')}</Text>
+                </Pressable>
                 <View style={styles.legalRow}>
                   <Pressable
                     onPress={() => privacyUrl && void Linking.openURL(privacyUrl)}
@@ -768,7 +697,7 @@ export default function LoginScreen({ navigation }: Props) {
                 </View>
               </>
             ) : null}
-          </Animated.View>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -778,16 +707,14 @@ export default function LoginScreen({ navigation }: Props) {
                 <Text style={styles.modalTitle}>{t('anon.confirmTitle')}</Text>
                 <Text style={styles.modalWarningText}>{t('anon.warning')}</Text>
                 <Text style={styles.modalWarningText}>{t('anon.expiryWarning')}</Text>
-                <NativeGlassButton
-              label={t('anon.continue')}
+            <Pressable
               onPress={continueAsGuest}
+              accessibilityRole="button"
               accessibilityLabel={t('anon.continue')}
-              width={240}
-              height={52}
-              shape="capsule"
-              variant="glassProminent"
-              style={styles.modalCta}
-            />
+              style={({ pressed }) => [styles.modalCta, pressed && styles.pressed]}
+            >
+              <Text style={styles.ctaText}>{t('anon.continue')}</Text>
+            </Pressable>
             <Pressable onPress={cancelGuest} accessibilityRole="button" style={styles.modalSecondary}>
               <Text style={styles.modalSecondaryText}>{t('common.cancel')}</Text>
             </Pressable>
@@ -803,48 +730,46 @@ const makeStyles = (accent: string) =>
     fill: { flex: 1 },
     langChrome: { position: 'absolute', right: 20, zIndex: 10 },
     content: { flexGrow: 1, paddingHorizontal: 24 },
-    header: { alignItems: 'center', marginBottom: 28 },
-    title: { fontSize: 28, fontWeight: '700', color: '#fff', marginTop: 14 },
-    sub: { fontSize: 14, lineHeight: 20, color: 'rgba(235,235,245,0.6)', marginTop: 8, textAlign: 'center', maxWidth: 300 },
-    formViewport: { minHeight: 480, position: 'relative' },
-    formLayer: { position: 'absolute', left: 0, right: 0, top: 0 },
+    header: { alignItems: 'center', marginBottom: 4 },
+    title: { fontSize: 24, fontWeight: '700', color: '#fff' },
+    formViewport: { width: '100%' },
     form: { width: '100%' },
-    label: { fontSize: 12, fontWeight: '600', letterSpacing: 0.6, color: 'rgba(235,235,245,0.45)', marginTop: 18, marginBottom: 8, marginLeft: 4 },
+    label: { fontSize: 12, fontWeight: '600', letterSpacing: 0.6, color: 'rgba(235,235,245,0.45)', marginTop: 6, marginBottom: 4, marginLeft: 4 },
     field: { height: 52, borderRadius: 26, justifyContent: 'center', paddingHorizontal: 2, backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.2)', flexDirection: 'row', alignItems: 'center' },
     revealButton: { minWidth: 44, height: 52, alignItems: 'center', justifyContent: 'center' },
     fieldError: { marginTop: 6, marginLeft: 4, color: '#ff8f8f', fontSize: 13, lineHeight: 18 },
     formError: { marginTop: 10, marginBottom: 2, color: '#ff8f8f', fontSize: 13, lineHeight: 18, textAlign: 'center' },
-    cta: { height: 52, borderRadius: 26, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 24, backgroundColor: accent, borderWidth: StyleSheet.hairlineWidth, borderColor: accentMix(accent, 55), width: '100%' },
+    cta: { height: 52, borderRadius: 26, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 10, backgroundColor: accent, borderWidth: StyleSheet.hairlineWidth, borderColor: accentMix(accent, 55), width: '100%' },
     ctaDisabled: { opacity: 0.4 },
     pressed: { opacity: 0.85 },
     ctaText: { fontSize: 17, fontWeight: '600', color: '#fff' },
     forgot: { alignSelf: 'flex-end', minHeight: 44, justifyContent: 'center', paddingLeft: 12 },
     forgotText: { fontSize: 13, color: 'rgba(235,235,245,0.72)', textDecorationLine: 'underline' },
-    divider: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 22 },
+    divider: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 12 },
     dividerLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(255,255,255,0.18)' },
     dividerText: { fontSize: 12, letterSpacing: 1, color: 'rgba(235,235,245,0.4)' },
     socialIcon: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.22)' },
     socialCaption: { textAlign: 'center', fontSize: 12, color: 'rgba(235,235,245,0.45)', marginTop: 8, maxWidth: 125 },
-    socialRow: { minHeight: 72, marginTop: 18, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', gap: 16 },
+    socialRow: { minHeight: 64, marginTop: 10, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', gap: 16 },
     socialColumn: { alignItems: 'center' },
-    guestButton: { alignSelf: 'center', marginTop: 24 },
-    legalRow: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 10 },
+    guestButton: { alignSelf: 'center', width: '100%', minHeight: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center', marginTop: 10, backgroundColor: 'rgba(255,255,255,0.1)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.22)' },
+    legalRow: { minHeight: 36, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 4 },
     legalText: { fontSize: 12, color: 'rgba(235,235,245,0.6)', textDecorationLine: 'underline' },
     legalDot: { color: 'rgba(235,235,245,0.4)' },
     disabledText: { opacity: 0.5 },
-    resetCard: { minHeight: 480 },
+    resetCard: { minHeight: 0 },
     sectionTitle: { fontSize: 20, fontWeight: '700', color: '#fff', marginTop: 22 },
     resetHint: { fontSize: 14, lineHeight: 20, color: 'rgba(235,235,245,0.65)', marginTop: 10 },
     successText: { fontSize: 14, lineHeight: 20, color: '#9de7b5', marginTop: 14 },
     backLink: { alignSelf: 'center', minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, marginTop: 10 },
     backLinkText: { fontSize: 14, color: 'rgba(235,235,245,0.72)', textDecorationLine: 'underline' },
-    pendingCard: { minHeight: 480, alignItems: 'center', paddingTop: 30 },
+    pendingCard: { minHeight: 0, alignItems: 'center', paddingTop: 20 },
     pendingEmail: { fontSize: 16, fontWeight: '600', color: '#fff', marginTop: 12 },
     modalScrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center', padding: 24 },
     modalCard: { width: '100%', maxWidth: 380, borderRadius: 22, padding: 22, backgroundColor: '#182131', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.14)' },
     modalTitle: { fontSize: 19, fontWeight: '700', color: '#fff', marginBottom: 14 },
     modalWarningText: { fontSize: 14, lineHeight: 21, color: 'rgba(235,235,245,0.78)' },
-    modalCta: { alignSelf: 'center', marginTop: 20 },
+    modalCta: { alignSelf: 'center', width: '100%', minHeight: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center', marginTop: 20, backgroundColor: accent },
     modalSecondary: { alignSelf: 'center', minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, marginTop: 8 },
     modalSecondaryText: { fontSize: 14, color: 'rgba(235,235,245,0.65)', textDecorationLine: 'underline' },
   });

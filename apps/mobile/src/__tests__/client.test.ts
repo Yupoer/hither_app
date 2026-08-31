@@ -13,6 +13,7 @@ import { avatarColorForGroup, avatarForGroup, displayMemberAvatar } from '../con
 import { memberColor } from '../glass';
 import {
   addDestination,
+  getKmlImportQuota,
   createGroup,
   joinGroup,
   getGroupState,
@@ -402,6 +403,15 @@ describe('addDestination', () => {
         coordinates: { latitude: 0, longitude: 0 },
       }),
     ).rejects.toThrow('permission denied');
+  });
+});
+
+describe('getKmlImportQuota', () => {
+  it('reads the account-wide server quota without a local reset', async () => {
+    mockedRpc.mockResolvedValue({ data: 3, error: null });
+
+    await expect(getKmlImportQuota()).resolves.toBe(3);
+    expect(mockedRpc).toHaveBeenCalledWith('get_kml_import_quota');
   });
 });
 

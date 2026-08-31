@@ -40,13 +40,13 @@ const styles = StyleSheet.create({
   },
   tab: {
     flex: 1,
-    minHeight: 44,
+    minHeight: 96,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 14,
   },
   active: { backgroundColor: 'rgba(255,255,255,0.16)' },
-  text: { fontSize: 15, fontWeight: '600', color: 'rgba(235,235,245,0.6)' },
+  text: { fontSize: 18, fontWeight: '600', color: 'rgba(235,235,245,0.6)' },
   activeText: { color: '#fff' },
 });
 

@@ -174,6 +174,13 @@ export async function addDestinationsBatch(
   throw new KmlImportError('persistence', code ?? 'persistence', message);
 }
 
+/** Remaining account-wide free KML imports. The server owns the counter. */
+export async function getKmlImportQuota(): Promise<number> {
+  const { data, error } = await supabase.rpc('get_kml_import_quota');
+  orThrow(error);
+  return typeof data === 'number' && Number.isFinite(data) ? Math.max(0, data) : 0;
+}
+
 export async function deleteDestination(
   groupId: string,
   destinationId: string,

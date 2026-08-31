@@ -75,7 +75,7 @@ describe('long-press inline rename (#172)', () => {
   });
 
   it('uses theme accent for pencil activeColor (not glass.ok)', () => {
-    const editStart = mapScreen.indexOf('testID="map-edit-itinerary"');
+    const editStart = mapScreen.indexOf("testID={scopeKey === 'main' ? 'map-edit-itinerary'");
     expect(editStart).toBeGreaterThan(-1);
     // activeColor is set just above the testID in the AmicroButton props.
     const window = mapScreen.slice(Math.max(0, editStart - 350), editStart + 80);

@@ -10,7 +10,8 @@ export const en: Record<keyof ZhDict, string> = {
   'common.delete': 'Delete',
   'common.or': 'or',
 
-  'interaction.timeout': 'This action timed out. Please try again.',
+  'interaction.timeout': 'The connection timed out. Check Wi‑Fi or mobile data and try again.',
+  'interaction.signOutTimeout': 'Sign-out connection timed out. Check Wi‑Fi or mobile data and try again. You are still signed in.',
   'interaction.error': 'This action failed. Please try again.',
   'interaction.retry': 'Retry',
   'interaction.mapFailed': 'Map failed to load',
