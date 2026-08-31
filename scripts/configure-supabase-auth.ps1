@@ -1,6 +1,8 @@
 ﻿[CmdletBinding()]
 param(
-  [switch]$DryRun
+  [switch]$DryRun,
+  [ValidateSet('brevo', 'gmail')]
+  [string]$SmtpProvider = 'brevo'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -16,37 +18,63 @@ function Require-EnvironmentValue([string]$Name) {
 }
 
 $supabaseToken = Require-EnvironmentValue 'SUPABASE_ACCESS_TOKEN'
-$brevoApiKey = Require-EnvironmentValue 'BREVO_API_KEY'
-$smtpUser = Require-EnvironmentValue 'BREVO_SMTP_USER'
-$smtpKey = Require-EnvironmentValue 'BREVO_SMTP_KEY'
-$senderEmail = Require-EnvironmentValue 'BREVO_SENDER_EMAIL'
 $iosClientId = [Environment]::GetEnvironmentVariable('EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID')
+$smtpHost = ''
+$smtpPort = 0
+$smtpUser = ''
+$smtpKey = ''
+$senderEmail = ''
+$brevoApiKey = ''
+if ($SmtpProvider -eq 'brevo') {
+  $brevoApiKey = Require-EnvironmentValue 'BREVO_API_KEY'
+  $smtpHost = 'smtp-relay.brevo.com'
+  $smtpPort = 587
+  $smtpUser = Require-EnvironmentValue 'BREVO_SMTP_USER'
+  $smtpKey = Require-EnvironmentValue 'BREVO_SMTP_KEY'
+  $senderEmail = Require-EnvironmentValue 'BREVO_SENDER_EMAIL'
+} else {
+  $smtpHost = Require-EnvironmentValue 'SMTP_HOST'
+  $smtpPortText = Require-EnvironmentValue 'SMTP_PORT'
+  if (-not [int]::TryParse($smtpPortText, [ref]$smtpPort) -or $smtpPort -lt 1 -or $smtpPort -gt 65535) {
+    throw 'SMTP_PORT must be an integer between 1 and 65535.'
+  }
+  $smtpUser = Require-EnvironmentValue 'SMTP_USER'
+  $smtpKey = Require-EnvironmentValue 'SMTP_PASSWORD'
+  $smtpKey = $smtpKey -replace '\s', ''
+  $senderEmail = Require-EnvironmentValue 'SMTP_SENDER_EMAIL'
+}
 
 $supabaseHeaders = @{
   Authorization = "Bearer $supabaseToken"
   Accept = 'application/json'
 }
-$brevoHeaders = @{
-  'api-key' = $brevoApiKey
-  Accept = 'application/json'
+$brevoHeaders = @{}
+if ($SmtpProvider -eq 'brevo') {
+  $brevoHeaders = @{
+    'api-key' = $brevoApiKey
+    Accept = 'application/json'
+  }
 }
 
 Write-Output "Supabase project: $projectRef"
+Write-Output "SMTP provider: $SmtpProvider"
 $current = Invoke-RestMethod -Method Get -Uri $authEndpoint -Headers $supabaseHeaders
 Write-Output 'Read current Auth configuration.'
 
 if (-not $DryRun) {
   try {
-    $account = Invoke-RestMethod -Method Get -Uri 'https://api.brevo.com/v3/account' -Headers $brevoHeaders
-    if (-not $account.email) { throw 'Brevo account response did not contain an email.' }
-    $senders = Invoke-RestMethod -Method Get -Uri 'https://api.brevo.com/v3/senders?limit=50&offset=0' -Headers $brevoHeaders
-    $sender = @($senders.senders) | Where-Object { $_.email -ieq $senderEmail } | Select-Object -First 1
-    if (-not $sender -or $sender.active -ne $true) {
-      throw "Brevo sender is missing or not active: $senderEmail"
+    if ($SmtpProvider -eq 'brevo') {
+      $account = Invoke-RestMethod -Method Get -Uri 'https://api.brevo.com/v3/account' -Headers $brevoHeaders
+      if (-not $account.email) { throw 'Brevo account response did not contain an email.' }
+      $senders = Invoke-RestMethod -Method Get -Uri 'https://api.brevo.com/v3/senders?limit=50&offset=0' -Headers $brevoHeaders
+      $sender = @($senders.senders) | Where-Object { $_.email -ieq $senderEmail } | Select-Object -First 1
+      if (-not $sender -or $sender.active -ne $true) {
+        throw "Brevo sender is missing or not active: $senderEmail"
+      }
+      Write-Output 'Brevo API key and verified sender check passed.'
     }
-    Write-Output 'Brevo API key and verified sender check passed.'
 
-    $smtp = [System.Net.Mail.SmtpClient]::new('smtp-relay.brevo.com', 587)
+    $smtp = [System.Net.Mail.SmtpClient]::new($smtpHost, $smtpPort)
     $smtp.EnableSsl = $true
     $smtp.Credentials = [System.Net.NetworkCredential]::new($smtpUser, $smtpKey)
     $message = [System.Net.Mail.MailMessage]::new()
@@ -60,17 +88,17 @@ if (-not $DryRun) {
       $message.Dispose()
       $smtp.Dispose()
     }
-    Write-Output 'Brevo SMTP delivery test passed.'
+    Write-Output "$SmtpProvider SMTP delivery test passed."
   } catch {
-    throw "Brevo preflight failed; production Auth was not changed. $($_.Exception.Message)"
+    throw "$SmtpProvider SMTP preflight failed; production Auth was not changed. $($_.Exception.Message)"
   }
 } else {
-  Write-Output 'Dry run: skipped Brevo API and SMTP delivery.'
+  Write-Output "Dry run: skipped $SmtpProvider preflight and SMTP delivery."
 }
 
 $allowList = @()
 if ($current.uri_allow_list) {
-  $allowList += ([string]$current.uri_allow_list -split "[`r`n,]+" | Where-Object { $_.Trim() })
+  $allowList += ([string]$current.uri_allow_list -split "[,`r`n]+" | Where-Object { $_.Trim() })
 }
 $allowList += 'hither://auth/callback'
 $allowList += 'hither://auth/recovery'
@@ -92,8 +120,8 @@ $patchBody = [ordered]@{
   external_email_enabled = $true
   mailer_autoconfirm = $false
   mailer_secure_email_change_enabled = $true
-  smtp_host = 'smtp-relay.brevo.com'
-  smtp_port = '587'
+  smtp_host = $smtpHost
+  smtp_port = [string]$smtpPort
   smtp_user = $smtpUser
   smtp_pass = $smtpKey
   smtp_admin_email = $senderEmail
@@ -102,7 +130,7 @@ $patchBody = [ordered]@{
   mailer_subjects_recovery = 'Reset your Hither password / 重設 Hither 密碼'
   mailer_templates_confirmation_content = $confirmationTemplate
   mailer_templates_recovery_content = $recoveryTemplate
-  uri_allow_list = ($allowList -join "`n")
+  uri_allow_list = ($allowList -join ',')
 }
 
 # Supabase accepts a comma-separated additional-client-id string. Preserve the
@@ -133,15 +161,16 @@ $verified = Invoke-RestMethod -Method Get -Uri $authEndpoint -Headers $supabaseH
 
 if ($verified.external_email_enabled -ne $true -or
     $verified.mailer_autoconfirm -ne $false -or
-    $verified.smtp_host -ne 'smtp-relay.brevo.com' -or
+    $verified.smtp_host -ne $smtpHost -or
     $verified.smtp_admin_email -ine $senderEmail -or
     -not ([string]$verified.smtp_pass)) {
   throw 'Supabase Auth read-back did not match the requested email configuration.'
 }
-if (-not ([string]$verified.uri_allow_list -split "[`r`n,]+" | Where-Object { $_ -eq 'hither://auth/callback' })) {
+$verifiedAllowList = @([string]$verified.uri_allow_list -split "[,`r`n]+" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+if ($verifiedAllowList -notcontains 'hither://auth/callback') {
   throw 'Supabase Auth read-back is missing hither://auth/callback.'
 }
-if (-not ([string]$verified.uri_allow_list -split "[`r`n,]+" | Where-Object { $_ -eq 'hither://auth/recovery' })) {
+if ($verifiedAllowList -notcontains 'hither://auth/recovery') {
   throw 'Supabase Auth read-back is missing hither://auth/recovery.'
 }
 
