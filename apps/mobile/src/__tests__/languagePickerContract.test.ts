@@ -26,7 +26,8 @@ describe('language picker placement contract', () => {
   it('shows LanguagePicker on Login without hiding it behind a session', () => {
     expect(login).toMatch(/from ['"]\.\.\/components\/LanguagePicker['"]/);
     expect(login).toContain('<LanguagePicker');
-    expect(login).not.toContain('variant="menu"');
+    expect(login).toContain('variant="menu"');
+    expect(login).toContain('left: 20');
     expect(login).not.toMatch(/user\s*\?[\s\S]{0,80}<LanguagePicker/);
   });
 

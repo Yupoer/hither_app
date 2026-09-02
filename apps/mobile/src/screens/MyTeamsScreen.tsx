@@ -187,6 +187,7 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
           return (
             <Animated.View key={info.group.id} layout={LinearTransition.springify()}>
               <Pressable
+                accessible={!isExpanded}
                 onPress={() => {
                   lightTap();
                   setExpandedGroupId(isExpanded ? null : info.group.id);
@@ -288,6 +289,9 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
                     <View style={styles.expandedButtonsRow}>
                       <Pressable
                         onPress={() => handleEnterGroup(info)}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('teams.enterMap')}
+                        testID={`team-enter-map-${info.group.id}`}
                         style={({ pressed }) => [styles.inlineEnterBtn, { backgroundColor: accent }, pressed && styles.pressed]}
                       >
                         <Text style={styles.inlineEnterText}>{t('teams.enterMap')}</Text>

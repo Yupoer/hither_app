@@ -1,0 +1,45 @@
+diff --git a/node_modules/@react-native-google-signin/google-signin/ios/RNGoogleSignin.mm b/node_modules/@react-native-google-signin/google-signin/ios/RNGoogleSignin.mm
+index c56cac8..aef08f9 100644
+--- a/node_modules/@react-native-google-signin/google-signin/ios/RNGoogleSignin.mm
++++ b/node_modules/@react-native-google-signin/google-signin/ios/RNGoogleSignin.mm
+@@ -130,12 +130,13 @@ RCT_EXPORT_METHOD(signIn:(NSDictionary *)options
+       }
+ 
+       NSString* hint = options[@"loginHint"];
++      NSString* nonce = options[@"nonce"];
+       NSArray* scopes = self.scopes;
+ 
+ #if DEBUG
+     @try {
+ #endif
+-      [GIDSignIn.sharedInstance signInWithPresentingViewController:presentingViewController hint:hint additionalScopes:scopes completion:^(GIDSignInResult * _Nullable signInResult, NSError * _Nullable error) {
++      [GIDSignIn.sharedInstance signInWithPresentingViewController:presentingViewController hint:hint additionalScopes:scopes nonce:nonce completion:^(GIDSignInResult * _Nullable signInResult, NSError * _Nullable error) {
+         [self handleCompletion:signInResult withError:error withResolver:resolve withRejector:reject fromCallsite:@"signIn"];
+       }];
+ #if DEBUG
+diff --git a/node_modules/@react-native-google-signin/google-signin/lib/typescript/src/types.d.ts b/node_modules/@react-native-google-signin/google-signin/lib/typescript/src/types.d.ts
+index 693048c..17197b7 100644
+--- a/node_modules/@react-native-google-signin/google-signin/lib/typescript/src/types.d.ts
++++ b/node_modules/@react-native-google-signin/google-signin/lib/typescript/src/types.d.ts
+@@ -7,6 +7,8 @@ export type SignInParams = {
+      * [See docs here](https://developers.google.com/identity/sign-in/ios/reference/Classes/GIDSignIn#-signinwithpresentingviewcontroller:hint:completion:)
+      */
+     loginHint?: string;
++    /** iOS only. Custom nonce included in the returned ID token. */
++    nonce?: string;
+ };
+ /**
+  * @group Original Google sign in
+diff --git a/node_modules/@react-native-google-signin/google-signin/src/types.ts b/node_modules/@react-native-google-signin/google-signin/src/types.ts
+index 3fe73ea..b590565 100644
+--- a/node_modules/@react-native-google-signin/google-signin/src/types.ts
++++ b/node_modules/@react-native-google-signin/google-signin/src/types.ts
+@@ -7,6 +7,8 @@ export type SignInParams = {
+    * [See docs here](https://developers.google.com/identity/sign-in/ios/reference/Classes/GIDSignIn#-signinwithpresentingviewcontroller:hint:completion:)
+    */
+   loginHint?: string;
++  /** iOS only. Custom nonce included in the returned ID token. */
++  nonce?: string;
+ };
+ 
+ /**

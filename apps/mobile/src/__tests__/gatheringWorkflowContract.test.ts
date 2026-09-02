@@ -112,8 +112,8 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(reorderList).toContain('onSwipeToggleAffordance');
     expect(reorderList).toContain("headerAffordance === 'collapse'");
     expect(reorderList).toContain("headerAffordance === 'drag'");
-    // Whole-day block move (not bare header).
-    expect(reorderList).toContain('moveDayBlockBefore');
+    // Day2+ moves only the day separator; destination flat order is stable.
+    expect(reorderList).toContain('moveDayHeaderBefore');
     expect(reorderList).toContain('REVEAL_WIDTH');
   });
 

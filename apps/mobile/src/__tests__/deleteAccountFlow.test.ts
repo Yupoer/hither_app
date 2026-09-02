@@ -17,6 +17,7 @@ const mockMaybeSingle = jest.fn();
 const mockUpdateNickname = jest.fn();
 const mockUpdateProfile = jest.fn();
 const mockGetGoogleIdToken = jest.fn();
+const mockGetGoogleAuthCredentials = jest.fn();
 
 jest.mock('react', () => ({ useCallback: (fn: unknown) => fn }));
 jest.mock('react-native', () => ({ Platform: { OS: 'ios' } }));
@@ -42,6 +43,7 @@ jest.mock('../api/client', () => ({
 }));
 jest.mock('../state/googleSignIn', () => ({
   getGoogleIdToken: (...args: unknown[]) => mockGetGoogleIdToken(...args),
+  getGoogleAuthCredentials: (...args: unknown[]) => mockGetGoogleAuthCredentials(...args),
   usesNativeGoogleSignIn: true,
 }));
 jest.mock('../api/supabase', () => ({
@@ -68,6 +70,7 @@ jest.mock('../api/supabase', () => ({
 }));
 
 import { useAuthFlow } from '../state/useAuthFlow';
+import { GOOGLE_AUTH_STAGE_TIMEOUT_MS } from '../state/useAuthFlow';
 
 function invokingSetUser() {
   const seed = { id: 'u1', name: 'Ada', email: 'ada@example.test', provider: 'anonymous' as const };
@@ -213,6 +216,143 @@ describe('useAuthFlow deleteAccount and signOut', () => {
     });
     expect(mockSignInWithOAuth).not.toHaveBeenCalled();
     expect(setUser).toHaveBeenCalledWith(expect.objectContaining({ id: 'google-u1' }));
+  });
+
+  it('passes the native Google access token with the ID token to Supabase', async () => {
+    mockGetGoogleAuthCredentials.mockResolvedValueOnce({
+      idToken: 'google-id-token',
+      accessToken: 'google-access-token',
+    });
+    mockSignInWithIdToken.mockResolvedValueOnce({
+      data: {
+        user: {
+          id: 'google-u2',
+          email: 'google2@example.test',
+          app_metadata: { provider: 'google' },
+        },
+      },
+      error: null,
+    });
+    const flow = makeFlow();
+
+    await expect(flow.signInWithGoogle()).resolves.toMatchObject({ id: 'google-u2' });
+    expect(mockSignInWithIdToken).toHaveBeenCalledWith({
+      provider: 'google',
+      token: 'google-id-token',
+      access_token: 'google-access-token',
+    });
+  });
+
+  it('classifies a Supabase Google token-exchange rejection separately', async () => {
+    mockSignInWithIdToken.mockResolvedValueOnce({
+      data: null,
+      error: { code: 'invalid_token', status: 400, message: 'invalid audience' },
+    });
+
+    await expect(makeFlow().signInWithGoogle()).rejects.toMatchObject({
+      code: 'google_token_exchange_failed',
+      message: expect.stringContaining('invalid audience'),
+    });
+    expect(mockUpsert).not.toHaveBeenCalled();
+  });
+
+  it('classifies a Supabase Google network failure separately', async () => {
+    mockSignInWithIdToken.mockResolvedValueOnce({
+      data: null,
+      error: { code: 'NETWORK_ERROR', message: 'network unavailable' },
+    });
+
+    await expect(makeFlow().signInWithGoogle()).rejects.toMatchObject({
+      code: 'google_token_exchange_network',
+      message: expect.stringContaining('network unavailable'),
+    });
+    expect(mockUpsert).not.toHaveBeenCalled();
+  });
+
+  it('classifies an empty Supabase token-exchange response without throwing', async () => {
+    mockSignInWithIdToken.mockResolvedValueOnce({ data: null, error: null });
+
+    await expect(makeFlow().signInWithGoogle()).rejects.toMatchObject({
+      code: 'google_token_exchange_failed',
+    });
+    expect(mockUpsert).not.toHaveBeenCalled();
+  });
+
+  it('classifies profile bootstrap failures after a successful token exchange', async () => {
+    mockSignInWithIdToken.mockResolvedValueOnce({
+      data: {
+        user: {
+          id: 'google-profile-failure',
+          email: 'profile-failure@example.test',
+          app_metadata: { provider: 'google' },
+        },
+      },
+      error: null,
+    });
+    mockMaybeSingle.mockResolvedValueOnce({
+      data: null,
+      error: { code: 'PGRST001', message: 'profile lookup unavailable' },
+    });
+
+    await expect(makeFlow().signInWithGoogle()).rejects.toMatchObject({
+      code: 'google_profile_bootstrap_failed',
+      message: expect.stringContaining('profile lookup unavailable'),
+    });
+    expect(mockUpsert).not.toHaveBeenCalled();
+  });
+
+  it('classifies profile bootstrap network failures separately', async () => {
+    mockSignInWithIdToken.mockResolvedValueOnce({
+      data: {
+        user: {
+          id: 'google-profile-network',
+          email: 'profile-network@example.test',
+          app_metadata: { provider: 'google' },
+        },
+      },
+      error: null,
+    });
+    mockMaybeSingle.mockResolvedValueOnce({
+      data: null,
+      error: { code: 'NETWORK_ERROR', message: 'profile network unavailable' },
+    });
+
+    await expect(makeFlow().signInWithGoogle()).rejects.toMatchObject({
+      code: 'google_profile_bootstrap_network',
+      message: expect.stringContaining('profile network unavailable'),
+    });
+    expect(mockUpsert).not.toHaveBeenCalled();
+  });
+
+  it('keeps a real Google exchange timeout distinct from generic auth failure', async () => {
+    mockSignInWithIdToken.mockRejectedValueOnce({
+      name: 'AbortError',
+      code: 'ETIMEDOUT',
+      message: 'request timed out',
+    });
+
+    await expect(makeFlow().signInWithGoogle()).rejects.toMatchObject({
+      code: 'google_token_exchange_timeout',
+      message: 'Google verification timed out. Check your connection and try again.',
+    });
+  });
+
+  it('reports a stage timeout when the Supabase exchange never settles', async () => {
+    jest.useFakeTimers();
+    try {
+      mockSignInWithIdToken.mockReturnValueOnce(new Promise(() => undefined));
+      const pending = makeFlow().signInWithGoogle();
+      const result = expect(pending).rejects.toMatchObject({
+        code: 'google_token_exchange_timeout',
+        message: 'Google verification timed out. Check your connection and try again.',
+      });
+
+      await jest.advanceTimersByTimeAsync(GOOGLE_AUTH_STAGE_TIMEOUT_MS);
+
+      await result;
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('returns null when native Google account selection is cancelled', async () => {

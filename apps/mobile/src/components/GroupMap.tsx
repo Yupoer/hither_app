@@ -983,7 +983,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
         }
         const dest = (destinations ?? []).find((d) => d.id === marker.id);
         if (!dest) return null;
-        // Stay cards use day color + bed; stops prefer per-stop color then day.
+        // Every destination uses its trip-day color; emoji remains per-stop.
         const bgColor =
           dest.kind === 'accommodation'
             ? getColorForDay(dest.day, dayColors)

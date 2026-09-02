@@ -31,7 +31,7 @@ import {
   DEFAULT_REORDER_LAYOUT,
   dragTargetIndexFromOffset,
   legalDragIndicesForList,
-  moveDayBlockBefore,
+  moveDayHeaderBefore,
   orderAfterDragMove,
   reorderRowCenterY,
   snapToLegalDragIndex,
@@ -148,6 +148,28 @@ type ListItem =
   | { type: 'header'; day: number; id: string; title: string; dateStr: string }
   | { type: 'dest'; item: Destination; id: string };
 
+/**
+ * Stable route shape used to reconcile an optimistic local drop with the
+ * parent draft. It follows headers rather than trusting a destination's
+ * stale `day` field while the ghost list is being committed.
+ */
+function listShapeSignature(list: readonly ListItem[]): string {
+  let day = 1;
+  let position = 0;
+  return list
+    .map((entry) => {
+      if (entry.type === 'header') {
+        day = entry.day;
+        position = 0;
+        return `h:${day}`;
+      }
+      const shape = `d:${entry.id}:${day}:${position}`;
+      position += 1;
+      return shape;
+    })
+    .join('|');
+}
+
 export default function DestinationReorderList({
   groupId,
   destinations,
@@ -213,6 +235,12 @@ export default function DestinationReorderList({
   const [order, setOrder] = useState<ListItem[]>([]);
   const orderRef = useRef(order);
   orderRef.current = order;
+  /**
+   * After a local drop, keep the committed ghost visible until the parent
+   * draft reflects the same route shape. This prevents the list briefly
+   * reverting to the server snapshot during draft flush scheduling.
+   */
+  const pendingOrderSignatureRef = useRef<string | null>(null);
 
   const draggingRef = useRef(false);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -405,6 +433,22 @@ export default function DestinationReorderList({
     [departureDate],
   );
 
+  const dayDateLabel = useCallback(
+    (day: number): string => {
+      if (!departureDate) return '';
+      const dateObj = /^\d{4}-\d{2}-\d{2}$/.test(departureDate.trim())
+        ? new Date(`${departureDate.trim()}T12:00:00`)
+        : new Date(departureDate);
+      if (Number.isNaN(dateObj.getTime())) return '';
+      dateObj.setDate(dateObj.getDate() + (day - 1));
+      return t('map.tripDayDate', {
+        month: dateObj.getMonth() + 1,
+        day: dateObj.getDate(),
+      });
+    },
+    [departureDate, t],
+  );
+
   const handleSync = useCallback(async () => {
     if (!onSync || syncing) return;
     // onSync is MapScreen.syncFromDatabaseAndUploadLogs (runUiAction swallows
@@ -449,22 +493,12 @@ export default function DestinationReorderList({
       });
 
       for (let d = startDay; d <= days; d++) {
-        let dateStr = '';
-        if (departureDate) {
-          const dateObj = /^\d{4}-\d{2}-\d{2}$/.test(departureDate.trim())
-            ? new Date(`${departureDate.trim()}T12:00:00`)
-            : new Date(departureDate);
-          if (!Number.isNaN(dateObj.getTime())) {
-            dateObj.setDate(dateObj.getDate() + (d - 1));
-            dateStr = t('map.tripDayDate', { month: dateObj.getMonth() + 1, day: dateObj.getDate() });
-          }
-        }
         nextOrder.push({
           type: 'header',
           day: d,
           id: `header-${d}`,
           title: t('trip.dayTitle', { day: d }),
-          dateStr,
+          dateStr: dayDateLabel(d),
         });
         const dayDests = sortedDests.filter((dest) => (dest.day || 1) === d);
         for (const dest of dayDests) {
@@ -476,9 +510,13 @@ export default function DestinationReorderList({
         nextOrder.push({ type: 'dest', item: dest, id: dest.id });
       }
 
+      const incomingSignature = listShapeSignature(nextOrder);
+      const pendingSignature = pendingOrderSignatureRef.current;
+      if (pendingSignature && pendingSignature !== incomingSignature) return;
+      pendingOrderSignatureRef.current = null;
       setOrder(nextOrder);
     }
-  }, [closeOpenSwipeable, destinations, tripDays, departureDate, t]);
+  }, [closeOpenSwipeable, dayDateLabel, destinations, tripDays, t]);
 
   const toReorderEntries = useCallback((list: ListItem[]): ReorderListEntry[] => {
     return list.map((entry) => {
@@ -578,14 +616,8 @@ export default function DestinationReorderList({
         legalIndicesRef.current.length > 0
           ? legalIndicesRef.current
           : legalDragIndicesForList(entries, id);
-      // Allow aiming past the last row (append) — clamp to max legal if needed.
       const legalOrSelf = legal.length > 0 ? legal : [startIndex];
-      const maxLegal = legalOrSelf[legalOrSelf.length - 1];
-      const aim =
-        rawTarget > maxLegal && maxLegal === entries.length - 1
-          ? maxLegal
-          : rawTarget;
-      const target = snapToLegalDragIndex(legalOrSelf, aim, direction);
+      const target = snapToLegalDragIndex(legalOrSelf, rawTarget, direction);
       dropTargetIndexRef.current = target;
       if (target !== lastDropHapticIndexRef.current) {
         lastDropHapticIndexRef.current = target;
@@ -616,9 +648,10 @@ export default function DestinationReorderList({
       if (target !== startIndex) {
         let next: ListItem[];
         if (moving?.type === 'header') {
-          // Whole day block (header + all dests). May insert mid-dest of a
-          // neighboring day; renumber stamps day from preceding headers.
-          next = moveDayBlockBefore(orderRef.current, startIndex, target);
+          // Move only the day separator. Destination order is intentionally
+          // unchanged; the new header positions determine each destination's
+          // day after the drop.
+          next = moveDayHeaderBefore(orderRef.current, startIndex, target);
           let dayCounter = 0;
           next = next.map((item) => {
             if (item.type === 'header') {
@@ -628,6 +661,7 @@ export default function DestinationReorderList({
                 day: dayCounter,
                 id: `header-${dayCounter}`,
                 title: t('trip.dayTitle', { day: dayCounter }),
+                dateStr: dayDateLabel(dayCounter),
               };
             }
             // Stamp nested destination day from the preceding header.
@@ -639,6 +673,7 @@ export default function DestinationReorderList({
         } else {
           next = orderAfterDragMove(orderRef.current, startIndex, target);
         }
+        pendingOrderSignatureRef.current = listShapeSignature(next);
         orderRef.current = next;
         setOrder(next);
       }
@@ -706,7 +741,7 @@ export default function DestinationReorderList({
       // Unlock parent ScrollView even if update computation throws.
       endDragSession();
     }
-  }, [onReorder, destinations, endDragSession, t]);
+  }, [dayDateLabel, onReorder, destinations, endDragSession, t]);
 
   const handlersRef = useRef({ handleGrant, handleMove, handleRelease });
   handlersRef.current = { handleGrant, handleMove, handleRelease };
@@ -969,14 +1004,18 @@ export default function DestinationReorderList({
                 item.day <= 1 || headerAffordance === 'collapse';
               const showDragAffordance =
                 canReorder && item.day > 1 && headerAffordance === 'drag';
-              // Drop on a header index = first slot of that day → draw AFTER header,
-              // never between previous day's quick-add and this header.
+              // A boundary after a header is the first destination slot for
+              // that day. Only that boundary draws below the header; the
+              // boundary before a header remains above the separator.
               const headerIndex = flatIndex;
-              const dropAfterHeader = dropTargetIndex === headerIndex;
+              const dropBeforeHeader =
+                item.day > 1 && dropTargetIndex === headerIndex;
+              const dropAfterHeader = dropTargetIndex === headerIndex + 1;
               flatIndex += 1; // header occupies one order slot
               const destNodes = !collapsed
                 ? block.dests.map((destItem, destIdx) => {
-                    // First dest: header already claimed the "after header" line.
+                    // First dest: header already claimed the after-header
+                    // boundary line.
                     const line =
                       dropTargetIndex === flatIndex
                       && !(dropAfterHeader && destIdx === 0)
@@ -1005,6 +1044,13 @@ export default function DestinationReorderList({
                   key={item.id}
                   testID={`day-block-${item.day}`}
                 >
+                  {dropBeforeHeader ? (
+                    <View
+                      key={`drop-before-header-${item.day}`}
+                      style={[styles.dropLine, { backgroundColor: colors.accent }]}
+                      testID={`drop-before-header-${item.day}`}
+                    />
+                  ) : null}
                   <HeaderRow
                     item={item}
                     styles={styles}

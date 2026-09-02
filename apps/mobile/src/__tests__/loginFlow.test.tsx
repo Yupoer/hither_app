@@ -7,6 +7,7 @@ const mockSignInWithEmail = jest.fn();
 const mockSignUpWithEmail = jest.fn();
 const mockResendConfirmation = jest.fn();
 const mockRequestPasswordReset = jest.fn();
+const mockSignInWithGoogle = jest.fn();
 
 jest.mock('../state/SessionContext', () => ({
   useSession: () => ({
@@ -14,7 +15,7 @@ jest.mock('../state/SessionContext', () => ({
     signUpWithEmail: mockSignUpWithEmail,
     resendSignupConfirmation: mockResendConfirmation,
     requestPasswordReset: mockRequestPasswordReset,
-    signInWithGoogle: jest.fn(),
+    signInWithGoogle: mockSignInWithGoogle,
     signInWithApple: jest.fn(),
   }),
 }));
@@ -95,6 +96,17 @@ jest.mock('../components/CrookIcon', () => () => {
   const { View: NativeView } = require('react-native') as typeof import('react-native');
   return ReactRuntime.createElement(NativeView);
 });
+jest.mock('../components/GoogleGIcon', () => () => {
+  const ReactRuntime = require('react') as typeof React;
+  const { Text: NativeText } = require('react-native') as typeof import('react-native');
+  return ReactRuntime.createElement(NativeText, null, 'Google G');
+});
+
+jest.mock('../utils/activityLog', () => ({
+  logEvent: jest.fn(),
+  logError: jest.fn(),
+}));
+
 jest.mock('../components/LanguagePicker', () => () => null);
 
 jest.mock('../components/SafePressable', () => ({
@@ -138,6 +150,7 @@ describe('LoginScreen email flows', () => {
     mockSignUpWithEmail.mockResolvedValue(undefined);
     mockResendConfirmation.mockResolvedValue(undefined);
     mockRequestPasswordReset.mockResolvedValue(undefined);
+    mockSignInWithGoogle.mockResolvedValue(null);
   });
 
   it('enables the login CTA after test credentials and reaches the app', async () => {
@@ -204,6 +217,21 @@ describe('LoginScreen email flows', () => {
     expect(getByText('login.credentialsInvalid')).toBeTruthy();
   });
 
+  it('keeps the login screen mounted and shows a local error when Google rejects', async () => {
+    mockSignInWithGoogle.mockRejectedValueOnce(new Error('network unavailable'));
+    const { getByTestId, getByText } = render(
+      <LoginScreen navigation={navigation as never} route={{} as never} />,
+    );
+
+    await act(async () => {
+      fireEvent.press(getByTestId('login-google'));
+    });
+
+    await waitFor(() => expect(getByText('login.authUnavailable')).toBeTruthy());
+    expect(getByTestId('login-email')).toBeTruthy();
+    expect(navigation.replace).not.toHaveBeenCalled();
+  });
+
   it('keeps the email CTA disabled for whitespace-only required values', () => {
     const { getByTestId } = render(<LoginScreen navigation={navigation as never} route={{} as never} />);
     fireEvent.changeText(getByTestId('login-email'), '   ');
@@ -244,6 +272,8 @@ describe('LoginScreen email flows', () => {
     const { getByTestId, getByText } = render(<LoginScreen navigation={navigation as never} route={{} as never} />);
     fireEvent.changeText(getByTestId('login-email'), 'reset@example.com');
     fireEvent.press(getByTestId('login-forgot-password'));
+    expect(getByText('login.resetTitle')).toBeTruthy();
+    expect(getByText('login.resetHint')).toBeTruthy();
     await act(async () => {
       fireEvent.press(getByTestId('login-reset-submit'));
     });
@@ -262,5 +292,20 @@ describe('LoginScreen email flows', () => {
     });
     expect(mockRequestPasswordReset).toHaveBeenCalledTimes(2);
     jest.useRealTimers();
+  });
+
+  it('keeps reset mode email-only and exposes back plus legal links', () => {
+    const { getByTestId, queryByTestId, getByText } = render(
+      <LoginScreen navigation={navigation as never} route={{} as never} />,
+    );
+    fireEvent.press(getByTestId('login-forgot-password'));
+
+    expect(getByTestId('login-back')).toBeTruthy();
+    expect(getByTestId('login-reset-email')).toBeTruthy();
+    expect(getByTestId('login-reset-submit')).toBeTruthy();
+    expect(getByTestId('login-back-to-sign-in')).toBeTruthy();
+    expect(queryByTestId('login-reset-google')).toBeNull();
+    expect(getByText('login.privacy')).toBeTruthy();
+    expect(getByText('login.terms')).toBeTruthy();
   });
 });

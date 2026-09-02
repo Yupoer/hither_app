@@ -31,14 +31,14 @@ describe('route editor + KML contracts (#151)', () => {
     expect(block).not.toContain('await addDestination(');
   });
 
-  it('route list is scope-filtered for leaders; day>1 whole-day blocks may drag', () => {
+  it('route list is scope-filtered for leaders; day>1 separators may drag', () => {
     expect(mapScreen).not.toMatch(/rawDestinations[\s\S]{0,200}if \(isLeader\) return all/);
-    // Stops drag only in interactionMode drag; Day1 header fixed; Day2+ swipe-toggle drag moves whole block.
+    // Stops drag only in interactionMode drag; Day1 header fixed; Day2+ swipe-toggle drag moves only the separator.
     expect(reorder).toContain('interactionMode === \'drag\'');
     expect(reorder).toContain('canDrag={canDragStop}');
     expect(reorder).toContain("type === 'header'");
     expect(reorder).toContain('canDragHeader');
-    expect(reorder).toContain('moveDayBlockBefore');
+    expect(reorder).toContain('moveDayHeaderBefore');
     expect(reorder).toContain('item.day > 1');
     expect(reorder).toContain('entry.day <= 1');
     expect(reorder).toContain('headerAffordanceByDay');
@@ -46,6 +46,7 @@ describe('route editor + KML contracts (#151)', () => {
     expect(reorder).toContain('const showCollapseAffordance');
     expect(reorder).toContain('const showDragAffordance');
     expect(reorder).toContain('onSwipeToggleAffordance');
+    expect(reorder).toContain('drop-before-header');
     expect(reorder).toContain('drop-after-header');
   });
   it('open-once sync + import CTA replace always-on sync button', () => {

@@ -8,12 +8,14 @@ export type AuthModeSelectorProps = {
   onChange: (mode: AuthMode) => void;
   labels: { signin: string; signup: string };
   disabled?: boolean;
+  /** Auth gate uses a full-width glass control; other callers retain the compact default. */
+  wide?: boolean;
 };
 
-export default function AuthModeSelector({ mode, onChange, labels, disabled }: AuthModeSelectorProps) {
+export default function AuthModeSelector({ mode, onChange, labels, disabled, wide = false }: AuthModeSelectorProps) {
   const reducedMotion = useReducedMotion();
   return (
-    <View style={styles.tabs} accessibilityRole="tablist">
+    <View style={[styles.tabs, wide && styles.wideTabs]} accessibilityRole="tablist">
       {(['signin', 'signup'] as AuthMode[]).map((next) => (
         <Pressable
           key={next}
@@ -54,6 +56,14 @@ const styles = StyleSheet.create({
     padding: 3,
     backgroundColor: 'rgba(255,255,255,0.06)',
   },
+  wideTabs: {
+    width: '100%',
+    borderRadius: 20,
+    padding: 4,
+    backgroundColor: 'rgba(255,255,255,0.075)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
   tab: {
     flex: 1,
     height: 32,
@@ -68,4 +78,3 @@ const styles = StyleSheet.create({
   text: { fontSize: 18, fontWeight: '600', color: 'rgba(235,235,245,0.6)' },
   activeText: { color: '#fff' },
 });
-

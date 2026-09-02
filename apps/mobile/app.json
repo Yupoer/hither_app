@@ -24,6 +24,15 @@
         "NSMotionUsageDescription": "Hither 使用裝置動作與姿態資料，改善導航中的移動判斷與效能診斷。",
         "NSSupportsLiveActivities": true,
         "NSSupportsLiveActivitiesFrequentUpdates": true,
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": [
+              "hither",
+              "app.hither.mobile",
+              "com.googleusercontent.apps.542661452505-5d0l9jotbl9asqloju792rdd7rafc2s5"
+            ]
+          }
+        ],
         "UIBackgroundModes": [
           "location",
           "remote-notification"
