@@ -197,6 +197,33 @@ describe('runUiAction contract', () => {
     expect(DEFAULT_UI_ACTION_TIMEOUT_MS).toBe(15_000);
   });
 
+  it('keeps an interactive social action alive past the default timeout when overridden', async () => {
+    jest.useFakeTimers();
+    try {
+      let release!: (value: string) => void;
+      const picker = new Promise<string>((resolve) => {
+        release = resolve;
+      });
+      const onBusyChange = jest.fn();
+      const pending = runUiAction('login.google', () => picker, {
+        screen: 'Login',
+        timeoutMs: 120_000,
+        onBusyChange,
+      });
+
+      await Promise.resolve();
+      await jest.advanceTimersByTimeAsync(DEFAULT_UI_ACTION_TIMEOUT_MS);
+      expect(isUiActionInFlight('login.google')).toBe(true);
+      expect(onBusyChange).toHaveBeenLastCalledWith(true);
+
+      release('signed in');
+      await expect(pending).resolves.toBe('signed in');
+      expect(onBusyChange).toHaveBeenLastCalledWith(false);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('publishes failures for the recovery banner with canRetry', async () => {
     const seen: Array<{ kind: string; canRetry: boolean } | null> = [];
     const unsub = subscribeUiActionFailures((f) => {

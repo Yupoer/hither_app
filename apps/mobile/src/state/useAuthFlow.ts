@@ -21,9 +21,18 @@ import {
 } from '../auth/types';
 import type { Membership } from './SessionContext';
 import { displayMemberAvatar } from '../constants/avatars';
-import { getGoogleIdToken, usesNativeGoogleSignIn } from './googleSignIn';
+import {
+  getGoogleAuthCredentials,
+  getGoogleIdToken,
+  usesNativeGoogleSignIn,
+} from './googleSignIn';
+import type { GoogleAuthCredentials } from './googleSignInTypes';
 
 const AUTH_CALLBACK_URL = 'hither://auth/callback';
+// Keep the shared 15s UI action timeout as the final safety net, but report
+// which Google stage stalled first so a token/profile issue is not shown as a
+// generic connectivity error.
+export const GOOGLE_AUTH_STAGE_TIMEOUT_MS = 12_000;
 
 type SupabaseAuthUser = {
   id: string;
@@ -34,41 +43,145 @@ type SupabaseAuthUser = {
   identities?: unknown[] | null;
 };
 
-async function materializeUser(authUser: SupabaseAuthUser, nickname?: string): Promise<User> {
-  const meta = authUser.user_metadata ?? {};
-  const { data: existing } = await supabase
-    .from('profiles')
-    .select('nickname, avatar, preferences')
-    .eq('id', authUser.id)
-    .maybeSingle();
-  const existingRow = existing as {
-    nickname?: string;
-    avatar?: string | null;
-    preferences?: unknown;
+type GoogleAuthStage = 'token_exchange' | 'profile_bootstrap';
+
+function safeGoogleErrorCode(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const code = value.trim();
+  return /^[A-Za-z0-9_.-]{1,64}$/.test(code) ? code : undefined;
+}
+
+function isGoogleNetworkTimeout(error: unknown): boolean {
+  const candidate = error as {
+    code?: unknown;
+    name?: unknown;
+    message?: unknown;
+    status?: unknown;
   } | null;
-  const metadataName =
-    (typeof meta.full_name === 'string' && meta.full_name) ||
-    (typeof meta.name === 'string' && meta.name) ||
-    (typeof meta.nickname === 'string' && meta.nickname) ||
-    '';
-  const name =
-    nickname?.trim() ||
-    existingRow?.nickname ||
-    metadataName ||
-    authUser.email?.split('@')[0] ||
-    '';
-  const { error: profileError } = await supabase
-    .from('profiles')
-    .upsert({ id: authUser.id, nickname: name }, { onConflict: 'id' });
-  if (profileError) throw toAuthFlowError(profileError, 'Unable to save your profile.');
+  const code = typeof candidate?.code === 'string' ? candidate.code : '';
+  const name = typeof candidate?.name === 'string' ? candidate.name : '';
+  const message = typeof candidate?.message === 'string' ? candidate.message : '';
+  return candidate?.status === 408
+    || ['ETIMEDOUT', 'ECONNABORTED', 'UND_ERR_CONNECT_TIMEOUT'].includes(code.toUpperCase())
+    || name === 'AbortError'
+    || /(?:timed?\s*out|timeout)/i.test(message);
+}
+
+function isGoogleNetworkFailure(error: unknown): boolean {
+  const candidate = error as { code?: unknown; message?: unknown } | null;
+  const code = typeof candidate?.code === 'string' ? candidate.code : '';
+  const message = typeof candidate?.message === 'string' ? candidate.message : '';
+  return /network|offline|failed to fetch|connection/i.test(`${code} ${message}`);
+}
+
+function toGoogleStageError(error: unknown, stage: GoogleAuthStage): AuthFlowError {
+  const fallback = stage === 'token_exchange'
+    ? 'Unable to verify your Google account.'
+    : 'Unable to finish setting up your Google profile.';
+  const normalized = toAuthFlowError(error, fallback);
+  const timeout = isGoogleNetworkTimeout(error) || isGoogleNetworkTimeout(normalized);
+  const network = !timeout && (isGoogleNetworkFailure(error) || isGoogleNetworkFailure(normalized));
+  const stageCode = stage === 'token_exchange' ? 'token_exchange' : 'profile_bootstrap';
+  const code = `google_${stageCode}_${timeout ? 'timeout' : network ? 'network' : 'failed'}`;
+  const message = timeout
+    ? stage === 'token_exchange'
+      ? 'Google verification timed out. Check your connection and try again.'
+      : 'Google profile setup timed out. Check your connection and try again.'
+    : normalized.message === fallback
+      ? fallback
+      : `${fallback} ${normalized.message}`;
+  return new AuthFlowError(message, code, normalized.status);
+}
+
+function withGoogleStageTimeout<T>(
+  operation: Promise<T>,
+  stage: GoogleAuthStage,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      reject(toGoogleStageError(
+        new AuthFlowError('Google request timed out.', 'ETIMEDOUT'),
+        stage,
+      ));
+    }, GOOGLE_AUTH_STAGE_TIMEOUT_MS);
+    operation.then(
+      (value) => {
+        clearTimeout(timeoutId);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timeoutId);
+        reject(error);
+      },
+    );
+  });
+}
+
+async function readGoogleCredentials(): Promise<GoogleAuthCredentials | null> {
+  // The undefined branch keeps older Jest/native mocks compatible while the
+  // platform adapter rolls out the ID-token + access-token response shape.
+  const credentials = typeof getGoogleAuthCredentials === 'function'
+    ? await getGoogleAuthCredentials()
+    : undefined;
+  if (credentials !== undefined) return credentials;
+  const idToken = await getGoogleIdToken();
+  return idToken ? { idToken, accessToken: null, nonce: null } : null;
+}
+
+function googleTokenCredentials(credentials: GoogleAuthCredentials) {
   return {
-    id: authUser.id,
-    name,
-    email: authUser.email ?? '',
-    avatar: displayMemberAvatar(existingRow?.avatar, authUser.id).emoji,
-    provider: authUser.app_metadata?.provider,
-    preferences: normalizeAccountPreferences(existingRow?.preferences),
+    provider: 'google' as const,
+    token: credentials.idToken,
+    ...(credentials.accessToken ? { access_token: credentials.accessToken } : {}),
+    ...(credentials.nonce ? { nonce: credentials.nonce } : {}),
   };
+}
+
+async function materializeUser(
+  authUser: SupabaseAuthUser,
+  nickname?: string,
+  googleStage?: 'profile_bootstrap',
+): Promise<User> {
+  try {
+    const meta = authUser.user_metadata ?? {};
+    const { data: existing, error: profileReadError } = await supabase
+      .from('profiles')
+      .select('nickname, avatar, preferences')
+      .eq('id', authUser.id)
+      .maybeSingle();
+    if (profileReadError) throw profileReadError;
+    const existingRow = existing as {
+      nickname?: string;
+      avatar?: string | null;
+      preferences?: unknown;
+    } | null;
+    const metadataName =
+      (typeof meta.full_name === 'string' && meta.full_name) ||
+      (typeof meta.name === 'string' && meta.name) ||
+      (typeof meta.nickname === 'string' && meta.nickname) ||
+      '';
+    const name =
+      nickname?.trim() ||
+      existingRow?.nickname ||
+      metadataName ||
+      authUser.email?.split('@')[0] ||
+      '';
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .upsert({ id: authUser.id, nickname: name }, { onConflict: 'id' });
+    if (profileError) throw profileError;
+    return {
+      id: authUser.id,
+      name,
+      email: authUser.email ?? '',
+      avatar: displayMemberAvatar(existingRow?.avatar, authUser.id).emoji,
+      provider: authUser.app_metadata?.provider,
+      preferences: normalizeAccountPreferences(existingRow?.preferences),
+    };
+  } catch (error) {
+    if (googleStage) throw toGoogleStageError(error, googleStage);
+    throw toAuthFlowError(error, 'Unable to save your profile.');
+  }
 }
 
 export interface UseAuthFlowParams {
@@ -114,17 +227,34 @@ export function useAuthFlow({
     async (nickname?: string): Promise<User | null> => {
       let authUser: SupabaseAuthUser | null = null;
       try {
-        const token = await getGoogleIdToken();
-        if (!token) return null;
-        const { data, error } = await supabase.auth.signInWithIdToken({
-          provider: 'google',
-          token,
+        const credentials = await readGoogleCredentials();
+        if (!credentials) return null;
+        console.log('[auth][google] token_exchange_started', {
+          hasIdToken: Boolean(credentials.idToken),
+          hasAccessToken: Boolean(credentials.accessToken),
         });
-        if (error || !data.user) {
-          throw toAuthFlowError(error, 'Google Sign-In failed.');
+        let data: { user?: SupabaseAuthUser | null } | null | undefined;
+        let error: unknown;
+        try {
+          const exchange = supabase.auth.signInWithIdToken(
+            googleTokenCredentials(credentials),
+          );
+          ({ data, error } = await withGoogleStageTimeout(exchange, 'token_exchange'));
+        } catch (exchangeError) {
+          throw toGoogleStageError(exchangeError, 'token_exchange');
         }
+        if (error || !data?.user) {
+          throw toGoogleStageError(error, 'token_exchange');
+        }
+        console.log('[auth][google] token_exchange_completed', {
+          hasUser: Boolean(data.user),
+        });
         authUser = data.user;
       } catch (error) {
+        const candidate = error as { code?: unknown; message?: unknown } | null;
+        console.warn('[auth][google] token_exchange_failed', {
+          code: safeGoogleErrorCode(candidate?.code),
+        });
         // Android retains the hosted fallback because the native Google module
         // is iOS-only in this release. iOS must never fall back to the
         // Supabase project host, which is what caused the misleading system
@@ -168,7 +298,12 @@ export function useAuthFlow({
       }
 
       if (!authUser) return null;
-      const nextUser = await materializeUser(authUser, nickname);
+      console.log('[auth][google] profile_bootstrap_started', { hasUser: true });
+      const nextUser = await withGoogleStageTimeout(
+        materializeUser(authUser, nickname, 'profile_bootstrap'),
+        'profile_bootstrap',
+      );
+      console.log('[auth][google] profile_bootstrap_completed', { hasUser: true });
       setUser(nextUser);
       setIsAnonymous(false);
       return nextUser;
@@ -262,9 +397,14 @@ export function useAuthFlow({
     let authUser: SupabaseAuthUser | null = null;
     let useHostedFallback = false;
     try {
-      const token = await getGoogleIdToken();
-      if (!token) return null;
-      const linked = await supabase.auth.linkIdentity({ provider: 'google', token });
+      const credentials = await readGoogleCredentials();
+      if (!credentials) return null;
+      const { idToken: token, accessToken } = credentials;
+      const linked = await supabase.auth.linkIdentity({
+        provider: 'google',
+        token,
+        ...(accessToken ? { access_token: accessToken } : {}),
+      });
       if (linked.error || !linked.data.user) {
         throw toAuthFlowError(linked.error, 'Google linking failed.');
       }

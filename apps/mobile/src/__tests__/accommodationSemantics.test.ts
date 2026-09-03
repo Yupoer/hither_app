@@ -11,6 +11,8 @@ import {
   isAccommodationDraggable,
   legalDragIndicesForList,
   moveDayBlockBefore,
+  moveDayHeaderBefore,
+  moveToInsertionBoundary,
   orderAfterDragMove,
   proposedOrderPreservesBoundaryLocks,
   quickAddAccommodationInsertPosition,
@@ -193,9 +195,10 @@ describe('legalDragIndicesForList (cross-day)', () => {
     expect(legal).toContain(indexOf('A'));
     expect(legal).toContain(indexOf('C'));
     expect(legal).toContain(indexOf('D'));
-    // Cannot land on locked head/tail hotels.
+    // Cannot land on the locked head/tail hotels. A boundary immediately
+    // before the tail is the valid preceding mid-destination slot.
     expect(legal).not.toContain(indexOf('h1a'));
-    expect(legal).not.toContain(indexOf('h4b'));
+    expect(legal).not.toContain(indexOf('h4b') + 1);
   });
 
   it('allows a mid stop to drop into an empty day block', () => {
@@ -209,11 +212,11 @@ describe('legalDragIndicesForList (cross-day)', () => {
     const legal = legalDragIndicesForList(order, 'A');
     const h2 = order.findIndex((e) => e.type === 'header' && e.day === 2);
     const h3 = order.findIndex((e) => e.type === 'header' && e.day === 3);
-    // Empty-day header indices must be legal so drag can enter that block.
-    expect(legal).toContain(h2);
-    expect(legal).toContain(h3);
-    // After drop into day 2 header slot, A sits under day 2.
-    const intoDay2 = orderAfterDragMove(order, 1, h2);
+    // The boundary after an empty-day header is the first destination slot.
+    expect(legal).toContain(h2 + 1);
+    expect(legal).toContain(h3 + 1);
+    // After drop into day 2's first-slot boundary, A sits under day 2.
+    const intoDay2 = orderAfterDragMove(order, 1, h2 + 1);
     let day = 1;
     let assigned = 0;
     for (const e of intoDay2) {
@@ -363,6 +366,56 @@ describe('legalDragIndicesForList (cross-day)', () => {
     expect(proposedOrderPreservesBoundaryLocks(good, 's1')).toBe(true);
   });
 
+  it('uses explicit insertion boundaries for upward and downward moves', () => {
+    const order: ReorderListEntry[] = [
+      header(1),
+      dest('A', 1),
+      dest('B', 1),
+      dest('C', 1),
+    ];
+    expect(moveToInsertionBoundary(order, 2, 1).map((e) => e.id)).toEqual([
+      'header-1', 'B', 'A', 'C',
+    ]);
+    expect(moveToInsertionBoundary(order, 2, 4).map((e) => e.id)).toEqual([
+      'header-1', 'A', 'C', 'B',
+    ]);
+    // Boundary 2 is immediately after B / before C, so it is a no-op.
+    expect(moveToInsertionBoundary(order, 2, 2).map((e) => e.id)).toEqual(
+      order.map((e) => e.id),
+    );
+  });
+
+  it('keeps the granted row at its own boundary when there is no movement', () => {
+    const order: ReorderListEntry[] = [header(1), dest('A', 1), dest('B', 1)];
+    expect(dragTargetIndexFromOffset(order, 2, 0, DEFAULT_REORDER_LAYOUT)).toBe(2);
+  });
+
+  it('moves only a day header and preserves the flat destination order', () => {
+    const order: ReorderListEntry[] = [
+      header(1), dest('A', 1), dest('B', 1),
+      header(2), dest('C', 2), dest('D', 2),
+      header(3), dest('E', 3),
+    ];
+    const h2 = order.findIndex((entry) => entry.id === 'header-2');
+    const moved = moveDayHeaderBefore(order, h2, 2);
+    expect(moved.filter((entry) => entry.type === 'dest').map((entry) => entry.id)).toEqual([
+      'A', 'B', 'C', 'D', 'E',
+    ]);
+    expect(moved.map((entry) => entry.id)).toEqual([
+      'header-1', 'A', 'header-2', 'B', 'C', 'D', 'header-3', 'E',
+    ]);
+    const renumbered = renumberReorderListDays(moved);
+    const dayOf = (id: string) => {
+      const entry = renumbered.find((item) => item.type === 'dest' && item.id === id);
+      return entry?.type === 'dest' ? entry.day : -1;
+    };
+    expect(dayOf('A')).toBe(1);
+    expect(dayOf('B')).toBe(2);
+    expect(dayOf('C')).toBe(2);
+    expect(dayOf('D')).toBe(2);
+    expect(dayOf('E')).toBe(3);
+  });
+
   it('snapToLegalDragIndex picks nearest legal slot', () => {
     expect(snapToLegalDragIndex([1, 5, 9], 6)).toBe(5);
     expect(snapToLegalDragIndex([1, 5, 9], 0)).toBe(1);
@@ -396,9 +449,10 @@ describe('legalDragIndicesForList (cross-day)', () => {
       header(2),
       header(3),
     ];
-    // Past mid of A (+ day gap) should aim at day2 header index 2.
-    const toDay2 = dragTargetIndexFromOffset(order, 1, 52, DEFAULT_REORDER_LAYOUT);
-    expect(toDay2).toBeGreaterThanOrEqual(2);
+    // Past the day gap and Day2 header midpoint should aim at Day2's first
+    // destination boundary (the boundary after header index 2).
+    const toDay2 = dragTargetIndexFromOffset(order, 1, 112, DEFAULT_REORDER_LAYOUT);
+    expect(toDay2).toBeGreaterThanOrEqual(3);
     const legal = legalDragIndicesForList(order, 'A');
     const snapped = snapToLegalDragIndex(legal, toDay2, 1);
     const proposed = orderAfterDragMove(order, 1, snapped);

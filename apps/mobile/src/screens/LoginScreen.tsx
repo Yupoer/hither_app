@@ -19,6 +19,7 @@ import { useIsFocused } from '@react-navigation/native';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import AuthField from '../components/AuthField';
 import AuthModeSelector, { type AuthMode } from '../components/AuthModeSelector';
+import CrookIcon from '../components/CrookIcon';
 import { useSession } from '../state/SessionContext';
 import { useTheme } from '../state/PreferencesContext';
 import { useTranslation, type TranslationKey } from '../i18n';
@@ -26,7 +27,6 @@ import { accentMix } from '../glass';
 import { runUiAction } from '../utils/uiAction';
 import SafePressable from '../components/SafePressable';
 import NativeGlassButton from '../components/NativeGlassButton';
-import CrookIcon from '../components/CrookIcon';
 import LanguagePicker from '../components/LanguagePicker';
 import MetalforgeBackground from '../components/MetalforgeBackground';
 import BlockingAuthOverlay from '../components/BlockingAuthOverlay';
@@ -46,6 +46,9 @@ type FieldName = 'email' | 'password' | 'confirmPassword';
 type AuthError = { field: keyof AuthFieldErrors; key: TranslationKey };
 
 const MIN_PASSWORD = 6;
+// The native account picker is interactive; the generic 15s action timeout
+// must not expire while the user is still choosing an account.
+const SOCIAL_AUTH_TIMEOUT_MS = 120_000;
 
 function mapAuthError(error: unknown): AuthError {
   const candidate = error as { code?: unknown; message?: unknown } | null;
@@ -65,6 +68,27 @@ function mapAuthError(error: unknown): AuthError {
   if (['weak_password', 'password_too_short'].includes(code)) {
     return { field: 'password', key: 'login.passwordFormatHint' };
   }
+  if (code === 'google_token_exchange_timeout') {
+    return { field: 'form', key: 'login.googleVerificationTimeout' };
+  }
+  if (code === 'google_token_exchange_network') {
+    return { field: 'form', key: 'login.googleVerificationNetwork' };
+  }
+  if (code === 'google_token_exchange_failed') {
+    return { field: 'form', key: 'login.googleVerificationFailed' };
+  }
+  if (['google_not_configured', 'google_native_sign_in_failed', 'google_native_configure_failed', 'google_native_unavailable', 'google_access_token_missing', 'google_token_missing'].includes(code)) {
+    return { field: 'form', key: 'login.googleVerificationFailed' };
+  }
+  if (code === 'google_profile_bootstrap_timeout') {
+    return { field: 'form', key: 'login.googleProfileTimeout' };
+  }
+  if (code === 'google_profile_bootstrap_network') {
+    return { field: 'form', key: 'login.googleProfileNetwork' };
+  }
+  if (code === 'google_profile_bootstrap_failed') {
+    return { field: 'form', key: 'login.googleProfileFailed' };
+  }
 
   const message = typeof candidate?.message === 'string' ? candidate.message.toLowerCase() : '';
   if (/invalid login credentials|invalid credentials|email or password/.test(message)) {
@@ -82,7 +106,11 @@ function mapAuthError(error: unknown): AuthError {
   return { field: 'form', key: 'login.authUnavailable' };
 }
 
-/** Login gate. Keep the form geometry stable across mode and language changes. */
+/**
+ * The pre-session auth gate. All three states (sign in, sign up, reset) share
+ * one scroll surface so the iOS and Android layouts remain usable on small
+ * screens and while the keyboard is open.
+ */
 export default function LoginScreen({ navigation }: Props) {
   const {
     user,
@@ -136,7 +164,9 @@ export default function LoginScreen({ navigation }: Props) {
     || busyAction === 'apple';
 
   useEffect(() => {
-    void AppleAuthentication.isAvailableAsync().then(setAppleAvailable).catch(() => setAppleAvailable(false));
+    void AppleAuthentication.isAvailableAsync()
+      .then(setAppleAvailable)
+      .catch(() => setAppleAvailable(false));
   }, []);
 
   useEffect(() => {
@@ -256,6 +286,7 @@ export default function LoginScreen({ navigation }: Props) {
       },
       {
         screen: 'Login',
+        timeoutMs: SOCIAL_AUTH_TIMEOUT_MS,
         suppressBanner: true,
         onBusyChange: (next) => setBusyAction(next ? (actionId === 'login.google' ? 'google' : 'apple') : null),
         onError: (kind) => {
@@ -351,6 +382,26 @@ export default function LoginScreen({ navigation }: Props) {
     return (touched[field] && local) || errors[field];
   }
 
+  function renderPasswordToggle(active: boolean, testID: string): React.ReactNode {
+    return (
+      <Pressable
+        onPress={() => {
+          if (!active || busy) return;
+          selectionTick();
+          setShowPassword((current) => !current);
+        }}
+        disabled={!active || busy}
+        accessibilityRole="button"
+        accessibilityLabel={showPassword ? t('login.hidePassword') : t('login.showPassword')}
+        testID={testID}
+        hitSlop={8}
+        style={styles.revealButton}
+      >
+        <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={26} color="#F4F7FC" />
+      </Pressable>
+    );
+  }
+
   function renderAuthPanel(panelMode: Mode, active: boolean): React.ReactNode {
     const panelSignUp = panelMode === 'signup';
     const panelEmailError = !email.trim()
@@ -372,16 +423,19 @@ export default function LoginScreen({ navigation }: Props) {
       && passwordOk
       && (!panelSignUp || confirmPasswordOk);
     const panelAction: AuthBusyAction = panelSignUp ? 'email_sign_up' : 'email_sign_in';
+    const emailError = errorFor('email', panelEmailError);
+    const passwordError = errorFor('password', panelPasswordError);
+    const confirmError = errorFor('confirmPassword', panelConfirmError);
     return (
       <View pointerEvents={active ? 'auto' : 'none'} style={styles.form}>
         <Text style={styles.label}>{t('login.email')}</Text>
-        <View style={styles.field}>
+        <View style={[styles.field, emailError && styles.fieldErrorBorder]}>
           <AuthField
             value={email}
             onChangeText={(value) => changeField('email', value)}
             onBlur={() => setTouched((current) => ({ ...current, email: true }))}
             placeholder={t('login.emailPlaceholder')}
-            placeholderTextColor="rgba(235,235,245,0.4)"
+            placeholderTextColor="rgba(235,235,245,0.46)"
             keyboardAppearance="dark"
             autoCapitalize="none"
             autoCorrect={false}
@@ -391,18 +445,16 @@ export default function LoginScreen({ navigation }: Props) {
             testID={active ? 'login-email' : undefined}
           />
         </View>
-        {errorFor('email', panelEmailError) ? (
-          <Text style={styles.fieldError}>{errorFor('email', panelEmailError)}</Text>
-        ) : null}
+        {emailError ? <Text style={styles.fieldError}>{emailError}</Text> : null}
 
         <Text style={styles.label}>{t('login.password')}</Text>
-        <View style={styles.field}>
+        <View style={[styles.field, passwordError && styles.fieldErrorBorder]}>
           <AuthField
             value={password}
             onChangeText={(value) => changeField('password', value)}
             onBlur={() => setTouched((current) => ({ ...current, password: true }))}
             placeholder={t('login.passwordPlaceholder')}
-            placeholderTextColor="rgba(235,235,245,0.4)"
+            placeholderTextColor="rgba(235,235,245,0.46)"
             keyboardAppearance="dark"
             autoCapitalize="none"
             autoCorrect={false}
@@ -411,35 +463,20 @@ export default function LoginScreen({ navigation }: Props) {
             accessibilityLabel={t('login.password')}
             testID={active ? 'login-password' : undefined}
           />
-          <Pressable
-            onPress={() => {
-              if (!active || busy) return;
-              selectionTick();
-              setShowPassword((current) => !current);
-            }}
-            disabled={!active || busy}
-            accessibilityRole="button"
-            accessibilityLabel={showPassword ? t('login.hidePassword') : t('login.showPassword')}
-            testID={active ? 'login-password-toggle' : undefined}
-            style={styles.revealButton}
-          >
-            <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={21} color="#fff" />
-          </Pressable>
+          {renderPasswordToggle(active, active ? 'login-password-toggle' : 'login-password-toggle-inactive')}
         </View>
-        {errorFor('password', panelPasswordError) ? (
-          <Text style={styles.fieldError}>{errorFor('password', panelPasswordError)}</Text>
-        ) : null}
+        {passwordError ? <Text style={styles.fieldError}>{passwordError}</Text> : null}
 
         {panelSignUp ? (
           <>
             <Text style={styles.label}>{t('login.confirmPassword')}</Text>
-            <View style={styles.field}>
+            <View style={[styles.field, confirmError && styles.fieldErrorBorder]}>
               <AuthField
                 value={confirmPassword}
                 onChangeText={(value) => changeField('confirmPassword', value)}
                 onBlur={() => setTouched((current) => ({ ...current, confirmPassword: true }))}
                 placeholder={t('login.confirmPasswordPlaceholder')}
-                placeholderTextColor="rgba(235,235,245,0.4)"
+                placeholderTextColor="rgba(235,235,245,0.46)"
                 keyboardAppearance="dark"
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -535,13 +572,13 @@ export default function LoginScreen({ navigation }: Props) {
       <View style={styles.resetCard}>
         <Text style={styles.resetHint}>{t('login.resetHint')}</Text>
         <Text style={styles.label}>{t('login.email')}</Text>
-        <View style={styles.field}>
+        <View style={[styles.field, touched.email && !emailOk && styles.fieldErrorBorder]}>
           <AuthField
             value={email}
             onChangeText={(value) => changeField('email', value)}
             onBlur={() => setTouched((current) => ({ ...current, email: true }))}
             placeholder={t('login.emailPlaceholder')}
-            placeholderTextColor="rgba(235,235,245,0.4)"
+            placeholderTextColor="rgba(235,235,245,0.46)"
             keyboardAppearance="dark"
             autoCapitalize="none"
             autoCorrect={false}
@@ -570,7 +607,12 @@ export default function LoginScreen({ navigation }: Props) {
           disabled={!emailOk || busy || resetCooldown > 0}
           testID="login-reset-submit"
           accessibilityRole="button"
-          style={[styles.cta, styles.resetAction, (!emailOk || busy || resetCooldown > 0) && styles.ctaDisabled]}
+          style={({ pressed }) => [
+            styles.cta,
+            styles.resetAction,
+            (!emailOk || busy || resetCooldown > 0) && styles.ctaDisabled,
+            pressed && emailOk && !busy && resetCooldown <= 0 && styles.pressed,
+          ]}
         >
           {busyAction === 'password_reset' ? (
             <ActivityIndicator color="#fff" />
@@ -581,9 +623,7 @@ export default function LoginScreen({ navigation }: Props) {
           )}
         </SafePressable>
         {resetCooldown > 0 ? (
-          <Text style={styles.cooldownText}>
-            {t('login.resendIn', { seconds: resetCooldown })}
-          </Text>
+          <Text style={styles.cooldownText}>{t('login.resendIn', { seconds: resetCooldown })}</Text>
         ) : null}
       </View>
     );
@@ -592,17 +632,17 @@ export default function LoginScreen({ navigation }: Props) {
   function renderPending(): React.ReactNode {
     return (
       <View style={styles.pendingCard}>
-        <Ionicons name="mail-outline" size={38} color={accent} />
+              <Ionicons name="mail-outline" size={38} color={accent} />
         <Text style={styles.sectionTitle}>{t('login.verificationTitle')}</Text>
         <Text style={styles.pendingEmail}>{pendingEmail}</Text>
         <Text style={styles.resetHint}>{t('login.verificationPending')}</Text>
         {errors.form ? <Text style={styles.formError}>{errors.form}</Text> : null}
-            <SafePressable
-              actionId="login.resend_confirmation"
-              screen="Login"
-              onPressAction={resendConfirmation}
-              onBusyChange={(next) => setBusyAction(next ? 'resend_confirmation' : null)}
-              suppressBanner
+        <SafePressable
+          actionId="login.resend_confirmation"
+          screen="Login"
+          onPressAction={resendConfirmation}
+          onBusyChange={(next) => setBusyAction(next ? 'resend_confirmation' : null)}
+          suppressBanner
           disabled={busy || resendCooldown > 0}
           testID="login-resend-confirmation"
           accessibilityRole="button"
@@ -630,6 +670,7 @@ export default function LoginScreen({ navigation }: Props) {
         onChange={setAuthMode}
         labels={{ signin: t('login.tabSignIn'), signup: t('login.tabSignUp') }}
         disabled={busy}
+        wide
       />
       <View style={styles.formViewport}>{renderAuthPanel(mode, true)}</View>
       {errors.form ? <Text style={styles.formError}>{errors.form}</Text> : null}
@@ -675,6 +716,7 @@ export default function LoginScreen({ navigation }: Props) {
           contentContainerStyle={[styles.content, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 16 }]}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
+          showsVerticalScrollIndicator={false}
         >
           <View>
             <View style={styles.header}>
@@ -700,6 +742,7 @@ export default function LoginScreen({ navigation }: Props) {
                       onPress={() => void runSocial('login.google', () => signInWithGoogle())}
                       disabled={busy}
                       accessibilityLabel={t('login.google')}
+                      testID="login-google"
                       size={64}
                       shape="circle"
                       variant="glass"
@@ -715,6 +758,7 @@ export default function LoginScreen({ navigation }: Props) {
                         onPress={() => void runSocial('login.apple', () => signInWithApple())}
                         disabled={busy}
                         accessibilityLabel={t('login.apple')}
+                        testID="login-apple"
                         size={64}
                         shape="circle"
                         variant="glass"
@@ -748,9 +792,9 @@ export default function LoginScreen({ navigation }: Props) {
       <Modal visible={guestConfirmVisible} transparent animationType="fade" onRequestClose={cancelGuest}>
         <View style={styles.modalScrim}>
           <View style={styles.modalCard}>
-                <Text style={styles.modalTitle}>{t('anon.confirmTitle')}</Text>
-                <Text style={styles.modalWarningText}>{t('anon.warning')}</Text>
-                <Text style={styles.modalWarningText}>{t('anon.expiryWarning')}</Text>
+            <Text style={styles.modalTitle}>{t('anon.confirmTitle')}</Text>
+            <Text style={styles.modalWarningText}>{t('anon.warning')}</Text>
+            <Text style={styles.modalWarningText}>{t('anon.expiryWarning')}</Text>
             <Pressable
               onPress={continueAsGuest}
               accessibilityRole="button"
@@ -782,6 +826,7 @@ const makeStyles = (accent: string) =>
     form: { width: '100%' },
     label: { fontSize: 12, fontWeight: '600', letterSpacing: 0.6, color: 'rgba(235,235,245,0.45)', marginTop: 6, marginBottom: 4, marginLeft: 4 },
     field: { height: 50, borderRadius: 18, justifyContent: 'center', paddingHorizontal: 14, backgroundColor: 'rgba(10,16,28,0.65)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.22)', flexDirection: 'row', alignItems: 'center' },
+    fieldErrorBorder: { borderColor: 'rgba(255,119,119,0.84)' },
     revealButton: { minWidth: 44, height: 50, alignItems: 'center', justifyContent: 'center' },
     fieldError: { marginTop: 6, marginLeft: 4, color: '#ff8f8f', fontSize: 13, lineHeight: 18 },
     formError: { marginTop: 10, marginBottom: 2, color: '#ff8f8f', fontSize: 13, lineHeight: 18, textAlign: 'center' },
@@ -816,12 +861,24 @@ const makeStyles = (accent: string) =>
     backLink: { alignSelf: 'center', minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, marginTop: 10 },
     backLinkText: { fontSize: 14, color: 'rgba(235,235,245,0.72)', textDecorationLine: 'underline' },
     pendingCard: { minHeight: 0, alignItems: 'center', paddingTop: 20 },
-    pendingEmail: { fontSize: 16, fontWeight: '600', color: '#fff', marginTop: 12 },
-    modalScrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center', padding: 24 },
-    modalCard: { width: '100%', maxWidth: 380, borderRadius: 22, padding: 22, backgroundColor: '#182131', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.14)' },
-    modalTitle: { fontSize: 19, fontWeight: '700', color: '#fff', marginBottom: 14 },
-    modalWarningText: { fontSize: 14, lineHeight: 21, color: 'rgba(235,235,245,0.78)' },
-    modalCta: { alignSelf: 'center', width: '100%', minHeight: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center', marginTop: 20, backgroundColor: accent },
-    modalSecondary: { alignSelf: 'center', minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, marginTop: 8 },
-    modalSecondaryText: { fontSize: 14, color: 'rgba(235,235,245,0.65)', textDecorationLine: 'underline' },
+    pendingEmail: { fontSize: 17, fontWeight: '600', color: '#F4F7FC', marginTop: 12 },
+    backButton: {
+      minHeight: 46,
+      paddingHorizontal: 16,
+      borderRadius: 23,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 3,
+      backgroundColor: 'rgba(255,255,255,0.07)',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'rgba(220,230,246,0.3)',
+    },
+    backButtonText: { color: '#F4F7FC', fontSize: 17, fontWeight: '600' },
+    modalScrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.58)', alignItems: 'center', justifyContent: 'center', padding: 24 },
+    modalCard: { width: '100%', maxWidth: 420, borderRadius: 24, padding: 24, backgroundColor: '#15243A', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(220,230,246,0.22)' },
+    modalTitle: { fontSize: 21, fontWeight: '700', color: '#F4F7FC', marginBottom: 14 },
+    modalWarningText: { fontSize: 15, lineHeight: 23, color: 'rgba(232,238,248,0.82)', marginBottom: 5 },
+    modalCta: { alignSelf: 'center', width: '100%', minHeight: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center', marginTop: 20, backgroundColor: accent },
+    modalSecondary: { alignSelf: 'center', minHeight: 46, justifyContent: 'center', paddingHorizontal: 14, marginTop: 8 },
+    modalSecondaryText: { fontSize: 15, color: 'rgba(226,233,245,0.72)', textDecorationLine: 'underline' },
   });

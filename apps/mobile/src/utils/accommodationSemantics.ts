@@ -173,18 +173,36 @@ function listEntryToAccommodation(
   };
 }
 
-/** Apply the same splice semantics as DestinationReorderList.handleMove. */
-export function orderAfterDragMove<T>(
+/**
+ * Move one entry to an explicit insertion boundary.
+ *
+ * Boundaries are in the original list coordinate space: `0` inserts before
+ * the first entry, `order.length` appends, and `b` inserts before
+ * `order[b]`. Removing the moving entry shifts every boundary after it left
+ * by one. Keeping that adjustment here prevents the classic downward-drop
+ * off-by-one where a row lands one slot below the line the user selected.
+ */
+export function moveToInsertionBoundary<T>(
   order: readonly T[],
   fromIndex: number,
-  toIndex: number,
+  insertionBoundary: number,
 ): T[] {
   if (fromIndex < 0 || fromIndex >= order.length) return [...order];
   const next = order.slice();
   const [moved] = next.splice(fromIndex, 1);
-  const clamped = Math.max(0, Math.min(toIndex, next.length));
-  next.splice(clamped, 0, moved);
+  const boundary = Math.max(0, Math.min(insertionBoundary, order.length));
+  const insertionIndex = boundary > fromIndex ? boundary - 1 : boundary;
+  next.splice(Math.max(0, Math.min(insertionIndex, next.length)), 0, moved);
   return next;
+}
+
+/** Backward-compatible name used by the route editor for boundary moves. */
+export function orderAfterDragMove<T>(
+  order: readonly T[],
+  fromIndex: number,
+  insertionBoundary: number,
+): T[] {
+  return moveToInsertionBoundary(order, fromIndex, insertionBoundary);
 }
 
 /** Minimal entry shape for whole-day block moves (headers + dest rows). */
@@ -239,6 +257,41 @@ export function moveDayBlockBefore<T extends DayBlockListEntry>(
   if (insertAt <= firstHeader) insertAt = firstHeader + 1;
 
   return [...rest.slice(0, insertAt), ...block, ...rest.slice(insertAt)];
+}
+
+/**
+ * Move only a day header/separator to an insertion boundary.
+ *
+ * Destination entries intentionally remain in exactly the same relative
+ * order. The caller renumbers day fields from the new header positions after
+ * this splice. Day 1's header is fixed; a later header may move between any
+ * entries after Day 1's header, but never before it.
+ */
+export function moveDayHeaderBefore<T extends DayBlockListEntry>(
+  order: readonly T[],
+  fromHeaderIndex: number,
+  insertionBoundary: number,
+): T[] {
+  if (
+    fromHeaderIndex < 0
+    || fromHeaderIndex >= order.length
+    || order[fromHeaderIndex]?.type !== 'header'
+  ) {
+    return [...order];
+  }
+  const firstHeader = order.findIndex((entry) => entry.type === 'header');
+  if (firstHeader < 0 || fromHeaderIndex === firstHeader) return [...order];
+
+  const boundary = Math.max(0, Math.min(insertionBoundary, order.length));
+  const next = order.slice();
+  const [header] = next.splice(fromHeaderIndex, 1);
+  let insertionIndex = boundary > fromHeaderIndex ? boundary - 1 : boundary;
+
+  // Keep Day 1 as the first section. Inserting immediately after its header
+  // is valid and allows the moved separator to make Day 1 empty.
+  if (insertionIndex <= firstHeader) insertionIndex = firstHeader + 1;
+  next.splice(Math.max(0, Math.min(insertionIndex, next.length)), 0, header);
+  return next;
 }
 
 /**
@@ -322,11 +375,11 @@ export function proposedOrderPreservesBoundaryLocks(
 }
 
 /**
- * Full-list indices where handleMove may place `movingId`.
+ * Full-list insertion boundaries where handleMove may place `movingId`.
  * Recomputed each move so cross-day splices stay consistent.
  * Locked head/tail accommodations only return their current index.
- * Day headers: Day1 is fixed; Day2…last may drag as whole blocks.
- * Legal drops for day D are insert-before indices after header(D-1) and
+ * Day headers: Day1 is fixed; Day2…last may drag as separator boundaries.
+ * Legal drops for day D are insertion boundaries after header(D-1) and
  * up to header(D+1) (or end of list) — including mid-dest slots so a day
  * can land between another day's gathering points. Cannot pass the next
  * day header (e.g. Day2 cannot move after Day3) or before Day1.
@@ -388,12 +441,12 @@ export function legalDragIndicesForList(
     return [movingIdx];
   }
 
-  // Allow any full-list index whose post-splice order preserves stay anchors.
-  // Include header indices so empty day blocks are valid drop targets (insert
-  // lands after the day header once the mover is spliced in).
+  // Allow any full-list boundary whose post-splice order preserves stay
+  // anchors. Include the boundary after a header so empty day blocks are
+  // valid drop targets (the row becomes that day's first destination).
   const legal = new Set<number>([movingIdx]);
   const firstHeaderIdx = order.findIndex((e) => e.type === 'header');
-  for (let target = 0; target < order.length; target++) {
+  for (let target = 0; target <= order.length; target++) {
     // Never offer "before the first day header" — that slot is not a day block.
     if (firstHeaderIdx >= 0 && target < firstHeaderIdx && target !== movingIdx) {
       continue;
@@ -550,7 +603,9 @@ export function dragTargetIndexFromOffset(
     if (fingerY < nextTop || i === order.length - 1) {
       const mid = top + rowHeights[i] / 2;
       // Past midpoint (or into following gap) → aim at next index (may be length).
-      if (fingerY >= mid) {
+      // Equality belongs to the row before the midpoint. This keeps a newly
+      // granted drag at its own boundary instead of jumping down one slot.
+      if (fingerY > mid) {
         return i + 1 < order.length ? i + 1 : order.length;
       }
       return i;

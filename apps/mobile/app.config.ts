@@ -10,9 +10,21 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   const mapsKey = process.env.GOOGLE_MAPS_ANDROID_API_KEY ?? '';
   const googleServicesFile =
     process.env.GOOGLE_SERVICES_JSON ?? './google-services.json';
-  const googleWebClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? '';
-  const googleIosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ?? '';
-  const googleIosUrlScheme = process.env.GOOGLE_IOS_URL_SCHEME ?? '';
+  // These are public OAuth client identifiers, not credentials. Keep the
+  // production values usable for a local/prebuild invocation while allowing
+  // a different Firebase/Google project to override them through env.
+  const defaultGoogleWebClientId =
+    '542661452505-sr3ljbqvkk997q2gn6vakbq8bgnqq8o9.apps.googleusercontent.com';
+  const defaultGoogleIosClientId =
+    '542661452505-5d0l9jotbl9asqloju792rdd7rafc2s5.apps.googleusercontent.com';
+  const defaultGoogleIosUrlScheme =
+    'com.googleusercontent.apps.542661452505-5d0l9jotbl9asqloju792rdd7rafc2s5';
+  const googleWebClientId =
+    process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?.trim() || defaultGoogleWebClientId;
+  const googleIosClientId =
+    process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID?.trim() || defaultGoogleIosClientId;
+  const googleIosUrlScheme =
+    process.env.GOOGLE_IOS_URL_SCHEME?.trim() || defaultGoogleIosUrlScheme;
   const privacyUrl = process.env.EXPO_PUBLIC_PRIVACY_URL ?? '';
   const termsUrl = process.env.EXPO_PUBLIC_TERMS_URL ?? '';
   const isProduction = process.env.EAS_BUILD_PROFILE === 'production';
@@ -27,12 +39,6 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     }
   };
 
-  if (isProduction && (!googleWebClientId || !googleIosClientId || !googleIosUrlScheme)) {
-    throw new Error(
-      '[app.config] Production Google Sign-In requires ' +
-        'EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID, EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID, and GOOGLE_IOS_URL_SCHEME.',
-    );
-  }
   if (isProduction && (!isConfiguredLegalUrl(privacyUrl) || !isConfiguredLegalUrl(termsUrl))) {
     throw new Error(
       '[app.config] Production legal links require HTTPS EXPO_PUBLIC_PRIVACY_URL and EXPO_PUBLIC_TERMS_URL.',
@@ -48,17 +54,42 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   }
 
   const plugins = [...(config.plugins ?? expoBase.plugins ?? [])];
-  if (googleIosUrlScheme) {
+  const hasGoogleSignInPlugin = plugins.some(
+    (plugin) => Array.isArray(plugin) && plugin[0] === '@react-native-google-signin/google-signin',
+  );
+  if (!hasGoogleSignInPlugin) {
     plugins.push([
       '@react-native-google-signin/google-signin',
       { iosUrlScheme: googleIosUrlScheme },
     ]);
   }
 
+  const baseIos = { ...(expoBase.ios ?? {}), ...(config.ios ?? {}) };
+  const baseInfoPlist = {
+    ...(expoBase.ios?.infoPlist ?? {}),
+    ...(config.ios?.infoPlist ?? {}),
+  } as Record<string, unknown>;
+  const urlTypes = Array.isArray(baseInfoPlist.CFBundleURLTypes)
+    ? (baseInfoPlist.CFBundleURLTypes as Array<Record<string, unknown>>).map((entry) => ({ ...entry }))
+    : [];
+  const firstUrlType = urlTypes[0] ?? {};
+  const schemes = Array.isArray(firstUrlType.CFBundleURLSchemes)
+    ? firstUrlType.CFBundleURLSchemes.filter((scheme): scheme is string => typeof scheme === 'string')
+    : [];
+  if (!schemes.includes(googleIosUrlScheme)) schemes.push(googleIosUrlScheme);
+  urlTypes[0] = { ...firstUrlType, CFBundleURLSchemes: schemes };
+
   return {
     ...expoBase,
     ...config,
     plugins,
+    ios: {
+      ...baseIos,
+      infoPlist: {
+        ...baseInfoPlist,
+        CFBundleURLTypes: urlTypes,
+      },
+    },
     extra: {
       ...expoBase.extra,
       ...config.extra,
@@ -67,6 +98,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         ...(config.extra as { google?: Record<string, string> } | undefined)?.google,
         EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: googleWebClientId,
         EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: googleIosClientId,
+        GOOGLE_IOS_URL_SCHEME: googleIosUrlScheme,
       },
       legal: {
         privacyUrl,

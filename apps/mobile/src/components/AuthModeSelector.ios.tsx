@@ -23,4 +23,3 @@ export default function AuthModeSelector({ mode, onChange, labels, disabled: isD
 const styles = StyleSheet.create({
   host: { width: 190, height: 42, alignSelf: 'center' },
 });
-

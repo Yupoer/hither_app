@@ -27,6 +27,7 @@ describe('language picker placement contract', () => {
     expect(login).toMatch(/from ['"]\.\.\/components\/LanguagePicker['"]/);
     expect(login).toContain('<LanguagePicker');
     expect(login).toContain('variant="menu"');
+    expect(login).toContain('left: 20');
     expect(login).not.toMatch(/user\s*\?[\s\S]{0,80}<LanguagePicker/);
   });
 

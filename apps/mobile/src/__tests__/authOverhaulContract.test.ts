@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const root = join(__dirname, '../../../../');
@@ -11,6 +11,7 @@ const modeSelector = read('apps/mobile/src/components/AuthModeSelector.tsx');
 const modeSelectorIos = read('apps/mobile/src/components/AuthModeSelector.ios.tsx');
 const googleIos = read('apps/mobile/src/state/googleSignIn.ios.ts');
 const googleFallback = read('apps/mobile/src/state/googleSignIn.ts');
+const googleGIcon = read('apps/mobile/src/components/GoogleGIcon.tsx');
 const zh = read('apps/mobile/src/i18n/locales/zh.ts');
 const packageConfig = JSON.parse(read('apps/mobile/package.json')) as {
   dependencies: Record<string, string>;
@@ -40,9 +41,10 @@ describe('auth overhaul contract', () => {
     expect(googleIos).toContain('GoogleSignin.configure');
     expect(googleIos).toContain('GoogleSignin.signIn');
     expect(authFlow).toContain("from './googleSignIn'");
+    expect(authFlow).toContain('getGoogleAuthCredentials');
     expect(authFlow).toContain('getGoogleIdToken');
     expect(authFlow).toMatch(/signInWithIdToken\(\{[\s\S]*?provider: 'google'/);
-    expect(authFlow).toContain("linkIdentity({ provider: 'google', token })");
+    expect(authFlow).toContain('access_token: accessToken');
     expect(authFlow).toContain('!usesNativeGoogleSignIn');
     expect(googleFallback).toContain('hosted OAuth');
     expect(authFlow).toContain('signInWithOAuth');
@@ -60,7 +62,8 @@ describe('auth overhaul contract', () => {
     expect(login).toContain('login-resend-confirmation');
     expect(login).toContain('getLegalUrl');
     expect(login).not.toContain('translateX');
-    expect(login).toContain('minHeight: 58');
+    expect(login).toContain('SOCIAL_AUTH_TIMEOUT_MS = 120_000');
+    expect(login).toContain('timeoutMs: SOCIAL_AUTH_TIMEOUT_MS');
     expect(authFieldIos).toContain("from 'react-native'");
     expect(authFieldIos).toContain('<TextInput');
     expect(login).toContain("primaryAction: { width: '100%'");
@@ -69,6 +72,8 @@ describe('auth overhaul contract', () => {
     expect(login).not.toContain('testID="login-signup-terms"');
     expect(login).not.toContain('termsAccepted');
     expect(login).toContain('BlockingAuthOverlay');
+    expect(googleGIcon).toContain("require('../../assets/google-g.png')");
+    expect(existsSync(join(root, 'apps/mobile/assets/google-g.png'))).toBe(true);
     expect(modeSelector).toContain("width: '66.667%'");
     expect(modeSelectorIos).toContain('<Picker');
     expect(modeSelectorIos).toContain("pickerStyle('segmented')");

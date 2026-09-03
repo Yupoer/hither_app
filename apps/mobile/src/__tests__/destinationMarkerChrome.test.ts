@@ -12,10 +12,10 @@ describe('destinationMarkerColor / emoji (map projection)', () => {
     2: '#6FA8FF',
   };
 
-  it('uses a valid per-stop markerColor when set', () => {
-    expect(
-      destinationMarkerColor({ markerColor: '#F0883E', day: 1 }, dayColors),
-    ).toBe('#F0883E');
+  it('always uses the current day color even when a legacy per-stop markerColor exists', () => {
+    const destination = { markerColor: '#F0883E', day: 1 } as const;
+    expect(destinationMarkerColor(destination, { 1: '#AABBCC' })).toBe('#AABBCC');
+    expect(destinationMarkerColor(destination, { 1: '#DDEEFF' })).toBe('#DDEEFF');
   });
 
   it('uses day color when markerColor is null', () => {
