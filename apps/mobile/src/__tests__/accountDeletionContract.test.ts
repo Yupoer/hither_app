@@ -21,10 +21,9 @@ const DELETE_KEYS = [
 ] as const;
 
 describe('account deletion placement contract', () => {
-  it('exposes confirmAction delete on RoleSelect and AccountSheet behind user', () => {
-    expect(roleSelect).toContain('confirmDeleteAccount');
-    expect(roleSelect).toContain("'role_select.delete_account'");
-    expect(roleSelect).toMatch(/user\s*\?[\s\S]*confirmDeleteAccount/);
+  it('keeps confirmAction delete in AccountSheet, not on the redesigned Home', () => {
+    expect(roleSelect).not.toContain('confirmDeleteAccount');
+    expect(roleSelect).not.toContain("'role_select.delete_account'");
 
     expect(authScreen).not.toContain('confirmDeleteAccount');
     expect(authScreen).not.toContain("'auth.delete_account'");
@@ -34,8 +33,6 @@ describe('account deletion placement contract', () => {
     expect(accountSheet).toContain('onAccountDeleted');
     expect(accountSheet).toContain('account-delete-loading');
     expect(accountSheet).toContain('onBusyChange: setDeleting');
-    expect(roleSelect).toContain('account-delete-loading');
-    expect(roleSelect).toContain('onBusyChange: setDeleting');
     expect(accountSheet).toMatch(/user\s*\?[\s\S]*confirmDeleteAccount/);
     expect(mapScreen).toContain('onAccountDeleted');
     expect(mapScreen).toContain("name: 'Login'");
@@ -52,7 +49,7 @@ describe('account deletion placement contract', () => {
 
   it('drops unused auth.delete_account from HIGH_RISK inventory', () => {
     expect(inventory).toContain("'account.delete'");
-    expect(inventory).toContain("'role_select.delete_account'");
+    expect(inventory).not.toContain("'role_select.delete_account'");
     expect(inventory).not.toContain("'auth.delete_account'");
   });
 

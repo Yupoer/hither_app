@@ -31,6 +31,7 @@ export default function NativeGlassButton({
   tintColor,
   layout,
   shape = label ? 'capsule' : 'circle',
+  cornerRadius = 18,
   size,
   width,
   height,
@@ -48,9 +49,12 @@ export default function NativeGlassButton({
     : variant === 'glassProminent'
       ? 'borderedProminent'
       : 'bordered';
+  const borderShape = shape === 'roundedRectangle'
+    ? buttonBorderShape(shape, cornerRadius)
+    : buttonBorderShape(shape);
   const modifiers = [
     buttonStyle(styleName),
-    buttonBorderShape(shape),
+    borderShape,
     controlSize(controlSizeValue),
     accessibilityLabelModifier(accessibilityLabel),
     ...(accessibilityHint ? [accessibilityHintModifier(accessibilityHint)] : []),
@@ -62,11 +66,13 @@ export default function NativeGlassButton({
       ? [frame({ width: fixedWidth, height: size ?? height })]
       : !iconOnly && layout === 'square'
         ? [frame({ width: 52, height: 52 })]
-        : !iconOnly && layout === 'fill'
-          ? [frame({ minWidth: 0, maxWidth: Infinity, height: height ?? 52 })]
-          : !iconOnly && height
-            ? [frame({ minWidth: 0, maxWidth: Infinity, height })]
-            : []),
+      : !iconOnly && layout === 'fill'
+        ? [frame({ minWidth: 0, maxWidth: Infinity, height: height ?? 52 })]
+        : !iconOnly && layout === 'fit'
+          ? [frame({ height: height ?? 52 })]
+      : !iconOnly && height
+        ? [frame({ minWidth: 0, maxWidth: Infinity, height })]
+        : []),
   ];
   const hostSizing: ViewStyle | null = fixedWidth
     ? { width: fixedWidth, height: size ?? height }
@@ -74,8 +80,10 @@ export default function NativeGlassButton({
       ? { width: 52, height: 52 }
       : layout === 'fill'
         ? { width: '100%', height: height ?? 52 }
+        : layout === 'fit'
+          ? { height: height ?? 52 }
         : height
-          ? { width: '100%', height }
+          ? { height }
         : null;
   const button = iconOnly && systemImage ? (
     <Button
@@ -101,7 +109,7 @@ export default function NativeGlassButton({
   );
   return (
     <Host
-      matchContents={!(fixedWidth || height || layout)}
+      matchContents={!(fixedWidth || layout === 'square' || layout === 'fill' || (height && layout !== 'fit'))}
       style={[hostSizing, style]}
       colorScheme="dark"
     >

@@ -61,7 +61,6 @@ const HIGH_RISK_ACTION_IDS = [
   'account.link_google',
   'account.link_apple',
   'account.delete',
-  'role_select.delete_account',
   'feedback.submit',
 ] as const;
 

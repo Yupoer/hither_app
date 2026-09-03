@@ -24,8 +24,10 @@ export type NativeGlassButtonProps = {
   busy?: boolean;
   tintColor?: string;
   foregroundColor?: string;
-  layout?: 'square' | 'fill';
-  shape?: 'circle' | 'capsule';
+  layout?: 'square' | 'fill' | 'fit';
+  shape?: 'circle' | 'capsule' | 'roundedRectangle';
+  /** Native rounded-rectangle radius; ignored for capsule/circle. */
+  cornerRadius?: number;
   /** Fixed square size for icon-only controls (defaults to 52pt). */
   size?: number;
   /** Explicit width for controls whose height is independent (e.g. fill rows). */
@@ -66,6 +68,10 @@ const FALLBACK_ICON: Record<string, string> = {
   checkmark: 'checkmark',
   eye: 'eye-outline',
   'eye.slash': 'eye-off-outline',
+  'chevron.left': 'chevron-back',
+  'rectangle.portrait.and.arrow.right': 'log-out-outline',
+  'rectangle.portrait.and.arrow.forward': 'log-out-outline',
+  'apple.logo': 'logo-apple',
 };
 
 /** Android/older-runtime fallback for the iOS SwiftUI glass button. */
@@ -82,6 +88,7 @@ export default function NativeGlassButton({
   busy = false,
   layout,
   shape = label ? 'capsule' : 'circle',
+  cornerRadius = 18,
   size,
   width,
   height,
@@ -98,7 +105,7 @@ export default function NativeGlassButton({
     <Pressable
       style={({ pressed }) => [
         styles.fallback,
-        shape === 'circle' ? styles.circle : styles.capsule,
+        shape === 'circle' ? styles.circle : shape === 'roundedRectangle' ? { borderRadius: cornerRadius } : styles.capsule,
         layout === 'square' && styles.square,
         (fixedSize || width) ? { width: width ?? fixedSize, height: fixedSize ?? height, borderRadius: shape === 'circle' && fixedSize ? fixedSize / 2 : 26 } : null,
         height ? { height } : null,

@@ -432,18 +432,15 @@ export function useAuthFlow({
   );
 
   const signUpWithEmail = useCallback(
-    async ({ email, password, nickname }: {
+    async ({ email, password }: {
       email: string;
       password: string;
-      nickname: string;
     }): Promise<EmailSignUpResult> => {
-      const trimmed = nickname.trim();
       const normalizedEmail = email.trim();
       const { data, error } = await supabase.auth.signUp({
         email: normalizedEmail,
         password,
         options: {
-          data: { nickname: trimmed },
           emailRedirectTo: AUTH_CALLBACK_URL,
         },
       });
@@ -457,7 +454,14 @@ export function useAuthFlow({
       if (!data.session) {
         return { status: 'verification_required', email: normalizedEmail };
       }
-      const nextUser = await materializeUser(data.user, trimmed);
+      // Signup no longer creates a profile nickname. The create/join flow is
+      // the first point that requires a non-empty display name.
+      const nextUser: User = {
+        id: data.user.id,
+        name: '',
+        email: data.user.email ?? normalizedEmail,
+        provider: 'email',
+      };
       setUser(nextUser);
       setIsAnonymous(false);
       return { status: 'signed_in', user: nextUser };

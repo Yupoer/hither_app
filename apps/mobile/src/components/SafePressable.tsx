@@ -3,8 +3,11 @@ import {
   Pressable,
   type PressableProps,
   type GestureResponderEvent,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native';
 import { runUiAction, type UiActionOptions, type UiActionToken } from '../utils/uiAction';
+import NativeGlassButton, { type NativeGlassButtonProps } from './NativeGlassButton';
 
 export type SafePressableProps = Omit<PressableProps, 'onPress' | 'disabled'> & {
   /** Stable id for single-flight + telemetry (e.g. `map.go_home`). */
@@ -21,6 +24,10 @@ export type SafePressableProps = Omit<PressableProps, 'onPress' | 'disabled'> & 
   onBusyChange?: (busy: boolean) => void;
   /** When true, skip global recovery banner (caller shows own UI). */
   suppressBanner?: boolean;
+  /** Render the same guarded action through the native SwiftUI button on iOS. */
+  native?: Omit<NativeGlassButtonProps, 'onPress' | 'disabled' | 'accessibilityLabel' | 'testID' | 'style'> & {
+    accessibilityLabel?: string;
+  };
 };
 
 /**
@@ -39,12 +46,18 @@ export default function SafePressable({
   accessibilityState,
   onBusyChange,
   suppressBanner,
+  native,
+  children,
+  accessibilityLabel,
+  accessibilityHint,
+  testID,
+  style,
   ...rest
 }: SafePressableProps) {
   const [busy, setBusy] = useState(false);
 
   const handlePress = useCallback(
-    (_event: GestureResponderEvent) => {
+    (_event?: GestureResponderEvent) => {
       if (!onPressAction) return;
       void runUiAction(actionId, (token) => onPressAction(token), {
         screen,
@@ -62,9 +75,27 @@ export default function SafePressable({
 
   const isDisabled = Boolean(disabled) || (disableWhileBusy && busy);
 
+  if (native) {
+    return (
+      <NativeGlassButton
+        {...native}
+        onPress={handlePress}
+        disabled={isDisabled}
+        accessibilityLabel={native.accessibilityLabel ?? accessibilityLabel ?? actionId}
+        accessibilityHint={accessibilityHint}
+        testID={testID}
+        style={typeof style === 'function' ? undefined : style as StyleProp<ViewStyle>}
+      />
+    );
+  }
+
   return (
     <Pressable
       {...rest}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityHint={accessibilityHint}
+      testID={testID}
+      style={style}
       disabled={isDisabled}
       onPress={handlePress}
       accessibilityState={{
@@ -72,6 +103,8 @@ export default function SafePressable({
         disabled: isDisabled,
         busy: busy || accessibilityState?.busy,
       }}
-    />
+    >
+      {children}
+    </Pressable>
   );
 }

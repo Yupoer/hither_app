@@ -80,7 +80,7 @@ describe('Dynamic Type contract', () => {
     expect(groupMap).toContain("typeRole=\"emoji\"");
     expect(groupMap).toMatch(/memberPin:\s*\{[\s\S]*?overflow:\s*'hidden'/);
     expect(myTeams).toContain("typeRole=\"emoji\"");
-    expect(myTeams).toMatch(/avatarBubble:\s*\{[\s\S]*?overflow:\s*'hidden'/);
+    expect(myTeams).toContain('NativeTeamCard');
     expect(myTeams).toMatch(/detailAvatarBig:\s*\{[\s\S]*?overflow:\s*'hidden'/);
   });
 

@@ -8,7 +8,7 @@ const appConfig = readFileSync(join(__dirname, '../../app.json'), 'utf8');
 describe('native Apple login UI contract', () => {
   it('exposes Apple login and renders a matching icon button beside Google', () => {
     expect(session).toContain('signInWithApple: () => Promise<User | null>');
-    expect(login).toContain('name="logo-apple"');
+    expect(login).toContain('systemImage="apple.logo"');
     expect(login).toContain('styles.socialIcon');
     expect(login).toContain('styles.socialRow');
   });

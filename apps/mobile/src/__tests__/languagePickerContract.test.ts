@@ -26,7 +26,7 @@ describe('language picker placement contract', () => {
   it('shows LanguagePicker on Login without hiding it behind a session', () => {
     expect(login).toMatch(/from ['"]\.\.\/components\/LanguagePicker['"]/);
     expect(login).toContain('<LanguagePicker');
-    expect(login).not.toContain('variant="menu"');
+    expect(login).toContain('variant="menu"');
     expect(login).not.toMatch(/user\s*\?[\s\S]{0,80}<LanguagePicker/);
   });
 
@@ -35,9 +35,8 @@ describe('language picker placement contract', () => {
     expect(roleSelect).toContain('<LanguagePicker');
     expect(roleSelect).toContain('variant="menu"');
     const pickerAt = roleSelect.indexOf('<LanguagePicker');
-    const gatedDelete = roleSelect.indexOf("{user ?");
     expect(pickerAt).toBeGreaterThanOrEqual(0);
-    expect(gatedDelete).toBeGreaterThan(pickerAt);
+    expect(roleSelect).not.toContain('confirmDeleteAccount');
   });
 
   it('places RoleSelect language menu on the left cluster next to Back', () => {

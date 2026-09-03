@@ -12,11 +12,20 @@ export async function updateNickname(nickname: string): Promise<string> {
   if (!trimmed) {
     throw new Error('暱稱不能為空');
   }
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('profiles')
     .update({ nickname: trimmed })
-    .eq('id', uid);
+    .eq('id', uid)
+    .select('id')
+    .maybeSingle();
   orThrow(error);
+  if (!data) {
+    const { error: insertError } = await supabase.from('profiles').upsert(
+      { id: uid, nickname: trimmed },
+      { onConflict: 'id' },
+    );
+    orThrow(insertError);
+  }
   return trimmed;
 }
 
