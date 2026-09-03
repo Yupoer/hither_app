@@ -1,30 +1,32 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useTheme } from '../state/PreferencesContext';
-import { accentMix } from '../glass';
 import { lightTap, alertBuzz } from '../utils/haptics';
 import { useSession } from '../state/SessionContext';
 import { getMyJoinedGroups, JoinedGroupInfo, leaveGroups } from '../api/client';
-import { GlassView } from '../native/liquidGlass';
 import { clearLiveActivities } from '../state/useLiveActivity';
 import { HitherText } from '../components/HitherText';
-import { avatarColorForGroup, avatarForGroup, displayMemberAvatar } from '../constants/avatars';
+import { avatarForGroup, displayMemberAvatar } from '../constants/avatars';
 import { runUiAction } from '../utils/uiAction';
 import { useTranslation } from '../i18n';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
+import MetalforgeBackground from '../components/MetalforgeBackground';
+import NativeGlassButton from '../components/NativeGlassButton';
+import NativeTeamCard from '../components/NativeTeamCard';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'MyTeams'>;
 
 export default function MyTeamsScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
+  const isFocused = useIsFocused();
   const { colors } = useTheme();
   const accent = colors.accent;
-  const { user, setMembership } = useSession();
+  const { user, setMembership, updateNickname } = useSession();
   const { t } = useTranslation();
 
   const [joinedGroups, setJoinedGroups] = useState<JoinedGroupInfo[]>(route.params?.initialGroups || []);
@@ -74,6 +76,14 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
         if (!token.isCurrent()) {
           enterInFlightRef.current = null;
           return;
+        }
+        if (!user?.name.trim()) {
+          const fallback = user?.email?.split('@')[0]?.trim() || t('group.travelerFallback');
+          await updateNickname(fallback);
+          if (!token.isCurrent()) {
+            enterInFlightRef.current = null;
+            return;
+          }
         }
         setMembership({ group: info.group, role: info.role });
         navigation.replace('Map', { groupId: info.group.id });
@@ -146,14 +156,29 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
 
   return (
     <View style={styles.fill}>
+      <MetalforgeBackground active={isFocused} />
       <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
-        <Pressable onPress={() => { lightTap(); navigation.goBack(); }} style={styles.backBtn} accessibilityRole="button">
-          <Ionicons name="chevron-back" size={28} color="#fff" />
-        </Pressable>
+        <NativeGlassButton
+          label={t('common.back')}
+          systemImage="chevron.left"
+          shape="capsule"
+          variant="glass"
+          onPress={() => { lightTap(); navigation.goBack(); }}
+          accessibilityLabel={t('common.back')}
+          width={78}
+          height={36}
+          style={styles.backBtn}
+        />
         <Text style={styles.title}>{t('teams.title')}</Text>
-        <Pressable onPress={handleClearAllGroups} style={styles.clearBtn} hitSlop={10}>
-          <Text style={styles.clearText}>{t('teams.clear')}</Text>
-        </Pressable>
+        <NativeGlassButton
+          label={t('teams.clear')}
+          shape="capsule"
+          variant="glass"
+          onPress={handleClearAllGroups}
+          accessibilityLabel={t('teams.clear')}
+          foregroundColor="#ff453a"
+          style={styles.clearBtn}
+        />
       </View>
 
       <ScrollView contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 40 }]}>
@@ -186,73 +211,28 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
 
           return (
             <Animated.View key={info.group.id} layout={LinearTransition.springify()}>
-              <Pressable
-                accessible={!isExpanded}
+              <NativeTeamCard
+                teamName={info.group.name}
+                subtitle={t('teams.memberCount', { count: info.memberCount })}
+                inviteCode={info.group.inviteCode}
+                groupEmoji={info.group.avatar || avatarForGroup(info.group.id)}
+                groupColor={info.group.avatarColor || 'rgba(255,255,255,0.16)'}
+                members={displayAvatars.map((p, i) => ({
+                  emoji: p.userId ? displayMemberAvatar(p.avatar, p.userId).emoji : undefined,
+                  placeholder: p.isPlaceholder,
+                }))}
+                extraCount={extraCount}
+                expanded={isExpanded}
                 onPress={() => {
                   lightTap();
                   setExpandedGroupId(isExpanded ? null : info.group.id);
                 }}
-                style={({ pressed }) => [
-                  styles.teamCard,
-                  { backgroundColor: 'rgba(255,255,255,0.1)' },
-                  pressed && !isExpanded && styles.pressed
-                ]}
-              >
-                
-                <View style={styles.teamCardHeader}>
-                  <View style={[styles.groupAvatar, { backgroundColor: info.group.avatarColor || avatarColorForGroup(info.group.id) }]}>
-                    <HitherText typeRole="emoji" style={styles.groupAvatarEmoji}>
-                      {info.group.avatar || avatarForGroup(info.group.id)}
-                    </HitherText>
-                  </View>
-                  <View style={styles.teamCardLeft}>
-                    <Text style={styles.teamCardName} numberOfLines={1}>{info.group.name}</Text>
-                    <Text style={styles.teamCardSubtitle}>
-                      {t('teams.memberCount', { count: info.memberCount })}
-                      {info.group.inviteCode
-                        ? t('teams.codeSuffix', { code: info.group.inviteCode })
-                        : ''}
-                    </Text>
-                  </View>
-                  <View style={styles.teamCardRight}>
-                    <View style={styles.avatarStack}>
-                      {displayAvatars.map((p, i) => (
-                        <View
-                          key={i}
-                          style={[
-                            styles.avatarBubble,
-                            {
-                              backgroundColor: p.avatarColor
-                                || (p.userId ? displayMemberAvatar(p.avatar, p.userId).color : 'rgba(255,255,255,0.05)'),
-                              zIndex: 10 - i,
-                            },
-                          ]}
-                        >
-                          {p.isPlaceholder ? (
-                            <Ionicons name="person" size={14} color="rgba(255,255,255,0.2)" />
-                          ) : (
-                            <HitherText typeRole="emoji" style={styles.avatarEmoji}>
-                              {displayMemberAvatar(p.avatar, p.userId ?? `${info.group.id}:${i}`).emoji}
-                            </HitherText>
-                          )}
-                        </View>
-                      ))}
-                      {extraCount > 0 && (
-                        <View style={[styles.avatarBubble, styles.avatarExtra, { zIndex: 0 }]}>
-                          <Text style={styles.avatarExtraText}>+{extraCount}</Text>
-                        </View>
-                      )}
-                    </View>
-                    <Ionicons 
-                      name={isExpanded ? "chevron-up" : "chevron-down"} 
-                      size={20} 
-                      color="rgba(255,255,255,0.4)" 
-                      style={{ marginLeft: 8 }} 
-                    />
-                  </View>
-                </View>
+                accessibilityLabel={`${info.group.name}, ${t('teams.memberCount', { count: info.memberCount })}`}
+                testID={`team-card-${info.group.id}`}
+                style={styles.teamCard}
+              />
 
-                {isExpanded && (
+              {isExpanded && (
                   <Animated.View entering={FadeIn} exiting={FadeOut} style={styles.expandedSection}>
                     <View style={styles.detailAvatars}>
                       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.detailAvatarsScroll}>
@@ -287,26 +267,32 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
                     ) : null}
 
                     <View style={styles.expandedButtonsRow}>
-                      <Pressable
+                      <NativeGlassButton
+                        label={t('teams.enterMap')}
                         onPress={() => handleEnterGroup(info)}
-                        accessibilityRole="button"
                         accessibilityLabel={t('teams.enterMap')}
-                        testID={`team-enter-map-${info.group.id}`}
-                        style={({ pressed }) => [styles.inlineEnterBtn, { backgroundColor: accent }, pressed && styles.pressed]}
-                      >
-                        <Text style={styles.inlineEnterText}>{t('teams.enterMap')}</Text>
-                      </Pressable>
+                        shape="capsule"
+                        variant="glassProminent"
+                        tintColor={accent}
+                        foregroundColor="#fff"
+                        height={48}
+                        style={[styles.inlineEnterBtn, { backgroundColor: accent }]}
+                      />
 
-                      <Pressable
+                      <NativeGlassButton
+                        label={t('teams.leave')}
                         onPress={() => handleLeaveGroup(info.group.id)}
-                        style={({ pressed }) => [styles.inlineLeaveBtn, pressed && styles.pressed]}
-                      >
-                        <Text style={styles.inlineLeaveText}>{t('teams.leave')}</Text>
-                      </Pressable>
+                        accessibilityLabel={t('teams.leave')}
+                        shape="capsule"
+                        variant="glass"
+                        foregroundColor="#ff453a"
+                        width={80}
+                        height={48}
+                        style={styles.inlineLeaveBtn}
+                      />
                     </View>
                   </Animated.View>
-                )}
-              </Pressable>
+              )}
             </Animated.View>
           );
         })}
@@ -316,7 +302,7 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
 }
 
 const styles = StyleSheet.create({
-  fill: { flex: 1, backgroundColor: '#080b12' },
+  fill: { flex: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -326,96 +312,18 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: 'rgba(255,255,255,0.1)',
   },
-  backBtn: {
-    width: 44,
-    height: 44,
-    alignItems: 'flex-start',
-    justifyContent: 'center',
-  },
+  backBtn: { width: 78, height: 36 },
   title: {
     fontSize: 18,
     fontWeight: '700',
     color: '#fff',
   },
-  clearBtn: {
-    width: 44,
-    height: 44,
-    alignItems: 'flex-end',
-    justifyContent: 'center',
-  },
-  clearText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#ff453a',
-  },
+  clearBtn: { width: 76, height: 36 },
   list: {
     padding: 20,
     gap: 16,
   },
-  teamCard: {
-    flexDirection: 'column',
-    padding: 16,
-    borderRadius: 20,
-    overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.15)',
-  },
-  teamCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  groupAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  groupAvatarEmoji: { fontSize: 24 },
-  teamCardLeft: {
-    flex: 1,
-    marginRight: 12,
-  },
-  teamCardName: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#fff',
-    marginBottom: 4,
-  },
-  teamCardSubtitle: {
-    fontSize: 14,
-    color: 'rgba(235,235,245,0.6)',
-  },
-  teamCardRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  avatarStack: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  avatarBubble: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: '#1e293b',
-    marginLeft: -10,
-  },
-  avatarEmoji: { fontSize: 16 },
-  avatarExtra: {
-    backgroundColor: 'rgba(255,255,255,0.15)',
-  },
-  avatarExtraText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#fff',
-  },
+  teamCard: { width: '100%', minHeight: 84 },
   expandedSection: {
     marginTop: 20,
     borderTopWidth: StyleSheet.hairlineWidth,

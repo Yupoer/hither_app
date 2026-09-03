@@ -36,9 +36,8 @@ describe('language picker placement contract', () => {
     expect(roleSelect).toContain('<LanguagePicker');
     expect(roleSelect).toContain('variant="menu"');
     const pickerAt = roleSelect.indexOf('<LanguagePicker');
-    const gatedDelete = roleSelect.indexOf("{user ?");
     expect(pickerAt).toBeGreaterThanOrEqual(0);
-    expect(gatedDelete).toBeGreaterThan(pickerAt);
+    expect(roleSelect).not.toContain('confirmDeleteAccount');
   });
 
   it('places RoleSelect language menu on the left cluster next to Back', () => {

@@ -224,7 +224,7 @@
       "child": 200,
       "acceptance": "A4 RoleSelect and AccountSheet expose delete behind user via confirmAction and the listed runUiAction ids. Auth no longer hosts delete (overridden by #203).",
       "testFile": "accountDeletionContract.test.ts",
-      "testNamePattern": "exposes confirmAction delete on RoleSelect and AccountSheet behind user"
+      "testNamePattern": "keeps confirmAction delete in AccountSheet"
     },
     {
       "parent": 199,

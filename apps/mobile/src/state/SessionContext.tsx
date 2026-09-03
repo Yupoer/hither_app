@@ -126,14 +126,14 @@ export interface SessionContextValue {
   /** Sign in with an existing email + password account. */
   signInWithEmail: (input: { email: string; password: string }) => Promise<User>;
   /**
-   * Register a new email + password account and record the nickname.
+   * Register a new email + password account. The create/join flow records the
+   * nickname after authentication.
    * Returns a verification-pending result when Supabase requires email
    * confirmation before creating a session.
    */
   signUpWithEmail: (input: {
     email: string;
     password: string;
-    nickname: string;
   }) => Promise<EmailSignUpResult>;
   requestPasswordReset: (email: string) => Promise<void>;
   completePasswordRecovery: (password: string) => Promise<void>;

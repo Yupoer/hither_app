@@ -79,9 +79,9 @@ export const en: Record<keyof ZhDict, string> = {
   'login.emailNotConfirmed': 'Verify your email before signing in',
   'login.privacy': 'Privacy policy',
   'login.terms': 'Terms of service',
-  'login.signupAgreementPrefix': 'By signing up, you agree to the ',
+  'login.signupAgreementPrefix': 'By tapping start, you agree to the ',
   'login.signupAgreementA11y': 'Agree to the terms of service and privacy policy',
-  'login.signupAgreementAnd': ' and confirm you have read the ',
+  'login.signupAgreementAnd': ' and ',
   'login.signupAgreementSuffix': '.',
   'login.signInFailed': 'Sign-in failed. Check your email and password.',
   'login.signUpFailed': 'Sign-up failed, please try again',
@@ -1030,7 +1030,7 @@ export const en: Record<keyof ZhDict, string> = {
   'teams.inviteCode': 'Invite code',
   'teams.enterMap': 'Open map',
   'teams.leave': 'Leave',
-  'role.myTeams': 'My teams ({count})',
+  'role.myTeams': 'View teams',
 
   // Nav command labels
   'nav.leaderStart': 'Start',

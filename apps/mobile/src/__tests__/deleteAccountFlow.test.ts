@@ -175,7 +175,7 @@ describe('useAuthFlow deleteAccount and signOut', () => {
       id: 'u2',
     });
     await expect(
-      flow.signUpWithEmail({ email: 'c@d.e', password: 'secret1', nickname: 'Cee' }),
+    flow.signUpWithEmail({ email: 'c@d.e', password: 'secret1' }),
     ).resolves.toMatchObject({ status: 'signed_in', user: { id: 'u3' } });
     await expect(flow.signInWithGoogle()).rejects.toThrow('oauth off');
     expect(mockSignInWithIdToken).toHaveBeenCalledWith({

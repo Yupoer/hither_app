@@ -85,9 +85,9 @@ export const zh = {
   'login.emailNotConfirmed': '請先完成電子信箱驗證',
   'login.privacy': '隱私權政策',
   'login.terms': '服務條款',
-  'login.signupAgreementPrefix': '註冊即表示同意',
+  'login.signupAgreementPrefix': '點擊開始即表示同意',
   'login.signupAgreementA11y': '同意服務條款與隱私權政策',
-  'login.signupAgreementAnd': '，並確認已閱讀',
+  'login.signupAgreementAnd': '與',
   'login.signupAgreementSuffix': '。',
   'login.signInFailed': '登入失敗，請確認 Email 與密碼',
   'login.signUpFailed': '註冊失敗，請再試一次',
@@ -1041,7 +1041,7 @@ export const zh = {
   'teams.inviteCode': '加入代碼',
   'teams.enterMap': '進入地圖',
   'teams.leave': '離開',
-  'role.myTeams': '查看我的隊伍 ({count})',
+  'role.myTeams': '查看隊伍',
 
   // Nav command labels (MapScreen display; gatherCommand keeps zh for pure tests)
   'nav.leaderStart': '開始',

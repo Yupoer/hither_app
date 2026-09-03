@@ -10,25 +10,26 @@ import {
   StyleSheet,
   Text,
   View,
-  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useIsFocused } from '@react-navigation/native';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import AuthField from '../components/AuthField';
 import AuthModeSelector, { type AuthMode } from '../components/AuthModeSelector';
 import CrookIcon from '../components/CrookIcon';
-import GoogleGIcon from '../components/GoogleGIcon';
 import { useSession } from '../state/SessionContext';
 import { useTheme } from '../state/PreferencesContext';
 import { useTranslation, type TranslationKey } from '../i18n';
-import { accentMix, shade } from '../glass';
+import { accentMix } from '../glass';
 import { runUiAction } from '../utils/uiAction';
 import SafePressable from '../components/SafePressable';
+import NativeGlassButton from '../components/NativeGlassButton';
 import LanguagePicker from '../components/LanguagePicker';
+import MetalforgeBackground from '../components/MetalforgeBackground';
+import BlockingAuthOverlay from '../components/BlockingAuthOverlay';
 import {
   errorTap,
   lightTap,
@@ -41,14 +42,13 @@ import type { AuthBusyAction, AuthFieldErrors } from '../auth/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 type Mode = AuthMode;
-type FieldName = 'nickname' | 'email' | 'password' | 'confirmPassword';
+type FieldName = 'email' | 'password' | 'confirmPassword';
 type AuthError = { field: keyof AuthFieldErrors; key: TranslationKey };
 
 const MIN_PASSWORD = 6;
 // The native account picker is interactive; the generic 15s action timeout
 // must not expire while the user is still choosing an account.
 const SOCIAL_AUTH_TIMEOUT_MS = 120_000;
-const AUTH_GRADIENT = ['#20385D', '#132744', '#0A172B', '#071225'] as const;
 
 function mapAuthError(error: unknown): AuthError {
   const candidate = error as { code?: unknown; message?: unknown } | null;
@@ -122,24 +122,20 @@ export default function LoginScreen({ navigation }: Props) {
     resendSignupConfirmation,
   } = useSession();
   const insets = useSafeAreaInsets();
-  const { height: windowHeight } = useWindowDimensions();
+  const isFocused = useIsFocused();
   const { colors } = useTheme();
   const { t } = useTranslation();
   const accent = colors.accent;
-  const compact = windowHeight < 900;
-  const styles = useMemo(() => makeStyles(accent, compact), [accent, compact]);
+  const styles = useMemo(() => makeStyles(accent), [accent]);
 
   const [mode, setMode] = useState<Mode>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [nickname, setNickname] = useState('');
-  const [termsAccepted, setTermsAccepted] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [busyAction, setBusyAction] = useState<AuthBusyAction>(null);
   const [errors, setErrors] = useState<AuthFieldErrors>({});
   const [touched, setTouched] = useState<Record<FieldName, boolean>>({
-    nickname: false,
     email: false,
     password: false,
     confirmPassword: false,
@@ -159,11 +155,13 @@ export default function LoginScreen({ navigation }: Props) {
   const emailOk = /\S+@\S+\.\S+/.test(email.trim());
   const passwordOk = password.replace(/\s/g, '').length >= MIN_PASSWORD;
   const confirmPasswordOk = password.length > 0 && password === confirmPassword;
-  const nicknameOk = !isSignUp || nickname.trim().length > 0;
   const formCanSubmit = emailOk
     && passwordOk
-    && nicknameOk
-    && (!isSignUp || (confirmPasswordOk && termsAccepted));
+    && (!isSignUp || confirmPasswordOk);
+  const blockingBusy = busyAction === 'email_sign_in'
+    || busyAction === 'email_sign_up'
+    || busyAction === 'google'
+    || busyAction === 'apple';
 
   useEffect(() => {
     void AppleAuthentication.isAvailableAsync()
@@ -172,9 +170,8 @@ export default function LoginScreen({ navigation }: Props) {
   }, []);
 
   useEffect(() => {
-    setTouched({ nickname: false, email: false, password: false, confirmPassword: false });
+    setTouched({ email: false, password: false, confirmPassword: false });
     setErrors({});
-    setTermsAccepted(false);
   }, [mode]);
 
   useEffect(() => {
@@ -207,7 +204,6 @@ export default function LoginScreen({ navigation }: Props) {
     if (field === 'email') setEmail(value);
     if (field === 'password') setPassword(value);
     if (field === 'confirmPassword') setConfirmPassword(value);
-    if (field === 'nickname') setNickname(value);
   }
 
   function validateAuthForm(nextMode: Mode): AuthFieldErrors {
@@ -217,16 +213,10 @@ export default function LoginScreen({ navigation }: Props) {
     if (!password) next.password = t('login.passwordRequired');
     else if (!passwordOk) next.password = t('login.passwordFormatHint');
     if (nextMode === 'signup') {
-      if (!nickname.trim()) next.nickname = t('login.nicknameRequired');
       if (!confirmPassword) next.confirmPassword = t('login.confirmPasswordRequired');
       else if (!confirmPasswordOk) next.confirmPassword = t('login.confirmPasswordMismatch');
     }
-    setTouched({
-      nickname: nextMode === 'signup',
-      email: true,
-      password: true,
-      confirmPassword: nextMode === 'signup',
-    });
+    setTouched({ email: true, password: true, confirmPassword: nextMode === 'signup' });
     setErrors(next);
     return next;
   }
@@ -252,7 +242,6 @@ export default function LoginScreen({ navigation }: Props) {
         const result = await signUpWithEmail({
           email: email.trim(),
           password,
-          nickname: nickname.trim(),
         });
         if (!token.isCurrent()) return;
         if (result?.status === 'verification_required') {
@@ -352,7 +341,7 @@ export default function LoginScreen({ navigation }: Props) {
     setResetSent(false);
     setResetCooldown(0);
     setErrors({});
-    setTouched({ nickname: false, email: false, password: false, confirmPassword: false });
+    setTouched({ email: false, password: false, confirmPassword: false });
   }
 
   function backToSignIn(): void {
@@ -413,19 +402,6 @@ export default function LoginScreen({ navigation }: Props) {
     );
   }
 
-  function renderCtaSurface(children: React.ReactNode): React.ReactNode {
-    return (
-      <LinearGradient
-        colors={[shade(accent, 0.2), accent]}
-        start={{ x: 0.08, y: 0 }}
-        end={{ x: 0.92, y: 1 }}
-        style={styles.ctaGradient}
-      >
-        {children}
-      </LinearGradient>
-    );
-  }
-
   function renderAuthPanel(panelMode: Mode, active: boolean): React.ReactNode {
     const panelSignUp = panelMode === 'signup';
     const panelEmailError = !email.trim()
@@ -443,39 +419,15 @@ export default function LoginScreen({ navigation }: Props) {
       : !confirmPasswordOk
         ? t('login.confirmPasswordMismatch')
         : null;
-    const panelNicknameError = !nickname.trim() ? t('login.nicknameRequired') : null;
     const panelCanSubmit = emailOk
       && passwordOk
-      && (!panelSignUp || (nicknameOk && confirmPasswordOk && termsAccepted));
+      && (!panelSignUp || confirmPasswordOk);
     const panelAction: AuthBusyAction = panelSignUp ? 'email_sign_up' : 'email_sign_in';
     const emailError = errorFor('email', panelEmailError);
     const passwordError = errorFor('password', panelPasswordError);
     const confirmError = errorFor('confirmPassword', panelConfirmError);
-    const nicknameError = errorFor('nickname', panelNicknameError);
-
     return (
       <View pointerEvents={active ? 'auto' : 'none'} style={styles.form}>
-        {panelSignUp ? (
-          <>
-            <Text style={styles.label}>{t('login.nickname')}</Text>
-            <View style={[styles.field, nicknameError && styles.fieldErrorBorder]}>
-              <AuthField
-                value={nickname}
-                onChangeText={(value) => changeField('nickname', value)}
-                onBlur={() => setTouched((current) => ({ ...current, nickname: true }))}
-                placeholder={t('login.nicknamePlaceholder')}
-                placeholderTextColor="rgba(235,235,245,0.46)"
-                keyboardAppearance="dark"
-                autoCapitalize="none"
-                autoCorrect={false}
-                accessibilityLabel={t('login.nickname')}
-                testID={active ? 'login-nickname' : undefined}
-              />
-            </View>
-            {nicknameError ? <Text style={styles.fieldError}>{nicknameError}</Text> : null}
-          </>
-        ) : null}
-
         <Text style={styles.label}>{t('login.email')}</Text>
         <View style={[styles.field, emailError && styles.fieldErrorBorder]}>
           <AuthField
@@ -533,46 +485,28 @@ export default function LoginScreen({ navigation }: Props) {
                 accessibilityLabel={t('login.confirmPassword')}
                 testID={active ? 'login-confirm-password' : undefined}
               />
-              {renderPasswordToggle(active, active ? 'login-confirm-password-toggle' : 'login-confirm-password-toggle-inactive')}
+              {confirmPasswordOk ? (
+                <Ionicons name="checkmark" size={21} color="#30d158" style={styles.revealButton} />
+              ) : (
+                <Pressable
+                  onPress={() => {
+                    if (!active || busy) return;
+                    selectionTick();
+                    setShowPassword((current) => !current);
+                  }}
+                  disabled={!active || busy}
+                  accessibilityRole="button"
+                  accessibilityLabel={showPassword ? t('login.hidePassword') : t('login.showPassword')}
+                  testID={active ? 'login-confirm-password-toggle' : undefined}
+                  style={styles.revealButton}
+                >
+                  <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={21} color="#fff" />
+                </Pressable>
+              )}
             </View>
-            {confirmError ? <Text style={styles.fieldError}>{confirmError}</Text> : null}
-            <Pressable
-              onPress={() => {
-                selectionTick();
-                setTermsAccepted((current) => !current);
-              }}
-              accessibilityRole="checkbox"
-              accessibilityLabel={t('login.signupAgreementA11y')}
-              accessibilityState={{ checked: termsAccepted }}
-              testID="login-signup-terms"
-              style={styles.signupAgreement}
-            >
-              <Ionicons
-                name={termsAccepted ? 'checkbox' : 'square-outline'}
-                size={25}
-                color={termsAccepted ? accent : 'rgba(235,235,245,0.72)'}
-                style={styles.signupAgreementIcon}
-              />
-              <Text style={styles.signupAgreementText}>
-                {t('login.signupAgreementPrefix')}
-                <Text
-                  onPress={() => termsUrl && void Linking.openURL(termsUrl)}
-                  accessibilityRole="link"
-                  style={styles.legalText}
-                >
-                  {t('login.terms')}
-                </Text>
-                {t('login.signupAgreementAnd')}
-                <Text
-                  onPress={() => privacyUrl && void Linking.openURL(privacyUrl)}
-                  accessibilityRole="link"
-                  style={styles.legalText}
-                >
-                  {t('login.privacy')}
-                </Text>
-                {t('login.signupAgreementSuffix')}
-              </Text>
-            </Pressable>
+            {errorFor('confirmPassword', panelConfirmError) ? (
+              <Text style={styles.fieldError}>{errorFor('confirmPassword', panelConfirmError)}</Text>
+            ) : null}
           </>
         ) : (
           <Pressable
@@ -601,23 +535,34 @@ export default function LoginScreen({ navigation }: Props) {
           disabled={!active || !panelCanSubmit || busy}
           testID={active ? 'login-submit' : undefined}
           accessibilityRole="button"
-          style={({ pressed }) => [
-            styles.cta,
+          accessibilityLabel={panelSignUp ? t('login.ctaSignUp') : t('login.ctaSignIn')}
+          native={{
+            label: panelSignUp ? t('login.ctaSignUp') : t('login.ctaSignIn'),
+            variant: 'glassProminent',
+            shape: 'capsule',
+            layout: 'fill',
+            height: 52,
+            tintColor: accent,
+            foregroundColor: '#060b14',
+          }}
+          style={[
             styles.primaryAction,
+            styles.nativeCta,
+            { backgroundColor: accent },
             (!panelCanSubmit || busy) && styles.ctaDisabled,
-            pressed && panelCanSubmit && styles.pressed,
           ]}
-        >
-          {renderCtaSurface(
-            busyAction === panelAction ? (
-              <ActivityIndicator color={colors.accentText} />
-            ) : (
-              <Text style={styles.ctaText}>
-                {panelSignUp ? t('login.ctaSignUp') : t('login.ctaSignIn')}
-              </Text>
-            ),
-          )}
-        </SafePressable>
+        />
+        {panelSignUp ? (
+          <View style={styles.signupLegal}>
+            <Text style={styles.signupLegalText}>
+              {t('login.signupAgreementPrefix')}{' '}
+              <Text onPress={() => termsUrl && void Linking.openURL(termsUrl)} accessibilityRole="link" style={styles.legalText}>{t('login.terms')}</Text>
+              {t('login.signupAgreementAnd')}
+              <Text onPress={() => privacyUrl && void Linking.openURL(privacyUrl)} accessibilityRole="link" style={styles.legalText}>{t('login.privacy')}</Text>
+              {t('login.signupAgreementSuffix')}
+            </Text>
+          </View>
+        ) : null}
       </View>
     );
   }
@@ -625,7 +570,6 @@ export default function LoginScreen({ navigation }: Props) {
   function renderReset(): React.ReactNode {
     return (
       <View style={styles.resetCard}>
-        <Text style={styles.resetTitle}>{t('login.resetTitle')}</Text>
         <Text style={styles.resetHint}>{t('login.resetHint')}</Text>
         <Text style={styles.label}>{t('login.email')}</Text>
         <View style={[styles.field, touched.email && !emailOk && styles.fieldErrorBorder]}>
@@ -670,27 +614,17 @@ export default function LoginScreen({ navigation }: Props) {
             pressed && emailOk && !busy && resetCooldown <= 0 && styles.pressed,
           ]}
         >
-          {renderCtaSurface(
-            busyAction === 'password_reset' ? (
-              <ActivityIndicator color={colors.accentText} />
-            ) : (
-              <Text style={styles.ctaText} numberOfLines={2} adjustsFontSizeToFit>
-                {resetSent ? t('login.resetResend') : t('login.resetSubmit')}
-              </Text>
-            ),
+          {busyAction === 'password_reset' ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.ctaText} numberOfLines={2} adjustsFontSizeToFit>
+              {resetSent ? t('login.resetResend') : t('login.resetSubmit')}
+            </Text>
           )}
         </SafePressable>
         {resetCooldown > 0 ? (
           <Text style={styles.cooldownText}>{t('login.resendIn', { seconds: resetCooldown })}</Text>
         ) : null}
-        <Pressable
-          onPress={backToSignIn}
-          accessibilityRole="button"
-          testID="login-back-to-sign-in"
-          style={styles.backLink}
-        >
-          <Text style={styles.backLinkText}>{t('login.backToSignIn')}</Text>
-        </Pressable>
       </View>
     );
   }
@@ -698,7 +632,7 @@ export default function LoginScreen({ navigation }: Props) {
   function renderPending(): React.ReactNode {
     return (
       <View style={styles.pendingCard}>
-              <Ionicons name="mail-outline" size={compact ? 36 : 42} color={accent} />
+              <Ionicons name="mail-outline" size={38} color={accent} />
         <Text style={styles.sectionTitle}>{t('login.verificationTitle')}</Text>
         <Text style={styles.pendingEmail}>{pendingEmail}</Text>
         <Text style={styles.resetHint}>{t('login.verificationPending')}</Text>
@@ -714,99 +648,18 @@ export default function LoginScreen({ navigation }: Props) {
           accessibilityRole="button"
           style={[styles.cta, (busy || resendCooldown > 0) && styles.ctaDisabled]}
         >
-          {renderCtaSurface(
-            busyAction === 'resend_confirmation' ? (
-              <ActivityIndicator color={colors.accentText} />
-            ) : (
-              <Text style={styles.ctaText}>
-                {resendCooldown > 0
-                  ? `${t('login.resendConfirmation')} (${resendCooldown})`
-                  : t('login.resendConfirmation')}
-              </Text>
-            ),
+          {busyAction === 'resend_confirmation' ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.ctaText}>
+              {resendCooldown > 0 ? `${t('login.resendConfirmation')} (${resendCooldown})` : t('login.resendConfirmation')}
+            </Text>
           )}
         </SafePressable>
         <Pressable onPress={backToSignIn} accessibilityRole="button" style={styles.backLink}>
           <Text style={styles.backLinkText}>{t('login.backToSignIn')}</Text>
         </Pressable>
       </View>
-    );
-  }
-
-  function renderLegalLinks(): React.ReactNode {
-    return (
-      <View style={styles.legalRow}>
-        <Pressable
-          onPress={() => privacyUrl && void Linking.openURL(privacyUrl)}
-          disabled={!privacyUrl}
-          accessibilityRole="link"
-          testID="login-privacy"
-        >
-          <Text style={[styles.legalText, !privacyUrl && styles.disabledText]}>{t('login.privacy')}</Text>
-        </Pressable>
-        <Text style={styles.legalDot}>·</Text>
-        <Pressable
-          onPress={() => termsUrl && void Linking.openURL(termsUrl)}
-          disabled={!termsUrl}
-          accessibilityRole="link"
-          testID="login-terms"
-        >
-          <Text style={[styles.legalText, !termsUrl && styles.disabledText]}>{t('login.terms')}</Text>
-        </Pressable>
-      </View>
-    );
-  }
-
-  function renderSocialOptions(): React.ReactNode {
-    return (
-      <>
-        <View style={styles.divider}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>{t('common.or')}</Text>
-          <View style={styles.dividerLine} />
-        </View>
-        <View style={styles.socialRow}>
-          <View style={styles.socialColumn}>
-            <Pressable
-              onPress={() => void runSocial('login.google', () => signInWithGoogle())}
-              disabled={busy}
-              accessibilityRole="button"
-              accessibilityLabel={t('login.google')}
-              testID="login-google"
-              style={({ pressed }) => [styles.socialIcon, busy && styles.ctaDisabled, pressed && !busy && styles.pressed]}
-            >
-              <GoogleGIcon size={34} />
-            </Pressable>
-            <Text style={styles.socialCaption}>{t('login.googleLabel')}</Text>
-          </View>
-          {appleAvailable ? (
-            <View style={styles.socialColumn}>
-              <Pressable
-                onPress={() => void runSocial('login.apple', () => signInWithApple())}
-                disabled={busy}
-                accessibilityRole="button"
-                accessibilityLabel={t('login.apple')}
-                testID="login-apple"
-                style={({ pressed }) => [styles.socialIcon, busy && styles.ctaDisabled, pressed && !busy && styles.pressed]}
-              >
-                <Ionicons name="logo-apple" size={34} color="#F5F7FB" />
-              </Pressable>
-              <Text style={styles.socialCaption}>{t('login.appleLabel')}</Text>
-            </View>
-          ) : null}
-        </View>
-        <Pressable
-          onPress={openGuestConfirm}
-          disabled={busy}
-          accessibilityRole="button"
-          accessibilityLabel={t('login.guest')}
-          testID="login-guest"
-          style={({ pressed }) => [styles.guestButton, busy && styles.ctaDisabled, pressed && styles.pressed]}
-        >
-          <Ionicons name="people-outline" size={29} color={accent} />
-          <Text style={styles.guestText}>{t('login.guest')}</Text>
-        </Pressable>
-      </>
     );
   }
 
@@ -824,51 +677,117 @@ export default function LoginScreen({ navigation }: Props) {
     </>
   );
 
-  const showBackChrome = resetMode || Boolean(pendingEmail);
-
   return (
-    <LinearGradient colors={[...AUTH_GRADIENT]} locations={[0, 0.35, 0.72, 1]} style={styles.fill}>
-      <View pointerEvents="none" style={styles.glowTop} />
-      <View pointerEvents="none" style={styles.glowBottom} />
-      <View style={[styles.langChrome, { top: insets.top + 12 }]}>
-        {showBackChrome ? (
-          <Pressable
-            onPress={backToSignIn}
-            accessibilityRole="button"
-            accessibilityLabel={t('common.back')}
-            testID="login-back"
-            hitSlop={8}
-            style={styles.backButton}
-          >
-            <Ionicons name="chevron-back" size={24} color="#F3F6FC" />
-            <Text style={styles.backButtonText}>{t('common.back')}</Text>
-          </Pressable>
-        ) : (
+    <View style={styles.fill}>
+      <MetalforgeBackground active={isFocused} />
+      {!resetMode ? (
+        <View
+          style={[styles.langChrome, { top: insets.top + 12 }]}
+          importantForAccessibility={blockingBusy ? 'no-hide-descendants' : 'auto'}
+          accessibilityElementsHidden={blockingBusy}
+        >
           <LanguagePicker variant="menu" />
-        )}
-      </View>
-      <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        </View>
+      ) : null}
+      {resetMode ? (
+        <View
+          style={[styles.resetBackChrome, { top: insets.top + 12 }]}
+          importantForAccessibility={blockingBusy ? 'no-hide-descendants' : 'auto'}
+          accessibilityElementsHidden={blockingBusy}
+        >
+          <SafePressable
+            actionId="login.reset_back"
+            screen="Login"
+            onPressAction={() => backToSignIn()}
+            disableWhileBusy={false}
+            native={{ label: t('common.back'), systemImage: 'chevron.left', shape: 'capsule', variant: 'glass', width: 78, height: 36 }}
+            accessibilityLabel={t('common.back')}
+            testID="login-reset-back"
+          />
+        </View>
+      ) : null}
+      <KeyboardAvoidingView
+        style={styles.fill}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        importantForAccessibility={blockingBusy ? 'no-hide-descendants' : 'auto'}
+        accessibilityElementsHidden={blockingBusy}
+      >
         <ScrollView
-          contentContainerStyle={[styles.content, { paddingTop: insets.top + (compact ? 16 : 24), paddingBottom: insets.bottom + (compact ? 16 : 28) }]}
+          contentContainerStyle={[styles.content, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 16 }]}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.screenColumn}>
-            <View style={[styles.brand, resetMode && styles.resetBrand]}>
-              <CrookIcon size={compact ? 44 : 64} color={accent} glow />
-              <Text style={styles.brandText}>{t('login.welcomeTitle')}</Text>
+          <View>
+            <View style={styles.header}>
+              <View style={styles.brand}>
+                <CrookIcon size={56} color={accent} />
+                <Text style={styles.title}>{resetMode ? t('login.forgotPassword') : 'Hither'}</Text>
+              </View>
             </View>
 
-            <View style={styles.mainPanel}>{content}</View>
+            {content}
 
-            {!pendingEmail && !resetMode ? renderSocialOptions() : null}
-            {resetMode ? <View style={styles.resetFooter}>{renderLegalLinks()}</View> : null}
-            {pendingEmail ? <View style={styles.pendingFooter}>{renderLegalLinks()}</View> : null}
-            {!pendingEmail && !resetMode ? <View style={styles.normalFooter}>{renderLegalLinks()}</View> : null}
+            {!pendingEmail && !resetMode && !isSignUp ? (
+              <>
+                <View style={styles.divider}>
+                  <View style={styles.dividerLine} />
+                  <Text style={styles.dividerText}>{t('common.or')}</Text>
+                  <View style={styles.dividerLine} />
+                </View>
+                <View style={styles.socialRow}>
+                  <View style={styles.socialColumn}>
+                    <NativeGlassButton
+                      label="G"
+                      onPress={() => void runSocial('login.google', () => signInWithGoogle())}
+                      disabled={busy}
+                      accessibilityLabel={t('login.google')}
+                      testID="login-google"
+                      size={64}
+                      shape="circle"
+                      variant="glass"
+                      foregroundColor="#fff"
+                      style={[styles.socialIcon, busy && styles.ctaDisabled]}
+                    />
+                    <Text style={styles.socialCaption}>{t('login.google')}</Text>
+                  </View>
+                  {appleAvailable ? (
+                    <View style={styles.socialColumn}>
+                      <NativeGlassButton
+                        systemImage="apple.logo"
+                        onPress={() => void runSocial('login.apple', () => signInWithApple())}
+                        disabled={busy}
+                        accessibilityLabel={t('login.apple')}
+                        testID="login-apple"
+                        size={64}
+                        shape="circle"
+                        variant="glass"
+                        foregroundColor="#fff"
+                        style={[styles.socialIcon, busy && styles.ctaDisabled]}
+                      />
+                      <Text style={styles.socialCaption}>{t('login.apple')}</Text>
+                    </View>
+                  ) : null}
+                </View>
+                <NativeGlassButton
+                  label={t('login.guest')}
+                  onPress={openGuestConfirm}
+                  disabled={busy}
+                  accessibilityLabel={t('login.guest')}
+                  testID="login-guest"
+                  shape="capsule"
+                  layout="fit"
+                  height={44}
+                  variant="glass"
+                  style={[styles.guestButton, busy && styles.ctaDisabled]}
+                />
+              </>
+            ) : null}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <BlockingAuthOverlay visible={blockingBusy} color={accent} />
 
       <Modal visible={guestConfirmVisible} transparent animationType="fade" onRequestClose={cancelGuest}>
         <View style={styles.modalScrim}>
@@ -890,160 +809,58 @@ export default function LoginScreen({ navigation }: Props) {
           </View>
         </View>
       </Modal>
-    </LinearGradient>
+    </View>
   );
 }
 
-const makeStyles = (accent: string, compact = false) =>
+const makeStyles = (accent: string) =>
   StyleSheet.create({
     fill: { flex: 1 },
-    glowTop: {
-      position: 'absolute',
-      width: 330,
-      height: 330,
-      borderRadius: 165,
-      top: -210,
-      right: -100,
-      backgroundColor: 'rgba(66, 116, 181, 0.13)',
-    },
-    glowBottom: {
-      position: 'absolute',
-      width: 280,
-      height: 280,
-      borderRadius: 140,
-      bottom: -170,
-      left: -130,
-      backgroundColor: 'rgba(37, 77, 132, 0.12)',
-    },
     langChrome: { position: 'absolute', left: 20, zIndex: 10 },
+    resetBackChrome: { position: 'absolute', left: 20, zIndex: 10 },
     content: { flexGrow: 1, paddingHorizontal: 24 },
-    screenColumn: { width: '100%', maxWidth: 680, alignSelf: 'center', flexGrow: 1 },
-    brand: {
-      alignSelf: 'center',
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 12,
-      marginTop: compact ? 12 : 68,
-      marginBottom: compact ? 12 : 44,
-    },
-    resetBrand: { marginTop: compact ? 12 : 84, marginBottom: compact ? 12 : 42 },
-    brandText: { color: '#F4F7FC', fontSize: compact ? 30 : 37, fontWeight: '700', letterSpacing: -0.8 },
-    mainPanel: { width: '100%' },
+    header: { alignItems: 'center', marginBottom: 22 },
+    brand: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    title: { fontSize: 34, fontWeight: '800', color: '#fff' },
     formViewport: { width: '100%' },
     form: { width: '100%' },
-    label: {
-      fontSize: compact ? 14 : 16,
-      lineHeight: compact ? 18 : 22,
-      fontWeight: '500',
-      color: 'rgba(226, 233, 245, 0.72)',
-      marginTop: compact ? 4 : 20,
-      marginBottom: compact ? 2 : 9,
-      marginLeft: 2,
-    },
-    field: {
-      minHeight: compact ? 52 : 62,
-      borderRadius: compact ? 15 : 18,
-      justifyContent: 'center',
-      paddingHorizontal: 6,
-      backgroundColor: 'rgba(255,255,255,0.075)',
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: 'rgba(220, 230, 246, 0.22)',
-      flexDirection: 'row',
-      alignItems: 'center',
-    },
-    fieldErrorBorder: { borderColor: 'rgba(255, 119, 119, 0.84)' },
-    revealButton: { minWidth: 48, minHeight: compact ? 44 : 52, alignItems: 'center', justifyContent: 'center' },
-    fieldError: { marginTop: 6, marginLeft: 3, color: '#FF9B9B', fontSize: 13, lineHeight: 18 },
-    formError: { marginTop: 12, color: '#FF9B9B', fontSize: 13, lineHeight: 18, textAlign: 'center' },
-    cta: {
-      minHeight: compact ? 52 : 62,
-      borderRadius: compact ? 26 : 31,
-      marginTop: compact ? 10 : 24,
-      backgroundColor: 'transparent',
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: accentMix(accent, 55),
-      width: '100%',
-      overflow: 'hidden',
-    },
-    ctaGradient: {
-      width: '100%',
-      minHeight: compact ? 52 : 62,
-      borderRadius: compact ? 26 : 31,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 8,
-    },
-    primaryAction: { width: '100%', alignSelf: 'center' },
-    resetAction: { width: '100%', alignSelf: 'center', marginTop: compact ? 24 : 42 },
-    // Disabled is enforced by Pressable/accessibilityState; keep the amber
-    // surface bright so validation does not turn the CTA into muddy brown.
-    ctaDisabled: { opacity: 1 },
-    pressed: { opacity: 0.82 },
-    ctaText: { fontSize: compact ? 17 : 19, fontWeight: '700', color: '#10213A' },
-    forgot: { alignSelf: 'flex-end', minHeight: compact ? 32 : 44, justifyContent: 'center', paddingLeft: 16 },
-    forgotText: { fontSize: compact ? 14 : 16, color: 'rgba(232,238,248,0.78)', textDecorationLine: 'underline' },
-    divider: { flexDirection: 'row', alignItems: 'center', gap: compact ? 12 : 14, marginTop: compact ? 12 : 36 },
-    dividerLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(224,232,246,0.27)' },
-    dividerText: { fontSize: compact ? 14 : 17, color: 'rgba(224,232,246,0.72)' },
-    socialIcon: {
-      width: compact ? 56 : 72,
-      height: compact ? 56 : 72,
-      borderRadius: compact ? 28 : 36,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: 'rgba(255,255,255,0.055)',
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: 'rgba(220,230,246,0.36)',
-    },
-    socialCaption: { textAlign: 'center', fontSize: compact ? 14 : 16, color: 'rgba(232,238,248,0.82)', marginTop: compact ? 4 : 11 },
-    socialRow: { minHeight: compact ? 84 : 112, marginTop: compact ? 6 : 22, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', gap: compact ? 28 : 40 },
-    socialColumn: { alignItems: 'center', minWidth: 86 },
-    guestButton: {
-      alignSelf: 'center',
-      width: '100%',
-      minHeight: compact ? 52 : 62,
-      borderRadius: compact ? 26 : 31,
-      flexDirection: 'row',
-      gap: compact ? 10 : 12,
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginTop: compact ? 8 : 25,
-      backgroundColor: 'rgba(255,255,255,0.065)',
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: 'rgba(220,230,246,0.3)',
-      paddingHorizontal: 12,
-    },
-    guestText: { fontSize: compact ? 17 : 19, fontWeight: '600', color: '#F0F4FB' },
-    legalRow: {
-      minHeight: compact ? 40 : 44,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: compact ? 14 : 18,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: 'rgba(224,232,246,0.18)',
-      paddingTop: compact ? 6 : 18,
-    },
-    normalFooter: { marginTop: compact ? 4 : 26, marginBottom: 4 },
-    resetFooter: { marginTop: compact ? 14 : 116, marginBottom: 6 },
-    pendingFooter: { marginTop: compact ? 20 : 48, marginBottom: 8 },
-    legalText: { fontSize: compact ? 13 : 15, color: 'rgba(224,232,246,0.68)', textDecorationLine: 'underline' },
-    legalDot: { color: 'rgba(224,232,246,0.56)', fontSize: compact ? 13 : 15 },
+    label: { fontSize: 12, fontWeight: '600', letterSpacing: 0.6, color: 'rgba(235,235,245,0.45)', marginTop: 6, marginBottom: 4, marginLeft: 4 },
+    field: { height: 50, borderRadius: 18, justifyContent: 'center', paddingHorizontal: 14, backgroundColor: 'rgba(10,16,28,0.65)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.22)', flexDirection: 'row', alignItems: 'center' },
+    fieldErrorBorder: { borderColor: 'rgba(255,119,119,0.84)' },
+    revealButton: { minWidth: 44, height: 50, alignItems: 'center', justifyContent: 'center' },
+    fieldError: { marginTop: 6, marginLeft: 4, color: '#ff8f8f', fontSize: 13, lineHeight: 18 },
+    formError: { marginTop: 10, marginBottom: 2, color: '#ff8f8f', fontSize: 13, lineHeight: 18, textAlign: 'center' },
+    cta: { height: 52, borderRadius: 26, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 10, backgroundColor: accent, borderWidth: StyleSheet.hairlineWidth, borderColor: accentMix(accent, 55), width: '100%' },
+    primaryAction: { width: '100%', alignSelf: 'center', marginTop: 18 },
+    nativeCta: { minHeight: 52, borderRadius: 26, justifyContent: 'center' },
+    resetAction: { width: '100%', alignSelf: 'center' },
+    ctaDisabled: { opacity: 0.4 },
+    pressed: { opacity: 0.85 },
+    ctaText: { fontSize: 17, fontWeight: '600', color: '#fff' },
+    forgot: { alignSelf: 'flex-end', minHeight: 44, justifyContent: 'center', paddingLeft: 12 },
+    forgotText: { fontSize: 13, color: 'rgba(235,235,245,0.72)', textDecorationLine: 'underline' },
+    divider: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 12 },
+    dividerLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(255,255,255,0.18)' },
+    dividerText: { fontSize: 12, letterSpacing: 1, color: 'rgba(235,235,245,0.4)' },
+    socialIcon: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(10,16,28,0.65)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.22)' },
+    socialCaption: { textAlign: 'center', fontSize: 12, color: 'rgba(235,235,245,0.45)', marginTop: 8, maxWidth: 125 },
+    socialRow: { minHeight: 78, marginTop: 10, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', gap: 32 },
+    socialColumn: { alignItems: 'center' },
+    guestButton: { alignSelf: 'center', minHeight: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', marginTop: 16, backgroundColor: 'rgba(10,16,28,0.65)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.22)', paddingHorizontal: 26 },
+    legalText: { fontSize: 12, color: 'rgba(235,235,245,0.6)', textDecorationLine: 'underline' },
+    legalDot: { color: 'rgba(235,235,245,0.4)' },
     disabledText: { opacity: 0.5 },
-    resetCard: { width: '100%' },
-    resetTitle: { fontSize: compact ? 32 : 39, lineHeight: compact ? 39 : 47, fontWeight: '700', color: '#F4F7FC', textAlign: 'center' },
-    resetHint: { fontSize: compact ? 16 : 18, lineHeight: compact ? 23 : 28, color: 'rgba(226,233,245,0.72)', marginTop: compact ? 10 : 17, textAlign: 'center' },
-    resetHelp: { fontSize: 14, lineHeight: 21, color: 'rgba(226,233,245,0.64)', marginTop: 12, textAlign: 'center' },
-    cooldownText: { fontSize: 13, color: 'rgba(226,233,245,0.6)', textAlign: 'center', marginTop: 8 },
-    successText: { fontSize: 15, lineHeight: 22, color: '#A2E7B8', marginTop: 18, textAlign: 'center' },
-    backLink: { alignSelf: 'center', minHeight: compact ? 44 : 50, justifyContent: 'center', paddingHorizontal: 16, marginTop: compact ? 8 : 16 },
-    backLinkText: { fontSize: compact ? 17 : 18, color: 'rgba(241,245,252,0.9)', textDecorationLine: 'underline' },
-    signupAgreement: { flexDirection: 'row', alignItems: 'flex-start', marginTop: compact ? 6 : 17, paddingHorizontal: 3 },
-    signupAgreementIcon: { width: compact ? 26 : 32, marginTop: -2 },
-    signupAgreementText: { flex: 1, fontSize: compact ? 13 : 14, lineHeight: compact ? 17 : 21, color: 'rgba(226,233,245,0.69)' },
+    resetCard: { minHeight: 0 },
+    sectionTitle: { fontSize: 20, fontWeight: '700', color: '#fff', marginTop: 22 },
+    resetHint: { fontSize: 14, lineHeight: 20, color: 'rgba(235,235,245,0.65)', marginTop: 10 },
+    resetHelp: { fontSize: 13, lineHeight: 19, color: 'rgba(235,235,245,0.65)', marginTop: 8 },
+    cooldownText: { fontSize: 12, color: 'rgba(235,235,245,0.55)', textAlign: 'center', marginTop: 6 },
+    signupLegal: { marginTop: 10, paddingHorizontal: 8 },
+    signupLegalText: { fontSize: 12, lineHeight: 18, textAlign: 'center', color: 'rgba(235,235,245,0.58)' },
+    successText: { fontSize: 14, lineHeight: 20, color: '#9de7b5', marginTop: 14 },
+    backLink: { alignSelf: 'center', minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, marginTop: 10 },
+    backLinkText: { fontSize: 14, color: 'rgba(235,235,245,0.72)', textDecorationLine: 'underline' },
     pendingCard: { minHeight: 0, alignItems: 'center', paddingTop: 20 },
-    sectionTitle: { fontSize: 28, lineHeight: 35, fontWeight: '700', color: '#F4F7FC', marginTop: 21, textAlign: 'center' },
     pendingEmail: { fontSize: 17, fontWeight: '600', color: '#F4F7FC', marginTop: 12 },
     backButton: {
       minHeight: 46,

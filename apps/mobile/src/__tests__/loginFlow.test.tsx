@@ -173,19 +173,15 @@ describe('LoginScreen email flows', () => {
     expect(navigation.replace).toHaveBeenCalledWith('RoleSelect');
   });
 
-  it('requires the terms checkbox before submitting registration', async () => {
-    const { getByTestId } = render(<LoginScreen navigation={navigation as never} route={{} as never} />);
+  it('submits registration without a nickname or checkbox', async () => {
+    const { getByTestId, queryByTestId } = render(<LoginScreen navigation={navigation as never} route={{} as never} />);
     fireEvent.press(getByTestId('login-tab-signup'));
-    await waitFor(() => expect(getByTestId('login-nickname')).toBeTruthy());
     fireEvent.changeText(getByTestId('login-email'), ' new@example.com ');
     fireEvent.changeText(getByTestId('login-password'), 'test-password');
     fireEvent.changeText(getByTestId('login-confirm-password'), 'test-password');
-    fireEvent.changeText(getByTestId('login-nickname'), ' Test User ');
 
-    expect(getByTestId('login-signup-terms').props.accessibilityState?.checked).toBe(false);
-    expect(getByTestId('login-submit').props.accessibilityState?.disabled).toBe(true);
-    fireEvent.press(getByTestId('login-signup-terms'));
-    expect(getByTestId('login-signup-terms').props.accessibilityState?.checked).toBe(true);
+    expect(queryByTestId('login-nickname')).toBeNull();
+    expect(queryByTestId('login-signup-terms')).toBeNull();
     expect(getByTestId('login-submit').props.accessibilityState?.disabled).toBe(false);
 
     await act(async () => {
@@ -195,7 +191,6 @@ describe('LoginScreen email flows', () => {
     expect(mockSignUpWithEmail).toHaveBeenCalledWith({
       email: 'new@example.com',
       password: 'test-password',
-      nickname: 'Test User',
     });
     expect(navigation.replace).toHaveBeenCalledWith('RoleSelect');
   });
@@ -249,12 +244,9 @@ describe('LoginScreen email flows', () => {
     });
     const { getByTestId, getByText } = render(<LoginScreen navigation={navigation as never} route={{} as never} />);
     fireEvent.press(getByTestId('login-tab-signup'));
-    await waitFor(() => expect(getByTestId('login-nickname')).toBeTruthy());
     fireEvent.changeText(getByTestId('login-email'), 'pending@example.com');
     fireEvent.changeText(getByTestId('login-password'), 'test-password');
     fireEvent.changeText(getByTestId('login-confirm-password'), 'test-password');
-    fireEvent.changeText(getByTestId('login-nickname'), 'Pending User');
-    fireEvent.press(getByTestId('login-signup-terms'));
 
     await act(async () => {
       fireEvent.press(getByTestId('login-submit'));
@@ -272,7 +264,6 @@ describe('LoginScreen email flows', () => {
     const { getByTestId, getByText } = render(<LoginScreen navigation={navigation as never} route={{} as never} />);
     fireEvent.changeText(getByTestId('login-email'), 'reset@example.com');
     fireEvent.press(getByTestId('login-forgot-password'));
-    expect(getByText('login.resetTitle')).toBeTruthy();
     expect(getByText('login.resetHint')).toBeTruthy();
     await act(async () => {
       fireEvent.press(getByTestId('login-reset-submit'));
@@ -300,10 +291,10 @@ describe('LoginScreen email flows', () => {
     );
     fireEvent.press(getByTestId('login-forgot-password'));
 
-    expect(getByTestId('login-back')).toBeTruthy();
+    expect(getByTestId('login-reset-back')).toBeTruthy();
     expect(getByTestId('login-reset-email')).toBeTruthy();
     expect(getByTestId('login-reset-submit')).toBeTruthy();
-    expect(getByTestId('login-back-to-sign-in')).toBeTruthy();
+    expect(queryByTestId('login-back-to-sign-in')).toBeNull();
     expect(queryByTestId('login-reset-google')).toBeNull();
     expect(getByText('login.privacy')).toBeTruthy();
     expect(getByText('login.terms')).toBeTruthy();

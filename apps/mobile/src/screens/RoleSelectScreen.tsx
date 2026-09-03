@@ -1,28 +1,26 @@
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
-  Modal,
   Platform,
-  Pressable,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useIsFocused } from '@react-navigation/native';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useTheme } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
 import { lightTap } from '../utils/haptics';
 import { logEvent } from '../utils/activityLog';
 import { runUiAction } from '../utils/uiAction';
-import { confirmDeleteAccount } from '../utils/deleteAccount';
 import CrookIcon from '../components/CrookIcon';
 import LanguagePicker from '../components/LanguagePicker';
+import NativeGlassButton from '../components/NativeGlassButton';
+import NativeRoleActionButton from '../components/NativeRoleActionButton';
+import NativeTeamsButton from '../components/NativeTeamsButton';
+import MetalforgeBackground from '../components/MetalforgeBackground';
 import { useSession } from '../state/SessionContext';
 import {
   getCachedMyJoinedGroups,
@@ -33,31 +31,23 @@ import Animated, { FadeIn, ZoomIn } from 'react-native-reanimated';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RoleSelect'>;
 
-/**
- * RoleSelect sits on a dark gradient mid-tone ≈ #0e1622.
- * Android composites translucent rounded fills + elevation/outline as a dark
- * “black frame” — use solid pre-blended fills there instead of low-alpha rgba.
- */
+// Keep Android's opaque fallback fills; iOS renders the native glass tile.
 const IS_ANDROID = Platform.OS === 'android';
-const CHROME_FILL = IS_ANDROID ? '#1c2432' : 'rgba(255,255,255,0.08)';
-const CHROME_BORDER = IS_ANDROID ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.18)';
 const JOIN_FILL = IS_ANDROID ? '#1c2432' : 'rgba(255,255,255,0.08)';
-const JOIN_BORDER = IS_ANDROID ? 'rgba(255,255,255,0.24)' : 'rgba(255,255,255,0.2)';
-const MY_TEAMS_FILL = IS_ANDROID ? '#242c3a' : 'rgba(255,255,255,0.12)';
 
 export default function RoleSelectScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
+  const isFocused = useIsFocused();
   const { colors } = useTheme();
   const { t } = useTranslation();
   const accent = colors.accent;
-  const { user, signOut, deleteAccount } = useSession();
+  const { user, signOut } = useSession();
 
   // Paint from in-memory cache immediately; refresh in background without
   // waiting for the full (profiles) path.
   const cached = user ? getCachedMyJoinedGroups(user.id) : null;
   const [joinedGroups, setJoinedGroups] = useState<JoinedGroupInfo[]>(cached ?? []);
   const [groupsLoading, setGroupsLoading] = useState(!!user && !cached);
-  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -120,25 +110,25 @@ export default function RoleSelectScreen({ navigation }: Props) {
   }
 
   return (
-    <LinearGradient
-      colors={['#1f3050', '#0e1622', '#080b12']}
-      locations={[0, 0.52, 1]}
-      style={styles.fill}
-    >
+    <View style={styles.fill}>
+      <MetalforgeBackground active={isFocused} />
       <View style={[styles.leftChrome, { top: insets.top + 12 }]}>
         {navigation.canGoBack() ? (
-          <Pressable
+          <NativeGlassButton
             onPress={() => navigation.goBack()}
-            accessibilityRole="button"
-            android_ripple={IS_ANDROID ? { color: 'transparent' } : undefined}
-            style={[styles.back, { backgroundColor: CHROME_FILL, borderColor: CHROME_BORDER }]}
-          >
-            <Ionicons name="chevron-back" size={22} color="rgba(255,255,255,0.7)" />
-          </Pressable>
+            systemImage="chevron.left"
+            size={36}
+            shape="capsule"
+            variant="glass"
+            accessibilityLabel={t('common.back')}
+            style={styles.back}
+          />
         ) : null}
         <LanguagePicker variant="menu" />
       </View>
-      <Pressable
+      <NativeGlassButton
+        label={t('settings.signOut')}
+        systemImage="rectangle.portrait.and.arrow.right"
         onPress={() => Alert.alert(
           t('settings.signOutTitle'),
           t('settings.signOutMsg'),
@@ -151,14 +141,11 @@ export default function RoleSelectScreen({ navigation }: Props) {
             },
           ],
         )}
-        accessibilityRole="button"
         accessibilityLabel={t('settings.signOut')}
-        android_ripple={IS_ANDROID ? { color: 'transparent' } : undefined}
-        style={[styles.logout, { top: insets.top + 12, backgroundColor: CHROME_FILL, borderColor: CHROME_BORDER }]}
-      >
-        <Ionicons name="log-out-outline" size={20} color="rgba(255,255,255,0.8)" />
-        <Text style={styles.logoutText}>{t('settings.signOut')}</Text>
-      </Pressable>
+        shape="capsule"
+        variant="glass"
+        style={[styles.logout, { top: insets.top + 12 }]}
+      />
 
       <View
         style={[
@@ -169,7 +156,6 @@ export default function RoleSelectScreen({ navigation }: Props) {
         <Animated.View entering={ZoomIn.duration(800).springify()} style={styles.headerArea}>
           <CrookIcon size={96} color={accent} glow style={styles.logo} />
           <Text style={styles.title}>Hither</Text>
-          <Text style={styles.tagline}>{t('role.tagline')}</Text>
         </Animated.View>
 
         <View style={{ height: 56 }} />
@@ -177,23 +163,25 @@ export default function RoleSelectScreen({ navigation }: Props) {
         <View style={styles.actionArea}>
           {/* Create / join stay fixed — no slide-up entrance. */}
           <View style={styles.actionRow}>
-            <Pressable
+            <NativeRoleActionButton
+              label={t('role.lead')}
+              systemImage="person.2.badge.plus"
               onPress={() => { lightTap(); logEvent('role_select', { role: 'leader' }); navigation.navigate('Auth', { role: 'leader' }); }}
-              android_ripple={IS_ANDROID ? { color: 'transparent' } : undefined}
-              style={[styles.actionTile, { backgroundColor: accent, borderColor: accent }]}
-            >
-              <CrookIcon size={32} color="#fff" />
-              <Text style={styles.actionTileText}>{t('role.lead')}</Text>
-            </Pressable>
+              accessibilityLabel={t('role.lead')}
+              testID="role-create"
+              accent={accent}
+              style={styles.actionTile}
+            />
 
-            <Pressable
+            <NativeRoleActionButton
+              label={t('role.join')}
+              systemImage="keypad"
               onPress={() => { lightTap(); logEvent('role_select', { role: 'follower' }); navigation.navigate('Auth', { role: 'follower' }); }}
-              android_ripple={IS_ANDROID ? { color: 'transparent' } : undefined}
-              style={[styles.actionTile, { backgroundColor: JOIN_FILL, borderColor: JOIN_BORDER }]}
-            >
-              <Ionicons name="keypad" size={32} color="#fff" />
-              <Text style={styles.actionTileText}>{t('role.join')}</Text>
-            </Pressable>
+              accessibilityLabel={t('role.join')}
+                  testID="role-join"
+                  accent={IS_ANDROID ? JOIN_FILL : '#172338'}
+                  style={styles.actionTile}
+                />
           </View>
 
           {reserveMyTeamsSlot && (
@@ -201,16 +189,14 @@ export default function RoleSelectScreen({ navigation }: Props) {
               <View style={styles.myTeamsSpacer} />
               {showMyTeams ? (
                 <Animated.View entering={FadeIn.duration(400)}>
-                  <TouchableOpacity
-                    activeOpacity={0.7}
+                  <NativeTeamsButton
+                    label={t('role.myTeams')}
+                    count={joinedGroups.length}
                     onPress={() => { lightTap(); navigation.navigate('MyTeams', { initialGroups: joinedGroups }); }}
-                    style={[styles.ctaMyTeams, { backgroundColor: MY_TEAMS_FILL }]}
-                  >
-                    <Ionicons name="people-outline" size={20} color={accent} />
-                    <Text style={styles.ctaMyTeamsText}>
-                      {t('role.myTeams', { count: joinedGroups.length })}
-                    </Text>
-                  </TouchableOpacity>
+                    accessibilityLabel={t('role.myTeams', { count: joinedGroups.length })}
+                    testID="role-my-teams"
+                    style={styles.ctaMyTeams}
+                  />
                 </Animated.View>
               ) : (
                 <View style={styles.myTeamsSlot} />
@@ -218,58 +204,17 @@ export default function RoleSelectScreen({ navigation }: Props) {
             </>
           )}
 
-          <Animated.View entering={FadeIn.duration(600).delay(300)}>
-            <Text style={[styles.footer, { marginTop: 16 }]}>{t('role.footer')}</Text>
-          </Animated.View>
-
-          {user ? (
-            <Pressable
-              onPress={() =>
-                confirmDeleteAccount({
-                  t,
-                  actionId: 'role_select.delete_account',
-                  screen: 'RoleSelect',
-                  deleteAccount,
-                  onBusyChange: setDeleting,
-                  onDeleted: () => {
-                    navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
-                  },
-                })
-              }
-              accessibilityRole="button"
-              accessibilityLabel={t('account.delete')}
-              style={styles.deleteAccount}
-            >
-              <Text style={styles.deleteAccountText}>{t('account.delete')}</Text>
-            </Pressable>
-          ) : null}
         </View>
 
         {/* Leftover height stays below actions — keeps create/join ↔ my-teams distance fixed. */}
         <View style={styles.bottomFlex} />
       </View>
-      <Modal
-        visible={deleting}
-        transparent
-        animationType="none"
-        onRequestClose={() => undefined}
-      >
-        <View style={styles.deleteLoadingScrim} testID="account-delete-loading" accessibilityRole="progressbar">
-          <ActivityIndicator size="large" color={accent} />
-        </View>
-      </Modal>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
-  deleteLoadingScrim: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.58)',
-  },
   leftChrome: {
     position: 'absolute',
     left: 20,
@@ -279,34 +224,15 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   back: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-    overflow: 'hidden',
-    // elevation:0 — translucent rounded chrome must not cast Android shadow frames
-    elevation: 0,
+    width: 36,
+    height: 36,
   },
   logout: {
     position: 'absolute',
     right: 20,
-    minHeight: 44,
-    paddingHorizontal: 12,
-    borderRadius: 22,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    borderWidth: StyleSheet.hairlineWidth,
-    overflow: 'hidden',
-    elevation: 0,
+    minHeight: 36,
+    paddingHorizontal: 14,
     zIndex: 10,
-  },
-  logoutText: {
-    color: 'rgba(255,255,255,0.8)',
-    fontSize: 14,
-    fontWeight: '600',
   },
   content: {
     flex: 1,
@@ -325,14 +251,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     marginTop: 16,
   },
-  tagline: {
-    fontSize: 17,
-    lineHeight: 24,
-    textAlign: 'center',
-    color: 'rgba(235,235,245,0.6)',
-    marginTop: 12,
-    maxWidth: 260,
-  },
   actionArea: {
     width: '100%',
     alignItems: 'center',
@@ -344,57 +262,21 @@ const styles = StyleSheet.create({
   },
   actionTile: {
     flex: 1,
-    aspectRatio: 1.2,
-    borderRadius: 24,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-    // Clip ripple + kill Android elevation outline on rounded tiles.
+    aspectRatio: 1,
+    height: 172,
+    borderRadius: 30,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.22)',
     overflow: 'hidden',
     elevation: 0,
-  },
-  actionTileText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#fff',
   },
   /** Fixed far gap between primary tiles and the my-teams CTA. */
   myTeamsSpacer: { height: 64 },
-  ctaMyTeams: {
-    minHeight: 54,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 24,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    overflow: 'hidden',
-    elevation: 0,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.15)',
-  },
+  ctaMyTeams: { minHeight: 50, paddingHorizontal: 32, borderRadius: 25 },
   /** Same height as ctaMyTeams so load → show keeps the far gap stable. */
   myTeamsSlot: {
     minHeight: 54,
     alignSelf: 'stretch',
-  },
-  ctaMyTeamsText: { fontSize: 15, fontWeight: '600', color: '#fff' },
-  footer: {
-    fontSize: 13,
-    color: 'rgba(235,235,245,0.4)',
-  },
-  deleteAccount: {
-    marginTop: 20,
-    minHeight: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-  },
-  deleteAccountText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: 'rgba(255,107,107,0.9)',
   },
   bottomFlex: { flex: 1 },
 });

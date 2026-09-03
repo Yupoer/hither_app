@@ -19,7 +19,8 @@ const packageConfig = JSON.parse(read('apps/mobile/package.json')) as {
 
 describe('auth overhaul contract', () => {
   it('returns verification pending for unconfirmed email sign-up', () => {
-    expect(authFlow).toContain("data: { nickname: trimmed }");
+    expect(authFlow).not.toContain("data: { nickname: trimmed }");
+    expect(authFlow).toContain('emailRedirectTo: AUTH_CALLBACK_URL');
     expect(authFlow).toContain("data.user.identities.length === 0");
     expect(authFlow).toContain("status: 'verification_required'");
     expect(authFlow).toContain("status: 'signed_in'");
@@ -63,26 +64,20 @@ describe('auth overhaul contract', () => {
     expect(login).not.toContain('translateX');
     expect(login).toContain('SOCIAL_AUTH_TIMEOUT_MS = 120_000');
     expect(login).toContain('timeoutMs: SOCIAL_AUTH_TIMEOUT_MS');
-    expect(login).toContain('minHeight: compact ? 52 : 62');
     expect(authFieldIos).toContain("from 'react-native'");
     expect(authFieldIos).toContain('<TextInput');
     expect(login).toContain("primaryAction: { width: '100%'");
-    expect(login).toContain("width: '100%',\n      minHeight: compact ? 52 : 62");
+    expect(login).toContain("guestButton: { alignSelf: 'center'");
     expect(login).toContain("resetAction: { width: '100%'");
-    expect(login).toContain('testID="login-signup-terms"');
-    expect(login).toContain('termsAccepted');
-    expect(login).toContain("t('login.resetTitle')");
-    expect(login).toContain("from '../components/GoogleGIcon'");
-    expect(login).not.toContain('login-reset-google');
+    expect(login).not.toContain('testID="login-signup-terms"');
+    expect(login).not.toContain('termsAccepted');
+    expect(login).toContain('BlockingAuthOverlay');
     expect(googleGIcon).toContain("require('../../assets/google-g.png')");
     expect(existsSync(join(root, 'apps/mobile/assets/google-g.png'))).toBe(true);
     expect(modeSelector).toContain("width: '66.667%'");
-    expect(modeSelectorIos).toContain("width: '66.667%'");
-    expect(modeSelector).toContain('height: 32');
-    expect(modeSelectorIos).toContain('height: 32');
-    expect(modeSelector).toContain('transitionDuration: reducedMotion ? 0 : 180');
-    expect(modeSelectorIos).toContain('transitionDuration: reducedMotion ? 0 : 180');
-    expect(zh).toContain("'login.signupAgreementPrefix': '註冊即表示同意'");
+    expect(modeSelectorIos).toContain('<Picker');
+    expect(modeSelectorIos).toContain("pickerStyle('segmented')");
+    expect(zh).toContain("'login.signupAgreementPrefix': '點擊開始即表示同意'");
     expect(zh).not.toContain('註冊即表示你同意');
   });
 });
