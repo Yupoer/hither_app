@@ -36,6 +36,12 @@ export type NativeGlassButtonProps = {
   height?: number;
   /** Native SwiftUI control size; used for icon-only fallbacks too. */
   controlSize?: 'regular' | 'large' | 'extraLarge';
+  fontSize?: number;
+  fontWeight?: 'regular' | 'medium' | 'semibold' | 'bold';
+  imageSize?: number;
+  spacing?: number;
+  iconOffset?: { x?: number; y?: number };
+  centerText?: boolean;
 };
 
 type FallbackIconProps = { name: string; size: number; color: string };
@@ -72,6 +78,8 @@ const FALLBACK_ICON: Record<string, string> = {
   'rectangle.portrait.and.arrow.right': 'log-out-outline',
   'rectangle.portrait.and.arrow.forward': 'log-out-outline',
   'apple.logo': 'logo-apple',
+  person: 'person-outline',
+  'person.fill': 'person',
 };
 
 /** Android/older-runtime fallback for the iOS SwiftUI glass button. */
@@ -94,17 +102,22 @@ export default function NativeGlassButton({
   height,
   controlSize = 'regular',
   foregroundColor = '#fff',
+  fontSize,
+  fontWeight = 'semibold',
+  imageSize,
+  spacing = 8,
 }: NativeGlassButtonProps) {
   const icon = systemImage ? FALLBACK_ICON[systemImage] ?? 'ellipse-outline' : null;
   const Icon = icon ? getFallbackIcon() : null;
   const defaultControlSize = controlSize === 'extraLarge' ? 78 : controlSize === 'large' ? 64 : 52;
   const iconOnly = Boolean(systemImage && !label);
   const fixedSize = size ?? (layout === 'square' || iconOnly ? defaultControlSize : undefined);
-  const iconSize = Math.max(26, Math.min(34, Math.round((fixedSize ?? 52) * 0.36)));
+  const resolvedIconSize = imageSize ?? Math.max(20, Math.min(34, Math.round((fixedSize ?? 52) * 0.36)));
   return (
     <Pressable
       style={({ pressed }) => [
         styles.fallback,
+        { gap: spacing },
         shape === 'circle' ? styles.circle : shape === 'roundedRectangle' ? { borderRadius: cornerRadius } : styles.capsule,
         layout === 'square' && styles.square,
         (fixedSize || width) ? { width: width ?? fixedSize, height: fixedSize ?? height, borderRadius: shape === 'circle' && fixedSize ? fixedSize / 2 : 26 } : null,
@@ -120,8 +133,8 @@ export default function NativeGlassButton({
       accessibilityState={{ disabled, selected, busy }}
       testID={testID}
     >
-      {Icon ? <Icon name={icon ?? 'ellipse-outline'} size={iconSize} color={foregroundColor} /> : icon ? <Text style={[styles.icon, { color: foregroundColor, fontSize: iconSize }]}>{icon}</Text> : null}
-      {label ? <Text style={[styles.label, { color: foregroundColor }]}>{label}</Text> : null}
+      {Icon ? <Icon name={icon ?? 'ellipse-outline'} size={resolvedIconSize} color={foregroundColor} /> : icon ? <Text style={[styles.icon, { color: foregroundColor, fontSize: resolvedIconSize }]}>{icon}</Text> : null}
+      {label ? <Text style={[styles.label, { color: foregroundColor, fontSize: fontSize ?? 16, fontWeight }]}>{label}</Text> : null}
     </Pressable>
   );
 }

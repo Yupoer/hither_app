@@ -23,21 +23,24 @@ export default function NativeRoleActionButton({
   disabled: isDisabled = false,
   style,
 }: NativeRoleActionButtonProps) {
+  const resolvedSystemImage = systemImage === 'keypad' ? 'circle.grid.3x3.fill' : systemImage;
   return (
-    <Host style={[{ flex: 1, height: 172 }, style]} colorScheme="dark">
+    <Host style={[{ flex: 1, aspectRatio: 1 }, style]} colorScheme="dark">
       <Button
         onPress={onPress}
         testID={testID}
         modifiers={[
           buttonStyle(liquidGlass.isLiquidGlassAvailable() ? 'glass' : 'bordered'),
           buttonBorderShape('roundedRectangle', 30),
-          frame({ minWidth: 0, maxWidth: Infinity, height: 172 }),
+          frame({ minWidth: 0, maxWidth: 10000, minHeight: 0, maxHeight: 10000 }),
           accessibilityLabel(a11yLabel),
           ...(isDisabled ? [disabled(true)] : []),
         ]}
       >
-        <VStack alignment="center" spacing={10} modifiers={[padding({ all: 18 })]}>
-          <Image systemName={systemImage as never} size={42} color="#fff" />
+        <VStack alignment="center" spacing={10} modifiers={[padding({ all: 16 }), frame({ minWidth: 0, maxWidth: 10000, minHeight: 0, maxHeight: 10000 })]}>
+          <VStack alignment="center" modifiers={[frame({ height: 56 })]}>
+            <Image systemName={resolvedSystemImage as never} size={42} color="#fff" />
+          </VStack>
           <Text modifiers={[foregroundColor('#fff'), font({ size: 17.5, weight: 'bold' })]}>{label}</Text>
         </VStack>
       </Button>

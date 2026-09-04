@@ -26,9 +26,29 @@ export default function NativeTeamsButton({ label, count, onPress, accessibility
 }
 
 const styles = StyleSheet.create({
-  button: { minHeight: 50, borderRadius: 25, paddingHorizontal: 32, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.22)' },
-  label: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  badge: { minWidth: 24, height: 24, borderRadius: 12, paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,149,0,0.24)' },
-  badgeText: { color: '#ff9500', fontSize: 14, fontWeight: '800' },
+  button: {
+    height: 56,
+    borderRadius: 28,
+    paddingHorizontal: 28,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(10,16,28,0.65)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.22)',
+    alignSelf: 'center',
+  },
+  label: { color: '#fff', fontSize: 17.5, fontWeight: '700' },
+  badge: {
+    minWidth: 26,
+    height: 26,
+    borderRadius: 13,
+    paddingHorizontal: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,149,0,0.28)',
+  },
+  badgeText: { color: '#ff9500', fontSize: 15, fontWeight: '800' },
   pressed: { opacity: 0.82 },
 });

@@ -49,11 +49,11 @@ export default function AuthModeSelector({ mode, onChange, labels, disabled, wid
 
 const styles = StyleSheet.create({
   tabs: {
-    width: '66.667%',
+    width: 248, // width: '66.667%' compact default
     alignSelf: 'center',
     flexDirection: 'row',
-    borderRadius: 14,
-    padding: 3,
+    borderRadius: 22,
+    padding: 4,
     backgroundColor: 'rgba(255,255,255,0.06)',
   },
   wideTabs: {
@@ -66,15 +66,15 @@ const styles = StyleSheet.create({
   },
   tab: {
     flex: 1,
-    height: 32,
+    height: 38,
   },
   tabSurface: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 11,
+    borderRadius: 16,
   },
   active: { backgroundColor: 'rgba(255,255,255,0.16)' },
-  text: { fontSize: 18, fontWeight: '600', color: 'rgba(235,235,245,0.6)' },
+  text: { fontSize: 15.5, fontWeight: '600', color: 'rgba(235,235,245,0.6)' },
   activeText: { color: '#fff' },
 });

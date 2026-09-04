@@ -30,6 +30,8 @@ import NativeGlassButton from '../components/NativeGlassButton';
 import LanguagePicker from '../components/LanguagePicker';
 import MetalforgeBackground from '../components/MetalforgeBackground';
 import BlockingAuthOverlay from '../components/BlockingAuthOverlay';
+import GoogleGIcon from '../components/GoogleGIcon';
+import SwiftUIGlassSurface from '../components/SwiftUIGlassSurface';
 import {
   errorTap,
   lightTap,
@@ -147,7 +149,6 @@ export default function LoginScreen({ navigation }: Props) {
   const [resetSent, setResetSent] = useState(false);
   const [guestConfirmVisible, setGuestConfirmVisible] = useState(false);
   const [appleAvailable, setAppleAvailable] = useState(false);
-
   const privacyUrl = getLegalUrl('privacy');
   const termsUrl = getLegalUrl('terms');
   const isSignUp = mode === 'signup';
@@ -397,7 +398,7 @@ export default function LoginScreen({ navigation }: Props) {
         hitSlop={8}
         style={styles.revealButton}
       >
-        <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={26} color="#F4F7FC" />
+        <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={24} color="#F4F7FC" />
       </Pressable>
     );
   }
@@ -486,7 +487,7 @@ export default function LoginScreen({ navigation }: Props) {
                 testID={active ? 'login-confirm-password' : undefined}
               />
               {confirmPasswordOk ? (
-                <Ionicons name="checkmark" size={21} color="#30d158" style={styles.revealButton} />
+                <Ionicons name="checkmark" size={24} color="#30d158" style={styles.revealButton} />
               ) : (
                 <Pressable
                   onPress={() => {
@@ -500,7 +501,7 @@ export default function LoginScreen({ navigation }: Props) {
                   testID={active ? 'login-confirm-password-toggle' : undefined}
                   style={styles.revealButton}
                 >
-                  <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={21} color="#fff" />
+                  <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={24} color="#F4F7FC" />
                 </Pressable>
               )}
             </View>
@@ -536,22 +537,20 @@ export default function LoginScreen({ navigation }: Props) {
           testID={active ? 'login-submit' : undefined}
           accessibilityRole="button"
           accessibilityLabel={panelSignUp ? t('login.ctaSignUp') : t('login.ctaSignIn')}
-          native={{
-            label: panelSignUp ? t('login.ctaSignUp') : t('login.ctaSignIn'),
-            variant: 'glassProminent',
-            shape: 'capsule',
-            layout: 'fill',
-            height: 52,
-            tintColor: accent,
-            foregroundColor: '#060b14',
-          }}
           style={[
-            styles.primaryAction,
-            styles.nativeCta,
-            { backgroundColor: accent },
+            styles.cta,
+            panelSignUp && styles.signupCta,
             (!panelCanSubmit || busy) && styles.ctaDisabled,
           ]}
-        />
+        >
+          {busy ? (
+            <ActivityIndicator color="#060b14" />
+          ) : (
+            <Text style={styles.ctaText}>
+              {panelSignUp ? t('login.ctaSignUp') : t('login.ctaSignIn')}
+            </Text>
+          )}
+        </SafePressable>
         {panelSignUp ? (
           <View style={styles.signupLegal}>
             <Text style={styles.signupLegalText}>
@@ -570,8 +569,7 @@ export default function LoginScreen({ navigation }: Props) {
   function renderReset(): React.ReactNode {
     return (
       <View style={styles.resetCard}>
-        <Text style={styles.resetHint}>{t('login.resetHint')}</Text>
-        <Text style={styles.label}>{t('login.email')}</Text>
+        <Text style={styles.resetHint}>{'請輸入你的註冊電子信箱，\n我們將發送密碼重設連結至你的信箱。'}</Text>
         <View style={[styles.field, touched.email && !emailOk && styles.fieldErrorBorder]}>
           <AuthField
             value={email}
@@ -607,18 +605,18 @@ export default function LoginScreen({ navigation }: Props) {
           disabled={!emailOk || busy || resetCooldown > 0}
           testID="login-reset-submit"
           accessibilityRole="button"
-          style={({ pressed }) => [
+          accessibilityLabel={resetSent ? t('login.resetResend') : '發送重設連結'}
+          style={[
             styles.cta,
             styles.resetAction,
             (!emailOk || busy || resetCooldown > 0) && styles.ctaDisabled,
-            pressed && emailOk && !busy && resetCooldown <= 0 && styles.pressed,
           ]}
         >
           {busyAction === 'password_reset' ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color="#060b14" />
           ) : (
-            <Text style={styles.ctaText} numberOfLines={2} adjustsFontSizeToFit>
-              {resetSent ? t('login.resetResend') : t('login.resetSubmit')}
+            <Text style={[styles.ctaText, { color: '#060b14', fontWeight: '800', fontSize: 16 }]} numberOfLines={1}>
+              {resetSent ? t('login.resetResend') : '發送重設連結'}
             </Text>
           )}
         </SafePressable>
@@ -682,16 +680,25 @@ export default function LoginScreen({ navigation }: Props) {
       <MetalforgeBackground active={isFocused} />
       {!resetMode ? (
         <View
-          style={[styles.langChrome, { top: insets.top + 12 }]}
+          style={[styles.langChrome, { top: insets.top + 8 }]}
           importantForAccessibility={blockingBusy ? 'no-hide-descendants' : 'auto'}
           accessibilityElementsHidden={blockingBusy}
         >
           <LanguagePicker variant="menu" />
         </View>
       ) : null}
+      {!resetMode ? (
+        <View
+          style={[styles.versionChrome, { top: insets.top + 16 }]}
+          importantForAccessibility={blockingBusy ? 'no-hide-descendants' : 'auto'}
+          accessibilityElementsHidden={blockingBusy}
+        >
+          <Text style={styles.versionText}>V0.1.6</Text>
+        </View>
+      ) : null}
       {resetMode ? (
         <View
-          style={[styles.resetBackChrome, { top: insets.top + 12 }]}
+          style={[styles.resetBackChrome, { top: insets.top + 8 }]}
           importantForAccessibility={blockingBusy ? 'no-hide-descendants' : 'auto'}
           accessibilityElementsHidden={blockingBusy}
         >
@@ -700,7 +707,14 @@ export default function LoginScreen({ navigation }: Props) {
             screen="Login"
             onPressAction={() => backToSignIn()}
             disableWhileBusy={false}
-            native={{ label: t('common.back'), systemImage: 'chevron.left', shape: 'capsule', variant: 'glass', width: 78, height: 36 }}
+            native={{
+              systemImage: 'chevron.left',
+              shape: 'capsule',
+              width: 45,
+              height: 45,
+              imageSize: 19.2,
+              iconOffset: { x: 1.16 },
+            }}
             accessibilityLabel={t('common.back')}
             testID="login-reset-back"
           />
@@ -713,17 +727,27 @@ export default function LoginScreen({ navigation }: Props) {
         accessibilityElementsHidden={blockingBusy}
       >
         <ScrollView
-          contentContainerStyle={[styles.content, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 16 }]}
+          contentContainerStyle={[styles.content, { paddingTop: insets.top + (resetMode ? 112 : 24), paddingBottom: insets.bottom + 16 }]}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
           showsVerticalScrollIndicator={false}
         >
           <View>
             <View style={styles.header}>
-              <View style={styles.brand}>
-                <CrookIcon size={56} color={accent} />
-                <Text style={styles.title}>{resetMode ? t('login.forgotPassword') : 'Hither'}</Text>
-              </View>
+              {resetMode ? (
+                <View style={styles.resetHeaderRow}>
+                  <View style={styles.resetIconSlot}>
+                    <CrookIcon size={56} color={accent} />
+                  </View>
+                  <Text style={styles.title}>{t('login.resetTitle')}</Text>
+                  <View style={styles.resetIconSlot} />
+                </View>
+              ) : (
+                <View style={styles.brand}>
+                  <CrookIcon size={56} color={accent} />
+                  <Text style={styles.title}>Hither</Text>
+                </View>
+              )}
             </View>
 
             {content}
@@ -732,52 +756,56 @@ export default function LoginScreen({ navigation }: Props) {
               <>
                 <View style={styles.divider}>
                   <View style={styles.dividerLine} />
-                  <Text style={styles.dividerText}>{t('common.or')}</Text>
+                  <Text style={styles.dividerText}>或使用其他方式</Text>
                   <View style={styles.dividerLine} />
                 </View>
                 <View style={styles.socialRow}>
-                  <View style={styles.socialColumn}>
+                  <View style={[styles.socialIcon, busy && styles.ctaDisabled]}>
                     <NativeGlassButton
-                      label="G"
                       onPress={() => void runSocial('login.google', () => signInWithGoogle())}
                       disabled={busy}
                       accessibilityLabel={t('login.google')}
                       testID="login-google"
-                      size={64}
+                      size={80}
+                      shape="circle"
+                      variant="glass"
+                      style={StyleSheet.absoluteFill}
+                    />
+                    <View pointerEvents="none" style={styles.socialIconOverlay}>
+                      <GoogleGIcon size={38} />
+                    </View>
+                  </View>
+                  {appleAvailable ? (
+                    <NativeGlassButton
+                      systemImage="apple.logo"
+                      onPress={() => void runSocial('login.apple', () => signInWithApple())}
+                      disabled={busy}
+                      accessibilityLabel={t('login.apple')}
+                      testID="login-apple"
+                      size={80}
+                      imageSize={38}
                       shape="circle"
                       variant="glass"
                       foregroundColor="#fff"
+                      iconOffset={{ y: -2 }}
                       style={[styles.socialIcon, busy && styles.ctaDisabled]}
                     />
-                    <Text style={styles.socialCaption}>{t('login.google')}</Text>
-                  </View>
-                  {appleAvailable ? (
-                    <View style={styles.socialColumn}>
-                      <NativeGlassButton
-                        systemImage="apple.logo"
-                        onPress={() => void runSocial('login.apple', () => signInWithApple())}
-                        disabled={busy}
-                        accessibilityLabel={t('login.apple')}
-                        testID="login-apple"
-                        size={64}
-                        shape="circle"
-                        variant="glass"
-                        foregroundColor="#fff"
-                        style={[styles.socialIcon, busy && styles.ctaDisabled]}
-                      />
-                      <Text style={styles.socialCaption}>{t('login.apple')}</Text>
-                    </View>
                   ) : null}
                 </View>
                 <NativeGlassButton
                   label={t('login.guest')}
+                  systemImage="person"
                   onPress={openGuestConfirm}
                   disabled={busy}
                   accessibilityLabel={t('login.guest')}
                   testID="login-guest"
                   shape="capsule"
                   layout="fit"
-                  height={44}
+                  width={173}
+                  height={50}
+                  fontSize={15.5}
+                  imageSize={16}
+                  spacing={4}
                   variant="glass"
                   style={[styles.guestButton, busy && styles.ctaDisabled]}
                 />
@@ -816,43 +844,47 @@ export default function LoginScreen({ navigation }: Props) {
 const makeStyles = (accent: string) =>
   StyleSheet.create({
     fill: { flex: 1 },
-    langChrome: { position: 'absolute', left: 20, zIndex: 10 },
-    resetBackChrome: { position: 'absolute', left: 20, zIndex: 10 },
+    langChrome: { position: 'absolute', left: 20, zIndex: 10, width: 45, height: 45 },
+    versionChrome: { position: 'absolute', right: 16, zIndex: 10 },
+    versionText: { fontSize: 13, fontWeight: '700', color: 'rgba(255,255,255,0.65)' },
+    resetBackChrome: { position: 'absolute', left: 20, zIndex: 10, width: 45, height: 45 },
     content: { flexGrow: 1, paddingHorizontal: 24 },
     header: { alignItems: 'center', marginBottom: 22 },
     brand: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    resetHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+    resetIconSlot: { width: 50, alignItems: 'flex-start', justifyContent: 'center' },
     title: { fontSize: 34, fontWeight: '800', color: '#fff' },
     formViewport: { width: '100%' },
     form: { width: '100%' },
-    label: { fontSize: 12, fontWeight: '600', letterSpacing: 0.6, color: 'rgba(235,235,245,0.45)', marginTop: 6, marginBottom: 4, marginLeft: 4 },
-    field: { height: 50, borderRadius: 18, justifyContent: 'center', paddingHorizontal: 14, backgroundColor: 'rgba(10,16,28,0.65)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.22)', flexDirection: 'row', alignItems: 'center' },
+    label: { fontSize: 16, fontWeight: '600', letterSpacing: 0.4, color: 'rgba(235,235,245,0.65)', marginTop: 6, marginBottom: 4, marginLeft: 4 },
+    field: { height: 50, borderRadius: 18, justifyContent: 'center', paddingHorizontal: 16, backgroundColor: 'rgba(10,16,28,0.65)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.22)', flexDirection: 'row', alignItems: 'center' },
     fieldErrorBorder: { borderColor: 'rgba(255,119,119,0.84)' },
     revealButton: { minWidth: 44, height: 50, alignItems: 'center', justifyContent: 'center' },
     fieldError: { marginTop: 6, marginLeft: 4, color: '#ff8f8f', fontSize: 13, lineHeight: 18 },
     formError: { marginTop: 10, marginBottom: 2, color: '#ff8f8f', fontSize: 13, lineHeight: 18, textAlign: 'center' },
     cta: { height: 52, borderRadius: 26, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 10, backgroundColor: accent, borderWidth: StyleSheet.hairlineWidth, borderColor: accentMix(accent, 55), width: '100%' },
+    signupCta: { marginTop: 24 },
     primaryAction: { width: '100%', alignSelf: 'center', marginTop: 18 },
     nativeCta: { minHeight: 52, borderRadius: 26, justifyContent: 'center' },
-    resetAction: { width: '100%', alignSelf: 'center' },
-    ctaDisabled: { opacity: 0.4 },
+    resetAction: { width: '100%', alignSelf: 'center', marginTop: 24 },
+    ctaDisabled: { opacity: 0.5 },
     pressed: { opacity: 0.85 },
-    ctaText: { fontSize: 17, fontWeight: '600', color: '#fff' },
-    forgot: { alignSelf: 'flex-end', minHeight: 44, justifyContent: 'center', paddingLeft: 12 },
-    forgotText: { fontSize: 13, color: 'rgba(235,235,245,0.72)', textDecorationLine: 'underline' },
-    divider: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 12 },
+    ctaText: { fontSize: 16, fontWeight: '800', color: '#060b14' },
+    forgot: { alignSelf: 'flex-end', marginTop: 12, marginBottom: 14 },
+    forgotText: { fontSize: 12.5, fontWeight: '600', color: 'rgba(235,235,245,0.72)' },
+    divider: { width: 280, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 18, marginBottom: 14 },
     dividerLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(255,255,255,0.18)' },
-    dividerText: { fontSize: 12, letterSpacing: 1, color: 'rgba(235,235,245,0.4)' },
-    socialIcon: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(10,16,28,0.65)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.22)' },
-    socialCaption: { textAlign: 'center', fontSize: 12, color: 'rgba(235,235,245,0.45)', marginTop: 8, maxWidth: 125 },
-    socialRow: { minHeight: 78, marginTop: 10, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', gap: 32 },
-    socialColumn: { alignItems: 'center' },
-    guestButton: { alignSelf: 'center', minHeight: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', marginTop: 16, backgroundColor: 'rgba(10,16,28,0.65)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.22)', paddingHorizontal: 26 },
+    dividerText: { fontSize: 16, fontWeight: '600', letterSpacing: 0.4, color: 'rgba(235,235,245,0.65)', textAlign: 'center' },
+    socialIcon: { width: 80, height: 80, borderRadius: 40, alignItems: 'center', justifyContent: 'center' },
+    socialIconOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
+    socialRow: { marginTop: 6, marginBottom: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 24 },
+    guestButton: { alignSelf: 'center', width: 173, height: 50, borderRadius: 25 },
     legalText: { fontSize: 12, color: 'rgba(235,235,245,0.6)', textDecorationLine: 'underline' },
     legalDot: { color: 'rgba(235,235,245,0.4)' },
     disabledText: { opacity: 0.5 },
     resetCard: { minHeight: 0 },
     sectionTitle: { fontSize: 20, fontWeight: '700', color: '#fff', marginTop: 22 },
-    resetHint: { fontSize: 14, lineHeight: 20, color: 'rgba(235,235,245,0.65)', marginTop: 10 },
+    resetHint: { fontSize: 17, lineHeight: 25, color: 'rgba(235,235,245,0.72)', marginTop: 24, marginBottom: 20 },
     resetHelp: { fontSize: 13, lineHeight: 19, color: 'rgba(235,235,245,0.65)', marginTop: 8 },
     cooldownText: { fontSize: 12, color: 'rgba(235,235,245,0.55)', textAlign: 'center', marginTop: 6 },
     signupLegal: { marginTop: 10, paddingHorizontal: 8 },

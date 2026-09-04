@@ -13,7 +13,7 @@ export default function GoogleGIcon({ size = 30, style }: { size?: number; style
       source={GOOGLE_G_ASSET}
       resizeMode="contain"
       accessibilityIgnoresInvertColors
-      style={[styles.icon, { width: size, height: size, borderRadius: size / 2 }, style]}
+      style={[styles.icon, { width: size, height: size }, style]}
     />
   );
 }

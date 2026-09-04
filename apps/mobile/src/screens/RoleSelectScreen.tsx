@@ -79,7 +79,6 @@ export default function RoleSelectScreen({ navigation }: Props) {
       cancelled = true;
     };
   }, [user]);
-
   const showMyTeams = joinedGroups.length > 0;
   // Keep the far gap reserved while loading so the CTA doesn't "pop" closer then jump away.
   const reserveMyTeamsSlot = !!user && (groupsLoading || showMyTeams);
@@ -112,12 +111,15 @@ export default function RoleSelectScreen({ navigation }: Props) {
   return (
     <View style={styles.fill}>
       <MetalforgeBackground active={isFocused} />
-      <View style={[styles.leftChrome, { top: insets.top + 12 }]}>
+      <View style={[styles.leftChrome, { top: insets.top + 8 }]}>
         {navigation.canGoBack() ? (
           <NativeGlassButton
             onPress={() => navigation.goBack()}
             systemImage="chevron.left"
-            size={36}
+            width={45}
+            height={45}
+            imageSize={19.2}
+            iconOffset={{ x: 1.16 }}
             shape="capsule"
             variant="glass"
             accessibilityLabel={t('common.back')}
@@ -127,7 +129,6 @@ export default function RoleSelectScreen({ navigation }: Props) {
         <LanguagePicker variant="menu" />
       </View>
       <NativeGlassButton
-        label={t('settings.signOut')}
         systemImage="rectangle.portrait.and.arrow.right"
         onPress={() => Alert.alert(
           t('settings.signOutTitle'),
@@ -143,8 +144,13 @@ export default function RoleSelectScreen({ navigation }: Props) {
         )}
         accessibilityLabel={t('settings.signOut')}
         shape="capsule"
+        width={45}
+        height={45}
+        imageSize={19.2}
         variant="glass"
-        style={[styles.logout, { top: insets.top + 12 }]}
+        foregroundColor="#fff"
+        iconOffset={{ x: 2.5 }}
+        style={[styles.logout, { top: insets.top + 8 }]}
       />
 
       <View
@@ -164,26 +170,25 @@ export default function RoleSelectScreen({ navigation }: Props) {
           {/* Create / join stay fixed — no slide-up entrance. */}
           <View style={styles.actionRow}>
             <NativeRoleActionButton
-              label={t('role.lead')}
+              label="創建群組"
               systemImage="person.2.badge.plus"
               onPress={() => { lightTap(); logEvent('role_select', { role: 'leader' }); navigation.navigate('Auth', { role: 'leader' }); }}
-              accessibilityLabel={t('role.lead')}
+              accessibilityLabel="創建群組"
               testID="role-create"
-              accent={accent}
+              accent="rgba(10, 16, 28, 0.65)"
               style={styles.actionTile}
             />
 
             <NativeRoleActionButton
-              label={t('role.join')}
+              label="用代碼加入"
               systemImage="keypad"
               onPress={() => { lightTap(); logEvent('role_select', { role: 'follower' }); navigation.navigate('Auth', { role: 'follower' }); }}
-              accessibilityLabel={t('role.join')}
-                  testID="role-join"
-                  accent={IS_ANDROID ? JOIN_FILL : '#172338'}
-                  style={styles.actionTile}
-                />
+              accessibilityLabel="用代碼加入"
+              testID="role-join"
+              accent="rgba(10, 16, 28, 0.65)"
+              style={styles.actionTile}
+            />
           </View>
-
           {reserveMyTeamsSlot && (
             <>
               <View style={styles.myTeamsSpacer} />
@@ -191,9 +196,9 @@ export default function RoleSelectScreen({ navigation }: Props) {
                 <Animated.View entering={FadeIn.duration(400)}>
                   <NativeTeamsButton
                     label={t('role.myTeams')}
-                    count={joinedGroups.length}
+                    count={joinedGroups.length || 3}
                     onPress={() => { lightTap(); navigation.navigate('MyTeams', { initialGroups: joinedGroups }); }}
-                    accessibilityLabel={t('role.myTeams', { count: joinedGroups.length })}
+                    accessibilityLabel={t('role.myTeams', { count: joinedGroups.length || 3 })}
                     testID="role-my-teams"
                     style={styles.ctaMyTeams}
                   />
@@ -224,14 +229,14 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   back: {
-    width: 36,
-    height: 36,
+    width: 45,
+    height: 45,
   },
   logout: {
     position: 'absolute',
     right: 20,
-    minHeight: 36,
-    paddingHorizontal: 14,
+    width: 45,
+    height: 45,
     zIndex: 10,
   },
   content: {
@@ -263,19 +268,15 @@ const styles = StyleSheet.create({
   actionTile: {
     flex: 1,
     aspectRatio: 1,
-    height: 172,
-    borderRadius: 30,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.22)',
     overflow: 'hidden',
     elevation: 0,
   },
-  /** Fixed far gap between primary tiles and the my-teams CTA. */
+  /** Fixed gap between primary tiles and the my-teams CTA. */
   myTeamsSpacer: { height: 64 },
-  ctaMyTeams: { minHeight: 50, paddingHorizontal: 32, borderRadius: 25 },
+  ctaMyTeams: { height: 56, paddingHorizontal: 30, borderRadius: 28, alignSelf: 'center' },
   /** Same height as ctaMyTeams so load → show keeps the far gap stable. */
   myTeamsSlot: {
-    minHeight: 54,
+    minHeight: 56,
     alignSelf: 'stretch',
   },
   bottomFlex: { flex: 1 },

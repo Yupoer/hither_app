@@ -15,6 +15,8 @@ import { useTranslation } from '../i18n';
 import { lightTap } from '../utils/haptics';
 import { LANGUAGE_CHOICES } from '../utils/showLanguageChoice';
 import { liquidGlass } from '../native';
+import { NativeMenuHost } from '../native/menu';
+import NativeGlassButton from './NativeGlassButton';
 
 export default function LanguagePicker({ variant = 'segmented' }: { variant?: 'segmented' | 'menu' }) {
   const { language, setLanguage } = usePreferences();
@@ -49,34 +51,36 @@ export default function LanguagePicker({ variant = 'segmented' }: { variant?: 's
   }
 
   return (
-    <Host style={styles.menuHost} colorScheme="dark">
-      <Menu
-        label={(
-          <HStack spacing={4} alignment="center">
-            <Text modifiers={[font({ size: 13, weight: 'semibold' }), foregroundColor('#fff')]}>{current.label}</Text>
-            <Image systemName="chevron.down" size={13} color="rgba(235,235,245,0.7)" />
-          </HStack>
-        )}
+    <NativeMenuHost
+      accessibilityLabel={t('settings.language')}
+      style={styles.menuHost}
+      items={LANGUAGE_CHOICES.map((choice) => ({
+        id: choice.key,
+        title: choice.label,
+        selected: choice.key === language,
+      }))}
+      onSelect={(id) => {
+        if (id === language) return;
+        lightTap();
+        setLanguage(id as typeof language);
+      }}
+    >
+      <NativeGlassButton
+        systemImage="globe"
+        shape="capsule"
+        width={45}
+        height={45}
+        imageSize={19.2}
+        variant="glass"
+        accessibilityLabel={t('settings.language')}
         testID="language-menu"
-        modifiers={[buttonStyle(liquidGlass.isLiquidGlassAvailable() ? 'glass' : 'bordered'), buttonBorderShape('capsule'), frame({ height: 36 }), accessibilityLabel(t('settings.language'))]}
-      >
-        {LANGUAGE_CHOICES.map((option) => (
-          <Button
-            key={option.key}
-            label={option.label}
-            onPress={() => {
-              if (option.key === language) return;
-              lightTap();
-              setLanguage(option.key);
-            }}
-          />
-        ))}
-      </Menu>
-    </Host>
+        style={styles.menuHost}
+      />
+    </NativeMenuHost>
   );
 }
 
 const styles = StyleSheet.create({
   segmentedHost: { width: 190, height: 42 },
-  menuHost: { minWidth: 88, height: 36 },
+  menuHost: { width: 45, height: 45 },
 });

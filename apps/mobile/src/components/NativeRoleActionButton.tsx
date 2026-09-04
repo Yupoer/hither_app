@@ -21,7 +21,7 @@ export default function NativeRoleActionButton({
   accessibilityLabel,
   testID,
   disabled = false,
-  accent = '#ff9500',
+  accent = 'rgba(10, 16, 28, 0.65)',
   style,
 }: NativeRoleActionButtonProps) {
   return (
@@ -55,6 +55,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   iconSlot: { width: 60, height: 56, alignItems: 'center', justifyContent: 'center' },
-  label: { fontSize: 17.5, lineHeight: 21, fontWeight: '700', color: '#fff' },
+  label: { fontSize: 17.5, lineHeight: 21, fontWeight: '800', color: '#fff' },
   pressed: { opacity: 0.82 },
 });

@@ -34,5 +34,5 @@ export default function AuthField({ value, onChangeText, accessibilityLabel, ...
 }
 
 const styles = StyleSheet.create({
-  input: { flex: 1, fontSize: 18, color: '#fff' },
+  input: { flex: 1, minHeight: 48, fontSize: 17.5, color: '#fff' },
 });

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, View, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, Alert, ActivityIndicator, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -24,6 +24,10 @@ type Props = NativeStackScreenProps<RootStackParamList, 'MyTeams'>;
 export default function MyTeamsScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
+  const { width: windowWidth } = useWindowDimensions();
+  const availableRowWidth = Math.max(0, windowWidth - 100);
+  const enterBtnWidth = Math.round(availableRowWidth * 0.72);
+  const leaveBtnWidth = availableRowWidth - enterBtnWidth;
   const { colors } = useTheme();
   const accent = colors.accent;
   const { user, setMembership, updateNickname } = useSession();
@@ -32,7 +36,6 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
   const [joinedGroups, setJoinedGroups] = useState<JoinedGroupInfo[]>(route.params?.initialGroups || []);
   const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(!route.params?.initialGroups?.length);
-
   /**
    * Enter guard across OTA reload / repeated taps / multi-group races.
    * Cleared on focus return and on non-navigation exits (timeout / stale token).
@@ -157,16 +160,17 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
   return (
     <View style={styles.fill}>
       <MetalforgeBackground active={isFocused} />
-      <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <NativeGlassButton
-          label={t('common.back')}
           systemImage="chevron.left"
           shape="capsule"
+          width={45}
+          height={45}
           variant="glass"
           onPress={() => { lightTap(); navigation.goBack(); }}
           accessibilityLabel={t('common.back')}
-          width={78}
-          height={36}
+          imageSize={19.2}
+          iconOffset={{ x: 1.16 }}
           style={styles.backBtn}
         />
         <Text style={styles.title}>{t('teams.title')}</Text>
@@ -177,6 +181,9 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
           onPress={handleClearAllGroups}
           accessibilityLabel={t('teams.clear')}
           foregroundColor="#ff453a"
+          width={60}
+          height={44}
+          fontSize={16}
           style={styles.clearBtn}
         />
       </View>
@@ -230,9 +237,8 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
                 accessibilityLabel={`${info.group.name}, ${t('teams.memberCount', { count: info.memberCount })}`}
                 testID={`team-card-${info.group.id}`}
                 style={styles.teamCard}
-              />
-
-              {isExpanded && (
+              >
+                {isExpanded && (
                   <Animated.View entering={FadeIn} exiting={FadeOut} style={styles.expandedSection}>
                     <View style={styles.detailAvatars}>
                       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.detailAvatarsScroll}>
@@ -274,9 +280,12 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
                         shape="capsule"
                         variant="glassProminent"
                         tintColor={accent}
-                        foregroundColor="#fff"
-                        height={48}
-                        style={[styles.inlineEnterBtn, { backgroundColor: accent }]}
+                        foregroundColor="#060b14"
+                        width={enterBtnWidth}
+                        height={45}
+                        fontSize={16}
+                        fontWeight="bold"
+                        style={styles.inlineEnterBtn}
                       />
 
                       <NativeGlassButton
@@ -286,13 +295,16 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
                         shape="capsule"
                         variant="glass"
                         foregroundColor="#ff453a"
-                        width={80}
-                        height={48}
+                        width={leaveBtnWidth}
+                        height={45}
+                        fontSize={15}
+                        fontWeight="semibold"
                         style={styles.inlineLeaveBtn}
                       />
                     </View>
                   </Animated.View>
-              )}
+                )}
+              </NativeTeamCard>
             </Animated.View>
           );
         })}
@@ -308,26 +320,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingBottom: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: 'rgba(255,255,255,0.1)',
   },
-  backBtn: { width: 78, height: 36 },
+  backBtn: { width: 45, height: 45 },
   title: {
     fontSize: 18,
     fontWeight: '700',
     color: '#fff',
   },
-  clearBtn: { width: 76, height: 36 },
+  clearBtn: { width: 60, height: 44 },
   list: {
     padding: 20,
     gap: 16,
   },
   teamCard: { width: '100%', minHeight: 84 },
   expandedSection: {
-    marginTop: 20,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: 'rgba(255,255,255,0.1)',
+    paddingHorizontal: 16,
+    paddingBottom: 16,
     paddingTop: 16,
   },
   detailAvatars: {
@@ -371,14 +384,13 @@ const styles = StyleSheet.create({
   },
   expandedButtonsRow: {
     flexDirection: 'row',
-    gap: 12,
+    alignItems: 'center',
+    gap: 20,
+    paddingHorizontal: 4,
+    paddingTop: 8,
   },
   inlineEnterBtn: {
-    flex: 1,
-    height: 48,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
+    height: 45,
   },
   inlineEnterText: {
     fontSize: 16,
@@ -386,12 +398,7 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   inlineLeaveBtn: {
-    width: 80,
-    height: 48,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    height: 45,
   },
   inlineLeaveText: {
     fontSize: 15,

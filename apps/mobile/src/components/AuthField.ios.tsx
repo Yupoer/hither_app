@@ -42,5 +42,5 @@ export default function AuthField({
 }
 
 const styles = StyleSheet.create({
-  input: { flex: 1, minHeight: 52, paddingHorizontal: 18, fontSize: 18, color: '#fff' },
+  input: { flex: 1, minHeight: 48, paddingHorizontal: 0, fontSize: 17.5, color: '#fff' },
 });

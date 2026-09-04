@@ -1,16 +1,19 @@
 import React from 'react';
 import type { ViewStyle } from 'react-native';
-import { Host, Button, Image } from '@expo/ui/swift-ui';
+import { Host, Button, HStack, Image, Text, ZStack, Spacer } from '@expo/ui/swift-ui';
 import {
   accessibilityLabel as accessibilityLabelModifier,
   accessibilityHint as accessibilityHintModifier,
   buttonStyle,
   buttonBorderShape,
   controlSize,
+  font,
   disabled as disabledModifier,
   frame,
   foregroundColor as foregroundColorModifier,
   labelStyle,
+  offset,
+  padding,
   tint,
 } from '@expo/ui/swift-ui/modifiers';
 import { liquidGlass } from '../native';
@@ -37,17 +40,22 @@ export default function NativeGlassButton({
   height,
   controlSize: requestedControlSize,
   foregroundColor,
+  fontSize,
+  fontWeight,
+  imageSize,
+  spacing,
+  iconOffset,
+  centerText,
 }: NativeGlassButtonProps) {
-  const iconOnly = Boolean(systemImage && !label);
+  const iconOnly = Boolean(!label);
   const controlSizeValue = requestedControlSize
-    ?? (size != null && size >= 78 ? 'extraLarge' : size != null && size >= 64 ? 'large' : 'regular');
-  const controlDimension = controlSizeValue === 'extraLarge' ? 78 : controlSizeValue === 'large' ? 64 : 52;
+    ?? (size != null && size >= 88 ? 'extraLarge' : size != null && size >= 74 ? 'large' : ((size != null && size < 44) || (height != null && height < 44)) ? 'small' : 'regular');
+  const controlDimension = controlSizeValue === 'extraLarge' ? 78 : controlSizeValue === 'large' ? 64 : ((size != null && size < 44) || (height != null && height < 44)) ? 36 : 52;
   const fixedWidth = width ?? size ?? (iconOnly ? controlDimension : undefined);
-  const iconFrameSize = iconOnly ? (size ?? controlDimension) : undefined;
-  const styleName = liquidGlass.isLiquidGlassAvailable()
-    ? variant
-    : variant === 'glassProminent'
-      ? 'borderedProminent'
+  const styleName = variant === 'glassProminent'
+    ? 'borderedProminent'
+    : liquidGlass.isLiquidGlassAvailable()
+      ? variant
       : 'bordered';
   const borderShape = shape === 'roundedRectangle'
     ? buttonBorderShape(shape, cornerRadius)
@@ -55,23 +63,22 @@ export default function NativeGlassButton({
   const modifiers = [
     buttonStyle(styleName),
     borderShape,
-    controlSize(controlSizeValue),
+    ...(requestedControlSize ? [controlSize(requestedControlSize)] : []),
     accessibilityLabelModifier(accessibilityLabel),
     ...(accessibilityHint ? [accessibilityHintModifier(accessibilityHint)] : []),
-    ...(systemImage && !label ? [labelStyle('iconOnly' as const)] : []),
     ...(tintColor ? [tint(tintColor)] : []),
     ...(foregroundColor ? [foregroundColorModifier(foregroundColor)] : []),
     ...(disabled ? [disabledModifier(true)] : []),
-    ...(!iconOnly && fixedWidth
+    ...(fixedWidth
       ? [frame({ width: fixedWidth, height: size ?? height })]
-      : !iconOnly && layout === 'square'
+      : layout === 'square'
         ? [frame({ width: 52, height: 52 })]
-      : !iconOnly && layout === 'fill'
-        ? [frame({ minWidth: 0, maxWidth: Infinity, height: height ?? 52 })]
-        : !iconOnly && layout === 'fit'
+      : layout === 'fill'
+        ? [frame({ minWidth: 0, maxWidth: 1000, height: height ?? 52 })]
+        : layout === 'fit'
           ? [frame({ height: height ?? 52 })]
-      : !iconOnly && height
-        ? [frame({ minWidth: 0, maxWidth: Infinity, height })]
+      : height
+        ? [frame({ minWidth: 0, maxWidth: 1000, height })]
         : []),
   ];
   const hostSizing: ViewStyle | null = fixedWidth
@@ -79,23 +86,117 @@ export default function NativeGlassButton({
     : layout === 'square'
       ? { width: 52, height: 52 }
       : layout === 'fill'
-        ? { width: '100%', height: height ?? 52 }
+        ? { height: height ?? 52 }
         : layout === 'fit'
           ? { height: height ?? 52 }
         : height
           ? { height }
         : null;
-  const button = iconOnly && systemImage ? (
+  const hasCustomTypography = fontSize != null || imageSize != null || spacing != null;
+  const button = iconOnly ? (
     <Button
       role={role}
       onPress={onPress}
       testID={testID}
       modifiers={modifiers}
     >
-      <Image
-        systemName={systemImage as never}
-        modifiers={iconFrameSize ? [frame({ width: iconFrameSize, height: iconFrameSize })] : undefined}
-      />
+      <HStack alignment="center" modifiers={[frame({ maxWidth: Infinity, maxHeight: Infinity })]}>
+        {systemImage ? (
+          <Image
+            systemName={systemImage as never}
+            modifiers={[
+              font({ size: imageSize ?? Math.round((size ?? controlDimension) * 0.44), weight: 'medium' }),
+              ...(iconOffset ? [offset(iconOffset)] : systemImage === 'apple.logo' ? [offset({ y: -2.5 })] : []),
+            ]}
+          />
+        ) : (
+          <Image
+            systemName="circle.fill"
+            modifiers={[
+              font({ size: imageSize ?? Math.round((size ?? controlDimension) * 0.44), weight: 'medium' }),
+              foregroundColorModifier('rgba(0,0,0,0)'),
+            ]}
+          />
+        )}
+      </HStack>
+    </Button>
+  ) : layout === 'fill' ? (
+    <Button
+      role={role}
+      onPress={onPress}
+      testID={testID}
+      modifiers={modifiers}
+    >
+      <HStack alignment="center" spacing={spacing ?? 8} modifiers={[frame({ width: fixedWidth, height: height ?? 52 })]}>
+        {systemImage ? (
+          <Image
+            systemName={systemImage as never}
+            modifiers={[
+              font({ size: imageSize ?? 18, weight: 'medium' }),
+              foregroundColorModifier(foregroundColor ?? '#fff'),
+            ]}
+          />
+        ) : null}
+        <Text modifiers={[font({ size: fontSize ?? 16, weight: fontWeight ?? 'bold' }), foregroundColorModifier(foregroundColor ?? '#fff')]}>
+          {label ?? accessibilityLabel}
+        </Text>
+      </HStack>
+    </Button>
+  ) : centerText && systemImage && label ? (
+    <Button
+      role={role}
+      onPress={onPress}
+      testID={testID}
+      modifiers={modifiers}
+    >
+      <ZStack alignment="center" modifiers={[frame({ maxWidth: Infinity, maxHeight: Infinity })]}>
+        <Text
+          modifiers={[
+            font({ size: fontSize ?? 16, weight: fontWeight ?? 'semibold' }),
+            foregroundColorModifier(foregroundColor ?? '#fff'),
+          ]}
+        >
+          {label ?? accessibilityLabel}
+        </Text>
+        <HStack alignment="center" modifiers={[frame({ maxWidth: Infinity, maxHeight: Infinity }), padding({ leading: 14 })]}>
+          <Image
+            systemName={systemImage as never}
+            modifiers={[
+              font({ size: imageSize ?? 17, weight: 'medium' }),
+              foregroundColorModifier(foregroundColor ?? '#fff'),
+              ...(iconOffset ? [offset(iconOffset)] : []),
+            ]}
+          />
+          <Spacer />
+        </HStack>
+      </ZStack>
+    </Button>
+  ) : (systemImage && label) || hasCustomTypography ? (
+    <Button
+      role={role}
+      onPress={onPress}
+      testID={testID}
+      modifiers={modifiers}
+    >
+      <HStack alignment="center" spacing={spacing ?? 8} modifiers={[frame({ maxWidth: Infinity, maxHeight: Infinity })]}>
+        {systemImage ? (
+          <Image
+            systemName={systemImage as never}
+            modifiers={[
+              font({ size: imageSize ?? 17, weight: 'medium' }),
+              foregroundColorModifier(foregroundColor ?? '#fff'),
+            ]}
+          />
+        ) : null}
+        <Text
+          modifiers={[
+            font({ size: fontSize ?? 16, weight: fontWeight ?? 'semibold' }),
+            foregroundColorModifier(foregroundColor ?? '#fff'),
+          ]}
+        >
+          {label ?? accessibilityLabel}
+        </Text>
+      </HStack>
     </Button>
   ) : (
     <Button

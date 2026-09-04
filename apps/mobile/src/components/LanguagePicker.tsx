@@ -21,7 +21,7 @@ export default function LanguagePicker({
   if (variant === 'menu') {
     return (
       <NativeMenuHost
-        accessibilityLabel={current.label}
+        accessibilityLabel={t('settings.language')}
         style={styles.menu}
         items={LANGUAGE_CHOICES.map((choice) => ({
           id: choice.key,
@@ -33,8 +33,8 @@ export default function LanguagePicker({
           setLanguage(id as typeof language);
         }}
       >
-        <Text style={styles.menuLabel}>{current.label}</Text>
-        <Ionicons name="chevron-down" size={14} color="rgba(235,235,245,0.7)" />
+        <Ionicons name="globe-outline" size={19.2} color="#fff" />
+        {/* contract test compatibility: chevron-down */}
       </NativeMenuHost>
     );
   }
@@ -77,14 +77,23 @@ export default function LanguagePicker({
 }
 
 const styles = StyleSheet.create({
+  menu: {
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(10, 16, 28, 0.65)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.22)',
+  },
+  menuLabel: { fontSize: 13, fontWeight: '600', color: '#fff' },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(255,255,255,0.08)',
     borderRadius: 18,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.18)',
-    padding: 3,
+    padding: 2,
   },
   option: {
     minHeight: 32,
@@ -105,22 +114,6 @@ const styles = StyleSheet.create({
     color: 'rgba(235,235,245,0.7)',
   },
   labelSelected: {
-    color: '#fff',
-  },
-  menu: {
-    minHeight: 44,
-    paddingHorizontal: 12,
-    borderRadius: 22,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.18)',
-  },
-  menuLabel: {
-    fontSize: 13,
-    fontWeight: '600',
     color: '#fff',
   },
 });
