@@ -6,6 +6,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import Constants from 'expo-constants';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
@@ -35,6 +36,10 @@ type Props = NativeStackScreenProps<RootStackParamList, 'RoleSelect'>;
 const IS_ANDROID = Platform.OS === 'android';
 const JOIN_FILL = IS_ANDROID ? '#1c2432' : 'rgba(255,255,255,0.08)';
 
+const appVersion =
+  Constants.expoConfig?.version ??
+  Constants.nativeAppVersion ??
+  '0.1.7';
 export default function RoleSelectScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
@@ -152,6 +157,12 @@ export default function RoleSelectScreen({ navigation }: Props) {
         iconOffset={{ x: 2.5 }}
         style={[styles.logout, { top: insets.top + 8 }]}
       />
+      <View
+        style={[styles.versionChrome, { bottom: Math.max(insets.bottom, 10) }]}
+        pointerEvents="none"
+      >
+        <Text style={styles.versionText}>V{appVersion}</Text>
+      </View>
 
       <View
         style={[
@@ -238,6 +249,19 @@ const styles = StyleSheet.create({
     width: 45,
     height: 45,
     zIndex: 10,
+  },
+  versionChrome: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+  versionText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.65)',
   },
   content: {
     flex: 1,
