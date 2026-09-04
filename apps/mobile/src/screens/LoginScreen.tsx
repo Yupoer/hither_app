@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import Constants from 'expo-constants';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
@@ -51,6 +52,10 @@ const MIN_PASSWORD = 6;
 // The native account picker is interactive; the generic 15s action timeout
 // must not expire while the user is still choosing an account.
 const SOCIAL_AUTH_TIMEOUT_MS = 120_000;
+const appVersion =
+  Constants.expoConfig?.version ??
+  Constants.nativeAppVersion ??
+  '0.1.7';
 
 function mapAuthError(error: unknown): AuthError {
   const candidate = error as { code?: unknown; message?: unknown } | null;
@@ -371,7 +376,9 @@ export default function LoginScreen({ navigation }: Props) {
   function continueAsGuest(): void {
     mediumTap();
     setGuestConfirmVisible(false);
-    navigation.navigate('RoleSelect');
+    setTimeout(() => {
+      navigation.reset({ index: 0, routes: [{ name: 'RoleSelect' }] });
+    }, 100);
   }
 
   function cancelGuest(): void {
@@ -689,11 +696,12 @@ export default function LoginScreen({ navigation }: Props) {
       ) : null}
       {!resetMode ? (
         <View
-          style={[styles.versionChrome, { top: insets.top + 16 }]}
+          style={[styles.versionChrome, { bottom: Math.max(insets.bottom, 10) }]}
+          pointerEvents="none"
           importantForAccessibility={blockingBusy ? 'no-hide-descendants' : 'auto'}
           accessibilityElementsHidden={blockingBusy}
         >
-          <Text style={styles.versionText}>V0.1.6</Text>
+          <Text style={styles.versionText}>V{appVersion}</Text>
         </View>
       ) : null}
       {resetMode ? (
@@ -766,13 +774,13 @@ export default function LoginScreen({ navigation }: Props) {
                       disabled={busy}
                       accessibilityLabel={t('login.google')}
                       testID="login-google"
-                      size={80}
+                      size={70}
                       shape="circle"
                       variant="glass"
                       style={StyleSheet.absoluteFill}
                     />
                     <View pointerEvents="none" style={styles.socialIconOverlay}>
-                      <GoogleGIcon size={38} />
+                      <GoogleGIcon size={33} />
                     </View>
                   </View>
                   {appleAvailable ? (
@@ -782,8 +790,8 @@ export default function LoginScreen({ navigation }: Props) {
                       disabled={busy}
                       accessibilityLabel={t('login.apple')}
                       testID="login-apple"
-                      size={80}
-                      imageSize={38}
+                      size={70}
+                      imageSize={33}
                       shape="circle"
                       variant="glass"
                       foregroundColor="#fff"
@@ -827,6 +835,7 @@ export default function LoginScreen({ navigation }: Props) {
               onPress={continueAsGuest}
               accessibilityRole="button"
               accessibilityLabel={t('anon.continue')}
+              testID="guest-confirm-button"
               style={({ pressed }) => [styles.modalCta, pressed && styles.pressed]}
             >
               <Text style={styles.ctaText}>{t('anon.continue')}</Text>
@@ -845,7 +854,7 @@ const makeStyles = (accent: string) =>
   StyleSheet.create({
     fill: { flex: 1 },
     langChrome: { position: 'absolute', left: 20, zIndex: 10, width: 45, height: 45 },
-    versionChrome: { position: 'absolute', right: 16, zIndex: 10 },
+    versionChrome: { position: 'absolute', left: 0, right: 0, alignItems: 'center', justifyContent: 'center', zIndex: 10 },
     versionText: { fontSize: 13, fontWeight: '700', color: 'rgba(255,255,255,0.65)' },
     resetBackChrome: { position: 'absolute', left: 20, zIndex: 10, width: 45, height: 45 },
     content: { flexGrow: 1, paddingHorizontal: 24 },
@@ -875,7 +884,7 @@ const makeStyles = (accent: string) =>
     divider: { width: 280, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 18, marginBottom: 14 },
     dividerLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(255,255,255,0.18)' },
     dividerText: { fontSize: 16, fontWeight: '600', letterSpacing: 0.4, color: 'rgba(235,235,245,0.65)', textAlign: 'center' },
-    socialIcon: { width: 80, height: 80, borderRadius: 40, alignItems: 'center', justifyContent: 'center' },
+    socialIcon: { width: 70, height: 70, borderRadius: 35, alignItems: 'center', justifyContent: 'center' },
     socialIconOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
     socialRow: { marginTop: 6, marginBottom: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 24 },
     guestButton: { alignSelf: 'center', width: 173, height: 50, borderRadius: 25 },
