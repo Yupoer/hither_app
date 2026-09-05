@@ -827,7 +827,11 @@ export default function LoginScreen({ navigation }: Props) {
 
       <Modal visible={guestConfirmVisible} transparent animationType="fade" onRequestClose={cancelGuest}>
         <View style={styles.modalScrim}>
-          <View style={styles.modalCard}>
+          <SwiftUIGlassSurface
+            shape="roundedRectangle"
+            cornerRadius={28}
+            style={styles.modalCard}
+          >
             <Text style={styles.modalTitle}>{t('anon.confirmTitle')}</Text>
             <Text style={styles.modalWarningText}>{t('anon.warning')}</Text>
             <Text style={styles.modalWarningText}>{t('anon.expiryWarning')}</Text>
@@ -843,7 +847,7 @@ export default function LoginScreen({ navigation }: Props) {
             <Pressable onPress={cancelGuest} accessibilityRole="button" style={styles.modalSecondary}>
               <Text style={styles.modalSecondaryText}>{t('common.cancel')}</Text>
             </Pressable>
-          </View>
+          </SwiftUIGlassSurface>
         </View>
       </Modal>
     </View>
@@ -915,8 +919,8 @@ const makeStyles = (accent: string) =>
       borderColor: 'rgba(220,230,246,0.3)',
     },
     backButtonText: { color: '#F4F7FC', fontSize: 17, fontWeight: '600' },
-    modalScrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.58)', alignItems: 'center', justifyContent: 'center', padding: 24 },
-    modalCard: { width: '100%', maxWidth: 420, borderRadius: 24, padding: 24, backgroundColor: '#15243A', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(220,230,246,0.22)' },
+    modalScrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.42)', alignItems: 'center', justifyContent: 'center', padding: 24 },
+    modalCard: { width: '100%', maxWidth: 420, borderRadius: 28, padding: 24 },
     modalTitle: { fontSize: 21, fontWeight: '700', color: '#F4F7FC', marginBottom: 14 },
     modalWarningText: { fontSize: 15, lineHeight: 23, color: 'rgba(232,238,248,0.82)', marginBottom: 5 },
     modalCta: { alignSelf: 'center', width: '100%', minHeight: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center', marginTop: 20, backgroundColor: accent },

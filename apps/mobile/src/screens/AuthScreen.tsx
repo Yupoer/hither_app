@@ -14,7 +14,8 @@ import {
   TouchableWithoutFeedback,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
+import { useIsFocused } from '@react-navigation/native';
+import MetalforgeBackground from '../components/MetalforgeBackground';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
@@ -44,6 +45,7 @@ const DISPLAY_FONT = 'Fredoka_600SemiBold';
  * session skips it and just reuses / renames the existing anon user.
  */
 export default function AuthScreen({ navigation, route }: Props) {
+  const isFocused = useIsFocused();
   const role = route.params?.role ?? 'leader';
   const isLeader = role === 'leader';
   const { signIn, user, updateNickname, setMembership, refreshProfile } = useSession();
@@ -142,11 +144,8 @@ export default function AuthScreen({ navigation, route }: Props) {
 
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-      <LinearGradient
-        colors={['#1f3050', '#0e1622', '#080b12']}
-        locations={[0, 0.52, 1]}
-        style={styles.fill}
-      >
+      <View style={styles.fill}>
+        <MetalforgeBackground active={isFocused} />
         <View
           style={[
             styles.content,
@@ -171,16 +170,9 @@ export default function AuthScreen({ navigation, route }: Props) {
               )}
             </View>
 
-            <Text style={styles.kicker}>
-              {isLeader ? t('auth.leaderKicker') : t('auth.followerKicker')}
-            </Text>
             <Text style={styles.title}>
               {isLeader ? t('auth.leaderTitle') : t('auth.followerTitle')}
             </Text>
-            <Text style={styles.sub}>
-              {isLeader ? t('auth.leaderSub') : t('auth.followerSub')}
-            </Text>
-
             <Text style={styles.label}>{t('auth.nameLabel')}</Text>
             <View style={styles.field}>
               <TextInput
@@ -379,7 +371,7 @@ export default function AuthScreen({ navigation, route }: Props) {
               {isLeader ? t('auth.leaderFoot') : t('auth.followerFoot')}
             </Text>
           </View>
-      </LinearGradient>
+      </View>
     </TouchableWithoutFeedback>
   );
 }
@@ -404,22 +396,7 @@ const makeStyles = (accent: string) =>
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: 'rgba(255,255,255,0.18)',
     },
-    kicker: {
-      fontSize: 12,
-      fontWeight: '700',
-      letterSpacing: 1.4,
-      textTransform: 'uppercase',
-      color: accent,
-      marginTop: 26,
-    },
-    title: { fontSize: 34, fontWeight: '700', color: '#fff', marginTop: 6 },
-    sub: {
-      fontSize: 15,
-      lineHeight: 21,
-      color: 'rgba(235,235,245,0.6)',
-      marginTop: 8,
-      maxWidth: 300,
-    },
+    title: { fontSize: 34, fontWeight: '700', color: '#fff', marginTop: 24, marginBottom: 6 },
     label: {
       fontSize: 12,
       fontWeight: '600',

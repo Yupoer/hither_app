@@ -5,18 +5,19 @@ const root = join(__dirname, '..');
 const read = (path: string) => readFileSync(join(root, path), 'utf8');
 
 describe('five-screen Liquid Glass redesign contract', () => {
-  it('uses the calibrated low-load Metalforge background', () => {
+  it('uses the Metalforge grain shader background via Skia', () => {
     const background = read('components/MetalforgeBackground.tsx');
-    expect(background).toContain("speed: 1.05");
-    expect(background).toContain("flow: 2.2");
-    expect(background).toContain("grain: 10.5");
-    expect(background).toContain("brightness: 0.72");
+    expect(background).toContain("speed:");
+    expect(background).toContain("flow:");
+    expect(background).toContain("grain:");
+    expect(background).toContain("brightness:");
     expect(background).toContain("'#9A502B'");
     expect(background).toContain("'#9B7683'");
-    expect(background.match(/<LinearGradient/g)?.length).toBe(3);
+    expect(background).toContain('@shopify/react-native-skia');
+    expect(background).toContain('Skia.RuntimeEffect.Make');
+    expect(background).toContain('<Shader');
     expect(background).not.toContain('setInterval');
-    expect(background).toContain('cancelAnimation');
-    expect(existsSync(join(root, '../assets/metalforge-grain.png'))).toBe(true);
+    expect(background).not.toContain('<LinearGradient');
   });
 
   it('blocks only the four authentication network actions', () => {

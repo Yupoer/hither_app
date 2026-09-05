@@ -219,6 +219,10 @@ PODS:
     - ExpoModulesCore
   - ExpoFont (56.0.7):
     - ExpoModulesCore
+  - ExpoGL (56.0.6):
+    - ExpoModulesCore
+    - ExpoModulesJSI
+    - ReactCommon/turbomodule/core
   - ExpoGlassEffect (56.0.4):
     - ExpoModulesCore
   - ExpoHaptics (56.0.3):
@@ -1876,6 +1880,30 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
+  - react-native-skia (2.6.2):
+    - hermes-engine
+    - RCTRequired
+    - RCTTypeSafety
+    - React
+    - React-callinvoker
+    - React-Core
+    - React-Core-prebuilt
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
   - react-native-slider (5.2.0):
     - hermes-engine
     - RCTRequired
@@ -2658,6 +2686,7 @@ DEPENDENCIES:
   - "ExpoDomWebView (from `../node_modules/@expo/dom-webview/ios`)"
   - ExpoFileSystem (from `../node_modules/expo-file-system/ios`)
   - ExpoFont (from `../node_modules/expo-font/ios`)
+  - ExpoGL (from `../node_modules/expo-gl`)
   - ExpoGlassEffect (from `../node_modules/expo-glass-effect/ios`)
   - ExpoHaptics (from `../node_modules/expo-haptics/ios`)
   - ExpoIap (from `../node_modules/expo-iap/ios`)
@@ -2728,6 +2757,7 @@ DEPENDENCIES:
   - React-mutationobservernativemodule (from `../node_modules/react-native/ReactCommon/react/nativemodule/mutationobserver`)
   - react-native-maps (from `../node_modules/react-native-maps`)
   - react-native-safe-area-context (from `../node_modules/react-native-safe-area-context`)
+  - "react-native-skia (from `../node_modules/@shopify/react-native-skia`)"
   - "react-native-slider (from `../node_modules/@react-native-community/slider`)"
   - react-native-view-shot (from `../node_modules/react-native-view-shot`)
   - React-NativeModulesApple (from `../node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios`)
@@ -2832,6 +2862,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-file-system/ios"
   ExpoFont:
     :path: "../node_modules/expo-font/ios"
+  ExpoGL:
+    :path: "../node_modules/expo-gl"
   ExpoGlassEffect:
     :path: "../node_modules/expo-glass-effect/ios"
   ExpoHaptics:
@@ -2971,6 +3003,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native-maps"
   react-native-safe-area-context:
     :path: "../node_modules/react-native-safe-area-context"
+  react-native-skia:
+    :path: "../node_modules/@shopify/react-native-skia"
   react-native-slider:
     :path: "../node_modules/@react-native-community/slider"
   react-native-view-shot:
@@ -3087,6 +3121,7 @@ SPEC CHECKSUMS:
   ExpoDomWebView: 4e53b05879dc73ba374f76bff93dd64c8a0d91b3
   ExpoFileSystem: df530c4d7a94d57f40847f84b118766a79747d37
   ExpoFont: 274487aa78f8c65d6551e2558eca3ec6ce3432ce
+  ExpoGL: 6d80b612794755afafc439fa3b5792b91efc0952
   ExpoGlassEffect: 7d4233dc0727ee2b28dd757eda70e1b6abf662fd
   ExpoHaptics: 89364cf3c3ca2cfd54cafed42f3be3169bab6d42
   ExpoIap: 567bf4071887fe1b65913deb0152f072f683e780
@@ -3166,6 +3201,7 @@ SPEC CHECKSUMS:
   React-mutationobservernativemodule: a42d1626651ccd7d0dc02a56e69d4ec77c248893
   react-native-maps: cb32168a32e30f83beb08198325ff96b70dd5c9f
   react-native-safe-area-context: 6b4966397ada0f7dd481e4486a2ef936834861a1
+  react-native-skia: b319389e81797af11985805fcfad0714b8670cab
   react-native-slider: 08ecfc4e9cc16cc388a56dd9caeca51b55cd9bb7
   react-native-view-shot: 5bf17256c542d46c02a6f2d2752fe88eb3a8d058
   React-NativeModulesApple: deba264b03bd79c6bd61014fa30e40321b5e443a
