@@ -1,10 +1,11 @@
-"""Skip product checks only for docs/rule files; unknown paths run full CI."""
+"""Run product checks only when the diff can affect product behavior."""
 import os
 import subprocess
 from pathlib import Path
 
 def product_required(paths):
     automation = {
+        ".github/workflows/ci.yml",
         "scripts/check-workflow-scope.py",
         "scripts/test_workflow_scope.py", "scripts/install-git-hooks.sh",
         "scripts/ota-auto-ship.sh", "scripts/task-end-ship.sh",
