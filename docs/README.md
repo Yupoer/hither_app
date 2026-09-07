@@ -8,11 +8,10 @@
 | 檔案 | 用途 |
 | --- | --- |
 | [`README.md`](./README.md) | 本索引；說明 `docs/` 邊界（什麼該放 GitHub） |
-| [`PRODUCT.md`](./PRODUCT.md) | 產品定位、策略、核心體驗與功能方向（PM 觀點） |
+| [`PRODUCT.md`](./PRODUCT.md) | 依目前 App 實作整理的產品定位、核心流程與能力邊界 |
 | [`product-decision-log.md`](./product-decision-log.md) | 已確認／未定案的產品決策與取捨（文件衝突時以此為準） |
 | [`current-app-functional-architecture.md`](./current-app-functional-architecture.md) | **以程式碼為準**的功能與架構盤點（模組邊界、平台能力） |
 | [`android-release-runbook.md`](./android-release-runbook.md) | Android EAS build／secrets／驗收指令手冊 |
-| [`apns-live-activity-setup.md`](./apns-live-activity-setup.md) | APNs 推播與 Live Activity 設定／切換手冊 |
 
 ## Hither Design System
 

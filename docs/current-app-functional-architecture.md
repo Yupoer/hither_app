@@ -623,7 +623,6 @@ docs/                     # product、design、QA、handoff、調查文件
 - [文件索引](./README.md)
 - [產品策略](./PRODUCT.md)
 - [產品決策紀錄](./product-decision-log.md)
-- [APNs / Live Activity setup](./apns-live-activity-setup.md)
 - [Android release runbook](./android-release-runbook.md)
 - [Hither Design System](./Hither%20Design%20System/readme.md)
 - 進行中功能與 ticket：**GitHub Issues／PRs**
