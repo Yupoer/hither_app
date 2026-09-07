@@ -8,5 +8,5 @@
 - 以現有 CI／package scripts 驗證受影響範圍；保留 required checks、適用的 acceptance-map 與 coverage。相同 head/base 的有效結果不重跑。文件／規則改動不跑無關產品測試。
 - commit／push 不觸發發布。Native、app config、plugins、native dependencies 變更需相容 binary；OTA／build／submit 僅按明確指定的平台與 channel 執行。
 - 合併後驗證 remote SHA，移除已交付且無 active owner 的 task worktree、feature branch 與已核實的暫存／備份。先檢查 tracked、untracked、ignored、stash；Issue closed 不等於所有本地內容都可刪。
-- 不留無主 WIP：未交付內容保留並關聯 GitHub recovery Issue／專用 worktree。正式文件、測試、憑證與發布資產不視作任務垃圾。
+- 僅本次已授權整理範圍內的未交付內容關聯 GitHub recovery Issue／專用 worktree；無關 WIP 原位保留。正式文件、測試、憑證與發布資產不視作任務垃圾。
 - 交付與清理各自回報；清理未完成繼續處理，不重啟已完成實作。不可把 Jest／typecheck 或 build 成功當成 native 裝置驗收。

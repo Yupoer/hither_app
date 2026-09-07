@@ -5,7 +5,7 @@ from pathlib import Path
 
 def product_required(paths):
     automation = {
-        ".github/workflows/ci.yml", "scripts/check-workflow-scope.py",
+        "scripts/check-workflow-scope.py",
         "scripts/test_workflow_scope.py", "scripts/install-git-hooks.sh",
         "scripts/ota-auto-ship.sh", "scripts/task-end-ship.sh",
     }
@@ -15,7 +15,7 @@ if __name__ == "__main__":
     if os.environ.get("EVENT_NAME") in {"pull_request", "push"} and os.environ.get("BASE_SHA", "").strip("0"):
         base = os.environ["BASE_SHA"]
         changed = subprocess.check_output(
-            ["git", "diff", "--name-only", "-z", base, "HEAD"]
+            ["git", "diff", "--no-renames", "--name-only", "-z", base, "HEAD"]
         ).decode("utf-8").strip("\0").split("\0")
         required = product_required([p for p in changed if p])
     else:
