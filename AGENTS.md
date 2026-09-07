@@ -1,7 +1,7 @@
 # Hither 工作規則
 
 - Git repo 為 hither_app；mobile 位於 apps/mobile。以 remote default branch 為整合基準。
-- 完整任務使用 workflow-controller：sol-plan-publish → implement-integration-pr → sol-review-land；未通過回實作，通過才 merge，接著同步及清理。規劃／審查使用 gpt-6-astra low，實作維持 gpt-5.6-luna max。
+- 完整任務使用 workflow-controller：sol-plan-publish → implement-integration-pr → sol-review-land；未通過回實作，通過才 merge，接著同步及清理。只有 Release skill 使用 gpt-6-astra low；其餘 workflow phase 使用 gpt-5.6-luna max。
 - GitHub Issue／PR 是任務狀態來源。一個 parent 一個 branch／worktree／PR，不同 parent 可並行。只讀當前任務需要的規格與資料。
 - 在專用 worktree 修改；主工作樹 dirty 不阻塞獨立工作，也不得為交接 stash 無關修改。合併後主工作樹安全 fast-forward；其他 active worktree 由 owner 在乾淨交接點同步 master。
 - 完整流程已授權同範圍規劃、Issue／PR、修復、push、merge 與已交付資源清理，不逐階段詢問。未決重大產品取捨、未授權發布、不可恢復的資料丟棄或必要憑證仍須處理。

@@ -35,7 +35,7 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_xxx
 
 使用使用者共用技能目錄 `~/.agents/skills`。Claude 的技能入口指向同一來源，不維護另一份內容。
 `workflow-controller` 自動接續規劃、實作、審查修復、合併與清理。
-規劃／審查為 `gpt-6-astra`／`low`；實作維持 `gpt-5.6-luna`／`max`。宿主不可用時明示能力限制。
+只有 Release skill 為 `gpt-6-astra`／`low`；其餘 workflow phase 使用 `gpt-5.6-luna`／`max`。宿主不可用時明示能力限制。
 主工作樹不用安裝只為模擬模型的 nested launcher。
 
 ## 5. Supabase CLI 重新 link（要跑 migration 時才需要）
