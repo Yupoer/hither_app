@@ -24,84 +24,19 @@ EXPO_PUBLIC_SUPABASE_URL=https://htqrucnjafhhvxdqslbv.supabase.co
 EXPO_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_xxx
 ```
 
-## 3. 重建 git hooks
+## 3. Git hooks 與發布
 
-```bash
-cd hither_app
-bash scripts/install-git-hooks.sh
-```
+不安裝 pre-push 全套測試或 post-commit／Stop 自動發布 hook。
+舊安裝的 `.git/hooks/pre-push`、`post-commit` 先檢查內容，再移除本專案的舊版本；保留其他自訂保障。
+`install-git-hooks.sh` 與舊 auto-ship 入口只提示，不修改 Git 或發布 OTA。
+驗證按 AGENTS.md 與 CI；OTA／build／submit 由明確授權的 release 流程執行。
 
-會安裝：
+## 4. 共用技能
 
-| Hook | 行為 |
-|------|------|
-| **pre-push** | `apps/mobile` 跑 jest + tsc，失敗擋 push |
-| **post-commit** | 若 **HEAD 僅含 OTA 可推送變更**（`apps/mobile/src/**`、assets 等；**不含** ios/android/modules/targets、package.json、app.json…），則：feature branch → merge 進 `master` 並 push；已在 `master` → 直接 push；接著 `eas update` 到 `production` + `preview` |
-
-腳本本體：`scripts/ota-auto-ship.sh`（可手動 `bash scripts/ota-auto-ship.sh` 或 `--force`）。
-
-暫時關閉自動 OTA：
-
-```bash
-OTA_AUTO_SHIP=0 git commit ...
-```
-
-**注意：** post-commit 會真的 push + 發 OTA；純文件／supabase／native 變更會自動 skip。
-
-## 3b. Grok 任務結束 hook（Stop → commit / merge / push / OTA）
-
-掛在**系統全域** `~/.grok/hooks/`（Windows：`%USERPROFILE%\.grok\hooks\`），Grok CLI 的 `/hooks-add` 只接受這個目錄。
-
-| 步驟 | 行為 |
-|------|------|
-| 1 | 有安全可提交變更 → auto-commit（略過 `.env` / `*.p8` / `node_modules` / `dist`） |
-| 2 | 僅 OTA 安全變更（`apps/mobile/src/**` 等）才繼續；含 native 則 skip OTA |
-| 3 | patch-bump `apps/mobile/app.json` 的 `expo.version`（**不改** `runtimeVersion`，既有 binary 仍能收 OTA） |
-| 4 | feature branch / worktree → **worktree-safe** merge 進 `master` 並 push；已在 `master` → 直接 push |
-| 5 | `eas update` → `production` + `preview`（timeout 900s） |
-
-檔案（全域，Always trusted）：
-
-- `~/.grok/hooks/task-end-ship.json`
-- `~/.grok/hooks/run-hook.cmd` + `task-end-ship`（進入點）
-- 本體仍在 repo：`hither_app/scripts/task-end-ship.sh`（hook 會依 workspace 自動找到）
-
-換機時把上述三個檔複製到新機器的 `~/.grok/hooks/`，或在 Grok 執行：
-
-```text
-/hooks-add %USERPROFILE%\.grok\hooks
-```
-
-然後 `/hooks` 確認 Stop → task-end-ship 已載入；改完檔可按 `r` reload。全域 hook 不需 `/hooks-trust`。
-
-手動試跑（不寫入）：
-
-```bash
-cd hither_app
-bash scripts/task-end-ship.sh --dry-run
-```
-
-暫時關閉：
-
-```bash
-# 整段 pipeline
-set TASK_END_SHIP=0          # PowerShell: $env:TASK_END_SHIP=0
-# 或只關 OTA / 版號 / commit
-TASK_END_SHIP_OTA=0
-TASK_END_SHIP_BUMP=0
-TASK_END_SHIP_COMMIT=0
-```
-
-與 post-commit 的關係：`task-end-ship` 執行期間固定 `OTA_AUTO_SHIP=0`，避免 commit 時再觸發 `ota-auto-ship` 雙重發佈。
-
-## 4. 重建 `.claude/agents/`（多模型調度）
-
-見 CLAUDE.md「多模型調度」章節。固定使用以下兩個角色：
-
-- `sol-architecture-reviewer.md`（model: `5.6Sol-Effort-Medium`）— 架構規劃、plan、技術取捨與 Code Review。
-- `luna-implementation-worker.md`（model: `5.6 Luna-Effort-Max`）— 依 plan 實作、測試與大量重複工作。
-
-執行順序固定為 Sol 產出 plan → Luna 實作與驗證 → Sol Code Review → Luna 修正 → Sol 最終驗收。
+使用使用者共用技能目錄 `~/.agents/skills`。Claude 的技能入口指向同一來源，不維護另一份內容。
+`workflow-controller` 自動接續規劃、實作、審查修復、合併與清理。
+規劃／審查為 `gpt-6-astra`／`low`；實作維持 `gpt-5.6-luna`／`max`。宿主不可用時明示能力限制。
+主工作樹不用安裝只為模擬模型的 nested launcher。
 
 ## 5. Supabase CLI 重新 link（要跑 migration 時才需要）
 

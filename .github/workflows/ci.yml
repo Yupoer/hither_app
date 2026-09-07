@@ -20,7 +20,7 @@ name: CI
 
 on:
   push:
-    branches: ["**"]
+    branches: ["master"]
   pull_request:
   workflow_dispatch:
 
@@ -39,20 +39,39 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Verify workflow tooling
+        working-directory: ${{ github.workspace }}
+        run: |
+          python3 scripts/test_workflow_scope.py
+          bash -n scripts/install-git-hooks.sh scripts/ota-auto-ship.sh scripts/task-end-ship.sh
+
+      - name: Classify rules and documentation changes
+        id: scope
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python3 scripts/check-workflow-scope.py
+        working-directory: ${{ github.workspace }}
+
       - uses: actions/setup-node@v4
+        if: steps.scope.outputs.product == 'true'
         with:
           node-version: 20
           cache: npm
           cache-dependency-path: apps/mobile/package-lock.json
 
       - name: Install
+        if: steps.scope.outputs.product == 'true'
         run: npm ci
 
       - name: Test (jest)
+        if: steps.scope.outputs.product == 'true'
         run: npm test --silent
 
       # Durable PR marker (not github.base_ref): <!-- hither-test-meta parent: N|pure-chore -->
       - name: Resolve META_PARENT from PR metadata
+        if: steps.scope.outputs.product == 'true'
         id: test_meta
         uses: actions/github-script@v7
         with:
@@ -95,38 +114,47 @@ jobs:
             core.info(`Resolved META_PARENT=${m[1]}`);
 
       - name: Test meta (L1 map + L2 anti-fake)
+        if: steps.scope.outputs.product == 'true'
         run: npm run test:meta
         env:
           META_PARENT: ${{ steps.test_meta.outputs.parent }}
 
       - name: Coverage changed functions ≥85%
+        if: steps.scope.outputs.product == 'true'
         run: npm run test:coverage:changed
         env:
           COVERAGE_BASE: ${{ github.base_ref && format('origin/{0}', github.base_ref) || 'origin/master' }}
           COVERAGE_THRESHOLD: '85'
 
       - name: Lint (eslint — full tree; featureTour at error severity)
+        if: steps.scope.outputs.product == 'true'
         run: npm run lint
 
       - name: Typecheck (tsc)
+        if: steps.scope.outputs.product == 'true'
         run: npm run typecheck
 
       - name: Verify iOS runtime alignment
+        if: steps.scope.outputs.product == 'true'
         run: npm run verify:runtime
 
       - name: Expo dependency check (version drift = Expo Go crashes)
+        if: steps.scope.outputs.product == 'true'
         run: npx --yes expo install --check
 
       - name: Expo doctor
+        if: steps.scope.outputs.product == 'true'
         # Pin: expo-doctor 1.20+ fails SDK 56 on a new Hermes V1 advisory
         # (upgrade-to-57 only). Stay on the last 20-check doctor until SDK 57.
         run: npx --yes expo-doctor@1.19.0
 
       - uses: denoland/setup-deno@v2
+        if: steps.scope.outputs.product == 'true'
         with:
           deno-version: v2.x
 
       - name: Deno Edge fixture tests
+        if: steps.scope.outputs.product == 'true'
         working-directory: ${{ github.workspace }}
         run: |
           deno test --no-check --allow-env --allow-net --allow-read --allow-import \
@@ -136,14 +164,17 @@ jobs:
             supabase/functions/sync-app-store-subscription/index_test.ts
 
       - uses: supabase/setup-cli@v1
+        if: steps.scope.outputs.product == 'true'
         with:
           version: 2.109.1
 
       - name: Strip migration BOM for local supabase CLI
+        if: steps.scope.outputs.product == 'true'
         working-directory: ${{ github.workspace }}
         run: node supabase/scripts/strip-migration-bom.mjs
 
       - name: Supabase SQL kick authorization (pgTAP)
+        if: steps.scope.outputs.product == 'true'
         working-directory: ${{ github.workspace }}
         run: |
           supabase db start
