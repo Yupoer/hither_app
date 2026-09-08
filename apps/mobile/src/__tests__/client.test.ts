@@ -430,12 +430,14 @@ describe('notifications, commands & journey', () => {
         leader_commands: false,
         follower_requests: true,
         journey: false,
+        arrival: false,
       }),
     ).toEqual({
       addGathering: true,
       leaderCommands: false,
       followerRequests: true,
       journey: false,
+      arrival: false,
     });
   });
 
@@ -611,6 +613,7 @@ describe('notifications, commands & journey', () => {
       leaderCommands: true,
       followerRequests: true,
       journey: true,
+      arrival: true,
     });
   });
 
@@ -623,6 +626,7 @@ describe('notifications, commands & journey', () => {
       leaderCommands: true,
       followerRequests: false,
       journey: true,
+      arrival: true,
     });
     expect(upsert).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -631,6 +635,7 @@ describe('notifications, commands & journey', () => {
         leader_commands: true,
         follower_requests: false,
         journey: true,
+        arrival: true,
       }),
       { onConflict: 'user_id' },
     );

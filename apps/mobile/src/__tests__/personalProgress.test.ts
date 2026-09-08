@@ -107,6 +107,7 @@ describe('derivePersonalProgress (shared local model)', () => {
 
   it('forces progress 1 and eta 0 on arrival', () => {
     const model = derivePersonalProgress({
+      arrived: true,
       deviceCoords: atTarget,
       targetCoords: atTarget,
       initialDistanceM: 1000,
@@ -165,6 +166,7 @@ describe('derivePersonalProgress (shared local model)', () => {
 
   it('reaches 100% only on confirmed arrival', () => {
     const model = derivePersonalProgress({
+      arrived: true,
       deviceCoords: atTarget,
       targetCoords: atTarget,
       initialDistanceM: 1000,
@@ -445,4 +447,11 @@ describe('personalDisplayProgress (#194 A3/A4)', () => {
       }),
     ).toBe(1);
   });
+});
+
+it('a coordinate inside the geofence cannot confirm arrival without the accuracy-aware reducer', () => {
+  const model = derivePersonalProgress({ deviceCoords: atTarget, targetCoords: atTarget,
+    initialDistanceM: 740, travelMode: 'walk', hasDepartedStart: true });
+  expect(model.arrived).toBe(false);
+  expect(model.progress).toBeLessThan(1);
 });

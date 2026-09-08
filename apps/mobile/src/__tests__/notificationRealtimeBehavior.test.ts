@@ -24,6 +24,7 @@ const mockGetPreferences = jest.fn(async () => ({
   followerRequests: true,
   addGathering: true,
   journey: true,
+  arrival: true,
 }));
 const mockSeen = new Set<string>();
 const mockChannel: { on: jest.Mock; subscribe: jest.Mock } = {
@@ -154,7 +155,7 @@ describe('Realtime notification semantics', () => {
     expect(mockSchedule).toHaveBeenLastCalledWith(expect.objectContaining({
       title: expect.stringContaining('Ada'),
       body: expect.stringContaining('Museum'),
-      data: expect.objectContaining({ eventId: expect.stringContaining('stop-1') }),
+      data: expect.objectContaining({ eventId: expect.stringContaining('arrival-1') }),
     }));
     root.unmount();
   });
@@ -189,4 +190,21 @@ describe('Realtime notification semantics', () => {
     }));
     followerRoot.unmount();
   });
+  it('notifies a follower of their own arrival and honors the separate arrival switch', async () => {
+    mockSession.membership.role = 'follower';
+    const root = await mountNotifications();
+    mockGetPreferences.mockResolvedValue({ leaderCommands: true, followerRequests: true,
+      addGathering: true, journey: false, arrival: true });
+    await emit('destination_arrivals', { new: { id: 'own-1', user_id: 'me', destination_id: 'stop-1' } });
+    expect(mockSchedule).toHaveBeenCalledWith(expect.objectContaining({ title: 'map.arriveTitle' }));
+    mockSchedule.mockClear();
+    await emit('destination_arrivals', { new: { id: 'peer-1', user_id: 'someone-else', destination_id: 'stop-1' } });
+    expect(mockSchedule).not.toHaveBeenCalled();
+    mockGetPreferences.mockResolvedValue({ leaderCommands: true, followerRequests: true,
+      addGathering: true, journey: true, arrival: false });
+    await emit('destination_arrivals', { new: { id: 'own-2', user_id: 'me', destination_id: 'stop-2' } });
+    expect(mockSchedule).not.toHaveBeenCalled();
+    root.unmount();
+  });
+
 });

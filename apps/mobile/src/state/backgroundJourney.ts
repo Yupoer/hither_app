@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
+import { updateLiveActivityProgress } from '../api/services/LiveActivityService';
 import { ackNavigationSession } from '../api/services/NavigationService';
 import { liveActivity } from '../native';
 import { distanceMeters } from '../utils/geo';
@@ -25,7 +26,7 @@ import {
   createArrivalState,
   reduceArrival,
 } from '../utils/navigationArrival';
-import { personalDisplayProgress } from '../utils/journeyProgress';
+import { derivePersonalProgress } from '../utils/personalProgress';
 import {
   BACKGROUND_JOURNEY_TASK,
   BACKGROUND_JOURNEY_KEY,
@@ -136,33 +137,37 @@ if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
           { radiusM: config.arrivalRadiusMeters },
         );
         const sequence = config.sequence + 1;
-        await timeBackgroundStage(stages, 'async_storage_write', () =>
-          AsyncStorage.setItem(
-            BACKGROUND_JOURNEY_KEY,
-            JSON.stringify({ ...config, sequence, arrivalState: arrival }),
-          ),
-        );
         // Local Live Activity always updates from device GPS — works offline and
         // when cloud sharing is off. Upload is gated separately below.
-        const movedFromStartM = config.startCoords
-          ? distanceMeters(config.startCoords, coords)
-          : undefined;
-        const displayProgress = personalDisplayProgress({
-          initialM: config.initialDistanceM,
-          currentM: distanceM,
-          movedFromStartM,
+        const progress = derivePersonalProgress({
+          deviceCoords: coords,
+          targetCoords: config.destination,
+          initialDistanceM: config.initialDistanceM,
+          distanceSource: config.distanceSource ?? 'fallback',
+          startCoords: config.startCoords,
           hasDepartedStart: config.hasDepartedStart,
-          previousMax: config.previousProgressMax,
+          previousProgressMax: config.previousProgressMax,
+          travelMode: config.travelMode,
+          routeAnchorGps: config.routeAnchorGps,
+          routeAnchorRemainingM: config.routeAnchorRemainingM,
+          routeEtaSeconds: config.etaSeconds,
           arrived: arrival.status === 'arrived',
         });
+        const displayProgress = progress.progress ?? 0;
+        await timeBackgroundStage(stages, 'async_storage_write', () =>
+          AsyncStorage.setItem(BACKGROUND_JOURNEY_KEY, JSON.stringify({
+            ...config, sequence, arrivalState: arrival, previousProgressMax: displayProgress,
+          })),
+        );
         await timeBackgroundStage(stages, 'live_activity_update', () =>
           liveActivity.updateAllGroupActivities({
             groupName: config.groupName ?? '',
             gatheringTitle: config.gatheringTitle ?? config.groupName,
             navigationSessionId: config.navigationSessionId ?? undefined,
             status: 'active',
-            distanceMeters: distanceM,
-            etaSeconds: config.etaSeconds,
+            distanceMeters: progress.distanceMeters ?? undefined,
+            etaSeconds: progress.etaSeconds ?? undefined,
+            accentHex: config.accentHex,
             progress: displayProgress,
             travelMode: config.travelMode,
             memberEmojis: config.memberEmojis,
@@ -279,9 +284,11 @@ if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
             sequence,
           });
         }
+        await updateLiveActivityProgress(config.groupId, config.destinationId, progress, config.accentHex)
+          .catch(() => undefined);
         if (
           config.navigationSessionId &&
-          arrival.status !== previousArrival.status &&
+          (arrival.status !== previousArrival.status || arrival.status === 'arrived') &&
           (arrival.status === 'arriving' || arrival.status === 'arrived')
         ) {
           await timeBackgroundStage(stages, 'session_ack', () =>
@@ -294,7 +301,7 @@ if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
                 accuracyM,
                 sequence,
               },
-            ).catch(() => undefined),
+            ),
           );
         }
         if (config.navigationSessionId && arrival.status === 'arrived') {

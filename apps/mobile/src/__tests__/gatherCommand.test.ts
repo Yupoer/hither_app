@@ -471,11 +471,11 @@ describe('planCompleteGatheringApply (#195)', () => {
         remoteAutoCompleted: true,
       }),
     ).toMatchObject({
-      callRpc: false,
+      callRpc: true,
       applyLocalClosedAt: true,
       startCardExit: true,
       refreshHistory: true,
-      reason: 'rpc_debounced',
+      reason: 'rpc',
     });
   });
 

@@ -45,8 +45,9 @@ describe('foreground arrival feedback', () => {
     expect(source).toContain('ArrivalCardExitShell');
     expect(source).toContain('mergeExitingDestinations');
     expect(source).toContain('COMPLETE_PROMPT_DELAY_MS');
-    expect(source).toContain("kind: 'destinationArrival'");
-    expect(source).toContain('arrivalNotificationDestIdsRef.current');
+    // Committed arrival INSERT drives notifications; animation does not schedule them.
+    expect(source).not.toContain("kind: 'destinationArrival'");
+    expect(source).not.toContain('if (opts?.stopNav)');
     expect(source).not.toContain('arrivalCheckBadge');
   });
 
@@ -109,7 +110,7 @@ describe('foreground arrival feedback', () => {
       source.indexOf('const submitArrivalWithTimestamp'),
     );
     expect(undo.indexOf('await setDestinationArrival(')).toBeLessThan(
-      undo.indexOf('arrivalNotificationDestIdsRef.current.delete'),
+      undo.indexOf('setAutoArrivedDestId'),
     );
   });
 });

@@ -17,6 +17,7 @@ import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
+import { shouldDeliverOnce } from '../utils/notificationDeliveryPolicy';
 
 /** Custom native module; `null` in Expo Go / when not built. */
 const HitherNotifications = requireOptionalNativeModule<{
@@ -52,13 +53,20 @@ export interface LocalNotificationInput {
 // Foreground presentation: without a handler, iOS suppresses notifications
 // while the app is open. The interim local-notification flow (realtime event ->
 // local notification) needs them visible in-app too, so always show a banner.
+const presentedEvents = new Set<string>();
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
+  handleNotification: async (notification) => {
+    const eventId = notification.request.content.data?.eventId;
+    const show = shouldDeliverOnce(
+      presentedEvents, typeof eventId === 'string' ? eventId : null, 'device',
+    );
+    return {
+      shouldShowBanner: show,
+      shouldShowList: show,
+      shouldPlaySound: show,
+      shouldSetBadge: false,
+    };
+  },
 });
 
 /** Request notification permission. Returns true if granted. */

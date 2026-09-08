@@ -66,7 +66,7 @@ import {
   cameraOnLongPress,
   cameraOnSearchPick,
 } from '../utils/mapCameraFlow';
-import { resolveNotificationRecipients } from '../utils/notificationDeliveryPolicy';
+import { notifyJourneyOperator } from '../state/journeyNotifications';
 import {
   assessLocationRefreshResponses,
   waitForLocationRefreshResponses,
@@ -1873,31 +1873,11 @@ export default function MapScreen({ route, navigation }: Props) {
     mapRef,
     carouselRef,
     setSelectedIndex,
-    onOperatorStartConfirm: (dest) => {
-      // Policy: operator_local_confirm for start_journey (sender once).
-      const policy = resolveNotificationRecipients({
-        event: 'start_journey',
-        senderId: user?.id ?? 'self',
-        members: [{
-          userId: user?.id ?? 'self',
-          role: isLeader ? 'leader' : 'follower',
-          subgroupId: myScopeId ?? null,
-          solo: false,
-        }],
-        eventId: groupId
-          ? `start_journey:${groupId}:${dest.id}`
-          : undefined,
-      });
-      if (policy.deliveryKind !== 'operator_local_confirm') return;
-      void notifications.scheduleLocalNotification({
-        title: t('notif.operatorStartTitle'),
-        body: t('notif.operatorStartBody'),
-        data: {
-          kind: 'operatorStartConfirm',
-          destinationId: dest.id,
-          eventId: policy.eventIdentity,
-        },
-      });
+    onOperatorStartConfirm: (dest, eventId) => {
+      void notifyJourneyOperator('start', dest.id, eventId, t).catch(() => undefined);
+    },
+    onOperatorPauseConfirm: (dest, eventId) => {
+      void notifyJourneyOperator('pause', dest.id, eventId, t).catch(() => undefined);
     },
     // Prefer live session. Only fall back to legacy journey_status while the
     // first fetch is still in flight (undefined), so a cold-start member still
@@ -2068,7 +2048,6 @@ export default function MapScreen({ route, navigation }: Props) {
   const foregroundAckRef = useRef<string | null>(null);
   const autoArrivalMarkedRef = useRef<string | null>(null);
   const arrivalFeedbackShownRef = useRef<string | null>(null);
-  const arrivalNotificationDestIdsRef = useRef<Set<string>>(new Set());
   /** In-flight complete-stop dest ids — ignore re-entry until settled (SUG-2). */
   const completingDestIdsRef = useRef<Set<string>>(new Set());
   /**
@@ -2220,7 +2199,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // Wired after promptCompleteAfterArrival is defined (see below).
   const afterPersonalArrivalRef = useRef<
-    (destination: Destination, opts?: { stopNav?: boolean; promptComplete?: boolean }) => void
+    (destination: Destination, opts?: { promptComplete?: boolean }) => void
   >(() => undefined);
 
   useEffect(() => {
@@ -2273,17 +2252,18 @@ export default function MapScreen({ route, navigation }: Props) {
         distanceM: straightM,
         accuracyM: deviceAccuracyM,
         consecutiveFixes: next.consecutiveFixes,
-      }).catch(() => undefined);
+      }).catch(() => {
+        if (foregroundAckRef.current === ackKey) foregroundAckRef.current = null;
+      });
     }
     if (arrivedNow && user?.id) {
       setAutoArrivedDestId(navTarget.id);
       // Persist personal arrival so the checkmark does not depend only on ACK.
       if (autoArrivalMarkedRef.current !== navTarget.id) {
         autoArrivalMarkedRef.current = navTarget.id;
-        // Celebrate + stop nav immediately; complete-stop only after write
+        // Celebrate immediately; complete-stop only after write
         // succeeds (Codex P1: do not schedule auto-complete before arrival RPC).
         afterPersonalArrivalRef.current(navTarget, {
-          stopNav: true,
           promptComplete: false,
         });
         void setDestinationArrival(navTarget.id, user.id, true)
@@ -2294,7 +2274,8 @@ export default function MapScreen({ route, navigation }: Props) {
           .then(() => {
             afterPersonalArrivalRef.current(navTarget, { promptComplete: true });
           })
-          .catch(() => {
+          .catch((error) => {
+            Alert.alert(t('arrival.failedTitle'), arrivalErrorMessage(error, t));
             // Arrival was not committed: clear optimistic personally-arrived so
             // manual Complete cannot auto-complete by force-including self.
             autoArrivalMarkedRef.current = null;
@@ -2303,7 +2284,6 @@ export default function MapScreen({ route, navigation }: Props) {
             if (arrivalFeedbackShownRef.current === navTarget.id) {
               arrivalFeedbackShownRef.current = null;
             }
-            arrivalNotificationDestIdsRef.current.delete(navTarget.id);
             setArrivalCelebrateDestId((cur) => (cur === navTarget.id ? null : cur));
           });
       }
@@ -2406,7 +2386,7 @@ export default function MapScreen({ route, navigation }: Props) {
       return;
     }
 
-    const key = `${groupId}:${navTarget.id}:${state?.group.journeyStartedAt ?? ''}`;
+    const key = `${groupId}:${navTarget.id}:${navigationSessionState.session?.id ?? state?.group.journeyStartedAt ?? ''}`;
     // New destination / journey → reset monotonic progress + last-valid.
     if (presentationStickyRef.current.key !== key) {
       presentationStickyRef.current = {
@@ -2448,6 +2428,8 @@ export default function MapScreen({ route, navigation }: Props) {
         startCoords: deviceCoords,
       };
       departedStartRef.current = false;
+      presentationStickyRef.current.progressMax = null;
+      setProgressMaxSticky(null);
       setInitialDistanceM(distanceM);
       setDistanceSource(source);
       setProgressDepartedStart(false);
@@ -2462,6 +2444,7 @@ export default function MapScreen({ route, navigation }: Props) {
     selfRoute?.distanceMeters,
     selfRouteGeneration,
     state?.group.journeyStartedAt,
+    navigationSessionState.session?.id,
   ]);
 
   /**
@@ -2525,6 +2508,10 @@ export default function MapScreen({ route, navigation }: Props) {
       destination: dest,
       arrivalRadiusMeters: localArrivalRadiusM,
       initialDistanceM: backgroundInitialM,
+      distanceSource: initialJourneyRef.current?.source,
+      routeAnchorGps: deviceCoords ?? undefined,
+      routeAnchorRemainingM: lastValidPresentation.distanceM ?? lastRouteDistanceM ?? backgroundInitialM,
+      accentHex: colors.accent,
       sequence: 0,
       travelMode,
       // Explicit high accuracy is a user opt-in even without team navigation.
@@ -2571,6 +2558,9 @@ export default function MapScreen({ route, navigation }: Props) {
     progressDepartedStart,
     progressMaxSticky,
     selfRoute?.expectedTravelTimeSeconds,
+    colors.accent,
+    lastValidPresentation.distanceM,
+    lastRouteDistanceM,
   ]);
 
   useEffect(() => () => void stopBackgroundJourney(), []);
@@ -2766,7 +2756,7 @@ export default function MapScreen({ route, navigation }: Props) {
    */
   const progressSurfaces = usePersonalProgressSurfaces({
     resetKey: journeyActive && groupId && navTarget
-      ? `${groupId}:${navTarget.id}:${state?.group.journeyStartedAt ?? ''}`
+      ? `${groupId}:${navTarget.id}:${navigationSessionState.session?.id ?? state?.group.journeyStartedAt ?? ''}`
       : null,
     deviceCoords,
     targetCoords: navTarget?.coordinates,
@@ -2847,7 +2837,7 @@ export default function MapScreen({ route, navigation }: Props) {
   // Stick presentation: monotonic progress max + last-valid distance/ETA (#145).
   useEffect(() => {
     if (!journeyActive || !navTarget || !groupId) return;
-    const key = `${groupId}:${navTarget.id}:${state?.group.journeyStartedAt ?? ''}`;
+    const key = `${groupId}:${navTarget.id}:${navigationSessionState.session?.id ?? state?.group.journeyStartedAt ?? ''}`;
     const sticky = presentationStickyRef.current;
     if (sticky.key !== key) {
       // Key was just set in baseline effect; align ref so subsequent samples stick.
@@ -2887,6 +2877,7 @@ export default function MapScreen({ route, navigation }: Props) {
     navTarget,
     groupId,
     state?.group.journeyStartedAt,
+    navigationSessionState.session?.id,
     personalProgress.progress,
     personalProgress.distanceMeters,
     personalProgress.etaSeconds,
@@ -3646,19 +3637,7 @@ export default function MapScreen({ route, navigation }: Props) {
       remoteAutoCompleted: remoteAutoCompleteDestIdsRef.current.has(destination.id),
     });
     const closedAt = destination.closedAt ?? new Date().toISOString();
-    if (plan.applyLocalClosedAt) {
-      setOptimisticDestinations((prev) =>
-        applyLocalClosedAt(prev ?? allScopedDestinations, destination.id, closedAt),
-      );
-    }
-    if (plan.startCardExit) {
-      const priorIdx = resolveExitIndexAtStart(
-        prevVisibleDestOrderRef.current,
-        destination.id,
-        prevVisibleDestOrderRef.current.length,
-      );
-      startArrivalCardExit({ ...destination, closedAt }, priorIdx);
-    }
+    if (completingDestIdsRef.current.has(destination.id)) return false;
     if (plan.callRpc) {
       completingDestIdsRef.current.add(destination.id);
       try {
@@ -3673,6 +3652,19 @@ export default function MapScreen({ route, navigation }: Props) {
         return false;
       }
       completingDestIdsRef.current.delete(destination.id);
+    }
+    if (plan.applyLocalClosedAt) {
+      setOptimisticDestinations((prev) =>
+        applyLocalClosedAt(prev ?? allScopedDestinations, destination.id, closedAt),
+      );
+    }
+    if (plan.startCardExit) {
+      const priorIdx = resolveExitIndexAtStart(
+        prevVisibleDestOrderRef.current,
+        destination.id,
+        prevVisibleDestOrderRef.current.length,
+      );
+      startArrivalCardExit({ ...destination, closedAt }, priorIdx);
     }
     if (plan.refreshHistory) {
       await navigationSessionState.refresh().catch(() => undefined);
@@ -3829,19 +3821,6 @@ export default function MapScreen({ route, navigation }: Props) {
         },
       );
     }
-    if (opts?.stopNav) void stopNavigation();
-    if (
-      opts?.promptComplete
-      && !arrivalNotificationDestIdsRef.current.has(destination.id)
-    ) {
-      arrivalNotificationDestIdsRef.current.add(destination.id);
-      void notifications.scheduleLocalNotification({
-        title: t('map.arriveTitle'),
-        body: t('map.arriveBody', { title: destination.title }),
-        data: { kind: 'destinationArrival', destinationId: destination.id },
-      });
-    }
-
     const COMPLETE_PROMPT_DELAY_MS = 1_600 + 1_000;
     if (opts?.promptComplete) {
       // includeSelf only on this post-write path (arrival RPC already succeeded).
@@ -3947,7 +3926,6 @@ export default function MapScreen({ route, navigation }: Props) {
             if (arrivalFeedbackShownRef.current === destination.id) {
               arrivalFeedbackShownRef.current = null;
             }
-            arrivalNotificationDestIdsRef.current.delete(destination.id);
           }
           await loadGatheringWorkflow().catch(() => undefined);
         } catch (error) {
@@ -3969,8 +3947,7 @@ export default function MapScreen({ route, navigation }: Props) {
       // Optimistic celebrate only — complete-stop waits for arrival write success.
       if (targetUserId === user?.id) setAutoArrivedDestId(destination.id);
       patchLocalArrival(destination.id, targetUserId, true, arrivedAt);
-      afterPersonalArrivalRef.current(destination, {
-        stopNav: navTarget?.id === destination.id,
+      if (targetUserId === user?.id) afterPersonalArrivalRef.current(destination, {
         promptComplete: false,
       });
       try {
@@ -3979,7 +3956,6 @@ export default function MapScreen({ route, navigation }: Props) {
         // Roll back local mark if the shared write fails — never complete-stop.
         if (targetUserId === user?.id) {
           setAutoArrivedDestId((cur) => (cur === destination.id ? null : cur));
-          arrivalNotificationDestIdsRef.current.delete(destination.id);
         }
         patchLocalArrival(destination.id, targetUserId, false);
         if (arrivalFeedbackShownRef.current === destination.id) {
@@ -3994,7 +3970,7 @@ export default function MapScreen({ route, navigation }: Props) {
       }
       await loadGatheringWorkflow().catch(() => undefined);
       // Arrival committed → complete rules (auto if all scoped arrived).
-      afterPersonalArrivalRef.current(destination, { promptComplete: true });
+      if (targetUserId === user?.id) afterPersonalArrivalRef.current(destination, { promptComplete: true });
     })();
   }, [
     loadGatheringWorkflow,

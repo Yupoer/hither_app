@@ -12,6 +12,7 @@ interface NotificationPrefsRow {
   leader_commands: boolean;
   follower_requests: boolean;
   journey: boolean;
+  arrival?: boolean;
 }
 
 export function mapNotificationPreferences(
@@ -22,6 +23,7 @@ export function mapNotificationPreferences(
     leaderCommands: row.leader_commands,
     followerRequests: row.follower_requests,
     journey: row.journey,
+    arrival: row.arrival ?? true,
   };
 }
 
@@ -61,7 +63,7 @@ export async function getNotificationPreferences(): Promise<NotificationPreferen
   const uid = await requireUserId();
   const { data, error } = await supabase
     .from('notification_preferences')
-    .select('add_gathering, leader_commands, follower_requests, journey')
+    .select('add_gathering, leader_commands, follower_requests, journey, arrival')
     .eq('user_id', uid)
     .maybeSingle();
   orThrow(error);
@@ -80,6 +82,7 @@ export async function setNotificationPreferences(
       leader_commands: prefs.leaderCommands,
       follower_requests: prefs.followerRequests,
       journey: prefs.journey,
+      arrival: prefs.arrival,
       updated_at: new Date().toISOString(),
     },
     { onConflict: 'user_id' },

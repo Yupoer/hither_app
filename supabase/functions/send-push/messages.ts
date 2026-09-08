@@ -222,7 +222,7 @@ export function buildMessage(p: PushPayload): { title: string; body: string } {
 }
 
 /** The notification_preferences column that gates this category. */
-export function prefColumn(category: PushPayload["category"]): string {
+export function prefColumn(category: PushPayload["category"]): "add_gathering" | "leader_commands" | "follower_requests" | "journey" | "arrival" {
   switch (category) {
     case "add_gathering":
       return "add_gathering";
@@ -230,8 +230,9 @@ export function prefColumn(category: PushPayload["category"]): string {
       return "leader_commands";
     case "follower_requests":
       return "follower_requests";
-    case "journey":
     case "arrival":
+      return "arrival";
+    case "journey":
     case "straggler":
     case "live_activity":
     case "navigation_session":

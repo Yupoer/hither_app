@@ -63,7 +63,8 @@ interface UseJourneyNavigationParams {
    * Operator local confirm after start/switch session succeeds (ticket 02).
    * Client-triggered — does not rely on DB update payload for sender.
    */
-  onOperatorStartConfirm?: (destination: Destination) => void;
+  onOperatorStartConfirm?: (destination: Destination, eventId: string) => void;
+  onOperatorPauseConfirm?: (destination: Destination, eventId: string) => void;
 }
 
 export function useJourneyNavigation({
@@ -87,6 +88,7 @@ export function useJourneyNavigation({
   travelMode = 'walk',
   onOptimisticGathering,
   onOperatorStartConfirm,
+  onOperatorPauseConfirm,
 }: UseJourneyNavigationParams) {
   const legacyMode = navigationSession === undefined;
   const legacySharedTargetId = legacyMode && state?.group.journeyStatus === 'going'
@@ -117,6 +119,21 @@ export function useJourneyNavigation({
     operationId: string;
     base: ActiveGatheringState;
   } | null>(null);
+
+  // Realtime/retry may confirm a start after the original request lost its response.
+  useEffect(() => {
+    const pending = requestRef.current;
+    if (!pendingStartRef.current || !pending || navigationSession?.status !== 'active'
+      || navigationSession.destinationId !== pending.destinationId
+      || navigationSession.requestId !== pending.requestId) return;
+    const destination = navigationDestinations.find((item) => item.id === pending.destinationId);
+    if (!destination) return;
+    requestRef.current = null;
+    pendingStartRef.current = null;
+    serverOrStartedSessionRef.current = true;
+    onOperatorStartConfirm?.(destination, `start:${groupId}:${pending.requestId}`);
+    void flushCoreOperationOutbox().catch(() => undefined);
+  }, [groupId, navigationSession, navigationDestinations, onOperatorStartConfirm]);
 
   const restorePendingStart = useCallback(async () => {
     const pending = pendingStartRef.current;
@@ -254,7 +271,10 @@ export function useJourneyNavigation({
       gatheringStateRef.current = result.local;
       onOptimisticGathering?.(result.local);
       // Cancel flock nav session (mirrors groups.journey → paused; never closes itinerary).
-      await cancelSession?.().catch(() => undefined);
+      const cancelled = await cancelSession?.();
+      const confirmedPaused = cancelled || (refreshNavigationSession && await refreshNavigationSession() === null);
+      if (confirmedPaused) onOperatorPauseConfirm?.(dest,
+        `pause:${cancelled?.id ?? navigationSession?.id ?? groupId}:${cancelled?.version ?? intent.sequence}`);
       _refresh();
       serverOrStartedSessionRef.current = false;
     } catch {
@@ -264,7 +284,7 @@ export function useJourneyNavigation({
       setPendingLeaderTargetId(null);
       setJourneyBusy(false);
     }
-  }, [groupId, state, onOptimisticGathering, _refresh, cancelSession]);
+  }, [groupId, state, onOptimisticGathering, _refresh, cancelSession, onOperatorPauseConfirm, refreshNavigationSession, navigationSession]);
 
   const runTeamStart = useCallback(async (intent: TeamCommandIntent): Promise<void> => {
     if (!groupId || !startSession) return;
@@ -335,6 +355,8 @@ export function useJourneyNavigation({
       if (!requestRef.current || requestRef.current.destinationId !== dest.id) {
         requestRef.current = { destinationId: dest.id, requestId: createRequestId() };
       }
+      const startRequestId = requestRef.current.requestId;
+      const startEventId = `start:${groupId}:${startRequestId}`;
       try {
         if (switching) {
           await startSession(dest.id, requestRef.current.requestId, true);
@@ -347,7 +369,7 @@ export function useJourneyNavigation({
         void flushCoreOperationOutbox().catch(() => undefined);
         // Operator local confirm once per successful start (not via Realtime sender path).
         try {
-          onOperatorStartConfirm?.(dest);
+          onOperatorStartConfirm?.(dest, startEventId);
         } catch {
           // best-effort
         }
@@ -361,8 +383,9 @@ export function useJourneyNavigation({
           const reconciled = refreshNavigationSession
             ? await refreshNavigationSession().catch(() => null)
             : null;
-          if (reconciled?.status === 'active') {
+          if (reconciled?.status === 'active' && reconciled.destinationId === dest.id && reconciled.requestId === startRequestId) {
             serverOrStartedSessionRef.current = true;
+            onOperatorStartConfirm?.(dest, startEventId);
           } else {
             await abortLeaderGatheringStart({
               operationId: enqueued.operationId,

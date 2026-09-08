@@ -6,6 +6,7 @@ import {
   deleteMyLiveActivitySessionsForGroups,
   getOrCreateLiveActivityDeviceId,
   upsertDeviceActivityToken,
+  updateDeviceActivityAccent,
   upsertLiveActivitySession,
   type LiveActivityTokenRegisterResult,
 } from '../api/services/LiveActivityService';
@@ -64,6 +65,7 @@ export function useLiveActivity(
 ): void {
   const { user } = useSession();
   const lastPersistAtRef = useRef(0);
+  const lastPersistedAccentRef = useRef<string | undefined>(undefined);
   const stateRef = useRef(state);
   const sessionRef = useRef(session);
   const pushToStartTokenRef = useRef<string | null>(null);
@@ -112,7 +114,8 @@ export function useLiveActivity(
       return;
     }
     const now = Date.now();
-    if (!opts?.force && now - lastPersistAtRef.current < PERSIST_MIN_MS) {
+    if (!opts?.force && currentState.accentHex === lastPersistedAccentRef.current
+      && now - lastPersistAtRef.current < PERSIST_MIN_MS) {
       return;
     }
     lastPersistAtRef.current = now;
@@ -123,7 +126,9 @@ export function useLiveActivity(
       currentDistanceM: currentState.distanceMeters,
       etaSeconds: currentState.etaSeconds,
       progress: currentState.progress,
+      accentHex: currentState.accentHex,
     });
+    lastPersistedAccentRef.current = currentState.accentHex;
   };
 
   useEffect(() => {
@@ -192,6 +197,7 @@ export function useLiveActivity(
           deviceId,
           token,
           enabledRef.current,
+          stateRef.current.accentHex,
         );
         gate.recordResult(identity, result);
         recordTokenRegisterResult(result);
@@ -215,6 +221,13 @@ export function useLiveActivity(
   }, []);
 
   useEffect(() => {
+    if (!user?.id || !state.accentHex) return;
+    void getOrCreateLiveActivityDeviceId().then((id) =>
+      updateDeviceActivityAccent(id, state.accentHex!),
+    ).catch(() => undefined);
+  }, [user?.id, state.accentHex]);
+
+  useEffect(() => {
     const deviceId = deviceIdRef.current;
     const uid = userIdRef.current;
     if (!deviceId || !uid) return;
@@ -232,6 +245,7 @@ export function useLiveActivity(
         deviceId,
         pushToStartTokenRef.current,
         liveActivitiesEnabled,
+        stateRef.current.accentHex,
       )
         .then((result) => {
           gate.recordResult(identity, result);

@@ -54,7 +54,8 @@ export function usePersonalProgressSurfaces(
 ): PersonalProgressSurfaces {
   const anchorRef = useRef<RouteAnchorState | null>(null);
   const resetKeyRef = useRef(input.resetKey);
-  if (resetKeyRef.current !== input.resetKey) {
+  const resetChanged = resetKeyRef.current !== input.resetKey;
+  if (resetChanged) {
     resetKeyRef.current = input.resetKey;
     anchorRef.current = null;
   }
@@ -86,6 +87,9 @@ export function usePersonalProgressSurfaces(
     routeResultGeneration: routeGeneration,
     routeAnchorGeneration: anchor?.generation,
   });
+  // React state still contains the previous journey's baseline on this render.
+  // Never feed its sticky percentage back into the new journey's effects.
+  if (resetChanged && !personalProgress.arrived) personalProgress.progress = 0;
   const sharedValues: PersonalProgressSurfaceValues = {
     distanceMeters:
       personalProgress.distanceMeters ?? input.fallbackDistanceM ?? null,

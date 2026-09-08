@@ -15,8 +15,6 @@ import {
 import {
   gatedJourneyProgress,
   journeyProgress,
-  hasArrived,
-  ARRIVAL_RADIUS_M,
   capPreArrivalProgress,
   monotonicProgress,
 } from './journeyProgress';
@@ -165,7 +163,6 @@ export function derivePersonalProgress(
   input: PersonalProgressInput,
 ): PersonalProgressModel {
   const completed = Boolean(input.completed);
-  const arrivalRadius = input.arrivalRadiusM ?? ARRIVAL_RADIUS_M;
   const staleAfter = input.staleAfterMs ?? 30_000;
 
   if (completed) {
@@ -297,9 +294,8 @@ export function derivePersonalProgress(
     distanceMetersValue = input.lastValidDistanceM;
   }
 
-  const geofenceArrived =
-    straightM != null && hasArrived(straightM, arrivalRadius);
-  const arrived = Boolean(input.arrived) || geofenceArrived;
+  // Only the accuracy-aware arrival reducer / committed check-in confirms arrival.
+  const arrived = Boolean(input.arrived);
 
   if (arrived) {
     return {

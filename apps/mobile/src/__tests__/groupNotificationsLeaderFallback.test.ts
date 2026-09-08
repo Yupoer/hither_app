@@ -50,7 +50,7 @@ describe('useGroupNotifications leader fallback + dual-path (BUG-5 / SUG-3)', ()
 
   it('subscribes to destination_arrivals INSERT for leader Realtime arrival fallback', () => {
     expect(source).toContain("table: 'destination_arrivals'");
-    expect(source).toContain("eventKind: 'member_arrival'");
+    expect(source).toContain("eventKind: ownArrival ? 'own_arrival' : 'member_arrival'");
     expect(source).toContain("pushCategory: 'arrival'");
     expect(source).toContain("isLeaderOnlyEvent = opts.eventKind === 'member_arrival'");
   });

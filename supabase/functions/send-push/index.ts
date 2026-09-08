@@ -55,12 +55,14 @@ interface LiveSessionRow {
   eta_seconds: number | null;
   travel_mode: "walk" | "transit" | "drive";
   last_progress_bucket?: number | null;
+  accent_hex?: string | null;
 }
 
 interface DeviceLiveActivityTokenRow {
   user_id: string;
   device_id: string;
   push_to_start_token: string;
+  accent_hex?: string | null;
 }
 
 interface DeviceTokenRow {
@@ -504,7 +506,7 @@ async function handleNavigationSession(
       eligibleUserIds.length > 0
         ? supabase
           .from("device_live_activity_tokens")
-          .select("user_id, device_id, push_to_start_token")
+          .select("user_id, device_id, push_to_start_token, accent_hex")
           .eq("live_activities_enabled", true)
           .not("push_to_start_token", "is", null)
           .in("user_id", eligibleUserIds)
@@ -575,7 +577,7 @@ async function handleNavigationSession(
               etaSeconds: 0,
               gatheredCount: memberArrived.filter(Boolean).length,
               memberCount: visibleMembers.length,
-              accentHex: "#58D68D",
+              accentHex: row.accent_hex ?? "#F5B142",
               memberEmojis,
               memberArrived,
             },
@@ -658,14 +660,14 @@ async function filterNotificationPreferences(
   const column = prefColumn(category);
   const { data, error } = await supabase
     .from("notification_preferences")
-    .select(`user_id, ${column}`)
+    .select("user_id, add_gathering, leader_commands, follower_requests, journey, arrival")
     .in("user_id", userIds);
   if (error) throw error;
 
   const disabled = new Set(
     (data ?? [])
-      .filter((row) => (row as Record<string, unknown>)[column] === false)
-      .map((row) => (row as Record<string, unknown>).user_id as string),
+      .filter((row) => row[column] === false)
+      .map((row) => row.user_id as string),
   );
   return userIds.filter((userId) => !disabled.has(userId));
 }
@@ -686,7 +688,7 @@ async function loadLiveSessions(
   let query = supabase
     .from("live_activity_sessions")
     .select(
-      "user_id, group_id, destination_id, push_token, initial_distance_m, current_distance_m, eta_seconds, travel_mode, last_progress_bucket",
+      "user_id, group_id, destination_id, push_token, initial_distance_m, current_distance_m, eta_seconds, travel_mode, last_progress_bucket, accent_hex",
     )
     .eq("group_id", payload.group_id)
     .not("push_token", "is", null);
@@ -773,7 +775,7 @@ async function sendLiveActivities(
         ),
         gatheredCount: visibleMembers.filter((member) => member.status === "arrived").length,
         memberCount: visibleMembers.length,
-        accentHex: "#58D68D",
+        accentHex: session.accent_hex ?? "#F5B142",
         travelMode: session.travel_mode,
         memberEmojis: visibleMembers.map(
           (member) => avatarByUser.get(member.user_id) ?? "🙂",

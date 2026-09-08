@@ -659,6 +659,9 @@ export const en: Record<keyof ZhDict, string> = {
   'settings.notifLeaderCommands': 'Leader commands',
   'settings.notifFollowerRequests': 'Member requests',
   'settings.notifJourney': 'Journey start / pause',
+  'settings.notifArrival': 'Arrival notifications',
+  'notif.operatorPauseTitle': 'Journey paused',
+  'notif.operatorPauseBody': 'You paused heading to the gathering point',
 
   'settings.locationSection': 'Location tracking',
   'settings.mapSection': 'Map',

@@ -1,3 +1,6 @@
+jest.mock('../api/supabase', () => ({ supabase: {} }));
+jest.mock('../utils/activityLog', () => ({ logEvent: jest.fn() }));
+jest.mock('../native/externalNavigation', () => ({ presentExternalMapsChooser: jest.fn() }));
 import React from 'react';
 import { deleteDestination, reorderDestinations } from '../api/client';
 import {
@@ -310,7 +313,8 @@ describe('useJourneyNavigation', () => {
     expect(reorderForNavigation.mock.invocationCallOrder[0]).toBeLessThan(
       startSession.mock.invocationCallOrder[0],
     );
-    expect(setSelectedIndex).toHaveBeenCalledWith(0);
+    // The reordered list has not arrived yet; selection waits for that snapshot.
+    expect(setSelectedIndex).not.toHaveBeenCalled();
     expect(startSession).toHaveBeenCalledWith(later.id, 'request-2');
   });
 
@@ -550,7 +554,8 @@ describe('useJourneyNavigation', () => {
   });
 
   it('End navigation pauses flock travel and cancels session without completing the stop', async () => {
-    const cancelSession = jest.fn().mockResolvedValue(null);
+    const cancelSession = jest.fn().mockResolvedValue({ id: 'session-1', version: 2, status: 'cancelled' });
+    const onOperatorPauseConfirm = jest.fn();
     const goingState = {
       ...pausedState,
       group: {
@@ -587,6 +592,7 @@ describe('useJourneyNavigation', () => {
         setSelectedIndex: jest.fn(),
         navigationSession: activeSession,
         cancelSession,
+        onOperatorPauseConfirm,
       });
       return null;
     }
@@ -603,6 +609,7 @@ describe('useJourneyNavigation', () => {
       expect.objectContaining({ groupState: goingState }),
     );
     expect(cancelSession).toHaveBeenCalled();
+    expect(onOperatorPauseConfirm).toHaveBeenCalledWith(destination, 'pause:session-1:2');
     expect(navigation?.journeyStatus).toBe('paused');
     expect(navigation?.navTarget).toBeUndefined();
   });
@@ -654,7 +661,32 @@ describe('useJourneyNavigation', () => {
     expect(abortLeaderGatheringStart).not.toHaveBeenCalled();
     expect(onOptimisticGathering).toHaveBeenCalledWith(optimisticGathering);
     // Optimistic target stays for reconnect; outbox remains pending.
-    expect(navigation?.pendingLeaderTargetId).toBe(destination.id);
+    expect(navigation?.navTarget?.id).toBe(destination.id);
     expect(navigation?.journeyActive).toBe(true);
   });
+  it('notifies the operator when Realtime confirms a start whose response was lost', async () => {
+    const onOperatorStartConfirm = jest.fn();
+    const startSession = jest.fn().mockRejectedValue(new Error('Network request failed'));
+    let navigation: ReturnType<typeof useJourneyNavigation> | undefined;
+    function Harness({ session }: { session: NavigationSession | null }) {
+      navigation = useJourneyNavigation({ state: pausedState, groupId: 'group-1', isLeader: true,
+        destinations: [destination], selectedDestination: destination, fromCoords: undefined,
+        refresh: jest.fn(), t: key => key, mapRef: { current: null }, carouselRef: { current: null },
+        setSelectedIndex: jest.fn(), startSession, navigationSession: session,
+        createRequestId: () => 'retry-request', onOperatorStartConfirm });
+      return null;
+    }
+    let tree: ReturnType<typeof create>;
+    await act(async () => { tree = create(React.createElement(Harness, { session: null })); });
+    await act(async () => { await navigation?.startNavigation(destination, 0); });
+    expect(onOperatorStartConfirm).not.toHaveBeenCalled();
+    const session = { id: 'retried-session', destinationId: destination.id,
+      requestId: 'retry-request', status: 'active', destination: { name: destination.title,
+        coordinates: destination.coordinates, arrivalRadiusMeters: 50 } } as NavigationSession;
+    await act(async () => { tree.update(React.createElement(Harness, { session })); });
+    await act(async () => { tree.update(React.createElement(Harness, { session })); });
+    expect(onOperatorStartConfirm).toHaveBeenCalledTimes(1);
+    expect(onOperatorStartConfirm).toHaveBeenCalledWith(destination, 'start:group-1:retry-request');
+  });
+
 });

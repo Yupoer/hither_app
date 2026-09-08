@@ -72,6 +72,7 @@ export async function upsertDeviceActivityToken(
   deviceId: string,
   pushToStartToken: string | null,
   enabled: boolean,
+  accentHex?: string,
 ): Promise<LiveActivityTokenRegisterResult> {
   const uid = await requireUserId();
   const row = {
@@ -79,6 +80,7 @@ export async function upsertDeviceActivityToken(
     device_id: deviceId,
     push_to_start_token: pushToStartToken,
     live_activities_enabled: pushToStartToken === null ? false : enabled,
+    ...(accentHex ? { accent_hex: accentHex } : {}),
     updated_at: new Date().toISOString(),
   };
 
@@ -167,6 +169,7 @@ export interface LiveActivitySessionInput {
   groupId: string;
   destinationId: string;
   activityId: string;
+  accentHex?: string;
   pushToken?: string;
   initialDistanceM: number;
   currentDistanceM: number;
@@ -200,6 +203,7 @@ export async function upsertLiveActivitySession(
       group_id: input.groupId,
       destination_id: input.destinationId,
       activity_id: input.activityId,
+      ...(input.accentHex ? { accent_hex: input.accentHex } : {}),
       push_token: input.pushToken ?? null,
       initial_distance_m: input.initialDistanceM,
       current_distance_m: Math.max(0, input.currentDistanceM),
@@ -244,5 +248,27 @@ export async function deleteMyLiveActivitySessionsForGroups(
     .delete()
     .eq('user_id', uid)
     .in('group_id', groupIds);
+  orThrow(error);
+}
+
+export async function updateDeviceActivityAccent(deviceId: string, accentHex: string): Promise<void> {
+  const uid = await requireUserId();
+  const { error } = await supabase.from('device_live_activity_tokens')
+    .update({ accent_hex: accentHex }).eq('user_id', uid).eq('device_id', deviceId);
+  orThrow(error);
+}
+
+export async function updateLiveActivityProgress(groupId: string, destinationId: string, state: {
+  distanceMeters: number | null; etaSeconds: number | null; progress: number | null;
+}, accentHex?: string): Promise<void> {
+  const uid = await requireUserId();
+  if (state.distanceMeters == null || state.progress == null) return;
+  const { error } = await supabase.from('live_activity_sessions').update({
+    current_distance_m: state.distanceMeters,
+    eta_seconds: state.etaSeconds == null ? null : Math.round(state.etaSeconds),
+    last_progress_bucket: progressBucket20(state.progress),
+    ...(accentHex ? { accent_hex: accentHex } : {}),
+    updated_at: new Date().toISOString(),
+  }).eq('user_id', uid).eq('group_id', groupId).eq('destination_id', destinationId);
   orThrow(error);
 }

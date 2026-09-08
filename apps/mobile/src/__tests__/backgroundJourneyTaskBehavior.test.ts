@@ -1,3 +1,4 @@
+jest.mock('../api/services/LiveActivityService', () => ({ updateLiveActivityProgress: jest.fn(async () => undefined) }));
 const mockStore = new Map<string, string>();
 const mockAsyncStorage = {
   getItem: jest.fn(async (key: string) => mockStore.get(key) ?? null),
@@ -157,4 +158,31 @@ describe('background journey native task wiring', () => {
       event: 'background_op_timeline',
     }));
   });
+});
+
+it('background route progress and theme match foreground; a failed arrival ACK retries', async () => {
+  const task = mockTaskCallback!;
+  const start = { latitude: 25.005, longitude: 121 };
+  const config = { ...baseConfig, initialDistanceM: 740, distanceSource: 'route',
+    routeAnchorGps: start, routeAnchorRemainingM: 740, startCoords: start,
+    accentHex: '#F5B142', etaSeconds: 780 };
+  await mockAsyncStorage.setItem(BACKGROUND_JOURNEY_KEY, JSON.stringify(config));
+  await task({ data: { locations: [{ ...locationSample, coords: { ...locationSample.coords, ...start } }] } });
+  expect(mockLiveActivity.updateAllGroupActivities).toHaveBeenLastCalledWith(expect.objectContaining({
+    progress: 0, distanceMeters: 740, etaSeconds: 780, accentHex: '#F5B142',
+  }));
+  const { derivePersonalProgress } = require('../utils/personalProgress');
+  const walking = { ...start, latitude: start.latitude - 0.0005 };
+  await task({ data: { locations: [{ ...locationSample, coords: { ...locationSample.coords, ...walking } }] } });
+  const foreground = derivePersonalProgress({ ...config, deviceCoords: walking, targetCoords: config.destination,
+    routeAnchorGps: start, routeAnchorRemainingM: 740, routeEtaSeconds: 780 });
+  expect(mockLiveActivity.updateAllGroupActivities).toHaveBeenLastCalledWith(expect.objectContaining({
+    progress: foreground.progress, distanceMeters: foreground.distanceMeters,
+  }));
+  await mockAsyncStorage.setItem(BACKGROUND_JOURNEY_KEY, JSON.stringify(baseConfig));
+  mockAckNavigation.mockRejectedValueOnce(new Error('offline'));
+  await expect(task({ data: { locations: [locationSample] } })).rejects.toThrow('offline');
+  expect((await loadBackgroundJourney())?.navigationSessionId).toBe('session-1');
+  await task({ data: { locations: [locationSample] } });
+  expect((await loadBackgroundJourney())?.navigationSessionId).toBeNull();
 });

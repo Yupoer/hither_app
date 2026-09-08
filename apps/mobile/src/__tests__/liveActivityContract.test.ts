@@ -159,7 +159,7 @@ describe('ActivityKit remote push contract', () => {
     );
     expect(background).toContain('gatheringTitle: config.gatheringTitle');
     expect(background).toContain('memberEmojis: config.memberEmojis');
-    expect(background).toContain('personalDisplayProgress');
+    expect(background).toContain('derivePersonalProgress');
     expect(background).not.toContain("groupName: ''");
   });
 

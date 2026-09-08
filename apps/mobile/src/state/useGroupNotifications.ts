@@ -129,9 +129,10 @@ export function useGroupNotifications(): void {
           opts.category === 'leaderCommands' || opts.category === 'followerRequests';
         // Leader-only events (member arrival) must reach captains even in a subgroup.
         const isLeaderOnlyEvent = opts.eventKind === 'member_arrival';
+        const isOwnArrival = opts.eventKind === 'own_arrival';
         // Solo/subgroup mute only when we successfully read memberships.
-        if (!soloErr && meRow?.solo) return;
-        if (!soloErr && !isCommand && !isLeaderOnlyEvent && meRow?.subgroup_id != null) return;
+        if (!isOwnArrival && !soloErr && meRow?.solo) return;
+        if (!soloErr && !isCommand && !isLeaderOnlyEvent && !isOwnArrival && meRow?.subgroup_id != null) return;
 
         // Role: trust DB row when present; on select error/null fall back to
         // session isLeaderRef so leader_only (request_start) is not dropped.
@@ -347,12 +348,17 @@ export function useGroupNotifications(): void {
             active_destination_id?: string | null;
             journey_started_at?: string | null;
           };
-          const prev = payload.old as { journey_status?: string };
+          const prev = payload.old as { journey_status?: string; active_destination_id?: string | null };
           if (next.journey_status === prev?.journey_status) return;
           // Operator local confirm is client-side after startSession — not here.
           if (isLeaderRef.current) return;
           const going = next.journey_status === 'going';
           void (async () => {
+            if (!going && prev.active_destination_id) {
+              const { data: completed } = await supabase.from('itinerary_items')
+                .select('closed_at').eq('id', prev.active_destination_id).maybeSingle();
+              if (completed?.closed_at) return;
+            }
             const [{ data: leader }, { data: destination }] = await Promise.all([
               supabase.from('memberships').select('user_id').eq('group_id', groupId).eq('role', 'leader').limit(1).maybeSingle(),
               next.active_destination_id
@@ -397,9 +403,10 @@ export function useGroupNotifications(): void {
             source?: string | null;
           };
           const arriverId = row.user_id;
-          if (!arriverId || arriverId === myUserId) return;
+          if (!arriverId) return;
+          const ownArrival = arriverId === myUserId;
           // Leaders only (policy matrix also enforces; early gate saves prefs I/O).
-          if (!isLeaderRef.current) return;
+          if (!ownArrival && !isLeaderRef.current) return;
           void (async () => {
             const [{ data: memberProfile }, { data: destination }] = await Promise.all([
               supabase.from('profiles').select('nickname').eq('id', arriverId).maybeSingle(),
@@ -412,15 +419,13 @@ export function useGroupNotifications(): void {
             const destTitle = (destination as { title?: string } | null)?.title?.trim();
             if (!destTitle) return;
             await fire({
-              category: 'journey',
-              title: name,
+              category: 'arrival',
+              title: ownArrival ? tRef.current('map.arriveTitle') : name,
               body: tRef.current('notif.memberArrivalBody', { title: destTitle }),
-              eventKind: 'member_arrival',
+              eventKind: ownArrival ? 'own_arrival' : 'member_arrival',
               senderId: arriverId,
-              // Keep destination_id as the event identity segment, matching push.
-              // send-push uses member_id when destination_id is absent;
-              // preserve that same fallback for Realtime deduplication.
-              entityId: row.destination_id ?? arriverId,
+              // Match the committed arrival row id in push; legacy events fall back to the stop.
+              entityId: row.id ?? row.destination_id ?? arriverId,
               commandType: row.source ?? undefined,
               pushCategory: 'arrival',
             });

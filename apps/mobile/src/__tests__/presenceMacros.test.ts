@@ -10,6 +10,7 @@ const groupOff = {
   ...DEFAULT_NOTIFICATION_PREFERENCES,
   leaderCommands: false,
   journey: false,
+  arrival: false,
   addGathering: false,
 };
 const allOff = {
@@ -17,6 +18,7 @@ const allOff = {
   leaderCommands: false,
   followerRequests: false,
   journey: false,
+  arrival: false,
 };
 
 describe('presence macros', () => {
@@ -72,6 +74,7 @@ describe('presence macros', () => {
       leaderCommands: false,
       followerRequests: false,
       journey: false,
+      arrival: false,
     });
   });
 

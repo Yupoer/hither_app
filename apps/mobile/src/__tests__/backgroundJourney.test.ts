@@ -1,3 +1,4 @@
+jest.mock('../api/services/LiveActivityService', () => ({ updateLiveActivityProgress: jest.fn(async () => undefined) }));
 import {
   BACKGROUND_JOURNEY_KEY,
   createBackgroundJourneyController,

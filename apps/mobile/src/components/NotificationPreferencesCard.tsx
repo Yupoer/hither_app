@@ -29,6 +29,7 @@ const ROWS: { key: NotificationCategory; label: TranslationKey }[] = [
   { key: 'leaderCommands', label: 'settings.notifLeaderCommands' },
   { key: 'followerRequests', label: 'settings.notifFollowerRequests' },
   { key: 'journey', label: 'settings.notifJourney' },
+  { key: 'arrival', label: 'settings.notifArrival' },
 ];
 
 export default function NotificationPreferencesCard({

@@ -111,7 +111,7 @@ describe('resolveNotificationRecipients', () => {
     expect(r.deliveryKind).toBe('leader_only');
   });
 
-  it('prefsAllow false empties remote-style recipients but not operator confirm', () => {
+  it('prefsAllow false also suppresses operator confirmation', () => {
     const remote = resolveNotificationRecipients({
       event: 'quick_command',
       senderId: 'leader1',
@@ -126,7 +126,7 @@ describe('resolveNotificationRecipients', () => {
       members,
       prefsAllow: false,
     });
-    expect(local.recipientIds).toEqual(['leader1']);
+    expect(local.recipientIds).toEqual([]);
   });
 
   it('keepRealtimeFallback is always true (do not drop for push token)', () => {

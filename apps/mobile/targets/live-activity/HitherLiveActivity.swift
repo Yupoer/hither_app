@@ -16,7 +16,7 @@ import WidgetKit
 private enum Brand {
   // Fallback accent (lantern amber) — used only when the app doesn't pass a
   // theme accent. The live value comes from `ContentState.accentColor`.
-  static let accent = Color(red: 0x58 / 255, green: 0xD6 / 255, blue: 0x8D / 255)
+  static let accent = Color(red: 0xF5 / 255, green: 0xB1 / 255, blue: 0x42 / 255)
   static let card = Color.black
   static let textPrimary = Color(red: 0xF5 / 255, green: 0xF7 / 255, blue: 0xFB / 255)
   static let textSecondary = Color(white: 1, opacity: 0.6)

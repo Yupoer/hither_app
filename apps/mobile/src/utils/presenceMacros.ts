@@ -23,6 +23,7 @@ export const ALL_NOTIFICATION_CATEGORIES: readonly NotificationCategory[] = [
   'leaderCommands',
   'followerRequests',
   'journey',
+  'arrival',
 ];
 
 function allNotificationsOff(notifications: NotificationPreferences): boolean {

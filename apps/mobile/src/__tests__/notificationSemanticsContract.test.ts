@@ -45,7 +45,7 @@ describe('notification nickname and destination contract (#190)', () => {
     expect(realtime).toContain("`${senderName} ${tRef.current('notif.addGatheringTitle')}`");
     expect(realtime).toContain("tRef.current('group.travelerFallback')");
     expect(realtime).toContain('entityId: row.id ?? undefined');
-    expect(realtime).toContain('entityId: row.destination_id ?? arriverId');
+    expect(realtime).toContain('entityId: row.id ?? row.destination_id ?? arriverId');
     expect(realtime).toContain('senderId: row.sender_id');
   });
 

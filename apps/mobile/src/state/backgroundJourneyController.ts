@@ -19,6 +19,10 @@ export interface BackgroundJourneyConfig {
   destination: Coordinates;
   arrivalRadiusMeters: number;
   initialDistanceM: number;
+  distanceSource?: 'route' | 'fallback';
+  routeAnchorGps?: Coordinates;
+  routeAnchorRemainingM?: number;
+  accentHex?: string;
   sequence: number;
   travelMode: TravelMode;
   sharingEnabled: boolean;

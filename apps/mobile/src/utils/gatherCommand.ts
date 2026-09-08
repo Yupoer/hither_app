@@ -151,7 +151,7 @@ export function membersInDestinationScope<T extends { subgroupId?: string | null
   members: readonly T[],
   destinationSubgroupId: string | null | undefined,
 ): T[] {
-  return members.filter((m) => m.subgroupId === destinationSubgroupId);
+  return members.filter((m) => (m.subgroupId ?? null) === (destinationSubgroupId ?? null));
 }
 
 /**
@@ -387,7 +387,7 @@ export function planCompleteGatheringApply(input: {
       reason: 'already_closed',
     };
   }
-  if (input.rpcInFlight || input.remoteAutoCompleted) {
+  if (input.rpcInFlight) {
     return {
       callRpc: false,
       applyLocalClosedAt: true,

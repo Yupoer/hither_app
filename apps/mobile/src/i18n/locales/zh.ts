@@ -668,6 +668,9 @@ export const zh = {
   'settings.notifLeaderCommands': '隊長指令',
   'settings.notifFollowerRequests': '成員快捷請求',
   'settings.notifJourney': '行程開始 / 暫停',
+  'settings.notifArrival': '抵達通知',
+  'notif.operatorPauseTitle': '行程已暫停',
+  'notif.operatorPauseBody': '你已暫停前往集合點',
 
   // Settings · location tracking
   'settings.locationSection': '定位追蹤',

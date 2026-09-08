@@ -154,12 +154,11 @@ export function resolveNotificationRecipients(
   const prefsAllow = input.prefsAllow !== false;
   const sender = senderOf(input.members, input.senderId);
 
-  // Operator local confirms always allow sender once; not gated by broadcast prefs
-  // the same way as peer alerts (server prefs still filter remote fan-out).
+  // Operator confirms include the sender, while still respecting category preferences.
   if (input.event === 'start_journey' || input.event === 'own_arrival') {
     return {
       deliveryKind: 'operator_local_confirm',
-      recipientIds: unique([input.senderId]),
+      recipientIds: prefsAllow ? unique([input.senderId]) : [],
       includesSender: true,
       eventIdentity,
       keepRealtimeFallback,

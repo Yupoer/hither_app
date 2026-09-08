@@ -309,3 +309,19 @@ describe('useMapKitRoutes + MapScreen progress surfaces (#145 Sol r4)', () => {
   });
 
 });
+
+it('resets both displayed progress surfaces before the new journey baseline hydrates', async () => {
+  let surface: ReturnType<typeof usePersonalProgressSurfaces> | undefined;
+  function Harness({ resetKey }: { resetKey: string }) {
+    surface = usePersonalProgressSurfaces({ resetKey, deviceCoords: { latitude: 25, longitude: 121 },
+      targetCoords: { latitude: 25.01, longitude: 121 }, travelMode: 'walk',
+      initialDistanceM: 2000, previousProgressMax: 0.8, hasDepartedStart: true });
+    return null;
+  }
+  let tree: ReturnType<typeof create>;
+  await act(async () => { tree = create(React.createElement(Harness, { resetKey: 'old-session' })); });
+  expect(surface?.gatheringCard.progress).toBe(0.8);
+  await act(async () => { tree.update(React.createElement(Harness, { resetKey: 'new-session' })); });
+  expect(surface?.gatheringCard.progress).toBe(0);
+  expect(surface?.liveActivityPayload.progress).toBe(0);
+});

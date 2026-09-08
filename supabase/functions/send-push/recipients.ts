@@ -49,7 +49,10 @@ export function specialAlertRecipientIds<
   T extends { user_id: string; role: string; solo?: boolean },
 >(payload: PushPayload, members: T[]): string[] | null {
   if (payload.category === "arrival") {
-    return leaderOnlyRecipientIds(payload, members, { excludeSolo: true });
+    return [...new Set([
+      ...members.filter((member) => member.user_id === payload.sender_id).map((member) => member.user_id),
+      ...leaderOnlyRecipientIds(payload, members, { excludeSolo: true }),
+    ])];
   }
   const requestStart = requestStartRecipientIds(payload, members);
   if (requestStart) return requestStart;

@@ -596,6 +596,7 @@ export interface NotificationPreferences {
   leaderCommands: boolean;
   followerRequests: boolean;
   journey: boolean;
+  arrival: boolean;
 }
 
 export type NotificationCategory = keyof NotificationPreferences;
@@ -606,4 +607,5 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
   leaderCommands: true,
   followerRequests: true,
   journey: true,
+  arrival: true,
 };
