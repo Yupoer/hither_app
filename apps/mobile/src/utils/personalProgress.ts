@@ -22,7 +22,7 @@ import {
 export type ProgressFreshness = 'live' | 'stale' | 'unknown';
 
 export interface PersonalProgressInput {
-  /** Latest accepted local device coordinates (UI-gated). */
+  /** Latest accepted local device coordinates. */
   deviceCoords: Coordinates | null | undefined;
   /** Active gathering / navigation target. */
   targetCoords: Coordinates | null | undefined;
@@ -85,11 +85,15 @@ export function estimateRemainingFromGpsMove(opts: {
   lastRouteRemainingM: number;
   lastRouteAt: Coordinates;
   currentGps: Coordinates;
+  targetCoords?: Coordinates;
 }): number {
   const remaining = opts.lastRouteRemainingM;
   if (!Number.isFinite(remaining) || remaining < 0) return 0;
-  const moved = distanceMeters(opts.lastRouteAt, opts.currentGps);
-  if (!Number.isFinite(moved) || moved < 0) return remaining;
+  // ponytail: target-distance delta between route refreshes; use route projection if turns need greater precision.
+  const moved = opts.targetCoords
+    ? distanceMeters(opts.lastRouteAt, opts.targetCoords) - distanceMeters(opts.currentGps, opts.targetCoords)
+    : distanceMeters(opts.lastRouteAt, opts.currentGps);
+  if (!Number.isFinite(moved)) return remaining;
   return Math.max(0, remaining - moved);
 }
 
@@ -217,6 +221,7 @@ export function derivePersonalProgress(
       lastRouteRemainingM: input.routeAnchorRemainingM,
       lastRouteAt: input.routeAnchorGps,
       currentGps: input.deviceCoords as Coordinates,
+      targetCoords: target,
     });
   }
 
@@ -363,7 +368,10 @@ export function derivePersonalProgress(
         ? Math.max(0, input.lastValidEtaSeconds)
         : null
       : usedGpsLocalEstimate
-        ? etaSecondsFor(distanceMetersValue, input.travelMode)
+        ? input.routeEtaSeconds != null && Number.isFinite(input.routeEtaSeconds)
+          && input.routeAnchorRemainingM != null && input.routeAnchorRemainingM > 0
+          ? Math.max(0, input.routeEtaSeconds * distanceMetersValue / input.routeAnchorRemainingM)
+          : etaSecondsFor(distanceMetersValue, input.travelMode)
         : input.routeEtaSeconds != null && Number.isFinite(input.routeEtaSeconds)
           ? Math.max(0, input.routeEtaSeconds)
           : usedStickyDistance

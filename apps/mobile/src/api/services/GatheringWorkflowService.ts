@@ -4,7 +4,7 @@ import type {
   GatherPointRequest,
   GatherPointRequestItem,
 } from '../../types';
-import { isNetworkRequestError, orThrow, sleep } from './_helpers';
+import { isNetworkRequestError, orThrow, sleep, requireUserId } from './_helpers';
 
 interface RequestRow {
   id: string;
@@ -181,6 +181,7 @@ export async function setDestinationArrival(
   targetUserId: string,
   arrived: boolean,
 ): Promise<void> {
+  await requireUserId();
   const { error } = await supabase.rpc('set_destination_arrival', {
     p_destination_id: destinationId,
     p_target_user_id: targetUserId,
@@ -198,6 +199,7 @@ export async function setDestinationArrivalAt(
   arrived: boolean,
   arrivedAt: string | null,
 ): Promise<void> {
+  await requireUserId();
   const { error } = await supabase.rpc('set_destination_arrival_at', {
     p_destination_id: destinationId,
     p_target_user_id: targetUserId,

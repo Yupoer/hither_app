@@ -88,8 +88,8 @@ describe('locationPolicy', () => {
       accuracy: 4,
       activityType: 3,
       pausesUpdatesAutomatically: false,
-      deferredUpdatesDistance: 30,
-      deferredUpdatesInterval: 30_000,
+      deferredUpdatesDistance: 0,
+      deferredUpdatesInterval: 0,
     });
   });
 

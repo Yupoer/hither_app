@@ -229,14 +229,13 @@ export default function OverlaySheet({
             <Text style={styles.title} numberOfLines={1}>
               {title}
             </Text>
-            <View style={styles.headerActionSlot} />
+            <SheetHeaderAction
+              action={isCloseAction ? 'close' : 'commit'}
+              onPress={handleDone}
+              accessibilityLabel={doneLabel}
+              style={styles.headerActionSlot}
+            />
           </View>
-          <SheetHeaderAction
-            action={isCloseAction ? 'close' : 'commit'}
-            onPress={handleDone}
-            accessibilityLabel={doneLabel}
-            style={styles.headerAction}
-          />
         </View>
         <View style={styles.body} {...bodyPan.panHandlers}>
           {trackedChild}
@@ -288,12 +287,6 @@ const styles = StyleSheet.create({
   headerActionSlot: {
     width: MAP_SHEET_ACTION_HIT_SIZE,
     height: MAP_SHEET_ACTION_HIT_SIZE,
-  },
-  headerAction: {
-    position: 'absolute',
-    top: MAP_SHEET_EDGE_INSET,
-    right: MAP_SHEET_EDGE_INSET,
-    zIndex: 2,
   },
   title: {
     flex: 1,

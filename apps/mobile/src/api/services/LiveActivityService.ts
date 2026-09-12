@@ -166,6 +166,7 @@ export async function upsertDeviceActivityToken(
 }
 
 export interface LiveActivitySessionInput {
+  sampledAtMs?: number;
   groupId: string;
   destinationId: string;
   activityId: string;
@@ -210,7 +211,7 @@ export async function upsertLiveActivitySession(
       eta_seconds: input.etaSeconds == null ? null : Math.max(0, Math.round(input.etaSeconds)),
       travel_mode: input.travelMode,
       last_progress_bucket: progressBucket20(progress),
-      updated_at: new Date().toISOString(),
+      updated_at: new Date(input.sampledAtMs ?? Date.now()).toISOString(),
     },
     { onConflict: 'user_id,group_id' },
   );
@@ -260,7 +261,7 @@ export async function updateDeviceActivityAccent(deviceId: string, accentHex: st
 
 export async function updateLiveActivityProgress(groupId: string, destinationId: string, state: {
   distanceMeters: number | null; etaSeconds: number | null; progress: number | null;
-}, accentHex?: string): Promise<void> {
+}, accentHex?: string, sampledAtMs = Date.now()): Promise<void> {
   const uid = await requireUserId();
   if (state.distanceMeters == null || state.progress == null) return;
   const { error } = await supabase.from('live_activity_sessions').update({
@@ -268,7 +269,7 @@ export async function updateLiveActivityProgress(groupId: string, destinationId:
     eta_seconds: state.etaSeconds == null ? null : Math.round(state.etaSeconds),
     last_progress_bucket: progressBucket20(state.progress),
     ...(accentHex ? { accent_hex: accentHex } : {}),
-    updated_at: new Date().toISOString(),
+    updated_at: new Date(sampledAtMs).toISOString(),
   }).eq('user_id', uid).eq('group_id', groupId).eq('destination_id', destinationId);
   orThrow(error);
 }

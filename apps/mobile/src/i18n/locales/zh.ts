@@ -873,6 +873,7 @@ export const zh = {
   'history.title': '歷史行程',
   'history.deleteTitle': '刪除歷史紀錄？',
   'history.open': '查看歷史行程',
+  'history.pendingSync': '待同步',
   'history.empty': '還沒有行程紀錄。',
   'history.statusMissed': '未抵達',
   'history.statusIncomplete': '未完成',

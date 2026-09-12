@@ -613,7 +613,7 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain('ARRIVED_SPLIT_MS');
     expect(mapScreen).toContain('FadeInRight');
     expect(mapScreen).toContain('FadeOutRight');
-    expect(mapScreen).toContain('setDestinationArrivalAt');
+    expect(mapScreen).toContain('commitPersonalArrival(destination, targetUserId');
     // Arrive is one-tap now — no multi-option time-choice Alert.
     expect(mapScreen).toContain('handleSelfArrival');
     expect(mapScreen).toContain('submitArrivalWithTimestamp(destination, targetUserId, new Date().toISOString())');
@@ -634,7 +634,7 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain('color={glass.danger}');
     expect(mapScreen).toContain('locationSharingConfirmCopy');
     expect(mapScreen).toContain('confirmAction({');
-    expect(mapScreen).toContain('showsUserLocation={sharingEnabled && members.length > 0}');
+    expect(mapScreen).toContain('showsUserLocation={mapFocused && sharingEnabled && members.length > 0}');
     expect(mapScreen).not.toMatch(
       /toolsPaneBody[\s\S]*settings\.locationSharing[\s\S]*AmicroButton/,
     );
@@ -838,7 +838,7 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain('executeAutoCompleteStop');
     // Complete only after arrival write succeeds; failed write clears optimistic self.
     expect(mapScreen).toContain('promptComplete: false');
-    expect(mapScreen).toContain('setAutoArrivedDestId((cur) => (cur === navTarget.id ? null : cur))');
+    expect(mapScreen).toContain('setArrivalCelebrateDestId(cur => cur === destination.id ? null : cur)');
     // Manual Complete must not invent self arrival (includeSelf opt-in only).
     expect(mapScreen).toContain('includeUserId: opts?.includeSelf ? user?.id : null');
     // i18n for missing-members confirm (not zh-hardcoded Alert strings).

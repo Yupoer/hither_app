@@ -124,6 +124,7 @@ export function useLiveActivity(
       activityId,
       pushToken: reconcilerRef.current?.currentPushToken,
       currentDistanceM: currentState.distanceMeters,
+      sampledAtMs: currentState.sampledAtMs,
       etaSeconds: currentState.etaSeconds,
       progress: currentState.progress,
       accentHex: currentState.accentHex,
@@ -270,6 +271,7 @@ export function useLiveActivity(
         .then(() => {
           const handle = reconciler.currentHandle;
           if (handle) {
+            void liveActivity.updateGroupActivity(handle, stateRef.current).catch(() => undefined);
             void persistSession(handle, { force: true }).catch(() => undefined);
           }
         })
@@ -297,12 +299,6 @@ export function useLiveActivity(
     };
   }, []);
 
-  const roundedDistance =
-    state.distanceMeters != null ? Math.round(state.distanceMeters / 10) * 10 : null;
-  const roundedEta =
-    state.etaSeconds != null ? Math.round(state.etaSeconds / 15) * 15 : null;
-  const progressBucket =
-    state.progress != null ? Math.round(state.progress * 20) : null;
   const arrivalSignature = state.memberArrived?.map((arrived) => (arrived ? '1' : '0')).join('');
   // BUG-05: emoji changes must also push a Live Activity update.
   const emojiSignature = state.memberEmojis?.join(',') ?? '';
@@ -311,15 +307,15 @@ export function useLiveActivity(
   useEffect(() => {
     const handle = reconcilerRef.current?.currentHandle;
     if (active && handle) {
-      void liveActivity.updateGroupActivity(handle, stateRef.current);
+      void liveActivity.updateGroupActivity(handle, stateRef.current).catch(() => undefined);
       void persistSession(handle).catch(() => undefined);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     active,
-    roundedDistance,
-    roundedEta,
-    progressBucket,
+    state.distanceMeters,
+    state.etaSeconds,
+    state.progress,
     state.gatheredCount,
     state.memberCount,
     state.gatheringTitle,

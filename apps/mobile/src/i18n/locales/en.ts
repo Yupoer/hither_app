@@ -862,6 +862,7 @@ export const en: Record<keyof ZhDict, string> = {
   'history.title': 'Trip history',
   'history.deleteTitle': 'Delete this history entry?',
   'history.open': 'View trip history',
+  'history.pendingSync': 'Pending sync',
   'history.empty': 'No trip history yet.',
   'history.statusMissed': 'Missed',
   'history.statusIncomplete': 'Incomplete',

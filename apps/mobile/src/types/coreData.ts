@@ -30,6 +30,7 @@ export type CoreEntityType =
   | 'itinerary';
 
 export type CoreOperationType =
+  | 'record_arrival'
   | 'replace_snapshot'
   | 'start_gathering'
   | 'switch_gathering'

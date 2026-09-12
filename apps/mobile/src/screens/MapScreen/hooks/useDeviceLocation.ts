@@ -16,7 +16,6 @@ import {
   createMotionState,
   locationPolicy,
   reduceMotionState,
-  shouldAcceptUiSample,
   shouldUploadSample,
   shouldWatchLocation,
   uploadHeartbeatForCadence,
@@ -54,6 +53,7 @@ export function useDeviceLocation({
   /** Wall-clock of last UI-accepted sample — drives progress freshness/stale. */
   const [deviceCoordsAcceptedAtMs, setDeviceCoordsAcceptedAtMs] = useState<number | null>(null);
   const [appState, setAppState] = useState<AppStateStatus>(AppState.currentState);
+  const lastSampleAtRef = useRef(0);
   const uiGateRef = useRef<LocationGateState>({ lastCoords: null, lastAtMs: 0 });
   const uploadGateRef = useRef<LocationGateState>({ lastCoords: null, lastAtMs: 0 });
   const motionRef = useRef<MotionState>(createMotionState());
@@ -92,12 +92,18 @@ export function useDeviceLocation({
 
   const applySampleToUi = useCallback((sample: LocationSample, now: number) => {
     const coords = sample.coordinates;
+    if (!groupIdRef.current || !hasMembershipRef.current || AppState.currentState !== 'active'
+      || !Number.isFinite(sample.timestamp) || sample.timestamp <= lastSampleAtRef.current
+      || !Number.isFinite(coords.latitude) || !Number.isFinite(coords.longitude)
+      || Math.abs(coords.latitude) > 90 || Math.abs(coords.longitude) > 180) return false;
+    lastSampleAtRef.current = sample.timestamp;
     setDeviceCoords(coords);
     setDeviceAccuracyM(
       sample.accuracy != null && Number.isFinite(sample.accuracy) ? sample.accuracy : null,
     );
-    setDeviceCoordsAcceptedAtMs(now);
+    setDeviceCoordsAcceptedAtMs(Math.min(now, sample.timestamp));
     uiGateRef.current = { lastCoords: coords, lastAtMs: now };
+    return true;
   }, []);
 
   const enqueueUpload = useCallback(
@@ -145,13 +151,11 @@ export function useDeviceLocation({
       const now = Date.now();
       const policy = locationPolicy(highAccuracyRef.current);
       const coords = sample.coordinates;
+      if (!applySampleToUi(sample, now)) return;
       motionRef.current = reduceMotionState(motionRef.current, coords, now, policy);
 
-      if (shouldAcceptUiSample(coords, now, uiGateRef.current, policy)) {
-        energyObservability.increment('location_accepted');
-        energyObservability.event('location_acquisition');
-        applySampleToUi(sample, now);
-      }
+      energyObservability.increment('location_accepted');
+      energyObservability.event('location_acquisition');
 
       if (
         groupIdRef.current &&
@@ -183,12 +187,14 @@ export function useDeviceLocation({
     requireUpload?: boolean;
   }): Promise<Coordinates | null> => {
     energyObservability.increment('location_callback');
+    const requestedGroup = groupIdRef.current;
+    if (!requestedGroup || !hasMembershipRef.current || AppState.currentState !== 'active') return null;
     const fix = await location.getCurrentLocation(highAccuracyRef.current);
-    if (!fix) return null;
+    if (!fix || requestedGroup !== groupIdRef.current || !groupIdRef.current || !hasMembershipRef.current || AppState.currentState !== 'active') return null;
     energyObservability.increment('location_accepted');
     energyObservability.event('location_acquisition');
     const now = Date.now();
-    applySampleToUi(fix, now);
+    if (!applySampleToUi(fix, now)) return deviceCoordsRef.current;
     motionRef.current = reduceMotionState(
       motionRef.current,
       fix.coordinates,
@@ -265,6 +271,7 @@ export function useDeviceLocation({
       const cadenceNow = motionRef.current.cadence;
       void (async () => {
         let sample: LocationSample | null = null;
+        let acquiredFix = false;
         if (cadenceNow === 'stationary' && lastKnown && lastUploadAt > 0) {
           // Stationary liveness: reuse last known to avoid extra GPS wake.
           sample = {
@@ -281,6 +288,7 @@ export function useDeviceLocation({
           };
         } else {
           sample = await location.getCurrentLocation(highAccuracyRef.current).catch(() => null);
+          acquiredFix = sample != null;
           if (!sample && lastKnown) {
             sample = {
               coordinates: lastKnown,
@@ -289,9 +297,10 @@ export function useDeviceLocation({
             };
           }
         }
-        if (!sample) return;
+        if (!sample || gid !== groupIdRef.current || !hasMembershipRef.current || AppState.currentState !== 'active') return;
         energyObservability.increment('location_callback');
         const sampleNow = Date.now();
+        if (acquiredFix) applySampleToUi(sample, sampleNow);
         motionRef.current = reduceMotionState(
           motionRef.current,
           sample.coordinates,
@@ -307,11 +316,6 @@ export function useDeviceLocation({
             motionRef.current.cadence,
           )
           ) {
-          if (shouldAcceptUiSample(sample.coordinates, sampleNow, uiGateRef.current, policy)) {
-            energyObservability.increment('location_accepted');
-            energyObservability.event('location_acquisition');
-            applySampleToUi(sample, sampleNow);
-          }
           await enqueueUpload(sample, sampleNow, { immediate: true }).catch(() => undefined);
         }
       })();

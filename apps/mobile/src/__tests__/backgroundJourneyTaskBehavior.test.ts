@@ -73,6 +73,8 @@ const baseConfig = {
   destination: { latitude: 25, longitude: 121 },
   arrivalRadiusMeters: 50,
   initialDistanceM: 1000,
+  actorId: 'self',
+  target: { id: 'stop-1', title: 'Stop', coordinates: { latitude: 25, longitude: 121 }, order: 0, day: 1 },
   sequence: 0,
   travelMode: 'walk' as const,
   sharingEnabled: true,
@@ -126,10 +128,11 @@ describe('background journey native task wiring', () => {
       success: false,
     }));
 
-    await mockAsyncStorage.setItem(
-      BACKGROUND_JOURNEY_KEY,
-      JSON.stringify({ ...baseConfig, navigationSessionId: null, sharingEnabled: false }),
-    );
+    await startBackgroundJourney({ ...baseConfig, navigationSessionId: null, sharingEnabled: false, permissionsPrepared: true });
+    // A hidden sharing profile intentionally has no persisted tracking task.
+    await startBackgroundJourney({ ...baseConfig, navigationSessionId: null, permissionsPrepared: true });
+    const loaded = await loadBackgroundJourney();
+    await mockAsyncStorage.setItem(BACKGROUND_JOURNEY_KEY, JSON.stringify({ ...loaded, sharingEnabled: false }));
     expect(mockStore.get(BACKGROUND_JOURNEY_KEY)).toEqual(expect.any(String));
     await expect(mockAsyncStorage.getItem(BACKGROUND_JOURNEY_KEY)).resolves.toEqual(expect.any(String));
     await expect(loadBackgroundJourney()).resolves.toEqual(expect.objectContaining({
@@ -140,7 +143,7 @@ describe('background journey native task wiring', () => {
     expect(mockPurge).toHaveBeenCalled();
     expect(mockLiveActivity.updateAllGroupActivities).toHaveBeenCalled();
 
-    await mockAsyncStorage.setItem(BACKGROUND_JOURNEY_KEY, JSON.stringify(baseConfig));
+    await startBackgroundJourney({ ...baseConfig, permissionsPrepared: true });
     await task({ data: { locations: [locationSample] }, error: null });
     expect(mockEnqueue).toHaveBeenCalledWith(expect.objectContaining({
       groupId: 'group-1',
@@ -148,41 +151,43 @@ describe('background journey native task wiring', () => {
       trackingMode: expect.any(String),
     }));
     expect(mockFlush).toHaveBeenCalled();
-    expect(mockAckNavigation).toHaveBeenCalledWith(
-      'session-1',
-      'arrived',
-      expect.objectContaining({ distanceM: 0 }),
-    );
-    expect(mockClearLiveActivities).toHaveBeenCalledWith({ groupIds: ['group-1'] });
+    expect(mockAckNavigation).not.toHaveBeenCalledWith('session-1', 'arrived', expect.anything());
+    expect(require('../state/arrivalSync').enqueueArrival).toHaveBeenCalled();
+    expect(mockClearLiveActivities).not.toHaveBeenCalled();
     expect(mockDiagnostics.write).toHaveBeenCalledWith(expect.objectContaining({
       event: 'background_op_timeline',
     }));
   });
 });
 
-it('background route progress and theme match foreground; a failed arrival ACK retries', async () => {
+it('background route progress matches foreground; duplicate samples do not reprocess arrival', async () => {
+  await stopBackgroundJourney();
   const task = mockTaskCallback!;
   const start = { latitude: 25.005, longitude: 121 };
-  const config = { ...baseConfig, initialDistanceM: 740, distanceSource: 'route',
+  const config = { ...baseConfig, initialDistanceM: 740, distanceSource: 'route' as const,
     routeAnchorGps: start, routeAnchorRemainingM: 740, startCoords: start,
     accentHex: '#F5B142', etaSeconds: 780 };
-  await mockAsyncStorage.setItem(BACKGROUND_JOURNEY_KEY, JSON.stringify(config));
+  await startBackgroundJourney({ ...config, permissionsPrepared: true });
   await task({ data: { locations: [{ ...locationSample, coords: { ...locationSample.coords, ...start } }] } });
   expect(mockLiveActivity.updateAllGroupActivities).toHaveBeenLastCalledWith(expect.objectContaining({
     progress: 0, distanceMeters: 740, etaSeconds: 780, accentHex: '#F5B142',
   }));
   const { derivePersonalProgress } = require('../utils/personalProgress');
   const walking = { ...start, latitude: start.latitude - 0.0005 };
-  await task({ data: { locations: [{ ...locationSample, coords: { ...locationSample.coords, ...walking } }] } });
+  await task({ data: { locations: [{ ...locationSample, timestamp: 124, coords: { ...locationSample.coords, ...walking } }] } });
   const foreground = derivePersonalProgress({ ...config, deviceCoords: walking, targetCoords: config.destination,
     routeAnchorGps: start, routeAnchorRemainingM: 740, routeEtaSeconds: 780 });
   expect(mockLiveActivity.updateAllGroupActivities).toHaveBeenLastCalledWith(expect.objectContaining({
     progress: foreground.progress, distanceMeters: foreground.distanceMeters,
   }));
-  await mockAsyncStorage.setItem(BACKGROUND_JOURNEY_KEY, JSON.stringify(baseConfig));
-  mockAckNavigation.mockRejectedValueOnce(new Error('offline'));
-  await expect(task({ data: { locations: [locationSample] } })).rejects.toThrow('offline');
+  await startBackgroundJourney({ ...baseConfig, permissionsPrepared: true });
+  await task({ data: { locations: [locationSample] } });
+  const count = mockLiveActivity.updateAllGroupActivities.mock.calls.length;
   expect((await loadBackgroundJourney())?.navigationSessionId).toBe('session-1');
   await task({ data: { locations: [locationSample] } });
-  expect((await loadBackgroundJourney())?.navigationSessionId).toBeNull();
+  expect(mockLiveActivity.updateAllGroupActivities).toHaveBeenCalledTimes(count);
+  expect((await loadBackgroundJourney())?.navigationSessionId).toBe('session-1');
 });
+jest.mock('../state/arrivalSync', () => ({ enqueueArrival: jest.fn(async () => ({ status: 'pending' })) }));
+jest.mock('../api/services/GatheringWorkflowService', () => ({ fetchDestinationArrivals: jest.fn(async () => []) }));
+jest.mock('../state/coreDataSync', () => ({ getCoreOperationOutbox: () => ({ listByGroup: async () => [] }), flushCoreOperationOutbox: jest.fn(async () => undefined) }));

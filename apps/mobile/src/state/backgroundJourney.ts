@@ -1,3 +1,6 @@
+import { enqueueArrival } from './arrivalSync';
+import { getCoreOperationOutbox, flushCoreOperationOutbox } from './coreDataSync';
+import { fetchDestinationArrivals } from '../api/services/GatheringWorkflowService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
 import * as Location from 'expo-location';
@@ -29,13 +32,11 @@ import {
 import { derivePersonalProgress } from '../utils/personalProgress';
 import {
   BACKGROUND_JOURNEY_TASK,
-  BACKGROUND_JOURNEY_KEY,
   createBackgroundJourneyController,
   resolveBackgroundTrackingMode,
   type BackgroundJourneyConfig,
 } from './backgroundJourneyController';
 import { diagnostics } from './diagnostics';
-import { clearLiveActivities } from './useLiveActivity';
 import {
   enqueueLocationOutbox,
   flushLocationOutbox,
@@ -52,6 +53,7 @@ const controller = createBackgroundJourneyController(Location, AsyncStorage);
 let uploadGate: LocationGateState = { lastCoords: null, lastAtMs: 0 };
 /** Motion cadence for dynamic background upload heartbeat. */
 let motionState: MotionState = createMotionState();
+let latestSample: { epoch: number; timestamp: number } | null = null;
 
 /**
  * Fire-and-forget timeline write. `totalMs` is wall clock for callback work only
@@ -117,7 +119,7 @@ if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
         const config = await timeBackgroundStage(stages, 'config_load', () =>
           controller.load(),
         );
-        if (!config) return;
+        if (!config || !controller.isCurrent(config)) return;
         navigationSessionId = config.navigationSessionId;
 
         const trackingMode = resolveBackgroundTrackingMode(config);
@@ -126,6 +128,11 @@ if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
           latitude: latest.coords.latitude,
           longitude: latest.coords.longitude,
         };
+        if (!Number.isFinite(coords.latitude) || !Number.isFinite(coords.longitude)
+          || Math.abs(coords.latitude) > 90 || Math.abs(coords.longitude) > 180) return;
+        if (!Number.isFinite(latest.timestamp) || (latestSample && latestSample.epoch === config.trackingEpoch
+          && latest.timestamp <= latestSample.timestamp)) return;
+        latestSample = { epoch: config.trackingEpoch ?? 0, timestamp: latest.timestamp };
         const now = Date.now();
         const accuracyM = Math.max(0, latest.coords.accuracy ?? 0);
         const distanceM = distanceMeters(coords, config.destination);
@@ -136,6 +143,16 @@ if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
           { distanceM, accuracyM },
           { radiusM: config.arrivalRadiusMeters },
         );
+        let arrivalConfirmed = false;
+        if (arrival.status === 'arrived' && config.actorId && config.target && config.powerMode === 'journey') {
+          const rows = await getCoreOperationOutbox().listByGroup(config.groupId);
+          if (!controller.isCurrent(config)) return;
+          const operation = rows.find(op => op.operationType === 'record_arrival'
+            && op.entityId === config.destinationId && op.payload.actorId === config.actorId && op.payload.userId === config.actorId)
+            ?? await enqueueArrival({ groupId: config.groupId, actorId: config.actorId, userId: config.actorId,
+              destination: config.target, arrivedAt: new Date(latest.timestamp).toISOString(), completeSolo: config.completeSolo === true });
+          arrivalConfirmed = operation.status !== 'conflict';
+        }
         const sequence = config.sequence + 1;
         // Local Live Activity always updates from device GPS — works offline and
         // when cloud sharing is off. Upload is gated separately below.
@@ -151,14 +168,17 @@ if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
           routeAnchorGps: config.routeAnchorGps,
           routeAnchorRemainingM: config.routeAnchorRemainingM,
           routeEtaSeconds: config.etaSeconds,
-          arrived: arrival.status === 'arrived',
+          arrived: arrivalConfirmed,
         });
         const displayProgress = progress.progress ?? 0;
-        await timeBackgroundStage(stages, 'async_storage_write', () =>
-          AsyncStorage.setItem(BACKGROUND_JOURNEY_KEY, JSON.stringify({
-            ...config, sequence, arrivalState: arrival, previousProgressMax: displayProgress,
-          })),
+        const memberArrived = config.memberIds?.map((id, index) => id === config.actorId
+          ? arrivalConfirmed : config.memberArrived?.[index] ?? false) ?? config.memberArrived;
+        const stored = await timeBackgroundStage(stages, 'async_storage_write', () =>
+          controller.update(config, {
+            ...config, sequence, arrivalState: arrival, previousProgressMax: displayProgress, memberArrived,
+          }),
         );
+        if (!stored || !controller.isCurrent(config)) return;
         await timeBackgroundStage(stages, 'live_activity_update', () =>
           liveActivity.updateAllGroupActivities({
             groupName: config.groupName ?? '',
@@ -171,11 +191,21 @@ if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
             progress: displayProgress,
             travelMode: config.travelMode,
             memberEmojis: config.memberEmojis,
-            memberArrived: config.memberArrived,
-            gatheredCount: config.memberArrived?.filter(Boolean).length,
+            memberArrived,
+            gatheredCount: memberArrived?.filter(Boolean).length,
             memberCount: config.memberEmojis?.length,
           }),
         );
+        if (!controller.isCurrent(config)) return;
+        if (arrivalConfirmed) {
+          // Durable local arrival first; uploads must never hold up the local surface.
+          void flushCoreOperationOutbox().catch(() => undefined);
+          if (config.completeSolo) {
+            await liveActivity.endAllGroupActivities();
+            await controller.stop(config);
+            return;
+          }
+        }
         if (arrival.status !== previousArrival.status) {
           await timeBackgroundStage(stages, 'diagnostics_write', () =>
             diagnostics.write({
@@ -221,7 +251,7 @@ if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
           policy,
           motionState.cadence,
         );
-        if (!shouldUpload && arrival.status === 'enRoute') {
+        if (!shouldUpload && arrival.status === previousArrival.status) {
           await timeBackgroundStage(stages, 'diagnostics_write', () =>
             diagnostics.write({
               event: 'location_rejected_distance',
@@ -235,6 +265,7 @@ if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
           return;
         }
 
+        if (!controller.isCurrent(config)) return;
         await timeBackgroundStage(stages, 'outbox_enqueue', () =>
           enqueueLocationOutbox({
             id: Crypto.randomUUID(),
@@ -284,18 +315,26 @@ if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
             sequence,
           });
         }
-        await updateLiveActivityProgress(config.groupId, config.destinationId, progress, config.accentHex)
+        await updateLiveActivityProgress(config.groupId, config.destinationId, progress, config.accentHex, latest.timestamp)
           .catch(() => undefined);
+        if (config.memberIds && controller.isCurrent(config)) {
+          const arrivals = await fetchDestinationArrivals(config.groupId).catch(() => null);
+          if (arrivals) await controller.update(config, {
+            ...config, sequence, arrivalState: arrival, previousProgressMax: displayProgress,
+            memberArrived: config.memberIds.map(id => id === config.actorId ? arrivalConfirmed
+              : arrivals.some(a => a.destinationId === config.destinationId && a.userId === id)),
+          });
+        }
         if (
           config.navigationSessionId &&
-          (arrival.status !== previousArrival.status || arrival.status === 'arrived') &&
-          (arrival.status === 'arriving' || arrival.status === 'arrived')
+          arrival.status !== previousArrival.status &&
+          arrival.status === 'arriving' && controller.isCurrent(config)
         ) {
           await timeBackgroundStage(stages, 'session_ack', () =>
-            // ArrivalStatus includes enRoute; branch above already narrows to arriving|arrived.
+            // The durable arrival RPC owns the final arrived ACK.
             ackNavigationSession(
               config.navigationSessionId!,
-              arrival.status === 'arrived' ? 'arrived' : 'arriving',
+              'arriving',
               {
                 distanceM,
                 accuracyM,
@@ -304,25 +343,7 @@ if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
             ),
           );
         }
-        if (config.navigationSessionId && arrival.status === 'arrived') {
-          // A background arrival ends both local activities and the matching
-          // Supabase rows; the closed itinerary point remains historical.
-          await timeBackgroundStage(stages, 'clear_live_activities', () =>
-            clearLiveActivities({ groupIds: [config.groupId] }),
-          );
-          await timeBackgroundStage(stages, 'async_storage_write', () =>
-            AsyncStorage.setItem(
-              BACKGROUND_JOURNEY_KEY,
-              JSON.stringify({
-                ...config,
-                navigationSessionId: null,
-                teamNavigationActive: false,
-                powerMode: 'allDay',
-                arrivalState: arrival,
-              }),
-            ),
-          );
-        }
+
       } finally {
         finish();
       }
@@ -332,7 +353,7 @@ if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
 
 export function startBackgroundJourney(
   config: BackgroundJourneyConfig,
-): Promise<'started' | 'permission_denied' | 'hidden'> {
+): Promise<'started' | 'permission_denied' | 'hidden' | 'cancelled'> {
   return controller.start(config);
 }
 

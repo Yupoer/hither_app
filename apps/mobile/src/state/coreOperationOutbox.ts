@@ -474,7 +474,10 @@ export function createCoreOperationOutbox(
   ): Promise<'sent' | 'conflict' | 'duplicate'> => {
     if (result.status === 'accepted' || result.status === 'duplicate') {
       // Compact: delete acked rows so outbox stays bounded.
-      await outboxDb.delete(operation.id);
+      // Arrival rows also hold the durable local history until a remote read confirms it.
+      if (operation.operationType === 'record_arrival') {
+        await outboxDb.update({ ...operation, payload: { ...operation.payload, ...(result.entity as object ?? {}) }, status: 'acked', updatedAt: current });
+      } else await outboxDb.delete(operation.id);
       if (
         result.entity
         && typeof result.entity === 'object'
@@ -522,7 +525,7 @@ export function createCoreOperationOutbox(
         && conflict.serverEntityVersion != null
           ? conflict.serverEntityVersion
           : operation.entityVersion,
-      status: 'failed',
+      status: operation.operationType === 'record_arrival' ? 'conflict' : 'failed',
       conflictResult: conflict,
       attempts: operation.attempts + 1,
       nextAttemptAt: current + backoffMs(operation.attempts + 1),
@@ -545,6 +548,35 @@ export function createCoreOperationOutbox(
   return {
     initialize,
     runSerial,
+
+    enqueueArrival(groupId: string, destinationId: string, payload: Record<string, unknown>): Promise<CoreOperation> {
+      return runSerial(async () => {
+        await initialize();
+        const id = `arrival:${groupId}:${destinationId}:${payload.actorId}:${payload.userId}`;
+        const existing = await outboxDb.get(id);
+        if (existing && existing.status !== 'conflict') return existing;
+        const current = now();
+        const operation: CoreOperation = {
+          id, groupId, entityId: destinationId, entityType: 'itinerary',
+          entityVersion: 0, operationType: 'record_arrival', payload,
+          status: 'pending', attempts: 0, nextAttemptAt: current,
+          conflictResult: null, createdAt: current, updatedAt: current,
+        };
+        if (existing) await outboxDb.update(operation);
+        else await outboxDb.insert(operation);
+        notifyCoreOutboxChanged();
+        return operation;
+      });
+    },
+
+    removeArrival(id: string): Promise<void> {
+      return runSerial(async () => {
+        await initialize();
+        const operation = await outboxDb.get(id);
+        if (operation?.operationType === 'record_arrival') await outboxDb.delete(id);
+        notifyCoreOutboxChanged();
+      });
+    },
 
     enqueueGatheringTransition(
       input: EnqueueGatheringInput,

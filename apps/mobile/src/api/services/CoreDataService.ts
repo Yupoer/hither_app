@@ -10,7 +10,8 @@ import type {
   CoreOperation,
 } from '../../types/coreData';
 import { supabase } from '../supabase';
-import { orThrow } from './_helpers';
+import { orThrow, requireUserId } from './_helpers';
+import { setDestinationArrivalAt } from './GatheringWorkflowService';
 
 interface ApplyRpcRow {
   status: string;
@@ -57,6 +58,28 @@ function mapConflict(
 export async function applyCoreOperation(
   operation: CoreOperation,
 ): Promise<ApplyCoreOperationResult> {
+  if (operation.operationType === 'record_arrival') {
+    try {
+      const actorId = await requireUserId();
+      if (actorId !== operation.payload.actorId) {
+        throw Object.assign(new Error('抵達紀錄所屬帳號已變更'), { code: '42501' });
+      }
+      await setDestinationArrivalAt(operation.entityId, operation.payload.userId as string, true, operation.payload.arrivedAt as string);
+      const { data: destination, error } = await supabase.from('itinerary_items')
+        .select('closed_at').eq('id', operation.entityId).eq('group_id', operation.groupId).single();
+      orThrow(error);
+      return { status: 'accepted', operationId: operation.id, entityVersion: 0,
+        entity: { completeSolo: Boolean(destination?.closed_at) } };
+    } catch (error) {
+      const code = (error as { code?: string })?.code;
+      if (code === '42501' || code === 'P0001' || code === 'P0002' || code === '28000'
+        || code === 'PGRST116' || code === 'PGRST301' || code === 'PGRST302' || /^(22|23)/.test(code ?? '')) {
+        return { status: 'conflict', operationId: operation.id,
+          conflict: mapConflict(operation, { code: 'unauthorized', message: (error as Error).message }) };
+      }
+      throw error;
+    }
+  }
   const rpcName = operation.operationType === 'switch_gathering'
     ? 'apply_leader_gathering_switch'
     : 'apply_core_operation';

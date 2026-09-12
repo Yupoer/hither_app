@@ -213,15 +213,15 @@ describe('useMapKitRoutes + MapScreen progress surfaces (#145 Sol r4)', () => {
     expect(surfaces?.liveActivityPayload.distanceMeters).toBe(1000);
     expect(surfaces?.gatheringCard).toEqual(surfaces?.liveActivityPayload);
 
-    // GPS moves between throttled route results → local remaining drops.
+    // This GPS move is away from the target; local distance/ETA increase without a route request.
     const midGps = { latitude: 25.0295, longitude: 121.56 };
     await act(async () => {
       tree.update(React.createElement(Harness, { self: midGps }));
     });
     expect(routes?.selfRouteGeneration).toBe(1);
-    expect(surfaces?.gatheringCard.distanceMeters!).toBeLessThan(1000);
-    expect(surfaces?.gatheringCard.etaSeconds!).toBeLessThan(900);
-    expect(surfaces?.gatheringCard.progress!).toBeGreaterThan(0.5);
+    expect(surfaces?.gatheringCard.distanceMeters!).toBeGreaterThan(1000);
+    expect(surfaces?.gatheringCard.etaSeconds!).toBeGreaterThan(900);
+    expect(surfaces?.gatheringCard.progress!).toBeLessThan(0.5);
     expect(surfaces?.gatheringCard).toEqual(surfaces?.liveActivityPayload);
 
     // Advance wall clock past routeMinIntervalMs * 0.4 so recompute can fire.

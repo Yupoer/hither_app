@@ -167,7 +167,8 @@ describe('ActivityKit remote push contract', () => {
     expect(mapScreen).not.toContain('PROGRESS_REF_M');
     expect(mapScreen).toContain('gatedJourneyProgress(');
     expect(mapScreen).toContain('shouldAnchorInitial(');
-    expect(mapScreen).toContain("m.status === 'arrived'");
+    expect(mapScreen).not.toContain("m.status === 'arrived'");
+    expect(mapScreen).toContain('a.destinationId === navTarget?.id && a.userId === m.userId');
     expect(mapScreen).toContain('memberArrived:');
   });
 
@@ -213,7 +214,8 @@ describe('ActivityKit remote push contract', () => {
     // Single activity reconciliation still ends all before start.
     expect(liveHook).toContain('endAllGroupActivities');
     expect(liveHook).toContain('PERSIST_MIN_MS = 30_000');
-    expect(liveHook).toContain('Math.round(state.distanceMeters / 10) * 10');
+    expect(liveHook).not.toContain('Math.round(state.distanceMeters / 10) * 10');
+    expect(liveHook).toContain('state.distanceMeters,');
   });
 
   it('dims each member from its own arrived boolean', () => {

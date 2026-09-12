@@ -71,8 +71,8 @@ describe('background journey controller', () => {
       accuracy: 4,
       activityType: 3,
       pausesUpdatesAutomatically: false,
-      deferredUpdatesDistance: 30,
-      deferredUpdatesInterval: 30_000,
+      deferredUpdatesDistance: 0,
+      deferredUpdatesInterval: 0,
     });
   });
 
@@ -126,10 +126,8 @@ describe('background journey controller', () => {
 
     await expect(controller.start(config)).resolves.toBe('started');
 
-    expect(storage.setItem).toHaveBeenCalledWith(
-      BACKGROUND_JOURNEY_KEY,
-      JSON.stringify(config),
-    );
+    expect(storage.setItem.mock.calls[0][0]).toBe(BACKGROUND_JOURNEY_KEY);
+    expect(JSON.parse(storage.setItem.mock.calls[0][1])).toMatchObject(config);
     expect(location.startLocationUpdatesAsync).toHaveBeenCalledTimes(1);
     const opts = location.startLocationUpdatesAsync.mock.calls[0][1] as {
       accuracy: number;
@@ -331,4 +329,31 @@ describe('background journey native wiring', () => {
     expect(session).toContain('leaveGroupWithJourneyCleanup');
     expect(session).toContain('clearLiveActivities');
   });
+});
+
+it('stops a pending start and rejects late writes from the old tracker', async () => {
+  const { controller, location, storage } = harness();
+  let release!: () => void;
+  location.requestForegroundPermissionsAsync.mockImplementationOnce(() => new Promise(resolve => {
+    release = () => resolve({ status: 'granted' });
+  }));
+  const starting = controller.start(config);
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+  const stopping = controller.stop();
+  release();
+  await starting;
+  await stopping;
+  expect(location.startLocationUpdatesAsync).not.toHaveBeenCalled();
+  await controller.start({ ...config, permissionsPrepared: true });
+  const old = JSON.parse(storage.setItem.mock.calls[0][1]);
+  await controller.stop();
+  expect(controller.isCurrent(old)).toBe(false);
+  storage.setItem.mockClear();
+  await expect(controller.update(old, { ...old, sequence: 99 })).resolves.toBe(false);
+  expect(storage.setItem).not.toHaveBeenCalled();
+  expect(storage.removeItem).toHaveBeenCalledWith(BACKGROUND_JOURNEY_KEY);
+  await controller.start({ ...config, permissionsPrepared: true });
+  const newConfig = JSON.parse(storage.setItem.mock.calls[0][1]);
+  await controller.stop(old);
+  expect(controller.isCurrent(newConfig)).toBe(true);
 });

@@ -8,7 +8,7 @@ import {
   validateDestinationColor,
   validateDestinationEmoji,
 } from '../../utils/destinationEmojiColor';
-import { orThrow } from './_helpers';
+import { orThrow, requireUserId } from './_helpers';
 import { KmlImportError, type NormalizedImportItem } from '../../utils/kmlBatch';
 
 // ── Row shape ──────────────────────────────────────────────────────────────
@@ -208,6 +208,7 @@ export async function completeGatheringStop(
   if (isDemoGroup(groupId)) {
     return;
   }
+  await requireUserId();
   const { error } = await supabase.rpc('complete_gathering_stop', {
     p_group_id: groupId,
     p_destination_id: destinationId,

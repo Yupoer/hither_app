@@ -46,6 +46,7 @@ interface MembershipRow {
 }
 
 interface LiveSessionRow {
+  updated_at?: string;
   user_id: string;
   group_id: string;
   destination_id: string;
@@ -557,11 +558,15 @@ async function handleNavigationSession(
       const avatarByUser = new Map(
         (startProfiles ?? []).map((row) => [row.id as string, (row.avatar as string | null) ?? "🙂"]),
       );
-      const visibleMembers = members.filter((member) => !member.solo);
+      const { data: startArrivals, error: startArrivalError } = await supabase.from("destination_arrivals")
+        .select("user_id").eq("destination_id", payload.destination_id);
+      if (startArrivalError) throw startArrivalError;
+      const arrivedIds = new Set((startArrivals ?? []).map(row => row.user_id));
+      const visibleMembers = members.filter(member => member.subgroup_id === sender.subgroup_id);
       const memberEmojis = visibleMembers.map(
         (member) => avatarByUser.get(member.user_id) ?? "🙂",
       );
-      const memberArrived = visibleMembers.map((member) => member.status === "arrived");
+      const memberArrived = visibleMembers.map(member => arrivedIds.has(member.user_id));
       startResults = await Promise.all(
         startRows.map((row) =>
           sendLiveActivityStartApns(cfg, jwt, row.push_to_start_token, {
@@ -688,7 +693,7 @@ async function loadLiveSessions(
   let query = supabase
     .from("live_activity_sessions")
     .select(
-      "user_id, group_id, destination_id, push_token, initial_distance_m, current_distance_m, eta_seconds, travel_mode, last_progress_bucket, accent_hex",
+      "user_id, group_id, destination_id, push_token, initial_distance_m, current_distance_m, eta_seconds, travel_mode, last_progress_bucket, accent_hex, updated_at",
     )
     .eq("group_id", payload.group_id)
     .not("push_token", "is", null);
@@ -739,6 +744,10 @@ async function sendLiveActivities(
   if (destinationError) throw destinationError;
   if (profileError) throw profileError;
 
+  const { data: arrivals, error: arrivalError } = await supabase.from("destination_arrivals")
+    .select("destination_id, user_id").in("destination_id", destinationIds);
+  if (arrivalError) throw arrivalError;
+  const arrivedKeys = new Set((arrivals ?? []).map(row => `${row.destination_id}:${row.user_id}`));
   const titleByDestination = new Map(
     (destinations ?? []).map((row) => [row.id as string, row.title as string]),
   );
@@ -756,7 +765,7 @@ async function sendLiveActivities(
     sessions.map((session) => {
       const owner = memberByUser.get(session.user_id);
       const visibleMembers = owner
-        ? members.filter((member) => member.subgroup_id === owner.subgroup_id && !member.solo)
+        ? members.filter((member) => member.subgroup_id === owner.subgroup_id)
         : [];
       const contentState: LiveActivityContentState = {
         navigationSessionId: payload.category === "navigation_session"
@@ -773,20 +782,22 @@ async function sendLiveActivities(
             ? session.last_progress_bucket / 20
             : 0,
         ),
-        gatheredCount: visibleMembers.filter((member) => member.status === "arrived").length,
+        gatheredCount: visibleMembers.filter(member => arrivedKeys.has(`${session.destination_id}:${member.user_id}`)).length,
         memberCount: visibleMembers.length,
         accentHex: session.accent_hex ?? "#F5B142",
         travelMode: session.travel_mode,
         memberEmojis: visibleMembers.map(
           (member) => avatarByUser.get(member.user_id) ?? "🙂",
         ),
-        memberArrived: visibleMembers.map((member) => member.status === "arrived"),
+        memberArrived: visibleMembers.map(member => arrivedKeys.has(`${session.destination_id}:${member.user_id}`)),
         language: "zh",
       };
 
       return sendLiveActivityApns(cfg, jwt, session.push_token, {
         event,
-        timestamp,
+        // Use the snapshot time: an old cloud position must not replace a newer local ActivityKit update.
+        timestamp: event === "update" && session.updated_at
+          ? Math.min(timestamp, Math.floor((Date.parse(session.updated_at) || Date.now()) / 1000)) : timestamp,
         contentState,
       });
     }),

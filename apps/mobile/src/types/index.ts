@@ -296,6 +296,7 @@ export interface PendingInvite extends SubgroupInvite {
  * status missed/incomplete when the viewer never arrived.
  */
 export interface VisitedWaypoint {
+  pendingSync?: boolean;
   id: string;
   userId?: string;
   userName?: string;

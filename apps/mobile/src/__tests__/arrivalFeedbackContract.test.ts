@@ -11,30 +11,23 @@ describe('foreground arrival feedback', () => {
     // Low-accuracy samples must go through the reducer, not hasArrived alone.
     const autoBlock = source.slice(
       source.indexOf('// Auto-arrive while navigating'),
-      source.indexOf('// Auto-arrive while navigating') + 1200,
+      source.indexOf('const arrivedNow = next.status'),
     );
     expect(autoBlock).toContain('accuracyM: deviceAccuracyM');
     expect(autoBlock).not.toContain('insideRadius ||');
   });
 
   it('starts visual arrival feedback before waiting for the database ACK', () => {
-    const effect = source.slice(
-      source.indexOf('if (arrivedNow && user?.id)'),
-      source.indexOf('  }, [', source.indexOf('if (arrivedNow && user?.id)')),
-    );
-    expect(effect.indexOf('afterPersonalArrivalRef.current(navTarget')).toBeGreaterThanOrEqual(0);
-    expect(effect.indexOf('afterPersonalArrivalRef.current(navTarget')).toBeLessThan(
-      effect.indexOf('setDestinationArrival(navTarget.id'),
-    );
-    // Celebrate first without complete; complete only after arrival write succeeds.
+    const effect = source.slice(source.indexOf('const commitPersonalArrival ='), source.indexOf('// Auto-arrive while navigating'));
+    const durable = effect.indexOf('await enqueueArrival(');
+    const feedback = effect.indexOf('afterPersonalArrivalRef.current(destination');
+    const sync = effect.indexOf('await syncArrival(operation)');
+    expect(durable).toBeGreaterThanOrEqual(0);
+    expect(feedback).toBeGreaterThan(durable);
+    expect(sync).toBeGreaterThan(feedback);
     expect(effect).toContain('promptComplete: false');
-    expect(effect).toContain('promptComplete: true');
-    const writeIdx = effect.indexOf('setDestinationArrival(navTarget.id');
-    const completeIdx = effect.indexOf('promptComplete: true');
-    expect(completeIdx).toBeGreaterThan(writeIdx);
-    expect(source).toMatch(
-      /const personallyArrived = myCompletedDestinationIds\.has\(dest\.id\) \|\| \(\s*autoArrivedDestId === dest\.id/,
-    );
+    expect(effect).not.toContain('promptComplete: true');
+    expect(source).toContain('const personallyArrived = myCompletedDestinationIds.has(dest.id);');
     expect(source).toContain('arrivalDimOverlay');
     expect(source).toContain('arrivalCenterCheckLayer');
     expect(source).toContain('1_600');
@@ -94,23 +87,13 @@ describe('foreground arrival feedback', () => {
     expect(shellOnly).not.toContain('paddingTop');
   });
 
-  it('rolls back only failed arrival writes, not failed post-write refreshes', () => {
-    const submit = source.slice(
-      source.indexOf('const submitArrivalWithTimestamp'),
-      source.indexOf('/** Self Arrive', source.indexOf('const submitArrivalWithTimestamp')),
-    );
-    expect(submit).toContain('await setDestinationArrivalAt');
-    expect(submit).toContain('await loadGatheringWorkflow().catch(() => undefined)');
-    expect(submit.indexOf('await setDestinationArrivalAt')).toBeLessThan(
-      submit.indexOf('await loadGatheringWorkflow().catch(() => undefined)'),
-    );
-
-    const undo = source.slice(
-      source.indexOf('const handleArrival = useCallback'),
-      source.indexOf('const submitArrivalWithTimestamp'),
-    );
-    expect(undo.indexOf('await setDestinationArrival(')).toBeLessThan(
-      undo.indexOf('setAutoArrivedDestId'),
-    );
+  it('routes timestamped and automatic arrivals through the same durable submission', () => {
+    const manual = source.slice(source.indexOf('const submitArrivalWithTimestamp ='), source.indexOf('/** Self Arrive:'));
+    expect(manual).toContain('commitPersonalArrival(destination, targetUserId');
+    expect(source).toContain('commitPersonalArrival(navTarget, user.id');
+    const shared = source.slice(source.indexOf('const commitPersonalArrival ='), source.indexOf('// Auto-arrive while navigating'));
+    expect(shared).toContain('await syncArrival(operation)');
+    expect(shared).toContain('await loadGatheringWorkflow().catch(() => undefined)');
+    expect(shared).toContain('await refresh().catch(() => undefined)');
   });
 });

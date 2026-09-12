@@ -20,7 +20,8 @@ export async function requireUserId(): Promise<string> {
   const { data, error } = await supabase.auth.getSession();
   const uid = data.session?.user.id;
   if (error || !uid) {
-    throw new Error('尚未登入');
+    if (error) throw error;
+    throw Object.assign(new Error('尚未登入'), { code: '28000' });
   }
   return uid;
 }

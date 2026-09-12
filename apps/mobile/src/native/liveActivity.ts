@@ -58,6 +58,7 @@ const HitherLiveActivity =
 const NOOP_SUBSCRIPTION: EventSubscription = { remove() {} };
 
 export interface GroupActivityState {
+  sampledAtMs?: number;
   groupName: string;
   navigationSessionId?: string;
   status?: string;

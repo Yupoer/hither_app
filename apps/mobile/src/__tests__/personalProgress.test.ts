@@ -455,3 +455,17 @@ it('a coordinate inside the geofence cannot confirm arrival without the accuracy
   expect(model.arrived).toBe(false);
   expect(model.progress).toBeLessThan(1);
 });
+
+
+it('increases local route distance and ETA when moving away without a route refresh', () => {
+  const anchor = { latitude: 25, longitude: 121 };
+  const target = { latitude: 25.01, longitude: 121 };
+  const model = derivePersonalProgress({
+    deviceCoords: { latitude: 24.999, longitude: 121 }, targetCoords: target,
+    distanceSource: 'route', initialDistanceM: 1500, routeAnchorGps: anchor,
+    routeAnchorRemainingM: 1500, routeEtaSeconds: 900, travelMode: 'walk',
+  });
+  expect(model.distanceMeters).toBeGreaterThan(1500);
+  expect(model.etaSeconds).toBeCloseTo(900 * model.distanceMeters! / 1500);
+  expect(model.arrived).toBe(false);
+});
