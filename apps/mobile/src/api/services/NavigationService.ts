@@ -6,6 +6,7 @@ import type {
 } from '../../types/navigation';
 import { supabase } from '../supabase';
 import { orThrow, requireUserId } from './_helpers';
+import type { Destination } from '../../types';
 
 interface NavigationSessionRow {
   id: string;
@@ -150,16 +151,16 @@ export async function ackNavigationSession(
 }
 
 /**
- * Persist the account-level location sharing gate. Local navigation remains
- * enabled by design; the location ingestion RPC independently enforces this
+ * Persist the account-level gate for all location use. The ingestion RPC enforces this
  * row so a stale/background client cannot bypass the user's choice.
  */
-export async function setLocationSharingEnabled(enabled: boolean): Promise<void> {
+export async function setLocationSharingEnabled(enabled: boolean, expectedUserId?: string): Promise<void> {
   const userId = await requireUserId();
+  if (expectedUserId && userId !== expectedUserId) throw new Error('location_privacy_account_changed');
   const { error } = await supabase.from('member_privacy_settings').upsert({
     user_id: userId,
     sharing_enabled: enabled,
-    local_navigation_enabled: true,
+    local_navigation_enabled: enabled,
     updated_at: new Date().toISOString(),
   });
   orThrow(error);
@@ -190,6 +191,32 @@ export async function getActiveNavigationSession(
     .maybeSingle();
   orThrow(error);
   return data ? mapNavigationSession(data as NavigationSessionRow) : null;
+}
+
+/** Minimal background control data; never downloads teammates' positions. */
+export async function getBackgroundNavigationContext(groupId: string): Promise<{
+  actorId: string; hasMembership: boolean; sharingEnabled: boolean;
+  session: NavigationSession | null; target: Destination | null;
+}> {
+  const actorId = await requireUserId();
+  const [memberResult, sharingEnabled, session] = await Promise.all([
+    supabase.from('memberships').select('subgroup_id, solo').eq('group_id', groupId).eq('user_id', actorId).maybeSingle(),
+    getLocationSharingEnabled(),
+    getActiveNavigationSession(groupId),
+  ]);
+  orThrow(memberResult.error);
+  const member = memberResult.data;
+  const result = { actorId, hasMembership: Boolean(member), sharingEnabled: sharingEnabled !== false,
+    session: null as NavigationSession | null, target: null as Destination | null };
+  if (!member || member.solo || !session || sharingEnabled === false) return result;
+  const { data, error } = await supabase.from('itinerary_items')
+    .select('id, title, latitude, longitude, position, day, subgroup_id, closed_at')
+    .eq('group_id', groupId).eq('id', session.destinationId).maybeSingle();
+  orThrow(error);
+  if (!data || data.closed_at || (data.subgroup_id ?? null) !== (member.subgroup_id ?? null)) return result;
+  return { ...result, session, target: { id: data.id, title: data.title,
+    coordinates: { latitude: data.latitude, longitude: data.longitude }, order: data.position,
+    day: data.day ?? 1, subgroupId: data.subgroup_id ?? undefined } };
 }
 
 export async function getMyNavigationMemberState(

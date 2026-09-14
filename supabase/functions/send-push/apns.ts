@@ -108,6 +108,7 @@ export interface LiveActivityStartPayload {
 }
 
 export interface BackgroundLocationRefreshPayload {
+  category?: "location_refresh" | "navigation_session";
   groupId: string;
 }
 
@@ -222,7 +223,7 @@ export function buildBackgroundLocationRefreshRequest(
       },
       body: JSON.stringify({
         aps: { "content-available": 1 },
-        category: "location_refresh",
+        category: payload.category ?? "location_refresh",
         groupId: payload.groupId,
       }),
     },

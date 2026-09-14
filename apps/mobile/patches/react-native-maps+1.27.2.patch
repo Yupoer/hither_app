@@ -627,3 +627,69 @@ index b4fd5c1..3a1abe7 100644
     * If `false` the user won't be able to double tap to zoom the map.
     * **Note:** But it will greatly decrease delay of tap gesture recognition.
     *
+diff --git a/node_modules/react-native-maps/ios/AirMaps/AIRMapMarker.m b/node_modules/react-native-maps/ios/AirMaps/AIRMapMarker.m
+--- a/node_modules/react-native-maps/ios/AirMaps/AIRMapMarker.m
++++ b/node_modules/react-native-maps/ios/AirMaps/AIRMapMarker.m
+@@ -42,6 +42,7 @@ NSInteger const AIR_CALLOUT_OPEN_ZINDEX_BASELINE = 999;
+ - (instancetype)initWithFrame:(CGRect)frame {
+     self = [super initWithFrame:frame];
+     if (self) {
++        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(stopCoordinateAnimation) name:UIApplicationDidEnterBackgroundNotification object:nil];
+         [self.layer addObserver:self forKeyPath:@"zPosition" options:NSKeyValueObservingOptionNew context:nil];
+     }
+     return self;
+@@ -410,6 +411,8 @@ NSInteger const AIR_CALLOUT_OPEN_ZINDEX_BASELINE = 999;
+ }
+
+ - (void)dealloc {
++    [[NSNotificationCenter defaultCenter] removeObserver:self];
++    [self stopCoordinateAnimation];
+     [self.layer removeObserver:self forKeyPath:@"zPosition"];
+ }
+
+@@ -437,8 +440,9 @@ NSInteger const AIR_CALLOUT_OPEN_ZINDEX_BASELINE = 999;
+ }
+
+ - (void)animateToCoordinate:(CLLocationCoordinate2D)newCoordinate duration:(NSTimeInterval)duration {
+-    if (_isAnimating) {
+-        NSLog(@"Animation already in progress. Rejecting new animation request.");
++    [self stopCoordinateAnimation];
++    if (duration <= 0 || UIApplication.sharedApplication.applicationState != UIApplicationStateActive) {
++        self.coordinate = newCoordinate;
+         return;
+     }
+
+@@ -456,9 +460,21 @@ NSInteger const AIR_CALLOUT_OPEN_ZINDEX_BASELINE = 999;
+         [_displayLink invalidate];
+     }
+     _displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(updatePosition)];
++    _displayLink.preferredFramesPerSecond = 30;
+     [_displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+ }
+
++- (void)stopCoordinateAnimation {
++    [_displayLink invalidate];
++    _displayLink = nil;
++    _isAnimating = NO;
++}
++
++- (void)didMoveToWindow {
++    [super didMoveToWindow];
++    if (!self.window) [self stopCoordinateAnimation];
++}
++
+ - (void)updatePosition {
+     NSTimeInterval elapsed = [NSDate timeIntervalSinceReferenceDate] - _animationStartTime;
+     CGFloat progress = MIN(elapsed / _animationDuration, 1.0);
+diff --git a/node_modules/react-native-maps/ios/AirMaps/RNMapsMarkerView.mm b/node_modules/react-native-maps/ios/AirMaps/RNMapsMarkerView.mm
+--- a/node_modules/react-native-maps/ios/AirMaps/RNMapsMarkerView.mm
++++ b/node_modules/react-native-maps/ios/AirMaps/RNMapsMarkerView.mm
+@@ -66,7 +66,7 @@ using namespace facebook::react;
+
+ - (void) animateToCoordinates:(double)latitude longitude:(double)longitude duration:(NSInteger)duration
+ {
+-    [_view animateToCoordinate:CLLocationCoordinate2DMake(latitude, longitude) duration:duration/1000];
++    [_view animateToCoordinate:CLLocationCoordinate2DMake(latitude, longitude) duration:duration/1000.0];
+ }
+
+ - (void) showCallout

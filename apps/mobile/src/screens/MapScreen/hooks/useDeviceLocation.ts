@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 import { location } from '../../../native';
+import { setLocationAccessContext, captureLocationAccess, isLocationAccessCurrent } from '../../../state/locationPrivacy';
 import { energyObservability } from '../../../state/energyObservability';
 import {
   isDebugRouteActive,
@@ -18,7 +19,6 @@ import {
   reduceMotionState,
   shouldUploadSample,
   shouldWatchLocation,
-  uploadHeartbeatForCadence,
   type LocationGateState,
   type MotionState,
 } from '../../../utils/locationPolicy';
@@ -33,13 +33,11 @@ interface UseDeviceLocationParams {
   nativeMapLocationEnabled?: boolean;
   sharingEnabled?: boolean;
   hasMembership?: boolean;
+  teamNavigationActive?: boolean;
 }
 
 /** Coalesce passive outbox flushes; force-sync bypasses this delay. */
 const OUTBOX_FLUSH_DELAY_MS = 20_000;
-/** Independent timer tick — picks the active motion heartbeat each fire. */
-/** Timer base for motion-aware upload heartbeats (~½ prior 15s tick). */
-const HEARTBEAT_TICK_MS = 30_000;
 
 export function useDeviceLocation({
   groupId,
@@ -47,6 +45,7 @@ export function useDeviceLocation({
   nativeMapLocationEnabled = false,
   sharingEnabled = true,
   hasMembership,
+  teamNavigationActive = false,
 }: UseDeviceLocationParams) {
   const [deviceCoords, setDeviceCoords] = useState<Coordinates | null>(null);
   const [deviceAccuracyM, setDeviceAccuracyM] = useState<number | null>(null);
@@ -61,14 +60,12 @@ export function useDeviceLocation({
   const forceSyncInFlightRef = useRef(false);
   const groupIdRef = useRef(groupId);
   groupIdRef.current = groupId;
+  const teamNavigationRef = useRef(teamNavigationActive);
+  teamNavigationRef.current = teamNavigationActive;
   const highAccuracyRef = useRef(highAccuracy);
   highAccuracyRef.current = highAccuracy;
   const deviceCoordsRef = useRef(deviceCoords);
   deviceCoordsRef.current = deviceCoords;
-  const deviceAccuracyRef = useRef(deviceAccuracyM);
-  deviceAccuracyRef.current = deviceAccuracyM;
-  const nativeMapLocationEnabledRef = useRef(nativeMapLocationEnabled);
-  nativeMapLocationEnabledRef.current = nativeMapLocationEnabled;
   const sharingEnabledRef = useRef(sharingEnabled);
   sharingEnabledRef.current = sharingEnabled;
   const hasMembershipResolved = hasMembership ?? Boolean(groupId);
@@ -82,6 +79,13 @@ export function useDeviceLocation({
       hasMembershipRef.current,
     );
 
+  useEffect(() => {
+    setLocationAccessContext(hasMembershipResolved ? groupId ?? null : null, sharingEnabled, appState === 'active');
+  }, [groupId, hasMembershipResolved, sharingEnabled, appState]);
+  useEffect(() => () => setLocationAccessContext(null, false), []);
+
+  const policyNow = () => locationPolicy(highAccuracyRef.current || teamNavigationRef.current, teamNavigationRef.current ? 'journey' : 'foreground');
+
   const scheduleOutboxFlush = useCallback(() => {
     if (outboxFlushTimerRef.current) return;
     outboxFlushTimerRef.current = setTimeout(() => {
@@ -92,7 +96,7 @@ export function useDeviceLocation({
 
   const applySampleToUi = useCallback((sample: LocationSample, now: number) => {
     const coords = sample.coordinates;
-    if (!groupIdRef.current || !hasMembershipRef.current || AppState.currentState !== 'active'
+    if (!groupIdRef.current || !sharingEnabledRef.current || !hasMembershipRef.current || AppState.currentState !== 'active'
       || !Number.isFinite(sample.timestamp) || sample.timestamp <= lastSampleAtRef.current
       || !Number.isFinite(coords.latitude) || !Number.isFinite(coords.longitude)
       || Math.abs(coords.latitude) > 90 || Math.abs(coords.longitude) > 180) return false;
@@ -113,7 +117,9 @@ export function useDeviceLocation({
       options: { immediate: boolean },
     ): Promise<void> => {
       const gid = groupIdRef.current;
-      if (!gid) return;
+      if (!gid || !sharingEnabledRef.current || !hasMembershipRef.current) return;
+      const access = await captureLocationAccess(gid);
+      if (!access) return;
       await enqueueLocationOutbox({
         groupId: gid,
         coordinates: {
@@ -124,6 +130,7 @@ export function useDeviceLocation({
         },
         capturedAt: sample.timestamp,
       });
+      if (!isLocationAccessCurrent(access)) return;
       uploadGateRef.current = {
         lastCoords: sample.coordinates,
         lastAtMs: now,
@@ -149,10 +156,10 @@ export function useDeviceLocation({
     (sample: LocationSample): void => {
       energyObservability.increment('location_callback');
       const now = Date.now();
-      const policy = locationPolicy(highAccuracyRef.current);
+      const policy = policyNow();
       const coords = sample.coordinates;
       if (!applySampleToUi(sample, now)) return;
-      motionRef.current = reduceMotionState(motionRef.current, coords, now, policy);
+      motionRef.current = reduceMotionState(motionRef.current, coords, now, policy, sample.accuracy ?? 0);
 
       energyObservability.increment('location_accepted');
       energyObservability.event('location_acquisition');
@@ -169,7 +176,7 @@ export function useDeviceLocation({
           motionRef.current.cadence,
         )
       ) {
-        void enqueueUpload(sample, now, { immediate: false }).catch(() => undefined);
+        void enqueueUpload(sample, now, { immediate: teamNavigationRef.current }).catch(() => undefined);
       }
     },
     [applySampleToUi, enqueueUpload],
@@ -188,9 +195,11 @@ export function useDeviceLocation({
   }): Promise<Coordinates | null> => {
     energyObservability.increment('location_callback');
     const requestedGroup = groupIdRef.current;
-    if (!requestedGroup || !hasMembershipRef.current || AppState.currentState !== 'active') return null;
+    if (!requestedGroup || !sharingEnabledRef.current || !hasMembershipRef.current || AppState.currentState !== 'active') return null;
+    const access = await captureLocationAccess(requestedGroup);
+    if (!access) return null;
     const fix = await location.getCurrentLocation(highAccuracyRef.current);
-    if (!fix || requestedGroup !== groupIdRef.current || !groupIdRef.current || !hasMembershipRef.current || AppState.currentState !== 'active') return null;
+    if (!fix || !isLocationAccessCurrent(access) || !sharingEnabledRef.current || requestedGroup !== groupIdRef.current || !groupIdRef.current || !hasMembershipRef.current || AppState.currentState !== 'active') return null;
     energyObservability.increment('location_accepted');
     energyObservability.event('location_acquisition');
     const now = Date.now();
@@ -199,7 +208,8 @@ export function useDeviceLocation({
       motionRef.current,
       fix.coordinates,
       now,
-      locationPolicy(highAccuracyRef.current),
+      policyNow(),
+      fix.accuracy ?? 0,
     );
     if (groupIdRef.current && sharingEnabledRef.current && hasMembershipRef.current) {
       if (options?.requireUpload) {
@@ -221,11 +231,11 @@ export function useDeviceLocation({
     uiGateRef.current = { lastCoords: null, lastAtMs: 0 };
     uploadGateRef.current = { lastCoords: null, lastAtMs: 0 };
     motionRef.current = createMotionState(Date.now());
-  }, [highAccuracy]);
+  }, [highAccuracy, teamNavigationActive, groupId]);
 
   // Foreground force-sync: open app / return from background → upload now.
   useEffect(() => {
-    if (!groupId || appState !== 'active' || !sharingEnabled || !hasMembershipResolved) return;
+    if (nativeMapLocationEnabled || !groupId || appState !== 'active' || !sharingEnabled || !hasMembershipResolved) return;
     if (forceSyncInFlightRef.current) return;
     forceSyncInFlightRef.current = true;
     void refreshDeviceLocation()
@@ -233,7 +243,7 @@ export function useDeviceLocation({
       .finally(() => {
         forceSyncInFlightRef.current = false;
       });
-  }, [appState, groupId, refreshDeviceLocation, sharingEnabled, hasMembershipResolved]);
+  }, [appState, groupId, refreshDeviceLocation, sharingEnabled, hasMembershipResolved, nativeMapLocationEnabled]);
 
   useEffect(() => {
     if (groupId && appState === 'active' && sharingEnabled && hasMembershipResolved) {
@@ -241,89 +251,11 @@ export function useDeviceLocation({
     }
   }, [appState, groupId, sharingEnabled, hasMembershipResolved]);
 
-  // Independent heartbeat timer — does not rely on iOS watch callbacks while still.
-  useEffect(() => {
-    if (!watchAllowed(appState)) return;
-
-    const tick = () => {
-      const gid = groupIdRef.current;
-      if (!gid || AppState.currentState !== 'active') return;
-      const policy = locationPolicy(highAccuracyRef.current);
-      const now = Date.now();
-      // Quiet without GPS callbacks: still age into stationary.
-      if (
-        motionRef.current.lastCoords &&
-        now - motionRef.current.lastSignificantMoveAtMs >= policy.stationaryAfterMs
-      ) {
-        motionRef.current = {
-          ...motionRef.current,
-          cadence: 'stationary',
-        };
-      }
-      const heartbeatMs = uploadHeartbeatForCadence(
-        policy,
-        motionRef.current.cadence,
-      );
-      const lastUploadAt = uploadGateRef.current.lastAtMs;
-      if (lastUploadAt > 0 && now - lastUploadAt < heartbeatMs) return;
-
-      const lastKnown = deviceCoordsRef.current ?? uploadGateRef.current.lastCoords;
-      const cadenceNow = motionRef.current.cadence;
-      void (async () => {
-        let sample: LocationSample | null = null;
-        let acquiredFix = false;
-        if (cadenceNow === 'stationary' && lastKnown && lastUploadAt > 0) {
-          // Stationary liveness: reuse last known to avoid extra GPS wake.
-          sample = {
-            coordinates: lastKnown,
-            accuracy: deviceAccuracyRef.current,
-            timestamp: now,
-          };
-        } else if (nativeMapLocationEnabledRef.current && lastKnown) {
-          // MapKit owns continuous GPS; heartbeat only reuses last known.
-          sample = {
-            coordinates: lastKnown,
-            accuracy: deviceAccuracyRef.current,
-            timestamp: now,
-          };
-        } else {
-          sample = await location.getCurrentLocation(highAccuracyRef.current).catch(() => null);
-          acquiredFix = sample != null;
-          if (!sample && lastKnown) {
-            sample = {
-              coordinates: lastKnown,
-              accuracy: deviceAccuracyRef.current,
-              timestamp: now,
-            };
-          }
-        }
-        if (!sample || gid !== groupIdRef.current || !hasMembershipRef.current || AppState.currentState !== 'active') return;
-        energyObservability.increment('location_callback');
-        const sampleNow = Date.now();
-        if (acquiredFix) applySampleToUi(sample, sampleNow);
-        motionRef.current = reduceMotionState(
-          motionRef.current,
-          sample.coordinates,
-          sampleNow,
-          policy,
-        );
-        if (
-          shouldUploadSample(
-            sample.coordinates,
-            sampleNow,
-            uploadGateRef.current,
-            policy,
-            motionRef.current.cadence,
-          )
-          ) {
-          await enqueueUpload(sample, sampleNow, { immediate: true }).catch(() => undefined);
-        }
-      })();
-    };
-
-    const timer = setInterval(tick, HEARTBEAT_TICK_MS);
-    return () => clearInterval(timer);
-  }, [appState, groupId, applySampleToUi, enqueueUpload, sharingEnabled, hasMembershipResolved]);
+  // No GPS heartbeat: publish only timestamped sensor fixes, never retimestamp a cache.
+  useEffect(() => () => {
+    if (outboxFlushTimerRef.current) clearTimeout(outboxFlushTimerRef.current);
+    outboxFlushTimerRef.current = null;
+  }, [appState, groupId, sharingEnabled, hasMembershipResolved]);
 
   // DEV debug route: always feed samples into UI, even when MapKit owns real GPS.
   // Debug samples stay local — they must not enter the team location outbox.
@@ -332,7 +264,7 @@ export function useDeviceLocation({
     return subscribeDebugLocation((sample: LocationSample) => {
       if (!isDebugRouteActive()) return;
       const now = Date.now();
-      const policy = locationPolicy(highAccuracyRef.current);
+      const policy = policyNow();
       motionRef.current = reduceMotionState(
         motionRef.current,
         sample.coordinates,
@@ -352,7 +284,7 @@ export function useDeviceLocation({
     void location
       .watchLocation((sample: LocationSample) => {
         consumeForegroundSample(sample);
-      }, highAccuracy)
+      }, highAccuracy || teamNavigationActive)
       .then((unsub: () => void) => {
         if (cancelled) unsub();
         else stop = unsub;
@@ -365,7 +297,7 @@ export function useDeviceLocation({
       }
       stop();
     };
-  }, [appState, groupId, highAccuracy, nativeMapLocationEnabled, consumeForegroundSample, sharingEnabled, hasMembershipResolved]);
+  }, [appState, groupId, highAccuracy, teamNavigationActive, nativeMapLocationEnabled, consumeForegroundSample, sharingEnabled, hasMembershipResolved]);
 
   return {
     deviceCoords,

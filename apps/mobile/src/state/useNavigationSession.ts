@@ -1,3 +1,4 @@
+import { AppState } from 'react-native';
 import Constants from 'expo-constants';
 import * as Updates from 'expo-updates';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -28,8 +29,27 @@ export function useNavigationSession(groupId: string | null) {
   const [error, setError] = useState<string | null>(null);
   const activeSessionIdRef = useRef<string | null>(null);
   const sessionRef = useRef<NavigationSession | null>(null);
+  const lastEventRef = useRef<NavigationSession | null>(null);
+
+  const revision = useRef(0);
+  const groupRef = useRef(groupId);
+  groupRef.current = groupId;
+  const [foreground, setForeground] = useState(AppState.currentState === 'active');
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', state => {
+      revision.current += 1;
+      setForeground(state === 'active');
+    });
+    return () => { revision.current += 1; sub.remove(); };
+  }, []);
 
   const acceptSession = useCallback((next: NavigationSession) => {
+    if (next.groupId !== groupRef.current) return;
+    const previous = lastEventRef.current;
+    if (previous?.groupId === next.groupId && (previous.id === next.id ? previous.version >= next.version
+      : next.status !== 'active' || Date.parse(previous.startedAt) > Date.parse(next.startedAt))) return;
+    lastEventRef.current = next;
+    revision.current += 1;
     if (next.status !== 'active') {
       activeSessionIdRef.current = null;
       sessionRef.current = null;
@@ -37,18 +57,10 @@ export function useNavigationSession(groupId: string | null) {
       setMemberState(null);
       return;
     }
-    setSession((previous) => {
-      if (
-        previous?.id === next.id &&
-        previous.version >= next.version
-      ) {
-        return previous;
-      }
-      activeSessionIdRef.current = next.id;
-      sessionRef.current = next;
-      if (previous?.id !== next.id) setMemberState(null);
-      return next;
-    });
+    activeSessionIdRef.current = next.id;
+    sessionRef.current = next;
+    if (previous?.id !== next.id) setMemberState(null);
+    setSession(next);
   }, []);
 
   const refresh = useCallback(async () => {
@@ -60,9 +72,12 @@ export function useNavigationSession(groupId: string | null) {
       setLoading(false);
       return null;
     }
+    if (AppState.currentState !== 'active') return null;
+    const requestRevision = ++revision.current;
     setLoading(true);
     try {
       const next = await getActiveNavigationSession(groupId);
+      if (requestRevision !== revision.current || groupId !== groupRef.current) return null;
       if (!next) {
         activeSessionIdRef.current = null;
         sessionRef.current = null;
@@ -72,7 +87,8 @@ export function useNavigationSession(groupId: string | null) {
         return null;
       }
       acceptSession(next);
-      setMemberState(await getMyNavigationMemberState(next.id));
+      const member = await getMyNavigationMemberState(next.id);
+      if (activeSessionIdRef.current === next.id && groupId === groupRef.current) setMemberState(member);
       setError(null);
       return next;
     } catch (cause) {
@@ -86,6 +102,7 @@ export function useNavigationSession(groupId: string | null) {
   useEffect(() => {
     let cancelled = false;
     let unsubscribe: (() => void) | null = null;
+    if (!foreground) return;
     void refresh();
     if (!groupId) return;
 
@@ -110,9 +127,10 @@ export function useNavigationSession(groupId: string | null) {
 
     return () => {
       cancelled = true;
+      revision.current += 1;
       unsubscribe?.();
     };
-  }, [acceptSession, groupId, refresh]);
+  }, [acceptSession, groupId, refresh, foreground]);
 
   const reconcileTerminalConflict = useCallback(async (
     action: 'cancel' | 'complete',

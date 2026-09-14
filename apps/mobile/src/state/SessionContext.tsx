@@ -1,3 +1,4 @@
+import { setLocationAccessContext } from './locationPrivacy';
 import React, {
   createContext,
   useContext,
@@ -457,6 +458,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOutWithJourneyCleanup = useCallback(async () => {
+    setLocationAccessContext(null, false);
     const previousId = premiumUserIdRef.current ?? user?.id ?? null;
     await stopBackgroundJourney().catch(() => undefined);
     await clearLiveActivities();
@@ -472,6 +474,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const deleteAccountWithJourneyCleanup = useCallback(async () => {
     const previousId = premiumUserIdRef.current ?? user?.id ?? null;
     await deleteAccount();
+    setLocationAccessContext(null, false);
     await stopBackgroundJourney().catch(() => undefined);
     await clearLiveActivities();
     if (previousId) await clearPremiumProjectionCache(previousId);
@@ -483,6 +486,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, [deleteAccount, user?.id]);
 
   const leaveGroupWithJourneyCleanup = useCallback(() => {
+    setLocationAccessContext(null, false);
     void stopBackgroundJourney();
     void clearLiveActivities();
     setMembershipState(null);

@@ -169,3 +169,12 @@ describe('syncAuthority', () => {
       .toBe('itinerary_mutation');
   });
 });
+
+it('does not rewind a newer peer event when an older full snapshot completes',()=>{
+ const member = {userId:'peer',name:'Peer',role:'follower',status:'active',coordinates:{latitude:25,longitude:121},lastUpdated:'2026-09-14T00:00:10Z'} as GroupState['members'][number];
+ const previous=state({members:[member]});
+ const old={...member,coordinates:{latitude:24,longitude:121},lastUpdated:'2026-09-14T00:00:00Z'};
+ expect(mergeRemoteGroupStatePreservingOwnLocation(previous,state({members:[old]})).members[0].coordinates).toEqual(member.coordinates);
+ const hidden={...old,coordinates:undefined};
+ expect(mergeRemoteGroupStatePreservingOwnLocation(previous,state({members:[hidden]})).members[0].coordinates).toBeUndefined();
+});

@@ -20,6 +20,8 @@ import {
 import {
   LEGACY_LOCATION_SHARING_KEY,
   LOCATION_SHARING_KEY,
+  setLocationSharingConsent,
+  subscribeLocationSharingConsent,
 } from './locationPrivacy';
 
 /**
@@ -176,6 +178,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [textScale, setTextScaleState] = useState<TextScalePref>(DEFAULT_TEXT_SCALE);
   const [highAccuracy, setHighAccuracyState] = useState(false);
   const [sharingEnabled, setSharingEnabledState] = useState(true);
+  useEffect(() => subscribeLocationSharingConsent(setSharingEnabledState), []);
   // Default on: locate-me tilts to 30° unless the user opts out in Settings.
   const [obliqueLocate, setObliqueLocateState] = useState(true);
   // Default on: Live Activity during journey unless the user opts out.
@@ -317,6 +320,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   }, []);
 
   const setSharingEnabled = useCallback((on: boolean) => {
+    setLocationSharingConsent(on);
     setSharingEnabledState(on);
     void AsyncStorage.setItem(LOCATION_SHARING_KEY, on ? 'true' : 'false');
   }, []);

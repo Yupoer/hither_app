@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 import { getGroupRecoverySnapshot } from '../api/client';
 import { energyObservability } from './energyObservability';
+import { syncLocationSharing } from './locationSharingSync';
 import { isNetworkRequestError } from '../api/services/_helpers';
 import { supabase } from '../api/supabase';
 import type { GroupState } from '../types';
@@ -15,7 +16,7 @@ import {
   mergeLocationPatches,
   type MemberLocationPatch,
 } from '../utils/groupStatePatches';
-import { isOwnLocationChange, locationPolicy } from '../utils/locationPolicy';
+import { isOwnLocationChange } from '../utils/locationPolicy';
 import {
   describeRecoveryMerge,
   isLeaderGatheringOperation,
@@ -108,7 +109,7 @@ export function useGroupState(
   groupId: string | null,
   options: UseGroupStateOptions = {},
 ): UseGroupStateResult {
-  const { myUserId = null, highAccuracy = false } = options;
+  const { myUserId = null } = options;
   const [state, setState] = useState<GroupState | null>(null);
   /** Mirrors React state so recovery can merge + persist one authoritative snapshot. */
   const stateRef = useRef<GroupState | null>(null);
@@ -134,8 +135,6 @@ export function useGroupState(
   const pendingPatchesRef = useRef(new Map<string, MemberLocationPatch>());
   const myUserIdRef = useRef(myUserId);
   myUserIdRef.current = myUserId;
-  const highAccuracyRef = useRef(highAccuracy);
-  highAccuracyRef.current = highAccuracy;
 
   const loadInFlightRef = useRef<Promise<boolean> | null>(null);
   // Realtime can report a newer revision while the recovery RPC is still in
@@ -325,6 +324,7 @@ export function useGroupState(
           // Local cache write is best-effort; remote state still paints.
         }
         // Opportunistic outbox drain after a successful network round-trip.
+        if (myUserIdRef.current) await syncLocationSharing(myUserIdRef.current).catch(() => undefined);
         await flushCoreOperationOutbox().catch(() => undefined);
         await refreshOpenOperations(groupId);
         return true;
@@ -496,6 +496,7 @@ export function useGroupState(
     };
 
     const flushLocationPatches = () => {
+      locationDebounceRef.current = null;
       const buffered = Array.from(pendingPatchesRef.current.values());
       pendingPatchesRef.current.clear();
       if (buffered.length === 0) return;
@@ -520,12 +521,8 @@ export function useGroupState(
     };
 
     const scheduleLocationPatch = () => {
-      if (locationDebounceRef.current) {
-        clearTimeout(locationDebounceRef.current);
-      }
-      const ms = locationPolicy(highAccuracyRef.current, 'foreground')
-        .realtimeLocationDebounceMs;
-      locationDebounceRef.current = setTimeout(flushLocationPatches, ms);
+      if (locationDebounceRef.current) return;
+      locationDebounceRef.current = setTimeout(flushLocationPatches, 250);
     };
 
     const filter = `group_id=eq.${groupId}`;
@@ -549,7 +546,6 @@ export function useGroupState(
             scheduleReload('location_change', payload as { commit_timestamp?: string });
             return;
           }
-          scheduleReload('location_change', payload as { commit_timestamp?: string });
           mergeLocationPatches(pendingPatchesRef.current, parsed);
           scheduleLocationPatch();
         },

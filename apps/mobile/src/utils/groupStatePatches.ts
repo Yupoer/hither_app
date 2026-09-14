@@ -24,6 +24,8 @@ export function locationPatchFromRealtimePayload(
   if (typeof userId !== 'string') return 'full-reload';
   if (typeof lat !== 'number' || typeof lon !== 'number') return 'full-reload';
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return 'full-reload';
+  if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return 'full-reload';
+  if (typeof row.updated_at !== 'string' || !Number.isFinite(Date.parse(row.updated_at))) return 'full-reload';
   const updatedAt =
     typeof row.updated_at === 'string' ? row.updated_at : new Date().toISOString();
   return {
@@ -55,6 +57,7 @@ export function applyMemberLocationPatches(
     if (idx < 0) return null;
 
     const prev = list[idx];
+    if (prev.lastUpdated && Date.parse(patch.updatedAt) <= Date.parse(prev.lastUpdated)) continue;
     const same =
       prev.coordinates?.latitude === patch.coordinates.latitude &&
       prev.coordinates?.longitude === patch.coordinates.longitude &&
@@ -78,5 +81,7 @@ export function mergeLocationPatches(
   into: Map<string, MemberLocationPatch>,
   patch: MemberLocationPatch,
 ): void {
+  const previous = into.get(patch.userId);
+  if (previous && Date.parse(previous.updatedAt) >= Date.parse(patch.updatedAt)) return;
   into.set(patch.userId, patch);
 }

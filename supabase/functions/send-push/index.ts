@@ -247,6 +247,7 @@ async function sendBackgroundLocationRefreshes(
     const apnsResults = await Promise.all(
       ios.map(({ token }) =>
         sendBackgroundLocationRefresh(cfg, jwt, token, {
+          category: payload.category === "navigation_session" ? "navigation_session" : "location_refresh",
           groupId: payload.group_id,
         }).then((r): PushResult => ({ ...r, provider: "apns" }))),
     );
@@ -265,7 +266,7 @@ async function sendBackgroundLocationRefreshes(
       android.map(({ token }) =>
         sendFcmData(cfg, access, token, {
           data: {
-            category: "location_refresh",
+            category: payload.category === "navigation_session" ? "navigation_session" : "location_refresh",
             groupId: payload.group_id,
           },
         })),
@@ -496,6 +497,17 @@ async function handleNavigationSession(
     return json({ error: "navigation session payload is incomplete" }, 400);
   }
 
+  // Delayed webhooks must never end or replace a newer journey's activities.
+  const { data: latest, error: latestError } = await supabase.from("navigation_sessions")
+    .select("id, status, version").eq("group_id", payload.group_id)
+    .order("started_at", { ascending: false }).limit(1).maybeSingle();
+  if (latestError) throw latestError;
+  if (!latest || latest.id !== payload.session_id || latest.status !== payload.status
+    || latest.version !== payload.version) return json({ sent: 0, ignored: "superseded_session_event" });
+  const controlTokens = await loadTokenRows(members.filter(member => !member.solo
+    && member.user_id !== payload.sender_id).map(member => member.user_id));
+  await sendBackgroundLocationRefreshes(controlTokens, payload).catch(() => console.warn("navigation_control_delivery_failed"));
+
   const eligibleUserIds = await filterNotificationPreferences(
     members.filter((member) => !member.solo).map((member) => member.user_id),
     "navigation_session",
@@ -525,11 +537,26 @@ async function handleNavigationSession(
       .from("live_activity_sessions")
       .select("user_id")
       .eq("group_id", payload.group_id)
+      .gt("expires_at", new Date().toISOString())
       .not("push_token", "is", null);
     if (handleError) throw handleError;
     const usersWithHandle = new Set(
       ((handleRows ?? []) as { user_id: string }[]).map((row) => row.user_id),
     );
+    // Reuse existing handles when switching; they must not keep the old destination.
+    const existingUsers = eligibleUserIds.filter(id => usersWithHandle.has(id));
+    let existingResults: ApnsResult[] = [];
+    if (existingUsers.length) {
+      const { error } = await supabase.from("live_activity_sessions")
+        .update({ destination_id: payload.destination_id, current_distance_m: 0,
+          last_progress_bucket: 0, eta_seconds: null, updated_at: new Date().toISOString() })
+        .eq("group_id", payload.group_id).gt("expires_at", new Date().toISOString())
+        .in("user_id", existingUsers);
+      if (error) throw error;
+      const handles = (await loadLiveSessions(payload, members, sender))
+        .filter(row => existingUsers.includes(row.user_id));
+      existingResults = await sendLiveActivities(handles, members, memberByUser, payload);
+    }
     // Starter starts locally; devices that already have a handle must not PTS.
     const startRows = startRowsRaw.filter(
       (row) => row.user_id !== payload.sender_id && !usersWithHandle.has(row.user_id),
@@ -542,7 +569,7 @@ async function handleNavigationSession(
 
     // Live Activity start is iOS-only; require APNs only when start tokens exist
     // or fallback includes ios tokens. FCM only when android fallbacks exist.
-    let startResults: ApnsResult[] = [];
+    let startResults: ApnsResult[] = existingResults;
     if (startRows.length > 0) {
       const cfg = readApnsConfig();
       const jwt = await providerToken(cfg);
@@ -567,7 +594,7 @@ async function handleNavigationSession(
         (member) => avatarByUser.get(member.user_id) ?? "🙂",
       );
       const memberArrived = visibleMembers.map(member => arrivedIds.has(member.user_id));
-      startResults = await Promise.all(
+      startResults = [...existingResults, ...await Promise.all(
         startRows.map((row) =>
           sendLiveActivityStartApns(cfg, jwt, row.push_to_start_token, {
             timestamp,
@@ -587,11 +614,11 @@ async function handleNavigationSession(
               memberArrived,
             },
           })),
-      );
+      )];
     }
 
     let fallbackResults = await sendAlerts(fallbackTokenRows, payload);
-    const deadStartTokens = startResults
+    const deadStartTokens = startResults.filter(result => startRows.some(row => row.push_to_start_token === result.token))
       .filter((result) => result.dead)
       .map((result) => result.token);
     if (deadStartTokens.length > 0) {
@@ -643,7 +670,8 @@ async function handleNavigationSession(
       .in("push_token", deadActivityTokens);
   }
   if (payload.status !== "active") {
-    await supabase.from("live_activity_sessions").delete().eq("group_id", payload.group_id);
+    await supabase.from("live_activity_sessions").delete().eq("group_id", payload.group_id)
+      .eq("destination_id", payload.destination_id);
   }
   return json({
     sent: 0,
@@ -772,7 +800,7 @@ async function sendLiveActivities(
           ? payload.session_id ?? undefined
           : undefined,
         status: payload.category === "navigation_session"
-          ? payload.status ?? undefined
+          ? payload.status === "active" && payload.version === 1 ? "starting" : payload.status ?? undefined
           : undefined,
         gatheringTitle: titleByDestination.get(session.destination_id) ?? "集合點",
         distanceMeters: Math.max(0, Math.round(session.current_distance_m)),

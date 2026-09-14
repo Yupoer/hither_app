@@ -634,7 +634,7 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain('color={glass.danger}');
     expect(mapScreen).toContain('locationSharingConfirmCopy');
     expect(mapScreen).toContain('confirmAction({');
-    expect(mapScreen).toContain('showsUserLocation={mapFocused && sharingEnabled && members.length > 0}');
+    expect(mapScreen).toContain("showsUserLocation={appState === 'active' && mapFocused && preferencesReady && sharingEnabled && members.some(m => m.userId === user?.id)}");
     expect(mapScreen).not.toMatch(
       /toolsPaneBody[\s\S]*settings\.locationSharing[\s\S]*AmicroButton/,
     );

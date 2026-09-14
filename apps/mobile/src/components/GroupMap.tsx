@@ -1,3 +1,4 @@
+import { memberMotionDuration, type MemberMotionSample } from '../utils/memberMotion';
 import React, {
   Component,
   forwardRef,
@@ -22,7 +23,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import MapView, { AnimatedRegion, Marker, MarkerAnimated, Polyline } from 'react-native-maps';
+import MapView, { Marker, Polyline } from 'react-native-maps';
 import type { Coordinates, Destination, MemberLocation } from '../types';
 import { displayMemberAvatar } from '../constants/avatars';
 import { usePreferences, useTheme } from '../state/PreferencesContext';
@@ -407,7 +408,7 @@ const PendingPlaceMarker = React.memo(function PendingPlaceMarker({ pendingPlace
   );
 });
 
-const MemberMarker = React.memo(function MemberMarker({ member, accent, styles }: any) {
+const MemberMarker = React.memo(function MemberMarker({ member, accent, styles, appActive, reduceMotion }: any) {
   const isLeader = member.role === 'leader';
   const ringColor = isLeader ? accent : '#FFFFFF';
   const displayAvatar = displayMemberAvatar(member.avatar, member.userId, member.avatarColor);
@@ -424,62 +425,33 @@ const MemberMarker = React.memo(function MemberMarker({ member, accent, styles }
     bgColor,
   ]);
 
-  // Display-only interpolation between real GPS fixes (no extrapolation past latest).
-  const regionRef = useRef(
-    new AnimatedRegion({
-      latitude: lat ?? 0,
-      longitude: lng ?? 0,
-      latitudeDelta: 0,
-      longitudeDelta: 0,
-    }),
-  );
-  const lastCoordRef = useRef<{ latitude: number; longitude: number } | null>(
-    lat != null && lng != null ? { latitude: lat, longitude: lng } : null,
-  );
-
+  const markerRef = useRef<React.ElementRef<typeof Marker>>(null);
+  const initialCoordinate = useRef({ latitude: lat ?? 0, longitude: lng ?? 0 });
+  const lastSample = useRef<MemberMotionSample | null>(null);
+  const wasActive = useRef(false);
+  const latestCoordinate = useRef(initialCoordinate.current);
   useEffect(() => {
-    if (lat == null || lng == null || !Number.isFinite(lat) || !Number.isFinite(lng)) return;
-    const prev = lastCoordRef.current;
-    lastCoordRef.current = { latitude: lat, longitude: lng };
-    if (!prev) {
-      regionRef.current.setValue({
-        latitude: lat,
-        longitude: lng,
-        latitudeDelta: 0,
-        longitudeDelta: 0,
-      });
-      return;
-    }
-    if (prev.latitude === lat && prev.longitude === lng) return;
-    // Clamp duration: short hops snappy, longer moves smoother — never invent a next point.
-    const approxM =
-      Math.hypot((lat - prev.latitude) * 111_000, (lng - prev.longitude) * 85_000);
-    const duration = Math.min(800, Math.max(280, approxM * 4));
-    regionRef.current
-      .timing({
-        latitude: lat,
-        longitude: lng,
-        latitudeDelta: 0,
-        longitudeDelta: 0,
-        duration,
-        useNativeDriver: false,
-        // RN Animated types require these for composite configs on some versions.
-        toValue: 0 as unknown as number,
-        isInteraction: false,
-      } as RNAnimated.TimingAnimationConfig & {
-        latitude: number;
-        longitude: number;
-        latitudeDelta: number;
-        longitudeDelta: number;
-      })
-      .start();
-  }, [lat, lng]);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return;
+    const next = { coordinates: { latitude: lat, longitude: lng }, sampledAt: Date.parse(member.lastUpdated ?? '') };
+    if (appActive && wasActive.current && lastSample.current && Number.isFinite(next.sampledAt)
+      && next.sampledAt < lastSample.current.sampledAt) return;
+    const duration = memberMotionDuration(lastSample.current, next, Date.now(), appActive && wasActive.current && !reduceMotion);
+    wasActive.current = appActive;
+    latestCoordinate.current = next.coordinates;
+    lastSample.current = next;
+    // Installed native command handles overlap from the currently displayed coordinate.
+    markerRef.current?.animateMarkerToCoordinate(next.coordinates, duration);
+  }, [lat, lng, member.lastUpdated, appActive, reduceMotion]);
+  useEffect(() => () => {
+    markerRef.current?.animateMarkerToCoordinate(latestCoordinate.current, 0);
+  }, []);
 
   if (lat == null || lng == null) return null;
 
   return (
-    <MarkerAnimated
-      coordinate={regionRef.current as unknown as { latitude: number; longitude: number }}
+    <Marker
+      ref={markerRef}
+      coordinate={initialCoordinate.current}
       title={member.name}
       description={isLeader ? 'Leader' : 'Follower'}
       anchor={{ x: 0.5, y: 1 }}
@@ -507,7 +479,7 @@ const MemberMarker = React.memo(function MemberMarker({ member, accent, styles }
           </HitherText>
         </View>
       </View>
-    </MarkerAnimated>
+    </Marker>
   );
 });
 
@@ -1031,6 +1003,8 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
           <MemberMarker
             key={m.userId}
             member={m}
+            appActive={appActive}
+            reduceMotion={reduceMotion}
             accent={colors.accent}
             styles={styles}
           />

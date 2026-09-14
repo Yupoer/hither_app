@@ -9,6 +9,7 @@ import type { Coordinates } from '../types';
 import type { TrackingMode } from '../utils/locationPolicy';
 import { createSingleFlightFlush } from '../utils/locationOutboxFlush';
 import { getHitherDatabase } from './hitherDatabase';
+import { captureLocationAccess, isLocationAccessCurrent } from './locationPrivacy';
 
 export const LOCATION_OUTBOX_KEY = '@hither/location-outbox';
 const TTL_MS = 24 * 60 * 60 * 1_000;
@@ -420,15 +421,22 @@ const outbox = createLocationOutbox(
   AsyncStorage,
 );
 
-export function enqueueLocationOutbox(
+export async function enqueueLocationOutbox(
   input: LocationUploadEvent | LegacyEnqueueInput,
 ): Promise<void> {
-  return outbox.enqueue(input);
+  const access = await captureLocationAccess(input.groupId);
+  if (!access) return;
+  await outbox.enqueue(input);
+  if (!isLocationAccessCurrent(access)) await outbox.purge();
 }
 
-export function flushLocationOutbox(
+export async function flushLocationOutbox(
   maxEntries = MAX_BATCH,
 ): Promise<LocationFlushResult> {
+  if (!await captureLocationAccess()) {
+    await outbox.purge();
+    return { sent: 0, discarded: 0, remaining: 0, retryScheduled: 0 };
+  }
   return outbox.flush(maxEntries);
 }
 

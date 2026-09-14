@@ -1,22 +1,9 @@
 import type { Coordinates } from '../types';
 import { distanceMeters } from './geo';
 
-/**
- * Power modes for the 8h ≈ 20% battery budget goal:
- *
- * - `foreground` — app open on map (UI-responsive).
- * - `allDay` — phone locked / background group presence. Designed so a full
- *   day of sharing (~8h) stays near ≤20% on modern phones when mostly walking
- *   or idle. Uses Low accuracy + multi-minute deferred batches.
- * - `journey` — navigating to a gathering point in background; denser than
- *   allDay but still capped. `highAccuracy` only applies here / foreground.
- *
- * Continuous High accuracy for 8h will typically drain 40%+ and is intentionally
- * outside this budget — the precise toggle is short-burst only.
- *
- * Upload cadence is **dynamic**: while the device is moving, use the denser
- * `uploadHeartbeatMs`; after a quiet period, switch to
- * `uploadHeartbeatStationaryMs` (still a real heartbeat — not "off").
+/** Foreground UI, passive presence, and journey profiles. Uploads only use real sensor fixes.
+ * iOS live updates use OS-managed default/fitness profiles; Expo fallback uses explicit accuracy.
+ * Battery targets require device measurements and are not guarantees.
  */
 export type LocationPowerMode = 'foreground' | 'allDay' | 'journey';
 
@@ -50,7 +37,7 @@ export function resolveTrackingMode(input: TrackingModeInput): TrackingMode {
     return 'navigationMax';
   }
   if (input.teamNavigationActive) return 'teamNavigation';
-  if (input.manualHighAccuracy) return 'manualHighAccuracy';
+  if (input.manualHighAccuracy && input.appState === 'active') return 'manualHighAccuracy';
   return input.appState === 'active' ? 'foreground' : 'passiveBackground';
 }
 
@@ -68,12 +55,12 @@ export interface LocationPolicy {
   uploadMinIntervalMs: number;
   /**
    * Upload heartbeat while **moving** (or right after a move).
-   * Also used as the independent timer tick base.
+   * Evaluated only when a timestamped sensor sample arrives.
    */
   uploadHeartbeatMs: number;
   /**
    * Upload heartbeat while **stationary** for a while.
-   * Still reports liveness — just less often than moving.
+   * No sample means no upload; never manufacture liveness from cached coordinates.
    */
   uploadHeartbeatStationaryMs: number;
   /**
@@ -90,7 +77,7 @@ export interface LocationPolicy {
 }
 
 /**
- * Rough expected drain share for GPS+radio alone (device-dependent).
+ * Legacy product targets, not measured drain or a platform guarantee.
  * Not a guarantee — screen-on map time dominates if the app stays open.
  */
 export const POWER_BUDGET_NOTE = {
@@ -127,13 +114,13 @@ export function locationPolicy(
     return highAccuracy
       ? {
           accuracy: 'high',
-          distanceInterval: 20,
-          timeInterval: 10_000,
+          distanceInterval: 8,
+          timeInterval: 5_000,
           uiMinDistanceM: 8,
           uiMinIntervalMs: 2_000,
-          uploadMinDistanceM: 25,
-          uploadMinIntervalMs: 15_000,
-          uploadHeartbeatMs: 30_000,
+          uploadMinDistanceM: 8,
+          uploadMinIntervalMs: 5_000,
+          uploadHeartbeatMs: 10_000,
           uploadHeartbeatStationaryMs: 60_000,
           stationaryAfterMs: 45_000,
           routeMinDistanceM: 20,
@@ -143,13 +130,13 @@ export function locationPolicy(
         }
       : {
           accuracy: 'balanced',
-          distanceInterval: 60,
-          timeInterval: 45_000,
+          distanceInterval: 10,
+          timeInterval: 5_000,
           uiMinDistanceM: 30,
           uiMinIntervalMs: 10_000,
-          uploadMinDistanceM: 70,
-          uploadMinIntervalMs: 60_000,
-          uploadHeartbeatMs: 30_000,
+          uploadMinDistanceM: 10,
+          uploadMinIntervalMs: 5_000,
+          uploadHeartbeatMs: 10_000,
           uploadHeartbeatStationaryMs: 60_000,
           stationaryAfterMs: 45_000,
           routeMinDistanceM: 60,
@@ -256,11 +243,15 @@ export function reduceMotionState(
   sample: Coordinates,
   nowMs: number,
   policy: LocationPolicy,
+  accuracyM = 0,
 ): MotionState {
   const moved = prev.lastCoords
     ? distanceMeters(prev.lastCoords, sample)
     : Number.POSITIVE_INFINITY;
-  const significant = !prev.lastCoords || moved >= policy.uploadMinDistanceM;
+  // Keep an anchor until a real move accumulates; comparing consecutive fixes
+  // classifies slow walking as stationary forever. Ignore jitter within accuracy.
+  const threshold = Math.max(5, Math.min(100, Math.max(0, accuracyM)));
+  const significant = !prev.lastCoords || moved >= threshold;
   const lastSignificantMoveAtMs = significant
     ? nowMs
     : prev.lastSignificantMoveAtMs;
@@ -270,7 +261,7 @@ export function reduceMotionState(
   return {
     cadence,
     lastSignificantMoveAtMs,
-    lastCoords: sample,
+    lastCoords: significant ? sample : prev.lastCoords,
   };
 }
 

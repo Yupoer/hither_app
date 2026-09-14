@@ -1,22 +1,8 @@
-/**
- * Device location boundary.
- *
- * This is the ONLY module in the JS layer that imports `expo-location`.
- * Screens and state must go through these functions, never the Expo module
- * directly — that keeps the device-capability surface swappable (Route A:
- * a custom native module can later back the same interface, see
- * `apps/mobile/modules/hither-location` / Phase B).
- *
- * Phase A: backed by `expo-location` (foreground positioning, works in
- * Expo Go). Background / high-accuracy positioning is the native module's job.
- *
- * Phase B seam: if the custom native module `HitherLocation`
- * (`apps/mobile/modules/hither-location`) is present — i.e. on an EAS Dev
- * Build — it backs these calls instead; in Expo Go it is absent and the
- * Expo implementation below runs. The interface is identical either way.
- */
-import { requireOptionalNativeModule } from 'expo-modules-core';
+import { nextBackgroundLocation } from './backgroundLocation';
+/** Device positioning boundary; consent is checked before and after asynchronous work. */
 import * as Location from 'expo-location';
+import { AppState } from 'react-native';
+import { captureLocationAccess, isLocationAccessCurrent, subscribeLocationAccessChanges } from '../state/locationPrivacy';
 import type { Coordinates } from '../types';
 import { locationPolicy } from '../utils/locationPolicy';
 import {
@@ -25,14 +11,6 @@ import {
   subscribeDebugLocation,
 } from './debugLocation';
 
-/**
- * Optional custom native module. `null` in Expo Go / when not built.
- * Typed loosely on purpose — the contract is the exported functions below,
- * not this proxy.
- */
-const HitherLocation = requireOptionalNativeModule<{
-  getCurrentLocation(): Promise<LocationSample | null>;
-}>('HitherLocation');
 
 /** A single positioning sample. */
 export interface LocationSample {
@@ -155,34 +133,46 @@ function expoLocationOptions(highAccuracy: boolean): Location.LocationOptions {
 export async function getCurrentLocation(
   highAccuracy = false,
 ): Promise<LocationSample | null> {
+  const access = await captureLocationAccess();
+  if (!access) return null;
   if (isDebugRouteActive()) {
     const debugSample = getDebugLocationSample();
     if (debugSample) return debugSample;
   }
-  // Prefer the custom native module (precise/background-capable) when built.
-  if (HitherLocation) {
-    try {
-      const sample = await HitherLocation.getCurrentLocation();
-      if (sample) {
-        return sample;
-      }
-      // null => native module not wired yet; fall through to expo-location
-    } catch {
-      // fall through to the Expo implementation
-    }
-  }
-  const granted = await requestPermission();
-  if (!granted) {
+  const granted = AppState.currentState === 'active'
+    ? await requestPermission()
+    : (await Location.getForegroundPermissionsAsync()).status === 'granted';
+  if (!granted || !isLocationAccessCurrent(access)) {
     return null;
   }
-  try {
-    const position = await Location.getCurrentPositionAsync(
-      expoLocationOptions(highAccuracy),
-    );
-    return toSample(position);
-  } catch {
-    return null;
+  if (AppState.currentState !== 'active') {
+    const fix = await nextBackgroundLocation(access.signal);
+    return fix && isLocationAccessCurrent(access) ? toSample(fix) : null;
   }
+  return new Promise<LocationSample | null>((resolve) => {
+    let sub: Location.LocationSubscription | undefined;
+    let settled = false;
+    let unsubscribe = () => {};
+    const finish = (sample: LocationSample | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      unsubscribe();
+      sub?.remove();
+      if (!sample) { resolve(null); return; }
+      void Location.getForegroundPermissionsAsync().then(permission =>
+        resolve(permission.status === 'granted' && isLocationAccessCurrent(access) ? sample : null),
+      ).catch(() => resolve(null));
+    };
+    const timeout = setTimeout(() => finish(null), 15_000);
+    unsubscribe = subscribeLocationAccessChanges(() => finish(null));
+    void Location.watchPositionAsync(expoLocationOptions(highAccuracy),
+      position => finish(toSample(position)), () => finish(null))
+      .then(subscription => {
+        sub = subscription;
+        if (settled || !isLocationAccessCurrent(access)) { sub.remove(); finish(null); }
+      }).catch(() => finish(null));
+  });
 }
 
 /**
@@ -195,23 +185,33 @@ export async function watchLocation(
   onSample: (sample: LocationSample) => void,
   highAccuracy = false,
 ): Promise<() => void> {
+  const access = await captureLocationAccess();
+  if (!access || AppState.currentState !== 'active') return () => {};
   const granted = await requestPermission();
-  if (!granted) {
+  if (!granted || !isLocationAccessCurrent(access)) {
     return () => {};
   }
+  let unsubscribeDebug = () => {};
   try {
-    const unsubscribeDebug = subscribeDebugLocation(onSample);
+    const accept = (sample: LocationSample) => {
+      if (isLocationAccessCurrent(access) && AppState.currentState === 'active') onSample(sample);
+    };
+    unsubscribeDebug = subscribeDebugLocation(accept);
     const sub = await Location.watchPositionAsync(
       expoLocationOptions(highAccuracy),
       (position) => {
-        if (!isDebugRouteActive()) onSample(toSample(position));
+        if (!isDebugRouteActive()) accept(toSample(position));
       },
     );
-    return () => {
+    const stop = () => {
       unsubscribeDebug();
       sub.remove();
     };
+    if (!isLocationAccessCurrent(access)) { stop(); return () => {}; }
+    const unsubscribeAccess = subscribeLocationAccessChanges(stop);
+    return () => { unsubscribeAccess(); stop(); };
   } catch {
+    unsubscribeDebug();
     return () => {};
   }
 }

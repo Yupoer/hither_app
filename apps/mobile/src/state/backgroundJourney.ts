@@ -1,12 +1,14 @@
+import { AppState } from 'react-native';
+import { captureLocationAccess, isLocationAccessCurrent, subscribeLocationAccessChanges, isLocationAccessEnabled, setLocationSharingConsent, LOCATION_SHARING_KEY } from './locationPrivacy';
+import { backgroundLocationAdapter, observeNativeBackgroundLocation, prepareNativeBackgroundLocation, nativeBackgroundAvailable } from '../native/backgroundLocation';
 import { enqueueArrival } from './arrivalSync';
 import { getCoreOperationOutbox, flushCoreOperationOutbox } from './coreDataSync';
-import { fetchDestinationArrivals } from '../api/services/GatheringWorkflowService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import { updateLiveActivityProgress } from '../api/services/LiveActivityService';
-import { ackNavigationSession } from '../api/services/NavigationService';
+import { ackNavigationSession, getBackgroundNavigationContext } from '../api/services/NavigationService';
 import { liveActivity } from '../native';
 import { distanceMeters } from '../utils/geo';
 import {
@@ -31,6 +33,7 @@ import {
 } from '../utils/navigationArrival';
 import { derivePersonalProgress } from '../utils/personalProgress';
 import {
+  backgroundPresenceConfig,
   BACKGROUND_JOURNEY_TASK,
   createBackgroundJourneyController,
   resolveBackgroundTrackingMode,
@@ -47,12 +50,17 @@ interface BackgroundLocationTaskData {
   locations: Location.LocationObject[];
 }
 
-const controller = createBackgroundJourneyController(Location, AsyncStorage);
+const controller = createBackgroundJourneyController(backgroundLocationAdapter, AsyncStorage);
 
 /** Process-local gate so background batches don't spam upserts. */
 let uploadGate: LocationGateState = { lastCoords: null, lastAtMs: 0 };
 /** Motion cadence for dynamic background upload heartbeat. */
 let motionState: MotionState = createMotionState();
+let lastCloudProgressAt = 0;
+let lastLocalProgressAt = 0;
+let lastLocalProgressSignature = '';
+let lastControlSyncAt = 0;
+let controlSync: Promise<void> | null = null;
 let latestSample: { epoch: number; timestamp: number } | null = null;
 
 /**
@@ -82,10 +90,7 @@ function writeTimeline(
     .catch(() => undefined);
 }
 
-if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
-  TaskManager.defineTask<BackgroundLocationTaskData>(
-    BACKGROUND_JOURNEY_TASK,
-    async ({ data, error }) => {
+async function processBackgroundLocations({ data, error }: { data?: BackgroundLocationTaskData; error?: unknown }): Promise<void> {
       const callbackStarted = Date.now();
       const stages: BackgroundOpTimingEntry[] = [];
       const callbackId = nextBackgroundCallbackId();
@@ -116,10 +121,22 @@ if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
         }
         if (!data?.locations?.length) return;
 
-        const config = await timeBackgroundStage(stages, 'config_load', () =>
+        let config = await timeBackgroundStage(stages, 'config_load', () =>
           controller.load(),
         );
         if (!config || !controller.isCurrent(config)) return;
+        if (Date.now() - lastControlSyncAt > 60_000) {
+          await reconcileBackgroundNavigation(config.groupId).catch(() => undefined);
+          config = await controller.load();
+          if (!config || !controller.isCurrent(config)) return;
+        }
+        const access = await captureLocationAccess(config.groupId, true);
+        if (!access || !config.sharingEnabled || config.hasMembership === false) {
+          await stopBackgroundJourney();
+          await purgeLocationOutbox();
+          return;
+        }
+        if (AppState.currentState === 'active') return;
         navigationSessionId = config.navigationSessionId;
 
         const trackingMode = resolveBackgroundTrackingMode(config);
@@ -146,7 +163,7 @@ if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
         let arrivalConfirmed = false;
         if (arrival.status === 'arrived' && config.actorId && config.target && config.powerMode === 'journey') {
           const rows = await getCoreOperationOutbox().listByGroup(config.groupId);
-          if (!controller.isCurrent(config)) return;
+          if (!controller.isCurrent(config) || !isLocationAccessCurrent(access)) return;
           const operation = rows.find(op => op.operationType === 'record_arrival'
             && op.entityId === config.destinationId && op.payload.actorId === config.actorId && op.payload.userId === config.actorId)
             ?? await enqueueArrival({ groupId: config.groupId, actorId: config.actorId, userId: config.actorId,
@@ -178,8 +195,12 @@ if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
             ...config, sequence, arrivalState: arrival, previousProgressMax: displayProgress, memberArrived,
           }),
         );
-        if (!stored || !controller.isCurrent(config)) return;
-        await timeBackgroundStage(stages, 'live_activity_update', () =>
+        if (!stored || !controller.isCurrent(config) || !isLocationAccessCurrent(access)) return;
+        const displaySignature = JSON.stringify([config.navigationSessionId, arrival.status, memberArrived, config.accentHex]);
+        if (config.powerMode === 'journey' && (displaySignature !== lastLocalProgressSignature || now - lastLocalProgressAt >= 10_000)) {
+          lastLocalProgressSignature = displaySignature;
+          lastLocalProgressAt = now;
+          await timeBackgroundStage(stages, 'live_activity_update', () =>
           liveActivity.updateAllGroupActivities({
             groupName: config.groupName ?? '',
             gatheringTitle: config.gatheringTitle ?? config.groupName,
@@ -196,13 +217,14 @@ if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
             memberCount: config.memberEmojis?.length,
           }),
         );
-        if (!controller.isCurrent(config)) return;
+        }
+        if (!controller.isCurrent(config) || !isLocationAccessCurrent(access)) return;
         if (arrivalConfirmed) {
           // Durable local arrival first; uploads must never hold up the local surface.
           void flushCoreOperationOutbox().catch(() => undefined);
           if (config.completeSolo) {
             await liveActivity.endAllGroupActivities();
-            await controller.stop(config);
+            await startBackgroundJourney(backgroundPresenceConfig(config));
             return;
           }
         }
@@ -243,7 +265,7 @@ if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
             (powerMode === 'journey' && Boolean(config.highAccuracy)),
           powerMode,
         );
-        motionState = reduceMotionState(motionState, coords, now, policy);
+        motionState = reduceMotionState(motionState, coords, now, policy, accuracyM);
         const shouldUpload = shouldUploadSample(
           coords,
           now,
@@ -265,7 +287,7 @@ if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
           return;
         }
 
-        if (!controller.isCurrent(config)) return;
+        if (!controller.isCurrent(config) || !isLocationAccessCurrent(access)) return;
         await timeBackgroundStage(stages, 'outbox_enqueue', () =>
           enqueueLocationOutbox({
             id: Crypto.randomUUID(),
@@ -315,15 +337,10 @@ if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
             sequence,
           });
         }
-        await updateLiveActivityProgress(config.groupId, config.destinationId, progress, config.accentHex, latest.timestamp)
-          .catch(() => undefined);
-        if (config.memberIds && controller.isCurrent(config)) {
-          const arrivals = await fetchDestinationArrivals(config.groupId).catch(() => null);
-          if (arrivals) await controller.update(config, {
-            ...config, sequence, arrivalState: arrival, previousProgressMax: displayProgress,
-            memberArrived: config.memberIds.map(id => id === config.actorId ? arrivalConfirmed
-              : arrivals.some(a => a.destinationId === config.destinationId && a.userId === id)),
-          });
+        if (config.powerMode === 'journey' && controller.isCurrent(config) && isLocationAccessCurrent(access)
+          && (arrival.status !== previousArrival.status || now - lastCloudProgressAt >= 30_000)) {
+          lastCloudProgressAt = now;
+          await updateLiveActivityProgress(config.groupId, config.destinationId, progress, config.accentHex, latest.timestamp).catch(() => undefined);
         }
         if (
           config.navigationSessionId &&
@@ -347,18 +364,70 @@ if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
       } finally {
         finish();
       }
-    },
-  );
 }
 
-export function startBackgroundJourney(
+// Serialize/coalesce callbacks: never overlap arrival writes or replay an old batch.
+let pendingBatch: { data?: BackgroundLocationTaskData; error?: unknown } | null = null;
+let processing: Promise<void> | null = null;
+export function handleBackgroundLocations(payload: { data?: BackgroundLocationTaskData; error?: unknown }): Promise<void> {
+  pendingBatch = payload;
+  if (!processing) processing = (async () => {
+    while (pendingBatch) {
+      const next = pendingBatch;
+      pendingBatch = null;
+      await processBackgroundLocations(next);
+    }
+  })().finally(() => { processing = null; });
+  return processing;
+}
+if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
+  TaskManager.defineTask<BackgroundLocationTaskData>(BACKGROUND_JOURNEY_TASK, handleBackgroundLocations);
+}
+observeNativeBackgroundLocation(sample => {
+  void handleBackgroundLocations({ data: { locations: [sample] } }).catch(() => undefined);
+});
+subscribeLocationAccessChanges(() => {
+  if (!isLocationAccessEnabled()) {
+    pendingBatch = null;
+    void stopBackgroundJourney().catch(() => undefined);
+    void purgeLocationOutbox().catch(() => undefined);
+  }
+});
+
+
+export async function startBackgroundJourney(
   config: BackgroundJourneyConfig,
 ): Promise<'started' | 'permission_denied' | 'hidden' | 'cancelled'> {
+  const access = await captureLocationAccess(config.groupId);
+  if (!access || !config.sharingEnabled || config.hasMembership === false) {
+    await stopBackgroundJourney();
+    return 'hidden';
+  }
+  const previous = await controller.load();
+  if (previous?.navigationSessionId !== config.navigationSessionId || previous?.groupId !== config.groupId) {
+    uploadGate = { lastCoords: null, lastAtMs: 0 };
+    motionState = createMotionState();
+    latestSample = null;
+    lastLocalProgressSignature = '';
+    lastLocalProgressAt = 0;
+  }
+  if (!isLocationAccessCurrent(access)) return 'cancelled';
   return controller.start(config);
 }
 
-export function prepareBackgroundJourneyPermissions(): Promise<'ready' | 'permission_denied'> {
-  return controller.preparePermissions();
+export async function prepareBackgroundJourneyPermissions(allowPrompt = true): Promise<'ready' | 'permission_denied'> {
+  const access = await captureLocationAccess();
+  if (!access || AppState.currentState !== 'active') return 'permission_denied';
+  const foreground = await Location.getForegroundPermissionsAsync();
+  const background = await Location.getBackgroundPermissionsAsync();
+  let ready = foreground.status === 'granted' && (nativeBackgroundAvailable || background.status === 'granted');
+  if (!ready && allowPrompt) {
+    const allowed = foreground.status === 'granted' || (await Location.requestForegroundPermissionsAsync()).status === 'granted';
+    ready = allowed && (nativeBackgroundAvailable || (await Location.requestBackgroundPermissionsAsync()).status === 'granted');
+  }
+  if (!isLocationAccessCurrent(access) || AppState.currentState !== 'active') return 'permission_denied';
+  if (ready) ready = await prepareNativeBackgroundLocation(true);
+  return ready ? 'ready' : 'permission_denied';
 }
 
 export function stopBackgroundJourney(): Promise<void> {
@@ -369,4 +438,43 @@ export function stopBackgroundJourney(): Promise<void> {
 
 export function loadBackgroundJourney(): Promise<BackgroundJourneyConfig | null> {
   return controller.load();
+}
+
+/** Push + piggyback recovery only. No background timer or teammate-location reads. */
+export function reconcileBackgroundNavigation(groupId: string): Promise<void> {
+  if (controlSync) return controlSync;
+  controlSync = (async () => {
+    const access = await captureLocationAccess(groupId);
+    if (!access || AppState.currentState === 'active') return;
+    const config = await controller.load();
+    if (!config || config.groupId !== groupId) return;
+    lastControlSyncAt = Date.now();
+    const next = await getBackgroundNavigationContext(groupId);
+    if (!isLocationAccessCurrent(access) || !controller.isCurrent(config)) return;
+    if (!next.hasMembership || next.actorId !== config.actorId || !next.sharingEnabled) {
+      setLocationSharingConsent(false);
+      if (!next.sharingEnabled) await AsyncStorage.setItem(LOCATION_SHARING_KEY, 'false');
+      await stopBackgroundJourney();
+      await purgeLocationOutbox();
+      return;
+    }
+    if (!next.session || !next.target) {
+      if (config.powerMode === 'journey') {
+        await liveActivity.endAllGroupActivities();
+        await startBackgroundJourney(backgroundPresenceConfig(config));
+      }
+      return;
+    }
+    if (next.session.id === config.navigationSessionId) return;
+    const target = next.target;
+    const initialDistanceM = uploadGate.lastCoords ? distanceMeters(uploadGate.lastCoords, target.coordinates) : 0;
+    await startBackgroundJourney({ ...backgroundPresenceConfig(config), target,
+      destinationId: target.id, destination: target.coordinates,
+      navigationSessionId: next.session.id, sessionExpiresAt: next.session.expiresAt,
+      gatheringTitle: target.title, powerMode: 'journey', teamNavigationActive: true,
+      arrivalRadiusMeters: next.session.destination.arrivalRadiusMeters, initialDistanceM,
+      distanceSource: 'fallback', memberArrived: config.memberIds?.map(() => false) });
+    await liveActivity.observeExistingActivities();
+  })().finally(() => { controlSync = null; });
+  return controlSync;
 }

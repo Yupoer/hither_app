@@ -9,7 +9,8 @@ import {
   ingestLocationBatch,
   listMyPendingLocationRefreshes,
 } from '../api/services/LocationService';
-import { LOCATION_SHARING_KEY } from './locationPrivacy';
+import { captureLocationAccess, isLocationAccessCurrent } from './locationPrivacy';
+import { reconcileBackgroundNavigation } from './backgroundJourney';
 import { diagnostics } from './diagnostics';
 import {
   purgeLocationOutbox,
@@ -90,10 +91,12 @@ async function uploadAndAckPendingRefreshes(
 /** Foreground/cold-start recovery: one GPS fix, one upload batch, per-group ACK. */
 export async function recoverPendingLocationRefreshes(): Promise<void> {
   if (AppState.currentState !== 'active') return;
-  const pending = await listMyPendingLocationRefreshes().catch(() => []);
+  const access = await captureLocationAccess();
+  if (!access) return;
+  const pending = (await listMyPendingLocationRefreshes().catch(() => []))
+    .filter(row => row.groupId === access.groupId);
   if (pending.length === 0) return;
-  const sharingEnabled = await AsyncStorage.getItem(LOCATION_SHARING_KEY) !== 'false';
-  if (!sharingEnabled) {
+  if (!isLocationAccessCurrent(access)) {
     await diagnostics.write({
       event: 'location_rejected_sharing_disabled',
       source: 'location_push',
@@ -147,9 +150,9 @@ if (!TaskManager.isTaskDefined(BACKGROUND_LOCATION_REFRESH_TASK)) {
       if (error || AppState.currentState === 'active') return;
 
       const payload = parsePayload(data);
-      if (payload?.category !== 'location_refresh' || !payload.groupId) return;
-      const sharingEnabled = await AsyncStorage.getItem(LOCATION_SHARING_KEY) !== 'false';
-      if (!sharingEnabled) {
+      if (!payload?.groupId || !['location_refresh', 'navigation_session'].includes(payload.category ?? '')) return;
+      const access = await captureLocationAccess(payload.groupId);
+      if (!access) {
         await purgeLocationOutbox();
         await diagnostics.write({
           event: 'location_rejected_sharing_disabled',
@@ -158,6 +161,13 @@ if (!TaskManager.isTaskDefined(BACKGROUND_LOCATION_REFRESH_TASK)) {
         return;
       }
 
+      if (payload.category === 'navigation_session') {
+        await reconcileBackgroundNavigation(payload.groupId);
+        return;
+      }
+      const pending = await listMyPendingLocationRefreshes().catch(() => []);
+      const matching = pending.filter(row => row.groupId === payload.groupId);
+      if (!matching.length || !isLocationAccessCurrent(access)) return;
       const fix = await location.getCurrentLocation(false).catch(() => null);
       if (!fix) {
         await rememberPendingRefresh(payload.groupId).catch(() => undefined);
@@ -165,27 +175,8 @@ if (!TaskManager.isTaskDefined(BACKGROUND_LOCATION_REFRESH_TASK)) {
       }
 
       try {
-        const pending = await listMyPendingLocationRefreshes().catch(() => []);
-        const matching = pending.filter((row) => row.groupId === payload.groupId);
-        if (matching.length > 0) {
-          await uploadAndAckPendingRefreshes(fix, matching);
-        } else {
-          // Compatibility for a push queued before the pending ledger was
-          // deployed: upload the requested group but there is no row to ACK.
-          await ingestLocationBatch([{
-            id: Crypto.randomUUID(),
-            groupId: payload.groupId,
-            navigationSessionId: null,
-            capturedAt: fix.timestamp,
-            coords: {
-              ...fix.coordinates,
-              accuracy: Math.max(0, fix.accuracy ?? 0),
-            },
-            trackingMode: 'passiveBackground',
-            source: 'refresh_request',
-            sequence: fix.timestamp,
-          }]);
-        }
+        if (!isLocationAccessCurrent(access)) return;
+        await uploadAndAckPendingRefreshes(fix, matching);
         await diagnostics.write({
           event: 'location_outbox_enqueued',
           source: 'refresh_request',

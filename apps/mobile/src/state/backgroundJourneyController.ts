@@ -13,6 +13,7 @@ export const BACKGROUND_JOURNEY_TASK = 'hither-background-journey-location';
 export const BACKGROUND_JOURNEY_KEY = '@hither/background-journey';
 
 export interface BackgroundJourneyConfig {
+  sessionExpiresAt?: string;
   trackingEpoch?: number;
   actorId?: string;
   target?: Destination;
@@ -60,6 +61,14 @@ export interface BackgroundJourneyConfig {
    * transitions pass this flag so starting the native task never prompts.
    */
   permissionsPrepared?: boolean;
+}
+
+export function backgroundPresenceConfig(config: BackgroundJourneyConfig): BackgroundJourneyConfig {
+  return { ...config, navigationSessionId: null, sessionExpiresAt: undefined, destinationId: 'group-presence',
+    target: undefined, powerMode: 'allDay', teamNavigationActive: false, highAccuracy: false,
+    arrivalState: undefined, completeSolo: false, initialDistanceM: 0, sequence: 0,
+    previousProgressMax: undefined, routeAnchorGps: undefined, routeAnchorRemainingM: undefined,
+    startCoords: undefined, hasDepartedStart: false, etaSeconds: undefined };
 }
 
 interface PermissionResult {
@@ -167,8 +176,8 @@ export function backgroundLocationOptions(
     // Passive presence has only a declared heartbeat; do not let Core Location
     // pause it indefinitely after a stationary interval. Journey modes may use
     // the OS pause policy to conserve power while still actively navigating.
-    pausesUpdatesAutomatically: false,
-    showsBackgroundLocationIndicator: mode !== 'passiveBackground',
+    pausesUpdatesAutomatically: powerMode === 'allDay',
+    showsBackgroundLocationIndicator: true,
     foregroundService: {
       notificationTitle:
         powerMode === 'allDay'

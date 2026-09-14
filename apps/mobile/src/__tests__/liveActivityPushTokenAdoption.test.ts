@@ -56,6 +56,7 @@ jest.mock('../utils/liveActivityTokenGate', () => ({
 const platform = { OS: 'ios' };
 jest.mock('react-native', () => ({
   Platform: platform,
+  AppState: { currentState: 'active' },
 }));
 
 jest.mock('../native', () => ({

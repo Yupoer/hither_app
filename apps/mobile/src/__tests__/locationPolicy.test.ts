@@ -101,11 +101,11 @@ describe('locationPolicy', () => {
     });
   });
 
-  it('keeps passive background heartbeat from being auto-paused', () => {
+  it('allows the OS to pause passive background GPS', () => {
     expect(backgroundLocationOptions('allDay', true, 'passiveBackground')).toMatchObject({
       accuracy: 2,
-      pausesUpdatesAutomatically: false,
-      showsBackgroundLocationIndicator: false,
+      pausesUpdatesAutomatically: true,
+      showsBackgroundLocationIndicator: true,
     });
   });
 });
@@ -214,7 +214,7 @@ describe('resolveTrackingMode', () => {
         sharingEnabled: true,
         manualHighAccuracy: true,
       }),
-    ).toBe('manualHighAccuracy');
+    ).toBe('passiveBackground');
   });
 });
 
@@ -236,9 +236,9 @@ describe('shouldWatchLocation / shouldRunBackgroundLocation', () => {
     expect(shouldRunBackgroundLocation('group-1', 'background', true, false)).toBe(false);
   });
 
-  it('journey uploads at least every 30s moving / 60s stationary (#196 D1)', () => {
+  it('journey targets 10s moving / 60s stationary with real samples', () => {
     const p = locationPolicy(false, 'journey');
-    expect(p.uploadHeartbeatMs).toBe(30_000);
+    expect(p.uploadHeartbeatMs).toBe(10_000);
     expect(p.uploadHeartbeatStationaryMs).toBe(60_000);
   });
 

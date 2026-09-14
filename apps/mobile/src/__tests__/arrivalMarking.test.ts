@@ -93,3 +93,9 @@ describe('canMarkDestinationArrival', () => {
     ).toBe(true);
   });
 });
+
+it.each(['b', 'c'])('allows the confirmed navigation target %s before stale order catches up', id => {
+  expect(canMarkDestinationArrival({ destId: id, destOrder: 2, destSubgroupId: null,
+    scopedDestinations: [{id:'a',order:0,subgroupId:null,closedAt:null},{id,order:2,subgroupId:null,closedAt:null}],
+    myArrivedDestinationIds: new Set(), activeDestinationId: id })).toBe(true);
+});

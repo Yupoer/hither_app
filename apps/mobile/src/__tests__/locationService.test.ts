@@ -1,3 +1,6 @@
+jest.mock('expo-location', () => ({ getForegroundPermissionsAsync: jest.fn(async () => ({status:'granted'})) }));
+jest.mock('@react-native-async-storage/async-storage', () => ({ getItem: jest.fn(async () => null) }));
+import { setLocationAccessContext } from '../state/locationPrivacy';
 const mockSupabase = {
   from: jest.fn(),
   rpc: jest.fn(),
@@ -30,20 +33,23 @@ const {
 describe('LocationService durable refresh seams', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    setLocationAccessContext('group-1', true, true);
     mockIsDemoGroup.mockReturnValue(false);
     mockRequireUserId.mockResolvedValue('user-1');
     mockSupabase.from.mockReturnValue({
-      upsert: jest.fn().mockResolvedValue({ error: null }),
+      upsert: jest.fn().mockReturnValue({ abortSignal: jest.fn().mockResolvedValue({ error: null }) }),
     });
   });
 
   it('updates demo locations locally and remote locations through member upsert', async () => {
     const coordinates = { latitude: 25, longitude: 121 };
     mockIsDemoGroup.mockReturnValueOnce(true);
+    setLocationAccessContext('demo', true, true);
     await updateMyLocation(coordinates, 'demo');
     expect(mockDemoUpdateMyLocation).toHaveBeenCalledWith(coordinates);
     expect(mockRequireUserId).not.toHaveBeenCalled();
 
+    setLocationAccessContext('group-1', true, true);
     await updateMyLocation(coordinates, 'group-1');
     expect(mockRequireUserId).toHaveBeenCalledTimes(1);
     const memberLocations = mockSupabase.from.mock.results[0]?.value;
@@ -61,10 +67,9 @@ describe('LocationService durable refresh seams', () => {
 
   it('keeps demo events local and sends only remote events to the batch RPC', async () => {
     mockIsDemoGroup.mockImplementation((groupId?: string) => groupId === 'demo');
-    mockSupabase.rpc.mockResolvedValue({
-      data: { acceptedIds: ['remote-1'], rejected: [{ id: 'remote-2', reason: 'old' }] },
-      error: null,
-    });
+    mockSupabase.rpc.mockReturnValue({ abortSignal: jest.fn().mockResolvedValue({
+      data: { acceptedIds: ['remote-1'], rejected: [{ id: 'remote-2', reason: 'old' }] }, error: null,
+    }) });
     const base = {
       navigationSessionId: null,
       capturedAt: 10,
@@ -77,15 +82,16 @@ describe('LocationService durable refresh seams', () => {
       { ...base, id: 'demo-1', groupId: 'demo' },
       { ...base, id: 'remote-1', groupId: 'group-1' },
     ])).resolves.toEqual({
-      acceptedIds: ['demo-1', 'remote-1'],
-      rejected: [{ id: 'remote-2', reason: 'old' }],
+      acceptedIds: ['remote-1'],
+      rejected: [{ id: 'demo-1', reason: 'local_location_access_denied' }, { id: 'remote-2', reason: 'old' }],
     });
-    expect(mockDemoUpdateMyLocation).toHaveBeenCalledWith(base.coords);
+    expect(mockDemoUpdateMyLocation).not.toHaveBeenCalled();
     expect(mockSupabase.rpc).toHaveBeenCalledWith('ingest_location_batch', {
       p_events: [expect.objectContaining({ id: 'remote-1', groupId: 'group-1' })],
     });
 
     mockSupabase.rpc.mockClear();
+    setLocationAccessContext('demo', true, true);
     await expect(ingestLocationBatch([{ ...base, id: 'demo-2', groupId: 'demo' }]))
       .resolves.toEqual({ acceptedIds: ['demo-2'], rejected: [] });
     expect(mockSupabase.rpc).not.toHaveBeenCalled();

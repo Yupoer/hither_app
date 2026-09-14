@@ -161,7 +161,7 @@
       "child": 196,
       "acceptance": "D1 Journey sharing uploads at least every 30s moving / 60s stationary.",
       "testFile": "locationPolicy.test.ts",
-      "testNamePattern": "journey uploads at least every 30s"
+      "testNamePattern": "journey targets 10s moving"
     },
     {
       "parent": 193,

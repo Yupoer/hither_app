@@ -132,17 +132,19 @@ export function mergeRemoteGroupStatePreservingOwnLocation(
   ownUserId?: string | null,
   options: MergeRemoteGroupOptions = {},
 ): GroupState {
-  if (!previous) return remote;
+  if (!previous || previous.group.id !== remote.group.id) return remote;
   const previousSelf = ownUserId
     ? previous.members.find((member) => member.userId === ownUserId)
     : undefined;
-  const members = previousSelf?.coordinates
-    ? remote.members.map((member) =>
-        member.userId === ownUserId
-          ? preserveOwnLocation(member, previousSelf)
-          : member,
-      )
-    : remote.members;
+  const previousMembers = new Map(previous.members.map(member => [member.userId, member]));
+  const members = remote.members.map(member => {
+    if (member.userId === ownUserId && previousSelf?.coordinates) return preserveOwnLocation(member, previousSelf);
+    const previousPeer = previousMembers.get(member.userId);
+    // Preserve a newer server event, while allowing explicit removal of a hidden position.
+    return member.coordinates && previousPeer?.coordinates && member.lastUpdated && previousPeer.lastUpdated
+      && Date.parse(previousPeer.lastUpdated) > Date.parse(member.lastUpdated)
+      ? preserveOwnLocation(member, previousPeer) : member;
+  });
 
   const fenceEmptyItinerary = shouldFenceEmptyItinerary({
     reason: options.reloadReason,

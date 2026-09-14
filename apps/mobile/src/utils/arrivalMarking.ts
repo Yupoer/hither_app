@@ -17,7 +17,10 @@ export function canMarkDestinationArrival(opts: {
   destSubgroupId?: string | null;
   scopedDestinations: ArrivalMarkStop[];
   myArrivedDestinationIds: ReadonlySet<string>;
+  activeDestinationId?: string | null;
 }): boolean {
+  // An active team target is authoritative even while reordered rows are in flight.
+  if (opts.activeDestinationId === opts.destId) return true;
   const scopeKey = opts.destSubgroupId ?? null;
   return !opts.scopedDestinations.some((stop) => {
     if ((stop.subgroupId ?? null) !== scopeKey) return false;

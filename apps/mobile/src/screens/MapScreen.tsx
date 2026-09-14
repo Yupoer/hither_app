@@ -1,3 +1,5 @@
+import { captureLocationAccess } from '../state/locationPrivacy';
+import { hydrateLocationSharing, rememberLocationSharing, syncLocationSharing } from '../state/locationSharingSync';
 import React, {
   useCallback,
   useEffect,
@@ -775,6 +777,13 @@ export default function MapScreen({ route, navigation }: Props) {
   draftDailyRef.current = draftDailyAccommodations;
   const optimisticDestinationsRef = useRef(optimisticDestinations);
   optimisticDestinationsRef.current = optimisticDestinations;
+  useEffect(() => {
+    if (!optimisticDestinations || routeDraftDirtyRef.current.destinations) return;
+    if (optimisticDestinations.length === rawDestinations.length && optimisticDestinations.every(d => {
+      const remote = rawDestinations.find(item => item.id === d.id);
+      return remote && remote.order === d.order && remote.day === d.day && remote.closedAt === d.closedAt;
+    })) setOptimisticDestinations(null);
+  }, [rawDestinations, optimisticDestinations]);
   const workflowReloadRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [optimisticTripDays, setOptimisticTripDays] = useState<number | null>(null);
   const [optimisticDepartureDate, setOptimisticDepartureDate] = useState<string | null>(null);
@@ -1834,9 +1843,10 @@ export default function MapScreen({ route, navigation }: Props) {
   } = useDeviceLocation({
     groupId: mapFocused ? groupId : null,
     highAccuracy,
+    teamNavigationActive: navigationSessionState.session?.status === 'active',
     nativeMapLocationEnabled: Platform.OS === 'ios',
-    sharingEnabled,
-    hasMembership: mapFocused && members.length > 0,
+    sharingEnabled: preferencesReady && sharingEnabled,
+    hasMembership: mapFocused && members.some(m => m.userId === user?.id),
   });
 
   // --- Carousel selection ---------------------------------------------------
@@ -1902,6 +1912,7 @@ export default function MapScreen({ route, navigation }: Props) {
     isLeader,
     destinations,
     navigationDestinations: destinations,
+    reorderDestinations: allScopedDestinations,
     selectedDestination,
     fromCoords,
     refresh,
@@ -1982,27 +1993,25 @@ export default function MapScreen({ route, navigation }: Props) {
       return;
     }
     privacyHydratedUserRef.current = user.id;
-    void getLocationSharingEnabled()
-      .then(async (remoteValue) => {
-        if (remoteValue == null) {
-          await setLocationSharingEnabled(sharingEnabled);
-        } else {
-          setSharingEnabled(remoteValue);
-        }
-      })
+    let cancelled = false;
+    void hydrateLocationSharing(user.id)
+      .then((enabled) => { if (!cancelled && enabled != null) setSharingEnabled(enabled); })
       .catch(() => {
         privacyHydratedUserRef.current = null;
       });
-  }, [preferencesReady, setSharingEnabled, sharingEnabled, user?.id]);
+    return () => { cancelled = true; };
+  }, [preferencesReady, setSharingEnabled, user?.id]);
 
   const [sharingApplying, setSharingApplying] = useState(false);
   const handleSharingEnabledChange = useCallback(async (enabled: boolean) => {
-    const previous = sharingEnabled;
+    if (!user?.id) return false;
     if (enabled) {
+      await AsyncStorage.removeItem('pref.backgroundSharingExplained');
       const granted = await requestLocationPermission();
       if (!granted) return false;
     }
     setSharingEnabled(enabled);
+    const pendingWrite = rememberLocationSharing(user.id, enabled).then(() => null, error => error);
     if (!enabled) {
       await stopBackgroundJourney().catch(() => undefined);
       await purgeLocationOutbox().catch(() => undefined);
@@ -2013,7 +2022,9 @@ export default function MapScreen({ route, navigation }: Props) {
       }
     }
     try {
-      await setLocationSharingEnabled(enabled);
+      const writeError = await pendingWrite;
+      if (writeError) throw writeError;
+      await syncLocationSharing(user.id);
       return true;
     } catch {
       await diagnostics.write({
@@ -2021,12 +2032,11 @@ export default function MapScreen({ route, navigation }: Props) {
         errorCode: 'privacy_sync_failed',
         success: false,
       }).catch(() => undefined);
-      // Keep the local preference aligned with the server when the sync fails.
-      setSharingEnabled(previous);
+      // Local consent wins while offline; recovery retries the durable intent.
       Alert.alert(t('settings.locationSharingSyncFailed'));
       return false;
     }
-  }, [setSharingEnabled, navigationSessionState, sharingEnabled, t]);
+  }, [setSharingEnabled, navigationSessionState, user?.id, t]);
   const handleSharingEnabledChangeAnimated = useCallback(() => {
     if (sharingApplying) return;
     const nextEnabled = !sharingEnabled;
@@ -2262,8 +2272,9 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [arrivalOperations, mapFocused, user?.id, t]);
 
   const arrivalSubmitInFlight = useRef(new Set<string>());
-  const commitPersonalArrival = useCallback(async (destination: Destination, targetUserId: string, arrivedAt: string) => {
+  const commitPersonalArrival = useCallback(async (destination: Destination, targetUserId: string, arrivedAt: string, automatic = false) => {
     if (!groupId || !user?.id) return;
+    if (automatic && !await captureLocationAccess(groupId, true)) return;
     const key = `${destination.id}:${targetUserId}`;
     if (arrivalSubmitInFlight.current.has(key)) return;
     arrivalSubmitInFlight.current.add(key);
@@ -2287,7 +2298,8 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [groupId, user?.id, members, canEditItinerary, loadGatheringWorkflow, refresh, t]);
 
   useEffect(() => {
-    if (!mapFocused) return;
+    if (!mapFocused || !sharingEnabled || appState !== 'active' || deviceCoordsAcceptedAtMs == null
+      || Date.now() - deviceCoordsAcceptedAtMs > 30_000) return;
     // Auto-arrive while navigating (shared flock session or local path plan).
     // tools slider radius is authoritative (e.g. 300 m).
     if (!journeyActive || !navTarget || !deviceCoords) {
@@ -2345,11 +2357,13 @@ export default function MapScreen({ route, navigation }: Props) {
     if (arrivedNow && user?.id && autoArrivalMarkedRef.current !== navTarget.id) {
       // One automatic attempt per destination; manual retry remains available after rejection.
       autoArrivalMarkedRef.current = navTarget.id;
-      void commitPersonalArrival(navTarget, user.id, new Date().toISOString());
+      void commitPersonalArrival(navTarget, user.id, new Date().toISOString(), true);
     }
     if (!arrivedNow) autoArrivalMarkedRef.current = null;
   }, [
     mapFocused,
+    sharingEnabled,
+    appState,
     deviceCoordsAcceptedAtMs,
     commitPersonalArrival,
     deviceAccuracyM,
@@ -2397,6 +2411,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const [distanceSource, setDistanceSource] = useState<DistanceSource | undefined>();
   const [progressDepartedStart, setProgressDepartedStart] = useState(false);
   const backgroundPermissionDeniedRef = useRef<string | null>(null);
+  const backgroundStartedKeyRef = useRef<string | null>(null);
   const showLocationPermissionAlert = useCallback(
     (
       title = t('location.permissionTitle'),
@@ -2425,6 +2440,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const [backgroundPermissionsPreparedFor, setBackgroundPermissionsPreparedFor] =
     useState<string | null>(null);
   const backgroundPermissionPrepareInFlightRef = useRef<string | null>(null);
+  const backgroundPermissionAttemptedRef = useRef<string | null>(null);
 
   // Journey progress baseline (foreground only) — separate from GPS ownership.
   useEffect(() => {
@@ -2511,13 +2527,15 @@ export default function MapScreen({ route, navigation }: Props) {
   ]);
 
   /**
-   * Single GPS owner for the 8h≈20% budget:
+   * Single foreground/background GPS owner:
    * - App active → foreground watch (useDeviceLocation); background task STOPPED.
    * - App background → allDay group presence, or denser journey profile.
-   * Dual-tracking (watch + task) is the main heat source when navigating.
+   * Avoid overlapping GPS consumers; device measurements determine actual energy savings.
    */
   useEffect(() => {
-    if (!groupId || !mapFocused) {
+    if (!groupId || !mapFocused || !sharingEnabled || !preferencesReady || !members.some(m => m.userId === user?.id)) {
+      backgroundStartedKeyRef.current = null;
+      backgroundPermissionAttemptedRef.current = null;
       setBackgroundPermissionsPreparedFor(null);
       void stopBackgroundJourney();
       return;
@@ -2525,11 +2543,31 @@ export default function MapScreen({ route, navigation }: Props) {
 
     // Foreground owns GPS.
     if (appState === 'active') {
+      backgroundStartedKeyRef.current = null;
       backgroundPermissionDeniedRef.current = null;
       if (sharingEnabled && backgroundPermissionsPreparedFor !== groupId
-        && backgroundPermissionPrepareInFlightRef.current !== groupId) {
+        && backgroundPermissionPrepareInFlightRef.current !== groupId
+        && backgroundPermissionAttemptedRef.current !== groupId) {
         backgroundPermissionPrepareInFlightRef.current = groupId;
-        void prepareBackgroundJourneyPermissions()
+        backgroundPermissionAttemptedRef.current = groupId;
+        void (async () => {
+          const key = 'pref.backgroundSharingExplained';
+          const saved = await AsyncStorage.getItem(key);
+          if (!saved) {
+            const accepted = await new Promise<boolean>(resolve => Alert.alert(
+              language === 'en' ? 'Share location in the background' : '背景位置分享',
+              language === 'en'
+                ? 'While sharing is on, Hither shares your location with this team even outside a journey. iOS may show a location indicator. Stop sharing pauses all location access. Closing the app stops updates until you reopen it.'
+                : '開啟分享時，即使沒有行程，Hither 仍會在背景向目前團隊分享位置。iOS 可能顯示定位提示。「停止分享」會停止所有定位；完全關閉 App 後，須再次開啟才會恢復。',
+              [{ text: language === 'en' ? 'Not now' : '暫時不要', style: 'cancel', onPress: () => resolve(false) },
+               { text: language === 'en' ? 'Continue' : '繼續', onPress: () => resolve(true) }],
+            ));
+            await AsyncStorage.setItem(key, accepted ? 'accepted' : 'declined');
+            if (!accepted) return 'permission_denied' as const;
+          }
+          if (saved === 'declined') return 'permission_denied' as const;
+          return prepareBackgroundJourneyPermissions(true);
+        })()
           .then((result) => {
             if (result === 'ready') {
               setBackgroundPermissionsPreparedFor(groupId);
@@ -2538,6 +2576,7 @@ export default function MapScreen({ route, navigation }: Props) {
               void rememberPendingLocationPermission();
             }
           })
+          .catch(() => setBackgroundPermissionsPreparedFor(null))
           .finally(() => {
             if (backgroundPermissionPrepareInFlightRef.current === groupId) {
               backgroundPermissionPrepareInFlightRef.current = null;
@@ -2550,13 +2589,15 @@ export default function MapScreen({ route, navigation }: Props) {
       return;
     }
 
+    backgroundPermissionAttemptedRef.current = null;
     const powerMode = journeyActive && navTarget ? 'journey' : 'allDay';
     const dest =
       navTarget?.coordinates ??
       deviceCoords ??
       { latitude: 0, longitude: 0 };
     const key = `${groupId}:${powerMode}:${navTarget?.id ?? 'presence'}`;
-    if (backgroundPermissionDeniedRef.current === key) return;
+    if (backgroundPermissionDeniedRef.current === key || backgroundStartedKeyRef.current === key) return;
+    backgroundStartedKeyRef.current = key;
 
     const backgroundInitialM =
       initialJourneyRef.current?.distanceM ??
@@ -2585,7 +2626,7 @@ export default function MapScreen({ route, navigation }: Props) {
       highAccuracy,
       powerMode,
       sharingEnabled,
-      hasMembership: members.length > 0,
+      hasMembership: members.some(m => m.userId === user?.id),
       gatheringTitle: navTarget?.title ?? membership?.group.name,
       groupName: membership?.group.name ?? '',
       memberEmojis: members.filter(m => (m.subgroupId ?? null) === (navTarget?.subgroupId ?? null)).map(m => m.avatar ?? ''),
@@ -2598,6 +2639,7 @@ export default function MapScreen({ route, navigation }: Props) {
       appState: appState === 'background' ? 'background' : 'inactive',
       permissionsPrepared: backgroundPermissionsPreparedFor === groupId,
     }).then((result) => {
+      if (result !== 'started' && backgroundStartedKeyRef.current === key) backgroundStartedKeyRef.current = null;
       if (result === 'hidden') {
         void purgeLocationOutbox();
       }
@@ -2605,11 +2647,16 @@ export default function MapScreen({ route, navigation }: Props) {
         backgroundPermissionDeniedRef.current = key;
         void rememberPendingLocationPermission();
       }
+    }).catch(() => {
+      if (backgroundStartedKeyRef.current === key) backgroundStartedKeyRef.current = null;
     });
   }, [
     appState,
     mapFocused,
     backgroundPermissionsPreparedFor,
+    preferencesReady,
+    language,
+    localArrivalRadiusM,
     destinationArrivals,
     user?.id,
     canEditItinerary,
@@ -4366,6 +4413,7 @@ export default function MapScreen({ route, navigation }: Props) {
           logEvent('destination_reorder', { count: updates.length });
           const base = optimisticDestinationsRef.current ?? rawDestinations;
           const newDests = applyReorderToDestinations(base, updates);
+          optimisticDestinationsRef.current = newDests;
           setOptimisticDestinations(newDests);
 
           // Full open itinerary slots (all days) for immediate nav promote.
@@ -5531,6 +5579,7 @@ export default function MapScreen({ route, navigation }: Props) {
       destSubgroupId: dest.subgroupId,
       scopedDestinations: destinations,
       myArrivedDestinationIds: myCompletedDestinationIds,
+      activeDestinationId: navigationSessionState.session?.destinationId,
     });
     // Product: 「已抵達」only while team nav is active on this card
     // (Start splits it out; End swallows it back into Start width).
@@ -5552,6 +5601,7 @@ export default function MapScreen({ route, navigation }: Props) {
     };
   }, [
     tourDestination,
+    navigationSessionState.session?.destinationId,
     destinations,
     isLeader,
     sharedTargetId,
@@ -6549,7 +6599,7 @@ export default function MapScreen({ route, navigation }: Props) {
         <GroupMap
           ref={mapRef}
           members={members}
-          showsUserLocation={mapFocused && sharingEnabled && members.length > 0}
+          showsUserLocation={appState === 'active' && mapFocused && preferencesReady && sharingEnabled && members.some(m => m.userId === user?.id)}
           gathering={activePoint}
           destinations={destinations}
           dailyAccommodations={mapDailyAccommodations}
@@ -6981,6 +7031,7 @@ export default function MapScreen({ route, navigation }: Props) {
                 destSubgroupId: dest.subgroupId,
                 scopedDestinations: destinations,
                 myArrivedDestinationIds: myCompletedDestinationIds,
+      activeDestinationId: sharedTargetId,
               });
               // Product: only show 「已抵達」while this card's team nav is active.
               // Pre-start: Start occupies the arrived slot (3 controls).

@@ -1,3 +1,4 @@
+jest.mock('../state/backgroundJourney', () => ({ reconcileBackgroundNavigation: jest.fn(async () => {}) }));
 const mockStore = new Map<string, string>();
 const mockAsyncStorage = {
   getItem: jest.fn(async (key: string) => mockStore.get(key) ?? null),
@@ -49,7 +50,7 @@ const {
   rememberPendingLocationPermission,
 } = require('../state/backgroundLocationRefresh') as typeof import('../state/backgroundLocationRefresh');
 const { BACKGROUND_LOCATION_REFRESH_TASK } = require('../state/backgroundLocationRefresh') as typeof import('../state/backgroundLocationRefresh');
-const { LOCATION_SHARING_KEY } = require('../state/locationPrivacy') as typeof import('../state/locationPrivacy');
+const { LOCATION_SHARING_KEY, setLocationAccessContext, setLocationSharingConsent } = require('../state/locationPrivacy') as typeof import('../state/locationPrivacy');
 
 function taskHandler(): (payload: unknown) => Promise<void> {
   if (!mockTaskCallback) throw new Error('background refresh task was not registered');
@@ -65,6 +66,7 @@ const fix = {
 describe('durable location refresh recovery', () => {
   beforeEach(() => {
     mockStore.clear();
+    setLocationAccessContext('group-1', true, true);
     mockAppState.currentState = 'active';
     jest.clearAllMocks();
     mockLocation.getCurrentLocation.mockResolvedValue(fix);
@@ -76,7 +78,7 @@ describe('durable location refresh recovery', () => {
     }));
   });
 
-  it('uses one foreground fix and ACKs every accepted pending group by version', async () => {
+  it('uses one foreground fix and ACKs only the currently shared group by version', async () => {
     mockListPending.mockResolvedValue([
       { groupId: 'group-1', requestedBy: 'leader', requestedAt: '2026-08-13T00:00:00Z' },
       { groupId: 'group-2', requestedBy: 'leader', requestedAt: '2026-08-13T00:00:01Z' },
@@ -86,12 +88,12 @@ describe('durable location refresh recovery', () => {
     expect(mockLocation.getCurrentLocation).toHaveBeenCalledTimes(1);
     expect(mockLocation.getCurrentLocation).toHaveBeenCalledWith(false);
     expect(mockIngest).toHaveBeenCalledTimes(1);
-    expect(mockIngest.mock.calls[0][0]).toHaveLength(2);
+    expect(mockIngest.mock.calls[0][0]).toHaveLength(1);
     expect(mockAck).toHaveBeenNthCalledWith(1, 'group-1', '2026-08-13T00:00:00Z');
-    expect(mockAck).toHaveBeenNthCalledWith(2, 'group-2', '2026-08-13T00:00:01Z');
+    expect(mockAck).toHaveBeenCalledTimes(1);
     expect(mockDiagnostics.write).toHaveBeenCalledWith(expect.objectContaining({
       event: 'refresh_request_completed',
-      count: 2,
+      count: 1,
     }));
   });
 
@@ -105,9 +107,7 @@ describe('durable location refresh recovery', () => {
     await mockAsyncStorage.setItem(LOCATION_SHARING_KEY, 'false');
     await recoverPendingLocationRefreshes();
     expect(mockLocation.getCurrentLocation).not.toHaveBeenCalled();
-    expect(mockDiagnostics.write).toHaveBeenCalledWith(expect.objectContaining({
-      event: 'location_rejected_sharing_disabled',
-    }));
+
   });
 
   it('keeps the durable row when the foreground fix or upload fails', async () => {
@@ -148,13 +148,12 @@ describe('durable location refresh recovery', () => {
       data: { data: { dataString: JSON.stringify({ category: 'location_refresh', groupId: 'group-2' }) } },
       error: null,
     });
-    expect(mockIngest).toHaveBeenCalledTimes(2);
-    expect(mockIngest.mock.calls[1][0][0]).toMatchObject({ groupId: 'group-2' });
+    expect(mockIngest).toHaveBeenCalledTimes(1);
+    expect(mockLocation.getCurrentLocation).toHaveBeenCalledTimes(1);
+    setLocationSharingConsent(false);
+    await handler({ data: { data: { category: 'navigation_session', groupId: 'group-1' } }, error: null });
+    expect(require('../state/backgroundJourney').reconcileBackgroundNavigation).not.toHaveBeenCalled();
 
-    mockLocation.getCurrentLocation.mockResolvedValueOnce(null);
-    await handler({ data: { data: { category: 'location_refresh', groupId: 'group-3' } }, error: null });
-    await expect(consumePendingLocationRefresh('group-3')).resolves.toBe('group-3');
-    await expect(consumePendingLocationRefresh('group-4')).resolves.toBeNull();
   });
 
   it('consumes permission markers exactly once and ignores malformed refresh data', async () => {

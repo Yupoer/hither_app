@@ -151,7 +151,7 @@ describe('background journey controller', () => {
     };
     // Legacy highAccuracy maps to manualHighAccuracy (Highest=5), never BestForNavigation=6.
     expect(opts.accuracy).toBe(5);
-    expect(opts.distanceInterval).toBe(20);
+    expect(opts.distanceInterval).toBe(8);
   });
 
   it('allDay uses Low accuracy and ignores highAccuracy for the 8h budget', async () => {
@@ -172,7 +172,7 @@ describe('background journey controller', () => {
     };
     expect(opts.accuracy).toBe(2);
     expect(opts.deferredUpdatesInterval).toBe(180_000);
-    expect(opts.pausesUpdatesAutomatically).toBe(false);
+    expect(opts.pausesUpdatesAutomatically).toBe(true);
   });
 
   it('restarts native updates when highAccuracy profile changes', async () => {
@@ -290,7 +290,7 @@ describe('background journey native wiring', () => {
   });
 
   it('orders background work locally before any navigation acknowledgement', () => {
-    const callback = taskModule.slice(taskModule.indexOf('async ({ data'));
+    const callback = taskModule.slice(taskModule.indexOf('async function processBackgroundLocations'));
     expect(callback.indexOf('reduceArrival')).toBeLessThan(
       callback.indexOf('updateAllGroupActivities'),
     );

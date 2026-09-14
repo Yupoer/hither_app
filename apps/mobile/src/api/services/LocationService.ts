@@ -6,6 +6,7 @@ import { demoUpdateMyLocation, isDemoGroup } from '../demo';
 import type { Coordinates } from '../../types';
 import { requireUserId, orThrow } from './_helpers';
 import { normalizeLocationRefreshRecipientIds } from '../../utils/locationRefreshResponse';
+import { captureLocationAccess, isLocationAccessCurrent } from '../../state/locationPrivacy';
 
 export interface LocationRefreshResult {
   accepted: boolean;
@@ -51,11 +52,14 @@ export async function updateMyLocation(
   coordinates: Coordinates,
   groupId: string,
 ): Promise<void> {
+  const access = await captureLocationAccess(groupId, true);
+  if (!access) return;
   if (isDemoGroup(groupId)) {
     demoUpdateMyLocation(coordinates);
     return;
   }
   const uid = await requireUserId();
+  if (!isLocationAccessCurrent(access)) return;
   const { error } = await supabase.from('member_locations').upsert(
     {
       group_id: groupId,
@@ -65,16 +69,21 @@ export async function updateMyLocation(
       updated_at: new Date().toISOString(),
     },
     { onConflict: 'group_id,user_id' },
-  );
+  ).abortSignal(access.signal);
   orThrow(error);
 }
 
 export async function ingestLocationBatch(
   events: LocationBatchEvent[],
 ): Promise<LocationBatchResult> {
+  const access = await captureLocationAccess(undefined, true);
+  const denied = (rows: LocationBatchEvent[]) => rows.map(event => ({ id: event.id, reason: 'local_location_access_denied' }));
+  if (!access) return { acceptedIds: [], rejected: denied(events) };
+  const rejected = denied(events.filter(event => event.groupId !== access.groupId));
   const acceptedIds: string[] = [];
   const remoteEvents: LocationBatchEvent[] = [];
   for (const event of events) {
+    if (event.groupId !== access.groupId) continue;
     if (isDemoGroup(event.groupId)) {
       demoUpdateMyLocation(event.coords);
       acceptedIds.push(event.id);
@@ -82,17 +91,18 @@ export async function ingestLocationBatch(
       remoteEvents.push(event);
     }
   }
-  if (remoteEvents.length === 0) return { acceptedIds, rejected: [] };
+  if (remoteEvents.length === 0) return { acceptedIds, rejected };
 
   await requireUserId();
+  if (!isLocationAccessCurrent(access)) return { acceptedIds: [], rejected: denied(events) };
   const { data, error } = await supabase.rpc('ingest_location_batch', {
     p_events: remoteEvents,
-  });
+  }).abortSignal(access.signal);
   orThrow(error);
   const result = (data ?? {}) as Partial<LocationBatchResult>;
   return {
     acceptedIds: [...acceptedIds, ...(Array.isArray(result.acceptedIds) ? result.acceptedIds : [])],
-    rejected: Array.isArray(result.rejected) ? result.rejected : [],
+    rejected: [...rejected, ...(Array.isArray(result.rejected) ? result.rejected : [])],
   };
 }
 

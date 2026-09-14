@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import {
   deleteLiveActivitySession,
   deleteMyLiveActivitySessions,
@@ -65,6 +65,7 @@ export function useLiveActivity(
 ): void {
   const { user } = useSession();
   const lastPersistAtRef = useRef(0);
+  const lastDisplayRef = useRef({ at: 0, semantic: '', payload: '' });
   const lastPersistedAccentRef = useRef<string | undefined>(undefined);
   const stateRef = useRef(state);
   const sessionRef = useRef(session);
@@ -306,10 +307,16 @@ export function useLiveActivity(
 
   useEffect(() => {
     const handle = reconcilerRef.current?.currentHandle;
-    if (active && handle) {
-      void liveActivity.updateGroupActivity(handle, stateRef.current).catch(() => undefined);
-      void persistSession(handle).catch(() => undefined);
-    }
+    if (!active || !handle || AppState.currentState !== 'active') return;
+    const semantic = JSON.stringify([session?.destinationId, state.status, state.gatheredCount,
+      state.memberCount, state.gatheringTitle, state.groupName, state.accentHex, state.travelMode,
+      arrivalSignature, emojiSignature, destinationEmojiSig]);
+    const payload = JSON.stringify(stateRef.current);
+    const last = lastDisplayRef.current;
+    if (last.payload === payload || (last.semantic === semantic && Date.now() - last.at < 10_000)) return;
+    lastDisplayRef.current = { at: Date.now(), semantic, payload };
+    void liveActivity.updateGroupActivity(handle, stateRef.current).catch(() => undefined);
+    void persistSession(handle).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     active,

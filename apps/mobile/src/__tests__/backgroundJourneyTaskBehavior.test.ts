@@ -1,3 +1,6 @@
+const mockAppState = { currentState: 'background' };
+jest.mock('react-native', () => ({ AppState: mockAppState }));
+jest.mock('expo-modules-core', () => ({ requireOptionalNativeModule: () => null }));
 jest.mock('../api/services/LiveActivityService', () => ({ updateLiveActivityProgress: jest.fn(async () => undefined) }));
 const mockStore = new Map<string, string>();
 const mockAsyncStorage = {
@@ -10,6 +13,8 @@ const mockAsyncStorage = {
   }),
 };
 const mockLocation = {
+  getForegroundPermissionsAsync: jest.fn(async () => ({ status: 'granted' })),
+  getBackgroundPermissionsAsync: jest.fn(async () => ({ status: 'granted' })),
   requestForegroundPermissionsAsync: jest.fn(async () => ({ status: 'granted' })),
   requestBackgroundPermissionsAsync: jest.fn(async () => ({ status: 'granted' })),
   hasStartedLocationUpdatesAsync: jest.fn(async () => false),
@@ -94,6 +99,8 @@ const locationSample = {
 describe('background journey native task wiring', () => {
   beforeEach(() => {
     mockStore.clear();
+    require('../state/locationPrivacy').setLocationAccessContext('group-1', true, true);
+    mockAppState.currentState = 'background';
     jest.clearAllMocks();
     mockLocation.hasStartedLocationUpdatesAsync.mockResolvedValue(false);
     mockLocation.requestForegroundPermissionsAsync.mockResolvedValue({ status: 'granted' });
@@ -106,12 +113,15 @@ describe('background journey native task wiring', () => {
     mockLocation.hasStartedLocationUpdatesAsync
       .mockResolvedValueOnce(false)
       .mockResolvedValueOnce(true);
+    mockAppState.currentState = 'active';
     await expect(prepareBackgroundJourneyPermissions()).resolves.toBe('ready');
+    mockAppState.currentState = 'background';
     await expect(startBackgroundJourney({ ...baseConfig, permissionsPrepared: true })).resolves.toBe('started');
     await expect(loadBackgroundJourney()).resolves.toEqual(expect.objectContaining(baseConfig));
+    mockLocation.hasStartedLocationUpdatesAsync.mockResolvedValue(true);
     await expect(stopBackgroundJourney()).resolves.toBeUndefined();
-    expect(mockLocation.requestForegroundPermissionsAsync).toHaveBeenCalledTimes(1);
-    expect(mockLocation.requestBackgroundPermissionsAsync).toHaveBeenCalledTimes(1);
+    expect(mockLocation.getForegroundPermissionsAsync).toHaveBeenCalledTimes(1);
+    expect(mockLocation.getBackgroundPermissionsAsync).toHaveBeenCalledTimes(1);
     expect(mockLocation.stopLocationUpdatesAsync).toHaveBeenCalledWith(
       'hither-background-journey-location',
     );
@@ -141,7 +151,7 @@ describe('background journey native task wiring', () => {
     expect(mockAsyncStorage.getItem).toHaveBeenCalledWith(BACKGROUND_JOURNEY_KEY);
     await task({ data: { locations: [locationSample] }, error: null });
     expect(mockPurge).toHaveBeenCalled();
-    expect(mockLiveActivity.updateAllGroupActivities).toHaveBeenCalled();
+    expect(mockLiveActivity.updateAllGroupActivities).not.toHaveBeenCalled();
 
     await startBackgroundJourney({ ...baseConfig, permissionsPrepared: true });
     await task({ data: { locations: [locationSample] }, error: null });
@@ -174,7 +184,9 @@ it('background route progress matches foreground; duplicate samples do not repro
   }));
   const { derivePersonalProgress } = require('../utils/personalProgress');
   const walking = { ...start, latitude: start.latitude - 0.0005 };
+  const clock = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 10_001);
   await task({ data: { locations: [{ ...locationSample, timestamp: 124, coords: { ...locationSample.coords, ...walking } }] } });
+  clock.mockRestore();
   const foreground = derivePersonalProgress({ ...config, deviceCoords: walking, targetCoords: config.destination,
     routeAnchorGps: start, routeAnchorRemainingM: 740, routeEtaSeconds: 780 });
   expect(mockLiveActivity.updateAllGroupActivities).toHaveBeenLastCalledWith(expect.objectContaining({

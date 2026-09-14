@@ -37,9 +37,10 @@ describe('location privacy and diagnostics UI contract', () => {
     expect(handler).toContain('stopBackgroundJourney()');
     expect(handler).toContain('purgeLocationOutbox()');
     expect(handler).toContain("navigationSessionState.ack('sharing_disabled'");
-    expect(handler).toContain('setLocationSharingEnabled(enabled)');
+    expect(handler).toContain('rememberLocationSharing(user.id, enabled)');
+    expect(handler).toContain('syncLocationSharing(user.id)');
     expect(navigationService).toContain("from('member_privacy_settings').upsert");
-    expect(navigationService).toContain('local_navigation_enabled: true');
+    expect(navigationService).toContain('local_navigation_enabled: enabled');
   });
 
   it('removes diagnostics UI while keeping the underlying store', () => {

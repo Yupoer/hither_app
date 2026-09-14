@@ -44,11 +44,11 @@ describe('measured performance regressions', () => {
     );
   });
 
-  it('force-syncs on foreground and keeps an independent motion-aware heartbeat', () => {
+  it('force-syncs on foreground and only uploads timestamped sensor samples', () => {
     expect(locationHook).toContain('refreshDeviceLocation');
-    expect(locationHook).toContain('HEARTBEAT_TICK_MS');
+    expect(locationHook).not.toContain('HEARTBEAT_TICK_MS');
     expect(locationHook).toContain('reduceMotionState');
-    expect(locationHook).toContain('uploadHeartbeatForCadence');
+    expect(locationHook).toContain('shouldUploadSample');
     expect(locationHook).toContain('immediate: true');
   });
 
@@ -108,12 +108,11 @@ describe('measured performance regressions', () => {
   });
 
   it('animates member markers between real coordinate endpoints only', () => {
-    expect(groupMap).toContain('AnimatedRegion');
-    expect(groupMap).toContain('MarkerAnimated');
-    expect(groupMap).toContain('regionRef.current');
-    expect(groupMap).toContain('.timing(');
+    expect(groupMap).toContain('animateMarkerToCoordinate');
+    expect(groupMap).toContain('memberMotionDuration');
+    expect(groupMap).not.toContain('AnimatedRegion');
     // Only animate to the latest real lat/lng — never invent a predicted point.
-    expect(groupMap).toContain('never invent a next point');
+    expect(groupMap).toContain('next.coordinates');
     expect(groupMap).not.toMatch(/predictedCoords|velocityPredict|deadReckon/);
   });
 

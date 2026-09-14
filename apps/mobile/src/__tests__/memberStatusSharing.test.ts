@@ -31,7 +31,7 @@ describe('member status + location sharing seam', () => {
       destructive: false,
     });
     expect(translations.zh['settings.locationSharing']).toBe('分享我的位置');
-    expect(translations.zh['settings.locationSharingHint']).toContain('關閉後停止向隊友更新位置');
+    expect(translations.zh['settings.locationSharingHint']).toContain('關閉後停止所有定位與位置上傳');
   });
 
   it('confirms turning sharing off with stop-sharing copy', () => {

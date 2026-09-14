@@ -4,7 +4,7 @@ import type { ScrollView } from 'react-native';
 import { isNetworkRequestError } from '../../../api/services/_helpers';
 import { distanceMeters } from '../../../utils/geo';
 import { resolveGatheringOutboxAfterSessionStart } from '../../../utils/gatheringSessionOutbox';
-import { promoteDestinationWithinDay } from '../../../utils/tripDay';
+import { promoteDestinationWithinDay, openDestinationsForReorder } from '../../../utils/tripDay';
 import { followCarouselIndexAfterPromote } from '../../../utils/journeyStartCarouselIdentity';
 import type { Coordinates, Destination, GroupState, JourneyStatus } from '../../../types';
 import type { NavigationSession } from '../../../types/navigation';
@@ -35,6 +35,7 @@ interface UseJourneyNavigationParams {
   isLeader: boolean;
   destinations: Destination[];
   navigationDestinations?: Destination[];
+  reorderDestinations?: Destination[];
   selectedDestination: Destination | undefined;
   fromCoords: Coordinates | undefined;
   refresh: () => void;
@@ -73,6 +74,7 @@ export function useJourneyNavigation({
   isLeader,
   destinations,
   navigationDestinations = destinations,
+  reorderDestinations = destinations,
   selectedDestination,
   fromCoords,
   refresh: _refresh,
@@ -341,7 +343,7 @@ export function useJourneyNavigation({
       const startedDestId = dest.id;
       if (reorderForNavigation) {
         pendingCarouselTargetIdRef.current = startedDestId;
-        const updates = promoteDestinationWithinDay(destinations, startedDestId);
+        const updates = promoteDestinationWithinDay(openDestinationsForReorder(reorderDestinations), startedDestId);
         if (!(await reorderForNavigation(updates))) {
           pendingCarouselTargetIdRef.current = null;
           throw new Error('destination_reorder_failed');
@@ -430,6 +432,7 @@ export function useJourneyNavigation({
     mapRef,
     onOptimisticGathering,
     reorderForNavigation,
+    reorderDestinations,
     destinations,
     navigationDestinations,
     setSelectedIndex,
