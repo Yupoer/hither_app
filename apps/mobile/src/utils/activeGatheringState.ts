@@ -307,6 +307,7 @@ export function deriveActiveGatheringFromGroup(
   entityVersion = 1,
   nowMs = Date.now(),
 ): ActiveGatheringState {
+  destinations = destinations.filter(destination => destination.day !== null);
   const journeyPhase: JourneyPhase =
     group.journeyStatus === 'going' ? 'en_route' : 'staying';
 
@@ -385,6 +386,7 @@ export function applyGatheringToDestinations(
   gathering: ActiveGatheringState,
 ): Destination[] {
   return destinations.map((dest) => {
+    if (dest.day === null) return dest;
     const status = pointStatusOf(gathering, dest.id);
     if (status === 'completed') {
       return {
@@ -408,12 +410,13 @@ export function groupStateFromSnapshotParts(
     destinations,
     gathering,
   );
+  const scheduled = projectedDestinations.filter(destination => destination.day !== null);
   const nextPendingId = nextPendingDestinationId(gathering, null);
   const nextDestination =
-    projectedDestinations.find((d) => d.id === gathering.activeDestinationId)
-    ?? projectedDestinations.find((d) => d.id === nextPendingId)
-    ?? projectedDestinations.find((d) => !d.closedAt)
-    ?? projectedDestinations[0];
+    scheduled.find((d) => d.id === gathering.activeDestinationId)
+    ?? scheduled.find((d) => d.id === nextPendingId)
+    ?? scheduled.find((d) => !d.closedAt)
+    ?? scheduled[0];
   return {
     group: projectedGroup,
     destinations: projectedDestinations,

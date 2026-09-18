@@ -13,13 +13,13 @@
 export type OpenReorderUpdate = {
   id: string;
   position: number;
-  day: number;
+  day: number | null;
 };
 
 export type OpenSlotSource = {
   id: string;
   order: number;
-  day?: number;
+  day?: number | null;
 };
 
 /**
@@ -56,7 +56,7 @@ export function mapOpenReorderToPersistedPositions<T extends OpenReorderUpdate>(
 export function buildOpenReorderPayload<T extends {
   id: string;
   order: number;
-  day?: number;
+  day?: number | null;
   kind?: string;
   stayAnchor?: boolean;
   meetAt?: string;
@@ -65,19 +65,19 @@ export function buildOpenReorderPayload<T extends {
 ): {
   id: string;
   position: number;
-  day: number;
+  day: number | null;
   stayAnchor?: boolean;
   meetAt?: string;
 }[] {
   const sorted = [...openDraft].sort((a, b) => {
-    if ((a.day || 1) !== (b.day || 1)) return (a.day || 1) - (b.day || 1);
+    if ((a.day ?? 0) !== (b.day ?? 0)) return (a.day ?? 0) - (b.day ?? 0);
     return a.order - b.order;
   });
   const openSlots = openPositionSlotsFromOpenDestinations(sorted);
   const relative = sorted.map((d, index) => ({
     id: d.id,
     position: index,
-    day: d.day || 1,
+    day: d.day === undefined ? 1 : d.day,
     stayAnchor: d.kind === 'accommodation' ? Boolean(d.stayAnchor) : undefined,
     meetAt: d.meetAt,
   }));

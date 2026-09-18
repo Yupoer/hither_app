@@ -80,5 +80,52 @@ await assert.rejects(db.query('select set_destination_arrival($1,$2,true)',[id(1
 await uid(1);
 await assert.rejects(start(10,105),/already closed/);
 assert.equal(await scalar("select count(*)::int as value from navigation_sessions where status='active'"),1);
+
+// New migration against the same live-navigation fixture: pool writes must preserve it.
+await db.exec(`
+reset role;
+alter table itinerary_items alter id set default gen_random_uuid();
+alter table itinerary_items add kind text default 'stop', add address text, add created_by uuid;
+alter table itinerary_items add meet_red_minutes integer, add meet_set_by uuid, add meet_warn_pushed_at timestamptz, add meet_due_pushed_at timestamptz;
+create table subgroups(id uuid primary key, group_id uuid);
+create table gather_point_requests(id uuid primary key, group_id uuid, subgroup_id uuid, requester_id uuid, status text, items jsonb, reviewed_by uuid, reviewed_at timestamptz);
+create table account_import_quotas(user_id uuid primary key, used_count integer default 0, updated_at timestamptz);
+create table personal_premium_entitlements(user_id uuid,status text,expires_at timestamptz);
+create function profile_has_lifetime_premium(uuid) returns boolean language sql as $$ select false $$;
+create function personal_premium_is_live(text,timestamptz) returns boolean language sql as $$ select false $$;
+create function group_has_active_premium(uuid) returns boolean language sql as $$ select false $$;
+grant all on all tables in schema public to authenticated;
+`);
+await db.exec('create table auth.users(id uuid primary key)');
+await db.query('insert into auth.users values($1),($2)',[id(1),id(2)]);
+const coreSchema = readFileSync(new URL('../migrations/20260725000200_core_operation_sync.sql',import.meta.url),'utf8');
+await db.exec(coreSchema.slice(0,coreSchema.indexOf('create or replace function public.apply_core_operation(')));
+await db.exec(readFileSync(new URL('../migrations/20260919090000_unscheduled_destination_pool.sql',import.meta.url),'utf8'));
+await db.exec('set role authenticated');
+await uid(1);
+const pool = (await db.query("select add_itinerary_item($1,null,'Pool',null,25,121,null) as id",[id(100)])).rows[0].id;
+assert.equal(await scalar(`select day as value from itinerary_items where id='${pool}'`), null);
+await assert.rejects(db.query('select apply_leader_gathering_switch($1,$2,$3,0,$4)',[id(210),id(100),id(100),pool]),/closed/);
+await assert.rejects(db.query('select start_navigation_session($1,$2,$3)',[id(100),pool,id(120)]),/missing or closed/);
+await assert.rejects(db.query('select set_destination_arrival($1,$2,true)',[pool,id(1)]));
+await assert.rejects(db.query('select complete_gathering_stop($1,$2)',[id(100),pool]),/unscheduled/);
+await db.query('select reorder_itinerary_items($1,$2)',[id(100),JSON.stringify([{id:pool,day:2}])]);
+assert.equal(await scalar(`select day as value from itinerary_items where id='${pool}'`),2);
+await db.query('select reorder_itinerary_items($1,$2)',[id(100),JSON.stringify([{id:pool,day:null}])]);
+assert.equal(await scalar(`select day as value from itinerary_items where id='${pool}'`),null);
+await assert.rejects(db.query('select reorder_itinerary_items($1,$2)',[id(100),JSON.stringify([{id:pool,day:2},{id:id(12),day:null}])]),/end navigation/);
+assert.equal(await scalar(`select day as value from itinerary_items where id='${pool}'`),null); // batch rolled back
+await assert.rejects(db.query("select add_itinerary_item($1,null,'Stay',null,25,121,null,'accommodation')",[id(100)]),/accommodation_scheduled/);
+await db.query('select import_itinerary_batch($1,null,null,$2)',[id(100),JSON.stringify([{title:'Imported',latitude:25,longitude:121}])]);
+assert.equal(await scalar("select day as value from itinerary_items where title='Imported'"),null);
+await uid(2);
+await assert.rejects(db.query('select reorder_itinerary_items($1,$2)',[id(100),JSON.stringify([{id:pool,day:1}])]),/permission/);
+await assert.rejects(db.query("select add_itinerary_item($1,null,'Denied',null,25,121,null)",[id(100)]),/permission/);
+await uid(1);
+await db.query("insert into gather_point_requests(id,group_id,status,items) values($1,$2,'pending',$3)",[id(200),id(100),JSON.stringify([{title:'Approved',latitude:25,longitude:121,day:1}])]);
+await db.query('select resolve_gather_point_request($1,true)',[id(200)]);
+assert.equal(await scalar("select day as value from itinerary_items where title='Approved'"),null);
+assert.equal(await scalar("select count(*)::int as value from navigation_sessions where status='active'"),1);
+console.log('PASS: pool add/import/approval, schedule/unschedule, active-navigation guard, atomic rollback, authorization');
 await db.close();
 console.log('PASS: third/second promotion, stable day/history/order, retry, switch, arrival/history idempotency, authorization, rollback');

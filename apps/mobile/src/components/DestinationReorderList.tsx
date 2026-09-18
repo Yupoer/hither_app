@@ -9,6 +9,7 @@ import {
   Modal,
   Dimensions,
   Platform,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
@@ -40,7 +41,6 @@ import {
   type MeasuredReorderGeometry,
   type ReorderListEntry,
 } from '../utils/accommodationSemantics';
-import { eligibleFavoriteDateOptions } from '../utils/favoriteDates';
 import { lightTap, mediumTap, selectionTick } from '../utils/haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
@@ -88,6 +88,7 @@ export interface FavoritePlaceView {
 
 interface Props {
   groupId?: string;
+  activeDestinationId?: string;
   destinations: Destination[];
   canReorder: boolean;
   tripDays?: number;
@@ -96,8 +97,8 @@ interface Props {
   showTripDetails?: boolean;
   onUpdateTripDetails?: (days: number, date: string) => void;
   onReorder?: (
-    updates: { id: string; position: number; day: number; stayAnchor?: boolean }[],
-  ) => void;
+    updates: { id: string; position: number; day: number | null; stayAnchor?: boolean }[],
+  ) => void | Promise<boolean>;
   onDelete?: (id: string) => void;
   /** Per-stop emoji (+ optional markerColor). Day color is via day-header picker. */
   onUpdateEmojiColor?: (
@@ -172,6 +173,7 @@ function listShapeSignature(list: readonly ListItem[]): string {
 
 export default function DestinationReorderList({
   groupId,
+  activeDestinationId,
   destinations,
   canReorder,
   tripDays,
@@ -328,7 +330,7 @@ export default function DestinationReorderList({
   >({});
   const [favoritesOpen, setFavoritesOpen] = useState(false);
   /** Favorite selected; date must be confirmed before write. */
-  const [favoritePending, setFavoritePending] = useState<FavoritePlaceView | null>(null);
+  const [moveDestinationId, setMoveDestinationId] = useState<string | null>(null);
 
   useEffect(() => {
     if (activeId || interactionMode !== 'drag' || setStayModeDay != null || !canReorder) {
@@ -479,19 +481,20 @@ export default function DestinationReorderList({
   useEffect(() => {
     closeOpenSwipeable();
     if (!draggingRef.current) {
-      const nextOrder: ListItem[] = [];
+      const nextOrder: ListItem[] = [{ type: 'header', day: 0, id: 'header-pool', title: t('trip.pool'), dateStr: '' }];
       const days = Math.max(1, tripDays || 1);
       // Route editor always shows the full trip (day 1..N). Day-gating belongs
       // to the carousel only — hiding past days here caused Day1→Day2 after 完成.
       const startDay = 1;
 
       const sortedDests = [...destinations].sort((a, b) => {
-        const dayA = a.day || 1;
-        const dayB = b.day || 1;
+        const dayA = a.day ?? 0;
+        const dayB = b.day ?? 0;
         if (dayA !== dayB) return dayA - dayB;
         return a.order - b.order;
       });
 
+      for (const dest of sortedDests.filter(dest => dest.day == null)) nextOrder.push({ type: 'dest', item: dest, id: dest.id });
       for (let d = startDay; d <= days; d++) {
         nextOrder.push({
           type: 'header',
@@ -500,13 +503,13 @@ export default function DestinationReorderList({
           title: t('trip.dayTitle', { day: d }),
           dateStr: dayDateLabel(d),
         });
-        const dayDests = sortedDests.filter((dest) => (dest.day || 1) === d);
+        const dayDests = sortedDests.filter((dest) => dest.day === d);
         for (const dest of dayDests) {
           nextOrder.push({ type: 'dest', item: dest, id: dest.id });
         }
       }
       // Destinations past tripDays still surface as orphans.
-      for (const dest of sortedDests.filter((d) => (d.day || 1) > days)) {
+      for (const dest of sortedDests.filter((d) => (d.day ?? 0) > days)) {
         nextOrder.push({ type: 'dest', item: dest, id: dest.id });
       }
 
@@ -526,7 +529,7 @@ export default function DestinationReorderList({
       return {
         type: 'dest' as const,
         id: entry.item.id,
-        day: entry.item.day || 1,
+        day: entry.item.day ?? 0,
         kind: entry.item.kind === 'accommodation' ? 'accommodation' : 'stop',
         stayAnchor: entry.item.stayAnchor,
         title: entry.item.title,
@@ -631,13 +634,14 @@ export default function DestinationReorderList({
     [pan, toReorderEntries, onDragAutoScroll, getMeasuredGeometry],
   );
 
-  const handleRelease = useCallback(() => {
+  const handleRelease = useCallback(async () => {
     if (!draggingRef.current) return;
 
+    const previousOrder = [...orderRef.current];
     const updates: {
       id: string;
       position: number;
-      day: number;
+      day: number | null;
       stayAnchor?: boolean;
     }[] = [];
     try {
@@ -655,6 +659,7 @@ export default function DestinationReorderList({
           let dayCounter = 0;
           next = next.map((item) => {
             if (item.type === 'header') {
+              if (item.day === 0) return item;
               dayCounter += 1;
               return {
                 ...item,
@@ -667,7 +672,7 @@ export default function DestinationReorderList({
             // Stamp nested destination day from the preceding header.
             return {
               ...item,
-              item: { ...item.item, day: dayCounter > 0 ? dayCounter : 1 },
+              item: { ...item.item, day: dayCounter > 0 ? dayCounter : null },
             };
           });
         } else {
@@ -678,14 +683,14 @@ export default function DestinationReorderList({
         setOrder(next);
       }
 
-      let currentDay = 1;
+      let currentDay = 0;
       let position = 0;
       const byDay = new Map<number, AccommodationListItem[]>();
       for (const item of orderRef.current) {
         if (item.type === 'header') {
           currentDay = item.day;
         } else {
-          updates.push({ id: item.id, position, day: currentDay });
+          updates.push({ id: item.id, position, day: currentDay || null });
           const list = byDay.get(currentDay) ?? [];
           list.push({
             id: item.item.id,
@@ -723,7 +728,7 @@ export default function DestinationReorderList({
         if (
           !orig
           || openIndexById.get(u.id) !== u.position
-          || (orig.day || 1) !== u.day
+          || orig.day !== u.day
           || (u.stayAnchor !== undefined
             && Boolean(orig.stayAnchor) !== Boolean(u.stayAnchor)
             && orig.kind === 'accommodation')
@@ -735,13 +740,38 @@ export default function DestinationReorderList({
 
       if (changed) {
         lightTap();
-        onReorder?.(updates);
+        if (updates.some(update => update.id === activeDestinationId && update.day == null)) {
+          pendingOrderSignatureRef.current = null;
+          orderRef.current = previousOrder;
+          setOrder(previousOrder);
+          Alert.alert(t('map.setFailedTitle'), t('trip.endBeforePool'));
+          return;
+        }
+        try {
+          const ok = await onReorder?.(updates);
+          if (ok === false) throw new Error('reorder_failed');
+        } catch {
+          pendingOrderSignatureRef.current = null;
+          orderRef.current = previousOrder;
+          setOrder(previousOrder);
+        }
       }
     } finally {
       // Unlock parent ScrollView even if update computation throws.
       endDragSession();
     }
-  }, [dayDateLabel, onReorder, destinations, endDragSession, t]);
+  }, [dayDateLabel, onReorder, destinations, endDragSession, t, activeDestinationId]);
+
+  const moveToDay = (id: string, day: number | null) => {
+    const moving = destinations.find(item => item.id === id);
+    if (!moving) return;
+    const next = destinations.filter(item => item.id !== id);
+    const last = next.findLastIndex(item => item.day === day);
+    const firstLater = next.findIndex(item => (item.day ?? 0) > (day ?? 0));
+    next.splice(last >= 0 ? last + 1 : firstLater >= 0 ? firstLater : next.length, 0, { ...moving, day });
+    void Promise.resolve(onReorder?.(next.map((item, position) => ({ id: item.id, day: item.day, position }))))
+      .catch(() => undefined);
+  };
 
   const handlersRef = useRef({ handleGrant, handleMove, handleRelease });
   handlersRef.current = { handleGrant, handleMove, handleRelease };
@@ -834,7 +864,7 @@ export default function DestinationReorderList({
               }
             }
 
-            const firstDayBlockIndex = blocks.findIndex((block) => block.kind === 'day');
+            const firstDayBlockIndex = blocks.findIndex((block) => block.kind === 'day' && block.header.day > 0);
             const firstAccommodationId = order.find(
               (item) => item.type === 'dest' && item.item.kind === 'accommodation',
             )?.id ?? null;
@@ -850,11 +880,11 @@ export default function DestinationReorderList({
               /** Day block this row is rendered under (may differ from item.day mid-drag). */
               blockDay?: number,
             ) => {
-              const visualDay = blockDay ?? item.item.day ?? 1;
-              if (collapsedDays[visualDay] || collapsedDays[item.item.day || 1]) return null;
+              const visualDay = blockDay ?? item.item.day ?? 0;
+              if (collapsedDays[visualDay] || collapsedDays[item.item.day ?? 0]) return null;
               const dayColor = getColorForDay(visualDay, dayColors);
               const dayItems: AccommodationListItem[] = destinations
-                .filter((d) => (d.day || 1) === visualDay)
+                .filter((d) => (d.day ?? 0) === visualDay)
                 .map((d) => ({
                   id: d.id,
                   kind: d.kind === 'accommodation' ? 'accommodation' : 'stop',
@@ -869,7 +899,7 @@ export default function DestinationReorderList({
               void lockedIds;
               const inSetMode = setStayModeDay === visualDay;
               const isStayCard = item.item.kind === 'accommodation';
-              const stayDate = stayDateForDay(visualDay);
+              const stayDate = visualDay > 0 ? stayDateForDay(visualDay) : null;
               const dailyAccommodation = stayDate && dailyByDate
                 ? dailyByDate[stayDate]
                 : undefined;
@@ -894,6 +924,8 @@ export default function DestinationReorderList({
                 <Row
                   key={item.id}
                   item={item.item}
+                  onMoveTo={canReorder && item.item.kind !== 'accommodation'
+                    ? () => setMoveDestinationId(item.item.id) : undefined}
                   active={activeId === item.id}
                   canDrag={canDragStop}
                   canSwipeDelete={canReorder && !!onDelete && !locked && !inSetMode}
@@ -983,8 +1015,8 @@ export default function DestinationReorderList({
                 );
               }
               const item = block.header;
-              const bgColor = dayColors[item.day] || DAY_COLORS[(item.day - 1) % DAY_COLORS.length];
-              const stayDate = stayDateForDay(item.day);
+              const bgColor = getColorForDay(item.day, dayColors);
+              const stayDate = item.day > 0 ? stayDateForDay(item.day) : null;
               const daily = stayDate && dailyByDate ? dailyByDate[stayDate] : undefined;
               const collapsed = Boolean(collapsedDays[item.day]);
               const dayStopCount = block.dests.length;
@@ -1055,7 +1087,7 @@ export default function DestinationReorderList({
                     item={item}
                     styles={styles}
                     bgColor={bgColor}
-                    canEditColors={canReorder}
+                    canEditColors={canReorder && item.day > 0}
                     onColorPress={onHeaderColorPress}
                     dailyTitle={daily?.title}
                     onRemoveDaily={
@@ -1107,6 +1139,7 @@ export default function DestinationReorderList({
                     headerPan={pan}
                     setStayLabel={
                       canReorder
+                      && item.day > 0
                       && !hasDaily
                       && onSetDailyFromDestination
                       && dayStopCount > 0
@@ -1130,6 +1163,7 @@ export default function DestinationReorderList({
                     }
                     onToggleSetStay={
                       canReorder
+                      && item.day > 0
                       && !hasDaily
                       && onSetDailyFromDestination
                       && dayStopCount > 0
@@ -1224,7 +1258,7 @@ export default function DestinationReorderList({
       )}
 
       <SettingsChildSheet
-        visible={favoritesOpen && !favoritePending}
+        visible={favoritesOpen}
         onClose={() => setFavoritesOpen(false)}
         title={t('stay.favorites')}
         initialStage={1}
@@ -1239,8 +1273,9 @@ export default function DestinationReorderList({
                   <Pressable
                     style={styles.favRowMain}
                     onPress={() => {
-                      // #160: show eligible-date picker first; write only after confirm.
-                      setFavoritePending(fav);
+                      // New favorite places enter the pool; scheduling uses the same drag list.
+                      onPickFavorite?.(fav, 0);
+                      setFavoritesOpen(false);
                     }}
                     accessibilityRole="button"
                   >
@@ -1267,45 +1302,19 @@ export default function DestinationReorderList({
         </View>
       </SettingsChildSheet>
 
-      <SettingsChildSheet
-        visible={favoritePending != null}
-        onClose={() => {
-          // Cancel: write nothing.
-          setFavoritePending(null);
-          setFavoritesOpen(false);
-        }}
-        title={favoritePending?.title ?? t('stay.favorites')}
-        initialStage={1}
-        stageTwoRatio={0.9}
-      >
+      <SettingsChildSheet visible={moveDestinationId != null} onClose={() => setMoveDestinationId(null)}
+        title={t('trip.moveTo')} initialStage={1} stageTwoRatio={0.9}>
         <View style={styles.childSheetBody}>
-            <Text style={styles.modalLabel}>{t('stay.pickDate')}</Text>
-            {eligibleFavoriteDateOptions({
-              departureDate,
-              tripDays,
-            }).map((opt) => (
-              <Pressable
-                key={opt.dateKey}
-                style={styles.favRow}
-                onPress={() => {
-                  const fav = favoritePending;
-                  if (fav) {
-                    onPickFavorite?.(fav, opt.day);
-                  }
-                  setFavoritePending(null);
-                  setFavoritesOpen(false);
-                }}
-                accessibilityRole="button"
-              >
-                <Ionicons name="calendar-outline" size={16} color={colors.accent} />
-                <Text style={styles.favTitle}>
-                  {t('trip.dayTitle', { day: opt.day })} · {opt.dateKey}
-                </Text>
-              </Pressable>
-            ))}
-            {eligibleFavoriteDateOptions({ departureDate, tripDays }).length === 0 ? (
-              <Text style={styles.empty}>{t('stay.noEligibleDates')}</Text>
-            ) : null}
+          {[null, ...Array.from({ length: Math.max(1, tripDays ?? 1) }, (_, i) => i + 1)].map(day => (
+            <Pressable key={day ?? 'pool'} style={styles.favRow} accessibilityRole="button"
+              disabled={day == null && moveDestinationId === activeDestinationId}
+              onPress={() => {
+                if (moveDestinationId) moveToDay(moveDestinationId, day);
+                setMoveDestinationId(null);
+              }}>
+              <Text style={styles.favTitle}>{day == null ? t('trip.pool') : t('trip.dayTitle', { day })}</Text>
+            </Pressable>
+          ))}
         </View>
       </SettingsChildSheet>
 
@@ -1822,6 +1831,7 @@ const Row = memo(function Row({
   showSelect,
   selectSelected,
   onSelectAsStay,
+  onMoveTo,
   multiSelect,
   multiSelected,
   onToggleMultiSelect,
@@ -1854,6 +1864,7 @@ const Row = memo(function Row({
   /** Local pending stay selection (not yet committed). */
   selectSelected?: boolean;
   onSelectAsStay?: () => void;
+  onMoveTo?: () => void;
   multiSelect?: boolean;
   multiSelected?: boolean;
   onToggleMultiSelect?: () => void;
@@ -2033,9 +2044,10 @@ const Row = memo(function Row({
           onPress={
             multiSelect && onToggleMultiSelect
               ? onToggleMultiSelect
-              : undefined
+              : onMoveTo
           }
-          disabled={!multiSelect}
+          accessibilityRole="button"
+          disabled={!multiSelect && !onMoveTo}
         >
           <OverflowMarquee
             text={item.title}

@@ -63,36 +63,60 @@ export default React.memo(function DestinationSearch({
   const [submittingId, setSubmittingId] = useState<string | null>(null);
   // Guards against a stale debounced search resolving after we've moved on.
   const seqRef = useRef(0);
+  const searchRegionRef = useRef(biasRegion);
+  const [searchError, setSearchError] = useState<'failed' | 'quota' | null>(null);
 
   // Reset everything whenever the sheet is opened afresh.
   useEffect(() => {
     if (visible) {
+      searchRegionRef.current = biasRegion;
       setQuery('');
       setResults([]);
       setSearching(false);
       setSubmittingId(null);
+      setSearchError(null);
     }
+    // GPS updates must not restart a query while this sheet is open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
   // Debounced search as the query changes.
   useEffect(() => {
     const trimmed = query.trim();
-    if (!trimmed) {
+    const seq = ++seqRef.current;
+    setSearchError(null);
+    if (!visible || !trimmed) {
       setResults([]);
       setSearching(false);
       return;
     }
     setSearching(true);
-    const seq = ++seqRef.current;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
     const handle = setTimeout(async () => {
-      const hits = await maps.searchPlaces(trimmed, biasRegion);
-      if (seq === seqRef.current) {
-        setResults(hits);
-        setSearching(false);
+      try {
+        const hits = await Promise.race([
+          maps.searchPlaces(trimmed, searchRegionRef.current, { throwOnError: true }),
+          new Promise<never>((_, reject) => {
+            timeout = setTimeout(() => reject(new Error('search_timeout')), 20_000);
+          }),
+        ]);
+        if (seq === seqRef.current) setResults(hits);
+      } catch (error) {
+        if (seq === seqRef.current) {
+          setResults([]);
+          setSearchError((error as { code?: string })?.code === 'quota_exceeded' ? 'quota' : 'failed');
+        }
+      } finally {
+        clearTimeout(timeout);
+        if (seq === seqRef.current) setSearching(false);
       }
     }, DEBOUNCE_MS);
-    return () => clearTimeout(handle);
-  }, [query, biasRegion]);
+    return () => {
+      ++seqRef.current;
+      clearTimeout(handle);
+      clearTimeout(timeout);
+    };
+  }, [query, visible]);
 
   async function handlePick(place: PlaceResult) {
     if (submittingId) {
@@ -142,7 +166,7 @@ export default React.memo(function DestinationSearch({
             <Text style={styles.statusText}>{t('search.searching')}</Text>
           </View>
         ) : query.trim() && results.length === 0 ? (
-          <Text style={styles.statusText}>{t('search.quotaOrOffline')}</Text>
+          <Text style={styles.statusText}>{t(searchError === 'quota' ? 'search.quota' : searchError === 'failed' ? 'search.failed' : 'search.noResults')}</Text>
         ) : null}
 
         <FlatList

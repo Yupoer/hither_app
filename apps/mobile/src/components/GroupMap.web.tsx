@@ -14,7 +14,8 @@ import { displayMemberAvatar } from '../constants/avatars';
  *
  * The real, interactive map only runs on iOS / Android (Expo Go on a device).
  */
-function getColorForDay(day: number | undefined, dayColors: Record<number, string>) {
+function getColorForDay(day: number | null | undefined, dayColors: Record<number, string>) {
+  if (day === null) return '#718096';
   if (!day) return dayColors[1] || DAY_COLORS[0];
   return dayColors[day] || DAY_COLORS[(day - 1) % DAY_COLORS.length];
 }
@@ -57,7 +58,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
             <View style={styles.rowText}>
               <Text style={styles.title}>{dest.title}</Text>
               <Text style={styles.sub}>
-                Day {dest.day || 1} · {dest.coordinates.latitude.toFixed(5)}, {dest.coordinates.longitude.toFixed(5)}
+                {dest.day == null ? t('trip.pool') : `Day ${dest.day}`} · {dest.coordinates.latitude.toFixed(5)}, {dest.coordinates.longitude.toFixed(5)}
               </Text>
             </View>
           </View>

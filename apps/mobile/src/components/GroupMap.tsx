@@ -121,7 +121,7 @@ export interface GroupMapProps {
     coordinates: Coordinates;
     sourceDestinationId?: string | null;
     /** Trip day (1-based) for bed marker day-color + callout. */
-    day?: number;
+    day?: number | null;
   }> | null;
   /** @deprecated Prefer dailyAccommodations. */
   dailyAccommodation?: {
@@ -129,7 +129,7 @@ export interface GroupMapProps {
     title: string;
     coordinates: Coordinates;
     sourceDestinationId?: string | null;
-    day?: number;
+    day?: number | null;
   } | null;
   /** Localized label for stay callout (e.g. 住宿 / Stay). */
   stayCalloutLabel?: string;
@@ -279,6 +279,7 @@ const DestinationMarker = React.memo(function DestinationMarker({
   /** Override Marker description (stay: "Day N · 住宿"). */
   calloutDescription?: string;
 }) {
+  const { t } = useTranslation();
   // Pulse briefly every 5s — never leave tracksViewChanges true continuously.
   const [pulseOn, setPulseOn] = useState(false);
   const scaleAnim = useRef(new RNAnimated.Value(1)).current;
@@ -336,7 +337,7 @@ const DestinationMarker = React.memo(function DestinationMarker({
     calloutDescription
     ?? (dest.kind === 'accommodation'
       ? stayMarkerDescription(dest.day, 'Stay')
-      : `Day ${dest.day || 1}`);
+      : dest.day == null ? t('trip.pool') : `Day ${dest.day}`);
 
   // Capture bitmap only on appearance / pulse window / style change — never continuous.
   const tracksViewChanges = useTracksViewChanges([

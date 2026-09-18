@@ -315,7 +315,7 @@ export interface GatherPointRequestItem {
   title: string;
   address?: string;
   coordinates: Coordinates;
-  day?: number;
+  day?: number | null;
 }
 
 export interface GatherPointRequest {
@@ -452,7 +452,7 @@ export interface Destination {
   /** Position within the group's ordered itinerary (0-based). */
   order: number;
   /** Which day of the trip this destination belongs to (1-based). */
-  day: number;
+  day: number | null;
   address?: string;
   coordinates: Coordinates;
   /** ISO-8601 target date+time to gather, set by the leader. Optional. */

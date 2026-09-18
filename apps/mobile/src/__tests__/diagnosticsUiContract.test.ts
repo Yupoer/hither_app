@@ -34,7 +34,7 @@ describe('location privacy and diagnostics UI contract', () => {
     expect(start).toBeGreaterThanOrEqual(0);
     expect(end).toBeGreaterThan(start);
     expect(handler).toContain('setSharingEnabled(enabled)');
-    expect(handler).toContain('stopBackgroundJourney()');
+    expect(handler).toContain('stopBackgroundJourney(true)');
     expect(handler).toContain('purgeLocationOutbox()');
     expect(handler).toContain("navigationSessionState.ack('sharing_disabled'");
     expect(handler).toContain('rememberLocationSharing(user.id, enabled)');

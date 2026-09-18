@@ -56,6 +56,21 @@ describe('searchPlaces Android / empty-native fallback', () => {
     expect(mockProxySearch).not.toHaveBeenCalled();
   });
 
+  it('continues a business search when MapKit only returns the district', async () => {
+    mockNativeSearch.mockResolvedValue([{ ...station, name: '內湖區', address: '台北市內湖區' }]);
+    const business = { ...station, name: 'CQ2', address: '台北市內湖區' };
+    mockProxySearch.mockResolvedValue([business]);
+    await expect(searchPlaces('內湖 CQ2')).resolves.toEqual([business]);
+    expect(mockProxySearch).toHaveBeenCalledWith('內湖 CQ2', undefined);
+  });
+
+  it('uses a complete native address match', async () => {
+    const address = { ...station, name: '辦公室', address: '台北市內湖區瑞光路 1 號' };
+    mockNativeSearch.mockResolvedValue([address]);
+    await expect(searchPlaces('台北市內湖區瑞光路 1 號')).resolves.toEqual([address]);
+    expect(mockProxySearch).not.toHaveBeenCalled();
+  });
+
   it('accepts a Google Maps coordinate paste without calling a provider', async () => {
     await expect(searchPlaces('25.068330191151723, 121.59711154017673')).resolves.toEqual([
       {

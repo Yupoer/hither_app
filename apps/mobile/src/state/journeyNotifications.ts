@@ -1,3 +1,5 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { APPROACH_FIRED_STORAGE_KEY, approachNotifyKey, approachNotifyCopy, shouldFireApproachNotify, type ApproachNotifyInput } from '../utils/approachNotify';
 import { getNotificationPreferences } from '../api/services/NotificationService';
 import type { TranslationKey } from '../i18n';
 import { notifications } from '../native';
@@ -28,4 +30,25 @@ export async function notifyJourneyOperator(
   } finally {
     inFlight.delete(eventId);
   }
+}
+
+/** Shared foreground/background dedupe; suppressed alerts do not consume delivery. */
+export async function notifyJourneyApproach(
+  sessionId: string | null | undefined, destinationId: string, title: string, input: ApproachNotifyInput,
+): Promise<void> {
+  if (!shouldFireApproachNotify(input)) return;
+  const key = approachNotifyKey(sessionId, destinationId);
+  if (inFlight.has(key) || delivered.has(key)) return;
+  inFlight.add(key);
+  try {
+    const raw = await AsyncStorage.getItem(APPROACH_FIRED_STORAGE_KEY);
+    const keys: string[] = raw ? JSON.parse(raw) : [];
+    if (keys.includes(key)) return;
+    const id = await notifications.scheduleLocalNotification({
+      ...approachNotifyCopy(title), data: { kind: 'approach', destinationId },
+    });
+    if (!id) return;
+    delivered.add(key);
+    await AsyncStorage.setItem(APPROACH_FIRED_STORAGE_KEY, JSON.stringify([...keys.slice(-399), key]));
+  } finally { inFlight.delete(key); }
 }

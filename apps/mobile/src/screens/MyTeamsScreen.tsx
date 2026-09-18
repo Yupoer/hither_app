@@ -74,8 +74,7 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
       async (token) => {
         setExpandedGroupId(null);
         lightTap();
-        // Reconcile orphan Live Activities after OTA / prior session before map.
-        await clearLiveActivities().catch(() => undefined);
+        // Map adopts the existing activity after navigation hydration.
         if (!token.isCurrent()) {
           enterInFlightRef.current = null;
           return;

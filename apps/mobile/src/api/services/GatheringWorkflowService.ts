@@ -16,7 +16,7 @@ interface RequestRow {
     address?: string;
     latitude: number;
     longitude: number;
-    day?: number;
+    day?: number | null;
   }[];
   status: GatherPointRequest['status'];
   created_at: string;
@@ -40,7 +40,7 @@ export async function submitGatherPointRequest(
       address: item.address,
       latitude: item.coordinates.latitude,
       longitude: item.coordinates.longitude,
-      day: item.day ?? 1,
+      day: null,
     })),
   });
   orThrow(error);

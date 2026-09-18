@@ -213,10 +213,10 @@ export async function getBackgroundNavigationContext(groupId: string): Promise<{
     .select('id, title, latitude, longitude, position, day, subgroup_id, closed_at')
     .eq('group_id', groupId).eq('id', session.destinationId).maybeSingle();
   orThrow(error);
-  if (!data || data.closed_at || (data.subgroup_id ?? null) !== (member.subgroup_id ?? null)) return result;
+  if (!data || data.day == null || data.closed_at || (data.subgroup_id ?? null) !== (member.subgroup_id ?? null)) return result;
   return { ...result, session, target: { id: data.id, title: data.title,
     coordinates: { latitude: data.latitude, longitude: data.longitude }, order: data.position,
-    day: data.day ?? 1, subgroupId: data.subgroup_id ?? undefined } };
+    day: data.day, subgroupId: data.subgroup_id ?? undefined } };
 }
 
 export async function getMyNavigationMemberState(

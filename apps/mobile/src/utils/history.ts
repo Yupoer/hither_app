@@ -82,7 +82,8 @@ export function pastStopsForHistory(
       if (dest.closedAt) return true;
       // No date gate → only closed stops are synthetic (arrivals come from DB).
       if (current == null) return false;
-      const day = dest.day || 1;
+      if (dest.day == null) return false;
+      const day = dest.day;
       // Fully past trip: every remaining open stop is historical.
       if (days != null && current > days) return true;
       // Before/during trip: only days strictly before today.

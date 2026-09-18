@@ -37,9 +37,9 @@ describe('OTA apply single-flight + team entry lifecycle', () => {
     expect(myTeams).toContain('if (enterInFlightRef.current) return');
     expect(myTeams).toContain("navigation.replace('Map'");
     expect(myTeams).toContain('setMembership');
-    // LA cleanup on enter (orphan reconcile after OTA).
-    expect(myTeams).toContain('clearLiveActivities');
-    expect(myTeams).toMatch(/clearLiveActivities\(\)/);
+    // Entering the map must not kill an active journey. Explicit leave still clears.
+    const entry = myTeams.slice(myTeams.indexOf("'my_teams.enter_group'"), myTeams.indexOf("navigation.replace('Map'"));
+    expect(entry).not.toContain('clearLiveActivities(');
     // Guard released on focus, not immediately after sync replace.
     expect(myTeams).toContain('useFocusEffect');
     // Non-navigation exits release the guard (timeout resolves, stale token).

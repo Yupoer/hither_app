@@ -16,13 +16,16 @@
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import * as Notifications from 'expo-notifications';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { shouldDeliverOnce } from '../utils/notificationDeliveryPolicy';
 
 /** Custom native module; `null` in Expo Go / when not built. */
 const HitherNotifications = requireOptionalNativeModule<{
   getDevicePushToken?: () => Promise<string | null>;
 }>('HitherNotifications');
+const HitherLocation = requireOptionalNativeModule<{
+  isDeviceLocked?: () => Promise<boolean | null>;
+}>('HitherLocation');
 
 let warnedAndroidExpoGoRemotePush = false;
 
@@ -57,7 +60,7 @@ const presentedEvents = new Set<string>();
 Notifications.setNotificationHandler({
   handleNotification: async (notification) => {
     const eventId = notification.request.content.data?.eventId;
-    const show = shouldDeliverOnce(
+    const show = !(Platform.OS === 'ios' && notification.request.content.data?.kind === 'approach') && shouldDeliverOnce(
       presentedEvents, typeof eventId === 'string' ? eventId : null, 'device',
     );
     return {
@@ -129,6 +132,9 @@ export async function scheduleLocalNotification(
   input: LocalNotificationInput,
 ): Promise<string | null> {
   try {
+    if (input.data?.kind === 'approach' && Platform.OS === 'ios') {
+      if (AppState.currentState === 'active' || await HitherLocation?.isDeviceLocked?.() !== true) return null;
+    }
     if (!(await requestPermission())) {
       return null;
     }

@@ -43,6 +43,22 @@ export interface PlaceResult {
   coordinates: Coordinates;
 }
 
+/** A district-only match must not finish a multi-term business search. */
+export function matchesPlaceQuery(place: PlaceResult, query: string): boolean {
+  const text = `${place.name} ${place.address ?? ''}`.normalize('NFKC').toLocaleLowerCase();
+  return query.normalize('NFKC').toLocaleLowerCase().split(/\s+/).filter(Boolean)
+    .every(term => text.includes(term));
+}
+
+async function searchWithTimeout<T>(request: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([request, new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('search_timeout')), 8_000);
+    })]);
+  } finally { clearTimeout(timer); }
+}
+
 /** Map viewport used to bias search results toward what the user sees. */
 export interface MapRegion {
   latitude: number;
@@ -340,6 +356,7 @@ export function platformizedMapLifecycle(options: {
 export async function searchPlaces(
   query: string,
   region?: MapRegion,
+  options?: { throwOnError?: boolean },
 ): Promise<PlaceResult[]> {
   const trimmed = query.trim();
   if (!trimmed) {
@@ -397,9 +414,10 @@ export async function searchPlaces(
   // Native non-empty only — empty arrays must not short-circuit the proxy.
   if (HitherMaps) {
     try {
-      const native = await HitherMaps.searchPlaces(trimmed, region);
-      if (Array.isArray(native) && native.length > 0) {
-        return native;
+      const native = await searchWithTimeout(HitherMaps.searchPlaces(trimmed, region));
+      const matching = Array.isArray(native) ? native.filter(place => matchesPlaceQuery(place, trimmed)) : [];
+      if (matching.length > 0) {
+        return matching;
       }
     } catch {
       // fall through
@@ -407,11 +425,12 @@ export async function searchPlaces(
   }
 
   try {
-    const proxy = await proxySearchPlaces(trimmed, region);
+    const proxy = await searchWithTimeout(proxySearchPlaces(trimmed, region));
     if (proxy !== null) {
       return proxy;
     }
   } catch (err) {
+    if (options?.throwOnError && !allowPublicGeocoderFallback()) throw err;
     // Fail-closed for auth/quota: do not pretend free geocoders are production Places.
     if (err instanceof MapsProxyError) {
       if (err.code === 'quota_exceeded' || err.code === 'unauthorized') {
@@ -421,16 +440,18 @@ export async function searchPlaces(
   }
 
   if (!allowPublicGeocoderFallback()) {
+    if (options?.throwOnError) throw new Error('search_unavailable');
     return [];
   }
 
   try {
-    const photon = await searchPhoton(trimmed, region);
+    const photon = await searchWithTimeout(searchPhoton(trimmed, region));
     if (photon.length > 0) {
       return rankByDistance(photon, region);
     }
-    return rankByDistance(await searchNominatim(trimmed, region), region);
-  } catch {
+    return rankByDistance(await searchWithTimeout(searchNominatim(trimmed, region)), region);
+  } catch (error) {
+    if (options?.throwOnError) throw error;
     return [];
   }
 }

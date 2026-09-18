@@ -301,10 +301,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
     const finishInitialization = () => {
       if (active) setInitializing(false);
-      // Drop orphaned lock-screen Live Activities left after a previous
-      // process death (in-memory handle is gone). Map restarts them if
-      // the user re-enters an active journey.
-      void clearLiveActivities();
+      // Navigation reconciliation adopts activities after hydration.
     };
 
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {

@@ -1,3 +1,4 @@
+import { notifyJourneyApproach } from './journeyNotifications';
 import { AppState } from 'react-native';
 import { captureLocationAccess, isLocationAccessCurrent, subscribeLocationAccessChanges, isLocationAccessEnabled, setLocationSharingConsent, LOCATION_SHARING_KEY } from './locationPrivacy';
 import { backgroundLocationAdapter, observeNativeBackgroundLocation, prepareNativeBackgroundLocation, nativeBackgroundAvailable } from '../native/backgroundLocation';
@@ -131,7 +132,7 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
           if (!config || !controller.isCurrent(config)) return;
         }
         const access = await captureLocationAccess(config.groupId, true);
-        if (!access || !config.sharingEnabled || config.hasMembership === false) {
+        if (!access || !config.sharingEnabled || config.hasMembership === false || config.powerMode === 'allDay' || !config.navigationSessionId) {
           await stopBackgroundJourney();
           await purgeLocationOutbox();
           return;
@@ -168,7 +169,8 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
             && op.entityId === config.destinationId && op.payload.actorId === config.actorId && op.payload.userId === config.actorId)
             ?? await enqueueArrival({ groupId: config.groupId, actorId: config.actorId, userId: config.actorId,
               destination: config.target, arrivedAt: new Date(latest.timestamp).toISOString(), completeSolo: config.completeSolo === true });
-          arrivalConfirmed = operation.status !== 'conflict';
+          arrivalConfirmed = operation.status === 'acked';
+          if (!arrivalConfirmed && operation.status !== 'conflict') void flushCoreOperationOutbox().catch(() => undefined);
         }
         const sequence = config.sequence + 1;
         // Local Live Activity always updates from device GPS — works offline and
@@ -219,12 +221,18 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
         );
         }
         if (!controller.isCurrent(config) || !isLocationAccessCurrent(access)) return;
+        if (config.powerMode === 'journey') {
+          await notifyJourneyApproach(config.navigationSessionId, config.destinationId, config.gatheringTitle ?? '', {
+            remainingM: progress.distanceMeters ?? distanceM, totalM: config.initialDistanceM,
+            arrivalRadiusM: config.arrivalRadiusMeters, arrived: arrivalConfirmed, alreadyFired: false,
+          }).catch(() => undefined);
+        }
         if (arrivalConfirmed) {
           // Durable local arrival first; uploads must never hold up the local surface.
           void flushCoreOperationOutbox().catch(() => undefined);
           if (config.completeSolo) {
             await liveActivity.endAllGroupActivities();
-            await startBackgroundJourney(backgroundPresenceConfig(config));
+            await stopBackgroundJourney(true);
             return;
           }
         }
@@ -254,10 +262,7 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
           return;
         }
 
-        const powerMode =
-          trackingMode === 'passiveBackground' && config.powerMode === 'allDay'
-            ? 'allDay'
-            : 'journey';
+        const powerMode = 'journey';
         const policy = locationPolicy(
           trackingMode === 'teamNavigation' ||
             trackingMode === 'navigationMax' ||
@@ -399,8 +404,8 @@ export async function startBackgroundJourney(
   config: BackgroundJourneyConfig,
 ): Promise<'started' | 'permission_denied' | 'hidden' | 'cancelled'> {
   const access = await captureLocationAccess(config.groupId);
-  if (!access || !config.sharingEnabled || config.hasMembership === false) {
-    await stopBackgroundJourney();
+  if (!access || !config.sharingEnabled || config.hasMembership === false || config.powerMode === 'allDay' || !config.navigationSessionId) {
+    await stopBackgroundJourney(true);
     return 'hidden';
   }
   const previous = await controller.load();
@@ -430,10 +435,11 @@ export async function prepareBackgroundJourneyPermissions(allowPrompt = true): P
   return ready ? 'ready' : 'permission_denied';
 }
 
-export function stopBackgroundJourney(): Promise<void> {
+export async function stopBackgroundJourney(releaseSession = false): Promise<void> {
   uploadGate = { lastCoords: null, lastAtMs: 0 };
   motionState = createMotionState();
-  return controller.stop();
+  await controller.stop();
+  if (releaseSession) await prepareNativeBackgroundLocation(false);
 }
 
 export function loadBackgroundJourney(): Promise<BackgroundJourneyConfig | null> {
@@ -461,7 +467,7 @@ export function reconcileBackgroundNavigation(groupId: string): Promise<void> {
     if (!next.session || !next.target) {
       if (config.powerMode === 'journey') {
         await liveActivity.endAllGroupActivities();
-        await startBackgroundJourney(backgroundPresenceConfig(config));
+        await stopBackgroundJourney(true);
       }
       return;
     }

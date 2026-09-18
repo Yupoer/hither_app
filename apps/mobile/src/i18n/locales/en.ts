@@ -734,7 +734,12 @@ export const en: Record<keyof ZhDict, string> = {
   'search.placeholder': 'Enter an address or place name',
   'search.sheetTitle': 'Search places',
   'search.searching': 'Searching…',
+  'trip.moveTo': 'Move to a day or the pool',
+  'trip.endBeforePool': 'End navigation to this place before moving it to the pool.',
+  'trip.pool': 'Unscheduled places',
   'search.noResults': 'No matching places',
+  'search.failed': 'Search failed or timed out. Edit your query to retry, or long-press the map.',
+  'search.quota': 'Search quota reached. Long-press the map to add a place.',
   'search.longPressHint': 'You can also long-press the map to drop a place',
 
   'web.note':

@@ -63,7 +63,7 @@ export function useDeviceLocation({
   const teamNavigationRef = useRef(teamNavigationActive);
   teamNavigationRef.current = teamNavigationActive;
   const highAccuracyRef = useRef(highAccuracy);
-  highAccuracyRef.current = highAccuracy;
+  highAccuracyRef.current = highAccuracy && teamNavigationActive;
   const deviceCoordsRef = useRef(deviceCoords);
   deviceCoordsRef.current = deviceCoords;
   const sharingEnabledRef = useRef(sharingEnabled);
@@ -84,7 +84,7 @@ export function useDeviceLocation({
   }, [groupId, hasMembershipResolved, sharingEnabled, appState]);
   useEffect(() => () => setLocationAccessContext(null, false), []);
 
-  const policyNow = () => locationPolicy(highAccuracyRef.current || teamNavigationRef.current, teamNavigationRef.current ? 'journey' : 'foreground');
+  const policyNow = () => locationPolicy(teamNavigationRef.current, teamNavigationRef.current ? 'journey' : 'foreground');
 
   const scheduleOutboxFlush = useCallback(() => {
     if (outboxFlushTimerRef.current) return;
@@ -284,7 +284,7 @@ export function useDeviceLocation({
     void location
       .watchLocation((sample: LocationSample) => {
         consumeForegroundSample(sample);
-      }, highAccuracy || teamNavigationActive)
+      }, teamNavigationActive)
       .then((unsub: () => void) => {
         if (cancelled) unsub();
         else stop = unsub;

@@ -355,7 +355,7 @@ describe('addDestination', () => {
       p_address: '台北市信義區',
       p_latitude: 25.034,
       p_longitude: 121.564,
-      p_day: 1,
+      p_day: null,
       p_kind: 'stop',
       p_stay_anchor: false,
     });
@@ -507,7 +507,7 @@ describe('notifications, commands & journey', () => {
       p_group_id: 'g1',
       p_subgroup_id: 'sg1',
       p_items: [{
-        title: '車站', address: '台北市', latitude: 25.1, longitude: 121.5, day: 1,
+        title: '車站', address: '台北市', latitude: 25.1, longitude: 121.5, day: null,
       }],
     });
   });

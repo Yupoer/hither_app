@@ -44,7 +44,7 @@ describe('addDestinationsBatch', () => {
     expect(mockedRpc).toHaveBeenCalledWith('import_itinerary_batch', {
       p_group_id: 'g1',
       p_subgroup_id: 'sg',
-      p_day: 2,
+      p_day: null,
       p_items: [
         { title: 'A', latitude: 1, longitude: 2, address: null },
         { title: 'B', latitude: 3, longitude: 4, address: null },

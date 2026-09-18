@@ -84,8 +84,8 @@ export function resolveVisibleStartDay(
 
 export function sortDestinationsByDayOrder(destinations: Destination[]): Destination[] {
   return [...destinations].sort((a, b) => {
-    const dayA = a.day || 1;
-    const dayB = b.day || 1;
+    const dayA = a.day ?? 0;
+    const dayB = b.day ?? 0;
     if (dayA !== dayB) return dayA - dayB;
     return a.order - b.order;
   });
@@ -100,25 +100,25 @@ export function sortDestinationsByDayOrder(destinations: Destination[]): Destina
 export function promoteDestinationWithinDay(
   destinations: Destination[],
   destinationId: string,
-): { id: string; position: number; day: number }[] {
+): { id: string; position: number; day: number | null }[] {
   const sorted = sortDestinationsByDayOrder(destinations);
   const target = sorted.find((item) => item.id === destinationId);
   if (!target) {
     return sorted.map((item, position) => ({
       id: item.id,
       position,
-      day: item.day || 1,
+      day: item.day,
     }));
   }
-  const day = target.day || 1;
+  const day = target.day;
   const withoutTarget = sorted.filter((item) => item.id !== destinationId);
-  const dayStart = withoutTarget.findIndex((item) => (item.day || 1) === day);
+  const dayStart = withoutTarget.findIndex((item) => item.day === day);
   const insertAt = dayStart < 0 ? withoutTarget.length : dayStart;
   withoutTarget.splice(insertAt, 0, target);
   return withoutTarget.map((item, position) => ({
     id: item.id,
     position,
-    day: item.day || 1,
+    day: item.day,
   }));
 }
 
@@ -146,7 +146,7 @@ export function filterActiveDestinations(
   tripDays: number | null | undefined,
   now: Date = new Date(),
 ): Destination[] {
-  const open = destinations.filter((dest) => !dest.closedAt);
+  const open = destinations.filter((dest) => !dest.closedAt && dest.day != null);
   const current = currentTripDayNumber(departureDate, tripDays, now);
 
   // Gate off or trip not started ??all open stops.
@@ -167,7 +167,7 @@ export function filterActiveDestinations(
 export function nextOrderedDestination(
   destinations: Destination[],
 ): Destination | undefined {
-  return sortDestinationsByDayOrder(destinations)[0];
+  return sortDestinationsByDayOrder(destinations.filter(dest => dest.day != null))[0];
 }
 
 export interface AppendPositionPlan {
@@ -182,7 +182,7 @@ export interface AppendPositionPlan {
  * later day) shift right so day order stays contiguous.
  */
 export function positionForAppendOnDay(
-  existing: { id: string; order: number; day: number }[],
+  existing: { id: string; order: number; day: number | null }[],
   targetDay: number,
 ): AppendPositionPlan {
   const day = Math.max(1, targetDay || 1);
@@ -219,7 +219,7 @@ export interface BatchAppendPlan {
  * for every later row (avoids N full-list read/shift loops).
  */
 export function positionForBatchAppendOnDay(
-  existing: { id: string; order: number; day: number }[],
+  existing: { id: string; order: number; day: number | null }[],
   targetDay: number,
   count: number,
 ): BatchAppendPlan {

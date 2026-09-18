@@ -11,9 +11,10 @@ import { DAY_COLORS } from '../theme';
 import { destinationEmojiDisplay } from './destinationEmojiColor';
 
 export function getColorForDay(
-  day: number | undefined,
+  day: number | null | undefined,
   dayColors: Record<number, string>,
 ): string {
+  if (day === null || day === 0) return '#718096';
   if (!day) return dayColors[1] || DAY_COLORS[0];
   return dayColors[day] || DAY_COLORS[(day - 1) % DAY_COLORS.length];
 }
@@ -43,7 +44,7 @@ export function destinationMarkerEmoji(
 
 /** Callout description: "Day N · 住宿" / "Day N · Stay". */
 export function stayMarkerDescription(
-  day: number | undefined,
+  day: number | null | undefined,
   stayLabel: string,
 ): string {
   const d = Math.max(1, day || 1);

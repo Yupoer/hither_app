@@ -17,7 +17,7 @@ export interface ItineraryRow {
   id: string;
   title: string;
   position: number;
-  day: number;
+  day: number | null;
   address: string | null;
   latitude: number;
   longitude: number;
@@ -40,7 +40,7 @@ export function mapDestination(row: ItineraryRow): Destination {
     id: row.id,
     title: row.title,
     order: row.position,
-    day: row.day ?? 1,
+    day: row.day,
     address: row.address ?? undefined,
     coordinates: {
       latitude: row.latitude ?? 0,
@@ -67,7 +67,7 @@ export async function addDestination(
     title: string;
     address?: string;
     coordinates: Coordinates;
-    day?: number;
+    day?: number | null;
     /** Default stop; use accommodation for quick-add stay cards. */
     kind?: 'stop' | 'accommodation';
   },
@@ -76,7 +76,7 @@ export async function addDestination(
   if (isDemoGroup(groupId)) {
     return demoAddDestination({ ...input, subgroupId, kind: input.kind });
   }
-  const targetDay = Math.max(1, input.day ?? 1);
+  const targetDay = input.kind === 'accommodation' ? Math.max(1, input.day ?? 1) : input.day ?? null;
   const kind = input.kind === 'accommodation' ? 'accommodation' : 'stop';
   // Quick-add mid cards are never stay anchors; auto-add RPC sets anchors.
   const stayAnchor = false;
@@ -120,10 +120,10 @@ export async function addDestination(
 export async function addDestinationsBatch(
   groupId: string,
   items: NormalizedImportItem[],
-  options?: { day?: number; subgroupId?: string },
+  options?: { day?: number | null; subgroupId?: string },
 ): Promise<void> {
   if (!items.length) return;
-  const targetDay = Math.max(1, options?.day ?? 1);
+  const targetDay = null;
   const subgroupId = options?.subgroupId;
 
   if (isDemoGroup(groupId)) {
@@ -221,7 +221,7 @@ export async function reorderDestinations(
   updates: {
     id: string;
     position: number;
-    day: number;
+    day: number | null;
     meetAt?: string;
     stayAnchor?: boolean;
   }[],
@@ -237,7 +237,7 @@ export async function reorderDestinations(
     const row: {
       id: string;
       position: number;
-      day: number;
+      day: number | null;
       meet_at?: string | null;
       stay_anchor?: boolean;
     } = {

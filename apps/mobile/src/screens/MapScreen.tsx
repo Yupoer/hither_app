@@ -68,7 +68,7 @@ import {
   cameraOnLongPress,
   cameraOnSearchPick,
 } from '../utils/mapCameraFlow';
-import { notifyJourneyOperator } from '../state/journeyNotifications';
+import { notifyJourneyOperator, notifyJourneyApproach } from '../state/journeyNotifications';
 import {
   assessLocationRefreshResponses,
   waitForLocationRefreshResponses,
@@ -83,6 +83,7 @@ import {
 import DestinationSearch from '../components/DestinationSearch';
 import MeetCountdown from '../components/MeetCountdown';
 import DestinationReorderList from '../components/DestinationReorderList';
+import MetalforgeStarfield from '../components/MetalforgeStarfield';
 import NotificationPreferencesCard from '../components/NotificationPreferencesCard';
 import QuickCommandsCard from '../components/QuickCommandsCard';
 import CustomQuickCommandSheet from '../components/CustomQuickCommandSheet';
@@ -110,9 +111,6 @@ import {
   resolveNavCommand,
 } from '../utils/gatherCommand';
 import {
-  APPROACH_FIRED_STORAGE_KEY,
-  approachNotifyCopy,
-  approachNotifyKey,
   shouldFireApproachNotify,
 } from '../utils/approachNotify';
 import {
@@ -1841,12 +1839,12 @@ export default function MapScreen({ route, navigation }: Props) {
     refreshDeviceLocation,
     consumeForegroundSample,
   } = useDeviceLocation({
-    groupId: mapFocused ? groupId : null,
+    groupId: mapFocused || hasNavigationSession ? groupId : null,
     highAccuracy,
     teamNavigationActive: navigationSessionState.session?.status === 'active',
-    nativeMapLocationEnabled: Platform.OS === 'ios',
+    nativeMapLocationEnabled: Platform.OS === 'ios' && mapFocused,
     sharingEnabled: preferencesReady && sharingEnabled,
-    hasMembership: mapFocused && members.some(m => m.userId === user?.id),
+    hasMembership: (mapFocused || hasNavigationSession) && members.some(m => m.userId === user?.id),
   });
 
   // --- Carousel selection ---------------------------------------------------
@@ -1887,7 +1885,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // Bridge: handleReorder is declared later; navigation promote needs it first.
   const reorderForNavigationRef = useRef<
-    (updates: { id: string; position: number; day: number }[]) => Promise<boolean>
+    (updates: { id: string; position: number; day: number | null }[]) => Promise<boolean>
   >(async () => false);
 
   // --- Journey navigation + Live Activity ----------------------------------
@@ -2006,14 +2004,14 @@ export default function MapScreen({ route, navigation }: Props) {
   const handleSharingEnabledChange = useCallback(async (enabled: boolean) => {
     if (!user?.id) return false;
     if (enabled) {
-      await AsyncStorage.removeItem('pref.backgroundSharingExplained');
+      await AsyncStorage.removeItem('pref.journeyBackgroundExplained');
       const granted = await requestLocationPermission();
       if (!granted) return false;
     }
     setSharingEnabled(enabled);
     const pendingWrite = rememberLocationSharing(user.id, enabled).then(() => null, error => error);
     if (!enabled) {
-      await stopBackgroundJourney().catch(() => undefined);
+      await stopBackgroundJourney(true).catch(() => undefined);
       await purgeLocationOutbox().catch(() => undefined);
       if (navigationSessionState.session) {
         await navigationSessionState.ack('sharing_disabled', {
@@ -2102,18 +2100,6 @@ export default function MapScreen({ route, navigation }: Props) {
    */
   const remoteAutoCompleteDestIdsRef = useRef<Set<string>>(new Set());
   const arrivalSplitSeenRef = useRef<Set<string>>(new Set());
-  const approachFiredRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    void AsyncStorage.getItem(APPROACH_FIRED_STORAGE_KEY)
-      .then((raw) => {
-        if (!raw) return;
-        const keys = JSON.parse(raw) as string[];
-        if (Array.isArray(keys)) {
-          for (const key of keys) approachFiredRef.current.add(key);
-        }
-      })
-      .catch(() => undefined);
-  }, []);
   const [arrivalCelebrateDestId, setArrivalCelebrateDestId] = useState<string | null>(null);
   const [requestingStartDestId, setRequestingStartDestId] = useState<string | null>(null);
 
@@ -2526,6 +2512,9 @@ export default function MapScreen({ route, navigation }: Props) {
     navigationSessionState.session?.id,
   ]);
 
+  const backgroundJourneyWantedRef = useRef(false);
+  backgroundJourneyWantedRef.current = Boolean(journeyActive && navTarget && sharingEnabled);
+
   /**
    * Single foreground/background GPS owner:
    * - App active → foreground watch (useDeviceLocation); background task STOPPED.
@@ -2533,11 +2522,11 @@ export default function MapScreen({ route, navigation }: Props) {
    * Avoid overlapping GPS consumers; device measurements determine actual energy savings.
    */
   useEffect(() => {
-    if (!groupId || !mapFocused || !sharingEnabled || !preferencesReady || !members.some(m => m.userId === user?.id)) {
+    if (!groupId || !journeyActive || !navTarget || !sharingEnabled || !preferencesReady || !members.some(m => m.userId === user?.id)) {
       backgroundStartedKeyRef.current = null;
       backgroundPermissionAttemptedRef.current = null;
       setBackgroundPermissionsPreparedFor(null);
-      void stopBackgroundJourney();
+      void stopBackgroundJourney(true);
       return;
     }
 
@@ -2551,14 +2540,14 @@ export default function MapScreen({ route, navigation }: Props) {
         backgroundPermissionPrepareInFlightRef.current = groupId;
         backgroundPermissionAttemptedRef.current = groupId;
         void (async () => {
-          const key = 'pref.backgroundSharingExplained';
+          const key = 'pref.journeyBackgroundExplained';
           const saved = await AsyncStorage.getItem(key);
           if (!saved) {
             const accepted = await new Promise<boolean>(resolve => Alert.alert(
               language === 'en' ? 'Share location in the background' : '背景位置分享',
               language === 'en'
-                ? 'While sharing is on, Hither shares your location with this team even outside a journey. iOS may show a location indicator. Stop sharing pauses all location access. Closing the app stops updates until you reopen it.'
-                : '開啟分享時，即使沒有行程，Hither 仍會在背景向目前團隊分享位置。iOS 可能顯示定位提示。「停止分享」會停止所有定位；完全關閉 App 後，須再次開啟才會恢復。',
+                ? 'During an active journey, Hither shares your location with this team in the background. Background navigation stops when the journey ends or you stop sharing.'
+                : '行程進行中，Hither 會在背景向團隊分享位置。行程結束或停止分享後，背景導航定位會停止。',
               [{ text: language === 'en' ? 'Not now' : '暫時不要', style: 'cancel', onPress: () => resolve(false) },
                { text: language === 'en' ? 'Continue' : '繼續', onPress: () => resolve(true) }],
             ));
@@ -2569,6 +2558,7 @@ export default function MapScreen({ route, navigation }: Props) {
           return prepareBackgroundJourneyPermissions(true);
         })()
           .then((result) => {
+            if (!backgroundJourneyWantedRef.current) { void stopBackgroundJourney(true); return; }
             if (result === 'ready') {
               setBackgroundPermissionsPreparedFor(groupId);
             } else {
@@ -2905,8 +2895,6 @@ export default function MapScreen({ route, navigation }: Props) {
     const remaining = personalProgress.distanceMeters;
     const total = initialDistanceM;
     if (remaining == null || total == null) return;
-    const key = approachNotifyKey(navigationSessionState.session?.id, navTarget.id);
-    if (approachFiredRef.current.has(key)) return;
     if (!shouldFireApproachNotify({
       remainingM: remaining,
       totalM: total,
@@ -2914,20 +2902,10 @@ export default function MapScreen({ route, navigation }: Props) {
       arrived: personalProgress.arrived || localNavigationArrived,
       alreadyFired: false,
     })) return;
-    approachFiredRef.current.add(key);
-    const copy = approachNotifyCopy(navTarget.title);
-    void notifications.scheduleLocalNotification({
-      title: copy.title,
-      body: copy.body,
-      data: { kind: 'approach', destinationId: navTarget.id },
+    void notifyJourneyApproach(navigationSessionState.session?.id, navTarget.id, navTarget.title, {
+      remainingM: remaining, totalM: total, arrivalRadiusM: localArrivalRadiusM,
+      arrived: personalProgress.arrived || localNavigationArrived, alreadyFired: false,
     }).catch(() => undefined);
-    void AsyncStorage.getItem(APPROACH_FIRED_STORAGE_KEY)
-      .then((raw) => {
-        const prev = raw ? (JSON.parse(raw) as string[]) : [];
-        const next = Array.from(new Set([...prev, key]));
-        return AsyncStorage.setItem(APPROACH_FIRED_STORAGE_KEY, JSON.stringify(next));
-      })
-      .catch(() => undefined);
   }, [
     journeyActive,
     navTarget,
@@ -3081,11 +3059,9 @@ export default function MapScreen({ route, navigation }: Props) {
   // Preference (liveActivityEnabled) ≠ entitlement (store + Premium session).
   const liveActivityAllowed = liveActivityEnabled && (liveActivityEffective || isPro);
   useLiveActivity(
-    mapFocused && journeyActive
-      && !personalProgress.arrived
-      && !localNavigationArrived
-      && liveActivityAllowed
-      && !(preferencesReady && passiveCompanionMode),
+    !preferencesReady ? undefined : !liveActivityAllowed ? false
+      : hasNavigationSession || journeyActive ? true
+      : navigationSessionState.loading || navigationSessionState.error || loading || groupStateError ? undefined : false,
     {
     groupName: membership?.group.name ?? '',
     navigationSessionId: navigationSessionState.session?.id,
@@ -3382,7 +3358,7 @@ export default function MapScreen({ route, navigation }: Props) {
           title: place.name,
           address: place.address,
           coordinates: place.coordinates,
-          day: tripDayForAdd(),
+          day: null,
         }], 'search');
         return;
       }
@@ -3397,7 +3373,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const handlePickDestination = useCallback(async (place: PlaceResult): Promise<boolean> => {
     if (!groupId) return false;
-    const addDay = tripDayForAdd();
+    const addDay = null;
     const placeSource = pendingPlaceSourceRef.current ?? 'search';
     if (!canEditItinerary) {
       return notifyLeaderPlace([{
@@ -3434,7 +3410,6 @@ export default function MapScreen({ route, navigation }: Props) {
           );
           if (!token.isCurrent()) return false;
           logEvent('destination_add', { source: placeSource, day: addDay });
-          setSelectedIndex(destinations.length);
           // Long-press success: fit self + dest (or single-point fallback).
           // Search success: keep neighborhood center on the new pin (no regression).
           if (placeSource === 'longpress') {
@@ -3499,7 +3474,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const handleKmlImport = useCallback(async (items: KmlPlacemark[], onProgress: (done: number) => void) => {
     if (!groupId) return;
-    const addDay = tripDayForAdd();
+    const addDay = null;
     const importScopeId = kmlScopeId;
     const canEditImportScope = importScopeId ? isMySubgroupLeader : isLeader;
     // BUG-15: non-editors notify captain with place names instead of writing itinerary.
@@ -3571,7 +3546,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const handleCoordinateDestination = useCallback(
     async (input: CoordinateDestinationInput) => {
       if (!groupId) return;
-      const addDay = tripDayForAdd();
+      const addDay = null;
       if (!canEditItinerary) {
         const ok = await notifyLeaderPlace([{
           title: input.title,
@@ -3608,7 +3583,6 @@ export default function MapScreen({ route, navigation }: Props) {
             );
             if (!token.isCurrent()) return false;
             logEvent('destination_add', { source: 'coordinates', day: addDay });
-            setSelectedIndex(destinations.length);
             if (obliqueLocate) {
               mapRef.current?.focusOblique(input.coordinates, {
                 zoom: PLACE_ZOOM,
@@ -4345,7 +4319,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const applyReorderToDestinations = useCallback(
     (
       base: Destination[],
-      updates: { id: string; position: number; day: number; stayAnchor?: boolean }[],
+      updates: { id: string; position: number; day: number | null; stayAnchor?: boolean }[],
     ): Destination[] => {
       // Full open list (all trip days) — never day-gate the write slots.
       const openForSlots = openDestinationsForReorder(base);
@@ -4358,10 +4332,12 @@ export default function MapScreen({ route, navigation }: Props) {
         if (!dest) continue;
         dest.order = update.position;
         dest.day = update.day;
+        if (update.day == null) dest.meetAt = undefined;
         if (update.stayAnchor !== undefined) dest.stayAnchor = update.stayAnchor;
         const original = base.find((d) => d.id === update.id);
         if (
           departureDate
+          && update.day != null
           && original?.meetAt
           && (original.day || 1) !== update.day
         ) {
@@ -4373,7 +4349,7 @@ export default function MapScreen({ route, navigation }: Props) {
         }
       }
       newDests.sort((a, b) => {
-        if ((a.day || 1) !== (b.day || 1)) return (a.day || 1) - (b.day || 1);
+        if ((a.day ?? 0) !== (b.day ?? 0)) return (a.day ?? 0) - (b.day ?? 0);
         return a.order - b.order;
       });
       return newDests;
@@ -4382,21 +4358,28 @@ export default function MapScreen({ route, navigation }: Props) {
   );
 
   /**
-   * Route-editor reorder is local-only (Optimistic UI).
-   * Network write happens in flushRouteDraft when the sheet is dismissed.
+   * Persist saved places immediately; unmaterialized drafts flush on dismissal.
    */
   const handleReorder = useCallback(
     async (
-      updates: { id: string; position: number; day: number; stayAnchor?: boolean }[],
+      updates: { id: string; position: number; day: number | null; stayAnchor?: boolean }[],
     ): Promise<boolean> => {
       if (!groupId) return false;
+      if (updates.some(update => update.id === navTargetId && update.day == null)) {
+        Alert.alert(t('map.setFailedTitle'), t('trip.endBeforePool'));
+        return false;
+      }
+      const persisted = updates.every(update => !update.id.startsWith('draft-'));
+      if (persisted && !routeDraftDirtyRef.current.destinations) {
+        return reorderForNavigationRef.current(updates);
+      }
       logEvent('destination_reorder_local', { count: updates.length });
       const base = optimisticDestinationsRef.current ?? routeEditorServerDestinations;
       setOptimisticDestinations(applyReorderToDestinations(base, updates));
       routeDraftDirtyRef.current.destinations = true;
       return true;
     },
-    [groupId, routeEditorServerDestinations, applyReorderToDestinations],
+    [groupId, routeEditorServerDestinations, applyReorderToDestinations, navTargetId, t],
   );
 
   /**
@@ -4404,7 +4387,7 @@ export default function MapScreen({ route, navigation }: Props) {
    */
   const persistReorderNow = useCallback(
     async (
-      updates: { id: string; position: number; day: number; stayAnchor?: boolean }[],
+      updates: { id: string; position: number; day: number | null; stayAnchor?: boolean }[],
     ): Promise<boolean> => {
       if (!groupId) return false;
       const result = await runUiAction(
@@ -4423,7 +4406,7 @@ export default function MapScreen({ route, navigation }: Props) {
           const departureDate = optimisticDepartureDate ?? group?.departureDate;
           const persistedUpdates = withSlots.map((update) => {
             const original = base.find((dest) => dest.id === update.id);
-            if (!departureDate || !original?.meetAt || (original.day || 1) === update.day) {
+            if (update.day == null || !departureDate || !original?.meetAt || original.day === update.day) {
               return { ...update };
             }
             return {
@@ -4445,6 +4428,7 @@ export default function MapScreen({ route, navigation }: Props) {
             logError('destination_reorder_failed', e);
             if (token.isCurrent()) {
               Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
+              optimisticDestinationsRef.current = null;
               setOptimisticDestinations(null);
               refresh();
             }
@@ -4547,7 +4531,7 @@ export default function MapScreen({ route, navigation }: Props) {
                   title: dest.title,
                   address: dest.address,
                   coordinates: dest.coordinates,
-                  day: dest.day || 1,
+                  day: dest.day,
                   kind: dest.kind === 'accommodation' ? 'accommodation' : 'stop',
                 },
                 routeEditorScopeIdRef.current,
@@ -4585,7 +4569,7 @@ export default function MapScreen({ route, navigation }: Props) {
                     const date = dateForTripDay(dep, d.day || 1);
                     return date ? localDayKey(date) === stayDate : false;
                   });
-                  return match?.day;
+                  return match?.day ?? undefined;
                 })();
                 await clearDailyAccommodation(groupId, stayDate, day);
               }
@@ -4610,7 +4594,7 @@ export default function MapScreen({ route, navigation }: Props) {
                   const date = dateForTripDay(dep, d.day || 1);
                   return date ? localDayKey(date) === stayDate : false;
                 });
-                return match?.day;
+                return match?.day ?? undefined;
               })();
               // Never pass draft-* as FK-ish source id after materialize map.
               const sourceId = draftRow.sourceDestinationId;
@@ -4963,7 +4947,7 @@ export default function MapScreen({ route, navigation }: Props) {
     // Align meet times in the local destination draft (if any).
     const base = optimisticDestinationsRef.current ?? routeEditorServerDestinations;
     const aligned = base.map((destination) => {
-      if (!destination.meetAt) return destination;
+      if (!destination.meetAt || destination.day == null) return destination;
       const alignedMeetAt = alignMeetTimeToTripDay(
         new Date(destination.meetAt),
         date,
@@ -6601,7 +6585,7 @@ export default function MapScreen({ route, navigation }: Props) {
           members={members}
           showsUserLocation={appState === 'active' && mapFocused && preferencesReady && sharingEnabled && members.some(m => m.userId === user?.id)}
           gathering={activePoint}
-          destinations={destinations}
+          destinations={[...allScopedDestinations.filter(d => d.day == null && !d.closedAt), ...destinations]}
           dailyAccommodations={mapDailyAccommodations}
           stayCalloutLabel={t('stay.defaultTitle')}
           pendingPlace={pendingPlace}
@@ -7099,6 +7083,12 @@ export default function MapScreen({ route, navigation }: Props) {
                         Must NOT key off personallyArrived or dim stays forever.
                         Siblings of padded content so absolute fill covers padding
                         + expanded command row (expanded and collapsed). */}
+                    {journeyActive && navTarget?.id === dest.id && mapFocused && appState === 'active' ? (
+                      <Animated.View pointerEvents="none" entering={FadeIn.duration(300)} exiting={FadeOut.duration(300)}
+                        style={[StyleSheet.absoluteFill, { borderRadius: gatherCardRadius, overflow: 'hidden' }]}>
+                        <MetalforgeStarfield active={active} />
+                      </Animated.View>
+                    ) : null}
                     {arrivalCelebrateDestId === dest.id ? (
                       <View pointerEvents="none" style={styles.arrivalDimOverlay} />
                     ) : null}
@@ -7746,6 +7736,7 @@ export default function MapScreen({ route, navigation }: Props) {
             departureDate={optimisticDepartureDate ?? group?.departureDate}
             onUpdateTripDetails={handleUpdateTripDetails}
             onReorder={handleReorder}
+            activeDestinationId={navTargetId ?? undefined}
             onDelete={canEditItinerary ? handleDelete : undefined}
             onUpdateEmojiColor={canEditItinerary ? handleUpdateEmojiColor : undefined}
             onImport={() => { void openKmlImportForScope(routeEditorScopeId); }}
@@ -7866,8 +7857,8 @@ export default function MapScreen({ route, navigation }: Props) {
                       .sort((a, b) => a.order - b.order);
                     if (dayStops.length === 0) return;
                     const allSorted = openForRouteEditor.slice().sort((a, b) => {
-                      if ((a.day || 1) !== (b.day || 1)) {
-                        return (a.day || 1) - (b.day || 1);
+                      if ((a.day ?? 0) !== (b.day ?? 0)) {
+                        return (a.day ?? 0) - (b.day ?? 0);
                       }
                       return a.order - b.order;
                     });
@@ -7883,7 +7874,7 @@ export default function MapScreen({ route, navigation }: Props) {
                         longitude: 0,
                       };
                     const base = optimisticDestinationsRef.current ?? routeEditorServerDestinations;
-                    const sameDay = base.filter((d) => (d.day || 1) === day);
+                    const sameDay = base.filter((d) => d.day === day);
                     const insertOrder =
                       sameDay.length > 0
                         ? Math.max(...sameDay.map((d) => d.order)) + 1
@@ -7901,14 +7892,14 @@ export default function MapScreen({ route, navigation }: Props) {
                       subgroupId: routeEditorScopeId,
                     };
                     const shifted = base.map((d) => {
-                      if ((d.day || 1) !== day) return d;
+                      if (d.day !== day) return d;
                       if (d.order >= insertOrder) return { ...d, order: d.order + 1 };
                       return d;
                     });
                     setOptimisticDestinations(
                       [...shifted, draftCard].sort((a, b) => {
-                        if ((a.day || 1) !== (b.day || 1)) {
-                          return (a.day || 1) - (b.day || 1);
+                        if ((a.day ?? 0) !== (b.day ?? 0)) {
+                          return (a.day ?? 0) - (b.day ?? 0);
                         }
                         return a.order - b.order;
                       }),
@@ -7919,10 +7910,11 @@ export default function MapScreen({ route, navigation }: Props) {
             }
             onPickFavorite={
               canEditItinerary && groupId
-                ? (fav, day) => {
+                ? (fav, _day) => {
+                    const day = null;
                     // Local draft stop from favorites — flush on dismiss.
                     const base = optimisticDestinationsRef.current ?? routeEditorServerDestinations;
-                    const sameDay = base.filter((d) => (d.day || 1) === day);
+                    const sameDay = base.filter((d) => d.day === day);
                     const insertOrder =
                       sameDay.length > 0
                         ? Math.max(...sameDay.map((d) => d.order)) + 1
@@ -7939,14 +7931,14 @@ export default function MapScreen({ route, navigation }: Props) {
                       subgroupId: routeEditorScopeId,
                     };
                     const shifted = base.map((d) => {
-                      if ((d.day || 1) !== day) return d;
+                      if (d.day !== day) return d;
                       if (d.order >= insertOrder) return { ...d, order: d.order + 1 };
                       return d;
                     });
                     setOptimisticDestinations(
                       [...shifted, draftStop].sort((a, b) => {
-                        if ((a.day || 1) !== (b.day || 1)) {
-                          return (a.day || 1) - (b.day || 1);
+                        if ((a.day ?? 0) !== (b.day ?? 0)) {
+                          return (a.day ?? 0) - (b.day ?? 0);
                         }
                         return a.order - b.order;
                       }),

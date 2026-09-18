@@ -58,7 +58,7 @@ export async function clearLiveActivities(opts?: {
 }
 
 export function useLiveActivity(
-  active: boolean,
+  active: boolean | undefined,
   state: GroupActivityState,
   session?: LiveActivitySessionContext,
   liveActivitiesEnabled = true,
@@ -277,7 +277,7 @@ export function useLiveActivity(
           }
         })
         .catch(() => undefined);
-    } else if (!active) {
+    } else if (active === false) {
       // Journey off — clear native + DB sessions.
       // Do NOT tear down while active but session is still hydrating (GPS baseline).
       void reconciler
@@ -285,20 +285,10 @@ export function useLiveActivity(
         .catch(() => undefined);
     } else if (active && !session) {
       // Active journey but session not ready yet — leave existing activity alone.
-    } else {
-      // Active with session lost destination: stop native only.
-      void reconciler
-        .request({ kind: 'stop', clearSessions: false })
-        .catch(() => undefined);
-    }
+    } // Unknown/hydrating state must not end a native activity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, session?.destinationId]);
 
-  useEffect(() => {
-    return () => {
-      void reconcilerRef.current?.dispose().catch(() => undefined);
-    };
-  }, []);
 
   const arrivalSignature = state.memberArrived?.map((arrived) => (arrived ? '1' : '0')).join('');
   // BUG-05: emoji changes must also push a Live Activity update.

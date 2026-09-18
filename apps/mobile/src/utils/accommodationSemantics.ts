@@ -304,12 +304,13 @@ export function renumberReorderListDays(
   let day = 0;
   return order.map((entry) => {
     if (entry.type === 'header') {
+      if (entry.day === 0) return entry;
       day += 1;
       return { type: 'header' as const, day, id: `header-${day}` };
     }
     return {
       ...entry,
-      day: day > 0 ? day : 1,
+      day: day > 0 ? day : order[0]?.type === 'header' && order[0].day === 0 ? 0 : 1,
     };
   });
 }
@@ -401,7 +402,7 @@ export function legalDragIndicesForList(
     });
     const hPos = headerIndices.indexOf(movingIdx);
     // Day1 header is fixed.
-    if (hPos <= 0) {
+    if (hPos <= 0 || movingEntry.day <= 1) {
       return [movingIdx];
     }
     const prevHeaderIdx = headerIndices[hPos - 1];
@@ -448,10 +449,15 @@ export function legalDragIndicesForList(
   const firstHeaderIdx = order.findIndex((e) => e.type === 'header');
   for (let target = 0; target <= order.length; target++) {
     // Never offer "before the first day header" — that slot is not a day block.
-    if (firstHeaderIdx >= 0 && target < firstHeaderIdx && target !== movingIdx) {
+    if (firstHeaderIdx >= 0 && target <= firstHeaderIdx && target !== movingIdx) {
       continue;
     }
     const proposed = orderAfterDragMove(order, movingIdx, target);
+    if (movingEntry.kind === 'accommodation') {
+      const index = proposed.findIndex(entry => entry.id === movingId);
+      const header = proposed.slice(0, index).reverse().find(entry => entry.type === 'header');
+      if (header?.type === 'header' && header.day === 0) continue;
+    }
     if (proposedOrderPreservesBoundaryLocks(proposed, movingId)) {
       legal.add(target);
     }

@@ -1,3 +1,4 @@
+jest.mock('../state/journeyNotifications', () => ({ notifyJourneyApproach: jest.fn(async () => undefined) }));
 const mockAppState = { currentState: 'background' };
 jest.mock('react-native', () => ({ AppState: mockAppState }));
 jest.mock('expo-modules-core', () => ({ requireOptionalNativeModule: () => null }));
@@ -140,7 +141,9 @@ describe('background journey native task wiring', () => {
 
     await startBackgroundJourney({ ...baseConfig, navigationSessionId: null, sharingEnabled: false, permissionsPrepared: true });
     // A hidden sharing profile intentionally has no persisted tracking task.
-    await startBackgroundJourney({ ...baseConfig, navigationSessionId: null, permissionsPrepared: true });
+    await expect(startBackgroundJourney({ ...baseConfig, navigationSessionId: null, permissionsPrepared: true })).resolves.toBe('hidden');
+    await expect(loadBackgroundJourney()).resolves.toBeNull();
+    await startBackgroundJourney({ ...baseConfig, permissionsPrepared: true });
     const loaded = await loadBackgroundJourney();
     await mockAsyncStorage.setItem(BACKGROUND_JOURNEY_KEY, JSON.stringify({ ...loaded, sharingEnabled: false }));
     expect(mockStore.get(BACKGROUND_JOURNEY_KEY)).toEqual(expect.any(String));

@@ -742,7 +742,12 @@ export const zh = {
   'search.placeholder': '輸入地址或地點名稱',
   'search.sheetTitle': '搜尋地點',
   'search.searching': '搜尋中…',
+  'trip.moveTo': '移至天數或獨立池',
+  'trip.endBeforePool': '請先結束此地點的導航，再移回獨立池',
+  'trip.pool': '獨立池',
   'search.noResults': '找不到相符的地點',
+  'search.failed': '搜尋失敗或逾時，請修改關鍵字重試，或長按地圖標記',
+  'search.quota': '搜尋額度已用完，可長按地圖標記',
   'search.longPressHint': '長按地圖也可以標記並新增地點',
 
   // Group map (web fallback)

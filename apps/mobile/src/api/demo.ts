@@ -93,7 +93,7 @@ export function getDemoState(
     members,
     destinations,
     subgroups: state.subgroups.map((s) => ({ ...s })),
-    nextDestination: destinations[0],
+    nextDestination: destinations.find(dest => dest.day != null && !dest.closedAt),
   };
 }
 
@@ -130,21 +130,21 @@ export function demoAddDestination(input: {
   title: string;
   address?: string;
   coordinates: Coordinates;
-  day?: number;
+  day?: number | null;
   /** Scope stop to a 小隊; omit/undefined = main team itinerary. */
   subgroupId?: string;
   kind?: 'stop' | 'accommodation';
 }): string {
-  const targetDay = Math.max(1, input.day ?? 1);
+  const targetDay = input.kind === 'accommodation' ? Math.max(1, input.day ?? 1) : input.day ?? null;
   const scoped = state.destinations.filter((d) =>
     input.subgroupId ? d.subgroupId === input.subgroupId : d.subgroupId == null,
   );
-  const sameDay = scoped.filter((d) => (d.day || 1) === targetDay);
+  const sameDay = scoped.filter((d) => d.day === targetDay);
   let insertOrder: number;
   if (sameDay.length > 0) {
     insertOrder = Math.max(...sameDay.map((d) => d.order)) + 1;
   } else {
-    const earlier = scoped.filter((d) => (d.day || 1) < targetDay);
+    const earlier = scoped.filter((d) => (d.day ?? 0) < (targetDay ?? 0));
     insertOrder =
       earlier.length > 0 ? Math.max(...earlier.map((d) => d.order)) + 1 : 0;
   }
@@ -177,7 +177,7 @@ export function demoAddDestinationsBatch(
     title: string;
     address?: string;
     coordinates: Coordinates;
-    day?: number;
+    day?: number | null;
     subgroupId?: string;
   }[],
 ): void {

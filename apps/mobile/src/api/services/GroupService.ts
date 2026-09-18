@@ -357,7 +357,7 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
     members,
     destinations,
     subgroups,
-    nextDestination: destinations[0],
+    nextDestination: destinations.find(dest => dest.day != null && !dest.closedAt),
     dailyAccommodations,
   };
 }
@@ -429,7 +429,7 @@ export async function getGroupRecoverySnapshot(
       members,
       destinations,
       subgroups,
-      nextDestination: destinations[0],
+      nextDestination: destinations.find(dest => dest.day != null && !dest.closedAt),
       dailyAccommodations,
     },
     generatedAt,

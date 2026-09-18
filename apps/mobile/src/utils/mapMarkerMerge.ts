@@ -17,7 +17,7 @@ export interface MapMarkerInput {
   coordinates: Coordinates;
   kind: MapMarkerKind;
   /** Destination / stay day (1-based). */
-  day?: number;
+  day?: number | null;
   emoji?: string | null;
   markerColor?: string | null;
   /** When daily accommodation was copied from a destination id. */
@@ -30,7 +30,7 @@ export type DailyAccommodationMarker = {
   coordinates: Coordinates;
   sourceDestinationId?: string | null;
   /** Trip day for bed marker color / callout (1-based). */
-  day?: number;
+  day?: number | null;
 };
 
 function isBedKind(kind: MapMarkerKind, destKind?: string | null): boolean {
@@ -39,7 +39,7 @@ function isBedKind(kind: MapMarkerKind, destKind?: string | null): boolean {
 }
 
 /** Dedupe key: same coords on different days keep separate markers. */
-function markerSlotKey(coords: Coordinates, day?: number): string {
+function markerSlotKey(coords: Coordinates, day?: number | null): string {
   const coord = coordinateDedupeKey(coords);
   if (typeof day === 'number' && day > 0) return `${coord}|d${day}`;
   return coord;

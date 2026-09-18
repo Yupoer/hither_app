@@ -94,7 +94,7 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
 
   it('keeps itinerary editing and flag colours leader-only', () => {
     expect(mapScreen).toContain('const canEditItinerary = Boolean(isLeader || isMySubgroupLeader)');
-    expect(reorderList).toContain('canEditColors={canReorder}');
+    expect(reorderList).toContain('canEditColors={canReorder && item.day > 0}');
     expect(migrations).toContain('drop policy if exists "itinerary_items: insert if in that subgroup"');
   });
 

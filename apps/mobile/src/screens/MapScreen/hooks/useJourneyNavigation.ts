@@ -56,7 +56,7 @@ interface UseJourneyNavigationParams {
   refreshNavigationSession?: () => Promise<NavigationSession | null>;
   createRequestId?: () => string;
   reorderForNavigation?: (
-    updates: { id: string; position: number; day: number }[],
+    updates: { id: string; position: number; day: number | null }[],
   ) => Promise<boolean>;
   travelMode?: TravelMode;
   onOptimisticGathering?: (gathering: ActiveGatheringState) => void;

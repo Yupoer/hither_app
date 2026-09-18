@@ -17,6 +17,11 @@ public class HitherLocationModule: Module {
 
   public func definition() -> ModuleDefinition {
     Name("HitherLocation")
+    // Protected data is a conservative lock signal, not a screen-on detector.
+    AsyncFunction("isDeviceLocked") { () -> Bool? in
+      if UIApplication.shared.applicationState == .active { return false }
+      return UIApplication.shared.isProtectedDataAvailable ? nil : true
+    }.runOnQueue(.main)
     Events("onBackgroundLocation", "onBackgroundLocationError")
 
     OnAppBecomesActive { self.foregroundSeen = true }
