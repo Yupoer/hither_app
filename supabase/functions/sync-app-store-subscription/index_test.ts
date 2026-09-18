@@ -17,6 +17,8 @@ const envValues: Record<string, string> = {
   SUPABASE_URL: 'https://example.supabase.co',
   SUPABASE_ANON_KEY: 'anon',
   SUPABASE_SERVICE_ROLE_KEY: 'service',
+  SUPABASE_SECRET_KEYS: '{"default":"new-secret"}',
+  SUPABASE_JWT_SECRET: 'jwt-secret',
 };
 
 const transactionPayload = {
@@ -48,14 +50,53 @@ function request(
     const payload = btoa(JSON.stringify({ role: 'authenticated', sub: USER_ID }));
     authorization = `Bearer header.${payload}.sig`;
   }
+  return requestWithCredentials(body, authorization);
+}
+
+function requestWithCredentials(
+  body: Record<string, unknown>,
+  authorization: string | null,
+  apiKey?: string,
+): Request {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (authorization) headers.Authorization = authorization;
+  if (apiKey) headers.apikey = apiKey;
   return new Request('https://example.test/sync-app-store-subscription', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: authorization,
-    },
+    headers,
     body: JSON.stringify(body),
   });
+}
+
+function base64UrlJson(value: unknown): string {
+  const bytes = new TextEncoder().encode(JSON.stringify(value));
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+async function signedServiceJwt(
+  claims: Record<string, unknown> = {},
+): Promise<string> {
+  const header = base64UrlJson({ alg: 'HS256', typ: 'JWT' });
+  const payload = base64UrlJson({
+    role: 'service_role',
+    exp: 1_800_000_100,
+    ...claims,
+  });
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(envValues.SUPABASE_JWT_SECRET),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const signature = new Uint8Array(
+    await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${header}.${payload}`)),
+  );
+  let binary = '';
+  for (const byte of signature) binary += String.fromCharCode(byte);
+  return `${header}.${payload}.${btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')}`;
 }
 
 async function read(response: Response): Promise<Record<string, unknown>> {
@@ -192,6 +233,126 @@ Deno.test('service_role bound originalTransactionId apply is idempotent', async 
   }
 });
 
+Deno.test('new secret key API auth preserves bound service sync without anon key', async () => {
+  const handler = createSyncHandler({
+    env: (name) => name === 'SUPABASE_ANON_KEY' ? undefined : envValues[name],
+    now: () => 1_800_000_010_000,
+    connectJwt: 'test-connect-jwt',
+    verifyJws: () => Promise.resolve({
+      ok: true as const,
+      header: { alg: 'ES256' },
+      payload: transactionPayload as never,
+      jwsSha256: 'hash-txn',
+    }),
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        data: [{ lastTransactions: [{ signedTransactionInfo: 'apple-jws' }] }],
+      }),
+    }),
+    createAdmin: () => ({
+      rpc: async () => ({
+        data: { ok: true, durable: true, duplicate: false, status: 'active' },
+        error: null,
+      }),
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: { user_id: USER_ID, app_account_token: ACCOUNT_TOKEN, environment: 'Sandbox' },
+                error: null,
+              }),
+            }),
+          }),
+        }),
+      }),
+    }),
+  });
+  const response = await handler(requestWithCredentials(
+    { originalTransactionId: ORIGINAL, environment: 'Sandbox' },
+    null,
+    'new-secret',
+  ));
+  const result = await read(response);
+  if (response.status !== 200 || result.durable !== true) {
+    throw new Error(`expected secret-key service sync, got ${response.status}`);
+  }
+});
+
+Deno.test('signed service JWT remains accepted while expired service JWT is rejected', async () => {
+  let appleCalls = 0;
+  const handler = createSyncHandler({
+    env: (name) => envValues[name],
+    now: () => 1_800_000_010_000,
+    connectJwt: 'test-connect-jwt',
+    fetchImpl: async () => {
+      appleCalls += 1;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: [{ lastTransactions: [{ signedTransactionInfo: 'apple-jws' }] }],
+        }),
+      };
+    },
+    verifyJws: () => Promise.resolve({
+      ok: true as const,
+      header: { alg: 'ES256' },
+      payload: transactionPayload as never,
+      jwsSha256: 'hash-txn',
+    }),
+    createUser: () => ({
+      auth: {
+        getUser: async () => ({ data: { user: null }, error: new Error('invalid jwt') }),
+      },
+    }),
+    createAdmin: () => ({
+      rpc: async () => ({ data: { ok: true, durable: true }, error: null }),
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: { user_id: USER_ID, app_account_token: ACCOUNT_TOKEN, environment: 'Sandbox' },
+                error: null,
+              }),
+            }),
+          }),
+        }),
+      }),
+    }),
+  });
+  const valid = await signedServiceJwt();
+  const validResponse = await handler(requestWithCredentials(
+    { originalTransactionId: ORIGINAL, environment: 'Sandbox' },
+    `Bearer ${valid}`,
+  ));
+  if (validResponse.status !== 200) {
+    throw new Error(`expected signed service JWT to work, got ${validResponse.status}`);
+  }
+
+  for (const invalid of [
+    await signedServiceJwt({ exp: 1_800_000_009 }),
+    await signedServiceJwt({ exp: undefined }),
+    await signedServiceJwt({ exp: '1800000100' }),
+    await signedServiceJwt({ nbf: 1_800_000_011 }),
+    await signedServiceJwt({ role: 'authenticated' }),
+    'broken.payload.!!!',
+  ]) {
+    const response = await handler(requestWithCredentials(
+      { originalTransactionId: ORIGINAL, environment: 'Sandbox' },
+      `Bearer ${invalid}`,
+    ));
+    const result = await read(response);
+    if (response.status !== 401 || result.error !== 'not_authenticated') {
+      throw new Error(`expected invalid service JWT rejection, got ${response.status}`);
+    }
+  }
+  if (appleCalls !== 1) throw new Error('invalid service JWT must not call Apple');
+});
+
 Deno.test('user JWT cannot sync another user originalTransactionId', async () => {
   const handler = createSyncHandler({
     env: (name) => envValues[name],
@@ -214,10 +375,37 @@ Deno.test('user JWT cannot sync another user originalTransactionId', async () =>
       }),
     }),
   });
-  const response = await handler(request({ originalTransactionId: ORIGINAL }));
-  const result = await read(response);
-  if (response.status !== 422 || result.error !== 'transaction_binding_mismatch') {
-    throw new Error(`expected binding mismatch, got ${response.status} ${result.error}`);
+  const body = { originalTransactionId: ORIGINAL };
+  for (const req of [
+    request(body),
+    requestWithCredentials(body, request(body).headers.get('Authorization'), 'new-secret'),
+  ]) {
+    const response = await handler(req);
+    const result = await read(response);
+    if (response.status !== 422 || result.error !== 'transaction_binding_mismatch') {
+      throw new Error(`expected binding mismatch, got ${response.status} ${result.error}`);
+    }
+  }
+});
+
+Deno.test('invalid user Bearer cannot fall back to a proxy service apikey', async () => {
+  let userChecks = 0;
+  const handler = createSyncHandler({
+    env: (name) => envValues[name],
+    createUser: () => ({ auth: { getUser: async () => {
+      userChecks += 1;
+      return { data: { user: null }, error: new Error('invalid user') };
+    } } }),
+    createAdmin: () => ({
+      rpc: () => { throw new Error('must not write'); },
+      from: () => { throw new Error('must not query service data'); },
+    }),
+  });
+  const response = await handler(requestWithCredentials(
+    { signedTransaction: 'untrusted' }, 'Bearer invalid-user', 'new-secret',
+  ));
+  if (response.status !== 401 || userChecks !== 1) {
+    throw new Error('mixed credentials must fail user authentication without service fallback');
   }
 });
 

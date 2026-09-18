@@ -36,4 +36,13 @@ describe('diagnostic consent', () => {
     expect(source).not.toMatch(/__DEV__/);
     expect(consent.isDiagnosticConsentEnabled()).toBe(false);
   });
+
+  it('does not restore stale consent when it is revoked during hydration', async () => {
+    const consent = await import('../state/diagnosticConsent');
+    mockStorage.set(consent.DIAGNOSTIC_CONSENT_KEY, 'true');
+    const hydration = consent.getDiagnosticConsentEnabled();
+    await consent.setDiagnosticConsentEnabled(false);
+    await expect(hydration).resolves.toBe(false);
+    expect(consent.isDiagnosticConsentEnabled()).toBe(false);
+  });
 });

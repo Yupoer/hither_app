@@ -3,6 +3,20 @@
   "description": "L1 meta gate: each child acceptance maps to a real test. FULL_IMPLEMENT must append entries for the parent being delivered. Empty entries is valid only when META_PARENT=pure-chore (PR body: <!-- hither-test-meta parent: pure-chore -->). Required parent ids fail L1 if zero matching entries.",
   "entries": [
     {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "An in-flight preference read cannot restore diagnostic consent after the user revokes it.",
+      "testFile": "diagnosticConsent.test.ts",
+      "testNamePattern": "does not restore stale consent when it is revoked during hydration"
+    },
+    {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "Optional ad diagnostics respect consent at collection and upload, including queued data after revocation.",
+      "testFile": "diagnostics.test.ts",
+      "testNamePattern": "purges queued ad diagnostics when consent is revoked before upload"
+    },
+    {
       "parent": 187,
       "child": 188,
       "acceptance": "Group tour pane and target geometry commit atomically; Add Place highlights the favorite star.",

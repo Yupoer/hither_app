@@ -15,8 +15,8 @@ name: CI
 # EAS Build/Submit remains a separate release step (not auto-triggered here).
 #
 # On failure on the default branch, the `open-issue` job files a deduped GitHub issue
-# labelled `ci-failure` + `claude-fix`, which the claude-fix workflow picks up to open a
-# fix PR automatically.
+# labelled `ci-failure` + `claude-fix` for triage. A maintainer can dispatch the
+# Claude Fix workflow after reviewing the report; issue events do not run an agent.
 
 on:
   push:
@@ -161,7 +161,8 @@ jobs:
             supabase/functions/_shared/storekit_test.ts \
             supabase/functions/verify-and-apply-purchase/index_test.ts \
             supabase/functions/apple-server-notifications/index_test.ts \
-            supabase/functions/sync-app-store-subscription/index_test.ts
+            supabase/functions/sync-app-store-subscription/index_test.ts \
+            supabase/functions/admob-reward-callback/ssv_test.ts
 
       - uses: supabase/setup-cli@v1
         if: steps.scope.outputs.product == 'true'
@@ -183,6 +184,8 @@ jobs:
           supabase test db --local supabase/tests/storekit_purchase_ledger.test.sql
           supabase test db --local supabase/tests/premium_projection.test.sql
           supabase test db --local supabase/tests/premium_anonymous_cleanup_skip.test.sql
+          supabase test db --local supabase/tests/database_security_role_matrix.test.sql
+          supabase test db --local supabase/tests/anonymous_expiry_is_member.test.sql
 
   # Turn a red build on the default branch into an actionable, deduped issue.
   open-issue:

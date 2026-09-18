@@ -98,5 +98,10 @@
     "react-test-renderer": "19.2.3",
     "ts-jest": "^29.2.5",
     "typescript": "~6.0.3"
+  },
+  "overrides": {
+    "xcode": {
+      "uuid": "11.1.1"
+    }
   }
 }

@@ -53,7 +53,7 @@ export interface DiagnosticInput {
   canRequestAds?: boolean;
   consentFormShown?: boolean;
   errCode?: string;
-  /** Truncated / redacted SDK message (≤120). */
+  /** SDK text accepted from callers but never persisted or uploaded. */
   errMsg?: string;
   /** Last 6 of ad unit id only. */
   unitSuffix?: string;
@@ -251,13 +251,12 @@ const ALLOWED_FIELDS = [
   'canRequestAds',
   'consentFormShown',
   'errCode',
-  'errMsg',
   'unitSuffix',
   'sessionTail',
   'buildNumber',
 ] as const;
 
-/** Temporary: store ad trail always records so field failures are diagnosable without consent toggle. */
+/** Identifies ad failures for the consent-gated upload scheduler. */
 export function isStoreAdDiagnosticEvent(event: string): boolean {
   return event.startsWith('store_ad_');
 }
@@ -275,6 +274,10 @@ function sanitize(input: DiagnosticInput): DiagnosticPayload {
     ) payload[field] = value;
   }
   return payload;
+}
+
+function sanitizeRecord(record: DiagnosticRecord): DiagnosticRecord {
+  return { ...record, payload: sanitize({ ...record.payload, event: record.event }) };
 }
 
 type DiagnosticUploader = (
@@ -311,15 +314,14 @@ export function createDiagnostics(
   const list = async (limit = MAX_RECORDS): Promise<DiagnosticRecord[]> => {
     await initialize();
     await cleanup();
-    return database.list(Math.min(MAX_RECORDS, Math.max(0, limit)));
+    return (await database.list(Math.min(MAX_RECORDS, Math.max(0, limit)))).map(sanitizeRecord);
   };
 
   return {
     write(input: DiagnosticInput): Promise<void> {
       return runSerial(async () => {
         const storeAd = isStoreAdDiagnosticEvent(input.event);
-        // store_ad_* always records (field debug); everything else needs consent.
-        if (!storeAd && !(await getDiagnosticConsentEnabled())) return;
+        if (!(await getDiagnosticConsentEnabled())) return;
         await initialize();
         if (
           mode === 'minimal' &&
@@ -352,24 +354,24 @@ export function createDiagnostics(
     flush(): Promise<{ sent: number; remaining: number }> {
       return runSerial(async () => {
         await initialize();
-        const consent = await getDiagnosticConsentEnabled();
-        let pending = await database.getPending(MAX_UPLOAD_BATCH);
-        // Without consent, still upload store_ad_* so watch-ad failures reach backend.
-        if (!consent) {
-          pending = pending.filter((record) => isStoreAdDiagnosticEvent(record.event));
+        if (!(await getDiagnosticConsentEnabled())) {
+          await database.purgeUnuploaded();
+          return { sent: 0, remaining: 0 };
         }
+        const pending = (await database.getPending(MAX_UPLOAD_BATCH)).map(sanitizeRecord);
         if (pending.length === 0) {
           await cleanup();
           return {
             sent: 0,
-            remaining: consent
-              ? await database.pendingCount()
-              : (await database.getPending(MAX_RECORDS)).filter((r) =>
-                  isStoreAdDiagnosticEvent(r.event),
-                ).length,
+            remaining: await database.pendingCount(),
           };
         }
         let result: DiagnosticBatchResult;
+        // Consent can change while SQLite reads are in flight.
+        if (!(await getDiagnosticConsentEnabled())) {
+          await database.purgeUnuploaded();
+          return { sent: 0, remaining: 0 };
+        }
         try {
           result = await upload(pending, metadata);
         } catch {
@@ -449,7 +451,7 @@ export type StoreAdStepInput = Omit<DiagnosticInput, 'event'> & {
 };
 
 /**
- * Fine-grained store rewarded-ad trail. Always persisted (consent bypass) and
+ * Fine-grained store rewarded-ad trail. Persisted only with diagnostic consent and
  * flushed quickly on failures / terminal phases so field failures are locatable.
  */
 export async function logStoreAdStep(input: StoreAdStepInput): Promise<void> {

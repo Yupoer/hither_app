@@ -171,7 +171,8 @@ describe('#235 App Store Server API contract', () => {
   });
 
   it('A2 service_role and already-bound originalTransactionId fetches Apple status', () => {
-    expect(syncFn).toContain("role === 'service_role'");
+    expect(syncFn).toContain("payload.role !== 'service_role'");
+    expect(syncFn).toContain('payload.exp <= nowSeconds');
     expect(syncFn).toContain('isVerifiedServiceRole');
     expect(syncFn).toContain('fetchSubscriptionStatuses');
     expect(syncFn).not.toContain('decodeJwtRole');

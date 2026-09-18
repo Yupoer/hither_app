@@ -20,7 +20,8 @@ export function getDiagnosticConsentEnabled(): Promise<boolean> {
   if (hydrated) return Promise.resolve(enabled);
   if (!hydration) {
     hydration = AsyncStorage.getItem(DIAGNOSTIC_CONSENT_KEY)
-      .then(hydrateDiagnosticConsent)
+      // A user choice made during the read takes precedence over stored state.
+      .then((value) => hydrated ? enabled : hydrateDiagnosticConsent(value))
       .finally(() => {
         hydration = null;
       });

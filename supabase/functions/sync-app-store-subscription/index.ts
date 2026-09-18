@@ -123,52 +123,91 @@ function base64UrlToBytes(part: string): Uint8Array {
   return bytes;
 }
 
-async function verifiedHs256Role(token: string, secret: string): Promise<string | null> {
-  const parts = token.split('.');
-  if (parts.length !== 3) return null;
-  const [headerPart, payloadPart, signaturePart] = parts;
-  let header: { alg?: string };
+async function verifiedHs256Role(
+  token: string,
+  secret: string,
+  nowMs: number,
+): Promise<string | null> {
   try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const [headerPart, payloadPart, signaturePart] = parts;
+    let header: { alg?: string };
     header = JSON.parse(new TextDecoder().decode(base64UrlToBytes(headerPart))) as { alg?: string };
-  } catch {
-    return null;
-  }
-  if (header.alg !== 'HS256') return null;
-  const key = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  );
-  const expected = new Uint8Array(
-    await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${headerPart}.${payloadPart}`)),
-  );
-  const actual = base64UrlToBytes(signaturePart);
-  if (expected.length !== actual.length) return null;
-  let mismatch = 0;
-  for (let i = 0; i < expected.length; i += 1) mismatch |= expected[i] ^ actual[i];
-  if (mismatch !== 0) return null;
-  try {
     const payload = JSON.parse(new TextDecoder().decode(base64UrlToBytes(payloadPart))) as {
-      role?: string;
+      role?: unknown;
+      exp?: unknown;
+      nbf?: unknown;
     };
-    return typeof payload.role === 'string' ? payload.role : null;
+    if (header.alg !== 'HS256' || payload.role !== 'service_role') return null;
+    if (typeof payload.exp !== 'number' || !Number.isFinite(payload.exp)) return null;
+    const nowSeconds = Math.floor(nowMs / 1000);
+    if (payload.exp <= nowSeconds) return null;
+    if (payload.nbf !== undefined) {
+      if (typeof payload.nbf !== 'number' || !Number.isFinite(payload.nbf) || payload.nbf > nowSeconds) {
+        return null;
+      }
+    }
+
+    const key = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(secret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign'],
+    );
+    const expected = new Uint8Array(
+      await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${headerPart}.${payloadPart}`)),
+    );
+    const actual = base64UrlToBytes(signaturePart);
+    if (expected.length !== actual.length) return null;
+    let mismatch = 0;
+    for (let i = 0; i < expected.length; i += 1) mismatch |= expected[i] ^ actual[i];
+    return mismatch === 0 ? 'service_role' : null;
   } catch {
     return null;
   }
 }
 
+function secretKeyValues(env: (name: string) => string | undefined): string[] {
+  const raw = env('SUPABASE_SECRET_KEYS');
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return Object.values(parsed).filter(
+      (value): value is string => typeof value === 'string' && value.length > 0,
+    );
+  } catch {
+    return [];
+  }
+}
+
 async function isVerifiedServiceRole(
-  bearer: string,
+  credential: string,
   env: (name: string) => string | undefined,
+  nowMs: number,
 ): Promise<boolean> {
-  const serviceKey = env('SUPABASE_SERVICE_ROLE_KEY');
-  if (serviceKey && timingSafeEqual(bearer, serviceKey)) return true;
+  if (!credential) return false;
+  const knownKeys = [env('SUPABASE_SERVICE_ROLE_KEY'), ...secretKeyValues(env)]
+    .filter((value): value is string => typeof value === 'string' && value.length > 0);
+  if (knownKeys.some((key) => timingSafeEqual(credential, key))) return true;
   const jwtSecret = env('SUPABASE_JWT_SECRET') ?? env('JWT_SECRET');
   if (!jwtSecret) return false;
-  const role = await verifiedHs256Role(bearer, jwtSecret);
-  return role === 'service_role';
+  return await verifiedHs256Role(credential, jwtSecret, nowMs) === 'service_role';
+}
+
+function publicApiKey(env: (name: string) => string | undefined): string | null {
+  const publishableKeys = env('SUPABASE_PUBLISHABLE_KEYS');
+  if (publishableKeys) {
+    try {
+      const defaultKey = (JSON.parse(publishableKeys) as Record<string, unknown>).default;
+      if (typeof defaultKey === 'string' && defaultKey.length > 0) return defaultKey;
+    } catch {
+      // Legacy anon key below.
+    }
+  }
+  const legacyKey = env('SUPABASE_ANON_KEY');
+  return legacyKey && legacyKey.length > 0 ? legacyKey : null;
 }
 
 function applyStatus(error: string): number {
@@ -255,15 +294,17 @@ export function createSyncHandler(
     if (req.method !== 'POST') return json(405, { ok: false, error: 'method_not_allowed' });
 
     const authorization = req.headers.get('Authorization');
-    if (!authorization?.startsWith('Bearer ')) {
+    const bearer = authorization?.startsWith('Bearer ')
+      ? authorization.slice('Bearer '.length).trim()
+      : '';
+    const apiKey = req.headers.get('apikey')?.trim() ?? '';
+    if (!bearer && !apiKey) {
       outcomeLog('missing_auth');
       return json(401, { ok: false, error: 'not_authenticated' });
     }
-    const bearer = authorization.slice('Bearer '.length).trim();
 
     const supabaseUrl = env('SUPABASE_URL');
-    const anonKey = env('SUPABASE_ANON_KEY');
-    if (!supabaseUrl || !anonKey) return json(503, { ok: false, error: 'server_configuration_missing' });
+    if (!supabaseUrl) return json(503, { ok: false, error: 'server_configuration_missing' });
 
     const baseConfig = storeKitConfigFromEnv(env);
     const secrets = appStoreServerSecretsFromEnv(env);
@@ -287,10 +328,12 @@ export function createSyncHandler(
       return json(400, { ok: false, error: 'invalid_body' });
     }
 
-    const admin = createAdmin(supabaseUrl, adminKey(env));
-    const isService = await isVerifiedServiceRole(bearer, env);
+    // A forwarded user Bearer must never inherit a proxy's privileged API key.
+    // Invalid Bearers also fail as users instead of falling back to service.
+    const isService = await isVerifiedServiceRole(bearer || apiKey, env, now());
 
     if (isService) {
+      const admin = createAdmin(supabaseUrl, adminKey(env));
       const originalTransactionId = requiredString(body, 'originalTransactionId', 'original_transaction_id');
       const environment = (requiredString(body, 'environment') ?? 'Production') as StoreKitEnvironment;
       if (!originalTransactionId) {
@@ -349,7 +392,19 @@ export function createSyncHandler(
       return last ?? json(503, { ok: false, error: 'apple_subscription_missing' });
     }
 
-    const userClient = createUser(supabaseUrl, anonKey, authorization);
+    if (!bearer) {
+      outcomeLog('invalid_auth');
+      return json(401, { ok: false, error: 'not_authenticated' });
+    }
+    const anonKey = publicApiKey(env);
+    if (!anonKey) return json(503, { ok: false, error: 'server_configuration_missing' });
+    const admin = createAdmin(supabaseUrl, adminKey(env));
+    const userAuthorization = authorization?.startsWith('Bearer ') ? authorization : null;
+    if (!userAuthorization) {
+      outcomeLog('invalid_auth');
+      return json(401, { ok: false, error: 'not_authenticated' });
+    }
+    const userClient = createUser(supabaseUrl, anonKey, userAuthorization);
     const { data: userData, error: userError } = await userClient.auth.getUser();
     if (userError || !userData.user) {
       outcomeLog('invalid_auth');

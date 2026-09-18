@@ -28,6 +28,9 @@ jest.mock('../state/logBatchScheduler', () => ({
 
 import {
   createDiagnostics,
+  SQLiteDiagnosticDatabase,
+  diagnostics as sharedDiagnostics,
+  logStoreAdStep,
   type DiagnosticDatabase,
   type DiagnosticRecord,
 } from '../state/diagnostics';
@@ -92,6 +95,53 @@ const metadata = {
   appVersion: '0.1.3',
 };
 
+it('uses parameterized SQLite writes and purges only pending diagnostics', async () => {
+  const row = { id: 'row', timestamp: 1, session_id: 'session', event: 'store_ad_load',
+    navigation_session_id: null, payload: '{"success":false}', attempts: 0, uploaded_at: null };
+  const sqlite = {
+    runAsync: jest.fn(async () => undefined),
+    getAllAsync: jest.fn(async () => [row]),
+    getFirstAsync: jest.fn(async () => ({ count: 1 })),
+    withTransactionAsync: async (operation: () => Promise<void>) => operation(),
+  };
+  const open = jest.fn(async () => sqlite as never);
+  const database = new SQLiteDiagnosticDatabase(open);
+  await database.initialize();
+  const records = await database.list(10);
+  expect(records[0]).toMatchObject({ sessionId: 'session', payload: { success: false }, uploadedAt: null });
+  await database.insert(records[0]);
+  expect(sqlite.runAsync.mock.calls[0]).toEqual([
+    expect.stringContaining('VALUES (?, ?, ?, ?, ?, ?, ?, ?)'),
+    'row', 1, 'session', 'store_ad_load', null, '{"success":false}', 0, null,
+  ]);
+  expect(await database.getPending(100)).toEqual(records);
+  await database.resolveUpload(['row'], ['retry'], 20);
+  expect(sqlite.runAsync).toHaveBeenCalledWith(
+    'UPDATE diagnostic_events SET uploaded_at = ? WHERE id = ?', 20, 'row');
+  expect(sqlite.runAsync).toHaveBeenCalledWith(
+    'UPDATE diagnostic_events SET attempts = attempts + 1 WHERE id = ?', 'retry');
+  expect(await database.pendingCount()).toBe(1);
+  await database.cleanup(10, 100);
+  expect(sqlite.runAsync).toHaveBeenCalledWith('DELETE FROM diagnostic_events WHERE timestamp < ?', 10);
+  await database.purgeUnuploaded();
+  expect(sqlite.runAsync).toHaveBeenLastCalledWith('DELETE FROM diagnostic_events WHERE uploaded_at IS NULL');
+});
+
+it('routes ad steps through the consent-gated writer and handles upload failures', async () => {
+  const write = jest.spyOn(sharedDiagnostics, 'write').mockResolvedValue();
+  const flush = jest.spyOn(sharedDiagnostics, 'flush').mockRejectedValue(new Error('offline'));
+  try {
+    await logStoreAdStep({ step: 'loaded', phase: 'load' });
+    expect(flush).not.toHaveBeenCalled();
+    await logStoreAdStep({ step: 'failed', phase: 'terminal', success: false });
+    expect(write).toHaveBeenLastCalledWith(expect.objectContaining({ event: 'store_ad_load', source: 'store' }));
+    expect(flush).toHaveBeenCalledTimes(1);
+  } finally {
+    write.mockRestore();
+    flush.mockRestore();
+  }
+});
+
 describe('bounded diagnostics', () => {
   beforeEach(() => {
     consentEnabled.value = true;
@@ -114,7 +164,7 @@ describe('bounded diagnostics', () => {
     expect(upload).not.toHaveBeenCalled();
   });
 
-  it('still records and flushes store_ad_* when consent is off', async () => {
+  it('does not record or flush store_ad_* when consent is off', async () => {
     consentEnabled.value = false;
     const database = new MemoryDiagnosticDatabase();
     const upload = jest.fn(async (records: DiagnosticRecord[]) => ({
@@ -137,12 +187,23 @@ describe('bounded diagnostics', () => {
       success: false,
       modulePresent: false,
     });
+    expect(database.records.size).toBe(0);
+    await expect(diagnostics.flush()).resolves.toEqual({ sent: 0, remaining: 0 });
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it('purges queued ad diagnostics when consent is revoked before upload', async () => {
+    const database = new MemoryDiagnosticDatabase();
+    const upload = jest.fn();
+    const diagnostics = createDiagnostics(database, upload, () => 1_000, metadata, () => 'ad');
+    await diagnostics.write({ event: 'store_ad_load', phase: 'terminal' });
     expect(database.records.size).toBe(1);
-    const record = [...database.records.values()][0];
-    expect(record.payload.step).toBe('missing_module');
-    expect(record.payload.modulePresent).toBe(false);
-    await expect(diagnostics.flush()).resolves.toEqual({ sent: 1, remaining: 0 });
-    expect(upload).toHaveBeenCalledTimes(1);
+    consentEnabled.value = false;
+    await expect(diagnostics.flush()).resolves.toEqual({ sent: 0, remaining: 0 });
+    expect(database.records.size).toBe(0);
+    consentEnabled.value = true;
+    await diagnostics.flush();
+    expect(upload).not.toHaveBeenCalled();
   });
 
   it('redacts secrets, exact coordinates, email and raw error messages', async () => {
@@ -164,12 +225,57 @@ describe('bounded diagnostics', () => {
       longitude: 121.5,
       email: 'person@example.com',
       errorMessage: 'socket exposed a private URL',
+      errMsg: 'SDK request https://private.example/?token=secret-token',
     } as never);
 
     const exported = await diagnostics.exportJson();
     expect(exported).toContain('offline');
     expect(exported).toContain('teamNavigation');
-    expect(exported).not.toMatch(/secret-token|25\.04|121\.5|person@example\.com|private URL/);
+    expect(exported).not.toMatch(/secret-token|25\.04|121\.5|person@example\.com|private URL|private\.example/);
+  });
+
+  it('rechecks consent after reading the pending batch', async () => {
+    const database = new MemoryDiagnosticDatabase();
+    const upload = jest.fn();
+    const diagnostics = createDiagnostics(database, upload, () => 1_000, metadata, () => 'ad');
+    await diagnostics.write({ event: 'store_ad_load' });
+    const getPending = database.getPending.bind(database);
+    database.getPending = async (limit) => {
+      const records = await getPending(limit);
+      consentEnabled.value = false;
+      return records;
+    };
+    await expect(diagnostics.flush()).resolves.toEqual({ sent: 0, remaining: 0 });
+    expect(upload).not.toHaveBeenCalled();
+    expect(database.records.size).toBe(0);
+  });
+
+  it('sanitizes legacy queued payloads before export and upload', async () => {
+    const database = new MemoryDiagnosticDatabase();
+    database.records.set('legacy', {
+      id: 'legacy', timestamp: 1_000, sessionId: 'session', event: 'store_ad_load',
+      navigationSessionId: null, attempts: 0, uploadedAt: null,
+      payload: { errMsg: 'https://private.example/?token=secret', errorCode: 'offline', token: 'secret' },
+    });
+    const upload = jest.fn(async (records: DiagnosticRecord[]) => ({
+      acceptedIds: records.map((record) => record.id), rejected: [],
+    }));
+    const diagnostics = createDiagnostics(database, upload, () => 1_000, metadata, () => 'new');
+    expect((await diagnostics.list())[0].payload).toEqual({ errorCode: 'offline' });
+    expect(await diagnostics.exportJson()).not.toMatch(/private\.example|secret|errMsg/);
+    await diagnostics.flush();
+    expect(upload.mock.calls[0][0][0].payload).toEqual({ errorCode: 'offline' });
+  });
+
+  it('uploads ad diagnostics with consent while preserving failure scheduling', async () => {
+    const database = new MemoryDiagnosticDatabase();
+    const upload = jest.fn(async (records: DiagnosticRecord[]) => ({
+      acceptedIds: records.map((record) => record.id), rejected: [],
+    }));
+    const diagnostics = createDiagnostics(database, upload, () => 1_000, metadata, () => 'ad');
+    await diagnostics.write({ event: 'store_ad_load', success: false, step: 'missing_module' });
+    await expect(diagnostics.flush()).resolves.toEqual({ sent: 1, remaining: 0 });
+    expect(upload.mock.calls[0][0][0].payload.step).toBe('missing_module');
   });
 
   it('keeps at most 10,000 records and removes events older than 72 hours', async () => {
