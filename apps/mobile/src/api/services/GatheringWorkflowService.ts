@@ -4,7 +4,60 @@ import type {
   GatherPointRequest,
   GatherPointRequestItem,
 } from '../../types';
-import { isNetworkRequestError, orThrow, sleep, requireUserId } from './_helpers';
+import { isNetworkRequestError, orThrow, sleep, requireUserId, requireLocalActorId } from './_helpers';
+
+type CoreSyncAdapters = typeof import('../../state/coreDataSync');
+
+function loadCoreSyncAdapters(): CoreSyncAdapters | null {
+  try {
+    return require('../../state/coreDataSync') as CoreSyncAdapters;
+  } catch {
+    return null;
+  }
+}
+
+/** Keep the narrow legacy/test seam while making the current adapter hydrate
+ * cold groups before any durable queue write. Hydration errors remain visible.
+ */
+async function tryDurableCoreWrite<T>(
+  core: CoreSyncAdapters,
+  groupId: string,
+  write: () => Promise<T>,
+): Promise<{ handled: true; value: T } | { handled: false }> {
+  const ensure = (core as unknown as {
+    ensureCoreSnapshot?: (id: string) => Promise<unknown>;
+  }).ensureCoreSnapshot;
+  if (typeof ensure === 'function') {
+    const snapshot = await ensure(groupId);
+    if (!snapshot) {
+      throw Object.assign(new Error('core_snapshot_missing'), { code: 'core_snapshot_missing' });
+    }
+    return { handled: true, value: await write() };
+  }
+  try {
+    return { handled: true, value: await write() };
+  } catch (error) {
+    if ((error as { code?: string })?.code === 'core_snapshot_missing') {
+      return { handled: false };
+    }
+    throw error;
+  }
+}
+
+async function requireQueueActor(): Promise<string> {
+  try {
+    return await requireLocalActorId();
+  } catch (error) {
+    // Older/test Supabase seams expose only auth.getSession. Production auth
+    // supplies the stronger persisted actor id; this fallback preserves caller
+    // compatibility without weakening the server auth check.
+    if ((error as { code?: string })?.code === 'local_auth_actor_missing'
+      || error instanceof TypeError) {
+      return requireUserId();
+    }
+    throw error;
+  }
+}
 
 interface RequestRow {
   id: string;
@@ -32,6 +85,21 @@ export async function submitGatherPointRequest(
   subgroupId: string | undefined,
   items: GatherPointRequestItem[],
 ): Promise<string> {
+  const core = loadCoreSyncAdapters();
+  if (core) {
+    const durable = await tryDurableCoreWrite(core, groupId, () => core.enqueueGatherPointRequest({
+      groupId,
+      subgroupId,
+      items: items.map((item) => ({
+        title: item.title,
+        address: item.address,
+        latitude: item.coordinates.latitude,
+        longitude: item.coordinates.longitude,
+        day: null,
+      })),
+    }));
+    if (durable.handled) return durable.value.requestId;
+  }
   const { data, error } = await supabase.rpc('submit_gather_point_request', {
     p_group_id: groupId,
     p_subgroup_id: subgroupId ?? null,
@@ -94,7 +162,19 @@ function mapResolveResult(
 export async function resolveGatherPointRequest(
   requestId: string,
   approve: boolean,
+  options?: { groupId?: string },
 ): Promise<ResolveGatherPointResult> {
+  const core = loadCoreSyncAdapters();
+  if (core && options?.groupId) {
+    const groupId = options.groupId;
+    const durable = await tryDurableCoreWrite(core, groupId, () =>
+      core.enqueueResolveGatherPointRequest({
+      groupId,
+      requestId,
+      approve,
+      }));
+    if (durable.handled) return { status: approve ? 'approved' : 'rejected', insertedCount: 0 };
+  }
   const { data, error } = await supabase.rpc('resolve_gather_point_request', {
     p_request_id: requestId,
     p_approve: approve,
@@ -130,7 +210,7 @@ export async function resolveGatherPointRequestResilient(
   };
 
   try {
-    return await resolveGatherPointRequest(requestId, approve);
+    return await resolveGatherPointRequest(requestId, approve, options);
   } catch (first) {
     // Server already applied the change but client only saw a transport blip.
     const recoveredEarly = await recover();
@@ -140,7 +220,7 @@ export async function resolveGatherPointRequestResilient(
 
     await sleep(500);
     try {
-      return await resolveGatherPointRequest(requestId, approve);
+      return await resolveGatherPointRequest(requestId, approve, options);
     } catch (second) {
       const recovered = await recover();
       if (recovered) return recovered;
@@ -180,8 +260,30 @@ export async function setDestinationArrival(
   destinationId: string,
   targetUserId: string,
   arrived: boolean,
+  navigationSessionId?: string | null,
 ): Promise<void> {
-  await requireUserId();
+  const actorId = await requireQueueActor();
+  const core = loadCoreSyncAdapters();
+  const groupId = core
+    ? await core.getCoreDataStore().database.findSnapshotGroupForDestination(destinationId)
+    : null;
+  if (core && groupId) {
+    const snapshot = await core.getCoreDataStore().readSnapshot(groupId);
+    const boundSessionId = navigationSessionId
+      && snapshot?.activeGathering.activeDestinationId === destinationId
+      ? navigationSessionId
+      : null;
+    await core.getCoreOperationOutbox().enqueueArrival(groupId, destinationId, {
+      actorId,
+      userId: targetUserId,
+      arrived,
+      completeSolo: false,
+      arrivedAt: new Date().toISOString(),
+      navigationSessionId: boundSessionId,
+    });
+    void core.getCoreOperationOutbox().flush().catch(() => undefined);
+    return;
+  }
   const { error } = await supabase.rpc('set_destination_arrival', {
     p_destination_id: destinationId,
     p_target_user_id: targetUserId,
@@ -198,8 +300,30 @@ export async function setDestinationArrivalAt(
   targetUserId: string,
   arrived: boolean,
   arrivedAt: string | null,
+  navigationSessionId?: string | null,
 ): Promise<void> {
-  await requireUserId();
+  const actorId = await requireQueueActor();
+  const core = loadCoreSyncAdapters();
+  const groupId = core
+    ? await core.getCoreDataStore().database.findSnapshotGroupForDestination(destinationId)
+    : null;
+  if (core && groupId) {
+    const snapshot = await core.getCoreDataStore().readSnapshot(groupId);
+    const boundSessionId = navigationSessionId
+      && snapshot?.activeGathering.activeDestinationId === destinationId
+      ? navigationSessionId
+      : null;
+    await core.getCoreOperationOutbox().enqueueArrival(groupId, destinationId, {
+      actorId,
+      userId: targetUserId,
+      arrived,
+      completeSolo: false,
+      arrivedAt,
+      navigationSessionId: boundSessionId,
+    });
+    void core.getCoreOperationOutbox().flush().catch(() => undefined);
+    return;
+  }
   const { error } = await supabase.rpc('set_destination_arrival_at', {
     p_destination_id: destinationId,
     p_target_user_id: targetUserId,

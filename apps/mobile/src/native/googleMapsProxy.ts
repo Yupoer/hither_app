@@ -4,6 +4,7 @@
  */
 import type { Coordinates } from '../types';
 import { decodePolyline } from '../utils/polyline';
+import { getNavigatorOnline } from '../store/connectivity';
 import type { DirectionsResult, MapRegion, PlaceResult, TravelMode } from './maps';
 
 /**
@@ -27,13 +28,33 @@ export type MapsProxyErrorCode =
 export class MapsProxyError extends Error {
   readonly code: MapsProxyErrorCode;
   readonly status: number;
+  readonly retryAfterMs: number | null;
 
-  constructor(code: MapsProxyErrorCode, status: number, message?: string) {
+  constructor(
+    code: MapsProxyErrorCode,
+    status: number,
+    message?: string,
+    retryAfterMs?: number | null,
+  ) {
     super(message ?? code);
     this.name = 'MapsProxyError';
     this.code = code;
     this.status = status;
+    this.retryAfterMs = retryAfterMs != null && Number.isFinite(retryAfterMs)
+      ? Math.max(0, retryAfterMs)
+      : null;
   }
+}
+
+/** Retry-After supports either seconds or an HTTP date. */
+function retryAfterMs(res: Response): number | null {
+  const raw = res.headers?.get?.('Retry-After')?.trim();
+  if (!raw) return null;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1_000);
+  const at = Date.parse(raw);
+  if (!Number.isFinite(at)) return null;
+  return Math.max(0, at - Date.now());
 }
 
 /**
@@ -45,9 +66,11 @@ export function isMapsQuotaFailure(code: MapsProxyErrorCode): boolean {
   return code === 'quota_exceeded' || code === 'quota_rpc_failed';
 }
 
-/** Global cool-down applies across all keys (quota / missing config). */
+/** Global cool-down applies across all keys (quota / missing config / auth). */
 function usesGlobalCooldown(code: MapsProxyErrorCode): boolean {
-  return isMapsQuotaFailure(code) || code === 'missing_config';
+  return isMapsQuotaFailure(code)
+    || code === 'missing_config'
+    || code === 'unauthorized';
 }
 
 /** Record map/search/directions failures without changing throw/fallback behavior. */
@@ -127,6 +150,14 @@ async function getAuthContext(): Promise<{
 }
 
 async function postProxy(body: unknown): Promise<Response> {
+  // The connectivity store already exposes a synchronous navigator signal on
+  // web/test runtimes. Respect a definite offline state before touching auth
+  // or fetch; unknown stays fail-open for native runtimes without NetInfo.
+  if (getNavigatorOnline() === false) {
+    const err = new MapsProxyError('network', 0);
+    recordMapsProxyFailure('maps.proxy.request', err);
+    throw err;
+  }
   const auth = await getAuthContext();
   if (!auth) {
     const err = new MapsProxyError('unauthorized', 401);
@@ -155,21 +186,22 @@ function throwForStatus(
   body: ProxyErrorBody,
   operation: 'maps.proxy.search' | 'maps.proxy.directions' = 'maps.proxy.search',
 ): never {
+  const retryAfter = retryAfterMs(res);
   let err: MapsProxyError;
-  if (res.status === 401) err = new MapsProxyError('unauthorized', 401);
+  if (res.status === 401) err = new MapsProxyError('unauthorized', 401, undefined, retryAfter);
   else if (res.status === 429 || body.error === 'quota_exceeded') {
-    err = new MapsProxyError('quota_exceeded', 429);
+    err = new MapsProxyError('quota_exceeded', 429, undefined, retryAfter);
   } else if (res.status === 400 || body.error === 'invalid_input') {
-    err = new MapsProxyError('invalid_input', 400);
+    err = new MapsProxyError('invalid_input', 400, undefined, retryAfter);
   } else if (body.error === 'quota_rpc_failed') {
-    err = new MapsProxyError('quota_rpc_failed', 503);
+    err = new MapsProxyError('quota_rpc_failed', 503, undefined, retryAfter);
   } else if (body.error === 'missing_config') {
-    err = new MapsProxyError('missing_config', 503);
+    err = new MapsProxyError('missing_config', 503, undefined, retryAfter);
   } else if (body.error === 'upstream_unavailable') {
-    err = new MapsProxyError('upstream_unavailable', res.status || 503);
+    err = new MapsProxyError('upstream_unavailable', res.status || 503, undefined, retryAfter);
   } else {
     // Unknown 5xx — treat as Google/upstream class without inventing config/quota.
-    err = new MapsProxyError('upstream_unavailable', res.status || 503);
+    err = new MapsProxyError('upstream_unavailable', res.status || 503, undefined, retryAfter);
   }
   recordMapsProxyFailure(operation, err);
   throw err;
@@ -193,10 +225,75 @@ const failureCooldown = new Map<
   string,
   { expiresAt: number; error: MapsProxyError }
 >();
-/** Process-global cool-down for quota / missing_config (all keys). */
+/** Process-global cool-down for quota / missing_config / auth (all keys). */
 let globalFailureCooldown: { expiresAt: number; error: MapsProxyError } | null =
   null;
 const inFlight = new Map<string, Promise<unknown>>();
+
+/** Cross-coordinate service backoff for transient 503/network failures. */
+export const MAPS_SERVICE_BREAKER_DELAYS_MS = [
+  15_000,
+  30_000,
+  60_000,
+  120_000,
+] as const;
+
+interface MapsServiceCircuit {
+  openUntilMs: number;
+  nextDelayIndex: number;
+  error: MapsProxyError;
+  halfOpenProbeInFlight: boolean;
+}
+
+let mapsServiceCircuit: MapsServiceCircuit | null = null;
+
+function isServiceCircuitFailure(error: MapsProxyError): boolean {
+  return error.code === 'network' || error.status === 503;
+}
+
+function reserveServiceCircuit(now: number): void {
+  const circuit = mapsServiceCircuit;
+  if (!circuit) return;
+  if (circuit.openUntilMs > now || circuit.halfOpenProbeInFlight) {
+    // Reuse the classified failure; callers see a bounded pause instead of a
+    // new request for every coordinate key.
+    throw circuit.error;
+  }
+  // Exactly one request is allowed to probe recovery after the backoff.
+  circuit.halfOpenProbeInFlight = true;
+}
+
+function recordServiceSuccess(): void {
+  mapsServiceCircuit = null;
+}
+
+function recordServiceFailure(error: MapsProxyError): void {
+  if (!isServiceCircuitFailure(error)) return;
+  const now = Date.now();
+  const current = mapsServiceCircuit;
+  // Another coordinate may have already opened the circuit for this failure
+  // window. Do not advance the backoff repeatedly for the same outage burst.
+  if (current && current.openUntilMs > now && !current.halfOpenProbeInFlight) return;
+  const index = current?.nextDelayIndex ?? 0;
+  const baseDelay = MAPS_SERVICE_BREAKER_DELAYS_MS[
+    Math.min(index, MAPS_SERVICE_BREAKER_DELAYS_MS.length - 1)
+  ];
+  const delay = Math.max(baseDelay, error.retryAfterMs ?? 0);
+  mapsServiceCircuit = {
+    openUntilMs: now + delay,
+    nextDelayIndex: Math.min(index + 1, MAPS_SERVICE_BREAKER_DELAYS_MS.length - 1),
+    error,
+    halfOpenProbeInFlight: false,
+  };
+}
+
+/** Read-only signal for route surfaces that want to avoid starting work. */
+export function isMapsServiceCircuitOpen(now = Date.now()): boolean {
+  return Boolean(
+    mapsServiceCircuit &&
+    (mapsServiceCircuit.openUntilMs > now || mapsServiceCircuit.halfOpenProbeInFlight),
+  );
+}
 
 function regionKey(region?: MapRegion): string {
   if (!region) return '';
@@ -209,7 +306,9 @@ function coordKey(c: Coordinates): string {
 }
 
 function rememberFailure(key: string, error: MapsProxyError): void {
-  const ttl = FAILURE_COOLDOWN_MS[error.code] ?? 5_000;
+  // Keep the existing bounded cooldowns as a floor, but honor an upstream
+  // Retry-After when it asks callers to wait longer.
+  const ttl = Math.max(FAILURE_COOLDOWN_MS[error.code] ?? 5_000, error.retryAfterMs ?? 0);
   const entry = { expiresAt: Date.now() + ttl, error };
   failureCooldown.set(key, entry);
   if (usesGlobalCooldown(error.code)) {
@@ -235,7 +334,8 @@ async function withDedupeCache<T>(key: string, work: () => Promise<T>): Promise<
   if (cached && cached.expiresAt > now) {
     return cached.value as T;
   }
-  // Global short-circuit: after quota/missing_config, block all keys.
+  // Global short-circuit: after quota/missing_config/auth failure, block all
+  // keys until the bounded pause expires instead of retrying every coordinate.
   if (globalFailureCooldown && globalFailureCooldown.expiresAt > now) {
     throw globalFailureCooldown.error;
   }
@@ -250,9 +350,14 @@ async function withDedupeCache<T>(key: string, work: () => Promise<T>): Promise<
   const pending = inFlight.get(key) as Promise<T> | undefined;
   if (pending) return pending;
 
+  // Coordinate-independent breaker check happens after in-flight dedupe, so
+  // identical concurrent callers still share one request.
+  reserveServiceCircuit(now);
+
   const promise = (async () => {
     try {
       const value = await work();
+      recordServiceSuccess();
       responseCache.set(key, { expiresAt: Date.now() + CACHE_TTL_MS, value });
       failureCooldown.delete(key);
       // Bound cache growth: drop expired + oldest when large.
@@ -269,6 +374,7 @@ async function withDedupeCache<T>(key: string, work: () => Promise<T>): Promise<
       return value;
     } catch (error) {
       if (error instanceof MapsProxyError) {
+        recordServiceFailure(error);
         rememberFailure(key, error);
       }
       throw error;
@@ -285,6 +391,7 @@ export function __resetGoogleMapsProxyCacheForTests(): void {
   responseCache.clear();
   failureCooldown.clear();
   globalFailureCooldown = null;
+  mapsServiceCircuit = null;
   inFlight.clear();
 }
 
@@ -313,6 +420,7 @@ export async function proxySearchPlaces(
     }
     return body.places.map((p) => ({
       id: p.id,
+      providerPlaceId: `google:${p.id}`,
       name: p.name,
       address: p.address,
       coordinates: p.coordinates,

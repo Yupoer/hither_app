@@ -12,6 +12,7 @@ import { updateLiveActivityProgress } from '../api/services/LiveActivityService'
 import { ackNavigationSession, getBackgroundNavigationContext } from '../api/services/NavigationService';
 import { liveActivity } from '../native';
 import { distanceMeters } from '../utils/geo';
+import { canEvaluateSynchronizedArrival } from '../utils/synchronizedArrival';
 import {
   compactBackgroundTimeline,
   exceedsWatchdogBudget,
@@ -152,22 +153,27 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
           && latest.timestamp <= latestSample.timestamp)) return;
         latestSample = { epoch: config.trackingEpoch ?? 0, timestamp: latest.timestamp };
         const now = Date.now();
-        const accuracyM = Math.max(0, latest.coords.accuracy ?? 0);
+        const accuracyM = latest.coords.accuracy ?? undefined;
+        const freshArrivalFix = canEvaluateSynchronizedArrival({ sampledAt: latest.timestamp,
+          now, accuracyM, radiusM: config.arrivalRadiusMeters });
         const distanceM = distanceMeters(coords, config.destination);
         const previousArrival = config.arrivalState ??
           createArrivalState(config.initialDistanceM);
-        const arrival = reduceArrival(
+        const arrival = freshArrivalFix ? reduceArrival(
           previousArrival,
           { distanceM, accuracyM },
           { radiusM: config.arrivalRadiusMeters },
-        );
+        ) : previousArrival;
         let arrivalConfirmed = false;
-        if (arrival.status === 'arrived' && config.actorId && config.target && config.powerMode === 'journey') {
+        if (freshArrivalFix && arrival.status === 'arrived' && config.actorId && config.target && config.powerMode === 'journey') {
           const rows = await getCoreOperationOutbox().listByGroup(config.groupId);
           if (!controller.isCurrent(config) || !isLocationAccessCurrent(access)) return;
           const operation = rows.find(op => op.operationType === 'record_arrival'
-            && op.entityId === config.destinationId && op.payload.actorId === config.actorId && op.payload.userId === config.actorId)
+            && op.entityId === config.destinationId && op.payload.actorId === config.actorId && op.payload.userId === config.actorId
+            && (op.payload.navigationSessionId ?? null) === (config.navigationSessionId ?? null)
+            && op.payload.arrived !== false)
             ?? await enqueueArrival({ groupId: config.groupId, actorId: config.actorId, userId: config.actorId,
+              navigationSessionId: config.navigationSessionId,
               destination: config.target, arrivedAt: new Date(latest.timestamp).toISOString(), completeSolo: config.completeSolo === true });
           arrivalConfirmed = operation.status === 'acked';
           if (!arrivalConfirmed && operation.status !== 'conflict') void flushCoreOperationOutbox().catch(() => undefined);
@@ -221,7 +227,7 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
         );
         }
         if (!controller.isCurrent(config) || !isLocationAccessCurrent(access)) return;
-        if (config.powerMode === 'journey') {
+        if (freshArrivalFix && config.powerMode === 'journey') {
           await notifyJourneyApproach(config.navigationSessionId, config.destinationId, config.gatheringTitle ?? '', {
             remainingM: progress.distanceMeters ?? distanceM, totalM: config.initialDistanceM,
             arrivalRadiusM: config.arrivalRadiusMeters, arrived: arrivalConfirmed, alreadyFired: false,
@@ -264,8 +270,9 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
 
         const powerMode = 'journey';
         const policy = locationPolicy(
-          trackingMode === 'teamNavigation' ||
-            trackingMode === 'navigationMax' ||
+          // Team navigation explains why the journey is active; it does not
+          // silently opt the user into precise/high-frequency uploads.
+          trackingMode === 'navigationMax' ||
             trackingMode === 'manualHighAccuracy' ||
             (powerMode === 'journey' && Boolean(config.highAccuracy)),
           powerMode,

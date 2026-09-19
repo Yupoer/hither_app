@@ -8,8 +8,52 @@ import {
   validateDestinationColor,
   validateDestinationEmoji,
 } from '../../utils/destinationEmojiColor';
-import { orThrow, requireUserId } from './_helpers';
+import { orThrow } from './_helpers';
 import { KmlImportError, type NormalizedImportItem } from '../../utils/kmlBatch';
+
+type CoreSyncAdapters = typeof import('../../state/coreDataSync');
+
+/** Lazy seam keeps legacy service imports usable in web/test environments that
+ * do not load the native SQLite/React Native surface until a local snapshot is
+ * actually available. Production iOS resolves this module normally. */
+function loadCoreSyncAdapters(): CoreSyncAdapters | null {
+  try {
+    return require('../../state/coreDataSync') as CoreSyncAdapters;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The current core adapter hydrates a cold group before queueing. A few
+ * already-shipped/test seams expose only the older enqueue functions; retain
+ * their narrow snapshot-missing fallback without weakening the production
+ * adapter (where ensureCoreSnapshot is always present).
+ */
+async function tryDurableCoreWrite<T>(
+  core: CoreSyncAdapters,
+  groupId: string,
+  write: () => Promise<T>,
+): Promise<{ handled: true; value: T } | { handled: false }> {
+  const ensure = (core as unknown as {
+    ensureCoreSnapshot?: (id: string) => Promise<unknown>;
+  }).ensureCoreSnapshot;
+  if (typeof ensure === 'function') {
+    const snapshot = await ensure(groupId);
+    if (!snapshot) {
+      throw Object.assign(new Error('core_snapshot_missing'), { code: 'core_snapshot_missing' });
+    }
+    return { handled: true, value: await write() };
+  }
+  try {
+    return { handled: true, value: await write() };
+  } catch (error) {
+    if ((error as { code?: string })?.code === 'core_snapshot_missing') {
+      return { handled: false };
+    }
+    throw error;
+  }
+}
 
 // ── Row shape ──────────────────────────────────────────────────────────────
 
@@ -30,6 +74,7 @@ export interface ItineraryRow {
   marker_color?: string | null;
   kind?: string | null;
   stay_anchor?: boolean | null;
+  provider_place_id?: string | null;
 }
 
 // ── Mapper ─────────────────────────────────────────────────────────────────
@@ -56,6 +101,7 @@ export function mapDestination(row: ItineraryRow): Destination {
     markerColor: row.marker_color ?? null,
     kind,
     stayAnchor: kind === 'accommodation' ? Boolean(row.stay_anchor) : false,
+    providerPlaceId: row.provider_place_id ?? undefined,
   };
 }
 
@@ -70,6 +116,8 @@ export async function addDestination(
     day?: number | null;
     /** Default stop; use accommodation for quick-add stay cards. */
     kind?: 'stop' | 'accommodation';
+    /** Stable provider identity; never inferred from coordinates. */
+    providerPlaceId?: string;
   },
   subgroupId?: string,
 ): Promise<string | undefined> {
@@ -80,6 +128,22 @@ export async function addDestination(
   const kind = input.kind === 'accommodation' ? 'accommodation' : 'stop';
   // Quick-add mid cards are never stay anchors; auto-add RPC sets anchors.
   const stayAnchor = false;
+  const core = loadCoreSyncAdapters();
+  if (core) {
+    const durable = await tryDurableCoreWrite(core, groupId, () => core.enqueueDestinationAdd({
+      groupId,
+      title: input.title,
+      address: input.address,
+      latitude: input.coordinates.latitude,
+      longitude: input.coordinates.longitude,
+      day: targetDay,
+      subgroupId,
+      kind,
+      stayAnchor,
+      providerPlaceId: input.providerPlaceId,
+    }));
+    if (durable.handled) return durable.value.destinationId;
+  }
   // Quick-add accommodation inserts before an occupied locked tail so the new
   // card is mid (draggable), not an immediate locked last boundary.
   // Shift later rows high→low so positions never collide mid-update.
@@ -188,6 +252,12 @@ export async function deleteDestination(
   if (isDemoGroup(groupId)) {
     return;
   }
+  const core = loadCoreSyncAdapters();
+  if (core) {
+    const durable = await tryDurableCoreWrite(core, groupId, () =>
+      core.enqueueDestinationDelete({ groupId, destinationId }));
+    if (durable.handled) return;
+  }
   // RPC cancels any active navigation_session for this stop, then deletes.
   // FK is ON DELETE SET NULL so historical sessions no longer block delete.
   const { error } = await supabase.rpc('delete_destination', {
@@ -208,7 +278,12 @@ export async function completeGatheringStop(
   if (isDemoGroup(groupId)) {
     return;
   }
-  await requireUserId();
+  const core = loadCoreSyncAdapters();
+  if (core) {
+    const durable = await tryDurableCoreWrite(core, groupId, () =>
+      core.enqueueDestinationComplete({ groupId, destinationId }));
+    if (durable.handled) return;
+  }
   const { error } = await supabase.rpc('complete_gathering_stop', {
     p_group_id: groupId,
     p_destination_id: destinationId,
@@ -230,6 +305,12 @@ export async function reorderDestinations(
     return;
   }
   if (!updates.length) return;
+  const core = loadCoreSyncAdapters();
+  if (core) {
+    const durable = await tryDurableCoreWrite(core, groupId, () =>
+      core.enqueueDestinationReorder({ groupId, updates }));
+    if (durable.handled) return;
+  }
   // Ordered IDs under groups FOR UPDATE; server recomputes positions from the
   // locked snapshot (client absolute positions are not trusted). Full batch
   // validates or aborts — partial RLS success is rejected.
@@ -312,6 +393,19 @@ export async function updateDestinationEmojiColor(
   }
   if (Object.keys(patch).length === 0) return;
 
+  const core = loadCoreSyncAdapters();
+  if (core) {
+    const durable = await tryDurableCoreWrite(core, groupId, () => core.enqueueDestinationEdit({
+      groupId,
+      destinationId,
+      patch: {
+        ...(patch.emoji === undefined ? {} : { emoji: patch.emoji }),
+        ...(patch.marker_color === undefined ? {} : { markerColor: patch.marker_color }),
+      },
+    }));
+    if (durable.handled) return;
+  }
+
   // .select() so a silent RLS miss (0 rows) surfaces instead of fake success.
   const { data, error } = await supabase
     .from('itinerary_items')
@@ -337,6 +431,7 @@ export async function setDestinationMeetTime(
   destinationId: string,
   meetAt: string | null,
   meetRedMinutes?: number | null,
+  groupId?: string,
 ): Promise<void> {
   const patch: {
     meet_at: string | null;
@@ -344,6 +439,16 @@ export async function setDestinationMeetTime(
   } = { meet_at: meetAt };
   if (meetAt != null && typeof meetRedMinutes === 'number') {
     patch.meet_red_minutes = meetRedMinutes;
+  }
+  const core = loadCoreSyncAdapters();
+  if (core && groupId) {
+    const durable = await tryDurableCoreWrite(core, groupId, () => core.enqueueDestinationMeetTime({
+      destinationId,
+      groupId,
+      meetAt,
+      meetRedMinutes,
+    }));
+    if (durable.handled) return;
   }
   const { error } = await supabase
     .from('itinerary_items')

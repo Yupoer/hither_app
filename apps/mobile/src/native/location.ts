@@ -4,7 +4,7 @@ import * as Location from 'expo-location';
 import { AppState } from 'react-native';
 import { captureLocationAccess, isLocationAccessCurrent, subscribeLocationAccessChanges } from '../state/locationPrivacy';
 import type { Coordinates } from '../types';
-import { locationPolicy } from '../utils/locationPolicy';
+import { locationPolicy, type LocationPowerMode } from '../utils/locationPolicy';
 import {
   getDebugLocationSample,
   isDebugRouteActive,
@@ -115,8 +115,11 @@ export async function getPermissionState(): Promise<LocationPermissionState> {
  * fix fails, so callers can fall back gracefully (the Map screen still works
  * without GPS by using a reference member).
  */
-function expoLocationOptions(highAccuracy: boolean): Location.LocationOptions {
-  const policy = locationPolicy(highAccuracy, 'foreground');
+function expoLocationOptions(
+  highAccuracy: boolean,
+  powerMode: LocationPowerMode = 'foreground',
+): Location.LocationOptions {
+  const policy = locationPolicy(highAccuracy, powerMode);
   const accuracy =
     policy.accuracy === 'high'
       ? Location.Accuracy.High
@@ -132,6 +135,7 @@ function expoLocationOptions(highAccuracy: boolean): Location.LocationOptions {
 
 export async function getCurrentLocation(
   highAccuracy = false,
+  powerMode: LocationPowerMode = 'foreground',
 ): Promise<LocationSample | null> {
   const access = await captureLocationAccess();
   if (!access) return null;
@@ -166,7 +170,7 @@ export async function getCurrentLocation(
     };
     const timeout = setTimeout(() => finish(null), 15_000);
     unsubscribe = subscribeLocationAccessChanges(() => finish(null));
-    void Location.watchPositionAsync(expoLocationOptions(highAccuracy),
+    void Location.watchPositionAsync(expoLocationOptions(highAccuracy, powerMode),
       position => finish(toSample(position)), () => finish(null))
       .then(subscription => {
         sub = subscription;
@@ -184,6 +188,7 @@ export async function getCurrentLocation(
 export async function watchLocation(
   onSample: (sample: LocationSample) => void,
   highAccuracy = false,
+  powerMode: LocationPowerMode = 'foreground',
 ): Promise<() => void> {
   const access = await captureLocationAccess();
   if (!access || AppState.currentState !== 'active') return () => {};
@@ -198,7 +203,7 @@ export async function watchLocation(
     };
     unsubscribeDebug = subscribeDebugLocation(accept);
     const sub = await Location.watchPositionAsync(
-      expoLocationOptions(highAccuracy),
+      expoLocationOptions(highAccuracy, powerMode),
       (position) => {
         if (!isDebugRouteActive()) accept(toSample(position));
       },

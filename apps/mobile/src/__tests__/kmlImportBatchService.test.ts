@@ -12,6 +12,12 @@ jest.mock('../api/supabase', () => {
   };
 });
 
+// KML's contract is the atomic remote batch RPC. Deliberately keep the native
+// durable-sync graph out of this legacy remote-only fixture.
+jest.mock('../state/coreDataSync', () => {
+  throw new Error('coreDataSync is intentionally unavailable in RPC-only tests');
+});
+
 jest.mock('../api/demo', () => ({
   isDemoGroup: () => false,
   demoAddDestination: jest.fn(),

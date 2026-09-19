@@ -8,7 +8,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Linking } from 'react-native';
+import { AppState, Linking } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { makeRedirectUri } from 'expo-auth-session';
 import * as QueryParams from 'expo-auth-session/build/QueryParams';
@@ -51,6 +51,9 @@ import {
   writePremiumProjectionCache,
 } from '../services/premiumProjectionCache';
 import { ensurePersonalPremiumAccess } from '../services/premiumPurchaseFlow';
+import { installAuthLifecycle } from '../api/authLifecycle';
+import { getDefaultAuthRecovery } from '../api/authRecovery';
+import { classifyOperationError } from '../utils/operationError';
 import {
   AuthFlowError,
   type EmailSignUpResult,
@@ -215,11 +218,66 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
+  // Supabase Auth's refresh timer must follow the native foreground state.
+  // `onForeground` is deferred by installAuthLifecycle, so no awaited Auth
+  // call can run while an AppState callback or auth event lock is held.
+  useEffect(() => {
+    let recovery: ReturnType<typeof getDefaultAuthRecovery> | null = null;
+    try {
+      recovery = getDefaultAuthRecovery();
+    } catch {
+      // Test doubles may provide an auth client without the production setup.
+    }
+    return installAuthLifecycle({
+      auth: supabase.auth,
+      appState: AppState,
+      onForeground: () => {
+        if (!recovery) return;
+        void recovery.refreshIfExpiring().catch((error) => {
+          // Keep logs allow-listed; never print session/token contents.
+          if (__DEV__) {
+            const classified = classifyOperationError(error);
+            console.warn('[auth] foreground refresh skipped', {
+              kind: classified.kind,
+              code: classified.code,
+              status: classified.status,
+            });
+          }
+        });
+      },
+    });
+  }, []);
+
   // Restore any persisted anonymous session on launch and keep `user.id` in
   // sync with auth state. The nickname is read back from `profiles` so a
   // relaunch shows the same identity.
   useEffect(() => {
     let active = true;
+    const deferredHydrations = new Set<ReturnType<typeof setTimeout>>();
+    let authEpoch = 0;
+
+    const cancelDeferredHydrations = () => {
+      for (const timer of deferredHydrations) clearTimeout(timer);
+      deferredHydrations.clear();
+    };
+
+    const deferHydration = (authUser: Parameters<typeof hydrate>[0]) => {
+      const epoch = ++authEpoch;
+      const timer = setTimeout(() => {
+        deferredHydrations.delete(timer);
+        void hydrate(authUser, epoch).catch((error) => {
+          if (__DEV__) {
+            const classified = classifyOperationError(error);
+            console.warn('[auth] session hydration skipped', {
+              kind: classified.kind,
+              code: classified.code,
+              status: classified.status,
+            });
+          }
+        });
+      }, 0);
+      deferredHydrations.add(timer);
+    };
 
     async function hydrate(authUser: {
       id: string;
@@ -227,7 +285,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       email?: string;
       app_metadata?: { provider?: string };
       user_metadata?: Record<string, unknown>;
-    } | undefined) {
+    } | undefined, epoch = authEpoch) {
+      if (!active || epoch !== authEpoch) return;
       if (!authUser) {
         const previousId = premiumUserIdRef.current;
         premiumUserIdRef.current = null;
@@ -248,6 +307,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         .select('*')
         .eq('id', authUser.id)
         .maybeSingle();
+      if (!active || epoch !== authEpoch) return;
       const row = data as
         | {
             nickname?: string;
@@ -271,7 +331,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           .from('profiles')
           .upsert({ id: authUser.id, nickname: metadataNickname }, { onConflict: 'id' });
       }
-      if (active) {
+      if (active && epoch === authEpoch) {
         const previousId = premiumUserIdRef.current;
         if (previousId && previousId !== authUser.id) {
           void clearPremiumProjectionCache(previousId);
@@ -310,9 +370,14 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         setPasswordRecoverySuccess(false);
       }
       if (session && (event === 'SIGNED_IN' || event === 'PASSWORD_RECOVERY')) {
-        void hydrate(session.user);
+        // Auth-js invokes this callback while holding an internal lock. Defer
+        // all Supabase/profile reads until the callback has returned.
+        cancelDeferredHydrations();
+        deferHydration(session.user);
       }
       if (!session) {
+        authEpoch += 1;
+        cancelDeferredHydrations();
         const previousId = premiumUserIdRef.current;
         premiumUserIdRef.current = null;
         if (previousId) void clearPremiumProjectionCache(previousId);
@@ -352,7 +417,14 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           setPasswordRecoverySuccess(false);
         }
       } catch (error) {
-        console.warn('[auth] deep-link session exchange failed', error);
+        const classified = classifyOperationError(error);
+        if (__DEV__) {
+          console.warn('[auth] deep-link session exchange skipped', {
+            kind: classified.kind,
+            code: classified.code,
+            status: classified.status,
+          });
+        }
       }
     };
 
@@ -363,14 +435,22 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       if (url) void handleAuthUrl(url);
     });
 
+    const restoreEpoch = authEpoch;
     supabase.auth
       .getSession()
-      .then(({ data }) => hydrate(data.session?.user))
+      .then(({ data }) => hydrate(data.session?.user, restoreEpoch))
       .catch((error) => {
         // A missing/temporarily unavailable Keychain must not hold the whole
         // app on its splash screen. Treat restore failure as signed-out; the
         // next explicit sign-in can still establish a fresh session.
-        console.warn('[auth] session restore failed; continuing signed out', error);
+        const classified = classifyOperationError(error);
+        if (__DEV__) {
+          console.warn('[auth] session restore skipped; continuing signed out', {
+            kind: classified.kind,
+            code: classified.code,
+            status: classified.status,
+          });
+        }
         if (active) {
           setUser(null);
           setIsAnonymous(false);
@@ -382,6 +462,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       active = false;
+      authEpoch += 1;
+      cancelDeferredHydrations();
       sub.subscription.unsubscribe();
       urlSub.remove();
     };

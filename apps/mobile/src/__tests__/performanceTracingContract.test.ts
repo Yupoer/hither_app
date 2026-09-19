@@ -78,10 +78,21 @@ describe('performance tracing contract', () => {
 
   it('exposes a navigation-only energy monitor independent of full API tracing', () => {
     expect(performance).toContain('export function startNavigationEnergyMonitor');
+    expect(performance).toContain('collectEnergyObservationSample');
+    expect(performance).toContain("confidence: 'energy_only'");
     expect(performance).toContain('navigation.energy.sample');
     expect(performance).toContain('navigation.energy.end');
     expect(performance).toContain('navigationSessionId');
     expect(performance).toContain('trackingMode');
+
+    const energyStart = performance.indexOf('async function collectEnergyObservationSample');
+    const energyEnd = performance.indexOf('/**', energyStart + 1);
+    const energySource = performance.slice(energyStart, energyEnd);
+    expect(energySource).toContain('getDiagnosticConsentEnabled');
+    expect(energySource).toContain('metrics.samplePerformance');
+    expect(energySource).toContain('insertEvent');
+    expect(energySource).not.toContain('if (!active');
+    expect(performance).toContain('void ensureEnabled();');
   });
 
   it('derives CPU percent from cpuTimeMs deltas and gates samples on app state', () => {

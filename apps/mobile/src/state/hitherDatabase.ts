@@ -78,16 +78,21 @@ async function openHitherDatabase(): Promise<SQLite.SQLiteDatabase> {
       ON core_navigation_responses(group_id, session_id);
     CREATE TABLE IF NOT EXISTS core_operation_outbox (
       id TEXT PRIMARY KEY NOT NULL,
+      actor_id TEXT,
       group_id TEXT NOT NULL,
       entity_type TEXT NOT NULL,
       entity_id TEXT NOT NULL,
       entity_version INTEGER NOT NULL,
       operation_type TEXT NOT NULL,
       payload TEXT NOT NULL,
+      sequence INTEGER NOT NULL DEFAULT 0,
+      dependency_ids TEXT NOT NULL DEFAULT '[]',
       status TEXT NOT NULL,
       attempts INTEGER NOT NULL DEFAULT 0,
       next_attempt_at INTEGER NOT NULL,
       conflict_result TEXT,
+      inflight_started_at INTEGER,
+      last_error TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
@@ -95,12 +100,60 @@ async function openHitherDatabase(): Promise<SQLite.SQLiteDatabase> {
       ON core_operation_outbox(next_attempt_at, created_at);
     CREATE INDEX IF NOT EXISTS core_operation_outbox_group
       ON core_operation_outbox(group_id, status);
+    CREATE TABLE IF NOT EXISTS core_operation_sequences (
+      actor_id TEXT NOT NULL,
+      group_id TEXT NOT NULL,
+      next_sequence INTEGER NOT NULL,
+      PRIMARY KEY (actor_id, group_id)
+    );
+    CREATE TABLE IF NOT EXISTS core_destination_id_aliases (
+      group_id TEXT NOT NULL,
+      local_destination_id TEXT NOT NULL,
+      canonical_destination_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (group_id, local_destination_id)
+    );
+    CREATE INDEX IF NOT EXISTS core_destination_id_aliases_canonical
+      ON core_destination_id_aliases(group_id, canonical_destination_id);
+  `);
+
+  // The first OTA-04 schema shipped before actor sequencing was introduced.
+  // SQLite has no portable ADD COLUMN IF NOT EXISTS, so inspect the table and
+  // add only the missing columns. Existing durable rows remain replayable.
+  const columns = await database.getAllAsync<{ name: string }>(
+    'PRAGMA table_info(core_operation_outbox)',
+  );
+  const existing = new Set(columns.map((column) => column.name));
+  const additions: Array<[string, string]> = [
+    ['actor_id', 'TEXT'],
+    ['sequence', 'INTEGER NOT NULL DEFAULT 0'],
+    ['dependency_ids', "TEXT NOT NULL DEFAULT '[]'"],
+    ['inflight_started_at', 'INTEGER'],
+    ['last_error', 'TEXT'],
+  ];
+  for (const [name, definition] of additions) {
+    if (!existing.has(name)) {
+      await database.runAsync(
+        `ALTER TABLE core_operation_outbox ADD COLUMN ${name} ${definition}`,
+      );
+    }
+  }
+  await database.execAsync(`
+    CREATE INDEX IF NOT EXISTS core_operation_outbox_fifo
+      ON core_operation_outbox(group_id, actor_id, sequence, created_at);
+    CREATE INDEX IF NOT EXISTS core_operation_outbox_due_v2
+      ON core_operation_outbox(next_attempt_at, group_id, actor_id, sequence, created_at);
   `);
   return database;
 }
 
 export function initializeHitherDatabase(): Promise<SQLite.SQLiteDatabase> {
-  if (!databasePromise) databasePromise = openHitherDatabase();
+  if (!databasePromise) {
+    databasePromise = openHitherDatabase().catch((error) => {
+      databasePromise = null;
+      throw error;
+    });
+  }
   return databasePromise;
 }
 

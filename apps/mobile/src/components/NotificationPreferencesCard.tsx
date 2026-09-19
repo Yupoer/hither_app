@@ -6,6 +6,7 @@ import {
   setNotificationPreferences,
 } from '../api/client';
 import { useTranslation, type TranslationKey } from '../i18n';
+import { getOperationErrorMessage } from '../utils/operationError';
 import {
   DEFAULT_NOTIFICATION_PREFERENCES,
   type NotificationCategory,
@@ -37,7 +38,7 @@ export default function NotificationPreferencesCard({
 }: {
   colors: Palette;
 }) {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [prefs, setPrefs] = useState<NotificationPreferences>(
     DEFAULT_NOTIFICATION_PREFERENCES,
@@ -64,11 +65,11 @@ export default function NotificationPreferencesCard({
     setPrefs(next); // optimistic
     try {
       await setNotificationPreferences(next);
-    } catch {
+    } catch (error) {
       setPrefs(previous); // roll back on failure
       Alert.alert(
         t('subgroup.failed') || '設定失敗',
-        t('map.setFailedMsg') || '無法更新設定，請檢查網路連線後再試。'
+        getOperationErrorMessage(error, language),
       );
     }
   }

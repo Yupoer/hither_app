@@ -40,7 +40,8 @@ jest.mock('../state/coreDataSync', () => ({
   hydrateCoreEntityVersions: (...args: unknown[]) => mockHydrateVersions(...args),
   listOpenCoreOperations: (groupId: string) => mockListOperations(groupId),
   projectOptimisticGathering: jest.fn(),
-  subscribeCoreOutboxChanges: () => mockSubscribeOutbox(),
+  projectPendingDestinations: (state: unknown) => state,
+  subscribeCoreOutboxChanges: (listener: () => void) => mockSubscribeOutbox(listener),
 }));
 
 jest.mock('../state/energyObservability', () => ({
@@ -56,9 +57,9 @@ const { act, create } = require('react-test-renderer') as {
 };
 const { useGroupState } = require('../state/useGroupState') as typeof import('../state/useGroupState');
 
-function state(name: string): GroupState {
+function state(name: string, groupId = 'group-1'): GroupState {
   return {
-    group: { id: 'group-1', name, inviteCode: 'RACE01' } as GroupState['group'],
+    group: { id: groupId, name, inviteCode: 'RACE01' } as GroupState['group'],
     members: [],
     destinations: [],
     subgroups: [],
@@ -225,6 +226,120 @@ describe('useGroupState recovery snapshot race', () => {
       await Promise.resolve();
     });
     expect(api.state?.group.name).toBe('local group two');
+
+    await act(async () => root.unmount());
+  });
+
+  it('keeps the new group loading through a late old-group response and rejects its old refresh', async () => {
+    const pending: Array<{
+      groupId: string;
+      resolve: (value: ReturnType<typeof snapshot>) => void;
+    }> = [];
+    mockRecovery.mockImplementation((groupId: string) => new Promise(resolve => {
+      pending.push({ groupId, resolve });
+    }));
+
+    let api!: ReturnType<typeof useGroupState>;
+    function Harness({ groupId }: { groupId: string }) {
+      api = useGroupState(groupId);
+      return null;
+    }
+
+    let root!: { unmount: () => void; update: (element: React.ReactElement) => void };
+    await act(async () => {
+      root = create(React.createElement(Harness, { groupId: 'group-1' }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(pending.map(request => request.groupId)).toEqual(['group-1']);
+    const oldRefresh = api.refresh;
+
+    await act(async () => {
+      root.update(React.createElement(Harness, { groupId: 'group-2' }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(api.state).toBeNull();
+    expect(api.loading).toBe(true);
+    expect(pending.map(request => request.groupId)).toEqual(['group-1', 'group-2']);
+
+    await act(async () => {
+      pending[0]!.resolve(snapshot(state('late old group'), '2026-09-19T00:00:01Z'));
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(api.state).toBeNull();
+    expect(api.loading).toBe(true);
+
+    const recoveryCalls = mockRecovery.mock.calls.length;
+    await act(async () => {
+      await expect(oldRefresh('poll_manual_refresh')).resolves.toBe(false);
+      await Promise.resolve();
+    });
+    expect(mockRecovery.mock.calls.length).toBe(recoveryCalls);
+
+    await act(async () => {
+      pending[1]!.resolve(snapshot(state('new group', 'group-2'), '2026-09-19T00:00:02Z'));
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(api.state?.group.name).toBe('new group');
+    expect(api.loading).toBe(false);
+
+    await act(async () => root.unmount());
+  });
+
+  it('keeps the new actor loading through a late old-actor recovery error', async () => {
+    const pending: Array<{
+      resolve: (value: ReturnType<typeof snapshot>) => void;
+      reject: (cause: Error) => void;
+    }> = [];
+    mockRecovery.mockImplementation((_groupId: string) => new Promise((resolve, reject) => {
+      pending.push({ resolve, reject });
+    }));
+
+    let api!: ReturnType<typeof useGroupState>;
+    function Harness({ actor }: { actor: string }) {
+      api = useGroupState('group-1', { myUserId: actor });
+      return null;
+    }
+
+    let root!: { unmount: () => void; update: (element: React.ReactElement) => void };
+    await act(async () => {
+      root = create(React.createElement(Harness, { actor: 'actor-old' }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(pending).toHaveLength(1);
+
+    await act(async () => {
+      root.update(React.createElement(Harness, { actor: 'actor-new' }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(pending).toHaveLength(2);
+    expect(api.state).toBeNull();
+    expect(api.loading).toBe(true);
+
+    await act(async () => {
+      pending[0]!.reject(new Error('old actor request failed'));
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(api.error).toBeNull();
+    expect(api.loading).toBe(true);
+
+    await act(async () => {
+      pending[1]!.resolve(snapshot(state('new actor'), '2026-09-19T00:00:03Z'));
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(api.state?.group.name).toBe('new actor');
+    expect(api.loading).toBe(false);
 
     await act(async () => root.unmount());
   });
@@ -435,6 +550,70 @@ describe('useGroupState recovery snapshot race', () => {
       if (arg) expect(arg.destinations.length).toBeGreaterThan(0);
     }
 
+    await act(async () => root.unmount());
+  });
+
+  it('coalesces non-location realtime events, polls without overlap and sleeps in background', async () => {
+    mockRecovery.mockResolvedValue(snapshot(state('server'), '2026-09-19T00:00:00Z'));
+    function Harness() { useGroupState('group-1'); return null; }
+    let root!: { unmount: () => void };
+    await act(async () => { root = create(React.createElement(Harness)); });
+    const { supabase } = require('../api/supabase');
+    const channel = supabase.channel.mock.results[0].value;
+    const subscribed = channel.subscribe.mock.calls[0][0];
+    await act(async () => { subscribed('SUBSCRIBED'); });
+    const before = mockRecovery.mock.calls.length;
+    await act(async () => {
+      for (const call of channel.on.mock.calls.slice(1)) call[2]({ commit_timestamp: '2026-09-19T00:00:01Z' });
+      await jest.advanceTimersByTimeAsync(300);
+    });
+    expect(mockRecovery.mock.calls.length).toBe(before + 1);
+    // Return a current revision so reconciliation settles after a new event.
+    mockRecovery.mockResolvedValue(snapshot(state('fresh'), '2026-09-19T00:00:01Z'));
+    await act(async () => { subscribed('CHANNEL_ERROR'); await jest.advanceTimersByTimeAsync(60_000); });
+    expect(mockRecovery.mock.calls.length).toBeGreaterThan(before + 1);
+    const { AppState } = require('react-native');
+    await act(async () => { AppState.addEventListener.mock.calls[0][1]('background'); });
+    const backgroundCalls = mockRecovery.mock.calls.length;
+    await act(async () => { await jest.advanceTimersByTimeAsync(900_000); });
+    expect(mockRecovery.mock.calls.length).toBe(backgroundCalls);
+    expect(supabase.removeChannel).toHaveBeenCalledWith(channel);
+    await act(async () => root.unmount());
+  });
+
+  it('retains a saved receipt on queue read failure and isolates a subsequent account', async () => {
+    const own = { id: 'op1', actorId: 'me', groupId: 'group-1', payload: {}, status: 'pending', operationType: 'add_destination' };
+    mockListOperations.mockResolvedValue([own, { ...own, id: 'other-op', actorId: 'other' }]);
+    mockRecovery.mockResolvedValue(snapshot(state('server'), '2026-09-19T00:00:00Z'));
+    let api!: ReturnType<typeof useGroupState>;
+    function Harness({ actor }: { actor: string }) { api = useGroupState('group-1', { myUserId: actor }); return null; }
+    let root!: { unmount: () => void; update: (element: React.ReactElement) => void };
+    await act(async () => { root = create(React.createElement(Harness, { actor: 'me' })); });
+    expect(api.openOperations.map(op => op.id)).toEqual(['op1']);
+    mockListOperations.mockRejectedValue(new Error('SQLite disk full'));
+    await act(async () => { mockSubscribeOutbox.mock.calls[0][0](); });
+    expect(api.openOperations.map(op => op.id)).toEqual(['op1']);
+    expect(api.error).toBeTruthy();
+    mockListOperations.mockResolvedValue([]);
+    await act(async () => { root.update(React.createElement(Harness, { actor: 'other' })); });
+    expect(api.openOperations).toEqual([]);
+    await act(async () => root.unmount());
+  });
+
+  it('shows cached state offline but clears it when membership was revoked', async () => {
+    mockReadSnapshot.mockResolvedValue({ state: state('cached'), source: 'local_cache', syncedAt: Date.now() });
+    mockRecovery.mockRejectedValue(new Error('Network request failed'));
+    let api!: ReturnType<typeof useGroupState>;
+    function Harness() { api = useGroupState('group-1'); return null; }
+    let root!: { unmount: () => void };
+    await act(async () => { root = create(React.createElement(Harness)); });
+    expect(api.state?.group.name).toBe('cached');
+    expect(api.dataSource).toBe('local_cache');
+    expect(api.error).toBeNull();
+    mockRecovery.mockRejectedValue(new Error('not_member'));
+    await act(async () => { expect(await api.refresh()).toBe(false); });
+    expect(api.state).toBeNull();
+    expect(api.error).toBe('not_member');
     await act(async () => root.unmount());
   });
 });

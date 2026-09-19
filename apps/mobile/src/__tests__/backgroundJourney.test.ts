@@ -154,6 +154,34 @@ describe('background journey controller', () => {
     expect(opts.distanceInterval).toBe(8);
   });
 
+  it('keeps the precise switch effective without a team navigation session', async () => {
+    const { controller, location } = harness();
+
+    await expect(
+      controller.start({
+        ...config,
+        powerMode: 'journey',
+        highAccuracy: true,
+        teamNavigationActive: false,
+        appState: 'background',
+      }),
+    ).resolves.toBe('started');
+
+    expect(
+      resolveBackgroundTrackingMode({
+        ...config,
+        powerMode: 'journey',
+        highAccuracy: true,
+        teamNavigationActive: false,
+        appState: 'background',
+      }),
+    ).toBe('manualHighAccuracy');
+    expect(location.startLocationUpdatesAsync.mock.calls[0][1]).toMatchObject({
+      accuracy: 5,
+      timeInterval: 5_000,
+    });
+  });
+
   it('allDay uses Low accuracy and ignores highAccuracy for the 8h budget', async () => {
     const { controller, location } = harness();
 

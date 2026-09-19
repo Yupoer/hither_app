@@ -1,6 +1,7 @@
 import type { GroupState } from '../types';
 import {
   describeRecoveryMerge,
+  isLeaderGatheringOperation,
   mergeRemoteGroupStatePreservingOwnLocation,
   pickStrongerReloadReason,
   shouldFenceEmptyItinerary,
@@ -27,6 +28,10 @@ function state(overrides: Partial<GroupState> = {}): GroupState {
 }
 
 describe('syncAuthority', () => {
+  it('does not let a conflicted local gathering override authoritative remote state', () => {
+    expect(isLeaderGatheringOperation({ entityType: 'active_gathering', status: 'conflict' })).toBe(false);
+    expect(isLeaderGatheringOperation({ entityType: 'active_gathering', status: 'pending' })).toBe(true);
+  });
   it('documents the requested source precedence', () => {
     expect(SYNC_AUTHORITY.ownLocation[0]).toBe('local');
     expect(SYNC_AUTHORITY.peerLocation[0]).toBe('server');

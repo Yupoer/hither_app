@@ -35,7 +35,15 @@ export type CoreOperationType =
   | 'start_gathering'
   | 'switch_gathering'
   | 'end_gathering'
-  | 'set_navigation_response';
+  | 'set_navigation_response'
+  | 'add_destination'
+  | 'edit_destination'
+  | 'delete_destination'
+  | 'reorder_destinations'
+  | 'set_destination_meet_time'
+  | 'complete_destination'
+  | 'submit_gather_point_request'
+  | 'resolve_gather_point_request';
 
 export type CoreOperationStatus =
   | 'pending'
@@ -83,6 +91,8 @@ export interface NavigationAnnouncementResponse {
  */
 export interface CoreGroupSnapshot {
   groupId: string;
+  /** Actor that owns unpublished local projection, absent for authoritative data. */
+  ownerActorId?: string;
   group: Group;
   destinations: Destination[];
   /** Optional member cache for offline UI; live GPS is out of scope. */
@@ -91,6 +101,8 @@ export interface CoreGroupSnapshot {
   activeGathering: ActiveGatheringState;
   /** Snapshot entity version (monotone per group). */
   entityVersion: number;
+  /** Independent itinerary entity version used by destination CRUD operations. */
+  itineraryVersion?: number;
   /** Epoch ms when this snapshot was last confirmed from remote. */
   syncedAt: number;
   /** Epoch ms of the latest local write. */
@@ -100,7 +112,14 @@ export interface CoreGroupSnapshot {
 
 /** Structured conflict written back for UI display (never silent overwrite). */
 export interface CoreConflictResult {
-  code: 'stale_version' | 'invalid_transition' | 'unauthorized' | 'unknown';
+  code:
+    | 'stale_version'
+    | 'invalid_transition'
+    | 'unauthorized'
+    | 'validation'
+    | 'dependency_missing'
+    | 'account_changed'
+    | 'unknown';
   message: string;
   serverEntityVersion?: number;
   serverState?: unknown;
@@ -113,6 +132,8 @@ export interface CoreConflictResult {
 /** Transport-neutral mutation carried by the operation outbox. */
 export interface CoreOperation {
   id: string;
+  /** Auth actor bound at creation. Undefined is retained only for old rows/tests. */
+  actorId?: string;
   groupId: string;
   entityType: CoreEntityType;
   entityId: string;
@@ -120,6 +141,13 @@ export interface CoreOperation {
   entityVersion: number;
   operationType: CoreOperationType;
   payload: Record<string, unknown>;
+  /** Monotone durable client sequence scoped to actor + group. */
+  sequence?: number;
+  /** Accepted operation ids that must precede this operation. */
+  dependencyIds?: string[];
+  /** Diagnostic fields retained across restart; not part of the server payload. */
+  inflightStartedAt?: number;
+  lastError?: string;
   createdAt: number;
   status: CoreOperationStatus;
   attempts: number;
@@ -146,6 +174,7 @@ export interface ApplyCoreOperationAccepted {
   entityVersion: number;
   /** Optional authoritative entity snapshot after apply. */
   entity?: unknown;
+  effects?: Record<string, unknown>;
 }
 
 export interface ApplyCoreOperationDuplicate {
@@ -153,6 +182,7 @@ export interface ApplyCoreOperationDuplicate {
   operationId: string;
   entityVersion: number;
   entity?: unknown;
+  effects?: Record<string, unknown>;
 }
 
 export interface ApplyCoreOperationConflict {

@@ -3,6 +3,15 @@ import 'react-native-url-polyfill/auto';
 import { createClient } from '@supabase/supabase-js';
 import { supabaseAuthStorage } from './authStorage';
 import { withSupabasePerformanceTracing } from './instrumentedSupabase';
+import {
+  configureDefaultAuthRecovery,
+  type AuthAdapterResult,
+} from './authRecovery';
+import { withAuthenticatedTransport } from './authenticatedTransport';
+import {
+  defaultSupabaseAuthStorageKey,
+  readLocalAuthActor,
+} from './localAuthActor';
 
 /**
  * 單例 Supabase client，RN 端直連（不經 Vapor，Vapor 已退役）。
@@ -33,4 +42,26 @@ export const baseSupabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
-export const supabase = withSupabasePerformanceTracing(baseSupabase);
+// @supabase/supabase-js derives this key when auth.storageKey is omitted.
+// Keep this read-only local identity lookup on the same SecureStore namespace;
+// it must never call auth.getSession()/refreshSession().
+export const SUPABASE_AUTH_STORAGE_KEY = defaultSupabaseAuthStorageKey(supabaseUrl);
+
+export async function getLocalAuthActorId(): Promise<string | null> {
+  return readLocalAuthActor(supabaseAuthStorage, SUPABASE_AUTH_STORAGE_KEY);
+}
+
+// Keep Auth recovery injectable while ensuring production requests share the
+// same single-flight refresh coordinator as the guarded mutation transport.
+const authRecovery = configureDefaultAuthRecovery({
+  getSession: () => baseSupabase.auth.getSession() as Promise<AuthAdapterResult>,
+  refreshSession: () => baseSupabase.auth.refreshSession() as Promise<AuthAdapterResult>,
+});
+
+const authenticatedSupabase = withAuthenticatedTransport(baseSupabase, { authRecovery });
+
+const tracedSupabase = withSupabasePerformanceTracing(authenticatedSupabase);
+
+// Preserve the normal Supabase client surface while exposing the local-only
+// draft actor seam used by durable offline enqueue callers.
+export const supabase = Object.assign(tracedSupabase, { getLocalAuthActorId });

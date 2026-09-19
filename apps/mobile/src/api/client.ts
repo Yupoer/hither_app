@@ -16,10 +16,44 @@
 export {
   generateInviteCode,
   requireUserId,
+  requireLocalActorId,
+  requireAuthenticatedSession,
+  runAuthenticatedOperation,
   orThrow,
   isNetworkRequestError,
   sleep,
 } from './services/_helpers';
+
+export {
+  classifyOperationError,
+  getOperationErrorMessage,
+  mapOperationErrorToMessage,
+  operationErrorMessage,
+} from '../utils/operationError';
+export type {
+  OperationErrorKind,
+  OperationErrorClassification,
+  OperationErrorContext,
+} from '../utils/operationError';
+
+export {
+  createAuthRecovery,
+  configureDefaultAuthRecovery,
+  getDefaultAuthRecovery,
+} from './authRecovery';
+export type {
+  AuthAdapterResult,
+  AuthRecoveryAdapter,
+  AuthRecoveryController,
+  AuthSessionLike,
+  AuthenticatedOperationOptions,
+} from './authRecovery';
+
+export {
+  withAuthenticatedTransport,
+  DEFAULT_READ_ONLY_RPC_NAMES,
+} from './authenticatedTransport';
+export { installAuthLifecycle } from './authLifecycle';
 
 export {
   mapGroup,

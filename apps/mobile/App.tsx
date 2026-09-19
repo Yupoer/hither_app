@@ -79,6 +79,7 @@ import InteractionRecoveryBanner from './src/components/InteractionRecoveryBanne
 import PremiumPurchaseRecovery from './src/components/PremiumPurchaseRecovery';
 import PasswordRecoveryScreen from './src/screens/PasswordRecoveryScreen';
 import { initializeCoreDataLayer } from './src/state/coreDataSync';
+import { startCoreSyncRuntime } from './src/state/coreSyncRuntime';
 
 // Keep every RN-native presentation dark, regardless of the iOS system scheme.
 Appearance.setColorScheme('dark');
@@ -132,7 +133,8 @@ function ThemedNavigation() {
   useEffect(() => {
     if (initializing) return;
     void initializeCoreDataLayer().catch(() => undefined);
-  }, [initializing]);
+    if (user?.id) return startCoreSyncRuntime();
+  }, [initializing, user?.id]);
 
   useEffect(() => {
     if (!ready || initializing || !user) return;

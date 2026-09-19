@@ -8,6 +8,12 @@ jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(async () => null),
   setItemAsync: jest.fn(async () => undefined),
 }));
+// These tests exercise the legacy RPC fallback. Keep the native SQLite/React
+// Native graph behind the service boundary so the assertions do not depend on
+// Jest being able to parse the mobile-only coreDataSync module.
+jest.mock('../state/coreDataSync', () => {
+  throw new Error('coreDataSync is intentionally unavailable in RPC-only tests');
+});
 
 import { avatarColorForGroup, avatarForGroup, displayMemberAvatar } from '../constants/avatars';
 import { memberColor } from '../glass';

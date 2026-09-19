@@ -21,10 +21,16 @@ describe('foreground arrival feedback', () => {
     const effect = source.slice(source.indexOf('const commitPersonalArrival ='), source.indexOf('// Auto-arrive while navigating'));
     const durable = effect.indexOf('await enqueueArrival(');
     const feedback = effect.indexOf('afterPersonalArrivalRef.current(destination');
-    const sync = effect.indexOf('await syncArrival(operation)');
+    const sync = effect.indexOf('void syncArrival(operation)');
     expect(durable).toBeGreaterThanOrEqual(0);
     expect(feedback).toBeGreaterThan(durable);
     expect(sync).toBeGreaterThan(feedback);
+    // The durable local receipt owns user-visible success; remote flush is
+    // deliberately fire-and-forget so offline transport cannot undo it.
+    expect(effect).toContain('void syncArrival(operation)');
+    expect(effect).toContain('.then(async status =>');
+    expect(effect).toContain("if (status !== 'acked') return;");
+    expect(effect).toContain('.catch(() => undefined)');
     expect(effect).toContain('promptComplete: false');
     expect(effect).not.toContain('promptComplete: true');
     expect(source).toContain('const personallyArrived = myCompletedDestinationIds.has(dest.id);');
@@ -92,7 +98,9 @@ describe('foreground arrival feedback', () => {
     expect(manual).toContain('commitPersonalArrival(destination, targetUserId');
     expect(source).toContain('commitPersonalArrival(navTarget, user.id');
     const shared = source.slice(source.indexOf('const commitPersonalArrival ='), source.indexOf('// Auto-arrive while navigating'));
-    expect(shared).toContain('await syncArrival(operation)');
+    expect(shared).toContain('void syncArrival(operation)');
+    expect(shared).toContain('.then(async status =>');
+    expect(shared).toContain("if (status !== 'acked') return;");
     expect(shared).toContain('await loadGatheringWorkflow().catch(() => undefined)');
     expect(shared).toContain('await refresh().catch(() => undefined)');
   });
