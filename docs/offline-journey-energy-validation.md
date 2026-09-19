@@ -34,6 +34,17 @@
 4. 生產 schema 前置 migration 與實際函式狀態核對；不能只看 Git 上有 migration 就假設生產已部署。
 5. iOS export、與已安裝 runtime 的原生相容性檢查、獨立審查、master 遠端 SHA、OTA group／平台／runtime 回查。
 
+補部署缺少的舊 migration 時，必須核對它是否會覆寫後來已部署的安全修正；不可僅依「缺少 migration」清單盲目套用。正式環境本次仍未部署。發布前須以正式函式定義與後續安全 migration 核對套用順序。
+
+## 本機驗證紀錄（2026-09-19）
+
+- Node 22.17.1：283 個 Jest suites、2,254 項測試通過。
+- 改動程式函式覆蓋率 90.95%（976/1,073），門檻 85%。
+- PostgreSQL 17／pgTAP：9 組、196 項通過，包含 durable outbox 40 項及 gathering validation 13 項；使用真實交易、權限與約束。
+- TypeScript、ESLint error gate、acceptance-map、workflow tooling、runtime alignment 與 iOS export 通過。
+- 線上 `expo install --check` 與 Expo Doctor 的依賴檢查未通過：既有依賴有 11 個原生套件 patch 版本落後官方建議。本次未改套件、未略過門檻；升級與新 binary 需要另行決定。
+- 原有 stash 與其他 active worktree 保留；尚未合併 master、部署正式後端或發布 OTA。
+
 ## 後端觀測的解讀
 
 本次唯讀紀錄同時出現路線代理 503、資料表／函式 42501，以及 28000／401。這些是不同錯誤類別，不應共用「確認你是隊長」。它們支持修正重試與錯誤對照，但不足以單獨證明 CPU、記憶體、定位或 GPU 是電量快速下降的唯一原因。現有後端紀錄缺少可對應該次裝置行程的連續電量／CPU／溫度樣本；不將程式上限或單元測試換算為節電百分比。

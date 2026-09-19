@@ -325,7 +325,7 @@ export const en: Record<keyof ZhDict, string> = {
   'subgroup.itineraryBadge': 'Team itinerary',
   'map.loading': 'Loading group locations…',
   'map.setFailedTitle': 'Failed',
-  'map.setFailedMsg': "Couldn't set the gathering point. Please try again.",
+  'map.setFailedMsg': "Couldn't complete this action. Please try again.",
   'map.routeSaveFailedTitle': 'Save failed',
   'map.routeSaveFailed': "Couldn't save itinerary changes. Please try again.",
   'map.searchA11y': 'Search next gathering point',

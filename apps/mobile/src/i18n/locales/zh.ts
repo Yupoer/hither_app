@@ -333,7 +333,7 @@ export const zh = {
   'subgroup.itineraryBadge': '小隊行程',
   'map.loading': '載入群組位置中…',
   'map.setFailedTitle': '設定失敗',
-  'map.setFailedMsg': '無法設定集合點，請稍後再試。',
+  'map.setFailedMsg': '操作未完成，請稍後再試。',
   'map.routeSaveFailedTitle': '儲存失敗',
   'map.routeSaveFailed': '無法儲存行程變更，請再試一次。',
   'map.searchA11y': '搜尋下一集合點',
