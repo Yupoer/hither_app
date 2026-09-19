@@ -2,7 +2,7 @@
 
 ## 交付範圍與限制
 
-- 目標：iOS production OTA；不得包含原生模組、原生依賴或 runtime 變更。
+- 目標：iOS production 交付。原始旅程修正是 OTA-safe；因 CI 發現既有 Expo SDK 56 原生 patch 依賴落後，已另外更新相容 patch 版本，因此本次需先建立並驗證新的 iOS binary，再發布同 runtime 的 OTA。
 - 旅程操作先取得本機持久化收據，再嘗試傳送；收據不代表隊員或後端已收到。
 - 網路、結果不明的逾時、登入狀態、隊長資格、後端存取拒絕、輸入錯誤與本機儲存失敗分開顯示。未知原因不能推定為權限問題。
 - 使用者不要求本次實體裝置測試。本文件及自動化測試不能證明半小時耗電量、溫度或音樂播放已改善。
@@ -42,7 +42,7 @@
 - 改動程式函式覆蓋率 90.95%（976/1,073），門檻 85%。
 - PostgreSQL 17／pgTAP：9 組、196 項通過，包含 durable outbox 40 項及 gathering validation 13 項；使用真實交易、權限與約束。
 - TypeScript、ESLint error gate、acceptance-map、workflow tooling、runtime alignment 與 iOS export 通過。
-- 線上 `expo install --check` 與 Expo Doctor 的依賴檢查未通過：既有依賴有 11 個原生套件 patch 版本落後官方建議。本次未改套件、未略過門檻；升級與新 binary 需要另行決定。
+- 線上 `expo install --check` 與 Expo Doctor 已通過；為修復原有門檻，更新了 11 個 Expo SDK 56 原生 patch 依賴及 lockfile。這些依賴會影響 native binary，因此必須先完成新的 iOS TestFlight binary 驗證；在此之前不發布 OTA。
 - 原有 stash 與其他 active worktree 保留；尚未合併 master、部署正式後端或發布 OTA。
 
 ## 後端觀測的解讀
