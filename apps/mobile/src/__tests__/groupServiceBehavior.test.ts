@@ -213,8 +213,8 @@ describe('GroupService snapshots and joined-group cache', () => {
   });
 
   it('handles signed-out, empty, profile-rich, and lite joined-group reads with disk cache', async () => {
-    mockedSupabase.auth.getSession.mockResolvedValueOnce({ data: { session: null }, error: null });
-    await expect(getMyJoinedGroups()).resolves.toEqual([]);
+    mockedSupabase.auth.getSession.mockResolvedValue({ data: { session: null }, error: null });
+    await expect(getMyJoinedGroups()).rejects.toThrow();
 
     mockedSupabase.auth.getSession.mockResolvedValue({ data: { session: { access_token: 't', user: { id: 'user-1' } } }, error: null });
     setTables({ memberships: { data: [], error: null } });
@@ -253,7 +253,7 @@ describe('GroupService snapshots and joined-group cache', () => {
       memberships: { data: [{ group_id: 'g-1', role: 'leader' }], error: null },
       groups: { data: [], error: null },
     });
-    await expect(getMyJoinedGroups()).resolves.toEqual([]);
+    await expect(getMyJoinedGroups()).rejects.toThrow('Joined group metadata is unavailable');
 
     setTables({
       memberships: { data: [{ group_id: 'g-1', role: 'leader', user_id: 'user-1' }, { group_id: 'g-1', role: 'leader', user_id: 'user-2' }], error: null },
@@ -264,6 +264,34 @@ describe('GroupService snapshots and joined-group cache', () => {
     storage.setItem.mockRejectedValueOnce(new Error('disk write'));
     await expect(getMyJoinedGroups()).resolves.toHaveLength(1);
     expect(getCachedMyJoinedGroups('user-1')).toHaveLength(1);
+  });
+
+  it('preserves the last successful list when membership or group reads fail', async () => {
+    const memberships = { data: [{ group_id: 'g-1', role: 'leader', user_id: 'user-1' }], error: null };
+    setTables({ memberships, groups: { data: [row()], error: null } });
+    await getMyJoinedGroups({ includeProfiles: false });
+    for (const table of ['memberships', 'groups']) {
+      setTables({ memberships, groups: { data: [row()], error: null },
+        [table]: { data: null, error: { message: 'Network request failed', code: 'transport' } } });
+      await expect(getMyJoinedGroups()).rejects.toMatchObject({ code: 'transport' });
+      expect(getCachedMyJoinedGroups('user-1')).toHaveLength(1);
+    }
+  });
+
+  it('rejects a session that changed before the screen actor was updated', async () => {
+    mockedSupabase.auth.getSession.mockResolvedValue({ data: { session: { access_token: 't', user: { id: 'user-b' } } }, error: null });
+    await expect(getMyJoinedGroups({ expectedActorId: 'user-a' })).rejects.toMatchObject({ code: 'session_missing_or_expired' });
+    expect(mockedSupabase.from).not.toHaveBeenCalled();
+    expect(getCachedMyJoinedGroups('user-a')).toBeNull();
+  });
+
+  it('does not cache a response when the session changes during the read', async () => {
+    const a = { data: { session: { access_token: 'a', user: { id: 'user-a' } } }, error: null };
+    const b = { data: { session: { access_token: 'b', user: { id: 'user-b' } } }, error: null };
+    mockedSupabase.auth.getSession.mockResolvedValue(b).mockResolvedValueOnce(a).mockResolvedValueOnce(a);
+    setTables({ memberships: { data: [], error: null } });
+    await expect(getMyJoinedGroups({ expectedActorId: 'user-a' })).rejects.toMatchObject({ code: 'session_missing_or_expired' });
+    expect(getCachedMyJoinedGroups('user-a')).toBeNull();
   });
 });
 

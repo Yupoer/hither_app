@@ -26,6 +26,7 @@ export const zh = {
   'coreData.offlineCache': '目前離線，顯示上次同步的旅團與行程',
   'coreData.staleSnapshot': '本地資料可能過期，連線後會自動更新',
   'coreData.emptySnapshot': '尚無本地旅團快照，請連線後再試',
+  'coreData.loadFailed': '團隊資料載入失敗，請重試。',
   'coreData.syncConflict': '同步未完成：需要處理',
   'coreData.pendingSync': '變更已儲存在本機，尚未同步',
   'coreData.conflictExplanation': '此操作未套用至後端，以後端狀態為準。放棄或重新套用都會取消後續相依操作；重新套用只重建此筆操作。',

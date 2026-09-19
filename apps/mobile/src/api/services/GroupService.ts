@@ -446,6 +446,8 @@ export interface JoinedGroupInfo {
 }
 
 export type GetMyJoinedGroupsOptions = {
+  /** Bind the read to the account currently represented by the caller. */
+  expectedActorId?: string;
   /**
    * When false, skip the profiles round-trip (RoleSelect only needs count +
    * group metadata). MyTeams should keep the default true for avatars.
@@ -509,19 +511,26 @@ export async function getMyJoinedGroups(
   options: GetMyJoinedGroupsOptions = {},
 ): Promise<JoinedGroupInfo[]> {
   const includeProfiles = options.includeProfiles !== false;
-  let uid: string;
-  try {
-    uid = await requireUserId();
-  } catch {
-    return [];
-  }
+  const uid = await requireUserId();
 
-  const { data: myMemberships } = await supabase
+  const assertActor = async () => {
+    const current = await requireUserId();
+    if (current !== uid || (options.expectedActorId && current !== options.expectedActorId)) {
+      throw Object.assign(new Error('The authenticated account changed during team loading'), {
+        code: 'session_missing_or_expired',
+      });
+    }
+  };
+  await assertActor();
+
+  const { data: myMemberships, error: membershipError } = await supabase
     .from('memberships')
     .select('group_id, role')
     .eq('user_id', uid);
+  orThrow(membershipError);
 
   if (!myMemberships || myMemberships.length === 0) {
+    await assertActor();
     return rememberJoinedGroups(uid, []);
   }
 
@@ -540,9 +549,11 @@ export async function getMyJoinedGroups(
       .in('group_id', groupIds),
   ]);
 
+  orThrow(groupsRes.error);
+  orThrow(membersRes.error);
   const groups = groupsRes.data;
   if (!groups || groups.length === 0) {
-    return rememberJoinedGroups(uid, []);
+    throw new Error('Joined group metadata is unavailable');
   }
 
   const members = membersRes.data ?? [];
@@ -577,6 +588,7 @@ export async function getMyJoinedGroups(
     for (const [gid, profiles] of membersByGroup) {
       nextDisk[gid] = profiles;
     }
+    await assertActor();
     void writeAvatarDiskCache(uid, nextDisk);
   }
 
@@ -595,6 +607,7 @@ export async function getMyJoinedGroups(
     };
   });
 
+  await assertActor();
   return rememberJoinedGroups(uid, list);
 }
 

@@ -671,8 +671,9 @@ describe('map UI placement contracts', () => {
     expect(roleSelect).toContain('bottomFlex');
     expect(roleSelect).toContain('myTeamsSlot');
     // Instant paint: memory cache + lite fetch (skip profiles on this screen).
-    expect(roleSelect).toContain('getCachedMyJoinedGroups');
-    expect(roleSelect).toContain('includeProfiles: false');
+    expect(roleSelect).toContain('useJoinedGroups(user?.id ?? null, false)');
+    const joinedGroupsHook = readFileSync(join(__dirname, '../state/useJoinedGroups.ts'), 'utf8');
+    expect(joinedGroupsHook).toContain('getCachedMyJoinedGroups');
   });
 
   it('keeps create/join static and only fades in My Teams', () => {

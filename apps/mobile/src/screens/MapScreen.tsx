@@ -600,6 +600,8 @@ export default function MapScreen({ route, navigation }: Props) {
     state,
     loading,
     error: groupStateError,
+    loadError,
+    refreshing,
     refresh,
     applyOptimisticGathering,
     emptyLocalSnapshot,
@@ -6619,13 +6621,16 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // OTA-04: offline cold start with no prior snapshot — clear empty outcome.
   // OTA-07: passive still mounts switch-back so users are never trapped.
-  if (!state && emptyLocalSnapshot) {
+  if (!state && (emptyLocalSnapshot || loadError)) {
     if (inPassiveMode) {
       return (
         <View style={styles.flex}>
           <View style={styles.loading}>
-            <Text style={styles.loadingText}>{t('coreData.emptySnapshot')}</Text>
+            <Text style={styles.loadingText}>{loadError?.kind === 'offline_transport' ? t('coreData.emptySnapshot') : loadError?.kind === 'unknown' ? t('coreData.loadFailed') : groupStateError ?? t('coreData.loadFailed')}</Text>
+            {refreshing ? <ActivityIndicator color={accent} /> : null}
             <Pressable
+              disabled={refreshing}
+              accessibilityState={{ disabled: refreshing, busy: refreshing }}
               onPress={() => { void refresh(); }}
               accessibilityRole="button"
               accessibilityLabel={t('interaction.retry')}
@@ -6651,8 +6656,11 @@ export default function MapScreen({ route, navigation }: Props) {
     }
     return (
       <View style={styles.loading}>
-        <Text style={styles.loadingText}>{t('coreData.emptySnapshot')}</Text>
+        <Text style={styles.loadingText}>{loadError?.kind === 'offline_transport' ? t('coreData.emptySnapshot') : loadError?.kind === 'unknown' ? t('coreData.loadFailed') : groupStateError ?? t('coreData.loadFailed')}</Text>
+        {refreshing ? <ActivityIndicator color={accent} /> : null}
         <Pressable
+          disabled={refreshing}
+          accessibilityState={{ disabled: refreshing, busy: refreshing }}
           onPress={() => { void refresh(); }}
           accessibilityRole="button"
           accessibilityLabel={t('interaction.retry')}

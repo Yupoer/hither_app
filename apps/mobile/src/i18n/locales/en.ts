@@ -22,6 +22,7 @@ export const en: Record<keyof ZhDict, string> = {
   'coreData.offlineCache': 'You are offline. Showing the last synced group and itinerary.',
   'coreData.staleSnapshot': 'Local data may be outdated. It will refresh when you reconnect.',
   'coreData.emptySnapshot': 'No local trip snapshot yet. Connect and try again.',
+  'coreData.loadFailed': 'Could not load your team. Please try again.',
   'coreData.syncConflict': 'Sync needs attention',
   'coreData.pendingSync': 'Saved on this device. Not yet synced.',
   'coreData.conflictExplanation': 'This action was not applied to the server. The server state is kept. Both discard and reapply cancel dependent actions; reapply recreates only this action.',

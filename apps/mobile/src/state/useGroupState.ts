@@ -4,7 +4,7 @@ import { getGroupRecoverySnapshot } from '../api/client';
 import { energyObservability } from './energyObservability';
 import { syncLocationSharing } from './locationSharingSync';
 import { isNetworkRequestError } from '../api/services/_helpers';
-import { getOperationErrorMessage } from '../utils/operationError';
+import { classifyOperationError, getOperationErrorMessage, type OperationErrorClassification } from '../utils/operationError';
 import { supabase } from '../api/supabase';
 import type { GroupState } from '../types';
 import type {
@@ -79,6 +79,8 @@ interface UseGroupStateResult {
   /** True only during the very first load (before any data arrives). */
   loading: boolean;
   error: string | null;
+  loadError: OperationErrorClassification | null;
+  refreshing: boolean;
   /** Force an immediate refresh (e.g. pull-to-refresh, recenter). */
   refresh: (reason?: GroupReloadReason) => Promise<boolean>;
   /** Where the current state was loaded from (OTA-04 local-first). */
@@ -118,6 +120,8 @@ export function useGroupState(
   const stateRef = useRef<GroupState | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<OperationErrorClassification | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const [dataSource, setDataSource] = useState<GroupStateDataSource>('none');
   const [snapshotFreshness, setSnapshotFreshness] = useState<CoreSnapshotFreshness>({
     unit: 'missing',
@@ -297,6 +301,7 @@ export function useGroupState(
     const loadReason = pickStrongerReloadReason(pendingReloadReasonRef.current, reason);
     pendingReloadReasonRef.current = null;
     inFlightReasonRef.current = loadReason;
+    setRefreshing(true);
     const run = (async () => {
       try {
         energyObservability.increment('snapshot');
@@ -353,6 +358,7 @@ export function useGroupState(
           setState(merged);
           persistSnapshot = merged;
           setError(null);
+          setLoadError(null);
           setDataSource('remote');
           setEmptyLocalSnapshot(false);
         }
@@ -383,6 +389,7 @@ export function useGroupState(
         return isCurrentRequest();
       } catch (cause) {
         if (!isCurrentRequest()) return false;
+        setLoadError(classifyOperationError(cause));
         const message = cause instanceof Error ? cause.message : String(cause ?? '');
         const notMember = /not_member/i.test(message);
         if (notMember) {
@@ -412,7 +419,10 @@ export function useGroupState(
         // must surface failure even if a local cache is still painted.
         return false;
       } finally {
-        if (isCurrentRequest()) setLoading(false);
+        if (isCurrentRequest()) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     })().finally(() => {
       if (loadInFlightRef.current !== run) return;
@@ -473,6 +483,8 @@ export function useGroupState(
     setSnapshotFreshness({ unit: 'missing' });
     setEmptyLocalSnapshot(false);
     setError(null);
+    setLoadError(null);
+    setRefreshing(false);
     pendingPatchesRef.current.clear();
     latestRevisionRef.current = '0';
 
@@ -679,6 +691,8 @@ export function useGroupState(
     state: projectedState,
     loading,
     error,
+    loadError,
+    refreshing,
     refresh: load,
     dataSource,
     snapshotFreshness,

@@ -92,6 +92,30 @@ describe('useGroupState recovery snapshot race', () => {
     jest.useRealTimers();
   });
 
+  it('exposes the real cold-start error and recovers without a local snapshot', async () => {
+    mockRecovery.mockRejectedValue(new TypeError('Function is not a constructor'));
+    let api!: ReturnType<typeof useGroupState>;
+    function Harness() { api = useGroupState('group-1'); return null; }
+    let root!: { unmount: () => void };
+    await act(async () => { root = create(React.createElement(Harness)); });
+    expect(api.state).toBeNull();
+    expect(api.loadError?.kind).toBe('unknown');
+    expect(api.emptyLocalSnapshot).toBe(true);
+    let settle!: (value: ReturnType<typeof snapshot>) => void;
+    mockRecovery.mockImplementation(() => new Promise(resolve => { settle = resolve; }));
+    await act(async () => { void api.refresh(); });
+    expect(api.refreshing).toBe(true);
+    const count = mockRecovery.mock.calls.length;
+    await act(async () => { void api.refresh(); });
+    expect(mockRecovery).toHaveBeenCalledTimes(count);
+    await act(async () => { settle(snapshot(state('Recovered'), '2026-09-19T00:00:00.000Z')); });
+    expect(api.state?.group.name).toBe('Recovered');
+    expect(api.loadError).toBeNull();
+    expect(api.refreshing).toBe(false);
+    expect(api.emptyLocalSnapshot).toBe(false);
+    await act(async () => root.unmount());
+  });
+
   it('starts one immediate follow-up after a newer Realtime revision', async () => {
     const pending: Array<(value: ReturnType<typeof snapshot>) => void> = [];
     mockRecovery.mockImplementation(() => new Promise((resolve) => pending.push(resolve)));

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { StyleSheet, Text, View, ScrollView, Alert, ActivityIndicator, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,7 +8,9 @@ import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useTheme } from '../state/PreferencesContext';
 import { lightTap, alertBuzz } from '../utils/haptics';
 import { useSession } from '../state/SessionContext';
-import { getMyJoinedGroups, JoinedGroupInfo, leaveGroups } from '../api/client';
+import { JoinedGroupInfo, leaveGroups } from '../api/client';
+import { useJoinedGroups } from '../state/useJoinedGroups';
+import GroupLoadError from '../components/GroupLoadError';
 import { clearLiveActivities } from '../state/useLiveActivity';
 import { HitherText } from '../components/HitherText';
 import { avatarForGroup, displayMemberAvatar } from '../constants/avatars';
@@ -18,11 +20,10 @@ import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanim
 import MetalforgeBackground from '../components/MetalforgeBackground';
 import NativeGlassButton from '../components/NativeGlassButton';
 import NativeTeamCard from '../components/NativeTeamCard';
-import { classifyOperationError } from '../utils/operationError';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'MyTeams'>;
 
-export default function MyTeamsScreen({ navigation, route }: Props) {
+export default function MyTeamsScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
   const { width: windowWidth } = useWindowDimensions();
@@ -34,34 +35,14 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
   const { user, setMembership, updateNickname } = useSession();
   const { t } = useTranslation();
 
-  const [joinedGroups, setJoinedGroups] = useState<JoinedGroupInfo[]>(route.params?.initialGroups || []);
+  const { groups: joinedGroups, setGroups: setJoinedGroups, loading: isLoading, error: groupsError, retry } = useJoinedGroups(user?.id ?? null);
   const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(!route.params?.initialGroups?.length);
   /**
    * Enter guard across OTA reload / repeated taps / multi-group races.
    * Cleared on focus return and on non-navigation exits (timeout / stale token).
    * UI baseline unchanged — only entry lifecycle hardening (ticket 02).
    */
   const enterInFlightRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (user) {
-      getMyJoinedGroups().then(data => {
-        setJoinedGroups(data);
-        setIsLoading(false);
-      }).catch((error) => {
-        const classified = classifyOperationError(error);
-        if (__DEV__) {
-          console.warn('[my-teams] joined groups unavailable', {
-            kind: classified.kind,
-            code: classified.code,
-            status: classified.status,
-          });
-        }
-        setIsLoading(false);
-      });
-    }
-  }, [user]);
 
   useFocusEffect(
     useCallback(() => {
@@ -196,6 +177,7 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
       </View>
 
       <ScrollView contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 40 }]}>
+        {groupsError ? <GroupLoadError error={groupsError} loading={isLoading} retry={retry} color={accent} /> : null}
         {isLoading && joinedGroups.length === 0 ? (
           <View style={{ paddingTop: 60, alignItems: 'center' }}>
             <ActivityIndicator size="large" color={accent} />

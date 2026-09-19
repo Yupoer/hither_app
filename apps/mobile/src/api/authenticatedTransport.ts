@@ -72,7 +72,10 @@ function guardBuilder(
     get(target, property, receiver) {
       if (property === 'then' && typeof (target as { then?: unknown }).then === 'function') {
         const originalThen = (target as { then: (resolve: unknown, reject?: unknown) => unknown }).then;
-        if (!mutation) return Reflect.get(target, property, receiver);
+        // PostgREST's then reads this.fetch and awaits native Promises. Running
+        // it with the Proxy receiver recursively proxies those Promises and
+        // breaks their constructor/receiver invariants (including Hermes).
+        if (!mutation) return originalThen.bind(target);
         return (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) =>
           authRecovery
             .withAuthenticatedOperation(
