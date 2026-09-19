@@ -29,6 +29,7 @@ import {
   JoinedGroupInfo,
 } from '../api/client';
 import Animated, { FadeIn, ZoomIn } from 'react-native-reanimated';
+import { classifyOperationError } from '../utils/operationError';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RoleSelect'>;
 
@@ -75,7 +76,16 @@ export default function RoleSelectScreen({ navigation }: Props) {
       .then((list) => {
         if (!cancelled) setJoinedGroups(list);
       })
-      .catch((e) => console.log('Failed to fetch joined groups', e))
+      .catch((error) => {
+        const classified = classifyOperationError(error);
+        if (__DEV__) {
+          console.warn('[role-select] joined groups unavailable', {
+            kind: classified.kind,
+            code: classified.code,
+            status: classified.status,
+          });
+        }
+      })
       .finally(() => {
         if (!cancelled) setGroupsLoading(false);
       });

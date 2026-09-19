@@ -856,12 +856,12 @@ describe('OTA-04 contract surfaces', () => {
 
     expect(journey).toContain('enqueueLeaderGatheringStart');
     expect(journey).toContain('onOptimisticGathering');
-    // OTA-01/04 P1: only retain outbox on transient network errors; never flush offline.
-    expect(journey).toContain('resolveGatheringOutboxAfterSessionStart');
-    expect(journey).toContain('abortLeaderGatheringStart');
+    // The durable server apply now owns gathering + navigation atomically.
+    // Behavioral FIFO/storage-failure coverage lives in journeyDurableCommands.
+    expect(journey).not.toMatch(/await startSession\(/);
+    expect(journey).not.toMatch(/await cancelSession\(/);
     expect(journey).toContain('flushImmediately: false');
     expect(journey).toContain('flushCoreOperationOutbox');
-    expect(journey.match(/void flushCoreOperationOutbox\(\)/g)?.length).toBe(1);
     expect(coreSync).toContain('abortLeaderGatheringStart');
     expect(coreSync).toContain('markGatheringConflictAndRestore');
     expect(coreSync).toContain('flushImmediately');
@@ -875,9 +875,9 @@ describe('OTA-04 contract surfaces', () => {
     expect(map).not.toContain('navResponse.prompt');
     expect(map).not.toContain('respondToAnnouncement(kind)');
     expect(map).not.toContain('hasCoreConflict');
-    expect(map).not.toContain('coreData.pendingSync');
+    expect(map).toContain('<CoreSyncStatus operations={openOperations}');
     expect(journey).toContain('enqueueLeaderGatheringSwitch');
-    expect(journey).toContain('startSession(dest.id, requestRef.current.requestId, true)');
+    expect(journey).toContain('enqueueLeaderGatheringSwitch(groupId, options)');
     const navigationService = fs.readFileSync(
       path.join(__dirname, '../api/services/NavigationService.ts'),
       'utf8',

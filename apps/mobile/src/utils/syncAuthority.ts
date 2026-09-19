@@ -198,7 +198,7 @@ export function isLeaderGatheringOperation(operation: {
   status: string;
 }): boolean {
   return operation.entityType === 'active_gathering'
-    && ['pending', 'failed', 'inflight', 'conflict'].includes(operation.status);
+    && ['pending', 'failed', 'inflight'].includes(operation.status);
 }
 
 

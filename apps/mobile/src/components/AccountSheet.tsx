@@ -23,6 +23,7 @@ import { useTranslation, type TranslationKey } from '../i18n';
 import { runUiAction } from '../utils/uiAction';
 import { confirmDeleteAccount } from '../utils/deleteAccount';
 import { isAnonymousAccessExpired } from '../anonymousAccess';
+import { getOperationErrorMessage } from '../utils/operationError';
 import {
   KEYBOARD_SURFACE_GAP_PT,
   keyboardScrollPaddingBottom,
@@ -55,7 +56,7 @@ export function AccountSheetContent({
     linkWithApple,
     deleteAccount,
   } = useSession();
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const scrollRef = useRef<ScrollView>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [deleting, setDeleting] = useState(false);
@@ -146,7 +147,7 @@ export function AccountSheetContent({
           if (token.isCurrent()) {
             Alert.alert(
               t('account.section'),
-              e instanceof Error ? e.message : t('account.upgradeSent'),
+              getOperationErrorMessage(e, language),
             );
           }
           throw e;
@@ -203,7 +204,7 @@ export function AccountSheetContent({
           if (token.isCurrent()) {
             Alert.alert(
               provider === 'google' ? t('login.google') : t('login.apple'),
-              e instanceof Error ? e.message : t('login.signInFailed'),
+              getOperationErrorMessage(e, language),
             );
           }
           throw e;

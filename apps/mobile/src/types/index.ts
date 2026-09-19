@@ -487,6 +487,8 @@ export interface Destination {
    * Cleared on some→some / some→none so cards become draggable mid.
    */
   stayAnchor?: boolean;
+  /** Stable provider identity; coordinate proximity is never used for merging. */
+  providerPlaceId?: string;
 }
 
 /** Per-team per-date accommodation snapshot (client shape). */

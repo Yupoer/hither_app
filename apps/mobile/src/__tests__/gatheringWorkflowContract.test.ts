@@ -56,7 +56,11 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(mapScreen).toContain('isNetworkRequestError');
     expect(mapScreen).toContain('gather_request_resolve');
     expect(mapScreen).toContain('resolvingGatherRequestId');
-    expect(mapScreen).toContain("t('gatherRequest.networkFailed')");
+    // Error copy is classified by the shared mapper; it must not hard-code a
+    // network message that can mislabel an ambiguous durable result.
+    expect(mapScreen).toContain('getOperationErrorMessage(error)');
+    expect(mapScreen).toContain('recoverGatherRequestAfterFailedResolve');
+    expect(mapScreen).not.toContain("t('gatherRequest.networkFailed')");
   });
 
   it('stores per-member destination arrivals and supports manual marking', () => {
@@ -151,7 +155,10 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(groupState).toContain("status === 'TIMED_OUT'");
     expect(groupState).toContain("status === 'CHANNEL_ERROR'");
     expect(groupState).toContain("status === 'CLOSED'");
-    expect(groupState).toContain('const timer = setInterval');
+    expect(groupState).toContain('let timer: ReturnType<typeof setTimeout>');
+    expect(groupState).toContain('const schedule = () =>');
+    expect(groupState).toContain('groupSyncDelay(realtimeReadyRef.current, failures)');
+    expect(groupState).not.toContain('setInterval(');
     expect(groupState).toMatch(/void loadRef\.current\(/);
     expect(groupState).not.toContain('const profilesChannel');
   });

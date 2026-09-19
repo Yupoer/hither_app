@@ -18,7 +18,7 @@ describe('shouldFireApproachNotify (#197)', () => {
     expect(APPROACH_NOTIFY_RATIO).toBeCloseTo(0.2);
     expect(shouldFireApproachNotify({ ...base, remainingM: 201 })).toBe(false);
     expect(shouldFireApproachNotify({ ...base, remainingM: 200 })).toBe(true);
-    expect(shouldFireApproachNotify({ ...base, remainingM: 50 })).toBe(true);
+    expect(shouldFireApproachNotify({ ...base, remainingM: 50 })).toBe(false);
   });
 
   it('skips when already arrived', () => {

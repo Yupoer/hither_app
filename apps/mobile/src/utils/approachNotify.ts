@@ -20,6 +20,9 @@ export function shouldFireApproachNotify(input: ApproachNotifyInput): boolean {
   if (!Number.isFinite(remainingM) || remainingM < 0) return false;
   if (!Number.isFinite(totalM) || totalM <= 0) return false;
   if (!Number.isFinite(arrivalRadiusM) || arrivalRadiusM < 0) return false;
+  // A newly synchronized target can already surround the user. Never play a
+  // stale approach alert while the arrival operation is being persisted.
+  if (remainingM <= arrivalRadiusM) return false;
   const threshold = totalM * APPROACH_NOTIFY_RATIO;
   if (arrivalRadiusM > threshold) return false;
   return remainingM <= threshold;

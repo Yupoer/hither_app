@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { saveOnboardingProfile } from '../api/client';
 import type { OnboardingAnswers } from './types';
+import { classifyOperationError } from '../utils/operationError';
 
 /**
  * Local persistence for the onboarding flag/answers, plus a one-shot sync of
@@ -127,6 +128,11 @@ export async function syncOnboardingIfNeeded(): Promise<void> {
       JSON.stringify({ ...state, synced: true }),
     );
   } catch (e) {
-    console.warn('[onboarding] profile sync failed', e);
+    const classified = classifyOperationError(e);
+    console.warn('[onboarding] profile sync failed', {
+      kind: classified.kind,
+      code: classified.code,
+      status: classified.status,
+    });
   }
 }

@@ -3,6 +3,76 @@
   "description": "L1 meta gate: each child acceptance maps to a real test. FULL_IMPLEMENT must append entries for the parent being delivered. Empty entries is valid only when META_PARENT=pure-chore (PR body: <!-- hither-test-meta parent: pure-chore -->). Required parent ids fail L1 if zero matching entries.",
   "entries": [
     {
+      "parent": 272,
+      "child": 272,
+      "acceptance": "Network and server access failures do not masquerade as leader-role errors.",
+      "testFile": "operationError.test.ts",
+      "testNamePattern": "does not infer leader rejection from SQLSTATE 42501 alone"
+    },
+    {
+      "parent": 272,
+      "child": 272,
+      "acceptance": "Durable commands preserve FIFO per actor and group and do not block independent groups.",
+      "testFile": "coreOperationOutboxDurable.test.ts",
+      "testNamePattern": "enforces FIFO per actor/group"
+    },
+    {
+      "parent": 272,
+      "child": 272,
+      "acceptance": "Restart retries an interrupted command with the original idempotency ID.",
+      "testFile": "coreOperationOutboxDurable.test.ts",
+      "testNamePattern": "replays an inflight row after restart"
+    },
+    {
+      "parent": 272,
+      "child": 272,
+      "acceptance": "Arrival undo arrival keeps all three ordered intents; another navigation session never reuses the old arrival.",
+      "testFile": "arrivalIntentOrdering.test.ts",
+      "testNamePattern": "preserves arrival undo arrival"
+    },
+    {
+      "parent": 272,
+      "child": 272,
+      "acceptance": "Normal journey location uploads respect a 10-second floor; precise tracking is opt-in.",
+      "testFile": "locationPolicy.test.ts",
+      "testNamePattern": "bounds normal moving uploads by the 10-second minimum"
+    },
+    {
+      "parent": 272,
+      "child": 272,
+      "acceptance": "Foreground synchronization is bounded, non-overlapping, and sleeps in background.",
+      "testFile": "coreSyncScheduler.test.ts",
+      "testNamePattern": "waits for queue retry eligibility"
+    },
+    {
+      "parent": 272,
+      "child": 272,
+      "acceptance": "Rapid journey taps remain FIFO and local persistence precedes success without parallel legacy server writes.",
+      "testFile": "journeyDurableCommands.test.ts",
+      "testNamePattern": "persists every Start End Start in tap order"
+    },
+    {
+      "parent": 272,
+      "child": 272,
+      "acceptance": "Newly synchronized targets evaluate fresh accurate fixes even without movement and suppress stale approach notifications.",
+      "testFile": "synchronizedArrival.test.ts",
+      "testNamePattern": "evaluates a fresh fix immediately"
+    },
+    {
+      "parent": 272,
+      "child": 272,
+      "acceptance": "Notification deduplication persists across restart and concurrent events do not overwrite each other.",
+      "testFile": "journeyNotificationLedger.test.ts",
+      "testNamePattern": "serializes different events and deduplicates"
+    },
+    {
+      "parent": 272,
+      "child": 272,
+      "acceptance": "Transparent particles apply exact requested speed twinkle density and radius factors while respecting lifecycle and power constraints.",
+      "testFile": "metalforgeStarfield.test.ts",
+      "testNamePattern": "uses the requested runtime factors"
+    },
+    {
       "parent": 270,
       "child": 270,
       "acceptance": "An in-flight preference read cannot restore diagnostic consent after the user revokes it.",

@@ -34,8 +34,23 @@ export interface CoreSqlExecutor {
 export interface CoreDataDatabase {
   initialize(): Promise<void>;
   getSnapshot(groupId: string): Promise<CoreGroupSnapshot | null>;
+  /** Read using an executor already inside the caller's transaction. */
+  readSnapshotInTransaction(
+    exec: CoreSqlExecutor,
+    groupId: string,
+  ): Promise<CoreGroupSnapshot | null>;
   putSnapshot(snapshot: CoreGroupSnapshot): Promise<void>;
+  /** Raw snapshot write for a local projection inside the caller's transaction. */
+  writeSnapshot(exec: CoreSqlExecutor, snapshot: CoreGroupSnapshot): Promise<void>;
   deleteSnapshot(groupId: string): Promise<void>;
+  findSnapshotGroupForDestination(destinationId: string): Promise<string | null>;
+  writeDestinationAlias(
+    exec: CoreSqlExecutor,
+    groupId: string,
+    localDestinationId: string,
+    canonicalDestinationId: string,
+    createdAt?: number,
+  ): Promise<void>;
   getActiveGathering(groupId: string): Promise<ActiveGatheringState | null>;
   /** Opens its own exclusive transaction. Defaults to optimistic snapshot patch. */
   putActiveGathering(
@@ -75,6 +90,20 @@ export interface CoreDataDatabase {
   hasLocalOptimisticGathering?(groupId: string): Promise<boolean>;
 }
 
+/**
+ * One in-process writer gate shared by the snapshot store and operation
+ * outbox. SQLite's exclusive transaction is the durable boundary; this gate
+ * prevents a store callback and an outbox callback from deciding pending state
+ * on opposite sides of that boundary.
+ */
+let coreDataWriteSerial = Promise.resolve();
+
+export function runCoreDataWriteLock<T>(work: () => Promise<T>): Promise<T> {
+  const next = coreDataWriteSerial.then(work, work);
+  coreDataWriteSerial = next.then(() => undefined, () => undefined);
+  return next;
+}
+
 interface SnapshotRow {
   group_id: string;
   payload: string;
@@ -105,29 +134,35 @@ interface NavResponseRow {
 
 export function snapshotPayloadOf(snapshot: CoreGroupSnapshot): string {
   return JSON.stringify({
+    ownerActorId: snapshot.ownerActorId,
     group: snapshot.group,
     destinations: snapshot.destinations,
     members: snapshot.members ?? [],
     subgroups: snapshot.subgroups ?? [],
     activeGathering: snapshot.activeGathering,
+    itineraryVersion: snapshot.itineraryVersion ?? 0,
   });
 }
 
 function rowToSnapshot(row: SnapshotRow): CoreGroupSnapshot {
   const payload = JSON.parse(row.payload) as {
+    ownerActorId?: string;
     group: CoreGroupSnapshot['group'];
     destinations: CoreGroupSnapshot['destinations'];
     members?: CoreGroupSnapshot['members'];
     subgroups?: CoreGroupSnapshot['subgroups'];
     activeGathering: ActiveGatheringState;
+    itineraryVersion?: number;
   };
   return {
     groupId: row.group_id,
+    ...(payload.ownerActorId ? { ownerActorId: payload.ownerActorId } : {}),
     group: payload.group,
     destinations: payload.destinations,
     members: payload.members,
     subgroups: payload.subgroups,
     activeGathering: payload.activeGathering,
+    itineraryVersion: payload.itineraryVersion ?? 0,
     entityVersion: row.entity_version,
     syncedAt: row.synced_at,
     updatedAt: row.updated_at,
@@ -168,6 +203,15 @@ export type SnapshotPatchMode = 'optimistic' | 'remote' | 'keep' | 'none';
 
 export interface WriteActiveGatheringOptions {
   patchSnapshot?: SnapshotPatchMode;
+  /** Binds an optimistic snapshot to the actor who created the draft. */
+  ownerActorId?: string;
+}
+
+type SnapshotActorGuard = () => Promise<string | null>;
+let snapshotActorGuard: SnapshotActorGuard | undefined;
+
+export function setCoreSnapshotActorGuard(guard: SnapshotActorGuard | undefined): void {
+  snapshotActorGuard = guard;
 }
 
 /** Gathering table only — never touches core_snapshots.source. */
@@ -233,6 +277,11 @@ async function writeGatheringRows(
     entityVersion: Math.max(existing.entityVersion, state.entityVersion),
     updatedAt,
     source: nextSource,
+    ...(patchMode === 'remote'
+      ? { ownerActorId: undefined }
+      : options.ownerActorId
+        ? { ownerActorId: options.ownerActorId }
+        : {}),
   };
   await exec.runAsync(
     `UPDATE core_snapshots
@@ -250,17 +299,23 @@ export class MemoryCoreDataDatabase implements CoreDataDatabase {
   snapshots = new Map<string, CoreGroupSnapshot>();
   gatherings = new Map<string, ActiveGatheringState>();
   navResponses = new Map<string, NavigationAnnouncementResponse>();
+  destinationAliases = new Map<string, string>();
 
   /** Test seam: shared journal for multi-store atomicity tests. */
   private journal: {
     snapshots: Map<string, CoreGroupSnapshot>;
     gatherings: Map<string, ActiveGatheringState>;
     navResponses: Map<string, NavigationAnnouncementResponse>;
+    destinationAliases: Map<string, string>;
   } | null = null;
 
   /** Optional linked outbox memory map for atomic multi-resource tx tests. */
-  linkedOutbox: { operations: Map<string, unknown>; snapshot: Map<string, unknown> | null } | null =
-    null;
+  linkedOutbox: {
+    operations: Map<string, unknown>;
+    sequences: Map<string, number>;
+    snapshot: Map<string, unknown> | null;
+    sequenceSnapshot: Map<string, number> | null;
+  } | null = null;
 
   private key(sessionId: string, userId: string): string {
     return `${sessionId}::${userId}`;
@@ -272,14 +327,43 @@ export class MemoryCoreDataDatabase implements CoreDataDatabase {
     return this.snapshots.get(groupId) ?? null;
   }
 
+  async readSnapshotInTransaction(
+    _exec: CoreSqlExecutor,
+    groupId: string,
+  ): Promise<CoreGroupSnapshot | null> {
+    return this.getSnapshot(groupId);
+  }
+
   async putSnapshot(snapshot: CoreGroupSnapshot): Promise<void> {
     this.snapshots.set(snapshot.groupId, snapshot);
     this.gatherings.set(snapshot.groupId, snapshot.activeGathering);
   }
 
+  async writeSnapshot(_exec: CoreSqlExecutor, snapshot: CoreGroupSnapshot): Promise<void> {
+    await this.putSnapshot(snapshot);
+  }
+
   async deleteSnapshot(groupId: string): Promise<void> {
     this.snapshots.delete(groupId);
     this.gatherings.delete(groupId);
+  }
+
+  async findSnapshotGroupForDestination(destinationId: string): Promise<string | null> {
+    for (const snapshot of this.snapshots.values()) {
+      if (snapshot.destinations.some((destination) => destination.id === destinationId)) {
+        return snapshot.groupId;
+      }
+    }
+    return null;
+  }
+
+  async writeDestinationAlias(
+    _exec: CoreSqlExecutor,
+    groupId: string,
+    localDestinationId: string,
+    canonicalDestinationId: string,
+  ): Promise<void> {
+    this.destinationAliases.set(`${groupId}:${localDestinationId}`, canonicalDestinationId);
   }
 
   async getActiveGathering(groupId: string): Promise<ActiveGatheringState | null> {
@@ -312,6 +396,11 @@ export class MemoryCoreDataDatabase implements CoreDataDatabase {
       entityVersion: Math.max(existing.entityVersion, state.entityVersion),
       updatedAt: Math.max(existing.updatedAt, updatedAt, state.phaseChangedAt),
       source: nextSource,
+      ...(patchMode === 'remote'
+        ? { ownerActorId: undefined }
+        : options.ownerActorId
+          ? { ownerActorId: options.ownerActorId }
+          : {}),
     });
   }
 
@@ -362,9 +451,11 @@ export class MemoryCoreDataDatabase implements CoreDataDatabase {
       snapshots: new Map(this.snapshots),
       gatherings: new Map(this.gatherings),
       navResponses: new Map(this.navResponses),
+      destinationAliases: new Map(this.destinationAliases),
     };
     if (this.linkedOutbox) {
       this.linkedOutbox.snapshot = new Map(this.linkedOutbox.operations);
+      this.linkedOutbox.sequenceSnapshot = new Map(this.linkedOutbox.sequences);
     }
     const exec: CoreSqlExecutor = {
       runAsync: async () => undefined,
@@ -373,13 +464,17 @@ export class MemoryCoreDataDatabase implements CoreDataDatabase {
     try {
       const result = await work(exec);
       this.journal = null;
-      if (this.linkedOutbox) this.linkedOutbox.snapshot = null;
+      if (this.linkedOutbox) {
+        this.linkedOutbox.snapshot = null;
+        this.linkedOutbox.sequenceSnapshot = null;
+      }
       return result;
     } catch (error) {
       if (this.journal) {
         this.snapshots = this.journal.snapshots;
         this.gatherings = this.journal.gatherings;
         this.navResponses = this.journal.navResponses;
+        this.destinationAliases = this.journal.destinationAliases;
         this.journal = null;
       }
       if (this.linkedOutbox?.snapshot) {
@@ -388,6 +483,13 @@ export class MemoryCoreDataDatabase implements CoreDataDatabase {
           this.linkedOutbox.operations.set(k, v);
         }
         this.linkedOutbox.snapshot = null;
+      }
+      if (this.linkedOutbox?.sequenceSnapshot) {
+        this.linkedOutbox.sequences.clear();
+        for (const [k, v] of this.linkedOutbox.sequenceSnapshot) {
+          this.linkedOutbox.sequences.set(k, v);
+        }
+        this.linkedOutbox.sequenceSnapshot = null;
       }
       throw error;
     }
@@ -412,31 +514,46 @@ export class SQLiteCoreDataDatabase implements CoreDataDatabase {
     return row ? rowToSnapshot(row) : null;
   }
 
+  async readSnapshotInTransaction(
+    exec: CoreSqlExecutor,
+    groupId: string,
+  ): Promise<CoreGroupSnapshot | null> {
+    const row = await exec.getFirstAsync<SnapshotRow>(
+      'SELECT * FROM core_snapshots WHERE group_id = ?',
+      groupId,
+    );
+    return row ? rowToSnapshot(row) : null;
+  }
+
   async putSnapshot(snapshot: CoreGroupSnapshot): Promise<void> {
     await this.withExclusiveTransaction(async (exec) => {
-      await exec.runAsync(
-        `INSERT INTO core_snapshots
-           (group_id, payload, entity_version, synced_at, updated_at, source)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT(group_id) DO UPDATE SET
-           payload = excluded.payload,
-           entity_version = excluded.entity_version,
-           synced_at = excluded.synced_at,
-           updated_at = excluded.updated_at,
-           source = excluded.source`,
-        snapshot.groupId,
-        snapshotPayloadOf(snapshot),
-        snapshot.entityVersion,
-        snapshot.syncedAt,
-        snapshot.updatedAt,
-        snapshot.source,
-      );
+      await this.writeSnapshot(exec, snapshot);
       // Snapshot row already carries authoritative source + payload; gathering
       // table only — never force local_optimistic here.
       await writeGatheringRows(exec, snapshot.activeGathering, snapshot.updatedAt, {
         patchSnapshot: 'none',
       });
     });
+  }
+
+  async writeSnapshot(exec: CoreSqlExecutor, snapshot: CoreGroupSnapshot): Promise<void> {
+    await exec.runAsync(
+      `INSERT INTO core_snapshots
+         (group_id, payload, entity_version, synced_at, updated_at, source)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(group_id) DO UPDATE SET
+         payload = excluded.payload,
+         entity_version = excluded.entity_version,
+         synced_at = excluded.synced_at,
+         updated_at = excluded.updated_at,
+         source = excluded.source`,
+      snapshot.groupId,
+      snapshotPayloadOf(snapshot),
+      snapshot.entityVersion,
+      snapshot.syncedAt,
+      snapshot.updatedAt,
+      snapshot.source,
+    );
   }
 
   async deleteSnapshot(groupId: string): Promise<void> {
@@ -447,6 +564,38 @@ export class SQLiteCoreDataDatabase implements CoreDataDatabase {
         groupId,
       );
     });
+  }
+
+  async findSnapshotGroupForDestination(destinationId: string): Promise<string | null> {
+    const database = await this.openDatabase();
+    const rows = await database.getAllAsync<SnapshotRow>('SELECT * FROM core_snapshots');
+    for (const row of rows) {
+      if (rowToSnapshot(row).destinations.some((destination) => destination.id === destinationId)) {
+        return row.group_id;
+      }
+    }
+    return null;
+  }
+
+  async writeDestinationAlias(
+    exec: CoreSqlExecutor,
+    groupId: string,
+    localDestinationId: string,
+    canonicalDestinationId: string,
+    createdAt = Date.now(),
+  ): Promise<void> {
+    await exec.runAsync(
+      `INSERT INTO core_destination_id_aliases
+         (group_id, local_destination_id, canonical_destination_id, created_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(group_id, local_destination_id) DO UPDATE SET
+         canonical_destination_id = excluded.canonical_destination_id,
+         created_at = excluded.created_at`,
+      groupId,
+      localDestinationId,
+      canonicalDestinationId,
+      createdAt,
+    );
   }
 
   async getActiveGathering(groupId: string): Promise<ActiveGatheringState | null> {
@@ -568,11 +717,13 @@ export function coreSnapshotFromGroupState(
   state: GroupState,
   options: {
     entityVersion?: number;
+    itineraryVersion?: number;
     gatheringVersion?: number;
     syncedAt?: number;
     updatedAt?: number;
     source?: CoreSnapshotSource;
     activeGathering?: ActiveGatheringState;
+    ownerActorId?: string;
   } = {},
 ): CoreGroupSnapshot {
   const now = options.updatedAt ?? Date.now();
@@ -583,11 +734,13 @@ export function coreSnapshotFromGroupState(
     ?? deriveActiveGatheringFromGroupState(state, gatheringVersion, now);
   return {
     groupId: state.group.id,
+    ...(options.ownerActorId ? { ownerActorId: options.ownerActorId } : {}),
     group: state.group,
     destinations: state.destinations,
     members: state.members,
     subgroups: state.subgroups,
     activeGathering,
+    itineraryVersion: options.itineraryVersion ?? 0,
     entityVersion: version,
     syncedAt: options.syncedAt ?? now,
     updatedAt: now,
@@ -606,6 +759,7 @@ export function groupStateFromCoreSnapshot(snapshot: CoreGroupSnapshot): GroupSt
 }
 
 export type PendingGatheringGuard = (groupId: string) => Promise<boolean>;
+export type PendingItineraryGuard = (groupId: string) => Promise<boolean>;
 
 export function createCoreDataStore(
   database: CoreDataDatabase,
@@ -613,8 +767,10 @@ export function createCoreDataStore(
   /**
    * When true for a group, remote snapshot must not downgrade local_optimistic
    * gathering (pending/inflight outbox or optimistic source).
-   */
+  */
   hasPendingGatheringOp: PendingGatheringGuard = async () => false,
+  hasPendingItineraryOp: PendingItineraryGuard = async () => false,
+  actorGuard?: SnapshotActorGuard,
 ) {
   let serial = Promise.resolve();
   let initialization: Promise<void> | null = null;
@@ -642,7 +798,18 @@ export function createCoreDataStore(
     async readSnapshot(groupId: string): Promise<CoreGroupSnapshot | null> {
       return runSerial(async () => {
         await initialize();
-        return database.getSnapshot(groupId);
+        const snapshot = await database.getSnapshot(groupId);
+        if (!snapshot?.ownerActorId) return snapshot;
+        const actor = actorGuard
+          ? await actorGuard()
+          : snapshotActorGuard
+            ? await snapshotActorGuard()
+            : undefined;
+        if (actor === undefined) return snapshot;
+        // A group-keyed snapshot can contain another account's unpublished
+        // projection. Treat it as a cache miss for the new account so the
+        // caller hydrates authoritative state instead of painting that draft.
+        return actor === snapshot.ownerActorId ? snapshot : null;
       });
     },
 
@@ -650,15 +817,23 @@ export function createCoreDataStore(
       state: GroupState,
       options: {
         entityVersion?: number;
+        itineraryVersion?: number;
         gatheringVersion?: number;
       } = {},
     ): Promise<CoreGroupSnapshot> {
       return runSerial(async () => {
         await initialize();
-        // Exclusive write re-reads snapshot + pending so a concurrent enqueue
-        // cannot be clobbered after a stale pending=false check.
-        return database.withExclusiveTransaction(async (exec) => {
-          const existing = await database.getSnapshot(state.group.id);
+        // The pending checks happen under the same in-process writer gate as
+        // enqueue/ack writes, but before BEGIN. This avoids both the stale
+        // guard race and awaiting an outbox serial lane while SQLite is locked.
+        return runCoreDataWriteLock(async () => {
+          const pendingGathering = await hasPendingGatheringOp(state.group.id);
+          const pendingItinerary = await hasPendingItineraryOp(state.group.id);
+          return database.withExclusiveTransaction(async (exec) => {
+          // Read through the transaction executor. Opening the database again
+          // here can contend with the exclusive SQLite transaction, and the
+          // snapshot must be the same snapshot that this write replaces.
+          const existing = await database.readSnapshotInTransaction(exec, state.group.id);
           const nextVersion =
             options.entityVersion
             ?? existing?.entityVersion
@@ -670,31 +845,27 @@ export function createCoreDataStore(
 
           const snapshot = coreSnapshotFromGroupState(state, {
             entityVersion: nextVersion,
+            itineraryVersion: options.itineraryVersion ?? existing?.itineraryVersion ?? 0,
             gatheringVersion,
             syncedAt: now(),
             updatedAt: now(),
             source: 'remote',
           });
 
-          // Re-check pending inside the exclusive lane (issue #6 residual race).
-          const pending =
-            (await hasPendingGatheringOp(state.group.id))
-            || existing?.source === 'local_optimistic'
-            || (await database.hasLocalOptimisticGathering?.(state.group.id));
-
           if (
-            pending
+            pendingGathering
             && existing
             && existing.activeGathering.entityVersion
               >= snapshot.activeGathering.entityVersion
           ) {
-            // Leader local-first: a remote poll must not replace a complete
-            // local itinerary with an empty/stale payload while a gathering
-            // switch/start/end is still waiting for acknowledgement.
-            snapshot.group = existing.group;
-            snapshot.destinations = existing.destinations;
-            snapshot.members = existing.members ?? snapshot.members;
-            snapshot.subgroups = existing.subgroups ?? snapshot.subgroups;
+            // Preserve only the active gathering portion while a gathering
+            // transition is waiting. The remote group and itinerary remain
+            // authoritative; an old local_optimistic source alone must never
+            // fence newer remote destinations.
+            snapshot.itineraryVersion = Math.max(
+              snapshot.itineraryVersion ?? 0,
+              existing.itineraryVersion ?? 0,
+            );
             snapshot.activeGathering = existing.activeGathering;
             snapshot.entityVersion = Math.max(
               snapshot.entityVersion,
@@ -703,35 +874,27 @@ export function createCoreDataStore(
             snapshot.source = 'local_optimistic';
           }
 
-          if (database instanceof MemoryCoreDataDatabase) {
-            await database.putSnapshot(snapshot);
-          } else {
-            await exec.runAsync(
-              `INSERT INTO core_snapshots
-                 (group_id, payload, entity_version, synced_at, updated_at, source)
-               VALUES (?, ?, ?, ?, ?, ?)
-               ON CONFLICT(group_id) DO UPDATE SET
-                 payload = excluded.payload,
-                 entity_version = excluded.entity_version,
-                 synced_at = excluded.synced_at,
-                 updated_at = excluded.updated_at,
-                 source = excluded.source`,
-              snapshot.groupId,
-              snapshotPayloadOf(snapshot),
-              snapshot.entityVersion,
-              snapshot.syncedAt,
-              snapshot.updatedAt,
-              snapshot.source,
-            );
-            // Gathering table only — snapshot source already written above.
-            await database.writeActiveGathering(
-              exec,
-              snapshot.activeGathering,
-              snapshot.updatedAt,
-              { patchSnapshot: 'none' },
+          if (pendingItinerary && existing) {
+            // The remote read is authoritative, but local pending commands
+            // already reserved the next versions. Never move that predicted
+            // version backwards; their original preconditions remain intact.
+            snapshot.itineraryVersion = Math.max(
+              snapshot.itineraryVersion ?? 0,
+              existing.itineraryVersion ?? 0,
             );
           }
-          return snapshot;
+
+          // Both implementations use raw writes on the caller's executor.
+          // Calling putSnapshot here would open a nested transaction on SQLite.
+          await database.writeSnapshot(exec, snapshot);
+          await database.writeActiveGathering(
+            exec,
+            snapshot.activeGathering,
+            snapshot.updatedAt,
+            { patchSnapshot: 'none' },
+          );
+            return snapshot;
+          });
         });
       });
     },
@@ -784,15 +947,21 @@ export type CoreDataStore = ReturnType<typeof createCoreDataStore>;
 export const sharedCoreDb = new SQLiteCoreDataDatabase();
 
 let pendingGatheringGuard: PendingGatheringGuard = async () => false;
+let pendingItineraryGuard: PendingItineraryGuard = async () => false;
 
 export function setPendingGatheringGuard(guard: PendingGatheringGuard): void {
   pendingGatheringGuard = guard;
+}
+
+export function setPendingItineraryGuard(guard: PendingItineraryGuard): void {
+  pendingItineraryGuard = guard;
 }
 
 export const sharedCoreDataStore = createCoreDataStore(
   sharedCoreDb,
   Date.now,
   (groupId) => pendingGatheringGuard(groupId),
+  (groupId) => pendingItineraryGuard(groupId),
 );
 
 export function readCoreSnapshot(groupId: string): Promise<CoreGroupSnapshot | null> {
@@ -803,6 +972,7 @@ export function saveRemoteGroupState(
   state: GroupState,
   entityVersionOrOptions?: number | {
     entityVersion?: number;
+    itineraryVersion?: number;
     gatheringVersion?: number;
   },
 ): Promise<CoreGroupSnapshot> {

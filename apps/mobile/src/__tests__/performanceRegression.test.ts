@@ -49,7 +49,13 @@ describe('measured performance regressions', () => {
     expect(locationHook).not.toContain('HEARTBEAT_TICK_MS');
     expect(locationHook).toContain('reduceMotionState');
     expect(locationHook).toContain('shouldUploadSample');
+    expect(locationHook).toContain('onIncomingSample');
+    expect(locationHook).toContain('shouldAcceptUiSample');
+    expect(locationHook).toContain('latestLocationSampleRef');
     expect(locationHook).toContain('immediate: true');
+    expect(locationHook).not.toContain('highAccuracy && teamNavigationActive');
+    expect(locationHook).toContain("highAccuracy || teamNavigationActive ? 'journey' : 'foreground'");
+    expect(locationBoundary).toContain('powerMode: LocationPowerMode');
   });
 
   it('uses MapKit as the iOS foreground location owner and keeps the native blue dot', () => {

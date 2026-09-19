@@ -117,10 +117,12 @@ export function locationPolicy(
           distanceInterval: 8,
           timeInterval: 5_000,
           uiMinDistanceM: 8,
-          uiMinIntervalMs: 2_000,
+          // React projection is capped at 2 Hz. Raw fixes remain available to
+          // arrival/navigation consumers through the location hook callback.
+          uiMinIntervalMs: 500,
           uploadMinDistanceM: 8,
           uploadMinIntervalMs: 5_000,
-          uploadHeartbeatMs: 10_000,
+          uploadHeartbeatMs: 5_000,
           uploadHeartbeatStationaryMs: 60_000,
           stationaryAfterMs: 45_000,
           routeMinDistanceM: 20,
@@ -131,12 +133,13 @@ export function locationPolicy(
       : {
           accuracy: 'balanced',
           distanceInterval: 10,
-          timeInterval: 5_000,
+          timeInterval: 10_000,
           uiMinDistanceM: 30,
-          uiMinIntervalMs: 10_000,
+          // React projection is capped at 1 Hz. Raw fixes are not discarded.
+          uiMinIntervalMs: 1_000,
           uploadMinDistanceM: 10,
-          uploadMinIntervalMs: 5_000,
-          uploadHeartbeatMs: 10_000,
+          uploadMinIntervalMs: 10_000,
+          uploadHeartbeatMs: 15_000,
           uploadHeartbeatStationaryMs: 60_000,
           stationaryAfterMs: 45_000,
           routeMinDistanceM: 60,
@@ -155,7 +158,7 @@ export function locationPolicy(
         distanceInterval: 8,
         timeInterval: 5_000,
         uiMinDistanceM: 5,
-        uiMinIntervalMs: 1_500,
+        uiMinIntervalMs: 500,
         uploadMinDistanceM: 12,
         uploadMinIntervalMs: 30_000,
         uploadHeartbeatMs: 30_000,
@@ -165,13 +168,13 @@ export function locationPolicy(
         routeMinIntervalMs: 3_000,
         routeCoordDecimals: 5,
         realtimeLocationDebounceMs: 1_500,
-      }
+    }
     : {
         accuracy: 'balanced',
         distanceInterval: 50,
         timeInterval: 30_000,
         uiMinDistanceM: 20,
-        uiMinIntervalMs: 8_000,
+        uiMinIntervalMs: 1_000,
         uploadMinDistanceM: 50,
         uploadMinIntervalMs: 40_000,
         // Non-journey foreground: at most 2 min liveness when stationary.
@@ -248,8 +251,10 @@ export function reduceMotionState(
   const moved = prev.lastCoords
     ? distanceMeters(prev.lastCoords, sample)
     : Number.POSITIVE_INFINITY;
-  // Keep an anchor until a real move accumulates; comparing consecutive fixes
-  // classifies slow walking as stationary forever. Ignore jitter within accuracy.
+  // Keep an anchor until movement exceeds the sensor-noise floor; comparing
+  // consecutive fixes classifies slow walking as stationary forever. Do not
+  // reuse uploadMinDistanceM here: balanced journey uploads may require 10 m,
+  // but several accurate 1 m fixes still prove that the user is moving.
   const threshold = Math.max(5, Math.min(100, Math.max(0, accuracyM)));
   const significant = !prev.lastCoords || moved >= threshold;
   const lastSignificantMoveAtMs = significant
@@ -286,12 +291,12 @@ export function shouldAcceptUiSample(
   policy: LocationPolicy,
 ): boolean {
   if (!last.lastCoords) return true;
+  if (nowMs - last.lastAtMs < policy.uiMinIntervalMs) return false;
   const moved = distanceMeters(last.lastCoords, sample);
   if (moved >= policy.uiMinDistanceM) return true;
-  if (nowMs - last.lastAtMs >= policy.uiMinIntervalMs && moved >= policy.uiMinDistanceM * 0.4) {
+  if (moved >= policy.uiMinDistanceM * 0.4) {
     return true;
   }
-  if (nowMs - last.lastAtMs < policy.uiMinIntervalMs) return false;
   return false;
 }
 
@@ -311,13 +316,12 @@ export function shouldUploadSample(
   if (!last.lastCoords) return true;
   const elapsed = nowMs - last.lastAtMs;
   const heartbeatMs = uploadHeartbeatForCadence(policy, cadence);
+  // Heartbeats have their own cadence so low-power profiles can keep liveness
+  // without waiting for a movement interval. Distance-triggered uploads still
+  // require the full minimum; there is no half-interval shortcut.
   if (elapsed >= heartbeatMs) return true;
-  const moved = distanceMeters(last.lastCoords, sample);
-  if (moved >= policy.uploadMinDistanceM && elapsed >= policy.uploadMinIntervalMs) return true;
-  if (moved >= policy.uploadMinDistanceM * 1.5 && elapsed >= policy.uploadMinIntervalMs * 0.5) {
-    return true;
-  }
-  return false;
+  if (elapsed < policy.uploadMinIntervalMs) return false;
+  return distanceMeters(last.lastCoords, sample) >= policy.uploadMinDistanceM;
 }
 
 /**
@@ -332,13 +336,9 @@ export function shouldRecomputeRoute(
   if (!last.lastCoords) return true;
   const elapsed = nowMs - last.lastAtMs;
   const moved = distanceMeters(last.lastCoords, sample);
-  if (moved >= policy.routeMinDistanceM && elapsed >= policy.routeMinIntervalMs * 0.4) {
-    return true;
-  }
-  if (elapsed >= policy.routeMinIntervalMs && moved >= policy.routeMinDistanceM * 0.5) {
-    return true;
-  }
-  return false;
+  // Route calculation is a network/native operation. Enforce the full
+  // interval for every coordinate, including a large move.
+  return elapsed >= policy.routeMinIntervalMs && moved >= policy.routeMinDistanceM;
 }
 
 /** Quantize coordinates for stable cache keys / member signatures. */

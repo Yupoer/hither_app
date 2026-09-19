@@ -33,7 +33,7 @@ it('persists an offline solo arrival across a new queue instance, replays once, 
   expect(projectArrivals(projected, await restarted.listByGroup('group'), 'self')).toHaveLength(1);
 });
 
-it('permanent rejection removes optimistic completion and never retries until explicit resubmission', async () => {
+it('permanent rejection removes optimistic completion and never retries until explicit conflict resolution and resubmission', async () => {
   const db = new MemoryCoreOperationOutboxDatabase();
   const submit = jest.fn(async (op: CoreOperation): Promise<ApplyCoreOperationResult> => ({
     status: 'conflict', operationId: op.id, conflict: {
@@ -41,7 +41,8 @@ it('permanent rejection removes optimistic completion and never retries until ex
       entityType: op.entityType, entityId: op.entityId, occurredAt: 100,
     },
   }));
-  const queue = createCoreOperationOutbox(new MemoryCoreDataDatabase(), db, submit);
+  let id = 0;
+  const queue = createCoreOperationOutbox(new MemoryCoreDataDatabase(), db, submit, Date.now, () => `retry-${++id}`, async () => 'self');
   await queue.enqueueArrival('group', 'stop', payload);
   await queue.flush();
   await queue.flush();
@@ -49,7 +50,9 @@ it('permanent rejection removes optimistic completion and never retries until ex
   const rows = await queue.listByGroup('group');
   expect(projectArrivals([], rows, 'self')).toEqual([]);
   expect(pendingSoloDestinationIds(rows, 'self').size).toBe(0);
-  await queue.enqueueArrival('group', 'stop', payload);
+  await queue.discardConflictChain(rows[0].id);
+  const retry = await queue.enqueueArrival('group', 'stop', payload);
+  expect(retry.id).not.toBe(rows[0].id);
   await queue.flush();
   expect(submit).toHaveBeenCalledTimes(2);
 });

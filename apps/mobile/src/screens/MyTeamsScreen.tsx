@@ -18,6 +18,7 @@ import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanim
 import MetalforgeBackground from '../components/MetalforgeBackground';
 import NativeGlassButton from '../components/NativeGlassButton';
 import NativeTeamCard from '../components/NativeTeamCard';
+import { classifyOperationError } from '../utils/operationError';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'MyTeams'>;
 
@@ -48,8 +49,15 @@ export default function MyTeamsScreen({ navigation, route }: Props) {
       getMyJoinedGroups().then(data => {
         setJoinedGroups(data);
         setIsLoading(false);
-      }).catch((e) => {
-        console.log('Failed to fetch joined groups', e);
+      }).catch((error) => {
+        const classified = classifyOperationError(error);
+        if (__DEV__) {
+          console.warn('[my-teams] joined groups unavailable', {
+            kind: classified.kind,
+            code: classified.code,
+            status: classified.status,
+          });
+        }
         setIsLoading(false);
       });
     }

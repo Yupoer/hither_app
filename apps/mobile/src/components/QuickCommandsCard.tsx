@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { sendCommand } from '../api/client';
 import { mediumTap } from '../utils/haptics';
 import { useTranslation } from '../i18n';
+import { getOperationErrorMessage } from '../utils/operationError';
 import {
   CUSTOM_QUICK_COMMAND_SLOTS,
   FOLLOWER_FIXED_COMMANDS,
@@ -86,7 +87,7 @@ export default function QuickCommandsCard({
   variant?: 'preview' | 'full';
   onOpenAll?: () => void;
 }) {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const { customQuickCommands } = useSession();
   // a11y-layout:quickCommands — column count + sizes track live font scale.
   const fontLayout = useFontLayout();
@@ -134,8 +135,8 @@ export default function QuickCommandsCard({
       await sendCommand(groupId, type, label);
       pushRecent(type);
       Alert.alert(t('command.sent'));
-    } catch {
-      Alert.alert(t('command.sendFailed'));
+    } catch (error) {
+      Alert.alert(getOperationErrorMessage(error, language));
     } finally {
       setSendingKey(null);
     }
@@ -157,8 +158,8 @@ export default function QuickCommandsCard({
       // send-push and Realtime both prefix the sender nickname in the title.
       await sendCommand(groupId, 'custom', message.trim() || label);
       Alert.alert(t('command.sent'));
-    } catch {
-      Alert.alert(t('command.sendFailed'));
+    } catch (error) {
+      Alert.alert(getOperationErrorMessage(error, language));
     } finally {
       setSendingKey(null);
     }

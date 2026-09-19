@@ -76,7 +76,7 @@ export async function saveOnboardingProfile(answers: object): Promise<void> {
     .from('profiles')
     .update({ onboarding: answers })
     .eq('id', uid);
-  if (error) throw new Error(error.message);
+  orThrow(error);
 }
 
 // Re-export entitlement entry points so existing ProfileService consumers keep working.

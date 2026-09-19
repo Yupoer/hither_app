@@ -21,6 +21,8 @@ import type { NavigationAnnouncementResponseKind } from '../types/coreData';
 import { diagnostics } from './diagnostics';
 import { enqueuePersonalNavigationResponse } from './coreDataSync';
 import { runNavigationTerminalMutation } from './navigationTerminalMutation';
+import { getOperationErrorMessage } from '../utils/operationError';
+import { getActiveLanguage } from '../i18n';
 
 export function useNavigationSession(groupId: string | null) {
   const [session, setSession] = useState<NavigationSession | null>(null);
@@ -46,7 +48,8 @@ export function useNavigationSession(groupId: string | null) {
   const acceptSession = useCallback((next: NavigationSession) => {
     if (next.groupId !== groupRef.current) return;
     const previous = lastEventRef.current;
-    if (previous?.groupId === next.groupId && (previous.id === next.id ? previous.version >= next.version
+    if (previous?.groupId === next.groupId && (previous.id === next.id
+      ? previous.status !== 'active' || previous.version >= next.version
       : next.status !== 'active' || Date.parse(previous.startedAt) > Date.parse(next.startedAt))) return;
     lastEventRef.current = next;
     revision.current += 1;
@@ -92,7 +95,7 @@ export function useNavigationSession(groupId: string | null) {
       setError(null);
       return next;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '無法取得導航狀態');
+      setError(getOperationErrorMessage(cause, getActiveLanguage()));
       return null;
     } finally {
       setLoading(false);
@@ -121,7 +124,7 @@ export function useNavigationSession(groupId: string | null) {
       else unsubscribe = cleanup;
     }).catch((cause) => {
       if (!cancelled) {
-        setError(cause instanceof Error ? cause.message : '無法訂閱導航狀態');
+        setError(getOperationErrorMessage(cause, getActiveLanguage()));
       }
     });
 

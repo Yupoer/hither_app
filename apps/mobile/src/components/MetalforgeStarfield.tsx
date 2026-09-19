@@ -37,8 +37,8 @@ uniform float baseScale;
 uniform float scaleStep;
 uniform float density;
 uniform float starSize;
+uniform float radiusScale;
 uniform half4 starColor;
-uniform half4 background;
 
 float hash21(float2 p) {
   p = fract(p * float2(123.34, 456.21));
@@ -58,7 +58,11 @@ half4 main(float2 fragCoord) {
   float2 uv = fragCoord / safeSize;
   float aspect = safeSize.x / safeSize.y;
   float2 point = float2((uv.x - 0.5) * aspect, uv.y - 0.5);
-  half3 result = background.rgb;
+  // The starfield is composited over its existing SwiftUI glass parent. Keep
+  // both RGB and alpha premultiplied so the shader never paints an opaque card
+  // behind the particles.
+  half3 result = half3(0.0);
+  float resultAlpha = 0.0;
   float activeLayers = clamp(layers, 0.0, 5.0);
   float probability = clamp(density, 0.0, 1.0);
 
@@ -70,7 +74,7 @@ half4 main(float2 fragCoord) {
       float scale = max(4.0, (baseScale + layer * scaleStep) * 0.20);
       float2 layerPoint = point * scale;
       layerPoint.y += time * speed * (0.18 + layer * 0.08);
-      layerPoint.x += sin(time * 0.05 + layer * 4.0) * 0.05;
+      layerPoint.x += sin(time * (speed / 1.2) * 0.05 + layer * 4.0) * 0.05;
 
       float2 cell = floor(layerPoint);
       float2 local = fract(layerPoint) - 0.5;
@@ -80,19 +84,20 @@ half4 main(float2 fragCoord) {
       float2 delta = local - jitter * 0.70;
 
       float radius = mix(0.004, 0.028, hash21(seed + float2(7.0, 19.0)));
-      radius *= 0.70 + starSize * 3.0;
+      radius *= (0.70 + starSize * 3.0) * radiusScale;
       float distanceToStar = length(delta);
       float core = 1.0 - smoothstep(radius * 0.25, radius, distanceToStar);
       float halo = 1.0 - smoothstep(radius, radius * 3.0, distanceToStar);
       float phase = hash21(seed + float2(23.0, 47.0)) * 6.2831853;
       float twinkle = 1.0 + sin(time * twinkleSpeed * (0.65 + layer * 0.18) + phase) * twinkleAmount;
-      float intensity = present * (core + halo * 0.12) * max(0.0, twinkle);
-
-      result += starColor.rgb * half(intensity);
+      float intensity = clamp(present * (core + halo * 0.12) * max(0.0, twinkle), 0.0, 1.0);
+      float layerAlpha = (1.0 - resultAlpha) * intensity * starColor.a;
+      result += starColor.rgb * half(layerAlpha);
+      resultAlpha += layerAlpha;
     }
   }
 
-  return half4(clamp(result, half3(0.0), half3(1.0)), 1.0);
+  return half4(clamp(result, half3(0.0), half3(1.0)), half(clamp(resultAlpha, 0.0, 1.0)));
 }
 `)!;
 
@@ -109,26 +114,77 @@ export const METALFORGE_STARFIELD_PARAMETERS = {
   background: '#020208',
 } as const;
 
+/** Runtime tuning required by the approved performance pass. */
+export const METALFORGE_STARFIELD_RUNTIME_FACTORS = {
+  speed: 0.5,
+  twinkleFrequency: 1 / 3,
+  density: 0.5,
+  radius: 1.5,
+  maxFps: 30,
+  lowPowerFps: 15,
+} as const;
+
+export type StarfieldAnimationPolicyInput = {
+  active: boolean;
+  appActive: boolean;
+  reducedMotion: boolean;
+  lowPowerMode?: boolean | null;
+  thermalState?: string | null;
+};
+
+export function getMetalforgeStarfieldAnimationPolicy({
+  active,
+  appActive,
+  reducedMotion,
+  lowPowerMode = false,
+  thermalState,
+}: StarfieldAnimationPolicyInput): {
+  shouldAnimate: boolean;
+  fps: 15 | 30;
+} {
+  const normalizedThermal = thermalState?.toLowerCase() ?? '';
+  const seriousHeat = normalizedThermal === 'serious' || normalizedThermal === 'critical';
+  return {
+    shouldAnimate: active && appActive && !reducedMotion && !seriousHeat,
+    fps: lowPowerMode ? 15 : 30,
+  };
+}
+
 const toRGBA = (hex: string): [number, number, number, number] => {
   const value = parseInt(hex.slice(1), 16);
   return [((value >> 16) & 255) / 255, ((value >> 8) & 255) / 255, (value & 255) / 255, 1];
 };
 
 const STAR_COLOR = toRGBA(METALFORGE_STARFIELD_PARAMETERS.starColor);
-const BACKGROUND_COLOR = toRGBA(METALFORGE_STARFIELD_PARAMETERS.background);
 
 export type MetalforgeStarfieldProps = {
   /** Freeze the last animated frame when the parent screen is not visible. */
   active?: boolean;
+  /** Optional native capability values; absent values fail open safely. */
+  lowPowerMode?: boolean | null;
+  thermalState?: string | null;
   style?: StyleProp<ViewStyle>;
 };
 
-export default function MetalforgeStarfield({ active = true, style }: MetalforgeStarfieldProps) {
+export default function MetalforgeStarfield({
+  active = true,
+  lowPowerMode = false,
+  thermalState,
+  style,
+}: MetalforgeStarfieldProps) {
   const reducedMotion = useReducedMotion();
   const [{ width, height }, setSize] = useState({ width: 1, height: 1 });
   const [appActive, setAppActive] = useState(AppState.currentState === 'active');
   const elapsed = useSharedValue(0);
-  const isActive = active && appActive && !reducedMotion;
+  const lastFrameAt = useSharedValue(-1);
+  const frameAccumulatorMs = useSharedValue(0);
+  const animationPolicy = getMetalforgeStarfieldAnimationPolicy({
+    active,
+    appActive,
+    reducedMotion,
+    lowPowerMode,
+    thermalState,
+  });
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
@@ -137,24 +193,47 @@ export default function MetalforgeStarfield({ active = true, style }: Metalforge
     return () => subscription.remove();
   }, []);
 
-  const frame = useFrameCallback(({ timeSincePreviousFrame }) => {
-    elapsed.value += Math.min(timeSincePreviousFrame ?? 0, 50) / 1000;
+  const frame = useFrameCallback(({ timestamp, timeSincePreviousFrame }) => {
+    if (!animationPolicy.shouldAnimate) return;
+    const now = timestamp ?? 0;
+    const intervalMs = 1_000 / animationPolicy.fps;
+    const deltaMs = lastFrameAt.value >= 0 && now > 0
+      ? Math.min(now - lastFrameAt.value, 100)
+      : Math.min(timeSincePreviousFrame ?? 0, 100);
+    if (now > 0) {
+      if (lastFrameAt.value >= 0 && now - lastFrameAt.value < intervalMs) return;
+      lastFrameAt.value = now;
+    } else {
+      // Expo Go / partial runtimes may omit timestamps. The elapsed-time
+      // accumulator keeps the same 30/15 FPS cap without a native dependency.
+      frameAccumulatorMs.value += deltaMs;
+      if (frameAccumulatorMs.value < intervalMs) return;
+      frameAccumulatorMs.value %= intervalMs;
+    }
+    elapsed.value += deltaMs / 1000;
   }, false);
-  useEffect(() => { frame.setActive(isActive); return () => frame.setActive(false); }, [frame, isActive]);
+  useEffect(() => {
+    if (animationPolicy.shouldAnimate) {
+      lastFrameAt.value = -1;
+      frameAccumulatorMs.value = 0;
+    }
+    frame.setActive(animationPolicy.shouldAnimate);
+    return () => frame.setActive(false);
+  }, [animationPolicy.shouldAnimate, frame, frameAccumulatorMs, lastFrameAt]);
 
   const uniforms = useDerivedValue(() => ({
     size: [width, height],
     time: reducedMotion ? 0 : elapsed.value,
-    speed: METALFORGE_STARFIELD_PARAMETERS.speed,
-    twinkleSpeed: METALFORGE_STARFIELD_PARAMETERS.twinkleSpeed,
+    speed: METALFORGE_STARFIELD_PARAMETERS.speed * METALFORGE_STARFIELD_RUNTIME_FACTORS.speed,
+    twinkleSpeed: METALFORGE_STARFIELD_PARAMETERS.twinkleSpeed * METALFORGE_STARFIELD_RUNTIME_FACTORS.twinkleFrequency,
     twinkleAmount: METALFORGE_STARFIELD_PARAMETERS.twinkleAmount,
     layers: METALFORGE_STARFIELD_PARAMETERS.layers,
     baseScale: METALFORGE_STARFIELD_PARAMETERS.baseScale,
     scaleStep: METALFORGE_STARFIELD_PARAMETERS.scaleStep,
-    density: METALFORGE_STARFIELD_PARAMETERS.density,
+    density: METALFORGE_STARFIELD_PARAMETERS.density * METALFORGE_STARFIELD_RUNTIME_FACTORS.density,
     starSize: METALFORGE_STARFIELD_PARAMETERS.starSize,
+    radiusScale: METALFORGE_STARFIELD_RUNTIME_FACTORS.radius,
     starColor: STAR_COLOR,
-    background: BACKGROUND_COLOR,
   }), [height, reducedMotion, width]);
 
   return (
@@ -176,6 +255,9 @@ export default function MetalforgeStarfield({ active = true, style }: Metalforge
 const styles = StyleSheet.create({
   container: {
     overflow: 'hidden',
+    // The parent owns the glass/material surface; particles are the first,
+    // pointer-transparent layer inside it and never cover foreground content.
+    zIndex: 0,
   },
 });
 

@@ -38,6 +38,8 @@ const HitherMaps = requireOptionalNativeModule<{
 /** A search hit the "next gathering point" picker can drop on the map. */
 export interface PlaceResult {
   id: string;
+  /** Provider-owned identity, never synthesized from coordinate proximity. */
+  providerPlaceId?: string;
   name: string;
   address?: string;
   coordinates: Coordinates;
@@ -398,6 +400,9 @@ export async function searchPlaces(
         return [{
           ...nearest,
           id: `plus-code:${plusCode}`,
+          // The selected coordinate is the Plus Code, not the nearest named
+          // POI. Its provider identity must not merge these distinct targets.
+          providerPlaceId: undefined,
           coordinates: plusCodeCoordinates,
         }];
       }

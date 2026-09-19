@@ -57,7 +57,8 @@ jobs:
       - uses: actions/setup-node@v4
         if: steps.scope.outputs.product == 'true'
         with:
-          node-version: 20
+          # Real SQLite transaction tests use node:sqlite (also verified locally on 22.17.1).
+          node-version: 22
           cache: npm
           cache-dependency-path: apps/mobile/package-lock.json
 
@@ -186,6 +187,8 @@ jobs:
           supabase test db --local supabase/tests/premium_anonymous_cleanup_skip.test.sql
           supabase test db --local supabase/tests/database_security_role_matrix.test.sql
           supabase test db --local supabase/tests/anonymous_expiry_is_member.test.sql
+          supabase test db --local supabase/tests/core_operation_gathering_validation.test.sql
+          supabase test db --local supabase/tests/core_operation_outbox_durable.test.sql
 
   # Turn a red build on the default branch into an actionable, deduped issue.
   open-issue:

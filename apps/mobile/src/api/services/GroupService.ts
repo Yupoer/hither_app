@@ -207,7 +207,7 @@ export async function createGroup(
     if (kind === 'registration_required' || code === 'P0406') {
       throw new Error(ANON_LEADER_REGISTRATION_REQUIRED);
     }
-    throw new Error(error.message);
+    orThrow(error);
   }
   const group = mapGroup(data as GroupRow);
   if (avatar || avatarColor) {
@@ -266,7 +266,7 @@ export async function joinGroup(inviteCode: string): Promise<Group> {
     if (kind === 'registration_required' || code === 'P0406') {
       throw new Error(ANON_LEADER_REGISTRATION_REQUIRED);
     }
-    throw new Error(error.message);
+    orThrow(error);
   }
   return mapGroup(data as GroupRow);
 }
@@ -302,7 +302,7 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
     supabase
       .from('itinerary_items')
       .select(
-        'id, title, address, latitude, longitude, position, day, meet_at, meet_red_minutes, subgroup_id, closed_at, closed_by_session_id, emoji, marker_color, kind, stay_anchor',
+        'id, title, address, latitude, longitude, position, day, meet_at, meet_red_minutes, subgroup_id, closed_at, closed_by_session_id, emoji, marker_color, kind, stay_anchor, provider_place_id',
       )
       .eq('group_id', groupId)
       .order('position', { ascending: true }),

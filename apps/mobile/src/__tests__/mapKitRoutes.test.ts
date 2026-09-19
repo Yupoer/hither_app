@@ -224,7 +224,7 @@ describe('useMapKitRoutes + MapScreen progress surfaces (#145 Sol r4)', () => {
     expect(surfaces?.gatheringCard.progress!).toBeLessThan(0.5);
     expect(surfaces?.gatheringCard).toEqual(surfaces?.liveActivityPayload);
 
-    // Advance wall clock past routeMinIntervalMs * 0.4 so recompute can fire.
+    // Advance wall clock past the full route interval so recompute can fire.
     await act(async () => {
       jest.advanceTimersByTime(40_000);
     });
@@ -303,6 +303,51 @@ describe('useMapKitRoutes + MapScreen progress surfaces (#145 Sol r4)', () => {
     expect(routes?.selfRoute).toBeNull();
     expect(mockGetDirections).toHaveBeenCalledWith(me, gathering.coordinates, 'transit');
 
+    await act(async () => {
+      tree.unmount();
+    });
+  });
+
+  it('does not permanently cache an unavailable route', async () => {
+    mockGetDirections
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce({
+        distanceMeters: 800,
+        expectedTravelTimeSeconds: 480,
+        points: [me, gathering.coordinates],
+      });
+
+    let routes: ReturnType<typeof useMapKitRoutes> | undefined;
+    function Harness({ showTarget }: { showTarget: boolean }) {
+      routes = useMapKitRoutes({
+        selfCoordinates: me,
+        members: [],
+        gathering: showTarget ? gathering : null,
+        travelMode: 'walk',
+      });
+      return null;
+    }
+
+    let tree: ReturnType<typeof create>;
+    await act(async () => {
+      tree = create(React.createElement(Harness, { showTarget: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(routes?.selfRoute).toBeNull();
+    expect(mockGetDirections).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      tree.update(React.createElement(Harness, { showTarget: false }));
+    });
+    await act(async () => {
+      tree.update(React.createElement(Harness, { showTarget: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockGetDirections).toHaveBeenCalledTimes(2);
+    expect(routes?.selfRoute?.distanceMeters).toBe(800);
     await act(async () => {
       tree.unmount();
     });

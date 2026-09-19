@@ -1,4 +1,5 @@
 import { requireOptionalNativeModule } from 'expo-modules-core';
+import { updateRuntimePowerState } from '../state/runtimePowerState';
 
 export interface MetricPayloadFile {
   id: string;
@@ -64,7 +65,9 @@ export async function removePayloads(ids: string[]): Promise<void> {
 }
 
 export async function samplePerformance(windowMs: number): Promise<PerformanceSample | null> {
-  return (await HitherMetrics?.samplePerformance?.(windowMs)) ?? null;
+  const sample = (await HitherMetrics?.samplePerformance?.(windowMs)) ?? null;
+  updateRuntimePowerState(sample);
+  return sample;
 }
 
 export async function setCollectionEnabled(enabled: boolean): Promise<boolean> {

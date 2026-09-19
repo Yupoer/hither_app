@@ -59,8 +59,12 @@ describe('Start same-day promote + carousel identity (#222)', () => {
     expect(carouselScrollX(1, 390)).toBe(390);
     expect(journey).toContain('followCarouselIndexAfterPromote');
     expect(carousel).toContain('programmaticTargetRef');
-    expect(journey).toContain('promoteDestinationWithinDay');
-    expect(journey).toContain('startedDestId');
+    // Start is a single durable gathering operation; it must not issue a
+    // separate itinerary promotion or depend on a pre-promote destination id.
+    expect(journey).toContain('flushImmediately: false');
+    expect(journey).toContain('pendingCarouselTargetIdRef.current = null');
+    expect(journey).not.toContain('promoteDestinationWithinDay');
+    expect(journey).not.toContain('startedDestId');
     expect(carousel).toContain('handleScrollBeginDrag');
     expect(journey).not.toContain('carouselRef.current?.scrollTo');
     expect(journey).not.toMatch(/carouselRef:\s*_carouselRef/);
