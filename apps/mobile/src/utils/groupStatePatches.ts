@@ -4,6 +4,7 @@ export interface MemberLocationPatch {
   userId: string;
   coordinates: Coordinates;
   updatedAt: string;
+  capturedAt?: string | null;
 }
 
 /**
@@ -32,6 +33,7 @@ export function locationPatchFromRealtimePayload(
     userId,
     coordinates: { latitude: lat, longitude: lon },
     updatedAt,
+    ...(typeof row.captured_at === 'string' ? { capturedAt: row.captured_at } : {}),
   };
 }
 
@@ -57,18 +59,23 @@ export function applyMemberLocationPatches(
     if (idx < 0) return null;
 
     const prev = list[idx];
-    if (prev.lastUpdated && Date.parse(patch.updatedAt) <= Date.parse(prev.lastUpdated)) continue;
+    const previousUpload = prev.uploadedAt ?? prev.lastUpdated;
+    if (previousUpload && Date.parse(patch.updatedAt) <= Date.parse(previousUpload)) continue;
     const same =
       prev.coordinates?.latitude === patch.coordinates.latitude &&
       prev.coordinates?.longitude === patch.coordinates.longitude &&
-      prev.lastUpdated === patch.updatedAt;
+      previousUpload === patch.updatedAt;
     if (same) continue;
 
     if (!members) members = state.members.slice();
     members[idx] = {
       ...prev,
       coordinates: patch.coordinates,
-      lastUpdated: patch.updatedAt,
+      capturedAt: patch.capturedAt ?? null,
+      uploadedAt: patch.updatedAt,
+      locationAvailability: Date.now() - Date.parse(patch.capturedAt ?? patch.updatedAt) < 120_000
+        ? 'available' : 'stale',
+      lastUpdated: patch.capturedAt ?? patch.updatedAt,
     };
   }
 

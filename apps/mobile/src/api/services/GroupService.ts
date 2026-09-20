@@ -107,6 +107,7 @@ export interface LocationRow {
   latitude: number | null;
   longitude: number | null;
   updated_at: string | null;
+  captured_at?: string | null;
 }
 
 // ── Pure mappers ───────────────────────────────────────────────────────────
@@ -156,7 +157,12 @@ export function mapMember(
     solo: membership.solo ?? false,
     subgroupId: membership.subgroup_id ?? undefined,
     coordinates,
-    lastUpdated: location?.updated_at ?? undefined,
+    capturedAt: location?.captured_at ?? null,
+    uploadedAt: location?.updated_at ?? null,
+    locationAvailability: !coordinates ? 'unavailable'
+      : Date.now() - Date.parse(location?.captured_at ?? location?.updated_at ?? '') < 120_000
+        ? 'available' : 'stale',
+    lastUpdated: location?.captured_at ?? location?.updated_at ?? undefined,
   };
 }
 
@@ -308,7 +314,7 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
       .order('position', { ascending: true }),
     supabase
       .from('member_locations')
-      .select('user_id, latitude, longitude, updated_at')
+      .select('user_id, latitude, longitude, captured_at, updated_at')
       .eq('group_id', groupId),
     // Do not swallow load failures as an empty list (false "no stay").
     listDailyAccommodations(groupId),

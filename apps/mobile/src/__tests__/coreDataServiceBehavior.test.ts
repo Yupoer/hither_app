@@ -51,6 +51,17 @@ beforeEach(() => {
 });
 
 describe('CoreDataService remote operation adapter', () => {
+  it.each(['scope_deleted', 'target_deleted', 'session_deleted', 'session_mismatch',
+    'not_session_member', 'history_not_correctable', 'dependency_failed', 'operation_identity_mismatch'])
+  ('settles terminal v3 %s instead of retrying it as an unknown failure', async code => {
+    mockedSupabase.rpc.mockResolvedValueOnce({ data: {
+      status: 'conflict', conflict: { code, message: 'no longer applicable' },
+    }, error: null });
+    await expect(applyCoreOperation(operation({ actorId: 'actor-1' }))).resolves.toMatchObject({
+      status: 'conflict', conflict: { code: 'validation' },
+    });
+  });
+
   it('applies actor-bound operations and maps accepted, duplicate, and conflict responses', async () => {
     const actorOp = operation({ actorId: 'actor-1' });
     mockedSupabase.rpc
@@ -69,7 +80,7 @@ describe('CoreDataService remote operation adapter', () => {
       status: 'conflict',
       conflict: { code: 'stale_version', serverEntityVersion: 7, operationId: 'op-1' },
     });
-    expect(mockedSupabase.rpc).toHaveBeenNthCalledWith(1, 'apply_core_operation_v2', expect.objectContaining({
+    expect(mockedSupabase.rpc).toHaveBeenNthCalledWith(1, 'apply_core_operation_v3', expect.objectContaining({
       p_actor_id: 'actor-1', p_sequence: 0, p_dependency_ids: [],
     }));
   });

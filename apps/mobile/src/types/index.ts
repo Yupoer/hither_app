@@ -235,9 +235,16 @@ export interface MemberLocation {
   solo?: boolean;
   /** Leaf subgroup the member currently belongs to, if any. */
   subgroupId?: string;
-  coordinates?: Coordinates;
-  /** ISO-8601 timestamp of the last location update. */
-  lastUpdated?: string;
+  /** Latest usable position; null means the member has no usable fix. */
+  coordinates?: Coordinates | null;
+  /** ISO-8601 timestamp when the device captured the position. */
+  capturedAt?: string | null;
+  /** ISO-8601 timestamp when the server accepted the position. */
+  uploadedAt?: string | null;
+  /** Whether the position can currently be used for a map/arrival decision. */
+  locationAvailability?: 'available' | 'stale' | 'unavailable' | null;
+  /** ISO-8601 timestamp of the last server-visible location update. */
+  lastUpdated?: string | null;
 }
 
 /** Subgroup mode: led by a sub-leader, or leaderless collaboration. */
@@ -303,8 +310,12 @@ export interface VisitedWaypoint {
   destinationId?: string;
   name: string;
   coordinates: Coordinates;
-  /** ISO-8601 timestamp of arrival (or synthetic sort key for non-arrivals). */
-  arrivedAt: string;
+  /** ISO-8601 timestamp of arrival; null when a leader only corrected history. */
+  arrivedAt: string | null;
+  /** Separate ordering key for rows whose physical arrival time is unknown. */
+  sortTimestamp?: string | null;
+  /** True when the row is a leader correction with no physical timestamp. */
+  timeUnknown?: boolean;
   /** arrived (default) | missed 未抵達 | incomplete 未完成 */
   status?: 'arrived' | 'missed' | 'incomplete';
   /** True when projected from a past itinerary stop, not a DB history row. */
@@ -333,8 +344,11 @@ export interface DestinationArrival {
   groupId: string;
   destinationId: string;
   userId: string;
-  arrivedAt: string;
-  source: 'automatic' | 'manual';
+  /** Null for a leader history correction: arrival is confirmed without inventing a time. */
+  arrivedAt: string | null;
+  /** Session scope prevents an old trip from reappearing after a restart. */
+  navigationSessionId?: string | null;
+  source: 'automatic' | 'manual' | 'leader_correction';
   markedBy: string;
 }
 

@@ -682,7 +682,7 @@ describe('SQLite core storage adapters', () => {
     void navigation;
   });
 
-  it('retains durable conflicts as open drafts but excludes them from pending work', async () => {
+  it('retains terminal validation receipts but excludes them from pending work', async () => {
     const harness = await newHarness();
     const queue = harness.createCoreOperationOutbox(
       harness.core,
@@ -691,8 +691,8 @@ describe('SQLite core storage adapters', () => {
         status: 'conflict' as const,
         operationId: operation.id,
         conflict: {
-          code: 'stale_version' as const,
-          message: 'server advanced',
+          code: 'validation' as const,
+          message: 'destination removed',
           serverEntityVersion: 4,
           serverState: { destinations: [] },
           operationId: operation.id,
@@ -713,7 +713,7 @@ describe('SQLite core storage adapters', () => {
       status: 'conflict',
       attempts: 1,
       nextAttemptAt: Number.MAX_SAFE_INTEGER,
-      conflictResult: { code: 'stale_version', serverEntityVersion: 4 },
+      conflictResult: { code: 'validation', serverEntityVersion: 4 },
     });
     expect(await harness.outbox.countPending()).toBe(0);
     expect(await harness.outbox.countPendingForEntity(
@@ -842,7 +842,7 @@ describe('SQLite core storage adapters', () => {
     expect(await restartedHarness.outbox.get('restart-op')).toBeNull();
   });
 
-  it('applies optimistic local state and resolves a durable conflict to remote state', async () => {
+  it('reverts an invalid transition to authoritative state without retrying', async () => {
     const harness = await newHarness();
     const base = makeSnapshot('gathering-group', ['local-destination'], {
       activeGathering: makeGathering('gathering-group'),
@@ -862,8 +862,8 @@ describe('SQLite core storage adapters', () => {
         status: 'conflict' as const,
         operationId: operation.id,
         conflict: {
-          code: 'stale_version' as const,
-          message: 'stale gathering version',
+          code: 'invalid_transition' as const,
+          message: 'session has changed',
           serverEntityVersion: 7,
           serverState: remoteState,
           operationId: operation.id,

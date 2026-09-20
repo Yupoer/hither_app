@@ -13,6 +13,7 @@ const mockStore = {
 };
 const mockOutbox = {
   enqueueArrival: jest.fn(),
+  enqueueMutation: jest.fn(),
   flush: jest.fn(),
 };
 const mockCoreSync = {
@@ -32,6 +33,7 @@ import {
   resolveGatherPointRequestResilient,
   setDestinationArrival,
   setDestinationArrivalAt,
+  correctDestinationArrival,
   submitGatherPointRequest,
 } from '../api/services/GatheringWorkflowService';
 
@@ -142,6 +144,16 @@ describe('GatheringWorkflowService durable and remote adapters', () => {
     await Promise.resolve();
   });
 
+  it('keeps an explicit subgroup session even when the cached main-team lane differs', async () => {
+    mockStore.database.findSnapshotGroupForDestination.mockResolvedValue('g-1');
+    mockStore.readSnapshot.mockResolvedValue({
+      activeGathering: { activeDestinationId: 'main-stop' },
+    });
+    await setDestinationArrivalAt('sub-stop', 'u-1', false, null, 'sub-session');
+    expect(mockOutbox.enqueueArrival).toHaveBeenLastCalledWith('g-1', 'sub-stop',
+      expect.objectContaining({ navigationSessionId: 'sub-session', arrived: false }));
+  });
+
   it('falls back to RPCs when no local destination snapshot exists', async () => {
     mockedSupabase.rpc
       .mockResolvedValueOnce({ data: null, error: null })
@@ -155,5 +167,23 @@ describe('GatheringWorkflowService durable and remote adapters', () => {
       p_destination_id: 'd-1', p_target_user_id: 'u-1', p_arrived: true,
       p_arrived_at: '2026-09-19T00:00:00Z',
     });
+  });
+
+  it('queues leader history corrections as a distinct null-timestamp operation', async () => {
+    mockStore.database.findSnapshotGroupForDestination.mockResolvedValue('g-1');
+    mockStore.readSnapshot.mockResolvedValue({ itineraryVersion: 7 });
+    mockOutbox.enqueueMutation.mockResolvedValue({ id: 'correction-1' });
+    await expect(correctDestinationArrival({
+      destinationId: 'd-1', targetUserId: 'member-1', arrived: true, sessionId: 'session-1',
+    })).resolves.toMatchObject({ id: 'correction-1' });
+    expect(mockOutbox.enqueueMutation).toHaveBeenCalledWith(expect.objectContaining({
+      groupId: 'g-1', entityType: 'itinerary', entityId: 'd-1', entityVersion: 7,
+      operationType: 'leader_correct_arrival', actorId: 'actor-1',
+      payload: expect.objectContaining({
+        targetUserId: 'member-1', sessionId: 'session-1', navigationSessionId: 'session-1',
+        arrived: true, arrivedAt: null, source: 'leader_correction',
+      }),
+    }));
+    expect(mockedSupabase.rpc).not.toHaveBeenCalled();
   });
 });

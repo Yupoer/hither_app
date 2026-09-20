@@ -90,6 +90,115 @@ function snapshotForGroup(
 }
 
 describe('durable core operation outbox', () => {
+  it('allows a fresh same-resource intent after a retained terminal receipt', async () => {
+    const db = new MemoryCoreOperationOutboxDatabase();
+    const queue = makeQueue(db, async op => accepted(op));
+    const first = await queue.enqueueMutation({ ...mutation('g'), entityType: 'active_gathering',
+      operationType: 'start_gathering', payload: { activeDestinationId: 'a', navigationRequestId: 's' } });
+    await db.update({ ...first, status: 'conflict', conflictResult: {
+      code: 'unauthorized', message: 'role lost', operationId: first.id, entityId: first.entityId,
+      entityType: first.entityType, occurredAt: 1,
+    } });
+    const next = await queue.enqueueMutation({ ...mutation('g'), entityType: 'active_gathering',
+      operationType: 'start_gathering', payload: { activeDestinationId: 'a', navigationRequestId: 't' } });
+    expect(next.dependencyIds).toEqual([]);
+    expect((await queue.flush()).sent).toBe(1);
+    expect(await queue.getOperation(next.id)).toBeNull();
+  });
+
+  it.each(['failed', 'conflict'] as const)('recovers an interleaved legacy session prerequisite (%s)', async status => {
+    const db = new MemoryCoreOperationOutboxDatabase();
+    const submit = jest.fn(async (op: CoreOperation) => accepted(op));
+    const queue = makeQueue(db, submit);
+    const start = await queue.enqueueMutation({ ...mutation('g'), entityType: 'active_gathering',
+      operationType: 'start_gathering', payload: { activeDestinationId: 'a', navigationRequestId: 's' } });
+    const edit = await queue.enqueueMutation({ ...mutation('g'), operationType: 'edit_destination',
+      payload: { destinationId: 'b', patch: { title: 'B' } } });
+    const arrival = await queue.enqueueArrival('g', 'a', {
+      actorId: 'actor-a', userId: 'actor-a', navigationSessionId: 's',
+    });
+    await db.update({ ...start, status, nextAttemptAt: 9_999,
+      conflictResult: status === 'conflict' ? { code: 'unauthorized', message: 'role changed',
+        operationId: start.id, entityId: start.entityId, entityType: start.entityType, occurredAt: 1 } : null });
+    await db.update({ ...edit, dependencyIds: [start.id] });
+    await db.update({ ...arrival, dependencyIds: [edit.id] });
+    expect((await queue.flush()).sent).toBe(1);
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(submit.mock.calls[0][0].id).toBe(edit.id);
+    expect(await queue.getOperation(arrival.id)).toMatchObject({
+      status: status === 'conflict' ? 'conflict' : 'pending', dependencyIds: [edit.id], attempts: 0,
+    });
+  });
+
+  it('does not inherit a legacy unrelated FIFO failure', async () => {
+    const db = new MemoryCoreOperationOutboxDatabase();
+    const queue = makeQueue(db, async op => accepted(op));
+    const a = await queue.enqueueMutation({ ...mutation('g'), operationType: 'edit_destination', payload: { destinationId: 'a', patch: {} } });
+    const b = await queue.enqueueMutation({ ...mutation('g'), operationType: 'add_destination', payload: { destinationId: 'b' } });
+    await db.update({ ...a, status: 'conflict', conflictResult: { code: 'validation', message: 'deleted',
+      operationId: a.id, entityId: a.entityId, entityType: a.entityType, occurredAt: 1 } });
+    await db.update({ ...b, dependencyIds: [a.id] });
+    expect((await queue.flush()).sent).toBe(1);
+    expect(await queue.getOperation(b.id)).toBeNull();
+  });
+
+  it('holds an offline arrival until its session creation is accepted', async () => {
+    const db = new MemoryCoreOperationOutboxDatabase();
+    const queue = makeQueue(db, async op => { if (op.operationType === 'start_gathering') throw new Error('offline'); return accepted(op); });
+    const start = await queue.enqueueMutation({ ...mutation('g'), entityType: 'active_gathering', operationType: 'start_gathering',
+      payload: { activeDestinationId: 'a', navigationRequestId: 'local-session' } });
+    const arrival = await queue.enqueueArrival('g', 'a', { actorId: 'actor-a', userId: 'actor-a', navigationSessionId: 'local-session' });
+    expect(arrival.dependencyIds).toContain(start.id);
+    expect((await queue.flush()).sent).toBe(0);
+    expect(await queue.getOperation(arrival.id)).toMatchObject({ status: 'pending', attempts: 0 });
+  });
+
+  it('lets an unrelated arrival and destination pass a backed-off destination edit', async () => {
+    const db = new MemoryCoreOperationOutboxDatabase();
+    const calls: string[] = [];
+    const queue = makeQueue(db, async operation => {
+      calls.push(operation.id);
+      if (operation.payload.destinationId === 'a') throw new Error('offline');
+      return accepted(operation);
+    });
+    await queue.enqueueMutation({ ...mutation('g'), operationType: 'edit_destination', payload: { destinationId: 'a', patch: { title: 'A' } } });
+    const other = await queue.enqueueMutation({ ...mutation('g'), operationType: 'edit_destination', payload: { destinationId: 'b', patch: { title: 'B' } } });
+    const arrival = await queue.enqueueArrival('g', 'a', { actorId: 'actor-a', userId: 'actor-a', navigationSessionId: 'session' });
+    expect(other.dependencyIds ?? []).toEqual([]);
+    expect(arrival.dependencyIds ?? []).toEqual([]);
+    const result = await queue.flush();
+    expect(result.sent).toBe(2);
+    expect(result.retryScheduled).toBe(1);
+    expect(calls).toHaveLength(3);
+  });
+
+  it('recovers a persisted stale conflict using the original UUID and payload', async () => {
+    const db = new MemoryCoreOperationOutboxDatabase();
+    const submit = jest.fn(async (op: CoreOperation) => accepted(op));
+    const queue = makeQueue(db, submit);
+    const op = await queue.enqueueMutation(mutation('g'));
+    await db.update({ ...op, status: 'conflict', nextAttemptAt: Number.MAX_SAFE_INTEGER,
+      conflictResult: { code: 'stale_version', message: 'old v2 conflict', operationId: op.id,
+        entityType: op.entityType, entityId: op.entityId, occurredAt: 1 } });
+    expect((await queue.flush()).sent).toBe(1);
+    expect(submit).toHaveBeenCalledWith(expect.objectContaining({ id: op.id, payload: op.payload, entityVersion: op.entityVersion }));
+  });
+
+  it('settles causal descendants after rejection while independent work continues', async () => {
+    const db = new MemoryCoreOperationOutboxDatabase();
+    const queue = makeQueue(db, async op => op.payload.destinationId === 'a'
+      ? { status: 'conflict', operationId: op.id, conflict: { code: 'unauthorized', message: 'role changed',
+        operationId: op.id, entityType: op.entityType, entityId: op.entityId, occurredAt: 1 } }
+      : accepted(op));
+    const root = await queue.enqueueMutation({ ...mutation('g'), operationType: 'add_destination', payload: { destinationId: 'a' } });
+    const child = await queue.enqueueMutation({ ...mutation('g'), operationType: 'edit_destination', payload: { destinationId: 'a', patch: {} } });
+    const other = await queue.enqueueMutation({ ...mutation('g'), operationType: 'add_destination', payload: { destinationId: 'b' } });
+    await queue.flush();
+    expect(await queue.getOperation(root.id)).toMatchObject({ status: 'conflict' });
+    expect(await queue.getOperation(child.id)).toMatchObject({ status: 'conflict' });
+    expect(await queue.getOperation(other.id)).toBeNull();
+  });
+
   it('enforces FIFO per actor/group while allowing another group to proceed', async () => {
     const db = new MemoryCoreOperationOutboxDatabase();
     const calls: string[] = [];
@@ -256,7 +365,7 @@ describe('durable core operation outbox', () => {
     expect(submit).toHaveBeenCalledTimes(2);
   });
 
-  it('keeps conflict drafts for explicit reapply and excludes them from local projection', async () => {
+  it('automatically retries stale drafts with the same identity and preserves their optimistic projection', async () => {
     const db = new MemoryCoreOperationOutboxDatabase();
     const queue = makeQueue(db, async (operation) => ({
       status: 'conflict' as const,
@@ -291,22 +400,16 @@ describe('durable core operation outbox', () => {
       payload: { destinationId: 'local-place', patch: { title: 'Edited draft' } },
     });
     await queue.flush();
-    expect((await queue.listConflicts('group-a')).map((row) => row.id)).toEqual([operation.id]);
+    expect(await queue.listConflicts('group-a')).toEqual([]);
+    expect(await queue.getOperation(operation.id)).toMatchObject({ status: 'failed', id: operation.id });
 
     const state = {
       group: { id: 'group-a' },
       destinations: [],
     } as unknown as GroupState;
-    expect(projectPendingDestinations(state, await queue.listByGroup('group-a')).destinations).toEqual([]);
+    expect(projectPendingDestinations(state, await queue.listByGroup('group-a')).destinations).toEqual([expect.objectContaining({ id: 'local-place', title: 'Edited draft' })]);
 
-    const recreated = await queue.recreateConflict(operation.id);
-    expect(recreated.id).not.toBe(operation.id);
-    expect(recreated.entityVersion).toBe(4);
-    expect(recreated.status).toBe('pending');
-    expect(recreated.sequence).toBeGreaterThan(operation.sequence ?? 0);
-    expect(recreated.dependencyIds).not.toContain(operation.id);
-    expect(await queue.getOperation(operation.id)).toBeNull();
-    expect(await queue.getOperation(dependent.id)).toBeNull();
+    expect(await queue.getOperation(dependent.id)).toMatchObject({ status: 'pending', dependencyIds: [operation.id] });
   });
 
   it('discards a conflict dependency chain atomically and checks the current actor', async () => {

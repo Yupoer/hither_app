@@ -79,7 +79,7 @@ function toMemberSnapshots(
     name: m.name,
     role: m.role,
     status: m.status,
-    lastUpdated: m.lastUpdated,
+    lastUpdated: m.lastUpdated ?? undefined,
     arrived: arrivedUserIds?.has(m.userId) || m.status === 'arrived',
   }));
 }

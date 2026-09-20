@@ -61,6 +61,27 @@ describe('locationPatchFromRealtimePayload', () => {
 });
 
 describe('applyMemberLocationPatches', () => {
+  it('keeps capture freshness separate from upload ordering for delayed positions', () => {
+    const first = applyMemberLocationPatches(baseState, [{
+      userId: 'peer', coordinates: { latitude: 25.2, longitude: 121.2 },
+      capturedAt: '2026-01-02T00:00:00.000Z',
+      updatedAt: '2026-01-03T00:00:00.000Z',
+    }], 'me')!;
+    expect(first.members[1]).toMatchObject({
+      capturedAt: '2026-01-02T00:00:00.000Z',
+      uploadedAt: '2026-01-03T00:00:00.000Z',
+      lastUpdated: '2026-01-02T00:00:00.000Z',
+      locationAvailability: 'stale',
+    });
+    // A reordered realtime receipt cannot win merely because lastUpdated is
+    // the older GPS capture time rather than the last server receipt.
+    expect(applyMemberLocationPatches(first, [{
+      userId: 'peer', coordinates: { latitude: 26, longitude: 122 },
+      capturedAt: '2026-01-02T01:00:00.000Z',
+      updatedAt: '2026-01-02T02:00:00.000Z',
+    }], 'me')).toBe(first);
+  });
+
   it('patches peer coordinates without network', () => {
     const next = applyMemberLocationPatches(
       baseState,

@@ -38,8 +38,11 @@ function mapConflict(
   operation: CoreOperation,
   conflict: ApplyRpcRow['conflict'],
 ): CoreConflictResult {
+  const terminalCodes = new Set(['operation_identity_mismatch', 'session_required', 'session_deleted',
+    'session_closed', 'session_mismatch', 'not_session_member', 'history_not_correctable',
+    'target_deleted', 'scope_mismatch', 'scope_deleted', 'dependency_failed', 'operation_expired']);
   return {
-    code:
+    code: terminalCodes.has(conflict?.code ?? '') ? 'validation' :
       conflict?.code === 'stale_version'
       || conflict?.code === 'invalid_transition'
       || conflict?.code === 'unauthorized'
@@ -79,7 +82,7 @@ export async function applyCoreOperation(
         }),
       };
     }
-    const { data, error } = await supabase.rpc('apply_core_operation_v2', {
+    const { data, error } = await supabase.rpc('apply_core_operation_v3', {
       p_operation_id: operation.id,
       p_group_id: operation.groupId,
       p_actor_id: operation.actorId,

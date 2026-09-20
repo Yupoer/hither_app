@@ -30,6 +30,8 @@ export type CoreEntityType =
   | 'itinerary';
 
 export type CoreOperationType =
+  | 'send_command'
+  | 'leader_correct_arrival'
   | 'record_arrival'
   | 'replace_snapshot'
   | 'start_gathering'
@@ -110,7 +112,7 @@ export interface CoreGroupSnapshot {
   source: CoreSnapshotSource;
 }
 
-/** Structured conflict written back for UI display (never silent overwrite). */
+/** Retained failure receipt; automatic recovery never asks the user to merge. */
 export interface CoreConflictResult {
   code:
     | 'stale_version'

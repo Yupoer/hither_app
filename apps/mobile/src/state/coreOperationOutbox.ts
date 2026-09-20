@@ -2,8 +2,8 @@
  * OTA-04 core operation outbox.
  *
  * Local optimistic state and outbox rows are written in ONE exclusive
- * transaction (no nested BEGIN). Replays are idempotent. Stale versions
- * return a displayable conflict rather than silently overwriting.
+ * transaction (no nested BEGIN). Replays preserve identity; stale versions
+ * are retried automatically and invalid intent settles without a blocking UI.
  */
 
 import * as Crypto from 'expo-crypto';
@@ -35,6 +35,7 @@ import {
 } from './coreDataStore';
 import { getHitherDatabase } from './hitherDatabase';
 import { classifyOperationError } from '../utils/operationError';
+import { projectOperationDestinations } from './coreOperationProjection';
 
 type OutboxListener = () => void;
 const outboxListeners = new Set<OutboxListener>();
@@ -282,39 +283,96 @@ async function insertOutboxRow(
   );
 }
 
-function queueKey(operation: CoreOperation): string {
-  return `${operation.actorId ?? ''}:${operation.groupId}`;
+/** Resource ordering, not one head-of-line queue for the entire group. */
+export function operationResources(operation: CoreOperation): string[] {
+  const prefix = `${operation.actorId ?? ''}:${operation.groupId}:`;
+  const payload = operation.payload;
+  const destinationId = payload.destinationId ?? payload.activeDestinationId;
+  let resources: string[];
+  if (operation.operationType === 'send_command') resources = [`command:${operation.id}`];
+  else if (operation.operationType === 'record_arrival' || operation.operationType === 'leader_correct_arrival') {
+    resources = [`arrival:${operation.entityId}:${payload.userId ?? payload.targetUserId}:${payload.navigationSessionId ?? payload.sessionId ?? ''}`];
+  } else if (operation.entityType === 'active_gathering'
+    || operation.operationType === 'complete_destination'
+    || operation.operationType === 'delete_destination') {
+    resources = [`journey:${payload.subgroupId ?? 'main'}`];
+    if (destinationId) resources.push(`destination:${destinationId}`);
+  } else if (operation.operationType === 'reorder_destinations' && Array.isArray(payload.updates) && payload.updates.length) {
+    resources = payload.updates.map((item: { id?: string }) => `destination:${item.id}`);
+  } else if (destinationId) resources = [`destination:${destinationId}`];
+  else resources = [`${operation.entityType}:${operation.entityId}`];
+  return resources.map(resource => prefix + resource);
+}
+
+function relatedOperations(a: CoreOperation, b: CoreOperation): boolean {
+  const resources = new Set(operationResources(a));
+  return operationResources(b).some(resource => resources.has(resource));
+}
+
+function isPrerequisite(prior: CoreOperation, next: CoreOperation): boolean {
+  if (prior.actorId !== next.actorId || prior.groupId !== next.groupId) return false;
+  if (relatedOperations(prior, next)) return true;
+  return createsRequiredEntity(prior, next);
+}
+
+function createsRequiredEntity(prior: CoreOperation, next: CoreOperation): boolean {
+  if (prior.actorId !== next.actorId || prior.groupId !== next.groupId) return false;
+  if (prior.operationType === 'start_gathering' || prior.operationType === 'switch_gathering') {
+    const session = next.payload.navigationSessionId ?? next.payload.sessionId;
+    if (session && session === prior.payload.navigationRequestId) return true;
+  }
+  return prior.operationType === 'add_destination' && next.operationType === 'record_arrival'
+    && prior.payload.destinationId === next.entityId;
+}
+
+function precedes(prior: CoreOperation, next: CoreOperation): boolean {
+  return (prior.sequence && next.sequence)
+    ? prior.sequence < next.sequence
+    : prior.createdAt < next.createdAt;
+}
+
+/** Infer causal edges lost by the old single-predecessor FIFO, without rewriting wire identity. */
+function dependsOn(next: CoreOperation, prior: CoreOperation): boolean {
+  return prior.id !== next.id
+    && (((next.dependencyIds ?? []).includes(prior.id) && isPrerequisite(prior, next))
+      || (precedes(prior, next) && createsRequiredEntity(prior, next)));
+}
+
+function recoverableConflict(operation: CoreOperation): boolean {
+  return operation.conflictResult?.code === 'stale_version'
+    || operation.conflictResult?.code === 'dependency_missing'
+    || operation.conflictResult?.code === 'unknown';
 }
 
 /**
- * Return only the FIFO head for each actor/group queue. A failed, inflight or
- * conflict head blocks every later sequence even when the later row is due.
- * Actorless rows are legacy-compatible and ordered by creation time.
+ * Preserve causal/resource order while letting independent work proceed.
+ * Terminal receipts do not own a lane; their causal descendants are settled
+ * before scheduling. Missing dependencies may already be compacted acknowledgements.
  */
 function dueHeads(
   operations: CoreOperation[],
   now: number,
   limit: number,
 ): CoreOperation[] {
-  const byQueue = new Map<string, CoreOperation[]>();
-  for (const operation of operations) {
-    const list = byQueue.get(queueKey(operation)) ?? [];
-    list.push(operation);
-    byQueue.set(queueKey(operation), list);
-  }
+  const blocked = new Set<string>();
   const heads: CoreOperation[] = [];
-  for (const list of byQueue.values()) {
-    list.sort((a, b) => {
+  const ordered = [...operations].sort((a, b) => {
       if ((a.sequence ?? 0) > 0 || (b.sequence ?? 0) > 0) {
         return (a.sequence ?? 0) - (b.sequence ?? 0) || a.createdAt - b.createdAt;
       }
       return a.createdAt - b.createdAt;
     });
-    const head = list.find((operation) => operation.status !== 'acked');
-    if (!head) continue;
+  for (const head of ordered) {
+    if (head.status === 'acked' || head.status === 'conflict') continue;
+    const resources = operationResources(head);
+    const dependencyPending = operations.some(dependency =>
+      dependency.status !== 'acked' && dependsOn(head, dependency));
+    const resourceBlocked = resources.some(resource => blocked.has(resource));
+    resources.forEach(resource => blocked.add(resource));
+    if (dependencyPending || resourceBlocked) continue;
     const open = head.status === 'pending' || head.status === 'failed' || head.status === 'inflight';
     // Inflight is always replayable after a process restart, regardless of its
-    // old attempt timestamp. Conflicts remain terminal and block the queue.
+    // old attempt timestamp.
     if (open && (head.status === 'inflight' || head.nextAttemptAt <= now)) heads.push(head);
   }
   return heads.sort((a, b) => a.createdAt - b.createdAt).slice(0, limit);
@@ -731,6 +789,8 @@ export interface EnqueueGatheringInput {
   activeDestinationId?: string | null;
   actorId?: string;
   navigationRequestId?: string;
+  navigationSessionId?: string | null;
+  subgroupId?: string | null;
 }
 
 export interface EnqueueNavigationResponseInput {
@@ -844,15 +904,14 @@ export function createCoreOperationOutbox(
       // SQLite transaction. The outbox and snapshot may share a connection;
       // opening a second SELECT while the snapshot transaction is exclusive
       // can deadlock on SQLite.
-      const prior = operation.actorId
+      const predecessors = operation.actorId
         ? (await outboxDb.listByGroup(operation.groupId))
           .filter((row) => row.actorId === operation.actorId
+            && isPrerequisite(row, operation)
             && row.status !== 'acked' && row.status !== 'conflict')
-          .sort((a, b) => (b.sequence ?? 0) - (a.sequence ?? 0))[0]
-        : undefined;
-      if (prior && prior.id !== operation.id) {
-        operation.dependencyIds = [...new Set([...(operation.dependencyIds ?? []), prior.id])];
-      }
+        : [];
+      operation.dependencyIds = [...new Set([...(operation.dependencyIds ?? []),
+        ...predecessors.filter(row => row.id !== operation.id).map(row => row.id)])];
       const predecessor = isItineraryMutation(operation)
         ? (await outboxDb.listByGroup(operation.groupId))
           .filter((row) => row.actorId === operation.actorId
@@ -907,15 +966,14 @@ export function createCoreOperationOutbox(
         const actor = await currentActorGuard();
         if (actor !== operation.actorId) throw new Error('account_changed');
       }
-      const prior = operation.actorId
+      const predecessors = operation.actorId
         ? (await outboxDb.listByGroup(operation.groupId))
           .filter((row) => row.actorId === operation.actorId
+            && isPrerequisite(row, operation)
             && row.status !== 'acked' && row.status !== 'conflict')
-          .sort((a, b) => (b.sequence ?? 0) - (a.sequence ?? 0))[0]
-        : undefined;
-      if (prior && prior.id !== operation.id) {
-        operation.dependencyIds = [...new Set([...(operation.dependencyIds ?? []), prior.id])];
-      }
+        : [];
+      operation.dependencyIds = [...new Set([...(operation.dependencyIds ?? []),
+        ...predecessors.filter(row => row.id !== operation.id).map(row => row.id)])];
       return outboxDb.withExclusiveTransaction(async (exec) => {
       if (operation.actorId && !(operation.sequence && operation.sequence > 0)) {
         operation.sequence = await outboxDb.writeAllocateSequence(
@@ -974,7 +1032,7 @@ export function createCoreOperationOutbox(
       changed = false;
       for (const row of rows) {
         if (!chain.has(row.id)
-          && (row.dependencyIds ?? []).some((id) => chain.has(id))) {
+          && rows.some(prior => chain.has(prior.id) && dependsOn(row, prior))) {
           chain.add(row.id);
           changed = true;
         }
@@ -1030,6 +1088,7 @@ export function createCoreOperationOutbox(
 
     const hasPendingDependents = rowsBefore.some((row) =>
       row.id !== operation.id
+      && row.actorId === operation.actorId
       && row.groupId === operation.groupId
       && row.entityType === operation.entityType
       && row.entityId === operation.entityId
@@ -1054,8 +1113,9 @@ export function createCoreOperationOutbox(
     };
     if (snapshot && operation.entityType === 'itinerary'
       && (serverDestinations !== null || aliasMap.size > 0)) {
-      let destinations = serverDestinations !== null && !hasPendingDependents
-        ? serverDestinations
+      let destinations = serverDestinations !== null
+        ? projectOperationDestinations(serverDestinations, rowsBefore.filter(row => row.id !== operation.id
+          && row.actorId === operation.actorId))
         : snapshot.destinations;
       if (aliasMap.size > 0) {
         const seen = new Set<string>();
@@ -1133,7 +1193,8 @@ export function createCoreOperationOutbox(
       return value;
     };
     for (const pending of rowsBefore) {
-      if (pending.id === operation.id || pending.status === 'acked') continue;
+      if (pending.id === operation.id || pending.status === 'acked'
+        || pending.actorId !== operation.actorId) continue;
       const entityId = resolveAlias(pending.entityId);
       await outboxDb.writeUpdate(exec, {
         ...pending,
@@ -1154,7 +1215,7 @@ export function createCoreOperationOutbox(
         // Compact only after the server result, projection, aliases, and
         // dependent rewrites can commit together. Arrival rows are retained as
         // an acknowledged local history row until the next remote read.
-        if (operation.operationType === 'record_arrival') {
+        if (operation.operationType === 'record_arrival' || operation.operationType === 'leader_correct_arrival') {
           const resultPayload = result.entity && typeof result.entity === 'object'
             ? result.entity
             : {};
@@ -1176,6 +1237,7 @@ export function createCoreOperationOutbox(
           && isUsableActiveGatheringState(result.entity)) {
           const newerPending = rowsBefore.some((row) =>
             row.id !== operation.id
+            && row.actorId === operation.actorId
             && row.entityType === operation.entityType
             && row.entityId === operation.entityId
             && isOpenOperation(row),
@@ -1200,9 +1262,21 @@ export function createCoreOperationOutbox(
     }
 
     const conflict = result.conflict;
-    // Durable operations are terminal on conflict. Their row retains the
-    // original local draft and the authoritative server state for explicit UI
-    // discard/recreate; it is never silently rebased or retried.
+    // v3 re-applies intent on the server without changing its UUID or payload.
+    // Preserve that identity even when an older conflict receipt is replayed.
+    if (conflict.code === 'stale_version' || conflict.code === 'dependency_missing'
+      || conflict.code === 'unknown') {
+      await runCoreDataWriteLock(() => outboxDb.update({
+        ...operation, status: 'failed', conflictResult: conflict,
+        attempts: operation.attempts + 1,
+        nextAttemptAt: current + backoffMs(operation.attempts + 1),
+        inflightStartedAt: undefined, updatedAt: current,
+      }));
+      notifyCoreOutboxChanged();
+      return 'conflict';
+    }
+    // Invalid intent is retained for diagnostics but is settled automatically;
+    // only its actual dependants terminate. No user decision is required.
     const conflictOperation: CoreOperation = {
       ...operation,
       status: isDurableOperation(operation)
@@ -1218,8 +1292,18 @@ export function createCoreOperationOutbox(
       inflightStartedAt: undefined,
       updatedAt: current,
     };
+    const conflictRows = await outboxDb.listByGroup(operation.groupId);
+    const invalidated = dependencyChain(operation.id, conflictRows);
     await withCoreWriteTransaction(async (exec) => {
       await outboxDb.writeUpdate(exec, conflictOperation);
+      for (const dependent of conflictRows) {
+        if (dependent.id !== operation.id && dependent.actorId === operation.actorId
+          && dependent.status !== 'acked' && invalidated.has(dependent.id)) {
+          await outboxDb.writeUpdate(exec, { ...dependent, status: 'conflict',
+            conflictResult: { ...conflict, code: 'invalid_transition', operationId: dependent.id,
+              message: 'prerequisite operation expired' }, nextAttemptAt: Number.MAX_SAFE_INTEGER, updatedAt: current });
+        }
+      }
       if (isDurableOperation(operation) && conflict.serverState) {
         if (operation.entityType === 'active_gathering'
           && isUsableActiveGatheringState(conflict.serverState)) {
@@ -1238,7 +1322,8 @@ export function createCoreOperationOutbox(
             if (!serverDestinations) return;
             await coreDb.writeSnapshot(exec, {
               ...snapshot,
-              destinations: serverDestinations,
+              destinations: projectOperationDestinations(serverDestinations, conflictRows.filter(row =>
+                !invalidated.has(row.id) && row.actorId === operation.actorId)),
               itineraryVersion: conflict.serverEntityVersion ?? snapshot.itineraryVersion ?? 0,
               syncedAt: current,
               updatedAt: current,
@@ -1301,7 +1386,7 @@ export function createCoreOperationOutbox(
         let existing = await outboxDb.get(id);
         // A terminal conflict is a retained draft, not a reusable idempotency
         // key. Generate a fresh operation id for the new intent and leave the
-        // old conflict row available for explicit UI resolution.
+        // old conflict row available for diagnostics.
         for (let attempts = 0; existing && attempts < 3; attempts += 1) {
           id = idFactory();
           existing = await outboxDb.get(id);
@@ -1331,7 +1416,7 @@ export function createCoreOperationOutbox(
       return runSerial(async () => {
         await initialize();
         const operation = await outboxDb.get(id);
-        if (operation?.operationType === 'record_arrival') {
+        if (operation?.operationType === 'record_arrival' || operation?.operationType === 'leader_correct_arrival') {
           await runCoreDataWriteLock(() => outboxDb.delete(id));
         }
         notifyCoreOutboxChanged();
@@ -1379,6 +1464,8 @@ export function createCoreOperationOutbox(
 
         const payload: Record<string, unknown> = {
           action: input.action,
+          subgroupId: input.subgroupId ?? null,
+          navigationSessionId: input.navigationSessionId ?? null,
           nextDestinationId: nextDestinationIdForPayload,
           activeDestinationId:
             input.action === 'end'
@@ -1657,6 +1744,37 @@ export function createCoreOperationOutbox(
       return runSerial(async () => {
         await initialize();
         const current = now();
+        // Upgrade retained v2 version conflicts in place; do not lose drafts or
+        // mutate the ledger identity. Settle irrecoverable dependency chains.
+        const owner = currentActorGuard ? await currentActorGuard() : undefined;
+        const rows = await outboxDb.listAll();
+        const ownRows = rows.filter(row => !currentActorGuard || (owner && row.actorId === owner));
+        const terminalIds = new Set(ownRows.filter(row => row.status === 'conflict'
+          && !recoverableConflict(row)).map(row => row.id));
+        let expanded = true;
+        while (expanded) {
+          expanded = false;
+          for (const row of ownRows) {
+            if (row.status !== 'acked' && !terminalIds.has(row.id)
+              && ownRows.some(prior => terminalIds.has(prior.id) && dependsOn(row, prior))) {
+              terminalIds.add(row.id); expanded = true;
+            }
+          }
+        }
+        await withCoreWriteTransaction(async exec => {
+          for (const row of ownRows) {
+            if (terminalIds.has(row.id) && row.status !== 'conflict') {
+              await outboxDb.writeUpdate(exec, {
+                ...row, status: 'conflict', nextAttemptAt: Number.MAX_SAFE_INTEGER,
+                conflictResult: { code: 'invalid_transition', message: 'prerequisite operation expired',
+                  operationId: row.id, entityType: row.entityType, entityId: row.entityId, occurredAt: current },
+                updatedAt: current,
+              });
+            } else if (row.status === 'conflict' && recoverableConflict(row) && !terminalIds.has(row.id)) {
+              await outboxDb.writeUpdate(exec, { ...row, status: 'pending', nextAttemptAt: current, updatedAt: current });
+            }
+          }
+        });
         // Fetch all queue heads when actor filtering is enabled. Applying the
         // batch limit before removing another account's heads could consume
         // the entire batch and starve the signed-in account.

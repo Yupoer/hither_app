@@ -12,6 +12,7 @@ import type {
 } from '../types/coreData';
 import type { Destination, GroupState } from '../types';
 import * as Crypto from 'expo-crypto';
+import { projectOperationDestinations } from './coreOperationProjection';
 import {
   applyGatheringToDestinations,
   applyGatheringToGroup,
@@ -56,7 +57,7 @@ outbox.setActorGuard(() => coreSessionGuard());
 setCoreSnapshotActorGuard(() => coreSessionGuard());
 
 function kickCoreTransport(): void {
-  void outbox.flush().catch(() => undefined);
+  void flushCoreOperationOutbox().catch(() => undefined);
 }
 
 // Remote snapshot must not clobber pending gathering outbox ops.
@@ -107,7 +108,17 @@ export { subscribeCoreOutboxChanges };
 export async function flushCoreOperationOutbox(
   maxEntries?: number,
 ): Promise<Awaited<ReturnType<CoreOperationOutbox['flush']>>> {
-  return outbox.flush(maxEntries);
+  let result = await outbox.flush(maxEntries);
+  // Each flush snapshots lane heads. Drain newly-unblocked descendants in a
+  // bounded burst; a later foreground retry handles longer queues and backoff.
+  for (let round = 0; round < 20 && result.remaining > 0 && !result.paused
+    && (result.sent + result.duplicates + result.conflicts > 0); round += 1) {
+    const next = await outbox.flush(maxEntries);
+    result = { ...next, sent: result.sent + next.sent, duplicates: result.duplicates + next.duplicates,
+      conflicts: result.conflicts + next.conflicts, retryScheduled: result.retryScheduled + next.retryScheduled };
+    if (next.sent + next.duplicates + next.conflicts === 0) break;
+  }
+  return result;
 }
 
 export async function initializeCoreDataLayer(): Promise<void> {
@@ -240,6 +251,13 @@ export async function enqueueDestinationEdit(input: {
   actorId?: string;
 }): Promise<CoreOperation> {
   const snapshot = await snapshotForDestination(input.destinationId, input.groupId);
+  const original = snapshot.destinations.find(destination => destination.id === input.destinationId);
+  if ((input.patch.latitude !== undefined && input.patch.latitude !== original?.coordinates.latitude)
+    || (input.patch.longitude !== undefined && input.patch.longitude !== original?.coordinates.longitude)) {
+    throw new Error('destination_coordinates_immutable');
+  }
+  // Older forms include unchanged coordinates. Do not send them as edits.
+  const { latitude: _latitude, longitude: _longitude, ...editablePatch } = input.patch;
   const operation = await outbox.enqueueMutation({
     groupId: snapshot.groupId,
     entityType: 'itinerary',
@@ -247,19 +265,16 @@ export async function enqueueDestinationEdit(input: {
     entityVersion: snapshot.itineraryVersion ?? 0,
     operationType: 'edit_destination',
     actorId: input.actorId,
-    payload: { destinationId: input.destinationId, patch: input.patch },
+    payload: { destinationId: input.destinationId, subgroupId: original?.subgroupId ?? null, patch: editablePatch },
     applyLocal: async (exec, operation) => {
       const current = await sharedCoreDb.readSnapshotInTransaction(exec, snapshot.groupId) ?? snapshot;
       const destinations = current.destinations.map((destination) => {
         if (destination.id !== input.destinationId) return destination;
-        const patch = input.patch;
+        const patch = editablePatch;
         return {
           ...destination,
           ...patch,
-          coordinates: {
-            latitude: patch.latitude ?? destination.coordinates.latitude,
-            longitude: patch.longitude ?? destination.coordinates.longitude,
-          },
+          coordinates: destination.coordinates,
         };
       });
       await sharedCoreDb.writeSnapshot(exec, optimisticSnapshot(current, destinations, Date.now(), operation.actorId));
@@ -282,7 +297,8 @@ export async function enqueueDestinationDelete(input: {
     entityVersion: snapshot.itineraryVersion ?? 0,
     operationType: 'delete_destination',
     actorId: input.actorId,
-    payload: { destinationId: input.destinationId },
+    payload: { destinationId: input.destinationId,
+      subgroupId: snapshot.destinations.find(d => d.id === input.destinationId)?.subgroupId ?? null },
     applyLocal: async (exec, operation) => {
       const current = await sharedCoreDb.readSnapshotInTransaction(exec, snapshot.groupId) ?? snapshot;
       const pointStatuses = { ...current.activeGathering.pointStatuses };
@@ -356,6 +372,7 @@ export async function enqueueDestinationMeetTime(input: {
     payload: {
       destinationId: input.destinationId,
       meetAt: input.meetAt,
+      subgroupId: snapshot.destinations.find(d => d.id === input.destinationId)?.subgroupId ?? null,
       meetRedMinutes: input.meetRedMinutes ?? null,
     },
     applyLocal: async (exec, operation) => {
@@ -387,7 +404,8 @@ export async function enqueueDestinationComplete(input: {
     entityVersion: snapshot.itineraryVersion ?? 0,
     operationType: 'complete_destination',
     actorId: input.actorId,
-    payload: { destinationId: input.destinationId, sessionId: input.sessionId ?? null },
+    payload: { destinationId: input.destinationId, sessionId: input.sessionId ?? null,
+      subgroupId: snapshot.destinations.find(d => d.id === input.destinationId)?.subgroupId ?? null },
     applyLocal: async (exec, operation) => {
       const current = await sharedCoreDb.readSnapshotInTransaction(exec, snapshot.groupId) ?? snapshot;
       const destinations = current.destinations.map((destination) =>
@@ -396,8 +414,12 @@ export async function enqueueDestinationComplete(input: {
           : destination,
       );
       const pointStatuses = { ...current.activeGathering.pointStatuses, [input.destinationId]: 'completed' as const };
-      await sharedCoreDb.writeSnapshot(exec, optimisticSnapshot({ ...current, activeGathering: { ...current.activeGathering, pointStatuses } }, destinations, Date.now(), operation.actorId));
-      await sharedCoreDb.writeActiveGathering(exec, { ...current.activeGathering, pointStatuses }, Date.now(), { patchSnapshot: 'none' });
+      const activeGathering = { ...current.activeGathering, pointStatuses,
+        ...(current.activeGathering.activeDestinationId === input.destinationId
+          ? { journeyPhase: 'staying' as const, activeDestinationId: null, phaseChangedAt: Date.now() } : {}) };
+      await sharedCoreDb.writeSnapshot(exec, optimisticSnapshot({ ...current, activeGathering,
+        group: applyGatheringToGroup(current.group, activeGathering) }, destinations, Date.now(), operation.actorId));
+      await sharedCoreDb.writeActiveGathering(exec, activeGathering, Date.now(), { patchSnapshot: 'none' });
     },
   });
   kickCoreTransport();
@@ -444,126 +466,8 @@ export async function enqueueResolveGatherPointRequest(input: {
   return operation;
 }
 
-/** Project unacknowledged local itinerary intent onto a UI GroupState. */
-export function projectPendingDestinations(
-  state: GroupState,
-  operations: CoreOperation[],
-): GroupState {
-  let destinations = [...state.destinations];
-  const open = operations
-    .filter((operation) => operation.status === 'pending' || operation.status === 'failed' || operation.status === 'inflight')
-    .sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0) || a.createdAt - b.createdAt);
-  for (const operation of open) {
-    const payload = operation.payload;
-    const destinationId = typeof payload.destinationId === 'string' ? payload.destinationId : operation.entityId;
-    if (operation.operationType === 'add_destination') {
-      if (!destinations.some((destination) => destination.id === destinationId)) {
-        destinations.push({
-          id: destinationId,
-          title: String(payload.title ?? ''),
-          order: destinations.length,
-          day: typeof payload.day === 'number' ? payload.day : null,
-          address: typeof payload.address === 'string' ? payload.address : undefined,
-          coordinates: {
-            latitude: Number(payload.latitude ?? 0),
-            longitude: Number(payload.longitude ?? 0),
-          },
-          subgroupId: typeof payload.subgroupId === 'string' ? payload.subgroupId : undefined,
-          kind: payload.kind === 'accommodation' ? 'accommodation' : 'stop',
-          stayAnchor: payload.stayAnchor === true,
-          providerPlaceId: typeof payload.providerPlaceId === 'string' ? payload.providerPlaceId : undefined,
-          ...(Object.prototype.hasOwnProperty.call(payload, 'emoji')
-            ? { emoji: typeof payload.emoji === 'string' ? payload.emoji : null }
-            : {}),
-          ...(Object.prototype.hasOwnProperty.call(payload, 'markerColor')
-            ? { markerColor: typeof payload.markerColor === 'string' ? payload.markerColor : null }
-            : {}),
-        });
-      }
-    } else if (operation.operationType === 'delete_destination') {
-      destinations = destinations.filter((destination) => destination.id !== destinationId);
-    } else if (operation.operationType === 'edit_destination') {
-      const patch = (payload.patch ?? {}) as Record<string, unknown>;
-      destinations = destinations.map((destination) => {
-        if (destination.id !== destinationId) return destination;
-        const next = { ...destination };
-        if (Object.prototype.hasOwnProperty.call(patch, 'title') && typeof patch.title === 'string') {
-          next.title = patch.title;
-        }
-        if (Object.prototype.hasOwnProperty.call(patch, 'address')) {
-          next.address = typeof patch.address === 'string' ? patch.address : undefined;
-        }
-        if (Object.prototype.hasOwnProperty.call(patch, 'day')) {
-          next.day = typeof patch.day === 'number' ? patch.day : null;
-        }
-        if (Object.prototype.hasOwnProperty.call(patch, 'subgroupId')) {
-          next.subgroupId = typeof patch.subgroupId === 'string' ? patch.subgroupId : undefined;
-        }
-        if (patch.kind === 'stop' || patch.kind === 'accommodation') next.kind = patch.kind;
-        if (Object.prototype.hasOwnProperty.call(patch, 'stayAnchor')) {
-          next.stayAnchor = patch.stayAnchor === true;
-        }
-        if (Object.prototype.hasOwnProperty.call(patch, 'providerPlaceId')) {
-          next.providerPlaceId = typeof patch.providerPlaceId === 'string'
-            ? patch.providerPlaceId
-            : undefined;
-        }
-        if (Object.prototype.hasOwnProperty.call(patch, 'emoji')) {
-          next.emoji = typeof patch.emoji === 'string' ? patch.emoji : null;
-        }
-        if (Object.prototype.hasOwnProperty.call(patch, 'markerColor')) {
-          next.markerColor = typeof patch.markerColor === 'string' ? patch.markerColor : null;
-        }
-        if (Object.prototype.hasOwnProperty.call(patch, 'meetAt')) {
-          next.meetAt = typeof patch.meetAt === 'string' ? patch.meetAt : undefined;
-        }
-        if (Object.prototype.hasOwnProperty.call(patch, 'meetRedMinutes')) {
-          next.meetRedMinutes = typeof patch.meetRedMinutes === 'number'
-            ? patch.meetRedMinutes
-            : undefined;
-        }
-        if (Object.prototype.hasOwnProperty.call(patch, 'latitude')) {
-          next.coordinates = { ...next.coordinates, latitude: Number(patch.latitude) };
-        }
-        if (Object.prototype.hasOwnProperty.call(patch, 'longitude')) {
-          next.coordinates = { ...next.coordinates, longitude: Number(patch.longitude) };
-        }
-        return next;
-      });
-    } else if (operation.operationType === 'complete_destination') {
-      destinations = destinations.map((destination) => destination.id === destinationId ? { ...destination, closedAt: new Date(operation.createdAt).toISOString() } : destination);
-    } else if (operation.operationType === 'set_destination_meet_time') {
-      destinations = destinations.map((destination) => destination.id === destinationId ? {
-        ...destination,
-        ...(Object.prototype.hasOwnProperty.call(payload, 'meetAt')
-          ? { meetAt: typeof payload.meetAt === 'string' ? payload.meetAt : undefined }
-          : {}),
-        ...(Object.prototype.hasOwnProperty.call(payload, 'meetRedMinutes')
-          ? { meetRedMinutes: typeof payload.meetRedMinutes === 'number' ? payload.meetRedMinutes : undefined }
-          : {}),
-      } : destination);
-    } else if (operation.operationType === 'reorder_destinations' && Array.isArray(payload.updates)) {
-      const updates = new Map((payload.updates as Array<Record<string, unknown>>).map((update) => [String(update.id), update]));
-      destinations = destinations.map((destination) => {
-        const update = updates.get(destination.id);
-        if (!update) return destination;
-        return {
-          ...destination,
-          order: typeof update.position === 'number' ? update.position : destination.order,
-          ...(Object.prototype.hasOwnProperty.call(update, 'day')
-            ? { day: typeof update.day === 'number' ? update.day : null }
-            : {}),
-          ...(Object.prototype.hasOwnProperty.call(update, 'meetAt')
-            ? { meetAt: typeof update.meetAt === 'string' ? update.meetAt : undefined }
-            : {}),
-          ...(Object.prototype.hasOwnProperty.call(update, 'stayAnchor')
-            ? { stayAnchor: update.stayAnchor === true }
-            : {}),
-        };
-      }).sort((a, b) => a.order - b.order);
-    }
-  }
-  return { ...state, destinations };
+export function projectPendingDestinations(state: GroupState, operations: CoreOperation[]): GroupState {
+  return { ...state, destinations: projectOperationDestinations(state.destinations, operations) };
 }
 
 /**
@@ -582,6 +486,8 @@ export async function enqueueLeaderGatheringStart(
     operationId?: string;
     actorId?: string;
     navigationRequestId?: string;
+    navigationSessionId?: string | null;
+    subgroupId?: string | null;
     /** Default true. Journey start sets false until session outcome is known. */
     flushImmediately?: boolean;
   } = {},
@@ -608,6 +514,8 @@ export async function enqueueLeaderGatheringStart(
       activeDestinationId: options.activeDestinationId ?? base.activeDestinationId,
       actorId: options.actorId,
       navigationRequestId: options.navigationRequestId,
+      navigationSessionId: options.navigationSessionId,
+      subgroupId: options.subgroupId,
     });
   if (options.flushImmediately !== false) {
     void outbox.flush().catch(() => undefined);
@@ -628,6 +536,8 @@ export async function enqueueLeaderGatheringSwitch(
     operationId?: string;
     actorId?: string;
     navigationRequestId?: string;
+    navigationSessionId?: string | null;
+    subgroupId?: string | null;
     flushImmediately?: boolean;
   },
 ): Promise<{
@@ -651,6 +561,8 @@ export async function enqueueLeaderGatheringSwitch(
       activeDestinationId: options.activeDestinationId,
       actorId: options.actorId,
       navigationRequestId: options.navigationRequestId,
+      navigationSessionId: options.navigationSessionId,
+      subgroupId: options.subgroupId,
     });
   if (options.flushImmediately !== false) {
     void outbox.flush().catch(() => undefined);
@@ -688,6 +600,8 @@ export async function enqueueLeaderGatheringEnd(
     nextDestinationId?: string | null;
     operationId?: string;
     actorId?: string;
+    navigationSessionId?: string | null;
+    subgroupId?: string | null;
     flushImmediately?: boolean;
   } = {},
 ): Promise<{ local: ActiveGatheringState }> {
@@ -707,6 +621,8 @@ export async function enqueueLeaderGatheringEnd(
     baseState: base,
     nextDestinationId: options.nextDestinationId,
     actorId: options.actorId,
+    navigationSessionId: options.navigationSessionId,
+    subgroupId: options.subgroupId,
   });
   if (options.flushImmediately !== false) void outbox.flush().catch(() => undefined);
   return { local };

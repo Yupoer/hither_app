@@ -23,9 +23,9 @@ export const en: Record<keyof ZhDict, string> = {
   'coreData.staleSnapshot': 'Local data may be outdated. It will refresh when you reconnect.',
   'coreData.emptySnapshot': 'No local trip snapshot yet. Connect and try again.',
   'coreData.loadFailed': 'Could not load your team. Please try again.',
-  'coreData.syncConflict': 'Sync needs attention',
+  'coreData.syncConflict': 'Some actions were not applied',
   'coreData.pendingSync': 'Saved on this device. Not yet synced.',
-  'coreData.conflictExplanation': 'This action was not applied to the server. The server state is kept. Both discard and reapply cancel dependent actions; reapply recreates only this action.',
+  'coreData.conflictExplanation': 'This action can no longer be applied. State will update automatically and other actions will continue syncing. No action is needed.',
   'coreData.versionDifference': 'Local base version {local} · Server version {remote}',
   'coreData.discardLocal': 'Discard local operations',
   'coreData.reapplyLocal': 'Reapply against latest state',
@@ -906,6 +906,7 @@ export const en: Record<keyof ZhDict, string> = {
   'history.empty': 'No trip history yet.',
   'history.statusMissed': 'Missed',
   'history.statusIncomplete': 'Incomplete',
+  'history.timeUnknown': 'Time unknown (leader correction)',
 
   // Straggler alerts
   'straggler.section': 'Straggler alerts',

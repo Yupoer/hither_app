@@ -49,6 +49,13 @@ const destinationSearch = readFileSync(
 );
 
 describe('map UI placement contracts', () => {
+  it('hydrates the shared foreground undo marker before the first GPS fix', () => {
+    expect(mapScreen).toContain('loadBackgroundManualUndo(actorId, groupId, destinationId, sessionId)');
+    expect(mapScreen).toContain('foregroundUndoHydrationRef.current.pending');
+    expect(mapScreen).toContain('const mutationAtStart = foregroundUndoMutationSequenceRef.current;');
+    expect(mapScreen).toContain('suppressed: false');
+  });
+
   it('opens the main settings page at one full-width 90% stage', () => {
     expect(settingsChildSheet).toContain('SettingsSheetPanel');
     expect(settingsPanel).toContain("import BottomSheet from '../../../components/BottomSheet'");

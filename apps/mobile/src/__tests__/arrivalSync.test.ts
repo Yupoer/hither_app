@@ -64,3 +64,22 @@ it('personal arrival does not locally close a multi-person stop', async () => {
   expect(projectArrivals([], rows, 'self')).toHaveLength(1);
   expect(pendingSoloDestinationIds(rows, 'self').size).toBe(0);
 });
+
+it('projects a leader correction with a null arrival time only in its completed session', () => {
+  const correction: CoreOperation = {
+    id: 'correction-1', groupId: 'group', actorId: 'leader', entityType: 'itinerary', entityId: 'stop',
+    entityVersion: 0, operationType: 'leader_correct_arrival', status: 'pending', attempts: 0,
+    nextAttemptAt: 0, conflictResult: null, createdAt: 1, updatedAt: 1, sequence: 1,
+    payload: {
+      targetUserId: 'member', arrived: true, arrivedAt: null,
+      sessionId: 'completed-session', navigationSessionId: 'completed-session',
+    },
+  };
+  const projected = projectArrivals([], [correction], 'leader', ['completed-session']);
+  expect(projected).toEqual([expect.objectContaining({
+    destinationId: 'stop', userId: 'member', arrivedAt: null,
+    source: 'leader_correction', navigationSessionId: 'completed-session',
+  })]);
+  expect(projectArrivals([], [correction], 'leader', ['new-session'])).toEqual([]);
+  expect(projectArrivals([], [correction], 'member', ['completed-session'])).toEqual([]);
+});

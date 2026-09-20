@@ -1,12 +1,12 @@
 # 地圖靜默同步與行程規劃
 
-狀態：2026-09-20 grilling 已確認，待實作。本次發布只調整粒子效果；本文件不是同步重構已上線的聲明。
+狀態：2026-09-20 grilling 同步規劃已實作，整合測試與 GPT-6 Astra low 全案 code review 通過。粒子調整已先行發布；同步版本依序執行發布腳本完整驗證、後端部署及 OTA，實際部署結果以發布紀錄為準。
 
 ## 目標與現況
 
 所有合法操作立即更新本機畫面並持久化排隊，恢復連線後自動同步。同步異常只顯示非阻斷通知，不要求使用者選擇放棄或重新套用。
 
-目前 `coreOperationOutbox` 以帳號及群組共用 FIFO，terminal conflict 停在隊首，阻擋後續操作；`CoreSyncStatus` 因此持續要求手動處理。現有後端對落後版本及非 ACTIVE 抵達的拒絕規則也必須改造，不能只移除 UI。
+改造前，`coreOperationOutbox` 以帳號及群組共用 FIFO，terminal conflict 停在隊首，阻擋後續操作；`CoreSyncStatus` 因此持續要求手動處理。此次同步重構同時修改排程、後端落後版本與非 ACTIVE 延遲抵達規則，不只移除 UI。
 
 ## 行程與權限
 
@@ -59,6 +59,17 @@
 7. 驗證 IDLE 無 Tag、定位不可用、小隊最後成員退出清理、失效 queue、通知過期與角色檢查。
 8. 後端相容部署先於客戶端 OTA；審查後發布並觀察 queue 等待時間、重試／终止原因及自動解決比例。歷史資料缺少時間時保留 null，不捏造時間。
 
-## 本次粒子發布
+## 已完成的粒子發布
 
-相對 2026-09-20 master 499e9df：大小乘三（radiusScale 1.5→4.5），每顆粒子用固定隨機速度為原層移速的五至十倍，水平由左向右循環；閃爍頻率再乘三分之一（1/3→1/9）。保留透明、密度、顏色及節能策略。僅發布 production／iOS，不包含上述同步重構。
+相對 2026-09-20 master 499e9df：大小乘三（radiusScale 1.5→4.5），每顆粒子用固定隨機速度為原層移速的五至十倍，水平由左向右循環；閃爍頻率再乘三分之一（1/3→1/9）。保留透明、密度、顏色及節能策略。先行發布 commit `89ff885`、production／iOS；這個先行版本不包含上述同步重構。
+
+## 同步實作與驗證對照
+
+- `coreOperationOutbox`／`coreOperationProjection`：持久化意圖、依實際相依排序、舊 FIFO 恢復、不相關操作繼續送出、依最新快照重新投影。
+- `apply_core_operation_v3`：伺服器驗權、scope/session 綁定、冪等、事件歷史與校正、空小隊清理；舊 RPC 經相容介面執行。
+- `useJourneyNavigation`／`MapScreen`／`GatheringWorkflowService`：離線立即回應、Start/End/Complete 區別、ACTIVE 刪除確認、自己的抵達切換及完成後隊長校正。
+- `arrivalSync`／`backgroundJourney`：原 session 的延遲抵達、手動 undo 與自動判定協調；定位維持既有狀態等級與頻率。
+- `GroupService`／`groupStatePatches`／位置 timestamp migration：分開取得與後端接收時間，保留未知位置與未知抵達時間。
+- `NotificationService`／`send-push`：通知持久排隊、期限檢查、各行程範圍的推播與 Live Activity 隔離。
+- 驗證包含 Jest、TypeScript、真實 PostgreSQL 17 SQL 測試與 Deno Edge Function 測試。自動測試與 code review 不等於真機斷網、APNs 實際收件或 GPU 效能驗收；這些結果不得宣稱已完成。
+- PostgreSQL 17 驗證：v3 操作 63、舊介面相容 15、手機 wire contract 整合 10、位置時間 3，共 91 個斷言通過；測試資料皆於交易回滾，不寫入正式環境。推播函式 18 個 Deno 測試及型別檢查通過。

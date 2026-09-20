@@ -11,6 +11,7 @@ import type { Destination } from '../../types';
 interface NavigationSessionRow {
   id: string;
   group_id: string;
+  scope_subgroup_id?: string | null;
   destination_id: string;
   destination_name: string;
   destination_latitude: number;
@@ -45,6 +46,7 @@ export function mapNavigationSession(row: NavigationSessionRow): NavigationSessi
   return {
     id: row.id,
     groupId: row.group_id,
+    scopeSubgroupId: row.scope_subgroup_id ?? null,
     destinationId: row.destination_id,
     destination: {
       name: row.destination_name,
@@ -179,12 +181,17 @@ export async function getLocationSharingEnabled(): Promise<boolean | null> {
 
 export async function getActiveNavigationSession(
   groupId: string,
+  scopeSubgroupId: string | null = null,
 ): Promise<NavigationSession | null> {
-  const { data, error } = await supabase
+  const baseQuery = supabase
     .from('navigation_sessions')
     .select('*')
     .eq('group_id', groupId)
-    .eq('status', 'active')
+    .eq('status', 'active');
+  const scopedQuery = scopeSubgroupId == null
+    ? baseQuery.is('scope_subgroup_id', null)
+    : baseQuery.eq('scope_subgroup_id', scopeSubgroupId);
+  const { data, error } = await scopedQuery
     .gt('expires_at', new Date().toISOString())
     .order('started_at', { ascending: false })
     .limit(1)
@@ -194,18 +201,23 @@ export async function getActiveNavigationSession(
 }
 
 /** Minimal background control data; never downloads teammates' positions. */
-export async function getBackgroundNavigationContext(groupId: string): Promise<{
+export async function getBackgroundNavigationContext(groupId: string, scopeSubgroupId?: string | null): Promise<{
   actorId: string; hasMembership: boolean; sharingEnabled: boolean;
   session: NavigationSession | null; target: Destination | null;
 }> {
   const actorId = await requireUserId();
-  const [memberResult, sharingEnabled, session] = await Promise.all([
+  const [memberResult, sharingEnabled] = await Promise.all([
     supabase.from('memberships').select('subgroup_id, solo').eq('group_id', groupId).eq('user_id', actorId).maybeSingle(),
     getLocationSharingEnabled(),
-    getActiveNavigationSession(groupId),
   ]);
   orThrow(memberResult.error);
   const member = memberResult.data;
+  // Callers that do not yet have a hydrated scope use the membership row as
+  // the safe default. Explicit null means the main-team session.
+  const resolvedScope = scopeSubgroupId === undefined
+    ? (member?.subgroup_id ?? null)
+    : scopeSubgroupId;
+  const session = await getActiveNavigationSession(groupId, resolvedScope);
   const result = { actorId, hasMembership: Boolean(member), sharingEnabled: sharingEnabled !== false,
     session: null as NavigationSession | null, target: null as Destination | null };
   if (!member || member.solo || !session || sharingEnabled === false) return result;
@@ -300,6 +312,7 @@ export async function subscribeNavigationSession(
   groupId: string,
   onSession: (session: NavigationSession) => void,
   onMemberState: (state: MemberNavigationState) => void,
+  scopeSubgroupId: string | null = null,
 ): Promise<() => void> {
   const userId = await requireUserId();
   const channel = supabase
@@ -314,7 +327,9 @@ export async function subscribeNavigationSession(
       },
       (payload) => {
         if (payload.new && Object.keys(payload.new).length > 0) {
-          onSession(mapNavigationSession(payload.new as unknown as NavigationSessionRow));
+          const next = mapNavigationSession(payload.new as unknown as NavigationSessionRow);
+          if ((next.scopeSubgroupId ?? null) !== scopeSubgroupId) return;
+          onSession(next);
         }
       },
     )

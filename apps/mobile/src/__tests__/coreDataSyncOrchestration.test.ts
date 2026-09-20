@@ -332,8 +332,6 @@ describe('coreDataSync production orchestration', () => {
         title: 'Edited stop',
         address: 'Edited address',
         day: null,
-        latitude: 24.5,
-        longitude: 120.5,
       },
       actorId: 'actor-a',
     });
@@ -379,16 +377,18 @@ describe('coreDataSync production orchestration', () => {
     });
     expect(edited.payload).toMatchObject({
       destinationId: 'd1',
-      patch: { day: null, latitude: 24.5, longitude: 120.5 },
+      patch: { day: null, title: 'Edited stop' },
     });
     expect(meet.payload).toEqual({
       destinationId: added.destinationId,
+      subgroupId: 'subgroup-1',
       meetAt: '2026-09-19T12:30:00.000Z',
       meetRedMinutes: 15,
     });
     expect(completed.payload).toEqual({
       destinationId: added.destinationId,
       sessionId: 'session-1',
+      subgroupId: 'subgroup-1',
     });
 
     const snapshot = await getCoreDataStore().readSnapshot('group-1');
@@ -407,7 +407,7 @@ describe('coreDataSync production orchestration', () => {
     expect(editedLocal).toMatchObject({
       title: 'Edited stop',
       day: null,
-      coordinates: { latitude: 24.5, longitude: 120.5 },
+      coordinates: { latitude: 25, longitude: 121 },
     });
     expect(snapshot?.activeGathering.pointStatuses[added.destinationId]).toBe('completed');
 
@@ -580,6 +580,7 @@ describe('coreDataSync production orchestration', () => {
     });
     expect(operation.payload).toEqual({
       destinationId: 'd1',
+      subgroupId: null,
       meetAt: null,
       meetRedMinutes: null,
     });

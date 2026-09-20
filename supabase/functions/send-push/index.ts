@@ -6,6 +6,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { secureEqual } from "./auth.ts";
+import { isExpiredPush } from "./deadline.ts";
 import {
   providerToken,
   readApnsConfig,
@@ -32,6 +33,7 @@ import {
 } from "./messages.ts";
 import {
   locationRefreshRecipientIds,
+  navigationScopeMembers,
   specialAlertRecipientIds,
 } from "./recipients.ts";
 import { eventIdFromPayload } from "./eventId.ts";
@@ -303,6 +305,7 @@ Deno.serve(async (req) => {
   if (!payload?.category || !payload?.group_id || !payload?.sender_id) {
     return json({ error: "missing category/group_id/sender_id" }, 400);
   }
+  if (isExpiredPush(payload)) return json({ sent: 0, ignored: "expired_command" });
 
   try {
     const { data: memberData, error: memberError } = await supabase
@@ -343,7 +346,7 @@ Deno.serve(async (req) => {
     }
 
     const inSenderScope = (member: MembershipRow) =>
-      member.subgroup_id === sender.subgroup_id;
+      member.subgroup_id === (payload.category === "journey" ? null : sender.subgroup_id);
 
     // Meet-time + straggler: notify everyone in scope including the sender
     // (leader who set the clock / who detected the straggler). Other alerts
@@ -462,10 +465,11 @@ Deno.serve(async (req) => {
     }
 
     if (payload.category === "journey" && payload.status === "paused") {
-      await supabase
+      const mainUsers = members.filter(member => member.subgroup_id == null).map(member => member.user_id);
+      if (mainUsers.length) await supabase
         .from("live_activity_sessions")
         .delete()
-        .eq("group_id", payload.group_id);
+        .eq("group_id", payload.group_id).in("user_id", mainUsers);
     }
 
     const deviceSummary = summarizePushResults([...alertResults, ...refreshResults]);
@@ -497,13 +501,21 @@ async function handleNavigationSession(
     return json({ error: "navigation session payload is incomplete" }, 400);
   }
 
-  // Delayed webhooks must never end or replace a newer journey's activities.
+  // Fence delayed events within their own scope; a newer subgroup session
+  // must not suppress the main team's event or replace its activities.
+  const { data: target, error: targetError } = await supabase.from("navigation_sessions")
+    .select("id, scope_key, scope_subgroup_id").eq("group_id", payload.group_id)
+    .eq("id", payload.session_id).maybeSingle();
+  if (targetError) throw targetError;
+  if (!target) return json({ sent: 0, ignored: "deleted_session" });
   const { data: latest, error: latestError } = await supabase.from("navigation_sessions")
     .select("id, status, version").eq("group_id", payload.group_id)
+    .eq("scope_key", target.scope_key)
     .order("started_at", { ascending: false }).limit(1).maybeSingle();
   if (latestError) throw latestError;
   if (!latest || latest.id !== payload.session_id || latest.status !== payload.status
     || latest.version !== payload.version) return json({ sent: 0, ignored: "superseded_session_event" });
+  members = navigationScopeMembers(members, target.scope_subgroup_id);
   const controlTokens = await loadTokenRows(members.filter(member => !member.solo
     && member.user_id !== payload.sender_id).map(member => member.user_id));
   await sendBackgroundLocationRefreshes(controlTokens, payload).catch(() => console.warn("navigation_control_delivery_failed"));
@@ -586,10 +598,11 @@ async function handleNavigationSession(
         (startProfiles ?? []).map((row) => [row.id as string, (row.avatar as string | null) ?? "🙂"]),
       );
       const { data: startArrivals, error: startArrivalError } = await supabase.from("destination_arrivals")
-        .select("user_id").eq("destination_id", payload.destination_id);
+        .select("user_id").eq("destination_id", payload.destination_id)
+        .eq("navigation_session_id", payload.session_id);
       if (startArrivalError) throw startArrivalError;
       const arrivedIds = new Set((startArrivals ?? []).map(row => row.user_id));
-      const visibleMembers = members.filter(member => member.subgroup_id === sender.subgroup_id);
+      const visibleMembers = members;
       const memberEmojis = visibleMembers.map(
         (member) => avatarByUser.get(member.user_id) ?? "🙂",
       );
@@ -733,6 +746,16 @@ async function loadLiveSessions(
   if (payload.category === "live_activity") {
     if (!payload.target_user_id) return [];
     query = query.eq("user_id", payload.target_user_id);
+  }
+
+  if (payload.category === "navigation_session" || payload.category === "journey") {
+    const scopedUsers = (payload.category === "journey"
+      ? members.filter(member => member.subgroup_id == null) : members).map(member => member.user_id);
+    if (!scopedUsers.length) return [];
+    query = query.in("user_id", scopedUsers);
+    if (payload.category === "navigation_session" && payload.destination_id) {
+      query = query.eq("destination_id", payload.destination_id);
+    }
   }
 
   const { data, error } = await query;

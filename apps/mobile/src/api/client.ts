@@ -150,6 +150,7 @@ export {
   fetchDestinationArrivals,
   setDestinationArrival,
   setDestinationArrivalAt,
+  correctDestinationArrival,
 } from './services/GatheringWorkflowService';
 export type { ResolveGatherPointResult } from './services/GatheringWorkflowService';
 

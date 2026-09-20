@@ -4,6 +4,7 @@ import { captureLocationAccess, isLocationAccessCurrent, subscribeLocationAccess
 import { backgroundLocationAdapter, observeNativeBackgroundLocation, prepareNativeBackgroundLocation, nativeBackgroundAvailable } from '../native/backgroundLocation';
 import { enqueueArrival } from './arrivalSync';
 import { getCoreOperationOutbox, flushCoreOperationOutbox } from './coreDataSync';
+import type { CoreOperation } from '../types/coreData';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
 import * as Location from 'expo-location';
@@ -53,6 +54,72 @@ interface BackgroundLocationTaskData {
 }
 
 const controller = createBackgroundJourneyController(backgroundLocationAdapter, AsyncStorage);
+
+/**
+ * Foreground manual-undo tombstones survive the background task being
+ * stopped while the app is active.  The marker is scoped to one destination
+ * and navigation session; a released marker remains until that session is
+ * replaced so a cold background launch cannot resurrect an old undo.
+ */
+export const BACKGROUND_MANUAL_UNDO_KEY = '@hither/background-manual-undo';
+export interface BackgroundManualUndoMarker {
+  actorId: string;
+  groupId: string;
+  destinationId: string;
+  navigationSessionId: string;
+  operationId?: string | null;
+  occurredAt: string;
+  suppressed: boolean;
+}
+
+function manualUndoMarkerKey(marker: Pick<BackgroundManualUndoMarker, 'actorId' | 'groupId' | 'destinationId' | 'navigationSessionId'>): string {
+  return `${marker.actorId}:${marker.groupId}:${marker.destinationId}:${marker.navigationSessionId}`;
+}
+
+async function readManualUndoMarkers(): Promise<Record<string, BackgroundManualUndoMarker>> {
+  try {
+    const raw = await AsyncStorage.getItem(BACKGROUND_MANUAL_UNDO_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, BackgroundManualUndoMarker>;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+async function writeManualUndoMarker(marker: BackgroundManualUndoMarker): Promise<void> {
+  try {
+    const markers = await readManualUndoMarkers();
+    markers[manualUndoMarkerKey(marker)] = marker;
+    await AsyncStorage.setItem(BACKGROUND_MANUAL_UNDO_KEY, JSON.stringify(markers));
+  } catch {
+    // The durable arrival operation remains the source of truth if storage is
+    // temporarily unavailable; background will still read its outbox marker.
+  }
+}
+
+export function rememberBackgroundManualUndo(marker: BackgroundManualUndoMarker): Promise<void> {
+  return writeManualUndoMarker({ ...marker, suppressed: true });
+}
+
+export function releaseBackgroundManualUndo(marker: BackgroundManualUndoMarker): Promise<void> {
+  return writeManualUndoMarker({ ...marker, suppressed: false });
+}
+
+/**
+ * Read the same account/session-scoped marker used by the native background
+ * task. Foreground screens use this on mount/remount so a manual undo remains
+ * effective even when the in-memory MapScreen refs were recreated.
+ */
+export async function loadBackgroundManualUndo(
+  actorId: string,
+  groupId: string,
+  destinationId: string,
+  navigationSessionId: string,
+): Promise<BackgroundManualUndoMarker | null> {
+  const markers = await readManualUndoMarkers();
+  return markers[manualUndoMarkerKey({ actorId, groupId, destinationId, navigationSessionId })] ?? null;
+}
 
 /** Process-local gate so background batches don't spam upserts. */
 let uploadGate: LocationGateState = { lastCoords: null, lastAtMs: 0 };
@@ -157,24 +224,83 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
         const freshArrivalFix = canEvaluateSynchronizedArrival({ sampledAt: latest.timestamp,
           now, accuracyM, radiusM: config.arrivalRadiusMeters });
         const distanceM = distanceMeters(coords, config.destination);
+        // A foreground undo is a durable record_arrival(false). Background
+        // callbacks can run after the tap (or on another process), so read
+        // the same outbox and carry a per-operation suppression marker. The
+        // marker is cleared only after a fix leaves the geofence; otherwise
+        // the next callback would immediately re-create the arrival.
+        // The background task may already be running when the foreground
+        // records an undo. Read the account/session-scoped tombstone on every
+        // callback so an ACK/compaction or a cold callback cannot resurrect
+        // the old arrival from stale controller state.
+        const persistedManualUndo = config.actorId && config.navigationSessionId && config.target
+          ? await loadBackgroundManualUndo(
+            config.actorId,
+            config.groupId,
+            config.destinationId,
+            config.navigationSessionId,
+          )
+          : null;
+        let manualUndoOperationId = persistedManualUndo?.operationId ?? config.manualUndoOperationId ?? null;
+        let manualUndoOccurredAt = persistedManualUndo?.occurredAt ?? config.manualUndoOccurredAt ?? null;
+        let manualUndoSuppressed = persistedManualUndo?.suppressed ?? config.manualUndoSuppressed === true;
+        let arrivalRows: CoreOperation[] = [];
+        if (config.actorId && config.target && config.powerMode === 'journey') {
+          arrivalRows = await getCoreOperationOutbox().listByGroup(config.groupId);
+          if (!controller.isCurrent(config) || !isLocationAccessCurrent(access)) return;
+          const latestArrival = arrivalRows
+            .filter(op => op.operationType === 'record_arrival'
+              && op.entityId === config.destinationId
+              && op.payload.actorId === config.actorId
+              && op.payload.userId === config.actorId
+              && (op.payload.navigationSessionId ?? null) === (config.navigationSessionId ?? null)
+              && op.status !== 'conflict')
+            .sort((a, b) => (a.sequence ?? a.createdAt) - (b.sequence ?? b.createdAt))
+            .at(-1);
+          if (latestArrival?.payload.arrived === false
+            && latestArrival.id !== manualUndoOperationId) {
+            manualUndoOperationId = latestArrival.id;
+            manualUndoOccurredAt = typeof latestArrival.payload.occurredAt === 'string'
+              ? latestArrival.payload.occurredAt
+              : new Date(latestArrival.createdAt).toISOString();
+            manualUndoSuppressed = true;
+          }
+          if (manualUndoSuppressed && distanceM > config.arrivalRadiusMeters) {
+            manualUndoSuppressed = false;
+            await releaseBackgroundManualUndo({
+              actorId: config.actorId,
+              groupId: config.groupId,
+              destinationId: config.destinationId,
+              navigationSessionId: config.navigationSessionId,
+              operationId: manualUndoOperationId,
+              occurredAt: manualUndoOccurredAt ?? new Date().toISOString(),
+              suppressed: false,
+            });
+          }
+        }
         const previousArrival = config.arrivalState ??
           createArrivalState(config.initialDistanceM);
-        const arrival = freshArrivalFix ? reduceArrival(
-          previousArrival,
-          { distanceM, accuracyM },
-          { radiusM: config.arrivalRadiusMeters },
-        ) : previousArrival;
+        const arrival = manualUndoSuppressed
+          ? createArrivalState(distanceM)
+          : freshArrivalFix ? reduceArrival(
+            previousArrival,
+            { distanceM, accuracyM },
+            { radiusM: config.arrivalRadiusMeters },
+          ) : previousArrival;
         let arrivalConfirmed = false;
-        if (freshArrivalFix && arrival.status === 'arrived' && config.actorId && config.target && config.powerMode === 'journey') {
-          const rows = await getCoreOperationOutbox().listByGroup(config.groupId);
-          if (!controller.isCurrent(config) || !isLocationAccessCurrent(access)) return;
-          const operation = rows.find(op => op.operationType === 'record_arrival'
+        if (!manualUndoSuppressed && freshArrivalFix && arrival.status === 'arrived' && config.actorId && config.target && config.powerMode === 'journey') {
+          const undoTime = manualUndoOccurredAt ? Date.parse(manualUndoOccurredAt) : Number.NaN;
+          const operation = arrivalRows.find(op => op.operationType === 'record_arrival'
             && op.entityId === config.destinationId && op.payload.actorId === config.actorId && op.payload.userId === config.actorId
             && (op.payload.navigationSessionId ?? null) === (config.navigationSessionId ?? null)
-            && op.payload.arrived !== false)
+            && op.payload.arrived !== false
+            && (!Number.isFinite(undoTime)
+              || (typeof op.payload.occurredAt === 'string'
+                && Date.parse(op.payload.occurredAt) > undoTime)))
             ?? await enqueueArrival({ groupId: config.groupId, actorId: config.actorId, userId: config.actorId,
               navigationSessionId: config.navigationSessionId,
-              destination: config.target, arrivedAt: new Date(latest.timestamp).toISOString(), completeSolo: config.completeSolo === true });
+              destination: config.target, arrivedAt: new Date(latest.timestamp).toISOString(),
+              occurredAt: new Date(latest.timestamp).toISOString(), completeSolo: config.completeSolo === true });
           arrivalConfirmed = operation.status === 'acked';
           if (!arrivalConfirmed && operation.status !== 'conflict') void flushCoreOperationOutbox().catch(() => undefined);
         }
@@ -201,6 +327,9 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
         const stored = await timeBackgroundStage(stages, 'async_storage_write', () =>
           controller.update(config, {
             ...config, sequence, arrivalState: arrival, previousProgressMax: displayProgress, memberArrived,
+            manualUndoOperationId,
+            manualUndoOccurredAt,
+            manualUndoSuppressed,
           }),
         );
         if (!stored || !controller.isCurrent(config) || !isLocationAccessCurrent(access)) return;
@@ -236,11 +365,6 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
         if (arrivalConfirmed) {
           // Durable local arrival first; uploads must never hold up the local surface.
           void flushCoreOperationOutbox().catch(() => undefined);
-          if (config.completeSolo) {
-            await liveActivity.endAllGroupActivities();
-            await stopBackgroundJourney(true);
-            return;
-          }
         }
         if (arrival.status !== previousArrival.status) {
           await timeBackgroundStage(stages, 'diagnostics_write', () =>
@@ -415,8 +539,19 @@ export async function startBackgroundJourney(
     await stopBackgroundJourney(true);
     return 'hidden';
   }
+  const manualUndo = config.actorId && config.navigationSessionId
+    ? await loadBackgroundManualUndo(config.actorId, config.groupId, config.destinationId, config.navigationSessionId)
+    : null;
+  const effectiveConfig = manualUndo
+    ? {
+        ...config,
+        manualUndoOperationId: manualUndo.operationId ?? config.manualUndoOperationId,
+        manualUndoOccurredAt: manualUndo.occurredAt,
+        manualUndoSuppressed: manualUndo.suppressed,
+      }
+    : config;
   const previous = await controller.load();
-  if (previous?.navigationSessionId !== config.navigationSessionId || previous?.groupId !== config.groupId) {
+  if (previous?.navigationSessionId !== effectiveConfig.navigationSessionId || previous?.groupId !== effectiveConfig.groupId) {
     uploadGate = { lastCoords: null, lastAtMs: 0 };
     motionState = createMotionState();
     latestSample = null;
@@ -424,7 +559,7 @@ export async function startBackgroundJourney(
     lastLocalProgressAt = 0;
   }
   if (!isLocationAccessCurrent(access)) return 'cancelled';
-  return controller.start(config);
+  return controller.start(effectiveConfig);
 }
 
 export async function prepareBackgroundJourneyPermissions(allowPrompt = true): Promise<'ready' | 'permission_denied'> {
@@ -462,7 +597,7 @@ export function reconcileBackgroundNavigation(groupId: string): Promise<void> {
     const config = await controller.load();
     if (!config || config.groupId !== groupId) return;
     lastControlSyncAt = Date.now();
-    const next = await getBackgroundNavigationContext(groupId);
+    const next = await getBackgroundNavigationContext(groupId, config.scopeSubgroupId);
     if (!isLocationAccessCurrent(access) || !controller.isCurrent(config)) return;
     if (!next.hasMembership || next.actorId !== config.actorId || !next.sharingEnabled) {
       setLocationSharingConsent(false);
@@ -482,6 +617,7 @@ export function reconcileBackgroundNavigation(groupId: string): Promise<void> {
     const target = next.target;
     const initialDistanceM = uploadGate.lastCoords ? distanceMeters(uploadGate.lastCoords, target.coordinates) : 0;
     await startBackgroundJourney({ ...backgroundPresenceConfig(config), target,
+      scopeSubgroupId: target.subgroupId ?? config.scopeSubgroupId ?? null,
       destinationId: target.id, destination: target.coordinates,
       navigationSessionId: next.session.id, sessionExpiresAt: next.session.expiresAt,
       gatheringTitle: target.title, powerMode: 'journey', teamNavigationActive: true,

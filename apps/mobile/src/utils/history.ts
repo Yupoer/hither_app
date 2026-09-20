@@ -20,8 +20,17 @@ export interface HistoryDayGroup {
   items: HistoryWaypoint[];
 }
 
-function dayKeyFromIso(iso: string): string {
-  return localDayKey(new Date(iso));
+function sortTimestamp(item: HistoryWaypoint): number | null {
+  const value = item.sortTimestamp ?? item.arrivedAt;
+  if (!value) return null;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function dayKeyFromIso(iso: string | null): string {
+  if (!iso) return 'unknown';
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? 'unknown' : localDayKey(date);
 }
 
 /**
@@ -32,17 +41,22 @@ function dayKeyFromIso(iso: string): string {
 export function groupHistoryByDay(items: HistoryWaypoint[]): HistoryDayGroup[] {
   const byDay = new Map<string, HistoryWaypoint[]>();
   for (const item of items) {
-    const day = dayKeyFromIso(item.arrivedAt);
+    const day = dayKeyFromIso(item.sortTimestamp ?? item.arrivedAt);
     const list = byDay.get(day);
     if (list) list.push(item);
     else byDay.set(day, [item]);
   }
   return [...byDay.entries()]
-    .sort(([a], [b]) => (a < b ? 1 : a > b ? -1 : 0))
+    .sort(([a], [b]) => {
+      if (a === 'unknown') return 1;
+      if (b === 'unknown') return -1;
+      return a < b ? 1 : a > b ? -1 : 0;
+    })
     .map(([day, dayItems]) => ({
       day,
       items: [...dayItems].sort(
-        (a, b) => new Date(a.arrivedAt).getTime() - new Date(b.arrivedAt).getTime(),
+        (a, b) => (sortTimestamp(a) ?? Number.MAX_SAFE_INTEGER)
+          - (sortTimestamp(b) ?? Number.MAX_SAFE_INTEGER),
       ),
     }));
 }
@@ -76,6 +90,9 @@ export function pastStopsForHistory(
 
   return destinations
     .filter((dest) => {
+      // History is the main-team journey ledger. Subgroup-only stops have a
+      // separate scoped history and must not become synthetic main-team rows.
+      if (dest.subgroupId) return false;
       if (arrivedDestinationIds.has(dest.id)) return false;
       // Completed / closed stops leave the active carousel; always surface
       // them in history even when the trip has no departure-date gate.
@@ -103,6 +120,7 @@ export function pastStopsForHistory(
         name: dest.title,
         coordinates: dest.coordinates,
         arrivedAt,
+        sortTimestamp: arrivedAt,
         status,
         synthetic: true,
       } satisfies HistoryWaypoint;
@@ -119,14 +137,19 @@ export function historyFromDestinationArrivals(
     .filter((arrival) => options.isGroupLeader || arrival.userId === options.viewerId)
     .flatMap((arrival) => {
       const destination = destinationById.get(arrival.destinationId);
-      if (!destination?.closedAt) return [];
+      if (!destination?.closedAt || destination.subgroupId) return [];
       return [{
         id: "arrival:" + arrival.id,
         userId: arrival.userId,
         destinationId: arrival.destinationId,
         name: destination.title,
         coordinates: destination.coordinates,
+        // A leader correction deliberately keeps arrivedAt null. Sort by the
+        // destination's close time, but let the UI show that physical time is
+        // unknown instead of inventing one.
         arrivedAt: arrival.arrivedAt,
+        sortTimestamp: arrival.arrivedAt ?? destination.closedAt ?? null,
+        timeUnknown: arrival.arrivedAt == null,
         status: "arrived",
       } satisfies HistoryWaypoint];
     });

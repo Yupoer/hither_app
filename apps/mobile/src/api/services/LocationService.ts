@@ -66,7 +66,7 @@ export async function updateMyLocation(
       user_id: uid,
       latitude: coordinates.latitude,
       longitude: coordinates.longitude,
-      updated_at: new Date().toISOString(),
+      captured_at: new Date().toISOString(),
     },
     { onConflict: 'group_id,user_id' },
   ).abortSignal(access.signal);

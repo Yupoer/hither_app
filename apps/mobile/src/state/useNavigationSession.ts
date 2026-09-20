@@ -24,7 +24,10 @@ import { runNavigationTerminalMutation } from './navigationTerminalMutation';
 import { getOperationErrorMessage } from '../utils/operationError';
 import { getActiveLanguage } from '../i18n';
 
-export function useNavigationSession(groupId: string | null) {
+export function useNavigationSession(
+  groupId: string | null,
+  scopeSubgroupId: string | null = null,
+) {
   const [session, setSession] = useState<NavigationSession | null>(null);
   const [memberState, setMemberState] = useState<MemberNavigationState | null>(null);
   const [loading, setLoading] = useState(Boolean(groupId));
@@ -36,6 +39,8 @@ export function useNavigationSession(groupId: string | null) {
   const revision = useRef(0);
   const groupRef = useRef(groupId);
   groupRef.current = groupId;
+  const scopeRef = useRef<string | null>(scopeSubgroupId);
+  scopeRef.current = scopeSubgroupId;
   const [foreground, setForeground] = useState(AppState.currentState === 'active');
   useEffect(() => {
     const sub = AppState.addEventListener('change', state => {
@@ -47,6 +52,7 @@ export function useNavigationSession(groupId: string | null) {
 
   const acceptSession = useCallback((next: NavigationSession) => {
     if (next.groupId !== groupRef.current) return;
+    if ((next.scopeSubgroupId ?? null) !== scopeRef.current) return;
     const previous = lastEventRef.current;
     if (previous?.groupId === next.groupId && (previous.id === next.id
       ? previous.status !== 'active' || previous.version >= next.version
@@ -79,7 +85,7 @@ export function useNavigationSession(groupId: string | null) {
     const requestRevision = ++revision.current;
     setLoading(true);
     try {
-      const next = await getActiveNavigationSession(groupId);
+      const next = await getActiveNavigationSession(groupId, scopeSubgroupId);
       if (requestRevision !== revision.current || groupId !== groupRef.current) return null;
       if (!next) {
         activeSessionIdRef.current = null;
@@ -100,7 +106,7 @@ export function useNavigationSession(groupId: string | null) {
     } finally {
       setLoading(false);
     }
-  }, [acceptSession, groupId]);
+  }, [acceptSession, groupId, scopeSubgroupId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -119,6 +125,7 @@ export function useNavigationSession(groupId: string | null) {
           setMemberState(next);
         }
       },
+      scopeSubgroupId,
     ).then((cleanup) => {
       if (cancelled) cleanup();
       else unsubscribe = cleanup;
@@ -133,7 +140,27 @@ export function useNavigationSession(groupId: string | null) {
       revision.current += 1;
       unsubscribe?.();
     };
-  }, [acceptSession, groupId, refresh, foreground]);
+  }, [acceptSession, groupId, refresh, foreground, scopeSubgroupId]);
+
+  const laneRef = useRef<{ groupId: string | null; scopeSubgroupId: string | null }>({
+    groupId,
+    scopeSubgroupId,
+  });
+  useEffect(() => {
+    // A subgroup switch is a new navigation lane. Do not let the previous
+    // lane's session survive while the scoped query is hydrating.
+    const previous = laneRef.current;
+    if (previous.groupId === groupId && previous.scopeSubgroupId === scopeSubgroupId) return;
+    laneRef.current = { groupId, scopeSubgroupId };
+    revision.current += 1;
+    activeSessionIdRef.current = null;
+    sessionRef.current = null;
+    lastEventRef.current = null;
+    setSession(null);
+    setMemberState(null);
+    setError(null);
+    if (foreground && groupId) void refresh().catch(() => undefined);
+  }, [foreground, groupId, refresh, scopeSubgroupId]);
 
   const reconcileTerminalConflict = useCallback(async (
     action: 'cancel' | 'complete',

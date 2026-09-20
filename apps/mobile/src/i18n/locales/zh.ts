@@ -27,9 +27,9 @@ export const zh = {
   'coreData.staleSnapshot': '本地資料可能過期，連線後會自動更新',
   'coreData.emptySnapshot': '尚無本地旅團快照，請連線後再試',
   'coreData.loadFailed': '團隊資料載入失敗，請重試。',
-  'coreData.syncConflict': '同步未完成：需要處理',
+  'coreData.syncConflict': '部分操作未套用',
   'coreData.pendingSync': '變更已儲存在本機，尚未同步',
-  'coreData.conflictExplanation': '此操作未套用至後端，以後端狀態為準。放棄或重新套用都會取消後續相依操作；重新套用只重建此筆操作。',
+  'coreData.conflictExplanation': '此操作已無法套用，系統會自動更新狀態；其他操作會繼續同步，不需要手動處理。',
   'coreData.versionDifference': '本機基準版本 {local} · 後端版本 {remote}',
   'coreData.discardLocal': '放棄本機操作',
   'coreData.reapplyLocal': '依最新狀態重新套用',
@@ -917,6 +917,7 @@ export const zh = {
   'history.empty': '還沒有行程紀錄。',
   'history.statusMissed': '未抵達',
   'history.statusIncomplete': '未完成',
+  'history.timeUnknown': '時間未知（隊長校正）',
 
   // Straggler alerts
   'straggler.section': '脫隊示警',

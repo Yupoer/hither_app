@@ -14,6 +14,7 @@ function dest(
   id: string,
   day: number,
   closedAt?: string,
+  subgroupId?: string,
 ): Destination {
   return {
     id,
@@ -22,6 +23,7 @@ function dest(
     order: day,
     coordinates: { latitude: 1, longitude: 2 },
     closedAt,
+    ...(subgroupId ? { subgroupId } : {}),
   };
 }
 
@@ -104,6 +106,19 @@ describe('pastStopsForHistory / mergeHistoryWithPastStops', () => {
     expect(synthetic[0].status).toBe('missed');
   });
 
+  it('does not project subgroup-only stops into main-team history', () => {
+    const synthetic = pastStopsForHistory(
+      [dest('main', 1, '2026-07-17T08:00:00.000Z'), dest('sub', 1, '2026-07-17T08:00:00.000Z', 'sub-1')],
+      {
+        departureDate: null,
+        tripDays: null,
+        now,
+        arrivedDestinationIds: new Set(),
+      },
+    );
+    expect(synthetic.map((item) => item.destinationId)).toEqual(['main']);
+  });
+
   it('skips destinations the viewer already arrived at', () => {
     const synthetic = pastStopsForHistory(
       [dest('day1', 1)],
@@ -133,6 +148,43 @@ describe('pastStopsForHistory / mergeHistoryWithPastStops', () => {
       isGroupLeader: false,
     });
     expect(rows).toMatchObject([{ destinationId: 'closed', status: 'arrived' }]);
+  });
+
+  it('keeps leader-correction arrival time null while sorting by close time', () => {
+    const rows = historyFromDestinationArrivals([
+      {
+        id: 'correction-1',
+        groupId: 'g1',
+        destinationId: 'closed',
+        userId: 'u1',
+        arrivedAt: null,
+        source: 'leader_correction',
+        markedBy: 'leader',
+      },
+    ], [dest('closed', 1, '2026-07-17T08:00:00.000Z')], {
+      viewerId: 'u1',
+      isGroupLeader: false,
+    });
+    expect(rows[0]).toMatchObject({ arrivedAt: null, timeUnknown: true,
+      sortTimestamp: '2026-07-17T08:00:00.000Z' });
+  });
+
+  it('does not project subgroup arrivals into main-team history', () => {
+    const rows = historyFromDestinationArrivals([
+      {
+        id: 'sub-arrival',
+        groupId: 'g1',
+        destinationId: 'sub-stop',
+        userId: 'u1',
+        arrivedAt: '2026-07-17T07:00:00.000Z',
+        source: 'manual',
+        markedBy: 'u1',
+      },
+    ], [dest('sub-stop', 1, '2026-07-17T08:00:00.000Z', 'sub-1')], {
+      viewerId: 'u1',
+      isGroupLeader: true,
+    });
+    expect(rows).toEqual([]);
   });
 
   it('merges real arrivals with synthetic past stops', () => {

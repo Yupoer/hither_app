@@ -27,10 +27,10 @@ it('shows only the current actor local receipt, never another account or an ackn
   await act(async () => root.unmount());
 });
 
-it('offers explicit version reapply with the action title and reports resolution failure without dismissing the draft', async () => {
+it('shows a non-blocking conflict receipt without manual resolution controls', async () => {
   const operation = row({ status: 'conflict', conflictResult: { code: 'stale_version',
     operationId: 'op', entityType: 'itinerary', entityId: 'g', occurredAt: 1, serverEntityVersion: 3, message: 'changed' } });
-  const resolve = jest.fn(async () => { throw new Error('SQLite disk full'); });
+  const resolve = jest.fn(async () => { throw new Error('should not be called'); });
   let root: any;
   await act(async () => { root = create(React.createElement(CoreSyncStatus, {
     operations: [operation], actorId: 'me', t, onResolve: resolve, describeError: () => 'storage unavailable',
@@ -39,14 +39,13 @@ it('offers explicit version reapply with the action title and reports resolution
   expect(JSON.stringify(root.toJSON())).toContain('coreData.actionEdit');
   expect(JSON.stringify(root.toJSON())).toContain('Local name');
   expect(JSON.stringify(root.toJSON())).toContain('coreData.versionDifference');
-  await act(async () => root.root.findAllByType('Pressable')[2].props.onPress());
-  expect(resolve).toHaveBeenCalledWith(operation, 'reapply');
-  expect(JSON.stringify(root.toJSON())).toContain('storage unavailable');
-  expect(root.root.findAllByType('Pressable')[2].props.disabled).toBe(false);
+  expect(root.root.findAllByType('Pressable')).toHaveLength(1);
+  expect(JSON.stringify(root.toJSON())).not.toContain('coreData.pendingSync');
+  expect(resolve).not.toHaveBeenCalled();
   await act(async () => root.unmount());
 });
 
-it('does not offer blind reapply for permission or invalid-state conflicts', async () => {
+it('keeps permission conflicts non-blocking and never offers blind reapply', async () => {
   const operation = row({ status: 'conflict', conflictResult: { code: 'unauthorized',
     operationId: 'op', entityType: 'itinerary', entityId: 'g', occurredAt: 1, message: 'permission denied' } });
   const resolve = jest.fn(async () => undefined);
@@ -57,7 +56,7 @@ it('does not offer blind reapply for permission or invalid-state conflicts', asy
   await act(async () => root.root.findAllByType('Pressable')[0].props.onPress());
   expect(JSON.stringify(root.toJSON())).not.toContain('coreData.reapplyLocal');
   expect(JSON.stringify(root.toJSON())).not.toContain('coreData.versionDifference');
-  await act(async () => root.root.findAllByType('Pressable')[1].props.onPress());
-  expect(resolve).toHaveBeenCalledWith(operation, 'discard');
+  expect(root.root.findAllByType('Pressable')).toHaveLength(1);
+  expect(resolve).not.toHaveBeenCalled();
   await act(async () => root.unmount());
 });

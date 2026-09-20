@@ -24,7 +24,7 @@ const mockTaskManager = {
   defineTask: jest.fn((_name?: string, _handler?: (payload: unknown) => Promise<void>) => undefined),
 };
 const mockArrival = jest.fn();
-const mockListByGroup = jest.fn(async () => []);
+const mockListByGroup = jest.fn(async (): Promise<any[]> => []);
 const mockFlushCore = jest.fn(async () => undefined);
 const mockEnqueueLocation = jest.fn(async () => undefined);
 const mockFlushLocation = jest.fn(async () => ({ retryScheduled: 0, discarded: 0, remaining: 0 }));
@@ -104,9 +104,12 @@ jest.mock('../state/locationOutbox', () => ({
 
 const {
   handleBackgroundLocations,
+  loadBackgroundManualUndo,
   loadBackgroundJourney,
   prepareBackgroundJourneyPermissions,
   reconcileBackgroundNavigation,
+  rememberBackgroundManualUndo,
+  releaseBackgroundManualUndo,
   startBackgroundJourney,
   stopBackgroundJourney,
 } = require('../state/backgroundJourney') as typeof import('../state/backgroundJourney');
@@ -216,7 +219,7 @@ describe('background journey lifecycle and callback gate', () => {
     mockFlushLocation.mockResolvedValueOnce({ retryScheduled: 1, discarded: 0, remaining: 1 });
     await task({ data: { locations: [location()] } });
     expect(mockArrival).toHaveBeenCalledWith(expect.objectContaining({
-      groupId: 'group-1', actorId: 'actor-1',
+      groupId: 'group-1', actorId: 'actor-1', navigationSessionId: 'session-1',
     }));
     expect(mockLiveActivity.updateAllGroupActivities).toHaveBeenCalledWith(expect.objectContaining({
       navigationSessionId: 'session-1', memberArrived: [false],
@@ -237,12 +240,59 @@ describe('background journey lifecycle and callback gate', () => {
     expect(saved?.sequence).toBeGreaterThan(0);
   });
 
-  it('confirms an accurate arrival and completes an acknowledged solo journey', async () => {
+  it('honors a foreground undo tombstone after the ACKed row is compacted', async () => {
+    const marker = {
+      actorId: 'actor-1',
+      groupId: 'group-1', destinationId: 'destination-1', navigationSessionId: 'undo-session',
+      operationId: 'undo-1', occurredAt: '2026-09-20T01:00:00.000Z', suppressed: true,
+    } as const;
+    await startBackgroundJourney({ ...baseConfig, navigationSessionId: 'undo-session' });
+    // Simulate the ACKed undo having already been compacted. The callback
+    // must observe the persisted tombstone, not depend on start-time state or
+    // the outbox row still being present.
+    await rememberBackgroundManualUndo(marker);
+    mockListByGroup.mockResolvedValueOnce([]);
+    await mockTaskCallback.current!({ data: { locations: [location()] } });
+    expect(mockArrival).not.toHaveBeenCalled();
+    expect((await loadBackgroundJourney())?.manualUndoSuppressed).toBe(true);
+  });
+
+  it('does not carry an undo tombstone across accounts on the same device', async () => {
+    await rememberBackgroundManualUndo({
+      actorId: 'actor-1', groupId: 'group-1', destinationId: 'destination-1',
+      navigationSessionId: 'shared-session', operationId: 'undo-1',
+      occurredAt: '2026-09-20T01:00:00.000Z', suppressed: true,
+    });
+    await startBackgroundJourney({
+      ...baseConfig,
+      actorId: 'actor-2',
+      navigationSessionId: 'shared-session',
+      memberIds: ['actor-2'],
+    });
+    mockListByGroup.mockResolvedValueOnce([]);
+    await mockTaskCallback.current!({ data: { locations: [location()] } });
+    expect(mockArrival).toHaveBeenCalledWith(expect.objectContaining({ actorId: 'actor-2' }));
+  });
+
+  it('keeps a released marker so an old outbox undo cannot re-suppress re-entry', async () => {
+    const marker = {
+      actorId: 'actor-1', groupId: 'group-1', destinationId: 'destination-1',
+      navigationSessionId: 'released-session', operationId: 'undo-1',
+      occurredAt: '2026-09-20T01:00:00.000Z', suppressed: true,
+    } as const;
+    await rememberBackgroundManualUndo(marker);
+    await releaseBackgroundManualUndo({ ...marker, suppressed: false });
+    await expect(loadBackgroundManualUndo(
+      'actor-1', 'group-1', 'destination-1', 'released-session',
+    )).resolves.toEqual(expect.objectContaining({ operationId: 'undo-1', suppressed: false }));
+  });
+
+  it('confirms an accurate arrival without ending the leader-controlled journey', async () => {
     await startBackgroundJourney({ ...baseConfig, completeSolo: true });
     const task = mockTaskCallback.current!;
     mockArrival.mockResolvedValueOnce({ status: 'acked' });
     await task({ data: { locations: [location()] } });
-    expect(mockLiveActivity.endAllGroupActivities).toHaveBeenCalled();
+    expect(mockLiveActivity.endAllGroupActivities).not.toHaveBeenCalled();
   });
 
   it('coalesces control reconciliation and stops stale background sessions', async () => {

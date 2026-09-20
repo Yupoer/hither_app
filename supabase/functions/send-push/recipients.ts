@@ -1,7 +1,13 @@
 import type { PushPayload } from "./messages.ts";
 
+export function navigationScopeMembers<T extends { subgroup_id?: string | null }>(
+  members: T[], scopeSubgroupId: string | null,
+): T[] {
+  return members.filter(member => (member.subgroup_id ?? null) === scopeSubgroupId);
+}
+
 export function locationRefreshRecipientIds(
-  payload: Pick<PushPayload, "category" | "sender_id" | "recipient_ids">,
+  payload: Pick<PushPayload, "category" | "sender_id" | "recipient_ids"> & Partial<Pick<PushPayload, "group_id">>,
 ): string[] {
   if (payload.category !== "location_refresh" || !Array.isArray(payload.recipient_ids)) {
     return [];

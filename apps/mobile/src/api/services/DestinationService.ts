@@ -274,6 +274,7 @@ export async function deleteDestination(
 export async function completeGatheringStop(
   groupId: string,
   destinationId: string,
+  navigationSessionId?: string | null,
 ): Promise<void> {
   if (isDemoGroup(groupId)) {
     return;
@@ -281,7 +282,7 @@ export async function completeGatheringStop(
   const core = loadCoreSyncAdapters();
   if (core) {
     const durable = await tryDurableCoreWrite(core, groupId, () =>
-      core.enqueueDestinationComplete({ groupId, destinationId }));
+      core.enqueueDestinationComplete({ groupId, destinationId, sessionId: navigationSessionId ?? null }));
     if (durable.handled) return;
   }
   const { error } = await supabase.rpc('complete_gathering_stop', {

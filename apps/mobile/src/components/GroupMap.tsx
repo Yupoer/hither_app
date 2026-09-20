@@ -580,7 +580,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
   // Match the map chrome to the app theme: the light "day" palette gets the
   // light Apple Maps style; the dark "night"/"dusk" palettes get the dark one.
   const mapInterfaceStyle: 'light' | 'dark' = themeName === 'day' ? 'light' : 'dark';
-  const memberCenter = members.find((member) => member.coordinates)?.coordinates;
+  const memberCenter = members.find((member) => member.coordinates)?.coordinates ?? undefined;
   const fallbackCenter = initialCenter ?? memberCenter;
   const mapInitialRegion = useMemo(
     () => initialRegionFor(gathering?.coordinates ?? fallbackCenter, latOffset),

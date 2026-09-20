@@ -24,6 +24,8 @@ export type NavigationMemberStatus =
 export interface NavigationSession {
   id: string;
   groupId: string;
+  /** Null is the main-team scope; a subgroup id isolates parallel sessions. */
+  scopeSubgroupId?: string | null;
   destinationId: string;
   destination: {
     name: string;

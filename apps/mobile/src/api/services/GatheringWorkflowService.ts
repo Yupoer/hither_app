@@ -4,6 +4,7 @@ import type {
   GatherPointRequest,
   GatherPointRequestItem,
 } from '../../types';
+import type { CoreOperation } from '../../types/coreData';
 import { isNetworkRequestError, orThrow, sleep, requireUserId, requireLocalActorId } from './_helpers';
 
 type CoreSyncAdapters = typeof import('../../state/coreDataSync');
@@ -57,6 +58,26 @@ async function requireQueueActor(): Promise<string> {
     }
     throw error;
   }
+}
+
+async function arrivalMetadata(occurredAt?: string | null): Promise<{
+  occurredAt: string;
+  deviceId?: string;
+}> {
+  let deviceId: string | undefined;
+  try {
+    const service = require('./LiveActivityService') as {
+      getOrCreateLiveActivityDeviceId: () => Promise<string>;
+    };
+    deviceId = await service.getOrCreateLiveActivityDeviceId();
+  } catch {
+    // Keep the mutation durable when SecureStore is temporarily unavailable;
+    // deviceId is diagnostic metadata, not the arrival's identity.
+  }
+  return {
+    occurredAt: occurredAt ?? new Date().toISOString(),
+    ...(deviceId ? { deviceId } : {}),
+  };
 }
 
 interface RequestRow {
@@ -234,7 +255,7 @@ export async function fetchDestinationArrivals(
 ): Promise<DestinationArrival[]> {
   const { data, error } = await supabase
     .from('destination_arrivals')
-    .select('id, group_id, destination_id, user_id, arrived_at, source, marked_by')
+    .select('id, group_id, destination_id, user_id, arrived_at, source, marked_by, navigation_session_id')
     .eq('group_id', groupId);
   orThrow(error);
   return ((data ?? []) as {
@@ -242,9 +263,10 @@ export async function fetchDestinationArrivals(
     group_id: string;
     destination_id: string;
     user_id: string;
-    arrived_at: string;
+    arrived_at: string | null;
     source: DestinationArrival['source'];
     marked_by: string;
+    navigation_session_id?: string | null;
   }[]).map((row) => ({
     id: row.id,
     groupId: row.group_id,
@@ -253,6 +275,9 @@ export async function fetchDestinationArrivals(
     arrivedAt: row.arrived_at,
     source: row.source,
     markedBy: row.marked_by,
+    ...(typeof row.navigation_session_id === 'string'
+      ? { navigationSessionId: row.navigation_session_id }
+      : {}),
   }));
 }
 
@@ -261,28 +286,30 @@ export async function setDestinationArrival(
   targetUserId: string,
   arrived: boolean,
   navigationSessionId?: string | null,
-): Promise<void> {
+): Promise<CoreOperation | void> {
   const actorId = await requireQueueActor();
   const core = loadCoreSyncAdapters();
   const groupId = core
     ? await core.getCoreDataStore().database.findSnapshotGroupForDestination(destinationId)
     : null;
   if (core && groupId) {
-    const snapshot = await core.getCoreDataStore().readSnapshot(groupId);
-    const boundSessionId = navigationSessionId
-      && snapshot?.activeGathering.activeDestinationId === destinationId
-      ? navigationSessionId
-      : null;
-    await core.getCoreOperationOutbox().enqueueArrival(groupId, destinationId, {
+    // The caller already resolved the destination/scope session.  A cached
+    // group snapshot can still describe the main-team lane while this action
+    // belongs to a subgroup, so do not discard an explicit session merely
+    // because that snapshot's active destination differs.
+    const boundSessionId = navigationSessionId ?? null;
+    const metadata = await arrivalMetadata();
+    const operation = await core.getCoreOperationOutbox().enqueueArrival(groupId, destinationId, {
       actorId,
       userId: targetUserId,
       arrived,
       completeSolo: false,
       arrivedAt: new Date().toISOString(),
       navigationSessionId: boundSessionId,
+      ...metadata,
     });
     void core.getCoreOperationOutbox().flush().catch(() => undefined);
-    return;
+    return operation;
   }
   const { error } = await supabase.rpc('set_destination_arrival', {
     p_destination_id: destinationId,
@@ -301,34 +328,87 @@ export async function setDestinationArrivalAt(
   arrived: boolean,
   arrivedAt: string | null,
   navigationSessionId?: string | null,
-): Promise<void> {
+): Promise<CoreOperation | void> {
   const actorId = await requireQueueActor();
   const core = loadCoreSyncAdapters();
   const groupId = core
     ? await core.getCoreDataStore().database.findSnapshotGroupForDestination(destinationId)
     : null;
   if (core && groupId) {
-    const snapshot = await core.getCoreDataStore().readSnapshot(groupId);
-    const boundSessionId = navigationSessionId
-      && snapshot?.activeGathering.activeDestinationId === destinationId
-      ? navigationSessionId
-      : null;
-    await core.getCoreOperationOutbox().enqueueArrival(groupId, destinationId, {
+    const boundSessionId = navigationSessionId ?? null;
+    const metadata = await arrivalMetadata(arrivedAt);
+    const operation = await core.getCoreOperationOutbox().enqueueArrival(groupId, destinationId, {
       actorId,
       userId: targetUserId,
       arrived,
       completeSolo: false,
       arrivedAt,
       navigationSessionId: boundSessionId,
+      ...metadata,
     });
     void core.getCoreOperationOutbox().flush().catch(() => undefined);
-    return;
+    return operation;
   }
   const { error } = await supabase.rpc('set_destination_arrival_at', {
     p_destination_id: destinationId,
     p_target_user_id: targetUserId,
     p_arrived: arrived,
     p_arrived_at: arrivedAt,
+  });
+  orThrow(error);
+}
+
+/**
+ * Queue an audited leader correction for a completed main-team session.
+ *
+ * This is intentionally a distinct core operation from a member's arrival:
+ * the server records `arrivedAt = null` and retains the correction actor in
+ * the history event. The legacy RPC fallback is kept only for environments
+ * that do not have the durable adapter loaded yet.
+ */
+export async function correctDestinationArrival(input: {
+  destinationId: string;
+  targetUserId: string;
+  arrived: boolean;
+  sessionId: string;
+  note?: string | null;
+}): Promise<CoreOperation | void> {
+  const actorId = await requireQueueActor();
+  const core = loadCoreSyncAdapters();
+  const groupId = core
+    ? await core.getCoreDataStore().database.findSnapshotGroupForDestination(input.destinationId)
+    : null;
+  if (core && groupId) {
+    const snapshot = await core.getCoreDataStore().readSnapshot(groupId);
+    const metadata = await arrivalMetadata();
+    const operation = await core.getCoreOperationOutbox().enqueueMutation({
+      groupId,
+      entityType: 'itinerary',
+      entityId: input.destinationId,
+      entityVersion: snapshot?.itineraryVersion ?? 0,
+      operationType: 'leader_correct_arrival',
+      actorId,
+      payload: {
+        actorId,
+        targetUserId: input.targetUserId,
+        userId: input.targetUserId,
+        arrived: input.arrived,
+        arrivedAt: null,
+        source: 'leader_correction',
+        sessionId: input.sessionId,
+        navigationSessionId: input.sessionId,
+        ...metadata,
+        ...(input.note == null ? {} : { note: input.note }),
+      },
+    });
+    void core.getCoreOperationOutbox().flush().catch(() => undefined);
+    return operation;
+  }
+  const { error } = await supabase.rpc('set_destination_arrival_at', {
+    p_destination_id: input.destinationId,
+    p_target_user_id: input.targetUserId,
+    p_arrived: input.arrived,
+    p_arrived_at: null,
   });
   orThrow(error);
 }
