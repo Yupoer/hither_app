@@ -73,27 +73,38 @@ half4 main(float2 fragCoord) {
     if (layer < activeLayers) {
       float scale = max(4.0, (baseScale + layer * scaleStep) * 0.20);
       float2 layerPoint = point * scale;
-      layerPoint.y += time * speed * (0.18 + layer * 0.08);
-      layerPoint.x += sin(time * (speed / 1.2) * 0.05 + layer * 4.0) * 0.05;
+      // Stable row/slot identities allow independent velocities. Evaluating
+      // neighbouring rows preserves halos; wrapping outside the card avoids pops.
+      float period = aspect * scale + 2.0;
+      float slots = clamp(ceil(period * probability), 1.0, 16.0);
+      float slotPresence = min(1.0, period * probability / slots);
+      for (int rowOffset = -1; rowOffset <= 1; rowOffset++) {
+        float row = floor(layerPoint.y) + float(rowOffset);
+        for (int slot = 0; slot < 16; slot++) {
+          if (float(slot) < slots) {
+            float2 seed = float2(float(slot), row) + float2(layer * 17.0, layer * 31.0);
+            float present = step(1.0 - slotPresence, hash21(seed));
+            float2 jitter = hash22(seed + float2(13.0, 29.0));
+            float velocity = speed * (0.18 + layer * 0.08)
+              * mix(5.0, 10.0, hash21(seed + float2(41.0, 83.0)));
+            float x = fract(jitter.x + time * velocity / period) * period - period * 0.5;
+            float y = row + 0.5 + (jitter.y - 0.5) * 0.70;
+            float2 delta = layerPoint - float2(x, y);
 
-      float2 cell = floor(layerPoint);
-      float2 local = fract(layerPoint) - 0.5;
-      float2 seed = cell + float2(layer * 17.0, layer * 31.0);
-      float present = step(1.0 - probability, hash21(seed));
-      float2 jitter = hash22(seed + float2(13.0, 29.0)) - 0.5;
-      float2 delta = local - jitter * 0.70;
-
-      float radius = mix(0.004, 0.028, hash21(seed + float2(7.0, 19.0)));
-      radius *= (0.70 + starSize * 3.0) * radiusScale;
-      float distanceToStar = length(delta);
-      float core = 1.0 - smoothstep(radius * 0.25, radius, distanceToStar);
-      float halo = 1.0 - smoothstep(radius, radius * 3.0, distanceToStar);
-      float phase = hash21(seed + float2(23.0, 47.0)) * 6.2831853;
-      float twinkle = 1.0 + sin(time * twinkleSpeed * (0.65 + layer * 0.18) + phase) * twinkleAmount;
-      float intensity = clamp(present * (core + halo * 0.12) * max(0.0, twinkle), 0.0, 1.0);
-      float layerAlpha = (1.0 - resultAlpha) * intensity * starColor.a;
-      result += starColor.rgb * half(layerAlpha);
-      resultAlpha += layerAlpha;
+            float radius = mix(0.004, 0.028, hash21(seed + float2(7.0, 19.0)));
+            radius *= (0.70 + starSize * 3.0) * radiusScale;
+            float distanceToStar = length(delta);
+            float core = 1.0 - smoothstep(radius * 0.25, radius, distanceToStar);
+            float halo = 1.0 - smoothstep(radius, radius * 3.0, distanceToStar);
+            float phase = hash21(seed + float2(23.0, 47.0)) * 6.2831853;
+            float twinkle = 1.0 + sin(time * twinkleSpeed * (0.65 + layer * 0.18) + phase) * twinkleAmount;
+            float intensity = clamp(present * (core + halo * 0.12) * max(0.0, twinkle), 0.0, 1.0);
+            float layerAlpha = (1.0 - resultAlpha) * intensity * starColor.a;
+            result += starColor.rgb * half(layerAlpha);
+            resultAlpha += layerAlpha;
+          }
+        }
+      }
     }
   }
 
@@ -117,9 +128,9 @@ export const METALFORGE_STARFIELD_PARAMETERS = {
 /** Runtime tuning required by the approved performance pass. */
 export const METALFORGE_STARFIELD_RUNTIME_FACTORS = {
   speed: 0.5,
-  twinkleFrequency: 1 / 3,
+  twinkleFrequency: 1 / 9,
   density: 0.5,
-  radius: 1.5,
+  radius: 4.5,
   maxFps: 30,
   lowPowerFps: 15,
 } as const;

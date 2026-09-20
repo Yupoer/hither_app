@@ -38,16 +38,18 @@ describe('MetalforgeStarfield performance contract', () => {
   it('uses the requested runtime factors and transparent premultiplied shader', () => {
     expect(METALFORGE_STARFIELD_RUNTIME_FACTORS).toEqual({
       speed: 0.5,
-      twinkleFrequency: 1 / 3,
+      twinkleFrequency: 1 / 9,
       density: 0.5,
-      radius: 1.5,
+      radius: 4.5,
       maxFps: 30,
       lowPowerFps: 15,
     });
     expect(source).toContain('half3 result = half3(0.0)');
     expect(source).toContain('resultAlpha');
     expect(source).toContain('radiusScale');
-    expect(source).toContain('sin(time * (speed / 1.2) * 0.05');
+    expect(source).toContain('mix(5.0, 10.0, hash21(seed + float2(41.0, 83.0)))');
+    expect(source).toContain('jitter.x + time * velocity / period');
+    expect(source).not.toContain('layerPoint.y +=');
     expect(source).not.toContain('result = background.rgb');
     expect(source).toContain('pointerEvents="none"');
     expect(source).toContain('useFrameCallback');
