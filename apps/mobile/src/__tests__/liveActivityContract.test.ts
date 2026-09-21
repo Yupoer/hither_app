@@ -193,9 +193,11 @@ describe('ActivityKit remote push contract', () => {
     expect(widget).toContain('etaText');
     expect(widget).toContain('compactDuration');
     expect(widget).toContain('DestinationTitle');
-    expect(widget).toContain('destinationNeedsMarquee');
+    expect(widget).not.toContain('TimelineView');
+    expect(widget).toContain('.lineLimit(2)');
     expect(widget).toContain('layoutPriority(0)');
-    expect(widget).toContain('minWidth: 88');
+    expect(widget).not.toContain('minWidth: 88');
+    expect(widget).not.toContain('.fill(accent.opacity(0.22))');
     expect(widgetAttributes).toContain('1d12hr');
     expect(widgetAttributes).toContain('不到1分鐘');
     expect(widgetAttributes).toContain('1小時30分鐘');

@@ -1,3 +1,4 @@
+import { retainVisibleGroupSeed } from './visibleGroupSeed';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 import { getGroupRecoverySnapshot } from '../api/client';
@@ -127,6 +128,9 @@ export function useGroupState(
     unit: 'missing',
   });
   const [emptyLocalSnapshot, setEmptyLocalSnapshot] = useState(false);
+  useEffect(() => {
+    if (myUserId && state) return retainVisibleGroupSeed(myUserId, state);
+  }, [myUserId, state]);
   const [openOperations, setOpenOperations] = useState<CoreOperation[]>([]);
   const openOperationsRef = useRef<CoreOperation[]>([]);
   openOperationsRef.current = openOperations;
@@ -204,13 +208,6 @@ export function useGroupState(
     }
   }, []);
 
-  // Live outbox banners: refresh open ops after enqueue / flush.
-  useEffect(() => {
-    if (!groupId) return;
-    return subscribeCoreOutboxChanges(() => {
-      void refreshOpenOperations(groupId);
-    });
-  }, [groupId, myUserId, refreshOpenOperations]);
 
   const applyOptimisticGathering = useCallback((gathering: ActiveGatheringState) => {
     setState((prev) => {
@@ -243,7 +240,11 @@ export function useGroupState(
         setDataSource('none');
         return false;
       }
-      const next = groupStateFromCoreSnapshot(snapshot);
+      const projected = groupStateFromCoreSnapshot(snapshot);
+      const current = stateRef.current;
+      // Core writes change itinerary/gathering, not the live location feed.
+      const next = current?.group.id === id ? { ...projected,
+        members: current.members, subgroups: current.subgroups } : projected;
       const freshness = coreSnapshotFreshness(snapshot, Date.now());
       stateRef.current = next;
       setState(next);
@@ -258,6 +259,17 @@ export function useGroupState(
       return false;
     }
   }, [refreshOpenOperations]);
+
+  // The SQLite transaction has already committed when this fires. Paint it
+  // before any remote refresh; all screens share the same local projection.
+  useEffect(() => {
+    if (!groupId) return;
+    return subscribeCoreOutboxChanges(() => {
+      void applyLocalSnapshot(groupId).then(applied => {
+        if (!applied) void refreshOpenOperations(groupId);
+      });
+    });
+  }, [groupId, myUserId, applyLocalSnapshot, refreshOpenOperations]);
 
   const load = useCallback((reason: GroupReloadReason = 'unknown'): Promise<boolean> => {
     if (!groupId) return Promise.resolve(false);

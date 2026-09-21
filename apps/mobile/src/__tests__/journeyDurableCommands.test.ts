@@ -1,3 +1,5 @@
+jest.mock('../state/appNotice', () => ({ showOperationFailure: jest.fn(), showAppNotice: jest.fn() }));
+import { showOperationFailure } from '../state/appNotice';
 jest.mock('react-native', () => ({ Alert: { alert: jest.fn() } }));
 jest.mock('expo-crypto', () => ({ randomUUID: jest.fn(() => 'operation-id') }));
 jest.mock('../utils/operationError', () => ({ getOperationErrorMessage: () => 'local storage failed' }));
@@ -160,6 +162,21 @@ it('reports local storage failure without claiming a saved journey or starting t
   await act(async () => { await api.startNavigation(first, 0); });
   expect(projection).not.toHaveBeenCalled();
   expect(api.navTargetId).toBeNull();
-  expect(Alert.alert).toHaveBeenCalledWith('map.setFailedTitle', 'local storage failed');
+  expect(showOperationFailure).toHaveBeenCalledWith('map.setFailedTitle', 'local storage failed');
   expect(startSession).not.toHaveBeenCalled();
+});
+
+it('hides navigation immediately while End storage is pending and never resurrects on failure', async () => {
+  jest.mocked(sync.enqueueLeaderGatheringStart).mockResolvedValue(saved('a', 1) as any);
+  await act(async () => { await api.startNavigation(first, 0); });
+  expect(api.navTargetId).toBe('a');
+  let reject!: (error: Error) => void;
+  jest.mocked(sync.enqueueLeaderGatheringEnd).mockImplementation(() => new Promise((_resolve, fail) => { reject = fail; }));
+  let pending!: Promise<boolean>;
+  await act(async () => { pending = api.stopNavigation(); });
+  expect(api.navTargetId).toBeNull();
+  expect(api.journeyActive).toBe(false);
+  await act(async () => { reject(new Error('storage unavailable')); await pending; });
+  expect(api.navTargetId).toBeNull();
+  expect(api.journeyActive).toBe(false);
 });

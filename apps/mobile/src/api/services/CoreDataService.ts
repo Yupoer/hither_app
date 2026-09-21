@@ -1,3 +1,4 @@
+import { operationWirePayload } from '../../state/itineraryRollback';
 /**
  * Remote apply for OTA-04 core operations (Supabase).
  * Transport is replaceable; semantics match createLocalCoreOperationApplicator.
@@ -90,7 +91,7 @@ export async function applyCoreOperation(
       p_entity_id: operation.entityId,
       p_entity_version: operation.entityVersion,
       p_operation_type: operation.operationType,
-      p_payload: operation.payload,
+      p_payload: operationWirePayload(operation.payload),
       p_sequence: operation.sequence ?? 0,
       p_dependency_ids: operation.dependencyIds ?? [],
       p_created_at: new Date(operation.createdAt).toISOString(),
@@ -149,7 +150,7 @@ export async function applyCoreOperation(
         p_entity_id: operation.entityId,
         p_entity_version: operation.entityVersion,
         p_operation_type: operation.operationType,
-        p_payload: operation.payload,
+        p_payload: operationWirePayload(operation.payload),
         p_created_at: new Date(operation.createdAt).toISOString(),
       };
   const { data, error } = await supabase.rpc(rpcName, rpcArgs);

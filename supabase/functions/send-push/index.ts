@@ -210,8 +210,8 @@ async function sendAlerts(
     const cfg = readApnsConfig();
     const jwt = await providerToken(cfg);
     const apnsResults = await Promise.all(
-      ios.map(({ token }) =>
-        sendApns(cfg, jwt, token, { title, body, data }).then(
+      ios.map(({ token, user_id }) =>
+        sendApns(cfg, jwt, token, { title, body, data: { ...data, recipientId: user_id } }).then(
           (r): PushResult => ({ ...r, provider: "apns" }),
         )),
     );
@@ -227,7 +227,7 @@ async function sendAlerts(
     }
     const access = await fcmAccessToken(cfg);
     const fcmResults = await Promise.all(
-      android.map(({ token }) => sendFcm(cfg, access, token, { title, body, data })),
+      android.map(({ token, user_id }) => sendFcm(cfg, access, token, { title, body, data: { ...data, recipientId: user_id } })),
     );
     results.push(...fcmResults);
   }

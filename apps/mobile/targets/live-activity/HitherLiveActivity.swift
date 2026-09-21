@@ -98,7 +98,9 @@ struct HitherLiveActivityWidget: Widget {
           VStack(alignment: .trailing, spacing: 0) {
             if let eta = context.state.etaText {
               Text(eta.unit.isEmpty ? eta.value : "\(eta.value) \(eta.unit)")
-                .font(.system(size: 22, weight: .bold))
+                .font(.system(size: 18, weight: .bold))
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
                 .foregroundStyle(Brand.textPrimary)
               if let d = context.state.formattedDistance {
                 Text(d).font(.system(size: 12)).foregroundStyle(Brand.textSecondary)
@@ -164,22 +166,11 @@ private struct DestinationTitle: View {
   let text: String
 
   var body: some View {
-    let needsMarquee = HitherGroupAttributes.ContentState.destinationNeedsMarquee(text)
-    Group {
-      if needsMarquee {
-        TimelineView(.periodic(from: .now, by: 0.1)) { context in
-          let cycle = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 7)
-          Text(text)
-            .lineLimit(1)
-            .fixedSize(horizontal: true, vertical: false)
-            .offset(x: -CGFloat(cycle / 7) * 120)
-        }
-      } else {
-        Text(text).lineLimit(1)
-      }
-    }
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .clipped()
+    Text(text)
+      .lineLimit(2)
+      .fixedSize(horizontal: false, vertical: true)
+      .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+      .accessibilityLabel(text)
   }
 }
 
@@ -190,62 +181,53 @@ private struct LockScreenView: View {
 
   var body: some View {
     let accent = context.state.accentColor
-    return VStack(alignment: .leading, spacing: 12) {
-      HStack(alignment: .top, spacing: 12) {
-        // Leading identity = travel mode artwork (accessible label kept).
-        TravelModeBadge(symbol: context.state.modeSymbol, accent: accent, size: 44)
+    return VStack(alignment: .leading, spacing: 10) {
+      HStack(alignment: .top, spacing: 10) {
+        TravelModeBadge(symbol: context.state.modeSymbol, accent: accent, size: 40)
           .accessibilityLabel(context.state.modeAccessibilityLabel)
+          .fixedSize()
         VStack(alignment: .leading, spacing: 3) {
-          // No second transport glyph before「正在前往」.
           Text("正在前往")
             .font(.system(size: 10.5, weight: .bold))
-            .tracking(0.45)
             .foregroundStyle(accent)
-          DestinationTitle(
-            text: context.state.displayTitle(fallbackGroupName: context.attributes.groupName)
-          )
+          DestinationTitle(text: context.state.displayTitle(fallbackGroupName: context.attributes.groupName))
             .font(.system(size: 17, weight: .semibold))
             .foregroundStyle(Brand.textPrimary)
-            .layoutPriority(0)
         }
-        .layoutPriority(0)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        Spacer(minLength: 6)
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+      }
+      // ETA has its own row: neither a long title nor large type can push it
+      // beyond the lock-screen host's width.
+      HStack(alignment: .firstTextBaseline, spacing: 10) {
         if let eta = context.state.etaText {
-          VStack(alignment: .trailing, spacing: 1) {
-            Text(eta.unit.isEmpty ? eta.value : "\(eta.value) \(eta.unit)")
-              .font(.system(size: 22, weight: .bold))
-              .foregroundStyle(Brand.textPrimary)
-              .lineLimit(1)
-            if let distance = context.state.formattedDistance {
-              Text(distance)
-                .font(.system(size: 12))
-                .foregroundStyle(Brand.textSecondary)
-            }
-          }
-          .frame(minWidth: 88, alignment: .trailing)
-          .fixedSize(horizontal: true, vertical: false)
-          .layoutPriority(1)
+          Text(eta.unit.isEmpty ? eta.value : "\(eta.value) \(eta.unit)")
+            .font(.system(size: 18, weight: .bold))
+            .foregroundStyle(Brand.textPrimary)
+            .lineLimit(2)
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+        }
+        if let distance = context.state.formattedDistance {
+          Text(distance).font(.system(size: 12))
+            .foregroundStyle(Brand.textSecondary)
+            .lineLimit(2)
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .trailing)
         }
       }
-
-      // BUG-05: progress percentage next to the bar (Lock Screen + Island share ProgressRow).
       ProgressRow(value: context.state.clampedProgress, accent: accent)
-
-      HStack {
-        AvatarStack(
-          emojis: context.state.avatarEmojis,
-          arrived: context.state.avatarArrived
-        )
-        Spacer()
+      HStack(spacing: 8) {
+        AvatarStack(emojis: context.state.avatarEmojis, arrived: context.state.avatarArrived)
+          .frame(maxWidth: .infinity, alignment: .leading)
         if let status = context.state.arrivalStatus {
-          Text(status)
-            .font(.system(size: 12.5, weight: .medium))
+          Text(status).font(.system(size: 12.5, weight: .medium))
             .foregroundStyle(Brand.textSecondary)
+            .lineLimit(2)
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .trailing)
         }
       }
     }
-    .padding(16)
+    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+    .padding(.horizontal, 16)
+    .padding(.vertical, 12)
   }
 
 }
@@ -258,7 +240,7 @@ private struct TravelModeBadge: View {
   var body: some View {
     ZStack {
       RoundedRectangle(cornerRadius: 12)
-        .fill(accent.opacity(0.22))
+        .fill(Color(red: 0.18, green: 0.15, blue: 0.10))
         .frame(width: size, height: size)
       Image(systemName: symbol)
         .font(.system(size: size * 0.42, weight: .semibold))

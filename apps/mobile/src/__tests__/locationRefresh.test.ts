@@ -44,7 +44,7 @@ describe('remote location refresh wiring', () => {
     const pullIdx = mapScreen.indexOf('const pulled = await refresh()', fanIdx);
     expect(pullIdx).toBeGreaterThan(fanIdx);
     expect(mapScreen).toContain('if (!pulled)');
-    expect(mapScreen).toContain("Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'))");
+    expect(mapScreen).toContain("showOperationFailure(t('map.setFailedTitle'), t('map.setFailedMsg'))");
     // Self row freshness prefers local sample after push (not stuck on missing).
     expect(mapScreen).toContain('resolveSelfAwareLastUpdated');
     expect(mapScreen).toContain('deviceCoordsAcceptedAtMs');

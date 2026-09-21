@@ -1,3 +1,4 @@
+import { operationWirePayload, rollbackItinerary, type ItineraryRollback } from './itineraryRollback';
 /**
  * OTA-04 core operation outbox.
  *
@@ -173,7 +174,7 @@ function sameOperationIntent(a: CoreOperation, b: CoreOperation): boolean {
     && a.entityId === b.entityId
     && a.entityVersion === b.entityVersion
     && a.operationType === b.operationType
-    && stableJson(a.payload) === stableJson(b.payload)
+    && stableJson(operationWirePayload(a.payload)) === stableJson(operationWirePayload(b.payload))
     && stableJson(a.dependencyIds ?? []) === stableJson(b.dependencyIds ?? []);
 }
 
@@ -790,6 +791,7 @@ export interface EnqueueGatheringInput {
   actorId?: string;
   navigationRequestId?: string;
   navigationSessionId?: string | null;
+  expectedSessionStartedAt?: string | null;
   subgroupId?: string | null;
 }
 
@@ -855,6 +857,15 @@ export function createCoreOperationOutbox(
   const runSerial = <T>(operation: () => Promise<T>): Promise<T> => {
     const next = serial.then(operation, operation);
     serial = next.then(() => undefined, () => undefined);
+    return next;
+  };
+
+  // Transport may wait for network/auth recovery. Never hold the local
+  // command lane across that wait; SQLite's shared writer gate owns mutations.
+  let transportSerial = Promise.resolve();
+  const runTransport = <T>(work: () => Promise<T>): Promise<T> => {
+    const next = transportSerial.then(work, work);
+    transportSerial = next.then(() => undefined, () => undefined);
     return next;
   };
 
@@ -948,7 +959,14 @@ export function createCoreOperationOutbox(
         // real stale-version conflict, never an implicit client-side rebase.
         if (predecessor) operation.entityVersion = predecessor.entityVersion + 1;
       }
+      const before = isItineraryMutation(operation)
+        ? await coreDb.readSnapshotInTransaction(exec, operation.groupId) : null;
       await applyLocal(exec);
+      if (before) {
+        const after = await coreDb.readSnapshotInTransaction(exec, operation.groupId);
+        operation.payload = { ...operation.payload,
+          _localRollback: { before: before.destinations, after: after?.destinations ?? before.destinations } };
+      }
       await outboxDb.writeInsert(exec, operation);
       });
     });
@@ -1210,8 +1228,9 @@ export function createCoreOperationOutbox(
     current: number,
   ): Promise<'sent' | 'conflict' | 'duplicate'> => {
     if (result.status === 'accepted' || result.status === 'duplicate') {
-      const rowsBefore = await outboxDb.listByGroup(operation.groupId);
-      await withCoreWriteTransaction(async (exec) => {
+      await runCoreDataWriteLock(async () => {
+        const rowsBefore = await outboxDb.listByGroup(operation.groupId);
+        await coreDb.withExclusiveTransaction(async (exec) => {
         // Compact only after the server result, projection, aliases, and
         // dependent rewrites can commit together. Arrival rows are retained as
         // an acknowledged local history row until the next remote read.
@@ -1257,6 +1276,7 @@ export function createCoreOperationOutbox(
           }
         }
       });
+      });
       notifyCoreOutboxChanged();
       return result.status === 'duplicate' ? 'duplicate' : 'sent';
     }
@@ -1292,9 +1312,10 @@ export function createCoreOperationOutbox(
       inflightStartedAt: undefined,
       updatedAt: current,
     };
-    const conflictRows = await outboxDb.listByGroup(operation.groupId);
-    const invalidated = dependencyChain(operation.id, conflictRows);
-    await withCoreWriteTransaction(async (exec) => {
+    await runCoreDataWriteLock(async () => {
+      const conflictRows = await outboxDb.listByGroup(operation.groupId);
+      const invalidated = dependencyChain(operation.id, conflictRows);
+      await coreDb.withExclusiveTransaction(async (exec) => {
       await outboxDb.writeUpdate(exec, conflictOperation);
       for (const dependent of conflictRows) {
         if (dependent.id !== operation.id && dependent.actorId === operation.actorId
@@ -1302,6 +1323,21 @@ export function createCoreOperationOutbox(
           await outboxDb.writeUpdate(exec, { ...dependent, status: 'conflict',
             conflictResult: { ...conflict, code: 'invalid_transition', operationId: dependent.id,
               message: 'prerequisite operation expired' }, nextAttemptAt: Number.MAX_SAFE_INTEGER, updatedAt: current });
+        }
+      }
+      if (isItineraryMutation(operation) && !conflict.serverState) {
+        const snapshot = await coreDb.readSnapshotInTransaction(exec, operation.groupId);
+        if (snapshot) {
+          let destinations = snapshot.destinations;
+          // Reverse dependants first, then their failed prerequisite.
+          const rejected = conflictRows.filter(row => invalidated.has(row.id) && row.actorId === operation.actorId)
+            .sort((a, b) => (b.sequence ?? 0) - (a.sequence ?? 0));
+          for (const row of rejected) {
+            const undo = row.payload._localRollback as ItineraryRollback | undefined;
+            if (undo?.before && undo?.after) destinations = rollbackItinerary(destinations, undo);
+          }
+          await coreDb.writeSnapshot(exec, { ...snapshot, destinations,
+            updatedAt: current, source: 'local_optimistic' });
         }
       }
       if (isDurableOperation(operation) && conflict.serverState) {
@@ -1341,6 +1377,7 @@ export function createCoreOperationOutbox(
           await coreDb.writeNavigationResponse(exec, entity);
         }
       }
+    });
     });
     notifyCoreOutboxChanged();
     return 'conflict';
@@ -1466,6 +1503,7 @@ export function createCoreOperationOutbox(
           action: input.action,
           subgroupId: input.subgroupId ?? null,
           navigationSessionId: input.navigationSessionId ?? null,
+          ...(input.expectedSessionStartedAt ? { expectedSessionStartedAt: input.expectedSessionStartedAt } : {}),
           nextDestinationId: nextDestinationIdForPayload,
           activeDestinationId:
             input.action === 'end'
@@ -1741,7 +1779,7 @@ export function createCoreOperationOutbox(
     },
 
     flush(maxEntries = MAX_BATCH): Promise<CoreOutboxFlushResult> {
-      return runSerial(async () => {
+      return runTransport(async () => {
         await initialize();
         const current = now();
         // Upgrade retained v2 version conflicts in place; do not lose drafts or
@@ -1898,18 +1936,10 @@ export function createCoreOperationOutbox(
                 entityId: operation.entityId,
                 occurredAt: now(),
               };
-              await runCoreDataWriteLock(() => outboxDb.update({
-                ...operation,
-                status: 'conflict',
-                attempts,
-                nextAttemptAt: Number.MAX_SAFE_INTEGER,
-                conflictResult: conflict,
-                lastError: conflict.message,
-                inflightStartedAt: undefined,
-                updatedAt: now(),
-              }));
+              await handleSubmitResult(operation, {
+                status: 'conflict', operationId: operation.id, conflict,
+              }, now());
               conflicts += 1;
-              notifyCoreOutboxChanged();
               continue;
             }
             await runCoreDataWriteLock(() => outboxDb.update({
@@ -1941,6 +1971,19 @@ export function createCoreOperationOutbox(
           retryScheduled,
           paused,
         };
+      });
+    },
+
+    retryFailedOperation(id: string): Promise<void> {
+      return runSerial(async () => {
+        await initialize();
+        await runCoreDataWriteLock(async () => {
+          const operation = await outboxDb.get(id);
+          if (!operation || operation.status !== 'failed') return;
+          if (currentActorGuard && operation.actorId !== await currentActorGuard()) return;
+          await outboxDb.update({ ...operation, nextAttemptAt: now(), updatedAt: now() });
+        });
+        notifyCoreOutboxChanged();
       });
     },
 
@@ -1982,18 +2025,19 @@ export function createCoreOperationOutbox(
     // an enqueue may be waiting on that same gate.
     async hasPendingGathering(groupId: string): Promise<boolean> {
       await initialize();
-      const n = await outboxDb.countPendingForEntity(
-        groupId,
-        'active_gathering',
-        groupId,
-      );
-      return n > 0;
+      const actor = currentActorGuard ? await currentActorGuard() : undefined;
+      const rows = await outboxDb.listOpenByGroup(groupId);
+      return rows.some(row => (!currentActorGuard || (actor != null && row.actorId === actor))
+        && row.entityType === 'active_gathering' && row.entityId === groupId
+        && row.status !== 'conflict');
     },
 
     async hasPendingItinerary(groupId: string): Promise<boolean> {
       await initialize();
       const rows = await outboxDb.listOpenByGroup(groupId);
-      return rows.some((row) => row.entityType === 'itinerary'
+      const actor = currentActorGuard ? await currentActorGuard() : undefined;
+      return rows.some((row) => (!currentActorGuard || (actor != null && row.actorId === actor))
+        && row.entityType === 'itinerary'
         && row.entityId === groupId
         && row.status !== 'conflict'
         && row.operationType !== 'record_arrival');

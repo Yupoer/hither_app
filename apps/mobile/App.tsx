@@ -75,6 +75,7 @@ import { setDiagnosticConsentEnabled } from './src/state/diagnosticConsent';
 import { uploadLocalLogs } from './src/utils/uploadLocalLogs';
 import { startOtaUpdateBootstrap } from './src/utils/otaUpdates';
 import OtaUpdateToast from './src/components/OtaUpdateToast';
+import AppNoticeHost from './src/components/AppNoticeHost';
 import InteractionRecoveryBanner from './src/components/InteractionRecoveryBanner';
 import PremiumPurchaseRecovery from './src/components/PremiumPurchaseRecovery';
 import PasswordRecoveryScreen from './src/screens/PasswordRecoveryScreen';
@@ -435,6 +436,7 @@ export default function App() {
               <OtaUpdateToast />
               {/* Global: action error/timeout recovery (runUiAction). */}
               <InteractionRecoveryBanner />
+              <AppNoticeHost />
             </SessionProvider>
           </PreferencesProvider>
         </SafeAreaProvider>

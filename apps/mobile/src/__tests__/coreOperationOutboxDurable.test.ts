@@ -2,7 +2,12 @@ jest.mock('expo-sqlite', () => ({ openDatabaseAsync: jest.fn() }));
 jest.mock('react-native', () => ({ Platform: { OS: 'ios' } }));
 jest.mock('expo-crypto', () => ({ randomUUID: jest.fn(() => 'generated-id') }));
 jest.mock('../api/supabase', () => ({
-  supabase: { auth: { getSession: jest.fn() }, rpc: jest.fn(), from: jest.fn() },
+  supabase: {
+    auth: { getSession: jest.fn() },
+    rpc: jest.fn(),
+    from: jest.fn(),
+    getLocalAuthActorId: jest.fn(async () => 'actor-a'),
+  },
 }));
 
 import type { GroupState } from '../types';
@@ -545,6 +550,31 @@ describe('durable core operation outbox', () => {
     expect((await coreDb.getSnapshot('group-a'))?.source).toBe('remote');
   });
 
+  it('scopes pending guards to the current actor', async () => {
+    const db = new MemoryCoreOperationOutboxDatabase();
+    const actor = { value: 'actor-a' };
+    const queue = makeQueue(db, async operation => accepted(operation), actor);
+
+    await queue.enqueueMutation({
+      ...mutation('group-a', 'actor-a'),
+      entityType: 'active_gathering',
+      operationType: 'start_gathering',
+      payload: { activeDestinationId: 'destination-a', navigationRequestId: 'session-a' },
+    });
+    await queue.enqueueMutation({
+      ...mutation('group-a', 'actor-a'),
+      operationType: 'edit_destination',
+      payload: { destinationId: 'destination-a', patch: { title: 'local' } },
+    });
+
+    actor.value = 'actor-b';
+    expect(await queue.hasPendingGathering('group-a')).toBe(false);
+    expect(await queue.hasPendingItinerary('group-a')).toBe(false);
+    actor.value = 'actor-a';
+    expect(await queue.hasPendingGathering('group-a')).toBe(true);
+    expect(await queue.hasPendingItinerary('group-a')).toBe(true);
+  });
+
   it('filters an optimistic snapshot owned by another actor before UI projection', async () => {
     const coreDb = new MemoryCoreDataDatabase();
     const actor = { value: 'actor-a' as string | null };
@@ -557,8 +587,48 @@ describe('durable core operation outbox', () => {
       async () => actor.value,
     );
     expect(await store.readSnapshot('group-a')).toMatchObject({ ownerActorId: 'actor-a' });
+    expect(await store.getActiveGathering('group-a')).toMatchObject({ groupId: 'group-a' });
     actor.value = 'actor-b';
     expect(await store.readSnapshot('group-a')).toBeNull();
+    expect(await store.getActiveGathering('group-a')).toBeNull();
+  });
+
+  it('does not preserve another actor\'s pending gathering during remote hydrate', async () => {
+    const coreDb = new MemoryCoreDataDatabase();
+    const actor = { value: 'actor-a' as string | null };
+    const local = snapshotForGroup('group-a', 1, 'actor-a') as any;
+    local.activeGathering = {
+      ...local.activeGathering,
+      journeyPhase: 'en_route',
+      activeDestinationId: 'destination-a',
+      pointStatuses: { 'destination-a': 'en_route' },
+      entityVersion: 1,
+    };
+    await coreDb.putSnapshot(local);
+    const hydrated = groupStateFromCoreSnapshot(local);
+    const remoteState = {
+      ...hydrated,
+      group: { ...hydrated.group, journeyStatus: 'paused' as const, activeDestinationId: undefined },
+    };
+    const store = createCoreDataStore(
+      coreDb,
+      () => 2_000,
+      async () => true,
+      async () => false,
+      async () => actor.value,
+    );
+
+    actor.value = 'actor-b';
+    const saved = await store.saveRemoteGroupState(remoteState, {
+      entityVersion: 0,
+      gatheringVersion: 0,
+    });
+
+    expect(saved.ownerActorId).toBe('actor-b');
+    expect(saved.source).toBe('remote');
+    expect(saved.activeGathering.journeyPhase).toBe('staying');
+    expect(saved.activeGathering.activeDestinationId).toBeNull();
+    expect(saved.activeGathering.entityVersion).toBe(0);
   });
 
   it('rejects a reused operation id before applying a different local payload', async () => {
@@ -652,4 +722,43 @@ describe('durable core operation outbox', () => {
     expect(result.retryScheduled).toBe(1);
     expect(await queue.getOperation(operation.id)).toMatchObject({ status: 'failed', conflictResult: null });
   });
+});
+
+it('persists new local commands and reads receipts while an earlier network request hangs', async () => {
+  const db = new MemoryCoreOperationOutboxDatabase();
+  let release!: (value: ApplyCoreOperationResult) => void;
+  let entered!: () => void;
+  const submitting = new Promise<void>(resolve => { entered = resolve; });
+  const queue = makeQueue(db, () => { entered(); return new Promise(resolve => { release = resolve; }); });
+  const first = await queue.enqueueMutation({ ...mutation('group-a'), operationId: 'first' });
+  const flushing = queue.flush();
+  await submitting;
+  // This awaits only SQLite, never the network promise above.
+  const second = await queue.enqueueMutation({ ...mutation('group-a'), operationId: 'second' });
+  expect(second.id).toBe('second');
+  const end = await queue.enqueueGatheringTransition({ groupId: 'group-a', operationId: 'end', action: 'end',
+    baseState: { groupId: 'group-a', journeyPhase: 'en_route', activeDestinationId: 'point',
+      pointStatuses: { point: 'en_route' }, phaseChangedAt: 0, entityVersion: 1 } });
+  expect(end.local.journeyPhase).toBe('staying');
+  expect((await queue.listByGroup('group-a')).map(op => op.id)).toEqual(['first', 'second', 'end']);
+  release(accepted(first));
+  await flushing;
+});
+
+it('rolls back a terminal transport rejection using local history while preserving independent additions', async () => {
+  const db = new MemoryCoreOperationOutboxDatabase();
+  const coreDb = new MemoryCoreDataDatabase();
+  await coreDb.putSnapshot(snapshotForGroup() as any);
+  const queue = makeQueue(db, async () => { throw Object.assign(new Error('limit'), { code: 'P0004' }); }, undefined, undefined, coreDb);
+  const destination = { id: 'rejected', title: 'rejected', order: 0, day: null, coordinates: { latitude: 25, longitude: 121 } };
+  await queue.enqueueMutation({ ...mutation('group-a'), operationType: 'add_destination', payload: { destinationId: destination.id },
+    applyLocal: async (exec) => {
+      const snapshot = (await coreDb.readSnapshotInTransaction(exec, 'group-a'))!;
+      await coreDb.writeSnapshot(exec, { ...snapshot, destinations: [destination] });
+    },
+  });
+  const current = (await coreDb.getSnapshot('group-a'))!;
+  await coreDb.putSnapshot({ ...current, destinations: [...current.destinations, { ...destination, id: 'independent' }] });
+  await queue.flush();
+  expect((await coreDb.getSnapshot('group-a'))!.destinations.map(item => item.id)).toEqual(['independent']);
 });

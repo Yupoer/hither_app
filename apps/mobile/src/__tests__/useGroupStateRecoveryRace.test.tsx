@@ -624,6 +624,20 @@ describe('useGroupState recovery snapshot race', () => {
     await act(async () => root.unmount());
   });
 
+  it('paints a committed local destination while remote recovery is still pending', async () => {
+    mockRecovery.mockImplementation(() => new Promise(() => {}));
+    const local = { ...state('local'), destinations: [{ id: 'local-point', title: 'saved locally',
+      coordinates: { latitude: 25, longitude: 121 }, order: 0, day: null }] };
+    let api!: ReturnType<typeof useGroupState>;
+    function Harness() { api = useGroupState('group-1', { myUserId: 'me' }); return null; }
+    let root!: { unmount: () => void };
+    await act(async () => { root = create(React.createElement(Harness)); });
+    mockReadSnapshot.mockResolvedValue({ state: local, source: 'local_optimistic', syncedAt: Date.now() });
+    await act(async () => { mockSubscribeOutbox.mock.calls[0][0](); });
+    expect(api.state?.destinations[0].id).toBe('local-point');
+    await act(async () => root.unmount());
+  });
+
   it('shows cached state offline but clears it when membership was revoked', async () => {
     mockReadSnapshot.mockResolvedValue({ state: state('cached'), source: 'local_cache', syncedAt: Date.now() });
     mockRecovery.mockRejectedValue(new Error('Network request failed'));

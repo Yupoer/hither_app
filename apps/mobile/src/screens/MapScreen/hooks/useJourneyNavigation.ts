@@ -1,3 +1,5 @@
+import { legacyNavigationSessionKey, readEndedNavigationSessions, rememberEndedNavigationSession } from '../../../state/endedNavigationSessions';
+import { showAppNotice, showOperationFailure } from '../../../state/appNotice';
 import * as Crypto from 'expo-crypto';
 import { useState, useMemo, useEffect, useCallback, useRef, RefObject } from 'react';
 import { Alert, type ScrollView } from 'react-native';
@@ -23,6 +25,9 @@ import { logEvent } from '../../../utils/activityLog';
 interface TeamCommandIntent {
   sequence: number;
   action: 'start' | 'end';
+  operationId: string;
+  targetSessionId?: string | null;
+  expectedSessionStartedAt?: string | null;
   destination: Destination;
   index: number;
 }
@@ -35,6 +40,7 @@ interface TeamCommandJob {
 
 interface UseJourneyNavigationParams {
   state: GroupState | null;
+  actorId?: string | null;
   groupId: string | null | undefined;
   isLeader: boolean;
   destinations: Destination[];
@@ -77,6 +83,7 @@ interface UseJourneyNavigationParams {
 
 export function useJourneyNavigation({
   state,
+  actorId,
   groupId,
   isLeader,
   destinations,
@@ -117,6 +124,29 @@ export function useJourneyNavigation({
   const [pendingLeaderTargetId, setPendingLeaderTargetId] = useState<string | null>(null);
   const [pendingLeaderStop, setPendingLeaderStop] = useState(false);
   const [journeyBusy, setJourneyBusy] = useState(false);
+  const [locallyStopped, setLocallyStopped] = useState(false);
+  const stoppedServerSessionRef = useRef<string | null>(null);
+  const stoppedAtRef = useRef(0);
+  const [endedSessions, setEndedSessions] = useState<Set<string>>(new Set());
+  const [endedLoadedFor, setEndedLoadedFor] = useState('');
+  const endedContext = `${actorId ?? ''}:${groupId ?? ''}`;
+  useEffect(() => {
+    let active = true;
+    setLocallyStopped(false);
+    setEndedSessions(new Set());
+    if (!actorId || !groupId) { setEndedLoadedFor(endedContext); return; }
+    void readEndedNavigationSessions(actorId, groupId).then(values => {
+      if (active) { setEndedSessions(current => new Set([...current, ...values])); setEndedLoadedFor(endedContext); }
+    }).catch(error => {
+      if (active) {
+        // Fail closed: unreadable dismissal history cannot resurrect navigation.
+        setEndedLoadedFor('');
+        showOperationFailure(t('map.setFailedTitle'), getOperationErrorMessage(error));
+      }
+    });
+    return () => { active = false; };
+  }, [actorId, groupId, endedContext]);
+
   const localSessionIdRef = useRef<string | null>(null);
   const localSessionContextRef = useRef<{
     destinationId: string;
@@ -135,6 +165,9 @@ export function useJourneyNavigation({
   const teamCommandSequenceRef = useRef(0);
   const pendingCarouselTargetIdRef = useRef<string | null>(null);
   const gatheringStatesRef = useRef(new Map<string, ActiveGatheringState>());
+  const gatheringCacheKey = JSON.stringify([actorId ?? null, groupId ?? null]);
+  const currentActorRef = useRef(actorId);
+  currentActorRef.current = actorId;
   const currentGroupRef = useRef(groupId);
   currentGroupRef.current = groupId;
   const mountedRef = useRef(true);
@@ -150,7 +183,7 @@ export function useJourneyNavigation({
     pendingTeamStartIntentRef.current = null;
     pendingStartRef.current = null;
     requestRef.current = null;
-  }, [groupId, publishLocalSessionId]);
+  }, [groupId, actorId, publishLocalSessionId]);
   const serverOrStartedSessionRef = useRef(Boolean(authoritativeSharedTargetId));
   const pendingStartRef = useRef<{
     operationId: string;
@@ -231,21 +264,35 @@ export function useJourneyNavigation({
   // settled, even if the realtime session row itself did not change.
   }, [clearLocalSessionAlias, hasPendingTeamOperation, navigationSession]);
 
-  const sharedTargetId = optimisticTeamTargetId !== undefined
+  const legacySessionKey = legacyNavigationSessionKey(state?.group.journeyStartedAt, authoritativeSharedTargetId);
+  const visibleSessionKey = navigationSession?.id ?? legacySessionKey;
+  const serverLegacyKey = navigationSession ? legacyNavigationSessionKey(navigationSession.startedAt, navigationSession.destinationId) : legacySessionKey;
+  const hiddenSession = (endedSessions.has(visibleSessionKey) || endedSessions.has(legacySessionKey) || endedSessions.has(serverLegacyKey)
+    || Boolean(navigationSession?.requestId && endedSessions.has(navigationSession.requestId))) && !optimisticTeamTargetId;
+  useEffect(() => {
+    if (locallyStopped && navigationSession?.status === 'active' && !hiddenSession
+      && navigationSession.id !== stoppedServerSessionRef.current
+      && Date.parse(navigationSession.startedAt) > stoppedAtRef.current) {
+      setLocallyStopped(false);
+    }
+  }, [locallyStopped, navigationSession, hiddenSession]);
+  const suppressNavigation = locallyStopped || (isLeader && (hiddenSession
+    || (Boolean(actorId) && endedLoadedFor !== endedContext && !optimisticTeamTargetId)));
+  const sharedTargetId = suppressNavigation ? null : optimisticTeamTargetId !== undefined
     ? optimisticTeamTargetId
     : authoritativeSharedTargetId;
 
   useEffect(() => {
-    if (groupId && !gatheringStatesRef.current.has(groupId) && state) {
-      gatheringStatesRef.current.set(groupId, deriveActiveGatheringFromGroupState(state, 0));
+    if (groupId && !gatheringStatesRef.current.has(gatheringCacheKey) && state) {
+      gatheringStatesRef.current.set(gatheringCacheKey, deriveActiveGatheringFromGroupState(state, 0));
     }
-  }, [state, groupId]);
+  }, [state, groupId, gatheringCacheKey]);
 
   useEffect(() => {
     if (hasPendingTeamOperation !== false || !state || !groupId || teamCommandRunnerRef.current) return;
-    gatheringStatesRef.current.set(groupId, deriveActiveGatheringFromGroupState(state, 0));
+    gatheringStatesRef.current.set(gatheringCacheKey, deriveActiveGatheringFromGroupState(state, 0));
     setOptimisticTeamTargetId(undefined);
-  }, [state, groupId, hasPendingTeamOperation]);
+  }, [state, groupId, gatheringCacheKey, hasPendingTeamOperation]);
 
   useEffect(() => {
     serverOrStartedSessionRef.current = Boolean(authoritativeSharedTargetId);
@@ -266,7 +313,7 @@ export function useJourneyNavigation({
   // Shared flock session owns the target for leaders and members. During a
   // local optimistic End, `sharedTargetId` is null and the route disappears
   // immediately instead of waiting for the terminal RPC.
-  const navTargetId = sharedTargetId ?? (isLeader ? pendingLeaderTargetId : localTargetId);
+  const navTargetId = suppressNavigation ? null : sharedTargetId ?? (isLeader ? pendingLeaderTargetId : localTargetId);
   const navTarget = useMemo<Destination | undefined>(() => {
     if (!navTargetId) return undefined;
     const fromList = navigationDestinations.find((destination) => destination.id === navTargetId);
@@ -322,12 +369,12 @@ export function useJourneyNavigation({
 
   const runTeamEnd = useCallback(async (intent: TeamCommandIntent): Promise<boolean> => {
     if (!groupId) return false;
-    const isCurrent = () => mountedRef.current && currentGroupRef.current === groupId;
-    const baseState = gatheringStatesRef.current.get(groupId)
+    const isCurrent = () => mountedRef.current && currentGroupRef.current === groupId && currentActorRef.current === actorId;
+    const baseState = gatheringStatesRef.current.get(gatheringCacheKey)
       ?? (state ? deriveActiveGatheringFromGroupState(state, 0) : undefined);
     if (isCurrent()) setJourneyBusy(true);
     try {
-      const operationId = createRequestId();
+      const operationId = intent.operationId;
       // End is scoped to the session that was active when the user tapped.
       // A later Start must never be mistaken for this terminal operation.
       const localSessionId = localSessionIdRef.current;
@@ -340,15 +387,24 @@ export function useJourneyNavigation({
         && navigationSession.destinationId === intent.destination.id
         && (navigationSession.scopeSubgroupId ?? null)
           === (intent.destination.subgroupId ?? null));
-      const navigationSessionId = localMatches
-        ? localSessionId
-        : serverMatches ? navigationSession?.id ?? null : null;
+      const navigationSessionId = intent.targetSessionId !== undefined ? intent.targetSessionId
+        : localMatches ? localSessionId : serverMatches ? navigationSession?.id ?? null : null;
+      intent.targetSessionId = navigationSessionId;
+      if (intent.expectedSessionStartedAt === undefined) intent.expectedSessionStartedAt = state?.group.journeyStartedAt ?? null;
+      const endedSessionKey = navigationSessionId ?? legacyNavigationSessionKey(intent.expectedSessionStartedAt, intent.destination.id);
+      if (actorId) {
+        setEndedSessions(values => new Set([...values, endedSessionKey]));
+        void rememberEndedNavigationSession(actorId, groupId, endedSessionKey).catch(error => {
+          if (isCurrent()) showOperationFailure(t('map.setFailedTitle'), getOperationErrorMessage(error));
+        });
+      }
       const result = await enqueueLeaderGatheringEnd(groupId, { baseState, groupState: state,
-        operationId,
+        actorId: actorId ?? undefined, operationId,
         navigationSessionId,
+        expectedSessionStartedAt: navigationSessionId ? null : intent.expectedSessionStartedAt,
         subgroupId: intent.destination.subgroupId ?? null,
         flushImmediately: false });
-      gatheringStatesRef.current.set(groupId, result.local);
+      gatheringStatesRef.current.set(gatheringCacheKey, result.local);
       if (!isCurrent()) { void flushCoreOperationOutbox().catch(() => undefined); return true; }
       pendingStartRef.current = null;
       requestRef.current = null;
@@ -381,10 +437,17 @@ export function useJourneyNavigation({
       if (pendingTeamStartIntentRef.current?.sequence === intent.sequence) {
         pendingTeamStartIntentRef.current = null;
       }
-      setOptimisticTeamTargetId(undefined);
-      Alert.alert(t('map.setFailedTitle'), getOperationErrorMessage(error));
+      setOptimisticTeamTargetId(null);
+      showAppNotice({
+        id: `end-save:${intent.operationId}`,
+        title: t('notice.endLocalOnly'), message: getOperationErrorMessage(error),
+        actionLabel: t('interaction.retry'),
+        onAction: async () => {
+          if (isCurrent() && teamCommandSequenceRef.current === intent.sequence) await runTeamEnd(intent);
+        },
+      });
       logEvent('nav_end_failed', { destId: intent.destination.id });
-      return false;
+      return true;
     } finally {
       if (isCurrent()) {
         setPendingLeaderStop(false);
@@ -392,19 +455,19 @@ export function useJourneyNavigation({
         setJourneyBusy(false);
       }
     }
-  }, [groupId, state, navigationSession, publishLocalSessionId, onOptimisticGathering, onOperatorPauseConfirm, createRequestId, _refresh, refreshNavigationSession, t]);
+  }, [groupId, actorId, state, navigationSession, publishLocalSessionId, onOptimisticGathering, onOperatorPauseConfirm, createRequestId, _refresh, refreshNavigationSession, t]);
 
   const runTeamStart = useCallback(async (intent: TeamCommandIntent): Promise<boolean> => {
     if (!groupId) return false;
-    const isCurrent = () => mountedRef.current && currentGroupRef.current === groupId;
+    const isCurrent = () => mountedRef.current && currentGroupRef.current === groupId && currentActorRef.current === actorId;
     const { destination: dest, index } = intent;
     if (isCurrent()) { setJourneyBusy(true); setPendingLeaderStop(false); }
     try {
-      const baseState = gatheringStatesRef.current.get(groupId)
+      const baseState = gatheringStatesRef.current.get(gatheringCacheKey)
         ?? (state ? deriveActiveGatheringFromGroupState(state, 0) : undefined);
       const switching = Boolean(baseState?.activeDestinationId && baseState.activeDestinationId !== dest.id);
-      const operationId = createRequestId();
-      const options = { baseState, groupState: state, activeDestinationId: dest.id, operationId,
+      const operationId = intent.operationId;
+      const options = { baseState, groupState: state, actorId: actorId ?? undefined, activeDestinationId: dest.id, operationId,
         // The transition is durable before a server session exists. Reusing
         // this id as navigationRequestId lets delayed arrivals stay bound to
         // this exact local session after reconnect.
@@ -415,7 +478,7 @@ export function useJourneyNavigation({
       const enqueued = switching
         ? await enqueueLeaderGatheringSwitch(groupId, options)
         : await enqueueLeaderGatheringStart(groupId, options);
-      gatheringStatesRef.current.set(groupId, enqueued.local);
+      gatheringStatesRef.current.set(gatheringCacheKey, enqueued.local);
       if (!isCurrent()) { void flushCoreOperationOutbox().catch(() => undefined); return true; }
       pendingStartRef.current = { operationId: enqueued.operationId, base: enqueued.base };
       requestRef.current = { destinationId: dest.id, requestId: enqueued.operationId };
@@ -444,16 +507,27 @@ export function useJourneyNavigation({
         pendingTeamStartIntentRef.current = null;
       }
       setOptimisticTeamTargetId(undefined);
-      Alert.alert(t('map.setFailedTitle'), getOperationErrorMessage(error));
+      showOperationFailure(t('map.setFailedTitle'), getOperationErrorMessage(error));
       logEvent('nav_start_failed', { destId: dest.id, sequence: intent.sequence });
       return false;
     } finally {
       if (isCurrent()) { setPendingLeaderTargetId(null); setJourneyBusy(false); }
     }
-  }, [groupId, state, navigationSession?.id, navigationDestinations, mapRef, onOptimisticGathering,
+  }, [groupId, actorId, state, navigationSession?.id, navigationDestinations, mapRef, onOptimisticGathering,
     setSelectedIndex, createRequestId, _refresh, refreshNavigationSession, t]);
 
   const enqueueTeamCommand = useCallback((action: 'start' | 'end', dest: Destination, index: number): Promise<boolean> => {
+    if (action === 'end') {
+      stoppedServerSessionRef.current = navigationSession?.id ?? null;
+      stoppedAtRef.current = Date.now();
+      setLocallyStopped(true);
+      setOptimisticTeamTargetId(null);
+      setPendingLeaderTargetId(null);
+      setLocalTargetId(null);
+    } else {
+      setLocallyStopped(false);
+    }
+
     if (!isLeader) {
       if (action === 'start') startLocalRoutePlan(dest, index);
       else setLocalTargetId(null);
@@ -462,6 +536,7 @@ export function useJourneyNavigation({
     const intent: TeamCommandIntent = {
       sequence: ++teamCommandSequenceRef.current,
       action,
+      operationId: createRequestId(),
       destination: dest,
       index,
     };
@@ -501,7 +576,7 @@ export function useJourneyNavigation({
     };
     drain();
     return result;
-  }, [isLeader, startLocalRoutePlan, runTeamStart, runTeamEnd]);
+  }, [isLeader, startLocalRoutePlan, runTeamStart, runTeamEnd, createRequestId, navigationSession?.id]);
 
   const startNavigation = useCallback(
     async (dest: Destination, index: number) => {
@@ -534,7 +609,10 @@ export function useJourneyNavigation({
         const pending = enqueueTeamCommand('end', dest, destinations.findIndex((item) => item.id === dest.id));
         return pending;
       }
-      return false;
+      setLocallyStopped(true);
+      setOptimisticTeamTargetId(null);
+      setPendingLeaderTargetId(null);
+      return true;
     }
     setLocalTargetId(null);
     return true;
@@ -578,6 +656,7 @@ export function useJourneyNavigation({
   }, [destinations, mapRef, navigationSession?.id, setSelectedIndex, sharedTargetId]);
 
   return {
+    navigationStoppedLocally: suppressNavigation,
     journeyStatus,
     journeyGoing,
     journeyActive,

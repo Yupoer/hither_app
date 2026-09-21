@@ -1,3 +1,4 @@
+import { showOperationFailure } from '../state/appNotice';
 import { captureLocationAccess } from '../state/locationPrivacy';
 import { hydrateLocationSharing, rememberLocationSharing, syncLocationSharing } from '../state/locationSharingSync';
 import React, {
@@ -819,6 +820,18 @@ export default function MapScreen({ route, navigation }: Props) {
     })) setOptimisticDestinations(null);
   }, [rawDestinations, optimisticDestinations]);
   const workflowReloadRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handledItineraryRejections = useRef(new Set<string>());
+  useEffect(() => {
+    const rejected = openOperations.filter(op => op.entityType === 'itinerary'
+      && op.status === 'conflict' && !handledItineraryRejections.current.has(op.id));
+    if (!rejected.length) return;
+    rejected.forEach(op => handledItineraryRejections.current.add(op.id));
+    if (!routeDraftDirtyRef.current.destinations) {
+      optimisticDestinationsRef.current = null;
+      setOptimisticDestinations(null);
+    }
+  }, [openOperations]);
+
   const [optimisticTripDays, setOptimisticTripDays] = useState<number | null>(null);
   const [optimisticDepartureDate, setOptimisticDepartureDate] = useState<string | null>(null);
   // Membership changes switch the active itinerary scope. Clear every draft
@@ -1731,7 +1744,7 @@ export default function MapScreen({ route, navigation }: Props) {
           if (typeof redMin === 'number') setMeetRedMin(redMin);
           return refresh();
         })
-        .catch((cause) => Alert.alert(t('map.setFailedTitle'), getOperationErrorMessage(cause)));
+        .catch((cause) => showOperationFailure(t('map.setFailedTitle'), getOperationErrorMessage(cause)));
     },
     [refresh, t, meetRedMin, setMeetRedMin],
   );
@@ -1937,6 +1950,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // --- Device GPS ----------------------------------------------------------
   const incomingArrivalHandlerRef = useRef<() => void>(() => undefined);
+  const [deviceNavigationSuppressed, setDeviceNavigationSuppressed] = useState(false);
   const {
     deviceCoords,
     deviceAccuracyM,
@@ -1948,7 +1962,7 @@ export default function MapScreen({ route, navigation }: Props) {
   } = useDeviceLocation({
     groupId: mapFocused || hasNavigationSession ? groupId : null,
     highAccuracy,
-    teamNavigationActive: navigationSessionState.session?.status === 'active',
+    teamNavigationActive: !deviceNavigationSuppressed && navigationSessionState.session?.status === 'active',
     nativeMapLocationEnabled: Platform.OS === 'ios' && mapFocused,
     sharingEnabled: preferencesReady && sharingEnabled,
     hasMembership: (mapFocused || hasNavigationSession) && members.some(m => m.userId === user?.id),
@@ -1998,6 +2012,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // --- Journey navigation + Live Activity ----------------------------------
   const {
+    navigationStoppedLocally,
     journeyStatus,
     journeyGoing,
     journeyActive,
@@ -2014,6 +2029,7 @@ export default function MapScreen({ route, navigation }: Props) {
     stopNavigation,
   } = useJourneyNavigation({
     state,
+    actorId: user?.id,
     groupId,
     // The command lane is scoped: a subgroup leader may start/end only their
     // subgroup session, using the scoped destination list below.
@@ -2056,6 +2072,8 @@ export default function MapScreen({ route, navigation }: Props) {
     hasPendingTeamOperation: openOperations.some(op => op.entityType === 'active_gathering'
       && (op.actorId ?? op.payload.actorId) === user?.id && op.status !== 'conflict'),
   });
+
+  useEffect(() => { setDeviceNavigationSuppressed(navigationStoppedLocally); }, [navigationStoppedLocally]);
 
   // OTA-01: single authoritative team gathering projection for map / broadcast /
   // notification / passive surfaces. Personal ETA/mode/progress never write here.
@@ -2963,7 +2981,7 @@ export default function MapScreen({ route, navigation }: Props) {
       hasDepartedStart: progressDepartedStart,
       previousProgressMax: progressMaxSticky ?? undefined,
       etaSeconds: lastValidPresentation.etaSeconds ?? selfRoute?.expectedTravelTimeSeconds,
-      teamNavigationActive: hasNavigationSession || Boolean(journeyActive && navTarget),
+      teamNavigationActive: !navigationStoppedLocally && (hasNavigationSession || Boolean(journeyActive && navTarget)),
       appState: appState === 'background' ? 'background' : 'inactive',
       permissionsPrepared: backgroundPermissionsPreparedFor === groupId,
     }).then((result) => {
@@ -2998,6 +3016,7 @@ export default function MapScreen({ route, navigation }: Props) {
     navTarget,
     navigationSessionId,
     hasNavigationSession,
+    navigationStoppedLocally,
     sharingEnabled,
     showLocationPermissionAlert,
     travelMode,
@@ -3034,6 +3053,7 @@ export default function MapScreen({ route, navigation }: Props) {
     highAccuracy,
     journeyActive,
     hasNavigationSession,
+    navigationStoppedLocally,
   ]);
 
   const lastFittedRouteRef = useRef<string | null>(null);
@@ -3400,7 +3420,7 @@ export default function MapScreen({ route, navigation }: Props) {
   // Preference (liveActivityEnabled) ≠ entitlement (store + Premium session).
   const liveActivityAllowed = liveActivityEnabled && (liveActivityEffective || isPro);
   useLiveActivity(
-    !preferencesReady ? undefined : !liveActivityAllowed ? false
+    navigationStoppedLocally ? false : !preferencesReady ? undefined : !liveActivityAllowed ? false
       : hasNavigationSession || journeyActive ? true
       : navigationSessionState.loading || navigationSessionState.error || loading || groupStateError ? undefined : false,
     {
@@ -3522,7 +3542,7 @@ export default function MapScreen({ route, navigation }: Props) {
         if (!permission || permission.foregroundStatus !== 'granted') {
           showLocationPermissionAlert();
         } else {
-          Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
+          showOperationFailure(t('map.setFailedTitle'), t('map.setFailedMsg'));
         }
         return;
       }
@@ -3549,7 +3569,7 @@ export default function MapScreen({ route, navigation }: Props) {
         // returns false on remote failure even if a local cache is still shown.
         const pulled = await refresh();
         if (!pulled) {
-          Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
+          showOperationFailure(t('map.setFailedTitle'), t('map.setFailedMsg'));
         } else {
           const finalResponseResult = assessLocationRefreshResponses({
             members: membersRef.current,
@@ -3587,7 +3607,7 @@ export default function MapScreen({ route, navigation }: Props) {
         );
       }
     } catch (cause) {
-      Alert.alert(t('map.setFailedTitle'), getOperationErrorMessage(cause));
+      showOperationFailure(t('map.setFailedTitle'), getOperationErrorMessage(cause));
     } finally {
       setRefreshingLocations(false);
     }
@@ -3664,7 +3684,7 @@ export default function MapScreen({ route, navigation }: Props) {
           } catch (e) {
             logError('destination_suggest_failed', e, { source });
             if (token.isCurrent()) {
-              Alert.alert(t('map.setFailedTitle'), getOperationErrorMessage(e));
+              showOperationFailure(t('map.setFailedTitle'), getOperationErrorMessage(e));
             }
             throw e;
           }
@@ -3674,7 +3694,7 @@ export default function MapScreen({ route, navigation }: Props) {
           suppressBanner: true,
           onError: (kind) => {
             if (kind === 'timeout') {
-              Alert.alert(t('map.setFailedTitle'), t('interaction.timeout'));
+              showOperationFailure(t('map.setFailedTitle'), t('interaction.timeout'));
             }
           },
         },
@@ -3787,7 +3807,7 @@ export default function MapScreen({ route, navigation }: Props) {
         } catch (e) {
           logError('destination_add_failed', e, { source: placeSource });
           if (token.isCurrent()) {
-            Alert.alert(t('map.setFailedTitle'), getOperationErrorMessage(e));
+            showOperationFailure(t('map.setFailedTitle'), getOperationErrorMessage(e));
           }
           throw e;
         }
@@ -3797,7 +3817,7 @@ export default function MapScreen({ route, navigation }: Props) {
         suppressBanner: true,
         onError: (kind) => {
           if (kind === 'timeout') {
-            Alert.alert(t('map.setFailedTitle'), t('interaction.timeout'));
+            showOperationFailure(t('map.setFailedTitle'), t('interaction.timeout'));
           }
         },
       },
@@ -3947,7 +3967,7 @@ export default function MapScreen({ route, navigation }: Props) {
           } catch (e) {
             logError('destination_add_failed', e, { source: 'coordinates' });
             if (token.isCurrent()) {
-              Alert.alert(t('map.setFailedTitle'), getOperationErrorMessage(e));
+              showOperationFailure(t('map.setFailedTitle'), getOperationErrorMessage(e));
             }
             throw e;
           }
@@ -3957,7 +3977,7 @@ export default function MapScreen({ route, navigation }: Props) {
           suppressBanner: true,
           onError: (kind) => {
             if (kind === 'timeout') {
-              Alert.alert(t('map.setFailedTitle'), t('interaction.timeout'));
+              showOperationFailure(t('map.setFailedTitle'), t('interaction.timeout'));
             }
           },
         },
@@ -4329,7 +4349,7 @@ export default function MapScreen({ route, navigation }: Props) {
         );
       })
       .catch(() => {
-        Alert.alert(t('map.setFailedTitle'), t('command.sendFailed'));
+        showOperationFailure(t('map.setFailedTitle'), t('command.sendFailed'));
       })
       .finally(() => setRequestingStartDestId(null));
   }, [groupId, requestingStartDestId, t]);
@@ -4754,7 +4774,7 @@ export default function MapScreen({ route, navigation }: Props) {
     ): Promise<boolean> => {
       if (!groupId) return false;
       if (updates.some(update => update.id === navTargetId && update.day == null)) {
-        Alert.alert(t('map.setFailedTitle'), t('trip.endBeforePool'));
+        showOperationFailure(t('map.setFailedTitle'), t('trip.endBeforePool'));
         return false;
       }
       const persisted = updates.every(update => !update.id.startsWith('draft-'));
@@ -4815,7 +4835,7 @@ export default function MapScreen({ route, navigation }: Props) {
           } catch (e) {
             logError('destination_reorder_failed', e);
             if (token.isCurrent()) {
-              Alert.alert(t('map.setFailedTitle'), getOperationErrorMessage(e));
+              showOperationFailure(t('map.setFailedTitle'), getOperationErrorMessage(e));
               optimisticDestinationsRef.current = null;
               setOptimisticDestinations(null);
               refresh();
@@ -4830,7 +4850,7 @@ export default function MapScreen({ route, navigation }: Props) {
             setOptimisticDestinations(null);
             void refresh();
             if (kind === 'timeout') {
-              Alert.alert(t('map.setFailedTitle'), t('interaction.timeout'));
+              showOperationFailure(t('map.setFailedTitle'), t('interaction.timeout'));
             }
           },
         },
@@ -5095,7 +5115,7 @@ export default function MapScreen({ route, navigation }: Props) {
             if (id === navTargetId && journeyActive) {
               const ended = await stopNavigation();
               if (!ended) {
-                Alert.alert(t('map.setFailedTitle'), t('map.routeSaveFailed'));
+                showOperationFailure(t('map.setFailedTitle'), t('map.routeSaveFailed'));
                 return;
               }
             }
@@ -5134,7 +5154,7 @@ export default function MapScreen({ route, navigation }: Props) {
             if (navTargetId && ids.includes(navTargetId) && journeyActive) {
               const ended = await stopNavigation();
               if (!ended) {
-                Alert.alert(t('map.setFailedTitle'), t('map.routeSaveFailed'));
+                showOperationFailure(t('map.setFailedTitle'), t('map.routeSaveFailed'));
                 return;
               }
             }
@@ -5189,7 +5209,7 @@ export default function MapScreen({ route, navigation }: Props) {
         setPendingDestinationMutations((pending) =>
           removeDestinationMutation(pending, mutation.mutationId),
         );
-        Alert.alert(t('map.setFailedTitle'), getOperationErrorMessage(e));
+        showOperationFailure(t('map.setFailedTitle'), getOperationErrorMessage(e));
         // Keep persisted rows visible; do not clear on pre-write failure.
         return;
       }
@@ -7519,8 +7539,8 @@ export default function MapScreen({ route, navigation }: Props) {
                         + expanded command row (expanded and collapsed). */}
                     {journeyActive && navTarget?.id === dest.id && mapFocused && appState === 'active' ? (
                       <Animated.View pointerEvents="none" entering={FadeIn.duration(300)} exiting={FadeOut.duration(300)}
-                        style={[StyleSheet.absoluteFill, { borderRadius: gatherCardRadius, overflow: 'hidden' }]}>
-                        <MetalforgeStarfield active={active} lowPowerMode={powerState.lowPowerMode}
+                        style={[StyleSheet.absoluteFill, { borderRadius: gatherCardRadius, overflow: 'hidden', zIndex: 0 }]}>
+                        <MetalforgeStarfield collapsed={!cardExpanded} active={active} lowPowerMode={powerState.lowPowerMode}
                           thermalState={powerState.thermalState} />
                       </Animated.View>
                     ) : null}
@@ -7553,7 +7573,7 @@ export default function MapScreen({ route, navigation }: Props) {
                         </Animated.View>
                       </Animated.View>
                     ) : null}
-                    <View style={styles.cardInner}>
+                    <View style={[styles.cardInner, { zIndex: 1 }]}>
                     <GatheringCardPressable
                       onToggle={() => toggleGatheringCard(dest.id)}
                       accessibilityLabel={dest.title}

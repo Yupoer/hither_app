@@ -1,3 +1,4 @@
+import { getVisibleGroupSeed } from './visibleGroupSeed';
 /**
  * Production wiring for OTA-04 core operation outbox + snapshot helpers.
  * Single shared store + outbox (one serial path for mutations / remote save).
@@ -20,6 +21,8 @@ import {
 } from '../utils/activeGatheringState';
 import {
   getCoreActiveGathering,
+  coreSnapshotFromGroupState,
+  runCoreDataWriteLock,
   setCoreSnapshotActorGuard,
   setPendingGatheringGuard,
   setPendingItineraryGuard,
@@ -69,27 +72,29 @@ export function getCoreDataStore(): CoreDataStore {
 }
 
 /**
- * Cold-start seam for service mutations: hydrate the durable snapshot before
- * deciding whether a write may be queued. A failed hydrate is surfaced to the
- * caller; it must not silently fall back to an online-only mutation.
+ * Service mutations may seed a cold local snapshot from this actor's visible
+ * state. No network read belongs in this write prerequisite. Missing local
+ * context fails explicitly rather than silently using an online-only write.
  */
 export async function ensureCoreSnapshot(groupId: string) {
   const existing = await sharedCoreDataStore.readSnapshot(groupId);
   if (existing) return existing;
-  const groupService = require('../api/services/GroupService') as {
-    getGroupRecoverySnapshot: (id: string) => Promise<{
-      state: GroupState;
-      entityVersions: Record<string, number>;
-    }>;
-  };
-  const remote = await groupService.getGroupRecoverySnapshot(groupId);
-  const activeVersion = remote.entityVersions[`active_gathering:${groupId}`];
-  const itineraryVersion = remote.entityVersions[`itinerary:${groupId}`];
-  await sharedCoreDataStore.saveRemoteGroupState(remote.state, {
-    entityVersion: activeVersion,
-    gatheringVersion: activeVersion,
-    itineraryVersion,
+  const actorId = await requireLocalActorId();
+  const visible = getVisibleGroupSeed(actorId, groupId);
+  if (!visible) throw localSnapshotError();
+  // No network in a write prerequisite. Seed only this actor's displayed state;
+  // version reconciliation belongs to the background operation processor.
+  await runCoreDataWriteLock(async () => {
+    if (await requireLocalActorId() !== actorId) throw localSnapshotError();
+    await sharedCoreDb.withExclusiveTransaction(async exec => {
+      const current = await sharedCoreDb.readSnapshotInTransaction(exec, groupId);
+      if (current && (!current.ownerActorId || current.ownerActorId === actorId)) return;
+      const seed = coreSnapshotFromGroupState(visible, { source: 'local_cache', syncedAt: 0 });
+      await sharedCoreDb.writeSnapshot(exec, { ...seed, ownerActorId: actorId });
+      await sharedCoreDb.writeActiveGathering(exec, seed.activeGathering, Date.now(), { patchSnapshot: 'none' });
+    });
   });
+
   return sharedCoreDataStore.readSnapshot(groupId);
 }
 
@@ -601,6 +606,7 @@ export async function enqueueLeaderGatheringEnd(
     operationId?: string;
     actorId?: string;
     navigationSessionId?: string | null;
+    expectedSessionStartedAt?: string | null;
     subgroupId?: string | null;
     flushImmediately?: boolean;
   } = {},
@@ -612,7 +618,10 @@ export async function enqueueLeaderGatheringEnd(
       ? deriveActiveGatheringFromGroupState(options.groupState, 0)
       : null);
   if (!base) {
-    throw new Error('no local gathering base for end');
+    return enqueueLeaderGatheringEnd(groupId, { ...options, baseState: {
+      groupId, journeyPhase: 'staying', activeDestinationId: null, pointStatuses: {},
+      phaseChangedAt: Date.now(), entityVersion: 0,
+    } });
   }
   const { local } = await outbox.enqueueGatheringTransition({
     operationId: options.operationId,
@@ -622,6 +631,7 @@ export async function enqueueLeaderGatheringEnd(
     nextDestinationId: options.nextDestinationId,
     actorId: options.actorId,
     navigationSessionId: options.navigationSessionId,
+    expectedSessionStartedAt: options.expectedSessionStartedAt,
     subgroupId: options.subgroupId,
   });
   if (options.flushImmediately !== false) void outbox.flush().catch(() => undefined);

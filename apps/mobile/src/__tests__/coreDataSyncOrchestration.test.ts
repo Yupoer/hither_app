@@ -1,3 +1,5 @@
+import { operationWirePayload } from '../state/itineraryRollback';
+import { retainVisibleGroupSeed } from '../state/visibleGroupSeed';
 /**
  * Production coreDataSync orchestration coverage.
  *
@@ -238,35 +240,17 @@ afterEach(async () => {
 });
 
 describe('coreDataSync production orchestration', () => {
-  it('hydrates a missing snapshot through the recovery boundary and fails closed', async () => {
-    const recoveredState = makeState('cold-group', []);
-    mockGetGroupRecoverySnapshot.mockResolvedValue({
-      state: recoveredState,
-      entityVersions: {
-        'active_gathering:cold-group': 4,
-        'itinerary:cold-group': 9,
-      },
-    });
-
+  it('seeds a cold snapshot from this actor visible state without waiting for remote recovery', async () => {
+    const release = retainVisibleGroupSeed('actor-a', makeState('cold-group', []));
     const recovered = await ensureCoreSnapshot('cold-group');
-    expect(recovered).toMatchObject({
-      groupId: 'cold-group',
-      entityVersion: 4,
-      itineraryVersion: 9,
-      activeGathering: { entityVersion: 4 },
-    });
+    expect(recovered).toMatchObject({ groupId: 'cold-group', ownerActorId: 'actor-a', source: 'local_cache' });
     await expect(ensureCoreSnapshot('cold-group')).resolves.toBe(recovered);
-    expect(mockGetGroupRecoverySnapshot).toHaveBeenCalledTimes(1);
-
-    mockGetGroupRecoverySnapshot.mockRejectedValueOnce(new Error('recovery failed'));
-    await expect(ensureCoreSnapshot('missing-group')).rejects.toThrow('recovery failed');
-    await expect(enqueueDestinationAdd({
-      groupId: 'missing-group',
-      title: 'No local snapshot',
-      latitude: 25,
-      longitude: 121,
-      actorId: 'actor-a',
-    })).rejects.toMatchObject({ code: 'core_snapshot_missing' });
+    expect(mockGetGroupRecoverySnapshot).not.toHaveBeenCalled();
+    release();
+    await expect(ensureCoreSnapshot('missing-group')).rejects.toMatchObject({ code: 'core_snapshot_missing' });
+    const foreignRelease = retainVisibleGroupSeed('actor-b', makeState('foreign-group', []));
+    await expect(ensureCoreSnapshot('foreign-group')).rejects.toMatchObject({ code: 'core_snapshot_missing' });
+    foreignRelease();
   });
 
   it('exposes the shared memory-backed store/outbox and hydrates independent versions', async () => {
@@ -379,13 +363,13 @@ describe('coreDataSync production orchestration', () => {
       destinationId: 'd1',
       patch: { day: null, title: 'Edited stop' },
     });
-    expect(meet.payload).toEqual({
+    expect(operationWirePayload(meet.payload)).toEqual({
       destinationId: added.destinationId,
       subgroupId: 'subgroup-1',
       meetAt: '2026-09-19T12:30:00.000Z',
       meetRedMinutes: 15,
     });
-    expect(completed.payload).toEqual({
+    expect(operationWirePayload(completed.payload)).toEqual({
       destinationId: added.destinationId,
       sessionId: 'session-1',
       subgroupId: 'subgroup-1',
@@ -578,7 +562,7 @@ describe('coreDataSync production orchestration', () => {
       meetRedMinutes: null,
       actorId: 'actor-a',
     });
-    expect(operation.payload).toEqual({
+    expect(operationWirePayload(operation.payload)).toEqual({
       destinationId: 'd1',
       subgroupId: null,
       meetAt: null,

@@ -833,7 +833,9 @@ export function createCoreDataStore(
           // Read through the transaction executor. Opening the database again
           // here can contend with the exclusive SQLite transaction, and the
           // snapshot must be the same snapshot that this write replaces.
-          const existing = await database.readSnapshotInTransaction(exec, state.group.id);
+          const stored = await database.readSnapshotInTransaction(exec, state.group.id);
+          const actor = actorGuard ? await actorGuard() : snapshotActorGuard ? await snapshotActorGuard() : undefined;
+          const existing = stored?.ownerActorId && actor !== undefined && stored.ownerActorId !== actor ? null : stored;
           const nextVersion =
             options.entityVersion
             ?? existing?.entityVersion
@@ -852,6 +854,7 @@ export function createCoreDataStore(
             source: 'remote',
           });
 
+          if (actor) snapshot.ownerActorId = actor;
           if (
             pendingGathering
             && existing
@@ -907,10 +910,13 @@ export function createCoreDataStore(
     async getActiveGathering(groupId: string): Promise<ActiveGatheringState | null> {
       return runSerial(async () => {
         await initialize();
-        const direct = await database.getActiveGathering(groupId);
-        if (direct) return direct;
         const snap = await database.getSnapshot(groupId);
-        return snap?.activeGathering ?? null;
+        if (snap?.ownerActorId) {
+          const actor = actorGuard ? await actorGuard() : snapshotActorGuard ? await snapshotActorGuard() : undefined;
+          if (actor !== undefined && actor !== snap.ownerActorId) return null;
+        }
+        const direct = await database.getActiveGathering(groupId);
+        return direct ?? snap?.activeGathering ?? null;
       });
     },
 

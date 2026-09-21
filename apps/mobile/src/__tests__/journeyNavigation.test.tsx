@@ -1,6 +1,27 @@
 jest.mock('../api/supabase', () => ({ supabase: {} }));
+jest.mock('@react-native-async-storage/async-storage', () => ({
+  __esModule: true,
+  default: {
+    getItem: jest.fn(async () => null),
+    setItem: jest.fn(async () => undefined),
+    removeItem: jest.fn(async () => undefined),
+    multiGet: jest.fn(async () => []),
+  },
+}));
 jest.mock('../utils/activityLog', () => ({ logEvent: jest.fn() }));
 jest.mock('../native/externalNavigation', () => ({ presentExternalMapsChooser: jest.fn() }));
+jest.mock('../state/endedNavigationSessions', () => {
+  const actual = jest.requireActual('../state/endedNavigationSessions') as typeof import('../state/endedNavigationSessions');
+  return {
+    ...actual,
+    readEndedNavigationSessions: jest.fn(),
+    rememberEndedNavigationSession: jest.fn().mockResolvedValue(undefined),
+  };
+});
+jest.mock('../state/appNotice', () => ({
+  showAppNotice: jest.fn(),
+  showOperationFailure: jest.fn(),
+}));
 import React from 'react';
 import { deleteDestination, reorderDestinations } from '../api/client';
 import {
@@ -10,6 +31,10 @@ import {
   enqueueLeaderGatheringSwitch,
   flushCoreOperationOutbox,
 } from '../state/coreDataSync';
+import {
+  legacyNavigationSessionKey,
+  readEndedNavigationSessions,
+} from '../state/endedNavigationSessions';
 import { useJourneyNavigation } from '../screens/MapScreen/hooks/useJourneyNavigation';
 import type { Destination, GroupState } from '../types';
 import type { ActiveGatheringState } from '../types/coreData';
@@ -37,6 +62,7 @@ jest.mock('../api/client', () => ({
 }));
 
 jest.mock('../state/coreDataSync', () => ({
+  getCoreOperationOutbox: () => ({ getOperation: jest.fn(async () => null) }),
   abortLeaderGatheringStart: jest.fn().mockResolvedValue(undefined),
   enqueueLeaderGatheringStart: jest.fn(),
   enqueueLeaderGatheringSwitch: jest.fn(),
@@ -90,11 +116,9 @@ describe('useJourneyNavigation', () => {
     jest.mocked(enqueueLeaderGatheringEnd).mockReset();
     jest.mocked(abortLeaderGatheringStart).mockReset();
     jest.mocked(flushCoreOperationOutbox).mockReset();
-    jest.mocked(enqueueLeaderGatheringStart).mockResolvedValue({
-      local: optimisticGathering,
-      base: baseGathering,
-      operationId: 'op-start-1',
-    });
+    jest.mocked(enqueueLeaderGatheringStart).mockImplementation(async (_group, options) => ({
+      local: optimisticGathering, base: baseGathering, operationId: options?.operationId ?? 'op-start-1',
+    }));
     jest.mocked(enqueueLeaderGatheringSwitch).mockResolvedValue({
       local: optimisticGathering,
       base: baseGathering,
@@ -105,6 +129,7 @@ describe('useJourneyNavigation', () => {
     });
     jest.mocked(abortLeaderGatheringStart).mockResolvedValue(undefined);
     jest.mocked(flushCoreOperationOutbox).mockResolvedValue(undefined as never);
+    jest.mocked(readEndedNavigationSessions).mockResolvedValue(new Set());
   });
 
   it('member joins shared flock nav without tapping 路徑 when session is active', () => {
@@ -225,7 +250,8 @@ describe('useJourneyNavigation', () => {
     expect(navigation?.journeyStatus).toBe('going');
     expect(navigation?.navTarget?.id).toBe(destination.id);
     expect(navigation?.journeyActive).toBe(true);
-    expect(startSession).toHaveBeenCalledWith(destination.id, 'request-1');
+    expect(startSession).not.toHaveBeenCalled();
+    expect(enqueueLeaderGatheringStart).toHaveBeenCalledWith('group-1', expect.objectContaining({ operationId: 'request-1', activeDestinationId: destination.id }));
   });
 
   it('switches an active point without ending or completing the old point', async () => {
@@ -270,11 +296,11 @@ describe('useJourneyNavigation', () => {
       'group-1',
       expect.objectContaining({ activeDestinationId: later.id, flushImmediately: false }),
     );
-    expect(startSession).toHaveBeenCalledWith(later.id, 'request-switch', true);
+    expect(startSession).not.toHaveBeenCalled();
     expect(enqueueLeaderGatheringStart).not.toHaveBeenCalled();
   });
 
-  it('promotes the later stop then starts the session in that order', async () => {
+  it('queues the selected later stop and shows it without waiting for remote reorder', async () => {
     const later = { ...destination, id: 'destination-2', order: 1 };
     const startSession = jest.fn().mockResolvedValue({
       id: 'session-2',
@@ -306,19 +332,15 @@ describe('useJourneyNavigation', () => {
     act(() => { create(React.createElement(Harness)); });
     await act(async () => { await navigation?.startNavigation(later, 1); });
 
-    expect(reorderForNavigation).toHaveBeenCalledWith([
-      { id: 'destination-2', position: 0, day: 1 },
-      { id: 'destination-1', position: 1, day: 1 },
-    ]);
-    expect(reorderForNavigation.mock.invocationCallOrder[0]).toBeLessThan(
-      startSession.mock.invocationCallOrder[0],
-    );
-    // The reordered list has not arrived yet; selection waits for that snapshot.
-    expect(setSelectedIndex).not.toHaveBeenCalled();
-    expect(startSession).toHaveBeenCalledWith(later.id, 'request-2');
+    expect(reorderForNavigation).not.toHaveBeenCalled();
+    expect(startSession).not.toHaveBeenCalled();
+    expect(enqueueLeaderGatheringStart).toHaveBeenCalledWith('group-1',
+      expect.objectContaining({ activeDestinationId: later.id, operationId: 'request-2' }));
+    expect(setSelectedIndex).toHaveBeenCalledWith(1);
+    expect(navigation?.navTarget?.id).toBe(later.id);
   });
 
-  it('skips startSession when reorderForNavigation returns false', async () => {
+  it('does not let the obsolete remote reorder gate block a durable local Start', async () => {
     const later = { ...destination, id: 'destination-2', order: 1 };
     const startSession = jest.fn().mockResolvedValue({
       id: 'session-2',
@@ -349,7 +371,8 @@ describe('useJourneyNavigation', () => {
     act(() => { create(React.createElement(Harness)); });
     await act(async () => { await navigation?.startNavigation(later, 1); });
 
-    expect(reorderForNavigation).toHaveBeenCalled();
+    expect(reorderForNavigation).not.toHaveBeenCalled();
+    expect(enqueueLeaderGatheringStart).toHaveBeenCalledWith('group-1', expect.objectContaining({ activeDestinationId: later.id }));
     expect(startSession).not.toHaveBeenCalled();
     expect(navigation?.pendingLeaderTargetId).toBeNull();
   });
@@ -608,13 +631,13 @@ describe('useJourneyNavigation', () => {
       'group-1',
       expect.objectContaining({ groupState: goingState }),
     );
-    expect(cancelSession).toHaveBeenCalled();
-    expect(onOperatorPauseConfirm).toHaveBeenCalledWith(destination, 'pause:session-1:2');
+    expect(cancelSession).not.toHaveBeenCalled();
+    expect(onOperatorPauseConfirm).toHaveBeenCalledWith(destination, expect.stringMatching(/^pause:group-1:/));
     expect(navigation?.journeyStatus).toBe('paused');
     expect(navigation?.navTarget).toBeUndefined();
   });
 
-  it('keeps gathering outbox pending without flush when startSession is offline', async () => {
+  it('shows durable local navigation and attempts the outbox even when legacy startSession is offline', async () => {
     const startSession = jest
       .fn()
       .mockRejectedValue(new Error('TypeError: Network request failed'));
@@ -655,9 +678,9 @@ describe('useJourneyNavigation', () => {
         flushImmediately: false,
       }),
     );
-    expect(startSession).toHaveBeenCalledWith(destination.id, 'request-offline-1');
-    // Critical: do not submit start_gathering before navigation_sessions exists.
-    expect(flushCoreOperationOutbox).not.toHaveBeenCalled();
+    expect(startSession).not.toHaveBeenCalled();
+    // The durable RPC owns session creation and retry; local UI never awaits it.
+    expect(flushCoreOperationOutbox).toHaveBeenCalled();
     expect(abortLeaderGatheringStart).not.toHaveBeenCalled();
     expect(onOptimisticGathering).toHaveBeenCalledWith(optimisticGathering);
     // Optimistic target stays for reconnect; outbox remains pending.
@@ -687,6 +710,107 @@ describe('useJourneyNavigation', () => {
     await act(async () => { tree.update(React.createElement(Harness, { session })); });
     expect(onOperatorStartConfirm).toHaveBeenCalledTimes(1);
     expect(onOperatorStartConfirm).toHaveBeenCalledWith(destination, 'start:group-1:retry-request');
+  });
+
+  it('keeps an ended legacy session hidden when the server session id arrives later', async () => {
+    const startedAt = '2026-09-22T18:00:00.123456+08:00';
+    const serverStartedAt = '2026-09-22T10:00:00.123Z';
+    const goingState = {
+      ...pausedState,
+      group: {
+        ...pausedState.group,
+        journeyStatus: 'going',
+        activeDestinationId: destination.id,
+        journeyStartedAt: startedAt,
+      },
+    } as GroupState;
+    const activeSession = {
+      id: 'server-session-after-load',
+      status: 'active',
+      destinationId: destination.id,
+      startedAt: serverStartedAt,
+      destination: {
+        name: destination.title,
+        coordinates: destination.coordinates,
+        arrivalRadiusMeters: 50,
+      },
+    } as NavigationSession;
+    jest.mocked(readEndedNavigationSessions).mockResolvedValue(
+      new Set([legacyNavigationSessionKey(startedAt, destination.id)]),
+    );
+    let navigation: ReturnType<typeof useJourneyNavigation> | undefined;
+    function Harness({ session }: { session?: NavigationSession }) {
+      navigation = useJourneyNavigation({
+        state: goingState,
+        actorId: 'actor-a',
+        groupId: 'group-1',
+        isLeader: true,
+        destinations: [destination],
+        selectedDestination: destination,
+        fromCoords: undefined,
+        refresh: jest.fn(),
+        t: key => key,
+        mapRef: { current: null },
+        carouselRef: { current: null },
+        setSelectedIndex: jest.fn(),
+        navigationSession: session,
+      });
+      return null;
+    }
+
+    let tree: { update: (nextElement: React.ReactElement) => void };
+    await act(async () => {
+      tree = create(React.createElement(Harness, { session: undefined }));
+    });
+    await act(async () => {
+      tree.update(React.createElement(Harness, { session: activeSession }));
+    });
+
+    expect(navigation?.navTarget).toBeUndefined();
+    expect(navigation?.sharedTargetId).toBeNull();
+    expect(navigation?.navigationStoppedLocally).toBe(true);
+  });
+
+  it('fails closed when ended-session persistence cannot be read', async () => {
+    jest.mocked(readEndedNavigationSessions).mockRejectedValue(new Error('storage unavailable'));
+    const activeSession = {
+      id: 'active-session',
+      status: 'active',
+      destinationId: destination.id,
+      startedAt: '2026-09-22T10:00:00.000Z',
+      destination: {
+        name: destination.title,
+        coordinates: destination.coordinates,
+        arrivalRadiusMeters: 50,
+      },
+    } as NavigationSession;
+    let navigation: ReturnType<typeof useJourneyNavigation> | undefined;
+    function Harness() {
+      navigation = useJourneyNavigation({
+        state: pausedState,
+        actorId: 'actor-a',
+        groupId: 'group-1',
+        isLeader: true,
+        destinations: [destination],
+        selectedDestination: destination,
+        fromCoords: undefined,
+        refresh: jest.fn(),
+        t: key => key,
+        mapRef: { current: null },
+        carouselRef: { current: null },
+        setSelectedIndex: jest.fn(),
+        navigationSession: activeSession,
+      });
+      return null;
+    }
+
+    await act(async () => {
+      create(React.createElement(Harness));
+    });
+
+    expect(navigation?.navTarget).toBeUndefined();
+    expect(navigation?.sharedTargetId).toBeNull();
+    expect(navigation?.navigationStoppedLocally).toBe(true);
   });
 
 });

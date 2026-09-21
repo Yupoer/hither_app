@@ -119,7 +119,7 @@ describe('OTA-04 active gathering semantics (OTA-01)', () => {
 
   it('rejects invalid transitions', () => {
     const base = deriveActiveGatheringFromGroupState(makeState(), 0);
-    expect(() => endGathering(base, 1)).toThrow(/invalid_transition/);
+    expect(endGathering(base, 1).journeyPhase).toBe('staying');
     const started = startGathering(base, 1);
     expect(() => startGathering(started, 2)).toThrow(/invalid_transition/);
   });
