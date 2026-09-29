@@ -91,6 +91,41 @@ describe('useGroupState recovery snapshot race', () => {
     jest.useRealTimers();
   });
 
+  it('keeps the live roster on a failed read and repairs missed events on the next 30-second poll', async () => {
+    const first = state('live');
+    mockRecovery.mockResolvedValue(snapshot(first, '2026-09-29T00:00:01Z'));
+    let api!: ReturnType<typeof useGroupState>;
+    function Harness() { api = useGroupState('group-1'); return null; }
+    let root!: { unmount: () => void };
+    await act(async () => { root = create(React.createElement(Harness)); });
+    expect(api.state?.group.name).toBe('live');
+    expect(Date.now() + api.serverTimeOffsetMs).toBe(Date.parse('2026-09-29T00:00:01Z'));
+    mockReadSnapshot.mockResolvedValue({ state: state('stale cache') });
+    mockRecovery.mockRejectedValueOnce(new Error('fetch failed'));
+    await act(async () => { expect(await api.refresh()).toBe(false); });
+    expect(api.error).toBe('fetch failed');
+    expect(api.dataSource).toBe('local_cache');
+    expect(api.state?.group.name).toBe('live');
+    mockRecovery.mockResolvedValue(snapshot(state('repaired'), '2026-09-29T00:00:02Z'));
+    await act(async () => { jest.advanceTimersByTime(30_000); });
+    expect(api.state?.group.name).toBe('repaired');
+    await act(async () => root.unmount());
+  });
+
+  it('releases a hung request after its deadline so the next read can recover', async () => {
+    mockRecovery.mockImplementationOnce(() => new Promise(() => {}));
+    let api!: ReturnType<typeof useGroupState>;
+    function Harness() { api = useGroupState('group-1'); return null; }
+    let root!: { unmount: () => void };
+    await act(async () => { root = create(React.createElement(Harness)); });
+    await act(async () => { jest.advanceTimersByTime(10_001); });
+    expect(api.loading).toBe(false);
+    mockRecovery.mockResolvedValue(snapshot(state('after timeout'), '2026-09-29T00:00:02Z'));
+    await act(async () => { expect(await api.refresh()).toBe(true); });
+    expect(api.state?.group.name).toBe('after timeout');
+    await act(async () => root.unmount());
+  });
+
   it('starts one immediate follow-up after a newer Realtime revision', async () => {
     const pending: Array<(value: ReturnType<typeof snapshot>) => void> = [];
     mockRecovery.mockImplementation(() => new Promise((resolve) => pending.push(resolve)));

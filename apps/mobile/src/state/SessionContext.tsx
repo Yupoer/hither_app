@@ -1,3 +1,4 @@
+import { purgeLocationOutbox } from './locationOutbox';
 import { setLocationAccessContext } from './locationPrivacy';
 import React, {
   createContext,
@@ -310,9 +311,14 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         setPasswordRecoverySuccess(false);
       }
       if (session && (event === 'SIGNED_IN' || event === 'PASSWORD_RECOVERY')) {
-        void hydrate(session.user);
+        if (premiumUserIdRef.current && premiumUserIdRef.current !== session.user.id) {
+          setLocationAccessContext(null, false);
+          void purgeLocationOutbox().then(() => hydrate(session.user)).catch(() => undefined);
+        } else void hydrate(session.user);
       }
       if (!session) {
+        setLocationAccessContext(null, false);
+        void purgeLocationOutbox().catch(() => undefined);
         const previousId = premiumUserIdRef.current;
         premiumUserIdRef.current = null;
         if (previousId) void clearPremiumProjectionCache(previousId);
@@ -459,6 +465,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     const previousId = premiumUserIdRef.current ?? user?.id ?? null;
     await stopBackgroundJourney().catch(() => undefined);
     await clearLiveActivities();
+    await purgeLocationOutbox();
     await signOut();
     if (previousId) await clearPremiumProjectionCache(previousId);
     premiumUserIdRef.current = null;
@@ -470,8 +477,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   const deleteAccountWithJourneyCleanup = useCallback(async () => {
     const previousId = premiumUserIdRef.current ?? user?.id ?? null;
-    await deleteAccount();
     setLocationAccessContext(null, false);
+    await purgeLocationOutbox();
+    await deleteAccount();
     await stopBackgroundJourney().catch(() => undefined);
     await clearLiveActivities();
     if (previousId) await clearPremiumProjectionCache(previousId);
@@ -485,6 +493,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const leaveGroupWithJourneyCleanup = useCallback(() => {
     setLocationAccessContext(null, false);
     void stopBackgroundJourney();
+    void purgeLocationOutbox().catch(() => undefined);
     void clearLiveActivities();
     setMembershipState(null);
     setTripEntitlement(null);

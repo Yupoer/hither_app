@@ -49,7 +49,7 @@ describe('durable location refresh contract (#191)', () => {
     expect(migration).toContain("'recipient_ids', to_jsonb(v_recipient_ids)");
     expect(pushIndex).toContain('locationRefreshRecipientIds(payload)');
     expect(pushRecipients).toContain('payload.recipient_ids');
-    expect(mapScreen).toContain('const expectedUserIds = result.recipientIds');
+    expect(readFileSync(join(__dirname, '../utils/refreshTeamLocations.ts'), 'utf8')).toContain('result.recipientIds');
     expect(mapScreen).not.toContain('expectedLocationRefreshRecipientIds');
   });
 
@@ -58,7 +58,7 @@ describe('durable location refresh contract (#191)', () => {
     expect(service).toContain("rpc('ack_my_location_refresh'");
     expect(refresh).toContain('const events = pending.map');
     expect(refresh).toContain('const accepted = new Set(result.acceptedIds)');
-    expect(refresh).toContain('if (!accepted.has(events[index].id)) continue');
+    expect(refresh).toContain("if (!accepted.has(events[index].id)) throw new Error('refresh_upload_not_accepted')");
     expect(refresh).toContain('ackMyLocationRefresh(row.groupId, row.requestedAt)');
     expect(refresh).toContain('getCurrentLocation(false)');
     expect(refresh).toContain('foreground_upload_failed');

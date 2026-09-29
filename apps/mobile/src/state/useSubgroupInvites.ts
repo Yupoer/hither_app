@@ -1,3 +1,4 @@
+import { useForegroundReconcile } from './useForegroundReconcile';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../api/supabase';
 import { acceptSubgroupInvite, declineSubgroupInvite, fetchMyInvites } from '../api/client';
@@ -65,6 +66,7 @@ export function useSubgroupInvites(): UseSubgroupInvitesResult {
       const next = isDemoGroup(groupId)
         ? demoFetchMyInvites(myUserId)
         : await fetchMyInvites(myUserId);
+      if (identityRef.current.groupId !== groupId || identityRef.current.myUserId !== myUserId) return;
       if (initializedRef.current) {
         const newOnes = next.filter(
           (i) => !seenIdsRef.current.has(i.id) && !notifiedIds.has(i.id),
@@ -93,10 +95,15 @@ export function useSubgroupInvites(): UseSubgroupInvitesResult {
     }
   }, [groupId, myUserId]);
 
+  useForegroundReconcile(Boolean(myUserId), load);
+  const identityRef = useRef({ groupId, myUserId });
+  identityRef.current = { groupId, myUserId };
+
   const loadRef = useRef(load);
   loadRef.current = load;
 
   useEffect(() => {
+    setInvites([]);
     if (!myUserId) return;
     initializedRef.current = false;
     seenIdsRef.current = new Set();
@@ -122,13 +129,13 @@ export function useSubgroupInvites(): UseSubgroupInvitesResult {
         },
         scheduleReload,
       )
-      .subscribe();
+      .subscribe(status => { if (status === 'SUBSCRIBED') scheduleReload(); });
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       supabase.removeChannel(channel);
     };
-  }, [myUserId]);
+  }, [myUserId, groupId]);
 
   const accept = useCallback(
     async (inviteId: string) => {

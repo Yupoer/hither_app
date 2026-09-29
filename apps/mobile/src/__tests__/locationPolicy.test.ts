@@ -37,15 +37,15 @@ describe('locationPolicy', () => {
   it('defaults to the motion-aware foreground balanced profile', () => {
     const p = locationPolicy(false);
     expect(p.accuracy).toBe('balanced');
-    expect(p.distanceInterval).toBe(50);
-    expect(p.timeInterval).toBe(30_000);
-    expect(p.uploadMinDistanceM).toBe(50);
-    expect(p.uploadHeartbeatMs).toBe(90_000);
-    expect(p.uploadHeartbeatStationaryMs).toBe(120_000);
+    expect(p.distanceInterval).toBe(10);
+    expect(p.timeInterval).toBe(5_000);
+    expect(p.uploadMinDistanceM).toBe(8);
+    expect(p.uploadHeartbeatMs).toBe(10_000);
+    expect(p.uploadHeartbeatStationaryMs).toBe(60_000);
     expect(p.stationaryAfterMs).toBe(45_000);
     expect(p.uploadHeartbeatStationaryMs).toBeGreaterThan(p.uploadHeartbeatMs);
     expect(p.routeCoordDecimals).toBe(4);
-    expect(p.realtimeLocationDebounceMs).toBe(4_000);
+    expect(p.realtimeLocationDebounceMs).toBe(250);
     expect(p.routeMinDistanceM).toBe(18);
     expect(p.routeMinIntervalMs).toBe(3_000);
   });
@@ -53,14 +53,14 @@ describe('locationPolicy', () => {
   it('uses the faster high-accuracy profile only when enabled in foreground', () => {
     const p = locationPolicy(true);
     expect(p.accuracy).toBe('high');
-    expect(p.distanceInterval).toBe(8);
+    expect(p.distanceInterval).toBe(5);
     expect(p.timeInterval).toBe(5_000);
-    expect(p.uploadMinDistanceM).toBe(12);
-    expect(p.uploadMinIntervalMs).toBe(30_000);
-    expect(p.uploadHeartbeatMs).toBe(30_000);
+    expect(p.uploadMinDistanceM).toBe(8);
+    expect(p.uploadMinIntervalMs).toBe(5_000);
+    expect(p.uploadHeartbeatMs).toBe(10_000);
     expect(p.uploadHeartbeatStationaryMs).toBe(60_000);
     expect(p.routeCoordDecimals).toBe(5);
-    expect(p.realtimeLocationDebounceMs).toBe(1_500);
+    expect(p.realtimeLocationDebounceMs).toBe(250);
     expect(p.routeMinDistanceM).toBe(15);
     expect(p.routeMinIntervalMs).toBe(3_000);
   });
@@ -300,7 +300,7 @@ describe('shouldUploadSample', () => {
 
   it('does not upload tiny moves before heartbeat', () => {
     expect(
-      shouldUploadSample(moved(5), 1_000 + 10_000, atOrigin(1_000), policy),
+      shouldUploadSample(moved(5), 1_000 + 1_000, atOrigin(1_000), policy),
     ).toBe(false);
   });
 

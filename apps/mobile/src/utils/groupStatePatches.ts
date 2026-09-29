@@ -4,6 +4,7 @@ export interface MemberLocationPatch {
   userId: string;
   coordinates: Coordinates;
   updatedAt: string;
+  capturedAt?: string;
 }
 
 /**
@@ -32,12 +33,13 @@ export function locationPatchFromRealtimePayload(
     userId,
     coordinates: { latitude: lat, longitude: lon },
     updatedAt,
+    capturedAt: typeof row.captured_at === 'string' ? row.captured_at : updatedAt,
   };
 }
 
 /**
  * Apply one or more peer location patches without a network round-trip.
- * - Skips myUserId (local GPS already owns self).
+ * - Includes own server confirmation; device GPS remains separate.
  * - Returns null if any patch refers to an unknown member (caller full-reloads).
  * - Returns the same state reference if nothing changed.
  */
@@ -51,12 +53,16 @@ export function applyMemberLocationPatches(
   let members: MemberLocation[] | null = null;
 
   for (const patch of patches) {
-    if (myUserId && patch.userId === myUserId) continue;
+    if (!Number.isFinite(Date.parse(patch.updatedAt)) || !Number.isFinite(patch.coordinates.latitude)
+      || !Number.isFinite(patch.coordinates.longitude) || Math.abs(patch.coordinates.latitude) > 90
+      || Math.abs(patch.coordinates.longitude) > 180) continue;
+
     const list = members ?? state.members;
     const idx = list.findIndex((m) => m.userId === patch.userId);
     if (idx < 0) return null;
 
     const prev = list[idx];
+    if (prev.sharingEnabled === false || (!prev.coordinates && prev.locationObservedAt && Date.parse(prev.locationObservedAt) >= Date.parse(patch.updatedAt))) continue;
     if (prev.lastUpdated && Date.parse(patch.updatedAt) <= Date.parse(prev.lastUpdated)) continue;
     const same =
       prev.coordinates?.latitude === patch.coordinates.latitude &&
@@ -69,6 +75,7 @@ export function applyMemberLocationPatches(
       ...prev,
       coordinates: patch.coordinates,
       lastUpdated: patch.updatedAt,
+      capturedAt: patch.capturedAt ?? patch.updatedAt,
     };
   }
 

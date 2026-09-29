@@ -1,3 +1,5 @@
+jest.mock('../api/services/_helpers', () => ({ requireUserId: async () => 'user-1' }));
+jest.mock('react-native', () => ({ AppState: { currentState: 'active' } }));
 jest.mock('../api/services/LocationService', () => ({
   ingestLocationBatch: jest.fn(),
 }));

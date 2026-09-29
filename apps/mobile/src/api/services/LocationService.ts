@@ -12,9 +12,11 @@ export interface LocationRefreshResult {
   accepted: boolean;
   retryAfterSeconds: number;
   recipientIds: string[];
+  requestedAt?: string;
 }
 
 export interface LocationBatchEvent {
+  actorId?: string;
   id: string;
   groupId: string;
   navigationSessionId: string | null;
@@ -40,6 +42,7 @@ interface LocationRefreshRow {
   accepted?: boolean;
   retry_after_seconds?: number;
   recipient_ids?: unknown;
+  requested_at?: string;
 }
 
 export interface PendingLocationRefresh {
@@ -93,10 +96,13 @@ export async function ingestLocationBatch(
   }
   if (remoteEvents.length === 0) return { acceptedIds, rejected };
 
-  await requireUserId();
+  const uid = await requireUserId();
   if (!isLocationAccessCurrent(access)) return { acceptedIds: [], rejected: denied(events) };
+  const owned = remoteEvents.filter(event => !event.actorId || event.actorId === uid);
+  rejected.push(...remoteEvents.filter(event => event.actorId && event.actorId !== uid).map(event => ({ id: event.id, reason: 'actor_changed' })));
+  if (!owned.length) return { acceptedIds, rejected };
   const { data, error } = await supabase.rpc('ingest_location_batch', {
-    p_events: remoteEvents,
+    p_events: owned,
   }).abortSignal(access.signal);
   orThrow(error);
   const result = (data ?? {}) as Partial<LocationBatchResult>;
@@ -120,6 +126,7 @@ export async function requestGroupLocationRefresh(
     accepted: row.accepted === true,
     retryAfterSeconds: Math.max(0, Math.ceil(row.retry_after_seconds ?? 0)),
     recipientIds: normalizeLocationRefreshRecipientIds(row.recipient_ids),
+    requestedAt: row.requested_at,
   };
 }
 

@@ -295,11 +295,12 @@ export function handlePlatformizedUserLocationChange(
   const coordinate = event.nativeEvent.coordinate;
   if (!coordinate) return;
   const { latitude, longitude, accuracy, timestamp } = coordinate;
+  if (timestamp == null || !Number.isFinite(timestamp)) return;
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
   onUserLocationSample({
     coordinates: { latitude, longitude },
     accuracy: accuracy != null && Number.isFinite(accuracy) ? accuracy : null,
-    timestamp: timestamp != null && Number.isFinite(timestamp) ? timestamp : Date.now(),
+    timestamp: timestamp!,
   });
 }
 

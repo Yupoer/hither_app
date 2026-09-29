@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
+import { requestWithDeadline } from '../utils/requestDeadline';
 import { getGroupRecoverySnapshot } from '../api/client';
 import { energyObservability } from './energyObservability';
 import { syncLocationSharing } from './locationSharingSync';
-import { isNetworkRequestError } from '../api/services/_helpers';
 import { supabase } from '../api/supabase';
 import type { GroupState } from '../types';
 import type {
@@ -16,7 +16,6 @@ import {
   mergeLocationPatches,
   type MemberLocationPatch,
 } from '../utils/groupStatePatches';
-import { isOwnLocationChange } from '../utils/locationPolicy';
 import {
   describeRecoveryMerge,
   isLeaderGatheringOperation,
@@ -46,8 +45,8 @@ import type { ActiveGatheringState, CoreOperation } from '../types/coreData';
  * poll also repairs silent/missed events after a member joins or a stop is
  * added while the channel reports SUBSCRIBED.
  */
-// ponytail: 60s is the fallback ceiling; Realtime handles normal propagation.
-export const GROUP_POLL_INTERVAL_MS = 60_000;
+// ponytail: 30s is the fallback ceiling; Realtime handles normal propagation.
+export const GROUP_POLL_INTERVAL_MS = 30_000;
 
 /** Coalesce bursts of non-location realtime events into a single refetch. */
 const REALTIME_DEBOUNCE_MS = 300;
@@ -63,7 +62,7 @@ const REALTIME_DEBOUNCE_MS = 300;
 let channelSeq = 0;
 
 interface UseGroupStateOptions {
-  /** Current user id — own location pings are ignored to avoid full-state thrash. */
+  /** Current user id; shared positions always come from server confirmation. */
   myUserId?: string | null;
   /** Aligns location-event debounce with the accuracy profile. */
   highAccuracy?: boolean;
@@ -73,6 +72,7 @@ export type GroupStateDataSource = 'remote' | 'local_cache' | 'none';
 
 interface UseGroupStateResult {
   state: GroupState | null;
+  serverTimeOffsetMs: number;
   /** True only during the very first load (before any data arrives). */
   loading: boolean;
   error: string | null;
@@ -113,6 +113,7 @@ export function useGroupState(
   const [state, setState] = useState<GroupState | null>(null);
   /** Mirrors React state so recovery can merge + persist one authoritative snapshot. */
   const stateRef = useRef<GroupState | null>(null);
+  const [serverTimeOffsetMs, setServerTimeOffsetMs] = useState(0);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [dataSource, setDataSource] = useState<GroupStateDataSource>('none');
@@ -234,7 +235,7 @@ export function useGroupState(
       // Initial/group-foreground effects may call load twice for the same
       // revision. Only a revision that arrived after this request needs a
       // follow-up; Realtime callbacks explicitly mark their own events below.
-      if (latestRevisionRef.current !== inFlightRevisionRef.current) {
+      if (reason === 'poll_manual_refresh' || latestRevisionRef.current !== inFlightRevisionRef.current) {
         pendingReloadRef.current = true;
       }
       pendingReloadReasonRef.current = pickStrongerReloadReason(
@@ -252,7 +253,7 @@ export function useGroupState(
       try {
         energyObservability.increment('snapshot');
         energyObservability.event('snapshot');
-        const recovery = await getGroupRecoverySnapshot(groupId);
+        const recovery = await requestWithDeadline(() => getGroupRecoverySnapshot(groupId));
         const next = recovery.state;
         const staleResponse = isOlderRevision(recovery.revision, latestRevisionRef.current);
         const isCurrentGeneration =
@@ -262,6 +263,8 @@ export function useGroupState(
         let persistSnapshot: GroupState | null = null;
         if (isCurrentGeneration && !staleResponse) {
           latestRevisionRef.current = recovery.revision;
+          const serverTime = Date.parse(recovery.generatedAt ?? '');
+          if (Number.isFinite(serverTime)) setServerTimeOffsetMs(serverTime - Date.now());
           const preserveLocalGathering = openOperationsRef.current.some(
             (operation) => isLeaderGatheringOperation(operation),
           );
@@ -343,17 +346,12 @@ export function useGroupState(
           }
           return false;
         }
-        const restored = await applyLocalSnapshot(groupId, generation);
+        const restored = stateRef.current !== null || await applyLocalSnapshot(groupId, generation);
         if (activeRef.current && groupGenerationRef.current === generation) {
           if (restored) {
             // Offline / network failure with a prior snapshot: show cached data.
-            setError(
-              isNetworkRequestError(cause)
-                ? null
-                : cause instanceof Error
-                  ? cause.message
-                  : '無法取得群組狀態',
-            );
+            setDataSource('local_cache');
+            setError(cause instanceof Error ? cause.message : 'sync_failed');
           } else {
             setError(cause instanceof Error ? cause.message : '無法取得群組狀態');
           }
@@ -377,7 +375,7 @@ export function useGroupState(
         debounceRef.current = null;
       }
       // The old response is fully settled here. Start the newer request now,
-      // avoiding the 60-second poll ceiling and remaining observable under
+      // avoiding the 30-second poll ceiling and remaining observable under
       // Jest's fake timers as well as native runtimes.
       if (
         activeRef.current
@@ -535,7 +533,7 @@ export function useGroupState(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'member_locations', filter },
         (payload) => {
-          if (isOwnLocationChange(payload, myUserIdRef.current)) return;
+
 
           const parsed = locationPatchFromRealtimePayload({
             new: payload.new as Record<string, unknown> | null,
@@ -607,11 +605,17 @@ export function useGroupState(
     };
   }, [groupId, appState, isOlderRevision]);
 
+  const refresh = useCallback(async (reason: GroupReloadReason = 'poll_manual_refresh') => {
+    const ok = await load(reason);
+    return loadInFlightRef.current ?? ok;
+  }, [load]);
+
   return {
     state,
+    serverTimeOffsetMs,
     loading,
     error,
-    refresh: load,
+    refresh,
     dataSource,
     snapshotFreshness,
     emptyLocalSnapshot,

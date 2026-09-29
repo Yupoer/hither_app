@@ -601,7 +601,7 @@ describe('OTA-04 operation outbox (ticket 02)', () => {
     const result = await outbox.flush();
     expect(result.conflicts).toBe(1);
     const op = await outbox.getOperation('op-stale');
-    expect(op?.status).toBe('failed');
+    expect(op?.status).toBe('conflict');
     expect(op?.conflictResult?.code).toBe('stale_version');
     // Leader local state remains authoritative; remote stale state cannot
     // clobber the optimistic gathering or erase its point map.

@@ -678,9 +678,7 @@ export function createCoreDataStore(
 
           // Re-check pending inside the exclusive lane (issue #6 residual race).
           const pending =
-            (await hasPendingGatheringOp(state.group.id))
-            || existing?.source === 'local_optimistic'
-            || (await database.hasLocalOptimisticGathering?.(state.group.id));
+            await hasPendingGatheringOp(state.group.id);
 
           if (
             pending
@@ -693,8 +691,6 @@ export function createCoreDataStore(
             // switch/start/end is still waiting for acknowledgement.
             snapshot.group = existing.group;
             snapshot.destinations = existing.destinations;
-            snapshot.members = existing.members ?? snapshot.members;
-            snapshot.subgroups = existing.subgroups ?? snapshot.subgroups;
             snapshot.activeGathering = existing.activeGathering;
             snapshot.entityVersion = Math.max(
               snapshot.entityVersion,

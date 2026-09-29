@@ -4,6 +4,7 @@
  * No fixed read/write cadence; deadline settlement is server-owned.
  * Does not gate navigation start.
  */
+import { useForegroundReconcile } from '../../../state/useForegroundReconcile';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   cancelCoordinationRequest,
@@ -55,12 +56,7 @@ async function loadViews(groupId: string, userId: string | undefined): Promise<C
   const rows = await fetchCoordinationRequests(groupId);
   const withResponses = await Promise.all(
     rows.map(async (row) => {
-      let responses: CoordinationResponse[] = [];
-      try {
-        responses = await fetchCoordinationResponses(row.id);
-      } catch {
-        responses = [];
-      }
+      const responses: CoordinationResponse[] = await fetchCoordinationResponses(row.id);
       const myOptionId =
         userId != null
           ? (responses.find((r) => r.userId === userId)?.optionId ?? null)
@@ -135,16 +131,18 @@ export function useCoordinationRequests(
       await inFlightRef.current;
       // Subsequent loops after a concurrent request are silent reloads.
       mode = 'silent';
-    } while (pendingRef.current);
+    } while (pendingRef.current && groupIdRef.current === gid);
   }, [active]);
+
+  useForegroundReconcile(active, () => load('silent'));
 
   const scheduleReload = useCallback(() => {
     if (reloadTimerRef.current) return;
     reloadTimerRef.current = setTimeout(() => {
       reloadTimerRef.current = null;
-      if (Date.now() - lastLoadAtRef.current < RELOAD_MIN_INTERVAL_MS) return;
+
       void load('silent');
-    }, 300);
+    }, Math.max(300, RELOAD_MIN_INTERVAL_MS - (Date.now() - lastLoadAtRef.current)));
   }, [load]);
 
   const refresh = useCallback(async () => {
@@ -157,6 +155,7 @@ export function useCoordinationRequests(
   );
 
   useEffect(() => {
+    setRequests([]);
     if (!active || !groupId) {
       setRequests([]);
       setLoading(false);
@@ -187,7 +186,7 @@ export function useCoordinationRequests(
         },
         scheduleReload,
       )
-      .subscribe();
+      .subscribe(status => { if (status === 'SUBSCRIBED') scheduleReload(); });
 
     return () => {
       if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);

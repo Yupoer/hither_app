@@ -1,3 +1,4 @@
+import * as Crypto from 'expo-crypto';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 import { location } from '../../../native';
@@ -63,9 +64,7 @@ export function useDeviceLocation({
   const teamNavigationRef = useRef(teamNavigationActive);
   teamNavigationRef.current = teamNavigationActive;
   const highAccuracyRef = useRef(highAccuracy);
-  highAccuracyRef.current = highAccuracy && teamNavigationActive;
-  const deviceCoordsRef = useRef(deviceCoords);
-  deviceCoordsRef.current = deviceCoords;
+  highAccuracyRef.current = highAccuracy;
   const sharingEnabledRef = useRef(sharingEnabled);
   sharingEnabledRef.current = sharingEnabled;
   const hasMembershipResolved = hasMembership ?? Boolean(groupId);
@@ -84,7 +83,7 @@ export function useDeviceLocation({
   }, [groupId, hasMembershipResolved, sharingEnabled, appState]);
   useEffect(() => () => setLocationAccessContext(null, false), []);
 
-  const policyNow = () => locationPolicy(teamNavigationRef.current, teamNavigationRef.current ? 'journey' : 'foreground');
+  const policyNow = () => locationPolicy(highAccuracyRef.current, teamNavigationRef.current ? 'journey' : 'foreground');
 
   const scheduleOutboxFlush = useCallback(() => {
     if (outboxFlushTimerRef.current) return;
@@ -97,7 +96,7 @@ export function useDeviceLocation({
   const applySampleToUi = useCallback((sample: LocationSample, now: number) => {
     const coords = sample.coordinates;
     if (!groupIdRef.current || !sharingEnabledRef.current || !hasMembershipRef.current || AppState.currentState !== 'active'
-      || !Number.isFinite(sample.timestamp) || sample.timestamp <= lastSampleAtRef.current
+      || !Number.isFinite(sample.timestamp) || sample.timestamp <= lastSampleAtRef.current || sample.timestamp > now + 120_000
       || !Number.isFinite(coords.latitude) || !Number.isFinite(coords.longitude)
       || Math.abs(coords.latitude) > 90 || Math.abs(coords.longitude) > 180) return false;
     lastSampleAtRef.current = sample.timestamp;
@@ -117,10 +116,12 @@ export function useDeviceLocation({
       options: { immediate: boolean },
     ): Promise<void> => {
       const gid = groupIdRef.current;
-      if (!gid || !sharingEnabledRef.current || !hasMembershipRef.current) return;
+      if (!gid || !sharingEnabledRef.current || !hasMembershipRef.current) throw new Error('location_access_denied');
       const access = await captureLocationAccess(gid);
-      if (!access) return;
+      if (!access) throw new Error('location_access_denied');
+      const eventId = Crypto.randomUUID();
       await enqueueLocationOutbox({
+        id: eventId,
         groupId: gid,
         coordinates: {
           ...sample.coordinates,
@@ -130,7 +131,7 @@ export function useDeviceLocation({
         },
         capturedAt: sample.timestamp,
       });
-      if (!isLocationAccessCurrent(access)) return;
+      if (!isLocationAccessCurrent(access)) throw new Error('location_access_changed');
       uploadGateRef.current = {
         lastCoords: sample.coordinates,
         lastAtMs: now,
@@ -140,7 +141,8 @@ export function useDeviceLocation({
           clearTimeout(outboxFlushTimerRef.current);
           outboxFlushTimerRef.current = null;
         }
-        await flushLocationOutbox();
+        const result = await flushLocationOutbox();
+        if (!result.acceptedIds?.includes(eventId)) throw new Error('location_upload_not_confirmed');
       } else {
         scheduleOutboxFlush();
       }
@@ -176,7 +178,7 @@ export function useDeviceLocation({
           motionRef.current.cadence,
         )
       ) {
-        void enqueueUpload(sample, now, { immediate: teamNavigationRef.current }).catch(() => undefined);
+        void enqueueUpload(sample, now, { immediate: true }).catch(() => undefined);
       }
     },
     [applySampleToUi, enqueueUpload],
@@ -187,7 +189,7 @@ export function useDeviceLocation({
    * Bypasses distance/time gates — "force sync".
    *
    * @param options.requireUpload When true (Force Refresh), upload failures
-   *   propagate so callers can stop peer fan-out and show failure feedback.
+   *   propagate so callers can report upload failure independently of reads.
    *   Background/foreground auto paths keep soft-fail upload.
    */
   const refreshDeviceLocation = useCallback(async (options?: {
@@ -203,7 +205,10 @@ export function useDeviceLocation({
     energyObservability.increment('location_accepted');
     energyObservability.event('location_acquisition');
     const now = Date.now();
-    if (!applySampleToUi(fix, now)) return deviceCoordsRef.current;
+    if (!applySampleToUi(fix, now)) {
+      if (options?.requireUpload) throw new Error('no_new_location_sample');
+      return null;
+    }
     motionRef.current = reduceMotionState(
       motionRef.current,
       fix.coordinates,
@@ -251,7 +256,19 @@ export function useDeviceLocation({
     }
   }, [appState, groupId, sharingEnabled, hasMembershipResolved]);
 
-  // No GPS heartbeat: publish only timestamped sensor fixes, never retimestamp a cache.
+  // Recover a silent MapKit feed with one bounded fix, never retimestamp cached coordinates.
+  useEffect(() => {
+    if (!groupId || appState !== 'active' || !sharingEnabled || !hasMembershipResolved) return;
+    const timer = setInterval(() => {
+      void flushLocationOutbox().catch(() => undefined);
+      if (Date.now() - lastSampleAtRef.current < 60_000 || forceSyncInFlightRef.current) return;
+      forceSyncInFlightRef.current = true;
+      void refreshDeviceLocation().catch(() => null).finally(() => { forceSyncInFlightRef.current = false; });
+    }, 30_000);
+    return () => clearInterval(timer);
+  }, [groupId, appState, sharingEnabled, hasMembershipResolved, refreshDeviceLocation]);
+
+  // Publish only timestamped sensor fixes.
   useEffect(() => () => {
     if (outboxFlushTimerRef.current) clearTimeout(outboxFlushTimerRef.current);
     outboxFlushTimerRef.current = null;
@@ -284,7 +301,7 @@ export function useDeviceLocation({
     void location
       .watchLocation((sample: LocationSample) => {
         consumeForegroundSample(sample);
-      }, teamNavigationActive)
+      }, highAccuracy)
       .then((unsub: () => void) => {
         if (cancelled) unsub();
         else stop = unsub;

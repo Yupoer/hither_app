@@ -513,9 +513,8 @@ export function createCoreOperationOutbox(
     }
 
     const conflict = result.conflict;
-    // Conflicts are recoverable transport metadata, not a user-facing state.
-    // Keep the leader's optimistic entity intact; a later foreground flush or
-    // explicit rebase can retry the desired intent against the new version.
+    // Rebase one stale-version switch; expose remaining business conflicts so
+    // an impossible intent cannot hide the server gathering indefinitely.
     await outboxDb.update({
       ...operation,
       // A leader switch can safely rebase on the server version because its
@@ -525,7 +524,7 @@ export function createCoreOperationOutbox(
         && conflict.serverEntityVersion != null
           ? conflict.serverEntityVersion
           : operation.entityVersion,
-      status: operation.operationType === 'record_arrival' ? 'conflict' : 'failed',
+      status: operation.operationType === 'switch_gathering' && conflict.code === 'stale_version' && operation.attempts === 0 ? 'failed' : 'conflict',
       conflictResult: conflict,
       attempts: operation.attempts + 1,
       nextAttemptAt: current + backoffMs(operation.attempts + 1),

@@ -132,6 +132,17 @@ describe('durable location refresh recovery', () => {
     }));
   });
 
+  it('never emits completed for a rejected upload or an unconfirmed ACK', async () => {
+    mockListPending.mockResolvedValue([{ groupId: 'group-1', requestedBy: 'leader', requestedAt: '2026-08-13T00:00:00Z' }]);
+    mockIngest.mockResolvedValueOnce({ acceptedIds: [], rejected: [{ id: 'x', reason: 'stale_sample' }] });
+    await recoverPendingLocationRefreshes();
+    expect(mockAck).not.toHaveBeenCalled();
+    expect(mockDiagnostics.write).not.toHaveBeenCalledWith(expect.objectContaining({ event: 'refresh_request_completed' }));
+    mockAck.mockResolvedValueOnce(false);
+    await recoverPendingLocationRefreshes();
+    expect(mockDiagnostics.write).not.toHaveBeenCalledWith(expect.objectContaining({ event: 'refresh_request_completed' }));
+  });
+
   it('handles headless matching rows, compatibility pushes, and legacy markers', async () => {
     const handler = taskHandler();
     mockAppState.currentState = 'background';

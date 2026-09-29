@@ -1,11 +1,12 @@
 import React from 'react';
 import {act,create,type ReactTestRenderer} from 'react-test-renderer';
 import type {NavigationSession} from '../types/navigation';
-let mockChange!:(state:string)=>void;
+const mockChanges = new Set<(state:string)=>void>();
+const mockChange = (state:string) => { for (const fn of mockChanges) fn(state); };
 let mockEvent!:(session:NavigationSession)=>void;
 const mockRead=jest.fn(async ():Promise<NavigationSession|null>=>null);
 const mockUnsubscribe=jest.fn();
-const mockApp={currentState:'active',addEventListener:(_event:string,fn:(state:string)=>void)=>{mockChange=fn;return {remove:jest.fn()};}};
+const mockApp={currentState:'active',addEventListener:(_event:string,fn:(state:string)=>void)=>{mockChanges.add(fn);return {remove:()=>mockChanges.delete(fn)};}};
 jest.mock('react-native',()=>({AppState:mockApp}));
 jest.mock('expo-constants',()=>({expoConfig:{}}));
 jest.mock('expo-updates',()=>({}));

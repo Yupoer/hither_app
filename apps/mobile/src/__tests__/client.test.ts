@@ -142,6 +142,7 @@ describe('pure mappers (snake_case row -> camelCase type)', () => {
       subgroupId: undefined,
       coordinates: { latitude: 25, longitude: 121 },
       lastUpdated: 't0',
+      capturedAt: 't0',
     });
   });
 

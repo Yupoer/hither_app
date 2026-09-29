@@ -56,7 +56,7 @@ describe('location refresh response classification', () => {
     expect(result).toMatchObject({ status: 'partial', respondedUserIds: ['a'] });
   });
 
-  it('waits at most eight seconds and reports no response', async () => {
+  it('waits at most twenty seconds and reports no response', async () => {
     let clock = 0;
     const result = await waitForLocationRefreshResponses({
       getMembers: () => [
@@ -71,7 +71,7 @@ describe('location refresh response classification', () => {
         clock += ms;
       },
     });
-    expect(clock).toBe(8_000);
+    expect(clock).toBe(20_000);
     expect(result).toMatchObject({ status: 'none', expectedUserIds: ['a'], respondedUserIds: [] });
   });
 });

@@ -82,14 +82,20 @@ async function uploadAndAckPendingRefreshes(
   const result = await ingestLocationBatch(events);
   const accepted = new Set(result.acceptedIds);
   for (const [index, row] of pending.entries()) {
-    if (!accepted.has(events[index].id)) continue;
+    if (!accepted.has(events[index].id)) throw new Error('refresh_upload_not_accepted');
     // Versioned ACK: a newer request_at wins and is intentionally not deleted.
-    await ackMyLocationRefresh(row.groupId, row.requestedAt).catch(() => undefined);
+    if (!await ackMyLocationRefresh(row.groupId, row.requestedAt)) throw new Error('refresh_ack_not_confirmed');
   }
 }
 
 /** Foreground/cold-start recovery: one GPS fix, one upload batch, per-group ACK. */
-export async function recoverPendingLocationRefreshes(): Promise<void> {
+let recoveryFlight: Promise<void> | null = null;
+export function recoverPendingLocationRefreshes(): Promise<void> {
+  if (recoveryFlight) return recoveryFlight;
+  recoveryFlight = recoverPendingRefreshes().finally(() => { recoveryFlight = null; });
+  return recoveryFlight;
+}
+async function recoverPendingRefreshes(): Promise<void> {
   if (AppState.currentState !== 'active') return;
   const access = await captureLocationAccess();
   if (!access) return;

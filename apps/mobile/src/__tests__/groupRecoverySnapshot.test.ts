@@ -35,6 +35,6 @@ describe('Ticket 2 single recovery snapshot contract', () => {
     expect(hook).toContain('latestRevisionRef');
     expect(hook).toContain('isOlderRevision');
     expect(hook).not.toContain('getGroupState(groupId)');
-    expect(hook).toContain('GROUP_POLL_INTERVAL_MS = 60_000');
+    expect(hook).toContain('GROUP_POLL_INTERVAL_MS = 30_000');
   });
 });

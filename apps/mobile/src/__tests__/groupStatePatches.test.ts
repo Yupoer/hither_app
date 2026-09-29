@@ -46,6 +46,7 @@ describe('locationPatchFromRealtimePayload', () => {
       userId: 'peer',
       coordinates: { latitude: 25.2, longitude: 121.2 },
       updatedAt: '2026-01-02T00:00:00.000Z',
+      capturedAt: '2026-01-02T00:00:00.000Z',
     });
   });
 
@@ -81,14 +82,14 @@ describe('applyMemberLocationPatches', () => {
     expect(next!.members[0]).toBe(baseState.members[0]);
   });
 
-  it('skips own user id', () => {
+  it('rejects invalid coordinates even for own user', () => {
     const next = applyMemberLocationPatches(
       baseState,
       [
         {
           userId: 'me',
           coordinates: { latitude: 99, longitude: 99 },
-          updatedAt: 'x',
+          updatedAt: '2026-01-02T00:00:00.000Z',
         },
       ],
       'me',
@@ -104,7 +105,7 @@ describe('applyMemberLocationPatches', () => {
           {
             userId: 'stranger',
             coordinates: { latitude: 1, longitude: 2 },
-            updatedAt: 'x',
+            updatedAt: '2026-01-02T00:00:00.000Z',
           },
         ],
         'me',

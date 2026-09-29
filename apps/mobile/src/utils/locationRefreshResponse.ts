@@ -58,7 +58,7 @@ export async function waitForLocationRefreshResponses({
   expectedUserIds,
   baselineLastUpdated,
   requestedAtMs,
-  timeoutMs = 8_000,
+  timeoutMs = 20_000,
   pollIntervalMs = 250,
   now = () => Date.now(),
   sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),

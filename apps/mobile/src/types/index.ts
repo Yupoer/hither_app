@@ -238,6 +238,11 @@ export interface MemberLocation {
   coordinates?: Coordinates;
   /** ISO-8601 timestamp of the last location update. */
   lastUpdated?: string;
+  /** Sensor sample time; lastUpdated is server receipt time. */
+  capturedAt?: string;
+  sharingEnabled?: boolean;
+  /** Snapshot observation time for an absent position; fences delayed events. */
+  locationObservedAt?: string;
 }
 
 /** Subgroup mode: led by a sub-leader, or leaderless collaboration. */

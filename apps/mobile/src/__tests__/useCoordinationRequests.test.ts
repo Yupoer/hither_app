@@ -2,6 +2,7 @@
  * Hook integration tests for OTA-09 MapScreen wiring of coordination requests.
  * Uses default jest (node + ts-jest) with react-test-renderer harness.
  */
+jest.mock('react-native', () => ({ AppState: { currentState: 'active', addEventListener: () => ({ remove() {} }) } }));
 import React from 'react';
 import type { CoordinationRequest, CoordinationResponse } from '../types';
 import { useCoordinationRequests } from '../screens/MapScreen/hooks/useCoordinationRequests';
@@ -274,6 +275,24 @@ describe('useCoordinationRequests', () => {
     });
 
     expect(overrideCoordinationRequest).toHaveBeenCalledWith('req-1', 'opt_a');
+  });
+
+  it('retains existing votes after a response read failure and does not lose a trailing event', async () => {
+    let api!: ReturnType<typeof useCoordinationRequests>;
+    function Harness() {
+      api = useCoordinationRequests({ groupId: 'group-1', userId: 'member-1', enabled: true });
+      return null;
+    }
+    mountHarness(() => React.createElement(Harness));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    const before = JSON.stringify(api.requests);
+    fetchCoordinationResponses.mockRejectedValueOnce(new Error('offline'));
+    await act(async () => { await api.refresh(); });
+    expect(JSON.stringify(api.requests)).toBe(before);
+    const count = fetchCoordinationRequests.mock.calls.length;
+    const callback = (channelOn.mock.calls as unknown as [string, unknown, () => void][])[0]![2];
+    await act(async () => { callback(); jest.advanceTimersByTime(10_000); });
+    expect(fetchCoordinationRequests.mock.calls.length).toBeGreaterThan(count);
   });
 
   it('does not load when disabled', async () => {

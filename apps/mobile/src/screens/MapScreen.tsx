@@ -1,3 +1,5 @@
+import { useForegroundReconcile } from '../state/useForegroundReconcile';
+import { refreshTeamLocations } from '../utils/refreshTeamLocations';
 import { captureLocationAccess } from '../state/locationPrivacy';
 import { hydrateLocationSharing, rememberLocationSharing, syncLocationSharing } from '../state/locationSharingSync';
 import React, {
@@ -69,10 +71,6 @@ import {
   cameraOnSearchPick,
 } from '../utils/mapCameraFlow';
 import { notifyJourneyOperator, notifyJourneyApproach } from '../state/journeyNotifications';
-import {
-  assessLocationRefreshResponses,
-  waitForLocationRefreshResponses,
-} from '../utils/locationRefreshResponse';
 import { keyboardAvoidBottomOffset } from '../utils/keyboardSurface';
 import {
   gatherRequestPageIndex,
@@ -260,7 +258,6 @@ import {
 } from '../utils/openReorderSlots';
 import {
   locationFreshness,
-  resolveSelfAwareLastUpdated,
 } from '../utils/locationFreshness';
 import {
   groupHistoryByDay,
@@ -595,11 +592,21 @@ export default function MapScreen({ route, navigation }: Props) {
     error: groupStateError,
     refresh,
     applyOptimisticGathering,
+    openOperations,
+    serverTimeOffsetMs,
     emptyLocalSnapshot,
   } = useGroupState(groupId, {
     myUserId: user?.id ?? null,
     highAccuracy,
   });
+  const displayedConflicts = useRef(new Set<string>());
+  useEffect(() => {
+    for (const op of openOperations) {
+      if (op.entityType !== 'active_gathering' || op.status !== 'conflict' || displayedConflicts.current.has(op.id)) continue;
+      displayedConflicts.current.add(op.id);
+      Alert.alert(t('map.setFailedTitle'), op.conflictResult?.message ?? t('map.setFailedMsg'));
+    }
+  }, [openOperations, t]);
   const navigationSessionState = useNavigationSession(groupId);
   const navigationSessionId = navigationSessionState.session?.id ?? null;
   const hasNavigationSession = navigationSessionId !== null;
@@ -989,6 +996,8 @@ export default function MapScreen({ route, navigation }: Props) {
   isScopeLeaderRef.current = canEditItinerary;
   const userIdRef = useRef(user?.id);
   userIdRef.current = user?.id;
+  const workflowGroupRef = useRef(groupId);
+  workflowGroupRef.current = groupId;
   const workflowInFlightRef = useRef<Promise<void> | null>(null);
   /** Set while a load is in flight so a concurrent request re-runs after. */
   const workflowPendingRef = useRef(false);
@@ -1014,6 +1023,7 @@ export default function MapScreen({ route, navigation }: Props) {
             ? fetchPendingGatherPointRequests(groupId)
             : Promise.resolve([]),
         ]);
+        if (workflowGroupRef.current !== groupId) return;
         setDestinationArrivals(arrivals);
         const scopedRequests = isSubgroupLeaderRef.current
           ? requests.filter((request) => request.subgroupId === myScopeIdRef.current)
@@ -1025,8 +1035,11 @@ export default function MapScreen({ route, navigation }: Props) {
         workflowInFlightRef.current = null;
       });
       await workflowInFlightRef.current;
-    } while (workflowPendingRef.current);
+    } while (workflowPendingRef.current && workflowGroupRef.current === groupId);
   }, [groupId]);
+
+  useForegroundReconcile(Boolean(groupId), loadGatheringWorkflow);
+  useForegroundReconcile(Boolean(groupId), recoverPendingLocationRefreshes);
 
   /** Optimistic arrival row so N/M progress updates before reload finishes. */
   const patchLocalArrival = useCallback((
@@ -1071,13 +1084,14 @@ export default function MapScreen({ route, navigation }: Props) {
     if (workflowReloadRef.current) return;
     workflowReloadRef.current = setTimeout(() => {
       workflowReloadRef.current = null;
-      // Realtime-driven only: skip if we just loaded (stops SELECT storms).
-      if (Date.now() - workflowLastLoadAtRef.current < WORKFLOW_MIN_INTERVAL_MS) return;
+      // Preserve the last event while coalescing bursts.
       void loadGatheringWorkflow().catch(() => undefined);
-    }, 300);
+    }, Math.max(300, WORKFLOW_MIN_INTERVAL_MS - (Date.now() - workflowLastLoadAtRef.current)));
   }, [loadGatheringWorkflow]);
 
   useEffect(() => {
+    setDestinationArrivals([]);
+    setGatherPointRequests([]);
     if (!groupId || isDemoGroup(groupId)) return;
     // Mount / group change only — not on every render or translator identity.
     workflowLastLoadAtRef.current = 0;
@@ -1107,7 +1121,7 @@ export default function MapScreen({ route, navigation }: Props) {
           );
         }
       })
-      .subscribe();
+      .subscribe(status => { if (status === 'SUBSCRIBED') scheduleWorkflowReload(); });
     return () => {
       if (workflowReloadRef.current) clearTimeout(workflowReloadRef.current);
       workflowReloadRef.current = null;
@@ -3154,112 +3168,27 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const refreshAllLocations = useCallback(async () => {
     if (!groupId || refreshingLocations) return;
-    // Client-side cooldown: do not re-hit fan-out while cooling.
-    const remainingMs = refreshCooldownUntil - Date.now();
-    if (remainingMs > 0) {
-      Alert.alert(
-        t('map.refreshLocationsCooldown', {
-          seconds: Math.max(1, Math.ceil(remainingMs / 1000)),
-        }),
-      );
-      return;
-    }
     setRefreshingLocations(true);
     try {
-      if (isDemoGroup(groupId)) {
-        // Demo: self one-shot only (no peer fan-out).
-        await refreshDeviceLocation();
-        return;
-      }
-
-      // 1) Self first: one-shot GPS + immediate upload + local marker/timestamp.
-      //    requireUpload: upload failure must stop fan-out and alert (spec 101–103).
-      const selfFix = await refreshDeviceLocation({ requireUpload: true });
-      if (!selfFix) {
-        // Permission / no-fix — surface actionable feedback; skip peer fan-out.
-        const permission = await location.getPermissionState().catch(() => null);
-        if (!permission || permission.foregroundStatus !== 'granted') {
-          showLocationPermissionAlert();
-        } else {
-          Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
-        }
-        return;
-      }
-
-      // 2) Then ask the server to fan out refresh requests to peers.
-      //    Realtime is the fast path; the bounded wait makes the result honest
-      //    before the final pull, without synthesizing peer timestamps.
-      const refreshStartedAtMs = Date.now();
-      const baselineLastUpdated = new Map(
-        membersRef.current.map((member) => [member.userId, member.lastUpdated]),
-      );
-      const result = await requestGroupLocationRefresh(groupId);
-      const retryAfter = Math.max(0, result.retryAfterSeconds);
-      setRefreshCooldownUntil(Date.now() + retryAfter * 1000);
-      if (result.accepted) {
-        const expectedUserIds = result.recipientIds;
-        const responseResult = await waitForLocationRefreshResponses({
-          getMembers: () => membersRef.current,
-          expectedUserIds,
-          baselineLastUpdated,
-          requestedAtMs: refreshStartedAtMs,
-        });
-        // The final pull reconciles missed Realtime events. useGroupState.refresh
-        // returns false on remote failure even if a local cache is still shown.
-        const pulled = await refresh();
-        if (!pulled) {
-          Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
-        } else {
-          const finalResponseResult = assessLocationRefreshResponses({
-            members: membersRef.current,
-            expectedUserIds,
-            baselineLastUpdated,
-            requestedAtMs: refreshStartedAtMs,
-          });
-          const visibleResult = finalResponseResult.respondedUserIds.length
-            >= responseResult.respondedUserIds.length
-            ? finalResponseResult
-            : responseResult;
-          if (visibleResult.status === 'all') {
-            Alert.alert(
-              t('map.refreshLocationsResultTitle'),
-              t('map.refreshLocationsResultAll'),
-            );
-          } else if (visibleResult.status === 'partial') {
-            Alert.alert(
-              t('map.refreshLocationsResultTitle'),
-              t('map.refreshLocationsResultPartial', {
-                responded: visibleResult.respondedUserIds.length,
-                expected: visibleResult.expectedUserIds.length,
-              }),
-            );
-          } else {
-            Alert.alert(
-              t('map.refreshLocationsResultTitle'),
-              t('map.refreshLocationsResultNone'),
-            );
-          }
-        }
-      } else {
-        Alert.alert(
-          t('map.refreshLocationsCooldown', { seconds: retryAfter }),
-        );
-      }
-    } catch {
-      Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
+      const result = await refreshTeamLocations({
+        pull: () => refresh('poll_manual_refresh'),
+        uploadSelf: () => refreshDeviceLocation({ requireUpload: true }),
+        requestPeers: () => requestGroupLocationRefresh(groupId),
+        getMembers: () => membersRef.current,
+        cooling: refreshCooldownUntil > Date.now() || isDemoGroup(groupId),
+      });
+      if (result.request) setRefreshCooldownUntil(Date.now() + result.request.retryAfterSeconds * 1000);
+      Alert.alert(t('map.refreshLocationsResultTitle'), [
+        t(result.pulled ? 'map.refreshReadSuccess' : 'map.refreshReadFailed'),
+        t(result.selfUploaded ? 'map.refreshSelfSuccess' : 'map.refreshSelfFailed'),
+        result.request?.accepted
+          ? t('map.refreshLocationsResultPartial', { responded: result.respondedUserIds.length, expected: result.expectedUserIds.length })
+          : t('map.refreshPeersCooling'),
+      ].join('\n'));
     } finally {
       setRefreshingLocations(false);
     }
-  }, [
-    groupId,
-    refresh,
-    refreshCooldownUntil,
-    refreshDeviceLocation,
-    refreshingLocations,
-    showLocationPermissionAlert,
-    t,
-    user?.id,
-  ]);
+  }, [groupId, refreshingLocations, refresh, refreshDeviceLocation, refreshCooldownUntil, t]);
 
   const fitAllMembers = useCallback(() => {
     void runUiAction(
@@ -5004,11 +4933,8 @@ export default function MapScreen({ route, navigation }: Props) {
           arrived,
           // Self row: prefer latest accepted local sample so refresh/push does
           // not leave「尚無位置更新」when blue-dot already has a valid fix.
-          lastUpdated: resolveSelfAwareLastUpdated({
-            isSelf,
-            remoteLastUpdated: m.lastUpdated,
-            selfSampleAtMs: isSelf ? deviceCoordsAcceptedAtMs : null,
-          }),
+          lastUpdated: m.capturedAt ?? m.lastUpdated,
+          sharingEnabled: m.sharingEnabled,
           // Color grade: secondary by default; green only arrived; warn only solo/straggler-like.
           statusColor: solo
             ? glass.warn
@@ -5255,6 +5181,9 @@ export default function MapScreen({ route, navigation }: Props) {
         dist={f.dist}
         arrived={f.arrived}
         lastUpdated={f.lastUpdated}
+        sharingEnabled={f.sharingEnabled}
+        serverTimeOffsetMs={serverTimeOffsetMs}
+        syncFailed={Boolean(groupStateError)}
         isMe={isMe}
         canKick={isLeader && !isMe && !f.isLeader}
         last={last}
@@ -5266,7 +5195,7 @@ export default function MapScreen({ route, navigation }: Props) {
         onKick={() => confirmKickMember({ userId: f.userId, name: f.name })}
       />
     );
-  }, [user?.id, t, doSelfMerge, doSelfSplit, styles, accent, isLeader, confirmKickMember]);
+  }, [user?.id, t, doSelfMerge, doSelfSplit, styles, accent, isLeader, confirmKickMember, serverTimeOffsetMs, groupStateError]);
 
   // Floating chrome rides just above the sheet's live top edge; its baseline
   // follows the sheet's animated gap to the screen bottom. At full the map
@@ -9068,9 +8997,8 @@ const RefreshLocationsButton = React.memo(function RefreshLocationsButton({
       mode="rotate"
       color={accent}
       style={styles.refreshLocationsButton}
-      onPress={lightTap}
-      onAnimationComplete={onPress}
-      disabled={refreshing || cooling}
+      onPress={() => { lightTap(); onPress(); }}
+      disabled={refreshing}
       accessibilityLabel={t('map.refreshLocationsA11y')}
       accessibilityHint={
         cooling ? t('map.refreshLocationsCooldown', { seconds: remaining }) : undefined
@@ -9094,6 +9022,9 @@ const FlockRow = React.memo(function FlockRow({
   dist,
   arrived,
   lastUpdated,
+  sharingEnabled,
+  serverTimeOffsetMs,
+  syncFailed,
   isMe,
   canKick = false,
   last,
@@ -9114,6 +9045,9 @@ const FlockRow = React.memo(function FlockRow({
   dist: string;
   arrived: boolean;
   lastUpdated?: string;
+  sharingEnabled?: boolean;
+  serverTimeOffsetMs: number;
+  syncFailed: boolean;
   isMe: boolean;
   canKick?: boolean;
   last: boolean;
@@ -9132,7 +9066,7 @@ const FlockRow = React.memo(function FlockRow({
   }, []);
 
   const movingRecently =
-    !!lastUpdated && nowMs - new Date(lastUpdated).getTime() < 2 * 60_000;
+    !!lastUpdated && nowMs + serverTimeOffsetMs - new Date(lastUpdated).getTime() < 2 * 60_000;
   const statusText = solo
     ? t('solo.badge')
     : isLeader
@@ -9144,8 +9078,8 @@ const FlockRow = React.memo(function FlockRow({
           : t('memberStatus.notStarted');
   const role = isLeader ? t('map.leaderRole') : t('map.memberRole');
   const distOrStatus = dist || statusText;
-  const freshness = locationFreshness(lastUpdated, nowMs);
-  const freshnessText =
+  const freshness = locationFreshness(lastUpdated, nowMs + serverTimeOffsetMs);
+  const freshnessText = sharingEnabled === false ? t('map.locationSharingStopped') :
     freshness.unit === 'minutes'
       ? t('locationUpdate.minutes', { minutes: freshness.value })
       : freshness.unit === 'hours'
@@ -9176,7 +9110,7 @@ const FlockRow = React.memo(function FlockRow({
               <Text style={styles.flockMetaDist}>{` · ${distOrStatus}`}</Text>
             ) : null}
             {freshnessText ? (
-              <Text style={styles.flockMetaFresh}>{` · ${freshnessText}`}</Text>
+              <Text style={styles.flockMetaFresh}>{` · ${freshnessText}${syncFailed ? ` · ${t('map.locationSyncFailed')}` : ''}`}</Text>
             ) : null}
             {!isMe && solo ? (
               <Text style={styles.flockMetaWarn}>{` · ${t('solo.badge')}`}</Text>

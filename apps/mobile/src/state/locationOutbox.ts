@@ -1,3 +1,5 @@
+import { AppState } from 'react-native';
+import { requireUserId } from '../api/services/_helpers';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
@@ -14,10 +16,12 @@ import { captureLocationAccess, isLocationAccessCurrent } from './locationPrivac
 export const LOCATION_OUTBOX_KEY = '@hither/location-outbox';
 const TTL_MS = 24 * 60 * 60 * 1_000;
 const MAX_BATCH = 50;
-const MAX_BACKOFF_MS = 15 * 60 * 1_000;
+const MAX_BACKOFF_MS = 60_000;
 
 export interface LocationFlushResult {
   sent: number;
+  acceptedIds?: string[];
+  nextRetryAt?: number;
   discarded: number;
   remaining: number;
   retryScheduled: number;
@@ -31,6 +35,7 @@ export type LocationUploadSource =
   | 'location_push';
 
 export interface LocationUploadEvent {
+  actorId?: string;
   id: string;
   groupId: string;
   navigationSessionId: string | null;
@@ -61,6 +66,7 @@ export interface LocationOutboxDatabase {
     failed: Array<Pick<LocationOutboxEntry, 'id' | 'attempts' | 'nextAttemptAt'>>,
   ): Promise<void>;
   count(): Promise<number>;
+  nextDue?(): Promise<number | null>;
   purge(): Promise<void>;
 }
 
@@ -80,6 +86,7 @@ interface LegacyEntry {
 }
 
 interface LegacyEnqueueInput {
+  actorId?: string;
   id?: string;
   groupId: string;
   navigationSessionId?: string | null;
@@ -108,6 +115,7 @@ interface LocationOutboxRow {
 
 function payloadOf(entry: LocationOutboxEntry): string {
   return JSON.stringify({
+    actorId: entry.actorId,
     coords: entry.coords,
     trackingMode: entry.trackingMode,
     source: entry.source,
@@ -122,7 +130,7 @@ function eventOf(entry: LocationOutboxEntry): LocationUploadEvent {
 function rowToEntry(row: LocationOutboxRow): LocationOutboxEntry {
   const payload = JSON.parse(row.payload) as Pick<
     LocationUploadEvent,
-    'coords' | 'trackingMode' | 'source'
+    'actorId' | 'coords' | 'trackingMode' | 'source'
   >;
   return {
     id: row.id,
@@ -173,7 +181,7 @@ export class SQLiteLocationOutboxDatabase implements LocationOutboxDatabase {
     const rows = await database.getAllAsync<LocationOutboxRow>(
       `SELECT * FROM location_outbox
        WHERE next_attempt_at <= ?
-       ORDER BY captured_at ASC, sequence ASC
+       ORDER BY captured_at DESC, sequence DESC
        LIMIT ?`,
       now,
       limit,
@@ -211,6 +219,12 @@ export class SQLiteLocationOutboxDatabase implements LocationOutboxDatabase {
     return row?.count ?? 0;
   }
 
+  async nextDue(): Promise<number | null> {
+    const db = await this.openDatabase();
+    const row = await db.getFirstAsync<{ due: number | null }>('SELECT MIN(next_attempt_at) AS due FROM location_outbox');
+    return row?.due ?? null;
+  }
+
   async purge(): Promise<void> {
     const database = await this.openDatabase();
     await database.runAsync('DELETE FROM location_outbox');
@@ -233,6 +247,7 @@ function normalizeInput(
   if ('coords' in input) return input;
   const capturedAt = input.capturedAt ?? now;
   return {
+    actorId: input.actorId,
     id: input.id ?? Crypto.randomUUID(),
     groupId: input.groupId,
     navigationSessionId: input.navigationSessionId ?? null,
@@ -333,6 +348,7 @@ export function createLocationOutbox(
           discarded: 0,
           remaining: await database.count(),
           retryScheduled: 0,
+          ...(database.nextDue ? { nextRetryAt: await database.nextDue() ?? undefined } : {}),
         };
       }
 
@@ -354,6 +370,7 @@ export function createLocationOutbox(
         threw
           ? []
           : result.rejected
+              .filter(item => !['retryable', 'request_timeout'].includes(item.reason))
               .map((item) => item.id)
               .filter((id) => dueIds.has(id)),
       );
@@ -372,6 +389,8 @@ export function createLocationOutbox(
       await database.resolveBatch(resolvedIds, failed);
       return {
         sent: accepted.size,
+        acceptedIds: [...accepted],
+        ...(database.nextDue ? { nextRetryAt: await database.nextDue() ?? undefined } : {}),
         discarded: discarded.size,
         remaining: await database.count(),
         retryScheduled: failed.length,
@@ -414,6 +433,8 @@ export function createLocationOutbox(
   };
 }
 
+let retryTimer: ReturnType<typeof setTimeout> | undefined;
+
 const outbox = createLocationOutbox(
   new SQLiteLocationOutboxDatabase(),
   ingestLocationBatch,
@@ -426,7 +447,9 @@ export async function enqueueLocationOutbox(
 ): Promise<void> {
   const access = await captureLocationAccess(input.groupId);
   if (!access) return;
-  await outbox.enqueue(input);
+  const actorId = await requireUserId();
+  if (!isLocationAccessCurrent(access)) return;
+  await outbox.enqueue({ ...input, actorId });
   if (!isLocationAccessCurrent(access)) await outbox.purge();
 }
 
@@ -437,9 +460,17 @@ export async function flushLocationOutbox(
     await outbox.purge();
     return { sent: 0, discarded: 0, remaining: 0, retryScheduled: 0 };
   }
-  return outbox.flush(maxEntries);
+  const result = await outbox.flush(maxEntries);
+  clearTimeout(retryTimer);
+  if (result.remaining > 0 && AppState.currentState === 'active') {
+    retryTimer = setTimeout(() => {
+      if (AppState.currentState === 'active') void flushLocationOutbox().catch(() => undefined);
+    }, Math.max(1_000, (result.nextRetryAt ?? Date.now() + 2_000) - Date.now()));
+  }
+  return result;
 }
 
 export function purgeLocationOutbox(): Promise<void> {
+  clearTimeout(retryTimer);
   return outbox.purge();
 }

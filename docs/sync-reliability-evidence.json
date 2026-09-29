@@ -1,0 +1,1825 @@
+{
+  "baselineCommit": "03c68b8c45cb35a05b22b03af42daa9fc7957d01",
+  "jest": {
+    "passed": 1993,
+    "failed": 4,
+    "total": 1997,
+    "failures": [
+      {
+        "file": "coreDataLocalFirst.test.ts",
+        "tests": [
+          "OTA-04 contract surfaces product code wires gathering mutations through outbox"
+        ]
+      },
+      {
+        "file": "languagePicker.test.ts",
+        "tests": [
+          "LanguagePicker shows the current language plus a chevron on the menu trigger"
+        ]
+      },
+      {
+        "file": "nativeUiContracts.test.ts",
+        "tests": [
+          "iOS native UI contracts keeps native close controls circular and icon-only"
+        ]
+      },
+      {
+        "file": "gatheringSessionOutbox.test.ts",
+        "tests": [
+          "useJourneyNavigation session/outbox wiring routes session errors through the classifier and flushes only on success"
+        ]
+      }
+    ]
+  },
+  "baselineReproduction": {
+    "passed": 52,
+    "failed": 4
+  },
+  "checks": {
+    "typescript": "passed",
+    "lint": {
+      "errors": 0,
+      "warnings": 519
+    },
+    "testMeta": "passed",
+    "runtimeAlignment": "passed",
+    "pglite": [
+      "location RPC and RLS scenarios passed",
+      "deleted-group premium projection guard passed"
+    ]
+  },
+  "coverageBeforeFinalActorGuard": {
+    "lines": {
+      "total": 2127,
+      "covered": 1330,
+      "skipped": 0,
+      "pct": 62.52
+    },
+    "statements": {
+      "total": 2396,
+      "covered": 1424,
+      "skipped": 0,
+      "pct": 59.43
+    },
+    "functions": {
+      "total": 517,
+      "covered": 248,
+      "skipped": 0,
+      "pct": 47.96
+    },
+    "branches": {
+      "total": 1279,
+      "covered": 670,
+      "skipped": 0,
+      "pct": 52.38
+    },
+    "branchesTrue": {
+      "total": 0,
+      "covered": 0,
+      "skipped": 0,
+      "pct": 100
+    }
+  },
+  "requiredFunctionCoveragePercent": 85,
+  "liveRuns": [
+    {
+      "run": "TrSnfK",
+      "startedAt": "2026-09-29T16:53:22.201Z",
+      "passedFunctionalChecks": false,
+      "checks": [
+        {
+          "name": "two isolated teams: 4 + 2 real authenticated clients",
+          "at": "2026-09-29T16:53:29.180Z"
+        }
+      ],
+      "stabilityMs": null,
+      "failure": "AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:\n\n  assert((await actors[2].call('state')).observed.locations > 0)\n\n    at C:\\Users\\alexs\\Desktop\\BZ\\hither\\hither_app\\apps\\mobile\\scripts\\location-smoke.cjs:62:5\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)",
+      "groups": [
+        "51623bc0-4cb0-4361-8e66-9abb8a693155",
+        "1a1cb35d-8f40-4d4d-b5c9-8c8d93bf2923"
+      ],
+      "actors": [
+        "bd86f16b-ba28-4307-9752-2f3188d56811",
+        "20415bb2-af08-4bf0-a2e8-bfc5f8d769f6",
+        "af4947b0-0f7b-4fc5-817a-9b7c20763409",
+        "f6293a70-c609-4849-9c25-fffbc471fd6a",
+        "2bb69214-c2a9-4011-b742-770eb42b63db",
+        "1eff23ad-5c71-4d22-b95b-6887971bb28c"
+      ],
+      "originalCleanup": [
+        {
+          "deleted": "f6293a70-c609-4849-9c25-fffbc471fd6a"
+        },
+        {
+          "deleted": "af4947b0-0f7b-4fc5-817a-9b7c20763409"
+        },
+        {
+          "deleted": "20415bb2-af08-4bf0-a2e8-bfc5f8d769f6"
+        },
+        {
+          "deleted": "1eff23ad-5c71-4d22-b95b-6887971bb28c"
+        },
+        {
+          "deleted": "bd86f16b-ba28-4307-9752-2f3188d56811"
+        },
+        {
+          "deleted": "2bb69214-c2a9-4011-b742-770eb42b63db"
+        }
+      ],
+      "cleanupGroups": null,
+      "finalCleanupVerified": true
+    },
+    {
+      "run": "kaXmPz",
+      "startedAt": "2026-09-29T16:55:24.060Z",
+      "passedFunctionalChecks": false,
+      "checks": [
+        {
+          "name": "two isolated teams: 4 + 2 real authenticated clients",
+          "at": "2026-09-29T16:55:28.945Z"
+        },
+        {
+          "name": "missing positions appear; real Realtime received; roster convergence",
+          "at": "2026-09-29T16:55:35.220Z"
+        },
+        {
+          "name": "location event loss while itinerary events remain live; recovery converges",
+          "at": "2026-09-29T16:55:41.029Z"
+        },
+        {
+          "name": "concurrent manual refresh; GPS failure and cooldown never block reads",
+          "at": "2026-09-29T16:55:44.880Z"
+        },
+        {
+          "name": "process death restores independent SQLite outbox and uploads without a new GPS sample",
+          "at": "2026-09-29T16:55:49.338Z"
+        }
+      ],
+      "stabilityMs": null,
+      "failure": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\ntrue !== false\n\n    at C:\\Users\\alexs\\Desktop\\BZ\\hither\\hither_app\\apps\\mobile\\scripts\\location-smoke.cjs:88:12\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)",
+      "groups": [
+        "5c3dd540-8eaa-484d-a576-00ca8fcb30a6",
+        "763549f3-470b-49bb-b31c-20d726dcbe8e"
+      ],
+      "actors": [
+        "e514e5b1-9f3d-4a11-a3ac-bf842f2ff4ba",
+        "f7770e80-aa40-4375-82c8-4ec4b1a6d626",
+        "7aa7ed00-cdd5-47a7-b016-9d2f220a3321",
+        "738d726c-3240-4e7c-8256-8ffa320ebcb5",
+        "072babcb-ba42-412f-8f63-5c88e7882655",
+        "1664e3cc-9f01-41bc-8501-a6e6cae01ad9"
+      ],
+      "originalCleanup": [
+        {
+          "deleted": "738d726c-3240-4e7c-8256-8ffa320ebcb5"
+        },
+        {
+          "deleted": "7aa7ed00-cdd5-47a7-b016-9d2f220a3321"
+        },
+        {
+          "deleted": "f7770e80-aa40-4375-82c8-4ec4b1a6d626"
+        },
+        {
+          "deleted": "1664e3cc-9f01-41bc-8501-a6e6cae01ad9"
+        },
+        {
+          "deleted": "e514e5b1-9f3d-4a11-a3ac-bf842f2ff4ba"
+        },
+        {
+          "deleted": "072babcb-ba42-412f-8f63-5c88e7882655"
+        }
+      ],
+      "cleanupGroups": null,
+      "finalCleanupVerified": true
+    },
+    {
+      "run": "qp2M0g",
+      "startedAt": "2026-09-29T17:00:53.940Z",
+      "passedFunctionalChecks": true,
+      "checks": [
+        {
+          "name": "two isolated teams: 4 + 2 real authenticated clients",
+          "at": "2026-09-29T17:01:00.583Z"
+        },
+        {
+          "name": "missing positions appear; real Realtime received; roster convergence",
+          "at": "2026-09-29T17:01:06.914Z"
+        },
+        {
+          "name": "location event loss while itinerary events remain live; recovery converges",
+          "at": "2026-09-29T17:01:12.634Z"
+        },
+        {
+          "name": "concurrent manual refresh; GPS failure and cooldown never block reads",
+          "at": "2026-09-29T17:01:16.482Z"
+        },
+        {
+          "name": "process death restores independent SQLite outbox and uploads without a new GPS sample",
+          "at": "2026-09-29T17:01:20.892Z"
+        },
+        {
+          "name": "old and future samples cannot poison current position",
+          "at": "2026-09-29T17:01:21.362Z"
+        },
+        {
+          "name": "cross-team read denied; disabled sharing hidden and uploads rejected",
+          "at": "2026-09-29T17:01:22.272Z"
+        },
+        {
+          "name": "stability cycle 1",
+          "at": "2026-09-29T17:01:22.834Z"
+        },
+        {
+          "name": "stability cycle 2",
+          "at": "2026-09-29T17:01:28.893Z"
+        },
+        {
+          "name": "stability cycle 3",
+          "at": "2026-09-29T17:01:34.774Z"
+        },
+        {
+          "name": "stability cycle 4",
+          "at": "2026-09-29T17:01:40.840Z"
+        },
+        {
+          "name": "stability cycle 5",
+          "at": "2026-09-29T17:01:46.570Z"
+        },
+        {
+          "name": "stability cycle 6",
+          "at": "2026-09-29T17:01:52.854Z"
+        },
+        {
+          "name": "stability cycle 7",
+          "at": "2026-09-29T17:01:58.533Z"
+        },
+        {
+          "name": "stability cycle 8",
+          "at": "2026-09-29T17:02:04.658Z"
+        },
+        {
+          "name": "stability cycle 9",
+          "at": "2026-09-29T17:02:10.441Z"
+        },
+        {
+          "name": "stability cycle 10",
+          "at": "2026-09-29T17:02:16.572Z"
+        },
+        {
+          "name": "stability cycle 11",
+          "at": "2026-09-29T17:02:22.345Z"
+        },
+        {
+          "name": "stability cycle 12",
+          "at": "2026-09-29T17:02:28.573Z"
+        },
+        {
+          "name": "stability cycle 13",
+          "at": "2026-09-29T17:02:34.269Z"
+        },
+        {
+          "name": "stability cycle 14",
+          "at": "2026-09-29T17:02:40.491Z"
+        },
+        {
+          "name": "stability cycle 15",
+          "at": "2026-09-29T17:02:46.397Z"
+        },
+        {
+          "name": "stability cycle 16",
+          "at": "2026-09-29T17:02:52.458Z"
+        },
+        {
+          "name": "stability cycle 17",
+          "at": "2026-09-29T17:02:58.164Z"
+        },
+        {
+          "name": "stability cycle 18",
+          "at": "2026-09-29T17:03:04.485Z"
+        },
+        {
+          "name": "stability cycle 19",
+          "at": "2026-09-29T17:03:10.118Z"
+        },
+        {
+          "name": "stability cycle 20",
+          "at": "2026-09-29T17:03:16.164Z"
+        },
+        {
+          "name": "stability cycle 21",
+          "at": "2026-09-29T17:03:21.969Z"
+        },
+        {
+          "name": "stability cycle 22",
+          "at": "2026-09-29T17:03:28.068Z"
+        },
+        {
+          "name": "stability cycle 23",
+          "at": "2026-09-29T17:03:33.660Z"
+        },
+        {
+          "name": "stability cycle 24",
+          "at": "2026-09-29T17:03:40.027Z"
+        },
+        {
+          "name": "stability cycle 25",
+          "at": "2026-09-29T17:03:45.623Z"
+        },
+        {
+          "name": "stability cycle 26",
+          "at": "2026-09-29T17:03:51.706Z"
+        },
+        {
+          "name": "stability cycle 27",
+          "at": "2026-09-29T17:03:57.490Z"
+        },
+        {
+          "name": "stability cycle 28",
+          "at": "2026-09-29T17:04:03.616Z"
+        },
+        {
+          "name": "stability cycle 29",
+          "at": "2026-09-29T17:04:09.221Z"
+        },
+        {
+          "name": "stability cycle 30",
+          "at": "2026-09-29T17:04:15.649Z"
+        },
+        {
+          "name": "stability cycle 31",
+          "at": "2026-09-29T17:04:21.238Z"
+        },
+        {
+          "name": "stability cycle 32",
+          "at": "2026-09-29T17:04:27.324Z"
+        },
+        {
+          "name": "stability cycle 33",
+          "at": "2026-09-29T17:04:33.126Z"
+        },
+        {
+          "name": "stability cycle 34",
+          "at": "2026-09-29T17:04:39.207Z"
+        },
+        {
+          "name": "stability cycle 35",
+          "at": "2026-09-29T17:04:44.811Z"
+        },
+        {
+          "name": "stability cycle 36",
+          "at": "2026-09-29T17:04:51.051Z"
+        },
+        {
+          "name": "stability cycle 37",
+          "at": "2026-09-29T17:04:56.756Z"
+        },
+        {
+          "name": "stability cycle 38",
+          "at": "2026-09-29T17:05:02.899Z"
+        },
+        {
+          "name": "stability cycle 39",
+          "at": "2026-09-29T17:05:08.681Z"
+        },
+        {
+          "name": "stability cycle 40",
+          "at": "2026-09-29T17:05:14.802Z"
+        },
+        {
+          "name": "stability cycle 41",
+          "at": "2026-09-29T17:05:20.445Z"
+        },
+        {
+          "name": "stability cycle 42",
+          "at": "2026-09-29T17:05:26.695Z"
+        },
+        {
+          "name": "stability cycle 43",
+          "at": "2026-09-29T17:05:32.334Z"
+        },
+        {
+          "name": "stability cycle 44",
+          "at": "2026-09-29T17:05:38.445Z"
+        },
+        {
+          "name": "stability cycle 45",
+          "at": "2026-09-29T17:05:44.249Z"
+        },
+        {
+          "name": "stability cycle 46",
+          "at": "2026-09-29T17:05:50.404Z"
+        },
+        {
+          "name": "stability cycle 47",
+          "at": "2026-09-29T17:05:56.031Z"
+        },
+        {
+          "name": "stability cycle 48",
+          "at": "2026-09-29T17:06:02.381Z"
+        },
+        {
+          "name": "stability cycle 49",
+          "at": "2026-09-29T17:06:07.996Z"
+        },
+        {
+          "name": "stability cycle 50",
+          "at": "2026-09-29T17:06:14.130Z"
+        },
+        {
+          "name": "stability cycle 51",
+          "at": "2026-09-29T17:06:20.012Z"
+        },
+        {
+          "name": "stability completed",
+          "at": "2026-09-29T17:06:25.023Z",
+          "cycles": 51,
+          "durationMs": 302750
+        }
+      ],
+      "stabilityMs": 302750,
+      "failure": null,
+      "groups": [
+        "5657bff2-449d-4cd5-84aa-54e8aaca1210",
+        "fc9c7f97-9036-478d-8d36-c21473bab7ba"
+      ],
+      "actors": [
+        "d5d5673f-b0e9-4cfc-9229-38a4a62352a2",
+        "d2b8b37a-fe86-4712-86e3-cd05567c3eef",
+        "3a131e8f-c9cb-4efa-b701-00b2136429f9",
+        "48dfd814-3da3-45b0-aefa-ee9a024d9b44",
+        "b9b489db-475e-4836-a655-b2f8187de237",
+        "3f72300b-c82e-42aa-846a-5317ac3c24bb"
+      ],
+      "originalCleanup": [
+        {
+          "deleted": "48dfd814-3da3-45b0-aefa-ee9a024d9b44"
+        },
+        {
+          "deleted": "3a131e8f-c9cb-4efa-b701-00b2136429f9"
+        },
+        {
+          "deleted": "d2b8b37a-fe86-4712-86e3-cd05567c3eef"
+        },
+        {
+          "deleted": "3f72300b-c82e-42aa-846a-5317ac3c24bb"
+        },
+        {
+          "deleted": "d5d5673f-b0e9-4cfc-9229-38a4a62352a2"
+        },
+        {
+          "deleted": "b9b489db-475e-4836-a655-b2f8187de237"
+        }
+      ],
+      "cleanupGroups": null,
+      "finalCleanupVerified": true
+    },
+    {
+      "run": "nUtCMK",
+      "startedAt": "2026-09-29T17:07:05.303Z",
+      "passedFunctionalChecks": true,
+      "checks": [
+        {
+          "name": "two isolated teams: 4 + 2 real authenticated clients",
+          "at": "2026-09-29T17:07:10.889Z"
+        },
+        {
+          "name": "missing positions appear; real Realtime received; roster convergence",
+          "at": "2026-09-29T17:07:17.064Z"
+        },
+        {
+          "name": "missed location automatically repaired within 30 seconds plus HTTP",
+          "at": "2026-09-29T17:07:41.410Z",
+          "elapsedMs": 17195
+        },
+        {
+          "name": "location event loss while itinerary events remain live; recovery converges",
+          "at": "2026-09-29T17:07:41.718Z"
+        },
+        {
+          "name": "concurrent manual refresh; GPS failure and cooldown never block reads",
+          "at": "2026-09-29T17:08:02.544Z"
+        },
+        {
+          "name": "process death restores independent SQLite outbox and uploads without a new GPS sample",
+          "at": "2026-09-29T17:08:07.449Z"
+        },
+        {
+          "name": "old and future samples cannot poison current position",
+          "at": "2026-09-29T17:08:07.899Z"
+        },
+        {
+          "name": "cross-team read denied; disabled sharing hidden and uploads rejected",
+          "at": "2026-09-29T17:08:08.843Z"
+        },
+        {
+          "name": "stability cycle 1",
+          "at": "2026-09-29T17:08:09.561Z"
+        },
+        {
+          "name": "stability cycle 2",
+          "at": "2026-09-29T17:08:15.744Z"
+        },
+        {
+          "name": "stability cycle 3",
+          "at": "2026-09-29T17:08:21.799Z"
+        },
+        {
+          "name": "stability cycle 4",
+          "at": "2026-09-29T17:08:28.026Z"
+        },
+        {
+          "name": "stability cycle 5",
+          "at": "2026-09-29T17:08:33.739Z"
+        },
+        {
+          "name": "stability cycle 6",
+          "at": "2026-09-29T17:08:40.107Z"
+        },
+        {
+          "name": "stability cycle 7",
+          "at": "2026-09-29T17:08:45.806Z"
+        },
+        {
+          "name": "stability cycle 8",
+          "at": "2026-09-29T17:08:51.942Z"
+        },
+        {
+          "name": "stability cycle 9",
+          "at": "2026-09-29T17:08:57.843Z"
+        },
+        {
+          "name": "stability cycle 10",
+          "at": "2026-09-29T17:09:04.011Z"
+        },
+        {
+          "name": "stability cycle 11",
+          "at": "2026-09-29T17:09:09.705Z"
+        },
+        {
+          "name": "stability cycle 12",
+          "at": "2026-09-29T17:09:16.137Z"
+        },
+        {
+          "name": "stability cycle 13",
+          "at": "2026-09-29T17:09:21.800Z"
+        },
+        {
+          "name": "stability cycle 14",
+          "at": "2026-09-29T17:09:27.894Z"
+        },
+        {
+          "name": "stability cycle 15",
+          "at": "2026-09-29T17:09:33.805Z"
+        },
+        {
+          "name": "stability cycle 16",
+          "at": "2026-09-29T17:09:40.596Z"
+        },
+        {
+          "name": "stability cycle 17",
+          "at": "2026-09-29T17:09:46.419Z"
+        },
+        {
+          "name": "stability cycle 18",
+          "at": "2026-09-29T17:09:52.822Z"
+        },
+        {
+          "name": "stability cycle 19",
+          "at": "2026-09-29T17:09:58.538Z"
+        },
+        {
+          "name": "stability cycle 20",
+          "at": "2026-09-29T17:10:04.755Z"
+        },
+        {
+          "name": "stability cycle 21",
+          "at": "2026-09-29T17:10:10.603Z"
+        },
+        {
+          "name": "stability cycle 22",
+          "at": "2026-09-29T17:10:16.791Z"
+        },
+        {
+          "name": "stability cycle 23",
+          "at": "2026-09-29T17:10:22.485Z"
+        },
+        {
+          "name": "stability cycle 24",
+          "at": "2026-09-29T17:10:28.825Z"
+        },
+        {
+          "name": "stability cycle 25",
+          "at": "2026-09-29T17:10:34.514Z"
+        },
+        {
+          "name": "stability cycle 26",
+          "at": "2026-09-29T17:10:40.650Z"
+        },
+        {
+          "name": "stability cycle 27",
+          "at": "2026-09-29T17:10:46.522Z"
+        },
+        {
+          "name": "stability cycle 28",
+          "at": "2026-09-29T17:10:52.679Z"
+        },
+        {
+          "name": "stability cycle 29",
+          "at": "2026-09-29T17:10:58.353Z"
+        },
+        {
+          "name": "stability cycle 30",
+          "at": "2026-09-29T17:11:04.789Z"
+        },
+        {
+          "name": "stability cycle 31",
+          "at": "2026-09-29T17:11:10.528Z"
+        },
+        {
+          "name": "stability cycle 32",
+          "at": "2026-09-29T17:11:16.824Z"
+        },
+        {
+          "name": "stability cycle 33",
+          "at": "2026-09-29T17:11:22.677Z"
+        },
+        {
+          "name": "stability cycle 34",
+          "at": "2026-09-29T17:11:28.863Z"
+        },
+        {
+          "name": "stability cycle 35",
+          "at": "2026-09-29T17:11:34.536Z"
+        },
+        {
+          "name": "stability cycle 36",
+          "at": "2026-09-29T17:11:40.922Z"
+        },
+        {
+          "name": "stability cycle 37",
+          "at": "2026-09-29T17:11:46.662Z"
+        },
+        {
+          "name": "stability cycle 38",
+          "at": "2026-09-29T17:11:52.937Z"
+        },
+        {
+          "name": "stability cycle 39",
+          "at": "2026-09-29T17:11:58.872Z"
+        },
+        {
+          "name": "stability cycle 40",
+          "at": "2026-09-29T17:12:05.014Z"
+        },
+        {
+          "name": "stability cycle 41",
+          "at": "2026-09-29T17:12:10.713Z"
+        },
+        {
+          "name": "stability cycle 42",
+          "at": "2026-09-29T17:12:17.687Z"
+        },
+        {
+          "name": "stability cycle 43",
+          "at": "2026-09-29T17:12:23.536Z"
+        },
+        {
+          "name": "stability cycle 44",
+          "at": "2026-09-29T17:12:29.830Z"
+        },
+        {
+          "name": "stability cycle 45",
+          "at": "2026-09-29T17:12:35.784Z"
+        },
+        {
+          "name": "stability cycle 46",
+          "at": "2026-09-29T17:12:41.930Z"
+        },
+        {
+          "name": "stability cycle 47",
+          "at": "2026-09-29T17:12:47.589Z"
+        },
+        {
+          "name": "stability cycle 48",
+          "at": "2026-09-29T17:12:53.987Z"
+        },
+        {
+          "name": "stability cycle 49",
+          "at": "2026-09-29T17:12:59.713Z"
+        },
+        {
+          "name": "stability cycle 50",
+          "at": "2026-09-29T17:13:05.939Z"
+        },
+        {
+          "name": "stability completed",
+          "at": "2026-09-29T17:13:10.950Z",
+          "cycles": 50,
+          "durationMs": 302106
+        }
+      ],
+      "stabilityMs": 302106,
+      "failure": null,
+      "groups": [
+        "8591fe02-facd-4e3a-a9c6-6d47dac92fce",
+        "cb19d81c-4556-44b2-b844-067b9dfb8c45"
+      ],
+      "actors": [
+        "b9614b65-2147-484a-adf3-cf0ae85e4d4c",
+        "c9e04b32-bb86-4716-a8ac-4c1ce169cded",
+        "d901a32f-27f2-40c7-b6e1-e59d54fd67b7",
+        "dabafe84-a6a4-4c37-a6d2-f8763ee4c698",
+        "408b23df-9f16-4fa3-a49f-cef3a60892c9",
+        "d4d44b85-1d8e-4de5-b9cf-a77fb3eb3316"
+      ],
+      "originalCleanup": [
+        {
+          "deleted": "dabafe84-a6a4-4c37-a6d2-f8763ee4c698"
+        },
+        {
+          "deleted": "d901a32f-27f2-40c7-b6e1-e59d54fd67b7"
+        },
+        {
+          "deleted": "c9e04b32-bb86-4716-a8ac-4c1ce169cded"
+        },
+        {
+          "deleted": "d4d44b85-1d8e-4de5-b9cf-a77fb3eb3316"
+        },
+        {
+          "deleted": "b9614b65-2147-484a-adf3-cf0ae85e4d4c"
+        },
+        {
+          "deleted": "408b23df-9f16-4fa3-a49f-cef3a60892c9"
+        }
+      ],
+      "cleanupGroups": null,
+      "finalCleanupVerified": true
+    },
+    {
+      "run": "MaMxdc",
+      "startedAt": "2026-09-29T17:16:47.371Z",
+      "passedFunctionalChecks": true,
+      "checks": [
+        {
+          "name": "two isolated teams: 4 + 2 real authenticated clients",
+          "at": "2026-09-29T17:16:53.072Z"
+        },
+        {
+          "name": "missing positions appear; real Realtime received; roster convergence",
+          "at": "2026-09-29T17:16:59.483Z"
+        },
+        {
+          "name": "missed location automatically repaired within 30 seconds plus HTTP",
+          "at": "2026-09-29T17:17:23.406Z",
+          "elapsedMs": 16700
+        },
+        {
+          "name": "location event loss while itinerary events remain live; recovery converges",
+          "at": "2026-09-29T17:17:23.635Z"
+        },
+        {
+          "name": "concurrent manual refresh; GPS failure and cooldown never block reads",
+          "at": "2026-09-29T17:17:44.277Z"
+        },
+        {
+          "name": "process death restores independent SQLite outbox and uploads without a new GPS sample",
+          "at": "2026-09-29T17:17:49.565Z"
+        },
+        {
+          "name": "old and future samples cannot poison current position",
+          "at": "2026-09-29T17:17:50.029Z"
+        },
+        {
+          "name": "cross-team read denied; disabled sharing hidden and uploads rejected",
+          "at": "2026-09-29T17:17:50.917Z"
+        },
+        {
+          "name": "stability completed",
+          "at": "2026-09-29T17:17:50.917Z",
+          "cycles": 0,
+          "durationMs": 0
+        },
+        {
+          "name": "offline observer recovers last arrival, changed vote, gathering request and deleted stop",
+          "at": "2026-09-29T17:17:52.413Z"
+        },
+        {
+          "name": "subgroup invitation, acceptance and merge converge",
+          "at": "2026-09-29T17:17:54.387Z"
+        },
+        {
+          "name": "leave revokes reads; switching teams clears old roster and cache",
+          "at": "2026-09-29T17:17:55.441Z"
+        }
+      ],
+      "stabilityMs": 0,
+      "failure": null,
+      "groups": [
+        "8536154a-1188-4f75-a739-6c91b8d12051",
+        "1b609d16-c230-438e-b218-2ed5a7bdb865"
+      ],
+      "actors": [
+        "c7924e0e-bc70-46d7-abc8-c10e52eb560a",
+        "0e5318be-1011-4c10-8466-159a91b04593",
+        "f1bc4565-f816-42df-b8f0-2660d135a21f",
+        "b0c733b2-b2c1-4170-a954-d1ac88336139",
+        "7f65681f-d229-4312-89f2-d6186ea21876",
+        "fb222706-05ef-491c-85bf-6a269aac4f3f"
+      ],
+      "originalCleanup": [
+        {
+          "deleted": "b0c733b2-b2c1-4170-a954-d1ac88336139"
+        },
+        {
+          "deleted": "f1bc4565-f816-42df-b8f0-2660d135a21f"
+        },
+        {
+          "deleted": "0e5318be-1011-4c10-8466-159a91b04593"
+        },
+        {
+          "deleted": "fb222706-05ef-491c-85bf-6a269aac4f3f"
+        },
+        {
+          "deleted": "c7924e0e-bc70-46d7-abc8-c10e52eb560a"
+        },
+        {
+          "deleted": "7f65681f-d229-4312-89f2-d6186ea21876"
+        }
+      ],
+      "cleanupGroups": null,
+      "finalCleanupVerified": true
+    },
+    {
+      "run": "EGuncd",
+      "startedAt": "2026-09-29T17:21:56.391Z",
+      "passedFunctionalChecks": true,
+      "checks": [
+        {
+          "name": "two isolated teams: 4 + 2 real authenticated clients",
+          "at": "2026-09-29T17:22:02.045Z"
+        },
+        {
+          "name": "missing positions appear; real Realtime received; roster convergence",
+          "at": "2026-09-29T17:22:08.180Z"
+        },
+        {
+          "name": "missed location automatically repaired within 30 seconds plus HTTP",
+          "at": "2026-09-29T17:22:32.184Z",
+          "elapsedMs": 16853
+        },
+        {
+          "name": "location event loss while itinerary events remain live; recovery converges",
+          "at": "2026-09-29T17:22:32.428Z"
+        },
+        {
+          "name": "concurrent manual refresh; GPS failure and cooldown never block reads",
+          "at": "2026-09-29T17:22:53.083Z"
+        },
+        {
+          "name": "process death restores independent SQLite outbox and uploads without a new GPS sample",
+          "at": "2026-09-29T17:23:00.345Z"
+        },
+        {
+          "name": "old and future samples cannot poison current position",
+          "at": "2026-09-29T17:23:00.822Z"
+        },
+        {
+          "name": "cross-team read denied; disabled sharing hidden and uploads rejected",
+          "at": "2026-09-29T17:23:01.729Z"
+        },
+        {
+          "name": "stability cycle 1",
+          "at": "2026-09-29T17:23:02.380Z"
+        },
+        {
+          "name": "stability cycle 2",
+          "at": "2026-09-29T17:23:08.565Z"
+        },
+        {
+          "name": "stability cycle 3",
+          "at": "2026-09-29T17:23:14.464Z"
+        },
+        {
+          "name": "stability cycle 4",
+          "at": "2026-09-29T17:23:20.714Z"
+        },
+        {
+          "name": "stability cycle 5",
+          "at": "2026-09-29T17:23:26.452Z"
+        },
+        {
+          "name": "stability cycle 6",
+          "at": "2026-09-29T17:23:32.810Z"
+        },
+        {
+          "name": "stability cycle 7",
+          "at": "2026-09-29T17:23:38.555Z"
+        },
+        {
+          "name": "stability cycle 8",
+          "at": "2026-09-29T17:23:44.957Z"
+        },
+        {
+          "name": "stability cycle 9",
+          "at": "2026-09-29T17:23:50.974Z"
+        },
+        {
+          "name": "stability cycle 10",
+          "at": "2026-09-29T17:23:57.140Z"
+        },
+        {
+          "name": "stability cycle 11",
+          "at": "2026-09-29T17:24:02.734Z"
+        },
+        {
+          "name": "stability cycle 12",
+          "at": "2026-09-29T17:24:09.096Z"
+        },
+        {
+          "name": "stability cycle 13",
+          "at": "2026-09-29T17:24:14.855Z"
+        },
+        {
+          "name": "stability cycle 14",
+          "at": "2026-09-29T17:24:21.503Z"
+        },
+        {
+          "name": "stability cycle 15",
+          "at": "2026-09-29T17:24:28.062Z"
+        },
+        {
+          "name": "stability cycle 16",
+          "at": "2026-09-29T17:24:34.305Z"
+        },
+        {
+          "name": "stability cycle 17",
+          "at": "2026-09-29T17:24:40.113Z"
+        },
+        {
+          "name": "stability cycle 18",
+          "at": "2026-09-29T17:24:46.677Z"
+        },
+        {
+          "name": "stability cycle 19",
+          "at": "2026-09-29T17:24:52.383Z"
+        },
+        {
+          "name": "stability cycle 20",
+          "at": "2026-09-29T17:24:58.603Z"
+        },
+        {
+          "name": "stability cycle 21",
+          "at": "2026-09-29T17:25:04.452Z"
+        },
+        {
+          "name": "stability cycle 22",
+          "at": "2026-09-29T17:25:10.656Z"
+        },
+        {
+          "name": "stability cycle 23",
+          "at": "2026-09-29T17:25:16.477Z"
+        },
+        {
+          "name": "stability cycle 24",
+          "at": "2026-09-29T17:25:23.606Z"
+        },
+        {
+          "name": "stability cycle 25",
+          "at": "2026-09-29T17:25:29.783Z"
+        },
+        {
+          "name": "stability cycle 26",
+          "at": "2026-09-29T17:25:35.909Z"
+        },
+        {
+          "name": "stability cycle 27",
+          "at": "2026-09-29T17:25:41.831Z"
+        },
+        {
+          "name": "stability cycle 28",
+          "at": "2026-09-29T17:25:48.164Z"
+        },
+        {
+          "name": "stability cycle 29",
+          "at": "2026-09-29T17:25:53.821Z"
+        },
+        {
+          "name": "stability cycle 30",
+          "at": "2026-09-29T17:26:00.184Z"
+        },
+        {
+          "name": "stability cycle 31",
+          "at": "2026-09-29T17:26:05.805Z"
+        },
+        {
+          "name": "stability cycle 32",
+          "at": "2026-09-29T17:26:11.962Z"
+        },
+        {
+          "name": "stability cycle 33",
+          "at": "2026-09-29T17:26:17.835Z"
+        },
+        {
+          "name": "stability cycle 34",
+          "at": "2026-09-29T17:26:24.054Z"
+        },
+        {
+          "name": "stability cycle 35",
+          "at": "2026-09-29T17:26:30.051Z"
+        },
+        {
+          "name": "stability cycle 36",
+          "at": "2026-09-29T17:26:36.337Z"
+        },
+        {
+          "name": "stability cycle 37",
+          "at": "2026-09-29T17:26:42.059Z"
+        },
+        {
+          "name": "stability cycle 38",
+          "at": "2026-09-29T17:26:48.254Z"
+        },
+        {
+          "name": "stability cycle 39",
+          "at": "2026-09-29T17:26:54.096Z"
+        },
+        {
+          "name": "stability cycle 40",
+          "at": "2026-09-29T17:27:00.358Z"
+        },
+        {
+          "name": "stability cycle 41",
+          "at": "2026-09-29T17:27:06.020Z"
+        },
+        {
+          "name": "stability cycle 42",
+          "at": "2026-09-29T17:27:12.386Z"
+        },
+        {
+          "name": "stability cycle 43",
+          "at": "2026-09-29T17:27:18.068Z"
+        },
+        {
+          "name": "stability cycle 44",
+          "at": "2026-09-29T17:27:24.256Z"
+        },
+        {
+          "name": "stability cycle 45",
+          "at": "2026-09-29T17:27:30.105Z"
+        },
+        {
+          "name": "stability cycle 46",
+          "at": "2026-09-29T17:27:36.173Z"
+        },
+        {
+          "name": "stability cycle 47",
+          "at": "2026-09-29T17:27:41.855Z"
+        },
+        {
+          "name": "stability cycle 48",
+          "at": "2026-09-29T17:27:48.392Z"
+        },
+        {
+          "name": "stability cycle 49",
+          "at": "2026-09-29T17:27:54.141Z"
+        },
+        {
+          "name": "stability cycle 50",
+          "at": "2026-09-29T17:28:00.343Z"
+        },
+        {
+          "name": "stability completed",
+          "at": "2026-09-29T17:28:05.348Z",
+          "cycles": 50,
+          "durationMs": 303618
+        },
+        {
+          "name": "offline observer recovers last arrival, changed vote, gathering request and deleted stop",
+          "at": "2026-09-29T17:28:06.995Z"
+        },
+        {
+          "name": "subgroup invitation, acceptance and merge converge",
+          "at": "2026-09-29T17:28:08.358Z"
+        },
+        {
+          "name": "leave revokes reads; switching teams clears old roster and cache",
+          "at": "2026-09-29T17:28:09.413Z"
+        }
+      ],
+      "stabilityMs": 303618,
+      "failure": null,
+      "groups": [
+        "dcd42cce-8521-4ef4-bcec-a4c982f85bb0",
+        "5ea21e6f-7a14-4993-b1ab-05b3a9ee132e"
+      ],
+      "actors": [
+        "8db41c42-87dd-4e4b-845f-94a2b15a7bfe",
+        "1ed7751d-6e39-456e-b926-8b2e08084b3c",
+        "69b6bcce-eb19-4547-bced-c7dabc3abe73",
+        "49bdbc9b-3e09-45b5-8f77-d53d238f12e0",
+        "271db009-a213-4d09-901e-1a21668cb27b",
+        "1806b7c0-d8d4-4d57-8298-15fa5d601d3f"
+      ],
+      "originalCleanup": [
+        {
+          "deleted": "49bdbc9b-3e09-45b5-8f77-d53d238f12e0"
+        },
+        {
+          "deleted": "69b6bcce-eb19-4547-bced-c7dabc3abe73"
+        },
+        {
+          "deleted": "1ed7751d-6e39-456e-b926-8b2e08084b3c"
+        },
+        {
+          "deleted": "1806b7c0-d8d4-4d57-8298-15fa5d601d3f"
+        },
+        {
+          "deleted": "8db41c42-87dd-4e4b-845f-94a2b15a7bfe"
+        },
+        {
+          "deleted": "271db009-a213-4d09-901e-1a21668cb27b"
+        }
+      ],
+      "cleanupGroups": null,
+      "finalCleanupVerified": true
+    },
+    {
+      "run": "PSFU47",
+      "startedAt": "2026-09-29T17:27:45.652Z",
+      "passedFunctionalChecks": false,
+      "checks": [
+        {
+          "name": "two isolated teams: 4 + 2 real authenticated clients",
+          "at": "2026-09-29T17:27:50.262Z"
+        },
+        {
+          "name": "missing positions appear; real Realtime received; roster convergence",
+          "at": "2026-09-29T17:27:56.220Z"
+        },
+        {
+          "name": "missed location automatically repaired within 30 seconds plus HTTP",
+          "at": "2026-09-29T17:28:20.557Z",
+          "elapsedMs": 17179
+        },
+        {
+          "name": "location event loss while itinerary events remain live; recovery converges",
+          "at": "2026-09-29T17:28:20.826Z"
+        },
+        {
+          "name": "concurrent manual refresh; GPS failure and cooldown never block reads",
+          "at": "2026-09-29T17:28:41.509Z"
+        },
+        {
+          "name": "process death restores independent SQLite outbox and uploads without a new GPS sample",
+          "at": "2026-09-29T17:28:48.530Z"
+        },
+        {
+          "name": "old and future samples cannot poison current position",
+          "at": "2026-09-29T17:28:49.169Z"
+        },
+        {
+          "name": "cross-team read denied; disabled sharing hidden and uploads rejected",
+          "at": "2026-09-29T17:28:50.007Z"
+        }
+      ],
+      "stabilityMs": null,
+      "failure": "AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n... Skipped lines\n\n  [\n    {\n      captured: '2026-09-29T17:28:20.827+00:00',\n      coordinates: {\n        latitude: 25,\n...\n    {\n+     captured: '2026-09-29T17:28:50.128+00:00',\n-     captured: '2026-09-29T17:28:20.827+00:00',\n      coordinates: {\n        latitude: 25.002,\n        longitude: 121\n      },\n      id: '70081ecd-3b5f-4d96-89b2-6ba46b3e085f',\n+     received: '2026-09-29T17:28:50.993316+00:00'\n-     received: '2026-09-29T17:28:21.706339+00:00'\n    },\n    {\n      captured: '2026-09-29T17:28:49.904+00:00',\n      coordinates: {\n        latitude: 25.003,\n\n    at converge (C:\\Users\\alexs\\Desktop\\BZ\\hither\\hither_app\\apps\\mobile\\scripts\\location-smoke.cjs:42:90)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async C:\\Users\\alexs\\Desktop\\BZ\\hither\\hither_app\\apps\\mobile\\scripts\\location-smoke.cjs:124:7",
+      "groups": [
+        "5fb127a9-1d8e-431c-b479-28107c564450",
+        "7d51840e-65e0-4e33-8f6c-9c455d324b21"
+      ],
+      "actors": [
+        "5f5349e9-7ab3-4046-bd3b-29b319d20c41",
+        "d89f0609-d66d-4fb0-a8f0-8e7f7b568ffc",
+        "70081ecd-3b5f-4d96-89b2-6ba46b3e085f",
+        "b36849a4-cd89-4caa-916b-7b97a7eea854",
+        "ead87887-f133-46fe-831f-f25680a80df2",
+        "b4fd5a93-de32-4f08-961a-ec7f7b8ec2f5"
+      ],
+      "originalCleanup": [
+        {
+          "deleted": "b36849a4-cd89-4caa-916b-7b97a7eea854"
+        },
+        {
+          "deleted": "70081ecd-3b5f-4d96-89b2-6ba46b3e085f"
+        },
+        {
+          "deleted": "d89f0609-d66d-4fb0-a8f0-8e7f7b568ffc"
+        },
+        {
+          "deleted": "b4fd5a93-de32-4f08-961a-ec7f7b8ec2f5"
+        },
+        {
+          "deleted": "5f5349e9-7ab3-4046-bd3b-29b319d20c41"
+        },
+        {
+          "deleted": "ead87887-f133-46fe-831f-f25680a80df2"
+        }
+      ],
+      "cleanupGroups": null,
+      "finalCleanupVerified": true
+    },
+    {
+      "run": "f3p0Ro",
+      "startedAt": "2026-09-29T17:30:06.042Z",
+      "passedFunctionalChecks": false,
+      "checks": [
+        {
+          "name": "two isolated teams: 4 + 2 real authenticated clients",
+          "at": "2026-09-29T17:30:11.148Z"
+        }
+      ],
+      "stabilityMs": null,
+      "failure": "AssertionError [ERR_ASSERTION]: {\"locations\":0,\"itinerary\":0,\"reads\":3,\"failures\":0,\"system\":[{\"message\":\"Subscribed to PostgreSQL\",\"status\":\"ok\",\"extension\":\"postgres_changes\",\"channel\":\"smoke-2-5ccace4f-f38b-436c-9adf-8482fe7d92b6\"}],\"statuses\":[\"SUBSCRIBED\"]}\n    at C:\\Users\\alexs\\Desktop\\BZ\\hither\\hither_app\\apps\\mobile\\scripts\\location-smoke.cjs:78:5\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)",
+      "groups": [
+        "c87551f9-b07f-4354-995a-082971ec26dd",
+        "2de7debc-614a-4d97-872e-ac3107af2d68"
+      ],
+      "actors": [
+        "1bb69d6a-06c8-4a9c-8e98-1cb5c7f2d71c",
+        "cbdf009e-fd9c-4c60-b3fb-209757194378",
+        "0c2fb9d6-61c6-4fba-8bb2-303f1bd25300",
+        "fce1b243-973f-4e99-9bd5-702007cd546a",
+        "930e0471-30b5-46f8-82f6-e0c34bacdc96",
+        "add667dc-27d7-4f4e-bedd-90e8a1b586b5"
+      ],
+      "originalCleanup": [
+        {
+          "deleted": "fce1b243-973f-4e99-9bd5-702007cd546a"
+        },
+        {
+          "deleted": "0c2fb9d6-61c6-4fba-8bb2-303f1bd25300"
+        },
+        {
+          "deleted": "cbdf009e-fd9c-4c60-b3fb-209757194378"
+        },
+        {
+          "deleted": "add667dc-27d7-4f4e-bedd-90e8a1b586b5"
+        },
+        {
+          "deleted": "1bb69d6a-06c8-4a9c-8e98-1cb5c7f2d71c"
+        },
+        {
+          "deleted": "930e0471-30b5-46f8-82f6-e0c34bacdc96"
+        }
+      ],
+      "cleanupGroups": null,
+      "finalCleanupVerified": true
+    },
+    {
+      "run": "QQsHTD",
+      "startedAt": "2026-09-29T17:33:25.135Z",
+      "passedFunctionalChecks": false,
+      "checks": [],
+      "stabilityMs": null,
+      "failure": "Error: actor 2: Request rate limit reached\n    at ChildProcess.<anonymous> (C:\\Users\\alexs\\Desktop\\BZ\\hither\\hither_app\\apps\\mobile\\scripts\\location-smoke.cjs:25:28)\n    at ChildProcess.emit (node:events:508:28)\n    at emit (node:internal/child_process:949:14)\n    at process.processTicksAndRejections (node:internal/process/task_queues:90:21)",
+      "groups": [],
+      "actors": [
+        "32252e62-9804-4f24-9122-57e3ef601f62",
+        "fe200512-6f7f-4876-91cf-1ed91554c3fa"
+      ],
+      "originalCleanup": [
+        {
+          "deleted": "fe200512-6f7f-4876-91cf-1ed91554c3fa"
+        },
+        {
+          "deleted": "32252e62-9804-4f24-9122-57e3ef601f62"
+        }
+      ],
+      "cleanupGroups": null,
+      "finalCleanupVerified": true
+    },
+    {
+      "run": "LXS2qi",
+      "startedAt": "2026-09-29T17:34:47.951Z",
+      "passedFunctionalChecks": true,
+      "checks": [
+        {
+          "name": "two isolated teams: 4 + 2 real authenticated clients",
+          "at": "2026-09-29T17:34:58.255Z"
+        },
+        {
+          "name": "missing positions appear; real Realtime received; roster convergence",
+          "at": "2026-09-29T17:35:04.410Z"
+        },
+        {
+          "name": "missed location automatically repaired within 30 seconds plus HTTP",
+          "at": "2026-09-29T17:35:28.410Z",
+          "elapsedMs": 16814
+        },
+        {
+          "name": "location event loss while itinerary events remain live; recovery converges",
+          "at": "2026-09-29T17:35:28.677Z"
+        },
+        {
+          "name": "concurrent manual refresh; GPS failure and cooldown never block reads",
+          "at": "2026-09-29T17:35:49.495Z"
+        },
+        {
+          "name": "process death restores independent SQLite outbox and uploads without a new GPS sample",
+          "at": "2026-09-29T17:35:56.552Z"
+        },
+        {
+          "name": "old and future samples cannot poison current position",
+          "at": "2026-09-29T17:35:57.190Z"
+        },
+        {
+          "name": "cross-team read denied; disabled sharing hidden and uploads rejected",
+          "at": "2026-09-29T17:35:58.023Z"
+        },
+        {
+          "name": "stability cycle 1",
+          "at": "2026-09-29T17:35:58.609Z"
+        },
+        {
+          "name": "stability cycle 2",
+          "at": "2026-09-29T17:36:04.963Z"
+        },
+        {
+          "name": "stability cycle 3",
+          "at": "2026-09-29T17:36:10.852Z"
+        },
+        {
+          "name": "stability cycle 4",
+          "at": "2026-09-29T17:36:17.039Z"
+        },
+        {
+          "name": "stability cycle 5",
+          "at": "2026-09-29T17:36:22.715Z"
+        },
+        {
+          "name": "stability cycle 6",
+          "at": "2026-09-29T17:36:28.951Z"
+        },
+        {
+          "name": "stability cycle 7",
+          "at": "2026-09-29T17:36:34.630Z"
+        },
+        {
+          "name": "stability cycle 8",
+          "at": "2026-09-29T17:36:40.791Z"
+        },
+        {
+          "name": "stability cycle 9",
+          "at": "2026-09-29T17:36:46.668Z"
+        },
+        {
+          "name": "stability cycle 10",
+          "at": "2026-09-29T17:36:52.784Z"
+        },
+        {
+          "name": "stability cycle 11",
+          "at": "2026-09-29T17:36:58.658Z"
+        },
+        {
+          "name": "stability cycle 12",
+          "at": "2026-09-29T17:37:05.046Z"
+        },
+        {
+          "name": "stability cycle 13",
+          "at": "2026-09-29T17:37:10.702Z"
+        },
+        {
+          "name": "stability cycle 14",
+          "at": "2026-09-29T17:37:16.956Z"
+        },
+        {
+          "name": "stability cycle 15",
+          "at": "2026-09-29T17:37:22.756Z"
+        },
+        {
+          "name": "stability cycle 16",
+          "at": "2026-09-29T17:37:28.868Z"
+        },
+        {
+          "name": "stability cycle 17",
+          "at": "2026-09-29T17:37:34.600Z"
+        },
+        {
+          "name": "stability cycle 18",
+          "at": "2026-09-29T17:37:40.927Z"
+        },
+        {
+          "name": "stability cycle 19",
+          "at": "2026-09-29T17:37:46.718Z"
+        },
+        {
+          "name": "stability cycle 20",
+          "at": "2026-09-29T17:37:52.804Z"
+        },
+        {
+          "name": "stability cycle 21",
+          "at": "2026-09-29T17:37:58.653Z"
+        },
+        {
+          "name": "stability cycle 22",
+          "at": "2026-09-29T17:38:06.661Z"
+        },
+        {
+          "name": "stability cycle 23",
+          "at": "2026-09-29T17:38:12.461Z"
+        },
+        {
+          "name": "stability cycle 24",
+          "at": "2026-09-29T17:38:19.107Z"
+        },
+        {
+          "name": "stability cycle 25",
+          "at": "2026-09-29T17:38:24.972Z"
+        },
+        {
+          "name": "stability cycle 26",
+          "at": "2026-09-29T17:38:30.980Z"
+        },
+        {
+          "name": "stability cycle 27",
+          "at": "2026-09-29T17:38:36.836Z"
+        },
+        {
+          "name": "stability cycle 28",
+          "at": "2026-09-29T17:38:43.021Z"
+        },
+        {
+          "name": "stability cycle 29",
+          "at": "2026-09-29T17:38:48.668Z"
+        },
+        {
+          "name": "stability cycle 30",
+          "at": "2026-09-29T17:38:54.962Z"
+        },
+        {
+          "name": "stability cycle 31",
+          "at": "2026-09-29T17:39:00.637Z"
+        },
+        {
+          "name": "stability cycle 32",
+          "at": "2026-09-29T17:39:06.968Z"
+        },
+        {
+          "name": "stability cycle 33",
+          "at": "2026-09-29T17:39:12.818Z"
+        },
+        {
+          "name": "stability cycle 34",
+          "at": "2026-09-29T17:39:18.901Z"
+        },
+        {
+          "name": "stability cycle 35",
+          "at": "2026-09-29T17:39:24.525Z"
+        },
+        {
+          "name": "stability cycle 36",
+          "at": "2026-09-29T17:39:30.722Z"
+        },
+        {
+          "name": "stability cycle 37",
+          "at": "2026-09-29T17:39:36.400Z"
+        },
+        {
+          "name": "stability cycle 38",
+          "at": "2026-09-29T17:39:42.560Z"
+        },
+        {
+          "name": "stability cycle 39",
+          "at": "2026-09-29T17:39:49.245Z"
+        },
+        {
+          "name": "stability cycle 40",
+          "at": "2026-09-29T17:39:57.739Z"
+        },
+        {
+          "name": "stability cycle 41",
+          "at": "2026-09-29T17:40:03.475Z"
+        },
+        {
+          "name": "stability cycle 42",
+          "at": "2026-09-29T17:40:09.879Z"
+        },
+        {
+          "name": "stability cycle 43",
+          "at": "2026-09-29T17:40:15.666Z"
+        },
+        {
+          "name": "stability cycle 44",
+          "at": "2026-09-29T17:40:22.023Z"
+        },
+        {
+          "name": "stability cycle 45",
+          "at": "2026-09-29T17:40:27.857Z"
+        },
+        {
+          "name": "stability cycle 46",
+          "at": "2026-09-29T17:40:33.988Z"
+        },
+        {
+          "name": "stability cycle 47",
+          "at": "2026-09-29T17:40:39.870Z"
+        },
+        {
+          "name": "stability cycle 48",
+          "at": "2026-09-29T17:40:46.716Z"
+        },
+        {
+          "name": "stability cycle 49",
+          "at": "2026-09-29T17:40:52.534Z"
+        },
+        {
+          "name": "stability cycle 50",
+          "at": "2026-09-29T17:40:58.707Z"
+        },
+        {
+          "name": "stability completed",
+          "at": "2026-09-29T17:41:03.711Z",
+          "cycles": 50,
+          "durationMs": 305688
+        },
+        {
+          "name": "offline observer recovers last arrival, changed vote, gathering request and deleted stop",
+          "at": "2026-09-29T17:41:06.162Z"
+        },
+        {
+          "name": "subgroup invitation, acceptance and merge converge",
+          "at": "2026-09-29T17:41:07.535Z"
+        },
+        {
+          "name": "leave revokes reads; switching teams clears old roster and cache",
+          "at": "2026-09-29T17:41:08.690Z"
+        }
+      ],
+      "stabilityMs": 305688,
+      "failure": null,
+      "groups": [
+        "dcb51444-61ad-4d4d-8263-60c739b9abad",
+        "ee7a5377-a038-431f-a4be-8f01f9d69ce1"
+      ],
+      "actors": [
+        "1d5fc120-e530-4baa-ab0b-b0abdd2363eb",
+        "7a918017-1880-40db-83ef-975ce95f9d4e",
+        "686ea3e2-23d4-41eb-9722-c99cce2b8940",
+        "d8ebfeec-a761-422e-a4b1-34cf504e7c4d",
+        "f1968e3f-8f72-4693-b0f4-cef7e582f4f7",
+        "168c9562-df54-4410-84e7-f3a53f5226b9"
+      ],
+      "originalCleanup": [
+        {
+          "index": 3,
+          "error": "{}"
+        },
+        {
+          "index": 2,
+          "error": "{}"
+        },
+        {
+          "index": 1,
+          "error": "{}"
+        },
+        {
+          "index": 5,
+          "error": "{}"
+        },
+        {
+          "index": 0,
+          "error": "{}"
+        },
+        {
+          "index": 4,
+          "error": "{}"
+        }
+      ],
+      "cleanupGroups": null,
+      "finalCleanupVerified": true
+    },
+    {
+      "run": "6GL5Wg",
+      "startedAt": "2026-09-29T17:41:50.688Z",
+      "passedFunctionalChecks": true,
+      "checks": [
+        {
+          "name": "two isolated teams: 4 + 2 real authenticated clients",
+          "at": "2026-09-29T17:42:01.447Z"
+        },
+        {
+          "name": "missing positions appear; real Realtime received; roster convergence",
+          "at": "2026-09-29T17:42:07.473Z"
+        },
+        {
+          "name": "missed location automatically repaired within 30 seconds plus HTTP",
+          "at": "2026-09-29T17:42:31.486Z",
+          "elapsedMs": 16879
+        },
+        {
+          "name": "location event loss while itinerary events remain live; recovery converges",
+          "at": "2026-09-29T17:42:31.712Z"
+        },
+        {
+          "name": "concurrent manual refresh; GPS failure and cooldown never block reads",
+          "at": "2026-09-29T17:42:52.338Z"
+        },
+        {
+          "name": "process death restores independent SQLite outbox and uploads without a new GPS sample",
+          "at": "2026-09-29T17:42:59.633Z"
+        },
+        {
+          "name": "old and future samples cannot poison current position",
+          "at": "2026-09-29T17:43:00.215Z"
+        },
+        {
+          "name": "cross-team read denied; disabled sharing hidden and uploads rejected",
+          "at": "2026-09-29T17:43:01.016Z"
+        },
+        {
+          "name": "stability completed",
+          "at": "2026-09-29T17:43:01.017Z",
+          "cycles": 0,
+          "durationMs": 0
+        },
+        {
+          "name": "offline observer recovers last arrival, changed vote, gathering request and deleted stop",
+          "at": "2026-09-29T17:43:02.515Z"
+        },
+        {
+          "name": "subgroup invitation, acceptance and merge converge",
+          "at": "2026-09-29T17:43:03.824Z"
+        },
+        {
+          "name": "leave revokes reads; switching teams clears old roster and cache",
+          "at": "2026-09-29T17:43:04.849Z"
+        },
+        {
+          "name": "persisted old-account SQLite event cannot upload as another member of the same team",
+          "at": "2026-09-29T17:43:04.853Z"
+        }
+      ],
+      "stabilityMs": 0,
+      "failure": null,
+      "groups": [
+        "2a36fc07-88e6-4fea-b90d-d3fadbac51c3",
+        "70777f32-710d-4e75-a138-08c951671cd8"
+      ],
+      "actors": [
+        "7c57580c-4221-43a6-81ff-a52edfacfea6",
+        "e6ab90b5-08be-4b39-8e8a-31189f99bb8a",
+        "93df8d18-aae2-4b3f-9843-f9125d9e6e72",
+        "b6fa9a7d-1a3b-410f-b4d9-ba8ae155648b",
+        "d89ee8c5-2de6-4a81-994e-4e64a33f5e0c",
+        "500613ae-e895-464d-9a90-dec3978c7efe"
+      ],
+      "originalCleanup": [
+        {
+          "index": 3,
+          "error": "{}"
+        },
+        {
+          "index": 2,
+          "error": "{}"
+        },
+        {
+          "index": 1,
+          "error": "{}"
+        },
+        {
+          "index": 5,
+          "error": "{}"
+        },
+        {
+          "index": 0,
+          "error": "{}"
+        },
+        {
+          "index": 4,
+          "error": "{}"
+        }
+      ],
+      "cleanupGroups": {
+        "ids": [],
+        "error": "insert or update on table \"premium_team_projections\" violates foreign key constraint \"premium_team_projections_group_id_fkey\""
+      },
+      "finalCleanupVerified": true
+    },
+    {
+      "run": "lygGmB",
+      "startedAt": "2026-09-29T17:47:05.601Z",
+      "passedFunctionalChecks": true,
+      "checks": [
+        {
+          "name": "two isolated teams: 4 + 2 real authenticated clients",
+          "at": "2026-09-29T17:47:15.783Z"
+        },
+        {
+          "name": "missing positions appear; real Realtime received; roster convergence",
+          "at": "2026-09-29T17:47:21.827Z"
+        },
+        {
+          "name": "missed location automatically repaired within 30 seconds plus HTTP",
+          "at": "2026-09-29T17:47:45.845Z",
+          "elapsedMs": 16870
+        },
+        {
+          "name": "location event loss while itinerary events remain live; recovery converges",
+          "at": "2026-09-29T17:47:46.119Z"
+        },
+        {
+          "name": "concurrent manual refresh; GPS failure and cooldown never block reads",
+          "at": "2026-09-29T17:48:06.934Z"
+        },
+        {
+          "name": "process death restores independent SQLite outbox and uploads without a new GPS sample",
+          "at": "2026-09-29T17:48:14.148Z"
+        },
+        {
+          "name": "old and future samples cannot poison current position",
+          "at": "2026-09-29T17:48:14.902Z"
+        },
+        {
+          "name": "cross-team read denied; disabled sharing hidden and uploads rejected",
+          "at": "2026-09-29T17:48:15.792Z"
+        },
+        {
+          "name": "stability completed",
+          "at": "2026-09-29T17:48:15.793Z",
+          "cycles": 0,
+          "durationMs": 0
+        },
+        {
+          "name": "offline observer recovers last arrival, changed vote, gathering request and deleted stop",
+          "at": "2026-09-29T17:48:17.278Z"
+        },
+        {
+          "name": "subgroup invitation, acceptance and merge converge",
+          "at": "2026-09-29T17:48:18.566Z"
+        },
+        {
+          "name": "leave revokes reads; switching teams clears old roster and cache",
+          "at": "2026-09-29T17:48:19.592Z"
+        },
+        {
+          "name": "persisted old-account SQLite event cannot upload as another member of the same team",
+          "at": "2026-09-29T17:48:19.596Z"
+        }
+      ],
+      "stabilityMs": 0,
+      "failure": null,
+      "groups": [
+        "1f0d0aab-5336-418e-9877-52c96022cd03",
+        "96ede6cf-e22b-4de1-9af7-095517af2f0d"
+      ],
+      "actors": [
+        "688ab66a-d2cd-4626-8704-d0335c1e6060",
+        "364a0bc6-06ba-44f0-b2aa-a5aca809e07c",
+        "2150a046-f006-4b76-9108-8d8772cc60c2",
+        "4bb34ce6-5d55-4fb5-b932-7ba03b88d147",
+        "85ef7403-5110-445d-98fb-c86047a5df53",
+        "37e67a78-cf3a-4b85-b4d4-3b2d1b91e069"
+      ],
+      "originalCleanup": [
+        {
+          "deleted": "4bb34ce6-5d55-4fb5-b932-7ba03b88d147"
+        },
+        {
+          "deleted": "2150a046-f006-4b76-9108-8d8772cc60c2"
+        },
+        {
+          "deleted": "364a0bc6-06ba-44f0-b2aa-a5aca809e07c"
+        },
+        {
+          "deleted": "37e67a78-cf3a-4b85-b4d4-3b2d1b91e069"
+        },
+        {
+          "deleted": "688ab66a-d2cd-4626-8704-d0335c1e6060"
+        },
+        {
+          "deleted": "85ef7403-5110-445d-98fb-c86047a5df53"
+        }
+      ],
+      "cleanupGroups": {
+        "ids": [],
+        "error": null
+      },
+      "finalCleanupVerified": true
+    }
+  ],
+  "finalCleanup": {
+    "remainingUsers": 0,
+    "remainingGroups": 0,
+    "scope": "Exact IDs from the listed runs; earlier cleanup failures repaired after premium projection guard migration"
+  },
+  "backend": {
+    "project": "htqrucnjafhhvxdqslbv",
+    "appliedVersions": [
+      "20260929164531",
+      "20260929173500",
+      "20260929175500"
+    ],
+    "edgeFunctionsChanged": false
+  },
+  "ota": {
+    "published": false,
+    "reason": "No verifiable compatible deployed runtime 0.1.8 binary; native package versions differ from previous production OTA commit",
+    "currentProductionUpdateGroup": "c30fdf35-3d90-4072-8d6c-0fc37795a398"
+  },
+  "unverified": [
+    "Native MapKit rendering",
+    "GPU animation rendering",
+    "iOS background scheduling and physical sensor cadence"
+  ]
+}

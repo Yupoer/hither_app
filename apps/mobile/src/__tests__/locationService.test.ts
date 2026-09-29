@@ -97,6 +97,12 @@ describe('LocationService durable refresh seams', () => {
     expect(mockSupabase.rpc).not.toHaveBeenCalled();
   });
 
+  it('does not send a previous account queued position under the new authenticated identity', async () => {
+    const event = { id: 'old-account', actorId: 'user-old', groupId: 'group-1', navigationSessionId: null, capturedAt: Date.now(), coords: { latitude: 25, longitude: 121 }, trackingMode: 'foreground', source: 'foreground', sequence: 1 };
+    await expect(ingestLocationBatch([event])).resolves.toEqual({ acceptedIds: [], rejected: [{ id: event.id, reason: 'actor_changed' }] });
+    expect(mockSupabase.rpc).not.toHaveBeenCalled();
+  });
+
   it('maps refresh cooldown, pending rows, and versioned ACKs from RPC responses', async () => {
     mockSupabase.rpc
       .mockResolvedValueOnce({ data: { accepted: true, retry_after_seconds: 1.2 }, error: null })

@@ -123,8 +123,7 @@ export interface MergeRemoteGroupOptions {
 }
 
 /**
- * Merge a remote group snapshot without allowing the remote copy of the
- * current user's location to move their local map backwards.
+ * Merge server snapshots with newer confirmed Realtime positions.
  */
 export function mergeRemoteGroupStatePreservingOwnLocation(
   previous: GroupState | null,
@@ -133,13 +132,22 @@ export function mergeRemoteGroupStatePreservingOwnLocation(
   options: MergeRemoteGroupOptions = {},
 ): GroupState {
   if (!previous || previous.group.id !== remote.group.id) return remote;
-  const previousSelf = ownUserId
-    ? previous.members.find((member) => member.userId === ownUserId)
-    : undefined;
   const previousMembers = new Map(previous.members.map(member => [member.userId, member]));
   const members = remote.members.map(member => {
-    if (member.userId === ownUserId && previousSelf?.coordinates) return preserveOwnLocation(member, previousSelf);
+    // Device GPS lives outside GroupState; roster rows use server-confirmed data.
     const previousPeer = previousMembers.get(member.userId);
+    // Missing-position snapshots carry their server observation time, so an old
+    // empty snapshot cannot erase a first fix delivered while the read was in flight.
+    if (member.sharingEnabled === false) return member;
+    if (!member.coordinates && previousPeer?.coordinates && member.locationObservedAt
+      && Date.parse(member.locationObservedAt) < Date.parse(previousPeer.lastUpdated ?? '')) {
+      return preserveOwnLocation(member, previousPeer);
+    }
+    if (member.coordinates && previousPeer?.locationObservedAt && !previousPeer.coordinates
+      && Date.parse(member.lastUpdated ?? '') <= Date.parse(previousPeer.locationObservedAt)) {
+      return { ...member, coordinates: undefined, lastUpdated: undefined, capturedAt: undefined,
+        locationObservedAt: previousPeer.locationObservedAt };
+    }
     // Preserve a newer server event, while allowing explicit removal of a hidden position.
     return member.coordinates && previousPeer?.coordinates && member.lastUpdated && previousPeer.lastUpdated
       && Date.parse(previousPeer.lastUpdated) > Date.parse(member.lastUpdated)
@@ -198,7 +206,7 @@ export function isLeaderGatheringOperation(operation: {
   status: string;
 }): boolean {
   return operation.entityType === 'active_gathering'
-    && ['pending', 'failed', 'inflight', 'conflict'].includes(operation.status);
+    && ['pending', 'failed', 'inflight'].includes(operation.status);
 }
 
 
@@ -210,5 +218,6 @@ function preserveOwnLocation(
     ...remote,
     coordinates: local.coordinates,
     lastUpdated: local.lastUpdated,
+    capturedAt: local.capturedAt,
   };
 }

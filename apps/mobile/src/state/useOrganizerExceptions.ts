@@ -7,6 +7,8 @@
  * not mutate team phase or another member's personal state.
  */
 
+import { useForegroundReconcile } from './useForegroundReconcile';
+import { AppState } from 'react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../api/supabase';
 import {
@@ -217,6 +219,7 @@ export function useOrganizerExceptions(
         });
       },
       {
+        onReady: () => { void refreshNavStates(); },
         onRemove: (userId) => {
           if (cancelled || sessionGenRef.current !== gen) return;
           setNavStates((prev) => prev.filter((s) => s.userId !== userId));
@@ -238,6 +241,8 @@ export function useOrganizerExceptions(
     };
   }, [enabled, navigationSessionId, refreshNavStates]);
 
+  useForegroundReconcile(enabled && Boolean(navigationSessionId), refreshNavStates);
+
   // Seed historical need_help + subscribe to live inserts.
   useEffect(() => {
     // Always clear when deps change so a group switch cannot leak signals.
@@ -250,7 +255,7 @@ export function useOrganizerExceptions(
       Date.now() - HELP_SIGNAL_LOOKBACK_HOURS * 60 * 60 * 1000,
     ).toISOString();
 
-    void (async () => {
+    const reloadHelp = async () => {
       try {
         const { data, error } = await supabase
           .from('commands')
@@ -270,7 +275,10 @@ export function useOrganizerExceptions(
       } catch {
         // Soft-fail: live subscription still covers new help after mount.
       }
-    })();
+    };
+    void reloadHelp();
+    const timer = setInterval(() => { if (AppState.currentState === 'active') void reloadHelp(); }, 30_000);
+    const resumed = AppState.addEventListener('change', state => { if (state === 'active') void reloadHelp(); });
 
     const channel = supabase
       .channel(`exception-help:${groupId}`)
@@ -298,9 +306,11 @@ export function useOrganizerExceptions(
           });
         },
       )
-      .subscribe();
+      .subscribe(status => { if (status === 'SUBSCRIBED') void reloadHelp(); });
     return () => {
       cancelled = true;
+      clearInterval(timer);
+      resumed.remove();
       void supabase.removeChannel(channel);
     };
   }, [enabled, groupId, leaderUserId]);

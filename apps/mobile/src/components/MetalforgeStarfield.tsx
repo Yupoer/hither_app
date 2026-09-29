@@ -15,6 +15,7 @@
  * parameters. Requires @shopify/react-native-skia and react-native-reanimated.
  */
 
+import { advanceStarfieldPhase } from '../utils/starfieldPhase';
 import React, { useEffect, useState } from 'react';
 import {
   AppState,
@@ -69,12 +70,12 @@ half4 main(float2 fragCoord) {
     if (layer < activeLayers) {
       float scale = max(4.0, (baseScale + layer * scaleStep) * 0.20);
       float2 layerPoint = point * scale;
-      layerPoint.y += time * speed * (0.18 + layer * 0.08);
-      layerPoint.x += sin(time * 0.05 + layer * 4.0) * 0.05;
+      layerPoint.y += time * 32.0 * (layer + 1.0);
+      layerPoint.x += sin(time * 6.2831853 + layer * 4.0) * 0.05;
 
       float2 cell = floor(layerPoint);
       float2 local = fract(layerPoint) - 0.5;
-      float2 seed = cell + float2(layer * 17.0, layer * 31.0);
+      float2 seed = mod(cell, 32.0) + float2(layer * 17.0, layer * 31.0);
       float present = step(1.0 - probability, hash21(seed));
       float2 jitter = hash22(seed + float2(13.0, 29.0)) - 0.5;
       float2 delta = local - jitter * 0.70;
@@ -85,7 +86,7 @@ half4 main(float2 fragCoord) {
       float core = 1.0 - smoothstep(radius * 0.25, radius, distanceToStar);
       float halo = 1.0 - smoothstep(radius, radius * 3.0, distanceToStar);
       float phase = hash21(seed + float2(23.0, 47.0)) * 6.2831853;
-      float twinkle = 1.0 + sin(time * twinkleSpeed * (0.65 + layer * 0.18) + phase) * twinkleAmount;
+      float twinkle = 1.0 + sin(time * 6.2831853 * (50.0 + layer * 12.0) + phase) * twinkleAmount;
       float intensity = present * (core + halo * 0.12) * max(0.0, twinkle);
 
       result += starColor.rgb * half(intensity);
@@ -138,7 +139,7 @@ export default function MetalforgeStarfield({ active = true, style }: Metalforge
   }, []);
 
   const frame = useFrameCallback(({ timeSincePreviousFrame }) => {
-    elapsed.value += Math.min(timeSincePreviousFrame ?? 0, 50) / 1000;
+    elapsed.value = advanceStarfieldPhase(elapsed.value, timeSincePreviousFrame ?? 0, METALFORGE_STARFIELD_PARAMETERS.speed);
   }, false);
   useEffect(() => { frame.setActive(isActive); return () => frame.setActive(false); }, [frame, isActive]);
 

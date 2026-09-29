@@ -36,6 +36,14 @@ export function useNavigationSession(groupId: string | null) {
   groupRef.current = groupId;
   const [foreground, setForeground] = useState(AppState.currentState === 'active');
   useEffect(() => {
+    revision.current += 1;
+    activeSessionIdRef.current = null;
+    sessionRef.current = null;
+    lastEventRef.current = null;
+    setSession(null);
+    setMemberState(null);
+  }, [groupId]);
+  useEffect(() => {
     const sub = AppState.addEventListener('change', state => {
       revision.current += 1;
       setForeground(state === 'active');
@@ -100,6 +108,12 @@ export function useNavigationSession(groupId: string | null) {
   }, [acceptSession, groupId]);
 
   useEffect(() => {
+    if (!foreground || !groupId) return;
+    const timer = setInterval(() => { void refresh(); }, 30_000);
+    return () => clearInterval(timer);
+  }, [foreground, groupId, refresh]);
+
+  useEffect(() => {
     let cancelled = false;
     let unsubscribe: (() => void) | null = null;
     if (!foreground) return;
@@ -116,6 +130,7 @@ export function useNavigationSession(groupId: string | null) {
           setMemberState(next);
         }
       },
+      () => { if (!cancelled) void refresh(); },
     ).then((cleanup) => {
       if (cancelled) cleanup();
       else unsubscribe = cleanup;

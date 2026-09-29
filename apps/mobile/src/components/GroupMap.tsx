@@ -427,10 +427,9 @@ const MemberMarker = React.memo(function MemberMarker({ member, accent, styles, 
   ]);
 
   const markerRef = useRef<React.ElementRef<typeof Marker>>(null);
-  const initialCoordinate = useRef({ latitude: lat ?? 0, longitude: lng ?? 0 });
   const lastSample = useRef<MemberMotionSample | null>(null);
   const wasActive = useRef(false);
-  const latestCoordinate = useRef(initialCoordinate.current);
+  const latestCoordinate = useRef({ latitude: lat ?? 0, longitude: lng ?? 0 });
   useEffect(() => {
     if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return;
     const next = { coordinates: { latitude: lat, longitude: lng }, sampledAt: Date.parse(member.lastUpdated ?? '') };
@@ -452,7 +451,7 @@ const MemberMarker = React.memo(function MemberMarker({ member, accent, styles, 
   return (
     <Marker
       ref={markerRef}
-      coordinate={initialCoordinate.current}
+      coordinate={{ latitude: lat, longitude: lng }}
       title={member.name}
       description={isLeader ? 'Leader' : 'Follower'}
       anchor={{ x: 0.5, y: 1 }}

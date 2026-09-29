@@ -1,3 +1,5 @@
+jest.mock('../api/services/_helpers', () => ({ requireUserId: async () => 'user-1' }));
+jest.mock('react-native', () => ({ AppState: { currentState: 'active' } }));
 jest.mock('../api/services/LocationService', () => ({
   ingestLocationBatch: jest.fn(),
 }));
@@ -83,7 +85,7 @@ describe('SQLite location outbox', () => {
     await outbox.enqueue(event({ id: 'c', capturedAt: 1_000, sequence: 3 }));
     await outbox.enqueue(event({ id: 'a', capturedAt: 1_000, sequence: 1 }));
 
-    await expect(outbox.flush()).resolves.toEqual({
+    await expect(outbox.flush()).resolves.toMatchObject({
       sent: 3,
       discarded: 0,
       remaining: 0,
@@ -106,7 +108,7 @@ describe('SQLite location outbox', () => {
     const outbox = createLocationOutbox(database, upload, () => now);
 
     await outbox.enqueue(event());
-    await expect(outbox.flush()).resolves.toEqual({
+    await expect(outbox.flush()).resolves.toMatchObject({
       sent: 0,
       discarded: 0,
       remaining: 1,
@@ -119,7 +121,7 @@ describe('SQLite location outbox', () => {
     });
 
     now = 3_001;
-    await expect(outbox.flush()).resolves.toEqual({
+    await expect(outbox.flush()).resolves.toMatchObject({
       sent: 1,
       discarded: 0,
       remaining: 0,
@@ -130,7 +132,7 @@ describe('SQLite location outbox', () => {
     const capped = createLocationOutbox(database, jest.fn().mockRejectedValue(new Error('offline')), () => now);
     await database.insert({ ...event({ id: 'cap' }), attempts: 20, nextAttemptAt: now, expiresAt: now + 86_400_000 });
     await capped.flush();
-    expect(database.entries.get('cap')?.nextAttemptAt).toBe(now + 15 * 60_000);
+    expect(database.entries.get('cap')?.nextAttemptAt).toBe(now + 60_000);
   });
 
   it('deletes permanent RPC rejects and retries only transport failures', async () => {
@@ -143,7 +145,7 @@ describe('SQLite location outbox', () => {
     await outbox.enqueue(event({ id: '00000000-0000-4000-8000-000000000001' }));
     await outbox.enqueue(event({ id: '00000000-0000-4000-8000-000000000002' }));
 
-    await expect(outbox.flush()).resolves.toEqual({
+    await expect(outbox.flush()).resolves.toMatchObject({
       sent: 1,
       discarded: 1,
       remaining: 0,
@@ -164,7 +166,7 @@ describe('SQLite location outbox', () => {
     const upload = jest.fn();
     const outbox = createLocationOutbox(database, upload, () => now);
 
-    await expect(outbox.flush()).resolves.toEqual({
+    await expect(outbox.flush()).resolves.toMatchObject({
       sent: 0,
       discarded: 0,
       remaining: 0,

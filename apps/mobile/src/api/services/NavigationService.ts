@@ -8,6 +8,8 @@ import { supabase } from '../supabase';
 import { orThrow, requireUserId } from './_helpers';
 import type { Destination } from '../../types';
 
+let subscriptionSequence = 0;
+
 interface NavigationSessionRow {
   id: string;
   group_id: string;
@@ -251,6 +253,7 @@ export async function listNavigationMemberStates(
 export interface SessionMemberStateHandlers {
   /** Called when a row is deleted (or UPDATE clears) so the leader list drops stale tech state. */
   onRemove?: (userId: string) => void;
+  onReady?: () => void;
 }
 
 /**
@@ -264,7 +267,7 @@ export async function subscribeSessionMemberStates(
   handlers: SessionMemberStateHandlers = {},
 ): Promise<() => void> {
   const channel = supabase
-    .channel(`navigation-member-states:${sessionId}`)
+    .channel(`navigation-member-states:${sessionId}:${++subscriptionSequence}`)
     .on(
       'postgres_changes',
       {
@@ -289,7 +292,7 @@ export async function subscribeSessionMemberStates(
         }
       },
     )
-    .subscribe();
+    .subscribe(status => { if (status === 'SUBSCRIBED') handlers.onReady?.(); });
 
   return () => {
     void supabase.removeChannel(channel);
@@ -300,10 +303,11 @@ export async function subscribeNavigationSession(
   groupId: string,
   onSession: (session: NavigationSession) => void,
   onMemberState: (state: MemberNavigationState) => void,
+  onReady?: () => void,
 ): Promise<() => void> {
   const userId = await requireUserId();
   const channel = supabase
-    .channel(`navigation-session:${groupId}:${userId}`)
+    .channel(`navigation-session:${groupId}:${userId}:${++subscriptionSequence}`)
     .on(
       'postgres_changes',
       {
@@ -336,7 +340,7 @@ export async function subscribeNavigationSession(
         }
       },
     )
-    .subscribe();
+    .subscribe(status => { if (status === 'SUBSCRIBED') onReady?.(); });
 
   return () => {
     void supabase.removeChannel(channel);

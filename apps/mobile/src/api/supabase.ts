@@ -1,5 +1,6 @@
 // URL/atob polyfill 必須在 supabase-js 之前載入（RN 沒有完整 URL 實作）。
 import 'react-native-url-polyfill/auto';
+import { requestWithDeadline } from '../utils/requestDeadline';
 import { createClient } from '@supabase/supabase-js';
 import { supabaseAuthStorage } from './authStorage';
 import { withSupabasePerformanceTracing } from './instrumentedSupabase';
@@ -25,6 +26,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const baseSupabase = createClient(supabaseUrl, supabaseAnonKey, {
+  global: { fetch: (input, init) => requestWithDeadline(signal => fetch(input, { ...init, signal }), 10_000, init?.signal) },
   auth: {
     storage: supabaseAuthStorage,
     autoRefreshToken: true,

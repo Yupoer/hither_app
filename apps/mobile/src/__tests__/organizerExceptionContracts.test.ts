@@ -2,6 +2,7 @@
  * Lightweight contracts for NavigationService session filters and help seed
  * helpers — no native network.
  */
+jest.mock('react-native', () => ({ AppState: { currentState: 'active', addEventListener: () => ({ remove() {} }) } }));
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 

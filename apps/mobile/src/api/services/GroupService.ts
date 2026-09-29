@@ -107,6 +107,7 @@ export interface LocationRow {
   latitude: number | null;
   longitude: number | null;
   updated_at: string | null;
+  captured_at?: string | null;
 }
 
 // ── Pure mappers ───────────────────────────────────────────────────────────
@@ -157,6 +158,7 @@ export function mapMember(
     subgroupId: membership.subgroup_id ?? undefined,
     coordinates,
     lastUpdated: location?.updated_at ?? undefined,
+    capturedAt: location?.captured_at ?? location?.updated_at ?? undefined,
   };
 }
 
@@ -308,7 +310,7 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
       .order('position', { ascending: true }),
     supabase
       .from('member_locations')
-      .select('user_id, latitude, longitude, updated_at')
+      .select('user_id, latitude, longitude, updated_at, captured_at')
       .eq('group_id', groupId),
     // Do not swallow load failures as an empty list (false "no stay").
     listDailyAccommodations(groupId),
@@ -398,6 +400,7 @@ export async function getGroupRecoverySnapshot(
   const locationRows = (Array.isArray(payload.locations) ? payload.locations : []) as LocationRow[];
   const profileById = new Map(profileRows.map((profile) => [profile.id, profile]));
   const locationByUser = new Map(locationRows.map((location) => [location.user_id, location]));
+  const sharingByUser = new Map((Array.isArray(payload.location_sharing) ? payload.location_sharing : []).map((row: {user_id: string; sharing_enabled: boolean}) => [row.user_id, row.sharing_enabled]));
   const members = memberRows.map((membership) =>
     mapMember(membership, profileById.get(membership.user_id), locationByUser.get(membership.user_id)),
   );
@@ -426,7 +429,8 @@ export async function getGroupRecoverySnapshot(
   return {
     state: {
       group: mapGroup(groupRow),
-      members,
+      members: members.map(member => ({ ...member, sharingEnabled: sharingByUser.get(member.userId),
+        ...(!member.coordinates ? { locationObservedAt: generatedAt ?? undefined } : {}) })),
       destinations,
       subgroups,
       nextDestination: destinations.find(dest => dest.day != null && !dest.closedAt),

@@ -146,43 +146,16 @@ export function locationPolicy(
         };
   }
 
-  // Foreground (app open). Tighter while walking; calm when resting.
-  // Balanced (default) intervals ~×2 vs prior to cut radio/GPS duty; highAccuracy
-  // stays denser for intentional precision.
-  return highAccuracy
-    ? {
-        accuracy: 'high',
-        distanceInterval: 8,
-        timeInterval: 5_000,
-        uiMinDistanceM: 5,
-        uiMinIntervalMs: 1_500,
-        uploadMinDistanceM: 12,
-        uploadMinIntervalMs: 30_000,
-        uploadHeartbeatMs: 30_000,
-        uploadHeartbeatStationaryMs: 60_000,
-        stationaryAfterMs: 45_000,
-        routeMinDistanceM: 15,
-        routeMinIntervalMs: 3_000,
-        routeCoordDecimals: 5,
-        realtimeLocationDebounceMs: 1_500,
-      }
-    : {
-        accuracy: 'balanced',
-        distanceInterval: 50,
-        timeInterval: 30_000,
-        uiMinDistanceM: 20,
-        uiMinIntervalMs: 8_000,
-        uploadMinDistanceM: 50,
-        uploadMinIntervalMs: 40_000,
-        // Non-journey foreground: at most 2 min liveness when stationary.
-        uploadHeartbeatMs: 90_000,
-        uploadHeartbeatStationaryMs: 120_000,
-        stationaryAfterMs: 45_000,
-        routeMinDistanceM: 18,
-        routeMinIntervalMs: 3_000,
-        routeCoordDecimals: 4,
-        realtimeLocationDebounceMs: 4_000,
-      };
+  return {
+    accuracy: highAccuracy ? 'high' : 'balanced',
+    distanceInterval: highAccuracy ? 5 : 10, timeInterval: 5_000,
+    uiMinDistanceM: 5, uiMinIntervalMs: 1_500,
+    uploadMinDistanceM: 8, uploadMinIntervalMs: 5_000,
+    uploadHeartbeatMs: 10_000, uploadHeartbeatStationaryMs: 60_000,
+    stationaryAfterMs: 45_000,
+    routeMinDistanceM: highAccuracy ? 15 : 18, routeMinIntervalMs: 3_000,
+    routeCoordDecimals: highAccuracy ? 5 : 4, realtimeLocationDebounceMs: 250,
+  };
 }
 
 export function shouldWatchLocation(
