@@ -92,6 +92,14 @@ describe('DestinationService mapping and durable boundaries', () => {
     expect(mockedSupabase.rpc).not.toHaveBeenCalled();
   });
 
+  it('preserves the observed navigation session when queuing deletion', async () => {
+    await deleteDestination('g-1', 'd-1', 'original-session');
+    expect(mockCoreSync.enqueueDestinationDelete).toHaveBeenCalledWith({
+      groupId: 'g-1', destinationId: 'd-1', sessionId: 'original-session',
+    });
+    expect(mockedSupabase.rpc).not.toHaveBeenCalled();
+  });
+
   it('keeps durable enqueue failures visible instead of silently dispatching a remote mutation', async () => {
     const failure = Object.assign(new Error('queue unavailable'), { code: 'queue_unavailable' });
     mockCoreSync.enqueueDestinationAdd.mockRejectedValueOnce(failure);

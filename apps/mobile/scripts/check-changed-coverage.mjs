@@ -109,6 +109,9 @@ function main() {
   // This script already enforces the threshold from coverage-summary.json.
   const args = [
     'jest',
+    '--runInBand',
+    '--silent',
+    '--forceExit',
     '--coverage',
     '--coverageDirectory',
     coverageDir,
@@ -121,6 +124,9 @@ function main() {
   const r = spawnSync('npx', args, {
     cwd: appRoot,
     encoding: 'utf8',
+    // Stream output instead of killing Jest when React diagnostics exceed
+    // spawnSync's default stdout buffer before it writes coverage results.
+    stdio: 'inherit',
     shell: true,
     env: process.env,
   });

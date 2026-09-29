@@ -248,6 +248,7 @@ export async function getKmlImportQuota(): Promise<number> {
 export async function deleteDestination(
   groupId: string,
   destinationId: string,
+  sessionId?: string | null,
 ): Promise<void> {
   if (isDemoGroup(groupId)) {
     return;
@@ -255,7 +256,7 @@ export async function deleteDestination(
   const core = loadCoreSyncAdapters();
   if (core) {
     const durable = await tryDurableCoreWrite(core, groupId, () =>
-      core.enqueueDestinationDelete({ groupId, destinationId }));
+      core.enqueueDestinationDelete({ groupId, destinationId, sessionId }));
     if (durable.handled) return;
   }
   // RPC cancels any active navigation_session for this stop, then deletes.

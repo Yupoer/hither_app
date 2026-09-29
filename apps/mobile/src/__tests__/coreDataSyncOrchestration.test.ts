@@ -323,7 +323,9 @@ describe('coreDataSync production orchestration', () => {
       groupId: 'group-1',
       destinationId: 'd2',
       actorId: 'actor-a',
+      sessionId: 'original-session',
     });
+    expect(deleted.payload.sessionId).toBe('original-session');
     const reordered = await enqueueDestinationReorder({
       groupId: 'group-1',
       updates: [

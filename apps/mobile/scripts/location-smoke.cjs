@@ -7,7 +7,7 @@ const assert = require('node:assert/strict');
 const { fork, execFileSync } = require('node:child_process');
 const crypto = require('node:crypto');
 const { createClient } = require('@supabase/supabase-js');
-const { parseEnv } = require('node:util');
+const { parseEnv, isDeepStrictEqual } = require('node:util');
 if (!process.argv.includes('--live') || !process.argv.includes('--admin')) throw new Error('Explicit --live --admin required for scoped setup and complete cleanup');
 const seconds = Number(process.argv.find(x => x.startsWith('--duration='))?.split('=')[1] ?? 300);
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hither-location-smoke-'));
@@ -51,7 +51,7 @@ function worker(index) {
 }
 const actors = Array.from({ length: 6 }, (_, i) => worker(i));
 const check = (name, details = {}) => { manifest.checks.push({ name, at: new Date().toISOString(), ...details }); save(); console.log(`PASS ${name}`); };
-const view = state => state.members.map(m => ({ id: m.userId, coordinates: m.coordinates, received: m.lastUpdated, captured: m.capturedAt })).sort((a, b) => a.id.localeCompare(b.id));
+const view = state => state.members.map(m => ({ id: m.userId, subgroupId: m.subgroupId, coordinates: m.coordinates, received: m.uploadedAt ?? m.lastUpdated, captured: m.capturedAt })).sort((a, b) => a.id.localeCompare(b.id));
 async function converge(team, count) {
   const deadline = Date.now() + 35_000;
   let last;
@@ -70,6 +70,18 @@ async function converge(team, count) {
     }
   } while (Date.now() < deadline);
   throw last;
+}
+
+async function waitArrival(observers, destinationId, userId, arrived) {
+  const deadline = Date.now() + 35_000;
+  while (true) {
+    const views = await Promise.all(observers.map(a => a.call('workflow', { kind: 'arrivals' })));
+    views.forEach(rows => rows.sort((a, b) => a.id.localeCompare(b.id)));
+    if (views.every(rows => isDeepStrictEqual(rows, views[0])
+      && rows.some(r => r.destinationId === destinationId && r.userId === userId && r.arrivedAt) === arrived)) return;
+    assert(Date.now() < deadline, `arrival ${arrived} never converged across observers`);
+    await sleep(250);
+  }
 }
 
 (async () => {
@@ -141,13 +153,18 @@ async function converge(team, count) {
     const restarted = await converge(team, 4);
     assert.equal(restarted[0].state.members.find(m => m.userId === manifest.actors[3].userId).coordinates.latitude, 25.03);
     check('process death restores independent SQLite outbox and uploads without a new GPS sample');
-    const before = view(restarted[0].state);
+    const before = view(restarted[0].state).find(m => m.id === manifest.actors[3].userId);
     const stale = await actors[3].call('upload', { lat: 24, capturedAt: Date.now() - 3_600_000 });
     assert.equal(stale.confirmed, false);
     const replay = await actors[3].call('raw', { name: 'ingest_location_batch', args: { p_events: [{ id: stale.eventId, groupId: A.id, navigationSessionId: null, capturedAt: Date.now() - 3_600_000, coords: { latitude: 24, longitude: 121, accuracy: 5 }, trackingMode: 'foreground', source: 'foreground', sequence: 1 }] } });
     assert.equal(replay.data.rejected[0].reason, 'stale_sample');
     const future = await actors[3].call('upload', { lat: 24, capturedAt: Date.now() + 3_600_000 }); assert.equal(future.confirmed, false);
-    assert.deepEqual(view((await converge(team, 4))[0].state), before);
+    const afterRejected = view((await converge(team, 4))[0].state).find(m => m.id === before.id);
+    // Other valid refresh replies may commit during this test. Require the
+    // rejected coordinates to stay absent and the target's clocks not to regress.
+    assert.notEqual(afterRejected.coordinates.latitude, 24);
+    assert(Date.parse(afterRejected.captured) >= Date.parse(before.captured));
+    assert(Date.parse(afterRejected.received) >= Date.parse(before.received));
     check('old and future samples cannot poison current position');
     const denied = await actors[5].call('raw', { name: 'get_group_recovery_snapshot', args: { p_group_id: A.id } }); assert(denied.error);
     await actors[3].call('privacy', { enabled: false });
@@ -155,6 +172,57 @@ async function converge(team, count) {
     const hidden = await converge(team, 4); assert.equal(hidden[0].state.members.find(m => m.userId === manifest.actors[3].userId).coordinates, undefined);
     await actors[3].call('privacy', { enabled: true }); assert.equal((await actors[3].call('upload')).confirmed, true);
     check('cross-team read denied; disabled sharing hidden and uploads rejected');
+    await team[2].call('disconnect');
+    await team[2].call('offline', { enabled: true });
+    const stop = await team[0].call('add');
+    // Durable add returns an optimistic ID before its server ACK. A second
+    // member can act only once that member's server snapshot contains the stop.
+    const stopDeadline = Date.now() + 35_000;
+    while (true) {
+      assert(await team[1].call('pull'));
+      if ((await team[1].call('state')).state.destinations.some(d => d.id === stop)) break;
+      assert(Date.now() < stopDeadline, 'durable destination never reached the other member');
+      await sleep(250);
+    }
+    await team[0].call('workflow', { kind: 'start', id: stop });
+    const sessionDeadline = Date.now() + 35_000;
+    let session;
+    while (!(session = await team[1].call('workflow', { kind: 'session' }))) {
+      assert(Date.now() < sessionDeadline, 'gathering start never created the navigation session');
+      await sleep(250);
+    }
+    assert.equal(session.destinationId, stop);
+    await team[1].call('workflow', { kind: 'arrive', id: stop, sessionId: session.id, arrived: true });
+    await waitArrival([team[0]], stop, manifest.actors[1].userId, true);
+    await team[1].call('workflow', { kind: 'arrive', id: stop, sessionId: session.id, arrived: false });
+    // The server removes the row on revocation; confirm the earlier true is gone.
+    await waitArrival([team[0]], stop, manifest.actors[1].userId, false);
+    await team[1].call('workflow', { kind: 'arrive', id: stop, sessionId: session.id, arrived: true });
+    const vote = await team[0].call('workflow', { kind: 'voteCreate' });
+    await team[1].call('workflow', { kind: 'vote', id: vote.id, option: 'no' });
+    await team[1].call('workflow', { kind: 'vote', id: vote.id, option: 'keep' });
+    const request = await team[1].call('workflow', { kind: 'request' });
+    const requestDeadline = Date.now() + 35_000;
+    while (!(await team[0].call('workflow', { kind: 'requests' })).some(r => r.id === request)) {
+      assert(Date.now() < requestDeadline, 'durable gathering request never reached the leader');
+      await sleep(250);
+    }
+    await team[2].call('offline', { enabled: false });
+    await team[2].call('reconnect');
+    await waitArrival(team, stop, manifest.actors[1].userId, true);
+    const votes = await Promise.all(team.map(a => a.call('workflow', { kind: 'votes', id: vote.id })));
+    votes.forEach(rows => assert.deepEqual(rows, votes[0]));
+    assert.equal(votes[0][0].optionId, 'keep');
+    await team[0].call('delete', { id: stop, sessionId: session.id });
+    const deleteDeadline = Date.now() + 35_000;
+    while (true) {
+      assert((await Promise.all(team.map(a => a.call('pull')))).every(Boolean));
+      const afterDelete = await Promise.all(team.map(a => a.call('state')));
+      if (afterDelete.every(s => !s.state.destinations.some(d => d.id === stop))) break;
+      assert(Date.now() < deleteDeadline, 'durable delete never converged across members');
+      await sleep(250);
+    }
+    check('offline observer recovers last arrival, changed vote, gathering request and deleted stop');
     const started = Date.now(); let cycle = 0;
     while (Date.now() - started < seconds * 1000) {
       cycle++;
@@ -173,36 +241,21 @@ async function converge(team, count) {
     }
     manifest.stabilityMs = Date.now() - started;
     check('stability completed', { cycles: cycle, durationMs: manifest.stabilityMs });
-    await team[2].call('disconnect');
-    await team[2].call('offline', { enabled: true });
-    const stop = await team[0].call('add');
-    await team[1].call('workflow', { kind: 'arrive', id: stop, arrived: true });
-    await team[1].call('workflow', { kind: 'arrive', id: stop, arrived: false });
-    await team[1].call('workflow', { kind: 'arrive', id: stop, arrived: true });
-    const vote = await team[0].call('workflow', { kind: 'voteCreate' });
-    await team[1].call('workflow', { kind: 'vote', id: vote.id, option: 'no' });
-    await team[1].call('workflow', { kind: 'vote', id: vote.id, option: 'keep' });
-    const request = await team[1].call('workflow', { kind: 'request' });
-    assert((await team[0].call('workflow', { kind: 'requests' })).some(r => r.id === request));
-    await team[2].call('offline', { enabled: false });
-    await team[2].call('reconnect');
-    const arrivals = await Promise.all(team.map(a => a.call('workflow', { kind: 'arrivals' })));
-    arrivals.forEach(rows => assert.deepEqual(rows, arrivals[0]));
-    assert(arrivals[0].some(r => r.destinationId === stop && r.userId === manifest.actors[1].userId));
-    const votes = await Promise.all(team.map(a => a.call('workflow', { kind: 'votes', id: vote.id })));
-    votes.forEach(rows => assert.deepEqual(rows, votes[0]));
-    assert.equal(votes[0][0].optionId, 'keep');
-    await team[0].call('delete', { id: stop });
-    check('offline observer recovers last arrival, changed vote, gathering request and deleted stop');
     const subgroup = await team[1].call('workflow', { kind: 'split' });
     await team[1].call('workflow', { kind: 'invite', id: subgroup.id, userId: manifest.actors[2].userId });
     const invites = await team[2].call('workflow', { kind: 'invites' });
     assert(invites.length > 0);
     await team[2].call('workflow', { kind: 'accept', id: invites[0].id });
-    await converge(team, 4);
+    const splitViews = await converge(team, 4);
+    for (const { state } of splitViews) for (const index of [1, 2]) {
+      assert.equal(state.members.find(m => m.userId === manifest.actors[index].userId).subgroupId, subgroup.id);
+    }
     await team[2].call('workflow', { kind: 'merge' });
     await team[1].call('workflow', { kind: 'merge' });
-    await converge(team, 4);
+    const mergedViews = await converge(team, 4);
+    for (const { state } of mergedViews) for (const index of [1, 2]) {
+      assert.equal(state.members.find(m => m.userId === manifest.actors[index].userId).subgroupId, undefined);
+    }
     check('subgroup invitation, acceptance and merge converge');
     await team[3].call('workflow', { kind: 'leave' });
     const revoked = await team[3].call('raw', { name: 'get_group_recovery_snapshot', args: { p_group_id: A.id } });

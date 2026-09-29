@@ -293,6 +293,7 @@ export async function enqueueDestinationDelete(input: {
   groupId: string;
   destinationId: string;
   actorId?: string;
+  sessionId?: string | null;
 }): Promise<CoreOperation> {
   const snapshot = await snapshotForDestination(input.destinationId, input.groupId);
   const operation = await outbox.enqueueMutation({
@@ -302,7 +303,7 @@ export async function enqueueDestinationDelete(input: {
     entityVersion: snapshot.itineraryVersion ?? 0,
     operationType: 'delete_destination',
     actorId: input.actorId,
-    payload: { destinationId: input.destinationId,
+    payload: { destinationId: input.destinationId, sessionId: input.sessionId ?? null,
       subgroupId: snapshot.destinations.find(d => d.id === input.destinationId)?.subgroupId ?? null },
     applyLocal: async (exec, operation) => {
       const current = await sharedCoreDb.readSnapshotInTransaction(exec, snapshot.groupId) ?? snapshot;

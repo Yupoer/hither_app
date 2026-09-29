@@ -85,6 +85,7 @@ const { mergeRemoteGroupStatePreservingOwnLocation } = require(path.join(root, '
 const { applyMemberLocationPatches, locationPatchFromRealtimePayload } = require(path.join(root, 'utils/groupStatePatches.ts'));
 const { refreshTeamLocations } = require(path.join(root, 'utils/refreshTeamLocations.ts'));
 const core = require(path.join(root, 'state/coreDataSync.ts'));
+const arrivalSync = require(path.join(root, 'state/arrivalSync.ts'));
 const { startCoreSyncRuntime } = require(path.join(root, 'state/coreSyncRuntime.ts'));
 let userId, groupId, state = null, channel, dropLocations = false, poll, stopCore;
 const observed = { locations: 0, itinerary: 0, reads: 0, failures: 0, system: [], statuses: [] };
@@ -174,7 +175,7 @@ const actions = {
     }, requestPeers: () => locationApi.requestGroupLocationRefresh(groupId), getMembers: () => state?.members ?? [], cooling: args.cooling ?? false, timeoutMs: 20_000 });
   },
   add: args => destinations.addDestination(groupId, { title: 'Dummy smoke stop', coordinates: { latitude: 25, longitude: 121 }, day: 1 }),
-  delete: args => destinations.deleteDestination(groupId, args.id),
+  delete: args => destinations.deleteDestination(groupId, args.id, args.sessionId),
   privacy: args => navigation.setLocationSharingEnabled(args.enabled),
   raw: async args => {
     const result = await supabase.rpc(args.name, args.args);
@@ -185,7 +186,22 @@ const actions = {
       case 'voteCreate': return coordination.createCoordinationRequest({ groupId, subject: 'Dummy vote', subjectKind: 'itinerary', options: [{ id: 'keep', label: 'Keep', kind: 'keep_current' }, { id: 'no', label: 'No change', kind: 'no_change' }], deadline: new Date(Date.now() + 600_000).toISOString(), policy: 'majority', defaultOutcome: 'keep' });
       case 'vote': return coordination.respondToCoordinationRequest(args.id, args.option);
       case 'votes': return coordination.fetchCoordinationResponses(args.id);
-      case 'arrive': return gathering.setDestinationArrival(args.id, userId, args.arrived);
+      case 'start': {
+        if (!await pull()) throw new Error('start snapshot unavailable');
+        const operationId = crypto.randomUUID();
+        const result = await core.enqueueLeaderGatheringStart(groupId, { groupState: state, actorId: userId, activeDestinationId: args.id, operationId, navigationRequestId: operationId });
+        await core.flushCoreOperationOutbox();
+        return result;
+      }
+      case 'session': return navigation.getActiveNavigationSession(groupId);
+      case 'arrive': {
+        const destination = state?.destinations.find(d => d.id === args.id);
+        if (!destination || !args.sessionId) throw new Error('arrival requires the observed destination and navigation session');
+        const operation = args.arrived
+          ? await arrivalSync.enqueueArrival({ groupId, actorId: userId, userId, destination, arrivedAt: new Date().toISOString(), completeSolo: false, navigationSessionId: args.sessionId })
+          : await gathering.setDestinationArrivalAt(args.id, userId, false, null, args.sessionId);
+        return { operationId: operation.id, status: await arrivalSync.syncArrival(operation) };
+      }
       case 'arrivals': return gathering.fetchDestinationArrivals(groupId);
       case 'request': return gathering.submitGatherPointRequest(groupId, undefined, [{ title: 'Dummy request', coordinates: { latitude: 25, longitude: 121 } }]);
       case 'requests': return gathering.fetchPendingGatherPointRequests(groupId);

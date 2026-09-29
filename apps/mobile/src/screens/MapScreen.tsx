@@ -4615,14 +4615,14 @@ export default function MapScreen({ route, navigation }: Props) {
         } catch (recordErr) {
           logError('history_record_failed', recordErr, { groupId, dest: dest.id });
         }
-        await deleteDestination(groupId, dest.id);
+        await deleteDestination(groupId, dest.id, resolveCurrentNavigationSessionId(dest));
       }
       await stopNavigation();
       refresh();
     } catch (e) {
       Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
     }
-  }, [groupId, destinations, stopNavigation, refresh, t]);
+  }, [groupId, destinations, stopNavigation, refresh, t, resolveCurrentNavigationSessionId]);
 
   // Report-a-problem: grab the current screen, then swap the settings overlay
   // for the feedback form. Uses the SAME `overlay` state so the two are
@@ -4846,7 +4846,8 @@ export default function MapScreen({ route, navigation }: Props) {
           // 2) Deletes before reorder so slots free up.
           for (const id of dirty.deletedIds) {
             if (id.startsWith('draft-')) continue;
-            await deleteDestination(groupId, id);
+            const original = routeEditorServerDestinations.find(d => d.id === id);
+            await deleteDestination(groupId, id, original ? resolveCurrentNavigationSessionId(original) : null);
           }
           if (!token.isCurrent()) return;
 
@@ -5003,6 +5004,7 @@ export default function MapScreen({ route, navigation }: Props) {
     optimisticDepartureDate,
     serverDailyAccommodations,
     routeEditorServerDestinations,
+    resolveCurrentNavigationSessionId,
     refresh,
     t,
   ]);
