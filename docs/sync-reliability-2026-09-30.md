@@ -98,7 +98,7 @@ PGlite 執行實際 migration 與 RPC，使用最小 auth／通知 fixture 和 R
 
 Security advisors：0 ERROR；8 筆 RLS-without-policy INFO、1 anon SECURITY DEFINER、54 authenticated SECURITY DEFINER、52 anonymous-access policies、1 leaked-password protection 未啟用 WARN。RPC 型功能與訪客使用本來就會觸發部分警告；不能因此自動撤銷現有功能權限。密碼洩漏保護屬另項 Auth 設定，未擅改。
 
-Production channel 指向 production branch，目前 update group `c30fdf35-3d90-4072-8d6c-0fc37795a398`，runtime 0.1.8、commit `a55845fe5f3b04afabeb38b136ac713a5e252984`。EAS 最近 iOS build 是 0.1.6 development／internal，沒有可核對的相容 0.1.8 binary 記錄。整合遠端 lock 並 npm ci 後，原生套件版本已與 production OTA commit 一致，但 `targets/live-activity/HitherLiveActivity.swift` 仍有遠端帶入的原生變更。缺少可核對的相容 0.1.8 binary 證據，不能只憑 runtime 相同發布；依 hither-commit-push-ota 的「Native-incompatible changes stop after Git with the binary requirement」規則不發布 OTA、不自動 native build。需相容 binary 的 build provenance 後才可發布。
+Production channel `production` 指向同名 branch，production runtime 為 0.1.8。使用者確認已在 2026-09-22 的原生變更 commit `9fcce37583b35ef97d5c5eb3a498278335805179` 後完成本地 iOS build；該 commit 至今沒有後續原生輸入變更。已發布並以 `eas update:view` 回讀確認 iOS OTA：group `280b0857-5aec-4aa2-bd20-796bbac5266b`、update `01a0ee92-2dd5-7d5c-8959-6fda54ca2cd0`、runtime `0.1.8`、branch `production`、Git commit `47c99f3c432adb6b0f6a014c10f7d3ba62de4775`。
 
 最終完整 Jest：293 suites、2336 tests 通過、0 失敗；TypeScript、lint（0 errors／669 warnings）、test meta、runtime alignment 通過。對整合的遠端 SHA 計算變更函式 coverage 為 86.10%（601／698），通過 85% 門檻，lines 91.66%。Coverage runner 改串流輸出，避免 React 診斷超過 spawnSync buffer 時測試被中止；未調降門檻。npm ci 安裝後 audit 為 0 vulnerabilities。
 

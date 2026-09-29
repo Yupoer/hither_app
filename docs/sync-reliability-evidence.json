@@ -3206,9 +3206,17 @@
     "historyDrift": "dry-run still reports twelve pre-existing remote-only migration versions; no reset or unrelated replay; new guard deployed by apply_migration, filename matches its recorded timestamp"
   },
   "ota": {
-    "published": false,
-    "reason": "Native dependencies now match prior OTA after integrating remote lockfile, but HitherLiveActivity.swift changed; no verifiable compatible deployed runtime 0.1.8 binary provenance",
-    "currentProductionUpdateGroup": "c30fdf35-3d90-4072-8d6c-0fc37795a398"
+    "published": true,
+    "platform": "ios",
+    "channel": "production",
+    "branch": "production",
+    "runtime": "0.1.8",
+    "group": "280b0857-5aec-4aa2-bd20-796bbac5266b",
+    "updateId": "01a0ee92-2dd5-7d5c-8959-6fda54ca2cd0",
+    "gitCommitHash": "47c99f3c432adb6b0f6a014c10f7d3ba62de4775",
+    "message": "hither OTA commit=47c99f3c432adb6b0f6a014c10f7d3ba62de4775 runtime=0.1.8",
+    "verifiedWith": "eas update:view",
+    "baseBinary": "user confirmed local build after 2026-09-22 commit 9fcce37; no native-input changes since that commit"
   },
   "unverified": [
     "Native MapKit rendering",
