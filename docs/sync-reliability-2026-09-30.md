@@ -1,6 +1,6 @@
 # 同步修復與驗證紀錄 — 2026-09-30
 
-直接修改既有 master，基準 `03c68b8c45cb35a05b22b03af42daa9fc7957d01`。本文件區分已執行的無 UI 驗證、正式後端驗證與尚未證明的原生行為。
+直接修改既有 master，基準 `03c68b8c45cb35a05b22b03af42daa9fc7957d01`。經 Astra medium 審查後，整合遠端 `9fcce37583b35ef97d5c5eb3a498278335805179`，merge commit 為 `3a0c51022f708aa449af1e0ebf770917efd7de2c`。本文件區分已執行的無 UI 驗證、正式後端驗證與尚未證明的原生行為。
 
 ## 根因與修正
 
@@ -8,13 +8,15 @@
 2. **手動更新相依方向錯誤**：自己 GPS 失敗／等待與群組請求冷卻，阻擋了讀取其他成員。現在共用 `refreshTeamLocations` 同時啟動伺服器讀取、自身定位／上傳及隊員請求；冷卻只限制請求。UI 分別報告讀取、上傳及回覆數。
 3. **復原覆寫新資料**：讀取失敗重新載入舊 SQLite、集合點 optimistic fence 保留整份成員、舊快照覆蓋 Realtime 等路徑會造成各裝置不同。現在只在冷啟動使用快取，依 server receipt 合併位置；無位置快照帶伺服器觀測時間，避免「第一筆位置已收到，舊空快照又把頭像擦掉」。離隊與停止分享仍是明確撤除。
 4. **無回呼／漏訊息缺少有效恢復**：前景 30 秒核對，SUBSCRIBED 重連與前景恢復補讀；HTTP 與 recovery deadline 釋放鎖。MapKit 無樣本時用有界單次新定位恢復，不把 cached 座標重新蓋時間，不另開持續 watcher。
-5. **時間語意混用**：自己用本機 GPS、其他人用伺服器資料，造成「我看剛更新、別人看很久前」。分享列全用伺服器確認資料，分開 capturedAt／lastUpdated；freshness 用採樣時間，讀取不改時間，並由 snapshot 的 server time 校正觀看手機的時鐘。藍點仍是本機定位。讀取失敗保留資料並標示失敗。
+5. **時間語意混用**：自己用本機 GPS、其他人用伺服器資料，造成「我看剛更新、別人看很久前」。分享列全用伺服器確認資料，分開 capturedAt（採樣）／uploadedAt（伺服器接收）；lastUpdated 保留既有採樣時間語意；freshness 用採樣時間，讀取不改時間，並由 snapshot 的 server time 校正觀看手機的時鐘。藍點仍是本機定位。讀取失敗保留資料並標示失敗。
 6. **RPC 假接受**：舊 sample 的 UPSERT 沒更新位置，RPC 卻回 accepted；重複 event 又可能刷新 receipt。新 RPC 拒絕 stale／不合法時間與座標，duplicate 不重寫位置。被拒絕的 event INSERT 一併回滾，重送不能變成功；同一 ID 不接受不同 payload。
 7. **尾端事件丟失**：抵達、集合請求與投票原本節流期間直接 return。現在延後補讀；投票 responses 讀取失敗保留既有票數。分隊邀請、導航及例外來源补上前景／重連／30 秒核對；切隊清除舊模型並阻擋遲到回應。
 8. **位置跨帳號佇列**：新位置在 SQLite payload 保存 actorId，上傳前拒絕另一帳號的事件；登出、刪帳號、切換登入身分先撤銷位置存取並清除佇列。明確撤銷分享的清除屬隱私行為，不是網路失敗重試。
-9. **粒子時間無界**：改為有界相位與週期 seed／整數頻率；可見且 active 時持續、背景暫停、恢復續播，保留 Reduce Motion。MemberMarker 同時提供最新 declarative coordinate，不只依賴原生動畫命令更新位置。
+9. **粒子時間無界**：保留遠端 CPU Skia Path 外觀，以有界 twinkle 相位與每顆粒子的位置 wrap 持續循環；可見且 active 時持續、背景暫停、恢復續播，保留 Reduce Motion。MemberMarker 同時提供最新 declarative coordinate，不只依賴原生動畫命令更新位置。
 
 10. **刪隊 trigger 相互衝突**：批次清理 memberships 時，空團隊已被刪除，Premium trigger 仍重建該團隊 projection，造成 FK 失敗。共用 recompute 函式先鎖定／檢查 parent；不存在就返回，既有團隊照常計算。PGlite 與真實 Dummy 清理皆通過。
+
+11. **活動集合點刪除遺漏 session**：整合遠端 durable v3 後，正式 delete 入口未傳原始 sessionId，伺服器正確拒絕刪除活動目的地。兩個 UI 入口改用既有 session resolver，Service 與共享 outbox 原樣持久化；不於重送時抓較新的 session，避免舊離線意圖刪掉新集合。真實 Smoke 揭露此問題，Service／outbox 測試與 Astra 複審已通過。
 
 這些是由程式路徑、失敗回歸與 Dummy 重現支持的原因；沒有三台使用者手機的原始 trace，因此不把其中單一路徑宣稱為當時唯一原因。
 
@@ -47,7 +49,7 @@
 - 收藏、profile、Premium／商店不走隊伍位置的 30 秒輪詢。建議維持開啟／操作後核對；只有需要雙裝置同時停留該頁時，才加入該頁的 Realtime＋前景核對，避免全 App 無差別輪詢。
 - 裝置休眠、被強制終止、OS 不提供 GPS 時，無法保證五秒新樣本；讀取也不能替另一台手機製造新位置。會保留舊位置與採樣時間／失敗狀態。5–10 秒是前景且有有效樣本、正常網路的政策目標，無 UI 測試不能證明真機耗電與 OS 排程。
 - collection sampling timestamp 仍來自感測器；超過伺服器兩分鐘的未來樣本被拒絕，逾 24 小時不再重送。觀看端時鐘校正不會把延遲上傳的舊樣本變成新樣本。
-- 全檔 function coverage 門檻目前未達 85%，且完整 Jest 有 4 個在基準 master 也重現的既有契約失敗；不能聲稱專案所有品質門檻已綠燈。細節見驗證資料。
+- lint 仍有 669 個警告、0 errors；本次沒有把無關歷史警告一起大規模改寫。完整 Jest 與 85% 變更函式覆蓋率門檻均已通過。
 
 ## 測試分層與可重跑命令
 
@@ -61,6 +63,8 @@ npm.cmd run lint
 node scripts/check-test-meta.mjs
 node scripts/verify-runtime-alignment.mjs
 node node_modules/jest/bin/jest.js --runInBand --silent --forceExit
+$env:COVERAGE_BASE='9fcce37583b35ef97d5c5eb3a498278335805179'
+node scripts/check-changed-coverage.mjs
 node scripts/location-smoke.cjs --live --admin --duration=300
 ```
 
@@ -73,7 +77,7 @@ npm.cmd install --prefix .sync-test-runtime --no-save --package-lock=false @elec
 node supabase/tests/member_location_sync.mjs .sync-test-runtime/node_modules/@electric-sql/pglite/dist/index.js
 ```
 
-PGlite 執行實際 migration 與 RPC，使用最小 auth／通知 fixture 和 RLS 測試資料；它不代表真實 Realtime，正式權限另由各帳號 live session 驗證。固定亂序種子：24301、20260930、731。相位測試五百萬步，跨千次週期。
+PGlite 執行實際 migration 與 RPC，使用最小 auth／通知 fixture 和 RLS 測試資料；它不代表真實 Realtime，正式權限另由各帳號 live session 驗證。固定亂序種子：24301、20260930、731。相位測試五百萬步，跨千次週期；粒子位置另跑十萬次有界更新與暫停／恢復。
 
 | 必測情境 | 證據 |
 |---|---|
@@ -90,12 +94,23 @@ PGlite 執行實際 migration 與 RPC，使用最小 auth／通知 fixture 和 R
 
 ## 後端與發布
 
-已部署 `20260929164531_reliable_member_location_sync`、`20260929173500_location_rejection_idempotency`、`20260929175500_premium_projection_deleted_group_guard` 到 Hither `htqrucnjafhhvxdqslbv`。db push dry-run 被既有歷史差異擋住，因此只執行這三份審查過的 SQL，並只 repair 對應三個版本為 applied；沒有 reset 或重跑其他 migration。此次沒有 Edge Function 改動。
+已部署 `20260929164531_reliable_member_location_sync`、`20260929173500_location_rejection_idempotency`、`20260929175500_premium_projection_deleted_group_guard` 到 Hither `htqrucnjafhhvxdqslbv`。db push dry-run 被既有歷史差異擋住，因此只執行這三份審查過的 SQL，並只 repair 對應三個版本為 applied；沒有 reset 或重跑其他 migration。本次另部署 `20260929183149_itinerary_version_deleted_group_guard`，修正遠端整合後真實清理測試發現的 itinerary version trigger 刪隊 FK 問題。正常寫入仍遞增版本，刪除 parent 不重建版本。此份經 MCP apply_migration 部署，檔名與實際 migration history 版本一致。此次修復沒有 Edge Function 改動。
 
 Security advisors：0 ERROR；8 筆 RLS-without-policy INFO、1 anon SECURITY DEFINER、54 authenticated SECURITY DEFINER、52 anonymous-access policies、1 leaked-password protection 未啟用 WARN。RPC 型功能與訪客使用本來就會觸發部分警告；不能因此自動撤銷現有功能權限。密碼洩漏保護屬另項 Auth 設定，未擅改。
 
-Production channel 指向 production branch，目前 update group `c30fdf35-3d90-4072-8d6c-0fc37795a398`，runtime 0.1.8、commit `a55845fe5f3b04afabeb38b136ac713a5e252984`。EAS 最近 iOS build 是 0.1.6 development／internal，沒有可核對的相容 0.1.8 binary 記錄。取回 production OTA commit 後確認 native modules／plugins／iOS source 沒有差異，但 package lock 的 Expo／location／SQLite 等原生套件版本不同；不能只憑同為 0.1.8 推定相容。因此不發布未驗證 OTA、不自動 native build。需要目前已部署 binary 的原生 dependency／build provenance，或明確安排相容 native build 後才可發布。
+Production channel 指向 production branch，目前 update group `c30fdf35-3d90-4072-8d6c-0fc37795a398`，runtime 0.1.8、commit `a55845fe5f3b04afabeb38b136ac713a5e252984`。EAS 最近 iOS build 是 0.1.6 development／internal，沒有可核對的相容 0.1.8 binary 記錄。整合遠端 lock 並 npm ci 後，原生套件版本已與 production OTA commit 一致，但 `targets/live-activity/HitherLiveActivity.swift` 仍有遠端帶入的原生變更。缺少可核對的相容 0.1.8 binary 證據，不能只憑 runtime 相同發布；依 hither-commit-push-ota 的「Native-incompatible changes stop after Git with the binary requirement」規則不發布 OTA、不自動 native build。需相容 binary 的 build provenance 後才可發布。
 
-最終完整 Jest：1993 通過、4 失敗（4 個均在未修改基準重現）；TypeScript、lint（0 errors／519 warnings）、test meta、runtime alignment 通過。變更檔案全檔 function coverage 的量測為 47.96%，未達 85%（量測在最後 actor guard 前，不能當最終 coverage 通過證明）。
+最終完整 Jest：293 suites、2336 tests 通過、0 失敗；TypeScript、lint（0 errors／669 warnings）、test meta、runtime alignment 通過。對整合的遠端 SHA 計算變更函式 coverage 為 86.10%（601／698），通過 85% 門檻，lines 91.66%。Coverage runner 改串流輸出，避免 React 診斷超過 spawnSync buffer 時測試被中止；未調降門檻。npm ci 安裝後 audit 為 0 vulnerabilities。
 
-真實五分鐘 run `LXS2qi`：305688 ms、50 cycles、62 checks 通過；其早期清理失敗已由第三份 migration 修復後按 ID 清除。最終 run `lygGmB`：13 checks 通過，包含帳號隔離，6 users／2 groups 清理完成；漏掉位置事件的自動補讀在 16870 ms 恢復。所有本次歷次 Dummy 資源已核對清除。詳細各輪結果、原始失敗和資源 ID 見 [驗證資料](sync-reliability-evidence.json)；原始 calls.jsonl 保留於每輪 Temp evidence 目錄。commit／remote SHA 見交付回覆。
+## Astra medium 審查與整合回歸
+
+- 空快照的 generated_at 不是刪除版本：已移除以它拒收真實新位置的條件，避免 snapshot 後 commit 的位置永遠被排除；明確停止分享仍生效。
+- 隊長例外來源只取最新 50 筆：補讀改按使用者合併最新訊號，避免較早尚未解決的求救被其他人的訊息擠掉。
+- MapKit 動畫必須用 capturedAt／採樣 lastUpdated，不能以剛收到的 uploadedAt 將舊 GPS 當新樣本。
+- 另外補上 UI refresh 整體 deadline、缺少 actorId 的持久化事件拒絕、舊帳號 refresh promise fencing，以及 stale_version 僅補讀重試一次後呈現衝突。
+- 上述根因已加回歸測試；最終 Astra medium 複審無新的確定問題。Hook tests 實際掛載 organizer／subgroup recovery hooks；navigation tests 執行正式 service scope／訂閱回呼。
+- 整合遠端 durable add 後，Smoke 改等待另一成員的伺服器 snapshot 確認新增再抵達；刪除後也逐一讀回所有成員確認消失，不把 optimistic function 返回視為遠端成功。六個 worker 使用正式 authenticated transport、auth recovery 與 core sync runtime。抵達測試使用正式 UI 的 enqueueLeaderGatheringStart、arrivalSync 與 setDestinationArrivalAt，從另一成員讀到導航 session 後綁定操作；缺少 session 的拒絕保留為失敗證據。分隊接受／合併逐端核對 subgroupId；抵達先確認撤回落庫，再確認最後 true 在所有端一致。合法並發定位可向前更新，但被拒座標不得生效、時間不得倒退。
+
+最終真實 run `IqW1Gu`：62 checks 全數通過、0 失敗；穩定性 302661 ms／48 cycles，漏掉位置事件在 17350 ms 自動補讀恢復。該輪 6 個帳號、2 個團隊清理成功；包含全部歷次失敗輪次，已逐 ID 核對 135 個測試帳號與 44 個測試團隊，殘留均為零。
+
+最新 Live Smoke、失敗輪次與清理核對結果見 [驗證資料](sync-reliability-evidence.json)。原始 calls.jsonl 保留於各輪 Temp evidence 目錄；帳號密碼與 session 不寫入版本庫。commit／remote SHA 見交付回覆。
