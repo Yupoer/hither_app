@@ -200,7 +200,20 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
       const key = routeCacheKey(from, to, mode, decimals);
       const cached = cacheRef.current.get(key);
       if (cached) return cached;
-      const request = getDirections(from, to, mode);
+      // Keep successful geometry and in-flight dedupe, but do not permanently
+      // cache a null/error produced while offline or while the proxy circuit
+      // is open. A later gated coordinate can then be the single half-open
+      // recovery probe instead of replaying a stale failure forever.
+      const request = (async () => {
+        try {
+          const route = await getDirections(from, to, mode);
+          if (!route) cacheRef.current.delete(key);
+          return route;
+        } catch {
+          cacheRef.current.delete(key);
+          return null;
+        }
+      })();
       cacheRef.current.set(key, request);
       return request;
     };

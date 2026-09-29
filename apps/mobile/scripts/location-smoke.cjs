@@ -29,6 +29,7 @@ let seq = 0;
 function worker(index) {
   const child = fork(path.join(__dirname, 'location-smoke-worker.cjs'), [], { env: { ...env, HITHER_SMOKE_ACTOR: String(index) }, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
   const pending = new Map();
+  child.on('error', error => { for (const p of pending.values()) { clearTimeout(p.timer); p.reject(error); } pending.clear(); });
   child.stderr.on('data', data => { if (!String(data).includes('ExperimentalWarning')) fs.appendFileSync(path.join(directory, 'worker-errors.log'), data); });
   child.stdout.on('data', data => fs.appendFileSync(path.join(directory, 'worker.log'), data));
   child.on('message', ({ id, value, error }) => {
@@ -39,6 +40,7 @@ function worker(index) {
   });
   child.on('exit', () => { for (const p of pending.values()) { clearTimeout(p.timer); p.reject(new Error('worker exited')); } pending.clear(); });
   return { index, child, call(action, args = {}) {
+    if (!child.connected) return Promise.reject(new Error(`actor ${index} worker unavailable`));
     const id = ++seq;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { pending.delete(id); reject(new Error(`actor ${index} ${action} timeout`)); }, 45_000);
@@ -217,7 +219,7 @@ async function converge(team, count) {
     assert.equal(unknownAccount.sent, 0); assert.equal(unknownAccount.discarded, 1);
     check('legacy SQLite event with unknown account cannot upload under the current session');
     manifest.passed = true;
-  } catch (error) { manifest.passed = false; manifest.failure = error.stack; console.error(error.message); process.exitCode = 1; }
+  } catch (error) { manifest.passed = false; manifest.failure = error.stack; save(); console.error(error.message); process.exitCode = 1; }
   finally {
     // Stop observers, then remove memberships before groups: the premium membership
     // trigger requires its parent group to still exist during its DELETE callback.

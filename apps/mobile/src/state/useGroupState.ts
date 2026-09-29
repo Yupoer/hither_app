@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { retainVisibleGroupSeed } from './visibleGroupSeed';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 import { requestWithDeadline } from '../utils/requestDeadline';
 import { getGroupRecoverySnapshot } from '../api/client';
 import { energyObservability } from './energyObservability';
 import { syncLocationSharing } from './locationSharingSync';
+import { classifyOperationError, getOperationErrorMessage, type OperationErrorClassification } from '../utils/operationError';
 import { supabase } from '../api/supabase';
 import type { GroupState } from '../types';
 import type {
@@ -36,6 +38,7 @@ import {
   hydrateCoreEntityVersions,
   listOpenCoreOperations,
   projectOptimisticGathering,
+  projectPendingDestinations,
   subscribeCoreOutboxChanges,
 } from './coreDataSync';
 import type { ActiveGatheringState, CoreOperation } from '../types/coreData';
@@ -76,6 +79,8 @@ interface UseGroupStateResult {
   /** True only during the very first load (before any data arrives). */
   loading: boolean;
   error: string | null;
+  loadError: OperationErrorClassification | null;
+  refreshing: boolean;
   /** Force an immediate refresh (e.g. pull-to-refresh, recenter). */
   refresh: (reason?: GroupReloadReason) => Promise<boolean>;
   /** Where the current state was loaded from (OTA-04 local-first). */
@@ -116,20 +121,26 @@ export function useGroupState(
   const [serverTimeOffsetMs, setServerTimeOffsetMs] = useState(0);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<OperationErrorClassification | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const [dataSource, setDataSource] = useState<GroupStateDataSource>('none');
   const [snapshotFreshness, setSnapshotFreshness] = useState<CoreSnapshotFreshness>({
     unit: 'missing',
   });
   const [emptyLocalSnapshot, setEmptyLocalSnapshot] = useState(false);
+  useEffect(() => {
+    if (myUserId && state) return retainVisibleGroupSeed(myUserId, state);
+  }, [myUserId, state]);
   const [openOperations, setOpenOperations] = useState<CoreOperation[]>([]);
   const openOperationsRef = useRef<CoreOperation[]>([]);
   openOperationsRef.current = openOperations;
   const [appState, setAppState] = useState<AppStateStatus>(AppState.currentState);
   const activeRef = useRef(true);
   const groupIdRef = useRef(groupId);
-  useEffect(() => {
-    groupIdRef.current = groupId;
-  }, [groupId]);
+  // Keep identity refs current during render. Async callbacks can settle
+  // between the render and the passive effect that would otherwise update
+  // these refs, especially while switching groups/accounts.
+  groupIdRef.current = groupId;
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const locationDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const realtimeReadyRef = useRef(false);
@@ -138,6 +149,11 @@ export function useGroupState(
   myUserIdRef.current = myUserId;
 
   const loadInFlightRef = useRef<Promise<boolean> | null>(null);
+  const loadInFlightContextRef = useRef<{
+    groupId: string;
+    actorId: string | null;
+    generation: number;
+  } | null>(null);
   // Realtime can report a newer revision while the recovery RPC is still in
   // flight. Do not collapse that event into the old promise: the completion
   // path schedules one immediate follow-up snapshot for the same group.
@@ -162,27 +178,36 @@ export function useGroupState(
   const refreshOpenOperations = useCallback(async (
     id: string,
     expectedGeneration = groupGenerationRef.current,
+    expectedActorId = myUserIdRef.current,
   ) => {
     const isCurrent = () => (
       activeRef.current
       && groupGenerationRef.current === expectedGeneration
       && groupIdRef.current === id
+      && myUserIdRef.current === expectedActorId
     );
     try {
       const ops = await listOpenCoreOperations(id);
-      if (isCurrent()) setOpenOperations(ops);
-    } catch {
-      if (isCurrent()) setOpenOperations([]);
+      if (isCurrent()) {
+        const own = ops.filter(op => Boolean(myUserIdRef.current)
+          && (op.actorId ?? op.payload.actorId) === myUserIdRef.current);
+        const previous = openOperationsRef.current;
+        openOperationsRef.current = own;
+        setOpenOperations(own);
+        // Accepted/conflicted intent must converge to authoritative data, not
+        // wait five minutes for the fallback poll or retain a local draft.
+        if (previous.some(op => op.status !== 'conflict'
+          && !own.some(next => next.id === op.id && next.status !== 'conflict'))) {
+          void loadRef.current('itinerary_mutation');
+        }
+      }
+    } catch (cause) {
+      // A queue read failure is not evidence that saved operations disappeared.
+      // Keep the last receipt visible and expose the real storage/session error.
+      if (isCurrent()) setError(getOperationErrorMessage(cause));
     }
   }, []);
 
-  // Live outbox banners: refresh open ops after enqueue / flush.
-  useEffect(() => {
-    if (!groupId) return;
-    return subscribeCoreOutboxChanges(() => {
-      void refreshOpenOperations(groupId);
-    });
-  }, [groupId, refreshOpenOperations]);
 
   const applyOptimisticGathering = useCallback((gathering: ActiveGatheringState) => {
     setState((prev) => {
@@ -198,11 +223,13 @@ export function useGroupState(
   const applyLocalSnapshot = useCallback(async (
     id: string,
     expectedGeneration = groupGenerationRef.current,
+    expectedActorId = myUserIdRef.current,
   ): Promise<boolean> => {
     const isCurrent = () => (
       activeRef.current
       && groupGenerationRef.current === expectedGeneration
       && groupIdRef.current === id
+      && myUserIdRef.current === expectedActorId
     );
     try {
       const snapshot = await readCoreSnapshot(id);
@@ -213,7 +240,11 @@ export function useGroupState(
         setDataSource('none');
         return false;
       }
-      const next = groupStateFromCoreSnapshot(snapshot);
+      const projected = groupStateFromCoreSnapshot(snapshot);
+      const current = stateRef.current;
+      // Core writes change itinerary/gathering, not the live location feed.
+      const next = current?.group.id === id ? { ...projected,
+        members: current.members, subgroups: current.subgroups } : projected;
       const freshness = coreSnapshotFreshness(snapshot, Date.now());
       stateRef.current = next;
       setState(next);
@@ -222,42 +253,76 @@ export function useGroupState(
       setEmptyLocalSnapshot(false);
       const source: CoreSnapshotSource = snapshot.source;
       void source;
-      await refreshOpenOperations(id, expectedGeneration);
+      await refreshOpenOperations(id, expectedGeneration, expectedActorId);
       return true;
     } catch {
       return false;
     }
   }, [refreshOpenOperations]);
 
+  // The SQLite transaction has already committed when this fires. Paint it
+  // before any remote refresh; all screens share the same local projection.
+  useEffect(() => {
+    if (!groupId) return;
+    return subscribeCoreOutboxChanges(() => {
+      void applyLocalSnapshot(groupId).then(applied => {
+        if (!applied) void refreshOpenOperations(groupId);
+      });
+    });
+  }, [groupId, myUserId, applyLocalSnapshot, refreshOpenOperations]);
+
   const load = useCallback((reason: GroupReloadReason = 'unknown'): Promise<boolean> => {
     if (!groupId) return Promise.resolve(false);
-    if (loadInFlightRef.current) {
-      // Initial/group-foreground effects may call load twice for the same
-      // revision. Only a revision that arrived after this request needs a
-      // follow-up; Realtime callbacks explicitly mark their own events below.
-      if (reason === 'poll_manual_refresh' || latestRevisionRef.current !== inFlightRevisionRef.current) {
-        pendingReloadRef.current = true;
-      }
-      pendingReloadReasonRef.current = pickStrongerReloadReason(
-        pendingReloadReasonRef.current,
-        reason,
-      );
-      return loadInFlightRef.current;
-    }
+    const actorId = myUserId;
     const generation = groupGenerationRef.current;
+    const isCurrentRequest = () => (
+      activeRef.current
+      && groupGenerationRef.current === generation
+      && groupIdRef.current === groupId
+      && myUserIdRef.current === actorId
+    );
+
+    // A callback retained by the previous group/account must not start a new
+    // recovery request after the hook has moved on. This is separate from the
+    // response guard below: it prevents an old refresh from occupying the
+    // shared in-flight slot needed by the current identity.
+    if (!isCurrentRequest()) return Promise.resolve(false);
+
+    if (loadInFlightRef.current) {
+      const inFlight = loadInFlightContextRef.current;
+      if (inFlight
+        && inFlight.groupId === groupId
+        && inFlight.actorId === actorId
+        && inFlight.generation === generation) {
+        // Initial/group-foreground effects may call load twice for the same
+        // revision. Only a revision that arrived after this request needs a
+        // follow-up; Realtime callbacks explicitly mark their own events below.
+        if (reason === 'poll_manual_refresh' || latestRevisionRef.current !== inFlightRevisionRef.current) {
+          pendingReloadRef.current = true;
+        }
+        pendingReloadReasonRef.current = pickStrongerReloadReason(
+          pendingReloadReasonRef.current,
+          reason,
+        );
+        return loadInFlightRef.current;
+      }
+      // A stale request may still settle, but it must not be reused by the
+      // current group/account. The new request below owns the slot.
+    }
     inFlightRevisionRef.current = latestRevisionRef.current;
     const loadReason = pickStrongerReloadReason(pendingReloadReasonRef.current, reason);
     pendingReloadReasonRef.current = null;
     inFlightReasonRef.current = loadReason;
+    setRefreshing(true);
     const run = (async () => {
       try {
         energyObservability.increment('snapshot');
         energyObservability.event('snapshot');
         const recovery = await requestWithDeadline(() => getGroupRecoverySnapshot(groupId));
+        if (!isCurrentRequest()) return false;
         const next = recovery.state;
         const staleResponse = isOlderRevision(recovery.revision, latestRevisionRef.current);
-        const isCurrentGeneration =
-          activeRef.current && groupGenerationRef.current === generation;
+        const isCurrentGeneration = isCurrentRequest();
         // One authoritative merge for React state + SQLite. Do not persist the
         // raw empty remote when membership fence preserves local cards (#167).
         let persistSnapshot: GroupState | null = null;
@@ -307,18 +372,20 @@ export function useGroupState(
           setState(merged);
           persistSnapshot = merged;
           setError(null);
+          setLoadError(null);
           setDataSource('remote');
           setEmptyLocalSnapshot(false);
         }
         try {
+          if (!isCurrentRequest()) return false;
           // Persist the same merged snapshot used for paint (never raw empty fenced next).
           if (!staleResponse && isCurrentGeneration && persistSnapshot) {
             await hydrateCoreEntityVersions(groupId, persistSnapshot);
           }
+          if (!isCurrentRequest()) return false;
           const snap = await readCoreSnapshot(groupId);
           if (
-            activeRef.current
-            && groupGenerationRef.current === generation
+            isCurrentRequest()
             && snap
           ) {
             setSnapshotFreshness(coreSnapshotFreshness(snap, Date.now()));
@@ -327,17 +394,21 @@ export function useGroupState(
           // Local cache write is best-effort; remote state still paints.
         }
         // Opportunistic outbox drain after a successful network round-trip.
-        if (myUserIdRef.current) await syncLocationSharing(myUserIdRef.current).catch(() => undefined);
+        if (!isCurrentRequest()) return false;
+        if (actorId) await syncLocationSharing(actorId).catch(() => undefined);
+        if (!isCurrentRequest()) return false;
         await flushCoreOperationOutbox().catch(() => undefined);
-        await refreshOpenOperations(groupId);
-        return true;
+        if (!isCurrentRequest()) return false;
+        await refreshOpenOperations(groupId, generation, actorId);
+        return isCurrentRequest();
       } catch (cause) {
-        if (!activeRef.current || groupGenerationRef.current !== generation) return false;
+        if (!isCurrentRequest()) return false;
+        setLoadError(classifyOperationError(cause));
         const message = cause instanceof Error ? cause.message : String(cause ?? '');
         const notMember = /not_member/i.test(message);
         if (notMember) {
           // Membership revoked (e.g. kick) — do not paint stale local cards.
-          if (activeRef.current && groupGenerationRef.current === generation) {
+          if (isCurrentRequest()) {
             stateRef.current = null;
             setState(null);
             setDataSource('none');
@@ -346,26 +417,25 @@ export function useGroupState(
           }
           return false;
         }
-        const restored = stateRef.current !== null || await applyLocalSnapshot(groupId, generation);
-        if (activeRef.current && groupGenerationRef.current === generation) {
-          if (restored) {
-            // Offline / network failure with a prior snapshot: show cached data.
-            setDataSource('local_cache');
-            setError(cause instanceof Error ? cause.message : 'sync_failed');
-          } else {
-            setError(cause instanceof Error ? cause.message : '無法取得群組狀態');
-          }
-        }
+        const restored = stateRef.current !== null || await applyLocalSnapshot(groupId, generation, actorId);
+        if (!isCurrentRequest()) return false;
+        if (restored) setDataSource('local_cache');
+        setError(getOperationErrorMessage(cause));
         // Always false when remote pull failed — callers (force-refresh, sync)
         // must surface failure even if a local cache is still painted.
         return false;
       } finally {
-        if (activeRef.current) setLoading(false);
+        if (isCurrentRequest()) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     })().finally(() => {
       if (loadInFlightRef.current !== run) return;
       loadInFlightRef.current = null;
       inFlightRevisionRef.current = null;
+      loadInFlightContextRef.current = null;
+      if (!isCurrentRequest()) return;
       const shouldFollow = pendingReloadRef.current;
       pendingReloadRef.current = false;
       if (!shouldFollow || !activeRef.current || !groupId) return;
@@ -388,8 +458,9 @@ export function useGroupState(
       }
     });
     loadInFlightRef.current = run;
+    loadInFlightContextRef.current = { groupId, actorId, generation };
     return run;
-  }, [applyLocalSnapshot, groupId, isOlderRevision, refreshOpenOperations]);
+  }, [applyLocalSnapshot, groupId, isOlderRevision, myUserId, refreshOpenOperations]);
 
   const loadRef = useRef(load);
   loadRef.current = load;
@@ -413,9 +484,13 @@ export function useGroupState(
     stateRef.current = null;
     setState(null);
     setDataSource('none');
+    openOperationsRef.current = [];
+    setOpenOperations([]);
     setSnapshotFreshness({ unit: 'missing' });
     setEmptyLocalSnapshot(false);
     setError(null);
+    setLoadError(null);
+    setRefreshing(false);
     pendingPatchesRef.current.clear();
     latestRevisionRef.current = '0';
 
@@ -426,7 +501,7 @@ export function useGroupState(
 
     let cancelled = false;
     void (async () => {
-      await applyLocalSnapshot(groupId, generation);
+      await applyLocalSnapshot(groupId, generation, myUserId);
       if (cancelled || !activeRef.current) return;
       // If we already painted from cache, drop the full-screen loader so the
       // map can render while remote reconciliation continues.
@@ -447,11 +522,12 @@ export function useGroupState(
         // must start its own recovery request immediately.
         loadInFlightRef.current = null;
         inFlightRevisionRef.current = null;
+        loadInFlightContextRef.current = null;
         pendingReloadRef.current = false;
         pendingReloadReasonRef.current = null;
       }
     };
-  }, [applyLocalSnapshot, groupId]);
+  }, [applyLocalSnapshot, groupId, myUserId]);
 
   // Realtime + poll only while the app is foregrounded (battery budget).
   useEffect(() => {
@@ -463,7 +539,7 @@ export function useGroupState(
 
     // Soft refresh when returning from background so peer pins catch up.
     void loadRef.current('poll_manual_refresh');
-    void flushCoreOperationOutbox().catch(() => undefined);
+    // load() drains only after session and remote state recovery have succeeded.
 
     const scheduleReload = (
       reason: GroupReloadReason,
@@ -592,29 +668,43 @@ export function useGroupState(
         }
       });
 
-    const timer = setInterval(() => {
-      void loadRef.current('poll_manual_refresh');
-    }, GROUP_POLL_INTERVAL_MS);
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      timer = setTimeout(async () => {
+        if (stopped) return;
+        await loadRef.current('poll_manual_refresh');
+        if (!stopped) schedule();
+      }, GROUP_POLL_INTERVAL_MS);
+    };
+    schedule();
 
     return () => {
       realtimeReadyRef.current = false;
       if (debounceRef.current) clearTimeout(debounceRef.current);
       if (locationDebounceRef.current) clearTimeout(locationDebounceRef.current);
-      clearInterval(timer);
+      stopped = true;
+      clearTimeout(timer);
       supabase.removeChannel(channel);
     };
   }, [groupId, appState, isOlderRevision]);
 
   const refresh = useCallback(async (reason: GroupReloadReason = 'poll_manual_refresh') => {
+    const actorId = myUserId;
+    if (groupIdRef.current !== groupId || myUserIdRef.current !== actorId) return false;
     const ok = await load(reason);
+    if (groupIdRef.current !== groupId || myUserIdRef.current !== actorId) return false;
     return loadInFlightRef.current ?? ok;
-  }, [load]);
-
+  }, [load, groupId, myUserId]);
+  const projectedState = useMemo(() => state
+    ? projectPendingDestinations(state, openOperations) : null, [state, openOperations]);
   return {
-    state,
+    state: projectedState,
     serverTimeOffsetMs,
     loading,
     error,
+    loadError,
+    refreshing,
     refresh,
     dataSource,
     snapshotFreshness,

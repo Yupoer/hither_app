@@ -10,7 +10,7 @@ export async function refreshTeamLocations(input: {
   cooling: boolean;
   timeoutMs?: number;
 }) {
-  const baselineLastUpdated = new Map(input.getMembers().map(m => [m.userId, m.lastUpdated]));
+  const baselineLastUpdated = new Map(input.getMembers().map(m => [m.userId, m.uploadedAt ?? m.lastUpdated]));
   const bounded = <T>(work: Promise<T>, timeoutMs = 10_000) => requestWithDeadline(() => work, timeoutMs);
   const firstPull = bounded(input.pull()).catch(() => false);
   // Include permission/session/storage waits, not only the native sensor timeout.

@@ -20,6 +20,8 @@ export interface PushPayload {
     | "gathering_request";
   group_id: string;
   sender_id: string;
+  /** Durable commands are not delivered after their original offline TTL. */
+  expires_at?: string | null;
   target_user_id?: string | null;
   destination_id?: string | null;
   member_id?: string | null;

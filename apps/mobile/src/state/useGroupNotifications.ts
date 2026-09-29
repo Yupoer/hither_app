@@ -84,9 +84,13 @@ export function useGroupNotifications(): void {
   tRef.current = t;
   const isLeaderRef = useRef(membership?.role === 'leader');
   isLeaderRef.current = membership?.role === 'leader';
+  const identityRef = useRef({ groupId, myUserId });
+  identityRef.current = { groupId, myUserId };
 
   useEffect(() => {
     if (!groupId || !myUserId) return;
+    let active = true;
+    const isCurrent = () => active && identityRef.current.groupId === groupId && identityRef.current.myUserId === myUserId;
 
     // Shared process set so Realtime local and FG push presentation dedupe.
     const seen = getProcessNotificationSeen();
@@ -195,7 +199,7 @@ export function useGroupNotifications(): void {
         if (!policy.recipientIds.includes(myUserId)) return;
 
         const prefs = await getNotificationPreferences();
-        if (!prefs[opts.category]) return;
+        if (!isCurrent() || !prefs[opts.category]) return;
 
         if (
           !shouldDeliverOnce(seen, eventIdentity, myUserId, 'realtime')
@@ -435,6 +439,7 @@ export function useGroupNotifications(): void {
       .subscribe();
 
     return () => {
+      active = false;
       unsubPush();
       supabase.removeChannel(channel);
     };

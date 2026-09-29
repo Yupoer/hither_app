@@ -75,10 +75,12 @@ import { setDiagnosticConsentEnabled } from './src/state/diagnosticConsent';
 import { uploadLocalLogs } from './src/utils/uploadLocalLogs';
 import { startOtaUpdateBootstrap } from './src/utils/otaUpdates';
 import OtaUpdateToast from './src/components/OtaUpdateToast';
+import AppNoticeHost from './src/components/AppNoticeHost';
 import InteractionRecoveryBanner from './src/components/InteractionRecoveryBanner';
 import PremiumPurchaseRecovery from './src/components/PremiumPurchaseRecovery';
 import PasswordRecoveryScreen from './src/screens/PasswordRecoveryScreen';
 import { initializeCoreDataLayer } from './src/state/coreDataSync';
+import { startCoreSyncRuntime } from './src/state/coreSyncRuntime';
 
 // Keep every RN-native presentation dark, regardless of the iOS system scheme.
 Appearance.setColorScheme('dark');
@@ -132,7 +134,8 @@ function ThemedNavigation() {
   useEffect(() => {
     if (initializing) return;
     void initializeCoreDataLayer().catch(() => undefined);
-  }, [initializing]);
+    if (user?.id) return startCoreSyncRuntime();
+  }, [initializing, user?.id]);
 
   useEffect(() => {
     if (!ready || initializing || !user) return;
@@ -433,6 +436,7 @@ export default function App() {
               <OtaUpdateToast />
               {/* Global: action error/timeout recovery (runUiAction). */}
               <InteractionRecoveryBanner />
+              <AppNoticeHost />
             </SessionProvider>
           </PreferencesProvider>
         </SafeAreaProvider>

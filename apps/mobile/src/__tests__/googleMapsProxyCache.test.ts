@@ -125,11 +125,18 @@ describe('googleMapsProxy withDedupeCache runtime behavior', () => {
     jest.dontMock('../state/performance');
   });
 
-  function jsonResponse(status: number, body: unknown): Response {
+  function jsonResponse(
+    status: number,
+    body: unknown,
+    headers: Record<string, string> = {},
+  ): Response {
     return {
       ok: status >= 200 && status < 300,
       status,
       json: async () => body,
+      headers: {
+        get: (name: string) => headers[name] ?? headers[name.toLowerCase()] ?? null,
+      },
     } as Response;
   }
 
@@ -211,7 +218,20 @@ describe('googleMapsProxy withDedupeCache runtime behavior', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('does not apply global cool-down for upstream so a different key may retry', async () => {
+  it('pauses auth failures across coordinates without a retry storm', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(401, { error: 'unauthorized' }));
+
+    await expect(proxyGetDirections(from, to, 'walk')).rejects.toMatchObject({
+      code: 'unauthorized',
+    });
+    await expect(proxyGetDirections(from, to2, 'walk')).rejects.toMatchObject({
+      code: 'unauthorized',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses a cross-coordinate breaker and one half-open probe for upstream failures', async () => {
+    jest.useFakeTimers();
     fetchMock
       .mockResolvedValueOnce(jsonResponse(503, { error: 'upstream_unavailable' }))
       .mockResolvedValueOnce(
@@ -228,7 +248,47 @@ describe('googleMapsProxy withDedupeCache runtime behavior', () => {
     await expect(proxyGetDirections(from, to, 'walk')).rejects.toMatchObject({
       code: 'upstream_unavailable',
     });
+    // A different coordinate is paused by the service breaker, not sent to
+    // the network immediately.
+    await expect(proxyGetDirections(from, to2, 'walk')).rejects.toMatchObject({
+      code: 'upstream_unavailable',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    jest.advanceTimersByTime(15_000);
     await expect(proxyGetDirections(from, to2, 'walk')).resolves.toBeNull();
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    jest.useRealTimers();
+  });
+
+  it('honors Retry-After when opening the cross-coordinate breaker', async () => {
+    jest.useFakeTimers();
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse(503, { error: 'upstream_unavailable' }, { 'Retry-After': '60' }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          action: 'route',
+          route: {
+            distanceMeters: 50,
+            expectedTravelTimeSeconds: 30,
+            encodedPolyline: '',
+          },
+        }),
+      );
+
+    await expect(proxyGetDirections(from, to, 'walk')).rejects.toMatchObject({
+      code: 'upstream_unavailable',
+      retryAfterMs: 60_000,
+    });
+    jest.advanceTimersByTime(59_999);
+    await expect(proxyGetDirections(from, to2, 'walk')).rejects.toMatchObject({
+      code: 'upstream_unavailable',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    jest.advanceTimersByTime(1);
+    await expect(proxyGetDirections(from, to2, 'walk')).resolves.toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    jest.useRealTimers();
   });
 });

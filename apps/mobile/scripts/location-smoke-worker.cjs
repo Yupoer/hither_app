@@ -36,13 +36,14 @@ require.extensions['.ts'] = (module, file) => module._compile(ts.transpileModule
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
 }).outputText, file);
 const { requestWithDeadline } = require(path.join(root, 'utils/requestDeadline.ts'));
-const supabase = createClient(process.env.EXPO_PUBLIC_SUPABASE_URL, process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY, {
+const baseSupabase = createClient(process.env.EXPO_PUBLIC_SUPABASE_URL, process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY, {
   auth: { storage, persistSession: true, autoRefreshToken: false, detectSessionInUrl: false },
   global: { fetch: (url, init) => {
     if (offline) return Promise.reject(new Error('fetch failed: injected offline'));
     return requestWithDeadline(signal => fetch(url, { ...init, signal }), 10_000, init?.signal);
   } },
 });
+let supabase = baseSupabase;
 const originalLoad = Module._load;
 Module._load = function(name, parent, main) {
   if (name === 'react-native') return { AppState: appState, Platform: { OS: 'ios' } };
@@ -52,6 +53,9 @@ Module._load = function(name, parent, main) {
   if (name === 'expo-sqlite') return { openDatabaseAsync: sqlite };
   if (name === 'expo-task-manager') return { isTaskDefined: () => true };
   if (name === 'expo-notifications') return { registerTaskAsync: async () => {} };
+  if (parent?.filename === path.join(root, 'i18n/index.ts') && name === '../state/PreferencesContext') {
+    return { usePreferences: () => ({ language: 'zh' }) };
+  }
   if (parent?.filename === path.join(root, 'state/backgroundLocationRefresh.ts')) {
     if (name === '../native') return { location: { getCurrentLocation: async () => ({ coordinates: event().coords, accuracy: 5, timestamp: Date.now() }) } };
     if (name === './backgroundJourney') return { reconcileBackgroundNavigation: async () => {} };
@@ -60,6 +64,13 @@ Module._load = function(name, parent, main) {
   if (parent && /supabase$/.test(name) && parent.filename.startsWith(root)) return { supabase };
   return originalLoad.apply(this, arguments);
 };
+const { configureDefaultAuthRecovery } = require(path.join(root, 'api/authRecovery.ts'));
+const { withAuthenticatedTransport } = require(path.join(root, 'api/authenticatedTransport.ts'));
+const { readLocalAuthActor, defaultSupabaseAuthStorageKey } = require(path.join(root, 'api/localAuthActor.ts'));
+const authRecovery = configureDefaultAuthRecovery({ getSession: () => baseSupabase.auth.getSession(), refreshSession: () => baseSupabase.auth.refreshSession() });
+supabase = Object.assign(withAuthenticatedTransport(baseSupabase, { authRecovery }), {
+  getLocalAuthActorId: () => readLocalAuthActor(storage, defaultSupabaseAuthStorageKey(process.env.EXPO_PUBLIC_SUPABASE_URL)),
+});
 const groupApi = require(path.join(root, 'api/services/GroupService.ts'));
 const locationApi = require(path.join(root, 'api/services/LocationService.ts'));
 const destinations = require(path.join(root, 'api/services/DestinationService.ts'));
@@ -73,12 +84,15 @@ const outbox = { enqueue: enqueueLocationOutbox, flush: flushLocationOutbox };
 const { mergeRemoteGroupStatePreservingOwnLocation } = require(path.join(root, 'utils/syncAuthority.ts'));
 const { applyMemberLocationPatches, locationPatchFromRealtimePayload } = require(path.join(root, 'utils/groupStatePatches.ts'));
 const { refreshTeamLocations } = require(path.join(root, 'utils/refreshTeamLocations.ts'));
-let userId, groupId, state = null, channel, dropLocations = false, poll;
+const core = require(path.join(root, 'state/coreDataSync.ts'));
+const { startCoreSyncRuntime } = require(path.join(root, 'state/coreSyncRuntime.ts'));
+let userId, groupId, state = null, channel, dropLocations = false, poll, stopCore;
 const observed = { locations: 0, itinerary: 0, reads: 0, failures: 0, system: [], statuses: [] };
 async function pull() {
   try {
     const remote = await groupApi.getGroupRecoverySnapshot(groupId);
     state = mergeRemoteGroupStatePreservingOwnLocation(state, remote.state, userId);
+    await core.hydrateCoreEntityVersions(groupId, state);
     await storage.setItem('snapshot', JSON.stringify(state));
     observed.reads++;
     return true;
@@ -132,6 +146,7 @@ const actions = {
     state = cached ? JSON.parse(cached) : null;
     if (state?.group.id !== groupId) state = null;
     await pull(); await subscribe();
+    stopCore?.(); stopCore = startCoreSyncRuntime();
     await outbox.flush();
     clearInterval(poll);
     poll = setInterval(() => { void pull(); void outbox.flush().catch(() => {}); void respond().catch(() => {}); }, 30_000);
@@ -184,7 +199,7 @@ const actions = {
     }
   },
   async cleanup(args = {}) {
-    clearInterval(poll); await supabase.removeAllChannels(); offline = false;
+    stopCore?.(); clearInterval(poll); await supabase.removeAllChannels(); offline = false;
     if (!args.managed) {
       const result = await supabase.rpc('delete_anonymous_account');
       if (result.error) throw result.error;

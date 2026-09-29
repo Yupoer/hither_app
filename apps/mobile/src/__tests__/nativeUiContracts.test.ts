@@ -147,9 +147,16 @@ describe('iOS native UI contracts', () => {
 
   it('keeps native close controls circular and icon-only', () => {
     expect(nativeGlassButtonIos).toContain('buttonBorderShape(shape)');
-    expect(nativeGlassButtonIos).toContain('controlSize(controlSizeValue)');
+    // The requested SwiftUI control size is an explicit override. The derived
+    // value remains a geometry hint for icon sizing, not a forced modifier.
+    expect(nativeGlassButtonIos).toContain('const controlSizeValue = requestedControlSize');
+    expect(nativeGlassButtonIos).toContain(
+      '...(requestedControlSize ? [controlSize(requestedControlSize)] : [])',
+    );
+    expect(nativeGlassButtonIos).not.toContain('controlSize(controlSizeValue)');
+    expect(nativeGlassButtonIos).toContain('const iconOnly = Boolean(!label)');
     expect(nativeGlassButtonIos).toContain('<Image');
-    expect(nativeGlassButtonIos).toContain("labelStyle('iconOnly' as const)");
+    expect(nativeGlassButtonIos).not.toContain("labelStyle('iconOnly' as const)");
     expect(overlaySheet).toContain('doneSystemImage');
     expect(overlaySheet).not.toContain('NativeGlassButton');
     expect(overlaySheet).toContain('<Pressable');
@@ -160,8 +167,8 @@ describe('iOS native UI contracts', () => {
     expect(sheetHeaderActionContent).toContain('MAP_SHEET_ACTION_VISUAL_SIZE');
     expect(sheetHeaderActionContent).toContain('MAP_SHEET_ACTION_HIT_SIZE');
     expect(sheetHeaderActionContent).toContain('MAP_SHEET_ACTION_ICON_SIZE');
-    expect(overlaySheet).toContain('top: MAP_SHEET_EDGE_INSET');
-    expect(overlaySheet).toContain('right: MAP_SHEET_EDGE_INSET');
+    expect(overlaySheet).toContain('paddingHorizontal: MAP_SHEET_EDGE_INSET');
+    expect(overlaySheet).toContain('headerActionSlot');
     expect(settingsPanel).toContain('width: MAP_SHEET_ACTION_HIT_SIZE');
     expect(mapSheetChrome).toContain('MAP_SHEET_ACTION_VISUAL_SIZE = 47');
     expect(mapSheetChrome).toContain('MAP_SHEET_ACTION_HIT_SIZE = 48');

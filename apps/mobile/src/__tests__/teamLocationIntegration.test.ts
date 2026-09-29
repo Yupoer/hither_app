@@ -116,7 +116,7 @@ test.each([0x5eed, 20260930, 731])('seed %s: scrambled snapshots and realtime ne
   let newest = '';
   for (const { kind, patch } of events) {
     if (kind === 'event') state = applyMemberLocationPatches(state, [patch])!;
-    else state = mergeRemoteGroupStatePreservingOwnLocation(state, { ...state, members: [{ ...state.members[0], coordinates: patch.coordinates, lastUpdated: patch.updatedAt }] });
+    else state = mergeRemoteGroupStatePreservingOwnLocation(state, { ...state, members: [{ ...state.members[0], coordinates: patch.coordinates, lastUpdated: patch.updatedAt, uploadedAt: patch.updatedAt }] });
     newest = patch.updatedAt > newest ? patch.updatedAt : newest;
     expect(state.members[0].lastUpdated).toBe(newest);
   }

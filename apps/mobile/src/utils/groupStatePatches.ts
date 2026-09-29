@@ -4,7 +4,7 @@ export interface MemberLocationPatch {
   userId: string;
   coordinates: Coordinates;
   updatedAt: string;
-  capturedAt?: string;
+  capturedAt?: string | null;
 }
 
 /**
@@ -33,7 +33,7 @@ export function locationPatchFromRealtimePayload(
     userId,
     coordinates: { latitude: lat, longitude: lon },
     updatedAt,
-    capturedAt: typeof row.captured_at === 'string' ? row.captured_at : updatedAt,
+    ...(typeof row.captured_at === 'string' ? { capturedAt: row.captured_at } : {}),
   };
 }
 
@@ -63,19 +63,23 @@ export function applyMemberLocationPatches(
 
     const prev = list[idx];
     if (prev.sharingEnabled === false) continue;
-    if (prev.lastUpdated && Date.parse(patch.updatedAt) <= Date.parse(prev.lastUpdated)) continue;
+    const previousUpload = prev.uploadedAt ?? prev.lastUpdated;
+    if (previousUpload && Date.parse(patch.updatedAt) <= Date.parse(previousUpload)) continue;
     const same =
       prev.coordinates?.latitude === patch.coordinates.latitude &&
       prev.coordinates?.longitude === patch.coordinates.longitude &&
-      prev.lastUpdated === patch.updatedAt;
+      previousUpload === patch.updatedAt;
     if (same) continue;
 
     if (!members) members = state.members.slice();
     members[idx] = {
       ...prev,
       coordinates: patch.coordinates,
-      lastUpdated: patch.updatedAt,
-      capturedAt: patch.capturedAt ?? patch.updatedAt,
+      capturedAt: patch.capturedAt ?? null,
+      uploadedAt: patch.updatedAt,
+      locationAvailability: Date.now() - Date.parse(patch.capturedAt ?? patch.updatedAt) < 120_000
+        ? 'available' : 'stale',
+      lastUpdated: patch.capturedAt ?? patch.updatedAt,
     };
   }
 

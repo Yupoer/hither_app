@@ -187,14 +187,11 @@ export function endGathering(
   nowMs: number,
   nextDestinationId?: string | null,
 ): ActiveGatheringState {
-  if (!canEndGathering(state) || !state.activeDestinationId) {
-    throw new Error('invalid_transition:end_gathering');
-  }
+  // End is idempotent, including stale or already-removed local sessions.
   const pausedId = state.activeDestinationId;
-
   const pointStatuses: Record<string, GatheringPointStatus> = {
     ...state.pointStatuses,
-    [pausedId]: 'pending',
+    ...(pausedId && state.pointStatuses[pausedId] !== 'completed' ? { [pausedId]: 'pending' as const } : {}),
   };
   // Explicit null clears the cursor; undefined → stay on the paused point.
   const nextId =

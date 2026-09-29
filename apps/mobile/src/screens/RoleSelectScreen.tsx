@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import {
   Alert,
+  ActivityIndicator,
   Platform,
   StyleSheet,
   Text,
@@ -23,11 +24,8 @@ import NativeRoleActionButton from '../components/NativeRoleActionButton';
 import NativeTeamsButton from '../components/NativeTeamsButton';
 import MetalforgeBackground from '../components/MetalforgeBackground';
 import { useSession } from '../state/SessionContext';
-import {
-  getCachedMyJoinedGroups,
-  getMyJoinedGroups,
-  JoinedGroupInfo,
-} from '../api/client';
+import { useJoinedGroups } from '../state/useJoinedGroups';
+import GroupLoadError from '../components/GroupLoadError';
 import Animated, { FadeIn, ZoomIn } from 'react-native-reanimated';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RoleSelect'>;
@@ -50,40 +48,7 @@ export default function RoleSelectScreen({ navigation }: Props) {
 
   // Paint from in-memory cache immediately; refresh in background without
   // waiting for the full (profiles) path.
-  const cached = user ? getCachedMyJoinedGroups(user.id) : null;
-  const [joinedGroups, setJoinedGroups] = useState<JoinedGroupInfo[]>(cached ?? []);
-  const [groupsLoading, setGroupsLoading] = useState(!!user && !cached);
-
-  useEffect(() => {
-    if (!user) {
-      setJoinedGroups([]);
-      setGroupsLoading(false);
-      return;
-    }
-
-    const fromCache = getCachedMyJoinedGroups(user.id);
-    if (fromCache) {
-      setJoinedGroups(fromCache);
-      setGroupsLoading(false);
-    } else {
-      setGroupsLoading(true);
-    }
-
-    let cancelled = false;
-    // RoleSelect only needs count + names; skip profiles for a faster first paint.
-    getMyJoinedGroups({ includeProfiles: false })
-      .then((list) => {
-        if (!cancelled) setJoinedGroups(list);
-      })
-      .catch((e) => console.log('Failed to fetch joined groups', e))
-      .finally(() => {
-        if (!cancelled) setGroupsLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [user]);
+  const { groups: joinedGroups, loading: groupsLoading, error: groupsError, retry } = useJoinedGroups(user?.id ?? null, false);
   const showMyTeams = joinedGroups.length > 0;
   // Keep the far gap reserved while loading so the CTA doesn't "pop" closer then jump away.
   const reserveMyTeamsSlot = !!user && (groupsLoading || showMyTeams);
@@ -200,6 +165,7 @@ export default function RoleSelectScreen({ navigation }: Props) {
               style={styles.actionTile}
             />
           </View>
+          {groupsError ? <GroupLoadError error={groupsError} loading={groupsLoading} retry={retry} color={accent} /> : null}
           {reserveMyTeamsSlot && (
             <>
               <View style={styles.myTeamsSpacer} />
@@ -215,7 +181,7 @@ export default function RoleSelectScreen({ navigation }: Props) {
                   />
                 </Animated.View>
               ) : (
-                <View style={styles.myTeamsSlot} />
+                <View style={styles.myTeamsSlot}>{groupsLoading ? <ActivityIndicator color={accent} /> : null}</View>
               )}
             </>
           )}

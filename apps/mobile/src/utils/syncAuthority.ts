@@ -140,14 +140,14 @@ export function mergeRemoteGroupStatePreservingOwnLocation(
     // empty snapshot cannot erase a first fix delivered while the read was in flight.
     if (member.sharingEnabled === false) return member;
     if (!member.coordinates && previousPeer?.coordinates && member.locationObservedAt
-      && Date.parse(member.locationObservedAt) < Date.parse(previousPeer.lastUpdated ?? '')) {
+      && Date.parse(member.locationObservedAt) < Date.parse(previousPeer.uploadedAt ?? previousPeer.lastUpdated ?? '')) {
       return preserveOwnLocation(member, previousPeer);
     }
     // Absence is not a deletion version: a transaction may stamp updated_at
     // before this snapshot and commit afterwards. Its first fix remains valid.
     // Preserve a newer server event, while allowing explicit removal of a hidden position.
-    return member.coordinates && previousPeer?.coordinates && member.lastUpdated && previousPeer.lastUpdated
-      && Date.parse(previousPeer.lastUpdated) > Date.parse(member.lastUpdated)
+    return member.coordinates && previousPeer?.coordinates && (member.uploadedAt ?? member.lastUpdated) && (previousPeer.uploadedAt ?? previousPeer.lastUpdated)
+      && Date.parse(previousPeer.uploadedAt ?? previousPeer.lastUpdated!) > Date.parse(member.uploadedAt ?? member.lastUpdated!)
       ? preserveOwnLocation(member, previousPeer) : member;
   });
 
@@ -216,5 +216,7 @@ function preserveOwnLocation(
     coordinates: local.coordinates,
     lastUpdated: local.lastUpdated,
     capturedAt: local.capturedAt,
+    uploadedAt: local.uploadedAt,
+    locationAvailability: local.locationAvailability,
   };
 }

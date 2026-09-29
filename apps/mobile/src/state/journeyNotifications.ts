@@ -3,6 +3,7 @@ import { APPROACH_FIRED_STORAGE_KEY, approachNotifyKey, approachNotifyCopy, shou
 import { getNotificationPreferences } from '../api/services/NotificationService';
 import type { TranslationKey } from '../i18n';
 import { notifications } from '../native';
+import { deliverJourneyEventOnce } from './journeyNotificationLedger';
 
 const delivered = new Set<string>();
 const inFlight = new Set<string>();
@@ -18,15 +19,18 @@ export async function notifyJourneyOperator(
   inFlight.add(eventId);
   try {
     if (!(await getNotificationPreferences()).journey) return;
-    const id = await notifications.scheduleLocalNotification({
-      title: t(action === 'start' ? 'notif.operatorStartTitle' : 'notif.operatorPauseTitle'),
-      body: t(action === 'start' ? 'notif.operatorStartBody' : 'notif.operatorPauseBody'),
-      data: { kind: 'operatorJourneyConfirm', destinationId, eventId },
+    await deliverJourneyEventOnce(`operator:${eventId}`, async () => {
+      const id = await notifications.scheduleLocalNotification({
+        title: t(action === 'start' ? 'notif.operatorStartTitle' : 'notif.operatorPauseTitle'),
+        body: t(action === 'start' ? 'notif.operatorStartBody' : 'notif.operatorPauseBody'),
+        data: { kind: 'operatorJourneyConfirm', destinationId, eventId },
+      });
+      if (id) {
+        delivered.add(eventId);
+        if (delivered.size > 400) delivered.delete(delivered.values().next().value!);
+      }
+      return id;
     });
-    if (id) {
-      delivered.add(eventId);
-      if (delivered.size > 400) delivered.delete(delivered.values().next().value!);
-    }
   } finally {
     inFlight.delete(eventId);
   }
@@ -42,13 +46,25 @@ export async function notifyJourneyApproach(
   inFlight.add(key);
   try {
     const raw = await AsyncStorage.getItem(APPROACH_FIRED_STORAGE_KEY);
-    const keys: string[] = raw ? JSON.parse(raw) : [];
+    let keys: string[] = [];
+    if (raw) {
+      try {
+        const parsed: unknown = JSON.parse(raw);
+        if (Array.isArray(parsed)) keys = parsed.filter((value): value is string => typeof value === 'string');
+      } catch { /* Legacy cache corruption does not disable the durable ledger. */ }
+    }
     if (keys.includes(key)) return;
-    const id = await notifications.scheduleLocalNotification({
-      ...approachNotifyCopy(title), data: { kind: 'approach', destinationId },
+    await deliverJourneyEventOnce(`approach:${key}`, async () => {
+      const id = await notifications.scheduleLocalNotification({
+        ...approachNotifyCopy(title), data: { kind: 'approach', destinationId },
+      });
+      if (!id) return null;
+      delivered.add(key);
+      if (delivered.size > 400) delivered.delete(delivered.values().next().value!);
+      // Read legacy delivery keys for migration only. The shared ledger already
+      // persisted this claim before dispatch; a second write after scheduling
+      // could fail and incorrectly revoke an already-delivered notification.
+      return id;
     });
-    if (!id) return;
-    delivered.add(key);
-    await AsyncStorage.setItem(APPROACH_FIRED_STORAGE_KEY, JSON.stringify([...keys.slice(-399), key]));
   } finally { inFlight.delete(key); }
 }

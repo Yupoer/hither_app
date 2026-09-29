@@ -80,6 +80,13 @@ export interface EnergyObservabilityController {
   stop: () => void;
 }
 
+export interface EnergyObservabilityStartOptions {
+  /** Override the finite startup schedule for compatibility-only samplers. */
+  startupOffsetsMs?: readonly number[];
+  /** Set to null to disable steady sampling for a caller. */
+  steadyIntervalMs?: number | null;
+}
+
 const ZERO_COUNTERS: EnergyCounterValues = {
   location_callback: 0,
   location_accepted: 0,
@@ -203,10 +210,17 @@ function invokeSample(
   void Promise.resolve(handler(sample)).catch(() => undefined);
 }
 
-function startSampling(handler: EnergyObservationSampleHandler): EnergySession {
+function startSampling(
+  handler: EnergyObservationSampleHandler,
+  options: EnergyObservabilityStartOptions = {},
+): EnergySession {
   let stopped = false;
   let steadyTimer: ReturnType<typeof setInterval> | null = null;
   const startupTimers = new Set<ReturnType<typeof setTimeout>>();
+  const startupOffsets = options.startupOffsetsMs ?? ENERGY_STARTUP_SAMPLE_OFFSETS_MS;
+  const steadyIntervalMs = options.steadyIntervalMs === undefined
+    ? ENERGY_STEADY_SAMPLE_INTERVAL_MS
+    : options.steadyIntervalMs;
 
   const cancelPendingStartupSampling = () => {
     for (const timer of startupTimers) clearTimeout(timer);
@@ -222,10 +236,11 @@ function startSampling(handler: EnergyObservationSampleHandler): EnergySession {
     if (stopped || steadyTimer || currentAppState !== 'active') return;
     // Keep the established five-minute cadence. The finite startup burst does
     // not create a second steady timer or an eager network flush.
+    if (steadyIntervalMs == null || steadyIntervalMs <= 0) return;
     steadyTimer = setInterval(() => {
       if (stopped) return;
       invokeSample(handler, 'steady', null, Date.now());
-    }, ENERGY_STEADY_SAMPLE_INTERVAL_MS);
+    }, steadyIntervalMs);
   };
 
   const pauseForBackground = () => {
@@ -248,7 +263,7 @@ function startSampling(handler: EnergyObservationSampleHandler): EnergySession {
   };
 
   if (currentAppState === 'active') {
-    for (const offsetMs of ENERGY_STARTUP_SAMPLE_OFFSETS_MS) {
+    for (const offsetMs of startupOffsets) {
       const targetAt = launchAt + offsetMs;
       const delayMs = Math.max(0, targetAt - Date.now());
       // A monitor enabled after a launch milestone must not backfill an old
@@ -332,10 +347,13 @@ export const energyObservability = {
     emitNativeSignpost(name, 'end', activeToken);
   },
 
-  start(handler: EnergyObservationSampleHandler): EnergyObservabilityController {
+  start(
+    handler: EnergyObservationSampleHandler,
+    options?: EnergyObservabilityStartOptions,
+  ): EnergyObservabilityController {
     activeController?.stop();
     resetCounterState();
-    const session = startSampling(handler);
+    const session = startSampling(handler, options);
     activeSession = session;
     activeController = session;
     return session;

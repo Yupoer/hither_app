@@ -16,6 +16,8 @@ export interface BackgroundJourneyConfig {
   sessionExpiresAt?: string;
   trackingEpoch?: number;
   actorId?: string;
+  /** Main team is null; subgroup sessions use this lane id. */
+  scopeSubgroupId?: string | null;
   target?: Destination;
   completeSolo?: boolean;
   memberIds?: string[];
@@ -34,6 +36,10 @@ export interface BackgroundJourneyConfig {
   sharingEnabled: boolean;
   hasMembership?: boolean;
   arrivalState?: ArrivalState;
+  /** A manual undo suppresses background auto-arrival until the user leaves. */
+  manualUndoOperationId?: string | null;
+  manualUndoOccurredAt?: string | null;
+  manualUndoSuppressed?: boolean;
   gatheringTitle?: string;
   groupName?: string;
   memberEmojis?: string[];
@@ -65,8 +71,10 @@ export interface BackgroundJourneyConfig {
 
 export function backgroundPresenceConfig(config: BackgroundJourneyConfig): BackgroundJourneyConfig {
   return { ...config, navigationSessionId: null, sessionExpiresAt: undefined, destinationId: 'group-presence',
-    target: undefined, powerMode: 'allDay', teamNavigationActive: false, highAccuracy: false,
+    scopeSubgroupId: undefined, target: undefined, powerMode: 'allDay', teamNavigationActive: false, highAccuracy: false,
     arrivalState: undefined, completeSolo: false, initialDistanceM: 0, sequence: 0,
+    manualUndoOperationId: undefined, manualUndoOccurredAt: undefined,
+    manualUndoSuppressed: undefined,
     previousProgressMax: undefined, routeAnchorGps: undefined, routeAnchorRemainingM: undefined,
     startCoords: undefined, hasDepartedStart: false, etaSeconds: undefined };
 }
@@ -93,21 +101,24 @@ export function resolveBackgroundTrackingMode(
   config: BackgroundJourneyConfig,
 ): TrackingMode {
   const powerMode = config.powerMode ?? 'journey';
-  const explicitMode =
-    config.sharingEnabled === false ||
-    config.teamNavigationActive != null ||
-    config.appState != null;
-  return resolveTrackingMode({
+  const preciseJourney = powerMode === 'journey' && config.highAccuracy === true;
+  const resolved = resolveTrackingMode({
     sharingEnabled: config.sharingEnabled ?? true,
     hasMembership: config.hasMembership ?? true,
     teamNavigationActive: config.teamNavigationActive ?? false,
-    // The legacy all-day profile intentionally ignores the high-accuracy
-    // preference; navigation is the only background mode that can opt in.
-    manualHighAccuracy: explicitMode
-      ? Boolean(config.highAccuracy)
-      : powerMode !== 'allDay' && Boolean(config.highAccuracy),
+    // All-day presence intentionally ignores precision. A journey's explicit
+    // precise switch remains meaningful even while the app is backgrounded.
+    manualHighAccuracy: preciseJourney,
     appState: config.appState ?? 'background',
   });
+  // resolveTrackingMode protects ordinary background presence from a manual
+  // precision request. Journey tracking is the one explicit exception: keep
+  // the same high-frequency profile when the user selected precise tracking,
+  // regardless of whether a shared team session is active.
+  if (resolved === 'passiveBackground' && preciseJourney) {
+    return 'manualHighAccuracy';
+  }
+  return resolved;
 }
 
 /**
@@ -129,10 +140,8 @@ export function backgroundLocationOptions(
   const powerProfile: LocationPowerMode =
     mode === 'passiveBackground' ? 'allDay' : 'journey';
   // Never allow highAccuracy to override allDay (budget).
-  const policy = locationPolicy(
-    mode === 'navigationMax' || mode === 'manualHighAccuracy' || mode === 'teamNavigation',
-    powerProfile,
-  );
+  const precise = mode === 'navigationMax' || mode === 'manualHighAccuracy';
+  const policy = locationPolicy(precise, powerProfile);
 
   // Expo Accuracy: Lowest=1 Low=2 Balanced=3 High=4 Highest=5 BestForNavigation=6
   // Walking/team navigation must not default to BestForNavigation (6).
@@ -288,6 +297,12 @@ export function createBackgroundJourneyController(
               ...config,
               sequence: Math.max(config.sequence, previous.sequence),
               arrivalState: config.arrivalState ?? previous.arrivalState,
+              manualUndoOperationId: config.manualUndoOperationId
+                ?? previous.manualUndoOperationId,
+              manualUndoOccurredAt: config.manualUndoOccurredAt
+                ?? previous.manualUndoOccurredAt,
+              manualUndoSuppressed: config.manualUndoSuppressed
+                ?? previous.manualUndoSuppressed,
             }
           : config;
         await storage.setItem(

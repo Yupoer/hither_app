@@ -8,6 +8,7 @@ import { supabase } from '../api/supabase';
 import {
   updateNickname as updateNicknameApi,
   updateProfile as updateProfileApi,
+  orThrow,
 } from '../api/client';
 import {
   normalizeAccountPreferences,
@@ -205,16 +206,13 @@ export function useAuthFlow({
     async ({ name }: { name: string; email?: string }): Promise<User> => {
       const nickname = name.trim();
       const { data, error } = await supabase.auth.signInAnonymously();
-      if (error || !data.user) {
-        throw new Error(error?.message ?? '匿名登入失敗');
-      }
+      if (error) throw toAuthFlowError(error, '匿名登入失敗');
+      if (!data.user) throw new AuthFlowError('匿名登入失敗', 'auth_user_missing');
       const userId = data.user.id;
       const { error: profileError } = await supabase
         .from('profiles')
         .upsert({ id: userId, nickname }, { onConflict: 'id' });
-      if (profileError) {
-        throw new Error(profileError.message);
-      }
+      if (profileError) throw toAuthFlowError(profileError, 'Unable to save your profile.');
       const nextUser: User = { id: userId, name: nickname, email: '' };
       setUser(nextUser);
       setIsAnonymous(true);
@@ -508,9 +506,8 @@ export function useAuthFlow({
         token: credential.identityToken,
         nonce: rawNonce,
       });
-      if (error || !data.user) {
-        throw new Error(error?.message ?? 'Apple linking failed');
-      }
+      if (error) throw toAuthFlowError(error, 'Apple linking failed');
+      if (!data.user) throw new AuthFlowError('Apple linking failed', 'auth_user_missing');
 
       await supabase.rpc('clear_anonymous_expiry_if_registered', {
         p_uid: user.id,
@@ -612,7 +609,7 @@ export function useAuthFlow({
   const signOut = useCallback(async () => {
     if (isAnonymous) {
       const { error } = await supabase.rpc('delete_anonymous_account');
-      if (error) throw new Error(error.message);
+      orThrow(error);
       await supabase.auth.signOut({ scope: 'local' });
     } else {
       await supabase.auth.signOut();
@@ -625,7 +622,7 @@ export function useAuthFlow({
 
   const deleteAccount = useCallback(async () => {
     const { error } = await supabase.rpc('delete_anonymous_account');
-    if (error) throw new Error(error.message);
+    orThrow(error);
     await supabase.auth.signOut({ scope: 'local' });
     setUser(null);
     setIsAnonymous(false);
@@ -643,7 +640,7 @@ export function useAuthFlow({
       const { error } = await supabase.auth.updateUser(
         isAnonymous ? { email: normalizedEmail, password } : { password },
       );
-      if (error) throw new Error(error.message);
+      if (error) throw toAuthFlowError(error, 'Unable to update the account.');
       // Never raw-update anonymous_expires_at from the client. The RPC only
       // clears the column when auth.users.is_anonymous is already false
       // (e.g. confirm-email already applied, or project has confirm off).

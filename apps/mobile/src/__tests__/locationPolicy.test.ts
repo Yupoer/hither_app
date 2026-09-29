@@ -238,8 +238,17 @@ describe('shouldWatchLocation / shouldRunBackgroundLocation', () => {
 
   it('journey targets 10s moving / 60s stationary with real samples', () => {
     const p = locationPolicy(false, 'journey');
-    expect(p.uploadHeartbeatMs).toBe(10_000);
+    expect(p.uploadMinIntervalMs).toBe(10_000);
+    expect(p.uploadHeartbeatMs).toBe(15_000);
     expect(p.uploadHeartbeatStationaryMs).toBe(60_000);
+  });
+
+  it('precise journey mode alone enables the 5-second high-frequency floor', () => {
+    const p = locationPolicy(true, 'journey');
+    expect(p.uploadMinIntervalMs).toBe(5_000);
+    expect(p.uploadHeartbeatMs).toBe(5_000);
+    expect(p.uploadHeartbeatStationaryMs).toBe(60_000);
+    expect(p.uiMinIntervalMs).toBe(500);
   });
 
   it('non-journey sharing refreshes liveness at most every 2 minutes (#196 D2)', () => {
@@ -316,6 +325,18 @@ describe('shouldUploadSample', () => {
     ).toBe(true);
   });
 
+  it('does not use the removed half-interval distance bypass', () => {
+    expect(
+      shouldUploadSample(
+        moved(policy.uploadMinDistanceM * 3),
+        1_000 + policy.uploadMinIntervalMs * 0.5,
+        atOrigin(1_000),
+        policy,
+        'moving',
+      ),
+    ).toBe(false);
+  });
+
   it('waits longer for heartbeat while stationary', () => {
     expect(
       shouldUploadSample(
@@ -349,15 +370,64 @@ describe('shouldRecomputeRoute', () => {
     expect(shouldRecomputeRoute(moved(5), 5_000, atOrigin(1_000), policy)).toBe(false);
   });
 
-  it('recomputes after enough move past partial interval', () => {
+  it('recomputes only after the full route interval', () => {
     expect(
       shouldRecomputeRoute(
         moved(policy.routeMinDistanceM + 10),
-        1_000 + policy.routeMinIntervalMs * 0.5,
+        1_000 + policy.routeMinIntervalMs,
         atOrigin(1_000),
         policy,
       ),
     ).toBe(true);
+  });
+});
+
+describe('virtual 30-minute journey request bounds', () => {
+  function countUploads(policy: ReturnType<typeof locationPolicy>): number {
+    let gate = empty;
+    let requests = 0;
+    for (let elapsedMs = 0; elapsedMs < 30 * 60_000; elapsedMs += 1_000) {
+      const sample = moved(elapsedMs / 1_000 * 2);
+      if (shouldUploadSample(sample, elapsedMs, gate, policy, 'moving')) {
+        gate = { lastCoords: sample, lastAtMs: elapsedMs };
+        requests += 1;
+      }
+    }
+    return requests;
+  }
+
+  function countRoutes(policy: ReturnType<typeof locationPolicy>): number {
+    let gate = empty;
+    let requests = 0;
+    for (let elapsedMs = 0; elapsedMs < 30 * 60_000; elapsedMs += 1_000) {
+      const sample = moved(elapsedMs / 1_000 * 2);
+      if (shouldRecomputeRoute(sample, elapsedMs, gate, policy)) {
+        gate = { lastCoords: sample, lastAtMs: elapsedMs };
+        requests += 1;
+      }
+    }
+    return requests;
+  }
+
+  it('bounds normal moving uploads by the 10-second minimum', () => {
+    const policy = locationPolicy(false, 'journey');
+    expect(countUploads(policy)).toBeLessThanOrEqual(30 * 60 / 10);
+    expect(countUploads(policy)).toBeGreaterThan(0);
+  });
+
+  it('bounds precise moving uploads by the 5-second minimum', () => {
+    const policy = locationPolicy(true, 'journey');
+    expect(countUploads(policy)).toBeLessThanOrEqual(30 * 60 / 5);
+    expect(countUploads(policy)).toBeGreaterThan(0);
+  });
+
+  it('does not recalculate routes on every background/foreground fix', () => {
+    const normal = countRoutes(locationPolicy(false, 'journey'));
+    const precise = countRoutes(locationPolicy(true, 'journey'));
+    expect(normal).toBeLessThanOrEqual(30 * 60 / 50);
+    expect(precise).toBeLessThanOrEqual(30 * 60 / 12);
+    expect(normal).toBeGreaterThan(0);
+    expect(precise).toBeGreaterThan(0);
   });
 });
 

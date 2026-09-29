@@ -1,10 +1,10 @@
+import { legacyNavigationSessionKey, readEndedNavigationSessions, rememberEndedNavigationSession } from '../../../state/endedNavigationSessions';
+import { showAppNotice, showOperationFailure } from '../../../state/appNotice';
 import * as Crypto from 'expo-crypto';
 import { useState, useMemo, useEffect, useCallback, useRef, RefObject } from 'react';
-import type { ScrollView } from 'react-native';
-import { isNetworkRequestError } from '../../../api/services/_helpers';
+import { Alert, type ScrollView } from 'react-native';
+import { getOperationErrorMessage } from '../../../utils/operationError';
 import { distanceMeters } from '../../../utils/geo';
-import { resolveGatheringOutboxAfterSessionStart } from '../../../utils/gatheringSessionOutbox';
-import { promoteDestinationWithinDay, openDestinationsForReorder } from '../../../utils/tripDay';
 import { followCarouselIndexAfterPromote } from '../../../utils/journeyStartCarouselIdentity';
 import type { Coordinates, Destination, GroupState, JourneyStatus } from '../../../types';
 import type { NavigationSession } from '../../../types/navigation';
@@ -14,23 +14,33 @@ import type { TravelMode } from '../../../native/maps';
 import type { ActiveGatheringState } from '../../../types/coreData';
 import { deriveActiveGatheringFromGroupState } from '../../../utils/activeGatheringState';
 import {
-  abortLeaderGatheringStart,
   enqueueLeaderGatheringEnd,
   enqueueLeaderGatheringStart,
   enqueueLeaderGatheringSwitch,
   flushCoreOperationOutbox,
+  getCoreOperationOutbox,
 } from '../../../state/coreDataSync';
 import { logEvent } from '../../../utils/activityLog';
 
 interface TeamCommandIntent {
   sequence: number;
   action: 'start' | 'end';
+  operationId: string;
+  targetSessionId?: string | null;
+  expectedSessionStartedAt?: string | null;
   destination: Destination;
   index: number;
 }
 
+interface TeamCommandJob {
+  execute: () => Promise<boolean>;
+  resolve: (value: boolean) => void;
+  reject: (error: unknown) => void;
+}
+
 interface UseJourneyNavigationParams {
   state: GroupState | null;
+  actorId?: string | null;
   groupId: string | null | undefined;
   isLeader: boolean;
   destinations: Destination[];
@@ -66,10 +76,14 @@ interface UseJourneyNavigationParams {
    */
   onOperatorStartConfirm?: (destination: Destination, eventId: string) => void;
   onOperatorPauseConfirm?: (destination: Destination, eventId: string) => void;
+  /** The local operation id acts as the session key while Start is offline. */
+  onLocalSessionIdChange?: (sessionId: string | null) => void;
+  hasPendingTeamOperation?: boolean;
 }
 
 export function useJourneyNavigation({
   state,
+  actorId,
   groupId,
   isLeader,
   destinations,
@@ -91,6 +105,8 @@ export function useJourneyNavigation({
   onOptimisticGathering,
   onOperatorStartConfirm,
   onOperatorPauseConfirm,
+  onLocalSessionIdChange,
+  hasPendingTeamOperation,
 }: UseJourneyNavigationParams) {
   const legacyMode = navigationSession === undefined;
   const legacySharedTargetId = legacyMode && state?.group.journeyStatus === 'going'
@@ -108,19 +124,85 @@ export function useJourneyNavigation({
   const [pendingLeaderTargetId, setPendingLeaderTargetId] = useState<string | null>(null);
   const [pendingLeaderStop, setPendingLeaderStop] = useState(false);
   const [journeyBusy, setJourneyBusy] = useState(false);
+  const [locallyStopped, setLocallyStopped] = useState(false);
+  const stoppedServerSessionRef = useRef<string | null>(null);
+  const stoppedAtRef = useRef(0);
+  const [endedSessions, setEndedSessions] = useState<Set<string>>(new Set());
+  const [endedLoadedFor, setEndedLoadedFor] = useState('');
+  const endedContext = `${actorId ?? ''}:${groupId ?? ''}`;
+  useEffect(() => {
+    let active = true;
+    setLocallyStopped(false);
+    setEndedSessions(new Set());
+    if (!actorId || !groupId) { setEndedLoadedFor(endedContext); return; }
+    void readEndedNavigationSessions(actorId, groupId).then(values => {
+      if (active) { setEndedSessions(current => new Set([...current, ...values])); setEndedLoadedFor(endedContext); }
+    }).catch(error => {
+      if (active) {
+        // Fail closed: unreadable dismissal history cannot resurrect navigation.
+        setEndedLoadedFor('');
+        showOperationFailure(t('map.setFailedTitle'), getOperationErrorMessage(error));
+      }
+    });
+    return () => { active = false; };
+  }, [actorId, groupId, endedContext]);
+
+  const localSessionIdRef = useRef<string | null>(null);
+  const localSessionContextRef = useRef<{
+    destinationId: string;
+    subgroupId: string | null;
+  } | null>(null);
+  const publishLocalSessionId = useCallback((sessionId: string | null) => {
+    localSessionIdRef.current = sessionId;
+    if (!sessionId) localSessionContextRef.current = null;
+    onLocalSessionIdChange?.(sessionId);
+  }, [onLocalSessionIdChange]);
   const lastFollowerCenterKeyRef = useRef<string | null>(null);
   const requestRef = useRef<{ destinationId: string; requestId: string } | null>(null);
-  const desiredTeamIntentRef = useRef<TeamCommandIntent | null>(null);
+  const desiredTeamIntentRef = useRef<TeamCommandJob[]>([]);
+  const pendingTeamStartIntentRef = useRef<TeamCommandIntent | null>(null);
   const teamCommandRunnerRef = useRef<Promise<void> | null>(null);
   const teamCommandSequenceRef = useRef(0);
   const pendingCarouselTargetIdRef = useRef<string | null>(null);
-  const gatheringStateRef = useRef<ActiveGatheringState | null>(null);
+  const gatheringStatesRef = useRef(new Map<string, ActiveGatheringState>());
+  const gatheringCacheKey = JSON.stringify([actorId ?? null, groupId ?? null]);
+  const currentActorRef = useRef(actorId);
+  currentActorRef.current = actorId;
+  const currentGroupRef = useRef(groupId);
+  currentGroupRef.current = groupId;
+  const mountedRef = useRef(true);
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
+  useEffect(() => {
+    setOptimisticTeamTargetId(undefined);
+    setLocalTargetId(null);
+    setPendingLeaderTargetId(null);
+    setPendingLeaderStop(false);
+    setJourneyBusy(false);
+    publishLocalSessionId(null);
+    localSessionContextRef.current = null;
+    pendingTeamStartIntentRef.current = null;
+    pendingStartRef.current = null;
+    requestRef.current = null;
+  }, [groupId, actorId, publishLocalSessionId]);
   const serverOrStartedSessionRef = useRef(Boolean(authoritativeSharedTargetId));
-  const startPromiseRef = useRef<Promise<void> | null>(null);
   const pendingStartRef = useRef<{
     operationId: string;
     base: ActiveGatheringState;
   } | null>(null);
+
+  /**
+   * A local Start id is only a session alias while the server row is being
+   * created.  Once that row (or a later authoritative replacement in the
+   * same lane) is visible, keeping the alias would make every arrival/end
+   * operation target an old session.  Keep this cleanup in one place so the
+   * command path and the realtime reconciliation path cannot drift apart.
+   */
+  const clearLocalSessionAlias = useCallback(() => {
+    if (!localSessionIdRef.current) return;
+    publishLocalSessionId(null);
+    pendingStartRef.current = null;
+    requestRef.current = null;
+  }, [publishLocalSessionId]);
 
   // Realtime/retry may confirm a start after the original request lost its response.
   useEffect(() => {
@@ -130,38 +212,87 @@ export function useJourneyNavigation({
       || navigationSession.requestId !== pending.requestId) return;
     const destination = navigationDestinations.find((item) => item.id === pending.destinationId);
     if (!destination) return;
-    requestRef.current = null;
-    pendingStartRef.current = null;
+    clearLocalSessionAlias();
     serverOrStartedSessionRef.current = true;
     onOperatorStartConfirm?.(destination, `start:${groupId}:${pending.requestId}`);
     void flushCoreOperationOutbox().catch(() => undefined);
-  }, [groupId, navigationSession, navigationDestinations, onOperatorStartConfirm]);
+  }, [clearLocalSessionAlias, groupId, navigationSession, navigationDestinations, onOperatorStartConfirm]);
 
-  const restorePendingStart = useCallback(async () => {
-    const pending = pendingStartRef.current;
-    if (!pending) return false;
-    await abortLeaderGatheringStart({
-      operationId: pending.operationId,
-      restore: pending.base,
-      message: 'navigation start superseded by End',
+  /**
+   * Reconcile a local Start that was acknowledged without the matching
+   * request id (for example after a reconnect, or when another device starts
+   * the same destination).  Do not discard an in-flight offline alias until
+   * its durable operation is settled; before then it is still the only stable
+   * key for local arrivals.  Once settled, the server session is authoritative
+   * for this destination/scope and the alias must not shadow it.
+   */
+  useEffect(() => {
+    const localSessionId = localSessionIdRef.current;
+    const localContext = localSessionContextRef.current;
+    const session = navigationSession;
+    if (!localSessionId || !localContext || !session) return;
+
+    const sameLane = session.destinationId === localContext.destinationId
+      && (session.scopeSubgroupId ?? null) === (localContext.subgroupId ?? null);
+    if (!sameLane) return;
+
+    // A matching active/terminal row is the authoritative acknowledgement of
+    // this local Start.  The request-matching effect above handles the active
+    // row's notification; this branch also clears aliases for terminal rows.
+    if (session.id === localSessionId || session.requestId === localSessionId) {
+      clearLocalSessionAlias();
+      return;
+    }
+
+    // A different active session in the same lane wins only after the local
+    // Start has settled.  This is the T -> U handoff: U must receive the next
+    // arrival and End instead of the stale local T alias.
+    if (session.status !== 'active') return;
+    let cancelled = false;
+    void getCoreOperationOutbox().getOperation(localSessionId).then((operation) => {
+      if (cancelled || localSessionIdRef.current !== localSessionId) return;
+      // Non-arrival Start operations are removed from the outbox on ACK, so a
+      // missing row is also a settled operation.  The local id was only
+      // published after a successful enqueue; it is never a speculative key.
+      const settled = !operation
+        || operation.status === 'acked'
+        || operation.status === 'conflict';
+      if (settled) clearLocalSessionAlias();
     }).catch(() => undefined);
-    pendingStartRef.current = null;
-    gatheringStateRef.current = pending.base;
-    onOptimisticGathering?.(pending.base);
-    serverOrStartedSessionRef.current = false;
-    setOptimisticTeamTargetId(null);
-    return true;
-  }, [onOptimisticGathering]);
+    return () => { cancelled = true; };
+  // Re-run when the owning group projection reports that the Start operation
+  // settled, even if the realtime session row itself did not change.
+  }, [clearLocalSessionAlias, hasPendingTeamOperation, navigationSession]);
 
-  const sharedTargetId = optimisticTeamTargetId !== undefined
+  const legacySessionKey = legacyNavigationSessionKey(state?.group.journeyStartedAt, authoritativeSharedTargetId);
+  const visibleSessionKey = navigationSession?.id ?? legacySessionKey;
+  const serverLegacyKey = navigationSession ? legacyNavigationSessionKey(navigationSession.startedAt, navigationSession.destinationId) : legacySessionKey;
+  const hiddenSession = (endedSessions.has(visibleSessionKey) || endedSessions.has(legacySessionKey) || endedSessions.has(serverLegacyKey)
+    || Boolean(navigationSession?.requestId && endedSessions.has(navigationSession.requestId))) && !optimisticTeamTargetId;
+  useEffect(() => {
+    if (locallyStopped && navigationSession?.status === 'active' && !hiddenSession
+      && navigationSession.id !== stoppedServerSessionRef.current
+      && Date.parse(navigationSession.startedAt) > stoppedAtRef.current) {
+      setLocallyStopped(false);
+    }
+  }, [locallyStopped, navigationSession, hiddenSession]);
+  const suppressNavigation = locallyStopped || (isLeader && (hiddenSession
+    || (Boolean(actorId) && endedLoadedFor !== endedContext && !optimisticTeamTargetId)));
+  const sharedTargetId = suppressNavigation ? null : optimisticTeamTargetId !== undefined
     ? optimisticTeamTargetId
     : authoritativeSharedTargetId;
 
   useEffect(() => {
-    if (!gatheringStateRef.current && state) {
-      gatheringStateRef.current = deriveActiveGatheringFromGroupState(state, 0);
+    if (groupId && !gatheringStatesRef.current.has(gatheringCacheKey) && state) {
+      gatheringStatesRef.current.set(gatheringCacheKey, deriveActiveGatheringFromGroupState(state, 0));
     }
-  }, [state]);
+  }, [state, groupId, gatheringCacheKey]);
+
+  useEffect(() => {
+    if (hasPendingTeamOperation !== false || !state || !groupId || teamCommandRunnerRef.current) return;
+    gatheringStatesRef.current.set(gatheringCacheKey, deriveActiveGatheringFromGroupState(state, 0));
+    setOptimisticTeamTargetId(undefined);
+  }, [state, groupId, gatheringCacheKey, hasPendingTeamOperation]);
 
   useEffect(() => {
     serverOrStartedSessionRef.current = Boolean(authoritativeSharedTargetId);
@@ -182,7 +313,7 @@ export function useJourneyNavigation({
   // Shared flock session owns the target for leaders and members. During a
   // local optimistic End, `sharedTargetId` is null and the route disappears
   // immediately instead of waiting for the terminal RPC.
-  const navTargetId = sharedTargetId ?? (isLeader ? pendingLeaderTargetId : localTargetId);
+  const navTargetId = suppressNavigation ? null : sharedTargetId ?? (isLeader ? pendingLeaderTargetId : localTargetId);
   const navTarget = useMemo<Destination | undefined>(() => {
     if (!navTargetId) return undefined;
     const fromList = navigationDestinations.find((destination) => destination.id === navTargetId);
@@ -236,281 +367,256 @@ export function useJourneyNavigation({
     [mapRef, setSelectedIndex],
   );
 
-  const runTeamEnd = useCallback(async (intent: TeamCommandIntent): Promise<void> => {
-    if (!groupId) return;
-    const dest = intent.destination;
-    if (pendingStartRef.current && !serverOrStartedSessionRef.current) {
-      if (startPromiseRef.current) await startPromiseRef.current;
-      if (!serverOrStartedSessionRef.current) {
-        await restorePendingStart();
-        return;
-      }
-    }
-    // If Start failed before creating a server session and the newest intent is
-    // End, there is nothing to pause. Keep the UI at staying and drop the
-    // superseded local Start instead of invoking a terminal RPC that must fail.
-    const baseState = gatheringStateRef.current
-      ?? (state ? deriveActiveGatheringFromGroupState(state, 0) : null);
-    const hasLocalActive = baseState?.journeyPhase === 'en_route';
-    if (!serverOrStartedSessionRef.current && !hasLocalActive) {
-      if (startPromiseRef.current) {
-        await startPromiseRef.current;
-      }
-      const refreshedState = gatheringStateRef.current;
-      if (!serverOrStartedSessionRef.current && refreshedState?.journeyPhase !== 'en_route') return;
-    }
-
-    setJourneyBusy(true);
-    setPendingLeaderStop(true);
-    setOptimisticTeamTargetId(null);
+  const runTeamEnd = useCallback(async (intent: TeamCommandIntent): Promise<boolean> => {
+    if (!groupId) return false;
+    const isCurrent = () => mountedRef.current && currentGroupRef.current === groupId && currentActorRef.current === actorId;
+    const baseState = gatheringStatesRef.current.get(gatheringCacheKey)
+      ?? (state ? deriveActiveGatheringFromGroupState(state, 0) : undefined);
+    if (isCurrent()) setJourneyBusy(true);
     try {
-      // End navigation = pause only. Point stays open (pending); no closed_at.
-      // Completing a stop is a separate action (completeGatheringStop).
-      const result = await enqueueLeaderGatheringEnd(groupId, {
-        baseState: baseState ?? undefined,
-        groupState: state,
-      });
-      gatheringStateRef.current = result.local;
+      const operationId = intent.operationId;
+      // End is scoped to the session that was active when the user tapped.
+      // A later Start must never be mistaken for this terminal operation.
+      const localSessionId = localSessionIdRef.current;
+      const localContext = localSessionContextRef.current;
+      const scopeMatches = (localContext?.subgroupId ?? null)
+        === (intent.destination.subgroupId ?? null);
+      const localMatches = Boolean(localSessionId && localContext
+        && localContext.destinationId === intent.destination.id && scopeMatches);
+      const serverMatches = Boolean(navigationSession?.status === 'active'
+        && navigationSession.destinationId === intent.destination.id
+        && (navigationSession.scopeSubgroupId ?? null)
+          === (intent.destination.subgroupId ?? null));
+      const navigationSessionId = intent.targetSessionId !== undefined ? intent.targetSessionId
+        : localMatches ? localSessionId : serverMatches ? navigationSession?.id ?? null : null;
+      intent.targetSessionId = navigationSessionId;
+      if (intent.expectedSessionStartedAt === undefined) intent.expectedSessionStartedAt = state?.group.journeyStartedAt ?? null;
+      const endedSessionKey = navigationSessionId ?? legacyNavigationSessionKey(intent.expectedSessionStartedAt, intent.destination.id);
+      if (actorId) {
+        setEndedSessions(values => new Set([...values, endedSessionKey]));
+        void rememberEndedNavigationSession(actorId, groupId, endedSessionKey).catch(error => {
+          if (isCurrent()) showOperationFailure(t('map.setFailedTitle'), getOperationErrorMessage(error));
+        });
+      }
+      const result = await enqueueLeaderGatheringEnd(groupId, { baseState, groupState: state,
+        actorId: actorId ?? undefined, operationId,
+        navigationSessionId,
+        expectedSessionStartedAt: navigationSessionId ? null : intent.expectedSessionStartedAt,
+        subgroupId: intent.destination.subgroupId ?? null,
+        flushImmediately: false });
+      gatheringStatesRef.current.set(gatheringCacheKey, result.local);
+      if (!isCurrent()) { void flushCoreOperationOutbox().catch(() => undefined); return true; }
+      pendingStartRef.current = null;
+      requestRef.current = null;
+      publishLocalSessionId(null);
+      if (!pendingTeamStartIntentRef.current
+        || pendingTeamStartIntentRef.current.sequence <= intent.sequence) {
+        pendingTeamStartIntentRef.current = null;
+      }
       onOptimisticGathering?.(result.local);
-      // Cancel flock nav session (mirrors groups.journey → paused; never closes itinerary).
-      const cancelled = await cancelSession?.();
-      const confirmedPaused = cancelled || (refreshNavigationSession && await refreshNavigationSession() === null);
-      if (confirmedPaused) onOperatorPauseConfirm?.(dest,
-        `pause:${cancelled?.id ?? navigationSession?.id ?? groupId}:${cancelled?.version ?? intent.sequence}`);
-      _refresh();
-      serverOrStartedSessionRef.current = false;
-    } catch {
-      logEvent('nav_end_pending', { destId: dest.id, sequence: intent.sequence });
-    } finally {
-      setPendingLeaderStop(false);
-      setPendingLeaderTargetId(null);
-      setJourneyBusy(false);
-    }
-  }, [groupId, state, onOptimisticGathering, _refresh, cancelSession, onOperatorPauseConfirm, refreshNavigationSession, navigationSession]);
-
-  const runTeamStart = useCallback(async (intent: TeamCommandIntent): Promise<void> => {
-    if (!groupId || !startSession) return;
-    const { destination: dest, index } = intent;
-
-    // A Start on another open point is a switch, not End. Keep the old point
-    // pending (never completed/closed) and replace the active session atomically.
-    const switching = Boolean(sharedTargetId && sharedTargetId !== dest.id);
-
-    setJourneyBusy(true);
-    setPendingLeaderStop(false);
-    setPendingLeaderTargetId(dest.id);
-    setOptimisticTeamTargetId(dest.id);
-    serverOrStartedSessionRef.current = false;
-    // Starting a point is a direct target change, not a user map pan. Avoid
-    // animating from the previous point while the carousel is being reordered.
-    mapRef.current?.centerOn(dest.coordinates, { animated: false });
-
-    let enqueued: {
-      local: ActiveGatheringState;
-      base: ActiveGatheringState;
-      operationId: string;
-    } | null = null;
-    try {
-      const baseState = gatheringStateRef.current
-        ?? (state ? deriveActiveGatheringFromGroupState(state, 0) : undefined);
-      enqueued = switching
-        ? await enqueueLeaderGatheringSwitch(groupId, {
-            baseState,
-            groupState: state,
-            activeDestinationId: dest.id,
-            flushImmediately: false,
-          })
-        : await enqueueLeaderGatheringStart(groupId, {
-            baseState,
-            groupState: state,
-            activeDestinationId: dest.id,
-            flushImmediately: false,
-          });
-      // Switch and Start share the same local-first optimistic contract; the
-      // session RPC below is the server-side handoff and must succeed first.
-      if (switching) {
-        logEvent('nav_switch_requested', {
-          fromDestId: sharedTargetId,
-          destId: dest.id,
-          sequence: intent.sequence,
-        });
-      }
-      gatheringStateRef.current = enqueued.local;
-      pendingStartRef.current = { operationId: enqueued.operationId, base: enqueued.base };
-      onOptimisticGathering?.(enqueued.local);
-
-      // #174: selection identity is destination id; index is only a projection.
-      const startedDestId = dest.id;
-      if (reorderForNavigation) {
-        pendingCarouselTargetIdRef.current = startedDestId;
-        const updates = promoteDestinationWithinDay(openDestinationsForReorder(reorderDestinations), startedDestId);
-        if (!(await reorderForNavigation(updates))) {
-          pendingCarouselTargetIdRef.current = null;
-          throw new Error('destination_reorder_failed');
-        }
-      } else {
-        pendingCarouselTargetIdRef.current = null;
-        const currentIndex = navigationDestinations.findIndex((item) => item.id === startedDestId);
-        setSelectedIndex(currentIndex >= 0 ? currentIndex : index);
-      }
-
-      if (!requestRef.current || requestRef.current.destinationId !== dest.id) {
-        requestRef.current = { destinationId: dest.id, requestId: createRequestId() };
-      }
-      const startRequestId = requestRef.current.requestId;
-      const startEventId = `start:${groupId}:${startRequestId}`;
-      try {
-        if (switching) {
-          await startSession(dest.id, requestRef.current.requestId, true);
-        } else {
-          await startSession(dest.id, requestRef.current.requestId);
-        }
-        requestRef.current = null;
-        serverOrStartedSessionRef.current = true;
-        pendingStartRef.current = null;
-        void flushCoreOperationOutbox().catch(() => undefined);
-        // Operator local confirm once per successful start (not via Realtime sender path).
-        try {
-          onOperatorStartConfirm?.(dest, startEventId);
-        } catch {
-          // best-effort
-        }
-      } catch (sessionError) {
-        const outboxAction = resolveGatheringOutboxAfterSessionStart({
-          ok: false,
-          isNetworkError: isNetworkRequestError(sessionError),
-        });
-        if (outboxAction === 'abort') {
-          requestRef.current = null;
-          const reconciled = refreshNavigationSession
-            ? await refreshNavigationSession().catch(() => null)
-            : null;
-          if (reconciled?.status === 'active' && reconciled.destinationId === dest.id && reconciled.requestId === startRequestId) {
-            serverOrStartedSessionRef.current = true;
-            onOperatorStartConfirm?.(dest, startEventId);
-          } else {
-            await abortLeaderGatheringStart({
-              operationId: enqueued.operationId,
-              restore: enqueued.base,
-              message: 'navigation start rejected',
-            });
-            gatheringStateRef.current = enqueued.base;
-            pendingStartRef.current = null;
-            onOptimisticGathering?.(enqueued.base);
-            serverOrStartedSessionRef.current = false;
-            setOptimisticTeamTargetId(null);
+      setOptimisticTeamTargetId(null);
+      // The durable operation owns both the gathering and navigation-session
+      // transition. No second online-only cancel can race it.
+      void flushCoreOperationOutbox().then(async () => {
+        if (!isCurrent()) return;
+        // Confirm only an accepted current command. Do not replay an old Pause
+        // sound when a later Start is already queued, or while still offline.
+        if (onOperatorPauseConfirm) {
+          const pending = await getCoreOperationOutbox().getOperation(operationId);
+          if (!pending && isCurrent() && teamCommandSequenceRef.current === intent.sequence) {
+            onOperatorPauseConfirm(intent.destination, `pause:${groupId}:${operationId}`);
           }
         }
-        // keep_pending: network errors retain the Start outbox. A newer End
-        // still supersedes the UI and is processed by this same runner after
-        // the promise settles; do not flush before a session row exists.
-        // keep_pending:
-      }
+        if (!isCurrent()) return;
+        _refresh();
+        return refreshNavigationSession?.();
+      }).catch(() => undefined);
+      return true;
     } catch (error) {
-      if (enqueued && !isNetworkRequestError(error)) {
-        await abortLeaderGatheringStart({
-          operationId: enqueued.operationId,
-          restore: enqueued.base,
-          message: 'gathering start aborted',
-        }).catch(() => undefined);
-        gatheringStateRef.current = enqueued.base;
-        onOptimisticGathering?.(enqueued.base);
-        serverOrStartedSessionRef.current = false;
-        setOptimisticTeamTargetId(null);
+      if (!isCurrent()) return false;
+      if (pendingTeamStartIntentRef.current?.sequence === intent.sequence) {
+        pendingTeamStartIntentRef.current = null;
       }
-      logEvent('nav_start_failed', { destId: dest.id, sequence: intent.sequence });
+      setOptimisticTeamTargetId(null);
+      showAppNotice({
+        id: `end-save:${intent.operationId}`,
+        title: t('notice.endLocalOnly'), message: getOperationErrorMessage(error),
+        actionLabel: t('interaction.retry'),
+        onAction: async () => {
+          if (isCurrent() && teamCommandSequenceRef.current === intent.sequence) await runTeamEnd(intent);
+        },
+      });
+      logEvent('nav_end_failed', { destId: intent.destination.id });
+      return true;
     } finally {
-      setPendingLeaderTargetId(null);
-      setJourneyBusy(false);
+      if (isCurrent()) {
+        setPendingLeaderStop(false);
+        setPendingLeaderTargetId(null);
+        setJourneyBusy(false);
+      }
     }
-  }, [
-    groupId,
-    startSession,
-    state,
-    sharedTargetId,
-    navigationDestinations,
-    mapRef,
-    onOptimisticGathering,
-    reorderForNavigation,
-    reorderDestinations,
-    destinations,
-    navigationDestinations,
-    setSelectedIndex,
-    createRequestId,
-    runTeamEnd,
-    restorePendingStart,
-    onOperatorStartConfirm,
-  ]);
+  }, [groupId, actorId, state, navigationSession, publishLocalSessionId, onOptimisticGathering, onOperatorPauseConfirm, createRequestId, _refresh, refreshNavigationSession, t]);
 
-  const enqueueTeamCommand = useCallback((action: 'start' | 'end', dest: Destination, index: number) => {
+  const runTeamStart = useCallback(async (intent: TeamCommandIntent): Promise<boolean> => {
+    if (!groupId) return false;
+    const isCurrent = () => mountedRef.current && currentGroupRef.current === groupId && currentActorRef.current === actorId;
+    const { destination: dest, index } = intent;
+    if (isCurrent()) { setJourneyBusy(true); setPendingLeaderStop(false); }
+    try {
+      const baseState = gatheringStatesRef.current.get(gatheringCacheKey)
+        ?? (state ? deriveActiveGatheringFromGroupState(state, 0) : undefined);
+      const switching = Boolean(baseState?.activeDestinationId && baseState.activeDestinationId !== dest.id);
+      const operationId = intent.operationId;
+      const options = { baseState, groupState: state, actorId: actorId ?? undefined, activeDestinationId: dest.id, operationId,
+        // The transition is durable before a server session exists. Reusing
+        // this id as navigationRequestId lets delayed arrivals stay bound to
+        // this exact local session after reconnect.
+        navigationRequestId: operationId,
+        navigationSessionId: navigationSession?.id ?? null,
+        subgroupId: dest.subgroupId ?? null,
+        flushImmediately: false };
+      const enqueued = switching
+        ? await enqueueLeaderGatheringSwitch(groupId, options)
+        : await enqueueLeaderGatheringStart(groupId, options);
+      gatheringStatesRef.current.set(gatheringCacheKey, enqueued.local);
+      if (!isCurrent()) { void flushCoreOperationOutbox().catch(() => undefined); return true; }
+      pendingStartRef.current = { operationId: enqueued.operationId, base: enqueued.base };
+      requestRef.current = { destinationId: dest.id, requestId: enqueued.operationId };
+      localSessionContextRef.current = {
+        destinationId: dest.id,
+        subgroupId: dest.subgroupId ?? null,
+      };
+      publishLocalSessionId(enqueued.operationId);
+      onOptimisticGathering?.(enqueued.local);
+      setOptimisticTeamTargetId(dest.id);
+      mapRef.current?.centerOn(dest.coordinates, { animated: false });
+      const currentIndex = navigationDestinations.findIndex(item => item.id === dest.id);
+      setSelectedIndex(currentIndex >= 0 ? currentIndex : index);
+      // Automatic carousel promotion is display-only. A separate reorder before
+      // Start would create a partial commit and poison the FIFO's base version.
+      pendingCarouselTargetIdRef.current = null;
+      void flushCoreOperationOutbox().then(() => {
+        if (!isCurrent()) return;
+        _refresh();
+        return refreshNavigationSession?.();
+      }).catch(() => undefined);
+      return true;
+    } catch (error) {
+      if (!isCurrent()) return false;
+      if (pendingTeamStartIntentRef.current?.sequence === intent.sequence) {
+        pendingTeamStartIntentRef.current = null;
+      }
+      setOptimisticTeamTargetId(undefined);
+      showOperationFailure(t('map.setFailedTitle'), getOperationErrorMessage(error));
+      logEvent('nav_start_failed', { destId: dest.id, sequence: intent.sequence });
+      return false;
+    } finally {
+      if (isCurrent()) { setPendingLeaderTargetId(null); setJourneyBusy(false); }
+    }
+  }, [groupId, actorId, state, navigationSession?.id, navigationDestinations, mapRef, onOptimisticGathering,
+    setSelectedIndex, createRequestId, _refresh, refreshNavigationSession, t]);
+
+  const enqueueTeamCommand = useCallback((action: 'start' | 'end', dest: Destination, index: number): Promise<boolean> => {
+    if (action === 'end') {
+      stoppedServerSessionRef.current = navigationSession?.id ?? null;
+      stoppedAtRef.current = Date.now();
+      setLocallyStopped(true);
+      setOptimisticTeamTargetId(null);
+      setPendingLeaderTargetId(null);
+      setLocalTargetId(null);
+    } else {
+      setLocallyStopped(false);
+    }
+
     if (!isLeader) {
       if (action === 'start') startLocalRoutePlan(dest, index);
       else setLocalTargetId(null);
-      return;
+      return Promise.resolve(true);
     }
-    desiredTeamIntentRef.current = {
+    const intent: TeamCommandIntent = {
       sequence: ++teamCommandSequenceRef.current,
       action,
+      operationId: createRequestId(),
       destination: dest,
       index,
     };
-    // Paint the latest intent before any promise is awaited.
-    setOptimisticTeamTargetId(action === 'start' ? dest.id : null);
-    if (teamCommandRunnerRef.current) return;
-
-    const run = (async () => {
-      while (desiredTeamIntentRef.current) {
-        const next = desiredTeamIntentRef.current;
-        desiredTeamIntentRef.current = null;
-        if (next.action === 'start') {
-          const startRun = runTeamStart(next);
-          startPromiseRef.current = startRun;
-          try {
-            await startRun;
-          } finally {
-            if (startPromiseRef.current === startRun) startPromiseRef.current = null;
-          }
-        } else {
-          await runTeamEnd(next);
+    if (action === 'start') pendingTeamStartIntentRef.current = intent;
+    // Capture the originating group's callback; a later render/group switch
+    // must not execute a new tap using an older drain closure's group/state.
+    const result = new Promise<boolean>((resolve, reject) => {
+      const job: TeamCommandJob = {
+        execute: async () => {
+          const runner = action === 'start' ? runTeamStart : runTeamEnd;
+          return runner(intent);
+        },
+        resolve,
+        reject,
+      };
+      desiredTeamIntentRef.current.push(job);
+    });
+    // Every tap is persisted in order; visible state changes after local save.
+    const drain = () => {
+      if (teamCommandRunnerRef.current) return;
+      const run = (async () => {
+      while (desiredTeamIntentRef.current.length) {
+        const job = desiredTeamIntentRef.current.shift()!;
+        try {
+          job.resolve(await job.execute());
+        } catch (error) {
+          job.reject(error);
         }
       }
     })().finally(() => {
       teamCommandRunnerRef.current = null;
-      // A tap can land between the final loop check and finally. Start one
-      // runner for that latest intent without recursively awaiting itself.
-      if (desiredTeamIntentRef.current) {
-        enqueueTeamCommand(
-          desiredTeamIntentRef.current.action,
-          desiredTeamIntentRef.current.destination,
-          desiredTeamIntentRef.current.index,
-        );
-      }
+      // A tap can land between the final loop check and finally. Restart
+      // without removing/re-appending its head (which would reorder taps).
+      if (desiredTeamIntentRef.current.length) drain();
     });
     teamCommandRunnerRef.current = run;
-  }, [isLeader, startLocalRoutePlan, runTeamStart, runTeamEnd]);
+    };
+    drain();
+    return result;
+  }, [isLeader, startLocalRoutePlan, runTeamStart, runTeamEnd, createRequestId, navigationSession?.id]);
 
   const startNavigation = useCallback(
     async (dest: Destination, index: number) => {
-      enqueueTeamCommand('start', dest, index);
+      // Start taps are intentionally fire-and-forget at the UI boundary. The
+      // FIFO still awaits each durable command internally, but callers must be
+      // able to enqueue End/Start taps while the first local write is pending.
+      void enqueueTeamCommand('start', dest, index);
     },
     [enqueueTeamCommand],
   );
 
   const requestTeamEnd = useCallback(
     async (dest: Destination, index: number) => {
-      enqueueTeamCommand('end', dest, index);
+      const wasBusy = teamCommandRunnerRef.current !== null;
+      const pending = enqueueTeamCommand('end', dest, index);
+      // Preserve the tap API's non-blocking behavior when an earlier Start is
+      // still writing. Consumers that need causal ordering (for example
+      // deleting the active card) use stopNavigation, which opts into waiting.
+      return wasBusy ? true : pending;
     },
     [enqueueTeamCommand],
   );
 
   const stopNavigation = useCallback(async () => {
     if (isLeader) {
-      const dest = navTarget ?? selectedDestination;
-      if (dest) await requestTeamEnd(dest, destinations.findIndex((item) => item.id === dest.id));
-      return;
+      const dest = pendingTeamStartIntentRef.current?.destination
+        ?? navTarget
+        ?? selectedDestination;
+      if (dest) {
+        const pending = enqueueTeamCommand('end', dest, destinations.findIndex((item) => item.id === dest.id));
+        return pending;
+      }
+      setLocallyStopped(true);
+      setOptimisticTeamTargetId(null);
+      setPendingLeaderTargetId(null);
+      return true;
     }
     setLocalTargetId(null);
-  }, [isLeader, navTarget, selectedDestination, destinations, requestTeamEnd]);
+    return true;
+  }, [isLeader, navTarget, selectedDestination, destinations, enqueueTeamCommand]);
 
   // Reorder is asynchronous. Project the selected page only after the latest
   // visible carousel order exactly matches the ID-based promote result; a
@@ -550,6 +656,7 @@ export function useJourneyNavigation({
   }, [destinations, mapRef, navigationSession?.id, setSelectedIndex, sharedTargetId]);
 
   return {
+    navigationStoppedLocally: suppressNavigation,
     journeyStatus,
     journeyGoing,
     journeyActive,
@@ -557,6 +664,8 @@ export function useJourneyNavigation({
     navTargetId,
     sharedTargetId: sharedTargetId ?? null,
     localTargetId,
+    /** Local UUID used to bind offline arrivals until the server session is visible. */
+    localSessionId: localSessionIdRef.current,
     pendingLeaderTargetId,
     activePoint,
     numericDistance,

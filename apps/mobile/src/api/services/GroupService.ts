@@ -157,8 +157,12 @@ export function mapMember(
     solo: membership.solo ?? false,
     subgroupId: membership.subgroup_id ?? undefined,
     coordinates,
-    lastUpdated: location?.updated_at ?? undefined,
-    capturedAt: location?.captured_at ?? location?.updated_at ?? undefined,
+    capturedAt: location?.captured_at ?? null,
+    uploadedAt: location?.updated_at ?? null,
+    locationAvailability: !coordinates ? 'unavailable'
+      : Date.now() - Date.parse(location?.captured_at ?? location?.updated_at ?? '') < 120_000
+        ? 'available' : 'stale',
+    lastUpdated: location?.captured_at ?? location?.updated_at ?? undefined,
   };
 }
 
@@ -209,7 +213,7 @@ export async function createGroup(
     if (kind === 'registration_required' || code === 'P0406') {
       throw new Error(ANON_LEADER_REGISTRATION_REQUIRED);
     }
-    throw new Error(error.message);
+    orThrow(error);
   }
   const group = mapGroup(data as GroupRow);
   if (avatar || avatarColor) {
@@ -268,7 +272,7 @@ export async function joinGroup(inviteCode: string): Promise<Group> {
     if (kind === 'registration_required' || code === 'P0406') {
       throw new Error(ANON_LEADER_REGISTRATION_REQUIRED);
     }
-    throw new Error(error.message);
+    orThrow(error);
   }
   return mapGroup(data as GroupRow);
 }
@@ -304,13 +308,13 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
     supabase
       .from('itinerary_items')
       .select(
-        'id, title, address, latitude, longitude, position, day, meet_at, meet_red_minutes, subgroup_id, closed_at, closed_by_session_id, emoji, marker_color, kind, stay_anchor',
+        'id, title, address, latitude, longitude, position, day, meet_at, meet_red_minutes, subgroup_id, closed_at, closed_by_session_id, emoji, marker_color, kind, stay_anchor, provider_place_id',
       )
       .eq('group_id', groupId)
       .order('position', { ascending: true }),
     supabase
       .from('member_locations')
-      .select('user_id, latitude, longitude, updated_at, captured_at')
+      .select('user_id, latitude, longitude, captured_at, updated_at')
       .eq('group_id', groupId),
     // Do not swallow load failures as an empty list (false "no stay").
     listDailyAccommodations(groupId),
@@ -450,6 +454,8 @@ export interface JoinedGroupInfo {
 }
 
 export type GetMyJoinedGroupsOptions = {
+  /** Bind the read to the account currently represented by the caller. */
+  expectedActorId?: string;
   /**
    * When false, skip the profiles round-trip (RoleSelect only needs count +
    * group metadata). MyTeams should keep the default true for avatars.
@@ -513,19 +519,26 @@ export async function getMyJoinedGroups(
   options: GetMyJoinedGroupsOptions = {},
 ): Promise<JoinedGroupInfo[]> {
   const includeProfiles = options.includeProfiles !== false;
-  let uid: string;
-  try {
-    uid = await requireUserId();
-  } catch {
-    return [];
-  }
+  const uid = await requireUserId();
 
-  const { data: myMemberships } = await supabase
+  const assertActor = async () => {
+    const current = await requireUserId();
+    if (current !== uid || (options.expectedActorId && current !== options.expectedActorId)) {
+      throw Object.assign(new Error('The authenticated account changed during team loading'), {
+        code: 'session_missing_or_expired',
+      });
+    }
+  };
+  await assertActor();
+
+  const { data: myMemberships, error: membershipError } = await supabase
     .from('memberships')
     .select('group_id, role')
     .eq('user_id', uid);
+  orThrow(membershipError);
 
   if (!myMemberships || myMemberships.length === 0) {
+    await assertActor();
     return rememberJoinedGroups(uid, []);
   }
 
@@ -544,9 +557,11 @@ export async function getMyJoinedGroups(
       .in('group_id', groupIds),
   ]);
 
+  orThrow(groupsRes.error);
+  orThrow(membersRes.error);
   const groups = groupsRes.data;
   if (!groups || groups.length === 0) {
-    return rememberJoinedGroups(uid, []);
+    throw new Error('Joined group metadata is unavailable');
   }
 
   const members = membersRes.data ?? [];
@@ -581,6 +596,7 @@ export async function getMyJoinedGroups(
     for (const [gid, profiles] of membersByGroup) {
       nextDisk[gid] = profiles;
     }
+    await assertActor();
     void writeAvatarDiskCache(uid, nextDisk);
   }
 
@@ -599,6 +615,7 @@ export async function getMyJoinedGroups(
     };
   });
 
+  await assertActor();
   return rememberJoinedGroups(uid, list);
 }
 

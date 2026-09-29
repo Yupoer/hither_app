@@ -35,6 +35,7 @@ const mockFlush = jest.fn(async (..._args: unknown[]) => ({ retryScheduled: 0, d
 const mockPurge = jest.fn(async (..._args: unknown[]) => undefined);
 const mockAckNavigation = jest.fn(async (..._args: unknown[]) => undefined);
 const mockClearLiveActivities = jest.fn(async (..._args: unknown[]) => undefined);
+const mockArrivalRows = jest.fn(async (): Promise<unknown[]> => []);
 let mockTaskCallback: ((payload: unknown) => Promise<void>) | undefined;
 
 jest.mock('@react-native-async-storage/async-storage', () => ({
@@ -87,7 +88,7 @@ const baseConfig = {
   powerMode: 'journey' as const,
 };
 const locationSample = {
-  timestamp: 123,
+  timestamp: Date.now(),
   coords: {
     latitude: 25,
     longitude: 121,
@@ -107,6 +108,7 @@ describe('background journey native task wiring', () => {
     mockLocation.requestForegroundPermissionsAsync.mockResolvedValue({ status: 'granted' });
     mockLocation.requestBackgroundPermissionsAsync.mockResolvedValue({ status: 'granted' });
     mockFlush.mockResolvedValue({ retryScheduled: 0, discarded: 0, remaining: 0 });
+    mockArrivalRows.mockResolvedValue([]);
     mockTaskCallback = mockTaskCallback ?? undefined;
   });
 
@@ -171,6 +173,19 @@ describe('background journey native task wiring', () => {
       event: 'background_op_timeline',
     }));
   });
+
+  it('does not reuse an acknowledged arrival belonging to an earlier navigation session', async () => {
+    await stopBackgroundJourney();
+    mockArrivalRows.mockResolvedValue([{
+      operationType: 'record_arrival', entityId: 'stop-1', status: 'acked',
+      payload: { actorId: 'self', userId: 'self', navigationSessionId: 'old-session' },
+    }]);
+    await startBackgroundJourney({ ...baseConfig, navigationSessionId: 'new-session', permissionsPrepared: true });
+    await mockTaskCallback!({ data: { locations: [{ ...locationSample, timestamp: Date.now() }] }, error: null });
+    expect(require('../state/arrivalSync').enqueueArrival).toHaveBeenCalledWith(expect.objectContaining({
+      navigationSessionId: 'new-session', actorId: 'self',
+    }));
+  });
 });
 
 it('background route progress matches foreground; duplicate samples do not reprocess arrival', async () => {
@@ -188,7 +203,7 @@ it('background route progress matches foreground; duplicate samples do not repro
   const { derivePersonalProgress } = require('../utils/personalProgress');
   const walking = { ...start, latitude: start.latitude - 0.0005 };
   const clock = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 10_001);
-  await task({ data: { locations: [{ ...locationSample, timestamp: 124, coords: { ...locationSample.coords, ...walking } }] } });
+  await task({ data: { locations: [{ ...locationSample, timestamp: locationSample.timestamp + 1, coords: { ...locationSample.coords, ...walking } }] } });
   clock.mockRestore();
   const foreground = derivePersonalProgress({ ...config, deviceCoords: walking, targetCoords: config.destination,
     routeAnchorGps: start, routeAnchorRemainingM: 740, routeEtaSeconds: 780 });
@@ -205,4 +220,4 @@ it('background route progress matches foreground; duplicate samples do not repro
 });
 jest.mock('../state/arrivalSync', () => ({ enqueueArrival: jest.fn(async () => ({ status: 'pending' })) }));
 jest.mock('../api/services/GatheringWorkflowService', () => ({ fetchDestinationArrivals: jest.fn(async () => []) }));
-jest.mock('../state/coreDataSync', () => ({ getCoreOperationOutbox: () => ({ listByGroup: async () => [] }), flushCoreOperationOutbox: jest.fn(async () => undefined) }));
+jest.mock('../state/coreDataSync', () => ({ getCoreOperationOutbox: () => ({ listByGroup: () => mockArrivalRows() }), flushCoreOperationOutbox: jest.fn(async () => undefined) }));

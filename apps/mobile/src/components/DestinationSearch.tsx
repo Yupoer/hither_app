@@ -14,6 +14,7 @@ import { useTranslation } from '../i18n';
 import { radius, spacing, type Palette } from '../theme';
 import { glass } from '../glass';
 import { extractPlusCode } from '../utils/plusCode';
+import { classifyOperationError } from '../utils/operationError';
 import CrookIcon from './CrookIcon';
 import OverlaySheet from './OverlaySheet';
 
@@ -104,7 +105,7 @@ export default React.memo(function DestinationSearch({
       } catch (error) {
         if (seq === seqRef.current) {
           setResults([]);
-          setSearchError((error as { code?: string })?.code === 'quota_exceeded' ? 'quota' : 'failed');
+          setSearchError(classifyOperationError(error).kind === 'quota' ? 'quota' : 'failed');
         }
       } finally {
         clearTimeout(timeout);

@@ -2,6 +2,7 @@ export interface LocationRefreshMemberSnapshot {
   userId: string;
   status?: string | null;
   lastUpdated?: string | null;
+  uploadedAt?: string | null;
 }
 
 export type LocationRefreshResponseStatus = 'all' | 'partial' | 'none';
@@ -39,7 +40,7 @@ export function assessLocationRefreshResponses({
   const expected = [...expectedUserIds];
   const respondedUserIds = expected.filter((userId) => {
     const member = members.find((candidate) => candidate.userId === userId);
-    const currentMs = timestampMs(member?.lastUpdated);
+    const currentMs = timestampMs(member?.uploadedAt ?? member?.lastUpdated);
     const baselineMs = timestampMs(baselineLastUpdated.get(userId));
     return currentMs != null
       && currentMs >= requestedAtMs

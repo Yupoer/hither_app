@@ -40,6 +40,13 @@ jest.mock('expo-apple-authentication', () => ({
 jest.mock('../api/client', () => ({
   updateNickname: (...args: unknown[]) => mockUpdateNickname(...args),
   updateProfile: (...args: unknown[]) => mockUpdateProfile(...args),
+  orThrow: (error: unknown) => {
+    if (!error) return;
+    const message = error && typeof error === 'object' && 'message' in error
+      ? String((error as { message?: unknown }).message ?? 'Supabase operation failed')
+      : String(error);
+    throw new Error(message);
+  },
 }));
 jest.mock('../state/googleSignIn', () => ({
   getGoogleIdToken: (...args: unknown[]) => mockGetGoogleIdToken(...args),

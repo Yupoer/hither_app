@@ -6,6 +6,7 @@ import { useSession } from '../state/SessionContext';
 import { useTheme } from '../state/PreferencesContext';
 import { glass } from '../glass';
 import { CUSTOM_QUICK_COMMAND_SLOTS } from '../types';
+import { getOperationErrorMessage } from '../utils/operationError';
 
 export default function CustomQuickCommandSheet({
   visible,
@@ -17,7 +18,7 @@ export default function CustomQuickCommandSheet({
   slot: number;
   onClose: () => void;
 }) {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const { colors } = useTheme();
   const { customQuickCommands, setCustomQuickCommand } = useSession();
   const [label, setLabel] = useState('');
@@ -41,12 +42,10 @@ export default function CustomQuickCommandSheet({
     try {
       await setCustomQuickCommand(safeSlot, command);
       onClose();
-    } catch (e) {
-      // BUG-23: surface the real failure reason (RLS / missing column / network).
-      const detail = e instanceof Error && e.message ? e.message : undefined;
+    } catch (error) {
       Alert.alert(
         t('settings.customQuickCommand'),
-        detail ?? t('settings.customQuickCommandSaveFailed'),
+        getOperationErrorMessage(error, language),
       );
     }
   }

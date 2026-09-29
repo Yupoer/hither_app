@@ -42,3 +42,12 @@ test('short consecutive walking fixes accumulate rather than looking stationary 
   expect(state.cadence).toBe('moving');
   expect(state.lastSignificantMoveAtMs).toBeGreaterThan(400_000);
 });
+
+test('recent upload of an old sensor fix cannot animate as a fresh movement', () => {
+  const uploadedAt = new Date(300_000).toISOString();
+  const member = { capturedAt: new Date(108_000).toISOString(), lastUpdated: uploadedAt, uploadedAt };
+  const next = { coordinates: { latitude: 25.0001, longitude: 121 }, sampledAt: Date.parse(member.capturedAt ?? member.lastUpdated) };
+  expect(memberMotionDuration({ coordinates: { latitude: 25, longitude: 121 }, sampledAt: 100_000 }, next, 300_000, true)).toBe(0);
+  const source = require('node:fs').readFileSync(require('node:path').join(__dirname, '../components/GroupMap.tsx'), 'utf8');
+  expect(source).toContain("sampledAt: Date.parse(member.capturedAt ?? member.lastUpdated ?? '')");
+});

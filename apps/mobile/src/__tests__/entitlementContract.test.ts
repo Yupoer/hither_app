@@ -39,6 +39,11 @@ jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(async () => null),
   setItemAsync: jest.fn(async () => undefined),
 }));
+// Entitlement limits and the legacy addDestination RPC fallback are tested
+// here; local SQLite durability has its own suites and must not load RN ESM.
+jest.mock('../state/coreDataSync', () => {
+  throw new Error('coreDataSync is intentionally unavailable in RPC-only tests');
+});
 
 const mockedAuth = supabase.auth as unknown as { getSession: jest.Mock };
 const mockedFrom = supabase.from as unknown as jest.Mock;

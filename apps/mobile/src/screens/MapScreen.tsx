@@ -1,5 +1,6 @@
 import { useForegroundReconcile } from '../state/useForegroundReconcile';
 import { refreshTeamLocations } from '../utils/refreshTeamLocations';
+import { showOperationFailure } from '../state/appNotice';
 import { captureLocationAccess } from '../state/locationPrivacy';
 import { hydrateLocationSharing, rememberLocationSharing, syncLocationSharing } from '../state/locationSharingSync';
 import React, {
@@ -8,6 +9,7 @@ import React, {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from 'react';
 import {
   AccessibilityInfo,
@@ -82,6 +84,8 @@ import DestinationSearch from '../components/DestinationSearch';
 import MeetCountdown from '../components/MeetCountdown';
 import DestinationReorderList from '../components/DestinationReorderList';
 import MetalforgeStarfield from '../components/MetalforgeStarfield';
+import CoreSyncStatus from '../components/CoreSyncStatus';
+import { getRuntimePowerState, subscribeRuntimePowerState } from '../state/runtimePowerState';
 import NotificationPreferencesCard from '../components/NotificationPreferencesCard';
 import QuickCommandsCard from '../components/QuickCommandsCard';
 import CustomQuickCommandSheet from '../components/CustomQuickCommandSheet';
@@ -153,8 +157,8 @@ import { avatarColorForGroup, avatarForGroup, displayMemberAvatar } from '../con
 import { canMarkDestinationArrival } from '../utils/arrivalMarking';
 import { useIsFocused } from '@react-navigation/native';
 import type { CoreOperation } from '../types/coreData';
-import { getCoreOperationOutbox, subscribeCoreOutboxChanges } from '../state/coreDataSync';
-import { enqueueArrival, syncArrival, projectArrivals, pendingSoloDestinationIds } from '../state/arrivalSync';
+import { getCoreOperationOutbox, subscribeCoreOutboxChanges, flushCoreOperationOutbox } from '../state/coreDataSync';
+import { enqueueArrival, syncArrival, projectArrivals } from '../state/arrivalSync';
 import { buildPassiveCompanionModel } from '../utils/passiveCompanion';
 import { uploadLocalLogs } from '../utils/uploadLocalLogs';
 import { runUiAction } from '../utils/uiAction';
@@ -214,8 +218,12 @@ import { useSubgroupInvites } from '../state/useSubgroupInvites';
 import { clearLiveActivities, useLiveActivity } from '../state/useLiveActivity';
 import {
   prepareBackgroundJourneyPermissions,
+  loadBackgroundManualUndo,
+  rememberBackgroundManualUndo,
+  releaseBackgroundManualUndo,
   startBackgroundJourney,
   stopBackgroundJourney,
+  type BackgroundManualUndoMarker,
 } from '../state/backgroundJourney';
 import { purgeLocationOutbox } from '../state/locationOutbox';
 import { diagnostics } from '../state/diagnostics';
@@ -274,6 +282,8 @@ import {
   resolveAddDay,
 } from '../utils/tripDay';
 import { createArrivalState, reduceArrival, type ArrivalState } from '../utils/navigationArrival';
+import { canEvaluateSynchronizedArrival, synchronizedArrivalTargetKey } from '../utils/synchronizedArrival';
+import { getOperationErrorMessage } from '../utils/operationError';
 import {
   applyDestinationMutationOverlay,
   destinationMarkerValues,
@@ -309,7 +319,8 @@ import {
   resolveGatherPointRequestResilient,
   sendCommand,
   isNetworkRequestError,
-  setDestinationArrival,
+  correctDestinationArrival,
+  setDestinationArrivalAt,
   setDailyAccommodation,
   clearDailyAccommodation,
   listFavoritePlaces,
@@ -398,11 +409,12 @@ function arrivalErrorMessage(
   error: unknown,
   t: (key: TranslationKey) => string,
 ): string {
-  const raw = error instanceof Error ? error.message : '';
+  const raw = error instanceof Error ? error.message
+    : error && typeof error === 'object' && 'message' in error ? String(error.message) : '';
   for (const { needle, key } of ARRIVAL_RPC_ERRORS) {
     if (raw.includes(needle)) return t(key);
   }
-  return raw || t('arrival.failedMsg');
+  return getOperationErrorMessage(error);
 }
 
 /** Short ETA like the design's "4 min" / "now" / "2 hr". */
@@ -583,6 +595,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const dark = themes.night;
 
   const groupId = route.params?.groupId ?? membership?.group.id ?? null;
+  const powerState = useSyncExternalStore(subscribeRuntimePowerState, getRuntimePowerState, getRuntimePowerState);
   // The demo flock has no membership row; the tester drives it as leader.
   const isLeader = membership?.role === 'leader' || isDemoGroup(groupId);
 
@@ -590,6 +603,8 @@ export default function MapScreen({ route, navigation }: Props) {
     state,
     loading,
     error: groupStateError,
+    loadError,
+    refreshing,
     refresh,
     applyOptimisticGathering,
     openOperations,
@@ -599,28 +614,6 @@ export default function MapScreen({ route, navigation }: Props) {
     myUserId: user?.id ?? null,
     highAccuracy,
   });
-  const displayedConflicts = useRef(new Set<string>());
-  useEffect(() => {
-    for (const op of openOperations) {
-      if (op.entityType !== 'active_gathering' || op.status !== 'conflict' || displayedConflicts.current.has(op.id)) continue;
-      displayedConflicts.current.add(op.id);
-      Alert.alert(t('map.setFailedTitle'), op.conflictResult?.message ?? t('map.setFailedMsg'));
-    }
-  }, [openOperations, t]);
-  const navigationSessionState = useNavigationSession(groupId);
-  const navigationSessionId = navigationSessionState.session?.id ?? null;
-  const hasNavigationSession = navigationSessionId !== null;
-  // Cold start / return from background: re-pull active flock session so
-  // members immediately enter nav mode without tapping「路徑」.
-  useEffect(() => {
-    const onAppState = (next: string) => {
-      if (next !== 'active' || !groupId) return;
-      void navigationSessionState.refresh().catch(() => undefined);
-      void refresh().catch(() => undefined);
-    };
-    const sub = AppState.addEventListener('change', onAppState);
-    return () => sub.remove();
-  }, [groupId, navigationSessionState.refresh, refresh]);
   const group = state?.group ?? membership?.group ?? null;
   const serverDailyAccommodations = state?.dailyAccommodations ?? [];
 
@@ -638,6 +631,32 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const me = useMemo(() => members.find((m) => m.userId === user?.id), [members, user?.id]);
   const myScopeId = me?.subgroupId;
+  // Navigation sessions are one lane per subgroup (plus the main-team lane),
+  // so a shared group id is not sufficient once parallel teams are active.
+  const displayedConflicts = useRef(new Set<string>());
+  useEffect(() => {
+    for (const op of openOperations) {
+      if (op.entityType !== 'active_gathering' || op.status !== 'conflict' || displayedConflicts.current.has(op.id)) continue;
+      displayedConflicts.current.add(op.id);
+      showOperationFailure(t('map.setFailedTitle'), op.conflictResult?.message ?? t('map.setFailedMsg'));
+    }
+  }, [openOperations, t]);
+  const navigationSessionState = useNavigationSession(groupId, myScopeId ?? null);
+  const navigationSessionId = navigationSessionState.session?.id ?? null;
+  /** Local durable Start id used as a session alias before the server row is visible. */
+  const [localNavigationSessionId, setLocalNavigationSessionId] = useState<string | null>(null);
+  const hasNavigationSession = navigationSessionId !== null;
+  // Cold start / return from background: re-pull the scoped flock session so
+  // members immediately enter nav mode without tapping「路徑」.
+  useEffect(() => {
+    const onAppState = (next: string) => {
+      if (next !== 'active' || !groupId) return;
+      void navigationSessionState.refresh().catch(() => undefined);
+      void refresh().catch(() => undefined);
+    };
+    const sub = AppState.addEventListener('change', onAppState);
+    return () => sub.remove();
+  }, [groupId, navigationSessionState.refresh, refresh]);
   const [routeEditorScopeId, setRouteEditorScopeId] = useState<string | undefined>(myScopeId);
   const routeEditorScopeIdRef = useRef<string | undefined>(routeEditorScopeId);
   routeEditorScopeIdRef.current = routeEditorScopeId;
@@ -699,13 +718,13 @@ export default function MapScreen({ route, navigation }: Props) {
     let active = true;
     const reload = async () => {
       const rows = groupId ? await getCoreOperationOutbox().listByGroup(groupId) : [];
-      if (active) setArrivalOperations(rows.filter(op => op.operationType === 'record_arrival'));
+      if (active) setArrivalOperations(rows.filter(op =>
+        op.operationType === 'record_arrival' || op.operationType === 'leader_correct_arrival'));
     };
     void reload().catch(() => undefined);
     const unsubscribe = subscribeCoreOutboxChanges(() => { void reload().catch(() => undefined); });
     return () => { active = false; unsubscribe(); };
   }, [groupId, user?.id]);
-  const localClosedIds = useMemo(() => pendingSoloDestinationIds(arrivalOperations, user?.id ?? ''), [arrivalOperations, user?.id]);
   /**
    * Route-sheet draft for daily stays. null = use server snapshot.
    * All stay set/clear while the route overlay is open lands here until flush.
@@ -720,9 +739,8 @@ export default function MapScreen({ route, navigation }: Props) {
   const destinationMutationSequenceRef = useRef(0);
   const baseScopedDestinations = optimisticDestinations ?? rawDestinations;
   const allScopedDestinations = useMemo(
-    () => applyDestinationMutationOverlay(baseScopedDestinations, pendingDestinationMutations)
-      .map(d => localClosedIds.has(d.id) ? { ...d, closedAt: d.closedAt ?? (arrivalOperations.find(op => op.entityId === d.id && op.payload.actorId === user?.id && op.status !== 'conflict')?.payload.arrivedAt as string) } : d),
-    [baseScopedDestinations, pendingDestinationMutations, localClosedIds, arrivalOperations, user?.id],
+    () => applyDestinationMutationOverlay(baseScopedDestinations, pendingDestinationMutations),
+    [baseScopedDestinations, pendingDestinationMutations],
   );
   const routeEditorServerDestinations = useMemo(() => {
     const all = state?.destinations ?? [];
@@ -731,8 +749,8 @@ export default function MapScreen({ route, navigation }: Props) {
       : all.filter((destination) => destination.subgroupId == null);
   }, [routeEditorScopeId, state?.destinations]);
   const routeEditorBaseDestinations = useMemo(
-    () => (optimisticDestinations ?? routeEditorServerDestinations).filter(d => !localClosedIds.has(d.id)),
-    [optimisticDestinations, routeEditorServerDestinations, localClosedIds],
+    () => optimisticDestinations ?? routeEditorServerDestinations,
+    [optimisticDestinations, routeEditorServerDestinations],
   );
   useEffect(() => {
     setPendingDestinationMutations((pending) => {
@@ -742,6 +760,24 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [rawDestinations]);
   const [remoteArrivals, setDestinationArrivals] = useState<DestinationArrival[]>([]);
   const destinationArrivals = useMemo(() => projectArrivals(remoteArrivals, arrivalOperations, user?.id ?? ''), [remoteArrivals, arrivalOperations, user?.id]);
+  const arrivalSessionScope = useMemo(
+    // A newly queued Start is the authoritative local session immediately;
+    // do not keep the previous server session in the active projection while
+    // its replacement is still hydrating. The v3 bridge uses the local
+    // operation id as the eventual server session id, so no alias is lost.
+    () => localNavigationSessionId
+      ? [localNavigationSessionId]
+      : navigationSessionId
+        ? [navigationSessionId]
+        : [],
+    [localNavigationSessionId, navigationSessionId],
+  );
+  const activeDestinationArrivals = useMemo(
+    () => arrivalSessionScope.length > 0
+      ? projectArrivals(remoteArrivals, arrivalOperations, user?.id ?? '', arrivalSessionScope)
+      : [],
+    [arrivalOperations, arrivalSessionScope, remoteArrivals, user?.id],
+  );
   const [gatherPointRequests, setGatherPointRequests] = useState<GatherPointRequest[]>([]);
   const [resolvingGatherRequestId, setResolvingGatherRequestId] = useState<string | null>(null);
   /** Selected request id for Route pane horizontal FIFO inbox (#173). */
@@ -790,6 +826,18 @@ export default function MapScreen({ route, navigation }: Props) {
     })) setOptimisticDestinations(null);
   }, [rawDestinations, optimisticDestinations]);
   const workflowReloadRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handledItineraryRejections = useRef(new Set<string>());
+  useEffect(() => {
+    const rejected = openOperations.filter(op => op.entityType === 'itinerary'
+      && op.status === 'conflict' && !handledItineraryRejections.current.has(op.id));
+    if (!rejected.length) return;
+    rejected.forEach(op => handledItineraryRejections.current.add(op.id));
+    if (!routeDraftDirtyRef.current.destinations) {
+      optimisticDestinationsRef.current = null;
+      setOptimisticDestinations(null);
+    }
+  }, [openOperations]);
+
   const [optimisticTripDays, setOptimisticTripDays] = useState<number | null>(null);
   const [optimisticDepartureDate, setOptimisticDepartureDate] = useState<string | null>(null);
   // Membership changes switch the active itinerary scope. Clear every draft
@@ -830,11 +878,11 @@ export default function MapScreen({ route, navigation }: Props) {
   /** Personal arrival rows (check-in) — not team stop completion. */
   const myCompletedDestinationIds = useMemo(
     () => new Set(
-      destinationArrivals
+      activeDestinationArrivals
         .filter((arrival) => arrival.userId === user?.id)
         .map((arrival) => arrival.destinationId),
     ),
-    [destinationArrivals, user?.id],
+    [activeDestinationArrivals, user?.id],
   );
   /** Team-completed stops (closedAt) — distinct from personal arrival. */
   const teamCompletedDestinationIds = useMemo(
@@ -1004,14 +1052,31 @@ export default function MapScreen({ route, navigation }: Props) {
   const workflowLastLoadAtRef = useRef(0);
   const workflowChannelSeqRef = useRef(0);
   const WORKFLOW_MIN_INTERVAL_MS = 2_500;
+  const workflowContext = `${groupId ?? ''}:${user?.id ?? ''}`;
+  const mapMountedRef = useRef(true);
+  useEffect(() => {
+    mapMountedRef.current = true;
+    return () => { mapMountedRef.current = false; };
+  }, []);
+  const workflowContextRef = useRef(workflowContext);
+  workflowContextRef.current = workflowContext;
+  useEffect(() => {
+    workflowInFlightRef.current = null;
+    workflowPendingRef.current = false;
+    workflowLastLoadAtRef.current = 0;
+    setDestinationArrivals([]);
+    setGatherPointRequests([]);
+  }, [workflowContext]);
 
   const loadGatheringWorkflow = useCallback(async () => {
-    if (!groupId || isDemoGroup(groupId)) return;
+    const isCurrent = () => mapMountedRef.current && workflowContextRef.current === workflowContext;
+    if (!groupId || isDemoGroup(groupId) || !isCurrent()) return;
     // Single-flight with pending re-run: a second caller during an in-flight
     // fetch must not return stale arrivals (e.g. mark then realtime overlap).
     if (workflowInFlightRef.current) {
       workflowPendingRef.current = true;
       await workflowInFlightRef.current;
+      if (!isCurrent()) return;
       if (!workflowPendingRef.current) return;
     }
     do {
@@ -1023,7 +1088,7 @@ export default function MapScreen({ route, navigation }: Props) {
             ? fetchPendingGatherPointRequests(groupId)
             : Promise.resolve([]),
         ]);
-        if (workflowGroupRef.current !== groupId) return;
+        if (!isCurrent()) return;
         setDestinationArrivals(arrivals);
         const scopedRequests = isSubgroupLeaderRef.current
           ? requests.filter((request) => request.subgroupId === myScopeIdRef.current)
@@ -1031,12 +1096,13 @@ export default function MapScreen({ route, navigation }: Props) {
         setGatherPointRequests(scopedRequests);
         workflowLastLoadAtRef.current = Date.now();
       })();
-      workflowInFlightRef.current = run.finally(() => {
-        workflowInFlightRef.current = null;
+      const tracked = run.finally(() => {
+        if (workflowInFlightRef.current === tracked) workflowInFlightRef.current = null;
       });
-      await workflowInFlightRef.current;
-    } while (workflowPendingRef.current && workflowGroupRef.current === groupId);
-  }, [groupId]);
+      workflowInFlightRef.current = tracked;
+      await tracked;
+    } while (isCurrent() && workflowPendingRef.current);
+  }, [groupId, workflowContext]);
 
   useForegroundReconcile(Boolean(groupId), loadGatheringWorkflow);
   useForegroundReconcile(Boolean(groupId), recoverPendingLocationRefreshes);
@@ -1047,6 +1113,7 @@ export default function MapScreen({ route, navigation }: Props) {
     targetUserId: string,
     arrived: boolean,
     arrivedAt?: string | null,
+    navigationSessionId?: string | null,
   ) => {
     setDestinationArrivals((prev) => {
       const without = prev.filter(
@@ -1063,22 +1130,71 @@ export default function MapScreen({ route, navigation }: Props) {
           groupId: groupId ?? '',
           destinationId,
           userId: targetUserId,
-          arrivedAt: arrivedAt ?? new Date().toISOString(),
-          source: 'manual' as const,
-          markedBy: targetUserId,
+          arrivedAt: arrivedAt === undefined ? new Date().toISOString() : arrivedAt,
+          source: 'leader_correction' as const,
+          markedBy: user?.id ?? targetUserId,
+          ...(navigationSessionId ? { navigationSessionId } : {}),
         },
       ];
     });
-  }, [groupId]);
+  }, [groupId, user?.id]);
 
   useEffect(() => {
+    const eventOrder = (op: CoreOperation) => {
+      const occurredAt = typeof op.payload.occurredAt === 'string'
+        ? Date.parse(op.payload.occurredAt)
+        : Number.NaN;
+      return Number.isFinite(occurredAt) ? occurredAt : (op.sequence ?? op.createdAt);
+    };
+    const keyFor = (op: CoreOperation) => `${op.entityId}:${String(
+      op.payload.targetUserId ?? op.payload.userId ?? ''
+    )}:${String(op.payload.navigationSessionId ?? op.payload.sessionId ?? '')}`;
+    const latestByKey = new Map<string, CoreOperation>();
+    for (const op of arrivalOperations) {
+      if (op.status === 'conflict' || op.payload.actorId !== user?.id) continue;
+      const key = keyFor(op);
+      const previous = latestByKey.get(key);
+      if (!previous || eventOrder(previous) <= eventOrder(op)) latestByKey.set(key, op);
+    }
     for (const op of arrivalOperations) {
       if (op.status !== 'acked' || op.payload.actorId !== user?.id) continue;
-      const arrived = remoteArrivals.some(a => a.destinationId === op.entityId && a.userId === op.payload.userId);
+      const opSessionId = typeof (op.payload.navigationSessionId ?? op.payload.sessionId) === 'string'
+        ? String(op.payload.navigationSessionId ?? op.payload.sessionId)
+        : null;
+      // Keep the latest active-session undo as a tombstone until the member
+      // leaves the geofence.  Background can start after ACK/compaction and
+      // still suppress the old arrival for this exact session.
+      const activeUndoTombstone = op.operationType === 'record_arrival'
+        && op.payload.arrived === false
+        && op.payload.userId === user?.id
+        && opSessionId != null
+        && arrivalSessionScope.includes(opSessionId);
+      if (activeUndoTombstone) continue;
+      // Once a newer acked intent is reflected, older receipts are safe to
+      // compact too. Otherwise an old leader correction can re-project after
+      // the newer undo/correction receipt is removed.
+      const latest = latestByKey.get(keyFor(op));
+      if (latest && latest.id !== op.id && latest.status === 'acked') {
+        void getCoreOperationOutbox().removeArrival(op.id);
+        continue;
+      }
+      const targetUserId = String(op.payload.targetUserId ?? op.payload.userId ?? '');
+      const sessionId = opSessionId;
+      const matching = remoteArrivals.find(a => a.destinationId === op.entityId
+        && a.userId === targetUserId
+        && (sessionId == null || a.navigationSessionId === sessionId));
+      const isCorrection = op.operationType === 'leader_correct_arrival'
+        || op.payload.source === 'leader_correction';
       const closed = !op.payload.completeSolo || rawDestinations.some(d => d.id === op.entityId && d.closedAt);
-      if (arrived && closed) void getCoreOperationOutbox().removeArrival(op.id);
+      const reflected = isCorrection
+        ? op.payload.arrived === false
+          ? !matching
+          : Boolean(matching && matching.source === 'leader_correction'
+            && matching.arrivedAt === null && matching.markedBy === op.actorId)
+        : op.payload.arrived === false ? !matching : Boolean(matching && closed);
+      if (reflected) void getCoreOperationOutbox().removeArrival(op.id);
     }
-  }, [arrivalOperations, remoteArrivals, rawDestinations, user?.id]);
+  }, [arrivalOperations, arrivalSessionScope, remoteArrivals, rawDestinations, user?.id]);
 
   const scheduleWorkflowReload = useCallback(() => {
     if (workflowReloadRef.current) return;
@@ -1640,7 +1756,7 @@ export default function MapScreen({ route, navigation }: Props) {
           if (typeof redMin === 'number') setMeetRedMin(redMin);
           return refresh();
         })
-        .catch(() => Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg')));
+        .catch((cause) => showOperationFailure(t('map.setFailedTitle'), getOperationErrorMessage(cause)));
     },
     [refresh, t, meetRedMin, setMeetRedMin],
   );
@@ -1845,6 +1961,8 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [syncFromDatabaseAndUploadLogs]);
 
   // --- Device GPS ----------------------------------------------------------
+  const incomingArrivalHandlerRef = useRef<() => void>(() => undefined);
+  const [deviceNavigationSuppressed, setDeviceNavigationSuppressed] = useState(false);
   const {
     deviceCoords,
     deviceAccuracyM,
@@ -1852,13 +1970,15 @@ export default function MapScreen({ route, navigation }: Props) {
     appState,
     refreshDeviceLocation,
     consumeForegroundSample,
+    latestLocationSampleRef,
   } = useDeviceLocation({
     groupId: mapFocused || hasNavigationSession ? groupId : null,
     highAccuracy,
-    teamNavigationActive: navigationSessionState.session?.status === 'active',
+    teamNavigationActive: !deviceNavigationSuppressed && navigationSessionState.session?.status === 'active',
     nativeMapLocationEnabled: Platform.OS === 'ios' && mapFocused,
     sharingEnabled: preferencesReady && sharingEnabled,
     hasMembership: (mapFocused || hasNavigationSession) && members.some(m => m.userId === user?.id),
+    onIncomingSample: () => incomingArrivalHandlerRef.current(),
   });
 
   // --- Carousel selection ---------------------------------------------------
@@ -1885,7 +2005,7 @@ export default function MapScreen({ route, navigation }: Props) {
       members[0],
     [members, user?.id],
   );
-  const fromCoords = deviceCoords ?? reference?.coordinates;
+  const fromCoords = deviceCoords ?? reference?.coordinates ?? undefined;
 
   // Lock MapView initialRegion to the first available center so GPS churn
   // does not rewrite GroupMap prop identity on every sample.
@@ -1904,6 +2024,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // --- Journey navigation + Live Activity ----------------------------------
   const {
+    navigationStoppedLocally,
     journeyStatus,
     journeyGoing,
     journeyActive,
@@ -1920,8 +2041,11 @@ export default function MapScreen({ route, navigation }: Props) {
     stopNavigation,
   } = useJourneyNavigation({
     state,
+    actorId: user?.id,
     groupId,
-    isLeader,
+    // The command lane is scoped: a subgroup leader may start/end only their
+    // subgroup session, using the scoped destination list below.
+    isLeader: isLeader || isMySubgroupLeader,
     destinations,
     navigationDestinations: destinations,
     reorderDestinations: allScopedDestinations,
@@ -1933,11 +2057,16 @@ export default function MapScreen({ route, navigation }: Props) {
     carouselRef,
     setSelectedIndex,
     onOperatorStartConfirm: (dest, eventId) => {
+      const fix = latestLocationSampleRef.current;
+      if (fix && canEvaluateSynchronizedArrival({ sampledAt: fix.timestamp,
+        now: Date.now(), accuracyM: fix.accuracy, radiusM: localArrivalRadiusM })
+        && distanceMeters(fix.coordinates, dest.coordinates) <= localArrivalRadiusM) return;
       void notifyJourneyOperator('start', dest.id, eventId, t).catch(() => undefined);
     },
     onOperatorPauseConfirm: (dest, eventId) => {
       void notifyJourneyOperator('pause', dest.id, eventId, t).catch(() => undefined);
     },
+    onLocalSessionIdChange: setLocalNavigationSessionId,
     // Prefer live session. Only fall back to legacy journey_status while the
     // first fetch is still in flight (undefined), so a cold-start member still
     // enters flock nav as soon as the active session row is available.
@@ -1952,7 +2081,11 @@ export default function MapScreen({ route, navigation }: Props) {
     reorderForNavigation: (updates) => reorderForNavigationRef.current(updates),
     travelMode,
     onOptimisticGathering: applyOptimisticGathering,
+    hasPendingTeamOperation: openOperations.some(op => op.entityType === 'active_gathering'
+      && (op.actorId ?? op.payload.actorId) === user?.id && op.status !== 'conflict'),
   });
+
+  useEffect(() => { setDeviceNavigationSuppressed(navigationStoppedLocally); }, [navigationStoppedLocally]);
 
   // OTA-01: single authoritative team gathering projection for map / broadcast /
   // notification / passive surfaces. Personal ETA/mode/progress never write here.
@@ -2090,7 +2223,10 @@ export default function MapScreen({ route, navigation }: Props) {
   const mapRoutesEnabled = !(preferencesReady && passiveCompanionMode);
   const { selfRoute, memberRoutes, selfRouteGeneration } = useMapKitRoutes({
     selfCoordinates: fromCoords,
-    members,
+    members: members.map((member) => ({
+      ...member,
+      coordinates: member.coordinates ?? undefined,
+    })),
     gathering: mapRoutesEnabled ? activePoint : null,
     travelMode,
     highAccuracy: mapRoutesEnabled ? highAccuracy : false,
@@ -2267,26 +2403,176 @@ export default function MapScreen({ route, navigation }: Props) {
       reportedArrivalConflicts.current.add(key);
       setArrivalCelebrateDestId(cur => cur === op.entityId ? null : cur);
       if (arrivalFeedbackShownRef.current === op.entityId) arrivalFeedbackShownRef.current = null;
-      Alert.alert(t('arrival.failedTitle'), arrivalErrorMessage(new Error(op.conflictResult?.message ?? '無法標記抵達'), t));
+      Alert.alert(t('arrival.failedTitle'), arrivalErrorMessage(op.conflictResult ?? new Error('無法標記抵達'), t));
     }
   }, [arrivalOperations, mapFocused, user?.id, t]);
 
   const arrivalSubmitInFlight = useRef(new Set<string>());
+  /** Manual undo suppresses auto-arrival until the member leaves and re-enters. */
+  const manualUndoSuppressedRef = useRef(new Map<string, BackgroundManualUndoMarker>());
+  const automaticArrivalRetryAt = useRef(0);
+  /**
+   * Resolve the session for the current destination/scope once, and reuse it
+   * for arrivals, undo, completion, and any terminal command.  A local Start
+   * alias is intentionally preferred while it is present: the server may
+   * still expose the previous session for the same destination during an
+   * offline restart.  useJourneyNavigation clears that alias after the Start
+   * is acknowledged or settled, allowing a later remote session to win.
+   */
+  const resolveCurrentNavigationSessionId = useCallback((destination: Destination): string | null => {
+    if (localNavigationSessionId && navTarget?.id === destination.id) {
+      return localNavigationSessionId;
+    }
+    const session = navigationSessionState.session;
+    if (session?.status === 'active'
+      && session.destinationId === destination.id
+      && (session.scopeSubgroupId ?? null) === (destination.subgroupId ?? null)) {
+      return session.id;
+    }
+    return null;
+  }, [localNavigationSessionId, navTarget?.id, navigationSessionState.session]);
+  // Prefer the local Start operation as the stable identity while its server
+  // session alias is hydrating; adding the server id must not reset an undo
+  // suppression inside the same trip.
+  const arrivalSessionKey = navTarget
+    ? resolveCurrentNavigationSessionId(navTarget) ?? 'local'
+    : localNavigationSessionId ?? navigationSessionId ?? 'local';
+  const arrivalContext = `${groupId ?? ''}:${user?.id ?? ''}:${arrivalSessionKey}`;
+  const arrivalContextRef = useRef(arrivalContext);
+  arrivalContextRef.current = arrivalContext;
+  const foregroundUndoHydrationRef = useRef<{ key: string; pending: boolean }>({ key: '', pending: false });
+  const foregroundUndoHydrationSequenceRef = useRef(0);
+  const foregroundUndoMutationSequenceRef = useRef(0);
+  const currentArrivalNavigationSessionId = navTarget
+    ? resolveCurrentNavigationSessionId(navTarget)
+    : null;
+  // Include the destination separately from arrivalContext: a local route
+  // can change cards before a server session id exists.
+  const foregroundUndoHydrationKey = `${arrivalContext}:${navTarget?.id ?? ''}:${currentArrivalNavigationSessionId ?? ''}`;
+  useEffect(() => {
+    foregroundArrivalRef.current = null;
+    foregroundAckRef.current = null;
+    autoArrivalMarkedRef.current = null;
+    automaticArrivalRetryAt.current = 0;
+    arrivalFeedbackShownRef.current = null;
+    manualUndoSuppressedRef.current.clear();
+    foregroundUndoHydrationRef.current = {
+      key: foregroundUndoHydrationKey,
+      pending: Boolean(groupId && user?.id && navTarget?.id && currentArrivalNavigationSessionId),
+    };
+    setArrivalCelebrateDestId(null);
+  }, [arrivalContext, currentArrivalNavigationSessionId, foregroundUndoHydrationKey, groupId, navTarget?.id, user?.id]);
+  useEffect(() => {
+    const actorId = user?.id;
+    const destinationId = navTarget?.id;
+    const sessionId = currentArrivalNavigationSessionId;
+    const hydrationKey = foregroundUndoHydrationKey;
+    const suppressionKey = `${arrivalSessionKey}:${destinationId ?? ''}:${actorId ?? ''}`;
+    const generation = ++foregroundUndoHydrationSequenceRef.current;
+    const mutationAtStart = foregroundUndoMutationSequenceRef.current;
+    if (!groupId || !actorId || !destinationId || !sessionId) {
+      foregroundUndoHydrationRef.current = { key: hydrationKey, pending: false };
+      return;
+    }
+    foregroundUndoHydrationRef.current = { key: hydrationKey, pending: true };
+    let cancelled = false;
+    const finishHydration = (marker: BackgroundManualUndoMarker | null) => {
+      if (cancelled
+        || generation !== foregroundUndoHydrationSequenceRef.current
+        || foregroundUndoHydrationRef.current.key !== hydrationKey) return;
+      // A tap can create or release an undo while the AsyncStorage read is
+      // in flight. Never let that older read overwrite the newer in-memory
+      // intent; the next outbox/store update will hydrate it again.
+      const hasNewerForegroundMutation = foregroundUndoMutationSequenceRef.current !== mutationAtStart;
+      if (hasNewerForegroundMutation) {
+        foregroundUndoHydrationRef.current = { key: hydrationKey, pending: false };
+        incomingArrivalHandlerRef.current();
+        return;
+      }
+      if (marker) {
+        // Keep released markers too: they are the shared session state, but
+        // only a suppressed marker gates the next in-radius fix.
+        manualUndoSuppressedRef.current.set(suppressionKey, marker);
+      } else {
+        // Storage can be unavailable while the durable undo operation is
+        // already in the outbox. Retain that active tombstone as a fallback.
+        const fallback = arrivalOperations
+          .filter(op => op.operationType === 'record_arrival'
+            && op.entityId === destinationId
+            && op.status !== 'conflict'
+            && op.payload.actorId === actorId
+            && op.payload.userId === actorId
+            && String(op.payload.navigationSessionId ?? op.payload.sessionId ?? '') === sessionId
+            && op.payload.arrived === false)
+          .sort((a, b) => {
+            const aTime = typeof a.payload.occurredAt === 'string' ? Date.parse(a.payload.occurredAt) : Number.NaN;
+            const bTime = typeof b.payload.occurredAt === 'string' ? Date.parse(b.payload.occurredAt) : Number.NaN;
+            return (Number.isFinite(aTime) ? aTime : a.createdAt)
+              - (Number.isFinite(bTime) ? bTime : b.createdAt);
+          })
+          .at(-1);
+        if (fallback) {
+          manualUndoSuppressedRef.current.set(suppressionKey, {
+            actorId,
+            groupId,
+            destinationId,
+            navigationSessionId: sessionId,
+            operationId: fallback.id,
+            occurredAt: typeof fallback.payload.occurredAt === 'string'
+              ? fallback.payload.occurredAt
+              : new Date(fallback.createdAt).toISOString(),
+            suppressed: true,
+          });
+        }
+      }
+      foregroundUndoHydrationRef.current = { key: hydrationKey, pending: false };
+      // A fix may have arrived while hydration was pending. Re-evaluate it
+      // now that suppression (including a released marker) is known.
+      incomingArrivalHandlerRef.current();
+    };
+    void loadBackgroundManualUndo(actorId, groupId, destinationId, sessionId)
+      .then(finishHydration)
+      .catch(() => finishHydration(null));
+    return () => { cancelled = true; };
+  }, [arrivalOperations, arrivalSessionKey, currentArrivalNavigationSessionId, foregroundUndoHydrationKey, groupId, navTarget?.id, user?.id]);
   const commitPersonalArrival = useCallback(async (destination: Destination, targetUserId: string, arrivedAt: string, automatic = false) => {
     if (!groupId || !user?.id) return;
-    if (automatic && !await captureLocationAccess(groupId, true)) return;
-    const key = `${destination.id}:${targetUserId}`;
+    const context = arrivalContext;
+    const stillCurrent = () => mapMountedRef.current && arrivalContextRef.current === context;
+    const key = `${context}:${destination.id}:${targetUserId}`;
     if (arrivalSubmitInFlight.current.has(key)) return;
     arrivalSubmitInFlight.current.add(key);
     try {
-      const scopeMembers = members.filter(m => (m.subgroupId ?? null) === (destination.subgroupId ?? null));
+      if (automatic && !await captureLocationAccess(groupId, true)) {
+        if (!stillCurrent()) return;
+        if (autoArrivalMarkedRef.current === destination.id) autoArrivalMarkedRef.current = null;
+        automaticArrivalRetryAt.current = Date.now() + 60_000;
+        return;
+      }
       const operation = await enqueueArrival({ groupId, actorId: user.id, userId: targetUserId, destination, arrivedAt,
-        completeSolo: canEditItinerary && scopeMembers.length === 1 && scopeMembers[0].userId === user.id });
-      if (targetUserId === user.id) afterPersonalArrivalRef.current(destination, { promptComplete: false });
-      await syncArrival(operation);
-      await loadGatheringWorkflow().catch(() => undefined);
-      await refresh().catch(() => undefined);
+        occurredAt: arrivedAt,
+        navigationSessionId: resolveCurrentNavigationSessionId(destination),
+        // Arrival never completes a gathering stop.  Completion is an
+        // explicit leader action, including a one-person subgroup.
+        completeSolo: false });
+      if (stillCurrent() && targetUserId === user.id) afterPersonalArrivalRef.current(destination, { promptComplete: false });
+      // The receipt is durable now. Transport failure must not undo the local
+      // arrival or keep the button busy while offline; outbox state owns errors.
+      void syncArrival(operation)
+        .then(async status => {
+          if (status !== 'acked') return;
+          if (!stillCurrent()) return;
+          await loadGatheringWorkflow().catch(() => undefined);
+          await refresh().catch(() => undefined);
+        })
+        .catch(() => undefined);
     } catch (error) {
+      if (!stillCurrent()) return;
+      if (automatic && autoArrivalMarkedRef.current === destination.id) {
+        autoArrivalMarkedRef.current = null;
+        // A persistent disk/privacy-store error must not alert on every GPS fix.
+        automaticArrivalRetryAt.current = Date.now() + 60_000;
+      }
       setArrivalCelebrateDestId(cur => cur === destination.id ? null : cur);
       if (arrivalFeedbackShownRef.current === destination.id) arrivalFeedbackShownRef.current = null;
       if (!(error instanceof Error && error.name === 'ArrivalSyncConflict')) {
@@ -2295,22 +2581,33 @@ export default function MapScreen({ route, navigation }: Props) {
     } finally {
       arrivalSubmitInFlight.current.delete(key);
     }
-  }, [groupId, user?.id, members, canEditItinerary, loadGatheringWorkflow, refresh, t]);
+  }, [arrivalContext, groupId, user?.id, loadGatheringWorkflow, refresh, t, resolveCurrentNavigationSessionId]);
 
-  useEffect(() => {
-    if (!mapFocused || !sharingEnabled || appState !== 'active' || deviceCoordsAcceptedAtMs == null
-      || Date.now() - deviceCoordsAcceptedAtMs > 30_000) return;
+  const evaluateForegroundArrival = useCallback(() => {
+    // Raw fixes stay current while stationary without forcing a map rerender.
+    // The same reducer runs immediately when a new target is synchronized.
+    const fix = latestLocationSampleRef.current;
+    const deviceCoords = fix?.coordinates;
+    const deviceAccuracyM = fix?.accuracy;
+    const deviceCoordsAcceptedAtMs = fix?.timestamp ?? null;
+    if (!mapFocused || !sharingEnabled || appState !== 'active'
+      || !canEvaluateSynchronizedArrival({ sampledAt: deviceCoordsAcceptedAtMs,
+        now: Date.now(), accuracyM: deviceAccuracyM, radiusM: localArrivalRadiusM })) return;
     // Auto-arrive while navigating (shared flock session or local path plan).
     // tools slider radius is authoritative (e.g. 300 m).
     if (!journeyActive || !navTarget || !deviceCoords) {
       foregroundArrivalRef.current = null;
       return;
     }
+    if (foregroundUndoHydrationRef.current.pending
+      && foregroundUndoHydrationRef.current.key === foregroundUndoHydrationKey) return;
     if (myCompletedDestinationIds.has(navTarget.id)) {
       return;
     }
     const session = navigationSessionState.session;
-    const key = `${session?.id ?? 'local'}:${navTarget.id}`;
+    const memberStatus = navigationSessionState.memberState?.localStatus;
+    if (session && !isLeader && !['activity_started', 'tracking_active', 'arriving', 'arrived'].includes(memberStatus ?? '')) return;
+    const key = synchronizedArrivalTargetKey(session?.id, navTarget, localArrivalRadiusM);
     if (session?.id && foregroundAckRef.current && !foregroundAckRef.current.startsWith(`${session.id}:`)) {
       foregroundAckRef.current = null;
     }
@@ -2318,6 +2615,47 @@ export default function MapScreen({ route, navigation }: Props) {
       foregroundAckRef.current = null;
     }
     const straightM = distanceMeters(deviceCoords, navTarget.coordinates);
+    const suppressionKey = `${arrivalSessionKey}:${navTarget.id}:${user?.id ?? ''}`;
+    const fallbackUndo = arrivalOperations
+      .filter(op => op.operationType === 'record_arrival'
+        && op.entityId === navTarget.id
+        && op.status !== 'conflict'
+        && op.payload.actorId === user?.id
+        && op.payload.userId === user?.id
+        && String(op.payload.navigationSessionId ?? op.payload.sessionId ?? '') === (currentArrivalNavigationSessionId ?? '')
+        && op.payload.arrived === false)
+      .sort((a, b) => {
+        const aTime = typeof a.payload.occurredAt === 'string' ? Date.parse(a.payload.occurredAt) : Number.NaN;
+        const bTime = typeof b.payload.occurredAt === 'string' ? Date.parse(b.payload.occurredAt) : Number.NaN;
+        return (Number.isFinite(aTime) ? aTime : a.createdAt)
+          - (Number.isFinite(bTime) ? bTime : b.createdAt);
+      })
+      .at(-1);
+    const manualUndo = manualUndoSuppressedRef.current.get(suppressionKey)
+      ?? (fallbackUndo ? {
+        actorId: user?.id ?? '',
+        groupId: groupId ?? '',
+        destinationId: navTarget.id,
+        navigationSessionId: currentArrivalNavigationSessionId ?? '',
+        operationId: fallbackUndo.id,
+        occurredAt: typeof fallbackUndo.payload.occurredAt === 'string'
+          ? fallbackUndo.payload.occurredAt
+          : new Date(fallbackUndo.createdAt).toISOString(),
+        suppressed: true,
+      } satisfies BackgroundManualUndoMarker : null);
+    if (manualUndo?.suppressed) {
+      const leftRadius = straightM > localArrivalRadiusM;
+      if (!leftRadius) return;
+      foregroundUndoMutationSequenceRef.current += 1;
+      const releasedUndo = { ...manualUndo, suppressed: false };
+      manualUndoSuppressedRef.current.set(suppressionKey, releasedUndo);
+      void releaseBackgroundManualUndo(releasedUndo);
+      foregroundArrivalRef.current = null;
+    } else if (manualUndo) {
+      // A released marker is intentionally hydrated so it wins over an old
+      // outbox row, but it must not block a legitimate re-entry. Keep it in
+      // memory so the fallback outbox scan cannot resurrect that old undo.
+    }
     if (foregroundArrivalRef.current?.key === key
       && foregroundArrivalRef.current.sampledAtMs === deviceCoordsAcceptedAtMs) return;
     const previous = foregroundArrivalRef.current?.key === key
@@ -2337,7 +2675,7 @@ export default function MapScreen({ route, navigation }: Props) {
     foregroundArrivalRef.current = {
       key,
       state: next,
-      sampledAtMs: deviceCoordsAcceptedAtMs,
+      sampledAtMs: deviceCoordsAcceptedAtMs!,
     };
     // The arrival RPC updates navigation_member_states transactionally.
     // A separate arrived ACK could commit before the durable arrival operation.
@@ -2354,7 +2692,8 @@ export default function MapScreen({ route, navigation }: Props) {
         if (foregroundAckRef.current === ackKey) foregroundAckRef.current = null;
       });
     }
-    if (arrivedNow && user?.id && autoArrivalMarkedRef.current !== navTarget.id) {
+    if (arrivedNow && user?.id && autoArrivalMarkedRef.current !== navTarget.id
+      && Date.now() >= automaticArrivalRetryAt.current) {
       // One automatic attempt per destination; manual retry remains available after rejection.
       autoArrivalMarkedRef.current = navTarget.id;
       void commitPersonalArrival(navTarget, user.id, new Date().toISOString(), true);
@@ -2372,12 +2711,20 @@ export default function MapScreen({ route, navigation }: Props) {
     loadGatheringWorkflow,
     localArrivalRadiusM,
     myCompletedDestinationIds,
+    arrivalSessionKey,
     navTarget,
     navigationSessionState.ack,
     navigationSessionState.session,
+    navigationSessionState.memberState?.localStatus,
+    isLeader,
     patchLocalArrival,
+    arrivalOperations,
+    currentArrivalNavigationSessionId,
+    foregroundUndoHydrationKey,
     user?.id,
   ]);
+  incomingArrivalHandlerRef.current = evaluateForegroundArrival;
+  useEffect(evaluateForegroundArrival, [evaluateForegroundArrival]);
   const initialJourneyRef = useRef<{
     key: string;
     distanceM: number;
@@ -2599,7 +2946,11 @@ export default function MapScreen({ route, navigation }: Props) {
       navTarget?.coordinates ??
       deviceCoords ??
       { latitude: 0, longitude: 0 };
-    const key = `${groupId}:${powerMode}:${navTarget?.id ?? 'presence'}`;
+    const backgroundNavigationSessionId = navTarget
+      ? resolveCurrentNavigationSessionId(navTarget)
+      : null;
+    const sessionKey = backgroundNavigationSessionId ?? 'none';
+    const key = `${groupId}:${powerMode}:${navTarget?.id ?? 'presence'}:${sessionKey}`;
     if (backgroundPermissionDeniedRef.current === key || backgroundStartedKeyRef.current === key) return;
     backgroundStartedKeyRef.current = key;
 
@@ -2611,11 +2962,14 @@ export default function MapScreen({ route, navigation }: Props) {
 
     void startBackgroundJourney({
       actorId: user?.id,
+      scopeSubgroupId: navTarget?.subgroupId ?? myScopeId ?? null,
       memberIds: members.filter(m => (m.subgroupId ?? null) === (navTarget?.subgroupId ?? null)).map(m => m.userId),
       target: navTarget ?? undefined,
-      completeSolo: canEditItinerary && members.filter(m => (m.subgroupId ?? null) === (navTarget?.subgroupId ?? null)).length === 1,
+      // Arrivals never close a stop or end background navigation.  A leader
+      // must explicitly complete the gathering point.
+      completeSolo: false,
       groupId,
-      navigationSessionId,
+      navigationSessionId: backgroundNavigationSessionId,
       destinationId: navTarget?.id ?? 'group-presence',
       destination: dest,
       arrivalRadiusMeters: localArrivalRadiusM,
@@ -2634,12 +2988,12 @@ export default function MapScreen({ route, navigation }: Props) {
       gatheringTitle: navTarget?.title ?? membership?.group.name,
       groupName: membership?.group.name ?? '',
       memberEmojis: members.filter(m => (m.subgroupId ?? null) === (navTarget?.subgroupId ?? null)).map(m => m.avatar ?? ''),
-      memberArrived: members.filter(m => (m.subgroupId ?? null) === (navTarget?.subgroupId ?? null)).map(m => destinationArrivals.some(a => a.destinationId === navTarget?.id && a.userId === m.userId)),
+      memberArrived: members.filter(m => (m.subgroupId ?? null) === (navTarget?.subgroupId ?? null)).map(m => activeDestinationArrivals.some(a => a.destinationId === navTarget?.id && a.userId === m.userId)),
       startCoords: journeyStartCoords ?? undefined,
       hasDepartedStart: progressDepartedStart,
       previousProgressMax: progressMaxSticky ?? undefined,
       etaSeconds: lastValidPresentation.etaSeconds ?? selfRoute?.expectedTravelTimeSeconds,
-      teamNavigationActive: hasNavigationSession || Boolean(journeyActive && navTarget),
+      teamNavigationActive: !navigationStoppedLocally && (hasNavigationSession || Boolean(journeyActive && navTarget)),
       appState: appState === 'background' ? 'background' : 'inactive',
       permissionsPrepared: backgroundPermissionsPreparedFor === groupId,
     }).then((result) => {
@@ -2661,7 +3015,10 @@ export default function MapScreen({ route, navigation }: Props) {
     preferencesReady,
     language,
     localArrivalRadiusM,
-    destinationArrivals,
+    localNavigationSessionId,
+    myScopeId,
+    activeDestinationArrivals,
+    resolveCurrentNavigationSessionId,
     user?.id,
     canEditItinerary,
     deviceCoords,
@@ -2671,6 +3028,7 @@ export default function MapScreen({ route, navigation }: Props) {
     navTarget,
     navigationSessionId,
     hasNavigationSession,
+    navigationStoppedLocally,
     sharingEnabled,
     showLocationPermissionAlert,
     travelMode,
@@ -2707,6 +3065,7 @@ export default function MapScreen({ route, navigation }: Props) {
     highAccuracy,
     journeyActive,
     hasNavigationSession,
+    navigationStoppedLocally,
   ]);
 
   const lastFittedRouteRef = useRef<string | null>(null);
@@ -2758,14 +3117,14 @@ export default function MapScreen({ route, navigation }: Props) {
       ?? activePoint?.id
       ?? null;
     if (pointId) {
-      for (const entry of destinationArrivals) {
+      for (const entry of activeDestinationArrivals) {
         if (entry.destinationId === pointId) ids.add(entry.userId);
       }
     }
     return ids;
   }, [
     members,
-    destinationArrivals,
+    activeDestinationArrivals,
     navigationSessionState.session?.destinationId,
     activePoint?.id,
   ]);
@@ -2827,7 +3186,7 @@ export default function MapScreen({ route, navigation }: Props) {
     if (!progressDepartedStart) setProgressDepartedStart(true);
   }, [gatedProgress?.departed, progressDepartedStart]);
   const liveMembers = members.filter(m => (m.subgroupId ?? null) === (navTarget?.subgroupId ?? null));
-  const liveMemberArrived = liveMembers.map(m => destinationArrivals.some(a => a.destinationId === navTarget?.id && a.userId === m.userId));
+  const liveMemberArrived = liveMembers.map(m => activeDestinationArrivals.some(a => a.destinationId === navTarget?.id && a.userId === m.userId));
   const liveGathered = navTarget ? liveMemberArrived.filter(Boolean).length : undefined;
   const localNavigationArrived = Boolean(navTarget && myCompletedDestinationIds.has(navTarget.id));
   // Near the pin, force 100% even if MapKit route distance still lags.
@@ -3073,7 +3432,7 @@ export default function MapScreen({ route, navigation }: Props) {
   // Preference (liveActivityEnabled) ≠ entitlement (store + Premium session).
   const liveActivityAllowed = liveActivityEnabled && (liveActivityEffective || isPro);
   useLiveActivity(
-    !preferencesReady ? undefined : !liveActivityAllowed ? false
+    navigationStoppedLocally ? false : !preferencesReady ? undefined : !liveActivityAllowed ? false
       : hasNavigationSession || journeyActive ? true
       : navigationSessionState.loading || navigationSessionState.error || loading || groupStateError ? undefined : false,
     {
@@ -3092,7 +3451,7 @@ export default function MapScreen({ route, navigation }: Props) {
     accentHex: accent,
     travelMode,
     memberEmojis: members.filter(m => (m.subgroupId ?? null) === (navTarget?.subgroupId ?? null)).map(m => m.avatar ?? ''),
-    memberArrived: members.filter(m => (m.subgroupId ?? null) === (navTarget?.subgroupId ?? null)).map(m => destinationArrivals.some(a => a.destinationId === navTarget?.id && a.userId === m.userId)),
+    memberArrived: members.filter(m => (m.subgroupId ?? null) === (navTarget?.subgroupId ?? null)).map(m => activeDestinationArrivals.some(a => a.destinationId === navTarget?.id && a.userId === m.userId)),
     // Ticket 07: destination emoji when set (native may no-op without a glyph slot).
     // Flag color is day-scoped in map/list chrome; LA keeps theme accent.
     destinationEmoji: navTarget?.emoji ?? undefined,
@@ -3238,15 +3597,21 @@ export default function MapScreen({ route, navigation }: Props) {
         'map.destination_suggest',
         async (token) => {
           try {
-            await submitGatherPointRequest(groupId, scopeId, items);
+            const requestId = await submitGatherPointRequest(groupId, scopeId, items);
             if (!token.isCurrent()) return false;
             logEvent('destination_suggest', { source, label });
-            Alert.alert(t('gatherRequest.sentTitle'), t('gatherRequest.sentBody'));
+            const queued = (await getCoreOperationOutbox().listByGroup(groupId)).find(op =>
+              op.operationType === 'submit_gather_point_request' && op.entityId === requestId);
+            if (queued && queued.status !== 'acked') {
+              Alert.alert(t('coreData.pendingSync'), t('coreData.requestSaved'));
+            } else {
+              Alert.alert(t('gatherRequest.sentTitle'), t('gatherRequest.sentBody'));
+            }
             return true;
           } catch (e) {
             logError('destination_suggest_failed', e, { source });
             if (token.isCurrent()) {
-              Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
+              showOperationFailure(t('map.setFailedTitle'), getOperationErrorMessage(e));
             }
             throw e;
           }
@@ -3256,7 +3621,7 @@ export default function MapScreen({ route, navigation }: Props) {
           suppressBanner: true,
           onError: (kind) => {
             if (kind === 'timeout') {
-              Alert.alert(t('map.setFailedTitle'), t('interaction.timeout'));
+              showOperationFailure(t('map.setFailedTitle'), t('interaction.timeout'));
             }
           },
         },
@@ -3334,6 +3699,7 @@ export default function MapScreen({ route, navigation }: Props) {
               address: place.address,
               coordinates: place.coordinates,
               day: addDay,
+              providerPlaceId: place.providerPlaceId,
             },
             myScopeId,
           );
@@ -3361,14 +3727,14 @@ export default function MapScreen({ route, navigation }: Props) {
               });
             }
           }
-          // Only treat as complete success when refresh confirms projection.
-          // refresh() false keeps the confirm card / temp flag (Ticket 05).
-          const projected = await refresh();
-          return projected === true;
+          // addDestination resolves only after durable local persistence. A
+          // disconnected refresh must not leave Add enabled for a second insert.
+          void refresh().catch(() => undefined);
+          return true;
         } catch (e) {
           logError('destination_add_failed', e, { source: placeSource });
           if (token.isCurrent()) {
-            Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
+            showOperationFailure(t('map.setFailedTitle'), getOperationErrorMessage(e));
           }
           throw e;
         }
@@ -3378,7 +3744,7 @@ export default function MapScreen({ route, navigation }: Props) {
         suppressBanner: true,
         onError: (kind) => {
           if (kind === 'timeout') {
-            Alert.alert(t('map.setFailedTitle'), t('interaction.timeout'));
+            showOperationFailure(t('map.setFailedTitle'), t('interaction.timeout'));
           }
         },
       },
@@ -3528,7 +3894,7 @@ export default function MapScreen({ route, navigation }: Props) {
           } catch (e) {
             logError('destination_add_failed', e, { source: 'coordinates' });
             if (token.isCurrent()) {
-              Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
+              showOperationFailure(t('map.setFailedTitle'), getOperationErrorMessage(e));
             }
             throw e;
           }
@@ -3538,7 +3904,7 @@ export default function MapScreen({ route, navigation }: Props) {
           suppressBanner: true,
           onError: (kind) => {
             if (kind === 'timeout') {
-              Alert.alert(t('map.setFailedTitle'), t('interaction.timeout'));
+              showOperationFailure(t('map.setFailedTitle'), t('interaction.timeout'));
             }
           },
         },
@@ -3612,11 +3978,7 @@ export default function MapScreen({ route, navigation }: Props) {
       void loadGatheringWorkflow().catch(() => undefined);
       Alert.alert(
         t('map.setFailedTitle'),
-        isNetworkRequestError(error)
-          ? t('gatherRequest.networkFailed')
-          : error instanceof Error
-            ? error.message
-            : t('map.setFailedMsg'),
+        getOperationErrorMessage(error),
       );
     } finally {
       setResolvingGatherRequestId(null);
@@ -3650,12 +4012,17 @@ export default function MapScreen({ route, navigation }: Props) {
     if (plan.callRpc) {
       completingDestIdsRef.current.add(destination.id);
       try {
-        await completeGatheringStop(groupId, destination.id);
+        const sessionId = resolveCurrentNavigationSessionId(destination);
+        if (sessionId) {
+          await completeGatheringStop(groupId, destination.id, sessionId);
+        } else {
+          await completeGatheringStop(groupId, destination.id);
+        }
       } catch (error) {
         logError('complete_gathering_failed', error, { groupId, destId: destination.id });
         Alert.alert(
           t('map.setFailedTitle'),
-          error instanceof Error ? error.message : t('map.setFailedMsg'),
+          getOperationErrorMessage(error),
         );
         completingDestIdsRef.current.delete(destination.id);
         return false;
@@ -3688,6 +4055,7 @@ export default function MapScreen({ route, navigation }: Props) {
     loadGatheringWorkflow,
     loadHistory,
     navigationSessionState,
+    resolveCurrentNavigationSessionId,
     refresh,
     startArrivalCardExit,
     t,
@@ -3720,7 +4088,7 @@ export default function MapScreen({ route, navigation }: Props) {
     includeSelf?: boolean;
   }) => {
     const arrivedIds = new Set(
-      destinationArrivals
+      activeDestinationArrivals
         .filter((a) => a.destinationId === destination.id)
         .map((a) => a.userId),
     );
@@ -3799,7 +4167,7 @@ export default function MapScreen({ route, navigation }: Props) {
     Alert.alert(title, message, buttons);
   }, [
     allScopedDestinations,
-    destinationArrivals,
+    activeDestinationArrivals,
     executeAutoCompleteStop,
     canEditItinerary,
     loadGatheringWorkflow,
@@ -3868,7 +4236,7 @@ export default function MapScreen({ route, navigation }: Props) {
       if (completingDestIdsRef.current.has(destination.id)) continue;
 
       const arrivedIds = new Set(
-        remoteArrivals
+        activeDestinationArrivals
           .filter((a) => a.destinationId === destination.id)
           .map((a) => a.userId),
       );
@@ -3885,7 +4253,7 @@ export default function MapScreen({ route, navigation }: Props) {
     }
   }, [
     allScopedDestinations,
-    remoteArrivals,
+    activeDestinationArrivals,
     executeAutoCompleteStop,
     groupId,
     canEditItinerary,
@@ -3908,12 +4276,22 @@ export default function MapScreen({ route, navigation }: Props) {
         );
       })
       .catch(() => {
-        Alert.alert(t('map.setFailedTitle'), t('command.sendFailed'));
+        showOperationFailure(t('map.setFailedTitle'), t('command.sendFailed'));
       })
       .finally(() => setRequestingStartDestId(null));
   }, [groupId, requestingStartDestId, t]);
 
   const handleArrival = useCallback((destination: Destination, targetUserId: string, arrived: boolean) => {
+    // Correction is intentionally narrower than the active-session self
+    // arrival path: only the main-team leader may correct a completed main
+    // stop, and correction carries a null arrivedAt (it is not an invented
+    // personal arrival timestamp).
+    const isCompletedMainHistory = isLeader && destination.subgroupId == null && destination.closedAt != null;
+    const isActiveSelfUndo = !arrived
+      && targetUserId === user?.id
+      && journeyActive
+      && navTarget?.id === destination.id;
+    if (!isCompletedMainHistory && !isActiveSelfUndo) return;
     const memberName = members.find((m) => m.userId === targetUserId)?.name;
     confirmAction({
       title: t(arrived ? 'arrival.markTitle' : 'arrival.undoTitle'),
@@ -3924,16 +4302,44 @@ export default function MapScreen({ route, navigation }: Props) {
     }, () => {
       void (async () => {
         try {
-          if (arrived) {
-            await commitPersonalArrival(destination, targetUserId, new Date().toISOString());
-            return;
+          const sessionId = isCompletedMainHistory
+            ? destination.closedBySessionId
+              ?? destinationArrivals.find((row) =>
+                row.destinationId === destination.id && row.userId === targetUserId
+                  && typeof row.navigationSessionId === 'string')?.navigationSessionId
+              ?? resolveCurrentNavigationSessionId(destination)
+            : resolveCurrentNavigationSessionId(destination);
+          if (!sessionId) throw new Error('arrival_correction_session_missing');
+          const undoOccurredAt = new Date().toISOString();
+          let operation: CoreOperation | void;
+          if (isCompletedMainHistory) {
+            operation = await correctDestinationArrival({
+              destinationId: destination.id,
+              targetUserId,
+              arrived,
+              sessionId,
+            });
+          } else {
+            operation = await setDestinationArrivalAt(destination.id, targetUserId, false, null, sessionId);
           }
-          await setDestinationArrival(destination.id, targetUserId, false);
-          for (const op of arrivalOperations.filter(op => op.entityId === destination.id && op.payload.userId === targetUserId)) {
-            await getCoreOperationOutbox().removeArrival(op.id);
-          }
-          patchLocalArrival(destination.id, targetUserId, arrived);
-          if (!arrived && targetUserId === user?.id) {
+          // The correction is another ordered durable intent. Deleting earlier
+          // receipts here could remove prerequisites while they are in flight.
+          patchLocalArrival(destination.id, targetUserId, arrived, null, sessionId);
+          if (isActiveSelfUndo && !arrived && targetUserId === user?.id) {
+            const marker: BackgroundManualUndoMarker = {
+              actorId: user.id,
+              groupId: groupId ?? '',
+              destinationId: destination.id,
+              navigationSessionId: sessionId,
+              operationId: operation?.id ?? null,
+              occurredAt: typeof operation?.payload.occurredAt === 'string'
+                ? operation.payload.occurredAt
+                : undoOccurredAt,
+              suppressed: true,
+            };
+            foregroundUndoMutationSequenceRef.current += 1;
+            manualUndoSuppressedRef.current.set(`${arrivalSessionKey}:${destination.id}:${targetUserId}`, marker);
+            await rememberBackgroundManualUndo(marker);
             if (autoArrivalMarkedRef.current === destination.id) {
               autoArrivalMarkedRef.current = null;
             }
@@ -3950,7 +4356,7 @@ export default function MapScreen({ route, navigation }: Props) {
         }
       })();
     });
-  }, [arrivalOperations, commitPersonalArrival, loadGatheringWorkflow, members, patchLocalArrival, t, user?.id]);
+  }, [arrivalSessionKey, correctDestinationArrival, destinationArrivals, groupId, isLeader, journeyActive, loadGatheringWorkflow, members, navTarget?.id, patchLocalArrival, resolveCurrentNavigationSessionId, setDestinationArrivalAt, t, user?.id]);
 
   const submitArrivalWithTimestamp = useCallback((destination: Destination, targetUserId: string, arrivedAt: string | null) => {
     void commitPersonalArrival(destination, targetUserId, arrivedAt ?? new Date().toISOString());
@@ -3972,7 +4378,7 @@ export default function MapScreen({ route, navigation }: Props) {
         .then(loadHistory)
         .catch((error) => Alert.alert(
           t('map.setFailedTitle'),
-          error instanceof Error ? error.message : t('map.setFailedMsg'),
+          getOperationErrorMessage(error),
         ));
     });
   }, [loadHistory, t]);
@@ -4295,7 +4701,7 @@ export default function MapScreen({ route, navigation }: Props) {
     ): Promise<boolean> => {
       if (!groupId) return false;
       if (updates.some(update => update.id === navTargetId && update.day == null)) {
-        Alert.alert(t('map.setFailedTitle'), t('trip.endBeforePool'));
+        showOperationFailure(t('map.setFailedTitle'), t('trip.endBeforePool'));
         return false;
       }
       const persisted = updates.every(update => !update.id.startsWith('draft-'));
@@ -4356,7 +4762,7 @@ export default function MapScreen({ route, navigation }: Props) {
           } catch (e) {
             logError('destination_reorder_failed', e);
             if (token.isCurrent()) {
-              Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
+              showOperationFailure(t('map.setFailedTitle'), getOperationErrorMessage(e));
               optimisticDestinationsRef.current = null;
               setOptimisticDestinations(null);
               refresh();
@@ -4371,7 +4777,7 @@ export default function MapScreen({ route, navigation }: Props) {
             setOptimisticDestinations(null);
             void refresh();
             if (kind === 'timeout') {
-              Alert.alert(t('map.setFailedTitle'), t('interaction.timeout'));
+              showOperationFailure(t('map.setFailedTitle'), t('interaction.timeout'));
             }
           },
         },
@@ -4461,6 +4867,7 @@ export default function MapScreen({ route, navigation }: Props) {
                   address: dest.address,
                   coordinates: dest.coordinates,
                   day: dest.day,
+                  providerPlaceId: dest.providerPlaceId,
                   kind: dest.kind === 'accommodation' ? 'accommodation' : 'stop',
                 },
                 routeEditorScopeIdRef.current,
@@ -4628,22 +5035,34 @@ export default function MapScreen({ route, navigation }: Props) {
           destructive: true,
         },
         () => {
-          // Route editor: local draft only. Network on sheet flush.
-          logEvent('destination_delete_local', { id });
-          const base = optimisticDestinationsRef.current ?? routeEditorServerDestinations;
-          setOptimisticDestinations(base.filter((d) => d.id !== id));
-          if (!id.startsWith('draft-')) {
-            routeDraftDirtyRef.current.deletedIds = [
-              ...routeDraftDirtyRef.current.deletedIds.filter((x) => x !== id),
-              id,
-            ];
-          }
-          routeDraftDirtyRef.current.destinations = true;
-          setRouteSelectedIds((prev) => prev.filter((x) => x !== id));
+          void (async () => {
+            // An ACTIVE card is a causal chain: enqueue End for its current
+            // session first, then stage the delete.  This prevents a delayed
+            // End from terminating a newly started session on the same card.
+            if (id === navTargetId && journeyActive) {
+              const ended = await stopNavigation();
+              if (!ended) {
+                showOperationFailure(t('map.setFailedTitle'), t('map.routeSaveFailed'));
+                return;
+              }
+            }
+            // Route editor: local draft only. Network on sheet flush.
+            logEvent('destination_delete_local', { id });
+            const base = optimisticDestinationsRef.current ?? routeEditorServerDestinations;
+            setOptimisticDestinations(base.filter((d) => d.id !== id));
+            if (!id.startsWith('draft-')) {
+              routeDraftDirtyRef.current.deletedIds = [
+                ...routeDraftDirtyRef.current.deletedIds.filter((x) => x !== id),
+                id,
+              ];
+            }
+            routeDraftDirtyRef.current.destinations = true;
+            setRouteSelectedIds((prev) => prev.filter((x) => x !== id));
+          })();
         },
       );
     },
-    [canEditItinerary, groupId, destinations, routeEditorServerDestinations, t],
+    [canEditItinerary, groupId, destinations, journeyActive, navTargetId, routeEditorServerDestinations, stopNavigation, t],
   );
 
   /** Multi-select delete from route sheet — one confirm, local draft only. */
@@ -4658,21 +5077,30 @@ export default function MapScreen({ route, navigation }: Props) {
           destructive: true,
         },
         () => {
-          logEvent('destination_delete_many_local', { count: ids.length });
-          const idSet = new Set(ids);
-          const base = optimisticDestinationsRef.current ?? routeEditorServerDestinations;
-          setOptimisticDestinations(base.filter((d) => !idSet.has(d.id)));
-          const serverIds = ids.filter((id) => !id.startsWith('draft-'));
-          routeDraftDirtyRef.current.deletedIds = [
-            ...routeDraftDirtyRef.current.deletedIds.filter((x) => !idSet.has(x)),
-            ...serverIds,
-          ];
-          routeDraftDirtyRef.current.destinations = true;
-          setRouteSelectedIds([]);
+          void (async () => {
+            if (navTargetId && ids.includes(navTargetId) && journeyActive) {
+              const ended = await stopNavigation();
+              if (!ended) {
+                showOperationFailure(t('map.setFailedTitle'), t('map.routeSaveFailed'));
+                return;
+              }
+            }
+            logEvent('destination_delete_many_local', { count: ids.length });
+            const idSet = new Set(ids);
+            const base = optimisticDestinationsRef.current ?? routeEditorServerDestinations;
+            setOptimisticDestinations(base.filter((d) => !idSet.has(d.id)));
+            const serverIds = ids.filter((id) => !id.startsWith('draft-'));
+            routeDraftDirtyRef.current.deletedIds = [
+              ...routeDraftDirtyRef.current.deletedIds.filter((x) => !idSet.has(x)),
+              ...serverIds,
+            ];
+            routeDraftDirtyRef.current.destinations = true;
+            setRouteSelectedIds([]);
+          })();
         },
       );
     },
-    [canEditItinerary, groupId, routeEditorServerDestinations, t],
+    [canEditItinerary, groupId, journeyActive, navTargetId, routeEditorServerDestinations, stopNavigation, t],
   );
 
   const handleUpdateEmojiColor = useCallback(
@@ -4708,7 +5136,7 @@ export default function MapScreen({ route, navigation }: Props) {
         setPendingDestinationMutations((pending) =>
           removeDestinationMutation(pending, mutation.mutationId),
         );
-        Alert.alert(t('map.setFailedTitle'), t('map.setFailedMsg'));
+        showOperationFailure(t('map.setFailedTitle'), getOperationErrorMessage(e));
         // Keep persisted rows visible; do not clear on pre-write failure.
         return;
       }
@@ -4911,7 +5339,7 @@ export default function MapScreen({ route, navigation }: Props) {
           ?? (d != null ? etaSecondsFor(d, travelMode) : null);
         const point = navTarget ?? activePoint;
         const arrived = Boolean(point && (m.subgroupId ?? null) === (point.subgroupId ?? null)
-          && destinationArrivals.some(a => a.destinationId === point.id && a.userId === m.userId));
+          && activeDestinationArrivals.some(a => a.destinationId === point.id && a.userId === m.userId));
         const isMemberLeader = m.role === 'leader';
         // Member status strings that depend on "how recent is lastUpdated" are
         // resolved in FlockRow (30s local tick) so MapScreen is not on a timer.
@@ -4955,7 +5383,7 @@ export default function MapScreen({ route, navigation }: Props) {
       members,
       activePoint,
       navTarget,
-      destinationArrivals,
+      activeDestinationArrivals,
       t,
       user?.id,
       user?.name,
@@ -5180,7 +5608,7 @@ export default function MapScreen({ route, navigation }: Props) {
         subgroupId={f.subgroupId}
         dist={f.dist}
         arrived={f.arrived}
-        lastUpdated={f.lastUpdated}
+        lastUpdated={f.lastUpdated ?? undefined}
         sharingEnabled={f.sharingEnabled}
         serverTimeOffsetMs={serverTimeOffsetMs}
         syncFailed={Boolean(groupStateError)}
@@ -6458,13 +6886,16 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // OTA-04: offline cold start with no prior snapshot — clear empty outcome.
   // OTA-07: passive still mounts switch-back so users are never trapped.
-  if (!state && emptyLocalSnapshot) {
+  if (!state && (emptyLocalSnapshot || loadError)) {
     if (inPassiveMode) {
       return (
         <View style={styles.flex}>
           <View style={styles.loading}>
-            <Text style={styles.loadingText}>{t('coreData.emptySnapshot')}</Text>
+            <Text style={styles.loadingText}>{loadError?.kind === 'offline_transport' ? t('coreData.emptySnapshot') : loadError?.kind === 'unknown' ? t('coreData.loadFailed') : groupStateError ?? t('coreData.loadFailed')}</Text>
+            {refreshing ? <ActivityIndicator color={accent} /> : null}
             <Pressable
+              disabled={refreshing}
+              accessibilityState={{ disabled: refreshing, busy: refreshing }}
               onPress={() => { void refresh(); }}
               accessibilityRole="button"
               accessibilityLabel={t('interaction.retry')}
@@ -6490,8 +6921,11 @@ export default function MapScreen({ route, navigation }: Props) {
     }
     return (
       <View style={styles.loading}>
-        <Text style={styles.loadingText}>{t('coreData.emptySnapshot')}</Text>
+        <Text style={styles.loadingText}>{loadError?.kind === 'offline_transport' ? t('coreData.emptySnapshot') : loadError?.kind === 'unknown' ? t('coreData.loadFailed') : groupStateError ?? t('coreData.loadFailed')}</Text>
+        {refreshing ? <ActivityIndicator color={accent} /> : null}
         <Pressable
+          disabled={refreshing}
+          accessibilityState={{ disabled: refreshing, busy: refreshing }}
           onPress={() => { void refresh(); }}
           accessibilityRole="button"
           accessibilityLabel={t('interaction.retry')}
@@ -6548,6 +6982,24 @@ export default function MapScreen({ route, navigation }: Props) {
         <View style={[styles.flex, { backgroundColor: '#0c0e12' }]} />
       )}
       {/* #175: navigation response banner removed entirely (not moved to Tools). */}
+      {openOperations.length > 0 ? (
+        <View style={{ position: 'absolute', top: inPassiveMode ? insets.top + 8 : topPad + 8,
+          left: 12, right: 12, zIndex: 30 }} pointerEvents="box-none">
+          <CoreSyncStatus operations={openOperations} actorId={user?.id ?? null} t={t}
+            key={workflowContext}
+            describeError={getOperationErrorMessage}
+            onResolve={async (operation, action) => {
+              const outbox = getCoreOperationOutbox();
+              if (action === 'discard') await outbox.discardConflictChain(operation.id);
+              else await outbox.recreateConflict(operation.id);
+              if (!mapMountedRef.current || workflowContextRef.current !== workflowContext) return;
+              await refresh();
+              await flushCoreOperationOutbox();
+              if (!mapMountedRef.current || workflowContextRef.current !== workflowContext) return;
+              await refresh();
+            }} />
+        </View>
+      ) : null}
 
       {/* OTA-07: reduced presentation — covers dense chrome; same state tree. */}
       {inPassiveMode ? (
@@ -6901,7 +7353,7 @@ export default function MapScreen({ route, navigation }: Props) {
               const cardArrival = deriveScopedArrivalCounts({
                 members,
                 destinationSubgroupId: dest.subgroupId,
-                arrivedUserIds: destinationArrivals
+                arrivedUserIds: activeDestinationArrivals
                   .filter((arrival) => arrival.destinationId === dest.id)
                   .map((arrival) => arrival.userId),
               });
@@ -7014,8 +7466,9 @@ export default function MapScreen({ route, navigation }: Props) {
                         + expanded command row (expanded and collapsed). */}
                     {journeyActive && navTarget?.id === dest.id && mapFocused && appState === 'active' ? (
                       <Animated.View pointerEvents="none" entering={FadeIn.duration(300)} exiting={FadeOut.duration(300)}
-                        style={[StyleSheet.absoluteFill, { borderRadius: gatherCardRadius, overflow: 'hidden' }]}>
-                        <MetalforgeStarfield active={active} />
+                        style={[StyleSheet.absoluteFill, { borderRadius: gatherCardRadius, overflow: 'hidden', zIndex: 0 }]}>
+                        <MetalforgeStarfield collapsed={!cardExpanded} active={active} lowPowerMode={powerState.lowPowerMode}
+                          thermalState={powerState.thermalState} />
                       </Animated.View>
                     ) : null}
                     {arrivalCelebrateDestId === dest.id ? (
@@ -7047,7 +7500,7 @@ export default function MapScreen({ route, navigation }: Props) {
                         </Animated.View>
                       </Animated.View>
                     ) : null}
-                    <View style={styles.cardInner}>
+                    <View style={[styles.cardInner, { zIndex: 1 }]}>
                     <GatheringCardPressable
                       onToggle={() => toggleGatheringCard(dest.id)}
                       accessibilityLabel={dest.title}
@@ -7120,7 +7573,7 @@ export default function MapScreen({ route, navigation }: Props) {
                                 ref={active ? (n) => setTourTargetRef('arrivalProgress', n) : undefined}
                                 collapsable={false}
                                 style={styles.arrivalPeopleChip}
-                                disabled={!isLeader}
+                                disabled={!isLeader || !flockNavigatingThis}
                                 onPress={(event) => {
                                   event.stopPropagation();
                                   registerCardActivity(dest.id);
@@ -7132,7 +7585,7 @@ export default function MapScreen({ route, navigation }: Props) {
                               >
                                 <Ionicons name="people-outline" size={16} color={accent} />
                                 <Text style={[styles.arrivalPeopleValue, { color: accent }]}>
-                                  {arrivedHere}/{totalMembers}
+                                  {flockNavigatingThis ? <>{arrivedHere}/{totalMembers}</> : '—'}
                                 </Text>
                               </Pressable>
                             </View>
@@ -8177,6 +8630,9 @@ export default function MapScreen({ route, navigation }: Props) {
               const scopedMembers = members.filter(
                 (member) => member.subgroupId === destination.subgroupId,
               );
+              const canCorrectHistory = isLeader
+                && destination.subgroupId == null
+                && destination.closedAt != null;
               const arrivedCount = destinationArrivals.filter(
                 (entry) => entry.destinationId === destination.id,
               ).length;
@@ -8213,19 +8669,21 @@ export default function MapScreen({ route, navigation }: Props) {
                           <Text style={styles.flockName} numberOfLines={1}>{member.name}</Text>
                           <Text style={styles.overlayHint}>{t(memberStateKey)}</Text>
                         </View>
-                        <Pressable
-                          style={styles.arrivalToggleBtn}
-                          onPress={() => handleArrival(destination, member.userId, !arrived)}
-                          accessibilityRole="button"
-                          accessibilityLabel={t(arrived ? 'arrival.undo' : 'arrival.mark')}
-                          accessibilityState={{ checked: arrived }}
-                        >
-                          <Ionicons
-                            name={arrived ? 'checkmark-circle' : 'checkmark-circle-outline'}
-                            size={36}
-                            color={arrived ? glass.ok : glass.textTertiary}
-                          />
-                        </Pressable>
+                        {canCorrectHistory ? (
+                          <Pressable
+                            style={styles.arrivalToggleBtn}
+                            onPress={() => handleArrival(destination, member.userId, !arrived)}
+                            accessibilityRole="button"
+                            accessibilityLabel={t(arrived ? 'arrival.undo' : 'arrival.mark')}
+                            accessibilityState={{ checked: arrived }}
+                          >
+                            <Ionicons
+                              name={arrived ? 'checkmark-circle' : 'checkmark-circle-outline'}
+                              size={36}
+                              color={arrived ? glass.ok : glass.textTertiary}
+                            />
+                          </Pressable>
+                        ) : null}
                       </View>
                     );
                   })}
@@ -8254,7 +8712,7 @@ export default function MapScreen({ route, navigation }: Props) {
           {arrivalDestination ? members
             .filter((member) => member.subgroupId === arrivalDestination.subgroupId)
             .map((member) => {
-              const arrived = destinationArrivals.some(
+              const arrived = activeDestinationArrivals.some(
                 (entry) => entry.destinationId === arrivalDestination.id && entry.userId === member.userId,
               );
               const memberStateKey = arrived
@@ -8268,19 +8726,21 @@ export default function MapScreen({ route, navigation }: Props) {
                     <Text style={styles.flockName} numberOfLines={1}>{member.name}</Text>
                     <Text style={styles.overlayHint}>{t(memberStateKey)}</Text>
                   </View>
-                  <Pressable
-                    style={styles.arrivalToggleBtn}
-                    onPress={() => handleArrival(arrivalDestination, member.userId, !arrived)}
-                    accessibilityRole="button"
-                    accessibilityLabel={t(arrived ? 'arrival.undo' : 'arrival.mark')}
-                    accessibilityState={{ checked: arrived }}
-                  >
-                    <Ionicons
-                      name={arrived ? 'checkmark-circle' : 'checkmark-circle-outline'}
-                      size={36}
-                      color={arrived ? glass.ok : glass.textTertiary}
-                    />
-                  </Pressable>
+                  {isLeader && arrivalDestination.subgroupId == null && arrivalDestination.closedAt != null ? (
+                    <Pressable
+                      style={styles.arrivalToggleBtn}
+                      onPress={() => handleArrival(arrivalDestination, member.userId, !arrived)}
+                      accessibilityRole="button"
+                      accessibilityLabel={t(arrived ? 'arrival.undo' : 'arrival.mark')}
+                      accessibilityState={{ checked: arrived }}
+                    >
+                      <Ionicons
+                        name={arrived ? 'checkmark-circle' : 'checkmark-circle-outline'}
+                        size={36}
+                        color={arrived ? glass.ok : glass.textTertiary}
+                      />
+                    </Pressable>
+                  ) : null}
                 </View>
               );
             }) : null}
@@ -8303,7 +8763,9 @@ export default function MapScreen({ route, navigation }: Props) {
           ) : (
             historyGroups.map((group) => {
               const [y, m, dNum] = group.day.split('-').map(Number);
-              const dayLabel = new Date(y, m - 1, dNum).toLocaleDateString();
+              const dayLabel = group.day === 'unknown'
+                ? t('history.timeUnknown')
+                : new Date(y, m - 1, dNum).toLocaleDateString();
               return (
                 <View key={group.day} style={styles.historyDayBlock}>
                   <Text style={styles.sectionLabel}>{dayLabel}</Text>
@@ -8335,6 +8797,8 @@ export default function MapScreen({ route, navigation }: Props) {
                             <Text style={[styles.historyTime, { color: glass.textTertiary }]}>
                               {statusLabel}
                             </Text>
+                          ) : item.timeUnknown || !item.arrivedAt ? (
+                            <Text style={styles.historyTime}>{t('history.timeUnknown')}</Text>
                           ) : (
                             <Text style={styles.historyTime}>
                               {new Date(item.arrivedAt).toLocaleTimeString([], {

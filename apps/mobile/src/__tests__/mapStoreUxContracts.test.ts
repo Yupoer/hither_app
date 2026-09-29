@@ -69,9 +69,11 @@ describe('long-press inline rename (#172)', () => {
     expect(mapScreen).toContain('cameraAfterSuccessfulAdd');
   });
 
-  it('treats refresh() false as incomplete success (keeps confirm card)', () => {
-    expect(mapScreen).toContain('const projected = await refresh()');
-    expect(mapScreen).toContain('return projected === true');
+  it('dismisses only after durable add success; refresh is best-effort', () => {
+    expect(mapScreen).toContain('addDestination resolves only after durable local persistence');
+    expect(mapScreen).toContain('void refresh().catch(() => undefined)');
+    expect(mapScreen).toContain('if (ok && token.isCurrent()) dismissConfirmCard()');
+    expect(mapScreen).not.toContain('const projected = await refresh()');
   });
 
   it('uses theme accent for pencil activeColor (not glass.ok)', () => {

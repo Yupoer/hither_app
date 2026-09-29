@@ -8,6 +8,12 @@ jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(async () => null),
   setItemAsync: jest.fn(async () => undefined),
 }));
+// These tests exercise the legacy RPC fallback. Keep the native SQLite/React
+// Native graph behind the service boundary so the assertions do not depend on
+// Jest being able to parse the mobile-only coreDataSync module.
+jest.mock('../state/coreDataSync', () => {
+  throw new Error('coreDataSync is intentionally unavailable in RPC-only tests');
+});
 
 import { avatarColorForGroup, avatarForGroup, displayMemberAvatar } from '../constants/avatars';
 import { memberColor } from '../glass';
@@ -142,7 +148,9 @@ describe('pure mappers (snake_case row -> camelCase type)', () => {
       subgroupId: undefined,
       coordinates: { latitude: 25, longitude: 121 },
       lastUpdated: 't0',
-      capturedAt: 't0',
+      capturedAt: null,
+      uploadedAt: 't0',
+      locationAvailability: 'stale',
     });
   });
 
@@ -154,6 +162,17 @@ describe('pure mappers (snake_case row -> camelCase type)', () => {
     );
     expect(m.coordinates).toBeUndefined();
     expect(m.name).toBe('');
+    expect(m.locationAvailability).toBe('unavailable');
+  });
+
+  it('preserves capture time separately from a late server upload', () => {
+    const member = mapMember({ user_id: 'u1', role: 'follower' }, undefined, {
+      user_id: 'u1', latitude: 25, longitude: 121,
+      captured_at: '2026-01-01T10:00:00Z', updated_at: '2026-01-01T10:10:00Z',
+    });
+    expect(member.capturedAt).toBe('2026-01-01T10:00:00Z');
+    expect(member.uploadedAt).toBe('2026-01-01T10:10:00Z');
+    expect(member.lastUpdated).toBe(member.capturedAt);
   });
 });
 
@@ -466,19 +485,12 @@ describe('notifications, commands & journey', () => {
     );
   });
 
-  it('sendCommand inserts a command with the sender id', async () => {
+  it('does not bypass durable storage when the command queue is unavailable', async () => {
     const insert = jest.fn().mockResolvedValue({ error: null });
     mockedFrom.mockImplementation(() => ({ insert }));
 
-    await sendCommand('g1', 'need_restroom', '我要上廁所');
-    expect(insert).toHaveBeenCalledWith({
-      group_id: 'g1',
-      sender_id: 'uid',
-      type: 'need_restroom',
-      message: '我要上廁所',
-      latitude: null,
-      longitude: null,
-    });
+    await expect(sendCommand('g1', 'need_restroom', '我要上廁所')).rejects.toThrow('coreDataSync is intentionally unavailable');
+    expect(insert).not.toHaveBeenCalled();
   });
 
   it('requests a group-wide location refresh through the server cooldown RPC', async () => {

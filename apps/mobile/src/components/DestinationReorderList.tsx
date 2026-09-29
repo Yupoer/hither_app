@@ -57,6 +57,7 @@ import { liquidGlass } from '../native';
 import SettingsChildSheet from '../screens/MapScreen/components/SettingsChildSheet';
 import OverflowMarquee from './OverflowMarquee';
 import { MAP_SHEET_CORNER_RADIUS } from './mapSheetChrome';
+import { classifyOperationError } from '../utils/operationError';
 
 const REORDER_VISUAL_SCALE = 1;
 const ROW_HEIGHT = 52;
@@ -1506,8 +1507,12 @@ export default function DestinationReorderList({
                       setEmojiSaveError(false);
                     } catch (e) {
                       if (__DEV__) {
-                        // Surface reason in metro for intermittent save failures.
-                        console.warn('[destEmoji] save failed', e);
+                        const classified = classifyOperationError(e);
+                        console.warn('[destEmoji] save failed', {
+                          kind: classified.kind,
+                          code: classified.code,
+                          status: classified.status,
+                        });
                       }
                       setEmojiSaveError(true);
                     } finally {

@@ -33,7 +33,7 @@ it('persists an offline solo arrival across a new queue instance, replays once, 
   expect(projectArrivals(projected, await restarted.listByGroup('group'), 'self')).toHaveLength(1);
 });
 
-it('permanent rejection removes optimistic completion and never retries until explicit resubmission', async () => {
+it('permanent rejection removes optimistic completion and never retries until explicit conflict resolution and resubmission', async () => {
   const db = new MemoryCoreOperationOutboxDatabase();
   const submit = jest.fn(async (op: CoreOperation): Promise<ApplyCoreOperationResult> => ({
     status: 'conflict', operationId: op.id, conflict: {
@@ -41,7 +41,8 @@ it('permanent rejection removes optimistic completion and never retries until ex
       entityType: op.entityType, entityId: op.entityId, occurredAt: 100,
     },
   }));
-  const queue = createCoreOperationOutbox(new MemoryCoreDataDatabase(), db, submit);
+  let id = 0;
+  const queue = createCoreOperationOutbox(new MemoryCoreDataDatabase(), db, submit, Date.now, () => `retry-${++id}`, async () => 'self');
   await queue.enqueueArrival('group', 'stop', payload);
   await queue.flush();
   await queue.flush();
@@ -49,7 +50,9 @@ it('permanent rejection removes optimistic completion and never retries until ex
   const rows = await queue.listByGroup('group');
   expect(projectArrivals([], rows, 'self')).toEqual([]);
   expect(pendingSoloDestinationIds(rows, 'self').size).toBe(0);
-  await queue.enqueueArrival('group', 'stop', payload);
+  await queue.discardConflictChain(rows[0].id);
+  const retry = await queue.enqueueArrival('group', 'stop', payload);
+  expect(retry.id).not.toBe(rows[0].id);
   await queue.flush();
   expect(submit).toHaveBeenCalledTimes(2);
 });
@@ -60,4 +63,23 @@ it('personal arrival does not locally close a multi-person stop', async () => {
   const rows = await queue.listByGroup('group');
   expect(projectArrivals([], rows, 'self')).toHaveLength(1);
   expect(pendingSoloDestinationIds(rows, 'self').size).toBe(0);
+});
+
+it('projects a leader correction with a null arrival time only in its completed session', () => {
+  const correction: CoreOperation = {
+    id: 'correction-1', groupId: 'group', actorId: 'leader', entityType: 'itinerary', entityId: 'stop',
+    entityVersion: 0, operationType: 'leader_correct_arrival', status: 'pending', attempts: 0,
+    nextAttemptAt: 0, conflictResult: null, createdAt: 1, updatedAt: 1, sequence: 1,
+    payload: {
+      targetUserId: 'member', arrived: true, arrivedAt: null,
+      sessionId: 'completed-session', navigationSessionId: 'completed-session',
+    },
+  };
+  const projected = projectArrivals([], [correction], 'leader', ['completed-session']);
+  expect(projected).toEqual([expect.objectContaining({
+    destinationId: 'stop', userId: 'member', arrivedAt: null,
+    source: 'leader_correction', navigationSessionId: 'completed-session',
+  })]);
+  expect(projectArrivals([], [correction], 'leader', ['new-session'])).toEqual([]);
+  expect(projectArrivals([], [correction], 'member', ['completed-session'])).toEqual([]);
 });

@@ -878,6 +878,45 @@ async function collectSample(
 }
 
 /**
+ * Low-overhead energy sample path. It is intentionally independent from the
+ * two-hour full-tracing flag: consent still gates every native read and every
+ * SQLite write, but a normal opted-in build can observe energy trends even
+ * when full API tracing is disabled. It does not run JS FPS/rAF measurement.
+ */
+async function collectEnergyObservationSample(
+  sample: EnergyObservationSample,
+): Promise<void> {
+  if (!isAppForeground() || nativeSampleInFlight) return;
+  if (!(await getDiagnosticConsentEnabled())) return;
+  nativeSampleInFlight = true;
+  try {
+    const nativeSample = await metrics.samplePerformance(SAMPLE_WINDOW_MS).catch(() => null);
+    if (!nativeSample) return;
+    const enriched = enrichNativeSample(nativeSample as unknown as Record<string, unknown>);
+    await insertEvent({
+      id: Crypto.randomUUID(),
+      timestamp: Date.now(),
+      sessionId,
+      eventType: 'sample',
+      operation: normalizeOperation(
+        sample.kind === 'startup' ? 'runtime.energy.startup' : 'runtime.energy.sample',
+      ),
+      payload: {
+        ...sanitizePayload({
+          ...enriched,
+          ...energySamplePayload(sample),
+          confidence: 'energy_only',
+          appState: performanceAppState,
+        }),
+        ...releaseContext(),
+      },
+    });
+  } finally {
+    nativeSampleInFlight = false;
+  }
+}
+
+/**
  * Compatibility-only navigation sampler for older callers/tests. MapScreen no
  * longer calls this function: production sampling is owned by
  * energyObservability.start() above. Keeping the deprecated seam avoids
@@ -1110,19 +1149,15 @@ export async function traceApi<T>(operation: string, work: () => Promise<T>): Pr
 export function startPerformanceMonitor(): () => void {
   let stopped = false;
   let controller: { stop: () => void } | null = null;
-  void ensureEnabled().then(async (enabled) => {
-    if (!enabled || stopped) return;
-    const consentEnabled = await getDiagnosticConsentEnabled();
+  // Full tracing initialization remains best-effort, but must not gate the
+  // consented low-overhead energy sampler.
+  void ensureEnabled();
+  void getDiagnosticConsentEnabled().then((consentEnabled) => {
     if (!consentEnabled || stopped) return;
     controller = energyObservability.start((sample) =>
-      collectSample(
-        'sample',
-        sample.kind === 'startup' ? 'runtime.startup.sample' : 'runtime.sample',
-        undefined,
-        sample,
-      ),
+      collectEnergyObservationSample(sample),
     );
-  });
+  }).catch(() => undefined);
   return () => {
     stopped = true;
     controller?.stop();
@@ -1141,16 +1176,24 @@ export function startNavigationEnergyMonitor(context: {
   // @deprecated: production MapScreen uses the single energyObservability
   // controller. This compatibility-only seam remains for old diagnostics.
   let stopped = false;
-  const sample = () => {
-    if (stopped || nativeSampleInFlight) return;
-    energyObservability.setTrackingMode(context.trackingMode);
-    void collectEnergySample('navigation.energy.sample', context);
-  };
-  sample();
-  const timer = setInterval(sample, SAMPLE_INTERVAL_MS);
+  energyObservability.setTrackingMode(context.trackingMode);
+  void collectEnergySample('navigation.energy.sample', context);
+  const controller = energyObservability.start(
+    (sample) => {
+      if (stopped) return;
+      // The immediate sample above owns the start boundary. This compatibility
+      // monitor only needs steady five-minute samples from the shared timer.
+      if (sample.kind === 'startup') return;
+      void collectEnergySample(
+        'navigation.energy.sample',
+        context,
+      );
+    },
+    { startupOffsetsMs: [], steadyIntervalMs: SAMPLE_INTERVAL_MS },
+  );
   return () => {
     stopped = true;
-    clearInterval(timer);
+    controller.stop();
     void collectEnergySample('navigation.energy.end', context);
   };
 }

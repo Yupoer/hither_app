@@ -17,6 +17,7 @@ import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import * as Notifications from 'expo-notifications';
 import { AppState, Platform } from 'react-native';
+import { showAppNotice } from '../state/appNotice';
 import { shouldDeliverOnce } from '../utils/notificationDeliveryPolicy';
 
 /** Custom native module; `null` in Expo Go / when not built. */
@@ -59,13 +60,30 @@ export interface LocalNotificationInput {
 const presentedEvents = new Set<string>();
 Notifications.setNotificationHandler({
   handleNotification: async (notification) => {
-    const eventId = notification.request.content.data?.eventId;
+    const data = notification.request.content.data;
+    if (data?.category === 'arrival') {
+      // Old-account tokens may still receive delayed push. Never present an
+      // arrival without a recipient matching the current authenticated actor.
+      const { requireLocalActorId } = await import('../api/services/_helpers');
+      const actor = await requireLocalActorId().catch(() => null);
+      if (!actor || data.recipientId !== actor) return {
+        shouldShowBanner: false, shouldShowList: false, shouldPlaySound: false, shouldSetBadge: false,
+      };
+    }
+    const eventId = data?.eventId;
     const show = !(Platform.OS === 'ios' && notification.request.content.data?.kind === 'approach') && shouldDeliverOnce(
       presentedEvents, typeof eventId === 'string' ? eventId : null, 'device',
     );
+    const content = notification.request.content;
+    const arrivalInApp = show && AppState.currentState === 'active'
+      && content.data?.category === 'arrival';
+    if (arrivalInApp) showAppNotice({
+      id: `arrival:${typeof eventId === 'string' ? eventId : notification.request.identifier}`,
+      title: content.title ?? '', message: content.body ?? undefined,
+    });
     return {
-      shouldShowBanner: show,
-      shouldShowList: show,
+      shouldShowBanner: show && !arrivalInApp,
+      shouldShowList: show && !arrivalInApp,
       shouldPlaySound: show,
       shouldSetBadge: false,
     };
@@ -134,6 +152,15 @@ export async function scheduleLocalNotification(
   try {
     if (input.data?.kind === 'approach' && Platform.OS === 'ios') {
       if (AppState.currentState === 'active' || await HitherLocation?.isDeviceLocked?.() !== true) return null;
+    }
+    if (AppState.currentState === 'active' && input.data?.category === 'arrival') {
+      const eventId = typeof input.data.eventId === 'string' ? input.data.eventId : null;
+      const id = eventId ?? `local-arrival:${Date.now()}`;
+      if (shouldDeliverOnce(presentedEvents, eventId, 'device')) {
+        showAppNotice({ id: `arrival:${id}`, title: input.title, message: input.body });
+      }
+      // In-app feedback does not depend on permission for system push banners.
+      return id;
     }
     if (!(await requestPermission())) {
       return null;

@@ -6,6 +6,8 @@ import { isDemoGroup } from '../demo';
 import type { CommandType, Coordinates, NotificationPreferences } from '../../types';
 import { DEFAULT_NOTIFICATION_PREFERENCES } from '../../types';
 import { requireUserId, orThrow } from './_helpers';
+import { requireLocalActorId } from './_helpers';
+import * as Crypto from 'expo-crypto';
 
 interface NotificationPrefsRow {
   add_gathering: boolean;
@@ -47,16 +49,17 @@ export async function sendCommand(
   coords?: Coordinates,
 ): Promise<void> {
   if (isDemoGroup(groupId)) return;
-  const uid = await requireUserId();
-  const { error } = await supabase.from('commands').insert({
-    group_id: groupId,
-    sender_id: uid,
-    type,
-    message: message ?? null,
-    latitude: coords?.latitude ?? null,
-    longitude: coords?.longitude ?? null,
+  const { getCoreOperationOutbox, flushCoreOperationOutbox } = await import('../../state/coreDataSync');
+  const uid = await requireLocalActorId();
+  const operationId = Crypto.randomUUID();
+  await getCoreOperationOutbox().enqueueMutation({
+    operationId, actorId: uid, groupId, entityType: 'itinerary', entityId: operationId,
+    operationType: 'send_command',
+    payload: { type, message: message ?? null,
+      latitude: coords?.latitude ?? null, longitude: coords?.longitude ?? null,
+      expiresAt: new Date(Date.now() + 5 * 60_000).toISOString() },
   });
-  orThrow(error);
+  void flushCoreOperationOutbox().catch(() => undefined);
 }
 
 export async function getNotificationPreferences(): Promise<NotificationPreferences> {

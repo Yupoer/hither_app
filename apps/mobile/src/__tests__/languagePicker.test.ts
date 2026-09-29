@@ -128,7 +128,7 @@ describe('LanguagePicker', () => {
     expect(mockSetLanguage).not.toHaveBeenCalledWith(expect.stringMatching(/restart/i));
   });
 
-  it('shows the current language plus a chevron on the menu trigger', () => {
+  it('uses the localized settings label and native language menu items', () => {
     let renderer: ReturnType<typeof create>;
     act(() => {
       renderer = create(React.createElement(LanguagePicker, { variant: 'menu' }));
@@ -136,15 +136,20 @@ describe('LanguagePicker', () => {
 
     const buttons = renderer!.root.findAllByProps({ accessibilityRole: 'button' });
     expect(buttons).toHaveLength(1);
-    expect(buttons[0].props.accessibilityLabel).toBe('中文');
-    expect(renderer!.root.findAllByProps({ name: 'chevron-down' }).length).toBeGreaterThan(0);
+    expect(buttons[0].props.accessibilityLabel).toBe('settings.language');
+    expect(buttons[0].props.items).toEqual([
+      { id: 'zh', title: '中文' },
+      { id: 'en', title: 'English' },
+    ]);
+    expect(renderer!.root.findAllByProps({ name: 'globe-outline' }).length).toBeGreaterThan(0);
 
     mockLanguage = 'en';
     act(() => {
       renderer.update(React.createElement(LanguagePicker, { variant: 'menu' }));
     });
     const updated = renderer!.root.findAllByProps({ accessibilityRole: 'button' });
-    expect(updated[0].props.accessibilityLabel).toBe('English');
+    expect(updated[0].props.accessibilityLabel).toBe('settings.language');
+    expect(updated[0].props.items).toEqual(buttons[0].props.items);
   });
 
   it('opens the native language choice and calls setLanguage for the other language', () => {

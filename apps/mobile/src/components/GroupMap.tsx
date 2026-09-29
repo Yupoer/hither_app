@@ -432,7 +432,7 @@ const MemberMarker = React.memo(function MemberMarker({ member, accent, styles, 
   const latestCoordinate = useRef({ latitude: lat ?? 0, longitude: lng ?? 0 });
   useEffect(() => {
     if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return;
-    const next = { coordinates: { latitude: lat, longitude: lng }, sampledAt: Date.parse(member.lastUpdated ?? '') };
+    const next = { coordinates: { latitude: lat, longitude: lng }, sampledAt: Date.parse(member.capturedAt ?? member.lastUpdated ?? '') };
     if (appActive && wasActive.current && lastSample.current && Number.isFinite(next.sampledAt)
       && next.sampledAt < lastSample.current.sampledAt) return;
     const duration = memberMotionDuration(lastSample.current, next, Date.now(), appActive && wasActive.current && !reduceMotion);
@@ -441,7 +441,7 @@ const MemberMarker = React.memo(function MemberMarker({ member, accent, styles, 
     lastSample.current = next;
     // Installed native command handles overlap from the currently displayed coordinate.
     markerRef.current?.animateMarkerToCoordinate(next.coordinates, duration);
-  }, [lat, lng, member.lastUpdated, appActive, reduceMotion]);
+  }, [lat, lng, member.capturedAt, member.lastUpdated, appActive, reduceMotion]);
   useEffect(() => () => {
     markerRef.current?.animateMarkerToCoordinate(latestCoordinate.current, 0);
   }, []);
@@ -579,7 +579,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
   // Match the map chrome to the app theme: the light "day" palette gets the
   // light Apple Maps style; the dark "night"/"dusk" palettes get the dark one.
   const mapInterfaceStyle: 'light' | 'dark' = themeName === 'day' ? 'light' : 'dark';
-  const memberCenter = members.find((member) => member.coordinates)?.coordinates;
+  const memberCenter = members.find((member) => member.coordinates)?.coordinates ?? undefined;
   const fallbackCenter = initialCenter ?? memberCenter;
   const mapInitialRegion = useMemo(
     () => initialRegionFor(gathering?.coordinates ?? fallbackCenter, latOffset),

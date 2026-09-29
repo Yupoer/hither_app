@@ -14,7 +14,7 @@ describe('debug location device feed', () => {
 
     expect(start).toBeGreaterThanOrEqual(0);
     expect(end).toBeGreaterThan(start);
-    expect(debugSubscription).toContain('applySampleToUi(sample, now)');
+    expect(debugSubscription).toContain('applySampleToUi(sample, now, { immediate: true })');
     expect(debugSubscription).not.toContain('enqueueUpload(sample');
   });
 

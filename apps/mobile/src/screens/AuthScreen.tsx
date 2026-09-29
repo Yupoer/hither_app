@@ -29,6 +29,7 @@ import { runUiAction, type UiActionToken } from '../utils/uiAction';
 import SafePressable from '../components/SafePressable';
 import { mediumTap } from '../utils/haptics';
 import { classifyAnonymousAccessError } from '../anonymousAccess';
+import { getOperationErrorMessage } from '../utils/operationError';
 import { AVATAR_COLORS, AVATAR_EMOJI } from '../constants/avatars';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Auth'>;
@@ -51,7 +52,7 @@ export default function AuthScreen({ navigation, route }: Props) {
   const { signIn, user, updateNickname, setMembership, refreshProfile } = useSession();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const accent = colors.accent;
   const styles = useMemo(() => makeStyles(accent), [accent]);
 
@@ -102,7 +103,7 @@ export default function AuthScreen({ navigation, route }: Props) {
       );
       return;
     }
-    const msg = raw || t('auth.signInFailed');
+    const msg = getOperationErrorMessage(e, language);
     Alert.alert(
       isLeader ? t('group.createFailedTitle') : t('group.joinFailedTitle'),
       msg,
