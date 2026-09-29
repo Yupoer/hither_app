@@ -437,7 +437,13 @@ let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
 const outbox = createLocationOutbox(
   new SQLiteLocationOutboxDatabase(),
-  ingestLocationBatch,
+  async events => {
+    // Pre-upgrade durable rows have no provable owner. Never relabel them as
+    // the currently signed-in account; a new sensor sample will replace them.
+    const result = await ingestLocationBatch(events.filter(event => Boolean(event.actorId)));
+    return { ...result, rejected: [...result.rejected,
+      ...events.filter(event => !event.actorId).map(event => ({ id: event.id, reason: 'actor_unknown' }))] };
+  },
   Date.now,
   AsyncStorage,
 );

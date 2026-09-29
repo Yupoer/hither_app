@@ -213,6 +213,9 @@ async function converge(team, count) {
     const oldAccount = await team[0].call('foreignQueue', { actorId: manifest.actors[1].userId });
     assert.equal(oldAccount.sent, 0); assert.equal(oldAccount.discarded, 1);
     check('persisted old-account SQLite event cannot upload as another member of the same team');
+    const unknownAccount = await team[0].call('foreignQueue', {});
+    assert.equal(unknownAccount.sent, 0); assert.equal(unknownAccount.discarded, 1);
+    check('legacy SQLite event with unknown account cannot upload under the current session');
     manifest.passed = true;
   } catch (error) { manifest.passed = false; manifest.failure = error.stack; console.error(error.message); process.exitCode = 1; }
   finally {

@@ -95,12 +95,15 @@ test('starfield wraps for thousands of cycles and resumes without an end frame',
   expect(advanceStarfieldPhase(phase,16)).not.toBe(phase);
 });
 
-test('an old empty snapshot cannot erase the first fix, and an old populated snapshot cannot resurrect removal', () => {
+test('empty snapshots cannot erase newer fixes or fence transactions that commit later', () => {
   const base = { group: { id: 'g', name: 'Dummy', inviteCode: 'DUMMY1', createdBy: 'm', createdAt: '2026-01-01T00:00:00Z', journeyStatus: 'paused', stragglerAlerts: true, stragglerThresholdM: 500 }, destinations: [], subgroups: [], members: [{ userId: 'm', name: 'm', role: 'follower', status: 'active', locationObservedAt: '2026-01-01T00:00:00Z' }] } as GroupState;
   const live = applyMemberLocationPatches(base, [{ userId: 'm', coordinates: { latitude: 25, longitude: 121 }, updatedAt: '2026-01-01T00:00:01Z' }])!;
   expect(mergeRemoteGroupStatePreservingOwnLocation(live, base).members[0].coordinates).toEqual(live.members[0].coordinates);
   const removed = { ...base, members: [{ ...base.members[0], locationObservedAt: '2026-01-01T00:00:02Z' }] };
-  expect(mergeRemoteGroupStatePreservingOwnLocation(removed, live).members[0].coordinates).toBeUndefined();
+  expect(mergeRemoteGroupStatePreservingOwnLocation(removed, live).members[0].coordinates).toEqual(live.members[0].coordinates);
+  expect(applyMemberLocationPatches(removed, [{ userId: 'm', coordinates: { latitude: 25, longitude: 121 }, updatedAt: '2026-01-01T00:00:01Z' }])!.members[0].coordinates).toEqual(live.members[0].coordinates);
+  const stopped = { ...removed, members: [{ ...removed.members[0], sharingEnabled: false }] };
+  expect(applyMemberLocationPatches(stopped, [{ userId: 'm', coordinates: { latitude: 25, longitude: 121 }, updatedAt: '2026-01-01T00:00:03Z' }])!.members[0].coordinates).toBeUndefined();
 });
 
 test.each([0x5eed, 20260930, 731])('seed %s: scrambled snapshots and realtime never regress confirmed positions', seed => {
@@ -118,4 +121,14 @@ test.each([0x5eed, 20260930, 731])('seed %s: scrambled snapshots and realtime ne
     expect(state.members[0].lastUpdated).toBe(newest);
   }
   expect(state.members[0].coordinates).toEqual(fixtures[39].coordinates);
+});
+
+test('manual refresh terminates if permission or session never settles', async () => {
+  jest.useFakeTimers();
+  const pull = jest.fn(async () => true);
+  const pending = refreshTeamLocations({ pull, uploadSelf: () => new Promise(() => {}), requestPeers: () => new Promise(() => {}), getMembers: () => [], cooling: false });
+  await jest.advanceTimersByTimeAsync(35_000);
+  expect(await pending).toMatchObject({ pulled: true, selfUploaded: false, request: null });
+  expect(pull).toHaveBeenCalledTimes(2);
+  jest.useRealTimers();
 });

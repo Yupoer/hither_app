@@ -62,7 +62,7 @@ export function applyMemberLocationPatches(
     if (idx < 0) return null;
 
     const prev = list[idx];
-    if (prev.sharingEnabled === false || (!prev.coordinates && prev.locationObservedAt && Date.parse(prev.locationObservedAt) >= Date.parse(patch.updatedAt))) continue;
+    if (prev.sharingEnabled === false) continue;
     if (prev.lastUpdated && Date.parse(patch.updatedAt) <= Date.parse(prev.lastUpdated)) continue;
     const same =
       prev.coordinates?.latitude === patch.coordinates.latitude &&

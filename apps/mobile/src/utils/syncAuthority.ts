@@ -143,11 +143,8 @@ export function mergeRemoteGroupStatePreservingOwnLocation(
       && Date.parse(member.locationObservedAt) < Date.parse(previousPeer.lastUpdated ?? '')) {
       return preserveOwnLocation(member, previousPeer);
     }
-    if (member.coordinates && previousPeer?.locationObservedAt && !previousPeer.coordinates
-      && Date.parse(member.lastUpdated ?? '') <= Date.parse(previousPeer.locationObservedAt)) {
-      return { ...member, coordinates: undefined, lastUpdated: undefined, capturedAt: undefined,
-        locationObservedAt: previousPeer.locationObservedAt };
-    }
+    // Absence is not a deletion version: a transaction may stamp updated_at
+    // before this snapshot and commit afterwards. Its first fix remains valid.
     // Preserve a newer server event, while allowing explicit removal of a hidden position.
     return member.coordinates && previousPeer?.coordinates && member.lastUpdated && previousPeer.lastUpdated
       && Date.parse(previousPeer.lastUpdated) > Date.parse(member.lastUpdated)

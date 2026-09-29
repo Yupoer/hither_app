@@ -105,3 +105,9 @@ describe('organizer exception contracts', () => {
     expect(hook).toContain('parseTimeMs');
   });
 });
+
+test('partial help recovery preserves unhandled members and newer realtime', () => {
+  const prior = [{ userId: 'A', seenAt: '2026-09-30T00:00:00Z' }, { userId: 'B', seenAt: '2026-09-30T00:02:00Z' }];
+  const rows = Array.from({ length: 50 }, () => ({ sender_id: 'B', created_at: '2026-09-30T00:01:00Z' }));
+  expect(__mapHelpRowsForTests(rows, 'leader', prior)).toEqual(prior);
+});

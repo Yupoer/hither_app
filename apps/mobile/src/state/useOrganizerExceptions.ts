@@ -89,10 +89,10 @@ function toMemberSnapshots(
 function mapHelpRows(
   rows: Array<{ sender_id?: string; created_at?: string }> | null,
   leaderUserId: string,
+  previous: TimedMemberSignal[] = [],
 ): TimedMemberSignal[] {
-  if (!rows?.length) return [];
   const byUser = new Map<string, string>();
-  for (const row of rows) {
+  for (const row of [...previous.map(signal => ({ sender_id: signal.userId, created_at: signal.seenAt })), ...(rows ?? [])]) {
     if (!row.sender_id || row.sender_id === leaderUserId) continue;
     const seenAt = row.created_at ?? new Date().toISOString();
     const seenMs = parseTimeMs(seenAt);
@@ -266,10 +266,11 @@ export function useOrganizerExceptions(
           .order('created_at', { ascending: false })
           .limit(50);
         if (cancelled || error) return;
-        setHelpSignals(
+        setHelpSignals(previous =>
           mapHelpRows(
             data as Array<{ sender_id?: string; created_at?: string }> | null,
             leaderUserId,
+            previous,
           ),
         );
       } catch {
@@ -300,10 +301,7 @@ export function useOrganizerExceptions(
           if (row.type !== 'need_help' || !row.sender_id) return;
           if (row.sender_id === leaderUserId) return;
           const seenAt = row.created_at ?? new Date().toISOString();
-          setHelpSignals((prev) => {
-            const without = prev.filter((s) => s.userId !== row.sender_id);
-            return [...without, { userId: row.sender_id!, seenAt }];
-          });
+          setHelpSignals(prev => mapHelpRows([{ sender_id: row.sender_id, created_at: seenAt }], leaderUserId, prev));
         },
       )
       .subscribe(status => { if (status === 'SUBSCRIBED') void reloadHelp(); });
@@ -474,8 +472,9 @@ export function useOrganizerExceptions(
 export function __mapHelpRowsForTests(
   rows: Array<{ sender_id?: string; created_at?: string }> | null,
   leaderUserId: string,
+  previous: TimedMemberSignal[] = [],
 ): TimedMemberSignal[] {
-  return mapHelpRows(rows, leaderUserId);
+  return mapHelpRows(rows, leaderUserId, previous);
 }
 
 /** @internal test: root cause key builder re-export */
