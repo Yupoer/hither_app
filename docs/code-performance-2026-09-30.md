@@ -21,7 +21,7 @@
 - 正式環境已有 12 個遠端 migration 版本不在本地。未重播或修復這些歷史版本，只部署並 reconcile 本次 migration。
 - 以 PGlite 隔離 PostgreSQL 重用真實初始 FK／RLS 和既有群組刪除函式，通過：一次離開多群、最後成員群組及行程 cascade、仍有他人的群組／會員／位置保留、離開者位置移除、不能刪除他人 membership、測試 fixture rollback。
 - 可重跑：`node supabase/tests/run-team-cleanup-local.mjs <PGlite dist/index.js 路徑>`。測試套件安裝在暫存目錄，不是 App dependency。此測試不覆蓋外部推播服務或原生裝置畫面。
-- 正式唯讀盤點仍有 86 個歷史空群組（2026-06-17 至 2026-07-14），以及既有孤立位置紀錄。這次不批次刪除歷史資料；新 trigger 處理往後的會員刪除。
+- 初次盤點有 86 個歷史空群組（2026-06-17 至 2026-07-14）；後續使用者明確授權全部刪除，清理結果見下方。
 - 自動審核拒絕正式資料庫的合成 fixture 測試與 RLS policy 刪除；改用隔離測試，保留原有 RLS policies，部署成功。
 
 ## 驗證與限制
@@ -33,3 +33,14 @@
 - 本次為程式碼及資料庫驗證，沒有 iOS 實機 UI 驗收或裝置 CPU／耗電量測，不宣稱量測過的效能百分比。
 - Supabase performance advisors 的未索引外鍵由 47 減為 42；其他索引依實際查詢量再評估，避免盲目增加寫入成本。既有多重 policies 保持不變。參考：[外鍵索引](https://supabase.com/docs/guides/database/database-linter?lint=0001_unindexed_foreign_keys)、[多重 permissive policies](https://supabase.com/docs/guides/database/database-linter?lint=0006_multiple_permissive_policies)。
 - 既有 security advisors 包含匿名可執行的 security-definer function 與未啟用 leaked-password protection；本次未改登入權限。參考：[function 權限](https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable)、[密碼保護](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection)。
+
+## 後續：完整刪除空群組
+
+使用者明確指定：沒有成員的群組，其歷史完成景點與所有群組相關資料都可刪除。
+
+- 已部署並登記 `20260930111355_purge_empty_groups_completely.sql`。短暫鎖定 memberships，避免清理檢查與加入／離開競爭；未變更任何同步頻率。
+- 將 `token_ledger` 與 `promo_redemptions` 的 group FK 由 SET NULL 改為 CASCADE，正式資料庫所有指向 groups 的外鍵現皆為 CASCADE，沒有缺少 group FK 的實體 `group_id` 欄位。
+- 正式清除 86 個零成員群組，連帶清除 337 筆 itinerary_items 與 86 筆 member_locations；這些空群組的 visited_waypoints、subgroups、token_ledger、promo_redemptions 在刪除前均為 0 筆。
+- 清理後空群組為 0；有成員群組仍為 20、memberships 仍為 21、profiles 仍為 17、token_wallets 仍為 8、錢包 balance 合計仍為 0。既有最後成員離開 trigger 啟用中。
+- 隔離 PostgreSQL 測試通過歷史空群組 purge、保留有成員群組及帳號、未來最後成員離開時連帶清除景點／位置／代幣紀錄／兌換紀錄。可重跑：`node supabase/tests/purge_empty_groups.test.mjs <PGlite dist/index.js 路徑>`。
+- 既有遠端 migration 漂移未改動；只 reconcile 本次版本。後端改動不需新增 OTA。Security advisors 檢查完成，既有登入與 function 權限警告同上。
