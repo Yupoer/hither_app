@@ -147,13 +147,14 @@ export function mapMember(
     location && location.latitude != null && location.longitude != null
       ? { latitude: location.latitude, longitude: location.longitude }
       : undefined;
+  const avatar = displayMemberAvatar(profile?.avatar, membership.user_id, profile?.avatar_color);
   return {
     userId: membership.user_id,
     name: profile?.nickname ?? '',
     role: membership.role,
     status: membership.status ?? 'active',
-    avatar: displayMemberAvatar(profile?.avatar, membership.user_id, profile?.avatar_color).emoji,
-    avatarColor: displayMemberAvatar(profile?.avatar, membership.user_id, profile?.avatar_color).color,
+    avatar: avatar.emoji,
+    avatarColor: avatar.color,
     solo: membership.solo ?? false,
     subgroupId: membership.subgroup_id ?? undefined,
     coordinates,
@@ -216,6 +217,7 @@ export async function createGroup(
     orThrow(error);
   }
   const group = mapGroup(data as GroupRow);
+  invalidateMyJoinedGroupsCache();
   if (avatar || avatarColor) {
     return updateGroupAvatar(
       group.id,
@@ -274,6 +276,7 @@ export async function joinGroup(inviteCode: string): Promise<Group> {
     }
     orThrow(error);
   }
+  invalidateMyJoinedGroupsCache();
   return mapGroup(data as GroupRow);
 }
 
@@ -285,14 +288,14 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
     if (uid) {
       const { data: p } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id, nickname, avatar, avatar_color')
         .eq('id', uid)
         .maybeSingle();
       profile = (p as ProfileRow | null) ?? null;
     }
     return getDemoState(uid, profile?.nickname, profile?.avatar ?? undefined);
   }
-  const [groupRes, membersRes, itineraryRes, locationsRes, dailyAccommodations] =
+  const [groupRes, membersRes, itineraryRes, locationsRes, dailyAccommodations, sgRes] =
     await Promise.all([
     supabase
       .from('groups')
@@ -303,7 +306,7 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
       .single(),
     supabase
       .from('memberships')
-      .select('*')
+      .select('user_id, role, status, solo, subgroup_id')
       .eq('group_id', groupId),
     supabase
       .from('itinerary_items')
@@ -318,6 +321,9 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
       .eq('group_id', groupId),
     // Do not swallow load failures as an empty list (false "no stay").
     listDailyAccommodations(groupId),
+    supabase.from('subgroups')
+      .select('id, name, mode, leader_id, parent_subgroup_id')
+      .eq('group_id', groupId),
   ]);
 
   orThrow(groupRes.error);
@@ -334,7 +340,7 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
   if (userIds.length > 0) {
     const { data: profiles, error: profileError } = await supabase
       .from('profiles')
-      .select('*')
+      .select('id, nickname, avatar, avatar_color')
       .in('id', userIds);
     orThrow(profileError);
     profileRows = (profiles ?? []) as ProfileRow[];
@@ -350,10 +356,6 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
   const destinations: Destination[] = (itineraryRows as any[]).map(mapDestination);
 
   let subgroups: Subgroup[] = [];
-  const sgRes = await supabase
-    .from('subgroups')
-    .select('*')
-    .eq('group_id', groupId);
   if (!sgRes.error) {
     subgroups = ((sgRes.data ?? []) as SubgroupRow[]).map(mapSubgroup);
   }
@@ -388,9 +390,10 @@ export async function getGroupRecoverySnapshot(
     };
   }
   await requireUserId();
-  const { data, error } = await supabase.rpc('get_group_recovery_snapshot', {
-    p_group_id: groupId,
-  });
+  const [{ data, error }, dailyAccommodations] = await Promise.all([
+    supabase.rpc('get_group_recovery_snapshot', { p_group_id: groupId }),
+    listDailyAccommodations(groupId),
+  ]);
   orThrow(error);
   if (!data || typeof data !== 'object') {
     throw new Error('group_recovery_snapshot_invalid');
@@ -429,7 +432,6 @@ export async function getGroupRecoverySnapshot(
     : generatedAt ?? '0';
   // Daily accommodations are a separate source of truth; batch-load (not per-day).
   // Propagate load failures — do not present errors as "no stay".
-  const dailyAccommodations = await listDailyAccommodations(groupId);
   return {
     state: {
       group: mapGroup(groupRow),
@@ -466,6 +468,13 @@ export type GetMyJoinedGroupsOptions = {
 /** In-memory cache so RoleSelect can paint the CTA immediately on re-entry. */
 let joinedGroupsCache: JoinedGroupInfo[] | null = null;
 let joinedGroupsCacheUserId: string | null = null;
+let joinedGroupsMutationRevision = 0;
+const joinedGroupsListeners = new Set<(actorId: string, groups: JoinedGroupInfo[]) => void>();
+
+export function subscribeMyJoinedGroups(listener: (actorId: string, groups: JoinedGroupInfo[]) => void): () => void {
+  joinedGroupsListeners.add(listener);
+  return () => { joinedGroupsListeners.delete(listener); };
+}
 
 /** Disk cache of avatar emoji/color per group — survives cold start. */
 export function joinedGroupAvatarsKey(userId: string): string {
@@ -500,6 +509,7 @@ export function getCachedMyJoinedGroups(userId: string | undefined | null): Join
 }
 
 export function invalidateMyJoinedGroupsCache(): void {
+  joinedGroupsMutationRevision += 1;
   joinedGroupsCache = null;
   joinedGroupsCacheUserId = null;
 }
@@ -507,6 +517,7 @@ export function invalidateMyJoinedGroupsCache(): void {
 function rememberJoinedGroups(userId: string, list: JoinedGroupInfo[]): JoinedGroupInfo[] {
   joinedGroupsCacheUserId = userId;
   joinedGroupsCache = list;
+  for (const listener of joinedGroupsListeners) listener(userId, list);
   return list;
 }
 
@@ -520,6 +531,17 @@ export async function getMyJoinedGroups(
 ): Promise<JoinedGroupInfo[]> {
   const includeProfiles = options.includeProfiles !== false;
   const uid = await requireUserId();
+
+  const mutationRevision = joinedGroupsMutationRevision;
+  const rememberIfCurrent = (list: JoinedGroupInfo[]) => {
+    // A pre-leave read cannot put deleted memberships back in either screen.
+    if (mutationRevision !== joinedGroupsMutationRevision) {
+      const current = getCachedMyJoinedGroups(uid);
+      if (current) return current;
+      throw new Error('Team membership changed during loading; retry');
+    }
+    return rememberJoinedGroups(uid, list);
+  };
 
   const assertActor = async () => {
     const current = await requireUserId();
@@ -539,14 +561,14 @@ export async function getMyJoinedGroups(
 
   if (!myMemberships || myMemberships.length === 0) {
     await assertActor();
-    return rememberJoinedGroups(uid, []);
+    return rememberIfCurrent([]);
   }
 
   const groupIds = myMemberships.map((m) => m.group_id);
   const roleByGroup = new Map(myMemberships.map((m) => [m.group_id, m.role as MemberRole]));
 
   // groups + membership rows in parallel (was sequential before).
-  const [groupsRes, membersRes] = await Promise.all([
+  const [groupsRes, membersRes, diskAvatars] = await Promise.all([
     supabase
       .from('groups')
       .select('id, name, invite_code, avatar, avatar_color, created_by, created_at, journey_status, active_destination_id, journey_started_at, straggler_alerts, straggler_threshold_m, trip_days, departure_date')
@@ -555,6 +577,7 @@ export async function getMyJoinedGroups(
       .from('memberships')
       .select('group_id, user_id')
       .in('group_id', groupIds),
+    readAvatarDiskCache(uid),
   ]);
 
   orThrow(groupsRes.error);
@@ -571,24 +594,25 @@ export async function getMyJoinedGroups(
   }
 
   const membersByGroup = new Map<string, { userId: string; avatar?: string; avatarColor?: string }[]>();
-  const diskAvatars = await readAvatarDiskCache(uid);
 
   // RoleSelect skips profiles (one less round-trip); MyTeams keeps avatars.
   if (includeProfiles && members.length > 0) {
     const userIdsToFetch = Array.from(new Set(members.map((m) => m.user_id)));
-    const { data: profileRows } = await supabase
+    const { data: profileRows, error: profileError } = await supabase
       .from('profiles')
       .select('id, avatar, avatar_color')
       .in('id', userIdsToFetch);
+    orThrow(profileError);
     const profileById = new Map((profileRows ?? []).map((p) => [p.id, p]));
 
     for (const m of members) {
       if (!membersByGroup.has(m.group_id)) membersByGroup.set(m.group_id, []);
       const p = profileById.get(m.user_id);
+      const avatar = displayMemberAvatar(p?.avatar, m.user_id, p?.avatar_color);
       membersByGroup.get(m.group_id)!.push({
         userId: m.user_id,
-        avatar: displayMemberAvatar(p?.avatar, m.user_id, p?.avatar_color).emoji,
-        avatarColor: displayMemberAvatar(p?.avatar, m.user_id, p?.avatar_color).color || memberColor(m.user_id),
+        avatar: avatar.emoji,
+        avatarColor: avatar.color || memberColor(m.user_id),
       });
     }
     // Persist full avatars for next cold start / lite RoleSelect paint.
@@ -597,7 +621,7 @@ export async function getMyJoinedGroups(
       nextDisk[gid] = profiles;
     }
     await assertActor();
-    void writeAvatarDiskCache(uid, nextDisk);
+    if (mutationRevision === joinedGroupsMutationRevision) void writeAvatarDiskCache(uid, nextDisk);
   }
 
   const list = groups.map((g) => {
@@ -616,7 +640,7 @@ export async function getMyJoinedGroups(
   });
 
   await assertActor();
-  return rememberJoinedGroups(uid, list);
+  return rememberIfCurrent(list);
 }
 
 export async function leaveGroups(groupIds: string[]): Promise<void> {
@@ -628,9 +652,16 @@ export async function leaveGroups(groupIds: string[]): Promise<void> {
     .eq('user_id', uid)
     .in('group_id', groupIds);
   orThrow(error);
+  const { data: remainingMemberships, error: verifyError } = await supabase
+    .from('memberships').select('group_id').eq('user_id', uid).in('group_id', groupIds);
+  orThrow(verifyError);
+  if (remainingMemberships?.length) throw new Error('Team leave was not confirmed');
+  if (await requireUserId() !== uid) throw new Error('Account changed during team leave');
+  joinedGroupsMutationRevision += 1;
   // Drop cache so RoleSelect / MyTeams don't show groups we just left.
   if (joinedGroupsCacheUserId === uid && joinedGroupsCache) {
-    const remaining = joinedGroupsCache.filter((g) => !groupIds.includes(g.group.id));
+    const left = new Set(groupIds);
+    const remaining = joinedGroupsCache.filter((g) => !left.has(g.group.id));
     rememberJoinedGroups(uid, remaining);
   } else {
     invalidateMyJoinedGroupsCache();

@@ -43,6 +43,15 @@ describe('five-screen Liquid Glass redesign contract', () => {
     expect(teams).toContain('<NativeGlassButton');
     expect(read('components/NativeRoleActionButton.ios.tsx')).toContain("buttonBorderShape('roundedRectangle', 30)");
     expect(read('components/NativeTeamCard.ios.tsx')).toContain("buttonBorderShape('roundedRectangle', 24)");
+    const teamsButton = read('components/NativeTeamsButton.ios.tsx');
+    expect(teamsButton).toContain('<Button onPress={onPress}');
+    expect(teamsButton).not.toContain('<Pressable');
+    expect(teamsButton).toContain('count > 0');
+    expect(teams).toContain('testID="teams-empty-create"');
+    expect(teams).toContain('testID="teams-empty-join"');
+    expect(teams).toContain("navigation.replace('Auth', { role: 'leader' })");
+    expect(teams).toContain("navigation.replace('Auth', { role: 'follower' })");
+    expect(read('screens/AuthScreen.tsx')).toContain('systemImage="chevron.left"');
   });
 
   it('keeps signup nickname-free and persists the nickname at create/join entry', () => {

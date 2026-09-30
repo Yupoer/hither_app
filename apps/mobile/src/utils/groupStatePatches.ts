@@ -51,6 +51,7 @@ export function applyMemberLocationPatches(
   if (patches.length === 0) return state;
 
   let members: MemberLocation[] | null = null;
+  const memberIndex = new Map(state.members.map((member, index) => [member.userId, index]));
 
   for (const patch of patches) {
     if (!Number.isFinite(Date.parse(patch.updatedAt)) || !Number.isFinite(patch.coordinates.latitude)
@@ -58,8 +59,8 @@ export function applyMemberLocationPatches(
       || Math.abs(patch.coordinates.longitude) > 180) continue;
 
     const list = members ?? state.members;
-    const idx = list.findIndex((m) => m.userId === patch.userId);
-    if (idx < 0) return null;
+    const idx = memberIndex.get(patch.userId);
+    if (idx == null) return null;
 
     const prev = list[idx];
     if (prev.sharingEnabled === false) continue;

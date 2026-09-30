@@ -1,8 +1,6 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import {
   Alert,
-  ActivityIndicator,
-  Platform,
   StyleSheet,
   Text,
   View,
@@ -10,7 +8,7 @@ import {
 import Constants from 'expo-constants';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useIsFocused } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useTheme } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
@@ -25,14 +23,11 @@ import NativeTeamsButton from '../components/NativeTeamsButton';
 import MetalforgeBackground from '../components/MetalforgeBackground';
 import { useSession } from '../state/SessionContext';
 import { useJoinedGroups } from '../state/useJoinedGroups';
+import { getCachedMyJoinedGroups } from '../api/services/GroupService';
 import GroupLoadError from '../components/GroupLoadError';
-import Animated, { FadeIn, ZoomIn } from 'react-native-reanimated';
+import Animated, { ZoomIn } from 'react-native-reanimated';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RoleSelect'>;
-
-// Keep Android's opaque fallback fills; iOS renders the native glass tile.
-const IS_ANDROID = Platform.OS === 'android';
-const JOIN_FILL = IS_ANDROID ? '#1c2432' : 'rgba(255,255,255,0.08)';
 
 const appVersion =
   Constants.expoConfig?.version ??
@@ -45,13 +40,14 @@ export default function RoleSelectScreen({ navigation }: Props) {
   const { t } = useTranslation();
   const accent = colors.accent;
   const { user, signOut } = useSession();
+  const actorId = user?.id;
 
   // Paint from in-memory cache immediately; refresh in background without
   // waiting for the full (profiles) path.
   const { groups: joinedGroups, loading: groupsLoading, error: groupsError, retry } = useJoinedGroups(user?.id ?? null, false);
-  const showMyTeams = joinedGroups.length > 0;
-  // Keep the far gap reserved while loading so the CTA doesn't "pop" closer then jump away.
-  const reserveMyTeamsSlot = !!user && (groupsLoading || showMyTeams);
+  useFocusEffect(useCallback(() => {
+    if (actorId && getCachedMyJoinedGroups(actorId) === null) retry();
+  }, [actorId, retry]));
 
   function startSignOut(): void {
     void runUiAction(
@@ -82,20 +78,6 @@ export default function RoleSelectScreen({ navigation }: Props) {
     <View style={styles.fill}>
       <MetalforgeBackground active={isFocused} />
       <View style={[styles.leftChrome, { top: insets.top + 8 }]}>
-        {navigation.canGoBack() ? (
-          <NativeGlassButton
-            onPress={() => navigation.goBack()}
-            systemImage="chevron.left"
-            width={45}
-            height={45}
-            imageSize={19.2}
-            iconOffset={{ x: 1.16 }}
-            shape="capsule"
-            variant="glass"
-            accessibilityLabel={t('common.back')}
-            style={styles.back}
-          />
-        ) : null}
         <LanguagePicker variant="menu" />
       </View>
       <NativeGlassButton
@@ -166,25 +148,15 @@ export default function RoleSelectScreen({ navigation }: Props) {
             />
           </View>
           {groupsError ? <GroupLoadError error={groupsError} loading={groupsLoading} retry={retry} color={accent} /> : null}
-          {reserveMyTeamsSlot && (
-            <>
-              <View style={styles.myTeamsSpacer} />
-              {showMyTeams ? (
-                <Animated.View entering={FadeIn.duration(400)}>
-                  <NativeTeamsButton
-                    label={t('role.myTeams')}
-                    count={joinedGroups.length || 3}
-                    onPress={() => { lightTap(); navigation.navigate('MyTeams', { initialGroups: joinedGroups }); }}
-                    accessibilityLabel={t('role.myTeams', { count: joinedGroups.length || 3 })}
-                    testID="role-my-teams"
-                    style={styles.ctaMyTeams}
-                  />
-                </Animated.View>
-              ) : (
-                <View style={styles.myTeamsSlot}>{groupsLoading ? <ActivityIndicator color={accent} /> : null}</View>
-              )}
-            </>
-          )}
+          <View style={styles.myTeamsSpacer} />
+          <NativeTeamsButton
+            label={t('role.myTeams')}
+            count={joinedGroups.length}
+            onPress={() => { lightTap(); navigation.navigate('MyTeams'); }}
+            accessibilityLabel={t('role.myTeams')}
+            testID="role-my-teams"
+            style={styles.ctaMyTeams}
+          />
 
         </View>
 
@@ -204,10 +176,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     zIndex: 10,
-  },
-  back: {
-    width: 45,
-    height: 45,
   },
   logout: {
     position: 'absolute',
@@ -263,11 +231,6 @@ const styles = StyleSheet.create({
   },
   /** Fixed gap between primary tiles and the my-teams CTA. */
   myTeamsSpacer: { height: 64 },
-  ctaMyTeams: { height: 56, paddingHorizontal: 30, borderRadius: 28, alignSelf: 'center' },
-  /** Same height as ctaMyTeams so load → show keeps the far gap stable. */
-  myTeamsSlot: {
-    minHeight: 56,
-    alignSelf: 'stretch',
-  },
+  ctaMyTeams: { height: 56, alignSelf: 'center' },
   bottomFlex: { flex: 1 },
 });

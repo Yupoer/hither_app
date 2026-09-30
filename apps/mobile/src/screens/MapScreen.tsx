@@ -820,8 +820,9 @@ export default function MapScreen({ route, navigation }: Props) {
   optimisticDestinationsRef.current = optimisticDestinations;
   useEffect(() => {
     if (!optimisticDestinations || routeDraftDirtyRef.current.destinations) return;
+    const remoteById = new Map(rawDestinations.map(item => [item.id, item]));
     if (optimisticDestinations.length === rawDestinations.length && optimisticDestinations.every(d => {
-      const remote = rawDestinations.find(item => item.id === d.id);
+      const remote = remoteById.get(d.id);
       return remote && remote.order === d.order && remote.day === d.day && remote.closedAt === d.closedAt;
     })) setOptimisticDestinations(null);
   }, [rawDestinations, optimisticDestinations]);
@@ -1318,11 +1319,15 @@ export default function MapScreen({ route, navigation }: Props) {
       viewerId: user?.id,
       isGroupLeader: !!isLeader,
     });
+    const memberNames = new Map(members.map(member => [member.userId, member.name]));
+    const pendingArrivalKeys = new Set(arrivalOperations
+      .filter(op => op.payload.actorId === user?.id && op.status !== 'acked' && op.status !== 'conflict')
+      .map(op => `${op.entityId}:${op.payload.userId}`));
     const named = projected.map((item) => ({
       ...item,
-      userName: members.find((member) => member.userId === item.userId)?.name,
+      userName: item.userId ? memberNames.get(item.userId) : undefined,
       status: item.status ?? ('arrived' as const),
-      pendingSync: arrivalOperations.some(op => op.entityId === item.destinationId && op.payload.userId === item.userId && op.payload.actorId === user?.id && op.status !== 'acked' && op.status !== 'conflict'),
+      pendingSync: pendingArrivalKeys.has(`${item.destinationId}:${item.userId}`),
     }));
     const merged = mergeHistoryWithPastStops(named, allScopedDestinations, {
       departureDate: optimisticDepartureDate ?? group?.departureDate,
@@ -5171,7 +5176,7 @@ export default function MapScreen({ route, navigation }: Props) {
           async (token) => {
             logEvent('group_leave', { groupId, isLeader });
             if (groupId) {
-              await leaveGroups([groupId]).catch(() => undefined);
+              await leaveGroups([groupId]);
               if (!token.isCurrent()) return;
               await clearLiveActivities({ groupIds: [groupId] });
             } else {

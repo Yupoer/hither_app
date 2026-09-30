@@ -27,6 +27,7 @@ import { accentMix, glass } from '../glass';
 import { logEvent, logError } from '../utils/activityLog';
 import { runUiAction, type UiActionToken } from '../utils/uiAction';
 import SafePressable from '../components/SafePressable';
+import NativeGlassButton from '../components/NativeGlassButton';
 import { mediumTap } from '../utils/haptics';
 import { classifyAnonymousAccessError } from '../anonymousAccess';
 import { getOperationErrorMessage } from '../utils/operationError';
@@ -158,14 +159,16 @@ export default function AuthScreen({ navigation, route }: Props) {
                 unconditional goBack() throws "GO_BACK was not handled". */}
             <View style={styles.topChrome}>
               {navigation.canGoBack() ? (
-                <Pressable
+                <NativeGlassButton
                   onPress={() => navigation.goBack()}
-                  accessibilityRole="button"
-                  accessibilityLabel="Back"
-                  style={styles.back}
-                >
-                  <Ionicons name="chevron-back" size={22} color="rgba(255,255,255,0.7)" />
-                </Pressable>
+                  accessibilityLabel={t('common.back')}
+                  systemImage="chevron.left"
+                  shape="capsule"
+                  variant="glass"
+                  width={45}
+                  height={45}
+                  imageSize={19.2}
+                />
               ) : (
                 <View style={styles.backSpacer} />
               )}
@@ -387,16 +390,6 @@ const makeStyles = (accent: string) =>
       justifyContent: 'space-between',
     },
     backSpacer: { width: 44, height: 44 },
-    back: {
-      width: 44,
-      height: 44,
-      borderRadius: 22,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: 'rgba(255,255,255,0.08)',
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: 'rgba(255,255,255,0.18)',
-    },
     title: { fontSize: 34, fontWeight: '700', color: '#fff', marginTop: 24, marginBottom: 6 },
     label: {
       fontSize: 12,

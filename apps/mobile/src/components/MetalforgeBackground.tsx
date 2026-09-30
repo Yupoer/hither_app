@@ -138,7 +138,7 @@ export default function MetalforgeBackground({ active = true }: MetalforgeBackgr
   const reducedMotion = useReducedMotion();
   const [appActive, setAppActive] = useState(AppState.currentState === 'active');
   const { width, height } = useWindowDimensions();
-  const frozen = useSharedValue(0);
+  const frozen = useSharedValue(globalElapsedTime.value);
   const isActive = active && appActive && !reducedMotion;
 
   useEffect(() => {
@@ -148,15 +148,20 @@ export default function MetalforgeBackground({ active = true }: MetalforgeBackgr
     return () => subscription.remove();
   }, []);
 
-  useFrameCallback((frameInfo) => {
-    if (!isActive) return;
+  const animationClock = useFrameCallback((frameInfo) => {
     if (frameInfo.timestamp !== undefined && frameInfo.timestamp > 0) {
       if (globalStartTime.value < 0) {
         globalStartTime.value = frameInfo.timestamp;
       }
       globalElapsedTime.value = (frameInfo.timestamp - globalStartTime.value) / 1000;
+      frozen.value = globalElapsedTime.value;
     }
-  });
+  }, false);
+
+  useEffect(() => {
+    animationClock.setActive(isActive);
+    return () => animationClock.setActive(false);
+  }, [animationClock, isActive]);
 
   // When frozen (reduced motion), hold a static frame
   useEffect(() => {
@@ -167,7 +172,7 @@ export default function MetalforgeBackground({ active = true }: MetalforgeBackgr
 
   const uniforms = useDerivedValue(() => ({
     size: [width, height],
-    time: reducedMotion ? frozen.value : globalElapsedTime.value,
+    time: frozen.value,
     speed: METALFORGE_PARAMETERS.speed,
     flow: METALFORGE_PARAMETERS.flow,
     grain: METALFORGE_PARAMETERS.grain,

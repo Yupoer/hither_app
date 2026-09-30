@@ -376,9 +376,9 @@
     {
       "parent": 203,
       "child": 204,
-      "acceptance": "A1 RoleSelect top-left menu trigger shows the current language plus a chevron. When canGoBack(), left cluster is [Back][menu] on one row; when stack root, menu occupies the left inset. Sign-out stays top-right.",
+      "acceptance": "A1 RoleSelect top-left menu trigger shows the current language plus a chevron and remains stable during outgoing navigation. The create/join Auth screen owns its native back button. Sign-out stays top-right.",
       "testFile": "languagePickerContract.test.ts",
-      "testNamePattern": "places RoleSelect language menu on the left cluster next to Back"
+      "testNamePattern": "keeps RoleSelect language menu stable during outgoing navigation"
     },
     {
       "parent": 203,

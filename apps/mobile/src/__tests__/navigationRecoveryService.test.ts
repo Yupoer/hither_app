@@ -31,11 +31,15 @@ test('recovery reads the proper subgroup and honors membership, privacy and clos
   expect(mockFilters).toContainEqual(['navigation_sessions', 'scope_subgroup_id', null]);
   await expect(setLocationSharingEnabled(false, 'another')).rejects.toThrow('location_privacy_account_changed');
   await setLocationSharingEnabled(false, 'me'); expect(await getLocationSharingEnabled()).toBe(false);
+  mockFilters.length = 0;
   expect((await getBackgroundNavigationContext('g')).session).toBeNull();
+  expect(mockFilters.some(filter => filter[0] === 'navigation_sessions')).toBe(false);
   await setLocationSharingEnabled(true, 'me'); mockRows.itinerary_items.closed_at = 'closed';
   expect((await getBackgroundNavigationContext('g')).target).toBeNull();
   mockRows.memberships = null;
+  mockFilters.length = 0;
   expect((await getBackgroundNavigationContext('g')).hasMembership).toBe(false);
+  expect(mockFilters.some(filter => filter[0] === 'navigation_sessions')).toBe(false);
   mockRows.navigation_member_states = member;
   expect(await getMyNavigationMemberState('s')).toMatchObject({ userId: 'me' });
   mockRows.navigation_member_states = [member];

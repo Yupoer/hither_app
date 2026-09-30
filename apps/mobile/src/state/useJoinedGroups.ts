@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type SetStateAction } from 'react';
-import { getCachedMyJoinedGroups, getMyJoinedGroups, type JoinedGroupInfo } from '../api/services/GroupService';
+import { getCachedMyJoinedGroups, getMyJoinedGroups, subscribeMyJoinedGroups, type JoinedGroupInfo } from '../api/services/GroupService';
 import { classifyOperationError, type OperationErrorClassification } from '../utils/operationError';
 
 /** Account-scoped list; a failed refresh never means that memberships vanished. */
@@ -14,6 +14,11 @@ export function useJoinedGroups(actorId: string | null, includeProfiles = true) 
   const actorRef = useRef(actorId);
   actorRef.current = actorId;
   const flight = useRef(false);
+  useEffect(() => subscribeMyJoinedGroups((changedActor, groups) => {
+    if (changedActor !== actorRef.current) return;
+    setResult(previous => previous.actorId === changedActor
+      ? { ...previous, groups, error: null } : previous);
+  }), []);
   useEffect(() => {
     let cancelled = false;
     flight.current = !!actorId;

@@ -4,23 +4,24 @@ import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } fro
 export type NativeTeamsButtonProps = {
   label: string;
   count: number;
+  width?: number;
   onPress: () => void;
   accessibilityLabel: string;
   testID?: string;
   style?: StyleProp<ViewStyle>;
 };
 
-export default function NativeTeamsButton({ label, count, onPress, accessibilityLabel, testID, style }: NativeTeamsButtonProps) {
+export default function NativeTeamsButton({ label, count, width, onPress, accessibilityLabel, testID, style }: NativeTeamsButtonProps) {
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       testID={testID}
-      style={({ pressed }) => [styles.button, style, pressed && styles.pressed]}
+      style={({ pressed }) => [styles.button, width != null && { width }, style, pressed && styles.pressed]}
     >
       <Text style={styles.label}>{label}</Text>
-      <View style={styles.badge}><Text style={styles.badgeText}>{count}</Text></View>
+      {count > 0 ? <View style={styles.badge}><Text style={styles.badgeText}>{count}</Text></View> : null}
     </Pressable>
   );
 }

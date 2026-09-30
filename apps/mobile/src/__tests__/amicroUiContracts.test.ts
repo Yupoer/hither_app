@@ -82,8 +82,10 @@ describe('Amicro native animation contracts', () => {
     expect(app).toContain('testID="splash-bouncing-dots"');
     expect(app).toContain('bottom: \'33%\'');
     expect(app).toContain('<BouncingDots color={colors.accent} />');
-    expect(button).toContain('withDelay');
+    expect(button).toContain('loadingDotOffset(phase.value, 0)');
+    expect(button).toContain('loadingDotOffset(phase.value, 1)');
+    expect(button).toContain('loadingDotOffset(phase.value, 2)');
     expect(button).toContain('withRepeat');
-    expect(button).toContain('withTiming(-20');
+    expect(button).toContain('Easing.linear');
   });
 });

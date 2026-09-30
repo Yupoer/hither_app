@@ -196,8 +196,8 @@ export function useGroupState(
         setOpenOperations(own);
         // Accepted/conflicted intent must converge to authoritative data, not
         // wait five minutes for the fallback poll or retain a local draft.
-        if (previous.some(op => op.status !== 'conflict'
-          && !own.some(next => next.id === op.id && next.status !== 'conflict'))) {
+        const remainingIds = new Set(own.filter(op => op.status !== 'conflict').map(op => op.id));
+        if (previous.some(op => op.status !== 'conflict' && !remainingIds.has(op.id))) {
           void loadRef.current('itinerary_mutation');
         }
       }

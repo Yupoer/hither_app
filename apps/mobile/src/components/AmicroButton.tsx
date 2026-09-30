@@ -10,16 +10,16 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import Animated, {
   cancelAnimation,
+  Easing,
   interpolate,
   runOnJS,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
-  withDelay,
   withRepeat,
-  withSequence,
   withTiming,
 } from 'react-native-reanimated';
+import { loadingDotOffset } from '../utils/loadingDots';
 
 // Adapted from https://github.com/Subhan-code/Amicro--Micro-transitions-
 // MIT licensed by Syed Subhan. This native version uses the app's existing
@@ -211,38 +211,23 @@ export function AmicroButton({
 
 export function BouncingDots({ color }: { color: string }) {
   const reducedMotion = useReducedMotion();
-  const first = useSharedValue(0);
-  const second = useSharedValue(0);
-  const third = useSharedValue(0);
+  const phase = useSharedValue(0);
 
   useEffect(() => {
-    const values = [first, second, third];
-    values.forEach((value, index) => {
-      value.value = reducedMotion
-        ? 0
-        : withDelay(
-            index * 100,
-            withRepeat(
-              withSequence(
-                withTiming(-20, { duration: 400 }),
-                withTiming(0, { duration: 400 }),
-              ),
-              -1,
-              false,
-            ),
-          );
-    });
-    return () => values.forEach((value) => cancelAnimation(value));
-  }, [first, reducedMotion, second, third]);
+    phase.value = reducedMotion ? 0 : withRepeat(withTiming(1, {
+      duration: 900, easing: Easing.linear,
+    }), -1, false);
+    return () => cancelAnimation(phase);
+  }, [phase, reducedMotion]);
 
   const firstStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: first.value }, { scaleY: interpolate(first.value, [-20, 0], [1.1, 0.8]) }],
+    transform: [{ translateY: reducedMotion ? 0 : loadingDotOffset(phase.value, 0) }],
   }));
   const secondStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: second.value }, { scaleY: interpolate(second.value, [-20, 0], [1.1, 0.8]) }],
+    transform: [{ translateY: reducedMotion ? 0 : loadingDotOffset(phase.value, 1) }],
   }));
   const thirdStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: third.value }, { scaleY: interpolate(third.value, [-20, 0], [1.1, 0.8]) }],
+    transform: [{ translateY: reducedMotion ? 0 : loadingDotOffset(phase.value, 2) }],
   }));
 
   return (

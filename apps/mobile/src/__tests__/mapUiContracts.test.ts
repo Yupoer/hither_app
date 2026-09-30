@@ -676,25 +676,27 @@ describe('map UI placement contracts', () => {
     const contentBlock = roleSelect.match(/content:\s*\{[^}]+\}/);
     expect(contentBlock?.[0] ?? '').not.toContain("justifyContent: 'center'");
     expect(roleSelect).toContain('bottomFlex');
-    expect(roleSelect).toContain('myTeamsSlot');
+    expect(roleSelect).toContain('<NativeTeamsButton');
+    expect(roleSelect).not.toContain('reserveMyTeamsSlot');
+    expect(roleSelect).toContain('count={joinedGroups.length}');
     // Instant paint: memory cache + lite fetch (skip profiles on this screen).
     expect(roleSelect).toContain('useJoinedGroups(user?.id ?? null, false)');
     const joinedGroupsHook = readFileSync(join(__dirname, '../state/useJoinedGroups.ts'), 'utf8');
     expect(joinedGroupsHook).toContain('getCachedMyJoinedGroups');
   });
 
-  it('keeps create/join static and only fades in My Teams', () => {
+  it('keeps create/join and the always-visible My Teams button static', () => {
     expect(roleSelect).not.toContain('SlideInDown');
     // Create/join action row is a plain View (no entering animation).
     expect(roleSelect).toContain('<View style={styles.actionRow}>');
-    expect(roleSelect).toContain('entering={FadeIn.duration(400)}');
+    expect(roleSelect).not.toContain('entering={FadeIn.duration(400)}');
     expect(roleSelect).toContain("t('role.myTeams'");
   });
 
   it('avoids Android elevation black-frame on translucent rounded role tiles', () => {
     // Opaque Android fills + elevation:0 on rounded action chrome.
-    expect(roleSelect).toContain("Platform.OS === 'android'");
-    expect(roleSelect).toContain('JOIN_FILL');
+    const roleButton = readFileSync(join(__dirname, '../components/NativeRoleActionButton.tsx'), 'utf8');
+    expect(roleButton).toContain('backgroundColor');
     expect(roleSelect).toMatch(/actionTile:\s*\{[\s\S]*?elevation:\s*0/);
     expect(roleSelect).toMatch(/actionTile:\s*\{[\s\S]*?overflow:\s*'hidden'/);
   });

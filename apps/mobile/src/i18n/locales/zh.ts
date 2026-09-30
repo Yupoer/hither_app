@@ -1088,6 +1088,8 @@ export const zh = {
   'teams.title': '我的隊伍',
   'teams.clear': '清空',
   'teams.clearAllTitle': '清空隊伍',
+  'teams.create': '創建',
+  'teams.join': '加入',
   'teams.clearAllMsg': '確定要離開所有隊伍嗎？',
   'teams.clearAllConfirm': '確定清空',
   'teams.leaveTitle': '離開隊伍',

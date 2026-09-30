@@ -40,9 +40,9 @@ describe('language picker placement contract', () => {
     expect(roleSelect).not.toContain('confirmDeleteAccount');
   });
 
-  it('places RoleSelect language menu on the left cluster next to Back', () => {
+  it('keeps RoleSelect language menu stable during outgoing navigation', () => {
     expect(roleSelect).toContain('variant="menu"');
-    expect(roleSelect).toMatch(/canGoBack\(\)/);
+    expect(roleSelect).not.toMatch(/canGoBack\(\)/);
     expect(roleSelect).toContain('leftChrome');
     expect(roleSelect).toMatch(/left:\s*20/);
     expect(roleSelect).toMatch(/flexDirection:\s*'row'/);

@@ -1077,6 +1077,8 @@ export const en: Record<keyof ZhDict, string> = {
   'teams.title': 'My teams',
   'teams.clear': 'Clear',
   'teams.clearAllTitle': 'Leave all teams',
+  'teams.create': 'Create',
+  'teams.join': 'Join',
   'teams.clearAllMsg': 'Leave every team you joined?',
   'teams.clearAllConfirm': 'Leave all',
   'teams.leaveTitle': 'Leave team',

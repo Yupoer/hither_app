@@ -1,11 +1,17 @@
 import React from 'react';
 const mockLoad = jest.fn();
+const mockListeners = new Set<(actor: string, groups: any[]) => void>();
 jest.mock('../api/services/GroupService', () => ({
   getMyJoinedGroups: (...args: unknown[]) => mockLoad(...args),
   getCachedMyJoinedGroups: () => null,
+  subscribeMyJoinedGroups: (listener: (actor: string, groups: any[]) => void) => {
+    mockListeners.add(listener);
+    return () => mockListeners.delete(listener);
+  },
 }));
 import { useJoinedGroups } from '../state/useJoinedGroups';
 const { act, create } = require('react-test-renderer');
+(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('account-scoped joined groups recovery', () => {
   beforeEach(() => { mockLoad.mockReset(); });
@@ -33,5 +39,25 @@ describe('account-scoped joined groups recovery', () => {
     expect(api.groups).toEqual([{ group: { id: 'b' } }]);
     expect(api.error).toBeNull();
     await act(async () => { root.unmount(); });
+  });
+  it('updates two mounted screens on leave without polling or leaking another account', async () => {
+    mockLoad.mockResolvedValue([{ group: { id: 'g' } }]);
+    const screens: Record<string, ReturnType<typeof useJoinedGroups>> = {};
+    function Harness({ id, actor }: { id: string; actor: string }) {
+      screens[id] = useJoinedGroups(actor); return null;
+    }
+    let root: any;
+    await act(async () => { root = create(React.createElement(React.Fragment, null,
+      React.createElement(Harness, { id: 'home', actor: 'a' }),
+      React.createElement(Harness, { id: 'teams', actor: 'a' }),
+      React.createElement(Harness, { id: 'other', actor: 'b' }),
+    )); });
+    await act(async () => { for (const listener of mockListeners) listener('a', []); });
+    expect(screens.home.groups).toEqual([]);
+    expect(screens.teams.groups).toEqual([]);
+    expect(screens.other.groups).toHaveLength(1);
+    expect(mockLoad).toHaveBeenCalledTimes(3);
+    await act(async () => { root.unmount(); });
+    expect(mockListeners.size).toBe(0);
   });
 });

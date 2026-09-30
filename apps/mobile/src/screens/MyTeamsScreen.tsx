@@ -20,6 +20,7 @@ import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanim
 import MetalforgeBackground from '../components/MetalforgeBackground';
 import NativeGlassButton from '../components/NativeGlassButton';
 import NativeTeamCard from '../components/NativeTeamCard';
+import NativeTeamsButton from '../components/NativeTeamsButton';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'MyTeams'>;
 
@@ -30,6 +31,7 @@ export default function MyTeamsScreen({ navigation }: Props) {
   const availableRowWidth = Math.max(0, windowWidth - 100);
   const enterBtnWidth = Math.round(availableRowWidth * 0.72);
   const leaveBtnWidth = availableRowWidth - enterBtnWidth;
+  const emptyActionWidth = Math.max(0, (windowWidth - 54) / 2);
   const { colors } = useTheme();
   const accent = colors.accent;
   const { user, setMembership, updateNickname } = useSession();
@@ -167,6 +169,7 @@ export default function MyTeamsScreen({ navigation }: Props) {
           shape="capsule"
           variant="glass"
           onPress={handleClearAllGroups}
+          disabled={isLoading || joinedGroups.length === 0}
           accessibilityLabel={t('teams.clear')}
           foregroundColor="#ff453a"
           width={60}
@@ -176,11 +179,21 @@ export default function MyTeamsScreen({ navigation }: Props) {
         />
       </View>
 
-      <ScrollView contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 40 }]}>
+      <ScrollView contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 40 }, joinedGroups.length === 0 && styles.emptyList]}>
         {groupsError ? <GroupLoadError error={groupsError} loading={isLoading} retry={retry} color={accent} /> : null}
         {isLoading && joinedGroups.length === 0 ? (
           <View style={{ paddingTop: 60, alignItems: 'center' }}>
             <ActivityIndicator size="large" color={accent} />
+          </View>
+        ) : null}
+        {!isLoading && !groupsError && joinedGroups.length === 0 ? (
+          <View style={styles.emptyActions}>
+            <NativeTeamsButton label={t('teams.create')} count={0} width={emptyActionWidth}
+              accessibilityLabel={t('teams.create')} testID="teams-empty-create"
+              onPress={() => { lightTap(); navigation.replace('Auth', { role: 'leader' }); }} />
+            <NativeTeamsButton label={t('teams.join')} count={0} width={emptyActionWidth}
+              accessibilityLabel={t('teams.join')} testID="teams-empty-join"
+              onPress={() => { lightTap(); navigation.replace('Auth', { role: 'follower' }); }} />
           </View>
         ) : null}
         {joinedGroups.map((info) => {
@@ -197,7 +210,7 @@ export default function MyTeamsScreen({ navigation }: Props) {
           const isExpanded = expandedGroupId === info.group.id;
           
           const detailAvatars = [];
-          for (let i = 0; i < totalMembers; i++) {
+          for (let i = 0; isExpanded && i < totalMembers; i++) {
             if (i < info.memberProfiles.length) {
               detailAvatars.push({ ...info.memberProfiles[i], isPlaceholder: false });
             } else {
@@ -325,6 +338,8 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   teamCard: { width: '100%', minHeight: 84 },
+  emptyList: { flexGrow: 1, justifyContent: 'center' },
+  emptyActions: { flexDirection: 'row', justifyContent: 'center', gap: 14 },
   expandedSection: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: 'rgba(255,255,255,0.1)',

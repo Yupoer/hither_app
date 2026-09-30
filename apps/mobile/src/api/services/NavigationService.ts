@@ -219,10 +219,11 @@ export async function getBackgroundNavigationContext(groupId: string, scopeSubgr
   const resolvedScope = scopeSubgroupId === undefined
     ? (member?.subgroup_id ?? null)
     : scopeSubgroupId;
-  const session = await getActiveNavigationSession(groupId, resolvedScope);
   const result = { actorId, hasMembership: Boolean(member), sharingEnabled: sharingEnabled !== false,
     session: null as NavigationSession | null, target: null as Destination | null };
-  if (!member || member.solo || !session || sharingEnabled === false) return result;
+  if (!member || member.solo || sharingEnabled === false) return result;
+  const session = await getActiveNavigationSession(groupId, resolvedScope);
+  if (!session) return result;
   const { data, error } = await supabase.from('itinerary_items')
     .select('id, title, latitude, longitude, position, day, subgroup_id, closed_at')
     .eq('group_id', groupId).eq('id', session.destinationId).maybeSingle();

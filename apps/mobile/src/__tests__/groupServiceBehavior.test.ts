@@ -46,6 +46,7 @@ import {
   joinGroup,
   kickGroupMember,
   leaveGroups,
+  subscribeMyJoinedGroups,
   mapGroup,
   mapMember,
   mapSubgroup,
@@ -300,12 +301,47 @@ describe('GroupService mutations and demo branches', () => {
     setTables({ memberships: { data: [{ group_id: 'g-1', role: 'leader' }], error: null }, groups: { data: [row()], error: null } });
     await getMyJoinedGroups({ includeProfiles: false });
     await expect(leaveGroups([])).resolves.toBeUndefined();
+    setTables({ memberships: { data: [], error: null } });
     await expect(leaveGroups(['g-1'])).resolves.toBeUndefined();
     expect(getCachedMyJoinedGroups('user-1')).toEqual([]);
 
     invalidateMyJoinedGroupsCache();
     await expect(leaveGroups(['g-2'])).resolves.toBeUndefined();
     expect(getCachedMyJoinedGroups('user-1')).toBeNull();
+  });
+
+  it('never reports a leave as successful when memberships remain or verification fails', async () => {
+    setTables({ memberships: { data: [{ group_id: 'g-1' }], error: null } });
+    await expect(leaveGroups(['g-1'])).rejects.toThrow('Team leave was not confirmed');
+    let call = 0;
+    mockedSupabase.from.mockImplementation(() => query(++call === 1
+      ? { data: null, error: null }
+      : { data: null, error: { message: 'verification offline' } }));
+    await expect(leaveGroups(['g-1'])).rejects.toMatchObject({ message: 'verification offline' });
+  });
+
+  it('publishes confirmed removals and fences a read started before leave', async () => {
+    setTables({ memberships: { data: [{ group_id: 'g-1', role: 'leader', user_id: 'user-1' }], error: null }, groups: { data: [row()], error: null } });
+    await getMyJoinedGroups({ includeProfiles: false });
+    const listener = jest.fn();
+    const stop = subscribeMyJoinedGroups(listener);
+    let resolveMemberships!: (result: unknown) => void;
+    mockedSupabase.from.mockImplementationOnce(() => {
+      const pending = query({ data: [], error: null });
+      pending.then = (resolve: (value: unknown) => unknown) => new Promise(r => { resolveMemberships = r; }).then(resolve);
+      return pending;
+    });
+    const read = getMyJoinedGroups({ includeProfiles: false });
+    for (let tick = 0; tick < 10 && !resolveMemberships; tick++) await Promise.resolve();
+    expect(resolveMemberships).toBeDefined();
+    setTables({ memberships: { data: [], error: null }, groups: { data: [row()], error: null } });
+    await leaveGroups(['g-1']);
+    resolveMemberships({ data: [{ group_id: 'g-1', role: 'leader' }], error: null });
+    await expect(read).resolves.toEqual([]);
+    expect(getCachedMyJoinedGroups('user-1')).toEqual([]);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith('user-1', []);
+    stop();
   });
 
   it('kicks members only through the atomic RPC and validates its returned code', async () => {
