@@ -1,5 +1,9 @@
-import type { Destination } from '../types';
-export interface ItineraryRollback { before: Destination[]; after: Destination[]; }
+import type { Destination, Group, GroupState } from '../types';
+import type { ActiveGatheringState } from '../types/coreData';
+export interface ItineraryRollback { before: Destination[]; after: Destination[];
+  beforeActiveGathering?: ActiveGatheringState; afterActiveGathering?: ActiveGatheringState;
+  beforeGroup?: Group; afterGroup?: Group;
+  beforeDailyAccommodations?: GroupState['dailyAccommodations']; afterDailyAccommodations?: GroupState['dailyAccommodations']; }
 export function operationWirePayload(payload: Record<string, unknown>): Record<string, unknown> {
   const { _localRollback, ...wire } = payload;
   return wire;
@@ -26,4 +30,24 @@ export function rollbackItinerary(current: Destination[], rollback: ItineraryRol
     if (!after.has(item.id) && !result.some(next => next.id === item.id)) result.push(item);
   }
   return result.sort((a, b) => (a.day ?? 0) - (b.day ?? 0) || a.order - b.order);
+}
+
+/** Restore the rejected fields only while they still match its local result. */
+export function rollbackTripAndStays(state: Pick<GroupState, 'group' | 'dailyAccommodations'>, rollback: ItineraryRollback): Pick<GroupState, 'group' | 'dailyAccommodations'> {
+  const group = { ...state.group };
+  for (const field of ['tripDays', 'departureDate', 'accommodationAutoAdd'] as const) {
+    if (rollback.beforeGroup && rollback.afterGroup && group[field] === rollback.afterGroup[field]) {
+      Object.assign(group, { [field]: rollback.beforeGroup[field] });
+    }
+  }
+  if (!rollback.beforeDailyAccommodations || !rollback.afterDailyAccommodations) return { ...state, group };
+  const before = new Map(rollback.beforeDailyAccommodations.map(stay => [stay.stayDate, stay]));
+  const after = new Map(rollback.afterDailyAccommodations.map(stay => [stay.stayDate, stay]));
+  const current = new Map((state.dailyAccommodations ?? []).map(stay => [stay.stayDate, stay]));
+  for (const date of new Set([...before.keys(), ...after.keys()])) {
+    if (JSON.stringify(current.get(date)) !== JSON.stringify(after.get(date))) continue;
+    const old = before.get(date);
+    if (old) current.set(date, old); else current.delete(date);
+  }
+  return { group, dailyAccommodations: [...current.values()].sort((a, b) => a.stayDate.localeCompare(b.stayDate)) };
 }

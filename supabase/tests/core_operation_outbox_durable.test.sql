@@ -119,6 +119,10 @@ create temporary table durable_test_versions(
   label text primary key,
   version integer not null
 );
+create temporary table durable_test_results(
+  label text primary key,
+  body jsonb not null
+);
 insert into durable_test_versions(label, version)
 select 'before_merge', coalesce((
   select entity_version from public.core_entity_versions
@@ -172,11 +176,10 @@ select ok(
   'durable end does not complete the destination'
 );
 
--- Same provider identity merges only in the same open scope, even when the
--- client base version is stale. The local UUID is retained as an alias, the
--- remote row is not overwritten, and the authoritative version is returned.
-with result as materialized (
-  select public.apply_core_operation_v2(
+-- v2 is now the v3 compatibility wrapper. Distinct UUIDs preserve repeat visits
+-- even for the same provider; stale base versions do not discard valid intent.
+insert into durable_test_results(label, body)
+select 'same_provider', public.apply_core_operation_v2(
     'eeeeeeee-eeee-4eee-8eee-eeeeeeee0103',
     'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
     '11111111-1111-4111-8111-111111111111',
@@ -188,29 +191,27 @@ with result as materialized (
       'day', 1, 'kind', 'stop', 'providerPlaceId', 'provider-open'
     ),
     3, array['eeeeeeee-eeee-4eee-8eee-eeeeeeee0102'::uuid]
-  ) as body
-)
+  );
 select ok(
-  (select body->'effects'->'destinationIdAliases'->>'eeeeeeee-eeee-4eee-8eee-eeeeeeee0301' from result)
-    = 'eeeeeeee-eeee-4eee-8eee-eeeeeeee0001'
-    and (select (body->>'entity_version')::integer from result)
-      = (select version from durable_test_versions where label = 'before_merge')
+  (select body->>'status' from durable_test_results where label = 'same_provider') = 'accepted'
+    and (select (body->>'entity_version')::integer from durable_test_results where label = 'same_provider')
+      = (select version + 1 from durable_test_versions where label = 'before_merge')
     and (select entity_version from public.core_entity_versions
          where group_id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
            and entity_type = 'itinerary'
            and entity_id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee')
-      = (select version from durable_test_versions where label = 'before_merge'),
-  'stale same-provider merge accepts with the authoritative itinerary version'
+      = (select version + 1 from durable_test_versions where label = 'before_merge'),
+  'stale same-provider add accepts distinct UUID intent with one authoritative version'
 );
 select is(
   (select count(*)::integer from public.itinerary_items
    where id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeee0301'),
-  0, 'merged local destination is not inserted as a second server row'
+  1, 'distinct local destination UUID is inserted even for the same provider'
 );
 select is(
   (select title from public.itinerary_items
    where id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeee0001'),
-  'Provider place', 'same-provider merge preserves the remote canonical row'
+  'Provider place', 'same-provider repeat visit preserves the existing remote row'
 );
 select is(
   (select (state->'destinations'->0->'coordinates'->>'latitude')::double precision
@@ -240,7 +241,7 @@ select is(
 select is(
   (select count(*)::integer from public.itinerary_items
    where id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeee0401'),
-  1, 'completed place is never an automatic merge candidate'
+  1, 'completed place revisit receives its own destination UUID'
 );
 
 insert into durable_test_versions(label, version)
@@ -356,7 +357,8 @@ select is(
   2, 'same sequence values do not collapse distinct operation UUIDs'
 );
 
--- Actor isolation and stale expected-version are terminal conflicts.
+-- Actor isolation remains terminal. Valid itinerary intent rebases against the
+-- current version; delete only the disposable repeat-visit fixture here.
 select set_config('request.jwt.claim.sub', '22222222-2222-4222-8222-222222222222', true);
 select is(
   public.apply_core_operation_v2(
@@ -371,17 +373,21 @@ select is(
   'unauthorized', 'follower cannot mutate leader-owned main itinerary'
 );
 select set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
-select is(
-  public.apply_core_operation_v2(
+insert into durable_test_results(label, body)
+select 'stale_delete', public.apply_core_operation_v2(
     'eeeeeeee-eeee-4eee-8eee-eeeeeeee0602',
     'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
     '11111111-1111-4111-8111-111111111111',
     'itinerary', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 0,
     'delete_destination',
-    jsonb_build_object('destinationId', 'eeeeeeee-eeee-4eee-8eee-eeeeeeee0001'),
+    jsonb_build_object('destinationId', 'eeeeeeee-eeee-4eee-8eee-eeeeeeee0301'),
     6, array['eeeeeeee-eeee-4eee-8eee-eeeeeeee0105'::uuid]
-  )->'conflict'->>'code',
-  'stale_version', 'stale expected version blocks later mutation'
+  );
+select ok(
+  (select body->>'status' from durable_test_results where label = 'stale_delete') = 'accepted'
+    and not exists (select 1 from public.itinerary_items where id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeee0301')
+    and exists (select 1 from public.itinerary_items where id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeee0001'),
+  'stale expected version accepts a valid delete without touching another destination'
 );
 
 -- Reorder authorization must use the authoritative scope leader helper for
@@ -613,7 +619,7 @@ select is(
     ),
     83, '{}'::uuid[]
   )->'conflict'->>'code',
-  'validation', 'old navigation session cannot arrive a different destination'
+  'session_mismatch', 'old navigation session cannot arrive a different destination'
 );
 insert into durable_test_versions(label, version)
 select 'before_arrival_completion', entity_version
@@ -632,7 +638,7 @@ select is(
     jsonb_build_object(
       'userId', '11111111-1111-4111-8111-111111111111',
       'navigationSessionId', (select id::text from durable_arrival_session),
-      'arrived', true
+      'arrived', true, 'arrivedAt', now(), 'occurredAt', now()
     ),
     84, '{}'::uuid[]
   )->>'status',
@@ -649,15 +655,43 @@ select is(
     jsonb_build_object(
       'userId', '22222222-2222-4222-8222-222222222222',
       'navigationSessionId', (select id::text from durable_arrival_session),
-      'arrived', true
+      'arrived', true, 'arrivedAt', now(), 'occurredAt', now()
     ),
     84, '{}'::uuid[]
   )->>'status',
   'accepted', 'follower arrival is accepted without an actor identity mismatch'
 );
 select set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
+-- Personal arrivals do not close the group journey. The leader's durable
+-- all-arrived operation validates the original session and commits closure.
+-- These arrival fixtures carry explicit timestamps, as the v3 projection
+-- retains absent arrivedAt as NULL and NULL does not count as an arrival.
+insert into durable_test_results(label, body)
+select 'all_arrived', public.apply_core_operation_v2(
+    'eeeeeeee-eeee-4eee-8eee-eeeeeeee0a04',
+    'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+    '11111111-1111-4111-8111-111111111111',
+    'itinerary', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 0,
+    'complete_destination',
+    jsonb_build_object('destinationId', 'eeeeeeee-eeee-4eee-8eee-eeeeeeee0001',
+      'sessionId', (select id::text from durable_arrival_session), 'reason', 'all_arrived'),
+    85, array['eeeeeeee-eeee-4eee-8eee-eeeeeeee0a02'::uuid, 'eeeeeeee-eeee-4eee-8eee-eeeeeeee0a03'::uuid]
+  );
 select ok(
-  (select closed_at is not null from public.itinerary_items
+  (select body->>'status' from durable_test_results where label = 'all_arrived') = 'accepted'
+    and (select count(*) = 2 and bool_and(m.user_id in (
+           '11111111-1111-4111-8111-111111111111'::uuid,
+           '22222222-2222-4222-8222-222222222222'::uuid))
+         from public.memberships m
+         join public.navigation_member_states n on n.user_id = m.user_id
+           and n.navigation_session_id = (select id from durable_arrival_session)
+         where m.group_id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
+           and m.subgroup_id is null and not coalesce(m.solo, false))
+    and (select count(*) = 2 from public.destination_arrivals
+         where destination_id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeee0001'
+           and navigation_session_id = (select id from durable_arrival_session)
+           and arrived_at is not null)
+    and (select closed_at is not null from public.itinerary_items
    where id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeee0001')
     and (select entity_version from public.core_entity_versions
          where group_id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
@@ -666,16 +700,14 @@ select ok(
       = (select version + 1 from durable_test_versions where label = 'before_arrival_completion')
     and (select status from public.navigation_sessions
          where id = (select id from durable_arrival_session)) = 'completed'
-    and (select result_state->>'completeSolo' from public.core_operations
-         where operation_id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeee0a02') = 'false'
-    and (select result_state->>'completeSolo' from public.core_operations
-         where operation_id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeee0a03') = 'true',
-  'arrival completion closes the actual destination and bumps itinerary version'
+    and (select count(*) from public.navigation_session_history
+         where navigation_session_id = (select id from durable_arrival_session) and arrived) = 2,
+  'durable all-arrived completion closes the bound destination and bumps itinerary version'
 );
 
 -- A group whose itinerary existed before this migration may have no version
--- row at all. The first v2 merge must lazily seed a complete canonical state,
--- and a following stale response must not expose an empty server snapshot.
+-- row at all. The first v2 intent must lazily seed a complete canonical state,
+-- and a following stale intent returns the full updated authoritative state.
 reset role;
 delete from public.core_entity_versions
 where group_id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
@@ -683,8 +715,8 @@ where group_id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
   and entity_id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
-with result as materialized (
-  select public.apply_core_operation_v2(
+insert into durable_test_results(label, body)
+select 'lazy_seed', public.apply_core_operation_v2(
     'eeeeeeee-eeee-4eee-8eee-eeeeeeee0d02',
     'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
     '11111111-1111-4111-8111-111111111111',
@@ -696,33 +728,32 @@ with result as materialized (
       'day', 1, 'kind', 'stop', 'providerPlaceId', 'provider-device-one'
     ),
     99, '{}'::uuid[]
-  ) as body
-)
+  );
 select ok(
-  (select body->>'status' from result) = 'accepted'
-    and (select (body->>'entity_version')::integer from result) = 0
-    and (select jsonb_array_length(body->'entity'->'destinations') from result) > 0,
+  (select body->>'status' from durable_test_results where label = 'lazy_seed') = 'accepted'
+    and (select (body->>'entity_version')::integer from durable_test_results where label = 'lazy_seed') = 1
+    and (select jsonb_array_length(body->'entity'->'destinations') from durable_test_results where label = 'lazy_seed') > 0,
   'first v2 write on a pre-migration group returns a complete canonical state'
 );
-with result as materialized (
-  select public.apply_core_operation_v2(
+insert into durable_test_results(label, body)
+select 'lazy_stale_edit', public.apply_core_operation_v2(
     'eeeeeeee-eeee-4eee-8eee-eeeeeeee0d03',
     'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
     '11111111-1111-4111-8111-111111111111',
-    'itinerary', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 1,
+    'itinerary', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 0,
     'edit_destination',
     jsonb_build_object(
       'destinationId', 'eeeeeeee-eeee-4eee-8eee-eeeeeeee0701',
-      'patch', jsonb_build_object('title', 'Should not apply')
+      'patch', jsonb_build_object('title', 'Updated after lazy seed')
     ),
     100, '{}'::uuid[]
-  ) as body
-)
+  );
 select ok(
-  (select body->'conflict'->>'code' from result) = 'stale_version'
-    and (select (body->'conflict'->>'server_entity_version')::integer from result) = 0
-    and (select jsonb_array_length(body->'conflict'->'server_state'->'destinations') from result) > 0,
-  'stale conflict on a pre-migration group returns the full canonical server state'
+  (select body->>'status' from durable_test_results where label = 'lazy_stale_edit') = 'accepted'
+    and (select (body->>'entity_version')::integer from durable_test_results where label = 'lazy_stale_edit') = 2
+    and (select jsonb_array_length(body->'entity'->'destinations') from durable_test_results where label = 'lazy_stale_edit') > 0
+    and (select title from public.itinerary_items where id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeee0701') = 'Updated after lazy seed',
+  'stale intent on a pre-migration group rebases and returns the full authoritative state'
 );
 
 select * from finish();

@@ -15,6 +15,7 @@ import type { GroupState } from '../types';
 import type {
   ActiveGatheringState,
   CoreGroupSnapshot,
+  CoreOperation,
   CoreSnapshotSource,
   NavigationAnnouncementResponse,
   NavigationAnnouncementResponseKind,
@@ -24,6 +25,7 @@ import {
   groupStateFromSnapshotParts,
 } from '../utils/activeGatheringState';
 import { getHitherDatabase } from './hitherDatabase';
+import { projectOperationGroupState } from './coreOperationProjection';
 
 /** Minimal executor so exclusive txn and plain DB share the same write path. */
 export interface CoreSqlExecutor {
@@ -137,6 +139,7 @@ export function snapshotPayloadOf(snapshot: CoreGroupSnapshot): string {
     ownerActorId: snapshot.ownerActorId,
     group: snapshot.group,
     destinations: snapshot.destinations,
+    dailyAccommodations: snapshot.dailyAccommodations,
     members: snapshot.members ?? [],
     subgroups: snapshot.subgroups ?? [],
     activeGathering: snapshot.activeGathering,
@@ -149,6 +152,7 @@ function rowToSnapshot(row: SnapshotRow): CoreGroupSnapshot {
     ownerActorId?: string;
     group: CoreGroupSnapshot['group'];
     destinations: CoreGroupSnapshot['destinations'];
+    dailyAccommodations?: CoreGroupSnapshot['dailyAccommodations'];
     members?: CoreGroupSnapshot['members'];
     subgroups?: CoreGroupSnapshot['subgroups'];
     activeGathering: ActiveGatheringState;
@@ -159,6 +163,7 @@ function rowToSnapshot(row: SnapshotRow): CoreGroupSnapshot {
     ...(payload.ownerActorId ? { ownerActorId: payload.ownerActorId } : {}),
     group: payload.group,
     destinations: payload.destinations,
+    ...(payload.dailyAccommodations ? { dailyAccommodations: payload.dailyAccommodations } : {}),
     members: payload.members,
     subgroups: payload.subgroups,
     activeGathering: payload.activeGathering,
@@ -737,6 +742,7 @@ export function coreSnapshotFromGroupState(
     ...(options.ownerActorId ? { ownerActorId: options.ownerActorId } : {}),
     group: state.group,
     destinations: state.destinations,
+    ...(state.dailyAccommodations ? { dailyAccommodations: state.dailyAccommodations } : {}),
     members: state.members,
     subgroups: state.subgroups,
     activeGathering,
@@ -749,17 +755,17 @@ export function coreSnapshotFromGroupState(
 }
 
 export function groupStateFromCoreSnapshot(snapshot: CoreGroupSnapshot): GroupState {
-  return groupStateFromSnapshotParts(
+  return { ...groupStateFromSnapshotParts(
     snapshot.group,
     snapshot.destinations,
     snapshot.activeGathering,
     snapshot.members ?? [],
     snapshot.subgroups ?? [],
-  );
+  ), dailyAccommodations: snapshot.dailyAccommodations ?? [] };
 }
 
 export type PendingGatheringGuard = (groupId: string) => Promise<boolean>;
-export type PendingItineraryGuard = (groupId: string) => Promise<boolean>;
+export type PendingItineraryGuard = (groupId: string) => Promise<boolean | CoreOperation[]>;
 
 export function createCoreDataStore(
   database: CoreDataDatabase,
@@ -828,7 +834,8 @@ export function createCoreDataStore(
         // guard race and awaiting an outbox serial lane while SQLite is locked.
         return runCoreDataWriteLock(async () => {
           const pendingGathering = await hasPendingGatheringOp(state.group.id);
-          const pendingItinerary = await hasPendingItineraryOp(state.group.id);
+          const pendingItineraryResult = await hasPendingItineraryOp(state.group.id);
+          const pendingItinerary = Array.isArray(pendingItineraryResult) ? pendingItineraryResult.length > 0 : pendingItineraryResult;
           return database.withExclusiveTransaction(async (exec) => {
           // Read through the transaction executor. Opening the database again
           // here can contend with the exclusive SQLite transaction, and the
@@ -885,6 +892,18 @@ export function createCoreDataStore(
               snapshot.itineraryVersion ?? 0,
               existing.itineraryVersion ?? 0,
             );
+          }
+
+          const metadataOperations = Array.isArray(pendingItineraryResult) ? pendingItineraryResult.filter(op =>
+            op.groupId === state.group.id && (actor === undefined || (actor != null && (!op.actorId || op.actorId === actor)))
+            && ['set_trip_details', 'set_daily_accommodation', 'clear_daily_accommodation'].includes(op.operationType)) : [];
+          if (metadataOperations.length > 0) {
+            const projected = projectOperationGroupState({ ...state, group: snapshot.group,
+              destinations: snapshot.destinations, dailyAccommodations: snapshot.dailyAccommodations }, metadataOperations);
+            snapshot.group = projected.group;
+            snapshot.dailyAccommodations = projected.dailyAccommodations;
+            snapshot.destinations = projected.destinations;
+            snapshot.source = 'local_optimistic';
           }
 
           // Both implementations use raw writes on the caller's executor.

@@ -1,4 +1,4 @@
-import type { Destination } from '../types';
+import type { Destination, GroupState } from '../types';
 import type { CoreOperation } from '../types/coreData';
 
 /** Project unacknowledged local itinerary intent onto a UI GroupState. */
@@ -121,4 +121,32 @@ export function projectOperationDestinations(
     }
   }
   return destinations;
+}
+
+/** Reapply pending trip/stay edits after authoritative refresh or receipt. */
+export function projectOperationGroupState(state: GroupState, operations: CoreOperation[]): GroupState {
+  let group = { ...state.group };
+  let dailyAccommodations = [...(state.dailyAccommodations ?? [])];
+  let destinations = [...state.destinations];
+  for (const operation of operations.filter(op => ['pending', 'failed', 'inflight'].includes(op.status))
+    .sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0) || a.createdAt - b.createdAt)) {
+    destinations = projectOperationDestinations(destinations, [operation]);
+    const payload = operation.payload;
+    if (operation.operationType === 'set_trip_details') {
+      group = { ...group, tripDays: Number(payload.tripDays), departureDate: String(payload.departureDate) };
+    } else if (operation.operationType === 'set_daily_accommodation' || operation.operationType === 'clear_daily_accommodation') {
+      const stayDate = String(payload.stayDate);
+      const previous = dailyAccommodations.find(daily => daily.stayDate === stayDate);
+      dailyAccommodations = dailyAccommodations.filter(daily => daily.stayDate !== stayDate);
+      if (operation.operationType === 'set_daily_accommodation') {
+        dailyAccommodations.push(payload.daily as unknown as NonNullable<GroupState['dailyAccommodations']>[number]);
+        group = { ...group, accommodationAutoAdd: false };
+      }
+      if (previous || operation.operationType === 'clear_daily_accommodation') {
+        destinations = destinations.map(destination => !destination.subgroupId && destination.kind === 'accommodation'
+          && (destination.day ?? 1) === (payload.day ?? 1) ? { ...destination, stayAnchor: false } : destination);
+      }
+    }
+  }
+  return { ...state, group, destinations, dailyAccommodations: dailyAccommodations.sort((a, b) => a.stayDate.localeCompare(b.stayDate)) };
 }

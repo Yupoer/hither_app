@@ -63,8 +63,13 @@ export function useNavigationSession(
     if ((next.scopeSubgroupId ?? null) !== scopeRef.current) return;
     const previous = lastEventRef.current;
     if (previous?.groupId === next.groupId && (previous.id === next.id
-      ? previous.status !== 'active' || previous.version >= next.version
+      ? previous.status !== 'active' || previous.version > next.version
+        || (previous.version === next.version && (next.memberIds === undefined
+          || JSON.stringify(previous.memberIds) === JSON.stringify(next.memberIds)))
       : next.status !== 'active' || Date.parse(previous.startedAt) > Date.parse(next.startedAt))) return;
+    if (previous?.id === next.id && next.memberIds === undefined && previous.memberIds !== undefined) {
+      next = { ...next, memberIds: previous.memberIds };
+    }
     lastEventRef.current = next;
     revision.current += 1;
     if (next.status !== 'active') {

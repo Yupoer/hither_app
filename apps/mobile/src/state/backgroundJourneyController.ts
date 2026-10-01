@@ -21,6 +21,12 @@ export interface BackgroundJourneyConfig {
   target?: Destination;
   completeSolo?: boolean;
   memberIds?: string[];
+  /** Full scoped roster, independent of the Live Activity avatar limit. */
+  navigationMemberIds?: string[];
+  arrivedMemberIds?: string[];
+  leaderId?: string;
+  /** Last accepted native timestamp, retained across a background relaunch. */
+  lastProcessedLocationAt?: number;
   groupId: string;
   navigationSessionId: string | null;
   destinationId: string;
@@ -73,6 +79,8 @@ export function backgroundPresenceConfig(config: BackgroundJourneyConfig): Backg
   return { ...config, navigationSessionId: null, sessionExpiresAt: undefined, destinationId: 'group-presence',
     scopeSubgroupId: undefined, target: undefined, powerMode: 'allDay', teamNavigationActive: false, highAccuracy: false,
     arrivalState: undefined, completeSolo: false, initialDistanceM: 0, sequence: 0,
+    navigationMemberIds: undefined, arrivedMemberIds: undefined, leaderId: undefined,
+    lastProcessedLocationAt: undefined,
     manualUndoOperationId: undefined, manualUndoOccurredAt: undefined,
     manualUndoSuppressed: undefined,
     previousProgressMax: undefined, routeAnchorGps: undefined, routeAnchorRemainingM: undefined,
@@ -290,13 +298,16 @@ export function createBackgroundJourneyController(
 
         if (requestedEpoch !== epoch) return 'cancelled';
         const persistedConfig = previous &&
+          previous.actorId === config.actorId &&
           previous.groupId === config.groupId &&
+          (previous.scopeSubgroupId ?? null) === (config.scopeSubgroupId ?? null) &&
           previous.destinationId === config.destinationId &&
           previous.navigationSessionId === config.navigationSessionId
           ? {
               ...config,
               sequence: Math.max(config.sequence, previous.sequence),
               arrivalState: config.arrivalState ?? previous.arrivalState,
+              lastProcessedLocationAt: previous.lastProcessedLocationAt,
               manualUndoOperationId: config.manualUndoOperationId
                 ?? previous.manualUndoOperationId,
               manualUndoOccurredAt: config.manualUndoOccurredAt

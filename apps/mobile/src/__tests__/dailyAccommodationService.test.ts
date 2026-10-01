@@ -1,8 +1,14 @@
 /**
- * DailyAccommodationService clear path — must use atomic RPC (REVIEW_FIX r2).
+ * DailyAccommodationService writes queue an atomic local projection + operation.
  */
 const rpc = jest.fn();
 const from = jest.fn();
+const mockEnqueueDaily = jest.fn();
+jest.mock('expo-crypto', () => ({ randomUUID: () => 'local-stay-id' }));
+jest.mock('../state/coreDataSync', () => ({
+  ensureCoreSnapshot: async () => ({ dailyAccommodations: [] }),
+  enqueueDailyAccommodation: (...args: unknown[]) => mockEnqueueDaily(...args),
+}));
 
 jest.mock('../api/supabase', () => ({
   supabase: {
@@ -21,72 +27,39 @@ import {
   setDailyAccommodation,
 } from '../api/services/DailyAccommodationService';
 
-describe('DailyAccommodationService atomic clear (#161)', () => {
+describe('DailyAccommodationService durable writes', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     rpc.mockResolvedValue({ data: null, error: null });
   });
 
-  it('clearDailyAccommodation uses single clear+downgrade RPC (not split Data API writes)', async () => {
+  it('clearDailyAccommodation queues clear+downgrade without remote prerequisites', async () => {
     await clearDailyAccommodation('group-1', '2026-08-11', 2);
-    expect(rpc).toHaveBeenCalledWith('clear_daily_accommodation_with_downgrade', {
-      p_group_id: 'group-1',
-      p_stay_date: '2026-08-11',
-      p_day: 2,
+    expect(mockEnqueueDaily).toHaveBeenCalledWith({
+      groupId: 'group-1', stayDate: '2026-08-11', day: 2,
     });
     expect(from).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
   });
 
-  it('clearDailyAccommodation passes null day when omitted', async () => {
+  it('clearDailyAccommodation omits day when omitted', async () => {
     await clearDailyAccommodation('group-1', '2026-08-11');
-    expect(rpc).toHaveBeenCalledWith('clear_daily_accommodation_with_downgrade', {
-      p_group_id: 'group-1',
-      p_stay_date: '2026-08-11',
-      p_day: null,
+    expect(mockEnqueueDaily).toHaveBeenCalledWith({
+      groupId: 'group-1', stayDate: '2026-08-11', day: undefined,
     });
   });
 
-  it('setDailyAccommodation forces auto-add off then uses set RPC', async () => {
-    rpc.mockImplementation(async (name: string) => {
-      if (name === 'set_accommodation_auto_add') {
-        return { data: null, error: null };
-      }
-      return {
-        data: {
-          daily: {
-            id: 'd1',
-            group_id: 'group-1',
-            stay_date: '2026-08-11',
-            title: 'Hotel',
-            address: null,
-            latitude: 1,
-            longitude: 2,
-          },
-          auto_added: false,
-          first_card_id: null,
-          last_card_id: null,
-        },
-        error: null,
-      };
-    });
+  it('setDailyAccommodation saves a durable stay and returns with auto-add off', async () => {
     const result = await setDailyAccommodation('group-1', '2026-08-11', {
       title: 'Hotel',
       coordinates: { latitude: 1, longitude: 2 },
       day: 1,
     });
-    expect(rpc).toHaveBeenCalledWith('set_accommodation_auto_add', {
-      p_group_id: 'group-1',
-      p_enabled: false,
-    });
-    expect(rpc).toHaveBeenCalledWith(
-      'set_daily_accommodation_with_auto_add',
-      expect.objectContaining({
-        p_group_id: 'group-1',
-        p_stay_date: '2026-08-11',
-        p_title: 'Hotel',
-        p_day: 1,
-      }),
-    );
+    expect(mockEnqueueDaily).toHaveBeenCalledWith(expect.objectContaining({
+      groupId: 'group-1', stayDate: '2026-08-11', day: 1,
+      daily: expect.objectContaining({ id: 'local-stay-id', title: 'Hotel' }),
+    }));
+    expect(rpc).not.toHaveBeenCalled();
     expect(result.autoAdded).toBe(false);
     expect(result.daily.title).toBe('Hotel');
   });

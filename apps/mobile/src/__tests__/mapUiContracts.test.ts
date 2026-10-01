@@ -714,13 +714,15 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain('requestTeamEnd');
     expect(mapScreen).toContain("navCmd.action === 'end_point'");
     expect(mapScreen).toContain('runCompleteGatheringStop');
-    // Complete uses the stop RPC; End navigation cancels session separately.
+    // Complete durably queues the original-session terminal operation.
     expect(mapScreen).toContain('navigationSessionState.refresh()');
     const completeFn = mapScreen.slice(
       mapScreen.indexOf('runCompleteGatheringStop = useCallback'),
       mapScreen.indexOf('runCompleteGatheringStop = useCallback') + 2800,
     );
-    expect(completeFn).toContain('completeGatheringStop(groupId, destination.id)');
+    expect(completeFn).toContain('enqueueJourneyCompletion({');
+    expect(completeFn).toContain('resolveCurrentNavigationSessionId(destination)');
+    expect(completeFn).toContain('finally {\n        completingDestIdsRef.current.delete(destination.id);');
     expect(completeFn).not.toContain('stopNavigation()');
     expect(completeFn).not.toContain('requestTeamEnd');
     expect(mapScreen).toContain('sharedTargetId');
