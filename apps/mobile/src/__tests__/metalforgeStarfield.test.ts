@@ -47,23 +47,29 @@ describe('MetalforgeStarfield performance contract', () => {
       active: true,
       appActive: true,
       reducedMotion: false,
+      thermalState: 'nominal',
+      lowPowerMode: false,
     })).toEqual({ shouldAnimate: true, fps: 20 });
     expect(getMetalforgeStarfieldAnimationPolicy({
       active: true,
       appActive: true,
       reducedMotion: false,
+      thermalState: 'nominal',
       lowPowerMode: true,
-    })).toEqual({ shouldAnimate: true, fps: 10 });
+    })).toEqual({ shouldAnimate: false, fps: 20 });
     expect(getMetalforgeStarfieldAnimationPolicy({
       active: true,
       appActive: true,
       reducedMotion: false,
+      lowPowerMode: false,
       thermalState: 'serious',
     }).shouldAnimate).toBe(false);
     expect(getMetalforgeStarfieldAnimationPolicy({
       active: false,
       appActive: true,
       reducedMotion: false,
+      thermalState: 'nominal',
+      lowPowerMode: false,
     }).shouldAnimate).toBe(false);
   });
 });

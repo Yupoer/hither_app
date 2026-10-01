@@ -19,6 +19,7 @@ import Animated, {
   withRepeat,
   withTiming,
 } from 'react-native-reanimated';
+import { useOptionalVisuals, isForegroundUi } from '../state/foregroundUi';
 import { loadingDotOffset } from '../utils/loadingDots';
 
 // Adapted from https://github.com/Subhan-code/Amicro--Micro-transitions-
@@ -57,7 +58,8 @@ export interface AmicroButtonProps {
   revertEpoch?: number;
   onPress?: () => void;
   /**
-   * Called when the press animation reaches the complete frame.
+   * Called once after an accepted press reaches the complete frame, or when
+   * optional motion is cancelled. Visual suspension never discards the action.
    * May return a Promise — when `resetAfterComplete` is true, the button
    * stays on the complete frame (and busy) until that Promise settles
    * (success or failure), then resets. Used by share / external ops.
@@ -90,20 +92,29 @@ export function AmicroButton({
   onPress,
   onAnimationComplete,
 }: AmicroButtonProps) {
-  const reducedMotion = useReducedMotion();
+  const visuals = useOptionalVisuals();
+  const reducedMotion = useReducedMotion() || !visuals;
+  const reducedMotionRef = useRef(reducedMotion);
+  reducedMotionRef.current = reducedMotion;
   const progress = useSharedValue(active ? 1 : 0);
   const busyRef = useRef(false);
+  const pendingCompletionRef = useRef(false);
   const activeRef = useRef(active);
   activeRef.current = active;
 
   const releaseBusyAndMaybeReset = useCallback(() => {
     busyRef.current = false;
     if (resetAfterComplete) {
-      progress.value = withTiming(activeRef.current ? 1 : 0, { duration: reducedMotion ? 0 : 100 });
+      progress.value = isForegroundUi() && !reducedMotionRef.current
+        ? withTiming(activeRef.current ? 1 : 0, { duration: 100 })
+        : (activeRef.current ? 1 : 0);
     }
-  }, [progress, reducedMotion, resetAfterComplete]);
+  }, [progress, resetAfterComplete]);
 
   const finish = useCallback(() => {
+    // An accepted press is semantic work; cancelling its decoration must not lose it.
+    if (!pendingCompletionRef.current) return;
+    pendingCompletionRef.current = false;
     // Keep busy until external Promise settles so double-tap cannot re-open.
     let result: void | Promise<void>;
     try {
@@ -123,13 +134,15 @@ export function AmicroButton({
   }, [onAnimationComplete, releaseBusyAndMaybeReset]);
 
   useEffect(() => {
+    if (!visuals) { cancelAnimation(progress); progress.value = active ? 1 : 0; return; }
     if (busyRef.current) return;
     progress.value = withTiming(active ? 1 : 0, { duration: reducedMotion ? 0 : 100 });
-  }, [active, revertEpoch, progress, reducedMotion]);
+  }, [active, revertEpoch, progress, reducedMotion, visuals]);
 
   const handlePress = useCallback(() => {
     if (disabled || busyRef.current) return;
     busyRef.current = true;
+    pendingCompletionRef.current = true;
     onPress?.();
     if (reducedMotion) {
       // Same sequencing as animated path (complete → external settle → reset),
@@ -138,11 +151,10 @@ export function AmicroButton({
       return;
     }
     const target = (activeOnPress ?? true) ? 1 : 0;
-    progress.value = withTiming(target, { duration: durationMs }, (finished) => {
-      if (finished) runOnJS(finish)();
-      else runOnJS(releaseBusyAndMaybeReset)();
+    progress.value = withTiming(target, { duration: durationMs }, () => {
+      runOnJS(finish)();
     });
-  }, [activeOnPress, disabled, durationMs, finish, onPress, progress, reducedMotion, releaseBusyAndMaybeReset]);
+  }, [activeOnPress, disabled, durationMs, finish, onPress, progress, reducedMotion]);
 
   const currentStyle = useAnimatedStyle(() => {
     if (mode === 'rotate') {
@@ -210,7 +222,8 @@ export function AmicroButton({
 }
 
 export function BouncingDots({ color }: { color: string }) {
-  const reducedMotion = useReducedMotion();
+  const visuals = useOptionalVisuals();
+  const reducedMotion = useReducedMotion() || !visuals;
   const phase = useSharedValue(0);
 
   useEffect(() => {

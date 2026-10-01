@@ -1,3 +1,4 @@
+import { useForegroundUi } from '../state/foregroundUi';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -63,6 +64,7 @@ export default React.memo(function DestinationSearch({
   const [searching, setSearching] = useState(false);
   const [submittingId, setSubmittingId] = useState<string | null>(null);
   // Guards against a stale debounced search resolving after we've moved on.
+  const foreground = useForegroundUi();
   const seqRef = useRef(0);
   const searchRegionRef = useRef(biasRegion);
   const [searchError, setSearchError] = useState<'failed' | 'quota' | null>(null);
@@ -83,6 +85,7 @@ export default React.memo(function DestinationSearch({
 
   // Debounced search as the query changes.
   useEffect(() => {
+    if (!foreground) return;
     const trimmed = query.trim();
     const seq = ++seqRef.current;
     setSearchError(null);
@@ -117,7 +120,7 @@ export default React.memo(function DestinationSearch({
       clearTimeout(handle);
       clearTimeout(timeout);
     };
-  }, [query, visible]);
+  }, [foreground, query, visible]);
 
   async function handlePick(place: PlaceResult) {
     if (submittingId) {

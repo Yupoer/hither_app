@@ -147,15 +147,57 @@ private final class PerformanceSampler: NSObject {
   private var startedAt: Date?
   private var startedSnapshot: PerformanceSnapshot?
   private var completion: (([String: Any]) -> Void)?
+  private var mainThreadDelayMs = 0.0
+  private var expectedInterval = 1.0 / 60
+  private var missedFrames = 0
+  private var sampledMemoryPeakMb = 0.0
+  private var memoryWarningCount = 0
+  private var memoryWarningObserver: NSObjectProtocol?
+  private var inactiveObserver: NSObjectProtocol?
+  private var previousBatteryMonitoring = false
+  private var sampleGeneration = 0
+  private var enabled = false
+
+  func setEnabled(_ enabled: Bool) {
+    DispatchQueue.main.async {
+      self.enabled = enabled
+      if let observer = self.memoryWarningObserver {
+        NotificationCenter.default.removeObserver(observer)
+        self.memoryWarningObserver = nil
+      }
+      if let observer = self.inactiveObserver {
+        NotificationCenter.default.removeObserver(observer)
+        self.inactiveObserver = nil
+      }
+      if enabled {
+        self.memoryWarningCount = 0
+        self.sampledMemoryPeakMb = 0
+        self.memoryWarningObserver = NotificationCenter.default.addObserver(
+          forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.memoryWarningCount += 1 }
+        self.inactiveObserver = NotificationCenter.default.addObserver(
+          forName: UIApplication.willResignActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.cancelSample() }
+      } else {
+        self.cancelSample()
+      }
+    }
+  }
 
   func sample(windowMs: Double, completion: @escaping ([String: Any]) -> Void) {
+    let requestedAt = CACurrentMediaTime()
     DispatchQueue.main.async {
-      guard self.displayLink == nil else {
+      guard self.enabled, UIApplication.shared.applicationState == .active, self.displayLink == nil else {
         completion([:])
         return
       }
       let device = UIDevice.current
+      self.sampleGeneration += 1
+      let generation = self.sampleGeneration
+      self.previousBatteryMonitoring = device.isBatteryMonitoringEnabled
       device.isBatteryMonitoringEnabled = true
+      self.mainThreadDelayMs = (CACurrentMediaTime() - requestedAt) * 1_000
+      self.missedFrames = 0
       self.frameIntervals = []
       self.frameCount = 0
       self.lastTimestamp = nil
@@ -168,18 +210,40 @@ private final class PerformanceSampler: NSObject {
       self.displayLink = link
 
       let boundedWindow = max(1_000, min(windowMs, 10_000))
+      let finishAt = CACurrentMediaTime() + boundedWindow / 1_000
       DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(Int(boundedWindow))) {
+        guard self.sampleGeneration == generation else { return }
+        self.mainThreadDelayMs = max(self.mainThreadDelayMs, (CACurrentMediaTime() - finishAt) * 1_000)
         self.finish()
       }
     }
+  }
+
+  private func cancelSample() {
+    sampleGeneration += 1
+    let wasSampling = displayLink != nil
+    displayLink?.invalidate()
+    displayLink = nil
+    let completion = self.completion
+    self.completion = nil
+    startedAt = nil
+    startedSnapshot = nil
+    frameIntervals.removeAll()
+    if wasSampling { UIDevice.current.isBatteryMonitoringEnabled = previousBatteryMonitoring }
+    completion?([:])
   }
 
   @objc private func tick(_ link: CADisplayLink) {
     frameCount += 1
     if let previous = lastTimestamp {
       let interval = link.timestamp - previous
-      if interval > 0 { frameIntervals.append(interval) }
+      if interval > 0 {
+        frameIntervals.append(interval)
+        // CADisplayLink target cadence adapts to ProMotion / Low Power Mode.
+        if interval > expectedInterval * 1.5 { missedFrames += 1 }
+      }
     }
+    expectedInterval = max(link.targetTimestamp - link.timestamp, 0.001)
     lastTimestamp = link.timestamp
   }
 
@@ -195,7 +259,8 @@ private final class PerformanceSampler: NSObject {
       startedSnapshot.cpuTimeMs.map { max(end - $0, 0) }
     }
     let processorCount = Double(max(ProcessInfo.processInfo.activeProcessorCount, 1))
-    let cpuPercent = cpuTimeMs.map { min(max(($0 / 1_000) / elapsed / processorCount * 100, 0), 100) }
+    let cpuCorePercent = cpuTimeMs.map { max(($0 / 1_000) / elapsed * 100, 0) }
+    let cpuPercent = cpuCorePercent.map { min($0 / processorCount, 100) }
     let maxFps = Double(UIScreen.main.maximumFramesPerSecond)
     let uiFps = Double(frameCount) / elapsed
     let sortedIntervals = frameIntervals.sorted()
@@ -203,13 +268,20 @@ private final class PerformanceSampler: NSObject {
       ? 0
       : min(sortedIntervals.count - 1, Int(Double(sortedIntervals.count - 1) * 0.95))
     let frameTimeP95Ms = sortedIntervals.isEmpty ? nil : sortedIntervals[p95Index] * 1_000
-    let targetInterval = maxFps > 0 ? 1 / maxFps : 0
-    let missedFrameRatio: Double? = targetInterval > 0 && !frameIntervals.isEmpty
-      ? Double(frameIntervals.filter { $0 > targetInterval * 1.5 }.count) / Double(frameIntervals.count)
+    let missedFrameRatio: Double? = !frameIntervals.isEmpty
+      ? Double(missedFrames) / Double(frameIntervals.count)
       : nil
 
     var result: [String: Any] = [
       "uiFps": uiFps,
+      "cpuTimeKind": "window",
+      "processSampleTimestampMs": Date().timeIntervalSince1970 * 1_000,
+      "processorCount": processorCount,
+      "mainThreadDelayMs": mainThreadDelayMs,
+      "memoryWarningCount": memoryWarningCount,
+      "nativeAppVersion": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown",
+      "nativeBuildNumber": Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown",
+      "hardwareModel": hardwareModel(),
       "displayMaxFps": maxFps,
       "batteryState": endedSnapshot.batteryState,
       "lowPowerMode": endedSnapshot.lowPowerMode,
@@ -220,7 +292,14 @@ private final class PerformanceSampler: NSObject {
     ]
     if let cpuPercent { result["cpuPercent"] = cpuPercent }
     if let cpuTimeMs { result["cpuTimeMs"] = cpuTimeMs }
-    if let memoryMb = endedSnapshot.memoryMb { result["memoryMb"] = memoryMb }
+    if let cpuCorePercent { result["cpuCorePercent"] = cpuCorePercent }
+    if let cumulative = endedSnapshot.cpuTimeMs { result["processCpuTimeMs"] = cumulative }
+    if let memoryMb = endedSnapshot.memoryMb {
+      result["memoryMb"] = memoryMb
+      sampledMemoryPeakMb = max(sampledMemoryPeakMb, memoryMb, startedSnapshot.memoryMb ?? 0)
+      result["sampledMemoryPeakMb"] = sampledMemoryPeakMb
+    }
+    UIDevice.current.isBatteryMonitoringEnabled = previousBatteryMonitoring
     if let frameTimeP95Ms { result["frameTimeP95Ms"] = frameTimeP95Ms }
     if let missedFrameRatio { result["missedFrameRatio"] = missedFrameRatio }
     if let batteryLevel = endedSnapshot.batteryLevel { result["batteryLevel"] = batteryLevel }
@@ -268,19 +347,23 @@ private final class PerformanceSampler: NSObject {
   }
 
   private func cpuTimeMs() -> Double? {
-    var info = task_thread_times_info_data_t()
-    var count = mach_msg_type_number_t(
-      MemoryLayout<task_thread_times_info_data_t>.size / MemoryLayout<integer_t>.size
-    )
-    let status = withUnsafeMutablePointer(to: &info) {
-      $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
-        task_info(mach_task_self_, task_flavor_t(TASK_THREAD_TIMES_INFO), $0, &count)
+    // getrusage includes CPU from terminated threads, unlike TASK_THREAD_TIMES_INFO.
+    var usage = rusage()
+    guard getrusage(RUSAGE_SELF, &usage) == 0 else { return nil }
+    let user = Double(usage.ru_utime.tv_sec) * 1_000 + Double(usage.ru_utime.tv_usec) / 1_000
+    let system = Double(usage.ru_stime.tv_sec) * 1_000 + Double(usage.ru_stime.tv_usec) / 1_000
+    return user + system
+  }
+
+  private func hardwareModel() -> String {
+    var system = utsname()
+    uname(&system)
+    let capacity = MemoryLayout.size(ofValue: system.machine)
+    return withUnsafePointer(to: &system.machine) {
+      $0.withMemoryRebound(to: CChar.self, capacity: capacity) {
+        String(cString: $0)
       }
     }
-    guard status == KERN_SUCCESS else { return nil }
-    let user = Double(info.user_time.seconds) * 1_000 + Double(info.user_time.microseconds) / 1_000
-    let system = Double(info.system_time.seconds) * 1_000 + Double(info.system_time.microseconds) / 1_000
-    return user + system
   }
 
   private func memoryMb() -> Double? {
@@ -355,12 +438,27 @@ public final class HitherMetricsModule: Module {
   private let launch = LaunchBreadcrumbStore()
   private let collectionLock = NSLock()
   private let signpostLock = NSLock()
-  private let energyLog = OSLog(
-    subsystem: "app.hither.mobile",
-    category: "energy"
-  )
+  private let energyLog = MXMetricManager.makeLogHandle(category: "energy")
   private var activeSignposts: [String: ActiveEnergySignpost] = [:]
   private var collectionEnabled = false
+  private var powerObservers: [NSObjectProtocol] = []
+
+  private func powerState() -> [String: Any] {
+    let thermal: String
+    switch ProcessInfo.processInfo.thermalState {
+    case .nominal: thermal = "nominal"
+    case .fair: thermal = "fair"
+    case .serious: thermal = "serious"
+    case .critical: thermal = "critical"
+    @unknown default: thermal = "unknown"
+    }
+    return ["thermalState": thermal, "lowPowerMode": ProcessInfo.processInfo.isLowPowerModeEnabled]
+  }
+
+  private func stopPowerObserving() {
+    for observer in powerObservers { NotificationCenter.default.removeObserver(observer) }
+    powerObservers.removeAll()
+  }
 
   private func staticSignpostName(_ name: EnergySignpostName) -> StaticString {
     switch name {
@@ -375,10 +473,13 @@ public final class HitherMetricsModule: Module {
   }
 
   private func emitEnergySignpost(name: String, phase: String, token: String?) {
-    guard let signpost = EnergySignpostName(rawValue: name) else { return }
+    collectionLock.lock()
+    defer { collectionLock.unlock() }
+    let enabled = collectionEnabled
+    guard enabled, let signpost = EnergySignpostName(rawValue: name) else { return }
     switch phase {
     case "event":
-      os_signpost(.event, log: energyLog, name: staticSignpostName(signpost))
+      mxSignpost(.event, log: energyLog, name: staticSignpostName(signpost))
     case "begin":
       let id = OSSignpostID(log: energyLog)
       if let token, !token.isEmpty {
@@ -386,7 +487,7 @@ public final class HitherMetricsModule: Module {
         activeSignposts[token] = ActiveEnergySignpost(id: id, name: signpost)
         signpostLock.unlock()
       }
-      os_signpost(
+      mxSignpost(
         .begin,
         log: energyLog,
         name: staticSignpostName(signpost),
@@ -398,7 +499,7 @@ public final class HitherMetricsModule: Module {
       let active = activeSignposts.removeValue(forKey: token)
       signpostLock.unlock()
       guard let active else { return }
-      os_signpost(
+      mxSignpost(
         .end,
         log: energyLog,
         name: staticSignpostName(active.name),
@@ -411,16 +512,38 @@ public final class HitherMetricsModule: Module {
 
   public func definition() -> ModuleDefinition {
     Name("HitherMetrics")
+    Events("powerStateChanged")
+
+    OnStartObserving {
+      // Read before registration: iOS otherwise may not activate thermal notifications.
+      _ = self.powerState()
+      self.stopPowerObserving()
+      for name in [ProcessInfo.thermalStateDidChangeNotification, Notification.Name.NSProcessInfoPowerStateDidChange, UIApplication.didBecomeActiveNotification] {
+        self.powerObservers.append(NotificationCenter.default.addObserver(
+          forName: name, object: nil, queue: .main
+        ) { [weak self] _ in
+          guard let self else { return }
+          self.sendEvent("powerStateChanged", self.powerState())
+        })
+      }
+    }
+    OnStopObserving { self.stopPowerObserving() }
+    AsyncFunction("getPowerState") { () -> [String: Any] in self.powerState() }
 
     OnCreate {
       self.subscriber.prepare()
     }
 
     OnDestroy {
+      self.stopPowerObserving()
+      self.sampler.setEnabled(false)
       self.collectionLock.lock()
       let wasEnabled = self.collectionEnabled
       self.collectionEnabled = false
       self.collectionLock.unlock()
+      self.signpostLock.lock()
+      self.activeSignposts.removeAll()
+      self.signpostLock.unlock()
       if wasEnabled {
         MXMetricManager.shared.remove(self.subscriber)
       }
@@ -431,9 +554,13 @@ public final class HitherMetricsModule: Module {
       defer { self.collectionLock.unlock() }
       guard enabled != self.collectionEnabled else { return true }
       self.collectionEnabled = enabled
+      self.sampler.setEnabled(enabled)
       if enabled {
         MXMetricManager.shared.add(self.subscriber)
       } else {
+        self.signpostLock.lock()
+        self.activeSignposts.removeAll()
+        self.signpostLock.unlock()
         MXMetricManager.shared.remove(self.subscriber)
         self.subscriber.purgePayloads()
       }
@@ -461,7 +588,10 @@ public final class HitherMetricsModule: Module {
         return
       }
       self.sampler.sample(windowMs: windowMs) { result in
-        promise.resolve(result)
+        self.collectionLock.lock()
+        let stillEnabled = self.collectionEnabled
+        self.collectionLock.unlock()
+        promise.resolve(stillEnabled ? result : nil)
       }
     }
 

@@ -1,3 +1,4 @@
+import { useForegroundClock } from '../state/foregroundUi';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -148,8 +149,13 @@ export default function LoginScreen({ navigation }: Props) {
     confirmPassword: false,
   });
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
-  const [resendCooldown, setResendCooldown] = useState(0);
-  const [resetCooldown, setResetCooldown] = useState(0);
+  const [resendUntil, setResendUntil] = useState(0);
+  const [resetUntil, setResetUntil] = useState(0);
+  const now = useForegroundClock(1000, Math.max(resendUntil, resetUntil) > Date.now());
+  const resendCooldown = Math.max(0, Math.ceil((resendUntil - now) / 1000));
+  const resetCooldown = Math.max(0, Math.ceil((resetUntil - now) / 1000));
+  const setResendCooldown = (seconds: number) => setResendUntil(Date.now() + seconds * 1000);
+  const setResetCooldown = (seconds: number) => setResetUntil(Date.now() + seconds * 1000);
   const [resetMode, setResetMode] = useState(false);
   const [resetSent, setResetSent] = useState(false);
   const [guestConfirmVisible, setGuestConfirmVisible] = useState(false);
@@ -180,17 +186,6 @@ export default function LoginScreen({ navigation }: Props) {
     setErrors({});
   }, [mode]);
 
-  useEffect(() => {
-    if (resendCooldown <= 0) return;
-    const timer = setInterval(() => setResendCooldown((value) => Math.max(0, value - 1)), 1000);
-    return () => clearInterval(timer);
-  }, [resendCooldown]);
-
-  useEffect(() => {
-    if (resetCooldown <= 0) return;
-    const timer = setInterval(() => setResetCooldown((value) => Math.max(0, value - 1)), 1000);
-    return () => clearInterval(timer);
-  }, [resetCooldown]);
 
   useEffect(() => {
     if (user && pendingEmail) navigation.replace('RoleSelect');

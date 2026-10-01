@@ -57,8 +57,9 @@ describe('energyObservability', () => {
 
     energyObservability.setAppState('active');
     jest.advanceTimersByTime(ENERGY_STEADY_SAMPLE_INTERVAL_MS);
-    expect(samples).toHaveLength(2);
-    expect(samples[1]?.kind).toBe('steady');
+    expect(samples).toHaveLength(3);
+    expect(samples[1]?.kind).toBe('resume');
+    expect(samples[2]?.kind).toBe('steady');
   });
 
   it('cancels the steady timer on background so no samples fire while inactive', () => {
@@ -76,8 +77,9 @@ describe('energyObservability', () => {
 
     energyObservability.setAppState('active');
     jest.advanceTimersByTime(ENERGY_STEADY_SAMPLE_INTERVAL_MS);
-    expect(samples).toHaveLength(2);
-    expect(samples[1]?.kind).toBe('steady');
+    expect(samples).toHaveLength(3);
+    expect(samples[1]?.kind).toBe('resume');
+    expect(samples[2]?.kind).toBe('steady');
   });
 
   it('cancels all unexecuted samples when the controller stops', () => {
@@ -142,4 +144,31 @@ describe('energyObservability', () => {
     expect(signpost).toHaveBeenCalledWith('route_calculation', 'begin', token);
     expect(signpost).toHaveBeenCalledWith('route_calculation', 'end', token);
   });
+});
+
+it('bounds incident sampling and releases workload ownership without collecting counters after stop', () => {
+  jest.useFakeTimers();
+  __resetEnergyObservabilityForTests();
+  const samples: EnergyObservationSample[] = [];
+  const release = energyObservability.mountWorkload({ mapCount: 1, rawRoutePointCount: 1000 });
+  const releaseSecond = energyObservability.mountWorkload({ animatedCanvasCount: 1 });
+  const controller = energyObservability.start(sample => { samples.push(sample); }, { startupOffsetsMs: [], steadyIntervalMs: null });
+  controller.requestSample('thermal');
+  controller.requestSample('thermal');
+  controller.requestSample('resume');
+  expect(samples).toHaveLength(1);
+  jest.advanceTimersByTime(30_000);
+  controller.requestSample('thermal');
+  expect(samples).toHaveLength(2);
+  energyObservability.setAppState('background');
+  jest.advanceTimersByTime(10_000);
+  controller.requestSample('thermal');
+  expect(samples).toHaveLength(2);
+  expect(energyObservability.workloadSnapshot()).toMatchObject({ mapCount: 1, animatedCanvasCount: 1, foregroundDurationMs: 30_000, backgroundDurationMs: 10_000 });
+  release(); releaseSecond();
+  expect(energyObservability.workloadSnapshot()).toMatchObject({ mapCount: 0, animatedCanvasCount: 0, rawRoutePointCount: 0 });
+  controller.stop();
+  energyObservability.increment('render');
+  expect(energyObservability.snapshotCounters().cumulative.render).toBe(0);
+  jest.useRealTimers();
 });

@@ -1,7 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AppState, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Canvas, Path, Skia } from '@shopify/react-native-skia';
 import { useDerivedValue, useFrameCallback, useReducedMotion, useSharedValue } from 'react-native-reanimated';
+import { optionalVisualsAllowed } from '../state/runtimePowerState';
+import { useForegroundUi } from '../state/foregroundUi';
+import { energyObservability } from '../state/energyObservability';
 import { createStarfieldParticles, STARFIELD_BASELINE } from '../utils/starfieldParticles';
 import { advanceStarfieldPhase, advanceStarfieldPosition, STARFIELD_PERIOD_SECONDS } from '../utils/starfieldPhase';
 
@@ -12,10 +15,11 @@ export interface StarfieldAnimationPolicyInput {
   active: boolean; appActive: boolean; reducedMotion: boolean; lowPowerMode?: boolean | null; thermalState?: string | null;
 }
 export function getMetalforgeStarfieldAnimationPolicy(input: StarfieldAnimationPolicyInput) {
-  const heat = input.thermalState?.toLowerCase();
   return {
-    shouldAnimate: input.active && input.appActive && !input.reducedMotion && heat !== 'serious' && heat !== 'critical',
-    fps: input.lowPowerMode || heat === 'fair' ? 10 : 20,
+    shouldAnimate: input.active && input.appActive && !input.reducedMotion && optionalVisualsAllowed({
+      thermalState: input.thermalState ?? null, lowPowerMode: input.lowPowerMode ?? null,
+    }),
+    fps: 20,
   };
 }
 export type MetalforgeStarfieldProps = {
@@ -24,18 +28,16 @@ export type MetalforgeStarfieldProps = {
 export default function MetalforgeStarfield({ active = true, collapsed = false, lowPowerMode, thermalState, style }: MetalforgeStarfieldProps) {
   const reducedMotion = useReducedMotion();
   const [{ width, height }, setSize] = useState({ width: 0, height: 0 });
-  const [appActive, setAppActive] = useState(AppState.currentState === 'active');
+  const appActive = useForegroundUi();
   const phase = useSharedValue(0);
   const positions = useSharedValue<number[]>([]);
   const lastFrameAt = useSharedValue(-1);
   const accumulated = useSharedValue(0);
   const policy = getMetalforgeStarfieldAnimationPolicy({ active, appActive, reducedMotion, lowPowerMode, thermalState });
+  const visible = active && appActive;
+  useEffect(() => energyObservability.mountWorkload({ starfieldCanvasCount: visible ? 1 : 0, animatedCanvasCount: policy.shouldAnimate ? 1 : 0 }), [visible, policy.shouldAnimate]);
   const particles = useMemo(() => createStarfieldParticles(width, height, collapsed), [width, height, collapsed]);
   useEffect(() => { positions.value = particles.map(star => star.x + star.radius * 3); }, [particles, positions]);
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', state => setAppActive(state === 'active'));
-    return () => subscription.remove();
-  }, []);
   const frame = useFrameCallback(({ timestamp, timeSincePreviousFrame }) => {
     if (!policy.shouldAnimate) return;
     const delta = lastFrameAt.value < 0 ? 0 : Math.min(timestamp - lastFrameAt.value, 100);
@@ -68,6 +70,7 @@ export default function MetalforgeStarfield({ active = true, collapsed = false, 
   }, [particles, width]);
   const corePath = useDerivedValue(() => paths.value.core);
   const haloPath = useDerivedValue(() => paths.value.halo);
+  if (!visible) return null;
   return <View onLayout={({ nativeEvent }) => setSize(current => current.width === nativeEvent.layout.width && current.height === nativeEvent.layout.height ? current : nativeEvent.layout)}
     pointerEvents="none" accessibilityElementsHidden style={[StyleSheet.absoluteFill, styles.container, style]}>
     <Canvas style={StyleSheet.absoluteFill}>

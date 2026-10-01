@@ -1,9 +1,11 @@
 import React, { useEffect } from 'react';
+import { useOptionalVisuals } from '../../state/foregroundUi';
 import { PixelRatio, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   useAnimatedStyle,
+  cancelAnimation,
   useSharedValue,
   withRepeat,
   withSequence,
@@ -82,7 +84,10 @@ function ThemePreviewCard({
   // Soft breath on the beacon ring only — never scale the whole card
   // (card-level scale + overflow:hidden rasterizes soft / low-res on iOS).
   const pulse = useSharedValue(1);
+  const visuals = useOptionalVisuals();
   useEffect(() => {
+    cancelAnimation(pulse);
+    if (!visuals) { pulse.value = 1; return; }
     if (selected) {
       pulse.value = withRepeat(
         withSequence(
@@ -95,7 +100,8 @@ function ThemePreviewCard({
     } else {
       pulse.value = withTiming(1, { duration: 200 });
     }
-  }, [selected, pulse]);
+    return () => cancelAnimation(pulse);
+  }, [selected, pulse, visuals]);
 
   const ringPulseStyle = useAnimatedStyle(() => ({
     transform: [{ scale: pulse.value }],

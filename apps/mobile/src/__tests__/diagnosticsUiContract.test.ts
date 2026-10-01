@@ -43,19 +43,20 @@ describe('location privacy and diagnostics UI contract', () => {
     expect(navigationService).toContain('local_navigation_enabled: enabled');
   });
 
-  it('removes diagnostics UI while keeping the underlying store', () => {
+  it('restores native diagnostics consent while keeping the underlying store', () => {
     expect(settings).not.toContain('diagnosticsEnabled');
     expect(settings).not.toContain("t('diagnostics.title')");
-    expect(settings).not.toContain("t('settings.diagnosticUpload')");
+    expect(settings).toContain("t('settings.diagnosticUpload')");
+    expect(settings).toContain('testID="settings-diagnostic-upload"');
     expect(map).not.toContain('<DiagnosticsOverlay');
     expect(existsSync(join(__dirname, '..', 'screens/MapScreen/components/DiagnosticsOverlay.tsx'))).toBe(false);
     expect(read('state/diagnostics.ts')).toContain('export const diagnostics');
   });
 
-  it('keeps diagnostic consent persistence without exposing settings UI', () => {
+  it('keeps diagnostic consent persistence and a native accessible switch', () => {
     expect(preferences).toContain('diagnosticUploadEnabled');
     expect(preferences).toContain('setDiagnosticUploadEnabled');
-    expect(settings).not.toContain('onDiagnosticSwitchChange');
+    expect(settings).toContain('onDiagnosticSwitchChange');
     expect(read('components/SystemToggle.tsx')).toContain('accessibilityRole="switch"');
   });
 });

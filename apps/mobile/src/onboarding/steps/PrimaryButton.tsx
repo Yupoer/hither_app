@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo } from 'react';
+import { useOptionalVisuals } from '../../state/foregroundUi';
 import { Pressable, StyleSheet } from 'react-native';
 import Animated, {
   interpolateColor,
+  cancelAnimation,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -28,9 +30,12 @@ export default function PrimaryButton({
   // Ease the disabled→enabled colour change instead of snapping — goal-gradient
   // feedback the moment a valid choice is made.
   const p = useSharedValue(disabled ? 0 : 1);
+  const visuals = useOptionalVisuals();
   useEffect(() => {
-    p.value = withTiming(disabled ? 0 : 1, { duration: 240 });
-  }, [disabled, p]);
+    cancelAnimation(p);
+    p.value = visuals ? withTiming(disabled ? 0 : 1, { duration: 240 }) : (disabled ? 0 : 1);
+    return () => cancelAnimation(p);
+  }, [disabled, p, visuals]);
   const bgStyle = useAnimatedStyle(() => ({
     backgroundColor: interpolateColor(p.value, [0, 1], [colors.border, colors.accent]),
   }));

@@ -1534,6 +1534,146 @@
       "acceptance": "A7 no Play Developer API and no new custom HTTP server outside Supabase Edge",
       "testFile": "premiumLedgerContract.test.ts",
       "testNamePattern": "A7 no Play Developer API and no new custom HTTP server"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "Native Settings consent persists with no capture during failed enable",
+      "testFile": "diagnosticConsent.test.ts",
+      "testNamePattern": "never grants consent during a failed enable"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "Safety notifications remain independent of diagnostic upload consent",
+      "testFile": "nativeMetricsSafety.test.ts",
+      "testNamePattern": "keeps power safety independent of consent"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "Hidden canvases release graphics resources",
+      "testFile": "metalforgeBackgroundLifecycle.test.ts",
+      "testNamePattern": "disables hidden frame callbacks"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "Optional graphics cap nominal refresh and stop at first thermal warning",
+      "testFile": "metalforgeBackgroundLifecycle.test.ts",
+      "testNamePattern": "caps active GPU frame updates"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "Targeted reports distinguish interval CPU from native burst CPU",
+      "testFile": "performanceEnergyCoverage.test.ts",
+      "testNamePattern": "attributes interval CPU"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "Bounded incident sampling and workload lifecycle scopes",
+      "testFile": "energyObservability.test.ts",
+      "testNamePattern": "bounds incident sampling"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "Revocation drops pending samples",
+      "testFile": "performanceEnergyCoverage.test.ts",
+      "testNamePattern": "drops a pending performance sample"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "Revocation stops new MetricKit submissions and re-enable cannot revive an old batch",
+      "testFile": "diagnosticSubmissionConsent.test.ts",
+      "testNamePattern": "stops the drained batch after revocation"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "Repeated lock and foreground cycles leave zero background UI timers and graphics workloads",
+      "testFile": "foregroundUiStress.test.ts",
+      "testNamePattern": "stress pauses 12 concurrent canvases"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "Concurrent shaders resume without background catch-up or multiplied clock time",
+      "testFile": "foregroundUiStress.test.ts",
+      "testNamePattern": "resumes shader time"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "Android focus loss pauses optional UI without affecting background domain work",
+      "testFile": "foregroundUiStress.test.ts",
+      "testNamePattern": "pauses Android UI on blur"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "Native map surface and display projection stop during background updates and restore camera once",
+      "testFile": "foregroundMapLifecycle.test.ts",
+      "testNamePattern": "releases the actual map subtree"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "Sheet suspension retains unsaved drafts and resumes the current close exactly once",
+      "testFile": "foregroundSheetLifecycle.test.ts",
+      "testNamePattern": "cancels mid-dismiss on lock"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "Native glass underlays release while sibling form drafts remain mounted",
+      "testFile": "foregroundSheetLifecycle.test.ts",
+      "testNamePattern": "releases native glass underlays"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "Cancelled overlay drag dismissal retains drafts and resumes its committed close once",
+      "testFile": "foregroundSheetLifecycle.test.ts",
+      "testNamePattern": "suspends a committed overlay drag close"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "Bottom-sheet gesture close intent survives suspended animation independently of controlled visibility",
+      "testFile": "foregroundSheetLifecycle.test.ts",
+      "testNamePattern": "retains a committed bottom-sheet gesture close"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "Accepted button operations complete once when optional animation is cancelled",
+      "testFile": "foregroundSheetLifecycle.test.ts",
+      "testNamePattern": "finishes an accepted Amicro operation once"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "The same pending map selection restores its final pose without replaying an entrance",
+      "testFile": "foregroundSheetLifecycle.test.ts",
+      "testNamePattern": "restores the same pending map place"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "OS cancellation of an active sheet drag does not commit a close or start background motion",
+      "testFile": "foregroundSheetLifecycle.test.ts",
+      "testNamePattern": "does not commit an OS-cancelled downward gesture"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "SDK 57 uses fixed React Native and Hermes memory regression versions without advancing to SDK 58",
+      "testFile": "runtimeAlignment.test.ts",
+      "testNamePattern": "uses SDK 57 with the fixed RN and Hermes"
     }
   ]
 }

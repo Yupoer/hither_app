@@ -122,6 +122,8 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
   const { t } = useTranslation();
   const { isPro, premiumProjection } = useSession();
   const {
+    diagnosticUploadEnabled,
+    setDiagnosticUploadEnabled,
     language,
     themeName,
     textScale,
@@ -150,6 +152,14 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
     | 'mapJourney'
     | 'support';
   const [page, setPage] = useState<SettingsChild>('root');
+  const [savingDiagnostics, setSavingDiagnostics] = useState(false);
+  const onDiagnosticSwitchChange = async (enabled: boolean) => {
+    if (savingDiagnostics) return;
+    setSavingDiagnostics(true);
+    try { await setDiagnosticUploadEnabled(enabled); }
+    catch { Alert.alert(t('settings.diagnosticUpload'), t('profile.saveFailed')); }
+    finally { setSavingDiagnostics(false); }
+  };
   const [groupAvatar, setGroupAvatar] = useState(group?.avatar ?? (group ? avatarForGroup(group.id) : AVATAR_EMOJI[0]));
   const [groupAvatarColor, setGroupAvatarColor] = useState(group?.avatarColor ?? (group ? avatarColorForGroup(group.id) : AVATAR_COLORS[0]));
   const [savingGroupAvatar, setSavingGroupAvatar] = useState(false);
@@ -375,6 +385,19 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
 
         <SectionLabel label={t('settings.sectionSupport')} styles={styles} />
         <View style={styles.settingsTopGroup}>
+          <View style={styles.accuracyRow} pointerEvents={savingDiagnostics ? "none" : "auto"}>
+            <View style={styles.accuracyCopy}>
+              <Text style={styles.accuracyLabel}>{t('settings.diagnosticUpload')}</Text>
+              <Text style={styles.accuracySubhint}>{t('settings.diagnosticUploadHint')}</Text>
+            </View>
+            <SystemToggle
+              testID="settings-diagnostic-upload"
+              value={diagnosticUploadEnabled}
+              onValueChange={onDiagnosticSwitchChange}
+              accessibilityLabel={t('settings.diagnosticUpload')}
+            />
+          </View>
+
           <NavRow
             title={t('settings.sectionSupport')}
             onPress={() => setPage('support')}

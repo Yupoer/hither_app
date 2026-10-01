@@ -1,5 +1,5 @@
 import { requireOptionalNativeModule } from 'expo-modules-core';
-import { updateRuntimePowerState } from '../state/runtimePowerState';
+import { updateRuntimePowerState, type RuntimePowerState } from '../state/runtimePowerState';
 
 export interface MetricPayloadFile {
   id: string;
@@ -9,6 +9,18 @@ export interface MetricPayloadFile {
 }
 
 export interface PerformanceSample {
+  processCpuTimeMs?: number | null;
+  processSampleTimestampMs?: number | null;
+  cpuTimeKind?: 'cumulative' | 'window' | null;
+  cpuCorePercent?: number | null;
+  processorCount?: number | null;
+  sampleWindowMs?: number | null;
+  mainThreadDelayMs?: number | null;
+  sampledMemoryPeakMb?: number | null;
+  memoryWarningCount?: number | null;
+  nativeAppVersion?: string | null;
+  nativeBuildNumber?: string | null;
+  hardwareModel?: string | null;
   cpuPercent: number | null;
   cpuTimeMs: number | null;
   memoryMb: number | null;
@@ -40,6 +52,8 @@ export interface PreviousLaunch {
 }
 
 interface HitherMetricsModule {
+  getPowerState?: () => Promise<RuntimePowerState | null>;
+  addListener?: (event: 'powerStateChanged', listener: (state: RuntimePowerState) => void) => { remove: () => void };
   drainPayloads?: () => Promise<MetricPayloadFile[]>;
   removePayloads?: (ids: string[]) => Promise<void>;
   samplePerformance?: (windowMs: number) => Promise<PerformanceSample | null>;
@@ -66,7 +80,7 @@ export async function removePayloads(ids: string[]): Promise<void> {
 
 export async function samplePerformance(windowMs: number): Promise<PerformanceSample | null> {
   const sample = (await HitherMetrics?.samplePerformance?.(windowMs)) ?? null;
-  updateRuntimePowerState(sample);
+  if (!HitherMetrics?.getPowerState || !HitherMetrics?.addListener) updateRuntimePowerState(sample);
   return sample;
 }
 
@@ -97,4 +111,26 @@ export async function signpost(
   token?: string,
 ): Promise<void> {
   await HitherMetrics?.signpost?.(name, phase, token);
+}
+
+/** Safety consumes notifications and one initial read, never the diagnostic sampler. */
+export function startRuntimePowerMonitoring(): () => void {
+  let stopped = false;
+  updateRuntimePowerState({ thermalState: 'unknown', lowPowerMode: null });
+  let revision = 0;
+  let subscription: { remove: () => void } | undefined;
+  try {
+    subscription = HitherMetrics?.addListener?.('powerStateChanged', state => {
+      if (stopped) return;
+      revision += 1;
+      updateRuntimePowerState(state);
+    });
+  } catch { /* Partial native runtimes stay safely static. */ }
+  const initialRevision = revision;
+  try {
+    void HitherMetrics?.getPowerState?.().then(state => {
+      if (!stopped && revision === initialRevision) updateRuntimePowerState(state);
+    }).catch(() => undefined);
+  } catch { /* Optional native API may be unavailable in older binaries. */ }
+  return () => { stopped = true; subscription?.remove(); };
 }

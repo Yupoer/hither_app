@@ -191,6 +191,9 @@ class HitherMetricsModule : Module() {
     return mapOf(
       "cpuPercent" to null, // instantaneous % needs a windowed delta; leave null
       "cpuTimeMs" to cpuTimeMs,
+      "cpuTimeKind" to "cumulative",
+      "processSampleTimestampMs" to System.currentTimeMillis(),
+      "processorCount" to Runtime.getRuntime().availableProcessors(),
       "memoryMb" to pssMb,
       "uiFps" to null,
       "frameTimeP95Ms" to null,

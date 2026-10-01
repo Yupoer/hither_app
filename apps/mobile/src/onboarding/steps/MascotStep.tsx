@@ -1,8 +1,10 @@
 import React, { useEffect } from 'react';
+import { useOptionalVisuals } from '../../state/foregroundUi';
 import { Image, StyleSheet, View } from 'react-native';
 import { HitherText } from '../../components/HitherText';
 import Animated, {
   useAnimatedStyle,
+  cancelAnimation,
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
@@ -24,9 +26,13 @@ export default function MascotStep({ answers, onAnswer, onSkip, onBack }: StepPr
   const mascot = MASCOTS[mascotId];
 
   const progress = useSharedValue(0);
+  const visuals = useOptionalVisuals();
   useEffect(() => {
+    cancelAnimation(progress);
+    if (!visuals || progress.value === 1) { progress.value = 1; return; }
     progress.value = withTiming(1, { duration: 450 });
-  }, [progress]);
+    return () => cancelAnimation(progress);
+  }, [progress, visuals]);
 
   const style = useAnimatedStyle(() => ({
     opacity: progress.value,

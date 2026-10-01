@@ -2,7 +2,12 @@ import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 const mockSearch = jest.fn();
+const mockListeners = new Set<(state: string) => void>();
+const mockAppState = { currentState: 'active', addEventListener: (_: string, listener: (state: string) => void) => {
+  mockListeners.add(listener); return { remove: () => mockListeners.delete(listener) };
+} };
 jest.mock('react-native', () => ({
+  AppState: mockAppState,
   ActivityIndicator: 'Spinner', FlatList: 'List', Pressable: 'Button', Text: 'Text',
   TextInput: 'Input', View: 'View', StyleSheet: { create: (value: unknown) => value, hairlineWidth: 1 },
 }));
@@ -20,6 +25,7 @@ const render = (next = props) => React.createElement(DestinationSearch, next);
 const input = (query: string) => act(() => view.root.findByType('Input' as never).props.onChangeText(query));
 beforeEach(() => {
   jest.useFakeTimers(); mockSearch.mockReset();
+  mockAppState.currentState = 'active';
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   act(() => { view = create(render()); });
 });
@@ -58,4 +64,20 @@ it('finishes a stalled request with an error rather than leaving a spinner', asy
   await act(async () => { jest.advanceTimersByTime(20_000); });
   expect(view.root.findAllByType('Spinner' as never)).toHaveLength(0);
   expect(JSON.stringify(view.toJSON())).toContain('search.failed');
+});
+
+it('cancels a background debounce and resumes the retained query once without replaying searches', async () => {
+  mockSearch.mockResolvedValue([]);
+  input('retained');
+  const transition = (state: string) => act(() => {
+    mockAppState.currentState = state;
+    for (const listener of mockListeners) listener(state);
+  });
+  transition('background');
+  await act(async () => { jest.advanceTimersByTime(120_000); });
+  expect(mockSearch).not.toHaveBeenCalled();
+  expect(view.root.findByType('Input' as never).props.value).toBe('retained');
+  transition('active'); transition('active');
+  await act(async () => { jest.advanceTimersByTime(450); });
+  expect(mockSearch).toHaveBeenCalledTimes(1);
 });

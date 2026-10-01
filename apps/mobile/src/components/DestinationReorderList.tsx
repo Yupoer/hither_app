@@ -1,3 +1,4 @@
+import { useForegroundUi, isForegroundUi } from '../state/foregroundUi';
 import React, { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
 import {
   Animated,
@@ -246,6 +247,7 @@ export default function DestinationReorderList({
   const pendingOrderSignatureRef = useRef<string | null>(null);
 
   const draggingRef = useRef(false);
+  const foreground = useForegroundUi();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [colorPickerDay, setColorPickerDay] = useState<number | null>(null);
   const [emojiPickerDestId, setEmojiPickerDestId] = useState<string | null>(null);
@@ -356,6 +358,14 @@ export default function DestinationReorderList({
     setDropTargetIndex(null);
     pan.setValue(0);
   }, [onDragActiveChange, pan]);
+
+  useEffect(() => {
+    if (!foreground) endDragSession();
+    return () => {
+      if (autoScrollRafRef.current != null) cancelAnimationFrame(autoScrollRafRef.current);
+      autoScrollRafRef.current = null;
+    };
+  }, [foreground, endDragSession]);
 
   const openAndroidDatePicker = useCallback(() => {
     if (Platform.OS !== 'android') return;
@@ -598,7 +608,7 @@ export default function DestinationReorderList({
               autoScrollRafRef.current = null;
               const delta = pendingAutoScrollRef.current;
               pendingAutoScrollRef.current = 0;
-              if (!draggingRef.current || delta === 0) return;
+              if (!isForegroundUi() || !draggingRef.current || delta === 0) return;
               onDragAutoScroll(delta);
             });
           }

@@ -49,6 +49,9 @@ export const ENERGY_COUNTER_NAMES = [
   'snapshot',
   'render',
   'network_request',
+  'route_projection',
+  'route_projection_ms',
+  'thermal_transition',
 ] as const;
 
 export type EnergyCounterName = (typeof ENERGY_COUNTER_NAMES)[number];
@@ -64,7 +67,7 @@ export interface EnergyCounterSnapshot {
 }
 
 export interface EnergyObservationSample {
-  kind: 'startup' | 'steady';
+  kind: 'startup' | 'steady' | 'thermal' | 'resume';
   startupOffsetMs: number | null;
   scheduledAt: number;
   appState: string;
@@ -78,6 +81,7 @@ export type EnergyObservationSampleHandler = (
 
 export interface EnergyObservabilityController {
   stop: () => void;
+  requestSample: (kind: 'thermal' | 'resume') => void;
 }
 
 export interface EnergyObservabilityStartOptions {
@@ -95,6 +99,9 @@ const ZERO_COUNTERS: EnergyCounterValues = {
   snapshot: 0,
   render: 0,
   network_request: 0,
+  route_projection: 0,
+  route_projection_ms: 0,
+  thermal_transition: 0,
 };
 
 let counters: EnergyCounterValues = { ...ZERO_COUNTERS };
@@ -107,6 +114,12 @@ let activeSession: EnergySession | null = null;
 let spanSequence = 0;
 let launchAt = Date.now();
 const activeSpans = new Map<EnergySignpostName, string>();
+const WORKLOAD_FIELDS = ['shaderCanvasCount', 'starfieldCanvasCount', 'animatedCanvasCount', 'mapCount', 'memberMarkerCount', 'destinationMarkerCount', 'rawRoutePointCount', 'displayRoutePointCount', 'markerMotionEnabled', 'mountedCardCount'] as const;
+type Workload = Partial<Record<typeof WORKLOAD_FIELDS[number], number>>;
+const workloads = new Map<object, Workload>();
+let stateChangedAt = Date.now();
+let foregroundMs = 0;
+let backgroundMs = 0;
 let nativeEnergySignpost: NativeEnergySignpost = () => undefined;
 
 interface EnergySession {
@@ -114,6 +127,7 @@ interface EnergySession {
   cancelPendingStartupSampling: () => void;
   pauseForBackground: () => void;
   resumeFromForeground: () => void;
+  requestSample: (kind: 'thermal' | 'resume') => void;
 }
 
 function createZeroCounters(): EnergyCounterValues {
@@ -248,8 +262,15 @@ function startSampling(
     clearSteadyTimer();
   };
 
+  let lastIncidentAt = -Infinity;
+  const requestSample = (kind: 'thermal' | 'resume') => {
+    if (stopped || currentAppState !== 'active' || Date.now() - lastIncidentAt < 30_000) return;
+    lastIncidentAt = Date.now();
+    invokeSample(handler, kind, null, Date.now());
+  };
   const resumeFromForeground = () => {
     if (stopped) return;
+    requestSample('resume');
     startSteadyTimer();
   };
 
@@ -285,17 +306,47 @@ function startSampling(
     cancelPendingStartupSampling,
     pauseForBackground,
     resumeFromForeground,
+    requestSample,
   };
 }
 
 export const energyObservability = {
   increment(name: EnergyCounterName, amount = 1): void {
-    if (!isEnergyCounterName(name)) return;
+    if (!activeSession || !isEnergyCounterName(name)) return;
     if (!Number.isFinite(amount) || amount <= 0) return;
     counters[name] += amount;
   },
 
+  mountWorkload(values: Workload): () => void {
+    const owner = {};
+    const safe: Workload = {};
+    for (const field of WORKLOAD_FIELDS) {
+      const value = values[field];
+      if (typeof value === 'number' && Number.isFinite(value) && value >= 0) safe[field] = value;
+    }
+    workloads.set(owner, safe);
+    return () => { workloads.delete(owner); };
+  },
+
+  workloadSnapshot(): Record<string, number> {
+    const result: Record<string, number> = {};
+    for (const field of WORKLOAD_FIELDS) result[field] = 0;
+    for (const values of workloads.values()) {
+      for (const field of WORKLOAD_FIELDS) result[field] += values[field] ?? 0;
+    }
+    const elapsed = Math.max(0, Date.now() - stateChangedAt);
+    result.foregroundDurationMs = foregroundMs + (currentAppState === 'active' ? elapsed : 0);
+    result.backgroundDurationMs = backgroundMs + (currentAppState !== 'active' ? elapsed : 0);
+    return result;
+  },
+
   setAppState(state: string): void {
+    const now = Date.now();
+    if (activeSession) {
+      if (currentAppState === 'active') foregroundMs += Math.max(0, now - stateChangedAt);
+      else backgroundMs += Math.max(0, now - stateChangedAt);
+    }
+    stateChangedAt = now;
     currentAppState = isAllowedAppState(state)
       ? state
       : boundedCategory(state, 'unknown') === 'active'
@@ -353,6 +404,7 @@ export const energyObservability = {
   ): EnergyObservabilityController {
     activeController?.stop();
     resetCounterState();
+    foregroundMs = 0; backgroundMs = 0; stateChangedAt = Date.now();
     const session = startSampling(handler, options);
     activeSession = session;
     activeController = session;
@@ -378,6 +430,8 @@ export function __resetEnergyObservabilityForTests(): void {
   activeController = null;
   activeSession = null;
   resetCounterState();
+  workloads.clear();
+  foregroundMs = 0; backgroundMs = 0; stateChangedAt = Date.now();
   currentAppState = 'active';
   currentTrackingMode = 'unknown';
   nativeEnergySignpost = () => undefined;

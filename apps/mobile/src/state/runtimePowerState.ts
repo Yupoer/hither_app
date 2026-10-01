@@ -1,4 +1,4 @@
-/** Reuse existing native samples; this store starts no timer or sensor. */
+/** Notification-driven system safety state; independent of diagnostic consent. */
 export interface RuntimePowerState {
   lowPowerMode: boolean | null;
   thermalState: string | null;
@@ -17,4 +17,9 @@ export function updateRuntimePowerState(sample: RuntimePowerState | null): void 
   if (state.lowPowerMode === next.lowPowerMode && state.thermalState === next.thermalState) return;
   state = next;
   for (const listener of listeners) listener();
+}
+
+/** Unknown native state is static; stop optional work at the first thermal warning. */
+export function optionalVisualsAllowed(power: RuntimePowerState): boolean {
+  return power.thermalState === 'nominal' && power.lowPowerMode === false;
 }

@@ -47,6 +47,7 @@ import DateTimePicker, {
 } from '@react-native-community/datetimepicker';
 import Animated, {
   useSharedValue,
+  cancelAnimation,
   useAnimatedStyle,
   interpolate,
   Extrapolation,
@@ -65,7 +66,8 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
-import GroupMap, { type GroupMapHandle } from '../components/GroupMap';
+import { useForegroundUi, useForegroundClock, isForegroundUi } from '../state/foregroundUi';
+import GroupMap, { type GroupMapHandle, type GroupMapCameraState } from '../components/GroupMap';
 import { PLACE_ALTITUDE, PLACE_ZOOM } from '../components/mapCameraMath';
 import {
   cameraAfterSuccessfulAdd,
@@ -169,6 +171,7 @@ import { useCarouselSelection } from './MapScreen/hooks/useCarouselSelection';
 import { useJourneyNavigation } from './MapScreen/hooks/useJourneyNavigation';
 import { useMapKitRoutes } from './MapScreen/hooks/useMapKitRoutes';
 import { usePersonalProgressSurfaces } from './MapScreen/hooks/usePersonalProgressSurfaces';
+import { usePendingPlaceEntrance } from './MapScreen/hooks/usePendingPlaceEntrance';
 import { energyObservability } from '../state/energyObservability';
 import { useGatherCardExpansion } from './MapScreen/hooks/useGatherCardExpansion';
 import {
@@ -623,6 +626,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const serverDailyAccommodations = state?.dailyAccommodations ?? [];
 
   const mapRef = useRef<GroupMapHandle | null>(null);
+  const mapCameraState = useRef<GroupMapCameraState>({});
   const carouselRef = useRef<ScrollView | null>(null);
 
   const members = useMemo(() => state?.members ?? [], [state?.members]);
@@ -740,6 +744,8 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const [optimisticDestinations, setOptimisticDestinations] = useState<Destination[] | null>(null);
   const mapFocused = useIsFocused();
+  const foregroundUi = useForegroundUi();
+  const uiVisible = foregroundUi && mapFocused;
   const [arrivalOperations, setArrivalOperations] = useState<CoreOperation[]>([]);
   useEffect(() => {
     let active = true;
@@ -975,6 +981,7 @@ export default function MapScreen({ route, navigation }: Props) {
       ),
     [openDestinations, arrivalExitSnapshots, arrivalExitRecords, arrivalExitContext],
   );
+  useEffect(() => energyObservability.mountWorkload({ mountedCardCount: uiVisible ? destinations.length : 0 }), [uiVisible, destinations.length]);
   const destinationIds = useMemo(() => destinations.map((dest) => dest.id), [destinations]);
   /**
    * Full open itinerary for the route editor (all open days + stay cards).
@@ -1438,7 +1445,6 @@ export default function MapScreen({ route, navigation }: Props) {
   // (so the search sheet can close and the bottom sheet collapses to peek).
   // confirmCardReady flips true instantly — then the bounce-up
   // card appears and the search bar / recenter capsule hide.
-  const [confirmCardReady, setConfirmCardReady] = useState(false);
   /** Keyboard height while confirm card is up — lifts card with 12pt gap. */
   const [confirmKeyboardHeight, setConfirmKeyboardHeight] = useState(0);
   const [kmlVisible, setKmlVisible] = useState(false);
@@ -1458,20 +1464,7 @@ export default function MapScreen({ route, navigation }: Props) {
     { latitude: number; longitude: number } | undefined
   >(undefined);
   // Bounce-up entrance animation for the add-gather-point confirm card.
-  const confirmCardAnim = useSharedValue(0);
-  useEffect(() => {
-    if (pendingPlace) {
-      const id = setTimeout(() => {
-        setConfirmCardReady(true);
-        confirmCardAnim.value = 0;
-        confirmCardAnim.value = withSpring(1, { damping: 16, stiffness: 100, mass: 1 });
-      }, 0);
-      return () => clearTimeout(id);
-    } else {
-      setConfirmCardReady(false);
-      confirmCardAnim.value = 0;
-    }
-  }, [pendingPlace, confirmCardAnim]);
+  const { ready: confirmCardReady, progress: confirmCardAnim } = usePendingPlaceEntrance(pendingPlace, uiVisible, heightSV);
   const confirmCardStyle = useAnimatedStyle(() => ({
     transform: [
       { translateY: interpolate(confirmCardAnim.value, [0, 1], [120, 0], Extrapolation.CLAMP) },
@@ -1696,7 +1689,6 @@ export default function MapScreen({ route, navigation }: Props) {
 
   /** Dismiss the confirm card (used by both Cancel and Add buttons). */
   function dismissConfirmCard() {
-    setConfirmCardReady(false);
     setPendingPlace(null);
     setPendingPlaceTitle('');
     setConfirmKeyboardHeight(0);
@@ -2266,10 +2258,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const mapRoutesEnabled = !(preferencesReady && passiveCompanionMode);
   const { selfRoute, memberRoutes, selfRouteGeneration } = useMapKitRoutes({
     selfCoordinates: fromCoords,
-    members: members.map((member) => ({
-      ...member,
-      coordinates: member.coordinates ?? undefined,
-    })),
+    members: [], // Member routes are already disabled by this hook; no peer-coordinate cloning.
     gathering: mapRoutesEnabled ? activePoint : null,
     travelMode,
     highAccuracy: mapRoutesEnabled ? highAccuracy : false,
@@ -2301,6 +2290,7 @@ export default function MapScreen({ route, navigation }: Props) {
     destination: Destination,
     indexAtStart = 0,
   ) => {
+    if (!isForegroundUi()) return;
     const started = beginArrivalCardExit(
       arrivalExitRecordsRef.current,
       destination.id,
@@ -2392,6 +2382,11 @@ export default function MapScreen({ route, navigation }: Props) {
       prevVisibleDestOrderRef.current = [];
       return;
     }
+    if (!uiVisible) {
+      knownClosedDestIdsRef.current = new Set(closedNow.map(d => d.id));
+      prevVisibleDestOrderRef.current = openDestinations.map(d => d.id);
+      return;
+    }
     if (knownClosedDestIdsRef.current == null) {
       // First paint: seed known closed so past history does not animate out.
       knownClosedDestIdsRef.current = new Set(closedNow.map((d) => d.id));
@@ -2432,6 +2427,7 @@ export default function MapScreen({ route, navigation }: Props) {
       [...exitingIds],
     );
   }, [
+    uiVisible,
     allScopedDestinations,
     openDestinations,
     startArrivalCardExit,
@@ -2443,6 +2439,11 @@ export default function MapScreen({ route, navigation }: Props) {
   ]);
 
   useEffect(() => {
+    if (!uiVisible) {
+      setArrivalExitRecords(new Map());
+      setArrivalExitSnapshots(new Map());
+      setArrivalCelebrateDestId(null);
+    }
     return () => {
       for (const timers of arrivalExitTimersRef.current.values()) {
         for (const t of timers) clearTimeout(t);
@@ -2450,7 +2451,7 @@ export default function MapScreen({ route, navigation }: Props) {
       arrivalExitTimersRef.current.clear();
       clearAllCelebrateClearTimers(celebrateClearTimersRef.current);
     };
-  }, []);
+  }, [uiVisible]);
 
   // Wired after promptCompleteAfterArrival is defined (see below).
   const afterPersonalArrivalRef = useRef<
@@ -5431,7 +5432,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const flock = useMemo(
     () =>
-      members.map((m) => {
+      (uiVisible ? members : []).map((m) => {
         const isSelf = m.userId === user?.id;
         // Gathering-point distance still drives the arrived/en-route STATUS.
         const d =
@@ -5487,6 +5488,7 @@ export default function MapScreen({ route, navigation }: Props) {
         };
       }),
     [
+      uiVisible,
       members,
       activePoint,
       navTarget,
@@ -5512,7 +5514,7 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [members, soloOverride, user?.id]);
 
   // My own subgroup, if any — gates the "invite a teammate" entry on my card.
-  const mySubgroupId = flock.find((f) => f.userId === user?.id)?.subgroupId;
+  const mySubgroupId = myScopeId;
 
   const mySoloActive = useMemo(() => {
     if (soloOverride !== null) return soloOverride;
@@ -5782,9 +5784,9 @@ export default function MapScreen({ route, navigation }: Props) {
   );
   const nextStopTitle = nextStop?.title;
   const nextStopDistLabel = useMemo(() => {
-    if (!nextStop || !fromCoords) return null;
+    if (!uiVisible || !nextStop || !fromCoords) return null;
     return formatDistance(distanceMeters(fromCoords, nextStop.coordinates));
-  }, [nextStop, fromCoords]);
+  }, [uiVisible, nextStop, fromCoords]);
 
   const sheetHeader = useMemo(() => {
     /* Fixed button roles (never swap meanings across screens):
@@ -7051,7 +7053,9 @@ export default function MapScreen({ route, navigation }: Props) {
       {/* Passive mode unmounts the map to free GPU/native tiles; switch-back remounts. */}
       {!inPassiveMode ? (
         <GroupMap
+          active={uiVisible}
           ref={mapRef}
+          cameraState={mapCameraState}
           members={members}
           showsUserLocation={appState === 'active' && mapFocused && preferencesReady && sharingEnabled && members.some(m => m.userId === user?.id)}
           gathering={activePoint}
@@ -7105,7 +7109,7 @@ export default function MapScreen({ route, navigation }: Props) {
       ) : null}
 
       {/* Group pill — moved to bottom left, tracking sheet like recenter capsule. */}
-      {showDenseChrome && !confirmCardReady && !atFull && (
+      {uiVisible && showDenseChrome && !confirmCardReady && !atFull && (
       <Animated.View
         style={[styles.teamCapsuleWrap, recenterStyle]}
         pointerEvents={atFull ? 'none' : 'box-none'}
@@ -7136,7 +7140,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
 
       {/* Recenter capsule — fit-all (top) + locate-me (bottom), always both. */}
-      {showDenseChrome && !confirmCardReady && !atFull && (
+      {uiVisible && showDenseChrome && !confirmCardReady && !atFull && (
       <Animated.View
         style={[styles.recenter, recenterStyle]}
         pointerEvents={atFull ? 'none' : 'auto'}
@@ -7382,7 +7386,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
       {/* Gathering-point carousel — above locate/group capsules; sheet wrapper
           zIndex is higher so the sheet covers cards on overlap. */}
-      {showDenseChrome && destinations.length > 0 && !atFull && (
+      {uiVisible && showDenseChrome && destinations.length > 0 && !atFull && (
         <Animated.View
           // a11y-layout:carouselCapsuleClearance
           style={[
@@ -9528,12 +9532,7 @@ const RefreshLocationsButton = React.memo(function RefreshLocationsButton({
   t: (key: TranslationKey, params?: Record<string, string | number>) => string;
   onPress: () => void;
 }) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (cooldownUntil <= Date.now()) return;
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [cooldownUntil]);
+  const now = useForegroundClock(1000, cooldownUntil > Date.now());
   const remaining = Math.max(0, Math.ceil((cooldownUntil - now) / 1000));
   const cooling = remaining > 0;
 
@@ -9612,11 +9611,7 @@ const FlockRow = React.memo(function FlockRow({
   onSelfSplit: () => void | Promise<unknown>;
   onKick?: () => void;
 }) {
-  const [nowMs, setNowMs] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNowMs(Date.now()), 30_000);
-    return () => clearInterval(id);
-  }, []);
+  const nowMs = useForegroundClock(30_000);
 
   const movingRecently =
     !!lastUpdated && nowMs + serverTimeOffsetMs - new Date(lastUpdated).getTime() < 2 * 60_000;

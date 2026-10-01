@@ -9,6 +9,7 @@ import {
   MAX_FIELD_STRING,
   redactSensitiveText,
 } from '../utils/errorFingerprint';
+import { getRuntimePowerState, subscribeRuntimePowerState } from './runtimePowerState';
 import { getDiagnosticConsentEnabled } from './diagnosticConsent';
 import {
   energyObservability,
@@ -101,10 +102,10 @@ export function deriveCpuPercent(
   if (!(wallDelta > 0) || !(cpuDelta >= 0) || !Number.isFinite(cpuDelta) || !Number.isFinite(wallDelta)) {
     return null;
   }
-  // Cap at 100% of one core-equivalent wall window (process may use more cores later).
+  // Raw core-equivalent CPU: a multi-core process can exceed 100%.
   const pct = (cpuDelta / wallDelta) * 100;
   if (!Number.isFinite(pct)) return null;
-  return Math.max(0, Math.min(400, pct));
+  return Math.max(0, pct);
 }
 
 /**
@@ -153,7 +154,15 @@ export const PERFORMANCE_SAFE_FIELDS = new Set([
   'confidence',
   'count',
   'cpuPercent',
-  'cpuTimeMs',
+  'cpuTimeMs', 'cpuTimeKind', 'processCpuTimeMs', 'processSampleTimestampMs', 'cpuCorePercent', 'processorCount',
+  'cpuIntervalDeltaMs', 'cpuIntervalWindowMs', 'cpuIntervalCorePercent', 'cpuIntervalNormalizedPercent',
+  'mainThreadDelayMs', 'jsSchedulingDelayMs', 'sampledMemoryPeakMb', 'memoryWarningCount',
+  'nativeAppVersion', 'nativeBuildNumber', 'hardwareModel',
+  'shaderCanvasCount', 'starfieldCanvasCount', 'animatedCanvasCount', 'mapCount',
+  'memberMarkerCount', 'destinationMarkerCount', 'rawRoutePointCount', 'displayRoutePointCount',
+  'markerMotionEnabled', 'mountedCardCount', 'routeProjectionCount', 'routeProjectionDurationMs',
+  'thermalPreviousState', 'thermalDwellMs',
+  'thermalTransitionCount', 'foregroundDurationMs', 'backgroundDurationMs',
   'deviceModel',
   'displayMaxFps',
   'durationMs',
@@ -787,6 +796,9 @@ function energySamplePayload(sample?: EnergyObservationSample): Record<string, u
   const { delta, cumulative } = sample.counters;
   return {
     sampleKind: sample.kind,
+    routeProjectionCount: delta.route_projection ?? null,
+    routeProjectionDurationMs: delta.route_projection_ms ?? null,
+    thermalTransitionCount: delta.thermal_transition ?? null,
     startupSampleOffsetMs: sample.startupOffsetMs,
     counterWindowMs: sample.counters.windowMs,
     appState: sample.appState,
@@ -811,14 +823,27 @@ function energySamplePayload(sample?: EnergyObservationSample): Record<string, u
 function enrichNativeSample(
   nativeSample: Record<string, unknown> | null,
 ): Record<string, unknown> {
-  const wallMs = Date.now();
-  const out: Record<string, unknown> = { ...(nativeSample ?? {}) };
+  const wallMs = typeof nativeSample?.processSampleTimestampMs === 'number' && Number.isFinite(nativeSample.processSampleTimestampMs)
+    ? nativeSample.processSampleTimestampMs : Date.now();
+  const out: Record<string, unknown> = {
+    cpuTimeKind: null, processCpuTimeMs: null, processorCount: null, cpuCorePercent: null,
+    cpuIntervalDeltaMs: null, cpuIntervalWindowMs: null, cpuIntervalCorePercent: null, cpuIntervalNormalizedPercent: null,
+    mainThreadDelayMs: null, sampledMemoryPeakMb: null, memoryWarningCount: null,
+    nativeAppVersion: null, nativeBuildNumber: null, hardwareModel: null,
+    ...(nativeSample ?? {}),
+  };
   const cpuTimeMs =
-    typeof nativeSample?.cpuTimeMs === 'number' && Number.isFinite(nativeSample.cpuTimeMs)
-      ? nativeSample.cpuTimeMs
-      : null;
+    typeof nativeSample?.processCpuTimeMs === 'number' && Number.isFinite(nativeSample.processCpuTimeMs)
+      ? nativeSample.processCpuTimeMs
+      : nativeSample?.cpuTimeKind === 'cumulative' && typeof nativeSample.cpuTimeMs === 'number'
+        ? nativeSample.cpuTimeMs : null;
   if (cpuTimeMs != null) {
     const derived = deriveCpuPercent(lastCpuSample, { cpuTimeMs, wallMs });
+    out.cpuIntervalDeltaMs = lastCpuSample && derived != null ? cpuTimeMs - lastCpuSample.cpuTimeMs : null;
+    out.cpuIntervalWindowMs = lastCpuSample && derived != null ? wallMs - lastCpuSample.wallMs : null;
+    out.cpuIntervalCorePercent = derived;
+    out.cpuIntervalNormalizedPercent = derived != null && typeof nativeSample?.processorCount === 'number' && nativeSample.processorCount > 0
+      ? derived / nativeSample.processorCount : null;
     lastCpuSample = { cpuTimeMs, wallMs };
     if (derived != null && (out.cpuPercent == null || out.cpuPercent === null)) {
       out.cpuPercent = derived;
@@ -836,6 +861,12 @@ function enrichNativeSample(
     lastMemoryMb = memoryMb;
   }
   return out;
+}
+
+/** One bounded scheduling probe per sample, never an ongoing JS frame loop. */
+function measureJsSchedulingDelay(): Promise<number> {
+  const startedAt = Date.now();
+  return new Promise(resolve => setTimeout(() => resolve(Math.max(0, Date.now() - startedAt - 100)), 100));
 }
 
 async function collectSample(
@@ -885,13 +916,17 @@ async function collectSample(
  */
 async function collectEnergyObservationSample(
   sample: EnergyObservationSample,
+  isCurrent: () => boolean = () => true,
 ): Promise<void> {
   if (!isAppForeground() || nativeSampleInFlight) return;
   if (!(await getDiagnosticConsentEnabled())) return;
   nativeSampleInFlight = true;
   try {
-    const nativeSample = await metrics.samplePerformance(SAMPLE_WINDOW_MS).catch(() => null);
-    if (!nativeSample) return;
+    const workload = energyObservability.workloadSnapshot?.() ?? {};
+    const [nativeSample, jsSchedulingDelayMs] = await Promise.all([
+      metrics.samplePerformance(SAMPLE_WINDOW_MS).catch(() => null), measureJsSchedulingDelay(),
+    ]);
+    if (!nativeSample || !isCurrent() || !(await getDiagnosticConsentEnabled())) return;
     const enriched = enrichNativeSample(nativeSample as unknown as Record<string, unknown>);
     await insertEvent({
       id: Crypto.randomUUID(),
@@ -899,11 +934,14 @@ async function collectEnergyObservationSample(
       sessionId,
       eventType: 'sample',
       operation: normalizeOperation(
-        sample.kind === 'startup' ? 'runtime.energy.startup' : 'runtime.energy.sample',
+        sample.kind === 'startup' ? 'runtime.energy.startup' : sample.kind === 'steady' ? 'runtime.energy.sample' : `runtime.energy.${sample.kind}`,
       ),
       payload: {
         ...sanitizePayload({
+          ...correlationContext(),
           ...enriched,
+          ...workload,
+          jsSchedulingDelayMs,
           ...energySamplePayload(sample),
           confidence: 'energy_only',
           appState: performanceAppState,
@@ -1146,21 +1184,46 @@ export async function traceApi<T>(operation: string, work: () => Promise<T>): Pr
   }
 }
 
+async function recordThermalTransition(previous: string | null, thermal: string | null, dwellMs: number): Promise<void> {
+  if (!(await getDiagnosticConsentEnabled())) return;
+  await insertEvent({
+    id: Crypto.randomUUID(), timestamp: Date.now(), sessionId, eventType: 'sample',
+    operation: 'runtime.energy.thermal_transition',
+    payload: { ...sanitizePayload({ ...correlationContext(), thermalPreviousState: previous,
+      thermalState: thermal, thermalDwellMs: dwellMs, appState: performanceAppState }), ...releaseContext() },
+  });
+}
+
 export function startPerformanceMonitor(): () => void {
   let stopped = false;
-  let controller: { stop: () => void } | null = null;
+  let controller: { stop: () => void; requestSample?: (kind: 'thermal' | 'resume') => void } | null = null;
+  let unsubscribePower: (() => void) | null = null;
   // Full tracing initialization remains best-effort, but must not gate the
   // consented low-overhead energy sampler.
   void ensureEnabled();
   void getDiagnosticConsentEnabled().then((consentEnabled) => {
     if (!consentEnabled || stopped) return;
-    controller = energyObservability.start((sample) =>
-      collectEnergyObservationSample(sample),
-    );
+    lastCpuSample = null; lastMemoryMb = null;
+    controller = energyObservability.start((sample) => collectEnergyObservationSample(sample, () => !stopped));
+    let previousThermal = getRuntimePowerState().thermalState;
+    let thermalChangedAt = Date.now();
+    unsubscribePower = subscribeRuntimePowerState(() => {
+      const thermal = getRuntimePowerState().thermalState;
+      if (thermal === previousThermal) return;
+      const previous = previousThermal;
+      const dwellMs = Math.max(0, Date.now() - thermalChangedAt);
+      previousThermal = thermal;
+      thermalChangedAt = Date.now();
+      // Preserve short critical transitions even when the costly sample is throttled.
+      void recordThermalTransition(previous, thermal, dwellMs).catch(() => undefined);
+      energyObservability.increment('thermal_transition');
+      controller?.requestSample?.('thermal');
+    });
   }).catch(() => undefined);
   return () => {
     stopped = true;
     controller?.stop();
+    unsubscribePower?.();
     controller = null;
   };
 }

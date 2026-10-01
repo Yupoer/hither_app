@@ -67,7 +67,7 @@ const mockDatabase = {
   withTransactionAsync: jest.fn(async (work: () => Promise<void>) => work()),
 };
 const mockConsent = jest.fn(async (..._args: unknown[]) => true);
-const mockNativeSample = {
+const mockNativeSample: import('../native/metrics').PerformanceSample = {
   cpuPercent: null,
   cpuTimeMs: 100,
   memoryMb: 120,
@@ -294,6 +294,7 @@ describe('performance and energy lifecycle coverage', () => {
   });
 
   it('starts and stops consented low-overhead energy sampling without JS FPS work', async () => {
+    jest.useFakeTimers();
     delete process.env.EXPO_PUBLIC_PERFORMANCE_TRACING;
     const stop = startPerformanceMonitor();
     await settle();
@@ -301,6 +302,8 @@ describe('performance and energy lifecycle coverage', () => {
     const handler = energyHandlers[0];
     expect(handler).toBeDefined();
     handler?.(observation);
+    await settle();
+    await jest.advanceTimersByTimeAsync(100);
     await settle();
     expect(mockMetrics.samplePerformance).toHaveBeenCalledWith(1_000);
     const energyRow = rows.find((row) => row.operation === 'runtime.energy.sample');
@@ -355,4 +358,52 @@ describe('performance and energy lifecycle coverage', () => {
     expect(mockMetrics.samplePerformance).toHaveBeenCalledTimes(1);
     setPerformanceAppState('active');
   });
+  it('attributes interval CPU from cumulative process counters without confusing the native burst window', async () => {
+    jest.useFakeTimers();
+    mockMetrics.samplePerformance.mockResolvedValue({ ...mockNativeSample,
+      cpuTimeKind: 'window', cpuTimeMs: 10, processCpuTimeMs: 1000, processorCount: 4, cpuPercent: 2.5,
+    } as typeof mockNativeSample);
+    const stop = startPerformanceMonitor();
+    await settle();
+    const handler = energyHandlers[0];
+    handler?.(observation);
+    await jest.advanceTimersByTimeAsync(100);
+    await settle();
+    let payload = JSON.parse(rows.at(-1)!.payload);
+    expect(payload).toMatchObject({ cpuIntervalCorePercent: null, cpuTimeMs: 10, cpuTimeKind: 'window', jsSchedulingDelayMs: 0 });
+    await jest.advanceTimersByTimeAsync(900);
+    mockMetrics.samplePerformance.mockResolvedValue({ ...mockNativeSample,
+      cpuTimeKind: 'window', cpuTimeMs: 20, processCpuTimeMs: 1500, processorCount: 4, cpuPercent: 5,
+    } as typeof mockNativeSample);
+    handler?.(observation);
+    await jest.advanceTimersByTimeAsync(100);
+    await settle();
+    payload = JSON.parse(rows.at(-1)!.payload);
+    expect(payload).toMatchObject({ cpuIntervalDeltaMs: 500, cpuIntervalWindowMs: 1000,
+      cpuIntervalCorePercent: 50, cpuIntervalNormalizedPercent: 12.5, cpuPercent: 5, cpuTimeMs: 20 });
+    stop();
+    mockMetrics.samplePerformance.mockResolvedValue(mockNativeSample);
+    const legacy = startPerformanceMonitor(); await settle();
+    energyHandlers.at(-1)?.(observation);
+    await jest.advanceTimersByTimeAsync(100); await settle();
+    expect(JSON.parse(rows.at(-1)!.payload).cpuIntervalCorePercent).toBeNull();
+    legacy();
+  });
+
+  it('drops a pending performance sample after consent revocation or monitor stop', async () => {
+    jest.useFakeTimers();
+    const stop = startPerformanceMonitor(); await settle();
+    energyHandlers[0]?.(observation); await settle();
+    mockConsent.mockResolvedValue(false);
+    await jest.advanceTimersByTimeAsync(100); await settle();
+    expect(rows.filter(row => row.event_type === 'sample')).toHaveLength(0);
+    stop();
+    mockConsent.mockResolvedValue(true);
+    const next = startPerformanceMonitor(); await settle();
+    energyHandlers.at(-1)?.(observation); await settle();
+    next();
+    await jest.advanceTimersByTimeAsync(100); await settle();
+    expect(rows.filter(row => row.event_type === 'sample')).toHaveLength(0);
+  });
+
 });

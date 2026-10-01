@@ -1,3 +1,4 @@
+import { useForegroundUi } from '../state/foregroundUi';
 /**
  * Global top toast when an EAS OTA just applied (any screen).
  * Mount once under SafeAreaProvider so insets are correct.
@@ -13,6 +14,7 @@ const VISIBLE_MS = 3200;
 const FADE_MS = 280;
 
 export default function OtaUpdateToast() {
+  const foreground = useForegroundUi();
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const [visible, setVisible] = useState(false);
@@ -20,6 +22,7 @@ export default function OtaUpdateToast() {
   const translateY = useRef(new Animated.Value(-12)).current;
 
   useEffect(() => {
+    if (!foreground) { opacity.stopAnimation(); translateY.stopAnimation(); setVisible(false); return; }
     let cancelled = false;
     let hideTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -61,8 +64,9 @@ export default function OtaUpdateToast() {
     return () => {
       cancelled = true;
       if (hideTimer) clearTimeout(hideTimer);
+      opacity.stopAnimation(); translateY.stopAnimation();
     };
-  }, [opacity, translateY]);
+  }, [foreground, opacity, translateY]);
 
   if (!visible) return null;
 

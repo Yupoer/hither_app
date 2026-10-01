@@ -19,11 +19,12 @@ describe('diagnostic consent', () => {
     expect(consent.isDiagnosticConsentEnabled()).toBe(false);
   });
 
-  it('changes the synchronous gate before persisting', async () => {
+  it('grants capture only after persistence succeeds', async () => {
     const consent = await import('../state/diagnosticConsent');
     const pending = consent.setDiagnosticConsentEnabled(true);
-    expect(consent.isDiagnosticConsentEnabled()).toBe(true);
+    expect(consent.isDiagnosticConsentEnabled()).toBe(false);
     await pending;
+    expect(consent.isDiagnosticConsentEnabled()).toBe(true);
     expect(mockStorage.get(consent.DIAGNOSTIC_CONSENT_KEY)).toBe('true');
   });
 
@@ -45,4 +46,23 @@ describe('diagnostic consent', () => {
     await expect(hydration).resolves.toBe(false);
     expect(consent.isDiagnosticConsentEnabled()).toBe(false);
   });
+});
+
+
+it('never grants consent during a failed enable and revokes immediately on storage failure', async () => {
+  const consent = await import('../state/diagnosticConsent');
+  consent.__resetDiagnosticConsentForTests();
+  const storage = require('@react-native-async-storage/async-storage');
+  let reject: (error: Error) => void = () => undefined;
+  storage.setItem.mockImplementationOnce(() => new Promise((_, failed) => { reject = failed; }));
+  const pending = consent.setDiagnosticConsentEnabled(true);
+  expect(consent.isDiagnosticConsentEnabled()).toBe(false);
+  reject(new Error('disk full'));
+  await expect(pending).rejects.toThrow('disk full');
+  expect(consent.isDiagnosticConsentEnabled()).toBe(false);
+  consent.hydrateDiagnosticConsent('true');
+  storage.setItem.mockRejectedValueOnce(new Error('disk full'));
+  const off = consent.setDiagnosticConsentEnabled(false);
+  expect(consent.isDiagnosticConsentEnabled()).toBe(false);
+  await expect(off).rejects.toThrow('disk full');
 });

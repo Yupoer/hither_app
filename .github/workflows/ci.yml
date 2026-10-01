@@ -145,9 +145,8 @@ jobs:
 
       - name: Expo doctor
         if: steps.scope.outputs.product == 'true'
-        # Pin: expo-doctor 1.20+ fails SDK 56 on a new Hermes V1 advisory
-        # (upgrade-to-57 only). Stay on the last 20-check doctor until SDK 57.
-        run: npx --yes expo-doctor@1.19.0
+        # SDK 57 includes the Hermes fix; keep the current advisory check enabled.
+        run: npx --yes expo-doctor@1.20.4
 
       - uses: denoland/setup-deno@v2
         if: steps.scope.outputs.product == 'true'

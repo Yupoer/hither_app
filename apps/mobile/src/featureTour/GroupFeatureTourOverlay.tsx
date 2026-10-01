@@ -1,3 +1,4 @@
+import { useForegroundUi } from '../state/foregroundUi';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
@@ -73,6 +74,7 @@ export function GroupFeatureTourOverlay({
   reduceMotion = false,
   ctaDisabled = false,
 }: GroupFeatureTourOverlayProps) {
+  const foreground = useForegroundUi();
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const { width: winW, height: winH } = useWindowDimensions();
@@ -110,6 +112,7 @@ export function GroupFeatureTourOverlay({
   // Fade the whole chrome (dim + hole + ring + card) together on copy change.
   // Never require `finished` — a superseded timing would leave opacity at 0.
   useEffect(() => {
+    if (!foreground) { ++fadeGenRef.current; opacity.stopAnimation?.(); return; }
     if (!visible) {
       fadeGenRef.current += 1;
       opacity.setValue(0);
@@ -167,6 +170,7 @@ export function GroupFeatureTourOverlay({
       }).start();
     });
   }, [
+    foreground,
     visible,
     stepKey,
     title,
@@ -181,14 +185,14 @@ export function GroupFeatureTourOverlay({
 
   // Move screen-reader focus to the step card / CTA when the step changes.
   useEffect(() => {
-    if (!visible) return;
+    if (!foreground || !visible) return;
     const handle = findNodeHandle(ctaRef.current);
     if (handle == null) return;
     const timer = setTimeout(() => {
       AccessibilityInfo.setAccessibilityFocus?.(handle);
     }, 100);
     return () => clearTimeout(timer);
-  }, [visible, title, ctaLabel]);
+  }, [foreground, visible, title, ctaLabel]);
 
   const hole = useMemo(
     () => (shown.targetRect ? paddedHole(shown.targetRect) : null),

@@ -1,3 +1,4 @@
+import { useForegroundUi } from '../state/foregroundUi';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
@@ -69,6 +70,7 @@ export default function OverlaySheet({
   edgeToEdge?: boolean;
   children: React.ReactNode;
 }) {
+  const foreground = useForegroundUi();
   const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const t = useRef(new Animated.Value(0)).current; // 0 hidden → 1 shown
@@ -93,12 +95,36 @@ export default function OverlaySheet({
   const [contentMounted, setContentMounted] = useState(visible);
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
+  const openCompletedRef = useRef(false);
+  const gestureClosePendingRef = useRef(false);
+
+  function finishGestureClose() {
+    Animated.timing(dragY, {
+      toValue: heightRef.current,
+      duration: 160,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (!finished || !gestureClosePendingRef.current || !visibleRef.current) return;
+      gestureClosePendingRef.current = false;
+      onCloseRef.current();
+    });
+  }
 
   useEffect(() => {
+    if (!visible) { openCompletedRef.current = false; gestureClosePendingRef.current = false; }
+    if (!foreground) { t.stopAnimation(); dragY.stopAnimation(); return; }
+    if (visible && gestureClosePendingRef.current) {
+      finishGestureClose();
+      return () => { t.stopAnimation(); dragY.stopAnimation(); };
+    }
     if (visible) {
       dragY.setValue(0);
       atTop.current = true;
       setContentMounted(true);
+    }
+    if (visible && openCompletedRef.current) {
+      t.setValue(1);
+      return;
     }
     Animated.timing(t, {
       toValue: visible ? 1 : 0,
@@ -107,13 +133,17 @@ export default function OverlaySheet({
     }).start(({ finished }) => {
       if (finished) {
         if (visibleRef.current) {
-          onOpenCompleteRef.current?.();
+          if (!openCompletedRef.current) {
+            openCompletedRef.current = true;
+            onOpenCompleteRef.current?.();
+          }
         } else {
           setContentMounted(false);
         }
       }
     });
-  }, [visible, t, dragY]);
+    return () => { t.stopAnimation(); dragY.stopAnimation(); };
+  }, [foreground, visible, t, dragY]);
 
   // Two drag-to-dismiss responders sharing one release rule: one on the
   // grabber/header (drags anywhere on it), one on the body that only claims a
@@ -129,11 +159,8 @@ export default function OverlaySheet({
         if (g.dy > DISMISS_TRAVEL || g.vy > DISMISS_VELOCITY) {
           // Slide the panel the rest of the way out, THEN unmount-close, so
           // there's no flash back to the top edge before it disappears.
-          Animated.timing(dragY, {
-            toValue: heightRef.current,
-            duration: 160,
-            useNativeDriver: true,
-          }).start(() => onCloseRef.current());
+          gestureClosePendingRef.current = true;
+          finishGestureClose();
         } else {
           Animated.spring(dragY, {
             toValue: 0,
@@ -195,7 +222,7 @@ export default function OverlaySheet({
   );
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents={visible ? 'auto' : 'none'}>
+    <View style={[StyleSheet.absoluteFill, !foreground && { display: 'none' }]} pointerEvents={visible ? 'auto' : 'none'}>
       <Animated.View style={[styles.scrim, { opacity: scrimOpacity }]}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
       </Animated.View>

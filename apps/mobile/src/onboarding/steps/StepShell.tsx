@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useOptionalVisuals } from '../../state/foregroundUi';
 import {
   AccessibilityInfo,
   Pressable,
@@ -10,6 +11,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   Easing,
+  cancelAnimation,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -86,16 +88,19 @@ export default function StepShell({
   const target = total > 1 ? 10 + (index / (total - 1)) * 90 : 100;
   // Start from the previous step's pct so remounts still animate from→to.
   const prog = useSharedValue(lastBarPct);
+  const visuals = useOptionalVisuals();
   const trackW = useSharedValue(0);
 
   useEffect(() => {
-    if (reduceMotion) {
+    cancelAnimation(prog);
+    if (reduceMotion || !visuals) {
       prog.value = target;
     } else {
       prog.value = withTiming(target, { duration: 450, easing: Easing.out(Easing.cubic) });
     }
     lastBarPct = target;
-  }, [target, prog, reduceMotion]);
+    return () => cancelAnimation(prog);
+  }, [target, prog, reduceMotion, visuals]);
 
   const onTrackLayout = (e: LayoutChangeEvent) => {
     trackW.value = e.nativeEvent.layout.width;

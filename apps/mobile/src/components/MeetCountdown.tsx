@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { Text, type StyleProp, type TextStyle } from 'react-native';
+import { useForegroundClock } from '../state/foregroundUi';
 import { formatCompactDurationFromMinutes } from '../utils/geo';
 
 function formatMeetClock(iso: string): string {
@@ -51,11 +52,7 @@ export default React.memo(function MeetCountdown({
   adjustsFontSizeToFit?: boolean;
   minimumFontScale?: number;
 }) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, []);
+  const now = useForegroundClock(1000);
 
   const remainingSec = Math.round((new Date(meetAtIso).getTime() - now) / 1000);
   const due = remainingSec <= 0;
