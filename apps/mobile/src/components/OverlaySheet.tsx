@@ -96,10 +96,27 @@ export default function OverlaySheet({
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
   const openCompletedRef = useRef(false);
+  const gestureClosePendingRef = useRef(false);
+
+  function finishGestureClose() {
+    Animated.timing(dragY, {
+      toValue: heightRef.current,
+      duration: 160,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (!finished || !gestureClosePendingRef.current || !visibleRef.current) return;
+      gestureClosePendingRef.current = false;
+      onCloseRef.current();
+    });
+  }
 
   useEffect(() => {
-    if (!visible) openCompletedRef.current = false;
+    if (!visible) { openCompletedRef.current = false; gestureClosePendingRef.current = false; }
     if (!foreground) { t.stopAnimation(); dragY.stopAnimation(); return; }
+    if (visible && gestureClosePendingRef.current) {
+      finishGestureClose();
+      return () => { t.stopAnimation(); dragY.stopAnimation(); };
+    }
     if (visible) {
       dragY.setValue(0);
       atTop.current = true;
@@ -142,11 +159,8 @@ export default function OverlaySheet({
         if (g.dy > DISMISS_TRAVEL || g.vy > DISMISS_VELOCITY) {
           // Slide the panel the rest of the way out, THEN unmount-close, so
           // there's no flash back to the top edge before it disappears.
-          Animated.timing(dragY, {
-            toValue: heightRef.current,
-            duration: 160,
-            useNativeDriver: true,
-          }).start(() => onCloseRef.current());
+          gestureClosePendingRef.current = true;
+          finishGestureClose();
         } else {
           Animated.spring(dragY, {
             toValue: 0,

@@ -193,6 +193,8 @@ export default React.memo(function BottomSheet({
   const dismissComplete = useCallback(() => onDismissCompleteRef.current?.(), []);
   const dismissTranslateYInternal = useSharedValue(0);
   const dismissY = dismissTranslateY ?? dismissTranslateYInternal;
+  // Gesture intent survives cancelled visual motion while the app is inactive.
+  const gestureClosePending = useSharedValue(false);
   const dismissDistanceSV = useSharedValue(dismissDistance ?? 1000);
   useEffect(() => {
     dismissDistanceSV.value = dismissDistance ?? 1000;
@@ -213,16 +215,31 @@ export default React.memo(function BottomSheet({
       (finished) => {
         'worklet';
         if (!finished) return;
-        if (notifyDismiss) runOnJS(dismiss)();
+        if (notifyDismiss) {
+          if (!gestureClosePending.value) return;
+          gestureClosePending.value = false;
+          runOnJS(dismiss)();
+        }
         runOnJS(dismissComplete)();
       },
     );
-  }, [foreground, dismissComplete, dismissDistanceSV, dismiss, dismissY]);
+  }, [foreground, dismissComplete, dismissDistanceSV, dismiss, dismissY, gestureClosePending]);
 
   // Controlled close (X / scrim / parent visibility) uses the same fixed-size
   // translateY exit as the gesture path, but must not notify onDismiss twice.
   useEffect(() => {
     if (!foreground) return;
+    if (gestureClosePending.value) {
+      if (dismissTranslateY != null) startTranslateDismiss(true);
+      else height.value = withSpring(0, SPRING, (finished) => {
+        'worklet';
+        if (finished && gestureClosePending.value) {
+          gestureClosePending.value = false;
+          runOnJS(dismiss)();
+        }
+      });
+      return;
+    }
     if (dismissTranslateY == null || dismissRequested == null) return;
     if (dismissRequested) {
       cancelAnimation(dismissY);
@@ -230,7 +247,7 @@ export default React.memo(function BottomSheet({
       return;
     }
     startTranslateDismiss(false);
-  }, [foreground, dismissRequested, dismissTranslateY, dismissY, startTranslateDismiss]);
+  }, [foreground, dismissRequested, dismissTranslateY, dismissY, startTranslateDismiss, gestureClosePending, height, dismiss]);
 
   // Settle a released sheet-drag on the JS thread — reuses the unit-tested pure
   // helpers, then springs the shared height (carrying the fling velocity) and
@@ -251,7 +268,7 @@ export default React.memo(function BottomSheet({
   // Use zero restart velocity so a mid-flight remeasure doesn't "kick back".
   const detentsKey = detents.join(',');
   useEffect(() => {
-    if (!foreground) return;
+    if (!foreground || gestureClosePending.value) return;
     const nextIndex = Math.max(0, Math.min(index, detents.length - 1));
     height.value = withSpring(detents[nextIndex], { ...SPRING, velocity: 0 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -269,6 +286,7 @@ export default React.memo(function BottomSheet({
         .simultaneousWithExternalGesture(scrollRef as unknown as React.RefObject<React.ComponentType>)
         .onBegin(() => {
           'worklet';
+          if (gestureClosePending.value) return;
           cancelAnimation(height);
           if (dismissTranslateY != null) {
             cancelAnimation(dismissY);
@@ -279,6 +297,7 @@ export default React.memo(function BottomSheet({
         })
         .onUpdate((e) => {
           'worklet';
+          if (gestureClosePending.value) return;
           const d = detentsSV.value;
           const last = d.length - 1;
           if (gMode.value === MODE_NONE) {
@@ -326,8 +345,18 @@ export default React.memo(function BottomSheet({
             scrollTo(scrollRef, 0, gStartScroll.value, false);
           }
         })
-        .onEnd((e) => {
+        .onEnd((e, success) => {
           'worklet';
+          if (gestureClosePending.value) return;
+          if (!success) {
+            // OS interruption is not a released dismissal gesture.
+            cancelAnimation(height);
+            cancelAnimation(dismissY);
+            height.value = gStartH.value;
+            dismissY.value = 0;
+            gMode.value = MODE_NONE;
+            return;
+          }
           if (gMode.value === MODE_SHEET) {
             const d = detentsSV.value;
             const dismissIndex = dismissIndexSV.value;
@@ -336,6 +365,7 @@ export default React.memo(function BottomSheet({
               && gStartH.value >= d[dismissIndex] - EPS
               && (e.translationY > DISMISS_TRAVEL || e.velocityY > DISMISS_VELOCITY);
             if (canDismiss) {
+              gestureClosePending.value = true;
               if (dismissTranslateY != null) {
                 cancelAnimation(dismissY);
                 dismissY.value = withTiming(
@@ -343,7 +373,8 @@ export default React.memo(function BottomSheet({
                   { duration: 220 },
                   (finished) => {
                     'worklet';
-                    if (finished) {
+                    if (finished && gestureClosePending.value) {
+                      gestureClosePending.value = false;
                       runOnJS(dismiss)();
                       runOnJS(dismissComplete)();
                     }
@@ -352,7 +383,10 @@ export default React.memo(function BottomSheet({
               } else {
                 height.value = withSpring(0, SPRING, (finished) => {
                   'worklet';
-                  if (finished) runOnJS(dismiss)();
+                  if (finished && gestureClosePending.value) {
+                    gestureClosePending.value = false;
+                    runOnJS(dismiss)();
+                  }
                 });
               }
             } else {
@@ -383,6 +417,7 @@ export default React.memo(function BottomSheet({
       dismissDistanceSV,
       dismissTranslateY,
       dismissY,
+      gestureClosePending,
     ],
   );
 

@@ -171,6 +171,7 @@ import { useCarouselSelection } from './MapScreen/hooks/useCarouselSelection';
 import { useJourneyNavigation } from './MapScreen/hooks/useJourneyNavigation';
 import { useMapKitRoutes } from './MapScreen/hooks/useMapKitRoutes';
 import { usePersonalProgressSurfaces } from './MapScreen/hooks/usePersonalProgressSurfaces';
+import { usePendingPlaceEntrance } from './MapScreen/hooks/usePendingPlaceEntrance';
 import { energyObservability } from '../state/energyObservability';
 import { useGatherCardExpansion } from './MapScreen/hooks/useGatherCardExpansion';
 import {
@@ -1407,7 +1408,6 @@ export default function MapScreen({ route, navigation }: Props) {
   // (so the search sheet can close and the bottom sheet collapses to peek).
   // confirmCardReady flips true instantly — then the bounce-up
   // card appears and the search bar / recenter capsule hide.
-  const [confirmCardReady, setConfirmCardReady] = useState(false);
   /** Keyboard height while confirm card is up — lifts card with 12pt gap. */
   const [confirmKeyboardHeight, setConfirmKeyboardHeight] = useState(0);
   const [kmlVisible, setKmlVisible] = useState(false);
@@ -1427,21 +1427,7 @@ export default function MapScreen({ route, navigation }: Props) {
     { latitude: number; longitude: number } | undefined
   >(undefined);
   // Bounce-up entrance animation for the add-gather-point confirm card.
-  const confirmCardAnim = useSharedValue(0);
-  useEffect(() => {
-    if (!uiVisible) { cancelAnimation(confirmCardAnim); cancelAnimation(heightSV); return; }
-    if (pendingPlace) {
-      const id = setTimeout(() => {
-        setConfirmCardReady(true);
-        confirmCardAnim.value = 0;
-        confirmCardAnim.value = withSpring(1, { damping: 16, stiffness: 100, mass: 1 });
-      }, 0);
-      return () => clearTimeout(id);
-    } else {
-      setConfirmCardReady(false);
-      confirmCardAnim.value = 0;
-    }
-  }, [pendingPlace, confirmCardAnim, heightSV, uiVisible]);
+  const { ready: confirmCardReady, progress: confirmCardAnim } = usePendingPlaceEntrance(pendingPlace, uiVisible, heightSV);
   const confirmCardStyle = useAnimatedStyle(() => ({
     transform: [
       { translateY: interpolate(confirmCardAnim.value, [0, 1], [120, 0], Extrapolation.CLAMP) },
@@ -1666,7 +1652,6 @@ export default function MapScreen({ route, navigation }: Props) {
 
   /** Dismiss the confirm card (used by both Cancel and Add buttons). */
   function dismissConfirmCard() {
-    setConfirmCardReady(false);
     setPendingPlace(null);
     setPendingPlaceTitle('');
     setConfirmKeyboardHeight(0);
