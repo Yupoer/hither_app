@@ -4113,10 +4113,10 @@ export default function MapScreen({ route, navigation }: Props) {
           t('map.setFailedTitle'),
           getOperationErrorMessage(error),
         );
-        completingDestIdsRef.current.delete(destination.id);
         return false;
+      } finally {
+        completingDestIdsRef.current.delete(destination.id);
       }
-      completingDestIdsRef.current.delete(destination.id);
     }
     if (plan.applyLocalClosedAt) {
       setOptimisticDestinations((prev) =>

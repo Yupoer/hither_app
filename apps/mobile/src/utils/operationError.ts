@@ -245,6 +245,8 @@ export function classifyOperationError(
     /leader role required/i,
     /leader membership required/i,
     /scope leader membership required/i,
+    /itinerary scope leader required/i,
+    /main-team leader required for history correction/i,
     /only leaders? may/i,
     /organizer role required/i,
   ])) {
