@@ -97,7 +97,7 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
   });
 
   it('keeps itinerary editing and flag colours leader-only', () => {
-    expect(mapScreen).toContain('const canEditItinerary = Boolean(isLeader || isMySubgroupLeader)');
+    expect(mapScreen).toContain('revokedLeaderContext !== roleContext && Boolean(isLeader || isMySubgroupLeader)');
     expect(reorderList).toContain('canEditColors={canReorder && item.day > 0}');
     expect(migrations).toContain('drop policy if exists "itinerary_items: insert if in that subgroup"');
   });
@@ -211,7 +211,7 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(migrations).toContain('insert into public.visited_waypoints');
     expect(client).toContain('completeGatheringStop');
     expect(mapScreen).toContain('projectHistoryForViewer');
-    expect(mapScreen).toContain('completeGatheringStop');
+    expect(mapScreen).toContain('enqueueJourneyCompletion');
     expect(mapScreen).toContain('leader_mark_complete');
     expect(migrations).toContain('coalesce(i.day, 1) >= v_current_day');
     expect(pushMessages).toContain('gathering_completed');

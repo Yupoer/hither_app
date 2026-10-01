@@ -371,10 +371,11 @@ describe('coreDataSync production orchestration', () => {
       meetAt: '2026-09-19T12:30:00.000Z',
       meetRedMinutes: 15,
     });
-    expect(operationWirePayload(completed.payload)).toEqual({
+    expect(operationWirePayload(completed!.payload)).toEqual({
       destinationId: added.destinationId,
       sessionId: 'session-1',
       subgroupId: 'subgroup-1',
+      reason: 'forced',
     });
 
     const snapshot = await getCoreDataStore().readSnapshot('group-1');

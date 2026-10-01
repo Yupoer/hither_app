@@ -306,6 +306,26 @@ afterEach(async () => {
 });
 
 describe('SQLite core storage adapters', () => {
+  it('restores durable trip and daily accommodation snapshots and receipts after JS restart', async () => {
+    const harness = await newHarness();
+    const snapshot = makeSnapshot('trip-stay');
+    snapshot.group = { ...snapshot.group, tripDays: 4, departureDate: '2026-10-01' };
+    snapshot.dailyAccommodations = [{ id: 'stay', groupId: 'trip-stay', stayDate: '2026-10-01',
+      title: 'Hotel', coordinates: { latitude: 25, longitude: 121 } }];
+    await harness.core.withExclusiveTransaction(async (exec: unknown) => {
+      await harness.core.writeSnapshot(exec, snapshot);
+      await harness.outbox.writeInsert(exec, makeOperation('trip-write', { groupId: 'trip-stay', entityId: 'trip-stay',
+        operationType: 'set_trip_details', payload: { tripDays: 4, departureDate: '2026-10-01' } }));
+      await harness.outbox.writeInsert(exec, makeOperation('stay-write', { groupId: 'trip-stay', entityId: 'trip-stay', sequence: 2,
+        operationType: 'set_daily_accommodation', payload: { stayDate: '2026-10-01', daily: snapshot.dailyAccommodations![0] } }));
+    });
+    const restored = await loadProduction(harness.database);
+    expect(await restored.core.getSnapshot('trip-stay')).toEqual(snapshot);
+    expect((await restored.outbox.listByGroup('trip-stay')).map((op: CoreOperation) => op.operationType))
+      .toEqual(['set_trip_details', 'set_daily_accommodation']);
+    expect(await restored.core.getSnapshot('missing')).toBeNull();
+  });
+
   it('upgrades a legacy outbox schema without losing durable rows', async () => {
     const harness = await newHarness((raw) => {
       raw.exec(`

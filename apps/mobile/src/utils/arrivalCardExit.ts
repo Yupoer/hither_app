@@ -13,6 +13,15 @@ export const ARRIVAL_CARD_EXIT_MS = 440;
 /** Brief center-check flash on personal arrival (not the completion hold). */
 export const PERSONAL_ARRIVAL_CELEBRATE_MS = 1_600;
 
+/** Only a card visible before this completion may be reinserted for its exit. */
+export function newlyCompletedVisibleCards<T extends { id: string }>(
+  closed: readonly T[], knownClosed: ReadonlySet<string> | null, visibleIds: readonly string[], hydrated: boolean,
+): T[] {
+  if (!hydrated || !knownClosed) return [];
+  const visible = new Set(visibleIds);
+  return closed.filter(card => !knownClosed.has(card.id) && visible.has(card.id));
+}
+
 export type CelebrateClearStore = Map<string, ReturnType<typeof setTimeout>>;
 
 /**

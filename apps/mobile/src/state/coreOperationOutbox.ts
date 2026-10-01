@@ -1,4 +1,4 @@
-import { operationWirePayload, rollbackItinerary, type ItineraryRollback } from './itineraryRollback';
+import { operationWirePayload, rollbackItinerary, rollbackTripAndStays, type ItineraryRollback } from './itineraryRollback';
 /**
  * OTA-04 core operation outbox.
  *
@@ -10,7 +10,7 @@ import { operationWirePayload, rollbackItinerary, type ItineraryRollback } from 
 import * as Crypto from 'expo-crypto';
 import { Platform } from 'react-native';
 import type { SQLiteDatabase } from 'expo-sqlite';
-import type { Destination } from '../types';
+import type { Destination, GroupState } from '../types';
 import type {
   ActiveGatheringState,
   ApplyCoreOperationResult,
@@ -36,7 +36,7 @@ import {
 } from './coreDataStore';
 import { getHitherDatabase } from './hitherDatabase';
 import { classifyOperationError } from '../utils/operationError';
-import { projectOperationDestinations } from './coreOperationProjection';
+import { projectOperationGroupState } from './coreOperationProjection';
 
 type OutboxListener = () => void;
 const outboxListeners = new Set<OutboxListener>();
@@ -185,6 +185,9 @@ const ITINERARY_MUTATION_TYPES: readonly CoreOperationType[] = [
   'reorder_destinations',
   'set_destination_meet_time',
   'complete_destination',
+  'set_trip_details',
+  'set_daily_accommodation',
+  'clear_daily_accommodation',
 ];
 
 function isItineraryMutation(operation: CoreOperation): boolean {
@@ -346,7 +349,7 @@ function recoverableConflict(operation: CoreOperation): boolean {
 }
 
 /**
- * Preserve causal/resource order while letting independent work proceed.
+ * Preserve actor/group FIFO; causal dependencies determine rejection only.
  * Terminal receipts do not own a lane; their causal descendants are settled
  * before scheduling. Missing dependencies may already be compacted acknowledgements.
  */
@@ -365,12 +368,12 @@ function dueHeads(
     });
   for (const head of ordered) {
     if (head.status === 'acked' || head.status === 'conflict') continue;
-    const resources = operationResources(head);
+    const lane = JSON.stringify([head.actorId ?? '', head.groupId]);
     const dependencyPending = operations.some(dependency =>
       dependency.status !== 'acked' && dependsOn(head, dependency));
-    const resourceBlocked = resources.some(resource => blocked.has(resource));
-    resources.forEach(resource => blocked.add(resource));
-    if (dependencyPending || resourceBlocked) continue;
+    const laneBlocked = blocked.has(lane);
+    blocked.add(lane);
+    if (dependencyPending || laneBlocked) continue;
     const open = head.status === 'pending' || head.status === 'failed' || head.status === 'inflight';
     // Inflight is always replayable after a process restart, regardless of its
     // old attempt timestamp.
@@ -965,7 +968,11 @@ export function createCoreOperationOutbox(
       if (before) {
         const after = await coreDb.readSnapshotInTransaction(exec, operation.groupId);
         operation.payload = { ...operation.payload,
-          _localRollback: { before: before.destinations, after: after?.destinations ?? before.destinations } };
+          _localRollback: { before: before.destinations, after: after?.destinations ?? before.destinations,
+            beforeActiveGathering: before.activeGathering, afterActiveGathering: after?.activeGathering,
+            beforeGroup: before.group, afterGroup: after?.group ?? before.group,
+            beforeDailyAccommodations: before.dailyAccommodations ?? [],
+            afterDailyAccommodations: after?.dailyAccommodations ?? before.dailyAccommodations ?? [] } };
       }
       await outboxDb.writeInsert(exec, operation);
       });
@@ -1116,6 +1123,8 @@ export function createCoreOperationOutbox(
       ? result.entity as {
           destinations?: unknown;
           entityVersion?: number;
+          group?: Partial<GroupState['group']>;
+          dailyAccommodations?: GroupState['dailyAccommodations'];
         }
       : null;
     const serverDestinations = normalizeItineraryDestinations(entity?.destinations);
@@ -1131,10 +1140,13 @@ export function createCoreOperationOutbox(
     };
     if (snapshot && operation.entityType === 'itinerary'
       && (serverDestinations !== null || aliasMap.size > 0)) {
-      let destinations = serverDestinations !== null
-        ? projectOperationDestinations(serverDestinations, rowsBefore.filter(row => row.id !== operation.id
-          && row.actorId === operation.actorId))
-        : snapshot.destinations;
+      const projected = projectOperationGroupState({
+        group: { ...snapshot.group, ...entity?.group },
+        destinations: serverDestinations ?? snapshot.destinations,
+        dailyAccommodations: entity?.dailyAccommodations ?? snapshot.dailyAccommodations,
+        members: snapshot.members ?? [], subgroups: snapshot.subgroups ?? [],
+      }, rowsBefore.filter(row => row.id !== operation.id && row.actorId === operation.actorId));
+      let destinations = projected.destinations;
       if (aliasMap.size > 0) {
         const seen = new Set<string>();
         destinations = destinations
@@ -1179,6 +1191,8 @@ export function createCoreOperationOutbox(
         : snapshot.itineraryVersion;
       const nextSnapshot = {
         ...snapshot,
+        group: projected.group,
+        dailyAccommodations: projected.dailyAccommodations,
         destinations,
         activeGathering,
         ...(typeof nextItineraryVersion === 'number'
@@ -1321,18 +1335,43 @@ export function createCoreOperationOutbox(
               message: 'prerequisite operation expired' }, nextAttemptAt: Number.MAX_SAFE_INTEGER, updatedAt: current });
         }
       }
+      if (isItineraryMutation(operation)) {
+        const currentSnapshot = await coreDb.readSnapshotInTransaction(exec, operation.groupId);
+        if (currentSnapshot) {
+          let snapshot = currentSnapshot;
+          const rejected = conflictRows.filter(row => invalidated.has(row.id) && row.actorId === operation.actorId)
+            .sort((a, b) => (b.sequence ?? 0) - (a.sequence ?? 0));
+          for (const row of rejected) {
+            const undo = row.payload._localRollback as ItineraryRollback | undefined;
+            if (!undo?.beforeActiveGathering || !undo.afterActiveGathering || !undo.beforeGroup
+              || JSON.stringify(snapshot.activeGathering) !== JSON.stringify(undo.afterActiveGathering)) continue;
+            snapshot = { ...snapshot, activeGathering: undo.beforeActiveGathering,
+              group: { ...snapshot.group, journeyStatus: undo.beforeGroup.journeyStatus,
+                activeDestinationId: undo.beforeGroup.activeDestinationId,
+                journeyStartedAt: undo.beforeGroup.journeyStartedAt } };
+          }
+          await coreDb.writeSnapshot(exec, snapshot);
+          await coreDb.writeActiveGathering(exec, snapshot.activeGathering, current, { patchSnapshot: 'none' });
+        }
+      }
       if (isItineraryMutation(operation) && !conflict.serverState) {
         const snapshot = await coreDb.readSnapshotInTransaction(exec, operation.groupId);
         if (snapshot) {
           let destinations = snapshot.destinations;
+          let tripAndStays: Pick<GroupState, 'group' | 'dailyAccommodations'> = {
+            group: snapshot.group, dailyAccommodations: snapshot.dailyAccommodations,
+          };
           // Reverse dependants first, then their failed prerequisite.
           const rejected = conflictRows.filter(row => invalidated.has(row.id) && row.actorId === operation.actorId)
             .sort((a, b) => (b.sequence ?? 0) - (a.sequence ?? 0));
           for (const row of rejected) {
             const undo = row.payload._localRollback as ItineraryRollback | undefined;
-            if (undo?.before && undo?.after) destinations = rollbackItinerary(destinations, undo);
+            if (undo?.before && undo?.after) {
+              destinations = rollbackItinerary(destinations, undo);
+              tripAndStays = rollbackTripAndStays(tripAndStays, undo);
+            }
           }
-          await coreDb.writeSnapshot(exec, { ...snapshot, destinations,
+          await coreDb.writeSnapshot(exec, { ...snapshot, ...tripAndStays, destinations,
             updatedAt: current, source: 'local_optimistic' });
         }
       }
@@ -1349,13 +1388,20 @@ export function createCoreOperationOutbox(
           if (snapshot) {
             const serverState = conflict.serverState as {
               destinations: unknown;
+              group?: Partial<GroupState['group']>;
+              dailyAccommodations?: GroupState['dailyAccommodations'];
             };
             const serverDestinations = normalizeItineraryDestinations(serverState.destinations);
             if (!serverDestinations) return;
+            const projected = projectOperationGroupState({
+              group: { ...snapshot.group, ...serverState.group }, destinations: serverDestinations,
+              members: snapshot.members ?? [], subgroups: snapshot.subgroups ?? [],
+              dailyAccommodations: serverState.dailyAccommodations ?? snapshot.dailyAccommodations,
+            }, conflictRows.filter(row => !invalidated.has(row.id) && row.actorId === operation.actorId));
             await coreDb.writeSnapshot(exec, {
               ...snapshot,
-              destinations: projectOperationDestinations(serverDestinations, conflictRows.filter(row =>
-                !invalidated.has(row.id) && row.actorId === operation.actorId)),
+              group: projected.group, dailyAccommodations: projected.dailyAccommodations,
+              destinations: projected.destinations,
               itineraryVersion: conflict.serverEntityVersion ?? snapshot.itineraryVersion ?? 0,
               syncedAt: current,
               updatedAt: current,
@@ -1657,6 +1703,14 @@ export function createCoreOperationOutbox(
         await initialize();
         const current = now();
         const actorId = await resolveActor(input.actorId, input.payload);
+        if (input.operationType === 'complete_destination') {
+          const existing = (await outboxDb.listByGroup(input.groupId)).find(row =>
+            row.actorId === actorId && row.operationType === 'complete_destination'
+            && row.status !== 'conflict'
+            && row.payload.destinationId === input.payload.destinationId
+            && (row.payload.sessionId ?? null) === (input.payload.sessionId ?? null));
+          if (existing) return existing;
+        }
         const operation: CoreOperation = {
           id: input.operationId ?? idFactory(),
           ...(actorId ? { actorId } : {}),
@@ -2037,6 +2091,17 @@ export function createCoreOperationOutbox(
         && row.entityId === groupId
         && row.status !== 'conflict'
         && row.operationType !== 'record_arrival');
+    },
+
+    // Direct read: snapshot persistence already owns the writer gate and must
+    // not wait for a serial enqueue that is waiting for that same gate.
+    async getPendingItineraryOperations(groupId: string): Promise<CoreOperation[]> {
+      await initialize();
+      const rows = await outboxDb.listOpenByGroup(groupId);
+      const actor = currentActorGuard ? await currentActorGuard() : undefined;
+      return rows.filter(row => (!currentActorGuard || (actor != null && row.actorId === actor))
+        && row.entityType === 'itinerary' && row.entityId === groupId
+        && row.status !== 'conflict' && row.operationType !== 'record_arrival');
     },
 
     peekPending(): Promise<CoreOperation[]> {

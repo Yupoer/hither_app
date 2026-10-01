@@ -189,6 +189,7 @@ jobs:
           supabase test db --local supabase/tests/anonymous_expiry_is_member.test.sql
           supabase test db --local supabase/tests/core_operation_gathering_validation.test.sql
           supabase test db --local supabase/tests/core_operation_outbox_durable.test.sql
+          supabase test db --local supabase/tests/durable_trip_daily_accommodation.test.sql
 
   # Turn a red build on the default branch into an actionable, deduped issue.
   open-issue:

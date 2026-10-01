@@ -29,6 +29,8 @@ jest.mock('../api/demo', () => ({
 }));
 
 const mockListDailyAccommodations = jest.fn();
+const mockEnqueueTripDetails = jest.fn();
+jest.mock('../state/coreDataSync', () => ({ enqueueTripDetails: (...args: unknown[]) => mockEnqueueTripDetails(...args) }));
 jest.mock('../api/services/DailyAccommodationService', () => ({
   listDailyAccommodations: (...args: unknown[]) => mockListDailyAccommodations(...args),
 }));
@@ -360,6 +362,7 @@ describe('GroupService mutations and demo branches', () => {
     await setStragglerConfig('g-1', false, 900);
     await reportStraggler('g-1', 'u-2', 901);
     await updateGroupTripDetails('g-1', 4, '2026-11-01');
+    expect(mockEnqueueTripDetails).toHaveBeenCalledWith({ groupId: 'g-1', tripDays: 4, departureDate: '2026-11-01' });
     await setSolo('g-1', true);
     mockedSupabase.rpc.mockResolvedValueOnce({ data: { id: 'sg', name: 'Team', mode: 'collab', leader_id: null, parent_subgroup_id: null }, error: null });
     await expect(selfSplit('g-1', 'Team')).resolves.toMatchObject({ id: 'sg' });

@@ -25,6 +25,7 @@ interface NavigationSessionRow {
   expires_at: string;
   status: NavigationSessionStatus;
   version: number;
+  navigation_member_states?: { user_id: string }[];
 }
 
 interface NavigationMemberStateRow {
@@ -64,6 +65,7 @@ export function mapNavigationSession(row: NavigationSessionRow): NavigationSessi
     expiresAt: row.expires_at,
     status: row.status,
     version: row.version,
+    ...(row.navigation_member_states ? { memberIds: row.navigation_member_states.map(member => member.user_id) } : {}),
   };
 }
 
@@ -187,7 +189,7 @@ export async function getActiveNavigationSession(
 ): Promise<NavigationSession | null> {
   const baseQuery = supabase
     .from('navigation_sessions')
-    .select('*')
+    .select('*, navigation_member_states(user_id)')
     .eq('group_id', groupId)
     .eq('status', 'active');
   const scopedQuery = scopeSubgroupId == null
@@ -206,6 +208,7 @@ export async function getActiveNavigationSession(
 export async function getBackgroundNavigationContext(groupId: string, scopeSubgroupId?: string | null): Promise<{
   actorId: string; hasMembership: boolean; sharingEnabled: boolean;
   session: NavigationSession | null; target: Destination | null;
+  navigationMemberIds?: string[]; arrivedMemberIds?: string[]; leaderId?: string;
 }> {
   const actorId = await requireUserId();
   const [memberResult, sharingEnabled] = await Promise.all([
@@ -229,7 +232,25 @@ export async function getBackgroundNavigationContext(groupId: string, scopeSubgr
     .eq('group_id', groupId).eq('id', session.destinationId).maybeSingle();
   orThrow(error);
   if (!data || data.day == null || data.closed_at || (data.subgroup_id ?? null) !== (member.subgroup_id ?? null)) return result;
-  return { ...result, session, target: { id: data.id, title: data.title,
+  const [rosterResult, arrivalsResult, subgroupResult] = await Promise.all([
+    supabase.from('memberships').select('user_id, role, subgroup_id, solo').eq('group_id', groupId),
+    supabase.from('destination_arrivals').select('user_id').eq('group_id', groupId)
+      .eq('destination_id', session.destinationId).eq('navigation_session_id', session.id),
+    resolvedScope == null ? Promise.resolve({ data: null, error: null })
+      : supabase.from('subgroups').select('leader_id').eq('group_id', groupId).eq('id', resolvedScope).maybeSingle(),
+  ]);
+  orThrow(rosterResult.error);
+  orThrow(arrivalsResult.error);
+  orThrow(subgroupResult.error);
+  const scopedMembers = (rosterResult.data ?? []).filter(row => !row.solo
+    && (row.subgroup_id ?? null) === resolvedScope
+    && (session.memberIds === undefined || session.memberIds.includes(row.user_id)));
+  return { ...result, session,
+    navigationMemberIds: scopedMembers.map(row => row.user_id),
+    arrivedMemberIds: (arrivalsResult.data ?? []).map(row => row.user_id),
+    leaderId: resolvedScope == null ? scopedMembers.find(row => row.role === 'leader')?.user_id
+      : subgroupResult.data?.leader_id ?? undefined,
+    target: { id: data.id, title: data.title,
     coordinates: { latitude: data.latitude, longitude: data.longitude }, order: data.position,
     day: data.day, subgroupId: data.subgroup_id ?? undefined } };
 }

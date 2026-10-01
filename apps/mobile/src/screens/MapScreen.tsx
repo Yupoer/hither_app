@@ -1,6 +1,6 @@
 import { useForegroundReconcile } from '../state/useForegroundReconcile';
 import { refreshTeamLocations } from '../utils/refreshTeamLocations';
-import { showOperationFailure } from '../state/appNotice';
+import { showOperationFailure, claimAppNotice } from '../state/appNotice';
 import { captureLocationAccess } from '../state/locationPrivacy';
 import { hydrateLocationSharing, rememberLocationSharing, syncLocationSharing } from '../state/locationSharingSync';
 import React, {
@@ -84,7 +84,6 @@ import DestinationSearch from '../components/DestinationSearch';
 import MeetCountdown from '../components/MeetCountdown';
 import DestinationReorderList from '../components/DestinationReorderList';
 import MetalforgeStarfield from '../components/MetalforgeStarfield';
-import CoreSyncStatus from '../components/CoreSyncStatus';
 import { getRuntimePowerState, subscribeRuntimePowerState } from '../state/runtimePowerState';
 import NotificationPreferencesCard from '../components/NotificationPreferencesCard';
 import QuickCommandsCard from '../components/QuickCommandsCard';
@@ -127,6 +126,7 @@ import {
   PERSONAL_ARRIVAL_CELEBRATE_MS,
   armCelebrateClearTimer,
   beginArrivalCardExit,
+  newlyCompletedVisibleCards,
   cancelCelebrateClearTimer,
   clearAllCelebrateClearTimers,
   mergeExitingDestinations,
@@ -283,7 +283,9 @@ import {
 } from '../utils/tripDay';
 import { createArrivalState, reduceArrival, type ArrivalState } from '../utils/navigationArrival';
 import { canEvaluateSynchronizedArrival, synchronizedArrivalTargetKey } from '../utils/synchronizedArrival';
-import { getOperationErrorMessage } from '../utils/operationError';
+import { getOperationErrorMessage, classifyOperationError } from '../utils/operationError';
+import { enqueueJourneyCompletion } from '../state/journeyCompletion';
+import { rollbackItinerary, type ItineraryRollback } from '../state/itineraryRollback';
 import {
   applyDestinationMutationOverlay,
   destinationMarkerValues,
@@ -296,7 +298,6 @@ import { liquidGlass, location, notifications, type MapRegion, type PlaceResult 
 import {
   addDestination,
   addDestinationsBatch,
-  completeGatheringStop,
   deleteDestination,
   fetchSentInvites,
   fetchVisitedWaypoints,
@@ -510,6 +511,7 @@ export default function MapScreen({ route, navigation }: Props) {
     premiumProjection,
     refreshEntitlement,
     upgradeToEmailAccount,
+    setMembership,
   } = useSession();
   const {
     highAccuracy,
@@ -597,7 +599,8 @@ export default function MapScreen({ route, navigation }: Props) {
   const groupId = route.params?.groupId ?? membership?.group.id ?? null;
   const powerState = useSyncExternalStore(subscribeRuntimePowerState, getRuntimePowerState, getRuntimePowerState);
   // The demo flock has no membership row; the tester drives it as leader.
-  const isLeader = membership?.role === 'leader' || isDemoGroup(groupId);
+  const [revokedLeaderContext, setRevokedLeaderContext] = useState<string | null>(null);
+  const roleContext = `${user?.id ?? ''}:${groupId ?? ''}`;
 
   const {
     state,
@@ -606,10 +609,12 @@ export default function MapScreen({ route, navigation }: Props) {
     loadError,
     refreshing,
     refresh,
+    refreshLocalSnapshot,
     applyOptimisticGathering,
     openOperations,
     serverTimeOffsetMs,
     emptyLocalSnapshot,
+    dataSource,
   } = useGroupState(groupId, {
     myUserId: user?.id ?? null,
     highAccuracy,
@@ -630,21 +635,43 @@ export default function MapScreen({ route, navigation }: Props) {
   // needs its own leader/subgroup branching to stay scoped correctly.
 
   const me = useMemo(() => members.find((m) => m.userId === user?.id), [members, user?.id]);
+  const isLeader = isDemoGroup(groupId) || (revokedLeaderContext !== roleContext
+    && (me ? me.role === 'leader' : membership?.group.id === groupId && membership.role === 'leader'));
+  useEffect(() => {
+    if (dataSource !== 'remote' || !me || !group || membership?.group.id !== groupId) return;
+    if (membership.role !== me.role) setMembership({ group, role: me.role });
+    setRevokedLeaderContext(null);
+  }, [dataSource, me, group, groupId, membership?.role, membership?.group.id, setMembership]);
   const myScopeId = me?.subgroupId;
   // Navigation sessions are one lane per subgroup (plus the main-team lane),
   // so a shared group id is not sufficient once parallel teams are active.
   const displayedConflicts = useRef(new Set<string>());
   useEffect(() => {
     for (const op of openOperations) {
-      if (op.entityType !== 'active_gathering' || op.status !== 'conflict' || displayedConflicts.current.has(op.id)) continue;
+      if (op.status !== 'conflict' || op.operationType === 'record_arrival'
+        || op.operationType === 'leader_correct_arrival' || displayedConflicts.current.has(op.id)) continue;
       displayedConflicts.current.add(op.id);
-      showOperationFailure(t('map.setFailedTitle'), op.conflictResult?.message ?? t('map.setFailedMsg'));
+      if (classifyOperationError(op.conflictResult).kind === 'leader_role_rejected') {
+        setRevokedLeaderContext(roleContext);
+        void refresh().catch(() => undefined);
+      }
+      if (!claimAppNotice(`core-rejected:${user?.id}:${op.id}`)) continue;
+      // Rejected causal descendants share their prerequisite's failure; one alert suffices.
+      if (op.conflictResult?.message === 'prerequisite operation expired') continue;
+      Alert.alert(t('map.setFailedTitle'), getOperationErrorMessage(op.conflictResult));
     }
-  }, [openOperations, t]);
+  }, [openOperations, roleContext, refresh, t, user?.id]);
   const navigationSessionState = useNavigationSession(groupId, myScopeId ?? null);
   const navigationSessionId = navigationSessionState.session?.id ?? null;
   /** Local durable Start id used as a session alias before the server row is visible. */
   const [localNavigationSessionId, setLocalNavigationSessionId] = useState<string | null>(null);
+  const sessionEligibleMembers = useMemo(() => {
+    const session = navigationSessionState.session;
+    if (!session?.memberIds || (localNavigationSessionId && localNavigationSessionId !== session.id
+      && localNavigationSessionId !== session.requestId)) return members;
+    const eligible = new Set(session.memberIds);
+    return members.filter(member => eligible.has(member.userId));
+  }, [members, navigationSessionState.session, localNavigationSessionId]);
   const hasNavigationSession = navigationSessionId !== null;
   // Cold start / return from background: re-pull the scoped flock session so
   // members immediately enter nav mode without tapping「路徑」.
@@ -836,6 +863,14 @@ export default function MapScreen({ route, navigation }: Props) {
     if (!routeDraftDirtyRef.current.destinations) {
       optimisticDestinationsRef.current = null;
       setOptimisticDestinations(null);
+    } else if (optimisticDestinationsRef.current) {
+      let next = optimisticDestinationsRef.current;
+      for (const op of [...rejected].sort((a, b) => (b.sequence ?? 0) - (a.sequence ?? 0))) {
+        const undo = op.payload._localRollback as ItineraryRollback | undefined;
+        if (undo?.before && undo.after) next = rollbackItinerary(next, undo);
+      }
+      optimisticDestinationsRef.current = next;
+      setOptimisticDestinations(next);
     }
   }, [openOperations]);
 
@@ -903,6 +938,8 @@ export default function MapScreen({ route, navigation }: Props) {
   const [arrivalExitSnapshots, setArrivalExitSnapshots] = useState<
     Map<string, Destination>
   >(() => new Map());
+  const arrivalExitContext = JSON.stringify([groupId, user?.id, myScopeId ?? null]);
+  const arrivalExitContextRef = useRef(arrivalExitContext);
   const arrivalExitTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>[]>>(
     new Map(),
   );
@@ -930,13 +967,13 @@ export default function MapScreen({ route, navigation }: Props) {
   );
   const destinations = useMemo(
     () =>
-      mergeExitingDestinations(
+      arrivalExitContextRef.current !== arrivalExitContext ? openDestinations : mergeExitingDestinations(
         openDestinations,
         arrivalExitSnapshots,
         arrivalExitRecords,
         prevVisibleDestOrderRef.current,
       ),
-    [openDestinations, arrivalExitSnapshots, arrivalExitRecords],
+    [openDestinations, arrivalExitSnapshots, arrivalExitRecords, arrivalExitContext],
   );
   const destinationIds = useMemo(() => destinations.map((dest) => dest.id), [destinations]);
   /**
@@ -955,7 +992,7 @@ export default function MapScreen({ route, navigation }: Props) {
         (subgroup) => subgroup.id === myScopeId && subgroup.leaderId === user?.id,
       )),
   );
-  const canEditItinerary = Boolean(isLeader || isMySubgroupLeader);
+  const canEditItinerary = revokedLeaderContext !== roleContext && Boolean(isLeader || isMySubgroupLeader);
 
   /** Pull destinations/group state only — used before arrival writes too. */
   const syncFromDatabase = useCallback(async () => {
@@ -1053,7 +1090,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const workflowLastLoadAtRef = useRef(0);
   const workflowChannelSeqRef = useRef(0);
   const WORKFLOW_MIN_INTERVAL_MS = 2_500;
-  const workflowContext = `${groupId ?? ''}:${user?.id ?? ''}`;
+  const workflowContext = `${groupId ?? ''}:${user?.id ?? ''}:${myScopeId ?? 'main'}`;
   const mapMountedRef = useRef(true);
   useEffect(() => {
     mapMountedRef.current = true;
@@ -2044,13 +2081,14 @@ export default function MapScreen({ route, navigation }: Props) {
     startNavigation,
     requestTeamEnd,
     stopNavigation,
+    stopRemovedDestination,
   } = useJourneyNavigation({
     state,
     actorId: user?.id,
     groupId,
     // The command lane is scoped: a subgroup leader may start/end only their
     // subgroup session, using the scoped destination list below.
-    isLeader: isLeader || isMySubgroupLeader,
+    isLeader: canEditItinerary,
     destinations,
     navigationDestinations: destinations,
     reorderDestinations: allScopedDestinations,
@@ -2338,6 +2376,22 @@ export default function MapScreen({ route, navigation }: Props) {
    */
   useEffect(() => {
     const closedNow = allScopedDestinations.filter((d) => d.closedAt != null);
+    if (arrivalExitContextRef.current !== arrivalExitContext) {
+      arrivalExitContextRef.current = arrivalExitContext;
+      for (const timers of arrivalExitTimersRef.current.values()) for (const timer of timers) clearTimeout(timer);
+      arrivalExitTimersRef.current.clear();
+      clearAllCelebrateClearTimers(celebrateClearTimersRef.current);
+      setArrivalExitRecords(new Map());
+      setArrivalExitSnapshots(new Map());
+      setArrivalCelebrateDestId(null);
+      knownClosedDestIdsRef.current = null;
+      remoteAutoCompleteDestIdsRef.current.clear();
+    }
+    if (!state || state.group.id !== groupId || loading) {
+      knownClosedDestIdsRef.current = null;
+      prevVisibleDestOrderRef.current = [];
+      return;
+    }
     if (knownClosedDestIdsRef.current == null) {
       // First paint: seed known closed so past history does not animate out.
       knownClosedDestIdsRef.current = new Set(closedNow.map((d) => d.id));
@@ -2355,8 +2409,8 @@ export default function MapScreen({ route, navigation }: Props) {
       setArrivalExitSnapshots(prev => { const next = new Map(prev); next.delete(id); return next; });
     }
     const newlyStarted: string[] = [];
-    for (const dest of closedNow) {
-      if (knownClosedDestIdsRef.current.has(dest.id)) continue;
+    for (const dest of newlyCompletedVisibleCards(closedNow, knownClosedDestIdsRef.current,
+      prevVisibleDestOrderRef.current, true)) {
       knownClosedDestIdsRef.current.add(dest.id);
       const priorIdx = resolveExitIndexAtStart(
         prevVisibleDestOrderRef.current,
@@ -2366,6 +2420,7 @@ export default function MapScreen({ route, navigation }: Props) {
       startArrivalCardExit(dest, priorIdx);
       newlyStarted.push(dest.id);
     }
+    knownClosedDestIdsRef.current = new Set(closedNow.map(destination => destination.id));
     const exitingIds = new Set<string>([
       ...arrivalExitRecords.keys(),
       ...newlyStarted,
@@ -2381,6 +2436,10 @@ export default function MapScreen({ route, navigation }: Props) {
     openDestinations,
     startArrivalCardExit,
     arrivalExitRecords,
+    arrivalExitContext,
+    groupId,
+    loading,
+    state,
   ]);
 
   useEffect(() => {
@@ -2406,11 +2465,17 @@ export default function MapScreen({ route, navigation }: Props) {
       const key = `${op.id}:${op.updatedAt}`;
       if (reportedArrivalConflicts.current.has(key)) continue;
       reportedArrivalConflicts.current.add(key);
+      if (classifyOperationError(op.conflictResult).kind === 'leader_role_rejected') {
+        setRevokedLeaderContext(roleContext);
+        void refresh().catch(() => undefined);
+      }
+      if (!claimAppNotice(`core-rejected:${user?.id}:${op.id}`)) continue;
+      if (op.conflictResult?.message === 'prerequisite operation expired') continue;
       setArrivalCelebrateDestId(cur => cur === op.entityId ? null : cur);
       if (arrivalFeedbackShownRef.current === op.entityId) arrivalFeedbackShownRef.current = null;
       Alert.alert(t('arrival.failedTitle'), arrivalErrorMessage(op.conflictResult ?? new Error('無法標記抵達'), t));
     }
-  }, [arrivalOperations, mapFocused, user?.id, t]);
+  }, [arrivalOperations, mapFocused, user?.id, t, roleContext, refresh]);
 
   const arrivalSubmitInFlight = useRef(new Set<string>());
   /** Manual undo suppresses auto-arrival until the member leaves and re-enters. */
@@ -2442,7 +2507,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const arrivalSessionKey = navTarget
     ? resolveCurrentNavigationSessionId(navTarget) ?? 'local'
     : localNavigationSessionId ?? navigationSessionId ?? 'local';
-  const arrivalContext = `${groupId ?? ''}:${user?.id ?? ''}:${arrivalSessionKey}`;
+  const arrivalContext = `${groupId ?? ''}:${user?.id ?? ''}:${myScopeId ?? 'main'}:${arrivalSessionKey}`;
   const arrivalContextRef = useRef(arrivalContext);
   arrivalContextRef.current = arrivalContext;
   const foregroundUndoHydrationRef = useRef<{ key: string; pending: boolean }>({ key: '', pending: false });
@@ -2969,9 +3034,14 @@ export default function MapScreen({ route, navigation }: Props) {
       actorId: user?.id,
       scopeSubgroupId: navTarget?.subgroupId ?? myScopeId ?? null,
       memberIds: members.filter(m => (m.subgroupId ?? null) === (navTarget?.subgroupId ?? null)).map(m => m.userId),
+      navigationMemberIds: sessionEligibleMembers.filter(m => !m.solo && (m.subgroupId ?? null)
+        === (navTarget?.subgroupId ?? null)).map(m => m.userId),
+      arrivedMemberIds: activeDestinationArrivals.filter(a => a.destinationId === navTarget?.id).map(a => a.userId),
+      leaderId: navTarget?.subgroupId
+        ? state?.subgroups.find(subgroup => subgroup.id === navTarget.subgroupId)?.leaderId
+        : members.find(member => member.role === 'leader')?.userId,
       target: navTarget ?? undefined,
-      // Arrivals never close a stop or end background navigation.  A leader
-      // must explicitly complete the gathering point.
+      // The shared completion helper handles all-member completion separately from arrival.
       completeSolo: false,
       groupId,
       navigationSessionId: backgroundNavigationSessionId,
@@ -3024,6 +3094,7 @@ export default function MapScreen({ route, navigation }: Props) {
     myScopeId,
     activeDestinationArrivals,
     resolveCurrentNavigationSessionId,
+    sessionEligibleMembers,
     user?.id,
     canEditItinerary,
     deviceCoords,
@@ -3894,7 +3965,7 @@ export default function MapScreen({ route, navigation }: Props) {
                 altitude: PLACE_ALTITUDE,
               });
             }
-            await refresh();
+            void refresh().catch(() => undefined);
             return true;
           } catch (e) {
             logError('destination_add_failed', e, { source: 'coordinates' });
@@ -3999,13 +4070,15 @@ export default function MapScreen({ route, navigation }: Props) {
     t,
   ]);
 
-  /** @returns true when complete RPC + refresh succeeded (for auto-complete notify). */
-  const runCompleteGatheringStop = useCallback(async (destination: Destination): Promise<boolean> => {
+  /** @returns true after local completion is saved; transport never owns success. */
+  const runCompleteGatheringStop = useCallback(async (destination: Destination, force = true): Promise<boolean> => {
     // Complete is separate from End navigation: only this path closes the stop
     // (closed_at → leaves carousel → history). End only pauses flock travel.
     // Server complete_gathering_stop also cancels any active nav for this stop.
-    if (!groupId) return false;
-    const alreadyClosed = !!destination.closedAt
+    if (!groupId || !user?.id || !canEditItinerary) return false;
+    const completionContext = arrivalContext;
+    const isCurrent = () => mapMountedRef.current && arrivalContextRef.current === completionContext;
+      const alreadyClosed = !!destination.closedAt
       || allScopedDestinations.find((d) => d.id === destination.id)?.closedAt != null;
     const plan = planCompleteGatheringApply({
       alreadyClosed,
@@ -4018,21 +4091,32 @@ export default function MapScreen({ route, navigation }: Props) {
       completingDestIdsRef.current.add(destination.id);
       try {
         const sessionId = resolveCurrentNavigationSessionId(destination);
-        if (sessionId) {
-          await completeGatheringStop(groupId, destination.id, sessionId);
-        } else {
-          await completeGatheringStop(groupId, destination.id);
+        const operation = await enqueueJourneyCompletion({
+          groupId, destinationId: destination.id, navigationSessionId: sessionId,
+          actorId: user.id, scopeSubgroupId: destination.subgroupId ?? null,
+          leaderId: user.id,
+          navigationMemberIds: sessionEligibleMembers.filter(member => !member.solo
+            && (member.subgroupId ?? null) === (destination.subgroupId ?? null)).map(member => member.userId),
+          arrivedMemberIds: activeDestinationArrivals.filter(arrival => arrival.destinationId === destination.id)
+            .map(arrival => arrival.userId),
+          force, isCurrent,
+        });
+        if (!isCurrent() || (!force && !operation)) {
+          completingDestIdsRef.current.delete(destination.id);
+          return false;
         }
+        await refreshLocalSnapshot();
+        if (!isCurrent()) return false;
       } catch (error) {
         logError('complete_gathering_failed', error, { groupId, destId: destination.id });
         Alert.alert(
           t('map.setFailedTitle'),
           getOperationErrorMessage(error),
         );
-        completingDestIdsRef.current.delete(destination.id);
         return false;
+      } finally {
+        completingDestIdsRef.current.delete(destination.id);
       }
-      completingDestIdsRef.current.delete(destination.id);
     }
     if (plan.applyLocalClosedAt) {
       setOptimisticDestinations((prev) =>
@@ -4047,22 +4131,28 @@ export default function MapScreen({ route, navigation }: Props) {
       );
       startArrivalCardExit({ ...destination, closedAt }, priorIdx);
     }
-    if (plan.refreshHistory) {
-      await navigationSessionState.refresh().catch(() => undefined);
-      await refresh().catch(() => undefined);
-      await loadGatheringWorkflow().catch(() => undefined);
-      await loadHistory().catch(() => undefined);
-    }
+    stopRemovedDestination(destination.id, resolveCurrentNavigationSessionId(destination));
+    if (plan.refreshHistory) void Promise.all([
+      navigationSessionState.refresh(), refresh(), loadGatheringWorkflow(), loadHistory(),
+    ]).catch(() => undefined);
     return true;
   }, [
     allScopedDestinations,
+    activeDestinationArrivals,
+    arrivalContext,
+    sessionEligibleMembers,
+    canEditItinerary,
     groupId,
+    members,
+    user?.id,
     loadGatheringWorkflow,
     loadHistory,
     navigationSessionState,
     resolveCurrentNavigationSessionId,
     refresh,
+    refreshLocalSnapshot,
     startArrivalCardExit,
+    stopRemovedDestination,
     t,
   ]);
 
@@ -4071,7 +4161,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const executeAutoCompleteStop = useCallback(async (destination: Destination) => {
     const alreadyTracked = remoteAutoCompleteDestIdsRef.current.has(destination.id);
     remoteAutoCompleteDestIdsRef.current.add(destination.id);
-    const ok = await runCompleteGatheringStop(destination);
+    const ok = await runCompleteGatheringStop(destination, false);
     if (!ok) {
       remoteAutoCompleteDestIdsRef.current.delete(destination.id);
       return;
@@ -4098,7 +4188,7 @@ export default function MapScreen({ route, navigation }: Props) {
         .map((a) => a.userId),
     );
     const counts = deriveScopedArrivalCounts({
-      members,
+      members: sessionEligibleMembers,
       destinationSubgroupId: destination.subgroupId,
       arrivedUserIds: arrivedIds,
       // Opt-in only — default false so failed write cannot force auto-complete.
@@ -4179,6 +4269,7 @@ export default function MapScreen({ route, navigation }: Props) {
     members,
     refresh,
     runCompleteGatheringStop,
+    sessionEligibleMembers,
     t,
     user?.id,
   ]);
@@ -4204,11 +4295,15 @@ export default function MapScreen({ route, navigation }: Props) {
       );
     }
     const COMPLETE_PROMPT_DELAY_MS = 1_600 + 1_000;
+    const feedbackContext = arrivalContext;
     if (opts?.promptComplete) {
       // includeSelf only on this post-write path (arrival RPC already succeeded).
-      setTimeout(() => {
-        promptCompleteAfterArrival(destination, { includeSelf: true });
-      }, alreadyShown ? 0 : COMPLETE_PROMPT_DELAY_MS);
+      armCelebrateClearTimer(celebrateClearTimersRef.current, `completion:${destination.id}`,
+        alreadyShown ? 0 : COMPLETE_PROMPT_DELAY_MS, () => {
+          if (mapMountedRef.current && arrivalContextRef.current === feedbackContext) {
+            promptCompleteAfterArrival(destination, { includeSelf: true });
+          }
+        });
       return;
     }
 
@@ -4222,9 +4317,9 @@ export default function MapScreen({ route, navigation }: Props) {
       const body = !raw || raw === 'map.arriveBody' || raw.includes('map.arriveBody')
         ? fallback
         : raw;
-      setTimeout(() => {
-        Alert.alert(t('map.arriveTitle'), body);
-      }, 1_600);
+      armCelebrateClearTimer(celebrateClearTimersRef.current, `arrival-notice:${destination.id}`, 1_600, () => {
+        if (mapMountedRef.current && arrivalContextRef.current === feedbackContext) Alert.alert(t('map.arriveTitle'), body);
+      });
     }
   };
 
@@ -4233,6 +4328,7 @@ export default function MapScreen({ route, navigation }: Props) {
   useEffect(() => {
     if (!canEditItinerary || !groupId) return;
     for (const destination of allScopedDestinations) {
+      if (destination.id !== navTargetId) continue;
       if (destination.closedAt) {
         remoteAutoCompleteDestIdsRef.current.delete(destination.id);
         continue;
@@ -4246,7 +4342,7 @@ export default function MapScreen({ route, navigation }: Props) {
           .map((a) => a.userId),
       );
       const counts = deriveScopedArrivalCounts({
-        members,
+        members: sessionEligibleMembers,
         destinationSubgroupId: destination.subgroupId,
         arrivedUserIds: arrivedIds,
         // Remote path: only committed arrivals, never invent self.
@@ -4260,6 +4356,8 @@ export default function MapScreen({ route, navigation }: Props) {
     allScopedDestinations,
     activeDestinationArrivals,
     executeAutoCompleteStop,
+    navTargetId,
+    sessionEligibleMembers,
     groupId,
     canEditItinerary,
     members,
@@ -4804,8 +4902,8 @@ export default function MapScreen({ route, navigation }: Props) {
   reorderForNavigationRef.current = persistReorderNow;
 
   /**
-   * Upload route-sheet draft after 完成 / swipe-dismiss.
-   * UI already reflects draft; this only syncs the backend once.
+   * Save route-sheet draft durably after 完成 / swipe-dismiss.
+   * Network delivery is owned by the outbox.
    */
   const flushRouteDraft = useCallback(async () => {
     if (!groupId || routeFlushInFlightRef.current) return;
@@ -4827,159 +4925,172 @@ export default function MapScreen({ route, navigation }: Props) {
       return;
     }
     routeFlushInFlightRef.current = true;
+    let localSaveError: unknown;
     try {
       await runUiAction(
         'map.route_draft_flush',
         async (token) => {
-          logEvent('route_draft_flush', {
-            destinations: dirty.destinations,
-            daily: dirty.daily,
-            trip: dirty.trip,
-            deleted: dirty.deletedIds.length,
-          });
+          try {
+            logEvent('route_draft_flush', {
+              destinations: dirty.destinations,
+              daily: dirty.daily,
+              trip: dirty.trip,
+              deleted: dirty.deletedIds.length,
+            });
 
-          // 1) Trip meta first (day count / departure) so day alignment is stable.
-          if (dirty.trip) {
-            const days = optimisticTripDays ?? group?.tripDays;
-            const date = optimisticDepartureDate ?? group?.departureDate;
-            if (typeof days === 'number' && date) {
-              await updateGroupTripDetails(groupId, days, date);
-            }
-          }
-          if (!token.isCurrent()) return;
-
-          // 2) Deletes before reorder so slots free up.
-          for (const id of dirty.deletedIds) {
-            if (id.startsWith('draft-')) continue;
-            const original = routeEditorServerDestinations.find(d => d.id === id);
-            await deleteDestination(groupId, id, original ? resolveCurrentNavigationSessionId(original) : null);
-          }
-          if (!token.isCurrent()) return;
-
-          // 3) Materialize draft-only rows; map temp → real ids.
-          let draftDests = optimisticDestinationsRef.current;
-          if (draftDests) {
-            const idMap = new Map<string, string>();
-            const nextDests: Destination[] = [];
-            for (const dest of draftDests) {
-              if (!dest.id.startsWith('draft-')) {
-                nextDests.push(dest);
-                continue;
+            // 1) Trip meta first (day count / departure) so day alignment is stable.
+            if (dirty.trip) {
+              const days = optimisticTripDays ?? group?.tripDays;
+              const date = optimisticDepartureDate ?? group?.departureDate;
+              if (typeof days === 'number' && date) {
+                await updateGroupTripDetails(groupId, days, date);
               }
-              const newId = await addDestination(
-                groupId,
-                {
-                  title: dest.title,
-                  address: dest.address,
-                  coordinates: dest.coordinates,
-                  day: dest.day,
-                  providerPlaceId: dest.providerPlaceId,
-                  kind: dest.kind === 'accommodation' ? 'accommodation' : 'stop',
-                },
-                routeEditorScopeIdRef.current,
+            }
+            if (!token.isCurrent()) return;
+
+            // 2) Deletes before reorder so slots free up.
+            for (const id of dirty.deletedIds) {
+              if (id.startsWith('draft-')) continue;
+              const original = routeEditorServerDestinations.find(d => d.id === id);
+              await deleteDestination(groupId, id, original ? resolveCurrentNavigationSessionId(original) : null);
+            }
+            if (!token.isCurrent()) return;
+
+            // 3) Materialize draft-only rows; map temp → real ids.
+            let draftDests = optimisticDestinationsRef.current;
+            if (draftDests) {
+              const nextDests: Destination[] = [];
+              for (const dest of draftDests) {
+                if (!dest.id.startsWith('draft-')) {
+                  nextDests.push(dest);
+                  continue;
+                }
+                const newId = await addDestination(
+                  groupId,
+                  {
+                    title: dest.title,
+                    address: dest.address,
+                    coordinates: dest.coordinates,
+                    day: dest.day,
+                    providerPlaceId: dest.providerPlaceId,
+                    kind: dest.kind === 'accommodation' ? 'accommodation' : 'stop',
+                  },
+                  routeEditorScopeIdRef.current,
+                );
+                if (!newId) {
+                  throw new Error('draft_materialize_empty');
+                }
+                nextDests.push({ ...dest, id: newId });
+                // Keep each saved id immediately: a later local write failure must
+                // not materialize this row again when the draft is retried.
+                const savedDests = (optimisticDestinationsRef.current ?? draftDests)
+                  .map(row => row.id === dest.id ? { ...row, id: newId } : row);
+                optimisticDestinationsRef.current = savedDests;
+                setOptimisticDestinations(savedDests);
+                if (draftDailyRef.current) {
+                  draftDailyRef.current = draftDailyRef.current.map(row => row.sourceDestinationId === dest.id
+                    ? { ...row, sourceDestinationId: newId } : row);
+                  setDraftDailyAccommodations(draftDailyRef.current);
+                }
+                dirty.destinations = true;
+                routeDraftDirtyRef.current.destinations = true;
+              }
+              draftDests = nextDests;
+            }
+            if (!token.isCurrent()) return;
+
+            // 4) Daily stay set/clear from draft snapshot.
+            if (dirty.daily && draftDailyRef.current) {
+              const serverByDate = new Map(
+                serverDailyAccommodations.map((d) => [d.stayDate, d]),
               );
-              if (!newId) {
-                throw new Error('draft_materialize_empty');
+              const draftByDate = new Map(
+                draftDailyRef.current.map((d) => [d.stayDate, d]),
+              );
+              for (const [stayDate, serverRow] of serverByDate) {
+                if (!draftByDate.has(stayDate)) {
+                  const day = (() => {
+                    const dep = optimisticDepartureDate ?? group?.departureDate;
+                    if (!dep) return undefined;
+                    // Best-effort: match by stayDate via open dests day.
+                    const match = (draftDests ?? routeEditorServerDestinations).find((d) => {
+                      const date = dateForTripDay(dep, d.day || 1);
+                      return date ? localDayKey(date) === stayDate : false;
+                    });
+                    return match?.day ?? undefined;
+                  })();
+                  await clearDailyAccommodation(groupId, stayDate, day);
+                }
+                void serverRow;
               }
-              idMap.set(dest.id, newId);
-              nextDests.push({ ...dest, id: newId });
-            }
-            draftDests = nextDests;
-            if (idMap.size > 0) {
-              setOptimisticDestinations(nextDests);
-              dirty.destinations = true;
-              routeDraftDirtyRef.current.destinations = true;
-            }
-          }
-          if (!token.isCurrent()) return;
-
-          // 4) Daily stay set/clear from draft snapshot.
-          if (dirty.daily && draftDailyRef.current) {
-            const serverByDate = new Map(
-              serverDailyAccommodations.map((d) => [d.stayDate, d]),
-            );
-            const draftByDate = new Map(
-              draftDailyRef.current.map((d) => [d.stayDate, d]),
-            );
-            for (const [stayDate, serverRow] of serverByDate) {
-              if (!draftByDate.has(stayDate)) {
+              for (const [stayDate, draftRow] of draftByDate) {
+                const serverRow = serverByDate.get(stayDate);
+                if (
+                  serverRow
+                  && serverRow.title === draftRow.title
+                  && serverRow.sourceDestinationId === draftRow.sourceDestinationId
+                ) {
+                  continue;
+                }
                 const day = (() => {
                   const dep = optimisticDepartureDate ?? group?.departureDate;
-                  if (!dep) return undefined;
-                  // Best-effort: match by stayDate via open dests day.
+                  if (!dep) return draftRow.sourceDestinationId ? undefined : undefined;
                   const match = (draftDests ?? routeEditorServerDestinations).find((d) => {
+                    if (draftRow.sourceDestinationId && d.id === draftRow.sourceDestinationId) {
+                      return true;
+                    }
                     const date = dateForTripDay(dep, d.day || 1);
                     return date ? localDayKey(date) === stayDate : false;
                   });
                   return match?.day ?? undefined;
                 })();
-                await clearDailyAccommodation(groupId, stayDate, day);
-              }
-              void serverRow;
-            }
-            for (const [stayDate, draftRow] of draftByDate) {
-              const serverRow = serverByDate.get(stayDate);
-              if (
-                serverRow
-                && serverRow.title === draftRow.title
-                && serverRow.sourceDestinationId === draftRow.sourceDestinationId
-              ) {
-                continue;
-              }
-              const day = (() => {
-                const dep = optimisticDepartureDate ?? group?.departureDate;
-                if (!dep) return draftRow.sourceDestinationId ? undefined : undefined;
-                const match = (draftDests ?? routeEditorServerDestinations).find((d) => {
-                  if (draftRow.sourceDestinationId && d.id === draftRow.sourceDestinationId) {
-                    return true;
-                  }
-                  const date = dateForTripDay(dep, d.day || 1);
-                  return date ? localDayKey(date) === stayDate : false;
+                // Never pass draft-* as FK-ish source id after materialize map.
+                const sourceId = draftRow.sourceDestinationId;
+                const resolvedSource =
+                  sourceId && sourceId.startsWith('draft-')
+                    ? undefined
+                    : sourceId ?? undefined;
+                await setDailyAccommodation(groupId, stayDate, {
+                  title: draftRow.title,
+                  address: draftRow.address,
+                  coordinates: draftRow.coordinates,
+                  sourceDestinationId: resolvedSource,
+                  day,
                 });
-                return match?.day ?? undefined;
-              })();
-              // Never pass draft-* as FK-ish source id after materialize map.
-              const sourceId = draftRow.sourceDestinationId;
-              const resolvedSource =
-                sourceId && sourceId.startsWith('draft-')
-                  ? undefined
-                  : sourceId ?? undefined;
-              await setDailyAccommodation(groupId, stayDate, {
-                title: draftRow.title,
-                address: draftRow.address,
-                coordinates: draftRow.coordinates,
-                sourceDestinationId: resolvedSource,
-                day,
-              });
+              }
             }
-          }
-          if (!token.isCurrent()) return;
+            if (!token.isCurrent()) return;
 
-          // 5) Final open-list reorder against absolute slots (ALL open days).
-          // Must not use filterActiveDestinations — day-gating drops past-day
-          // rows from the write and makes Day1 appear to become Day2 after 完成.
-          if (dirty.destinations && draftDests) {
-            const openDraft = openDestinationsForReorder(draftDests);
-            if (openDraft.some((d) => d.id.startsWith('draft-'))) {
-              throw new Error('draft_ids_in_reorder');
+            // 5) Final open-list reorder against absolute slots (ALL open days).
+            // Must not use filterActiveDestinations — day-gating drops past-day
+            // rows from the write and makes Day1 appear to become Day2 after 完成.
+            if (dirty.destinations && draftDests) {
+              const openDraft = openDestinationsForReorder(draftDests);
+              if (openDraft.some((d) => d.id.startsWith('draft-'))) {
+                throw new Error('draft_ids_in_reorder');
+              }
+              const withSlots = buildOpenReorderPayload(openDraft);
+              await reorderDestinations(groupId, withSlots);
             }
-            const withSlots = buildOpenReorderPayload(openDraft);
-            await reorderDestinations(groupId, withSlots);
-          }
-          if (!token.isCurrent()) return;
+            if (!token.isCurrent()) return;
 
-          await refresh();
-          if (!token.isCurrent()) return;
-          setOptimisticDestinations(null);
-          setDraftDailyAccommodations(null);
-          setOptimisticTripDays(null);
-          setOptimisticDepartureDate(null);
-          routeDraftDirtyRef.current = {
-            destinations: false,
-            daily: false,
-            trip: false,
-            deletedIds: [],
-          };
+            if (!(await refreshLocalSnapshot())) throw Object.assign(new Error('local snapshot read failed'), { code: 'SQLITE_READ_FAILED' });
+            if (!token.isCurrent()) return;
+            setOptimisticDestinations(null);
+            setDraftDailyAccommodations(null);
+            setOptimisticTripDays(null);
+            setOptimisticDepartureDate(null);
+            routeDraftDirtyRef.current = {
+              destinations: false,
+              daily: false,
+              trip: false,
+              deletedIds: [],
+            };
+            void refresh().catch(() => undefined);
+          } catch (cause) {
+            localSaveError = cause;
+            throw cause;
+          }
         },
         {
           screen: 'Map',
@@ -4988,12 +5099,12 @@ export default function MapScreen({ route, navigation }: Props) {
           timeoutMs: 60_000,
           onError: (kind) => {
             logError('route_draft_flush_failed', new Error(kind));
-            // Leader is already required to open the editor — never blame role.
-            if (kind === 'timeout') {
-              Alert.alert(t('map.routeSaveFailedTitle'), t('interaction.timeout'));
-            } else {
-              Alert.alert(t('map.routeSaveFailedTitle'), t('map.routeSaveFailed'));
+            if (classifyOperationError(localSaveError).kind === 'leader_role_rejected') {
+              setRevokedLeaderContext(roleContext);
+              void refresh().catch(() => undefined);
             }
+            Alert.alert(t('map.setFailedTitle'), kind === 'timeout'
+              ? t('interaction.timeout') : getOperationErrorMessage(localSaveError));
             // Keep draft visible so the user can reopen and retry.
           },
         },
@@ -5008,6 +5119,8 @@ export default function MapScreen({ route, navigation }: Props) {
     optimisticTripDays,
     optimisticDepartureDate,
     serverDailyAccommodations,
+    refreshLocalSnapshot,
+    roleContext,
     routeEditorServerDestinations,
     resolveCurrentNavigationSessionId,
     refresh,
@@ -5029,6 +5142,33 @@ export default function MapScreen({ route, navigation }: Props) {
     await openKmlImport();
   }, [openKmlImport]);
 
+  const persistRouteDeletions = useCallback(async (ids: string[]) => {
+    if (!groupId || !canEditItinerary) return;
+    const context = workflowContext;
+    const isCurrent = () => mapMountedRef.current && workflowContextRef.current === context;
+    try {
+      for (const id of ids) {
+        if (!isCurrent()) return;
+        const original = (optimisticDestinationsRef.current ?? routeEditorServerDestinations).find(d => d.id === id);
+        const sessionId = original ? resolveCurrentNavigationSessionId(original) : null;
+        if (!id.startsWith('draft-')) await deleteDestination(groupId, id, sessionId);
+        if (!isCurrent()) return;
+        await refreshLocalSnapshot();
+        if (!isCurrent()) return;
+        stopRemovedDestination(id, sessionId);
+        const next = (optimisticDestinationsRef.current ?? routeEditorServerDestinations).filter(d => d.id !== id);
+        optimisticDestinationsRef.current = next;
+        setOptimisticDestinations(next);
+        routeDraftDirtyRef.current.deletedIds = routeDraftDirtyRef.current.deletedIds.filter(value => value !== id);
+        setRouteSelectedIds(previous => previous.filter(value => value !== id));
+      }
+    } catch (cause) {
+      // Service returns after a local transaction. Only a real local-save failure reaches here.
+      if (isCurrent()) Alert.alert(t('map.setFailedTitle'), getOperationErrorMessage(cause));
+    }
+  }, [canEditItinerary, groupId, resolveCurrentNavigationSessionId, routeEditorServerDestinations,
+    refreshLocalSnapshot, stopRemovedDestination, t, workflowContext]);
+
   const handleDelete = useCallback(
     (id: string) => {
       if (!groupId || !canEditItinerary) return;
@@ -5042,37 +5182,15 @@ export default function MapScreen({ route, navigation }: Props) {
           destructive: true,
         },
         () => {
-          void (async () => {
-            // An ACTIVE card is a causal chain: enqueue End for its current
-            // session first, then stage the delete.  This prevents a delayed
-            // End from terminating a newly started session on the same card.
-            if (id === navTargetId && journeyActive) {
-              const ended = await stopNavigation();
-              if (!ended) {
-                showOperationFailure(t('map.setFailedTitle'), t('map.routeSaveFailed'));
-                return;
-              }
-            }
-            // Route editor: local draft only. Network on sheet flush.
-            logEvent('destination_delete_local', { id });
-            const base = optimisticDestinationsRef.current ?? routeEditorServerDestinations;
-            setOptimisticDestinations(base.filter((d) => d.id !== id));
-            if (!id.startsWith('draft-')) {
-              routeDraftDirtyRef.current.deletedIds = [
-                ...routeDraftDirtyRef.current.deletedIds.filter((x) => x !== id),
-                id,
-              ];
-            }
-            routeDraftDirtyRef.current.destinations = true;
-            setRouteSelectedIds((prev) => prev.filter((x) => x !== id));
-          })();
+          logEvent('destination_delete_local', { id });
+          void persistRouteDeletions([id]);
         },
       );
     },
-    [canEditItinerary, groupId, destinations, journeyActive, navTargetId, routeEditorServerDestinations, stopNavigation, t],
+    [canEditItinerary, groupId, destinations, persistRouteDeletions, t],
   );
 
-  /** Multi-select delete from route sheet — one confirm, local draft only. */
+  /** Multi-select delete saves each accepted local operation before transport. */
   const handleDeleteMany = useCallback(
     (ids: string[]) => {
       if (!groupId || !canEditItinerary || ids.length === 0) return;
@@ -5084,30 +5202,12 @@ export default function MapScreen({ route, navigation }: Props) {
           destructive: true,
         },
         () => {
-          void (async () => {
-            if (navTargetId && ids.includes(navTargetId) && journeyActive) {
-              const ended = await stopNavigation();
-              if (!ended) {
-                showOperationFailure(t('map.setFailedTitle'), t('map.routeSaveFailed'));
-                return;
-              }
-            }
-            logEvent('destination_delete_many_local', { count: ids.length });
-            const idSet = new Set(ids);
-            const base = optimisticDestinationsRef.current ?? routeEditorServerDestinations;
-            setOptimisticDestinations(base.filter((d) => !idSet.has(d.id)));
-            const serverIds = ids.filter((id) => !id.startsWith('draft-'));
-            routeDraftDirtyRef.current.deletedIds = [
-              ...routeDraftDirtyRef.current.deletedIds.filter((x) => !idSet.has(x)),
-              ...serverIds,
-            ];
-            routeDraftDirtyRef.current.destinations = true;
-            setRouteSelectedIds([]);
-          })();
+          logEvent('destination_delete_many_local', { count: ids.length });
+          void persistRouteDeletions(ids);
         },
       );
     },
-    [canEditItinerary, groupId, journeyActive, navTargetId, routeEditorServerDestinations, stopNavigation, t],
+    [canEditItinerary, groupId, persistRouteDeletions, t],
   );
 
   const handleUpdateEmojiColor = useCallback(
@@ -6989,24 +7089,6 @@ export default function MapScreen({ route, navigation }: Props) {
         <View style={[styles.flex, { backgroundColor: '#0c0e12' }]} />
       )}
       {/* #175: navigation response banner removed entirely (not moved to Tools). */}
-      {openOperations.length > 0 ? (
-        <View style={{ position: 'absolute', top: inPassiveMode ? insets.top + 8 : topPad + 8,
-          left: 12, right: 12, zIndex: 30 }} pointerEvents="box-none">
-          <CoreSyncStatus operations={openOperations} actorId={user?.id ?? null} t={t}
-            key={workflowContext}
-            describeError={getOperationErrorMessage}
-            onResolve={async (operation, action) => {
-              const outbox = getCoreOperationOutbox();
-              if (action === 'discard') await outbox.discardConflictChain(operation.id);
-              else await outbox.recreateConflict(operation.id);
-              if (!mapMountedRef.current || workflowContextRef.current !== workflowContext) return;
-              await refresh();
-              await flushCoreOperationOutbox();
-              if (!mapMountedRef.current || workflowContextRef.current !== workflowContext) return;
-              await refresh();
-            }} />
-        </View>
-      ) : null}
 
       {/* OTA-07: reduced presentation — covers dense chrome; same state tree. */}
       {inPassiveMode ? (
@@ -7358,7 +7440,7 @@ export default function MapScreen({ route, navigation }: Props) {
                 : null;
               // Team arrival toward THIS stop — scoped to destination subgroup.
               const cardArrival = deriveScopedArrivalCounts({
-                members,
+                members: dest.id === navTargetId ? sessionEligibleMembers : members,
                 destinationSubgroupId: dest.subgroupId,
                 arrivedUserIds: activeDestinationArrivals
                   .filter((arrival) => arrival.destinationId === dest.id)

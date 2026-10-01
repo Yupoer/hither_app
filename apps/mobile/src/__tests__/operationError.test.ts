@@ -22,6 +22,8 @@ describe('classifyOperationError', () => {
     [{ status: 504, message: 'gateway timeout' }, 'timeout_ambiguous_outcome'],
     [{ code: '28000', message: 'not authenticated' }, 'session_missing_or_expired'],
     [{ code: '42501', message: 'leader membership required' }, 'leader_role_rejected'],
+    [{ code: 'unauthorized', message: 'itinerary scope leader required' }, 'leader_role_rejected'],
+    [{ code: 'unauthorized', message: 'main-team leader required for history correction' }, 'leader_role_rejected'],
     [{ code: '42501', message: 'permission denied' }, 'acl_service_access'],
     [{ status: 429, code: 'too_many_requests', message: 'slow down' }, 'rate_limited'],
     [{ status: 503, message: 'upstream unavailable' }, 'service_unavailable'],

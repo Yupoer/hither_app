@@ -44,6 +44,9 @@ export type CoreOperationType =
   | 'reorder_destinations'
   | 'set_destination_meet_time'
   | 'complete_destination'
+  | 'set_trip_details'
+  | 'set_daily_accommodation'
+  | 'clear_daily_accommodation'
   | 'submit_gather_point_request'
   | 'resolve_gather_point_request';
 
@@ -97,6 +100,8 @@ export interface CoreGroupSnapshot {
   ownerActorId?: string;
   group: Group;
   destinations: Destination[];
+  /** Optional for snapshots saved before durable stay editing was introduced. */
+  dailyAccommodations?: GroupState['dailyAccommodations'];
   /** Optional member cache for offline UI; live GPS is out of scope. */
   members?: GroupState['members'];
   subgroups?: GroupState['subgroups'];

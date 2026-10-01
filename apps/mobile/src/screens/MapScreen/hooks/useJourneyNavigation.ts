@@ -1,5 +1,5 @@
 import { legacyNavigationSessionKey, readEndedNavigationSessions, rememberEndedNavigationSession } from '../../../state/endedNavigationSessions';
-import { showAppNotice, showOperationFailure } from '../../../state/appNotice';
+import { showOperationFailure } from '../../../state/appNotice';
 import * as Crypto from 'expo-crypto';
 import { useState, useMemo, useEffect, useCallback, useRef, RefObject } from 'react';
 import { Alert, type ScrollView } from 'react-native';
@@ -112,7 +112,9 @@ export function useJourneyNavigation({
   const legacySharedTargetId = legacyMode && state?.group.journeyStatus === 'going'
     ? state.group.activeDestinationId ?? null
     : null;
-  const authoritativeSharedTargetId = navigationSession?.status === 'active'
+  const removedTarget = state != null && navigationSession?.status === 'active'
+    && !state.destinations.some(destination => destination.id === navigationSession.destinationId && !destination.closedAt);
+  const authoritativeSharedTargetId = navigationSession?.status === 'active' && !removedTarget
     ? navigationSession.destinationId
     : legacySharedTargetId;
 
@@ -392,18 +394,17 @@ export function useJourneyNavigation({
       intent.targetSessionId = navigationSessionId;
       if (intent.expectedSessionStartedAt === undefined) intent.expectedSessionStartedAt = state?.group.journeyStartedAt ?? null;
       const endedSessionKey = navigationSessionId ?? legacyNavigationSessionKey(intent.expectedSessionStartedAt, intent.destination.id);
-      if (actorId) {
-        setEndedSessions(values => new Set([...values, endedSessionKey]));
-        void rememberEndedNavigationSession(actorId, groupId, endedSessionKey).catch(error => {
-          if (isCurrent()) showOperationFailure(t('map.setFailedTitle'), getOperationErrorMessage(error));
-        });
-      }
       const result = await enqueueLeaderGatheringEnd(groupId, { baseState, groupState: state,
         actorId: actorId ?? undefined, operationId,
         navigationSessionId,
         expectedSessionStartedAt: navigationSessionId ? null : intent.expectedSessionStartedAt,
         subgroupId: intent.destination.subgroupId ?? null,
         flushImmediately: false });
+      if (actorId) {
+        setEndedSessions(values => new Set([...values, endedSessionKey]));
+        // The durable End owns restart recovery; this dismissal cache is secondary.
+        void rememberEndedNavigationSession(actorId, groupId, endedSessionKey).catch(() => undefined);
+      }
       gatheringStatesRef.current.set(gatheringCacheKey, result.local);
       if (!isCurrent()) { void flushCoreOperationOutbox().catch(() => undefined); return true; }
       pendingStartRef.current = null;
@@ -437,17 +438,10 @@ export function useJourneyNavigation({
       if (pendingTeamStartIntentRef.current?.sequence === intent.sequence) {
         pendingTeamStartIntentRef.current = null;
       }
-      setOptimisticTeamTargetId(null);
-      showAppNotice({
-        id: `end-save:${intent.operationId}`,
-        title: t('notice.endLocalOnly'), message: getOperationErrorMessage(error),
-        actionLabel: t('interaction.retry'),
-        onAction: async () => {
-          if (isCurrent() && teamCommandSequenceRef.current === intent.sequence) await runTeamEnd(intent);
-        },
-      });
+      setOptimisticTeamTargetId(undefined);
+      Alert.alert(t('map.setFailedTitle'), getOperationErrorMessage(error));
       logEvent('nav_end_failed', { destId: intent.destination.id });
-      return true;
+      return false;
     } finally {
       if (isCurrent()) {
         setPendingLeaderStop(false);
@@ -618,6 +612,17 @@ export function useJourneyNavigation({
     return true;
   }, [isLeader, navTarget, selectedDestination, destinations, enqueueTeamCommand]);
 
+  /** Called after durable delete/complete; that operation owns the server cancellation. */
+  const stopRemovedDestination = useCallback((destinationId: string, sessionId: string | null) => {
+    if (navTargetId !== destinationId) return;
+    // The durable snapshot hides this target. Unlike a user's End, a rejected
+    // removal can restore the same original session and resume following it.
+    setOptimisticTeamTargetId(null);
+    setLocalTargetId(null);
+    setPendingLeaderTargetId(null);
+    publishLocalSessionId(null);
+  }, [navTargetId, publishLocalSessionId]);
+
   // Reorder is asynchronous. Project the selected page only after the latest
   // visible carousel order exactly matches the ID-based promote result; a
   // stale array still contains the target but must not clear the pending ID.
@@ -675,6 +680,7 @@ export function useJourneyNavigation({
     startNavigation,
     requestTeamEnd,
     stopNavigation,
+    stopRemovedDestination,
     startLocalRoutePlan,
   };
 }
