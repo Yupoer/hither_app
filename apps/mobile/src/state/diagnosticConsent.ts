@@ -6,9 +6,25 @@ let hydrated = false;
 let enabled = false;
 let choiceRevision = 0;
 let hydration: Promise<boolean> | null = null;
+const pendingSubmissions = new Set<() => void>();
 
 export function isDiagnosticConsentEnabled(): boolean {
   return hydrated && enabled;
+}
+
+/** Invalidates in-flight batches across revoke/re-enable, not just while OFF. */
+export function getDiagnosticConsentRevision(): number { return choiceRevision; }
+export function isDiagnosticConsentCurrent(revision: number): boolean {
+  return isDiagnosticConsentEnabled() && choiceRevision === revision;
+}
+
+/** Also fences token lookup/auth recovery inside the lazy Supabase request. */
+export function createDiagnosticSubmissionAbort(revision: number): { signal: AbortSignal; dispose: () => void } {
+  const controller = new AbortController();
+  const cancel = () => controller.abort();
+  pendingSubmissions.add(cancel);
+  if (!isDiagnosticConsentCurrent(revision)) cancel();
+  return { signal: controller.signal, dispose: () => { pendingSubmissions.delete(cancel); } };
 }
 
 export function hydrateDiagnosticConsent(value: string | null): boolean {
@@ -32,6 +48,7 @@ export function getDiagnosticConsentEnabled(): Promise<boolean> {
 
 export async function setDiagnosticConsentEnabled(next: boolean): Promise<void> {
   const revision = ++choiceRevision;
+  for (const cancel of pendingSubmissions) cancel();
   if (!next) enabled = false;
   hydrated = true;
   try {

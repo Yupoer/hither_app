@@ -1541,6 +1541,13 @@
       "acceptance": "Revocation drops pending samples",
       "testFile": "performanceEnergyCoverage.test.ts",
       "testNamePattern": "drops a pending performance sample"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "Revocation stops new MetricKit submissions and re-enable cannot revive an old batch",
+      "testFile": "diagnosticSubmissionConsent.test.ts",
+      "testNamePattern": "stops the drained batch after revocation"
     }
   ]
 }

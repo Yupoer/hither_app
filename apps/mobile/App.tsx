@@ -46,7 +46,7 @@ import {
 import { GLOBAL_FONT_SCALE_CAP } from './src/theme/typeScale';
 import { metrics } from './src/native';
 import { diagnostics } from './src/state/diagnostics';
-import { uploadMetricPayload } from './src/api/services/DiagnosticService';
+import { uploadMetricPayloadBatch } from './src/api/services/DiagnosticService';
 import {
   classifyCrashClass,
   classifyMetricPayload,
@@ -71,6 +71,7 @@ import {
   setLogBatchSchedulerEnabled,
   stopLogBatchScheduler,
 } from './src/state/logBatchScheduler';
+import { getDiagnosticConsentRevision, isDiagnosticConsentCurrent } from './src/state/diagnosticConsent';
 import { uploadLocalLogs } from './src/utils/uploadLocalLogs';
 import { startOtaUpdateBootstrap } from './src/utils/otaUpdates';
 import OtaUpdateToast from './src/components/OtaUpdateToast';
@@ -152,30 +153,30 @@ function ThemedNavigation() {
       return;
     }
 
+    let cancelled = false;
+    const consentRevision = getDiagnosticConsentRevision();
+    const isCurrent = () => !cancelled && isDiagnosticConsentCurrent(consentRevision);
     configurePerformanceTracing(uploadPerformanceBatch);
     configureLogBatchScheduler(async () => {
+      if (!isCurrent()) return { sent: 0, remaining: 0 };
       const logs = await uploadLocalLogs();
+      if (!isCurrent()) return { sent: 0, remaining: 0 };
       const allPayloads = await metrics.drainPayloads();
-      const payloads = allPayloads.slice(0, 5);
-      const acknowledged: string[] = [];
-      for (const payload of payloads) {
-        try {
-          await uploadMetricPayload(payload);
-          acknowledged.push(payload.id);
-          // Allow-listed crash class only — never raw MetricKit JSON in diagnostics.
-          const crashClass = classifyMetricPayload(payload.kind, payload.json);
-          void diagnostics
-            .write({
-              event: 'metric_payload_classified',
-              source: payload.kind,
-              errorCode: crashClass,
-              reason: crashClass,
-              success: true,
-            })
-            .catch(() => undefined);
-        } catch {
-          break;
-        }
+      if (!isCurrent()) return { sent: 0, remaining: 0 };
+      const acknowledged = await uploadMetricPayloadBatch(allPayloads, isCurrent);
+      if (!isCurrent()) return { sent: 0, remaining: 0 };
+      for (const payload of allPayloads.filter(item => acknowledged.includes(item.id))) {
+        // Allow-listed crash class only — never raw MetricKit JSON in diagnostics.
+        const crashClass = classifyMetricPayload(payload.kind, payload.json);
+        void diagnostics
+          .write({
+            event: 'metric_payload_classified',
+            source: payload.kind,
+            errorCode: crashClass,
+            reason: crashClass,
+            success: true,
+          })
+          .catch(() => undefined);
       }
       await metrics.removePayloads(acknowledged);
       return {
@@ -191,7 +192,6 @@ function ThemedNavigation() {
     setPerformancePlatform(Platform.OS);
     // Login / consent restored: flush any queued errors immediately.
     void flushPerformance().catch(() => undefined);
-    let cancelled = false;
     let stopMonitor: (() => void) | null = null;
     void metrics
       .setCollectionEnabled(true)
