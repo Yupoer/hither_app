@@ -83,6 +83,8 @@ interface UseGroupStateResult {
   refreshing: boolean;
   /** Force an immediate refresh (e.g. pull-to-refresh, recenter). */
   refresh: (reason?: GroupReloadReason) => Promise<boolean>;
+  /** Read durable local writes without waiting for a remote refresh. */
+  refreshLocalSnapshot: () => Promise<boolean>;
   /** Where the current state was loaded from (OTA-04 local-first). */
   dataSource: GroupStateDataSource;
   /** Snapshot freshness for offline / stale banners. */
@@ -240,6 +242,8 @@ export function useGroupState(
         setDataSource('none');
         return false;
       }
+      await refreshOpenOperations(id, expectedGeneration, expectedActorId);
+      if (!isCurrent()) return false;
       const projected = groupStateFromCoreSnapshot(snapshot);
       const current = stateRef.current;
       // Core writes change itinerary/gathering, not the live location feed.
@@ -253,7 +257,6 @@ export function useGroupState(
       setEmptyLocalSnapshot(false);
       const source: CoreSnapshotSource = snapshot.source;
       void source;
-      await refreshOpenOperations(id, expectedGeneration, expectedActorId);
       return true;
     } catch {
       return false;
@@ -696,6 +699,8 @@ export function useGroupState(
     if (groupIdRef.current !== groupId || myUserIdRef.current !== actorId) return false;
     return loadInFlightRef.current ?? ok;
   }, [load, groupId, myUserId]);
+  const refreshLocalSnapshot = useCallback(() => groupId
+    ? applyLocalSnapshot(groupId) : Promise.resolve(false), [groupId, applyLocalSnapshot]);
   const projectedState = useMemo(() => state
     ? projectPendingDestinations(state, openOperations) : null, [state, openOperations]);
   return {
@@ -706,6 +711,7 @@ export function useGroupState(
     loadError,
     refreshing,
     refresh,
+    refreshLocalSnapshot,
     dataSource,
     snapshotFreshness,
     emptyLocalSnapshot,

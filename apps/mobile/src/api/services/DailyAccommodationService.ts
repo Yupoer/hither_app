@@ -103,10 +103,8 @@ export interface SetDailyAccommodationResult {
 }
 
 /**
- * Upsert daily accommodation.
- * Product: head/tail auto-add cards are temporarily disabled — always force
- * the team switch off before the RPC so none→some never materializes boundary
- * stay cards. Quick-add + set-stay remain the only ways to add stay rows.
+ * Save locally with its durable operation. The backend atomically disables
+ * boundary auto-add while applying the stay; local completion never waits on it.
  */
 export async function setDailyAccommodation(
   groupId: string,
@@ -126,48 +124,22 @@ export async function setDailyAccommodation(
     return { daily, autoAdded: false };
   }
 
-  // Temporarily disable head/tail auto-add for all teams (UI switch removed).
-  await setAccommodationAutoAdd(groupId, false);
-
-  const { data, error } = await supabase.rpc(
-    'set_daily_accommodation_with_auto_add',
-    {
-      p_group_id: groupId,
-      p_stay_date: stayDate,
-      p_title: input.title,
-      p_address: input.address ?? null,
-      p_latitude: input.coordinates.latitude,
-      p_longitude: input.coordinates.longitude,
-      p_source_destination_id: input.sourceDestinationId ?? null,
-      p_day: input.day ?? null,
-    },
-  );
-  orThrow(error);
-
-  const payload = data as {
-    daily?: DailyAccommodationRow;
-    auto_added?: boolean;
-    first_card_id?: string | null;
-    last_card_id?: string | null;
-  } | null;
-
-  if (!payload?.daily) {
-    throw new Error('set_daily_accommodation_empty');
-  }
-
-  return {
-    daily: mapDailyAccommodation(payload.daily),
-    autoAdded: Boolean(payload.auto_added),
-    firstCardId: payload.first_card_id ?? null,
-    lastCardId: payload.last_card_id ?? null,
+  const core = require('../../state/coreDataSync') as typeof import('../../state/coreDataSync');
+  const crypto = require('expo-crypto') as typeof import('expo-crypto');
+  const snapshot = await core.ensureCoreSnapshot(groupId);
+  const daily: DailyAccommodation = {
+    id: snapshot?.dailyAccommodations?.find(stay => stay.stayDate === stayDate)?.id ?? crypto.randomUUID(),
+    groupId, stayDate, title: input.title, address: input.address,
+    coordinates: input.coordinates, sourceDestinationId: input.sourceDestinationId ?? null,
   };
+  await core.enqueueDailyAccommodation({ groupId, stayDate, daily, day: input.day });
+  return { daily, autoAdded: false, firstCardId: null, lastCardId: null };
 }
 
 /**
  * Clear daily accommodation for a date. Does not delete itinerary cards.
- * Delete + stay_anchor downgrade run in one expiry-aware DB transaction
- * (public INVOKER → extensions DEFINER RPC) so some→none cannot leave
- * locked cards if either half fails.
+ * Stay removal + anchor downgrade share the same local snapshot transaction
+ * and backend receipt, so either both apply or neither applies.
  */
 export async function clearDailyAccommodation(
   groupId: string,
@@ -175,15 +147,8 @@ export async function clearDailyAccommodation(
   day?: number,
 ): Promise<void> {
   if (isDemoGroup(groupId)) return;
-  const { error } = await supabase.rpc(
-    'clear_daily_accommodation_with_downgrade',
-    {
-      p_group_id: groupId,
-      p_stay_date: stayDate,
-      p_day: typeof day === 'number' && day > 0 ? day : null,
-    },
-  );
-  orThrow(error);
+  const core = require('../../state/coreDataSync') as typeof import('../../state/coreDataSync');
+  await core.enqueueDailyAccommodation({ groupId, stayDate, day: typeof day === 'number' && day > 0 ? day : undefined });
 }
 
 /**

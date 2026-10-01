@@ -2,7 +2,8 @@ import { notifyJourneyApproach } from './journeyNotifications';
 import { AppState } from 'react-native';
 import { captureLocationAccess, isLocationAccessCurrent, subscribeLocationAccessChanges, isLocationAccessEnabled, setLocationSharingConsent, LOCATION_SHARING_KEY } from './locationPrivacy';
 import { backgroundLocationAdapter, observeNativeBackgroundLocation, prepareNativeBackgroundLocation, nativeBackgroundAvailable } from '../native/backgroundLocation';
-import { enqueueArrival } from './arrivalSync';
+import { enqueueArrival, projectArrivals } from './arrivalSync';
+import { enqueueJourneyCompletion } from './journeyCompletion';
 import { getCoreOperationOutbox, flushCoreOperationOutbox } from './coreDataSync';
 import type { CoreOperation } from '../types/coreData';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -131,6 +132,7 @@ let lastLocalProgressSignature = '';
 let lastControlSyncAt = 0;
 let controlSync: Promise<void> | null = null;
 let latestSample: { epoch: number; timestamp: number } | null = null;
+let trackingGeneration = 0;
 
 /**
  * Fire-and-forget timeline write. `totalMs` is wall clock for callback work only
@@ -159,7 +161,7 @@ function writeTimeline(
     .catch(() => undefined);
 }
 
-async function processBackgroundLocations({ data, error }: { data?: BackgroundLocationTaskData; error?: unknown }): Promise<void> {
+async function processBackgroundLocations({ data, error }: { data?: BackgroundLocationTaskData; error?: unknown }, generation = trackingGeneration): Promise<void> {
       const callbackStarted = Date.now();
       const stages: BackgroundOpTimingEntry[] = [];
       const callbackId = nextBackgroundCallbackId();
@@ -193,19 +195,20 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
         let config = await timeBackgroundStage(stages, 'config_load', () =>
           controller.load(),
         );
-        if (!config || !controller.isCurrent(config)) return;
+        if (!config || generation !== trackingGeneration || !controller.isCurrent(config)) return;
         if (Date.now() - lastControlSyncAt > 60_000) {
-          await reconcileBackgroundNavigation(config.groupId).catch(() => undefined);
+          await reconcileBackgroundNavigation(config.groupId, true).catch(() => undefined);
           config = await controller.load();
-          if (!config || !controller.isCurrent(config)) return;
+          if (!config || generation !== trackingGeneration || !controller.isCurrent(config)) return;
         }
         const access = await captureLocationAccess(config.groupId, true);
+        if (generation !== trackingGeneration || !controller.isCurrent(config)) return;
         if (!access || !config.sharingEnabled || config.hasMembership === false || config.powerMode === 'allDay' || !config.navigationSessionId) {
-          await stopBackgroundJourney();
+          await stopBackgroundJourney(false, config);
           await purgeLocationOutbox();
           return;
         }
-        if (AppState.currentState === 'active') return;
+        if (AppState.currentState === 'active' || generation !== trackingGeneration || !controller.isCurrent(config)) return;
         navigationSessionId = config.navigationSessionId;
 
         const trackingMode = resolveBackgroundTrackingMode(config);
@@ -216,9 +219,10 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
         };
         if (!Number.isFinite(coords.latitude) || !Number.isFinite(coords.longitude)
           || Math.abs(coords.latitude) > 90 || Math.abs(coords.longitude) > 180) return;
-        if (!Number.isFinite(latest.timestamp) || (latestSample && latestSample.epoch === config.trackingEpoch
-          && latest.timestamp <= latestSample.timestamp)) return;
-        latestSample = { epoch: config.trackingEpoch ?? 0, timestamp: latest.timestamp };
+        if (!Number.isFinite(latest.timestamp) || latest.timestamp > Date.now()
+          || latest.timestamp <= (config.lastProcessedLocationAt ?? -Infinity)
+          || (latestSample && latestSample.epoch === config.trackingEpoch
+            && latest.timestamp <= latestSample.timestamp)) return;
         const now = Date.now();
         const accuracyM = latest.coords.accuracy ?? undefined;
         const freshArrivalFix = canEvaluateSynchronizedArrival({ sampledAt: latest.timestamp,
@@ -265,7 +269,9 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
               : new Date(latestArrival.createdAt).toISOString();
             manualUndoSuppressed = true;
           }
-          if (manualUndoSuppressed && distanceM > config.arrivalRadiusMeters) {
+          const undoTime = Date.parse(manualUndoOccurredAt ?? '');
+          if (manualUndoSuppressed && freshArrivalFix && distanceM > config.arrivalRadiusMeters
+            && (!Number.isFinite(undoTime) || latest.timestamp > undoTime)) {
             manualUndoSuppressed = false;
             await releaseBackgroundManualUndo({
               actorId: config.actorId,
@@ -287,13 +293,23 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
             { distanceM, accuracyM },
             { radiusM: config.arrivalRadiusMeters },
           ) : previousArrival;
-        let arrivalConfirmed = false;
-        if (!manualUndoSuppressed && freshArrivalFix && arrival.status === 'arrived' && config.actorId && config.target && config.powerMode === 'journey') {
+        const latestPersonalArrival = arrivalRows.filter(op => op.operationType === 'record_arrival'
+          && op.entityId === config.destinationId && op.payload.actorId === config.actorId
+          && op.payload.userId === config.actorId && op.status !== 'conflict'
+          && op.payload.navigationSessionId === config.navigationSessionId)
+          .sort((a, b) => (a.sequence ?? a.createdAt) - (b.sequence ?? b.createdAt)).at(-1);
+        const undoTime = Date.parse(manualUndoOccurredAt ?? '');
+        let arrivalConfirmed = !manualUndoSuppressed && (latestPersonalArrival
+          ? latestPersonalArrival.payload.arrived !== false && (!Number.isFinite(undoTime)
+            || (typeof latestPersonalArrival.payload.occurredAt === 'string'
+              && Date.parse(latestPersonalArrival.payload.occurredAt) > undoTime))
+          : config.arrivedMemberIds?.includes(config.actorId ?? '') === true);
+        if (!arrivalConfirmed && !manualUndoSuppressed && freshArrivalFix && arrival.status === 'arrived' && config.actorId && config.target && config.powerMode === 'journey') {
           const undoTime = manualUndoOccurredAt ? Date.parse(manualUndoOccurredAt) : Number.NaN;
           const operation = arrivalRows.find(op => op.operationType === 'record_arrival'
             && op.entityId === config.destinationId && op.payload.actorId === config.actorId && op.payload.userId === config.actorId
             && (op.payload.navigationSessionId ?? null) === (config.navigationSessionId ?? null)
-            && op.payload.arrived !== false
+            && op.payload.arrived !== false && op.status !== 'conflict'
             && (!Number.isFinite(undoTime)
               || (typeof op.payload.occurredAt === 'string'
                 && Date.parse(op.payload.occurredAt) > undoTime)))
@@ -301,8 +317,7 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
               navigationSessionId: config.navigationSessionId,
               destination: config.target, arrivedAt: new Date(latest.timestamp).toISOString(),
               occurredAt: new Date(latest.timestamp).toISOString(), completeSolo: config.completeSolo === true });
-          arrivalConfirmed = operation.status === 'acked';
-          if (!arrivalConfirmed && operation.status !== 'conflict') void flushCoreOperationOutbox().catch(() => undefined);
+          arrivalConfirmed = operation.status !== 'conflict';
         }
         const sequence = config.sequence + 1;
         // Local Live Activity always updates from device GPS — works offline and
@@ -324,15 +339,19 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
         const displayProgress = progress.progress ?? 0;
         const memberArrived = config.memberIds?.map((id, index) => id === config.actorId
           ? arrivalConfirmed : config.memberArrived?.[index] ?? false) ?? config.memberArrived;
+        const arrivedMemberIds = (config.arrivedMemberIds ?? []).filter(id => id !== config.actorId);
+        if (arrivalConfirmed && config.actorId) arrivedMemberIds.push(config.actorId);
         const stored = await timeBackgroundStage(stages, 'async_storage_write', () =>
           controller.update(config, {
             ...config, sequence, arrivalState: arrival, previousProgressMax: displayProgress, memberArrived,
+            arrivedMemberIds, lastProcessedLocationAt: latest.timestamp,
             manualUndoOperationId,
             manualUndoOccurredAt,
             manualUndoSuppressed,
           }),
         );
         if (!stored || !controller.isCurrent(config) || !isLocationAccessCurrent(access)) return;
+        latestSample = { epoch: config.trackingEpoch ?? 0, timestamp: latest.timestamp };
         const displaySignature = JSON.stringify([config.navigationSessionId, arrival.status, memberArrived, config.accentHex]);
         if (config.powerMode === 'journey' && (displaySignature !== lastLocalProgressSignature || now - lastLocalProgressAt >= 10_000)) {
           lastLocalProgressSignature = displaySignature;
@@ -356,6 +375,22 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
         );
         }
         if (!controller.isCurrent(config) || !isLocationAccessCurrent(access)) return;
+        if (config.actorId && config.navigationSessionId) {
+          const completionConfig = config;
+          const completion = await enqueueJourneyCompletion({
+            groupId: config.groupId, destinationId: config.destinationId,
+            navigationSessionId: config.navigationSessionId, actorId: config.actorId,
+            scopeSubgroupId: config.scopeSubgroupId, leaderId: config.leaderId,
+            navigationMemberIds: config.navigationMemberIds ?? [], arrivedMemberIds,
+            isCurrent: () => controller.isCurrent(completionConfig) && isLocationAccessCurrent(access),
+          });
+          if (completion && completion.status !== 'conflict'
+            && controller.isCurrent(config) && isLocationAccessCurrent(access)) {
+            await liveActivity.endAllGroupActivities();
+            if (controller.isCurrent(config)) await stopBackgroundJourney(true, config);
+            return;
+          }
+        }
         if (freshArrivalFix && config.powerMode === 'journey') {
           await notifyJourneyApproach(config.navigationSessionId, config.destinationId, config.gatheringTitle ?? '', {
             remainingM: progress.distanceMeters ?? distanceM, totalM: config.initialDistanceM,
@@ -502,17 +537,32 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
       }
 }
 
-// Serialize/coalesce callbacks: never overlap arrival writes or replay an old batch.
-let pendingBatch: { data?: BackgroundLocationTaskData; error?: unknown } | null = null;
+// Native batches may contain a brief geofence entry followed by an exit.
+// Keep every fix and serialize callbacks so durable arrival writes cannot overlap.
+const pendingBatches: { payload: { data?: BackgroundLocationTaskData; error?: unknown }; generation: number }[] = [];
 let processing: Promise<void> | null = null;
 export function handleBackgroundLocations(payload: { data?: BackgroundLocationTaskData; error?: unknown }): Promise<void> {
-  pendingBatch = payload;
+  pendingBatches.push({ payload, generation: trackingGeneration });
   if (!processing) processing = (async () => {
-    while (pendingBatch) {
-      const next = pendingBatch;
-      pendingBatch = null;
-      await processBackgroundLocations(next);
+    let failure: unknown;
+    while (pendingBatches.length) {
+      const next = pendingBatches.shift()!;
+      if (next.generation !== trackingGeneration) continue;
+      if (next.payload.error || !next.payload.data?.locations.length) {
+        await processBackgroundLocations(next.payload, next.generation);
+        continue;
+      }
+      for (const location of [...next.payload.data.locations].sort((a, b) => a.timestamp - b.timestamp)) {
+        if (next.generation !== trackingGeneration) break;
+        try {
+          await processBackgroundLocations({ data: { locations: [location] } }, next.generation);
+        } catch (error) {
+          // A failed durable write must not discard the remaining native fixes.
+          failure ??= error;
+        }
+      }
     }
+    if (failure) throw failure;
   })().finally(() => { processing = null; });
   return processing;
 }
@@ -524,7 +574,7 @@ observeNativeBackgroundLocation(sample => {
 });
 subscribeLocationAccessChanges(() => {
   if (!isLocationAccessEnabled()) {
-    pendingBatch = null;
+    pendingBatches.length = 0;
     void stopBackgroundJourney().catch(() => undefined);
     void purgeLocationOutbox().catch(() => undefined);
   }
@@ -534,7 +584,9 @@ subscribeLocationAccessChanges(() => {
 export async function startBackgroundJourney(
   config: BackgroundJourneyConfig,
 ): Promise<'started' | 'permission_denied' | 'hidden' | 'cancelled'> {
+  const generation = ++trackingGeneration;
   const access = await captureLocationAccess(config.groupId);
+  if (generation !== trackingGeneration) return 'cancelled';
   if (!access || !config.sharingEnabled || config.hasMembership === false || config.powerMode === 'allDay' || !config.navigationSessionId) {
     await stopBackgroundJourney(true);
     return 'hidden';
@@ -542,6 +594,7 @@ export async function startBackgroundJourney(
   const manualUndo = config.actorId && config.navigationSessionId
     ? await loadBackgroundManualUndo(config.actorId, config.groupId, config.destinationId, config.navigationSessionId)
     : null;
+  if (generation !== trackingGeneration) return 'cancelled';
   const effectiveConfig = manualUndo
     ? {
         ...config,
@@ -551,7 +604,9 @@ export async function startBackgroundJourney(
       }
     : config;
   const previous = await controller.load();
-  if (previous?.navigationSessionId !== effectiveConfig.navigationSessionId || previous?.groupId !== effectiveConfig.groupId) {
+  if (generation !== trackingGeneration) return 'cancelled';
+  if (previous?.navigationSessionId !== effectiveConfig.navigationSessionId || previous?.groupId !== effectiveConfig.groupId
+    || previous?.actorId !== effectiveConfig.actorId || previous?.scopeSubgroupId !== effectiveConfig.scopeSubgroupId) {
     uploadGate = { lastCoords: null, lastAtMs: 0 };
     motionState = createMotionState();
     latestSample = null;
@@ -577,11 +632,13 @@ export async function prepareBackgroundJourneyPermissions(allowPrompt = true): P
   return ready ? 'ready' : 'permission_denied';
 }
 
-export async function stopBackgroundJourney(releaseSession = false): Promise<void> {
+export async function stopBackgroundJourney(releaseSession = false, expected?: BackgroundJourneyConfig): Promise<void> {
+  if (expected && !controller.isCurrent(expected)) return;
+  const generation = ++trackingGeneration;
   uploadGate = { lastCoords: null, lastAtMs: 0 };
   motionState = createMotionState();
-  await controller.stop();
-  if (releaseSession) await prepareNativeBackgroundLocation(false);
+  await controller.stop(expected);
+  if (releaseSession && generation === trackingGeneration) await prepareNativeBackgroundLocation(false);
 }
 
 export function loadBackgroundJourney(): Promise<BackgroundJourneyConfig | null> {
@@ -589,7 +646,10 @@ export function loadBackgroundJourney(): Promise<BackgroundJourneyConfig | null>
 }
 
 /** Push + piggyback recovery only. No background timer or teammate-location reads. */
-export function reconcileBackgroundNavigation(groupId: string): Promise<void> {
+export function reconcileBackgroundNavigation(groupId: string, fromLocationTask = false): Promise<void> {
+  if (processing && !fromLocationTask) {
+    return processing.then(() => reconcileBackgroundNavigation(groupId), () => reconcileBackgroundNavigation(groupId));
+  }
   if (controlSync) return controlSync;
   controlSync = (async () => {
     const access = await captureLocationAccess(groupId);
@@ -602,18 +662,52 @@ export function reconcileBackgroundNavigation(groupId: string): Promise<void> {
     if (!next.hasMembership || next.actorId !== config.actorId || !next.sharingEnabled) {
       setLocationSharingConsent(false);
       if (!next.sharingEnabled) await AsyncStorage.setItem(LOCATION_SHARING_KEY, 'false');
-      await stopBackgroundJourney();
+      await stopBackgroundJourney(false, config);
       await purgeLocationOutbox();
       return;
     }
     if (!next.session || !next.target) {
       if (config.powerMode === 'journey') {
         await liveActivity.endAllGroupActivities();
-        await stopBackgroundJourney(true);
+        await stopBackgroundJourney(true, config);
       }
       return;
     }
-    if (next.session.id === config.navigationSessionId) return;
+    if (next.session.id === config.navigationSessionId) {
+      if (!next.navigationMemberIds || !next.arrivedMemberIds) return;
+      const operations = await getCoreOperationOutbox().listByGroup(groupId);
+      if (!controller.isCurrent(config) || !isLocationAccessCurrent(access)) return;
+      const arrivedMemberIds = projectArrivals(next.arrivedMemberIds.map(userId => ({
+        id: userId, groupId, destinationId: config.destinationId, userId,
+        arrivedAt: null, source: 'manual' as const, markedBy: userId,
+        navigationSessionId: next.session!.id,
+      })), operations, next.actorId, next.session.id).map(row => row.userId);
+      const undo = await loadBackgroundManualUndo(next.actorId, groupId, config.destinationId, next.session.id);
+      if (undo?.suppressed) {
+        const actorIndex = arrivedMemberIds.indexOf(next.actorId);
+        if (actorIndex >= 0) arrivedMemberIds.splice(actorIndex, 1);
+      }
+      if (!controller.isCurrent(config) || !isLocationAccessCurrent(access)) return;
+      const memberArrived = config.memberIds?.map(id => arrivedMemberIds.includes(id));
+      const stored = await controller.update(config, { ...config,
+        sequence: config.sequence + 1,
+        navigationMemberIds: next.navigationMemberIds,
+        arrivedMemberIds, leaderId: next.leaderId, memberArrived,
+      });
+      if (!stored || !controller.isCurrent(config) || !isLocationAccessCurrent(access)) return;
+      const completion = await enqueueJourneyCompletion({
+        groupId, destinationId: config.destinationId, navigationSessionId: next.session.id,
+        actorId: next.actorId, scopeSubgroupId: config.scopeSubgroupId, leaderId: next.leaderId,
+        navigationMemberIds: next.navigationMemberIds, arrivedMemberIds,
+        isCurrent: () => controller.isCurrent(config) && isLocationAccessCurrent(access),
+      });
+      if (completion && completion.status !== 'conflict'
+        && controller.isCurrent(config) && isLocationAccessCurrent(access)) {
+        await liveActivity.endAllGroupActivities();
+        if (controller.isCurrent(config)) await stopBackgroundJourney(true, config);
+      }
+      return;
+    }
     const target = next.target;
     const initialDistanceM = uploadGate.lastCoords ? distanceMeters(uploadGate.lastCoords, target.coordinates) : 0;
     await startBackgroundJourney({ ...backgroundPresenceConfig(config), target,
@@ -621,6 +715,8 @@ export function reconcileBackgroundNavigation(groupId: string): Promise<void> {
       destinationId: target.id, destination: target.coordinates,
       navigationSessionId: next.session.id, sessionExpiresAt: next.session.expiresAt,
       gatheringTitle: target.title, powerMode: 'journey', teamNavigationActive: true,
+      navigationMemberIds: next.navigationMemberIds, arrivedMemberIds: next.arrivedMemberIds,
+      leaderId: next.leaderId,
       arrivalRadiusMeters: next.session.destination.arrivalRadiusMeters, initialDistanceM,
       distanceSource: 'fallback', memberArrived: config.memberIds?.map(() => false) });
     await liveActivity.observeExistingActivities();

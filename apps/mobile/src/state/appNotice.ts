@@ -12,11 +12,17 @@ const seen = new Set<string>();
 const listeners = new Set<(notice: AppNotice | null) => void>();
 const emit = () => listeners.forEach(listener => listener(current));
 
+/** Reuse event deduplication for native terminal errors without a retry banner. */
+export function claimAppNotice(id: string): boolean {
+  if (seen.has(id)) return false;
+  seen.add(id);
+  if (seen.size > 500) seen.delete(seen.values().next().value!);
+  return true;
+}
+
 /** One bounded foreground surface; retries of the same event never spam it. */
 export function showAppNotice(notice: AppNotice): void {
-  if (seen.has(notice.id)) return;
-  seen.add(notice.id);
-  if (seen.size > 500) seen.delete(seen.values().next().value!);
+  if (!claimAppNotice(notice.id)) return;
   if (current) {
     pending.push(notice);
     if (pending.length > 20) pending.shift();

@@ -11,9 +11,9 @@ import type {
   CoreOperation,
   NavigationAnnouncementResponseKind,
 } from '../types/coreData';
-import type { Destination, GroupState } from '../types';
+import type { DailyAccommodation, Destination, GroupState } from '../types';
 import * as Crypto from 'expo-crypto';
-import { projectOperationDestinations } from './coreOperationProjection';
+import { projectOperationGroupState } from './coreOperationProjection';
 import {
   applyGatheringToDestinations,
   applyGatheringToGroup,
@@ -65,7 +65,7 @@ function kickCoreTransport(): void {
 
 // Remote snapshot must not clobber pending gathering outbox ops.
 setPendingGatheringGuard((groupId) => outbox.hasPendingGathering(groupId));
-setPendingItineraryGuard((groupId) => outbox.hasPendingItinerary(groupId));
+setPendingItineraryGuard((groupId) => outbox.getPendingItineraryOperations(groupId));
 
 export function getCoreDataStore(): CoreDataStore {
   return sharedCoreDataStore;
@@ -309,11 +309,12 @@ export async function enqueueDestinationDelete(input: {
       const current = await sharedCoreDb.readSnapshotInTransaction(exec, snapshot.groupId) ?? snapshot;
       const pointStatuses = { ...current.activeGathering.pointStatuses };
       delete pointStatuses[input.destinationId];
-      await sharedCoreDb.writeSnapshot(exec, optimisticSnapshot(current, current.destinations.filter((d) => d.id !== input.destinationId), Date.now(), operation.actorId));
-      await sharedCoreDb.writeActiveGathering(exec, {
-        ...current.activeGathering,
-        pointStatuses,
-      }, Date.now(), { patchSnapshot: 'none' });
+      const activeGathering = { ...current.activeGathering, pointStatuses,
+        ...(current.activeGathering.activeDestinationId === input.destinationId
+          ? { journeyPhase: 'staying' as const, activeDestinationId: null, phaseChangedAt: Date.now() } : {}) };
+      await sharedCoreDb.writeSnapshot(exec, optimisticSnapshot({ ...current, activeGathering,
+        group: applyGatheringToGroup(current.group, activeGathering) }, current.destinations.filter((d) => d.id !== input.destinationId), Date.now(), operation.actorId));
+      await sharedCoreDb.writeActiveGathering(exec, activeGathering, Date.now(), { patchSnapshot: 'none' });
     },
   });
   kickCoreTransport();
@@ -400,8 +401,12 @@ export async function enqueueDestinationComplete(input: {
   destinationId: string;
   sessionId?: string | null;
   actorId?: string;
-}): Promise<CoreOperation> {
+  subgroupId?: string | null;
+  isCurrent?: () => boolean;
+  reason?: 'all_arrived' | 'forced';
+}): Promise<CoreOperation | null> {
   const snapshot = await snapshotForDestination(input.destinationId, input.groupId);
+  if (input.isCurrent?.() === false || snapshot.destinations.find(d => d.id === input.destinationId)?.closedAt) return null;
   const closedAt = new Date().toISOString();
   const operation = await outbox.enqueueMutation({
     groupId: snapshot.groupId,
@@ -410,10 +415,11 @@ export async function enqueueDestinationComplete(input: {
     entityVersion: snapshot.itineraryVersion ?? 0,
     operationType: 'complete_destination',
     actorId: input.actorId,
-    payload: { destinationId: input.destinationId, sessionId: input.sessionId ?? null,
-      subgroupId: snapshot.destinations.find(d => d.id === input.destinationId)?.subgroupId ?? null },
+    payload: { destinationId: input.destinationId, sessionId: input.sessionId ?? null, reason: input.reason ?? 'forced',
+      subgroupId: input.subgroupId !== undefined ? input.subgroupId : snapshot.destinations.find(d => d.id === input.destinationId)?.subgroupId ?? null },
     applyLocal: async (exec, operation) => {
       const current = await sharedCoreDb.readSnapshotInTransaction(exec, snapshot.groupId) ?? snapshot;
+      if (input.isCurrent?.() === false) throw new Error('completion_context_changed');
       const destinations = current.destinations.map((destination) =>
         destination.id === input.destinationId
           ? { ...destination, closedAt, closedBySessionId: input.sessionId ?? undefined }
@@ -473,7 +479,58 @@ export async function enqueueResolveGatherPointRequest(input: {
 }
 
 export function projectPendingDestinations(state: GroupState, operations: CoreOperation[]): GroupState {
-  return { ...state, destinations: projectOperationDestinations(state.destinations, operations) };
+  return projectOperationGroupState(state, operations);
+}
+
+export async function enqueueTripDetails(input: {
+  groupId: string; tripDays: number; departureDate: string; actorId?: string;
+}): Promise<CoreOperation> {
+  if (!Number.isInteger(input.tripDays) || input.tripDays < 1 || !validStayDate(input.departureDate)) throw new Error('invalid_trip_details');
+  const snapshot = await ensureCoreSnapshot(input.groupId);
+  if (!snapshot) throw localSnapshotError();
+  const operation = await outbox.enqueueMutation({
+    groupId: input.groupId, entityType: 'itinerary', entityId: input.groupId,
+    entityVersion: snapshot.itineraryVersion ?? 0, operationType: 'set_trip_details', actorId: input.actorId,
+    payload: { tripDays: input.tripDays, departureDate: input.departureDate },
+    applyLocal: async (exec, op) => {
+      const current = await sharedCoreDb.readSnapshotInTransaction(exec, input.groupId) ?? snapshot;
+      await sharedCoreDb.writeSnapshot(exec, optimisticSnapshot({ ...current,
+        group: { ...current.group, tripDays: input.tripDays, departureDate: input.departureDate } }, current.destinations, Date.now(), op.actorId));
+    },
+  });
+  kickCoreTransport();
+  return operation;
+}
+
+function validStayDate(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value))
+    && new Date(value).toISOString().slice(0, 10) === value;
+}
+
+export async function enqueueDailyAccommodation(input: {
+  groupId: string; stayDate: string; daily?: DailyAccommodation; day?: number; actorId?: string;
+}): Promise<CoreOperation> {
+  if (!validStayDate(input.stayDate) || (input.day !== undefined && (!Number.isInteger(input.day) || input.day < 1))) throw new Error('invalid_daily_accommodation');
+  if (input.daily && (!input.daily.title.trim() || !Number.isFinite(input.daily.coordinates.latitude)
+    || Math.abs(input.daily.coordinates.latitude) > 90 || !Number.isFinite(input.daily.coordinates.longitude)
+    || Math.abs(input.daily.coordinates.longitude) > 180)) throw new Error('invalid_daily_accommodation');
+  const snapshot = await ensureCoreSnapshot(input.groupId);
+  if (!snapshot) throw localSnapshotError();
+  const operation = await outbox.enqueueMutation({
+    groupId: input.groupId, entityType: 'itinerary', entityId: input.groupId,
+    entityVersion: snapshot.itineraryVersion ?? 0, actorId: input.actorId,
+    operationType: input.daily ? 'set_daily_accommodation' : 'clear_daily_accommodation',
+    payload: { stayDate: input.stayDate, daily: input.daily ?? null, day: input.day ?? null },
+    applyLocal: async (exec, op) => {
+      const current = await sharedCoreDb.readSnapshotInTransaction(exec, input.groupId) ?? snapshot;
+      const projected = projectOperationGroupState({ group: current.group, destinations: current.destinations,
+        dailyAccommodations: current.dailyAccommodations, members: [], subgroups: [] }, [op]);
+      await sharedCoreDb.writeSnapshot(exec, optimisticSnapshot({ ...current, group: projected.group,
+        dailyAccommodations: projected.dailyAccommodations }, projected.destinations, Date.now(), op.actorId));
+    },
+  });
+  kickCoreTransport();
+  return operation;
 }
 
 /**

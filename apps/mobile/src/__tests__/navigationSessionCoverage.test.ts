@@ -165,6 +165,22 @@ describe('useNavigationSession lifecycle and mutations', () => {
     view.tree.unmount();
   });
 
+  it('preserves hydrated roster across same-session realtime and enriches an equal-version session row', async () => {
+    mockGetActive.mockResolvedValue({ ...session(), memberIds: ['user-1', 'leader-1'] });
+    const view = await mount('group-1');
+    await act(async () => sessionCallback?.(session('session-1', 2)));
+    expect(view.value().session?.memberIds).toEqual(['user-1', 'leader-1']);
+    await act(async () => sessionCallback?.(session('session-2', 1)));
+    expect(view.value().session?.memberIds).toBeUndefined();
+    mockGetActive.mockResolvedValue({ ...session('session-2', 1), memberIds: ['user-1'] });
+    await act(async () => { await view.value().refresh(); });
+    expect(view.value().session?.memberIds).toEqual(['user-1']);
+    mockGetActive.mockResolvedValue({ ...session('session-2', 1), memberIds: ['user-1', 'new-eligible-member'] });
+    await act(async () => { await view.value().refresh(); });
+    expect(view.value().session?.memberIds).toEqual(['user-1', 'new-eligible-member']);
+    view.tree.unmount();
+  });
+
   it('cancels and completes through versioned terminal mutations', async () => {
     const view = await mount('group-1');
     await act(async () => { await view.value().cancel(); });

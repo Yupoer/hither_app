@@ -758,11 +758,8 @@ export async function updateGroupTripDetails(
   departureDate: string,
 ): Promise<void> {
   if (isDemoGroup(groupId)) return;
-  const { error } = await supabase
-    .from('groups')
-    .update({ trip_days: tripDays, departure_date: departureDate })
-    .eq('id', groupId);
-  orThrow(error);
+  const core = require('../../state/coreDataSync') as typeof import('../../state/coreDataSync');
+  await core.enqueueTripDetails({ groupId, tripDays, departureDate });
 }
 
 export async function setSolo(groupId: string, solo: boolean): Promise<void> {

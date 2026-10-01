@@ -3,6 +3,48 @@
   "description": "L1 meta gate: each child acceptance maps to a real test. FULL_IMPLEMENT must append entries for the parent being delivered. Empty entries is valid only when META_PARENT=pure-chore (PR body: <!-- hither-test-meta parent: pure-chore -->). Required parent ids fail L1 if zero matching entries.",
   "entries": [
     {
+      "parent": 282, "child": 282,
+      "acceptance": "GPS enter then exit in one locked-screen batch records local arrival before ACK.",
+      "testFile": "backgroundJourneyCoverage.test.ts",
+      "testNamePattern": "processes an out-of-order enter/exit batch"
+    },
+    {
+      "parent": 282, "child": 282,
+      "acceptance": "Starting inside the radius accepts the first fresh accurate fix.",
+      "testFile": "backgroundJourneyCoverage.test.ts",
+      "testNamePattern": "accepts the first fresh accurate fix"
+    },
+    {
+      "parent": 282, "child": 282,
+      "acceptance": "Solo and all-arrived teams use original-session completion; leader force requires no arrivals.",
+      "testFile": "journeyCompletion.test.ts",
+      "testNamePattern": "explicit leader force completion"
+    },
+    {
+      "parent": 282, "child": 282,
+      "acceptance": "Failed queue head blocks all later same actor/group actions while other groups proceed.",
+      "testFile": "coreOperationOutboxDurable.test.ts",
+      "testNamePattern": "enforces FIFO per actor/group"
+    },
+    {
+      "parent": 282, "child": 282,
+      "acceptance": "Saved journey End remains successful with silent automatic backend retries.",
+      "testFile": "journeyDurableCommands.test.ts",
+      "testNamePattern": "keeps a saved End successful and silent"
+    },
+    {
+      "parent": 282, "child": 282,
+      "acceptance": "Trip dates and stays save durably offline, without prerequisite network writes.",
+      "testFile": "durableTripAccommodation.test.ts",
+      "testNamePattern": "durably saves trip and stay edits offline"
+    },
+    {
+      "parent": 282, "child": 282,
+      "acceptance": "Historical completed cards never reinsert during hydration or map reentry.",
+      "testFile": "localFirstJourneyBoundary.test.ts",
+      "testNamePattern": "does not reinsert completed history"
+    },
+    {
       "parent": 272,
       "child": 272,
       "acceptance": "Network and server access failures do not masquerade as leader-role errors.",

@@ -127,9 +127,8 @@ describe('durable core operation outbox', () => {
         operationId: start.id, entityId: start.entityId, entityType: start.entityType, occurredAt: 1 } : null });
     await db.update({ ...edit, dependencyIds: [start.id] });
     await db.update({ ...arrival, dependencyIds: [edit.id] });
-    expect((await queue.flush()).sent).toBe(1);
-    expect(submit).toHaveBeenCalledTimes(1);
-    expect(submit.mock.calls[0][0].id).toBe(edit.id);
+    expect((await queue.flush()).sent).toBe(status === 'conflict' ? 1 : 0);
+    expect(submit.mock.calls.map(([op]) => op.id)).toEqual(status === 'conflict' ? [edit.id] : []);
     expect(await queue.getOperation(arrival.id)).toMatchObject({
       status: status === 'conflict' ? 'conflict' : 'pending', dependencyIds: [edit.id], attempts: 0,
     });
@@ -158,7 +157,7 @@ describe('durable core operation outbox', () => {
     expect(await queue.getOperation(arrival.id)).toMatchObject({ status: 'pending', attempts: 0 });
   });
 
-  it('lets an unrelated arrival and destination pass a backed-off destination edit', async () => {
+  it('holds later arrival and destination work behind the same group retry head', async () => {
     const db = new MemoryCoreOperationOutboxDatabase();
     const calls: string[] = [];
     const queue = makeQueue(db, async operation => {
@@ -172,9 +171,12 @@ describe('durable core operation outbox', () => {
     expect(other.dependencyIds ?? []).toEqual([]);
     expect(arrival.dependencyIds ?? []).toEqual([]);
     const result = await queue.flush();
-    expect(result.sent).toBe(2);
+    expect(result.sent).toBe(0);
     expect(result.retryScheduled).toBe(1);
-    expect(calls).toHaveLength(3);
+    expect(calls).toHaveLength(1);
+    expect(await queue.getOperation(other.id)).toMatchObject({ status: 'pending', attempts: 0 });
+    expect(await queue.getOperation(arrival.id)).toMatchObject({ status: 'pending', attempts: 0 });
+    expect((await queue.flush()).sent).toBe(0);
   });
 
   it('recovers a persisted stale conflict using the original UUID and payload', async () => {
@@ -201,6 +203,7 @@ describe('durable core operation outbox', () => {
     await queue.flush();
     expect(await queue.getOperation(root.id)).toMatchObject({ status: 'conflict' });
     expect(await queue.getOperation(child.id)).toMatchObject({ status: 'conflict' });
+    await queue.flush();
     expect(await queue.getOperation(other.id)).toBeNull();
   });
 

@@ -38,6 +38,8 @@ export interface NavigationSession {
   expiresAt: string;
   status: NavigationSessionStatus;
   version: number;
+  /** Session arrival-eligible roster; absent on legacy/realtime session-only rows. */
+  memberIds?: string[];
 }
 
 export interface MemberNavigationState {

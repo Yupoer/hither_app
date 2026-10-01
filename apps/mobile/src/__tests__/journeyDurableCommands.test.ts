@@ -1,5 +1,5 @@
 jest.mock('../state/appNotice', () => ({ showOperationFailure: jest.fn(), showAppNotice: jest.fn() }));
-import { showOperationFailure } from '../state/appNotice';
+import { showOperationFailure, showAppNotice } from '../state/appNotice';
 jest.mock('react-native', () => ({ Alert: { alert: jest.fn() } }));
 jest.mock('expo-crypto', () => ({ randomUUID: jest.fn(() => 'operation-id') }));
 jest.mock('../utils/operationError', () => ({ getOperationErrorMessage: () => 'local storage failed' }));
@@ -36,15 +36,17 @@ const projection = jest.fn();
 const pauseConfirm = jest.fn();
 const localSessionChanges: Array<string | null> = [];
 const onLocalSessionIdChange = (sessionId: string | null) => localSessionChanges.push(sessionId);
-function Harness({ groupId = 'g', navigationSession = null }: {
+function Harness({ groupId = 'g', navigationSession = null, groupState, hasPendingTeamOperation = true }: {
   groupId?: string;
   navigationSession?: NavigationSession | null;
+  groupState?: GroupState;
+  hasPendingTeamOperation?: boolean;
 }) {
-  const currentState = groupId === 'g' ? state : { ...state, group: { ...state.group, id: groupId } };
+  const currentState = groupState ?? (groupId === 'g' ? state : { ...state, group: { ...state.group, id: groupId } });
   const currentApi = useJourneyNavigation({ state: currentState, groupId, isLeader: true, destinations: [first, second],
     selectedDestination: first, fromCoords: undefined, refresh: jest.fn(), t: key => key,
     mapRef: { current: null }, carouselRef: { current: null }, setSelectedIndex: jest.fn(),
-    navigationSession, startSession, cancelSession, hasPendingTeamOperation: true,
+    navigationSession, startSession, cancelSession, hasPendingTeamOperation,
     onOptimisticGathering: projection, onOperatorPauseConfirm: pauseConfirm,
     onLocalSessionIdChange });
   React.useLayoutEffect(() => { api = currentApi; });
@@ -166,7 +168,7 @@ it('reports local storage failure without claiming a saved journey or starting t
   expect(startSession).not.toHaveBeenCalled();
 });
 
-it('hides navigation immediately while End storage is pending and never resurrects on failure', async () => {
+it('reports End local storage failure explicitly and does not claim a saved command', async () => {
   jest.mocked(sync.enqueueLeaderGatheringStart).mockResolvedValue(saved('a', 1) as any);
   await act(async () => { await api.startNavigation(first, 0); });
   expect(api.navTargetId).toBe('a');
@@ -176,7 +178,56 @@ it('hides navigation immediately while End storage is pending and never resurrec
   await act(async () => { pending = api.stopNavigation(); });
   expect(api.navTargetId).toBeNull();
   expect(api.journeyActive).toBe(false);
-  await act(async () => { reject(new Error('storage unavailable')); await pending; });
+  let success: boolean | undefined;
+  await act(async () => { reject(new Error('storage unavailable')); success = await pending; });
+  expect(success).toBe(false);
+  expect(Alert.alert).toHaveBeenCalledWith('map.setFailedTitle', 'local storage failed');
+  expect(showAppNotice).not.toHaveBeenCalled();
   expect(api.navTargetId).toBeNull();
   expect(api.journeyActive).toBe(false);
+});
+
+it('keeps a saved End successful and silent when backend delivery fails', async () => {
+  jest.mocked(sync.enqueueLeaderGatheringStart).mockResolvedValue(saved('a', 1) as any);
+  await act(async () => { await api.startNavigation(first, 0); });
+  jest.mocked(sync.enqueueLeaderGatheringEnd).mockResolvedValue(saved(null, 2) as any);
+  jest.mocked(sync.flushCoreOperationOutbox).mockRejectedValueOnce(new Error('offline'));
+  let success: boolean | undefined;
+  await act(async () => { success = await api.stopNavigation(); });
+  expect(success).toBe(true);
+  expect(api.navTargetId).toBeNull();
+  expect(Alert.alert).not.toHaveBeenCalled();
+  expect(showAppNotice).not.toHaveBeenCalled();
+});
+
+it('stops a durably deleted target without creating a separate End command', async () => {
+  jest.mocked(sync.enqueueLeaderGatheringStart).mockResolvedValue(saved('a', 1) as any);
+  await act(async () => { await api.startNavigation(first, 0); });
+  await act(async () => { api.stopRemovedDestination('b', 'unrelated'); });
+  expect(api.navTargetId).toBe('a');
+  await act(async () => { api.stopRemovedDestination('a', 'op-1'); });
+  expect(api.navTargetId).toBeNull();
+  expect(sync.enqueueLeaderGatheringEnd).not.toHaveBeenCalled();
+  expect(cancelSession).not.toHaveBeenCalled();
+  expect(localSessionChanges.at(-1)).toBeNull();
+});
+
+it('resumes the same server session when terminal rejection restores a deleted target', async () => {
+  const navigationSession: NavigationSession = { id: 'original', groupId: 'g', destinationId: 'a',
+    destination: { name: 'A', coordinates: first.coordinates, arrivalRadiusMeters: 50 },
+    startedBy: 'leader', requestId: 'original', startedAt: new Date().toISOString(),
+    expiresAt: '2099-01-01T00:00:00Z', status: 'active', version: 1 };
+  await act(async () => { root.update(React.createElement(Harness, { navigationSession })); });
+  expect(api.navTargetId).toBe('a');
+  await act(async () => {
+    root.update(React.createElement(Harness, { navigationSession,
+      groupState: { ...state, destinations: [second] } }));
+    api.stopRemovedDestination('a', 'original');
+  });
+  expect(api.navTargetId).toBeNull();
+  await act(async () => { root.update(React.createElement(Harness, {
+    navigationSession, hasPendingTeamOperation: false, groupState: state,
+  })); });
+  expect(api.navTargetId).toBe('a');
+  expect(api.journeyActive).toBe(true);
 });
