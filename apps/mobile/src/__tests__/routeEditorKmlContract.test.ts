@@ -94,7 +94,7 @@ describe('route editor + KML contracts (#151)', () => {
   it('route flush uses neutral errors, longer timeout, and dirty snapshot', () => {
     const start = mapScreen.indexOf('const flushRouteDraft = useCallback');
     expect(start).toBeGreaterThanOrEqual(0);
-    const block = mapScreen.slice(start, start + 9000);
+    const block = mapScreen.slice(start, mapScreen.indexOf('const openKmlImport = useCallback', start));
     expect(block).toContain('timeoutMs: 60_000');
     expect(block).toContain('getOperationErrorMessage(localSaveError)');
     expect(block).toContain('await refreshLocalSnapshot()');
