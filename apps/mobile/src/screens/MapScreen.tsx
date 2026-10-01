@@ -938,6 +938,7 @@ export default function MapScreen({ route, navigation }: Props) {
       ),
     [openDestinations, arrivalExitSnapshots, arrivalExitRecords],
   );
+  useEffect(() => energyObservability.mountWorkload({ mountedCardCount: destinations.length }), [destinations.length]);
   const destinationIds = useMemo(() => destinations.map((dest) => dest.id), [destinations]);
   /**
    * Full open itinerary for the route editor (all open days + stay cards).

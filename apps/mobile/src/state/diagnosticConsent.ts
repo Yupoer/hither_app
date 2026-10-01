@@ -4,6 +4,7 @@ export const DIAGNOSTIC_CONSENT_KEY = 'pref.diagnosticUploadEnabled';
 
 let hydrated = false;
 let enabled = false;
+let choiceRevision = 0;
 let hydration: Promise<boolean> | null = null;
 
 export function isDiagnosticConsentEnabled(): boolean {
@@ -30,9 +31,17 @@ export function getDiagnosticConsentEnabled(): Promise<boolean> {
 }
 
 export async function setDiagnosticConsentEnabled(next: boolean): Promise<void> {
-  enabled = next;
+  const revision = ++choiceRevision;
+  if (!next) enabled = false;
   hydrated = true;
-  await AsyncStorage.setItem(DIAGNOSTIC_CONSENT_KEY, next ? 'true' : 'false');
+  try {
+    await AsyncStorage.setItem(DIAGNOSTIC_CONSENT_KEY, next ? 'true' : 'false');
+    if (choiceRevision === revision) enabled = next;
+  } catch (error) {
+    // Failed enable stays off. A failed revoke must also remain off this session.
+    if (choiceRevision === revision) enabled = false;
+    throw error;
+  }
 }
 
 /** Test helper — resets module state between Jest cases. */

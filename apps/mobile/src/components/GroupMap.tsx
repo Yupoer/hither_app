@@ -8,6 +8,7 @@ import React, {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ErrorInfo,
   type ReactNode,
 } from 'react';
@@ -45,6 +46,7 @@ import {
   platformizedMapViewProps,
 } from '../native/maps';
 import { defaultMapTransitProps } from '../native/mapTransitDefaults';
+import { getRuntimePowerState, subscribeRuntimePowerState, optionalVisualsAllowed } from '../state/runtimePowerState';
 import { energyObservability } from '../state/energyObservability';
 import {
   displayRoutePoints,
@@ -533,6 +535,8 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
   const [showFallback, setShowFallback] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
   const [appActive, setAppActive] = useState(AppState.currentState === 'active');
+  const power = useSyncExternalStore(subscribeRuntimePowerState, getRuntimePowerState, getRuntimePowerState);
+  const allowMarkerMotion = appActive && optionalVisualsAllowed(power);
   const readyLoggedRef = useRef(false);
   const loadedLoggedRef = useRef(false);
   const readyAtRef = useRef<number | null>(null);
@@ -593,14 +597,26 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     }),
   );
   const displayRoute = useMemo(
-    () => displayRoutePoints(
+    () => {
+      const started = performance.now();
+      const displayed = displayRoutePoints(
       selfCoordinates
         ? advanceRouteToCoordinate(routePoints ?? [], selfCoordinates)
         : (routePoints ?? []),
       settledRouteViewport,
-    ),
+      );
+      energyObservability.increment('route_projection');
+      energyObservability.increment('route_projection_ms', performance.now() - started);
+      return displayed;
+    },
     [routePoints, selfCoordinates, settledRouteViewport],
   );
+  useEffect(() => energyObservability.mountWorkload({
+    mapCount: appActive ? 1 : 0, memberMarkerCount: members.length, destinationMarkerCount: mergedMarkers.length,
+    rawRoutePointCount: routePoints?.length ?? 0, displayRoutePointCount: displayRoute.length,
+    markerMotionEnabled: allowMarkerMotion ? 1 : 0,
+  }), [appActive, allowMarkerMotion, members.length, mergedMarkers.length, routePoints?.length, displayRoute.length]);
+  const destinationById = useMemo(() => new Map((destinations ?? []).map(dest => [dest.id, dest])), [destinations]);
   const mapChrome = useMemo(
     () => mapKitChromeLayout({
       safeArea: insets,
@@ -948,12 +964,12 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
               isActiveTarget={false}
               isCompleted={false}
               reduceMotion={reduceMotion}
-              appActive={appActive}
+              appActive={allowMarkerMotion}
               calloutDescription={stayMarkerDescription(dayNum, stayLabel)}
             />
           );
         }
-        const dest = (destinations ?? []).find((d) => d.id === marker.id);
+        const dest = destinationById.get(marker.id);
         if (!dest) return null;
         // Every destination uses its trip-day color; emoji remains per-stop.
         const bgColor =
@@ -977,7 +993,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
             isActiveTarget={isActiveTarget}
             isCompleted={isCompleted}
             reduceMotion={reduceMotion}
-            appActive={appActive}
+            appActive={allowMarkerMotion}
             calloutDescription={
               dest.kind === 'accommodation'
                 ? stayMarkerDescription(dest.day, stayLabel)
@@ -1003,7 +1019,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
           <MemberMarker
             key={m.userId}
             member={m}
-            appActive={appActive}
+            appActive={allowMarkerMotion}
             reduceMotion={reduceMotion}
             accent={colors.accent}
             styles={styles}

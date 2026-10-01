@@ -20,11 +20,13 @@ describe('energy observability defensive exports', () => {
     expect(energyObservability.getAppState()).toBe('unknown');
     energyObservability.setTrackingMode('unrecognized-mode');
     expect(energyObservability.getTrackingMode()).toBe('unknown');
+    const controller = energyObservability.start(() => undefined, { startupOffsetsMs: [], steadyIntervalMs: null });
     energyObservability.increment('render', 2);
     expect(energyObservability.snapshotCounters()).toMatchObject({
       delta: expect.objectContaining({ render: 2 }),
       cumulative: expect.objectContaining({ render: 2 }),
     });
+    controller.stop();
     energyObservability.markLaunch(Number.NaN);
     energyObservability.markLaunch(100);
   });

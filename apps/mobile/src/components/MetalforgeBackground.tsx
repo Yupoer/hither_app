@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useSyncExternalStore } from 'react';
 import { AppState, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Canvas, Fill, Shader, Skia } from '@shopify/react-native-skia';
 import {
@@ -8,6 +8,9 @@ import {
   useReducedMotion,
   useSharedValue,
 } from 'react-native-reanimated';
+
+import { getRuntimePowerState, subscribeRuntimePowerState, optionalVisualsAllowed } from '../state/runtimePowerState';
+import { energyObservability } from '../state/energyObservability';
 
 // ─── MetalForge Grain SkSL Source ─────────────────────────────────────────────
 const grainSkSL = Skia.RuntimeEffect.Make(`
@@ -132,14 +135,21 @@ export type MetalforgeBackgroundProps = {
 /**
  * Full Metalforge grain shader rendered via React Native Skia.
  * Uses Hermite-interpolated 3×3 colour grid + procedural film grain
- * running at display refresh rate on the GPU.
+ * capped at 20 FPS, with static fallback under thermal/power pressure.
  */
 export default function MetalforgeBackground({ active = true }: MetalforgeBackgroundProps) {
   const reducedMotion = useReducedMotion();
   const [appActive, setAppActive] = useState(AppState.currentState === 'active');
   const { width, height } = useWindowDimensions();
   const frozen = useSharedValue(globalElapsedTime.value);
-  const isActive = active && appActive && !reducedMotion;
+  const power = useSyncExternalStore(subscribeRuntimePowerState, getRuntimePowerState, getRuntimePowerState);
+  const visible = active && appActive;
+  const isActive = visible && !reducedMotion && optionalVisualsAllowed(power);
+  const lastFrameAt = useSharedValue(-1);
+  useEffect(() => {
+    const release = energyObservability.mountWorkload({ shaderCanvasCount: visible ? 1 : 0, animatedCanvasCount: isActive ? 1 : 0 });
+    return release;
+  }, [visible, isActive]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
@@ -150,6 +160,8 @@ export default function MetalforgeBackground({ active = true }: MetalforgeBackgr
 
   const animationClock = useFrameCallback((frameInfo) => {
     if (frameInfo.timestamp !== undefined && frameInfo.timestamp > 0) {
+      if (lastFrameAt.value >= 0 && frameInfo.timestamp - lastFrameAt.value < 1000 / 20) return;
+      lastFrameAt.value = frameInfo.timestamp;
       if (globalStartTime.value < 0) {
         globalStartTime.value = frameInfo.timestamp;
       }
@@ -187,6 +199,8 @@ export default function MetalforgeBackground({ active = true }: MetalforgeBackgr
     color8: COLOR_UNIFORMS[7],
     color9: COLOR_UNIFORMS[8],
   }), [width, height, reducedMotion]);
+
+  if (!visible) return null;
 
   return (
     <View style={[StyleSheet.absoluteFill, styles.container]} pointerEvents="none" accessibilityElementsHidden>

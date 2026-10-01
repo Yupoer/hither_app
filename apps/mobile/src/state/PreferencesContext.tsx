@@ -15,6 +15,7 @@ import {
 } from '../theme';
 import {
   getDiagnosticConsentEnabled,
+  isDiagnosticConsentEnabled,
   setDiagnosticConsentEnabled,
 } from './diagnosticConsent';
 import {
@@ -384,8 +385,10 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   }, []);
 
   const setDiagnosticUploadEnabled = useCallback(async (next: boolean) => {
-    await setDiagnosticConsentEnabled(next);
-    setDiagnosticUploadEnabledState(next);
+    const pending = setDiagnosticConsentEnabled(next);
+    if (!next) setDiagnosticUploadEnabledState(false);
+    try { await pending; }
+    finally { setDiagnosticUploadEnabledState(isDiagnosticConsentEnabled()); }
   }, []);
 
   const value = useMemo<PreferencesValue>(

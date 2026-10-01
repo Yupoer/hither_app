@@ -1492,6 +1492,55 @@
       "acceptance": "A7 no Play Developer API and no new custom HTTP server outside Supabase Edge",
       "testFile": "premiumLedgerContract.test.ts",
       "testNamePattern": "A7 no Play Developer API and no new custom HTTP server"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "Native Settings consent persists with no capture during failed enable",
+      "testFile": "diagnosticConsent.test.ts",
+      "testNamePattern": "never grants consent during a failed enable"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "Safety notifications remain independent of diagnostic upload consent",
+      "testFile": "nativeMetricsSafety.test.ts",
+      "testNamePattern": "keeps power safety independent of consent"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "Hidden canvases release graphics resources",
+      "testFile": "metalforgeBackgroundLifecycle.test.ts",
+      "testNamePattern": "disables hidden frame callbacks"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "Optional graphics cap nominal refresh and stop at first thermal warning",
+      "testFile": "metalforgeBackgroundLifecycle.test.ts",
+      "testNamePattern": "caps active GPU frame updates"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "Targeted reports distinguish interval CPU from native burst CPU",
+      "testFile": "performanceEnergyCoverage.test.ts",
+      "testNamePattern": "attributes interval CPU"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "Bounded incident sampling and workload lifecycle scopes",
+      "testFile": "energyObservability.test.ts",
+      "testNamePattern": "bounds incident sampling"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "Revocation drops pending samples",
+      "testFile": "performanceEnergyCoverage.test.ts",
+      "testNamePattern": "drops a pending performance sample"
     }
   ]
 }

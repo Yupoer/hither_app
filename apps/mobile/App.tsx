@@ -71,7 +71,6 @@ import {
   setLogBatchSchedulerEnabled,
   stopLogBatchScheduler,
 } from './src/state/logBatchScheduler';
-import { setDiagnosticConsentEnabled } from './src/state/diagnosticConsent';
 import { uploadLocalLogs } from './src/utils/uploadLocalLogs';
 import { startOtaUpdateBootstrap } from './src/utils/otaUpdates';
 import OtaUpdateToast from './src/components/OtaUpdateToast';
@@ -112,6 +111,7 @@ function ThemedNavigation() {
   // Fredoka is the design's display face (gathering-point titles, ETA numerals,
   // Live Activity numbers). Held alongside the session/onboarding splash so the
   // first screen never flashes system font before Fredoka swaps in.
+  const userId = user?.id;
   const [fontsLoaded] = useFonts({ Fredoka_500Medium, Fredoka_600SemiBold });
   // Register this device for APNs once signed in (no-op until a Dev Build);
   // also asks notification permission, which the local-notification flow needs.
@@ -123,6 +123,8 @@ function ThemedNavigation() {
   // instance too (for the accept/decline UI) — see useSubgroupInvites for
   // how duplicate notifications across the two instances are avoided.
   useSubgroupInvites();
+
+  useEffect(() => metrics.startRuntimePowerMonitoring(), []);
 
   useEffect(() => {
     if (initializing) return;
@@ -138,10 +140,9 @@ function ThemedNavigation() {
   }, [initializing, user?.id]);
 
   useEffect(() => {
-    if (!ready || initializing || !user) return;
+    if (!ready || initializing || !userId) return;
 
     if (!diagnosticUploadEnabled) {
-      void setDiagnosticConsentEnabled(false);
       stopLogBatchScheduler();
       setLogBatchSchedulerEnabled(false);
       void diagnostics.purge().catch(() => undefined);
@@ -215,9 +216,12 @@ function ThemedNavigation() {
     return () => {
       cancelled = true;
       stopMonitor?.();
+      stopLogBatchScheduler();
+      setLogBatchSchedulerEnabled(false);
+      void metrics.setCollectionEnabled(false).catch(() => undefined);
       appSub.remove();
     };
-  }, [ready, diagnosticUploadEnabled, initializing, user]);
+  }, [ready, diagnosticUploadEnabled, initializing, userId]);
 
   // First-launch + home-boundary onboarding gate (#171 / #181).
   // Full onboarding is independent of group feature tour. Reset only marks
