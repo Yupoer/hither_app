@@ -80,6 +80,9 @@ import OverlaySheet from '../components/OverlaySheet';
 import { AmicroButton } from '../components/AmicroButton';
 import { updateRuntimePowerState } from '../state/runtimePowerState';
 import { usePendingPlaceEntrance } from '../screens/MapScreen/hooks/usePendingPlaceEntrance';
+// createElement supplies children separately; these are the same production components.
+const BottomSheetElement = BottomSheet as unknown as React.ComponentType<Omit<React.ComponentProps<typeof BottomSheet>, 'children'>>;
+const OverlaySheetElement = OverlaySheet as React.ComponentType<Omit<React.ComponentProps<typeof OverlaySheet>, 'children'>>;
 const { act, create } = require('react-test-renderer');
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 function transition(state: string) {
@@ -100,12 +103,11 @@ it('cancels mid-dismiss on lock, retains child drafts, and completes the current
     React.useEffect(() => { mounted(); }, []);
     return React.createElement('draft', { text, setText });
   }
-  const sheet = (close: boolean, index = 0) => React.createElement(BottomSheet, {
+  const sheet = (close: boolean, index = 0) => React.createElement(BottomSheetElement, {
     height, dismissTranslateY: dismissY, dismissRequested: !close,
     dismissDistance: 800, detents: [300, 600], index, bottomInset: 0,
     onIndexChange: jest.fn(), onDismissComplete: completed,
-    children: React.createElement(Draft),
-  });
+  }, React.createElement(Draft));
   let root: any;
   await act(async () => { root = create(sheet(false)); });
   await act(async () => { root.root.findByType('draft').props.setText('unsaved'); root.update(sheet(true)); });
@@ -162,10 +164,9 @@ it('retains an overlay draft and does not repeat its open completion or entrance
     return React.createElement('draft', { text, setText });
   }
   let root: any;
-  await act(async () => { root = create(React.createElement(OverlaySheet, { visible: true,
+  await act(async () => { root = create(React.createElement(OverlaySheetElement, { visible: true,
     onClose: jest.fn(), onOpenComplete: opened, title: 'edit', accent: '#ffffff', doneLabel: 'Done',
-    children: React.createElement(Draft),
-  })); });
+  }, React.createElement(Draft))); });
   await act(async () => { mockNativeTimings.at(-1).callback({ finished: true });
     root.root.findByType('draft').props.setText('unsaved'); });
   expect(opened).toHaveBeenCalledTimes(1);
@@ -186,9 +187,9 @@ it('suspends a committed overlay drag close without closing or clearing its draf
     return React.createElement('draft', { text, setText });
   }
   let root: any;
-  await act(async () => { root = create(React.createElement(OverlaySheet, { visible: true,
-    onClose: closed, title: 'edit', accent: '#ffffff', children: React.createElement(Draft),
-  })); });
+  await act(async () => { root = create(React.createElement(OverlaySheetElement, { visible: true,
+    onClose: closed, title: 'edit', accent: '#ffffff',
+  }, React.createElement(Draft))); });
   await act(async () => { mockNativeTimings.at(-1).callback({ finished: true }); });
   const grabber = root.root.findAllByType('View').find((node: any) => node.props.onPanResponderRelease);
   await act(async () => { grabber.props.onPanResponderRelease(null, { dy: 100, vy: 1 }); });
@@ -209,12 +210,12 @@ it.each([true, false])('retains a committed bottom-sheet gesture close during lo
   const height = mockValue(300), dismissY = mockValue(0);
   const closed = jest.fn(), completed = jest.fn();
   let root: any;
-  await act(async () => { root = create(React.createElement(BottomSheet, { height,
+  await act(async () => { root = create(React.createElement(BottomSheetElement, { height,
     ...(translate ? { dismissTranslateY: dismissY, dismissRequested: true } : {}),
     dismissDistance: 800, detents: [300, 600], index: 0, bottomInset: 0,
     dismissOnDownFromIndex: 0, onIndexChange: jest.fn(), onDismiss: closed,
-    onDismissComplete: completed, children: React.createElement('draft', { text: 'unsaved' }),
-  })); });
+    onDismissComplete: completed,
+  }, React.createElement('draft', { text: 'unsaved' }))); });
   const gesture = mockGestures.at(-1);
   await act(async () => { gesture.onBegin(); gesture.onUpdate({ translationY: 100 });
     gesture.onEnd({ translationY: 100, velocityY: 800 }, true); });
@@ -237,12 +238,11 @@ it.each([true, false])('does not commit an OS-cancelled downward gesture (backgr
   const height = mockValue(300), dismissY = mockValue(0);
   const closed = jest.fn(), completed = jest.fn();
   let root: any;
-  await act(async () => { root = create(React.createElement(BottomSheet, { height,
+  await act(async () => { root = create(React.createElement(BottomSheetElement, { height,
     dismissTranslateY: dismissY, dismissRequested: true, dismissDistance: 800,
     detents: [300, 600], index: 0, bottomInset: 0, dismissOnDownFromIndex: 0,
     onIndexChange: jest.fn(), onDismiss: closed, onDismissComplete: completed,
-    children: React.createElement('draft', { text: 'unsaved' }),
-  })); });
+  }, React.createElement('draft', { text: 'unsaved' }))); });
   const gesture = mockGestures.at(-1);
   await act(async () => { gesture.onBegin(); gesture.onUpdate({ translationY: 100 }); });
   const count = mockTimings.length;

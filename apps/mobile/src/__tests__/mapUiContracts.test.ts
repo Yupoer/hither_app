@@ -722,7 +722,7 @@ describe('map UI placement contracts', () => {
     );
     expect(completeFn).toContain('enqueueJourneyCompletion({');
     expect(completeFn).toContain('resolveCurrentNavigationSessionId(destination)');
-    expect(completeFn).toContain('finally {\n        completingDestIdsRef.current.delete(destination.id);');
+    expect(completeFn).toMatch(/finally\s*\{\s*completingDestIdsRef\.current\.delete\(destination\.id\);/);
     expect(completeFn).not.toContain('stopNavigation()');
     expect(completeFn).not.toContain('requestTeamEnd');
     expect(mapScreen).toContain('sharedTargetId');
