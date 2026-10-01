@@ -638,7 +638,7 @@ select is(
     jsonb_build_object(
       'userId', '11111111-1111-4111-8111-111111111111',
       'navigationSessionId', (select id::text from durable_arrival_session),
-      'arrived', true
+      'arrived', true, 'arrivedAt', now(), 'occurredAt', now()
     ),
     84, '{}'::uuid[]
   )->>'status',
@@ -655,7 +655,7 @@ select is(
     jsonb_build_object(
       'userId', '22222222-2222-4222-8222-222222222222',
       'navigationSessionId', (select id::text from durable_arrival_session),
-      'arrived', true
+      'arrived', true, 'arrivedAt', now(), 'occurredAt', now()
     ),
     84, '{}'::uuid[]
   )->>'status',
@@ -664,6 +664,8 @@ select is(
 select set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
 -- Personal arrivals do not close the group journey. The leader's durable
 -- all-arrived operation validates the original session and commits closure.
+-- These arrival fixtures carry explicit timestamps, as the v3 projection
+-- retains absent arrivedAt as NULL and NULL does not count as an arrival.
 insert into durable_test_results(label, body)
 select 'all_arrived', public.apply_core_operation_v2(
     'eeeeeeee-eeee-4eee-8eee-eeeeeeee0a04',
@@ -677,6 +679,18 @@ select 'all_arrived', public.apply_core_operation_v2(
   );
 select ok(
   (select body->>'status' from durable_test_results where label = 'all_arrived') = 'accepted'
+    and (select count(*) = 2 and bool_and(m.user_id in (
+           '11111111-1111-4111-8111-111111111111'::uuid,
+           '22222222-2222-4222-8222-222222222222'::uuid))
+         from public.memberships m
+         join public.navigation_member_states n on n.user_id = m.user_id
+           and n.navigation_session_id = (select id from durable_arrival_session)
+         where m.group_id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
+           and m.subgroup_id is null and not coalesce(m.solo, false))
+    and (select count(*) = 2 from public.destination_arrivals
+         where destination_id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeee0001'
+           and navigation_session_id = (select id from durable_arrival_session)
+           and arrived_at is not null)
     and (select closed_at is not null from public.itinerary_items
    where id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeee0001')
     and (select entity_version from public.core_entity_versions
