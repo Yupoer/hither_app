@@ -11,6 +11,7 @@
  * namespace from `src/native`.
  */
 import React from 'react';
+import { useForegroundUi } from '../state/foregroundUi';
 import { StyleSheet, View, type ViewProps } from 'react-native';
 import {
   GlassView as ExpoGlassView,
@@ -69,18 +70,19 @@ function GlassViewCore({
   children,
   ...rest
 }: GlassViewProps & { fallbackGlass?: string }) {
+  const foreground = useForegroundUi();
   // iOS 26+: let the system material render its native Liquid Glass surface.
   // The app pins the surrounding RN/SwiftUI scheme to dark at startup; no
   // extra underlay or hand-tuned opacity is added here.
   if (isLiquidGlassAvailable()) {
     return (
       <View style={style} {...rest}>
-        <ExpoGlassView
+        {foreground ? <ExpoGlassView
           glassEffectStyle={glassStyle}
           tintColor={tintColor}
           style={StyleSheet.absoluteFill}
           pointerEvents="none"
-        />
+        /> : null}
         {children}
       </View>
     );
@@ -92,12 +94,12 @@ function GlassViewCore({
     tintColor ?? (fallbackGlass != null ? thinTint(fallbackGlass) : 'rgba(22, 26, 34, 0.28)');
   return (
     <View style={[{ overflow: 'hidden' }, style]} {...rest}>
-      <BlurView
+      {foreground ? <BlurView
         tint="dark"
         intensity={28}
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
-      />
+      /> : null}
       <View
         style={[
           StyleSheet.absoluteFill,

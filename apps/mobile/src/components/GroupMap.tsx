@@ -15,8 +15,6 @@ import React, {
 import {
   AccessibilityInfo,
   Animated as RNAnimated,
-  AppState,
-  type AppStateStatus,
   Pressable,
   StyleSheet,
   Text,
@@ -24,7 +22,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import MapView, { Marker, Polyline } from 'react-native-maps';
+import MapView, { Marker, Polyline, type Camera, type Region } from 'react-native-maps';
 import type { Coordinates, Destination, MemberLocation } from '../types';
 import { displayMemberAvatar } from '../constants/avatars';
 import { usePreferences, useTheme } from '../state/PreferencesContext';
@@ -47,6 +45,7 @@ import {
 } from '../native/maps';
 import { defaultMapTransitProps } from '../native/mapTransitDefaults';
 import { getRuntimePowerState, subscribeRuntimePowerState, optionalVisualsAllowed } from '../state/runtimePowerState';
+import { useForegroundUi, isForegroundUi } from '../state/foregroundUi';
 import { energyObservability } from '../state/energyObservability';
 import {
   displayRoutePoints,
@@ -109,7 +108,16 @@ export interface GroupMapHandle {
   fitRoute: (coordinates: Coordinates[]) => void;
 }
 
+export interface GroupMapCameraState {
+  camera?: Camera;
+  region?: Region;
+  centeredMode?: 'fallback' | 'gathering' | 'user' | null;
+}
+
 export interface GroupMapProps {
+  active?: boolean;
+  /** One settled camera survives releasing the native map surface. */
+  cameraState?: React.MutableRefObject<GroupMapCameraState>;
   members: MemberLocation[];
   gathering?: Destination;
   destinations?: Destination[];
@@ -489,6 +497,7 @@ const EDGE_BUFFER = 16;
 
 const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
   {
+    active = true,
     members,
     gathering,
     destinations,
@@ -498,6 +507,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     pendingPlace,
     currentUserId,
     initialCenter,
+    cameraState,
     routePoints,
     selfCoordinates = null,
     routeColor,
@@ -528,13 +538,13 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
    * auto gathering animateToRegion. Mark user-driven cameras so the first
    * gathering effect does not re-animate on top.
    */
-  const centeredModeRef = useRef<'fallback' | 'gathering' | 'user' | null>(null);
+  const centeredModeRef = useRef<'fallback' | 'gathering' | 'user' | null>(cameraState?.current.centeredMode ?? null);
   // Finite surface remount: user may retry once; no timer auto-remount.
   const [surfaceKey, setSurfaceKey] = useState(0);
   const [remountUsed, setRemountUsed] = useState(false);
   const [showFallback, setShowFallback] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
-  const [appActive, setAppActive] = useState(AppState.currentState === 'active');
+  const appActive = useForegroundUi() && active;
   const power = useSyncExternalStore(subscribeRuntimePowerState, getRuntimePowerState, getRuntimePowerState);
   const allowMarkerMotion = appActive && optionalVisualsAllowed(power);
   const readyLoggedRef = useRef(false);
@@ -560,11 +570,6 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     return () => sub.remove();
   }, []);
 
-  useEffect(() => {
-    const onApp = (next: AppStateStatus) => setAppActive(next === 'active');
-    const sub = AppState.addEventListener('change', onApp);
-    return () => sub.remove();
-  }, []);
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   useEffect(() => {
@@ -586,8 +591,8 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
   const memberCenter = members.find((member) => member.coordinates)?.coordinates ?? undefined;
   const fallbackCenter = initialCenter ?? memberCenter;
   const mapInitialRegion = useMemo(
-    () => initialRegionFor(gathering?.coordinates ?? fallbackCenter, latOffset),
-    [fallbackCenter, gathering?.coordinates, latOffset],
+    () => cameraState?.current.region ?? initialRegionFor(gathering?.coordinates ?? fallbackCenter, latOffset),
+    [appActive, cameraState, fallbackCenter, gathering?.coordinates, latOffset],
   );
   const [settledRouteViewport, setSettledRouteViewport] = useState<RouteViewport>(() =>
     routeViewportFromRegion({
@@ -598,6 +603,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
   );
   const displayRoute = useMemo(
     () => {
+      if (!appActive) return [];
       const started = performance.now();
       const displayed = displayRoutePoints(
       selfCoordinates
@@ -609,7 +615,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       energyObservability.increment('route_projection_ms', performance.now() - started);
       return displayed;
     },
-    [routePoints, selfCoordinates, settledRouteViewport],
+    [appActive, routePoints, selfCoordinates, settledRouteViewport],
   );
   useEffect(() => energyObservability.mountWorkload({
     mapCount: appActive ? 1 : 0, memberMarkerCount: members.length, destinationMarkerCount: mergedMarkers.length,
@@ -629,7 +635,15 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     [chromeBottomOffset, chromeStage, insets, topOverlap, windowHeight, windowWidth],
   );
 
-  useEffect(() => platformizedMapLifecycle({
+  useEffect(() => {
+    if (!appActive) {
+      if (loadedTimeoutTimerRef.current) clearTimeout(loadedTimeoutTimerRef.current);
+      loadedTimeoutTimerRef.current = null;
+      readyLoggedRef.current = false;
+      loadedLoggedRef.current = false;
+      return;
+    }
+    return platformizedMapLifecycle({
     onAndroidMapMount: () => {
       androidMapMountCount += 1;
       // App lifecycle only — not Google Cloud Map Loads / billing.
@@ -642,7 +656,8 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       }
       logEvent('android_map_unmount', { mapMountCount: androidMapMountCount });
     },
-  }), []);
+    });
+  }, [appActive]);
 
   const onMapReady = useCallback(() => {
     energyObservability.event('map_ready');
@@ -801,7 +816,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
   // first gathering point becomes available. Never follow every GPS tick.
   // Skip auto animate when the user already framed via long-press / add / fit.
   useEffect(() => {
-    if (!mapRef.current) return;
+    if (!appActive || !mapRef.current) return;
     if (gathering) {
       if (centeredModeRef.current === 'user') {
         // Promote to gathering ownership without a second stacked animation.
@@ -819,7 +834,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       centeredModeRef.current = 'fallback';
     }
     // Sheet stage / detent must never re-run this effect.
-  }, [fallbackCenter, gathering]);
+  }, [appActive, fallbackCenter, gathering]);
 
   const handleMapSubtreeError = useCallback(() => {
     // Parent-owned: survives ordinary re-renders; not cleared by children identity.
@@ -874,6 +889,8 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
 
   // Parent-owned fallback: first and second failure both stay here so a parent
   // re-render cannot re-mount a broken MapView underneath the recovery UI.
+  if (!appActive) return null;
+
   if (showFallback) {
     return mapFallback;
   }
@@ -897,6 +914,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       // platform-owned location callbacks come from the native boundary.
       {...(mapViewProps as Record<string, unknown>)}
       initialRegion={mapInitialRegion}
+      initialCamera={cameraState?.current.camera}
       userInterfaceStyle={mapInterfaceStyle}
       // Continuous local blue-dot from device GPS (offline). Self is not drawn
       // as a flock emoji pin — that would lag on cloud upload cadence.
@@ -917,6 +935,15 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       // Help long-press win over pan on both platforms (esp. iOS MapKit).
       moveOnMarkerPress={false}
       onRegionChangeComplete={(region) => {
+        if (!isForegroundUi()) return;
+        if (cameraState) {
+          cameraState.current.region = region;
+          cameraState.current.centeredMode = centeredModeRef.current;
+          const surface = mapRef.current;
+          void surface?.getCamera().then(camera => {
+            if (surface === mapRef.current) cameraState.current.camera = camera;
+          }).catch(() => undefined);
+        }
         const nextViewport = routeViewportFromRegion({
           latitude: region.latitude,
           longitudeDelta: region.longitudeDelta,

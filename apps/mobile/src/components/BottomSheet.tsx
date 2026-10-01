@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useForegroundUi } from '../state/foregroundUi';
 import { Platform, ScrollView as RNScrollView, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector, ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import Animated, {
@@ -124,6 +125,7 @@ export default React.memo(function BottomSheet({
   useSwiftUIGlassSurface?: boolean;
   children: React.ReactNode;
 }) {
+  const foreground = useForegroundUi();
   const scrollRef = useAnimatedRef<RNScrollView>();
   // Live scroll offset, mirrored on the UI thread so the Pan worklet can decide
   // "is the list at the top?" without a JS round-trip.
@@ -196,7 +198,14 @@ export default React.memo(function BottomSheet({
     dismissDistanceSV.value = dismissDistance ?? 1000;
   }, [dismissDistance, dismissDistanceSV]);
 
+  // Cancel before the controlled-close effect, so resume can start its latest intent once.
+  useEffect(() => {
+    if (!foreground) { cancelAnimation(height); cancelAnimation(dismissY); }
+    return () => { cancelAnimation(height); cancelAnimation(dismissY); };
+  }, [foreground, height, dismissY]);
+
   const startTranslateDismiss = useCallback((notifyDismiss: boolean) => {
+    if (!foreground) return;
     cancelAnimation(dismissY);
     dismissY.value = withTiming(
       dismissDistanceSV.value,
@@ -208,11 +217,12 @@ export default React.memo(function BottomSheet({
         runOnJS(dismissComplete)();
       },
     );
-  }, [dismissComplete, dismissDistanceSV, dismiss, dismissY]);
+  }, [foreground, dismissComplete, dismissDistanceSV, dismiss, dismissY]);
 
   // Controlled close (X / scrim / parent visibility) uses the same fixed-size
   // translateY exit as the gesture path, but must not notify onDismiss twice.
   useEffect(() => {
+    if (!foreground) return;
     if (dismissTranslateY == null || dismissRequested == null) return;
     if (dismissRequested) {
       cancelAnimation(dismissY);
@@ -220,7 +230,7 @@ export default React.memo(function BottomSheet({
       return;
     }
     startTranslateDismiss(false);
-  }, [dismissRequested, dismissTranslateY, dismissY, startTranslateDismiss]);
+  }, [foreground, dismissRequested, dismissTranslateY, dismissY, startTranslateDismiss]);
 
   // Settle a released sheet-drag on the JS thread — reuses the unit-tested pure
   // helpers, then springs the shared height (carrying the fling velocity) and
@@ -241,10 +251,11 @@ export default React.memo(function BottomSheet({
   // Use zero restart velocity so a mid-flight remeasure doesn't "kick back".
   const detentsKey = detents.join(',');
   useEffect(() => {
+    if (!foreground) return;
     const nextIndex = Math.max(0, Math.min(index, detents.length - 1));
     height.value = withSpring(detents[nextIndex], { ...SPRING, velocity: 0 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detentsKey, index]);
+  }, [foreground, detentsKey, index]);
 
   // Build pan once: worklets read detentsSV / height / gesture shared values.
   // Do NOT depend on detents array identity — that would recreate every render.

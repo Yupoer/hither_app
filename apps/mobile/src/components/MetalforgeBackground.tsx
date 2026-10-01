@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useSyncExternalStore } from 'react';
-import { AppState, StyleSheet, View, useWindowDimensions } from 'react-native';
+import React, { useEffect, useSyncExternalStore } from 'react';
+import { StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Canvas, Fill, Shader, Skia } from '@shopify/react-native-skia';
 import {
   makeMutable,
@@ -10,6 +10,7 @@ import {
 } from 'react-native-reanimated';
 
 import { getRuntimePowerState, subscribeRuntimePowerState, optionalVisualsAllowed } from '../state/runtimePowerState';
+import { useForegroundUi } from '../state/foregroundUi';
 import { energyObservability } from '../state/energyObservability';
 
 // ─── MetalForge Grain SkSL Source ─────────────────────────────────────────────
@@ -124,7 +125,7 @@ const COLOR_UNIFORMS = METALFORGE_COLORS.map(toRGBA) as [
 ];
 // ─── Continuous Global Animation Clock ────────────────────────────────────────
 // Preserves animation time across screen transitions, mounts, and unmounts
-const globalStartTime = makeMutable(-1);
+
 const globalElapsedTime = makeMutable(0);
 
 export type MetalforgeBackgroundProps = {
@@ -139,41 +140,36 @@ export type MetalforgeBackgroundProps = {
  */
 export default function MetalforgeBackground({ active = true }: MetalforgeBackgroundProps) {
   const reducedMotion = useReducedMotion();
-  const [appActive, setAppActive] = useState(AppState.currentState === 'active');
+  const appActive = useForegroundUi();
   const { width, height } = useWindowDimensions();
   const frozen = useSharedValue(globalElapsedTime.value);
   const power = useSyncExternalStore(subscribeRuntimePowerState, getRuntimePowerState, getRuntimePowerState);
   const visible = active && appActive;
   const isActive = visible && !reducedMotion && optionalVisualsAllowed(power);
   const lastFrameAt = useSharedValue(-1);
+  const lastTimestamp = useSharedValue(-1);
   useEffect(() => {
     const release = energyObservability.mountWorkload({ shaderCanvasCount: visible ? 1 : 0, animatedCanvasCount: isActive ? 1 : 0 });
     return release;
   }, [visible, isActive]);
 
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', (state) => {
-      setAppActive(state === 'active');
-    });
-    return () => subscription.remove();
-  }, []);
 
   const animationClock = useFrameCallback((frameInfo) => {
     if (frameInfo.timestamp !== undefined && frameInfo.timestamp > 0) {
       if (lastFrameAt.value >= 0 && frameInfo.timestamp - lastFrameAt.value < 1000 / 20) return;
       lastFrameAt.value = frameInfo.timestamp;
-      if (globalStartTime.value < 0) {
-        globalStartTime.value = frameInfo.timestamp;
-      }
-      globalElapsedTime.value = (frameInfo.timestamp - globalStartTime.value) / 1000;
-      frozen.value = globalElapsedTime.value;
+      frozen.value += lastTimestamp.value < 0 ? 0 : (frameInfo.timestamp - lastTimestamp.value) / 1000;
+      lastTimestamp.value = frameInfo.timestamp;
+      globalElapsedTime.value = frozen.value;
     }
   }, false);
 
   useEffect(() => {
+    lastFrameAt.value = -1;
+    lastTimestamp.value = -1;
     animationClock.setActive(isActive);
     return () => animationClock.setActive(false);
-  }, [animationClock, isActive]);
+  }, [animationClock, isActive, lastFrameAt, lastTimestamp]);
 
   // When frozen (reduced motion), hold a static frame
   useEffect(() => {

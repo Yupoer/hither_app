@@ -19,6 +19,7 @@ import Animated, {
   withRepeat,
   withTiming,
 } from 'react-native-reanimated';
+import { useOptionalVisuals, isForegroundUi } from '../state/foregroundUi';
 import { loadingDotOffset } from '../utils/loadingDots';
 
 // Adapted from https://github.com/Subhan-code/Amicro--Micro-transitions-
@@ -90,7 +91,8 @@ export function AmicroButton({
   onPress,
   onAnimationComplete,
 }: AmicroButtonProps) {
-  const reducedMotion = useReducedMotion();
+  const visuals = useOptionalVisuals();
+  const reducedMotion = useReducedMotion() || !visuals;
   const progress = useSharedValue(active ? 1 : 0);
   const busyRef = useRef(false);
   const activeRef = useRef(active);
@@ -99,7 +101,7 @@ export function AmicroButton({
   const releaseBusyAndMaybeReset = useCallback(() => {
     busyRef.current = false;
     if (resetAfterComplete) {
-      progress.value = withTiming(activeRef.current ? 1 : 0, { duration: reducedMotion ? 0 : 100 });
+      progress.value = isForegroundUi() ? withTiming(activeRef.current ? 1 : 0, { duration: reducedMotion ? 0 : 100 }) : (activeRef.current ? 1 : 0);
     }
   }, [progress, reducedMotion, resetAfterComplete]);
 
@@ -123,9 +125,10 @@ export function AmicroButton({
   }, [onAnimationComplete, releaseBusyAndMaybeReset]);
 
   useEffect(() => {
+    if (!visuals) { cancelAnimation(progress); progress.value = active ? 1 : 0; return; }
     if (busyRef.current) return;
     progress.value = withTiming(active ? 1 : 0, { duration: reducedMotion ? 0 : 100 });
-  }, [active, revertEpoch, progress, reducedMotion]);
+  }, [active, revertEpoch, progress, reducedMotion, visuals]);
 
   const handlePress = useCallback(() => {
     if (disabled || busyRef.current) return;
@@ -210,7 +213,8 @@ export function AmicroButton({
 }
 
 export function BouncingDots({ color }: { color: string }) {
-  const reducedMotion = useReducedMotion();
+  const visuals = useOptionalVisuals();
+  const reducedMotion = useReducedMotion() || !visuals;
   const phase = useSharedValue(0);
 
   useEffect(() => {

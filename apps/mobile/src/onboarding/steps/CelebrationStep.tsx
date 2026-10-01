@@ -1,8 +1,10 @@
 import React, { useEffect } from 'react';
+import { useOptionalVisuals } from '../../state/foregroundUi';
 import { Image, StyleSheet, View, type ImageSourcePropType } from 'react-native';
 import { HitherText } from '../../components/HitherText';
 import Animated, {
   Easing,
+  cancelAnimation,
   useAnimatedStyle,
   useSharedValue,
   withDelay,
@@ -50,14 +52,18 @@ const CONFETTI = [
 ] as const;
 
 function Confetti({ spec }: { spec: (typeof CONFETTI)[number] }) {
+  const visuals = useOptionalVisuals();
   const v = useSharedValue(0);
   useEffect(() => {
+    cancelAnimation(v);
+    if (!visuals) { v.value = 0; return; }
     v.value = withDelay(
       spec.delay,
       withRepeat(withTiming(1, { duration: spec.dur, easing: Easing.in(Easing.cubic) }), -1, false),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return () => cancelAnimation(v);
+  }, [visuals, v, spec]);
   const style = useAnimatedStyle(() => ({
     transform: [{ translateY: v.value * 360 }, { rotate: `${v.value * 240}deg` }],
     opacity: v.value < 0.15 ? v.value / 0.15 : 1 - v.value,
@@ -92,7 +98,10 @@ export default function CelebrationStep({ answers, onAnswer }: StepProps) {
   const insets = useSafeAreaInsets();
 
   const pop = useSharedValue(0);
+  const visuals = useOptionalVisuals();
   useEffect(() => {
+    cancelAnimation(pop);
+    if (!visuals) { pop.value = 1; return; }
     pop.value = withDelay(
       80,
       withSequence(
@@ -101,7 +110,8 @@ export default function CelebrationStep({ answers, onAnswer }: StepProps) {
       ),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return () => cancelAnimation(pop);
+  }, [visuals, pop]);
   const heroStyle = useAnimatedStyle(() => ({
     transform: [{ scale: pop.value }],
     opacity: pop.value === 0 ? 0 : 1,

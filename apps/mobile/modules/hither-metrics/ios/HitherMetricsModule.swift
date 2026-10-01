@@ -153,6 +153,7 @@ private final class PerformanceSampler: NSObject {
   private var sampledMemoryPeakMb = 0.0
   private var memoryWarningCount = 0
   private var memoryWarningObserver: NSObjectProtocol?
+  private var inactiveObserver: NSObjectProtocol?
   private var previousBatteryMonitoring = false
   private var sampleGeneration = 0
   private var enabled = false
@@ -164,22 +165,21 @@ private final class PerformanceSampler: NSObject {
         NotificationCenter.default.removeObserver(observer)
         self.memoryWarningObserver = nil
       }
+      if let observer = self.inactiveObserver {
+        NotificationCenter.default.removeObserver(observer)
+        self.inactiveObserver = nil
+      }
       if enabled {
         self.memoryWarningCount = 0
         self.sampledMemoryPeakMb = 0
         self.memoryWarningObserver = NotificationCenter.default.addObserver(
           forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main
         ) { [weak self] _ in self?.memoryWarningCount += 1 }
+        self.inactiveObserver = NotificationCenter.default.addObserver(
+          forName: UIApplication.willResignActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.cancelSample() }
       } else {
-        self.sampleGeneration += 1
-        let wasSampling = self.displayLink != nil
-        self.displayLink?.invalidate()
-        self.displayLink = nil
-        let completion = self.completion
-        self.completion = nil
-        self.startedAt = nil
-        if wasSampling { UIDevice.current.isBatteryMonitoringEnabled = self.previousBatteryMonitoring }
-        completion?([:])
+        self.cancelSample()
       }
     }
   }
@@ -187,7 +187,7 @@ private final class PerformanceSampler: NSObject {
   func sample(windowMs: Double, completion: @escaping ([String: Any]) -> Void) {
     let requestedAt = CACurrentMediaTime()
     DispatchQueue.main.async {
-      guard self.enabled, self.displayLink == nil else {
+      guard self.enabled, UIApplication.shared.applicationState == .active, self.displayLink == nil else {
         completion([:])
         return
       }
@@ -217,6 +217,20 @@ private final class PerformanceSampler: NSObject {
         self.finish()
       }
     }
+  }
+
+  private func cancelSample() {
+    sampleGeneration += 1
+    let wasSampling = displayLink != nil
+    displayLink?.invalidate()
+    displayLink = nil
+    let completion = self.completion
+    self.completion = nil
+    startedAt = nil
+    startedSnapshot = nil
+    frameIntervals.removeAll()
+    if wasSampling { UIDevice.current.isBatteryMonitoringEnabled = previousBatteryMonitoring }
+    completion?([:])
   }
 
   @objc private func tick(_ link: CADisplayLink) {

@@ -84,7 +84,9 @@ it('keeps native metric semantics cumulative and display cadence calibrated with
   expect(native).toContain('getrusage(RUSAGE_SELF, &usage)');
   expect(native).toContain('link.targetTimestamp - link.timestamp');
   expect(native).toContain('guard self.sampleGeneration == generation');
-  expect(native).toContain('guard self.enabled, self.displayLink == nil');
+  expect(native).toContain('guard self.enabled, UIApplication.shared.applicationState == .active, self.displayLink == nil');
+  expect(native).toContain('UIApplication.willResignActiveNotification');
+  expect(native).toContain('self?.cancelSample()');
   expect(native).toContain('Events("powerStateChanged")');
   expect(native).toContain('ProcessInfo.thermalStateDidChangeNotification');
   expect(native).toContain('MXMetricManager.makeLogHandle');

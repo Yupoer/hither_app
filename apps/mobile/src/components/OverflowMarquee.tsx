@@ -20,6 +20,8 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { useOptionalVisuals } from '../state/foregroundUi';
+
 export const DEFAULT_MARQUEE_PX_PER_SEC = 40;
 export const MARQUEE_SPEED_MIN = 20;
 export const MARQUEE_SPEED_MAX = 80;
@@ -69,6 +71,8 @@ export default function OverflowMarquee({
   startPauseMs = 1000,
 }: Props) {
   const reduceMotion = useReducedMotion();
+  const visuals = useOptionalVisuals();
+  enabled = enabled && visuals;
   const offset = useSharedValue(0);
   const [viewportW, setViewportW] = useState(0);
   const [textW, setTextW] = useState(0);

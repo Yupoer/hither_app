@@ -1,4 +1,5 @@
 import React from 'react';
+import { useForegroundUi } from '../state/foregroundUi';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Host, Spacer, VStack } from '@expo/ui/swift-ui';
 import { frame, glassEffect } from '@expo/ui/swift-ui/modifiers';
@@ -30,6 +31,7 @@ export default function SwiftUIGlassSurface({
   fallbackTintColor,
   children,
 }: SwiftUIGlassSurfaceProps) {
+  const foreground = useForegroundUi();
   if (!liquidGlass.isLiquidGlassAvailable()) {
     return (
       <liquidGlass.GlassView
@@ -49,7 +51,7 @@ export default function SwiftUIGlassSurface({
 
   return (
     <View style={style} pointerEvents="box-none">
-      <Host
+      {foreground ? <Host
         matchContents={false}
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
@@ -67,7 +69,7 @@ export default function SwiftUIGlassSurface({
         >
           <Spacer />
         </VStack>
-      </Host>
+      </Host> : null}
       {children}
     </View>
   );

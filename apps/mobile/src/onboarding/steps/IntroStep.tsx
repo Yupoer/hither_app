@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
+import { useOptionalVisuals } from '../../state/foregroundUi';
 import { AccessibilityInfo, Image, StyleSheet, View, type ImageSourcePropType } from 'react-native';
 import Animated, {
   Easing,
+  cancelAnimation,
   useAnimatedStyle,
   useSharedValue,
   withDelay,
@@ -54,12 +56,14 @@ function MemberDot({
   reduceMotion: boolean;
 }) {
   const scatter = SCATTER[index];
+  const visuals = useOptionalVisuals();
   const gather = GATHER[index];
   const progress = useSharedValue(reduceMotion ? 1 : 0);
   const opacity = useSharedValue(reduceMotion ? 1 : 0.35);
 
   useEffect(() => {
-    if (reduceMotion) {
+    cancelAnimation(progress); cancelAnimation(opacity);
+    if (reduceMotion || !visuals) {
       progress.value = 1;
       opacity.value = 1;
       return;
@@ -75,7 +79,8 @@ function MemberDot({
       withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reduceMotion]);
+    return () => { cancelAnimation(progress); cancelAnimation(opacity); };
+  }, [reduceMotion, visuals, progress, opacity, index]);
 
   const style = useAnimatedStyle(() => {
     const t = progress.value;
@@ -103,6 +108,7 @@ function accentGlow(accent: string): string {
 }
 
 function GatherStage({ reduceMotion }: { reduceMotion: boolean }) {
+  const visuals = useOptionalVisuals();
   const { colors } = useTheme();
   const { scale } = useFontLayout();
   // Stage shrinks as type grows (and grows back when type shrinks) — continuous.
@@ -112,16 +118,10 @@ function GatherStage({ reduceMotion }: { reduceMotion: boolean }) {
   const beaconScale = useSharedValue(reduceMotion ? 1 : 0.85);
 
   useEffect(() => {
-    if (reduceMotion) {
+    cancelAnimation(beaconScale); cancelAnimation(beaconOpacity);
+    if (reduceMotion || !visuals) {
       beaconScale.value = 1;
-      beaconOpacity.value = withRepeat(
-        withSequence(
-          withTiming(0.85, { duration: 1250 }),
-          withTiming(1, { duration: 1250 }),
-        ),
-        -1,
-        false,
-      );
+      beaconOpacity.value = 1;
       return;
     }
     // Call 400–900ms, then after settle (~2.2s) slow breath — no scatter loop.
@@ -147,7 +147,8 @@ function GatherStage({ reduceMotion }: { reduceMotion: boolean }) {
       ),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reduceMotion]);
+    return () => { cancelAnimation(beaconScale); cancelAnimation(beaconOpacity); };
+  }, [reduceMotion, visuals, beaconScale, beaconOpacity]);
 
   const beaconStyle = useAnimatedStyle(() => ({
     opacity: beaconOpacity.value,

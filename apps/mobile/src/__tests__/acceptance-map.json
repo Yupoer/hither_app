@@ -1548,6 +1548,48 @@
       "acceptance": "Revocation stops new MetricKit submissions and re-enable cannot revive an old batch",
       "testFile": "diagnosticSubmissionConsent.test.ts",
       "testNamePattern": "stops the drained batch after revocation"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "Repeated lock and foreground cycles leave zero background UI timers and graphics workloads",
+      "testFile": "foregroundUiStress.test.ts",
+      "testNamePattern": "stress pauses 12 concurrent canvases"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "Concurrent shaders resume without background catch-up or multiplied clock time",
+      "testFile": "foregroundUiStress.test.ts",
+      "testNamePattern": "resumes shader time"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "Android focus loss pauses optional UI without affecting background domain work",
+      "testFile": "foregroundUiStress.test.ts",
+      "testNamePattern": "pauses Android UI on blur"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "Native map surface and display projection stop during background updates and restore camera once",
+      "testFile": "foregroundMapLifecycle.test.ts",
+      "testNamePattern": "releases the actual map subtree"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "Sheet suspension retains unsaved drafts and resumes the current close exactly once",
+      "testFile": "foregroundSheetLifecycle.test.ts",
+      "testNamePattern": "cancels mid-dismiss on lock"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "Native glass underlays release while sibling form drafts remain mounted",
+      "testFile": "foregroundSheetLifecycle.test.ts",
+      "testNamePattern": "releases native glass underlays"
     }
   ]
 }
