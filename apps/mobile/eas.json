@@ -17,6 +17,7 @@
       "node": "22.16.0",
       "distribution": "internal",
       "ios": {
+        "image": "macos-tahoe-26.5-xcode-26.6",
         "simulator": false
       },
       "channel": "preview",
@@ -40,6 +41,7 @@
     },
     "diagnostic": {
       "node": "22.16.0",
+      "ios": { "image": "macos-tahoe-26.5-xcode-26.6" },
       "distribution": "store",
       "autoIncrement": true,
       "channel": "diagnostic",
@@ -51,6 +53,7 @@
     },
     "production": {
       "node": "22.16.0",
+      "ios": { "image": "macos-tahoe-26.5-xcode-26.6" },
       "distribution": "store",
       "autoIncrement": true,
       "channel": "production",

@@ -1667,6 +1667,13 @@
       "acceptance": "OS cancellation of an active sheet drag does not commit a close or start background motion",
       "testFile": "foregroundSheetLifecycle.test.ts",
       "testNamePattern": "does not commit an OS-cancelled downward gesture"
+    },
+    {
+      "parent": 281,
+      "child": 281,
+      "acceptance": "SDK 57 uses fixed React Native and Hermes memory regression versions without advancing to SDK 58",
+      "testFile": "runtimeAlignment.test.ts",
+      "testNamePattern": "uses SDK 57 with the fixed RN and Hermes"
     }
   ]
 }

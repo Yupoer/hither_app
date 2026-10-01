@@ -100,7 +100,7 @@ export default function NativeGlassButton({
       testID={testID}
       modifiers={modifiers}
     >
-      <HStack alignment="center" modifiers={[frame({ maxWidth: Infinity, maxHeight: Infinity })]}>
+      <HStack alignment="center" spacing={0} modifiers={[frame({ maxWidth: Infinity, maxHeight: Infinity })]}>
         {systemImage ? (
           <Image
             systemName={systemImage as never}
@@ -158,7 +158,7 @@ export default function NativeGlassButton({
         >
           {label ?? accessibilityLabel}
         </Text>
-        <HStack alignment="center" modifiers={[frame({ maxWidth: Infinity, maxHeight: Infinity }), padding({ leading: 14 })]}>
+        <HStack alignment="center" spacing={0} modifiers={[frame({ maxWidth: Infinity, maxHeight: Infinity }), padding({ leading: 14 })]}>
           <Image
             systemName={systemImage as never}
             modifiers={[

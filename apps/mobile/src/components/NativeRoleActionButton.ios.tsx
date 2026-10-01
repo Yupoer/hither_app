@@ -38,7 +38,7 @@ export default function NativeRoleActionButton({
         ]}
       >
         <VStack alignment="center" spacing={10} modifiers={[padding({ all: 16 }), frame({ minWidth: 0, maxWidth: 10000, minHeight: 0, maxHeight: 10000 })]}>
-          <VStack alignment="center" modifiers={[frame({ height: 56 })]}>
+          <VStack alignment="center" spacing={0} modifiers={[frame({ height: 56 })]}>
             <Image systemName={resolvedSystemImage as never} size={42} color="#fff" />
           </VStack>
           <Text modifiers={[foregroundColor('#fff'), font({ size: 17.5, weight: 'bold' })]}>{label}</Text>

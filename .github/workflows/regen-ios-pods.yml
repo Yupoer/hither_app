@@ -8,7 +8,9 @@ on:
 
 jobs:
   pod-install:
-    runs-on: macos-15
+    runs-on: macos-26
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
     defaults:
       run:
         working-directory: apps/mobile
@@ -17,15 +19,16 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22.16.0
           cache: npm
           cache-dependency-path: apps/mobile/package-lock.json
 
       - name: Install JS deps
-        run: npm ci --legacy-peer-deps
+        run: npm ci
 
-      - name: Confirm Hermes engine + SDK 56 floor
+      - name: Confirm Xcode 26.6 + fixed SDK 57 Hermes floor
         run: |
+          xcodebuild -version | grep -q '^Xcode 26.6$'
           python3 - <<'PY'
           import json, pathlib
           pods = json.loads(pathlib.Path("ios/Podfile.properties.json").read_text())
@@ -33,9 +36,12 @@ jobs:
           assert pods.get("expo.jsEngine") == "hermes", pods
           assert pods.get("ios.deploymentTarget") == "16.4", pods
           rn = pkg["dependencies"]["react-native"]
-          assert rn.startswith("0.85."), rn
+          assert rn.startswith("0.86."), rn
           expo = pkg["dependencies"]["expo"]
-          assert "56" in expo, expo
+          assert "57" in expo, expo
+          installed_expo = json.loads(pathlib.Path("node_modules/expo/package.json").read_text())["version"]
+          expo_version = tuple(map(int, installed_expo.split(".")))
+          assert expo_version[0] == 57 and expo_version >= (57, 0, 17), installed_expo
           print("engine hermes; RN", rn, "expo", expo)
           PY
 
@@ -68,6 +74,6 @@ jobs:
       - name: Upload Podfile.lock
         uses: actions/upload-artifact@v4
         with:
-          name: podfile-lock-sdk56-hermes
+          name: podfile-lock-sdk57-hermes
           path: apps/mobile/ios/Podfile.lock
           if-no-files-found: error
