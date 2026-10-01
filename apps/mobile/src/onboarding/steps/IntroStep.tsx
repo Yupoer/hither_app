@@ -63,7 +63,7 @@ function MemberDot({
 
   useEffect(() => {
     cancelAnimation(progress); cancelAnimation(opacity);
-    if (reduceMotion || !visuals) {
+    if (reduceMotion || !visuals || progress.value === 1) {
       progress.value = 1;
       opacity.value = 1;
       return;

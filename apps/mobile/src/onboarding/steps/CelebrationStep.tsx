@@ -101,7 +101,7 @@ export default function CelebrationStep({ answers, onAnswer }: StepProps) {
   const visuals = useOptionalVisuals();
   useEffect(() => {
     cancelAnimation(pop);
-    if (!visuals) { pop.value = 1; return; }
+    if (!visuals || pop.value === 1) { pop.value = 1; return; }
     pop.value = withDelay(
       80,
       withSequence(

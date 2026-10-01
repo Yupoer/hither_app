@@ -5429,7 +5429,7 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [members, soloOverride, user?.id]);
 
   // My own subgroup, if any — gates the "invite a teammate" entry on my card.
-  const mySubgroupId = flock.find((f) => f.userId === user?.id)?.subgroupId;
+  const mySubgroupId = myScopeId;
 
   const mySoloActive = useMemo(() => {
     if (soloOverride !== null) return soloOverride;

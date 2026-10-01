@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import {
   Alert,
   StyleSheet,
@@ -25,7 +25,8 @@ import { useSession } from '../state/SessionContext';
 import { useJoinedGroups } from '../state/useJoinedGroups';
 import { getCachedMyJoinedGroups } from '../api/services/GroupService';
 import GroupLoadError from '../components/GroupLoadError';
-import Animated, { ZoomIn } from 'react-native-reanimated';
+import Animated, { cancelAnimation, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring } from 'react-native-reanimated';
+import { useOptionalVisuals } from '../state/foregroundUi';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RoleSelect'>;
 
@@ -36,6 +37,16 @@ const appVersion =
 export default function RoleSelectScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
+  const visuals = useOptionalVisuals();
+  const reducedMotion = useReducedMotion();
+  const entrance = useSharedValue(0);
+  useEffect(() => {
+    cancelAnimation(entrance);
+    if (!isFocused || !visuals || reducedMotion || entrance.value === 1) { entrance.value = 1; return; }
+    entrance.value = withSpring(1, { duration: 800, dampingRatio: 0.85 });
+    return () => cancelAnimation(entrance);
+  }, [entrance, isFocused, visuals, reducedMotion]);
+  const entranceStyle = useAnimatedStyle(() => ({ opacity: entrance.value, transform: [{ scale: entrance.value }] }));
   const { colors } = useTheme();
   const { t } = useTranslation();
   const accent = colors.accent;
@@ -117,7 +128,7 @@ export default function RoleSelectScreen({ navigation }: Props) {
           { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 32 },
         ]}
       >
-        <Animated.View entering={ZoomIn.duration(800).springify()} style={styles.headerArea}>
+        <Animated.View style={[styles.headerArea, entranceStyle]}>
           <CrookIcon size={96} color={accent} glow style={styles.logo} />
           <Text style={styles.title}>Hither</Text>
         </Animated.View>

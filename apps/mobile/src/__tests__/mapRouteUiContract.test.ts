@@ -31,7 +31,7 @@ describe('MapKit route UI contract', () => {
     expect(mapScreen).not.toContain('const halfPeek = peekSheetH / 2');
     expect(mapScreen).not.toContain('detents[detent] ?? detents[0]');
     expect(groupMap).toContain('// Sheet stage / detent must never re-run this effect.');
-    expect(groupMap).toContain('}, [fallbackCenter, gathering]);');
+    expect(groupMap).toContain('}, [appActive, fallbackCenter, gathering]);');
   });
 
   it('keeps gathering switch separate from completing a point', () => {
