@@ -1,6 +1,7 @@
 /**
  * NotificationService — push tokens, commands, notification preferences.
  */
+import { writeInstallationCapability } from '../installationCapabilities';
 import { supabase } from '../supabase';
 import { isDemoGroup } from '../demo';
 import type { CommandType, Coordinates, NotificationPreferences } from '../../types';
@@ -32,14 +33,17 @@ export function mapNotificationPreferences(
 export async function savePushToken(
   token: string | null,
   platform: 'ios' | 'android' = 'ios',
+  actorId?: string,
 ): Promise<void> {
   if (!token) return;
-  const uid = await requireUserId();
-  const { error } = await supabase.from('push_tokens').upsert(
-    { user_id: uid, token, platform, updated_at: new Date().toISOString() },
-    { onConflict: 'user_id,token' },
-  );
-  orThrow(error);
+  const uid = actorId ?? await requireUserId();
+  await writeInstallationCapability(uid, async deviceId => {
+    const { error } = await supabase.from('push_tokens').upsert(
+      { user_id: uid, device_id: deviceId, token, platform, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id,token' },
+    );
+    orThrow(error);
+  });
 }
 
 export async function sendCommand(

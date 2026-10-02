@@ -100,8 +100,15 @@ $allowList = @()
 if ($current.uri_allow_list) {
   $allowList += ([string]$current.uri_allow_list -split "[,`r`n]+" | Where-Object { $_.Trim() })
 }
-$allowList += 'hither://auth/callback'
-$allowList += 'hither://auth/recovery'
+$authOrigin = Require-EnvironmentValue 'EXPO_PUBLIC_AUTH_CALLBACK_ORIGIN'
+$authUri = [uri]$authOrigin
+if ($authUri.Scheme -ne 'https' -or $authUri.AbsolutePath -ne '/' -or $authUri.Query -or $authUri.Fragment -or $authUri.UserInfo) {
+  throw 'Auth callback origin must be an HTTPS origin.'
+}
+$authOrigin = $authUri.GetLeftPart([System.UriPartial]::Authority)
+$allowList = @($allowList | Where-Object { $_ -notmatch '^hither:' })
+$allowList += ($authOrigin + '/auth/callback?state=*')
+$allowList += ($authOrigin + '/auth/recovery?state=*')
 $allowList = @($allowList | ForEach-Object { $_.Trim() } | Select-Object -Unique)
 
 $confirmationTemplate = @(
@@ -167,11 +174,11 @@ if ($verified.external_email_enabled -ne $true -or
   throw 'Supabase Auth read-back did not match the requested email configuration.'
 }
 $verifiedAllowList = @([string]$verified.uri_allow_list -split "[,`r`n]+" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-if ($verifiedAllowList -notcontains 'hither://auth/callback') {
-  throw 'Supabase Auth read-back is missing hither://auth/callback.'
+if ($verifiedAllowList -notcontains ($authOrigin + '/auth/callback?state=*')) {
+  throw 'Supabase Auth read-back is missing HTTPS callback.'
 }
-if ($verifiedAllowList -notcontains 'hither://auth/recovery') {
-  throw 'Supabase Auth read-back is missing hither://auth/recovery.'
+if ($verifiedAllowList -notcontains ($authOrigin + '/auth/recovery?state=*')) {
+  throw 'Supabase Auth read-back is missing HTTPS recovery.'
 }
 
 Write-Output 'Supabase Auth configuration updated and verified.'

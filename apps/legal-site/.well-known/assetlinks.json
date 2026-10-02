@@ -1,0 +1,14 @@
+[
+  {
+    "target": {
+      "sha256_cert_fingerprints": [
+        "2B:9D:A7:37:F8:F2:D8:86:F8:98:9F:4C:AA:04:73:84:94:36:83:91:D1:58:D2:D4:E9:74:E1:33:C7:BA:03:52"
+      ],
+      "namespace": "android_app",
+      "package_name": "app.hither.mobile"
+    },
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ]
+  }
+]

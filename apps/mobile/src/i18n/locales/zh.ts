@@ -1046,7 +1046,8 @@ export const zh = {
   'kml.errOversize': '檔案太大，請精簡後再匯入',
   'kml.errRead': '無法讀取這個檔案，請換一個來源或重試',
   'kml.errCancelled': '已取消選檔',
-  'kml.lockedNote': '免費版一次最多匯入 {n} 個景點，升級解鎖全部',
+  'kml.lockedNote': '免費版一次最多匯入 {n} 個景點，升級增加額度',
+  'kml.batchLimit': '每次最多匯入 100 個景點；請將超過上限的景點分成另一個檔案匯入。',
   'kml.noRoom': '行程已達免費版集合點上限',
   'kml.importN': '匯入 {n} 個景點',
   'kml.importing': '匯入中 {done}/{total}',
@@ -1082,7 +1083,6 @@ export const zh = {
   'feedback.send': '送出回報',
   'feedback.sent': '已送出，謝謝回報',
   'feedback.failed': '送出失敗，請稍後再試',
-  'feedback.screenshotNote': '送出時會附上目前畫面截圖與裝置資訊',
 
   // My teams / role entry
   'teams.title': '我的隊伍',

@@ -1,0 +1,8 @@
+/.well-known/apple-app-site-association
+  Content-Type: application/json
+/.well-known/assetlinks.json
+  Content-Type: application/json
+/auth/*
+  Referrer-Policy: no-referrer
+  Cache-Control: no-store
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src https://htqrucnjafhhvxdqslbv.supabase.co; base-uri 'none'; frame-ancestors 'none'

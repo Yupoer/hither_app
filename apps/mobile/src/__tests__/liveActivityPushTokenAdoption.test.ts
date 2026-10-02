@@ -12,6 +12,8 @@ const mockGetOrCreateLiveActivityDeviceId = jest
   .fn()
   .mockResolvedValue('device-1');
 const mockUpsertDeviceActivityToken = jest.fn().mockResolvedValue('upserted');
+const mockUpdateDeviceActivityAccent = jest.fn().mockResolvedValue(undefined);
+const mockGateRecord = jest.fn();
 
 let pushTokenListener:
   | ((event: {
@@ -35,6 +37,7 @@ jest.mock('../api/services/LiveActivityService', () => ({
     mockGetOrCreateLiveActivityDeviceId(...args),
   upsertDeviceActivityToken: (...args: unknown[]) =>
     mockUpsertDeviceActivityToken(...args),
+  updateDeviceActivityAccent: (...args: unknown[]) => mockUpdateDeviceActivityAccent(...args),
 }));
 
 jest.mock('../state/SessionContext', () => ({
@@ -49,7 +52,7 @@ jest.mock('../utils/liveActivityTokenGate', () => ({
   getSharedLiveActivityTokenGate: () => ({
     ready: async () => undefined,
     shouldRegister: () => ({ action: 'register' }),
-    recordResult: jest.fn(),
+    recordResult: (...args: unknown[]) => mockGateRecord(...args),
   }),
 }));
 
@@ -228,6 +231,9 @@ describe('useLiveActivity push-token production seam (#146 Sol r3)', () => {
     pushTokenListener = null;
     mockUpsertLiveActivitySession.mockClear();
     mockUpsertLiveActivitySession.mockResolvedValue(undefined);
+    mockUpsertDeviceActivityToken.mockReset().mockResolvedValue('upserted');
+    mockUpdateDeviceActivityAccent.mockReset().mockResolvedValue(undefined);
+    mockGateRecord.mockClear();
   });
 
   it('fires addPushTokenListener: foreign ignored, accepted persists same pair', async () => {
@@ -290,6 +296,7 @@ describe('useLiveActivity push-token production seam (#146 Sol r3)', () => {
         navigationSessionId: 'nav-1',
         destinationId: 'd1',
       }),
+      'user-1',
     );
 
     mockUpsertLiveActivitySession.mockClear();
@@ -321,6 +328,7 @@ describe('useLiveActivity push-token production seam (#146 Sol r3)', () => {
         activityId: 'act-1',
         pushToken: 'tok-rotated',
       }),
+      'user-1',
     );
 
     await act(async () => {
@@ -365,6 +373,7 @@ describe('useLiveActivity push-token production seam (#146 Sol r3)', () => {
         progress: 0.02,
         currentDistanceM: 980,
       }),
+      'user-1',
     );
     await act(async () => {
       tree.unmount();
@@ -495,5 +504,77 @@ describe('useLiveActivity push-token production seam (#146 Sol r3)', () => {
     await act(async () => {
       tree.unmount();
     });
+  });
+  it('binds enabled-state registration and failed retries to the captured account', async () => {
+    const { useLiveActivity } = require('../state/useLiveActivity') as typeof import('../state/useLiveActivity');
+    function Harness({ enabled }: { enabled: boolean }) {
+      useLiveActivity(undefined, { groupName: 'T', accentHex: '#336699' } as never, undefined, enabled);
+      return null;
+    }
+    let tree!: ReturnType<typeof create>;
+    await act(async () => { tree = create(React.createElement(Harness, { enabled: true })); });
+    expect(mockUpdateDeviceActivityAccent).toHaveBeenCalledWith('device-1', '#336699');
+    await act(async () => { pushToStartListener?.({ token: 'persistent-token' }); });
+    mockUpsertDeviceActivityToken.mockClear();
+    await act(async () => { tree.update(React.createElement(Harness, { enabled: false })); });
+    expect(mockUpsertDeviceActivityToken).toHaveBeenCalledWith('device-1', 'persistent-token', false, '#336699', 'user-1');
+    expect(mockGateRecord).toHaveBeenCalledWith(expect.objectContaining({ userId: 'user-1', enabled: false }), 'upserted');
+    mockUpsertDeviceActivityToken.mockRejectedValueOnce(new Error('registration offline'));
+    await act(async () => { tree.update(React.createElement(Harness, { enabled: true })); });
+    expect(mockGateRecord).toHaveBeenCalledWith(expect.objectContaining({ userId: 'user-1', enabled: true }), 'unknown_error');
+    await act(async () => { tree.unmount(); });
+  });
+
+  it('survives failed native observation, device lookup, registration diagnostics and scoped cleanup', async () => {
+    const { useLiveActivity, clearLiveActivities } = require('../state/useLiveActivity') as typeof import('../state/useLiveActivity');
+    const { liveActivity } = require('../native') as { liveActivity: { startPushToStartTokenObservation: jest.Mock; observeExistingActivities: jest.Mock } };
+    const { diagnostics } = require('../state/diagnostics') as { diagnostics: { write: jest.Mock } };
+    liveActivity.startPushToStartTokenObservation.mockRejectedValueOnce(new Error('native observer unavailable'));
+    liveActivity.observeExistingActivities.mockRejectedValueOnce(new Error('native activities unavailable'));
+    mockGetOrCreateLiveActivityDeviceId.mockRejectedValueOnce(new Error('device lookup offline'));
+    mockUpdateDeviceActivityAccent.mockRejectedValueOnce(new Error('accent save offline'));
+    mockUpsertDeviceActivityToken.mockRejectedValueOnce(new Error('token save offline'));
+    diagnostics.write.mockRejectedValueOnce(new Error('diagnostics offline'));
+    const session = { groupId: 'g1', navigationSessionId: 'nav-1', destinationId: 'd1', initialDistanceM: 10, travelMode: 'walk' as const };
+    let tree!: ReturnType<typeof create>;
+    await act(async () => {
+      tree = create(React.createElement(function Harness() {
+        useLiveActivity(undefined, { groupName: 'T', accentHex: '#336699' } as never, session, true);
+        return null;
+      }));
+    });
+    await act(async () => { pushToStartListener?.({ token: 'pts-offline' }); });
+    expect(mockGateRecord).toHaveBeenCalledWith(expect.objectContaining({ userId: 'user-1' }), 'unknown_error');
+    expect(diagnostics.write).toHaveBeenCalledWith(expect.objectContaining({ errorCode: 'unknown_error' }));
+    mockDeleteMyLiveActivitySessions.mockRejectedValueOnce(new Error('cleanup offline'));
+    await expect(clearLiveActivities()).resolves.toBeUndefined();
+    mockDeleteMyLiveActivitySessionsForGroups.mockRejectedValueOnce(new Error('group cleanup offline'));
+    await expect(clearLiveActivities({ groupIds: ['g1'] })).resolves.toBeUndefined();
+    await act(async () => { tree.unmount(); });
+  });
+
+  it('contains native update and session persistence failures while the activity remains operable', async () => {
+    const { useLiveActivity } = require('../state/useLiveActivity') as typeof import('../state/useLiveActivity');
+    const { liveActivity } = require('../native') as { liveActivity: { updateGroupActivity: jest.Mock; endAllGroupActivities: jest.Mock; startGroupActivity: jest.Mock } };
+    const session = { groupId: 'g1', navigationSessionId: 'nav-1', destinationId: 'd1', initialDistanceM: 100, travelMode: 'walk' as const };
+    function Harness({ active, count }: { active: boolean; count: number }) {
+      useLiveActivity(active, { groupName: 'T', distanceMeters: 90, progress: 0.1, memberCount: count } as never, session, true);
+      return null;
+    }
+    liveActivity.updateGroupActivity.mockRejectedValueOnce(new Error('native update offline'));
+    mockUpsertLiveActivitySession.mockRejectedValueOnce(new Error('session save offline'));
+    let tree!: ReturnType<typeof create>;
+    await act(async () => { tree = create(React.createElement(Harness, { active: true, count: 1 })); });
+    expect(mockUpsertLiveActivitySession).toHaveBeenCalledWith(expect.objectContaining({ activityId: 'act-start' }), 'user-1');
+    liveActivity.updateGroupActivity.mockRejectedValueOnce(new Error('native update offline'));
+    mockUpsertLiveActivitySession.mockRejectedValueOnce(new Error('session save offline'));
+    await act(async () => { tree.update(React.createElement(Harness, { active: true, count: 2 })); });
+    expect(liveActivity.updateGroupActivity).toHaveBeenCalledWith('act-start', expect.objectContaining({ memberCount: 2 }));
+    mockDeleteLiveActivitySession.mockRejectedValueOnce(new Error('session delete offline'));
+    await act(async () => { tree.update(React.createElement(Harness, { active: false, count: 2 })); });
+    await act(async () => { tree.unmount(); });
+    liveActivity.startGroupActivity.mockRejectedValueOnce(new Error('activity start offline'));
+    await act(async () => { tree = create(React.createElement(Harness, { active: true, count: 1 })); });
+    await act(async () => { tree.unmount(); });
   });
 });

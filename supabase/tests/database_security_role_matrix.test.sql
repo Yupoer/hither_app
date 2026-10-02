@@ -152,8 +152,8 @@ select is(
       and tablename = 'objects'
       and policyname = 'feedback screenshots: upload own'
       and cmd = 'INSERT'),
-  1,
-  'feedback storage keeps its owner-scoped INSERT policy'
+  0,
+  'text-only feedback has no client screenshot INSERT policy'
 );
 select is(
   (select count(*)::int from pg_policies

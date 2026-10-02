@@ -1,0 +1,19 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": [
+          "5LBPG5TUKP.app.hither.mobile"
+        ],
+        "components": [
+          {
+            "/": "/auth/callback"
+          },
+          {
+            "/": "/auth/recovery"
+          }
+        ]
+      }
+    ]
+  }
+}

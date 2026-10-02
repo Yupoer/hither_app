@@ -64,6 +64,7 @@ describe('supabase wiring', () => {
           autoRefreshToken: true,
           persistSession: true,
           detectSessionInUrl: false,
+            flowType: 'pkce',
         },
       }),
     );

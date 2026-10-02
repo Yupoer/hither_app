@@ -1,3 +1,5 @@
+jest.mock('../api/installationCapabilities', () => ({ changeAuthSession: (operation: () => Promise<unknown>) => operation(), resumeInstallationCapabilities: jest.fn() }));
+jest.mock('../auth/callbacks', () => ({ beginAuthCallback: jest.fn(), consumeAuthCallback: jest.fn(), cancelAuthCallback: jest.fn() }));
 const mockGetGoogleAuthCredentials = jest.fn();
 const mockGetGoogleIdToken = jest.fn();
 const mockSignInWithIdToken = jest.fn();

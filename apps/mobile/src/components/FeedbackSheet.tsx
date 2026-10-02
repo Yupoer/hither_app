@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -9,12 +8,11 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import Constants from 'expo-constants';
 import SettingsChildSheet from '../screens/MapScreen/components/SettingsChildSheet';
 import { useTranslation, type TranslationKey } from '../i18n';
 import { useTheme } from '../state/PreferencesContext';
 import { glass, accentMix } from '../glass';
-import { supabase } from '../api/supabase';
+import { submitFeedback } from '../api/feedback';
 import { logEvent, logError } from '../utils/activityLog';
 import { runUiAction } from '../utils/uiAction';
 
@@ -31,22 +29,13 @@ const CATEGORIES: { key: Category; label: TranslationKey }[] = [
   { key: 'other', label: 'feedback.cat_other' },
 ];
 
-/**
- * Report-a-problem form, opened from the Settings overlay. The screenshot (if
- * any) is captured BEFORE this sheet opens (so it shows the actual screen, not
- * the feedback form) and handed in as `screenshotUri`.
- *
- * Upload/insert failures degrade gracefully: a failed screenshot upload just
- * sends the report without one, never blocking the report itself.
- */
+/** Text-only feedback form, opened from Settings. */
 export default function FeedbackSheet({
   visible,
   onClose,
-  screenshotUri,
 }: {
   visible: boolean;
   onClose: () => void;
-  screenshotUri: string | null;
 }) {
   const { t } = useTranslation();
   const { colors } = useTheme();
@@ -83,21 +72,6 @@ export default function FeedbackSheet({
     onClose();
   }
 
-  async function uploadScreenshot(userId: string): Promise<string | null> {
-    if (!screenshotUri) return null;
-    try {
-      const bytes = await fetch(screenshotUri).then((r) => r.arrayBuffer());
-      const path = `${userId}/${Date.now()}.jpg`;
-      const { error } = await supabase.storage
-        .from('feedback-screenshots')
-        .upload(path, bytes, { contentType: 'image/jpeg' });
-      if (error) return null;
-      return path;
-    } catch {
-      return null;
-    }
-  }
-
   async function submit() {
     if (!description.trim() || status === 'sending') return;
     await runUiAction(
@@ -106,26 +80,7 @@ export default function FeedbackSheet({
         setStatus('sending');
         logEvent('feedback_submit', { category });
         try {
-          const { data } = await supabase.auth.getSession();
-          if (!token.isCurrent()) return;
-          const userId = data.session?.user?.id;
-          if (!userId) throw new Error('no session');
-          const screenshotPath = await uploadScreenshot(userId);
-          if (!token.isCurrent()) return;
-          const { error } = await supabase.from('feedback_reports').insert({
-            user_id: userId,
-            context_tag: category,
-            description: description.trim(),
-            screenshot_path: screenshotPath,
-            // Device metadata only — no tokens, coords, or raw stacks.
-            device: {
-              os: Platform.OS,
-              osVersion: Platform.Version,
-              appVersion:
-                Constants.nativeApplicationVersion ?? Constants.expoConfig?.version ?? null,
-            },
-          });
-          if (error) throw error;
+          await submitFeedback(category, description);
           if (!token.isCurrent()) return;
           logEvent('feedback_submit_ok', { category });
           setStatus('sent');
@@ -193,10 +148,10 @@ export default function FeedbackSheet({
           placeholderTextColor={glass.textTertiary}
           keyboardAppearance="dark"
           multiline
+          maxLength={2000}
           numberOfLines={5}
           textAlignVertical="top"
         />
-        <Text style={styles.hint}>{t('feedback.screenshotNote')}</Text>
 
         {status === 'error' && <Text style={styles.error}>{t('feedback.failed')}</Text>}
         {status === 'sent' && <Text style={styles.success}>{t('feedback.sent')}</Text>}
@@ -245,7 +200,6 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: glass.hairline,
   },
-  hint: { fontSize: 12, color: glass.textTertiary },
   error: { fontSize: 13, color: glass.danger },
   success: { fontSize: 13, color: glass.ok },
   cta: {

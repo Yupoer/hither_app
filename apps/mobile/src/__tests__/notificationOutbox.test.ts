@@ -1,3 +1,4 @@
+jest.mock('../api/installationCapabilities', () => ({ writeInstallationCapability: jest.fn() }));
 jest.mock('../api/supabase', () => ({ supabase: {} }));
 jest.mock('../api/demo', () => ({ isDemoGroup: () => false }));
 jest.mock('../api/services/_helpers', () => ({ requireLocalActorId: jest.fn(async () => 'actor') }));

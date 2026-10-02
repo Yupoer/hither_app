@@ -1,3 +1,5 @@
+jest.mock('../api/installationCapabilities', () => ({ changeAuthSession: (operation: () => Promise<unknown>) => operation(), resumeInstallationCapabilities: jest.fn() }));
+jest.mock('../auth/callbacks', () => ({ beginAuthCallback: jest.fn(async () => 'https://hither-legal.pages.dev/auth/callback?state=test'), cancelAuthCallback: jest.fn(), consumeAuthCallback: jest.fn() }));
 const mockRpc = jest.fn();
 const mockSignOut = jest.fn();
 const mockSignInAnonymously = jest.fn();
@@ -18,6 +20,7 @@ const mockUpdateNickname = jest.fn();
 const mockUpdateProfile = jest.fn();
 const mockGetGoogleIdToken = jest.fn();
 const mockGetGoogleAuthCredentials = jest.fn();
+let mockUsesNativeGoogle = true;
 
 jest.mock('react', () => ({ useCallback: (fn: unknown) => fn }));
 jest.mock('react-native', () => ({ Platform: { OS: 'ios' } }));
@@ -51,7 +54,7 @@ jest.mock('../api/client', () => ({
 jest.mock('../state/googleSignIn', () => ({
   getGoogleIdToken: (...args: unknown[]) => mockGetGoogleIdToken(...args),
   getGoogleAuthCredentials: (...args: unknown[]) => mockGetGoogleAuthCredentials(...args),
-  usesNativeGoogleSignIn: true,
+  get usesNativeGoogleSignIn() { return mockUsesNativeGoogle; },
 }));
 jest.mock('../api/supabase', () => ({
   supabase: {
@@ -78,6 +81,7 @@ jest.mock('../api/supabase', () => ({
 
 import { useAuthFlow } from '../state/useAuthFlow';
 import { GOOGLE_AUTH_STAGE_TIMEOUT_MS } from '../state/useAuthFlow';
+import * as callbackFlow from '../auth/callbacks';
 
 function invokingSetUser() {
   const seed = { id: 'u1', name: 'Ada', email: 'ada@example.test', provider: 'anonymous' as const };
@@ -105,6 +109,7 @@ function makeFlow(overrides: Partial<Parameters<typeof useAuthFlow>[0]> = {}) {
 describe('useAuthFlow deleteAccount and signOut', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUsesNativeGoogle = true;
     mockRpc.mockResolvedValue({ error: null });
     mockSignOut.mockResolvedValue({ error: null });
     mockMaybeSingle.mockResolvedValue({ data: { nickname: 'Ada' } });
@@ -114,6 +119,20 @@ describe('useAuthFlow deleteAccount and signOut', () => {
     mockGetGoogleIdToken.mockResolvedValue('google-id-token');
     mockGetUser.mockResolvedValue({ data: { user: { is_anonymous: false } } });
     mockUpdateUser.mockResolvedValue({ error: null });
+  });
+
+  it.each(['signInWithGoogle', 'linkWithGoogle'] as const)('uses the installed SDK HTTPS callback option for hosted %s', async method => {
+    mockUsesNativeGoogle = false;
+    mockGetGoogleAuthCredentials.mockRejectedValueOnce({ code: 'google_native_unavailable' });
+    mockSignInWithOAuth.mockResolvedValue({ data: { url: 'https://provider.test/authorize' }, error: null });
+    mockLinkIdentity.mockResolvedValue({ data: { url: 'https://provider.test/authorize' }, error: null });
+    mockOpenAuth.mockResolvedValue({ type: 'success', url: 'https://hither-legal.pages.dev/auth/callback?state=test&code=pkce-code' });
+    jest.mocked(callbackFlow.consumeAuthCallback).mockResolvedValue({ user: { id: 'u1', email: 'linked@example.test' }, recovery: false } as never);
+    const flow = makeFlow();
+    expect(await flow[method]()).toMatchObject({ id: 'u1' });
+    expect(mockOpenAuth).toHaveBeenCalledWith('https://provider.test/authorize',
+      'https://hither-legal.pages.dev/auth/callback?state=test', { preferUniversalLinks: true });
+    expect(callbackFlow.consumeAuthCallback).toHaveBeenCalledWith(expect.stringContaining('code=pkce-code'));
   });
 
   it('deleteAccount always RPCs then local-signs-out registered users', async () => {
@@ -153,7 +172,7 @@ describe('useAuthFlow deleteAccount and signOut', () => {
     const flow = makeFlow({ isAnonymous: false });
     await flow.signOut();
     expect(mockRpc).not.toHaveBeenCalled();
-    expect(mockSignOut).toHaveBeenCalledWith();
+    expect(mockSignOut).toHaveBeenCalledWith({ scope: 'local' });
   });
 
   it('anonymous signOut still permanently deletes via the same RPC', async () => {

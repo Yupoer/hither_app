@@ -15,8 +15,7 @@ export type PushPlatform = 'ios' | 'android';
  * send-push can fan out to APNs or FCM. Safe everywhere: null token is a no-op.
  *
  * Keyed on the user id so a fresh sign-in re-registers; one-shot per user.
- * Logout does not delete server tokens — dead tokens are pruned by provider
- * responses in send-push.
+ * Logout revokes this installation before its authenticated session is removed.
  */
 export function usePushRegistration(): void {
   const { user } = useSession();
@@ -31,7 +30,7 @@ export function usePushRegistration(): void {
         const token = await notifications.getDevicePushToken();
         const platform: PushPlatform =
           Platform.OS === 'android' ? 'android' : 'ios';
-        if (active) await savePushToken(token, platform);
+        if (active) await savePushToken(token, platform, userId);
       } catch {
         // Best-effort: remote push simply stays unavailable for this session.
       }

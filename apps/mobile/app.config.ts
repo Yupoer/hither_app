@@ -28,6 +28,17 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   const privacyUrl = process.env.EXPO_PUBLIC_PRIVACY_URL ?? '';
   const termsUrl = process.env.EXPO_PUBLIC_TERMS_URL ?? '';
   const isProduction = process.env.EAS_BUILD_PROFILE === 'production';
+  const authOrigin = process.env.EXPO_PUBLIC_AUTH_CALLBACK_ORIGIN ?? 'https://hither-legal.pages.dev';
+  let authHost: string | undefined;
+  if (authOrigin) {
+    const parsed = new URL(authOrigin);
+    if (parsed.protocol !== 'https:' || parsed.pathname !== '/' || parsed.port
+      || parsed.username || parsed.password || parsed.search || parsed.hash) {
+      throw new Error('[app.config] EXPO_PUBLIC_AUTH_CALLBACK_ORIGIN must be an HTTPS origin.');
+    }
+    authHost = parsed.hostname;
+  }
+  if (isProduction && !authHost) throw new Error('[app.config] HTTPS auth callback origin is required.');
   const isConfiguredLegalUrl = (value: string): boolean => {
     try {
       const parsed = new URL(value);
@@ -85,6 +96,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     plugins,
     ios: {
       ...baseIos,
+      associatedDomains: [...(baseIos.associatedDomains ?? []), ...(authHost ? [`applinks:${authHost}`] : [])],
       infoPlist: {
         ...baseInfoPlist,
         CFBundleURLTypes: urlTypes,
@@ -110,6 +122,12 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       ...config.android,
       package: expoBase.android?.package ?? 'app.hither.mobile',
       googleServicesFile,
+      intentFilters: [
+        ...(config.android?.intentFilters ?? expoBase.android?.intentFilters ?? []),
+        ...(authHost ? [{ action: 'VIEW', autoVerify: true,
+          category: ['BROWSABLE', 'DEFAULT'],
+          data: [{ scheme: 'https', host: authHost, pathPrefix: '/auth/' }] }] : []),
+      ],
       config: {
         ...expoBase.android?.config,
         ...config.android?.config,
