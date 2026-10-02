@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import * as WebBrowser from 'expo-web-browser';
-import { makeRedirectUri } from 'expo-auth-session';
-import * as QueryParams from 'expo-auth-session/build/QueryParams';
+import { beginAuthCallback, consumeAuthCallback, cancelAuthCallback } from '../auth/callbacks';
+import { changeAuthSession, resumeInstallationCapabilities } from '../api/installationCapabilities';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Crypto from 'expo-crypto';
 import { supabase } from '../api/supabase';
@@ -29,7 +29,6 @@ import {
 } from './googleSignIn';
 import type { GoogleAuthCredentials } from './googleSignInTypes';
 
-const AUTH_CALLBACK_URL = 'hither://auth/callback';
 // Keep the shared 15s UI action timeout as the final safety net, but report
 // which Google stage stalled first so a token/profile issue is not shown as a
 // generic connectivity error.
@@ -205,7 +204,7 @@ export function useAuthFlow({
   const signIn = useCallback(
     async ({ name }: { name: string; email?: string }): Promise<User> => {
       const nickname = name.trim();
-      const { data, error } = await supabase.auth.signInAnonymously();
+      const { data, error } = await changeAuthSession(() => supabase.auth.signInAnonymously());
       if (error) throw toAuthFlowError(error, '匿名登入失敗');
       if (!data.user) throw new AuthFlowError('匿名登入失敗', 'auth_user_missing');
       const userId = data.user.id;
@@ -214,6 +213,7 @@ export function useAuthFlow({
         .upsert({ id: userId, nickname }, { onConflict: 'id' });
       if (profileError) throw toAuthFlowError(profileError, 'Unable to save your profile.');
       const nextUser: User = { id: userId, name: nickname, email: '' };
+      resumeInstallationCapabilities();
       setUser(nextUser);
       setIsAnonymous(true);
       return nextUser;
@@ -234,9 +234,9 @@ export function useAuthFlow({
         let data: { user?: SupabaseAuthUser | null } | null | undefined;
         let error: unknown;
         try {
-          const exchange = supabase.auth.signInWithIdToken(
+          const exchange = changeAuthSession(() => supabase.auth.signInWithIdToken(
             googleTokenCredentials(credentials),
-          );
+          ));
           ({ data, error } = await withGoogleStageTimeout(exchange, 'token_exchange'));
         } catch (exchangeError) {
           throw toGoogleStageError(exchangeError, 'token_exchange');
@@ -258,10 +258,7 @@ export function useAuthFlow({
         // Supabase project host, which is what caused the misleading system
         // prompt and the redirect_uri_mismatch screen.
         if (!usesNativeGoogleSignIn && (error as { code?: string }).code === 'google_native_unavailable') {
-          const redirectTo = makeRedirectUri({
-            scheme: 'hither',
-            path: 'auth/callback',
-          });
+          const redirectTo = await beginAuthCallback('oauth');
           const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
             provider: 'google',
             options: {
@@ -273,23 +270,12 @@ export function useAuthFlow({
           if (oauthError || !data?.url) {
             throw toAuthFlowError(oauthError, 'Google Sign-In failed.');
           }
-          const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
-          if (result.type !== 'success') return null;
+          const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo, { preferUniversalLinks: true });
+          if (result.type !== 'success') { await cancelAuthCallback(); return null; }
 
-          const { params, errorCode } = QueryParams.getQueryParams(result.url);
-          if (errorCode) throw new AuthFlowError(errorCode, errorCode);
-          const { access_token, refresh_token } = params;
-          if (!access_token) {
-            throw new AuthFlowError(
-              'Google Sign-In did not return credentials.',
-              'google_token_missing',
-            );
-          }
-          const session = await supabase.auth.setSession({ access_token, refresh_token });
-          if (session.error || !session.data.user) {
-            throw toAuthFlowError(session.error, 'Google Sign-In failed.');
-          }
-          authUser = session.data.user;
+          const session = await consumeAuthCallback(result.url);
+          if (!session?.user) throw new AuthFlowError('Google callback was rejected.', 'auth_callback_rejected');
+          authUser = session.user;
         } else {
           throw toAuthFlowError(error, 'Google Sign-In failed.');
         }
@@ -302,6 +288,7 @@ export function useAuthFlow({
         'profile_bootstrap',
       );
       console.log('[auth][google] profile_bootstrap_completed', { hasUser: true });
+      resumeInstallationCapabilities();
       setUser(nextUser);
       setIsAnonymous(false);
       return nextUser;
@@ -326,12 +313,13 @@ export function useAuthFlow({
       if (!credential.identityToken) {
         throw new AuthFlowError('Apple did not return an identity token.', 'apple_token_missing');
       }
+      const identityToken = credential.identityToken;
 
-      const { data, error } = await supabase.auth.signInWithIdToken({
+      const { data, error } = await changeAuthSession(() => supabase.auth.signInWithIdToken({
         provider: 'apple',
-        token: credential.identityToken,
+        token: identityToken,
         nonce: rawNonce,
-      });
+      }));
       if (error || !data.user) {
         throw toAuthFlowError(error, 'Apple Sign-In failed.');
       }
@@ -380,6 +368,7 @@ export function useAuthFlow({
         avatar: displayMemberAvatar(existingRow?.avatar, authUser.id).emoji,
         preferences: normalizeAccountPreferences(existingRow?.preferences),
       };
+      resumeInstallationCapabilities();
       setUser(nextUser);
       setIsAnonymous(false);
       return nextUser;
@@ -418,10 +407,7 @@ export function useAuthFlow({
     }
 
     if (useHostedFallback) {
-      const redirectTo = makeRedirectUri({
-        scheme: 'hither',
-        path: 'auth/callback',
-      });
+      const redirectTo = await beginAuthCallback('link');
       const { data, error } = await supabase.auth.linkIdentity({
         provider: 'google',
         options: {
@@ -434,33 +420,14 @@ export function useAuthFlow({
         throw toAuthFlowError(error, 'Google linking failed.');
       }
 
-      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
-      if (result.type !== 'success') return null;
+      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo, { preferUniversalLinks: true });
+      if (result.type !== 'success') { await cancelAuthCallback(); return null; }
 
-      const { params, errorCode } = QueryParams.getQueryParams(result.url);
-      if (errorCode) throw new AuthFlowError(errorCode, errorCode);
-      if (params.code) {
-        const exchanged = await supabase.auth.exchangeCodeForSession(params.code);
-        if (exchanged.error || !exchanged.data.user) {
-          throw toAuthFlowError(exchanged.error, 'Google linking failed.');
-        }
-        authUser = exchanged.data.user;
-      } else if (params.access_token) {
-        const session = await supabase.auth.setSession({
-          access_token: params.access_token,
-          refresh_token: params.refresh_token,
-        });
-        if (session.error || !session.data.user) {
-          throw toAuthFlowError(session.error, 'Google linking failed.');
-        }
-        authUser = session.data.user;
-      } else {
-        const current = await supabase.auth.getUser();
-        if (current.error || !current.data.user) {
-          throw toAuthFlowError(current.error, 'Google linking failed.');
-        }
-        authUser = current.data.user;
+      const session = await consumeAuthCallback(result.url);
+      if (!session?.user || session.user.id !== user.id) {
+        throw new AuthFlowError('Google linking callback was rejected.', 'auth_callback_rejected');
       }
+      authUser = session.user;
     }
 
     if (!authUser) return null;
@@ -521,6 +488,7 @@ export function useAuthFlow({
         provider: stillAnon ? user.provider : 'apple',
         anonymousExpiresAt: stillAnon ? user.anonymousExpiresAt : undefined,
       };
+      resumeInstallationCapabilities();
       setUser(nextUser);
       setIsAnonymous(stillAnon);
       return nextUser;
@@ -532,10 +500,10 @@ export function useAuthFlow({
 
   const signInWithEmail = useCallback(
     async ({ email, password }: { email: string; password: string }): Promise<User> => {
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await changeAuthSession(() => supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
-      });
+      }));
       if (error || !data.user) {
         throw toAuthFlowError(error, 'Email sign-in failed.');
       }
@@ -561,6 +529,7 @@ export function useAuthFlow({
         avatar: displayMemberAvatar(row?.avatar, userId).emoji,
         preferences: normalizeAccountPreferences(row?.preferences),
       };
+      resumeInstallationCapabilities();
       setUser(nextUser);
       setIsAnonymous(false);
       return nextUser;
@@ -574,13 +543,14 @@ export function useAuthFlow({
       password: string;
     }): Promise<EmailSignUpResult> => {
       const normalizedEmail = email.trim();
-      const { data, error } = await supabase.auth.signUp({
+      const redirectTo = await beginAuthCallback('signup');
+      const { data, error } = await changeAuthSession(() => supabase.auth.signUp({
         email: normalizedEmail,
         password,
         options: {
-          emailRedirectTo: AUTH_CALLBACK_URL,
+          emailRedirectTo: redirectTo,
         },
-      });
+      }));
       if (error) throw toAuthFlowError(error, 'Email sign-up failed.');
       if (!data.user) {
         throw new AuthFlowError('Email sign-up did not return a user.', 'auth_user_missing');
@@ -599,6 +569,7 @@ export function useAuthFlow({
         email: data.user.email ?? normalizedEmail,
         provider: 'email',
       };
+      resumeInstallationCapabilities();
       setUser(nextUser);
       setIsAnonymous(false);
       return { status: 'signed_in', user: nextUser };
@@ -606,29 +577,34 @@ export function useAuthFlow({
     [setUser, setIsAnonymous],
   );
 
-  const signOut = useCallback(async () => {
+  const signOut = useCallback(() => changeAuthSession(async () => {
+    await cancelAuthCallback();
     if (isAnonymous) {
       const { error } = await supabase.rpc('delete_anonymous_account');
       orThrow(error);
-      await supabase.auth.signOut({ scope: 'local' });
+      const signedOut = await supabase.auth.signOut({ scope: 'local' });
+      orThrow(signedOut.error);
     } else {
-      await supabase.auth.signOut();
+      const signedOut = await supabase.auth.signOut({ scope: 'local' });
+      orThrow(signedOut.error);
     }
     setUser(null);
     setIsAnonymous(false);
     setIsPro(false);
     setMembershipState(null);
-  }, [isAnonymous, setUser, setIsAnonymous, setIsPro, setMembershipState]);
+  }, true, false), [isAnonymous, setUser, setIsAnonymous, setIsPro, setMembershipState]);
 
-  const deleteAccount = useCallback(async () => {
+  const deleteAccount = useCallback(() => changeAuthSession(async () => {
+    await cancelAuthCallback();
     const { error } = await supabase.rpc('delete_anonymous_account');
     orThrow(error);
-    await supabase.auth.signOut({ scope: 'local' });
+    const signedOut = await supabase.auth.signOut({ scope: 'local' });
+      orThrow(signedOut.error);
     setUser(null);
     setIsAnonymous(false);
     setIsPro(false);
     setMembershipState(null);
-  }, [setUser, setIsAnonymous, setIsPro, setMembershipState]);
+  }, true, false), [setUser, setIsAnonymous, setIsPro, setMembershipState]);
 
   const upgradeToEmailAccount = useCallback(
     async (email: string, password: string) => {

@@ -10,8 +10,7 @@ if ([string]::IsNullOrWhiteSpace($contactEmail)) {
 }
 
 $source = (Join-Path $PSScriptRoot '..\apps\legal-site' | Resolve-Path).Path
-$staging = Join-Path (Join-Path $PSScriptRoot '..\.tmp') 'legal-site-deploy'
-if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Recurse -Force }
+$staging = Join-Path (Join-Path $PSScriptRoot '..\.tmp') ('legal-site-deploy-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $staging -Force | Out-Null
 Copy-Item -Path (Join-Path $source '*') -Destination $staging -Recurse -Force
 $utf8 = New-Object System.Text.UTF8Encoding($false)
@@ -22,32 +21,28 @@ Get-ChildItem -LiteralPath $staging -Recurse -File -Filter '*.html' | ForEach-Ob
   [System.IO.File]::WriteAllText($_.FullName, $content.Replace('__CONTACT_EMAIL__', $contactEmail), $utf8)
 }
 
-$listJson = (& npx.cmd --yes wrangler@latest pages project list --json | Out-String)
-$projects = @($listJson | ConvertFrom-Json)
-$existing = $projects | Where-Object {
-  $_.name -eq $ProjectName -or $_.project_name -eq $ProjectName -or $_.'Project Name' -eq $ProjectName
-} | Select-Object -First 1
-if (-not $existing) {
-  $createdOutput = (& npx.cmd --yes wrangler@latest pages project create $ProjectName --production-branch master | Out-String)
-  $createdName = [regex]::Match($createdOutput, '(?im)(?:project name|name)\s*[:=]\s*([A-Za-z0-9_-]+)').Groups[1].Value
-  if ($createdName) { $ProjectName = $createdName }
-}
-
 $deployOutput = (& npx.cmd --yes wrangler@latest pages deploy $staging --project-name $ProjectName --branch master | Out-String)
+if ($LASTEXITCODE -ne 0) { throw 'Cloudflare deployment failed; no successful deployment was claimed.' }
 $urlMatches = [regex]::Matches($deployOutput, 'https://[A-Za-z0-9.-]+\.pages\.dev')
 if ($urlMatches.Count -eq 0) {
   throw 'Wrangler did not return the deployed pages.dev URL; no URL was guessed.'
 }
-$baseUrl = $urlMatches[$urlMatches.Count - 1].Value.TrimEnd('/')
+$deploymentUrl = $urlMatches[$urlMatches.Count - 1].Value.TrimEnd('/')
+$baseUrl = "https://$ProjectName.pages.dev"
 $readRemote = {
-  param([string]$path)
+  param([string]$path, [switch]$Json)
   $temp = [System.IO.Path]::GetTempFileName()
+  $responseHeaders = [System.IO.Path]::GetTempFileName()
   try {
-    & curl.exe --fail --silent --show-error --location --output $temp ($baseUrl + $path)
+    & curl.exe --fail --silent --show-error --dump-header $responseHeaders --output $temp ($baseUrl + $path)
     if ($LASTEXITCODE -ne 0) { throw "Legal URL check failed: $path" }
+    if ($Json -and [IO.File]::ReadAllText($responseHeaders) -notmatch '(?im)^Content-Type:\s*application/json(?:;|\s|$)') {
+      throw "Association URL is not application/json: $path"
+    }
     return [System.IO.File]::ReadAllText($temp, $utf8)
   } finally {
     Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $responseHeaders -Force -ErrorAction SilentlyContinue
   }
 }
 $privacyBody = & $readRemote '/privacy/'
@@ -62,6 +57,21 @@ if ($termsBody.Length -lt 200 -or $termsBody -notmatch '服務條款|Terms of Se
 if ($stylesBody.Length -lt 100 -or $stylesBody -notmatch 'body') {
   throw 'Legal stylesheet content verification failed.'
 }
+foreach ($path in @('/.well-known/apple-app-site-association', '/.well-known/assetlinks.json')) {
+  $local = Join-Path $staging $path.TrimStart('/')
+  if (-not (Test-Path -LiteralPath $local)) { throw "Missing association file: $path" }
+  $remote = & $readRemote $path -Json
+  $remote | ConvertFrom-Json | Out-Null
+  if ($remote.Trim() -cne [IO.File]::ReadAllText($local, $utf8).Trim()) { throw "Association readback mismatch: $path" }
+}
+foreach ($path in @('/auth/callback', '/auth/recovery', '/auth/recovery/recovery.mjs')) {
+  $remote = & $readRemote $path
+  $localPath = if ($path.EndsWith('.mjs')) { $path } else { $path + '/index.html' }
+  if ($remote.Trim() -cne [IO.File]::ReadAllText((Join-Path $staging $localPath.TrimStart('/')), $utf8).Trim()) {
+    throw "Auth page readback mismatch: $path"
+  }
+}
+Write-Output "DEPLOYMENT_URL=$deploymentUrl"
 Write-Output "LEGAL_BASE_URL=$baseUrl"
 Write-Output "EXPO_PUBLIC_PRIVACY_URL=$baseUrl/privacy/"
 Write-Output "EXPO_PUBLIC_TERMS_URL=$baseUrl/terms/"

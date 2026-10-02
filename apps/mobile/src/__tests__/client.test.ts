@@ -825,35 +825,41 @@ describe('live activity sessions', () => {
 
   it('deletes only the current activity session', async () => {
     const eqActivity = jest.fn().mockResolvedValue({ error: null });
-    const eqUser = jest.fn(() => ({ eq: eqActivity }));
+    const eqDevice = jest.fn(() => ({ eq: eqActivity }));
+    const eqUser = jest.fn(() => ({ eq: eqDevice }));
     const remove = jest.fn(() => ({ eq: eqUser }));
     mockedFrom.mockImplementation(() => ({ delete: remove }));
 
     await deleteLiveActivitySession('activity-1');
 
     expect(eqUser).toHaveBeenCalledWith('user_id', 'uid');
+    expect(eqDevice).toHaveBeenCalledWith('device_id', 'test-device-id');
     expect(eqActivity).toHaveBeenCalledWith('activity_id', 'activity-1');
   });
 
-  it('deletes all live activity sessions for the current user', async () => {
-    const eqUser = jest.fn().mockResolvedValue({ error: null });
+  it('deletes only this installation live activity sessions for the current user', async () => {
+    const eqDevice = jest.fn().mockResolvedValue({ error: null });
+    const eqUser = jest.fn(() => ({ eq: eqDevice }));
     const remove = jest.fn(() => ({ eq: eqUser }));
     mockedFrom.mockImplementation(() => ({ delete: remove }));
 
     await deleteMyLiveActivitySessions();
 
     expect(eqUser).toHaveBeenCalledWith('user_id', 'uid');
+    expect(eqDevice).toHaveBeenCalledWith('device_id', 'test-device-id');
   });
 
   it('deletes live activity sessions for selected groups', async () => {
     const inGroups = jest.fn().mockResolvedValue({ error: null });
-    const eqUser = jest.fn(() => ({ in: inGroups }));
+    const eqDevice = jest.fn(() => ({ in: inGroups }));
+    const eqUser = jest.fn(() => ({ eq: eqDevice }));
     const remove = jest.fn(() => ({ eq: eqUser }));
     mockedFrom.mockImplementation(() => ({ delete: remove }));
 
     await deleteMyLiveActivitySessionsForGroups(['g1', 'g2']);
 
     expect(eqUser).toHaveBeenCalledWith('user_id', 'uid');
+    expect(eqDevice).toHaveBeenCalledWith('device_id', 'test-device-id');
     expect(inGroups).toHaveBeenCalledWith('group_id', ['g1', 'g2']);
   });
 });

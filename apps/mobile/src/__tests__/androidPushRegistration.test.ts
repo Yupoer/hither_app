@@ -49,7 +49,7 @@ describe('android push registration', () => {
 
   it('registers platform from Platform.OS when saving the token', () => {
     expect(pushRegistrationSrc).toContain("Platform.OS === 'android' ? 'android' : 'ios'");
-    expect(pushRegistrationSrc).toMatch(/savePushToken\(\s*token\s*,\s*platform\s*\)/);
+    expect(pushRegistrationSrc).toMatch(/savePushToken\(\s*token\s*,\s*platform\s*,\s*userId\s*\)/);
   });
 
   it('NotificationService accepts ios | android platform on upsert', () => {

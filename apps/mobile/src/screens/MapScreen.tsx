@@ -342,7 +342,6 @@ import {
   setNotificationPreferences,
 } from '../api/client';
 import { supabase } from '../api/supabase';
-import { captureScreen } from 'react-native-view-shot';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { markOnboardingReplayForHome } from '../onboarding/sync';
 import { isDemoGroup } from '../api/demo';
@@ -1344,9 +1343,6 @@ export default function MapScreen({ route, navigation }: Props) {
   const [appliedMacro, setAppliedMacro] = useState<PresenceMacroKind | null>(null);
   /** Which custom quick-command slot the editor is targeting. */
   const [customSlot, setCustomSlot] = useState(0);
-  // Screenshot captured the instant the feedback entry is tapped (before the
-  // form opens over the screen), handed to the sheet as evidence.
-  const [feedbackShot, setFeedbackShot] = useState<string | null>(null);
   // Visited-waypoint history — fetched fresh each time the overlay opens.
   // Past trip-day stops the viewer never reached are merged in as 未抵達/未完成.
   const [historyGroups, setHistoryGroups] = useState<HistoryDayGroup[]>([]);
@@ -4728,7 +4724,7 @@ export default function MapScreen({ route, navigation }: Props) {
     }
   }, [groupId, destinations, stopNavigation, refresh, t, resolveCurrentNavigationSessionId]);
 
-  // Report-a-problem: grab the current screen, then swap the settings overlay
+  // Report-a-problem: swap the settings overlay
   // for the feedback form. Uses the SAME `overlay` state so the two are
   // mutually exclusive — opening feedback closes settings, so the translucent
   // panels can never stack and interleave their text.
@@ -4737,14 +4733,7 @@ export default function MapScreen({ route, navigation }: Props) {
       'map.open_feedback',
       async (token) => {
         lightTap();
-        let uri: string | null = null;
-        try {
-          uri = await captureScreen({ format: 'jpg', quality: 0.6, result: 'tmpfile' });
-        } catch {
-          uri = null;
-        }
         if (!token.isCurrent()) return;
-        setFeedbackShot(uri);
         setOverlay('feedback');
       },
       { screen: 'Map' },
@@ -8930,7 +8919,6 @@ export default function MapScreen({ route, navigation }: Props) {
       <FeedbackSheet
         visible={overlay === 'feedback'}
         onClose={() => setOverlay(null)}
-        screenshotUri={feedbackShot}
       />
       </View>
 

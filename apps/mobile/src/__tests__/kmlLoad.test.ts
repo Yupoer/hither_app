@@ -1,9 +1,19 @@
 import {
+  KML_MAX_BYTES,
   isKmzAsset,
   kmlErrorI18nKey,
   loadKmlKmzFromAsset,
   type KmlLoadIo,
 } from '../utils/kmlLoad';
+import JSZip from 'jszip';
+
+async function kmz(content: string, name = 'doc.kml'): Promise<ArrayBuffer> {
+  return new JSZip().file(name, content).generateAsync({ type: 'arraybuffer', compression: 'DEFLATE' });
+}
+
+function directoryOffset(buffer: ArrayBuffer): number {
+  return new DataView(buffer).getUint32(buffer.byteLength - 6, true);
+}
 
 function makeIo(overrides: Partial<KmlLoadIo> = {}): KmlLoadIo {
   return {
@@ -66,25 +76,79 @@ describe('loadKmlKmzFromAsset', () => {
     expect(result).toMatchObject({ kind: 'error', code: 'oversize', stage: 'pick' });
   });
 
-  it('returns oversize when KMZ expands past max after unzip', async () => {
-    const huge = `${'x'.repeat(5000)}`;
+  it('rejects KMZ declared expanded bytes before loading or inflating the archive', async () => {
+    const buffer = await kmz('x'.repeat(5000));
+    const loadZip = jest.fn(JSZip.loadAsync);
     const result = await loadKmlKmzFromAsset(
-      { uri: 'file://bomb.kmz', name: 'bomb.kmz', size: 10 },
+      { uri: 'file://bomb.kmz', name: 'bomb.kmz' },
       makeIo({
-        readBinary: async () => new Uint8Array([1, 2, 3]).buffer,
-        loadZip: async () => ({
-          files: {
-            doc: {
-              name: 'doc.kml',
-              dir: false,
-              async: async () => huge,
-            },
-          },
-        }),
+        readBinary: async () => buffer,
+        loadZip,
       }),
-      { maxBytes: 100 },
+      { maxBytes: 1000 },
     );
     expect(result).toMatchObject({ kind: 'error', code: 'oversize', stage: 'unzipKmz' });
+    expect(loadZip).not.toHaveBeenCalled();
+  });
+
+  it('rejects KMZ entry tables and compression ratios before JSZip loads them', async () => {
+    const zip = new JSZip();
+    for (let entry = 0; entry < 257; entry += 1) zip.file(`${entry}.txt`, '');
+    const manyEntries = await zip.generateAsync({ type: 'arraybuffer' });
+    const highRatio = await kmz('x'.repeat(4 * 1024 * 1024));
+    for (const buffer of [manyEntries, highRatio]) {
+      const loadZip = jest.fn(JSZip.loadAsync);
+      const result = await loadKmlKmzFromAsset({ uri: 'file://bomb.kmz' }, makeIo({
+        readBinary: async () => buffer, loadZip,
+      }));
+      expect(result).toMatchObject({ kind: 'error', code: 'oversize', stage: 'unzipKmz' });
+      expect(loadZip).not.toHaveBeenCalled();
+    }
+  });
+
+  it('rejects the aggregate declared expansion across otherwise small KMZ entries', async () => {
+    const buffer = await new JSZip().file('doc.kml', 'a'.repeat(600)).file('photo.txt', 'b'.repeat(600))
+      .generateAsync({ type: 'arraybuffer', compression: 'DEFLATE' });
+    const loadZip = jest.fn(JSZip.loadAsync);
+    const result = await loadKmlKmzFromAsset({ uri: 'file://big.kmz' }, makeIo({
+      readBinary: async () => buffer, loadZip,
+    }), { maxBytes: 1000 });
+    expect(result).toMatchObject({ kind: 'error', code: 'oversize', stage: 'unzipKmz' });
+    expect(loadZip).not.toHaveBeenCalled();
+  });
+
+  it('hard-aborts KMZ streamed expansion at 8 MiB even when declared sizes lie', async () => {
+    const buffer = await kmz('x'.repeat(32 * 1024 * 1024));
+    // The forged directory passes size and ratio checks but the DEFLATE body is huge.
+    new DataView(buffer).setUint32(directoryOffset(buffer) + 24, KML_MAX_BYTES, true);
+    let emitted = 0;
+    const loadZip: NonNullable<KmlLoadIo['loadZip']> = async (data) => {
+      const zip = await JSZip.loadAsync(data);
+      const file = zip.files['doc.kml'] as JSZip.JSZipObject & {
+        internalStream: (type: 'string') => JSZip.JSZipStreamHelper<string>;
+      };
+      const original = file.internalStream.bind(file);
+      file.internalStream = (type) => original(type).on('data', (chunk) => { emitted += chunk.length; });
+      return zip;
+    };
+    const result = await loadKmlKmzFromAsset({ uri: 'file://bomb.kmz' }, makeIo({
+      readBinary: async () => buffer, loadZip,
+    }), { maxBytes: 64 * 1024 * 1024 });
+    expect(result).toMatchObject({ kind: 'error', code: 'oversize', stage: 'unzipKmz' });
+    expect(emitted).toBeGreaterThan(KML_MAX_BYTES);
+    expect(emitted).toBeLessThanOrEqual(KML_MAX_BYTES + 16 * 1024);
+  });
+
+  it('rejects a lying entry count before allocating JSZip entries', async () => {
+    const buffer = await kmz(GOOD_KML);
+    new DataView(buffer).setUint16(buffer.byteLength - 14, 0, true);
+    new DataView(buffer).setUint16(buffer.byteLength - 12, 0, true);
+    const loadZip = jest.fn(JSZip.loadAsync);
+    const result = await loadKmlKmzFromAsset({ uri: 'file://broken.kmz' }, makeIo({
+      readBinary: async () => buffer, loadZip,
+    }));
+    expect(result).toMatchObject({ kind: 'error', code: 'bad_zip' });
+    expect(loadZip).not.toHaveBeenCalled();
   });
 
   it('returns bad_zip when KMZ unzip fails', async () => {
@@ -101,37 +165,35 @@ describe('loadKmlKmzFromAsset', () => {
   });
 
   it('returns no_kml_in_kmz when zip has no kml entry', async () => {
+    const buffer = await kmz('hi', 'readme.txt');
     const result = await loadKmlKmzFromAsset(
       { uri: 'file://x.kmz', name: 'x.kmz' },
       makeIo({
-        readBinary: async () => new Uint8Array([1, 2, 3]).buffer,
-        loadZip: async () => ({
-          files: {
-            a: { name: 'readme.txt', dir: false, async: async () => 'hi' },
-          },
-        }),
+        readBinary: async () => buffer,
+        loadZip: JSZip.loadAsync,
       }),
     );
     expect(result).toMatchObject({ kind: 'error', code: 'no_kml_in_kmz' });
   });
 
   it('parses KML inside KMZ', async () => {
+    const buffer = await kmz(GOOD_KML);
     const result = await loadKmlKmzFromAsset(
       { uri: 'file://x.kmz', name: 'x.kmz' },
       makeIo({
-        readBinary: async () => new Uint8Array([1, 2, 3]).buffer,
-        loadZip: async () => ({
-          files: {
-            doc: {
-              name: 'doc.kml',
-              dir: false,
-              async: async () => GOOD_KML,
-            },
-          },
-        }),
+        readBinary: async () => buffer,
       }),
     );
     expect(result.kind).toBe('preview');
+  });
+
+  it('parses stored KMZ Unicode KML without a DEFLATE worker', async () => {
+    const buffer = await new JSZip().file('doc.kml', GOOD_KML.replace('<name>A', '<name>路線🍁'))
+      .generateAsync({ type: 'arraybuffer', compression: 'STORE' });
+    const result = await loadKmlKmzFromAsset({ uri: 'file://stored.kmz' }, makeIo({
+      readBinary: async () => buffer,
+    }));
+    expect(result).toMatchObject({ kind: 'preview', items: [{ name: '路線🍁' }] });
   });
 
   it('returns no_points / invalid_coords for empty placemarks', async () => {

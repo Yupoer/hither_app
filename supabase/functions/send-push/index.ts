@@ -5,7 +5,7 @@
 // Live Activity / push-to-start remain iOS/APNs only.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { secureEqual } from "./auth.ts";
+import { commandSenderIsAuthorized, secureEqual } from "./auth.ts";
 import { isExpiredPush } from "./deadline.ts";
 import {
   providerToken,
@@ -318,6 +318,9 @@ Deno.serve(async (req) => {
     const memberByUser = new Map(members.map((member) => [member.user_id, member]));
     const sender = memberByUser.get(payload.sender_id);
     if (!sender) return json({ error: "sender is not a group member" }, 403);
+    if (!commandSenderIsAuthorized(payload, sender.role)) {
+      return json({ error: "sender is not authorized for command" }, 403);
+    }
 
     payload = await deliverWithSenderFallback(
       payload,

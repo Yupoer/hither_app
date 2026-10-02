@@ -137,7 +137,8 @@ describe('Tickets 7-8 server ledger and verification contract', () => {
 
   it('validates Apple JWS chain and all entitlement binding fields', () => {
     expect(storekit).toContain("compactVerify");
-    expect(storekit).toContain('X509ChainBuilder');
+    expect(storekit).toContain('1.2.840.113635.100.6.11.1');
+    expect(storekit).toContain('1.2.840.113635.100.6.2.1');
     expect(storekit).toContain('APPLE_ROOT_CERT_SHA256');
     for (const field of [
       'bundle_mismatch',
