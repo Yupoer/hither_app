@@ -64,9 +64,9 @@ foreach ($path in @('/.well-known/apple-app-site-association', '/.well-known/ass
   $remote | ConvertFrom-Json | Out-Null
   if ($remote.Trim() -cne [IO.File]::ReadAllText($local, $utf8).Trim()) { throw "Association readback mismatch: $path" }
 }
-foreach ($path in @('/auth/callback', '/auth/recovery', '/auth/recovery/recovery.mjs')) {
+foreach ($path in @('/auth/callback/', '/auth/recovery/', '/auth/recovery/recovery.mjs')) {
   $remote = & $readRemote $path
-  $localPath = if ($path.EndsWith('.mjs')) { $path } else { $path + '/index.html' }
+  $localPath = if ($path.EndsWith('.mjs')) { $path } else { $path + 'index.html' }
   if ($remote.Trim() -cne [IO.File]::ReadAllText((Join-Path $staging $localPath.TrimStart('/')), $utf8).Trim()) {
     throw "Auth page readback mismatch: $path"
   }

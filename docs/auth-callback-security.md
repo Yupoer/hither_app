@@ -1,9 +1,10 @@
 # HTTPS authentication and installation revocation
 
-The controlled default origin is `https://hither-legal.pages.dev`. The local
-Cloudflare Pages cache names project `hither-legal`; on 2026-10-02 a live HTTPS
-GET returned the same Hither legal landing page as `apps/legal-site/index.html`.
-This establishes the existing origin, not deployment of these changes.
+The controlled origin is `https://hither-legal.pages.dev`, served by the existing
+Cloudflare Pages project `hither-legal`. Production deployment
+`7aa769ef-8d68-4f38-b06b-78b83489aaa1` on 2026-10-02 serves the associations and
+recovery pages from commit `db81bbce84db0de2daac0df5bd6925778a439ccd`.
+The existing privacy and terms content was preserved byte-for-byte.
 
 The HTTPS browser fallback preserves recovery for older binaries that lack
 associated domains. Both callback and recovery pages accept only an implicit
@@ -54,17 +55,31 @@ Before releasing a compatible binary:
    Google login/linking on real devices, including cold launch. This cannot be
    completed by an OTA update to a binary lacking those associations.
 
-At inspection time, both association URLs returned the landing HTML rather than
-JSON. The Cloudflare CLI's stored session is expired; connector tools disappeared
-during deployment preparation. These changes have **not** been deployed, and
-production callback delivery is not yet verified. Supabase redirect changes
-remain unapplied until the public HTTPS files have been verified.
+Production readback on 2026-10-02 verified both association URLs as HTTP 200
+`application/json`, with exact source contents. The canonical callback/recovery
+pages and recovery module return HTTP 200 with the expected CSP, no-store and
+no-referrer headers. Bare callback/recovery paths return HTTP 308 to their
+canonical trailing-slash pages and preserve the state query.
+
+After those checks, Supabase Auth was changed to the HTTPS site URL above and
+the two HTTPS state-bearing redirects. All 241 unrelated Auth/SMTP/OAuth fields
+were compared and remained unchanged. Invalid-token verification requests
+confirmed that `hither://auth/recovery` and the former
+`exp://192.168.0.191:8081` redirect fall back to HTTPS, while an allowed HTTPS
+recovery redirect preserves its state. Supabase still accepts a loopback
+`exp://127.0.0.1:8081` redirect; this is not an assertion that every local URL is
+blocked. The mobile handler independently requires the exact HTTPS origin and
+pending state. No emails were sent. This proves
+hosting and server configuration; native link delivery still requires the
+compatible binary and real-device validation described above.
 
 `20261002061707_revoke_installation_capabilities.sql` adds installation IDs to
 normal push and per-activity tokens. Logout/account transitions wait for in-flight
 registration writes, block queued writes, and revoke the current installation
-atomically while the old session is still available. Legacy push/session rows are
-matched against this device's native token/activity IDs. Other accounts and
+atomically while the old session is still available. Unbound legacy push rows
+were revoked during migration; the upgraded app registers its installation
+again. Legacy activity sessions are matched by this device's native activity IDs.
+Other accounts and
 other installations remain intact. A database transaction lock and revoked
 session record prevent late registration with the old session. Failed revocation
 throws and leaves auth available for an explicit retry. Successful signout is
