@@ -11,8 +11,8 @@ import React, {
 } from 'react';
 import { AppState, Linking } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
-import { makeRedirectUri } from 'expo-auth-session';
-import * as QueryParams from 'expo-auth-session/build/QueryParams';
+import { beginAuthCallback, consumeAuthCallback } from '../auth/callbacks';
+import { resumeInstallationCapabilities } from '../api/installationCapabilities';
 import { supabase } from '../api/supabase';
 import {
   updateNickname as updateNicknameApi,
@@ -64,8 +64,6 @@ import {
 // Dismisses a leftover auth browser tab if one is still open on launch.
 WebBrowser.maybeCompleteAuthSession();
 
-const AUTH_CALLBACK_URL = 'hither://auth/callback';
-const AUTH_RECOVERY_URL = 'hither://auth/recovery';
 
 /**
  * App-wide session state: who is signed in, and which group (and role)
@@ -371,6 +369,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         setPasswordRecoverySuccess(false);
       }
       if (session && (event === 'SIGNED_IN' || event === 'PASSWORD_RECOVERY')) {
+        resumeInstallationCapabilities();
         // Auth-js invokes this callback while holding an internal lock. Defer
         // all Supabase/profile reads until the callback has returned.
         if (premiumUserIdRef.current && premiumUserIdRef.current !== session.user.id) {
@@ -401,25 +400,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
     const handleAuthUrl = async (url: string) => {
       try {
-        const { params, errorCode } = QueryParams.getQueryParams(url);
-        if (errorCode) return;
-        let hasSession = false;
-        if (params.code) {
-          const result = await supabase.auth.exchangeCodeForSession(params.code);
-          if (result.error) throw result.error;
-          hasSession = Boolean(result.data.session);
-        } else if (params.access_token && params.refresh_token) {
-          const result = await supabase.auth.setSession({
-            access_token: params.access_token,
-            refresh_token: params.refresh_token,
-          });
-          if (result.error) throw result.error;
-          hasSession = Boolean(result.data.session);
-        }
-        if (active && params.type === 'recovery' && hasSession) {
-          // Auth-js emits PASSWORD_RECOVERY for this URL. Keep this local
-          // guard for React Native's explicit setSession path, which cannot
-          // pass auth-js its redirect type.
+        const result = await consumeAuthCallback(url);
+        if (active && result?.recovery && result.session) {
           setIsPasswordRecovery(true);
           setPasswordRecoverySuccess(false);
         }
@@ -511,7 +493,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   const requestPasswordReset = useCallback(async (email: string) => {
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: AUTH_RECOVERY_URL,
+      redirectTo: await beginAuthCallback('recovery'),
     });
     if (error) throw toAuthFlowError(error, 'Password reset failed.');
   }, []);
@@ -533,7 +515,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     const { error } = await supabase.auth.resend({
       type: 'signup',
       email: email.trim(),
-      options: { emailRedirectTo: AUTH_CALLBACK_URL },
+      options: { emailRedirectTo: await beginAuthCallback('signup') },
     });
     if (error) throw toAuthFlowError(error, 'Confirmation email could not be sent.');
   }, []);
@@ -547,9 +529,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setLocationAccessContext(null, false);
     const previousId = premiumUserIdRef.current ?? user?.id ?? null;
     await stopBackgroundJourney().catch(() => undefined);
-    await clearLiveActivities();
     await purgeLocationOutbox();
     await signOut();
+    await clearLiveActivities();
     if (previousId) await clearPremiumProjectionCache(previousId);
     premiumUserIdRef.current = null;
     setTripEntitlement(null);

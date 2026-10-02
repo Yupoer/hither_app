@@ -20,17 +20,17 @@ const packageConfig = JSON.parse(read('apps/mobile/package.json')) as {
 describe('auth overhaul contract', () => {
   it('returns verification pending for unconfirmed email sign-up', () => {
     expect(authFlow).not.toContain("data: { nickname: trimmed }");
-    expect(authFlow).toContain('emailRedirectTo: AUTH_CALLBACK_URL');
+    expect(authFlow).toContain('emailRedirectTo: redirectTo');
     expect(authFlow).toContain("data.user.identities.length === 0");
     expect(authFlow).toContain("status: 'verification_required'");
     expect(authFlow).toContain("status: 'signed_in'");
     expect(session).toContain("type: 'signup'");
-    expect(session).toContain('hither://auth/callback');
+    expect(session).toContain("beginAuthCallback('signup')");
   });
 
   it('keeps reset and recovery inside the SessionContext boundary', () => {
     expect(session).toContain('resetPasswordForEmail');
-    expect(session).toContain('hither://auth/recovery');
+    expect(session).toContain("beginAuthCallback('recovery')");
     expect(session).toContain("event === 'PASSWORD_RECOVERY'");
     expect(session).toContain('updateUser({ password })');
     expect(session).toContain("recovery_not_active");

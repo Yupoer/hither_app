@@ -3,6 +3,60 @@
   "description": "L1 meta gate: each child acceptance maps to a real test. FULL_IMPLEMENT must append entries for the parent being delivered. Empty entries is valid only when META_PARENT=pure-chore (PR body: <!-- hither-test-meta parent: pure-chore -->). Required parent ids fail L1 if zero matching entries.",
   "entries": [
     {
+      "parent": 285, "child": 285,
+      "acceptance": "Server atomically revokes installation push capabilities without affecting other accounts or devices, rejects late registration, and permits a fresh login.",
+      "testFile": "supabase/tests/installation_capabilities.test.sql",
+      "testNamePattern": "logout revokes in one transaction|late push registration|other account retained|fresh authentication"
+    },
+    {
+      "parent": 285, "child": 285,
+      "acceptance": "Auth callbacks require an exact HTTPS route and a one-time pending PKCE transaction.",
+      "testFile": "authCallbackSecurity.test.ts",
+      "testNamePattern": "accepts a locally initiated recovery|rejects unsolicited links|rejects expired state|deduplicates simultaneous"
+    },
+    {
+      "parent": 285, "child": 285,
+      "acceptance": "Logout drains and revokes installation capabilities before losing authentication and fences late account writes.",
+      "testFile": "installationCapabilities.test.ts",
+      "testNamePattern": "drains an in-flight registration|reports revocation failure|rejects an old account registration"
+    },
+    {
+      "parent": 285, "child": 285,
+      "acceptance": "Server enforces text feedback size, rate, and retained-row limits and removes screenshot allocation.",
+      "testFile": "supabase/tests/feedback_limits.test.sql",
+      "testNamePattern": "oversized text rejected|hourly limit|retained row limit|screenshot upload policy removed"
+    },
+    {
+      "parent": 285, "child": 285,
+      "acceptance": "Promo redemption serializes concurrent distinct accounts against a single remaining use.",
+      "testFile": "supabase/tests/promo_redemption_concurrency.mjs",
+      "testNamePattern": "two simultaneous redeemers produce one success"
+    },
+    {
+      "parent": 285, "child": 285,
+      "acceptance": "Actual SQL denies removed-member reads and arrivals, unauthorized commands, exhausted promo and excessive imports.",
+      "testFile": "supabase/tests/security_group_command_import_arrival.test.sql",
+      "testNamePattern": "unauthorized|already_used|101|follower"
+    },
+    {
+      "parent": 285, "child": 285,
+      "acceptance": "StoreKit authentic fixtures pass while cryptographically valid wrong-purpose certificate chains are rejected before privileged reads.",
+      "testFile": "supabase/functions/_shared/storekit_certificate_test.ts",
+      "testNamePattern": "Deno.test"
+    },
+    {
+      "parent": 285, "child": 285,
+      "acceptance": "Feedback accepts text only through the bounded authenticated RPC.",
+      "testFile": "feedback.test.ts",
+      "testNamePattern": "submits only category and trimmed text|propagates server rejection"
+    },
+    {
+      "parent": 285, "child": 285,
+      "acceptance": "KMZ rejects excessive directories, declared sizes, compression ratios and actual streamed expansion while accepting valid archives.",
+      "testFile": "kmlLoad.test.ts",
+      "testNamePattern": "rejects KMZ declared expanded bytes|rejects KMZ entry tables and compression ratios|hard-aborts KMZ streamed expansion|rejects a lying entry count|parses KML inside KMZ"
+    },
+    {
       "parent": 282, "child": 282,
       "acceptance": "GPS enter then exit in one locked-screen batch records local arrival before ACK.",
       "testFile": "backgroundJourneyCoverage.test.ts",

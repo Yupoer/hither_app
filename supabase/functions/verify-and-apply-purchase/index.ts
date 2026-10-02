@@ -165,6 +165,12 @@ export function createPurchaseHandler(
       return json(503, { ok: false, error: 'server_configuration_missing' });
     }
 
+    const verified = await verifyJws(signedTransaction, baseConfig);
+    if (!verified.ok) {
+      outcomeLog(verified.error);
+      return json(422, { ok: false, error: verified.error });
+    }
+
     const admin = createAdmin(supabaseUrl, adminKey(env));
     const { data: tokenRow, error: tokenError } = await admin
       .from('premium_app_account_tokens')
@@ -177,11 +183,6 @@ export function createPurchaseHandler(
     }
 
     const config = { ...baseConfig, appAccountToken: tokenRow.app_account_token };
-    const verified = await verifyJws(signedTransaction, config);
-    if (!verified.ok) {
-      outcomeLog(verified.error);
-      return json(422, { ok: false, error: verified.error });
-    }
 
     const clientTransactionId = requiredString(body, 'transaction_id', 'transactionId');
     if (clientTransactionId && clientTransactionId !== verified.payload.transactionId) {

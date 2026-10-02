@@ -1,28 +1,10 @@
-import * as Crypto from 'expo-crypto';
-import * as SecureStore from 'expo-secure-store';
+import { getInstallationId, writeInstallationCapability } from '../installationCapabilities';
 import type { TravelMode } from '../../utils/geo';
 import { personalDisplayProgress, progressBucket20 } from '../../utils/journeyProgress';
 import { supabase } from '../supabase';
 import { orThrow, requireUserId } from './_helpers';
 
-const LIVE_ACTIVITY_DEVICE_ID_KEY = 'hither.live-activity-device-id';
-let deviceIdPromise: Promise<string> | null = null;
-
-export function getOrCreateLiveActivityDeviceId(): Promise<string> {
-  if (!deviceIdPromise) {
-    deviceIdPromise = (async () => {
-      const stored = await SecureStore.getItemAsync(LIVE_ACTIVITY_DEVICE_ID_KEY);
-      if (stored) return stored;
-      const created = Crypto.randomUUID();
-      await SecureStore.setItemAsync(LIVE_ACTIVITY_DEVICE_ID_KEY, created);
-      return created;
-    })().catch((error) => {
-      deviceIdPromise = null;
-      throw error;
-    });
-  }
-  return deviceIdPromise;
-}
+export const getOrCreateLiveActivityDeviceId = getInstallationId;
 
 /** Outcome of a token register for diagnostics classification (never includes the token). */
 export type LiveActivityTokenRegisterResult =
@@ -61,6 +43,11 @@ function isTokenUniqueViolation(error: { code?: string; message?: string } | nul
   );
 }
 
+export async function upsertDeviceActivityToken(deviceId: string, token: string | null, enabled: boolean, accentHex?: string, actorId?: string): Promise<LiveActivityTokenRegisterResult> {
+  const uid = actorId ?? await requireUserId();
+  return await writeInstallationCapability(uid, () => writeDeviceActivityToken(deviceId, token, enabled, accentHex)) ?? 'unknown_error';
+}
+
 /**
  * Register / rotate the push-to-start token for this user+device.
  * Conflict target is (user_id, device_id). Global unique on push_to_start_token
@@ -68,7 +55,7 @@ function isTokenUniqueViolation(error: { code?: string; message?: string } | nul
  * tokens owned by the current user (device rotation) and soft-fail foreign
  * ownership without overwriting another user.
  */
-export async function upsertDeviceActivityToken(
+async function writeDeviceActivityToken(
   deviceId: string,
   pushToStartToken: string | null,
   enabled: boolean,
@@ -184,7 +171,12 @@ export interface LiveActivitySessionInput {
   arrived?: boolean;
 }
 
-export async function upsertLiveActivitySession(
+export async function upsertLiveActivitySession(input: LiveActivitySessionInput, actorId?: string): Promise<void> {
+  const uid = actorId ?? await requireUserId();
+  await writeInstallationCapability(uid, () => writeLiveActivitySession(input));
+}
+
+async function writeLiveActivitySession(
   input: LiveActivitySessionInput,
 ): Promise<void> {
   const uid = await requireUserId();
@@ -201,6 +193,7 @@ export async function upsertLiveActivitySession(
   const { error } = await supabase.from('live_activity_sessions').upsert(
     {
       user_id: uid,
+      device_id: await getInstallationId(),
       group_id: input.groupId,
       destination_id: input.destinationId,
       activity_id: input.activityId,
@@ -224,17 +217,19 @@ export async function deleteLiveActivitySession(activityId: string): Promise<voi
     .from('live_activity_sessions')
     .delete()
     .eq('user_id', uid)
+    .eq('device_id', await getInstallationId())
     .eq('activity_id', activityId);
   orThrow(error);
 }
 
-/** Delete every live_activity_sessions row owned by the current user. */
+/** Delete only this installation's Live Activity sessions. */
 export async function deleteMyLiveActivitySessions(): Promise<void> {
   const uid = await requireUserId();
   const { error } = await supabase
     .from('live_activity_sessions')
     .delete()
-    .eq('user_id', uid);
+    .eq('user_id', uid)
+    .eq('device_id', await getInstallationId());
   orThrow(error);
 }
 
@@ -248,6 +243,7 @@ export async function deleteMyLiveActivitySessionsForGroups(
     .from('live_activity_sessions')
     .delete()
     .eq('user_id', uid)
+    .eq('device_id', await getInstallationId())
     .in('group_id', groupIds);
   orThrow(error);
 }
@@ -263,13 +259,16 @@ export async function updateLiveActivityProgress(groupId: string, destinationId:
   distanceMeters: number | null; etaSeconds: number | null; progress: number | null;
 }, accentHex?: string, sampledAtMs = Date.now()): Promise<void> {
   const uid = await requireUserId();
-  if (state.distanceMeters == null || state.progress == null) return;
-  const { error } = await supabase.from('live_activity_sessions').update({
+  const progress = state.progress;
+  if (state.distanceMeters == null || progress == null) return;
+  await writeInstallationCapability(uid, async deviceId => {
+    const { error } = await supabase.from('live_activity_sessions').update({
     current_distance_m: state.distanceMeters,
     eta_seconds: state.etaSeconds == null ? null : Math.round(state.etaSeconds),
-    last_progress_bucket: progressBucket20(state.progress),
+      last_progress_bucket: progressBucket20(progress),
     ...(accentHex ? { accent_hex: accentHex } : {}),
     updated_at: new Date(sampledAtMs).toISOString(),
-  }).eq('user_id', uid).eq('group_id', groupId).eq('destination_id', destinationId);
-  orThrow(error);
+    }).eq('user_id', uid).eq('device_id', deviceId).eq('group_id', groupId).eq('destination_id', destinationId);
+    orThrow(error);
+  });
 }

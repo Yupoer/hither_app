@@ -1071,7 +1071,6 @@ export const en: Record<keyof ZhDict, string> = {
   'feedback.send': 'Send report',
   'feedback.sent': "Sent — thanks for the report",
   'feedback.failed': "Couldn't send — try again later",
-  'feedback.screenshotNote': 'A screenshot of the current screen and device info are attached',
 
   // My teams / role entry
   'teams.title': 'My teams',

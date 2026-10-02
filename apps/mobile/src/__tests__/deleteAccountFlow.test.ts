@@ -1,3 +1,5 @@
+jest.mock('../api/installationCapabilities', () => ({ changeAuthSession: (operation: () => Promise<unknown>) => operation(), resumeInstallationCapabilities: jest.fn() }));
+jest.mock('../auth/callbacks', () => ({ beginAuthCallback: jest.fn(async () => 'https://hither-legal.pages.dev/auth/callback?state=test'), cancelAuthCallback: jest.fn(), consumeAuthCallback: jest.fn() }));
 const mockRpc = jest.fn();
 const mockSignOut = jest.fn();
 const mockSignInAnonymously = jest.fn();
@@ -153,7 +155,7 @@ describe('useAuthFlow deleteAccount and signOut', () => {
     const flow = makeFlow({ isAnonymous: false });
     await flow.signOut();
     expect(mockRpc).not.toHaveBeenCalled();
-    expect(mockSignOut).toHaveBeenCalledWith();
+    expect(mockSignOut).toHaveBeenCalledWith({ scope: 'local' });
   });
 
   it('anonymous signOut still permanently deletes via the same RPC', async () => {

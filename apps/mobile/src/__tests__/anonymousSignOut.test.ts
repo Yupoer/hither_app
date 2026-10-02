@@ -29,7 +29,7 @@ function latestDeleteAccountSql(): string {
 describe('anonymous sign-out cleanup contract', () => {
   it('deletes the anonymous account before signing out', () => {
     expect(authFlow).toContain("rpc('delete_anonymous_account')");
-    expect(authFlow).toContain('await supabase.auth.signOut()');
+    expect(authFlow).toContain("await supabase.auth.signOut({ scope: 'local' })");
   });
 
   it('exposes a server-side RPC that deletes the authenticated anonymous user', () => {

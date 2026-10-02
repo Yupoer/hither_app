@@ -290,6 +290,7 @@ describe('useLiveActivity push-token production seam (#146 Sol r3)', () => {
         navigationSessionId: 'nav-1',
         destinationId: 'd1',
       }),
+      'user-1',
     );
 
     mockUpsertLiveActivitySession.mockClear();
@@ -321,6 +322,7 @@ describe('useLiveActivity push-token production seam (#146 Sol r3)', () => {
         activityId: 'act-1',
         pushToken: 'tok-rotated',
       }),
+      'user-1',
     );
 
     await act(async () => {
@@ -365,6 +367,7 @@ describe('useLiveActivity push-token production seam (#146 Sol r3)', () => {
         progress: 0.02,
         currentDistanceM: 980,
       }),
+      'user-1',
     );
     await act(async () => {
       tree.unmount();

@@ -1082,7 +1082,6 @@ export const zh = {
   'feedback.send': '送出回報',
   'feedback.sent': '已送出，謝謝回報',
   'feedback.failed': '送出失敗，請稍後再試',
-  'feedback.screenshotNote': '送出時會附上目前畫面截圖與裝置資訊',
 
   // My teams / role entry
   'teams.title': '我的隊伍',

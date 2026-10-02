@@ -28,8 +28,9 @@ const xcodeProject = readFileSync(
 
 describe('production mobile configuration', () => {
   it('uses the exact standalone OAuth callback for sign-in and identity linking', () => {
-    expect(authFlow.match(/makeRedirectUri\(\{\s*scheme: 'hither',\s*path: 'auth\/callback'/g))
-      .toHaveLength(2);
+    expect(authFlow).toContain("beginAuthCallback('oauth')");
+    expect(authFlow).toContain("beginAuthCallback('link')");
+    expect(authFlow).not.toContain('hither://auth/callback');
   });
 
   it('keeps Realtime local notification delivery while the app is alive', () => {

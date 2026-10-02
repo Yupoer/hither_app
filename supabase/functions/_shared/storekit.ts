@@ -96,11 +96,6 @@ function decodeBase64Url(input: string): Uint8Array {
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 }
 
-function decodeBase64(input: string): Uint8Array {
-  const binary = atob(input);
-  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
-}
-
 function decodeJson<T>(part: string): T {
   return JSON.parse(new TextDecoder().decode(decodeBase64Url(part))) as T;
 }
@@ -119,25 +114,50 @@ export async function sha256Hex(value: string): Promise<string> {
   return hex(new Uint8Array(digest));
 }
 
-async function verifyAppleCertificateChain(x5c: string[], rootFingerprint: string): Promise<void> {
-  if (x5c.length < 2 || !rootFingerprint.trim()) {
+export async function verifyAppleCertificateChain(
+  x5c: string[], rootFingerprint: string, effectiveDate: Date,
+): Promise<void> {
+  if (x5c.length !== 3 || !rootFingerprint.trim() || !Number.isFinite(effectiveDate.getTime())) {
     throw new Error('apple_certificate_chain_not_configured');
   }
 
-  // `jose` verifies the JWS with the leaf key. X509ChainBuilder verifies the
-  // certificate signatures and the pinned final Apple root prevents a foreign
-  // chain from being accepted. Both checks are required.
+  // Apple's offline SignedDataVerifier policy, with the existing deployment root pin:
+  // https://github.com/apple/app-store-server-library-node/blob/main/jws_verification.ts
   await import('npm:reflect-metadata');
-  const { X509Certificate, X509ChainBuilder } = await import('npm:@peculiar/x509@2.0.0');
-  const certificates = x5c.map((item) => new X509Certificate(decodeBase64(item)));
-  const chain = new X509ChainBuilder({ certificates });
-  const built = await chain.build(certificates[0]);
-  const root = built[built.length - 1];
+  const { X509Certificate, BasicConstraintsExtension, KeyUsagesExtension, KeyUsageFlags } =
+    await import('npm:@peculiar/x509@2.0.0');
+  const certificates = x5c.map((item) => new X509Certificate(item));
+  const [leaf, intermediate, root] = certificates;
   const rootHash = hex(
     new Uint8Array(await crypto.subtle.digest('SHA-256', root.rawData)),
   );
   if (rootHash.toLowerCase() !== rootFingerprint.trim().toLowerCase()) {
     throw new Error('apple_root_certificate_mismatch');
+  }
+  if (!leaf.getExtension('1.2.840.113635.100.6.11.1') ||
+      !intermediate.getExtension('1.2.840.113635.100.6.2.1')) {
+    throw new Error('apple_storekit_certificate_purpose_invalid');
+  }
+  for (let index = 0; index < certificates.length; index += 1) {
+    const certificate = certificates[index];
+    const constraints = certificate.getExtension(BasicConstraintsExtension);
+    const usages = certificate.getExtension(KeyUsagesExtension);
+    const ca = index > 0;
+    if ((index === 1 && !constraints?.ca) || (constraints && constraints.ca !== ca) ||
+        (usages && !(usages.usages & (ca ? KeyUsageFlags.keyCertSign : KeyUsageFlags.digitalSignature))) ||
+        (ca && constraints?.pathLength !== undefined && constraints.pathLength < index - 1)) {
+      throw new Error('apple_certificate_constraints_invalid');
+    }
+    // No guessed EKU is required: authentic Apple StoreKit leaves have no EKU;
+    // the Apple-defined signing OID above authorizes their role.
+    if (certificate.notBefore > effectiveDate || certificate.notAfter < effectiveDate) {
+      throw new Error('apple_certificate_expired');
+    }
+    const issuer = certificates[index + 1] ?? root;
+    if (certificate.issuer !== issuer.subject ||
+        !await certificate.verify({ publicKey: issuer.publicKey, signatureOnly: true })) {
+      throw new Error('apple_certificate_signature_invalid');
+    }
   }
 }
 
@@ -155,7 +175,11 @@ export async function verifyStoreKitJws(
     if (header.alg !== 'ES256' || !Array.isArray(header.x5c)) {
       return { ok: false, error: 'unsupported_jws_header' };
     }
-    await verifyAppleCertificateChain(header.x5c, config.appleRootCertSha256);
+    const decodedPayload = decodeJson<StoreKitTransactionPayload>(parts[1]);
+    if (typeof decodedPayload.signedDate !== 'number' || !Number.isSafeInteger(decodedPayload.signedDate)) {
+      return { ok: false, error: 'transaction_date_invalid' };
+    }
+    await verifyAppleCertificateChain(header.x5c, config.appleRootCertSha256, new Date(decodedPayload.signedDate));
     const key = await importX509(toPem(header.x5c[0]), 'ES256');
     const verified = await compactVerify(compactJws, key, { algorithms: ['ES256'] });
     const payload = JSON.parse(new TextDecoder().decode(verified.payload)) as StoreKitTransactionPayload;

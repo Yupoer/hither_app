@@ -18,6 +18,7 @@ import {
 import {
   allowedStoreKitEnvironments,
   storeKitConfigFromEnv,
+  validateStoreKitTransaction,
   type StoreKitEnvironment,
   verifyStoreKitJws,
 } from '../_shared/storekit.ts';
@@ -398,7 +399,6 @@ export function createSyncHandler(
     }
     const anonKey = publicApiKey(env);
     if (!anonKey) return json(503, { ok: false, error: 'server_configuration_missing' });
-    const admin = createAdmin(supabaseUrl, adminKey(env));
     const userAuthorization = authorization?.startsWith('Bearer ') ? authorization : null;
     if (!userAuthorization) {
       outcomeLog('invalid_auth');
@@ -416,6 +416,12 @@ export function createSyncHandler(
     }
 
     const signedTransaction = requiredString(body, 'signed_transaction', 'signedTransaction');
+    const signedVerification = signedTransaction ? await verifyJws(signedTransaction, baseConfig) : null;
+    if (signedVerification && !signedVerification.ok) {
+      outcomeLog(signedVerification.error);
+      return json(422, { ok: false, error: signedVerification.error });
+    }
+    const admin = createAdmin(supabaseUrl, adminKey(env));
     const { data: tokenRow, error: tokenError } = await admin
       .from('premium_app_account_tokens')
       .select('app_account_token')
@@ -427,8 +433,10 @@ export function createSyncHandler(
     }
     const config = { ...baseConfig, appAccountToken: tokenRow.app_account_token };
 
-    if (signedTransaction) {
-      const verified = await verifyAppleSignedTransaction(signedTransaction, config, now(), verifyJws);
+    if (signedVerification?.ok) {
+      const verified = validateStoreKitTransaction(
+        signedVerification.payload, config, now(), signedVerification.jwsSha256,
+      );
       if (!verified.ok) {
         outcomeLog(verified.error);
         return json(422, { ok: false, error: verified.error });

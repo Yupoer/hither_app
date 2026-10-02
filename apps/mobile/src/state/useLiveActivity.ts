@@ -120,6 +120,8 @@ export function useLiveActivity(
       return;
     }
     lastPersistAtRef.current = now;
+    const actorId = userIdRef.current;
+    if (!actorId) return;
     await upsertLiveActivitySession({
       ...currentSession,
       activityId,
@@ -129,7 +131,7 @@ export function useLiveActivity(
       etaSeconds: currentState.etaSeconds,
       progress: currentState.progress,
       accentHex: currentState.accentHex,
-    });
+    }, actorId);
     lastPersistedAccentRef.current = currentState.accentHex;
   };
 
@@ -200,6 +202,7 @@ export function useLiveActivity(
           token,
           enabledRef.current,
           stateRef.current.accentHex,
+          uid,
         );
         gate.recordResult(identity, result);
         recordTokenRegisterResult(result);
@@ -248,6 +251,7 @@ export function useLiveActivity(
         pushToStartTokenRef.current,
         liveActivitiesEnabled,
         stateRef.current.accentHex,
+        uid,
       )
         .then((result) => {
           gate.recordResult(identity, result);

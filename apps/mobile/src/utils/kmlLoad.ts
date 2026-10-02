@@ -6,9 +6,12 @@
 
 import type { KmlPlacemark } from './kml';
 import { parseKml } from './kml';
+import type JSZip from 'jszip';
 
 /** Max uncompressed KML / KMZ payload we will parse (safety). */
 export const KML_MAX_BYTES = 8 * 1024 * 1024;
+const KMZ_MAX_ENTRIES = 256;
+const KMZ_MAX_RATIO = 1000;
 
 /** UTF-8 byte length of a string (decoded KMZ/KML payload size). */
 export function utf8ByteLength(text: string): number {
@@ -105,9 +108,95 @@ export interface KmlLoadIo {
   getSize?: (fileUri: string) => Promise<number | null>;
   platform: string;
   /** Inject JSZip factory for tests. */
-  loadZip?: (data: ArrayBuffer) => Promise<{
-    files: Record<string, { name: string; dir: boolean; async: (type: 'string') => Promise<string> }>;
-  }>;
+  loadZip?: (data: ArrayBuffer) => Promise<Pick<JSZip, 'files'>>;
+}
+
+/** Bound ZIP metadata before JSZip allocates its entry table or inflates anything. */
+function checkKmzDirectory(buffer: ArrayBuffer, maxBytes: number): void {
+  const view = new DataView(buffer);
+  const bad = () => { throw new KmlLoadError('bad_zip', 'unzipKmz'); };
+  const oversize = () => { throw new KmlLoadError('oversize', 'unzipKmz'); };
+  let end = buffer.byteLength - 22;
+  const first = Math.max(0, end - 65535);
+  for (; end >= first; end -= 1) {
+    if (view.getUint32(end, true) === 0x06054b50 &&
+        end + 22 + view.getUint16(end + 20, true) === buffer.byteLength) break;
+  }
+  if (end < first) return bad();
+  const count = view.getUint16(end + 10, true);
+  const directorySize = view.getUint32(end + 12, true);
+  let offset = view.getUint32(end + 16, true);
+  // Small KMZ files need neither split archives nor ZIP64; reject both.
+  if (view.getUint16(end + 4, true) || view.getUint16(end + 6, true) ||
+      view.getUint16(end + 8, true) !== count || offset + directorySize !== end) return bad();
+  if (count > KMZ_MAX_ENTRIES) return oversize();
+  let expanded = 0;
+  for (let entry = 0; entry < count; entry += 1) {
+    if (offset + 46 > end || view.getUint32(offset, true) !== 0x02014b50) return bad();
+    const flags = view.getUint16(offset + 8, true);
+    const method = view.getUint16(offset + 10, true);
+    const compressed = view.getUint32(offset + 20, true);
+    const uncompressed = view.getUint32(offset + 24, true);
+    const local = view.getUint32(offset + 42, true);
+    if ((flags & 1) || (method !== 0 && method !== 8) || view.getUint16(offset + 34, true) ||
+        local + 30 > offset || view.getUint32(local, true) !== 0x04034b50 ||
+        (view.getUint16(local + 6, true) & 1) || view.getUint16(local + 8, true) !== method ||
+        local + 30 + view.getUint16(local + 26, true) + view.getUint16(local + 28, true) + compressed > offset) return bad();
+    expanded += uncompressed;
+    if (expanded > maxBytes || uncompressed > Math.max(1, compressed) * KMZ_MAX_RATIO) return oversize();
+    offset += 46 + view.getUint16(offset + 28, true) + view.getUint16(offset + 30, true) + view.getUint16(offset + 32, true);
+    if (offset > end) return bad();
+  }
+  if (offset !== end) return bad();
+}
+
+type ZipWorker = {
+  name: string;
+  previous?: ZipWorker;
+  error: (error: Error) => void;
+  processChunk: (...args: unknown[]) => void;
+  flush: (...args: unknown[]) => void;
+  push: (...args: unknown[]) => void;
+  end: (...args: unknown[]) => void;
+};
+
+async function readBoundedKml(file: JSZip.JSZipObject, maxBytes: number): Promise<string> {
+  // ponytail: JSZip 3.10 worker API; replace with a public cancellable stream if provided.
+  // JSZip 3.10's public pause() cannot interrupt pako's current synchronous push.
+  // Guard its worker boundary so overflow unwinds the inflater immediately and
+  // error() releases upstream data. This adapter is regression-tested with real ZIPs.
+  const stream = (file as JSZip.JSZipObject & {
+    internalStream: (type: 'string') => JSZip.JSZipStreamHelper<string> & { _worker: ZipWorker };
+  }).internalStream('string');
+  let worker = stream._worker;
+  if (!worker) throw new KmlLoadError('bad_zip', 'unzipKmz');
+  while (worker.previous && worker.name !== 'FlateWorker/Inflate') worker = worker.previous;
+  const methods = worker.name === 'FlateWorker/Inflate' ? ['processChunk', 'flush'] as const : ['push', 'end'] as const;
+  for (const method of methods) {
+    const original = worker[method];
+    worker[method] = function (...args: unknown[]) {
+      try { original.apply(this, args); } catch (error) {
+        // Unwind pako first; cleaning listeners during JSZip's active emit loop
+        // corrupts that loop. A microtask cleans up before the next input tick.
+        Promise.resolve().then(() => stream._worker.error(error as Error));
+      }
+    };
+  }
+  return new Promise((resolve, reject) => {
+    const chunks: string[] = [];
+    let bytes = 0;
+    stream.on('data', (chunk) => {
+      bytes += utf8ByteLength(chunk);
+      if (bytes > maxBytes) {
+        chunks.length = 0;
+        throw new KmlLoadError('oversize', 'unzipKmz');
+      }
+      chunks.push(chunk);
+    });
+    stream.on('error', (error) => { chunks.length = 0; reject(error); });
+    stream.on('end', () => resolve(chunks.join('')));
+    stream.resume();
+  });
 }
 
 function extensionOf(asset: KmlAssetLike): string | null {
@@ -157,7 +246,7 @@ export async function loadKmlKmzFromAsset(
     return { kind: 'cancelled' };
   }
 
-  const maxBytes = options?.maxBytes ?? KML_MAX_BYTES;
+  const maxBytes = Math.min(options?.maxBytes ?? KML_MAX_BYTES, KML_MAX_BYTES);
   const declaredSize =
     typeof asset.size === 'number' && Number.isFinite(asset.size) ? asset.size : null;
   if (declaredSize != null && declaredSize > maxBytes) {
@@ -240,22 +329,22 @@ export async function loadKmlKmzFromAsset(
       };
     }
 
-    let zip: {
-      files: Record<string, { name: string; dir: boolean; async: (type: 'string') => Promise<string> }>;
-    };
+    let zip: Pick<JSZip, 'files'>;
     try {
+      checkKmzDirectory(buffer, maxBytes);
       if (io.loadZip) {
         zip = await io.loadZip(buffer);
       } else {
         const JSZip = (await import('jszip')).default;
         zip = await JSZip.loadAsync(buffer);
       }
-    } catch {
+    } catch (error) {
+      const code = error instanceof KmlLoadError ? error.code : 'bad_zip';
       return {
         kind: 'error',
-        code: 'bad_zip',
+        code,
         stage: 'unzipKmz',
-        meta: metaOf(asset, io.platform, 'unzipKmz', buffer.byteLength, 'bad_zip'),
+        meta: metaOf(asset, io.platform, 'unzipKmz', buffer.byteLength, code),
       };
     }
 
@@ -271,13 +360,14 @@ export async function loadKmlKmzFromAsset(
       };
     }
     try {
-      xml = await kmlFile.async('string');
-    } catch {
+      xml = await readBoundedKml(kmlFile, maxBytes);
+    } catch (error) {
+      const code = error instanceof KmlLoadError ? error.code : 'bad_zip';
       return {
         kind: 'error',
-        code: 'bad_zip',
+        code,
         stage: 'unzipKmz',
-        meta: metaOf(asset, io.platform, 'unzipKmz', buffer.byteLength, 'bad_zip'),
+        meta: metaOf(asset, io.platform, 'unzipKmz', buffer.byteLength, code),
       };
     }
     // Compressed size may be tiny; enforce limit on *uncompressed* KML.
