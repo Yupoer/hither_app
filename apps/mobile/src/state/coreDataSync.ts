@@ -1,4 +1,5 @@
 import { getVisibleGroupSeed } from './visibleGroupSeed';
+import { insertFirstStop } from '../utils/firstStopInsertion';
 /**
  * Production wiring for OTA-04 core operation outbox + snapshot helpers.
  * Single shared store + outbox (one serial path for mutations / remote save).
@@ -194,6 +195,7 @@ export async function enqueueDestinationAdd(input: {
   stayAnchor?: boolean;
   providerPlaceId?: string;
   actorId?: string;
+  placement?: 'firstStop';
 }): Promise<{ operation: CoreOperation; destinationId: string }> {
   const snapshot = await sharedCoreDataStore.readSnapshot(input.groupId);
   if (!snapshot) throw localSnapshotError();
@@ -228,12 +230,13 @@ export async function enqueueDestinationAdd(input: {
       kind: destination.kind ?? 'stop',
       stayAnchor: destination.stayAnchor ?? false,
       providerPlaceId: destination.providerPlaceId ?? null,
+      ...(input.placement ? { placement: input.placement } : {}),
     },
     applyLocal: async (exec, operation) => {
       const current = await sharedCoreDb.readSnapshotInTransaction(exec, input.groupId) ?? snapshot;
       await sharedCoreDb.writeSnapshot(
         exec,
-        optimisticSnapshot(current, [
+        optimisticSnapshot(current, input.placement === 'firstStop' ? insertFirstStop(current.destinations, destination) : [
           ...current.destinations,
           { ...destination, order: current.destinations.length },
         ], Date.now(), operation.actorId),

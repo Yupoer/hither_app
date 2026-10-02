@@ -5,6 +5,7 @@ import {
   Animated,
   BackHandler,
   findNodeHandle,
+  Keyboard,
   Platform,
   StyleSheet,
   View,
@@ -21,6 +22,8 @@ import {
   type OverlayHoleKind,
 } from './overlayLayout';
 import TourCard from './TourCard';
+import { useFontLayout } from '../a11y/useFontScaleBucket';
+import { GLOBAL_FONT_SCALE_CAP } from '../theme/typeScale';
 
 export interface GroupFeatureTourOverlayProps {
   visible: boolean;
@@ -77,7 +80,16 @@ export function GroupFeatureTourOverlay({
   const foreground = useForegroundUi();
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
-  const { width: winW, height: winH } = useWindowDimensions();
+  const { width: winW, height: winH, fontScale = 1 } = useWindowDimensions();
+  const fontLayout = useFontLayout();
+  const [keyboardTop, setKeyboardTop] = useState<number | null>(() => Keyboard?.metrics?.()?.screenY ?? null);
+  const viewportHeight = Math.min(winH, keyboardTop ?? winH);
+  useEffect(() => {
+    const show = Keyboard?.addListener('keyboardDidShow', (event) => setKeyboardTop(event.endCoordinates.screenY));
+    const change = Keyboard?.addListener('keyboardDidChangeFrame', (event) => setKeyboardTop(event.endCoordinates.height > 0 ? event.endCoordinates.screenY : null));
+    const hide = Keyboard?.addListener('keyboardDidHide', () => setKeyboardTop(null));
+    return () => { show?.remove(); change?.remove(); hide?.remove(); };
+  }, []);
   const ctaRef = useRef<View>(null);
   // Animated.Value is stable; useState avoids ref.current during render (compiler).
   const [opacity] = useState(() => new Animated.Value(reduceMotion ? 1 : 0));
@@ -96,7 +108,7 @@ export function GroupFeatureTourOverlay({
   const shownKeyRef = useRef(stepKey);
   const fadeGenRef = useRef(0);
   // Content key invalidates measured height without an effect setState.
-  const contentKey = `${shown.title}\0${shown.body}\0${shown.ctaLabel}`;
+  const contentKey = `${shown.title}\0${shown.body}\0${shown.ctaLabel}\0${winW}:${viewportHeight}:${fontScale}:${fontLayout.textScale}:${fontLayout.boldText}`;
   const [cardLayout, setCardLayout] = useState<{ key: string; height: number | null }>({
     key: contentKey,
     height: null,
@@ -209,12 +221,12 @@ export function GroupFeatureTourOverlay({
       placeTourCard({
         hole: placementHole,
         windowWidth: winW,
-        windowHeight: winH,
+        windowHeight: viewportHeight,
         insets: { top: insets.top, bottom: insets.bottom },
         cardHeight,
         estimatedCardHeight: ESTIMATED_CARD_HEIGHT,
       }),
-    [placementHole, winW, winH, insets.top, insets.bottom, cardHeight],
+    [placementHole, winW, viewportHeight, insets.top, insets.bottom, cardHeight],
   );
 
   const a11yLabel = [shown.title, shown.body].filter((part) => part.trim().length > 0).join('. ');
@@ -305,6 +317,7 @@ export function GroupFeatureTourOverlay({
             top: placement.cardTop,
             left: 20,
             right: 20,
+            maxHeight: placement.maxCardHeight,
             opacity,
           },
         ]}
@@ -321,6 +334,9 @@ export function GroupFeatureTourOverlay({
           onPrev={onPrev}
           onNext={onNext}
           accessibilityLabel={a11yLabel}
+          maxHeight={placement.maxCardHeight}
+          textScale={fontLayout.textScale}
+          fontScale={Math.min(fontScale, GLOBAL_FONT_SCALE_CAP)}
         />
       </Animated.View>
     </View>

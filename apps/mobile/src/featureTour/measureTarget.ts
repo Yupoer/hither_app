@@ -1,6 +1,7 @@
 import type { LayoutRectangle } from 'react-native';
 import type { TourStepDef, TourTargetId } from './constants';
 import { clipRectToWindow } from './overlayLayout';
+import { requestWithDeadline } from '../utils/requestDeadline';
 
 export type MeasureFn = (id: TourTargetId) => Promise<LayoutRectangle | null>;
 
@@ -21,6 +22,7 @@ export interface MeasureWithRetryOptions {
   maxAttempts?: number;
   /** Delay between attempts in ms (default 80). */
   retryDelayMs?: number;
+  measureTimeoutMs?: number;
   /** Optional sleep override for tests. */
   sleep?: (ms: number) => Promise<void>;
   /**
@@ -51,12 +53,15 @@ export async function measureTargetWithRetry(
   const maxAttempts = opts.maxAttempts ?? 5;
   const delay = opts.retryDelayMs ?? 80;
   const sleep = opts.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+  const measure = (target: TourTargetId) => requestWithDeadline(
+    () => opts.measure(target), opts.measureTimeoutMs ?? 120,
+  ).catch(() => null);
 
   let last: LayoutRectangle | null = null;
   let prevStable: LayoutRectangle | null = null;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (attempt > 0) await sleep(delay);
-    last = await opts.measure(opts.target);
+    last = await measure(opts.target);
     if (last && last.width > 0 && last.height > 0) {
       if (!opts.requireStable) return last;
       if (prevStable && rectsClose(prevStable, last)) return last;
@@ -66,7 +71,7 @@ export async function measureTargetWithRetry(
 
   const parent = STABLE_PARENT_BY_TARGET[opts.target];
   if (parent && parent !== opts.target) {
-    const parentRect = await opts.measure(parent);
+    const parentRect = await measure(parent);
     if (parentRect && parentRect.width > 0 && parentRect.height > 0) {
       return parentRect;
     }

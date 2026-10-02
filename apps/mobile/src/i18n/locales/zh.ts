@@ -394,6 +394,8 @@ export const zh = {
   'map.searchPlaces': '搜尋地點',
   'confirmGather.kicker': '加入這個集合點？',
   'confirmGather.going': '前往 {name}',
+  'confirmGather.addPool': '加入獨立池',
+  'confirmGather.quickAdd': '快速加入',
   'confirmGather.add': '加入',
   'map.share': '分享',
   'map.copy': '複製',

@@ -90,7 +90,7 @@ describe('map UI placement contracts', () => {
   });
 
   it('keeps add-place secondary controls bright, transparent, and evenly spaced', () => {
-    expect(mapScreen).toContain('confirmControlRow: { flexDirection: \'row\', alignItems: \'center\', gap: 12 }');
+    expect(mapScreen).toContain('confirmControlRow: { flexDirection: \'row\', alignItems: \'center\', gap: 8, marginLeft: 8 }');
     expect(mapScreen).toContain('confirmBtnRow: {');
     expect(mapScreen).toContain('gap: 12');
     expect(mapScreen).toContain('paddingHorizontal: 20');
@@ -118,7 +118,7 @@ describe('map UI placement contracts', () => {
   });
 
   it('haptics the add-place confirmation and omits root settings subtitles', () => {
-    const confirmStart = mapScreen.indexOf("accessibilityLabel={t('confirmGather.add')}");
+    const confirmStart = mapScreen.indexOf('const confirmAddPlace = async');
     const confirmBlock = mapScreen.slice(confirmStart, confirmStart + 420);
     expect(confirmBlock).toContain('lightTap();');
 
@@ -522,8 +522,8 @@ describe('map UI placement contracts', () => {
 
   it('shares Peek corner geometry with overlays and keeps node cards readable', () => {
     expect(overlaySheet).toContain('MAP_SHEET_CORNER_RADIUS');
-    expect(reorderList).toContain('MAP_SHEET_CORNER_RADIUS');
-    expect(reorderList).toContain('borderRadius: MAP_SHEET_CORNER_RADIUS');
+    expect(reorderList).toContain('borderRadius: 16');
+    expect(reorderList).toContain('route-drag-preview');
     expect(reorderList).toContain('<OverflowMarquee');
     expect(reorderList).toContain('enabled={gatherCardTitleMarquee}');
     expect(reorderList).toContain('containerStyle={styles.rowTitleMarquee}');

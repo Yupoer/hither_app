@@ -164,6 +164,7 @@ import { enqueueArrival, syncArrival, projectArrivals } from '../state/arrivalSy
 import { buildPassiveCompanionModel } from '../utils/passiveCompanion';
 import { uploadLocalLogs } from '../utils/uploadLocalLogs';
 import { runUiAction } from '../utils/uiAction';
+import NativeGlassButton from '../components/NativeGlassButton';
 import { useTranslation, type TranslationKey } from '../i18n';
 import { PassiveCompanionPanel } from './MapScreen/components/PassiveCompanionPanel';
 import { useDeviceLocation } from './MapScreen/hooks/useDeviceLocation';
@@ -1421,6 +1422,8 @@ export default function MapScreen({ route, navigation }: Props) {
   const [pendingPlace, setPendingPlace] = useState<PlaceResult | null>(null);
   const [favoritePlaces, setFavoritePlaces] = useState<FavoritePlace[]>([]);
   const [favoriteBusy, setFavoriteBusy] = useState(false);
+  const [confirmPlaceBusy, setConfirmPlaceBusy] = useState(false);
+  const confirmPlaceBusyRef = useRef(false);
   const [addPlaceTourStep, setAddPlaceTourStep] = useState<number | null>(null);
   const [addPlaceTourLocalDone, setAddPlaceTourLocalDone] = useState(true);
   const [addPlaceTourTargetRect, setAddPlaceTourTargetRect] = useState<{
@@ -1855,6 +1858,7 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [meetTimeEditor]);
   // Freeze the route overlay's scroll while a stop is being drag-reordered so
   // the two vertical gestures never fight. Auto-scroll still works via ref.
+  const [routeDragPreview, setRouteDragPreview] = useState<React.ReactNode>(null);
   const [routeScrollEnabled, setRouteScrollEnabled] = useState(true);
   const [routeOverlayOpenComplete, setRouteOverlayOpenComplete] = useState(false);
   const routeScrollRef = useRef<ScrollView>(null);
@@ -3738,9 +3742,9 @@ export default function MapScreen({ route, navigation }: Props) {
     [canEditItinerary, notifyLeaderPlace, tripDayForAdd, obliqueLocate],
   );
 
-  const handlePickDestination = useCallback(async (place: PlaceResult): Promise<boolean> => {
+  const handlePickDestination = useCallback(async (place: PlaceResult, placement?: 'firstStop'): Promise<boolean> => {
     if (!groupId) return false;
-    const addDay = null;
+    const addDay = placement ? tripDayForAdd() : null;
     const placeSource = pendingPlaceSourceRef.current ?? 'search';
     if (!canEditItinerary) {
       return notifyLeaderPlace([{
@@ -3773,6 +3777,7 @@ export default function MapScreen({ route, navigation }: Props) {
               coordinates: place.coordinates,
               day: addDay,
               providerPlaceId: place.providerPlaceId,
+              ...(placement ? { placement } : {}),
             },
             myScopeId,
           );
@@ -7153,6 +7158,27 @@ export default function MapScreen({ route, navigation }: Props) {
           ? distanceMeters(fromCoords, pendingPlace.coordinates)
           : null;
         const pMin = pDist != null ? shortEta(walkingEtaSeconds(pDist)) : null;
+        const confirmAddPlace = async (placement?: 'firstStop') => {
+          if (confirmPlaceBusyRef.current) return;
+          confirmPlaceBusyRef.current = true;
+          setConfirmPlaceBusy(true);
+          lightTap();
+          try {
+            const place = { ...pendingPlace, name: pendingPlaceTitle.trim() || pendingPlace.name };
+            // Keep confirm card until success so failures do not wipe UI state.
+            await runUiAction(
+              'map.confirm_add_destination',
+              async (token) => {
+                const ok = await handlePickDestination(place, placement);
+                if (ok && token.isCurrent()) dismissConfirmCard();
+              },
+              { screen: 'Map' },
+            );
+          } finally {
+            confirmPlaceBusyRef.current = false;
+            setConfirmPlaceBusy(false);
+          }
+        };
         const confirmBottom = keyboardAvoidBottomOffset({
           baseBottom: insets.bottom + 24,
           keyboardHeight: confirmKeyboardHeight,
@@ -7170,9 +7196,6 @@ export default function MapScreen({ route, navigation }: Props) {
             >
               <View style={styles.confirmTopRow}>
                 <View style={styles.confirmTextCol}>
-                  <Text style={styles.confirmKicker} numberOfLines={1}>
-                    {t('confirmGather.going', { name: '' })}
-                  </Text>
                   {/* Inline rename — single draft; no separate Modal. */}
                   <TextInput
                     value={pendingPlaceTitle}
@@ -7268,43 +7291,21 @@ export default function MapScreen({ route, navigation }: Props) {
                       <Ionicons name="navigate" size={28} color={accent} />
                     </Pressable>
                   </View>
+                  <NativeGlassButton systemImage="xmark" shape="circle" size={44}
+                    imageSize={18} disabled={confirmPlaceBusy} accessibilityLabel={t('common.cancel')}
+                    testID="confirm-place-cancel" onPress={() => { selectionTick(); dismissConfirmCard(); }} />
                 </View>
               </View>
               <View style={styles.confirmBtnRow}>
-                <Pressable
-                  style={({ pressed }) => [styles.confirmCancel, pressed && styles.confirmControlPressed]}
-                  accessibilityLabel={t('common.cancel')}
-                  accessibilityRole="button"
-                  onPress={() => {
-                    selectionTick();
-                    dismissConfirmCard();
-                  }}
-                >
-                  <Text style={styles.confirmCancelText}>{t('common.cancel')}</Text>
-                </Pressable>
-                <Pressable
-                  style={({ pressed }) => [styles.confirmAdd, pressed && styles.confirmControlPressed]}
-                  accessibilityLabel={t('confirmGather.add')}
-                  accessibilityRole="button"
-                  onPress={() => {
-                    lightTap();
-                    const place = {
-                      ...pendingPlace,
-                      name: pendingPlaceTitle.trim() || pendingPlace.name,
-                    };
-                    // Keep confirm card until success so failures do not wipe UI state.
-                    void runUiAction(
-                      'map.confirm_add_destination',
-                      async (token) => {
-                        const ok = await handlePickDestination(place);
-                        if (ok && token.isCurrent()) dismissConfirmCard();
-                      },
-                      { screen: 'Map' },
-                    );
-                  }}
-                >
-                  <Text style={styles.confirmAddText}>{t('confirmGather.add')}</Text>
-                </Pressable>
+                <NativeGlassButton label={t('confirmGather.addPool')} layout="fill" height={60}
+                  style={{ flex: 1 }} fontSize={16} disabled={confirmPlaceBusy}
+                  accessibilityLabel={t('confirmGather.addPool')} testID="confirm-place-pool"
+                  onPress={() => { void confirmAddPlace().catch(() => undefined); }} />
+                <NativeGlassButton label={t('confirmGather.quickAdd')} layout="fill" height={60}
+                  style={{ flex: 1 }} fontSize={16} variant="glassProminent" tintColor="#0A84FF"
+                  disabled={confirmPlaceBusy} accessibilityLabel={t('confirmGather.quickAdd')}
+                  testID="confirm-place-quick-add"
+                  onPress={() => { void confirmAddPlace('firstStop').catch(() => undefined); }} />
               </View>
             </liquidGlass.GlassView>
           </Animated.View>
@@ -7351,24 +7352,14 @@ export default function MapScreen({ route, navigation }: Props) {
             });
             return;
           }
-          // Block advance until the next step has a non-zero measured rect.
-          const nextStep = ADD_PLACE_TOUR_STEPS[next];
-          if (!nextStep) return;
-          const generation = ++addPlaceTourGenerationRef.current;
-          setAddPlaceTourTransitioning(true);
-          void (async () => {
-            const rect = await measureTargetWithRetry({
-              measure: measureTourTarget,
-              target: nextStep.target,
-            });
-            if (generation !== addPlaceTourGenerationRef.current) return;
-            if (!isMeasuredTourRect(rect)) {
-              setAddPlaceTourTransitioning(false);
-              return;
-            }
-            setAddPlaceTourTargetRect(rect);
-            setAddPlaceTourStep(next);
-          })();
+          setAddPlaceTourTargetRect(null);
+          setAddPlaceTourStep(next);
+        }}
+        canGoPrev={addPlaceTourStep != null && addPlaceTourStep > 0}
+        onPrev={() => {
+          if (addPlaceTourStep == null || addPlaceTourStep <= 0 || addPlaceTourTransitioning) return;
+          setAddPlaceTourTargetRect(null);
+          setAddPlaceTourStep(addPlaceTourStep - 1);
         }}
         reduceMotion={tourReduceMotion}
       />
@@ -8116,6 +8107,7 @@ export default function MapScreen({ route, navigation }: Props) {
           setRouteScrollEnabled(true);
           setRouteOverlayOpenComplete(true);
         }}
+        floatingContent={routeDragPreview}
         title={t('map.gatheringPoints')}
         accent={accent}
         doneLabel={t('map.done')}
@@ -8216,6 +8208,7 @@ export default function MapScreen({ route, navigation }: Props) {
               setRouteScrollEnabled(!active);
               if (!active) setRouteScrollEnabled(true);
             }}
+            onDragPreviewChange={setRouteDragPreview}
             onDragAutoScroll={handleRouteDragAutoScroll}
             onTourTargetRef={setTourTargetRef}
             accountId={user?.id}
@@ -10382,9 +10375,9 @@ const makeStyles = (
       borderRadius: 34,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairlineStrong,
-      paddingHorizontal: 20,
-      paddingTop: 10,
-      paddingBottom: 10,
+      paddingHorizontal: 16,
+      paddingTop: 16,
+      paddingBottom: 16,
       gap: 4,
     },
     // Hide the bottom sheet while the confirm card is up without animating an
@@ -10392,9 +10385,8 @@ const makeStyles = (
     sheetHidden: { display: 'none' },
     sheetBodyHidden: { display: 'none' },
     confirmTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
-    confirmControlRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    confirmControlRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginLeft: 8 },
     confirmTextCol: { flex: 1, gap: 2 },
-    confirmKicker: { fontSize: 16, fontWeight: '600', color: '#fff', marginLeft: 2 },
     confirmTitleInput: {
       color: '#fff',
       fontSize: 18,
@@ -10412,16 +10404,16 @@ const makeStyles = (
     },
     confirmEtaRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
     confirmArrow: {
-      width: 60,
-      height: 60,
-      borderRadius: 30,
+      width: 44,
+      height: 44,
+      borderRadius: 22,
       alignItems: 'center',
       justifyContent: 'center',
     },
     confirmControl: {
-      width: 60,
-      height: 60,
-      borderRadius: 30,
+      width: 44,
+      height: 44,
+      borderRadius: 22,
       overflow: 'hidden',
       alignItems: 'center',
       justifyContent: 'center',
@@ -10442,30 +10434,6 @@ const makeStyles = (
       gap: 12,
       marginTop: 6,
     },
-    confirmCancel: {
-      flex: 1,
-      height: 60,
-      borderRadius: 30,
-      overflow: 'hidden',
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: glass.fillStrong,
-      paddingHorizontal: 8,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: glass.hairline,
-    },
-    confirmCancelText: { fontSize: 16, fontWeight: '700', color: '#FF453A', textAlign: 'center' },
-    confirmAdd: {
-      flex: 1,
-      height: 60,
-      borderRadius: 30,
-      overflow: 'hidden',
-      alignItems: 'center',
-      justifyContent: 'center',
-      paddingHorizontal: 8,
-      backgroundColor: Platform.OS === 'ios' ? '#0A84FF' : accent,
-    },
-    confirmAddText: { fontSize: 16, fontWeight: '700', color: '#fff', textAlign: 'center' },
     // Meet-time editor sheet: roomy, full-width controls (not the old cramped
     // left-aligned chips).
     meetEditorBody: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 40, gap: 14 },

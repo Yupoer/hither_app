@@ -1,3 +1,4 @@
+jest.mock('../a11y/useFontScaleBucket', () => ({ useFontLayout: () => ({ textScale: 1, boldText: false }) }));
 /**
  * Tour overlay hole/ring geometry, pointer sink, prev/next, Stage Two measure.
  */

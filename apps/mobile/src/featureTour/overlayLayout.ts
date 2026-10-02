@@ -141,7 +141,7 @@ export function placeTourCard(input: PlaceTourCardInput): PlaceTourCardResult {
   const cardH = input.cardHeight != null && input.cardHeight > 0 ? input.cardHeight : estimated;
   const topSafe = input.insets.top + 12;
   const bottomSafe = input.windowHeight - input.insets.bottom - 12;
-  const usable = Math.max(120, bottomSafe - topSafe);
+  const usable = Math.max(0, bottomSafe - topSafe);
 
   if (!input.hole) {
     // Final get-started card: true vertical center of the usable viewport
@@ -166,8 +166,10 @@ export function placeTourCard(input: PlaceTourCardInput): PlaceTourCardResult {
     input.hole.y < input.windowHeight * 0.25 || spaceAbove < PIN_MIN;
 
   const pinBottom = (): PlaceTourCardResult => {
-    const maxH = Math.max(PIN_MIN, Math.min(usable, Math.max(cardH, PIN_MIN)));
-    const usedH = Math.min(Math.max(cardH, PIN_MIN), usable);
+    // The bound depends only on geometry, never on the constrained measure.
+    // Otherwise a first short measurement permanently caps later long copy.
+    const maxH = usable;
+    const usedH = Math.min(cardH, usable);
     const top = Math.max(topSafe, bottomSafe - usedH);
     return { cardTop: top, maxCardHeight: maxH, placeAbove: false };
   };

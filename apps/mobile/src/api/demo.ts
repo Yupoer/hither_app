@@ -6,6 +6,7 @@ import type {
   PendingInvite,
   Subgroup,
 } from '../types';
+import { insertFirstStop } from '../utils/firstStopInsertion';
 
 /**
  * Local demo flock for testing the leader flow without rounding up real
@@ -134,12 +135,21 @@ export function demoAddDestination(input: {
   /** Scope stop to a 小隊; omit/undefined = main team itinerary. */
   subgroupId?: string;
   kind?: 'stop' | 'accommodation';
+  placement?: 'firstStop';
 }): string {
   const targetDay = input.kind === 'accommodation' ? Math.max(1, input.day ?? 1) : input.day ?? null;
   const scoped = state.destinations.filter((d) =>
     input.subgroupId ? d.subgroupId === input.subgroupId : d.subgroupId == null,
   );
   const sameDay = scoped.filter((d) => d.day === targetDay);
+  if (input.placement === 'firstStop') {
+    const id = `demo-dest-${++destSeq}`;
+    state.destinations = insertFirstStop(state.destinations, {
+      id, title: input.title, address: input.address, coordinates: input.coordinates,
+      order: 0, day: targetDay, subgroupId: input.subgroupId, kind: 'stop', stayAnchor: false,
+    });
+    return id;
+  }
   let insertOrder: number;
   if (sameDay.length > 0) {
     insertOrder = Math.max(...sameDay.map((d) => d.order)) + 1;

@@ -31,7 +31,7 @@ export default function MyTeamsScreen({ navigation }: Props) {
   const availableRowWidth = Math.max(0, windowWidth - 100);
   const enterBtnWidth = Math.round(availableRowWidth * 0.72);
   const leaveBtnWidth = availableRowWidth - enterBtnWidth;
-  const emptyActionWidth = Math.max(0, (windowWidth - 54) / 2);
+  const emptyActionWidth = Math.max(0, windowWidth - insets.left - insets.right - 40);
   const { colors } = useTheme();
   const accent = colors.accent;
   const { user, setMembership, updateNickname } = useSession();
@@ -188,10 +188,10 @@ export default function MyTeamsScreen({ navigation }: Props) {
         ) : null}
         {!isLoading && !groupsError && joinedGroups.length === 0 ? (
           <View style={styles.emptyActions}>
-            <NativeTeamsButton label={t('teams.create')} count={0} width={emptyActionWidth}
+            <NativeTeamsButton label={t('teams.create')} count={0} maxWidth={emptyActionWidth} height={70} fontSize={22} horizontalPadding={48}
               accessibilityLabel={t('teams.create')} testID="teams-empty-create"
               onPress={() => { lightTap(); navigation.replace('Auth', { role: 'leader' }); }} />
-            <NativeTeamsButton label={t('teams.join')} count={0} width={emptyActionWidth}
+            <NativeTeamsButton label={t('teams.join')} count={0} maxWidth={emptyActionWidth} height={70} fontSize={22} horizontalPadding={48}
               accessibilityLabel={t('teams.join')} testID="teams-empty-join"
               onPress={() => { lightTap(); navigation.replace('Auth', { role: 'follower' }); }} />
           </View>
@@ -339,7 +339,7 @@ const styles = StyleSheet.create({
   },
   teamCard: { width: '100%', minHeight: 84 },
   emptyList: { flexGrow: 1, justifyContent: 'center' },
-  emptyActions: { flexDirection: 'row', justifyContent: 'center', gap: 14 },
+  emptyActions: { flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 50 },
   expandedSection: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: 'rgba(255,255,255,0.1)',

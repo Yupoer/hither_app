@@ -195,6 +195,7 @@ jobs:
           supabase test db --local supabase/tests/anonymous_expiry_is_member.test.sql
           supabase test db --local supabase/tests/core_operation_gathering_validation.test.sql
           supabase test db --local supabase/tests/core_operation_outbox_durable.test.sql
+          supabase test db --local supabase/tests/quick_add_first_stop.test.sql
           supabase test db --local supabase/tests/durable_trip_daily_accommodation.test.sql
           supabase test db --local supabase/tests/security_group_command_import_arrival.test.sql
           supabase test db --local supabase/tests/feedback_limits.test.sql

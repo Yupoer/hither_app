@@ -316,49 +316,34 @@ export function useGroupFeatureTour(
     const generation = ++measureGenerationRef.current;
     transitioningRef.current = true;
     const run = async () => {
-      setTransitioning(true);
-      if (!requestedStep.target) {
+      try {
+        setTransitioning(true);
+        const win = getWindowSize();
+        const measured = await measureTourStepRects({
+          measure: (id) => measureRef.current(id),
+          step: requestedStep,
+          winW: win.width,
+          winH: win.height,
+          requireStable: Boolean(requestedStep.expandCard),
+        }).catch(() => ({ targetRect: null, placementRect: null }));
         if (!cancelled && generation === measureGenerationRef.current) {
+          // A detached target falls back to the centered copy; controls stay usable.
           setSnapshot({
             stepIndex: ctrl.stepIndex,
             step: requestedStep,
             pane: requestedStep.sheetPane ?? null,
-            targetRect: null,
-            placementRect: null,
+            targetRect: measured.targetRect,
+            placementRect: measured.placementRect,
           });
+        }
+      } finally {
+        if (!cancelled && generation === measureGenerationRef.current) {
           transitioningRef.current = false;
           setTransitioning(false);
         }
-        return;
-      }
-      const win = getWindowSize();
-      const measured = await measureTourStepRects({
-        measure: (id) => measureRef.current(id),
-        step: requestedStep,
-        winW: win.width,
-        winH: win.height,
-        requireStable: Boolean(requestedStep.expandCard),
-      });
-      if (!cancelled && generation === measureGenerationRef.current) {
-        // A missing target is a retryable measurement failure.  Keep the old
-        // copy/rect pair committed until the requested target is usable.
-        if (!measured.targetRect) {
-          transitioningRef.current = false;
-          setTransitioning(false);
-          return;
-        }
-        setSnapshot({
-          stepIndex: ctrl.stepIndex,
-          step: requestedStep,
-          pane: requestedStep.sheetPane ?? null,
-          targetRect: measured.targetRect,
-          placementRect: measured.placementRect,
-        });
-        transitioningRef.current = false;
-        setTransitioning(false);
       }
     };
-    void run();
+    void run().catch(() => undefined);
     return () => {
       cancelled = true;
     };

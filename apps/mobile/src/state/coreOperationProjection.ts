@@ -1,5 +1,6 @@
 import type { Destination, GroupState } from '../types';
 import type { CoreOperation } from '../types/coreData';
+import { insertFirstStop } from '../utils/firstStopInsertion';
 
 /** Project unacknowledged local itinerary intent onto a UI GroupState. */
 export function projectOperationDestinations(
@@ -15,7 +16,7 @@ export function projectOperationDestinations(
     const destinationId = typeof payload.destinationId === 'string' ? payload.destinationId : operation.entityId;
     if (operation.operationType === 'add_destination') {
       if (!destinations.some((destination) => destination.id === destinationId)) {
-        destinations.push({
+        const destination: Destination = {
           id: destinationId,
           title: String(payload.title ?? ''),
           order: destinations.length,
@@ -35,7 +36,9 @@ export function projectOperationDestinations(
           ...(Object.prototype.hasOwnProperty.call(payload, 'markerColor')
             ? { markerColor: typeof payload.markerColor === 'string' ? payload.markerColor : null }
             : {}),
-        });
+        };
+        destinations = payload.placement === 'firstStop'
+          ? insertFirstStop(destinations, destination) : [...destinations, destination];
       }
     } else if (operation.operationType === 'delete_destination') {
       destinations = destinations.filter((destination) => destination.id !== destinationId);

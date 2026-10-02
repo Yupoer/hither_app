@@ -402,11 +402,6 @@ export function useRouteReorderTour(
         maxAttempts: 6,
       });
       if (generation !== generationRef.current) return;
-      if (!rect || rect.width <= 0 || rect.height <= 0) {
-        transitioningRef.current = false;
-        setTransitioning(false);
-        return;
-      }
       setSnapshot({ stepIndex: nextIndex, targetRect: rect });
       transitioningRef.current = false;
       setTransitioning(false);
@@ -434,11 +429,6 @@ export function useRouteReorderTour(
         maxAttempts: 6,
       });
       if (generation !== generationRef.current) return;
-      if (!rect || rect.width <= 0 || rect.height <= 0) {
-        transitioningRef.current = false;
-        setTransitioning(false);
-        return;
-      }
       setSnapshot({ stepIndex: previousIndex, targetRect: rect });
       transitioningRef.current = false;
       setTransitioning(false);

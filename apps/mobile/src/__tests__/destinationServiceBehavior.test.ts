@@ -62,6 +62,19 @@ beforeEach(() => {
 });
 
 describe('DestinationService mapping and durable boundaries', () => {
+  it('passes quick-add intent through the durable path and uses the atomic fallback RPC', async () => {
+    const input = { title: 'Quick', day: 2, placement: 'firstStop' as const, coordinates: { latitude: 25, longitude: 121 } };
+    mockCoreSync.enqueueDestinationAdd.mockResolvedValue({ destinationId: 'queued' });
+    await expect(addDestination('g-1', input)).resolves.toBe('queued');
+    expect(mockCoreSync.enqueueDestinationAdd).toHaveBeenCalledWith(expect.objectContaining({ placement: 'firstStop', day: 2 }));
+    const ensure = mockCoreSync.ensureCoreSnapshot;
+    delete (mockCoreSync as any).ensureCoreSnapshot;
+    mockCoreSync.enqueueDestinationAdd.mockRejectedValue(coreMissing());
+    mockedSupabase.rpc.mockResolvedValue({ data: 'remote-id', error: null });
+    await expect(addDestination('g-1', input)).resolves.toBe('remote-id');
+    expect(mockedSupabase.rpc).toHaveBeenCalledWith('quick_add_itinerary_item', expect.objectContaining({ p_day: 2 }));
+    mockCoreSync.ensureCoreSnapshot = ensure;
+  });
   it('maps itinerary rows and normalizes accommodation/default fields', () => {
     expect(mapDestination({
       id: 'd-1', title: 'Hotel', position: 2, day: 1, address: null,

@@ -138,6 +138,6 @@ describe('integrated tour + i18n verification', () => {
     expect(overlaySrc).toContain('placeTourCard');
     expect(overlaySrc).toContain('estimatedCardHeight: ESTIMATED_CARD_HEIGHT');
     expect(overlaySrc).toContain('onLayout={onCardLayout}');
-    expect(tourCardSrc).not.toContain('<ScrollView');
+    expect(tourCardSrc).toContain('<ScrollView');
   });
 });

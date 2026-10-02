@@ -270,7 +270,7 @@ describe('route editor + KML contracts (#151)', () => {
     );
     expect(accommodationRpcMigration).toContain("v_item ? 'stay_anchor'");
     expect(accommodationRpcMigration).toContain('v_has_stay_anchors[v_idx]');
-    expect(destinationService).toContain("rpc('add_itinerary_item'");
+    expect(destinationService).toContain("'quick_add_itinerary_item' : 'add_itinerary_item'");
     expect(destinationService).toContain("rpc('reorder_itinerary_items'");
     expect(destinationService).toContain("rpc('import_itinerary_batch'");
     expect(destinationService).toContain('reorder_incomplete');

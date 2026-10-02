@@ -5,22 +5,26 @@ export type NativeTeamsButtonProps = {
   label: string;
   count: number;
   width?: number;
+  maxWidth?: number;
+  height?: number;
+  fontSize?: number;
+  horizontalPadding?: number;
   onPress: () => void;
   accessibilityLabel: string;
   testID?: string;
   style?: StyleProp<ViewStyle>;
 };
 
-export default function NativeTeamsButton({ label, count, width, onPress, accessibilityLabel, testID, style }: NativeTeamsButtonProps) {
+export default function NativeTeamsButton({ label, count, width, maxWidth, height = 56, fontSize = 17.5, horizontalPadding = 28, onPress, accessibilityLabel, testID, style }: NativeTeamsButtonProps) {
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       testID={testID}
-      style={({ pressed }) => [styles.button, width != null && { width }, style, pressed && styles.pressed]}
+      style={({ pressed }) => [styles.button, { width, maxWidth, minHeight: height, paddingHorizontal: horizontalPadding }, style, pressed && styles.pressed]}
     >
-      <Text style={styles.label}>{label}</Text>
+      <Text style={[styles.label, { fontSize, flexShrink: 1 }]}>{label}</Text>
       {count > 0 ? <View style={styles.badge}><Text style={styles.badgeText}>{count}</Text></View> : null}
     </Pressable>
   );
@@ -28,7 +32,7 @@ export default function NativeTeamsButton({ label, count, width, onPress, access
 
 const styles = StyleSheet.create({
   button: {
-    height: 56,
+    minHeight: 56,
     borderRadius: 28,
     paddingHorizontal: 28,
     flexDirection: 'row',

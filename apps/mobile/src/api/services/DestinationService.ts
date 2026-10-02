@@ -118,6 +118,7 @@ export async function addDestination(
     kind?: 'stop' | 'accommodation';
     /** Stable provider identity; never inferred from coordinates. */
     providerPlaceId?: string;
+    placement?: 'firstStop';
   },
   subgroupId?: string,
 ): Promise<string | undefined> {
@@ -141,6 +142,7 @@ export async function addDestination(
       kind,
       stayAnchor,
       providerPlaceId: input.providerPlaceId,
+      ...(input.placement ? { placement: input.placement } : {}),
     }));
     if (durable.handled) return durable.value.destinationId;
   }
@@ -149,7 +151,7 @@ export async function addDestination(
   // Shift later rows high→low so positions never collide mid-update.
   // Server-side lock + shift + insert (shared with import_itinerary_batch / reorder).
   // RPC returns the new row uuid (used by route-editor draft flush).
-  const { data, error } = await supabase.rpc('add_itinerary_item', {
+  const { data, error } = await supabase.rpc(input.placement === 'firstStop' ? 'quick_add_itinerary_item' : 'add_itinerary_item', {
     p_group_id: groupId,
     p_subgroup_id: subgroupId ?? null,
     p_title: input.title,

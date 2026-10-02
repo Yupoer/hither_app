@@ -20,7 +20,7 @@ export default function BlockingAuthOverlay({
       importantForAccessibility="yes"
       testID="auth-blocking-overlay"
     >
-      <BouncingDots color={color} />
+      <BouncingDots color={color} allowInactive />
     </View>
   );
 }

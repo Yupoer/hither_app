@@ -106,9 +106,9 @@ export const METALFORGE_COLORS = [
 ] as const;
 
 export const METALFORGE_PARAMETERS = {
-  speed: 0.8,
+  speed: 1.0,
   flow: 1.7,
-  grain: 13,
+  grain: 16.25,
   brightness: 0.6,
 } as const;
 

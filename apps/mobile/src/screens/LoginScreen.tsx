@@ -545,7 +545,7 @@ export default function LoginScreen({ navigation }: Props) {
             (!panelCanSubmit || busy) && styles.ctaDisabled,
           ]}
         >
-          {busy ? (
+          {busy && !blockingBusy ? (
             <ActivityIndicator color="#060b14" />
           ) : (
             <Text style={styles.ctaText}>

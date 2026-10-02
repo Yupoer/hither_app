@@ -1,3 +1,4 @@
+jest.mock('../a11y/useFontScaleBucket', () => ({ useFontLayout: () => ({ textScale: 1, boldText: false }) }));
 /**
  * #182 — group tour highlight geometry, targets, and final card.
  */

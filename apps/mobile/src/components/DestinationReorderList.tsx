@@ -57,7 +57,6 @@ import { getColorForDay, STAY_MARKER_EMOJI } from '../utils/destinationMarkerChr
 import { liquidGlass } from '../native';
 import SettingsChildSheet from '../screens/MapScreen/components/SettingsChildSheet';
 import OverflowMarquee from './OverflowMarquee';
-import { MAP_SHEET_CORNER_RADIUS } from './mapSheetChrome';
 import { classifyOperationError } from '../utils/operationError';
 
 const REORDER_VISUAL_SCALE = 1;
@@ -116,6 +115,7 @@ interface Props {
   emptyLabel: string;
   dragHint?: string;
   onDragActiveChange?: (active: boolean) => void;
+  onDragPreviewChange?: (preview: React.ReactNode | null) => void;
   /**
    * While dragging near the screen edge, parent should scroll by `deltaY`
    * (content coordinates). Enables reaching other day blocks off-screen.
@@ -192,6 +192,7 @@ export default function DestinationReorderList({
   emptyLabel,
   dragHint,
   onDragActiveChange,
+  onDragPreviewChange,
   onDragAutoScroll,
   dailyByDate,
   onClearDailyAccommodation,
@@ -283,6 +284,9 @@ export default function DestinationReorderList({
   const autoScrollRafRef = useRef<number | null>(null);
   const pendingAutoScrollRef = useRef(0);
   const pan = useRef(new Animated.Value(0)).current;
+  const previewPan = useRef(new Animated.Value(0)).current;
+  const rowViewsRef = useRef(new Map<string, View>());
+  const previewRowsRef = useRef(new Map<string, React.ReactElement>());
   /** Insertion line under finger aim (null when not dragging). */
   const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
   /** onLayout heights so drag aim matches real header / stay / quick-add sizes. */
@@ -354,10 +358,11 @@ export default function DestinationReorderList({
     }
     // Always re-enable parent scroll even if release races with unmount.
     onDragActiveChange?.(false);
+    onDragPreviewChange?.(null);
     setActiveId(null);
     setDropTargetIndex(null);
     pan.setValue(0);
-  }, [onDragActiveChange, pan]);
+  }, [onDragActiveChange, onDragPreviewChange, pan]);
 
   useEffect(() => {
     if (!foreground) endDragSession();
@@ -555,10 +560,26 @@ export default function DestinationReorderList({
       const entry = orderRef.current[startIdx];
       // Day1 header is fixed; Day2…last may drag.
       if (entry.type === 'header' && entry.day <= 1) return;
+      startIndexRef.current = startIdx;
       draggingRef.current = true;
       onDragActiveChange?.(true);
-      setActiveId(id);
-      startIndexRef.current = startIdx;
+      const view = rowViewsRef.current.get(id);
+      const preview = previewRowsRef.current.get(id);
+      previewPan.setValue(0);
+      if (view && preview && onDragPreviewChange) {
+        view.measureInWindow((x, y, width, height) => {
+          if (!draggingRef.current || orderRef.current[startIndexRef.current]?.id !== id) return;
+          setActiveId(id);
+          onDragPreviewChange(
+            <Animated.View pointerEvents="none" accessibilityElementsHidden testID="route-drag-preview"
+              style={{ position: 'absolute', left: x, top: y, width, height, zIndex: 1000,
+                elevation: 1000, transform: [{ translateY: previewPan }] }}>
+              {preview}
+            </Animated.View>,
+          );
+        });
+      }
+      if (!onDragPreviewChange) setActiveId(id);
       dropTargetIndexRef.current = startIdx;
       lastDropHapticIndexRef.current = startIdx;
       scrollAccumRef.current = 0;
@@ -577,7 +598,7 @@ export default function DestinationReorderList({
       pan.setValue(0);
       selectionTick();
     },
-    [pan, onDragActiveChange, toReorderEntries, getMeasuredGeometry],
+    [pan, previewPan, onDragActiveChange, onDragPreviewChange, toReorderEntries, getMeasuredGeometry],
   );
 
   const handleMove = useCallback(
@@ -641,8 +662,9 @@ export default function DestinationReorderList({
 
       // Pure finger offset — order/layout Y never changes during the gesture.
       pan.setValue(effectiveDy);
+      previewPan.setValue(dy);
     },
-    [pan, toReorderEntries, onDragAutoScroll, getMeasuredGeometry],
+    [pan, previewPan, toReorderEntries, onDragAutoScroll, getMeasuredGeometry],
   );
 
   const handleRelease = useCallback(async () => {
@@ -931,13 +953,14 @@ export default function DestinationReorderList({
                 canReorder && interactionMode === 'select' && !inSetMode;
               const canDragStop =
                 canReorder && !locked && interactionMode === 'drag';
-              return (
+              const row = (
                 <Row
                   key={item.id}
                   item={item.item}
                   onMoveTo={canReorder && item.item.kind !== 'accommodation'
                     ? () => setMoveDestinationId(item.item.id) : undefined}
                   active={activeId === item.id}
+                  onViewRef={(node) => { if (node) rowViewsRef.current.set(item.id, node); else rowViewsRef.current.delete(item.id); }}
                   canDrag={canDragStop}
                   canSwipeDelete={canReorder && !!onDelete && !locked && !inSetMode}
                   pan={pan}
@@ -948,6 +971,7 @@ export default function DestinationReorderList({
                   onGrant={onGrant}
                   onMove={onMove}
                   onRelease={onRelease}
+                  onCancel={endDragSession}
                   onDelete={onDelete}
                   isAccommodation={isStayCard}
                   stayDuplicate={stayDuplicate}
@@ -1003,6 +1027,11 @@ export default function DestinationReorderList({
                   }
                 />
               );
+              previewRowsRef.current.set(item.id, React.cloneElement(row, {
+                active: false, canDrag: false, canSwipeDelete: false,
+                onViewRef: undefined, tourTargetRef: undefined,
+              }));
+              return row;
             };
 
             // Flat index walk matches order[] for ghost drop indicator.
@@ -1082,19 +1111,8 @@ export default function DestinationReorderList({
                     flatIndex += block.dests.length;
                     return null;
                   })();
-              return (
-                <View
-                  key={item.id}
-                  testID={`day-block-${item.day}`}
-                >
-                  {dropBeforeHeader ? (
-                    <View
-                      key={`drop-before-header-${item.day}`}
-                      style={[styles.dropLine, { backgroundColor: colors.accent }]}
-                      testID={`drop-before-header-${item.day}`}
-                    />
-                  ) : null}
-                  <HeaderRow
+              const header = (
+<HeaderRow
                     item={item}
                     styles={styles}
                     bgColor={bgColor}
@@ -1147,6 +1165,7 @@ export default function DestinationReorderList({
                       showDragAffordance ? () => endDragSession() : undefined
                     }
                     headerActive={activeId === item.id}
+                    onViewRef={(node) => { if (node) rowViewsRef.current.set(item.id, node); else rowViewsRef.current.delete(item.id); }}
                     headerPan={pan}
                     setStayLabel={
                       canReorder
@@ -1218,6 +1237,24 @@ export default function DestinationReorderList({
                         : undefined
                     }
                   />
+              );
+              previewRowsRef.current.set(item.id, React.cloneElement(header, {
+                headerActive: false, onViewRef: undefined, tourTargetRef: undefined,
+                accommodationTargetRef: undefined,
+              }));
+              return (
+                <View
+                  key={item.id}
+                  testID={`day-block-${item.day}`}
+                >
+                  {dropBeforeHeader ? (
+                    <View
+                      key={`drop-before-header-${item.day}`}
+                      style={[styles.dropLine, { backgroundColor: colors.accent }]}
+                      testID={`drop-before-header-${item.day}`}
+                    />
+                  ) : null}
+                  {header}
                   {dropAfterHeader ? (
                     <View
                       key={`drop-after-header-${item.day}`}
@@ -1252,7 +1289,8 @@ export default function DestinationReorderList({
             });
             // Insertion line after the last row (aim past last midpoint).
             const endDrop =
-              dropTargetIndex === flatIndex ? (
+              dropTargetIndex === flatIndex
+              && !(order.at(-1)?.type === 'header') ? (
                 <View
                   key={`drop-end-${flatIndex}`}
                   style={[styles.dropLine, { backgroundColor: colors.accent }]}
@@ -1579,6 +1617,7 @@ const HeaderRow = memo(function HeaderRow({
   accent,
   onLayoutHeight,
   tourTargetRef,
+  onViewRef,
   accommodationTargetRef,
 }: {
   item: { day: number; title: string; dateStr: string };
@@ -1611,6 +1650,7 @@ const HeaderRow = memo(function HeaderRow({
   accent: string;
   onLayoutHeight?: (height: number) => void;
   tourTargetRef?: (node: View | null) => void;
+  onViewRef?: (node: View | null) => void;
   accommodationTargetRef?: (node: View | null) => void;
 }) {
   const { t } = useTranslation();
@@ -1704,6 +1744,7 @@ const HeaderRow = memo(function HeaderRow({
       ref={(node) => {
         const view = node as View | null;
         tourTargetRef?.(view);
+        onViewRef?.(view);
         // If no set-stay control is rendered (for example, every day already
         // has a saved accommodation), keep the route tour target measurable
         // on the day header instead of silently blocking the six-step tour.
@@ -1714,7 +1755,7 @@ const HeaderRow = memo(function HeaderRow({
       onLayout={(e) => onLayoutHeight?.(e.nativeEvent.layout.height)}
       style={
         headerActive && headerPan
-          ? { transform: [{ translateY: headerPan }], zIndex: 10, elevation: 6 }
+          ? { opacity: 0 }
           : undefined
       }
       {...(canSwipeToggleAffordance ? swipeResponder.panHandlers : {})}
@@ -1838,6 +1879,7 @@ const Row = memo(function Row({
   onGrant,
   onMove,
   onRelease,
+  onCancel,
   onDelete,
   onEmojiPress,
   isAccommodation,
@@ -1852,6 +1894,7 @@ const Row = memo(function Row({
   onToggleMultiSelect,
   onLayoutHeight,
   tourTargetRef,
+  onViewRef,
   onSwipeableOpen,
   onSwipeableClose,
   gatherCardTitleMarquee,
@@ -1869,6 +1912,7 @@ const Row = memo(function Row({
   onGrant: (id: string) => void;
   onMove: (id: string, dy: number, pageY?: number) => void;
   onRelease: () => void;
+  onCancel: () => void;
   onDelete?: (id: string) => void;
   onEmojiPress?: (id: string) => void;
   isAccommodation?: boolean;
@@ -1885,6 +1929,7 @@ const Row = memo(function Row({
   onToggleMultiSelect?: () => void;
   onLayoutHeight?: (height: number) => void;
   tourTargetRef?: (node: View | null) => void;
+  onViewRef?: (node: View | null) => void;
   onSwipeableOpen?: (swipeable: SwipeableMethods) => void;
   onSwipeableClose?: (swipeable: SwipeableMethods) => void;
   gatherCardTitleMarquee: boolean;
@@ -1904,6 +1949,8 @@ const Row = memo(function Row({
   onMoveRef.current = onMove;
   const onReleaseRef = useRef(onRelease);
   onReleaseRef.current = onRelease;
+  const onCancelRef = useRef(onCancel);
+  onCancelRef.current = onCancel;
   const { t } = useTranslation();
 
   const handleSwipeableOpen = useCallback(() => {
@@ -1945,7 +1992,7 @@ const Row = memo(function Row({
         handleTouchRef.current = false;
       },
       onPanResponderTerminate: () => {
-        onReleaseRef.current();
+        onCancelRef.current();
         handleTouchRef.current = false;
       },
     }),
@@ -1975,8 +2022,8 @@ const Row = memo(function Row({
 
   return (
     <View
-      ref={(node) => tourTargetRef?.(node as View | null)}
-      style={active && { zIndex: 10, elevation: 6 }}
+      ref={(node) => { tourTargetRef?.(node as View | null); onViewRef?.(node as View | null); }}
+      style={active && { opacity: 0 }}
       onLayout={(e) => onLayoutHeight?.(e.nativeEvent.layout.height)}
     >
       <ReanimatedSwipeable
@@ -2208,9 +2255,7 @@ const makeStyles = (colors: Palette) =>
       paddingVertical: spacing.md,
     },
     list: {
-      borderRadius: MAP_SHEET_CORNER_RADIUS,
-      borderWidth: 1,
-      borderColor: colors.border,
+      borderRadius: 16,
       backgroundColor: 'transparent',
       overflow: 'hidden',
     },

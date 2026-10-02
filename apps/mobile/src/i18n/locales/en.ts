@@ -384,6 +384,8 @@ export const en: Record<keyof ZhDict, string> = {
   'map.searchPlaces': 'Search places',
   'confirmGather.kicker': 'Add this gather point?',
   'confirmGather.going': 'To {name}',
+  'confirmGather.addPool': 'Add to pool',
+  'confirmGather.quickAdd': 'Quick add',
   'confirmGather.add': 'Add',
   'map.share': 'Share',
   'map.copy': 'Copy',

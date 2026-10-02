@@ -1,3 +1,4 @@
+jest.mock('../a11y/useFontScaleBucket', () => ({ useFontLayout: () => ({ textScale: 1, boldText: false }) }));
 /**
  * Sol REVIEW_FIX round 2 — high-level observable behavior for #129 / PR #142.
  * Node/ts-jest runner (same as CI `npm test`).
@@ -295,6 +296,31 @@ describe('R2: hook observable lifecycle', () => {
       ...overrides,
     };
   }
+
+  it('unlocks next and previous with centered copy when a native measurement never returns', async () => {
+    jest.useFakeTimers();
+    const measureTarget = jest.fn<Promise<any>, []>(async () => ({ x: 0, y: 100, width: 280, height: 44 }));
+    const box: { latest?: ReturnType<typeof useGroupFeatureTour> } = {};
+    let tree!: { unmount: () => void };
+    await act(async () => { tree = create(React.createElement(HookProbe, {
+      input: baseInput({ measureTarget }), onSnapshot: (value: ReturnType<typeof useGroupFeatureTour>) => { box.latest = value; },
+    })); });
+    await act(async () => { await jest.advanceTimersByTimeAsync(2000); });
+    expect(box.latest?.tourActive).toBe(true);
+    measureTarget.mockImplementation(() => new Promise(() => {}));
+    await act(async () => { box.latest?.onNext(); });
+    await act(async () => { await jest.advanceTimersByTimeAsync(5000); });
+    expect(box.latest?.stepIndex).toBe(1);
+    expect(box.latest?.targetRect).toBeNull();
+    expect(box.latest?.transitioning).toBe(false);
+    expect(box.latest?.canGoPrev).toBe(true);
+    await act(async () => { box.latest?.onPrev(); });
+    await act(async () => { await jest.advanceTimersByTimeAsync(5000); });
+    expect(box.latest?.stepIndex).toBe(0);
+    expect(box.latest?.transitioning).toBe(false);
+    await act(async () => tree.unmount());
+    jest.useRealTimers();
+  });
 
   it('notifies MapScreen when tour becomes active', async () => {
     const onTourActiveChange = jest.fn();

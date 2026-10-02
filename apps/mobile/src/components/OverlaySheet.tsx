@@ -49,6 +49,7 @@ export default function OverlaySheet({
   material = 'mapSheet',
   edgeToEdge = false,
   children,
+  floatingContent,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -69,6 +70,7 @@ export default function OverlaySheet({
   /** Flush left/right (no 8px inset). Used by Settings full-bleed sheet. */
   edgeToEdge?: boolean;
   children: React.ReactNode;
+  floatingContent?: React.ReactNode;
 }) {
   const foreground = useForegroundUi();
   const { height } = useWindowDimensions();
@@ -268,6 +270,7 @@ export default function OverlaySheet({
           {trackedChild}
         </View>
       </Animated.View>
+      {visible ? floatingContent : null}
     </View>
   );
 }

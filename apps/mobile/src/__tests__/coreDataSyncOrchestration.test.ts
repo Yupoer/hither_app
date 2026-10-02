@@ -240,6 +240,17 @@ afterEach(async () => {
 });
 
 describe('coreDataSync production orchestration', () => {
+  it('persists quick-add position and replay intent in the same durable mutation', async () => {
+    await seedSnapshot(makeState('group-1', [makeDestination('start', 0, { kind: 'accommodation', stayAnchor: true }),
+      makeDestination('old', 1)]));
+    const added = await enqueueDestinationAdd({ groupId: 'group-1', title: 'Quick',
+      latitude: 25, longitude: 121, day: 1, placement: 'firstStop', actorId: 'actor-a' });
+    const snapshot = await getCoreDataStore().readSnapshot('group-1');
+    expect(snapshot?.destinations.sort((a,b) => a.order-b.order).map(item => item.id))
+      .toEqual(['start', added.destinationId, 'old']);
+    expect(added.operation.payload.placement).toBe('firstStop');
+    expect((await memoryOutboxDb().listByGroup('group-1')).filter(op => op.operationType === 'add_destination')).toHaveLength(1);
+  });
   it('seeds a cold snapshot from this actor visible state without waiting for remote recovery', async () => {
     const release = retainVisibleGroupSeed('actor-a', makeState('cold-group', []));
     const recovered = await ensureCoreSnapshot('cold-group');

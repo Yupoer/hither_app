@@ -185,6 +185,31 @@ describe('route reorder tour (#189)', () => {
     });
   });
 
+  it('advances and returns with centered copy after a target detaches', async () => {
+    jest.useFakeTimers();
+    const measureTarget = jest.fn<Promise<any>, []>(async () => ({ x: 8, y: 12, width: 120, height: 36 }));
+    let latest: ReturnType<typeof useRouteReorderTour> | undefined;
+    function Probe() {
+      latest = useRouteReorderTour({ routeOverlayOpenComplete: true, isLeader: true,
+        canEditItinerary: true, gatheringPointCount: 1, accountId: 'user-a',
+        accountPreferences: { routeReorderTourCompleted: false }, measureTarget });
+      return null;
+    }
+    const root = create(React.createElement(Probe));
+    await flushRouteTour();
+    expect(latest?.tourActive).toBe(true);
+    measureTarget.mockResolvedValue(null);
+    await act(async () => { const pending = latest?.onNext(); await jest.advanceTimersByTimeAsync(1500); await pending; });
+    expect(latest?.stepIndex).toBe(1);
+    expect(latest?.targetRect).toBeNull();
+    expect(latest?.transitioning).toBe(false);
+    await act(async () => { const pending = latest?.onPrev(); await jest.advanceTimersByTimeAsync(1500); await pending; });
+    expect(latest?.stepIndex).toBe(0);
+    expect(latest?.transitioning).toBe(false);
+    await act(async () => root.unmount());
+    jest.useRealTimers();
+  });
+
   it('measures all six targets atomically and completes only after the last step', async () => {
     const measureTarget = jest.fn(async () => ({ x: 8, y: 12, width: 120, height: 36 }));
     const scrollToTarget = jest.fn();

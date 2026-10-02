@@ -110,7 +110,7 @@ describe('CoordinateDestinationSheet wiring contract', () => {
     expect(longPressBlock).toContain('cameraOnLongPress');
     expect(longPressBlock).not.toContain('notifyLeaderPlace');
     expect(mapScreen).toContain('notifyLeaderPlace');
-    expect(mapScreen).toContain('handlePickDestination(place)');
+    expect(mapScreen).toContain('handlePickDestination(place, placement)');
     expect(mapScreen).toContain('mediumTap()');
     expect(mapScreen).toContain('cameraAfterSuccessfulAdd');
     expect(groupMap).toContain('moveOnMarkerPress={false}');

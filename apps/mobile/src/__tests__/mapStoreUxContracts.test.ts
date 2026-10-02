@@ -52,7 +52,7 @@ describe('long-press inline rename (#172)', () => {
   it('keeps bottom confirm card with inline name TextInput (no rename Modal)', () => {
     expect(mapScreen).toContain('testID="confirm-place-name"');
     expect(mapScreen).toContain('setPendingPlaceTitle');
-    expect(mapScreen).toContain("t('confirmGather.add')");
+    expect(mapScreen).toContain("t('confirmGather.quickAdd')");
     expect(mapScreen).toContain('keyboardAvoidBottomOffset');
     expect(mapScreen).not.toContain('testID="confirm-rename-modal"');
     expect(mapScreen).not.toContain('openRenameModal');
