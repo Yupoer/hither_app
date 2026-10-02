@@ -148,6 +148,11 @@ jobs:
         # SDK 57 includes the Hermes fix; keep the current advisory check enabled.
         run: npx --yes expo-doctor@1.20.4
 
+      - name: HTTPS recovery browser behavior
+        if: steps.scope.outputs.product == 'true'
+        working-directory: ${{ github.workspace }}
+        run: node scripts/auth-web-recovery-check.mjs
+
       - uses: denoland/setup-deno@v2
         if: steps.scope.outputs.product == 'true'
         with:

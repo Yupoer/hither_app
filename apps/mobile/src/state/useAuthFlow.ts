@@ -270,7 +270,7 @@ export function useAuthFlow({
           if (oauthError || !data?.url) {
             throw toAuthFlowError(oauthError, 'Google Sign-In failed.');
           }
-          const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+          const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo, { preferUniversalLinks: true });
           if (result.type !== 'success') { await cancelAuthCallback(); return null; }
 
           const session = await consumeAuthCallback(result.url);
@@ -420,7 +420,7 @@ export function useAuthFlow({
         throw toAuthFlowError(error, 'Google linking failed.');
       }
 
-      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo, { preferUniversalLinks: true });
       if (result.type !== 'success') { await cancelAuthCallback(); return null; }
 
       const session = await consumeAuthCallback(result.url);

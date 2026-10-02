@@ -1,6 +1,7 @@
 import * as Crypto from 'expo-crypto';
-import * as SecureStore from 'expo-secure-store';
+import { supabaseAuthStorage } from './authStorage';
 import { supabase } from './supabase';
+import { getSharedLiveActivityTokenGate } from '../utils/liveActivityTokenGate';
 
 let deviceIdPromise: Promise<string> | null = null;
 let writes: Promise<unknown> = Promise.resolve();
@@ -28,10 +29,10 @@ export function changeAuthSession<T>(operation: () => Promise<T>, revoke = true,
 
 export function getInstallationId(): Promise<string> {
   if (!deviceIdPromise) deviceIdPromise = (async () => {
-    const stored = await SecureStore.getItemAsync('hither.live-activity-device-id');
+    const stored = await supabaseAuthStorage.getItem('hither.live-activity-device-id');
     if (stored) return stored;
     const created = Crypto.randomUUID();
-    await SecureStore.setItemAsync('hither.live-activity-device-id', created);
+    await supabaseAuthStorage.setItem('hither.live-activity-device-id', created);
     return created;
   })().catch(error => { deviceIdPromise = null; throw error; });
   return deviceIdPromise;
@@ -71,4 +72,7 @@ export async function revokeInstallationCapabilities(): Promise<void> {
     p_activity_ids: activities.map(activity => activity.activityId),
   });
   if (revoked.error) throw revoked.error;
+  const gate = getSharedLiveActivityTokenGate();
+  await gate.ready();
+  gate.reset();
 }

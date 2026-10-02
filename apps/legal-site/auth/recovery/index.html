@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>Hither 密碼重設</title><link rel="stylesheet" href="/styles.css"><script type="module" src="/auth/recovery/recovery.mjs"></script></head>
+<body><main><h1>Hither 密碼重設 / Reset password</h1>
+<p id="status" role="status">請在提出要求的裝置開啟 Hither，或重新提出密碼重設要求。 / Open Hither on the device where you started, or request a new reset link.</p>
+<form id="recovery" hidden>
+<p><label for="password">新密碼 / New password</label><br><input id="password" type="password" autocomplete="new-password" minlength="8" required></p>
+<p><label for="confirm">確認新密碼 / Confirm new password</label><br><input id="confirm" type="password" autocomplete="new-password" minlength="8" required></p>
+<button type="submit">更新密碼 / Update password</button>
+</form></main></body></html>

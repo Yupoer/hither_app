@@ -128,7 +128,7 @@ export default React.memo(function KmlImportSheet({
   }, [onImport, handleClose]);
 
   const allowedFor = (items: KmlPlacemark[]) => {
-    if (isPro || !canWrite) return items.length;
+    if (isPro || !canWrite) return Math.min(items.length, 100);
     const remaining = remainingDestinationSlots({
       isPro: false,
       openCount: currentCount,
@@ -143,7 +143,7 @@ export default React.memo(function KmlImportSheet({
         (remainingQuota ?? FREE_LIMITS.kmlImportPoints) + Math.max(0, extraCredits),
       ),
     );
-    return Math.min(items.length, batchCap);
+    return Math.min(items.length, batchCap, 100);
   };
 
   const errorCopy = (code: KmlLoadErrorCode | string): string => {
@@ -200,7 +200,10 @@ export default React.memo(function KmlImportSheet({
             const allowed = allowedFor(step.items);
             return (
               <>
-                {allowed < step.items.length && (
+                {step.items.length > 100 && (
+                  <Text style={styles.lockedNote}>{t('kml.batchLimit')}</Text>
+                )}
+                {allowed < Math.min(step.items.length, 100) && (
                   <Pressable onPress={onUpgrade}>
                     <Text style={[styles.lockedNote, { color: accent }]}>
                       {t('kml.lockedNote', { n: allowed })}

@@ -10,6 +10,7 @@ jest.mock('../api/supabase', () => ({ supabase: {
   rpc: (...args: unknown[]) => mockRpc(...args),
 } }));
 import { changeAuthSession, revokeInstallationCapabilities, resumeInstallationCapabilities, writeInstallationCapability } from '../api/installationCapabilities';
+import { getSharedLiveActivityTokenGate } from '../utils/liveActivityTokenGate';
 
 describe('installation capability lifecycle', () => {
   beforeEach(() => { mockActor = 'account-a'; resumeInstallationCapabilities(); jest.clearAllMocks(); mockRpc.mockResolvedValue({ error: null }); mockSignOut.mockResolvedValue({ error: null }); });
@@ -64,5 +65,34 @@ describe('installation capability lifecycle', () => {
     expect(mockSignOut).not.toHaveBeenCalled();
     mockSignOut.mockResolvedValue({ error: new Error('offline') });
     await expect(changeAuthSession(async () => { throw new Error('bad password'); })).rejects.toThrow('retry sign-out');
+  });
+  it('allows the same account and push-to-start token to register after successful logout', async () => {
+    const gate = getSharedLiveActivityTokenGate();
+    await gate.ready();
+    const identity = { userId: 'account-a', deviceId: 'installation-id', token: 'same-token', enabled: true };
+    gate.recordResult(identity, 'upserted');
+    expect(gate.shouldRegister(identity)).toEqual({ action: 'skip', reason: 'idempotent_cache' });
+    await revokeInstallationCapabilities();
+    resumeInstallationCapabilities();
+    expect(gate.shouldRegister(identity)).toEqual({ action: 'register' });
+    const register = jest.fn();
+    await writeInstallationCapability('account-a', register);
+    expect(register).toHaveBeenCalledWith('installation-id');
+  });
+  it('waits for gate hydration before clearing cached conflicts and leaves it intact if revoke fails', async () => {
+    const gate = getSharedLiveActivityTokenGate();
+    const identity = { userId: 'account-a', deviceId: 'installation-id', token: 'same-token', enabled: true };
+    gate.recordResult(identity, 'foreign_token_conflict');
+    mockRpc.mockResolvedValueOnce({ error: new Error('offline') });
+    await expect(revokeInstallationCapabilities()).rejects.toThrow('offline');
+    expect(gate.shouldRegister(identity)).toEqual({ action: 'skip', reason: 'permanent_conflict' });
+    let hydrate!: () => void;
+    const ready = jest.spyOn(gate, 'ready').mockImplementationOnce(() => new Promise<void>(resolve => { hydrate = resolve; }));
+    const revoked = revokeInstallationCapabilities();
+    while (!hydrate) await Promise.resolve();
+    expect(gate.shouldRegister(identity).action).toBe('skip');
+    hydrate(); await revoked;
+    expect(gate.shouldRegister(identity)).toEqual({ action: 'register' });
+    ready.mockRestore();
   });
 });

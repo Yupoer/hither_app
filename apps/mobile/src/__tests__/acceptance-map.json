@@ -4,6 +4,18 @@
   "entries": [
     {
       "parent": 285, "child": 285,
+      "acceptance": "Premium import preview matches the server batch ceiling without an upgrade promise.",
+      "testFile": "kmlImportPreview.test.ts",
+      "testNamePattern": "previews and submits only 100 Premium points"
+    },
+    {
+      "parent": 285, "child": 285,
+      "acceptance": "Browser recovery clears callback secrets before network access and never exchanges native PKCE codes.",
+      "testFile": "scripts/auth-web-recovery-check.mjs",
+      "testNamePattern": "URL cleared before requests"
+    },
+    {
+      "parent": 285, "child": 285,
       "acceptance": "Server atomically revokes installation push capabilities without affecting other accounts or devices, rejects late registration, and permits a fresh login.",
       "testFile": "supabase/tests/installation_capabilities.test.sql",
       "testNamePattern": "logout revokes in one transaction|late push registration|other account retained|fresh authentication"

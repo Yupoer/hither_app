@@ -50,6 +50,14 @@ begin
    perform public.import_itinerary_batch(g,null,1,jsonb_build_array(jsonb_build_object('title','X','extra',repeat('X',1048576),'latitude',25,'longitude',121)));
    raise exception 'payload ceiling missing';
  exception when sqlstate '22023' then assert sqlerrm = 'import batch limit exceeded'; end;
+ begin
+   perform public.import_itinerary_batch(g,null,1,jsonb_build_array(jsonb_build_object('title',repeat('漢',171),'latitude',25,'longitude',121)));
+   raise exception 'UTF-8 title ceiling missing';
+ exception when sqlstate '22023' then assert sqlerrm = 'invalid import item title'; end;
+ begin
+   perform public.import_itinerary_batch(g,null,1,jsonb_build_array(jsonb_build_object('title','X','address',repeat('漢',683),'latitude',25,'longitude',121)));
+   raise exception 'UTF-8 address ceiling missing';
+ exception when sqlstate '22023' then assert sqlerrm = 'invalid import item title'; end;
  assert (select count(*) = 1 from public.itinerary_items where group_id=g), 'rejected imports persisted rows';
 end;
 $$;

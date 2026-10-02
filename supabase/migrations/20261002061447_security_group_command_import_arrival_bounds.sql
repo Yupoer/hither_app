@@ -431,8 +431,8 @@ begin
   for v_item in select * from jsonb_array_elements(p_items)
   loop
     v_title := nullif(trim(coalesce(v_item->>'title', '')), '');
-    if v_title is null or length(v_title) > 512
-      or length(coalesce(v_item->>'address', '')) > 2048 then
+    if v_title is null or octet_length(v_title) > 512
+      or octet_length(coalesce(v_item->>'address', '')) > 2048 then
       raise exception 'invalid import item title' using errcode = '22023';
     end if;
     begin
