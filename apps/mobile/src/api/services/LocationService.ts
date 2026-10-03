@@ -7,6 +7,7 @@ import type { Coordinates } from '../../types';
 import { requireUserId, orThrow } from './_helpers';
 import { normalizeLocationRefreshRecipientIds } from '../../utils/locationRefreshResponse';
 import { captureLocationAccess, isLocationAccessCurrent } from '../../state/locationPrivacy';
+import { normalizeLocationSequence } from '../../utils/locationSequence';
 
 export interface LocationRefreshResult {
   accepted: boolean;
@@ -100,9 +101,19 @@ export async function ingestLocationBatch(
   if (!isLocationAccessCurrent(access)) return { acceptedIds: [], rejected: denied(events) };
   const owned = remoteEvents.filter(event => !event.actorId || event.actorId === uid);
   rejected.push(...remoteEvents.filter(event => event.actorId && event.actorId !== uid).map(event => ({ id: event.id, reason: 'actor_changed' })));
-  if (!owned.length) return { acceptedIds, rejected };
+  // Normalize again at the wire boundary for durable rows saved before this fix
+  // and direct callers. Keep capturedAt intact for precise server ordering.
+  const uploadEvents: LocationBatchEvent[] = [];
+  for (const event of owned) {
+    try {
+      uploadEvents.push({ ...event, sequence: normalizeLocationSequence(event.sequence) });
+    } catch {
+      rejected.push({ id: event.id, reason: 'invalid_event' });
+    }
+  }
+  if (!uploadEvents.length) return { acceptedIds, rejected };
   const { data, error } = await supabase.rpc('ingest_location_batch', {
-    p_events: owned,
+    p_events: uploadEvents,
   }).abortSignal(access.signal);
   orThrow(error);
   const result = (data ?? {}) as Partial<LocationBatchResult>;

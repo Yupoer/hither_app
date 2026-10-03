@@ -103,6 +103,39 @@ describe('LocationService durable refresh seams', () => {
     expect(mockSupabase.rpc).not.toHaveBeenCalled();
   });
 
+  it('repairs fractional sequences from pre-fix durable rows at the RPC boundary', async () => {
+    const capturedAt = 1791020129260.424;
+    const event = { id: 'persisted', actorId: 'user-1', groupId: 'group-1', navigationSessionId: null,
+      capturedAt, coords: { latitude: 35.685, longitude: 139.774, accuracy: 5 },
+      trackingMode: 'foreground', source: 'foreground', sequence: capturedAt };
+    mockSupabase.rpc.mockReturnValue({ abortSignal: jest.fn().mockResolvedValue({
+      data: { acceptedIds: [event.id], rejected: [] }, error: null,
+    }) });
+    await expect(ingestLocationBatch([event])).resolves.toEqual({ acceptedIds: [event.id], rejected: [] });
+    const wireEvent = mockSupabase.rpc.mock.calls[0][1].p_events[0];
+    expect(wireEvent).toEqual({ ...event, sequence: 1791020129260 });
+    expect(BigInt(JSON.stringify(wireEvent.sequence))).toBe(1791020129260n);
+    expect(event.sequence).toBe(capturedAt);
+  });
+
+  it('rejects unsafe sequences individually while uploading other valid events', async () => {
+    const base = { actorId: 'user-1', groupId: 'group-1', navigationSessionId: null, capturedAt: 10.424,
+      coords: { latitude: 35.685, longitude: 139.774 }, trackingMode: 'foreground', source: 'foreground' };
+    const invalid = [NaN, Infinity, -0.1, Number.MAX_SAFE_INTEGER + 1].map((sequence, i) => ({ ...base, id: `invalid-${i}`, sequence }));
+    mockSupabase.rpc.mockReturnValue({ abortSignal: jest.fn().mockResolvedValue({
+      data: { acceptedIds: ['valid'], rejected: [] }, error: null,
+    }) });
+    await expect(ingestLocationBatch([...invalid, { ...base, id: 'valid', sequence: 7 }])).resolves.toEqual({
+      acceptedIds: ['valid'], rejected: invalid.map(row => ({ id: row.id, reason: 'invalid_event' })),
+    });
+    expect(mockSupabase.rpc.mock.calls[0][1].p_events).toEqual([{ ...base, id: 'valid', sequence: 7 }]);
+    mockSupabase.rpc.mockClear();
+    await expect(ingestLocationBatch(invalid)).resolves.toEqual({
+      acceptedIds: [], rejected: invalid.map(row => ({ id: row.id, reason: 'invalid_event' })),
+    });
+    expect(mockSupabase.rpc).not.toHaveBeenCalled();
+  });
+
   it('maps refresh cooldown, pending rows, and versioned ACKs from RPC responses', async () => {
     mockSupabase.rpc
       .mockResolvedValueOnce({ data: { accepted: true, retry_after_seconds: 1.2 }, error: null })

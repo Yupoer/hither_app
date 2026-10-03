@@ -73,6 +73,32 @@ const event = (overrides: Partial<LocationUploadEvent> = {}): LocationUploadEven
 });
 
 describe('SQLite location outbox', () => {
+  it('stores an integer sequence while preserving the fractional foreground capture time', async () => {
+    const capturedAt = 1791020129260.424;
+    const database = new MemoryLocationOutboxDatabase();
+    const upload = jest.fn(async (events: LocationUploadEvent[]) => ({
+      acceptedIds: events.map(item => item.id), rejected: [],
+    }));
+    const outbox = createLocationOutbox(database, upload, () => capturedAt + 1_000);
+    await outbox.enqueue({ id: 'fractional', groupId: 'g1', capturedAt,
+      coordinates: { latitude: 35.685, longitude: 139.774, accuracy: 5 } });
+    expect(database.entries.get('fractional')).toMatchObject({ capturedAt, sequence: 1791020129260 });
+    await expect(outbox.flush()).resolves.toMatchObject({ sent: 1, discarded: 0, remaining: 0 });
+    expect(upload.mock.calls[0][0][0]).toMatchObject({ capturedAt, sequence: 1791020129260 });
+  });
+
+  it('normalizes explicitly supplied background event sequences without mutating the sensor event', async () => {
+    const capturedAt = 1791020129260.424;
+    const input = event({ capturedAt, sequence: capturedAt });
+    const database = new MemoryLocationOutboxDatabase();
+    const outbox = createLocationOutbox(database, jest.fn(), () => capturedAt);
+    await outbox.enqueue(input);
+    expect(database.entries.get(input.id)).toMatchObject({ capturedAt, sequence: 1791020129260 });
+    expect(input.sequence).toBe(capturedAt);
+    await expect(outbox.enqueue(event({ id: 'bad', sequence: Infinity }))).rejects.toThrow('invalid_location_sequence');
+    expect(database.entries.has('bad')).toBe(false);
+  });
+
   it('uploads oldest entries in sequence order with one RPC call per batch', async () => {
     const database = new MemoryLocationOutboxDatabase();
     const upload = jest.fn(async (events: LocationUploadEvent[]) => ({
@@ -190,7 +216,7 @@ describe('SQLite location outbox', () => {
       id: '00000000-0000-4000-8000-000000000099',
       groupId: 'g1',
       coordinates: { latitude: 25.04, longitude: 121.5 },
-      capturedAt: 1_000,
+      capturedAt: 1_000.424,
       attempts: 0,
       nextAttemptAt: 1_000,
       expiresAt: 86_401_000,
@@ -212,6 +238,7 @@ describe('SQLite location outbox', () => {
       trackingMode: 'foreground',
       source: 'foreground',
       sequence: 1_000,
+      capturedAt: 1_000.424,
     });
   });
 });

@@ -10,6 +10,7 @@ import {
 import type { Coordinates } from '../types';
 import type { TrackingMode } from '../utils/locationPolicy';
 import { createSingleFlightFlush } from '../utils/locationOutboxFlush';
+import { normalizeLocationSequence } from '../utils/locationSequence';
 import { getHitherDatabase } from './hitherDatabase';
 import { captureLocationAccess, isLocationAccessCurrent } from './locationPrivacy';
 
@@ -244,7 +245,7 @@ function normalizeInput(
   input: LocationUploadEvent | LegacyEnqueueInput,
   now: number,
 ): LocationUploadEvent {
-  if ('coords' in input) return input;
+  if ('coords' in input) return { ...input, sequence: normalizeLocationSequence(input.sequence) };
   const capturedAt = input.capturedAt ?? now;
   return {
     actorId: input.actorId,
@@ -263,7 +264,7 @@ function normalizeInput(
     },
     trackingMode: input.trackingMode ?? 'foreground',
     source: input.source ?? 'foreground',
-    sequence: input.sequence ?? capturedAt,
+    sequence: normalizeLocationSequence(input.sequence ?? capturedAt),
   };
 }
 
@@ -274,7 +275,8 @@ function legacyToEvent(value: unknown): LocationUploadEvent | null {
     typeof entry.groupId !== 'string' ||
     !isFiniteCoordinate(entry.coordinates?.latitude) ||
     !isFiniteCoordinate(entry.coordinates?.longitude) ||
-    !isFiniteCoordinate(entry.capturedAt)
+    !isFiniteCoordinate(entry.capturedAt) ||
+    entry.capturedAt < 0 || !Number.isSafeInteger(Math.trunc(entry.capturedAt))
   ) return null;
   return {
     id: isUuid(entry.id) ? entry.id : Crypto.randomUUID(),
@@ -284,7 +286,7 @@ function legacyToEvent(value: unknown): LocationUploadEvent | null {
     coords: { ...entry.coordinates },
     trackingMode: 'foreground',
     source: 'foreground',
-    sequence: entry.capturedAt,
+    sequence: normalizeLocationSequence(entry.capturedAt),
   };
 }
 
