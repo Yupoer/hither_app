@@ -1859,6 +1859,13 @@
       "acceptance": "Presence age is interpreted from true tracking metadata without renewing the capture timestamp.",
       "testFile": "groupStatePatches.test.ts",
       "testNamePattern": "preserves actual passive metadata"
+    },
+    {
+      "parent": 289,
+      "child": 289,
+      "acceptance": "The ExpoModulesJSI bridge state and initializer remain inside JavaScriptExecutor on a clean install.",
+      "testFile": "expoModulesJsiPatchContract.test.ts",
+      "testNamePattern": "places the synchronous bridge state inside JavaScriptExecutor"
     }
   ]
 }
