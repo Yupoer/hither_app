@@ -69,12 +69,12 @@ test.each([true, false])('manual refresh reads despite failed GPS and cooldown=%
   expect(requestPeers).toHaveBeenCalledTimes(cooling ? 0 : 1);
 });
 
-test('manual read starts before GPS resolves; peer accounting uses server time', async () => {
+test('manual read starts before GPS resolves; peer accounting uses exact ACK', async () => {
   const members: any[] = [{ userId:'peer', lastUpdated:'2026-01-01T00:00:00Z' }];
   let release!: (value: boolean) => void;
   const pull = jest.fn(async () => true);
   const run = refreshTeamLocations({ pull, uploadSelf:()=>new Promise(r=>{release=r;}), cooling:false,
-    requestPeers:async () => { members[0].lastUpdated='2026-01-01T00:00:01Z'; return {accepted:true,retryAfterSeconds:60,recipientIds:['peer'],requestedAt:'2026-01-01T00:00:01Z'}; }, getMembers:()=>members });
+    requestPeers:async () => { members[0].lastUpdated='2026-01-01T00:00:01Z'; return {accepted:true,retryAfterSeconds:60,recipientIds:['peer'],requestedAt:'2026-01-01T00:00:01Z'}; }, getMembers:()=>members, getAcknowledgedRecipientIds: async () => ['peer'] });
   expect(pull).toHaveBeenCalledTimes(1); release(true);
   expect(await run).toMatchObject({ selfUploaded:true, respondedUserIds:['peer'] });
 });

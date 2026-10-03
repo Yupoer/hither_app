@@ -101,7 +101,7 @@ describe('locationPolicy', () => {
     });
   });
 
-  it('keeps passive background GPS available after stationary intervals', () => {
+  it('prevents indefinite passive presence stalls in the Expo fallback', () => {
     expect(backgroundLocationOptions('allDay', true, 'passiveBackground')).toMatchObject({
       accuracy: 2,
       pausesUpdatesAutomatically: false,

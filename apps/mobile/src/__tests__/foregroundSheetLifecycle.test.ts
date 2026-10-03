@@ -325,3 +325,38 @@ it('restores the same pending map place to its final pose without replaying its 
   expect(jest.getTimerCount()).toBe(0);
   jest.useRealTimers();
 });
+
+
+it('resumes a controlled detent after a tap or horizontal gesture cancels its spring', async () => {
+  const height = mockValue(300), changed = jest.fn();
+  let root: any;
+  await act(async () => { root = create(React.createElement(BottomSheetElement, {
+    height, detents: [300, 600], index: 1, bottomInset: 0, onIndexChange: changed,
+  }, React.createElement('draft', { text: 'hotel saved' }))); });
+  // Recognition may fail before activation, with no onEnd for a tap/swipe.
+  height.value = 430;
+  const gesture = mockGestures.at(-1);
+  await act(async () => { gesture.onBegin(); gesture.onFinalize?.({}, false); });
+  expect(height.value).toBe(600);
+  expect(changed).not.toHaveBeenCalled();
+  expect(root.root.findByType('draft').props.text).toBe('hotel saved');
+  await act(async () => { root.unmount(); });
+});
+
+it('reconciles a failed gesture to the latest controlled index after foreground interruption', async () => {
+  const height = mockValue(300), changed = jest.fn();
+  let root: any;
+  const props = { height, detents: [300, 600], index: 1, bottomInset: 0, onIndexChange: changed };
+  await act(async () => { root = create(React.createElement(BottomSheetElement, props, React.createElement('draft'))); });
+  height.value = 430;
+  const gesture = mockGestures.at(-1);
+  await act(async () => { gesture.onBegin(); transition('background'); });
+  const count = mockSprings.length;
+  await act(async () => { gesture.onFinalize?.({}, false); });
+  expect(mockSprings).toHaveLength(count);
+  expect(height.value).toBe(600);
+  await act(async () => { root.update(React.createElement(BottomSheetElement, { ...props, index: 0 }, React.createElement('draft'))); transition('active'); });
+  expect(height.value).toBe(300);
+  expect(changed).not.toHaveBeenCalled();
+  await act(async () => { root.unmount(); });
+});

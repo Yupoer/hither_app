@@ -1,0 +1,326 @@
+{
+  "source": "/Users/dillion/Desktop/Hither/qa-runs/2026-10-03-tokyo-blocker002-fix-validation",
+  "reportCount": 80,
+  "reports": [
+    {
+      "path": "A-OFFLINE-NAVIGATION-RESULTS.md",
+      "sha256": "1665e0bf424db294176958e3cdec17c31612304ae33677dcbb23a1239b739080"
+    },
+    {
+      "path": "ACTIVE-DELETE-COLD-REPLAY-RESULT.md",
+      "sha256": "7ac0fc6d61a6afd0043e749d9e2de3a64972766c0b2dd54f321f236dd7fdd8c7"
+    },
+    {
+      "path": "B-REJOIN-BACKGROUND-CONSENT-READOUT.md",
+      "sha256": "ed53eb46e88e7d9d2b9618f4de3b1b96cac48fdd61f4ed79c91b60c2d70b1aea"
+    },
+    {
+      "path": "BACKGROUND-CONSENT-REJOIN-READOUT.md",
+      "sha256": "a728e5413a2ac3958b0d49c687df055fa9e7b4b2856eee270c6d9e6567d6bd6c"
+    },
+    {
+      "path": "BACKGROUND-PREPARATION-RACE-FIX.md",
+      "sha256": "779719c20617bbecce5254c2869fea9318671d4d22b2b74a6b45e892a34a2b9e"
+    },
+    {
+      "path": "BACKGROUND-RESUME-1315.md",
+      "sha256": "17cf8feb21ee2c5a7a931fd833b61bc2250387d00504aa96e1b4f7576dfd3ebc"
+    },
+    {
+      "path": "BACKGROUND-STALL-READOUT.md",
+      "sha256": "9bc4aff6c7912d7467dc6feff51d8fefc207afb581d78bf9b3e1c2a06ea1df7f"
+    },
+    {
+      "path": "BACKGROUND-VALIDATION.md",
+      "sha256": "713151fed296e9b728206a6049ede60741726899f607f712b3fcca49b6fcf400"
+    },
+    {
+      "path": "C-STALE-1443-READOUT.md",
+      "sha256": "557773c89605e7199f0867e783dd8a216444a592c9f3c46e244427d248b1ee68"
+    },
+    {
+      "path": "C-VIEWER-SIX-DIRECTION-COMPLETION.md",
+      "sha256": "43121a000c046b33bacec5ba9bfb2f450ce2266d2e0d41308149c40a3fd1c345"
+    },
+    {
+      "path": "CADENCE-CONTRACT-READOUT.md",
+      "sha256": "e1853f3da841d9f3208d8f6baaf2d8fd4f21b4ab3554ee6db7a9bba3b82f7961"
+    },
+    {
+      "path": "CONCURRENT-REFRESH-PERMISSION-RESULT.md",
+      "sha256": "6417cd2e3cb4ce6a9eca6476011341b78c18405f793ce637ad83f687625cf372"
+    },
+    {
+      "path": "CONTINUATION-LOG.md",
+      "sha256": "e51a7beb53be984c279dba3d398b18cfdc0f9c9f1c74ea48eac62a47dda1d60c"
+    },
+    {
+      "path": "CORE-QUEUE-READ-PROBE.md",
+      "sha256": "bd66250a763b8bdbc11fb2fb160fa4a7a4117598bfe208b9c93739c1c6a40246"
+    },
+    {
+      "path": "CROSS-DAY-ACTIVE-TARGET-IDENTITY-READOUT.md",
+      "sha256": "ddf7aa9c3baa7d2d4375017f339d4624b353240f56d9903ca1cd44f1a15405e4"
+    },
+    {
+      "path": "CURRENT-STATUS.md",
+      "sha256": "2f587ade9b7becd96237327526e76835d917480e4efe462e82f46d63b8fcc6cd"
+    },
+    {
+      "path": "DAY2-STAY-FIX-READOUT.md",
+      "sha256": "6cbdc8bfe9041c0fbd1eb72b5085d6f1c0c53ec7059a7d8403bf787a25199f15"
+    },
+    {
+      "path": "DUAL-VIEWER-SHARING-AND-B-LOCK.md",
+      "sha256": "1d9a253d4f25a77773680439c972f45af7110b263d8d6eda8608b9bcdc5c5260"
+    },
+    {
+      "path": "END-CONTROL-PRESENTATION-READOUT.md",
+      "sha256": "754dea890280e0a4859e5ed132ebbbab8f71dcb34b2b129a66348305f46d8e8f"
+    },
+    {
+      "path": "ENVIRONMENT-TEST-LIMITS.md",
+      "sha256": "fa14e23c784ff6835faf7edd2c9fe33a2ae1a0cc96744e96a877530eb8372080"
+    },
+    {
+      "path": "FINAL-44-COVERAGE-MAP.md",
+      "sha256": "114d3234af3b763261276a34a4004b5906b279b8e2ceb50e147d1e9ab931dd45"
+    },
+    {
+      "path": "FINAL-RESOURCE-OBSERVATION.md",
+      "sha256": "9c5861c1425e756b783aa80140d9f6f0f6e048bbff731760e9defb1b30dd07a7"
+    },
+    {
+      "path": "FINAL-TWO-SCENARIOS-SOURCE-GUIDE.md",
+      "sha256": "3048e8b9709913d77376def3f326a8e14b4e510e9d8e2864c933cface974162f"
+    },
+    {
+      "path": "HOTEL-REPLACEMENT-RESULT.md",
+      "sha256": "d7d23cd2047c6760feead244d71a9ad61309df64ddac887c0f3e643c852f32f7"
+    },
+    {
+      "path": "LEAVE-REJOIN-READOUT.md",
+      "sha256": "f0e58cb71f95ae81708abb757d2c389c0de8071c4d11d2a8ac283604f869236f"
+    },
+    {
+      "path": "LOCKED-NAVIGATION-MOTION-RESULT.md",
+      "sha256": "a0a9948c568cc19dc783d0dc8be55f8038955b8119a045ebae6b85873f5fdcf1"
+    },
+    {
+      "path": "LONG-RUN-RESOURCE-OBSERVATION.md",
+      "sha256": "d92266dc76843c0fe057e4f5ddd85fcb79114b5895b1120366a5e0d8dacd3e2c"
+    },
+    {
+      "path": "MEMBERSHIP-REVOCATION-RESULT.md",
+      "sha256": "2bd9e02fc2279042ad92c15c92ef0b2ff682e479884b6b744b722b8890a29ecc"
+    },
+    {
+      "path": "NATIVE-LISTENER-CONTROL.md",
+      "sha256": "4db6dab26928a29ed8578d176bc6abeb77fff3b913c0ee9dc33a2616e8a8372e"
+    },
+    {
+      "path": "NAVIGATION-START-CONTROL.md",
+      "sha256": "89d0eb7023d39f930e8e95550c46136966e5a3679fdc5db2bbcd222da437cc5a"
+    },
+    {
+      "path": "NETWORK-AND-REFRESH-RESULTS.md",
+      "sha256": "affa8c4fb450a99c03f15b43f67a2f9a86d78ceab0f00141c9b765e90e1fa9dc"
+    },
+    {
+      "path": "PAUSED-TEST-AND-RESUME.md",
+      "sha256": "355d6dedc890bbc4135caf619f0a5171cbccbc74d9c4b79bf8b1e9a518097578"
+    },
+    {
+      "path": "PERFORMANCE-STALL.md",
+      "sha256": "318bddff76ead27e895e4cad7d2df2d0efd8844c92cabbf2027c91e3749accf1"
+    },
+    {
+      "path": "PRECISION-TOGGLE-RESOURCE-RESULT.md",
+      "sha256": "b4816dd1934900b0db1ea2b6a766ff0032fe9197c483e6e8a6827841dc6c2bf6"
+    },
+    {
+      "path": "REFRESH-LOCK-FAULT-RECOVERY-RESULT.md",
+      "sha256": "1da19a7d816c3a3c4b64965e2c2e2ab212bbe7f49f5f5f22028a974b4b28ab61"
+    },
+    {
+      "path": "REMAINING-MINIMUM-SCENARIOS.md",
+      "sha256": "adf90ee3ef26618fef409971b870ee84eb5ae52e7cc5905690974cbf9f0bb1e3"
+    },
+    {
+      "path": "RESUME-A-FAULT-BC-MUTUAL-RESULT.md",
+      "sha256": "4a42991ede2f84a9199dd0a0771678c0fa9454207f7c85cb88a1930fa33076f4"
+    },
+    {
+      "path": "RESUME-ARRIVAL-MINIMUM-GUIDE.md",
+      "sha256": "b9b43be6b606f359eea3f7069f7711f9acc91a37151e4a8731666b84c6580029"
+    },
+    {
+      "path": "RESUME-B-LOCKED-MULTI-CYCLE-RESULT.md",
+      "sha256": "3a370d3e27d57fab5c3182202461463ee519d4ce235a89135a3be94d351092b3"
+    },
+    {
+      "path": "RESUME-CONCURRENT-TRAVEL-RESULT.md",
+      "sha256": "dc4078550b829588b877ceee21289010759ffeb9eb25aba8fdd9640c7c0f44e3"
+    },
+    {
+      "path": "RESUME-END-RESTART-RESULT.md",
+      "sha256": "bc8f482ca850477b4c91308dbf515801ce11ef48a6b3e93ace7c3d5bea03fdea"
+    },
+    {
+      "path": "RESUME-FINAL-RESOURCE-ADDENDUM.md",
+      "sha256": "a574d6b82af9a9e9fbea2f6c71a390798dbadc655f12c0dc349031b01a3dc36b"
+    },
+    {
+      "path": "RESUME-FINITE-COVERAGE-AUDIT.md",
+      "sha256": "50549b0e3685afc2c07dd752137f2e2373da1b5720c9c38447fe22d91bdc3838"
+    },
+    {
+      "path": "RESUME-FOLD-FIRST-ATTEMPT-LIMIT.md",
+      "sha256": "eaaf083b86a14a9fcc6241a88c0136d54937c67f84183e19ea994bdac3d03810"
+    },
+    {
+      "path": "RESUME-FOLD-STAY-FORWARD-RESULT.md",
+      "sha256": "06a9fb08ccee262ef00a50fd1012fa8f2ee1a2095e85220a549dbffe73229f5a"
+    },
+    {
+      "path": "RESUME-SEQUENTIAL-ARRIVAL-RESULT.md",
+      "sha256": "b2de91804fa2b94ede9fd6a31533ea3e6b194697c927354e0c50b2dd27a879fe"
+    },
+    {
+      "path": "ROUTE-IDENTITY-FIX.md",
+      "sha256": "aed13c921ee2af48b1a8071661bb2f0446dcdc447e586f1c4da14e8df8e63aa3"
+    },
+    {
+      "path": "SCRIPT-LIVE-OUTPUT.md",
+      "sha256": "5e6ba793592ae8eceb8ce895d6bb7913c525455566ed5fd69772cdd2b3d25fd6"
+    },
+    {
+      "path": "SEARCH-SELECTION-MISMATCH-DIAGNOSTIC-GUIDE.md",
+      "sha256": "040d286009c1b23623eb40933be4badcb43aa7444fa88208cb63835d7b1842d8"
+    },
+    {
+      "path": "SENDER-PRECISION-EXPERIMENT-PREPARATION.md",
+      "sha256": "1f56f335c9adadfc54cc91939741e4b03d0e2c167bc160c99816916c7a6e1b04"
+    },
+    {
+      "path": "SENDER-PRECISION-OFF-ON-RESULT.md",
+      "sha256": "fd06e7400ab6053dfc15fc615ba6fdd57f1ef71612c0a9594d64e6a132715ddb"
+    },
+    {
+      "path": "SHORT-1S-CONCURRENT-ENVIRONMENT-FAILURE.md",
+      "sha256": "273ce37114738ce68a35b9b3b596db98f5f3c488fdbb5c1c8d7f2ecd036b6f46"
+    },
+    {
+      "path": "SHORT-1S-PIXEL-MOTION.md",
+      "sha256": "dc46bc1a27bf15df8e942aa4b5f180aafb276e3385ae774d1588fc1d0b454b27"
+    },
+    {
+      "path": "SHORT-1S-PRECISION-RESULT.md",
+      "sha256": "b79130217f1b589482467ad474a50560cdc3bd8f91de9772e4a389085bddd81a"
+    },
+    {
+      "path": "SHORT-OUTAGE-RESULT.md",
+      "sha256": "cc0f2b8284347d0c930fc04d3ddf8b384e66c5e3adbe89b8d50932de423bab36"
+    },
+    {
+      "path": "SMOOTH-MOTION-MEASUREMENT-PLAN.md",
+      "sha256": "8542c3c1108e0e3e4453516a191bb872d8e5f80701e5358eead3d5d94a3b143c"
+    },
+    {
+      "path": "SMOOTH-MOTION-MEASUREMENT-RESULT.md",
+      "sha256": "c7e3acf48bf091d81d2942c922313c7ac64a0264ebaf4e26f281a12795a1772a"
+    },
+    {
+      "path": "STRAGGLER-HYSTERESIS-RESULT.md",
+      "sha256": "e0fee6a1993f362b6cbbec0b6e63ad2ee87c49957c7b9abc3d6239aeaddec942"
+    },
+    {
+      "path": "SWITCH-AND-FAULT-RESULT.md",
+      "sha256": "b8410ee03a0a5b40bc7a009a81b89e5086670fe9b454affce1b1be477a9e7952"
+    },
+    {
+      "path": "TEST-REPORTS.md",
+      "sha256": "a81d65d82b838043285be80245a691505a1c999237bc03b5ce44ecf7b2de266b"
+    },
+    {
+      "path": "TRAVEL-CHECKLIST.md",
+      "sha256": "6ada7da6499cad3e71b64ddb8653b9a0f2134f2979fc4fb0662acfef89c52ec6"
+    },
+    {
+      "path": "TRAVEL-STATE-RECOVERY.md",
+      "sha256": "c7d19d650135e79782be2f463a6c7aefba04597ef328b2cfd1fabec3db2a720f"
+    },
+    {
+      "path": "VALIDATION.md",
+      "sha256": "08d7f159ed448c3731ad39401936936eb77def9c89c0e05ceaf812ccd37142ef"
+    },
+    {
+      "path": "latency-analysis/NATIVE-BACKGROUND-READOUT.md",
+      "sha256": "1e60ada23b7888dcc83dccb02d913f1accfbcc7ab60133534765e30772eeda6a"
+    },
+    {
+      "path": "latency-analysis/READOUT.md",
+      "sha256": "096ef176e5c8dab6f9c87578f44595f4d01cda1a779340dae866868f5833cf30"
+    },
+    {
+      "path": "network-plan.md",
+      "sha256": "16ca4e3b30163e7b7391787398d0eb12dfab113ca5e935627776237e4a367016"
+    },
+    {
+      "path": "refresh-request-plan.md",
+      "sha256": "67d176c4854ce49320625ff14888150df7c1b1f11384aa046af97dc4b7ec0e58"
+    },
+    {
+      "path": "resource-analysis/RESUME-FINAL-PREPARATION.md",
+      "sha256": "889fc9fafb11de20cc1ee2583a5e1290e40efc8f653c5eb1c5450bf19b6fc507"
+    },
+    {
+      "path": "review/BACKGROUND-PREPARATION-RACE-REVIEW.md",
+      "sha256": "bc16a1f2c6575a7e6c778e09eaa34ecf1bbf026a91639c47ec9032044d3ba58e"
+    },
+    {
+      "path": "review/COVERAGE-AUDIT-LATEST.md",
+      "sha256": "57661d5298522fc091bc047cc8d2612e172c6ded34dad017f78ecac6e6d67483"
+    },
+    {
+      "path": "review/CROSS-DAY-SOURCE-VALIDATION-LIMITS.md",
+      "sha256": "3e773a67f06426c5fe1fdb9ee9616f1cdd238b443b3bd002f1f5942a3c597214"
+    },
+    {
+      "path": "review/DAY2-STAY-DATE-REVIEW.md",
+      "sha256": "59b3139486fb933faba65543a53529d5a482299109111ff557580bbbbf2054ea"
+    },
+    {
+      "path": "review/FINDING-001-presence-stale-threshold.md",
+      "sha256": "2397c339fb94ddafda2a55969bfe81bdb595f79590e25655e3f6620ee97f35bd"
+    },
+    {
+      "path": "review/FINDING-002-tour-tooltip-disappeared.md",
+      "sha256": "ca5032fd53ff89b311fbb2009e2b9f1dc9d282cb65d222d4d59ca8ac4d72598a"
+    },
+    {
+      "path": "review/FINDING-003-overlay-done-accessibility.md",
+      "sha256": "0db38d5ef07c7604d842d4ce5f4986bdd63e20251cd4cfd5a68b81e930256c90"
+    },
+    {
+      "path": "review/FINDING-004-post-stay-panel-unresponsive.md",
+      "sha256": "7b371254c65c61778ca61813f79c6c7a7d1db44afb80b9f214da6e233536104d"
+    },
+    {
+      "path": "review/REMAINING-TRAVEL-TEST-DESIGN.md",
+      "sha256": "10abf462fd529b1d1a2b78c75acdf54ed3715b7be4b5806df3d204e18f7b252e"
+    },
+    {
+      "path": "review/REVIEW.md",
+      "sha256": "3d30d852c158e54464f9bf64cb008aa2fdcb59f78f3c714823fd6852a3091c22"
+    },
+    {
+      "path": "review/ROUTE-IDENTITY-REVIEW.md",
+      "sha256": "8b5cbe2a9c738a1ecd721be0c72b21a39830de71b37c88f8f1247871d002ae26"
+    },
+    {
+      "path": "review/acceptance-matrix.md",
+      "sha256": "7ef6d6cdda43ded6f21de6c4eeb9186907193dcafa663d8f3fe1ad02c6a8dc42"
+    }
+  ]
+}

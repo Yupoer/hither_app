@@ -3,6 +3,11 @@ import type { ZhDict } from './zh';
 /** English (en) catalog. Must share the same key set as zh. */
 export const en: Record<keyof ZhDict, string> = {
   'common.cancel': 'Cancel',
+  'common.close': 'Close',
+  'map.refreshReceiptsUnavailable': 'Refresh requested. Member responses could not be confirmed; check each member’s last location time.',
+  'map.refreshPeersRequestFailed': 'Could not request member locations. Try again later.',
+  'group.invalidInviteCode': 'This invitation code is invalid or expired. Ask the leader for the current code.',
+  'gatherRequest.savedTitle': 'Suggestion saved',
   'common.ok': 'OK',
   'common.back': 'Back',
   'common.confirm': 'Confirm',
@@ -43,7 +48,7 @@ export const en: Record<keyof ZhDict, string> = {
   'coreData.actionResolveSuggestion': 'Resolve place suggestion',
   'coreData.actionRespond': 'Respond to journey notice',
   'coreData.actionUpdate': 'Update group data',
-  'coreData.requestSaved': 'Suggestion saved on this device. It reaches the leader after syncing.',
+  'coreData.requestSaved': 'Suggestion saved. It will be delivered automatically; check its status in the suggestions list.',
   'navResponse.prompt': 'Navigation started — report your status',
   'navResponse.acknowledged': 'Got it',
   'navResponse.late': "I'll be late",
@@ -715,11 +720,11 @@ export const en: Record<keyof ZhDict, string> = {
   'settings.mapSection': 'Map',
   'settings.highAccuracy': 'High accuracy',
   'settings.highAccuracyHint':
-    'Short bursts only. Leave off for all-day background (~20% / 8h target); continuous precise can exceed 40%.',
+    'Use for more accurate, frequent updates when needed. Battery use and heat depend on the device, signal and time spent on the map.',
   'settings.highAccuracyCompact': 'High accuracy',
   'settings.preciseLocation': 'Enable precise location',
   'settings.preciseLocationHint':
-    'Raises accuracy and update rate briefly. Keep off for all-day group sharing.',
+    'Raises accuracy and frequency in the foreground and during navigation. Background sharing without navigation uses about 2.5-minute intervals; the system may delay updates. Check the last location time.',
   'settings.obliqueLocate': 'Tilt camera when locating',
   'settings.obliqueLocateHint': 'Locate and swipe destinations with a 30° oblique view.',
   'settings.liveActivity': 'Live Activity',

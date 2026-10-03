@@ -14,7 +14,9 @@ describe('remote location refresh wiring', () => {
 
   it('uses the server refresh request instead of uploading the sender location', () => {
     expect(mapScreen).toContain('requestGroupLocationRefresh');
-    expect(mapScreen).toContain('retryAfterSeconds');
+    expect(mapScreen).toContain('setRefreshCooldownUntil(result.cooldownUntil)');
+    expect(mapScreen).toContain('getAcknowledgedRecipientIds: requestedAt => getGroupLocationRefreshAcknowledgements(groupId, requestedAt)');
+    expect(mapScreen).toContain('result.acknowledgementsAvailable');
     expect(mapScreen).not.toContain('refreshLocations(refreshDeviceLocation, refresh)');
   });
 

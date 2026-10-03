@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Coordinates } from '../../../types';
+import { cachedRouteRequest, type RouteCacheEntry } from '../../../utils/routeRequestCache';
 import {
   getDirections,
   type DirectionsResult,
@@ -133,9 +134,8 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
     memberRoutes: {},
     selfRouteGeneration: 0,
   });
-  // ponytail: cache lives for one MapScreen mount; cap/TTL only if large groups
-  // make measured memory or stale-route behavior a problem.
-  const cacheRef = useRef(new Map<string, Promise<DirectionsResult | null>>());
+  // Keep bounded recent geometry and in-flight dedupe for this map session.
+  const cacheRef = useRef(new Map<string, RouteCacheEntry>());
   const selfRouteGateRef = useRef<LocationGateState>({
     lastCoords: null,
     lastAtMs: 0,
@@ -213,24 +213,7 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
       // Origin quantization avoids jitter requests; a changed destination must
       // not reuse another stop's geometry even within the same GPS bucket.
       const key = [routeCacheKey(from, to, mode, decimals), to.latitude, to.longitude].join('|');
-      const cached = cacheRef.current.get(key);
-      if (cached) return cached;
-      // Keep successful geometry and in-flight dedupe, but do not permanently
-      // cache a null/error produced while offline or while the proxy circuit
-      // is open. A later gated coordinate can then be the single half-open
-      // recovery probe instead of replaying a stale failure forever.
-      const request = (async () => {
-        try {
-          const route = await getDirections(from, to, mode);
-          if (!route) cacheRef.current.delete(key);
-          return route;
-        } catch {
-          cacheRef.current.delete(key);
-          return null;
-        }
-      })();
-      cacheRef.current.set(key, request);
-      return request;
+      return cachedRouteRequest(cacheRef.current, key, () => getDirections(from, to, mode));
     };
 
     // No target → clear polylines (nav stopped / arrived / next stop not set).

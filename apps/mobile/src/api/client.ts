@@ -216,6 +216,7 @@ export {
 
 export {
   requestGroupLocationRefresh,
+  getGroupLocationRefreshAcknowledgements,
   updateMyLocation,
 } from './services/LocationService';
 

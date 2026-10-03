@@ -203,7 +203,9 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
           controller.load(),
         );
         if (!config || generation !== trackingGeneration || !controller.isCurrent(config)) return;
-        if (Date.now() - lastControlSyncAt > 60_000) {
+        // Reuse real callbacks for control recovery; a journey needs timely target
+        // changes, while passive presence retains its low-frequency owner.
+        if (Date.now() - lastControlSyncAt >= (config.powerMode === 'journey' ? 15_000 : 150_000)) {
           await reconcileBackgroundNavigation(config.groupId, true).catch(() => undefined);
           config = await controller.load();
           if (!config || generation !== trackingGeneration || !controller.isCurrent(config)) return;
@@ -226,7 +228,7 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
         };
         if (!Number.isFinite(coords.latitude) || !Number.isFinite(coords.longitude)
           || Math.abs(coords.latitude) > 90 || Math.abs(coords.longitude) > 180) return;
-        if (!Number.isFinite(latest.timestamp) || latest.timestamp > Date.now()
+        if (!Number.isFinite(latest.timestamp) || latest.timestamp > Date.now() + 120_000
           || latest.timestamp <= (config.lastProcessedLocationAt ?? -Infinity)
           || (latestSample && latestSample.epoch === config.trackingEpoch
             && latest.timestamp <= latestSample.timestamp)) return;
@@ -496,6 +498,13 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
         const upload = await timeBackgroundStage(stages, 'outbox_flush', () =>
           flushLocationOutbox(),
         );
+        if (controller.isCurrent(config) && isLocationAccessCurrent(access)
+          && await AsyncStorage.getItem('@hither/pending-location-refresh')) {
+          const { recoverPendingLocationRefreshFromSample } = await import('./backgroundLocationRefresh');
+          await recoverPendingLocationRefreshFromSample(config.groupId, {
+            timestamp: latest.timestamp, coordinates: coords, accuracy: accuracyM,
+          }).catch(() => undefined);
+        }
         if (upload.retryScheduled > 0) {
           await diagnostics.write({
             event: 'location_upload_failed',

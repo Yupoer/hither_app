@@ -15,6 +15,7 @@ import { Platform } from 'react-native';
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import type { Coordinates } from '../types';
 import { distanceMeters } from '../utils/geo';
+import { normalizePlaceSearchResults } from '../utils/normalizePlaceSearchResults';
 import { parseCoordinatePair } from '../utils/coordinateDestination';
 import { decodePlusCode, extractPlusCode } from '../utils/plusCode';
 import {
@@ -423,7 +424,7 @@ export async function searchPlaces(
       const native = await searchWithTimeout(HitherMaps.searchPlaces(trimmed, region));
       const matching = Array.isArray(native) ? native.filter(place => matchesPlaceQuery(place, trimmed)) : [];
       if (matching.length > 0) {
-        return matching;
+        return normalizePlaceSearchResults(matching);
       }
     } catch {
       // fall through
@@ -433,7 +434,7 @@ export async function searchPlaces(
   try {
     const proxy = await searchWithTimeout(proxySearchPlaces(trimmed, region));
     if (proxy !== null) {
-      return proxy;
+      return normalizePlaceSearchResults(proxy);
     }
   } catch (err) {
     if (options?.throwOnError && !allowPublicGeocoderFallback()) throw err;
@@ -453,9 +454,9 @@ export async function searchPlaces(
   try {
     const photon = await searchWithTimeout(searchPhoton(trimmed, region));
     if (photon.length > 0) {
-      return rankByDistance(photon, region);
+      return normalizePlaceSearchResults(rankByDistance(photon, region));
     }
-    return rankByDistance(await searchWithTimeout(searchNominatim(trimmed, region)), region);
+    return normalizePlaceSearchResults(rankByDistance(await searchWithTimeout(searchNominatim(trimmed, region)), region));
   } catch (error) {
     if (options?.throwOnError) throw error;
     return [];

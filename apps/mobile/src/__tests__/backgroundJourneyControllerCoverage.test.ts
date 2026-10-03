@@ -39,11 +39,11 @@ function harness(started = false) {
 
 describe('background journey controller state transitions', () => {
   it('normalizes presence config and resolves privacy/foreground/navigation modes', () => {
-    expect(backgroundPresenceConfig(base)).toMatchObject({
+    expect(backgroundPresenceConfig({ ...base, highAccuracy: true })).toMatchObject({
       navigationSessionId: null,
       destinationId: 'group-presence',
       powerMode: 'allDay',
-      highAccuracy: false,
+      highAccuracy: true,
       teamNavigationActive: false,
       completeSolo: false,
     });
@@ -55,7 +55,7 @@ describe('background journey controller state transitions', () => {
       accuracy: 5, timeInterval: 5_000, deferredUpdatesDistance: 0,
     });
     expect(backgroundLocationOptions('allDay', true, 'passiveBackground')).toMatchObject({
-      accuracy: 2, timeInterval: 150_000, deferredUpdatesInterval: 180_000,
+      accuracy: 2, timeInterval: 150_000, deferredUpdatesInterval: 150_000,
     });
   });
 

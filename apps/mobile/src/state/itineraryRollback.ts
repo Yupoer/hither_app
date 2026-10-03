@@ -5,7 +5,7 @@ export interface ItineraryRollback { before: Destination[]; after: Destination[]
   beforeGroup?: Group; afterGroup?: Group;
   beforeDailyAccommodations?: GroupState['dailyAccommodations']; afterDailyAccommodations?: GroupState['dailyAccommodations']; }
 export function operationWirePayload(payload: Record<string, unknown>): Record<string, unknown> {
-  const { _localRollback, ...wire } = payload;
+  const { _localRollback, _localBeforeSolo, ...wire } = payload;
   return wire;
 }
 /** Undo only this operation's changed fields, preserving unrelated newer work. */

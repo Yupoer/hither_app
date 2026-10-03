@@ -16,6 +16,7 @@ import { radius, spacing, type Palette } from '../theme';
 import { glass } from '../glass';
 import { extractPlusCode } from '../utils/plusCode';
 import { classifyOperationError } from '../utils/operationError';
+import { normalizePlaceSearchResults, placeSearchResultKey } from '../utils/normalizePlaceSearchResults';
 import CrookIcon from './CrookIcon';
 import OverlaySheet from './OverlaySheet';
 
@@ -68,6 +69,10 @@ export default React.memo(function DestinationSearch({
   const seqRef = useRef(0);
   const searchRegionRef = useRef(biasRegion);
   const [searchError, setSearchError] = useState<'failed' | 'quota' | null>(null);
+  const selectionRef = useRef({ query, results, searching, visible, submitting: false, epoch: 0 });
+  const epoch = selectionRef.current.epoch + (selectionRef.current.visible !== visible ? 1 : 0);
+  selectionRef.current = { query, results, searching, visible, epoch,
+    submitting: selectionRef.current.epoch === epoch && selectionRef.current.submitting };
 
   // Reset everything whenever the sheet is opened afresh.
   useEffect(() => {
@@ -95,6 +100,7 @@ export default React.memo(function DestinationSearch({
       return;
     }
     setSearching(true);
+    setResults([]);
     let timeout: ReturnType<typeof setTimeout> | undefined;
     const handle = setTimeout(async () => {
       try {
@@ -104,7 +110,7 @@ export default React.memo(function DestinationSearch({
             timeout = setTimeout(() => reject(new Error('search_timeout')), 20_000);
           }),
         ]);
-        if (seq === seqRef.current) setResults(hits);
+        if (seq === seqRef.current) setResults(normalizePlaceSearchResults(hits));
       } catch (error) {
         if (seq === seqRef.current) {
           setResults([]);
@@ -123,15 +129,24 @@ export default React.memo(function DestinationSearch({
   }, [foreground, query, visible]);
 
   async function handlePick(place: PlaceResult) {
-    if (submittingId) {
+    const selection = selectionRef.current;
+    if (!selection.visible || selection.searching || selection.submitting
+      || !selection.results.includes(place)) {
       return;
     }
-    setSubmittingId(place.id);
+    selectionRef.current.submitting = true;
+    const selectedQuery = selection.query;
+    const selectedEpoch = selection.epoch;
+    setSubmittingId(placeSearchResultKey(place));
     try {
       await onPick(place);
-      onClose();
+      if (selectionRef.current.visible && selectionRef.current.epoch === selectedEpoch
+        && selectionRef.current.query === selectedQuery && selectionRef.current.results.includes(place)) onClose();
     } finally {
-      setSubmittingId(null);
+      if (selectionRef.current.epoch === selectedEpoch) {
+        selectionRef.current.submitting = false;
+        setSubmittingId(null);
+      }
     }
   }
 
@@ -152,7 +167,12 @@ export default React.memo(function DestinationSearch({
           <TextInput
             style={styles.input}
             value={query}
-            onChangeText={(value) => setQuery(normalizeSearchInput(value))}
+            onChangeText={(value) => {
+              const next = normalizeSearchInput(value);
+              if (next === selectionRef.current.query) return;
+              selectionRef.current.searching = true;
+              setQuery(next);
+            }}
             placeholder={t('search.placeholder')}
             placeholderTextColor={glass.textTertiary}
             keyboardAppearance="dark"
@@ -164,18 +184,16 @@ export default React.memo(function DestinationSearch({
 
         <Text style={styles.hint}>{t('search.longPressHint')}</Text>
 
-        {searching ? (
-          <View style={styles.statusRow}>
-            <WaveLoading color={colors.accent} />
-            <Text style={styles.statusText}>{t('search.searching')}</Text>
-          </View>
-        ) : query.trim() && results.length === 0 ? (
-          <Text style={styles.statusText}>{t(searchError === 'quota' ? 'search.quota' : searchError === 'failed' ? 'search.failed' : 'search.noResults')}</Text>
-        ) : null}
+        <View style={styles.statusRow} testID="search-status">
+          {searching ? <WaveLoading color={colors.accent} /> : null}
+          <Text style={styles.statusText}>{searching ? t('search.searching')
+            : query.trim() && results.length === 0
+              ? t(searchError === 'quota' ? 'search.quota' : searchError === 'failed' ? 'search.failed' : 'search.noResults') : ''}</Text>
+        </View>
 
         <FlatList
           data={results}
-          keyExtractor={(item) => item.id}
+          keyExtractor={placeSearchResultKey}
           keyboardShouldPersistTaps="handled"
           style={styles.list}
           renderItem={({ item }) => (
@@ -185,7 +203,8 @@ export default React.memo(function DestinationSearch({
                 pressed && styles.resultPressed,
               ]}
               onPress={() => handlePick(item)}
-              disabled={submittingId !== null}
+              disabled={searching || submittingId !== null}
+              accessibilityState={{ disabled: searching || submittingId !== null }}
               accessibilityRole="button"
             >
               <View style={styles.resultIcon}>
@@ -201,7 +220,7 @@ export default React.memo(function DestinationSearch({
                   </Text>
                 ) : null}
               </View>
-              {submittingId === item.id ? (
+              {submittingId === placeSearchResultKey(item) ? (
                 <WaveLoading color={colors.accent} />
               ) : null}
             </Pressable>
@@ -237,7 +256,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
-  statusRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minHeight: 24 },
   statusText: { color: glass.textSecondary, fontSize: 14 },
   list: { flex: 1 },
   resultRow: {

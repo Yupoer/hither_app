@@ -31,14 +31,17 @@ export function assessLocationRefreshResponses({
   expectedUserIds,
   baselineLastUpdated,
   requestedAtMs,
+  acknowledgedRecipientIds,
 }: {
   members: readonly LocationRefreshMemberSnapshot[];
   expectedUserIds: readonly string[];
   baselineLastUpdated: ReadonlyMap<string, string | null | undefined>;
   requestedAtMs: number;
+  acknowledgedRecipientIds?: readonly string[];
 }): LocationRefreshResponseResult {
   const expected = [...expectedUserIds];
   const respondedUserIds = expected.filter((userId) => {
+    if (acknowledgedRecipientIds) return acknowledgedRecipientIds.includes(userId);
     const member = members.find((candidate) => candidate.userId === userId);
     const currentMs = timestampMs(member?.uploadedAt ?? member?.lastUpdated);
     const baselineMs = timestampMs(baselineLastUpdated.get(userId));

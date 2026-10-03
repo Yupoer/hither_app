@@ -1,6 +1,7 @@
 import type { Coordinates, GroupState, MemberLocation } from '../types';
+import { isLocationSampleFresh, type LocationSampleMetadata } from './locationFreshness';
 
-export interface MemberLocationPatch {
+export interface MemberLocationPatch extends LocationSampleMetadata {
   userId: string;
   coordinates: Coordinates;
   updatedAt: string;
@@ -34,6 +35,10 @@ export function locationPatchFromRealtimePayload(
     coordinates: { latitude: lat, longitude: lon },
     updatedAt,
     ...(typeof row.captured_at === 'string' ? { capturedAt: row.captured_at } : {}),
+    ...(typeof row.tracking_mode === 'string' || row.tracking_mode === null ? { locationTrackingMode: row.tracking_mode } : {}),
+    ...(typeof row.source === 'string' || row.source === null ? { locationSource: row.source } : {}),
+    ...(typeof row.navigation_session_id === 'string' || row.navigation_session_id === null
+      ? { locationNavigationSessionId: row.navigation_session_id } : {}),
   };
 }
 
@@ -78,7 +83,12 @@ export function applyMemberLocationPatches(
       coordinates: patch.coordinates,
       capturedAt: patch.capturedAt ?? null,
       uploadedAt: patch.updatedAt,
-      locationAvailability: Date.now() - Date.parse(patch.capturedAt ?? patch.updatedAt) < 120_000
+      // Clear absent metadata on a new sample; an older passive profile must
+      // not grant an unknown/journey sample the longer freshness allowance.
+      locationTrackingMode: patch.locationTrackingMode,
+      locationSource: patch.locationSource,
+      locationNavigationSessionId: patch.locationNavigationSessionId,
+      locationAvailability: isLocationSampleFresh(patch.capturedAt ?? patch.updatedAt, patch)
         ? 'available' : 'stale',
       lastUpdated: patch.capturedAt ?? patch.updatedAt,
     };

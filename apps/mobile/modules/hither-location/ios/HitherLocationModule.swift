@@ -65,20 +65,26 @@ public class HitherLocationModule: Module {
       let epoch = self.generation
       let journey = (options["activityType"] as? Int) == 3
       let minTime = max(1, (options["timeInterval"] as? Double ?? 5000) / 1000)
-      let minDistance = options["distanceInterval"] as? Double ?? 10
+      let fitness = LocationDeliveryPolicy.usesFitness(journey: journey,
+        accuracyCode: options["accuracy"] as? Int ?? 3)
       // Core Location pauses while stationary and resumes for small movements.
       // No relaunch registration: a terminated process must leave GPS off.
       self.updates = Task { @MainActor [weak self] in
         var previous: CLLocation?
         do {
-          for try await update in CLLocationUpdate.liveUpdates(journey ? .fitness : .default) {
+          for try await update in CLLocationUpdate.liveUpdates(fitness ? .fitness : .default) {
             guard !Task.isCancelled, let self, self.generation == epoch else { return }
             guard let location = update.location, location.horizontalAccuracy >= 0 else { continue }
             if let previous {
               let elapsed = location.timestamp.timeIntervalSince(previous.timestamp)
-              if elapsed <= 0 { continue }
-              if !update.isStationary && elapsed < minTime { continue }
-              if !journey && !update.isStationary && location.distance(from: previous) < minDistance { continue }
+              let thermalLevel: Int
+              switch ProcessInfo.processInfo.thermalState {
+              case .serious: thermalLevel = 2
+              case .critical: thermalLevel = 3
+              default: thermalLevel = 0
+              }
+              if !LocationDeliveryPolicy.shouldDeliver(elapsed: elapsed, minimumInterval: minTime,
+                                                       thermalLevel: thermalLevel) { continue }
             }
             previous = location
             self.sendEvent("onBackgroundLocation", [

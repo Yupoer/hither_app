@@ -99,7 +99,8 @@ export function locationPolicy(
       uiMinIntervalMs: 40_000,
       uploadMinDistanceM: 150,
       uploadMinIntervalMs: 150_000,
-      // Non-journey: at most 2 min liveness even if coords are unchanged.
+      // Evaluate liveness only on real fixes; the OS may deliver them later
+      // than this upload budget (native passive cadence is 150 seconds).
       uploadHeartbeatMs: 120_000,
       uploadHeartbeatStationaryMs: 120_000,
       stationaryAfterMs: 90_000,

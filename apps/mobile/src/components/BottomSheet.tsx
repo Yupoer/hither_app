@@ -149,6 +149,9 @@ export default React.memo(function BottomSheet({
   // Mirror props into SharedValues so pan / sheetStyle worklets always read
   // current detents & inset without rebuilding Gesture.Pan() every render.
   const detentsSV = useSharedValue(detents);
+  const indexSV = useSharedValue(index);
+  const foregroundSV = useSharedValue(foreground);
+  useEffect(() => { indexSV.value = index; foregroundSV.value = foreground; }, [index, foreground, indexSV, foregroundSV]);
   const bottomInsetSV = useSharedValue(bottomInset);
   const dismissIndexSV = useSharedValue(dismissOnDownFromIndex ?? -1);
   const edgeToEdgeAtLastSV = useSharedValue(edgeToEdgeAtLast ? 1 : 0);
@@ -279,6 +282,7 @@ export default React.memo(function BottomSheet({
   const pan = useMemo(
     () =>
       Gesture.Pan()
+        .enabled(foreground)
         .activeOffsetY([-SHEET_ACTIVE_OFFSET_Y, SHEET_ACTIVE_OFFSET_Y])
         // Fail when horizontal wins so CoverFlow (activeOffsetX) owns left/right swipes.
         .failOffsetX([-SHEET_FAIL_OFFSET_X, SHEET_FAIL_OFFSET_X])
@@ -399,10 +403,29 @@ export default React.memo(function BottomSheet({
             }
           }
           gMode.value = MODE_NONE;
+        })
+        .onFinalize((_e, success) => {
+          'worklet';
+          // onBegin also runs for taps and horizontal gestures. Those cancel
+          // the in-flight spring but never reach onEnd when recognition fails.
+          // Restore the latest controlled detent, not an intermediate height.
+          if (success || gestureClosePending.value) return;
+          const d = detentsSV.value;
+          const target = d[Math.max(0, Math.min(indexSV.value, d.length - 1))];
+          cancelAnimation(height);
+          cancelAnimation(dismissY);
+          dismissY.value = 0;
+          gMode.value = MODE_NONE;
+          height.value = foregroundSV.value
+            ? withSpring(target, { ...SPRING, velocity: 0 })
+            : target;
         }),
     // Stable shared values + settle + height + scrollRef only — not detents[].
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
+      foreground,
+      foregroundSV,
+      indexSV,
       height,
       settle,
       scrollRef,

@@ -44,6 +44,7 @@ export type CoreOperationType =
   | 'reorder_destinations'
   | 'set_destination_meet_time'
   | 'complete_destination'
+  | 'set_solo'
   | 'set_trip_details'
   | 'set_daily_accommodation'
   | 'clear_daily_accommodation'

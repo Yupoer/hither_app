@@ -30,7 +30,8 @@ jest.mock('../api/demo', () => ({
 
 const mockListDailyAccommodations = jest.fn();
 const mockEnqueueTripDetails = jest.fn();
-jest.mock('../state/coreDataSync', () => ({ enqueueTripDetails: (...args: unknown[]) => mockEnqueueTripDetails(...args) }));
+const mockEnqueueSolo = jest.fn();
+jest.mock('../state/coreDataSync', () => ({ enqueueSolo: (...args: unknown[]) => mockEnqueueSolo(...args), enqueueTripDetails: (...args: unknown[]) => mockEnqueueTripDetails(...args) }));
 jest.mock('../api/services/DailyAccommodationService', () => ({
   listDailyAccommodations: (...args: unknown[]) => mockListDailyAccommodations(...args),
 }));
@@ -110,6 +111,36 @@ beforeEach(() => {
 });
 
 describe('GroupService pure mappers and group lifecycle', () => {
+  it('uses reliable persisted cadence metadata in recovery and direct group reads without changing capturedAt', async () => {
+    const now = Date.parse('2026-10-04T00:00:00Z');
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
+    const capturedAt = new Date(now - 150_000).toISOString();
+    const membership = { user_id: 'user-1', role: 'leader' };
+    const fix = { user_id: 'user-1', latitude: 25, longitude: 121, captured_at: capturedAt,
+      updated_at: new Date(now).toISOString(), tracking_mode: 'passiveBackground',
+      source: 'background_task', navigation_session_id: null };
+    try {
+      mockedSupabase.rpc.mockResolvedValueOnce({ data: { group: row(), memberships: [membership],
+        locations: [fix], profiles: [], itinerary: [], subgroups: [] }, error: null });
+      const snapshot = await getGroupRecoverySnapshot('g-1');
+      expect(snapshot.state.members[0]).toMatchObject({ capturedAt, lastUpdated: capturedAt,
+        locationAvailability: 'available', locationTrackingMode: 'passiveBackground',
+        locationSource: 'background_task', locationNavigationSessionId: null });
+      setTables({ groups: { data: row(), error: null }, memberships: { data: [membership], error: null },
+        member_locations: { data: [fix], error: null } });
+      const state = await getGroupState('g-1');
+      expect(state.members[0]).toMatchObject({ capturedAt, locationAvailability: 'available' });
+      const index = mockedSupabase.from.mock.calls.findIndex(([table]) => table === 'member_locations');
+      expect(mockedSupabase.from.mock.results[index].value.select).toHaveBeenCalledWith(
+        expect.stringContaining('tracking_mode, source, navigation_session_id'));
+      expect(mapMember(membership as any, undefined, { ...fix, tracking_mode: 'navigationMax',
+        navigation_session_id: 'session-1' }).locationAvailability).toBe('stale');
+      expect(mapMember(membership as any, undefined, { ...fix, source: 'refresh_request' }).locationAvailability).toBe('stale');
+      clock.mockReturnValue(now + 30_000);
+      expect(mapMember(membership as any, undefined, fix).locationAvailability).toBe('stale');
+    } finally { clock.mockRestore(); }
+  });
+
   it('maps persisted and default group/member/subgroup fields', () => {
     expect(mapGroup(row({ avatar: 'unknown', avatar_color: 'bad', created_by: null, created_at: null }))).toMatchObject({
       id: 'g-1', createdBy: '', journeyStatus: 'paused', stragglerAlerts: true,
@@ -149,7 +180,7 @@ describe('GroupService pure mappers and group lifecycle', () => {
     expect(mockedSupabase.rpc).toHaveBeenCalledWith('join_group', { p_code: 'AB12CD' });
 
     mockedSupabase.rpc.mockResolvedValueOnce({ data: null, error: { code: 'P0002', message: 'missing' } });
-    await expect(joinGroup('missing')).rejects.toThrow('找不到這個群組');
+    await expect(joinGroup('missing')).rejects.toThrow('invalid_invite_code');
     mockedSupabase.rpc.mockResolvedValueOnce({ data: null, error: { code: 'P0003', message: 'cap' } });
     await expect(joinGroup('cap')).rejects.toMatchObject({ code: 'member_limit' });
     mockedSupabase.rpc.mockResolvedValueOnce({ data: null, error: { message: 'anonymous access expired' } });
@@ -364,6 +395,7 @@ describe('GroupService mutations and demo branches', () => {
     await updateGroupTripDetails('g-1', 4, '2026-11-01');
     expect(mockEnqueueTripDetails).toHaveBeenCalledWith({ groupId: 'g-1', tripDays: 4, departureDate: '2026-11-01' });
     await setSolo('g-1', true);
+    expect(mockEnqueueSolo).toHaveBeenCalledWith({ groupId: 'g-1', solo: true });
     mockedSupabase.rpc.mockResolvedValueOnce({ data: { id: 'sg', name: 'Team', mode: 'collab', leader_id: null, parent_subgroup_id: null }, error: null });
     await expect(selfSplit('g-1', 'Team')).resolves.toMatchObject({ id: 'sg' });
     await expect(selfMerge('g-1')).resolves.toBeUndefined();

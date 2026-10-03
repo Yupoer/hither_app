@@ -1,4 +1,4 @@
-import { memberMotionDuration, type MemberMotionSample } from '../utils/memberMotion';
+import { useMemberMarkerMotion } from './useMemberMarkerMotion';
 import React, {
   Component,
   forwardRef,
@@ -437,31 +437,17 @@ const MemberMarker = React.memo(function MemberMarker({ member, accent, styles, 
   ]);
 
   const markerRef = useRef<React.ElementRef<typeof Marker>>(null);
-  const lastSample = useRef<MemberMotionSample | null>(null);
-  const wasActive = useRef(false);
-  const latestCoordinate = useRef({ latitude: lat ?? 0, longitude: lng ?? 0 });
-  useEffect(() => {
-    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return;
-    const next = { coordinates: { latitude: lat, longitude: lng }, sampledAt: Date.parse(member.capturedAt ?? member.lastUpdated ?? '') };
-    if (appActive && wasActive.current && lastSample.current && Number.isFinite(next.sampledAt)
-      && next.sampledAt < lastSample.current.sampledAt) return;
-    const duration = memberMotionDuration(lastSample.current, next, Date.now(), appActive && wasActive.current && !reduceMotion);
-    wasActive.current = appActive;
-    latestCoordinate.current = next.coordinates;
-    lastSample.current = next;
-    // Installed native command handles overlap from the currently displayed coordinate.
-    markerRef.current?.animateMarkerToCoordinate(next.coordinates, duration);
-  }, [lat, lng, member.capturedAt, member.lastUpdated, appActive, reduceMotion]);
-  useEffect(() => () => {
-    markerRef.current?.animateMarkerToCoordinate(latestCoordinate.current, 0);
-  }, []);
+  const coordinate = useMemberMarkerMotion(markerRef, {
+    coordinates: { latitude: lat ?? NaN, longitude: lng ?? NaN },
+    sampledAt: Date.parse(member.capturedAt ?? member.lastUpdated ?? ''),
+  }, appActive && !reduceMotion);
 
-  if (lat == null || lng == null) return null;
+  if (!coordinate) return null;
 
   return (
     <Marker
       ref={markerRef}
-      coordinate={{ latitude: lat, longitude: lng }}
+      coordinate={coordinate}
       title={member.name}
       description={isLeader ? 'Leader' : 'Follower'}
       anchor={{ x: 0.5, y: 1 }}

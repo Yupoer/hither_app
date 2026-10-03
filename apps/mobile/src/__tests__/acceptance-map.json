@@ -1740,6 +1740,125 @@
       "acceptance": "SDK 57 uses fixed React Native and Hermes memory regression versions without advancing to SDK 58",
       "testFile": "runtimeAlignment.test.ts",
       "testNamePattern": "uses SDK 57 with the fixed RN and Hermes"
+    },
+    {
+      "parent": 287,
+      "child": 287,
+      "acceptance": "Solo intents survive offline restart, replay the same UUID, and roll back only definitive rejection.",
+      "testFile": "durableSolo.test.ts",
+      "testNamePattern": "durably switches Solo offline|replays the same Solo UUID|rolls back a definitive Solo rejection"
+    },
+    {
+      "parent": 287,
+      "child": 287,
+      "acceptance": "Refresh completion uses exact version ACKs and its cooldown excludes GPS and polling latency.",
+      "testFile": "refreshExactAcknowledgements.test.ts",
+      "testNamePattern": "counts exact version ACKs|does not extend cooldown|does not infer an ACK|maps the server cooldown deadline"
+    },
+    {
+      "parent": 287,
+      "child": 287,
+      "acceptance": "Solo receipts are follower-authorized; refresh acknowledgements match the exact request.",
+      "testFile": "supabase/tests/durable_solo_refresh_receipts.test.sql",
+      "testNamePattern": "Solo receipts are follower-authorized|Refresh accounting requires exact version ACK"
+    },
+    {
+      "parent": 287,
+      "child": 287,
+      "acceptance": "The route cache has bounded geometries and point retention with in-flight deduplication.",
+      "testFile": "routeRequestCache.test.ts",
+      "testNamePattern": "bounds a long map session|deduplicates in-flight routes|does not retain oversize geometry"
+    },
+    {
+      "parent": 287,
+      "child": 287,
+      "acceptance": "Native member motion preserves the initial coordinate and rejects older samples through resume.",
+      "testFile": "memberMarkerMotion.test.ts",
+      "testNamePattern": "never moves the coordinate prop|keeps trusted samples monotonic"
+    },
+    {
+      "parent": 287,
+      "child": 287,
+      "acceptance": "A locked background journey replaces stale targets without another GPS owner.",
+      "testFile": "backgroundJourneyCoverage.test.ts",
+      "testNamePattern": "recovers a changed locked-screen target|passes a real presence fix"
+    },
+    {
+      "parent": 287,
+      "child": 287,
+      "acceptance": "Unfinished active destinations remain visible across midnight.",
+      "testFile": "tripDay.test.ts",
+      "testNamePattern": "keeps an unfinished active target"
+    },
+    {
+      "parent": 287,
+      "child": 287,
+      "acceptance": "Hotel replacement updates only the matching open itinerary copy in the local projection.",
+      "testFile": "durableTripAccommodation.test.ts",
+      "testNamePattern": "replaces"
+    },
+    {
+      "parent": 287,
+      "child": 287,
+      "acceptance": "Failed recognition resumes the controlled sheet detent without dismissing or losing content.",
+      "testFile": "foregroundSheetLifecycle.test.ts",
+      "testNamePattern": "resumes a controlled detent|reconciles a failed gesture"
+    },
+    {
+      "parent": 287,
+      "child": 287,
+      "acceptance": "Sheet headers expose one actionable target and disable callbacks when busy.",
+      "testFile": "sheetHeaderActionBehavior.test.ts",
+      "testNamePattern": "disabled"
+    },
+    {
+      "parent": 287,
+      "child": 287,
+      "acceptance": "Old search rows cannot be selected while a new query is pending.",
+      "testFile": "destinationSearchLifecycle.test.ts",
+      "testNamePattern": "pending"
+    },
+    {
+      "parent": 287,
+      "child": 287,
+      "acceptance": "Arrival freshness rejects samples beyond the small future-clock allowance.",
+      "testFile": "synchronizedArrival.test.ts",
+      "testNamePattern": "accepts at most two seconds"
+    },
+    {
+      "parent": 287,
+      "child": 287,
+      "acceptance": "Calendar days and date picker values survive DST and negative timezones.",
+      "testFile": "tripDay.test.ts",
+      "testNamePattern": "advances by calendar date across DST|keeps the saved local calendar date"
+    },
+    {
+      "parent": 287,
+      "child": 287,
+      "acceptance": "Date picker ISO is normalized before offline persistence.",
+      "testFile": "durableTripAccommodation.test.ts",
+      "testNamePattern": "persists a local date picker ISO|protects an authoritative active gathering"
+    },
+    {
+      "parent": 287,
+      "child": 287,
+      "acceptance": "Trusted hotel replacement respects immutable points, active targets, isolation and transaction rollback.",
+      "testFile": "supabase/tests/reconcile_replaced_stay_cards.test.sql",
+      "testNamePattern": "Replaced daily stay updates matching open cards|Stay replacement trigger remains behind leader|Coordinate capabilities are inaccessible|Failed replacement rolls back"
+    },
+    {
+      "parent": 287,
+      "child": 287,
+      "acceptance": "Duplicate provider places cannot create duplicate keys or select a different location.",
+      "testFile": "destinationSearchLifecycle.test.ts",
+      "testNamePattern": "deduplicates the same provider location|does not let an old pick|does not strand selection"
+    },
+    {
+      "parent": 287,
+      "child": 287,
+      "acceptance": "Presence age is interpreted from true tracking metadata without renewing the capture timestamp.",
+      "testFile": "groupStatePatches.test.ts",
+      "testNamePattern": "preserves actual passive metadata"
     }
   ]
 }

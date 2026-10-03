@@ -9,8 +9,13 @@ describe('synchronized arrival', () => {
   it.each([null, undefined, -1, NaN, Infinity, 51, 90])('rejects uncertain accuracy %s', accuracyM => {
     expect(canEvaluateSynchronizedArrival({ ...fix, accuracyM })).toBe(false);
   });
-  it.each([null, -10_000, 20_001, NaN])('rejects stale or invalid timestamps %s', sampledAt => {
+  it.each([null, -10_000, 22_001, NaN])('rejects stale or invalid timestamps %s', sampledAt => {
     expect(canEvaluateSynchronizedArrival({ ...fix, sampledAt })).toBe(false);
+  });
+  it('accepts at most two seconds of GPS clock skew without extending the freshness window', () => {
+    expect(canEvaluateSynchronizedArrival({ ...fix, sampledAt: 21_072 })).toBe(true);
+    expect(canEvaluateSynchronizedArrival({ ...fix, sampledAt: 22_000 })).toBe(true);
+    expect(canEvaluateSynchronizedArrival({ ...fix, sampledAt: 4_999 })).toBe(false);
   });
   it('does not replay approach before an already-inside arrival is persisted', () => {
     expect(shouldFireApproachNotify({ remainingM: 20, totalM: 2000, arrivalRadiusM: 50,

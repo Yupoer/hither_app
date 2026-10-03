@@ -9,7 +9,7 @@ import {
   ingestLocationBatch,
   listMyPendingLocationRefreshes,
 } from '../api/services/LocationService';
-import { captureLocationAccess, isLocationAccessCurrent } from './locationPrivacy';
+import { captureLocationAccess, isLocationAccessCurrent, type LocationAccess } from './locationPrivacy';
 import { reconcileBackgroundNavigation } from './backgroundJourney';
 import { diagnostics } from './diagnostics';
 import {
@@ -63,8 +63,9 @@ async function rememberPendingRefresh(groupId: string): Promise<void> {
 async function uploadAndAckPendingRefreshes(
   fix: Awaited<ReturnType<typeof location.getCurrentLocation>>,
   pending: PendingRefreshRow[],
+  access: LocationAccess,
 ): Promise<void> {
-  if (!fix || pending.length === 0) return;
+  if (!fix || pending.length === 0 || !isLocationAccessCurrent(access)) return;
   const capturedAt = fix.timestamp;
   const events = pending.map((row) => ({
     id: Crypto.randomUUID(),
@@ -82,9 +83,34 @@ async function uploadAndAckPendingRefreshes(
   const result = await ingestLocationBatch(events);
   const accepted = new Set(result.acceptedIds);
   for (const [index, row] of pending.entries()) {
+    if (!isLocationAccessCurrent(access)) throw new Error('location_access_changed');
     if (!accepted.has(events[index].id)) throw new Error('refresh_upload_not_accepted');
     // Versioned ACK: a newer request_at wins and is intentionally not deleted.
     if (!await ackMyLocationRefresh(row.groupId, row.requestedAt)) throw new Error('refresh_ack_not_confirmed');
+  }
+}
+
+/** A timed-out silent refresh can use the next real fix from the existing GPS
+ * owner. This adds no timer or second location stream and keeps versioned ACKs.
+ */
+export async function recoverPendingLocationRefreshFromSample(
+  groupId: string,
+  fix: NonNullable<Awaited<ReturnType<typeof location.getCurrentLocation>>>,
+): Promise<void> {
+  const raw = await AsyncStorage.getItem(PENDING_LOCATION_REFRESH_KEY);
+  if (!raw || AppState.currentState === 'active') return;
+  let marker: { groupId?: string; requestedAt?: number };
+  try { marker = JSON.parse(raw); } catch { return; }
+  if (marker.groupId !== groupId || fix.timestamp < (marker.requestedAt ?? 0)) return;
+  const access = await captureLocationAccess(groupId);
+  if (!access) return;
+  const pending = (await listMyPendingLocationRefreshes()).filter(row => row.groupId === groupId);
+  if (!isLocationAccessCurrent(access)) return;
+  await uploadAndAckPendingRefreshes(fix, pending, access);
+  if (!isLocationAccessCurrent(access)) return;
+  // Preserve a newer marker written while this request was being uploaded.
+  if (await AsyncStorage.getItem(PENDING_LOCATION_REFRESH_KEY) === raw) {
+    await AsyncStorage.removeItem(PENDING_LOCATION_REFRESH_KEY);
   }
 }
 
@@ -121,7 +147,8 @@ async function recoverPendingRefreshes(): Promise<void> {
     return;
   }
   try {
-    await uploadAndAckPendingRefreshes(fix, pending);
+    if (!isLocationAccessCurrent(access) || AppState.currentState !== 'active') return;
+    await uploadAndAckPendingRefreshes(fix, pending, access);
     await diagnostics.write({
       event: 'refresh_request_completed',
       source: 'location_push',
@@ -182,7 +209,7 @@ if (!TaskManager.isTaskDefined(BACKGROUND_LOCATION_REFRESH_TASK)) {
 
       try {
         if (!isLocationAccessCurrent(access)) return;
-        await uploadAndAckPendingRefreshes(fix, matching);
+        await uploadAndAckPendingRefreshes(fix, matching, access);
         await diagnostics.write({
           event: 'location_outbox_enqueued',
           source: 'refresh_request',

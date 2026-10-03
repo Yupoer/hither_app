@@ -105,6 +105,11 @@ it('keeps older iOS tour copy and exit controls in native RN views across avatar
     title: 'Settings', ctaDisabled: true, onNext, onPrev })); });
   expect(tree.root.findByProps({ testID: 'tour-next' }).props.disabled).toBe(true);
   expect(tree.root.findByProps({ testID: 'tour-prev' }).props.disabled).toBe(true);
+  await act(async () => {
+    tree.root.findByProps({ testID: 'tour-next' }).props.onPress?.();
+    tree.root.findByProps({ testID: 'tour-prev' }).props.onPress?.();
+  });
+  expect(onNext).toHaveBeenCalledTimes(3); expect(onPrev).toHaveBeenCalledTimes(3);
   await act(async () => tree.unmount());
 });
 

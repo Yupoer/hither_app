@@ -24,12 +24,25 @@ const props = { visible: true, onClose: jest.fn(), onPick: jest.fn(), biasRegion
 const render = (next = props) => React.createElement(DestinationSearch, next);
 const input = (query: string) => act(() => view.root.findByType('Input' as never).props.onChangeText(query));
 beforeEach(() => {
-  jest.useFakeTimers(); mockSearch.mockReset();
+  jest.useFakeTimers(); mockSearch.mockReset(); props.onPick.mockReset(); props.onClose.mockReset();
   mockAppState.currentState = 'active';
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   act(() => { view = create(render()); });
 });
 afterEach(() => { act(() => view.unmount()); jest.useRealTimers(); });
+
+it('blocks an old search row while a replacement query is pending and preserves status layout', async () => {
+  mockSearch.mockResolvedValueOnce([{ id: 'garden', name: 'Garden', coordinates: { latitude: 25, longitude: 121 } }]);
+  input('garden');
+  await act(async () => { jest.advanceTimersByTime(450); });
+  const list = view.root.findByType('List' as never);
+  const staleRow = list.props.renderItem({ item: list.props.data[0] });
+  input('street');
+  await act(async () => { await staleRow.props.onPress(); });
+  expect(props.onPick).not.toHaveBeenCalled();
+  expect(view.root.findByType('List' as never).props.data).toEqual([]);
+  expect(view.root.findAllByProps({ testID: 'search-status' })).toHaveLength(1);
+});
 
 it('keeps one search and a fixed centre while GPS updates', async () => {
   mockSearch.mockResolvedValue([]);
@@ -62,7 +75,7 @@ it('finishes a stalled request with an error rather than leaving a spinner', asy
   input('timeout');
   await act(async () => { jest.advanceTimersByTime(450); });
   await act(async () => { jest.advanceTimersByTime(20_000); });
-  expect(view.root.findAllByType('Spinner' as never)).toHaveLength(0);
+  expect(view.root.findAllByType('WaveLoading' as never)).toHaveLength(0);
   expect(JSON.stringify(view.toJSON())).toContain('search.failed');
 });
 
@@ -80,5 +93,62 @@ it('cancels a background debounce and resumes the retained query once without re
   transition('active'); transition('active');
   await act(async () => { jest.advanceTimersByTime(450); });
   expect(mockSearch).toHaveBeenCalledTimes(1);
+});
+
+const repeatedPlaces = [
+  { id: 'W55441040', name: 'Station A', coordinates: { latitude: 35, longitude: 139 } },
+  { id: 'W55441040', name: 'Station A duplicate', coordinates: { latitude: 35, longitude: 139 } },
+  { id: 'W55441040', name: 'Station B', coordinates: { latitude: 35.01, longitude: 139 } },
+];
+
+it('deduplicates the same provider location and picks a distinct location with the same id', async () => {
+  mockSearch.mockResolvedValue(repeatedPlaces);
+  input('station');
+  await act(async () => { jest.advanceTimersByTime(450); });
+  const list = view.root.findByType('List' as never);
+  expect(list.props.data).toEqual([repeatedPlaces[0], repeatedPlaces[2]]);
+  const keys = list.props.data.map(list.props.keyExtractor);
+  expect(new Set(keys).size).toBe(2);
+  const secondRow = list.props.renderItem({ item: list.props.data[1] });
+  await act(async () => { await secondRow.props.onPress(); });
+  expect(props.onPick).toHaveBeenCalledTimes(1);
+  expect(props.onPick).toHaveBeenCalledWith(repeatedPlaces[2]);
+});
+
+it('keeps current rows selectable when the normalized input does not change', async () => {
+  mockSearch.mockResolvedValue(repeatedPlaces);
+  input('849VCWC8+Q48');
+  await act(async () => { jest.advanceTimersByTime(450); });
+  input('849VCWC8+Q48 added text');
+  const list = view.root.findByType('List' as never);
+  await act(async () => { await list.props.renderItem({ item: list.props.data[0] }).props.onPress(); });
+  expect(mockSearch).toHaveBeenCalledTimes(1);
+  expect(props.onPick).toHaveBeenCalledWith(repeatedPlaces[0]);
+});
+
+it('does not let an old pick close or unlock a reopened search with the same query', async () => {
+  let finishOld!: () => void;
+  let finishNew!: () => void;
+  props.onPick.mockImplementationOnce(() => new Promise<void>(resolve => { finishOld = resolve; }))
+    .mockImplementationOnce(() => new Promise<void>(resolve => { finishNew = resolve; }));
+  mockSearch.mockResolvedValue(repeatedPlaces);
+  input('station');
+  await act(async () => { jest.advanceTimersByTime(450); });
+  let list = view.root.findByType('List' as never);
+  act(() => { void list.props.renderItem({ item: list.props.data[0] }).props.onPress(); });
+  act(() => view.update(render({ ...props, visible: false })));
+  act(() => view.update(render()));
+  input('station');
+  await act(async () => { jest.advanceTimersByTime(450); });
+  list = view.root.findByType('List' as never);
+  const newRow = list.props.renderItem({ item: list.props.data[1] });
+  act(() => { void newRow.props.onPress(); });
+  expect(props.onPick).toHaveBeenCalledTimes(2);
+  await act(async () => { finishOld(); });
+  expect(props.onClose).not.toHaveBeenCalled();
+  await act(async () => { await newRow.props.onPress(); });
+  expect(props.onPick).toHaveBeenCalledTimes(2);
+  await act(async () => { finishNew(); });
+  expect(props.onClose).toHaveBeenCalledTimes(1);
 });
 jest.mock('../components/WaveLoading', () => 'WaveLoading');

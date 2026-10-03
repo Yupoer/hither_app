@@ -50,6 +50,7 @@ const mockNavigationContext = jest.fn(async (..._args: unknown[]): Promise<any> 
 const mockDiagnostics = { write: jest.fn(async () => undefined) };
 const mockSetConsent = jest.fn();
 const mockTaskCallback: { current?: (payload: unknown) => Promise<void> } = {};
+const mockRecoverRefreshSample = jest.fn(async (..._args: unknown[]) => undefined);
 
 jest.mock('react-native', () => ({ AppState: mockAppState }));
 jest.mock('@react-native-async-storage/async-storage', () => ({
@@ -107,6 +108,9 @@ jest.mock('../state/locationOutbox', () => ({
   enqueueLocationOutbox: forward(mockEnqueueLocation),
   flushLocationOutbox: forward(mockFlushLocation),
   purgeLocationOutbox: forward(mockPurgeLocation),
+}));
+jest.mock('../state/backgroundLocationRefresh', () => ({
+  recoverPendingLocationRefreshFromSample: forward(mockRecoverRefreshSample),
 }));
 
 const {
@@ -542,6 +546,47 @@ describe('background journey lifecycle and callback gate', () => {
     jest.clearAllMocks();
   }
 
+  it('recovers a changed locked-screen target within the journey control budget without losing precision', async () => {
+    await startCurrent({ ...baseConfig, highAccuracy: true } as typeof baseConfig);
+    const target = { ...baseConfig.target, id: 'destination-2', coordinates: { latitude: 25.003, longitude: 121 } };
+    mockNavigationContext.mockResolvedValue({ actorId: baseConfig.actorId, hasMembership: true,
+      sharingEnabled: true, session: { id: 'session-2', destination: { arrivalRadiusMeters: 50 } }, target });
+    jest.advanceTimersByTime(14_999);
+    await handleBackgroundLocations({ data: { locations: [location(Date.now(), 25.002)] } });
+    expect(mockNavigationContext).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(1);
+    await handleBackgroundLocations({ data: { locations: [location(Date.now(), 25.002)] } });
+    expect(mockNavigationContext).toHaveBeenCalledTimes(1);
+    expect(await loadBackgroundJourney()).toMatchObject({ navigationSessionId: 'session-2',
+      destinationId: target.id, highAccuracy: true });
+    expect(mockArrival).not.toHaveBeenCalled();
+  });
+
+  it('presence keeps the precision preference for a later journey while retaining the low-frequency profile', async () => {
+    await startBackgroundJourney({ ...baseConfig, powerMode: 'allDay', highAccuracy: true,
+      navigationSessionId: null });
+    expect(await loadBackgroundJourney()).toMatchObject({ highAccuracy: true, powerMode: 'allDay' });
+    expect(mockLocationAdapter.startLocationUpdatesAsync).toHaveBeenLastCalledWith(expect.any(String),
+      expect.objectContaining({ accuracy: 2, timeInterval: 150_000 }));
+    mockNavigationContext.mockResolvedValue({ actorId: baseConfig.actorId, hasMembership: true,
+      sharingEnabled: true, session: { id: 'session-2', destination: { arrivalRadiusMeters: 50 } }, target: baseConfig.target });
+    await reconcileBackgroundNavigation(baseConfig.groupId);
+    expect(await loadBackgroundJourney()).toMatchObject({ highAccuracy: true, powerMode: 'journey' });
+    expect(mockLocationAdapter.startLocationUpdatesAsync).toHaveBeenLastCalledWith(expect.any(String),
+      expect.objectContaining({ accuracy: 5, timeInterval: 5_000 }));
+  });
+
+  it('passes a real presence fix to a pending refresh without starting another GPS owner', async () => {
+    await startBackgroundJourney({ ...baseConfig, navigationSessionId: null, powerMode: 'allDay' });
+    store.set('@hither/pending-location-refresh', JSON.stringify({ groupId: baseConfig.groupId, requestedAt: Date.now() - 1 }));
+    const sample = location();
+    await handleBackgroundLocations({ data: { locations: [sample] } });
+    expect(mockRecoverRefreshSample).toHaveBeenCalledWith(baseConfig.groupId, expect.objectContaining({
+      timestamp: sample.timestamp, coordinates: { latitude: 25, longitude: 121 },
+    }));
+    expect(mockLocationAdapter.startLocationUpdatesAsync).toHaveBeenCalledTimes(1);
+  });
+
   it('processes an out-of-order enter/exit batch without losing the arrival or waiting for ACK', async () => {
     await startCurrent();
     const now = Date.now();
@@ -569,7 +614,7 @@ describe('background journey lifecycle and callback gate', () => {
     await handleBackgroundLocations({ data: { locations: [
       location(now - 20_000), location(now - 3, 25, 150),
       { ...location(now - 2), coords: { ...location().coords, accuracy: null } },
-      location(now + 1_000),
+      location(now + 2_001),
     ] } });
     expect(mockArrival).not.toHaveBeenCalled();
     expect((await loadBackgroundJourney())?.arrivedMemberIds).toEqual([]);

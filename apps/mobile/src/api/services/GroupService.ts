@@ -15,6 +15,7 @@ import {
 } from '../../constants/avatars';
 import { memberColor } from '../../glass';
 import { mergeAvatarProfiles } from '../../utils/gatherCommand';
+import { isLocationSampleFresh } from '../../utils/locationFreshness';
 import {
   demoSetJourneyStatus,
   demoSetJourneyTarget,
@@ -108,6 +109,9 @@ export interface LocationRow {
   longitude: number | null;
   updated_at: string | null;
   captured_at?: string | null;
+  tracking_mode?: string | null;
+  source?: string | null;
+  navigation_session_id?: string | null;
 }
 
 // ── Pure mappers ───────────────────────────────────────────────────────────
@@ -148,6 +152,8 @@ export function mapMember(
       ? { latitude: location.latitude, longitude: location.longitude }
       : undefined;
   const avatar = displayMemberAvatar(profile?.avatar, membership.user_id, profile?.avatar_color);
+  const metadata = { locationTrackingMode: location?.tracking_mode,
+    locationSource: location?.source, locationNavigationSessionId: location?.navigation_session_id };
   return {
     userId: membership.user_id,
     name: profile?.nickname ?? '',
@@ -160,8 +166,9 @@ export function mapMember(
     coordinates,
     capturedAt: location?.captured_at ?? null,
     uploadedAt: location?.updated_at ?? null,
+    ...metadata,
     locationAvailability: !coordinates ? 'unavailable'
-      : Date.now() - Date.parse(location?.captured_at ?? location?.updated_at ?? '') < 120_000
+      : isLocationSampleFresh(location?.captured_at ?? location?.updated_at, metadata)
         ? 'available' : 'stale',
     lastUpdated: location?.captured_at ?? location?.updated_at ?? undefined,
   };
@@ -259,7 +266,7 @@ export async function joinGroup(inviteCode: string): Promise<Group> {
   if (error) {
     const code = (error as { code?: string }).code;
     if (code === 'P0002') {
-      throw new Error('找不到這個群組');
+      throw Object.assign(new Error('invalid_invite_code'), { code: 'invalid_invite_code' });
     }
     // Free Plan member cap (5 including Leader) — server-authoritative.
     if (code === 'P0003' || /member_limit/i.test(error.message)) {
@@ -317,7 +324,7 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
       .order('position', { ascending: true }),
     supabase
       .from('member_locations')
-      .select('user_id, latitude, longitude, captured_at, updated_at')
+      .select('user_id, latitude, longitude, captured_at, updated_at, tracking_mode, source, navigation_session_id')
       .eq('group_id', groupId),
     // Do not swallow load failures as an empty list (false "no stay").
     listDailyAccommodations(groupId),
@@ -767,11 +774,8 @@ export async function setSolo(groupId: string, solo: boolean): Promise<void> {
     demoSetSolo(solo);
     return;
   }
-  const { error } = await supabase.rpc('set_solo', {
-    p_group: groupId,
-    p_solo: solo,
-  });
-  orThrow(error);
+  const core = require('../../state/coreDataSync') as typeof import('../../state/coreDataSync');
+  await core.enqueueSolo({ groupId, solo });
 }
 
 export async function selfSplit(groupId: string, name: string): Promise<Subgroup> {

@@ -199,7 +199,7 @@ describe('background journey controller', () => {
       pausesUpdatesAutomatically: boolean;
     };
     expect(opts.accuracy).toBe(2);
-    expect(opts.deferredUpdatesInterval).toBe(180_000);
+    expect(opts.deferredUpdatesInterval).toBe(150_000);
     expect(opts.pausesUpdatesAutomatically).toBe(false);
   });
 

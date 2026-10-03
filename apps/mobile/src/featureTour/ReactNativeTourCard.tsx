@@ -45,11 +45,12 @@ export default function TourCard({
           {canGoPrev && onPrev ? (
             <Pressable
               testID="tour-prev"
-              onPress={onPrev}
+              onPress={ctaDisabled ? undefined : onPrev}
               disabled={ctaDisabled}
               style={({ pressed }) => [styles.prevCta, pressed && styles.ctaPressed]}
               accessibilityRole="button"
               accessibilityLabel={prevLabel}
+              accessibilityState={{ disabled: ctaDisabled }}
             >
               <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={[styles.prevCtaText, { fontSize: 20 * textScale }]} maxFontSizeMultiplier={GLOBAL_FONT_SCALE_CAP}>{prevLabel}</Text>
             </Pressable>
@@ -57,7 +58,7 @@ export default function TourCard({
         </View>
         <Pressable
           testID="tour-next"
-          onPress={onNext}
+          onPress={ctaDisabled ? undefined : onNext}
           disabled={ctaDisabled}
           style={({ pressed }) => [
             styles.cta,
